@@ -300,6 +300,22 @@ async function request<T>(
     );
   }
 
+  /**
+   * ⚠️ A RATE LIMIT IS NOT A FAILURE, AND READING IT AS ONE COST AN AFTERNOON.
+   * A 429 arrived with the generic body, every caller rendered its own "we
+   * could not do that just now", and the operator clearing their vault on
+   * 2026-09-09 hit the delete ceiling after ten documents and concluded that
+   * "safe pictures and proficiencies wont delete" — the kinds they happened to
+   * reach eleventh. Nothing on screen said to wait a moment and try again,
+   * because nothing knew that was the answer.
+   */
+  if (res.status === 429) {
+    throw new LicenceApiError(
+      'That was a bit quick for us — give it a minute and try again.',
+      429,
+    );
+  }
+
   if (!res.ok) {
     const body = await safeJson<{ message?: string | string[]; code?: string }>(
       res,

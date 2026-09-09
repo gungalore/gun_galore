@@ -73,6 +73,10 @@ function build(row: Row | null) {
         updates.push(data);
         return {};
       }),
+      // Clearing a pointer left aiming at the deleted row — see
+      // credential-delete-pair.spec.ts. Not what this suite is about, but the
+      // delete path calls it and a missing double is a synchronous throw.
+      updateMany: jest.fn(async () => ({ count: 0 })),
     },
     motivationUpload: {
       updateMany: jest.fn(async (args: Record<string, unknown>) => {

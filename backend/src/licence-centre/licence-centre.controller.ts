@@ -307,9 +307,27 @@ export class LicenceCentreController {
     return new StreamableFile(bytes);
   }
 
-  /** POPIA erasure — the row AND the encrypted file. Throttled hard. */
+  /**
+   * POPIA erasure — the row AND the encrypted file.
+   *
+   * ⚠️ 60, NOT 10, AND THE OLD CEILING COST A REAL AFTERNOON. The operator
+   * cleared their vault on 2026-09-09 and deleted ten documents in
+   * thirty-six seconds; the eleventh onwards returned 429, the card renders
+   * any failure as "We could not delete that just now", and they reported
+   * that "safe pictures and proficiencies wont delete" — because those were
+   * the kinds they happened to reach last. The vault event log shows exactly
+   * ten deletes between 16:15:27 and 16:16:03 and none after.
+   *
+   * ⚠️ THE SAME LESSON THE UPLOAD ROUTE ALREADY LEARNED, in the other
+   * direction: `POST /licence-centre` says "20 was a ceiling a member could
+   * hit halfway through adding their own paperwork" and was raised to 60.
+   * Somebody clearing a vault deletes as many documents as they added.
+   *
+   * Still throttled, because this destroys bytes: 60 a minute is a person
+   * working through a folder, not a script.
+   */
   @Delete(':id')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   remove(@CurrentUser() clerkId: string, @Param('id') id: string) {
     return this.svc.remove(clerkId, id);
   }

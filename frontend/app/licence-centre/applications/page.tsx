@@ -3,13 +3,12 @@
 import { useAuth } from '@clerk/nextjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import {
   motivationsApi,
   type MotivationSummary,
 } from '@/lib/motivations-api';
-import { LICENCE_TYPES, licenceLabel } from '@/lib/licence-labels';
-import DeleteApplication from '@/components/licence-pack/delete-application';
+import { LICENCE_TYPES } from '@/lib/licence-labels';
+import ApplicationRow from '@/components/licence-pack/application-row';
 
 // ────────────────────────────────────────────────────────────────────
 // YOUR APPLICATIONS, AND THE FIVE THINGS YOU CAN APPLY FOR.
@@ -31,14 +30,20 @@ import DeleteApplication from '@/components/licence-pack/delete-application';
 // not make those.
 // ────────────────────────────────────────────────────────────────────
 
-const STATUS_WORDS: Record<string, string> = {
-  DRAFT: 'In progress',
-  GENERATING: 'Being written',
-  NEEDS_MORE_INFO: 'Needs more from you',
-  COMPLETED: 'Ready',
-  FAILED: 'Could not be written',
-  ABANDONED: 'Put aside',
-};
+/**
+ * The two piles a member actually thinks in.
+ *
+ * Operator, 2026-09-09: "splitting it into In progress and completed".
+ *
+ * ⚠️ COMPLETED IS THE ONLY STATUS THAT MEANS FINISHED, and everything else
+ * belongs in the other pile — a FAILED run included, because FAILED became
+ * regenerable on 2026-09-09 and the member's next move is to open it and try
+ * again. Putting it under "Completed" would tell them the opposite. ABANDONED
+ * is not finished either; it is put aside, which is a kind of in progress.
+ */
+function isFinished(r: MotivationSummary): boolean {
+  return r.status === 'COMPLETED';
+}
 
 export default function ApplicationsPage() {
   const { getToken } = useAuth();
@@ -94,50 +99,32 @@ export default function ApplicationsPage() {
           Loading…
         </p>
       ) : rows.length ? (
-        <section className="mt-5">
-          <p className="m-0 mb-2 text-[11px] font-medium uppercase tracking-[0.11em] text-[var(--text-tertiary)]">
-            Yours
-          </p>
-          <ul className="m-0 list-none p-0">
-            {/*
-              ⚠️ THE DELETE BUTTON IS A SIBLING OF THE LINK, NEVER INSIDE IT.
-              A <button> nested in an <a> is invalid HTML, and the browsers
-              that tolerate it still follow the link on the way to the click.
-              So the tile is the <li>, and the two controls divide it.
-            */}
-            {rows.map((r) => (
-              <li
-                key={r.id}
-                className="gg-tile mb-2 flex items-stretch overflow-hidden rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)]"
-              >
-                <Link
-                  href={`/licence-centre/${r.id}`}
-                  className="flex min-w-0 flex-1 items-center justify-between gap-3 px-[14px] py-3 no-underline"
-                >
-                  <span className="min-w-0">
-                    <span className="block text-[14.5px] font-medium leading-[1.3] text-[var(--text-primary)]">
-                      {licenceLabel(r.licenceType)}
-                    </span>
-                    <span className="mt-[2px] block font-mono text-[12px] text-[var(--text-tertiary)]">
-                      {r.referenceNumber}
-                    </span>
-                  </span>
-                  <span className="flex-shrink-0 text-[12px] text-[var(--text-tertiary)]">
-                    {STATUS_WORDS[r.status] ?? r.status}
-                  </span>
-                </Link>
-                <DeleteApplication
-                  token={getToken}
-                  motivationId={r.id}
-                  reference={r.referenceNumber}
-                  label="Delete"
-                  onDeleted={() => void load()}
-                  className="flex min-h-[44px] flex-shrink-0 items-center gap-1.5 border-l border-[var(--border-divider)] px-3.5 text-[12.5px] font-medium text-[var(--red)] hover:bg-[var(--red-wash)]"
-                />
-              </li>
+        <>
+          {(
+            [
+              ['In progress', rows.filter((r) => !isFinished(r))],
+              ['Completed', rows.filter(isFinished)],
+            ] as [string, MotivationSummary[]][]
+          )
+            .filter(([, list]) => list.length > 0)
+            .map(([label, list]) => (
+              <section key={label} className="mt-5">
+                <p className="m-0 mb-2 text-[11px] font-medium uppercase tracking-[0.11em] text-[var(--text-tertiary)]">
+                  {label}
+                </p>
+                <ul className="m-0 list-none p-0">
+                  {list.map((r) => (
+                    <ApplicationRow
+                      key={r.id}
+                      row={r}
+                      token={getToken}
+                      onChanged={() => void load()}
+                    />
+                  ))}
+                </ul>
+              </section>
             ))}
-          </ul>
-        </section>
+        </>
       ) : null}
 
       <section className="mt-6">

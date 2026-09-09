@@ -2028,6 +2028,47 @@ export class LicenceCentreService {
   }
 
   /** POPIA erasure of one document. Files first — a cascade cannot reach disk. */
+  /**
+   * The other page of a two-sided document, erased with the first.
+   *
+   * ⚠️ NOT A RECURSIVE `remove()` CALL. This one has already stamped the packs,
+   * resolved the notification, re-dated the competencies and re-armed the
+   * auto-link for the pair; doing all of it a second time would re-stamp
+   * `sourceRemovedAt` on rows the first pass already dated. It takes the bytes
+   * and the row and nothing else.
+   *
+   * ⚠️ AND IT NEVER THROWS THE ERASURE AWAY. If the partner's bytes will not
+   * go, the first side is already deleted and the member has had most of what
+   * they asked for; the caller logs it and moves on rather than failing a
+   * request that has already half-succeeded.
+   */
+  private async removeOtherSide(userId: string, id: string): Promise<void> {
+    const other = await this.prisma.credential.findFirst({
+      where: { id, userId },
+      select: { id: true, storageKey: true, kind: true },
+    });
+    if (!other) return;
+    if (other.storageKey) await this.files.remove(other.storageKey);
+    await this.prisma.motivationUpload
+      .updateMany({
+        where: { sourceCredentialId: other.id, sourceRemovedAt: null },
+        data: { sourceRemovedAt: new Date() },
+      })
+      .catch(() => undefined);
+    await this.prisma.credential.delete({ where: { id: other.id } });
+    this.vaultLog?.note({
+      stage: 'member',
+      outcome: 'corrected',
+      code: 'deleted',
+      userId,
+      credentialId: other.id,
+      detail: { kind: other.kind, withOtherSide: true },
+    });
+    await this.notifications
+      .resolveByEntity('credential', other.id, { userId })
+      .catch(() => undefined);
+  }
+
   async remove(clerkId: string, id: string) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
@@ -2102,6 +2143,50 @@ export class LicenceCentreService {
     await this.notifications
       .resolveByEntity('credential', id, { userId: user.id })
       .catch(() => undefined);
+
+    /**
+     * ⚠️ A TWO-SIDED DOCUMENT DELETES AS ONE DOCUMENT, and it did not.
+     *
+     * A proficiency is two scans of ONE certificate — the provider's front and
+     * the PFTC statement of results — pointing at each other through
+     * `otherSideId`, and `documentsOf()` folds them into a single row on the
+     * member's screen. Deleting one side left the other standing, which the
+     * list then promoted to lead: the document is still there, under the same
+     * title, with the same thumbnail. Operator, 2026-09-09: "safe pictures and
+     * proficiencies wont delete."
+     *
+     * They deleted one (the vault event carries `wasPaired: true`) and stopped,
+     * because nothing on the screen had changed. Seven proficiency rows remain
+     * and every one of them is paired.
+     *
+     * ⚠️ AND THE SURVIVOR WAS LEFT POINTING AT A DEAD ID. `otherSideId` is a
+     * plain string, not a relation, so nothing cleared it — the partner keeps a
+     * pointer to a row that no longer exists, and the pair tab in the detail
+     * column silently renders one page instead of two.
+     *
+     * Both sides go, and any dangling pointer at either of them is cleared.
+     * Never fatal: the erasure the member asked for has already happened, and
+     * POPIA is the stronger obligation than tidiness.
+     */
+    /**
+     * ⚠️ try/catch, NOT `.catch()`. The erasure the member asked for has
+     * already happened by this line; nothing below it may throw the request
+     * away, and a rejected promise is only one of the ways these calls can
+     * fail. `.catch()` does not catch a synchronous throw.
+     */
+    try {
+      if (row.otherSideId) {
+        await this.removeOtherSide(user.id, row.otherSideId);
+      }
+      await this.prisma.credential.updateMany({
+        where: { userId: user.id, otherSideId: row.id },
+        data: { otherSideId: null },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Credential ${id}: could not tidy the other side: ${(err as Error).message}`,
+      );
+    }
 
     /**
      * A LICENCE JUST LEFT, SO EVERY COMPETENCY DATED OFF IT IS NOW WRONG.

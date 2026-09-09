@@ -657,8 +657,15 @@ export default function CredentialCard({
             try {
               await licenceCentreApi.remove(token, row.id);
               await onChanged();
-            } catch {
-              onError('We could not delete that just now.');
+            } catch (e) {
+              // ⚠️ SAY WHICH FAILURE IT WAS. A rate limit told the member the
+              // document could not be deleted, full stop — see the 429 branch
+              // in licence-centre-api.ts.
+              onError(
+                e instanceof LicenceApiError && e.status === 429
+                  ? e.message
+                  : 'We could not delete that just now.',
+              );
             } finally {
               setBusy(false);
             }
