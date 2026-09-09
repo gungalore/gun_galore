@@ -460,6 +460,32 @@ export interface DrawingOptions {
   widthMm?: number;
   /** Letters `completeDims` filled in. They are drawn but never dimensioned. */
   derived?: ReadonlySet<keyof DrawingDims>;
+  /**
+   * Draw it as the pack's COVER HERO rather than as a figure in the body.
+   *
+   * Operator, 2026-09-09: "i think we put the renedered cartridge as the Hero
+   * image on the frontpage with it's basic dimensions and the Firearm
+   * manufacturer and caliber as a nice biggish readable subscript for it."
+   *
+   * ⚠️ "BASIC DIMENSIONS" IS THE WHOLE INSTRUCTION, AND IT IS A SUBTRACTION.
+   * The body figure carries five diameter callouts on two tiers above the
+   * silhouette, each on its own leader line — which is right where a reader
+   * has the prose beside it, and wrong on a cover, where it turns the first
+   * page of a licence application into an engineering sheet. The hero keeps
+   * the two lengths a person actually quotes, case and overall, and drops the
+   * rest. They are not lost: the full set is what the C.I.P. table in the
+   * body is for.
+   *
+   * ⚠️ AND IT DROPS THE CAPTION, because the cover sets its own. The caption
+   * here is 3.1 mm of type sized for a figure; the operator asked for the make
+   * and the calibre "biggish and readable", which is a display line the pack
+   * sets in its own faces at its own size.
+   *
+   * The saving is vertical and it is what makes room on the page: the two
+   * callout tiers above and the caption below come off, so the block lands at
+   * roughly two thirds the height for the same width.
+   */
+  hero?: boolean;
 }
 
 export function cartridgeDrawing(
@@ -475,13 +501,38 @@ export function cartridgeDrawing(
   const marginR = 13;
   const S = (widthMm - marginL - marginR) / D.L6;
 
+  const hero = opts.hero ?? false;
+
   const maxR = Math.max(D.R1, D.E1, D.P1, D.P2, D.H1, D.H2, D.G1) / 2;
   const halfH = maxR * S;
-  /** Headroom for two tiers of diameter callouts above the silhouette. */
-  const axisY = halfH + 15;
+  /**
+   * Headroom for two tiers of diameter callouts above the silhouette — and
+   * none at all on the hero, which draws no diameters.
+   */
+  const axisY = halfH + (hero ? 2 : 15);
   const topY = axisY - halfH;
   const botY = axisY + halfH;
-  const heightMm = botY + 30;
+  /**
+   * Room below for the two length tiers, and for the caption under them.
+   *
+   * ⚠️ THE LOWEST INK IS THE SECOND TIER'S EXTENSION LINE, which stops two
+   * millimetres below that tier. Trim past it and the overall-length dimension
+   * is clipped SILENTLY — the SVG has no clip path, so the callout simply
+   * falls outside the viewBox and the rasteriser drops it.
+   */
+  const heightMm = botY + (hero ? 14 : 30);
+
+  /**
+   * Where the length tiers sit below the silhouette, and how far apart.
+   *
+   * ⚠️ TIGHTER ON THE HERO BECAUSE HEIGHT IS WHAT IT PAYS FOR WIDTH. The hero
+   * is scaled to the room the cover has left after the address block and the
+   * particulars grid, so every millimetre of white space inside the drawing
+   * comes straight off how big the cartridge is on the page. On the body
+   * figure there is a whole column to spend and the callouts get their air.
+   */
+  const dimBase = hero ? 5 : 8;
+  const dimStep = hero ? 5.5 : 8;
 
   const px = (x: number) => marginL + x * S;
   const py = (r: number) => axisY - r * S;
@@ -530,7 +581,7 @@ export function cartridgeDrawing(
 
   /** A length dimension under the drawing, on its own tier. */
   const lengthDim = (from: number, to: number, tier: number, label: string) => {
-    const y = botY + 8 + tier * 8;
+    const y = botY + dimBase + tier * dimStep;
     const a = px(from);
     const b = px(to);
     parts.push(
@@ -596,27 +647,31 @@ export function cartridgeDrawing(
 
   const caseR = Math.max(D.R1, D.P1, D.H2) / 2;
 
-  diaDim('R1', D.R / 2, D.R1, 1);
-  diaDim('E1', D.E - 0.45, D.E1, 0);
-  diaDim('P1', Math.min(D.E + 3, D.L3 - 1), D.P1, 1);
-  diaDim('H2', D.L3 - 0.5, D.H2, 0);
-  diaDim('G1', D.L3 + Math.min(3.5, (D.L6 - D.L3) / 2), D.G1, 1);
+  if (!hero) {
+    diaDim('R1', D.R / 2, D.R1, 1);
+    diaDim('E1', D.E - 0.45, D.E1, 0);
+    diaDim('P1', Math.min(D.E + 3, D.L3 - 1), D.P1, 1);
+    diaDim('H2', D.L3 - 0.5, D.H2, 0);
+    diaDim('G1', D.L3 + Math.min(3.5, (D.L6 - D.L3) / 2), D.G1, 1);
+  }
   lengthDim(0, D.L3, 0, `case ${n2(D.L3)} mm`);
   lengthDim(0, D.L6, 1, `overall ${n2(D.L6)} mm`);
 
-  texts.push({
-    x: marginL,
-    y: heightMm - 3,
-    text:
-      labels.name +
-      (labels.pmaxBar
-        ? ` · maximum average pressure ${labels.pmaxBar} bar`
-        : '') +
-      ' · drawn to scale, dimensions in millimetres',
-    size: CAPTION_MM,
-    anchor: 'start',
-    role: 'caption',
-  });
+  if (!hero) {
+    texts.push({
+      x: marginL,
+      y: heightMm - 3,
+      text:
+        labels.name +
+        (labels.pmaxBar
+          ? ` · maximum average pressure ${labels.pmaxBar} bar`
+          : '') +
+        ' · drawn to scale, dimensions in millimetres',
+      size: CAPTION_MM,
+      anchor: 'start',
+      role: 'caption',
+    });
+  }
 
   /**
    * ⚠️ THE SLIGHT ANGLE IS TWO ELLIPSES, NOT A ROTATION.

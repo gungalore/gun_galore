@@ -273,6 +273,30 @@ function firearmLine(answers: Record<string, string>): string | undefined {
 }
 
 /**
+ * The display line under the cover's cartridge hero.
+ *
+ * Operator, 2026-09-09: "the Firearm manufacturer and caliber as a nice
+ * biggish readable subscript for it."
+ *
+ * ⚠️ THE MAKE AND THE CALIBRE, AND NOT THE REST OF THE LINE ABOVE. It is a
+ * label on a picture, not a second identification block: the model, the
+ * action and the serial are rows in the particulars grid further down the same
+ * page, where a DFO transcribes them onto the 271 one at a time.
+ *
+ * ⚠️ AND THE CALIBRE IS THE APPLICANT'S OWN, NOT THE CARTRIDGE'S STANDARDISED
+ * NAME. The drawing is of "6,5 Creedmoor" because that is what the figures
+ * were found under; the card says "6.5MM CREEDMOOR", and the card is what the
+ * DFO is checking the application against. Printing the standardised spelling
+ * on the cover would read as a discrepancy on the first page.
+ */
+function heroSubtitle(answers: Record<string, string>): string | undefined {
+  const make = (answers.firearm_make ?? '').trim();
+  const calibre = (answers.firearm_calibre ?? '').trim();
+  if (!calibre) return undefined;
+  return make ? `${make} · ${calibre}` : calibre;
+}
+
+/**
  * The cover's particulars table, in the book's own order.
  *
  * MOTIVATION-GUIDE-BOOK Part 7.2: "a particulars table (Applicant, Identity
@@ -830,7 +854,10 @@ export class MotivationRenderService {
       // cartridge its using from The Bench?" Both are still built because the
       // spliced page is the fallback when we hold no figures for the round;
       // the renderer prints one or the other, never both.
-      cartridgeDrawing: await this.cartridgeDrawingFor(answers.firearm_calibre),
+      cartridgeDrawing: await this.cartridgeDrawingFor(
+        answers.firearm_calibre,
+        heroSubtitle(answers),
+      ),
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
       // ⚠️ THE APPLICANT'S PAGE, NOT THE REGISTRAR'S. See MotivationPdfInput.
@@ -857,13 +884,21 @@ export class MotivationRenderService {
    * 166 mm wide, so 300 dpi is a little under two thousand pixels across the
    * column and the leader lines stay hairlines when printed.
    */
-  private async cartridgeDrawingFor(calibre: string | undefined): Promise<
+  private async cartridgeDrawingFor(
+    calibre: string | undefined,
+    /**
+     * The make-and-calibre line for the cover. Present means the drawing is
+     * the pack's hero; absent means it stays a figure in the body.
+     */
+    heroLine?: string,
+  ): Promise<
     | {
         png: Buffer;
         widthMm: number;
         heightMm: number;
         texts: DrawingText[];
         label: string;
+        hero?: { subtitle: string };
       }
     | undefined
   > {
@@ -905,7 +940,7 @@ export class MotivationRenderService {
       const drawing = cartridgeDrawing(
         completed.dims,
         { name: hit.name, pmaxBar: hit.dims.pmaxBar ?? hit.pmaxBar },
-        { derived: completed.derived },
+        { derived: completed.derived, hero: !!heroLine },
       );
       const png = await sharp(Buffer.from(drawing.svg), { density: 300 })
         .flatten({ background: '#ffffff' })
@@ -924,6 +959,12 @@ export class MotivationRenderService {
          * and printed straight into the table of contents.
          */
         label: `The cartridge \u2014 ${hit.name}`,
+        /**
+         * ⚠️ THE LABEL IS STILL BUILT ON A HERO PACK. It is the contents-page
+         * entry and the fallback heading, and a later change that gives the
+         * body its figure back must not have to remember to reinstate it.
+         */
+        ...(heroLine ? { hero: { subtitle: heroLine } } : {}),
       };
     } catch (err) {
       this.logger?.warn?.(

@@ -621,6 +621,29 @@ export interface MotivationPdfInput {
     texts: DrawingText[];
     /** The section heading, e.g. "The cartridge — 9 mm Luger". */
     label: string;
+    /**
+     * Set: this drawing is the COVER'S HERO, and the body does not repeat it.
+     *
+     * Operator, 2026-09-09: "i think we put the renedered cartridge as the
+     * Hero image on the frontpage with it's basic dimensions and the Firearm
+     * manufacturer and caliber as a nice biggish readable subscript for it."
+     *
+     * ⚠️ IT IS A PLACE, NOT A SECOND DRAWING. The same picture on the cover
+     * AND in the body is the fault the note above calls a document that has
+     * lost its place, so this moves it rather than adding it — the body's
+     * cartridge section keeps its prose and gives up its figure.
+     *
+     * ⚠️ WHICH IS ALSO WHY IT STAYS ON `cartridgeDrawing` RATHER THAN
+     * ARRIVING AS ITS OWN INPUT. Two other decisions read this field to know
+     * a drawing exists: the spliced C.I.P. sheet is suppressed by it, and the
+     * contents page counts on it. A hero passed separately would leave both
+     * believing the pack had no drawing, and the sheet this replaces would
+     * splice itself back in underneath.
+     */
+    hero?: {
+      /** The display line under it — the make and the calibre. */
+      subtitle: string;
+    };
   };
   /**
    * What the applicant physically carries to the DFO.
@@ -900,6 +923,164 @@ export class MotivationPdfService {
       );
     }
 
+    /**
+     * Place a rasterised drawing and set its callouts in the document's own
+     * faces. Returns the height it took.
+     *
+     * ⚠️ ONE SCALE FOR THE PICTURE AND THE LETTERING BOTH. The drawing is laid
+     * out in millimetres of paper and then fitted to a column; if the callouts
+     * were set at a fixed point size they would drift off their leader lines
+     * the moment the column width changed.
+     *
+     * ⚠️ AND IT IS SHARED BY THE COVER AND THE BODY ON PURPOSE. The hero and
+     * the figure are the same drawing at two sizes, so a change to how a
+     * callout is placed has to reach both or they stop agreeing.
+     */
+    const placeDrawing = (
+      cd: {
+        png: Buffer;
+        widthMm: number;
+        heightMm: number;
+        texts: DrawingText[];
+      },
+      x0: number,
+      y0: number,
+      width: number,
+    ): number => {
+      const scale = width / K.mm(cd.widthMm);
+      doc.image(cd.png, x0, y0, { width });
+
+      for (const t of cd.texts) {
+        doc
+          .font(t.role === 'caption' ? B.bodyItalic : B.body)
+          .fontSize(K.mm(t.size) * scale)
+          .fillColor(t.role === 'caption' ? C.mut : C.ink);
+        const tx = x0 + K.mm(t.x) * scale;
+        const ty = y0 + K.mm(t.y) * scale;
+        /**
+         * ⚠️ MEASURED AND PLACED, NOT ALIGNED. pdfkit centres text inside a
+         * given WIDTH, and the width here would have to be the whole column —
+         * which centres every callout on the page rather than over its own
+         * leader line. `baseline: 'alphabetic'` matters for the same reason:
+         * the y in DrawingText is where the leader stops, which is a baseline,
+         * not the top of a line box.
+         */
+        const w = doc.widthOfString(t.text);
+        doc.text(t.text, t.anchor === 'middle' ? tx - w / 2 : tx, ty, {
+          lineBreak: false,
+          baseline: 'alphabetic',
+        });
+      }
+      return K.mm(cd.heightMm) * scale;
+    };
+
+    // ── What the cover owes below its image ───────────────────────────
+    //
+    // ⚠️ MEASURED BEFORE THE IMAGE IS DRAWN, so the hero can be sized to what
+    // is actually left rather than to a guess. Everything here is a pure
+    // function of the input and the registered faces; nothing draws.
+
+    const labelW = K.mm(42);
+    const rowGap = K.mm(2.4) * 2;
+
+    /** The particulars, in the book's Part 7.2 order. */
+    const particularRows = (): [string, string][] => [
+      ['Applicant', input.applicantName],
+      ...(input.idNumber
+        ? ([['Identity number', input.idNumber]] as [string, string][])
+        : []),
+      ...(input.coverParticulars ??
+        ([
+          ...(input.firearmLine
+            ? ([['Firearm', input.firearmLine]] as [string, string][])
+            : []),
+          [
+            'Date',
+            input.generatedAt.toLocaleDateString('en-ZA', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            }),
+          ],
+        ] as [string, string][])),
+    ];
+
+    /** What the particulars grid will take, to the point. */
+    const measureGrid = (rows: [string, string][]): number => {
+      doc.font(B.body).fontSize(K.px(13));
+      return (
+        K.mm(3) +
+        rows.reduce((sum, [, v]) => {
+          const h = Math.max(
+            doc.heightOfString(v, { width: contentWidth - labelW }),
+            K.px(13) * 1.2,
+          );
+          return sum + h + rowGap;
+        }, 0)
+      );
+    };
+
+    /**
+     * The dossier's head — who the application is addressed to, and the band
+     * that heads the particulars grid. Returns the height it takes.
+     *
+     * ⚠️ IT MEASURES AND DRAWS THROUGH ONE CODE PATH, ON PURPOSE. The hero
+     * above it is scaled to the room the cover has left, so something has to
+     * know what this block costs BEFORE it is drawn. A second copy of these
+     * increments would be right on the day it was written and wrong the first
+     * time one of them moved — and the symptom is not a crash. It is a cover
+     * that overflows by two millimetres and throws its particulars table onto
+     * page two, which is precisely what this measurement exists to prevent.
+     */
+    const dossierHead = (top: number, draw: boolean): number => {
+      let y = top;
+      const step = K.px(13.5) * 1.5;
+
+      const line = (
+        text: string,
+        font: string,
+        colour: string,
+        wrap: boolean,
+      ): number => {
+        doc.font(font).fontSize(K.px(13.5));
+        const opts = wrap
+          ? { width: contentWidth }
+          : { width: contentWidth, lineBreak: false };
+        const h = doc.heightOfString(text, opts);
+        if (draw) doc.fillColor(colour).text(text, MARGIN, y, opts);
+        return h;
+      };
+
+      y += line('To:', B.body, C.sub, false) + step;
+      y += line('The Registrar of Firearms', B.bodySemi, C.ink, false) + step;
+      y += line(
+        'through the Designated Firearms Officer, South African Police Service',
+        B.body,
+        C.sub,
+        true,
+      );
+
+      y += K.mm(7);
+
+      // The band label, as the handoff heads the dossier grid.
+      const label = 'APPLICANT AND FIREARM';
+      const size = K.px(11);
+      doc.font(F.sansBold).fontSize(size);
+      const w =
+        doc.widthOfString(label, { characterSpacing: size * 0.22 }) + K.px(30);
+      const h = size * 1.2 + K.px(14);
+      if (draw) {
+        doc.rect(MARGIN, y, w, h).fill(C.band);
+        doc.fillColor(C.deep2).text(label, MARGIN + K.px(15), y + K.px(7), {
+          characterSpacing: size * 0.22,
+          lineBreak: false,
+        });
+      }
+      y += h + K.mm(5);
+
+      return y - top;
+    };
+
     // ── Cover ─────────────────────────────────────────────────────────
     //
     // ⚠️ A COVER, NOT A TITLE BLOCK. What we had was a heading and three
@@ -927,7 +1108,104 @@ export class MotivationPdfService {
       referenceNumber: '',
       licenceTypeLabel: input.licenceTypeLabel,
     });
-    if (input.firearmPhoto) {
+    // ── The hero ──────────────────────────────────────────────────────
+    //
+    // Operator, 2026-09-09: "i think we put the renedered cartridge as the
+    // Hero image on the frontpage with it's basic dimensions and the Firearm
+    // manufacturer and caliber as a nice biggish readable subscript for it."
+    //
+    // ⚠️ IT TAKES THE COVER'S IMAGE SLOT RATHER THAN JOINING IT, and the page
+    // is why. After the 80 mm masthead the cover has about 190 mm left, the
+    // photograph frame is a fixed 85 of them and the dossier grid needs most
+    // of the rest. A hero of roughly 50 mm plus its display line fits in that
+    // slot with room to spare; both together do not, and what gets pushed off
+    // the bottom is the particulars table — the one thing on the cover a DFO
+    // opens the folder for.
+    //
+    // ⚠️ AND ON A NEW APPLICATION THE DRAWING IS THE HONEST PICTURE OF THE
+    // TWO. The photograph on a first application is of a firearm the applicant
+    // does not own yet — a seller's photograph, or stock. The cartridge is
+    // drawn from the figures the licence itself will carry.
+    const heroDrawing = input.cartridgeDrawing?.hero
+      ? input.cartridgeDrawing
+      : undefined;
+    if (heroDrawing?.hero) {
+      /**
+       * ⚠️ IT IS SIZED TO WHAT IS LEFT, NOT TO THE COLUMN — and the first
+       * version was not, which is how this was found. Drawn at the full 182 mm
+       * the block came to 73 mm, the cover ran 19 mm over, and the particulars
+       * table went to page two behind a cover with a hole in it. Rendered and
+       * looked at, which is the only way that was ever going to show.
+       *
+       * ⚠️ AND THE ROOM IS NOT A CONSTANT, because the masthead is not. The
+       * five covers hand back anything from 76 mm (Ledger) to 100 mm (Plate) —
+       * a 24 mm spread, which is most of a hero — and the grid moves with the
+       * number of particulars a pack carries. Reserving what the page actually
+       * owes lets Ledger print the cartridge across the full column while
+       * Plate prints it smaller, instead of both being cut to Plate's size.
+       */
+      /**
+       * ⚠️ AND IT KEEPS A FEW MILLIMETRES BACK. Sized to the exact remainder,
+       * Plate — the tallest masthead — put the last row of the grid on the
+       * bottom margin to the point, and whether it fitted came down to
+       * floating-point noise in a `>`. It went to page two. The slack buys the
+       * decision away from the boundary, and it is also simply how the page
+       * should look: a particulars table butted against the footer rule reads
+       * as a page that ran out of room, which is exactly what it did.
+       */
+      const SLACK = K.mm(5);
+      const reserve = dossierHead(0, false) + measureGrid(particularRows());
+      const GAP_ABOVE = K.mm(4);
+      const SUB_SIZE = K.px(19);
+      const GAP_BELOW = K.mm(9);
+      const room =
+        K.BODY_BOTTOM -
+        coverY -
+        reserve -
+        GAP_ABOVE -
+        SUB_SIZE * 1.2 -
+        GAP_BELOW -
+        SLACK;
+
+      const atFullWidth =
+        K.mm(heroDrawing.heightMm) * (contentWidth / K.mm(heroDrawing.widthMm));
+      /**
+       * ⚠️ FLOORED AT HALF THE COLUMN. A pack with an unusually long
+       * particulars table could otherwise compute its way down to a
+       * twenty-millimetre cartridge, which is not a hero and not worth the
+       * page. Below that the drawing keeps its size and the grid's own net
+       * below catches the overflow — a big picture and the table overleaf
+       * beats a picture nobody can read.
+       */
+      const fit = Math.min(1, Math.max(0.5, room / atFullWidth));
+      const drawW = contentWidth * fit;
+      const x0 = MARGIN + (contentWidth - drawW) / 2;
+
+      const drawH = placeDrawing(heroDrawing, x0, coverY, drawW);
+      let hy = coverY + drawH + GAP_ABOVE;
+
+      /**
+       * ⚠️ "BIGGISH AND READABLE" IS A SIZE INSTRUCTION AND IT IS TAKEN
+       * LITERALLY. This is the only line on the cover set larger than the
+       * particulars grid, because it is the one a reader is meant to take off
+       * the page at arm's length. The make and the calibre are in the grid
+       * too, in their own rows — this is not the record, it is the label on
+       * the picture.
+       */
+      doc
+        .font(F.sansBold)
+        .fontSize(SUB_SIZE)
+        .fillColor(C.ink)
+        .text(heroDrawing.hero.subtitle, MARGIN, hy, {
+          width: contentWidth,
+          align: 'center',
+          characterSpacing: SUB_SIZE * 0.045,
+          lineBreak: false,
+        });
+      hy += SUB_SIZE * 1.2;
+
+      coverY = hy + GAP_BELOW;
+    } else if (input.firearmPhoto) {
       // ── The frame is fixed; the photograph is FITTED INSIDE IT ─────
       //
       // ⚠️ `fit`, NOT `cover`, AND THAT IS THE WHOLE FIX. It was `cover` on the
@@ -1005,51 +1283,8 @@ export class MotivationPdfService {
     doc.x = MARGIN;
     doc.y = coverY;
 
-    // Right of the photograph: who it is addressed to.
-    const dossierX = input.firearmPhoto ? MARGIN : MARGIN;
-    doc
-      .font(B.body)
-      .fontSize(K.px(13.5))
-      .fillColor(C.sub)
-      .text('To:', dossierX, doc.y, { width: contentWidth, lineBreak: false });
-    doc.y += K.px(13.5) * 1.5;
-    doc
-      .font(B.bodySemi)
-      .fillColor(C.ink)
-      .text('The Registrar of Firearms', dossierX, doc.y, {
-        width: contentWidth,
-        lineBreak: false,
-      });
-    doc.y += K.px(13.5) * 1.5;
-    doc
-      .font(B.body)
-      .fillColor(C.sub)
-      .text(
-        'through the Designated Firearms Officer, South African Police Service',
-        dossierX,
-        doc.y,
-        { width: contentWidth },
-      );
-
-    doc.y += K.mm(7);
-    // The band label, as the handoff heads the dossier grid.
-    {
-      const label = 'APPLICANT AND FIREARM';
-      const size = K.px(11);
-      doc.font(F.sansBold).fontSize(size);
-      const w =
-        doc.widthOfString(label, { characterSpacing: size * 0.22 }) + K.px(30);
-      const h = size * 1.2 + K.px(14);
-      doc.rect(MARGIN, doc.y, w, h).fill(C.band);
-      doc
-        .fillColor(C.deep2)
-        .text(label, MARGIN + K.px(15), doc.y + K.px(7), {
-          characterSpacing: size * 0.22,
-          lineBreak: false,
-        });
-      doc.y += h + K.mm(5);
-      doc.x = MARGIN;
-    }
+    doc.y += dossierHead(doc.y, true);
+    doc.x = MARGIN;
 
     // The grid: a 42 mm label column, hairline between rows.
     /**
@@ -1063,28 +1298,7 @@ export class MotivationPdfService {
      * and a count on the cover that disagreed with that index by one is a
      * discrepancy on the first page a reviewer reads.
      */
-    const rows: [string, string][] = [
-      ['Applicant', input.applicantName],
-      ...(input.idNumber
-        ? ([['Identity number', input.idNumber]] as [string, string][])
-        : []),
-      ...(input.coverParticulars ??
-        ([
-          ...(input.firearmLine
-            ? ([['Firearm', input.firearmLine]] as [string, string][])
-            : []),
-          [
-            'Date',
-            input.generatedAt.toLocaleDateString('en-ZA', {
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric',
-            }),
-          ],
-        ] as [string, string][])),
-    ];
-
-    const labelW = K.mm(42);
+    const rows = particularRows();
 
     // ── THE GRID HAS TO BE ASKED WHETHER IT FITS ─────────────────────────
     //
@@ -1106,18 +1320,16 @@ export class MotivationPdfService {
     // identification block across a page break is worse than starting it
     // cleanly overleaf: a DFO reading "Firearm" on one sheet and its serial on
     // the next has to hold the pack open at two places.
-    const rowGap = K.mm(2.4) * 2;
-    doc.font(B.body).fontSize(K.px(13));
-    const gridHeight =
-      K.mm(3) +
-      rows.reduce((sum, [, v]) => {
-        const h = Math.max(
-          doc.heightOfString(v, { width: contentWidth - labelW }),
-          K.px(13) * 1.2,
-        );
-        return sum + h + rowGap;
-      }, 0);
+    const gridHeight = measureGrid(rows);
 
+    /**
+     * ⚠️ THE NET STAYS UP EVEN THOUGH THE HERO IS NOW SIZED TO CLEAR IT. The
+     * hero reserves exactly this much and no cover carrying one should ever
+     * reach here — but a cover carrying a PHOTOGRAPH still reserves nothing,
+     * the frame is a fixed 85 mm, and a full Part 7.2 table under a Plate
+     * masthead does not fit beneath it. This is what stops that spraying
+     * pages, and it was load-bearing before the hero existed.
+     */
     if (doc.y + gridHeight > K.BODY_BOTTOM) {
       doc.addPage();
       doc.x = MARGIN;
@@ -1607,7 +1819,13 @@ export class MotivationPdfService {
      * taper, a mouth and a seated bullet, at scale, carrying the figures the
      * sheet printed and no others.
      */
-    let cartridgeDrawn = false;
+    /**
+     * ⚠️ A HERO IS ALREADY DRAWN BEFORE THE BODY STARTS, so the latch opens
+     * closed. Every path below is guarded on it — the writer's own cartridge
+     * heading, and the fallback that catches a pack whose plan has no such
+     * heading — so setting it here is the whole of "the cover took it".
+     */
+    let cartridgeDrawn = !!input.cartridgeDrawing?.hero;
 
     /** How much room the block needs, so a heading is never orphaned above it. */
     const cartridgeHeight = (): number => {
@@ -1621,41 +1839,8 @@ export class MotivationPdfService {
       if (!cd || cartridgeDrawn) return;
       cartridgeDrawn = true;
 
-      /**
-       * ⚠️ ONE SCALE FOR THE PICTURE AND THE LETTERING BOTH. The drawing is
-       * laid out in millimetres of paper and then fitted to the column; if the
-       * callouts were set at a fixed point size they would drift off their
-       * leader lines the moment the column width changed.
-       */
-      const scale = contentWidth / K.mm(cd.widthMm);
-      const drawH = K.mm(cd.heightMm) * scale;
-
-      const x0 = MARGIN;
       const y0 = doc.y;
-      doc.image(cd.png, x0, y0, { width: contentWidth });
-
-      for (const t of cd.texts) {
-        doc
-          .font(t.role === 'caption' ? B.bodyItalic : B.body)
-          .fontSize(K.mm(t.size) * scale)
-          .fillColor(t.role === 'caption' ? C.mut : C.ink);
-        const tx = x0 + K.mm(t.x) * scale;
-        const ty = y0 + K.mm(t.y) * scale;
-        /**
-         * ⚠️ MEASURED AND PLACED, NOT ALIGNED. pdfkit centres text inside a
-         * given WIDTH, and the width here would have to be the whole column —
-         * which centres every callout on the page rather than over its own
-         * leader line. `baseline: 'alphabetic'` matters for the same reason:
-         * the y in DrawingText is where the leader stops, which is a baseline,
-         * not the top of a line box.
-         */
-        const w = doc.widthOfString(t.text);
-        doc.text(t.text, t.anchor === 'middle' ? tx - w / 2 : tx, ty, {
-          lineBreak: false,
-          baseline: 'alphabetic',
-        });
-      }
-
+      const drawH = placeDrawing(cd, MARGIN, y0, contentWidth);
       doc.x = MARGIN;
       doc.y = y0 + drawH + PARA_GAP;
     };

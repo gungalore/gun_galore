@@ -940,6 +940,122 @@ describe('the cartridge drawing', () => {
     expect(t).toContain('Ø9.96');
   });
 
+  // ── The hero ──────────────────────────────────────────────────────
+  //
+  // Operator, 2026-09-09: "i think we put the renedered cartridge as the Hero
+  // image on the frontpage with it's basic dimensions and the Firearm
+  // manufacturer and caliber as a nice biggish readable subscript for it."
+
+  /**
+   * ⚠️ A HERO IS A DIFFERENT SHAPE FROM THE FIGURE, and the fixture has to be
+   * or the fit test is meaningless. `cartridgeDrawing` drops the two tiers of
+   * diameter callouts and the caption when it is asked for a hero and tightens
+   * what is left, so the same cartridge comes back at roughly 166 × 40 rather
+   * than 166 × 85. Handing the 85 to the cover is not a taller hero, it is a
+   * body figure in the wrong place — it cannot fit on any layout, and a test
+   * built on it would be measuring a caller error instead of the layout.
+   */
+  const hero = {
+    ...drawing,
+    heightMm: 40,
+    texts: drawing.texts.filter((t) => t.role !== 'caption'),
+    hero: { subtitle: 'MARLIN · .45-70 GOVERNMENT' },
+  };
+
+  it('⚠️ MOVES THE DRAWING TO THE COVER, it does not add a second one', async () => {
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: hero,
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+
+    // The display line the operator asked for, in the document's own type.
+    expect(t).toContain('MARLIN · .45-70 GOVERNMENT');
+
+    // ⚠️ ONCE, NOT TWICE. The cover taking the drawing has to mean the body
+    // gives it up: the same picture in both places is the fault the renderer
+    // calls a document that has lost its place, and it would read as one.
+    const shown = t.split('overall 29.69 mm').length - 1;
+    expect(shown).toBe(1);
+  });
+
+  it('⚠️ AND THE BODY DOES NOT FALL BACK TO A SECTION OF ITS OWN', async () => {
+    // The fallback exists for a plan whose writer never raised the cartridge.
+    // On a hero pack it must stay shut, or the pack carries the picture on the
+    // cover AND under a heading two pages in.
+    const { pdf } = await svc.render({
+      ...makeInput('Introduction:\n\nI am applying under section 13.'),
+      cartridgeDrawing: hero,
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text).replace(/\s+/g, '');
+    expect(t).not.toContain('THECARTRIDGE—9MMLUGER');
+  });
+
+  it('⚠️ LEAVES THE PARTICULARS TABLE ON THE COVER, on every layout', async () => {
+    // ⚠️ THIS IS THE TEST THE FIRST HERO FAILED. Drawn at the full column it
+    // came to 73 mm, the cover ran over, and the whole grid moved to page two
+    // behind a cover with a hole in it — silently, because the renderer's net
+    // catches the overflow and moves it tidily. Nothing throws and no other
+    // assertion notices.
+    //
+    // ⚠️ AND IT HAS TO RUN ON ALL FIVE. The mastheads differ by 24 mm between
+    // Ledger and Plate, which is most of a hero, so a fit proven on the
+    // default layout says nothing about the other four. Plate was still
+    // spilling after Banner was fixed.
+    const full = [
+      ['Firearm type and action', 'Rifle, bolt-action'],
+      ['Make', 'HOWA'],
+      ['Model', '1500'],
+      ['Calibre', '6.5MM CREEDMOOR'],
+      ['Serial number', 'B742119'],
+      ['Section applied under', 'Section 16'],
+      ['Date', '9 September 2026'],
+    ];
+
+    for (const layout of ['banner', 'plate', 'rule', 'ledger', 'classic']) {
+      const base = {
+        ...makeInput(withCartridgeSection),
+        layout,
+        idNumber: '000000 0000 000',
+        cartridgeDrawing: hero,
+      };
+      // A grid short enough that it cannot spill, whatever the hero does.
+      const short = await svc.render({
+        ...base,
+        coverParticulars: [['Make', 'HOWA']],
+      } as never);
+      // The book's Part 7.2 table in full — nine rows with the applicant.
+      const long = await svc.render({
+        ...base,
+        coverParticulars: full,
+      } as never);
+
+      // ⚠️ THE SPILL IS EXACTLY ONE PAGE, because the whole grid moves rather
+      // than the overflowing row. Equal counts is the grid staying put.
+      expect([layout, await pageCount(long.pdf)]).toEqual([
+        layout,
+        await pageCount(short.pdf),
+      ]);
+    }
+  });
+
+  it('⚠️ STILL SUPPRESSES THE SPLICED SHEET, which is why hero rides on this field', async () => {
+    // The C.I.P. page is suppressed by the PRESENCE of a drawing. Had the hero
+    // arrived as its own input, this pack would have looked drawing-less and
+    // spliced somebody else's sheet in underneath the cover that already
+    // carried ours.
+    const base = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: hero,
+    } as never);
+    const both = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: hero,
+      cipSheet: { bytes: await onePageSheet(), label: 'The cartridge' },
+    } as never);
+    expect(await pageCount(both.pdf)).toBe(await pageCount(base.pdf));
+  });
+
   it('⚠️ REPLACES THE SPLICED SHEET RATHER THAN JOINING IT', async () => {
     // Two cartridge sections in one pack is a document that has lost its
     // place — and the spliced page is a facsimile of somebody else's sheet,
