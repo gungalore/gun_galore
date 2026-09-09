@@ -415,3 +415,65 @@ describe('what a member may ask to be written again', () => {
     expect(REGENERABLE).not.toContain(MotivationStatus.ABANDONED);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE SUBJECT CARRIES ACROSS SENTENCES.
+//
+// Heading 6 is "Firearms already licensed to me", and the book asks for one
+// sentence per firearm on why it cannot do this job. Nobody writes that by
+// repeating the make every time. Read off MO000074 on 2026-09-09 — three
+// refusals, every one a sentence in heading 6 doing exactly what heading 6 is
+// for:
+//
+//   "It is a centrefire rifle designed for specific shooting disciplines, and
+//    its physical form factor means it cannot be carried on my person."
+// ────────────────────────────────────────────────────────────────────
+
+describe('sport vocabulary in a section 13 battery paragraph', () => {
+  const ARSENAL = [
+    { make: 'Howa', model: '1500', type: 'Rifle', calibre: '6.5mm Creedmoor' },
+  ] as never;
+  const scope = (text: string) =>
+    documentScope(text, { licenceType: S13, arsenal: ARSENAL });
+  const sportIssues = (text: string) =>
+    scope(text).filter((i) => /outside any sentence about a firearm/.test(i));
+
+  it('⚠️ ALLOWS A PRONOUN THAT FOLLOWS THE FIREARM IT NAMES', () => {
+    expect(
+      sportIssues(
+        'My Howa 1500 in 6.5mm Creedmoor is licensed under section 16. ' +
+          'It is a centrefire rifle designed for specific shooting disciplines, ' +
+          'and it cannot be carried on my person.',
+      ),
+    ).toEqual([]);
+  });
+
+  it('⚠️ STILL REFUSES A PARAGRAPH THAT NAMES NOTHING HELD', () => {
+    // The rule keeps its teeth. A section 13 that wanders into sport with no
+    // held firearm in sight is the thing it exists to catch.
+    expect(
+      sportIssues('I enjoy competitive sport shooting at my local range.'),
+    ).not.toEqual([]);
+  });
+
+  it('⚠️ RESETS AT THE BLANK LINE', () => {
+    // A paragraph about the Howa must not license the next paragraph to talk
+    // about hunting.
+    expect(
+      sportIssues(
+        'My Howa 1500 in 6.5mm Creedmoor is licensed under section 16.\n\n' +
+          'I hunt plains game most winters.',
+      ),
+    ).not.toEqual([]);
+  });
+
+  it('a bare section reference is enough to open the paragraph', () => {
+    // "licensed under section 16 for hunting" is the book's own sentence.
+    expect(
+      sportIssues(
+        'The rifle is licensed under section 16. It is used for hunting and ' +
+          'cannot be carried for defence.',
+      ),
+    ).toEqual([]);
+  });
+});

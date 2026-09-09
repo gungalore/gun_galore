@@ -274,7 +274,9 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
 
   for (const w of [...CATALOGUE_PHRASES, ...PRODUCT_PAGE_WORDS]) {
     if (contains(text, w)) {
-      flag(`the document says "${w}", which is catalogue copy rather than a reason`);
+      flag(
+        `the document says "${w}", which is catalogue copy rather than a reason`,
+      );
     }
   }
   for (const w of AMERICANISMS) {
@@ -301,7 +303,9 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
   }
   for (const w of OUTCOME_PHRASES) {
     if (contains(text, w)) {
-      flag(`the document says "${w}", which predicts or presses for an outcome`);
+      flag(
+        `the document says "${w}", which predicts or presses for an outcome`,
+      );
     }
   }
   /**
@@ -317,120 +321,146 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
     flag('the document contains markdown or a bulleted list');
   }
 
-  for (const s of sentences(text)) {
-    const match = bestFirearmMatch(s, names);
-    const row = match ? byName.get(match) : undefined;
+  /**
+   * ⚠️ THE SUBJECT CARRIES ACROSS SENTENCES, AND JUDGING ONE AT A TIME REFUSED
+   * DOCUMENTS THAT WERE WRITTEN CORRECTLY.
+   *
+   * Heading 6 is "Firearms already licensed to me", and the book asks for one
+   * sentence per firearm on why it cannot do this job. Nobody writes that by
+   * repeating the make every time — they name it, then say "It is a centrefire
+   * rifle designed for specific shooting disciplines, and its physical form
+   * means it cannot be carried on my person."
+   *
+   * A per-sentence window cannot see that "It" is the Howa named in the
+   * sentence before, so the mirror rule below read that as a section 13
+   * document reaching for sport vocabulary out of nowhere and refused the
+   * whole pack. Measured on MO000074, 2026-09-09: three refusals, every one of
+   * them a sentence in heading 6 doing exactly what heading 6 is for.
+   *
+   * So the subject is remembered WITHIN A PARAGRAPH and reset at the blank
+   * line. That is the unit a writer actually works in — one firearm, named,
+   * then discussed — and it keeps the rule's teeth: a paragraph that never
+   * names a held firearm or its section still gets no sport vocabulary at all.
+   */
+  for (const para of text.split(/\n\s*\n/)) {
+    let heldInParagraph = false;
+    for (const s of sentences(para)) {
+      const match = bestFirearmMatch(s, names);
+      const row = match ? byName.get(match) : undefined;
+      if (row || /\bsection\s+1[3-7]\b/i.test(s)) heldInParagraph = true;
 
-    /**
-     * ⚠️ A SECTION NAMED FOR A HELD FIREARM MUST BE THE ONE ON ITS CARD.
-     * MO000071, section 9: "a MARLIN rifle in .45-70 Government under section
-     * 15". The Marlin is a section 16, and a DFO holding the licence copies in
-     * Annexure G reads the contradiction off the page. Three of the model's
-     * five guesses happened to be right, which is the same defect with a
-     * better roll.
-     */
-    for (const m of s.matchAll(/\bsection\s+(\d{1,2}[A-Z]?)\b/gi)) {
-      const said = `section ${m[1].toLowerCase()}`;
-      if (!row) continue;
-      if (!row.section) {
-        flag(
-          `the document puts the applicant's ${match} under ${said}, and no licence card established a section for it`,
-        );
-      } else if (lc(row.section) !== said) {
-        flag(
-          `the document puts the applicant's ${match} under ${said}; the licence card says ${row.section}`,
-        );
-      }
-    }
-
-    /**
-     * ⚠️ AND A PURPOSE IT WAS NEVER GIVEN IS RULE 12'S OWN CRIME. "long-range
-     * game harvesting", "dedicated precision sport shooting rifle chambered
-     * for extended-range accuracy", "very small pocket calibre intended for
-     * specific restricted sport use" — five firearms, five invented roles,
-     * none of them supplied by anything.
-     */
-    if (row && !row.licensedFor) {
-      for (const w of SPORTING_WORDS) {
-        if (contains(s, w)) {
+      /**
+       * ⚠️ A SECTION NAMED FOR A HELD FIREARM MUST BE THE ONE ON ITS CARD.
+       * MO000071, section 9: "a MARLIN rifle in .45-70 Government under section
+       * 15". The Marlin is a section 16, and a DFO holding the licence copies in
+       * Annexure G reads the contradiction off the page. Three of the model's
+       * five guesses happened to be right, which is the same defect with a
+       * better roll.
+       */
+      for (const m of s.matchAll(/\bsection\s+(\d{1,2}[A-Z]?)\b/gi)) {
+        const said = `section ${m[1].toLowerCase()}`;
+        if (!row) continue;
+        if (!row.section) {
           flag(
-            `the document says the applicant's ${match} is for "${w}", and nothing in the pack states what it is licensed for`,
+            `the document puts the applicant's ${match} under ${said}, and no licence card established a section for it`,
           );
-          break;
+        } else if (lc(row.section) !== said) {
+          flag(
+            `the document puts the applicant's ${match} under ${said}; the licence card says ${row.section}`,
+          );
         }
       }
-    }
 
-    /**
-     * ⚠️ A COMPETENCY HAS NO PRINTED EXPIRY, SO ANY DATE IS DERIVED. MO000071
-     * wrote "competency certificate C9882094 … remains valid until 2026-08-26"
-     * into a document dated 9 September 2026 — telling the Registrar, in the
-     * applicant's own voice, that the certificate behind the application had
-     * lapsed. `applicationBlockers` refuses to generate on a competency that
-     * really has expired; this refuses to PRINT a validity date at all.
-     */
-    if (
-      /competenc/i.test(s) &&
-      /valid until|expires? on|expiry|remains valid|until \d/i.test(s)
-    ) {
-      flag(
-        'the document states a date until which the competency is valid; a SAPS competency certificate prints no expiry, so any such date is derived',
-      );
-    }
-
-    /**
-     * ⚠️ THE MIRROR RULE. A hunting or sport document carries no self-defence
-     * vocabulary either — except where it describes a firearm already held
-     * under section 13 or 14, which is exactly the sentence that disposes of
-     * the overlap. Same shape as the S13 rule below, same exception, opposite
-     * direction.
-     */
-    if (isSporting) {
-      const heldDefensive =
-        (row && /section 1[34]/i.test(row.section)) ||
-        /\bsection\s+1[34]\b/i.test(s);
-      if (!heldDefensive) {
-        for (const w of DEFENCE_VOCAB) {
+      /**
+       * ⚠️ AND A PURPOSE IT WAS NEVER GIVEN IS RULE 12'S OWN CRIME. "long-range
+       * game harvesting", "dedicated precision sport shooting rifle chambered
+       * for extended-range accuracy", "very small pocket calibre intended for
+       * specific restricted sport use" — five firearms, five invented roles,
+       * none of them supplied by anything.
+       */
+      if (row && !row.licensedFor) {
+        for (const w of SPORTING_WORDS) {
           if (contains(s, w)) {
             flag(
-              `a hunting or sport application says "${w}" outside any sentence about a firearm already held under section 13 or 14`,
+              `the document says the applicant's ${match} is for "${w}", and nothing in the pack states what it is licensed for`,
             );
             break;
           }
         }
       }
-    }
 
-    if (!isS13) continue;
+      /**
+       * ⚠️ A COMPETENCY HAS NO PRINTED EXPIRY, SO ANY DATE IS DERIVED. MO000071
+       * wrote "competency certificate C9882094 … remains valid until 2026-08-26"
+       * into a document dated 9 September 2026 — telling the Registrar, in the
+       * applicant's own voice, that the certificate behind the application had
+       * lapsed. `applicationBlockers` refuses to generate on a competency that
+       * really has expired; this refuses to PRINT a validity date at all.
+       */
+      if (
+        /competenc/i.test(s) &&
+        /valid until|expires? on|expiry|remains valid|until \d/i.test(s)
+      ) {
+        flag(
+          'the document states a date until which the competency is valid; a SAPS competency certificate prints no expiry, so any such date is derived',
+        );
+      }
 
-    /**
-     * ⚠️ S13 SCOPE, JUDGED PER SENTENCE. A self-defence application has no
-     * hunting or sport content — except where it is describing a licence the
-     * applicant already holds, which is exactly the argument the section is
-     * making. A sentence naming a held firearm, or naming section 15 or 16, is
-     * allowed the vocabulary; every other sentence is not.
-     */
-    const aboutHeld = !!row || /\bsection\s+1[56]\b/i.test(s);
-    if (!aboutHeld) {
-      for (const w of SPORTING_WORDS) {
-        if (contains(s, w)) {
-          flag(
-            `a self-defence application says "${w}" outside any sentence about a firearm already held`,
-          );
-          break;
+      /**
+       * ⚠️ THE MIRROR RULE. A hunting or sport document carries no self-defence
+       * vocabulary either — except where it describes a firearm already held
+       * under section 13 or 14, which is exactly the sentence that disposes of
+       * the overlap. Same shape as the S13 rule below, same exception, opposite
+       * direction.
+       */
+      if (isSporting) {
+        const heldDefensive =
+          (row && /section 1[34]/i.test(row.section)) ||
+          /\bsection\s+1[34]\b/i.test(s);
+        if (!heldDefensive) {
+          for (const w of DEFENCE_VOCAB) {
+            if (contains(s, w)) {
+              flag(
+                `a hunting or sport application says "${w}" outside any sentence about a firearm already held under section 13 or 14`,
+              );
+              break;
+            }
+          }
         }
       }
-    }
 
-    /**
-     * ⚠️ RELOADING IS NEVER S13 CONTENT, held firearm or not. It is hunting
-     * and sport material that reached MO000071 as "experience" because the
-     * profile row is asked on every licence type.
-     */
-    for (const w of RELOADING_WORDS) {
-      if (contains(s, w)) {
-        flag(`a self-defence application discusses "${w}"`);
-        break;
+      if (!isS13) continue;
+
+      /**
+       * ⚠️ S13 SCOPE, JUDGED PER SENTENCE. A self-defence application has no
+       * hunting or sport content — except where it is describing a licence the
+       * applicant already holds, which is exactly the argument the section is
+       * making. A sentence naming a held firearm, or naming section 15 or 16, is
+       * allowed the vocabulary; every other sentence is not.
+       */
+      const aboutHeld =
+        !!row || /\bsection\s+1[56]\b/i.test(s) || heldInParagraph;
+      if (!aboutHeld) {
+        for (const w of SPORTING_WORDS) {
+          if (contains(s, w)) {
+            flag(
+              `a self-defence application says "${w}" outside any sentence about a firearm already held`,
+            );
+            break;
+          }
+        }
+      }
+
+      /**
+       * ⚠️ RELOADING IS NEVER S13 CONTENT, held firearm or not. It is hunting
+       * and sport material that reached MO000071 as "experience" because the
+       * profile row is asked on every licence type.
+       */
+      for (const w of RELOADING_WORDS) {
+        if (contains(s, w)) {
+          flag(`a self-defence application discusses "${w}"`);
+          break;
+        }
       }
     }
   }

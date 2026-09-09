@@ -6,7 +6,81 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-09**.
 
-## 2026-09-09 (latest) — why the safe photographs never reached an application
+## 2026-09-09 (latest) — MO000074: why a real pack could not be produced
+
+The operator generated a real section 13 application and it FAILED, with an
+SMS: *"we could not finish document MO000074. Nothing is lost and nothing was
+charged. Open it and try again."* Then they read the SAPS 271 it had produced
+and listed seven defects on it.
+
+Deployed, in order: `a30020b5`, `40552155`, `a669e72c`, `c3fb82fe`, `4bf3adf0`.
+Rollback point for the last full deploy: **`alloutdoor-20260909-152424.dump`**.
+
+### Why it failed, from the row rather than from a guess
+
+`failureReason` on the FAILED row named three mechanical checks:
+
+- **the calibre did not "appear in the document"** — our fault, not the
+  writer's. The card stores `9MM PAR ( 9X19MM )` and the fact pack hands the
+  model `displayCalibre` of it; the check then demanded one of those two
+  strings VERBATIM, so a writer naming it the way every approved pack does —
+  "9mm Parabellum" — was reported as having lost it. `calibreForms` now accepts
+  the card form, the tidy form, the tidy form without its bracketed metric
+  equivalent, and that equivalent alone. **Not** "9mm" on its own: naming the
+  diameter and not the cartridge has not identified the firearm.
+- **two Americanisms** — "organiz", "specializ". The check is right (book rule
+  3) but it is MECHANICAL, and a mechanical failure costs the whole pack.
+  `southAfricanise` folds the spelling before anything is checked, in the main
+  writer AND in the reason writer.
+
+⚠️ **The reason writer was throwing away paid calls over a letter.** Read off
+the box: MO000074's "why this firearm" paragraph was rejected on "recogniz",
+then "specializ", then "utiliz" across consecutive attempts, and it re-runs on
+every page load.
+
+### Two structural faults found by pressing the button
+
+⚠️ **THE SMS PROMISED A RETRY THE PRODUCT REFUSED.** FAILED was excluded from
+`REGENERABLE` — "an admin owns those" — so the member opens the link, presses
+an enabled button, and gets **409 "This document cannot be prepared again from
+here. Contact support."** Measured through the real page. FAILED is now
+retryable; GENERATING, QUALITY_REVIEW and ABANDONED stay out.
+
+⚠️ **THE RETRY WAS BLIND.** A mechanical failure regenerates once with a fresh
+seed and the IDENTICAL prompt, so the second attempt failed on the same words
+as the first. It now carries what the previous draft tripped, after
+`<applicant-facts>` so it cannot be read as an applicant fact.
+
+⚠️ **AND THE REJECTED DRAFT WAS DISCARDED**, so `failureReason` named the WORD
+and never the sentence. Diagnosing this meant reasoning about a document that
+no longer existed. It is kept now, encrypted, unreachable by the member.
+
+### The seven defects on the 271
+
+| Reported | Cause |
+|---|---|
+| Marital status missing; all safe ticks missing | `renderSaps271` read the APPLICATION's answers only. Every `scope: 'profile'` field lives on the member. Both render paths now use `answersFor`, the door the writer already used. |
+| Competency date of issue blank | The vault asks a competency card for `competency_issued`; the extractor's date router only knew `issued_on`, so the date landed in `details` and never in `Credential.issuedOn` — the column the form and the expiry derivation both read. All four competency credentials on the box have `issuedOn` NULL. |
+| Competency "handgun" mark off | The tick box was 3.1pt wide at x=177.3, a sliver on the cell boundary. Now 17.8pt at x=184.4, consistent with rifle and shotgun. |
+| Marlin barrel and receiver serial missing | `first()` walked barrel, frame, serial — never `receiver_serial`. A Marlin card reads BARREL: NONE / FRAME: NONE / RECEIVER: MR90189D, so it ran out of keys and the row was stored with NO serial. |
+| Surname of current owner missing | Items 4, 5 and 82 were wired end to end with no input anywhere. The seller's form now asks for surname and initials. |
+| Negligence tick missing | `history_negligence` is only asked when something was lost or stolen. Nothing lost ⇒ No is the only answer the facts admit; written only where item 64 is an explicit No. |
+| — | **`WESTERN_CAPE`** printed raw in both addresses. Not on the operator's list; found reading the same page. The existing test froze it as expected output. |
+
+### Where it stands
+
+MO000074 was retried twice through the live page. The calibre and the
+Americanisms are gone from `failureReason`; the third attempt failed on
+`"furthermore"` (filler) and on `"hunt"`/`"hunting"` appearing outside a
+sentence the scope check recognises as being about a held firearm. That
+applicant holds four hunting rifles, so heading 6 has to describe them — worth
+checking whether `bestFirearmMatch` is too strict about what counts as "a
+sentence about a held firearm", now that the rejected draft is kept and can be
+read.
+
+---
+
+## 2026-09-09 — why the safe photographs never reached an application
 
 Operator: *"why doesn't the safe pictures pull in from the vault?"* and then
 *"the safe pictures should automatically be set that the date never expires."*
