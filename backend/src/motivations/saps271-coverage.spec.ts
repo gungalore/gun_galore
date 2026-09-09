@@ -221,6 +221,7 @@ describe('the owned-firearm grid', () => {
     [`existing_firearm_${n}_calibre`]: '.308 Winchester',
     [`existing_firearm_${n}_use`]: 'Hunting',
     [`existing_firearm_${n}_primary_use`]: 'plains_game',
+    [`existing_firearm_${n}_section_held`]: 'section_16',
     [`existing_firearm_${n}_licence_no`]: '4009117823',
   });
   const COLUMNS = Object.keys(row(1)).length;

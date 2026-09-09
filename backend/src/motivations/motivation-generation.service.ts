@@ -47,6 +47,7 @@ import {
 import { areasOnRoute, decodePolyline } from './motivation-route';
 import { cartridgeFacts, findCartridge } from './motivation-cartridge';
 import { arsenalRows, type ArsenalRow } from './motivation-arsenal';
+import { documentScope } from './motivation-scope';
 import { ownedFirearmSections } from './owned-firearm-sections';
 import { geocodeZa, type LatLng } from '../news/news-geo';
 import {
@@ -752,7 +753,20 @@ export class MotivationGenerationService {
       // The FIRST verifier, in code and for free: serial, ID, calibre and
       // annexure citations checked deterministically. A failure here rides
       // the same single retry as a broken structure — same cost, same cap.
-      let mechanics = packConsistency(attempt.text, answers, annexures);
+      /**
+       * ⚠️ AND THE SCOPE CHECK RIDES WITH IT, for the same reason and on the
+       * same retry. A wrong licence section, a role nothing supplied, or
+       * "terminal ballistics" in a self-defence application are all faults the
+       * APPLICANT cannot fix by answering another question — they are the
+       * writer's, so they take the mechanical path (one regeneration, then an
+       * admin alert) rather than the quality gate's path back to the member.
+       */
+      const scopeOf = (t: string) =>
+        documentScope(t, { licenceType: row.licenceType, arsenal });
+      let mechanics = [
+        ...packConsistency(attempt.text, answers, annexures),
+        ...scopeOf(attempt.text),
+      ];
 
       if (
         !structureOk ||
@@ -769,7 +783,10 @@ export class MotivationGenerationService {
         tokensOut += attempt.usage.completionTokens;
         structureOk = followsPlan(attempt.text, plan).ok;
         sameness = maxSimilarity(fingerprint(attempt.text), previous);
-        mechanics = packConsistency(attempt.text, answers, annexures);
+        mechanics = [
+          ...packConsistency(attempt.text, answers, annexures),
+          ...scopeOf(attempt.text),
+        ];
       }
 
       // ⚠️ A DOCUMENT THAT FAILS THE MECHANICAL CHECKS TWICE IS NEVER FILED.

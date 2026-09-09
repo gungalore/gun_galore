@@ -766,7 +766,7 @@ const SPORTING_TYPES: readonly MotivationLicenceType[] = [
  * legitimate phrase in a hunting motivation and a substring test would refuse
  * it. The rule is about a firearm's USE, not about the word.
  */
-const DEFENCE_WORDS = [
+export const DEFENCE_WORDS = [
   'self-defence',
   'self defence',
   'protection',
@@ -787,7 +787,7 @@ const DEFENCE_WORDS = [
  * worth paying: a reason paragraph has no business discussing recoil dynamics
  * either.
  */
-const PRODUCT_PAGE_WORDS = [
+export const PRODUCT_PAGE_WORDS = [
   'power factor',
   'split times',
   'high-volume',
@@ -811,7 +811,7 @@ const PRODUCT_PAGE_WORDS = [
  * ⚠️ "restricted to" AND NOT "restricted", because a legitimate sentence can
  * say a range is restricted. This list is about a claim, not a word.
  */
-const UNPROVABLE_RULE_WORDS = [
+export const UNPROVABLE_RULE_WORDS = [
   'requirement',
   'criteria',
   'criterion',
@@ -831,7 +831,7 @@ const UNPROVABLE_RULE_WORDS = [
  * word boundary, so the stem catches every inflection: "authoriz" takes
  * authorize, authorized and authorization.
  */
-const AMERICANISMS = [
+export const AMERICANISMS = [
   'caliber',
   'defense',
   'offense',
@@ -856,7 +856,7 @@ const AMERICANISMS = [
  * their own divisions and the input carries them; this only stops the model
  * reaching for an American one from memory.
  */
-const NOT_SOUTH_AFRICAN_DIVISIONS = [
+export const NOT_SOUTH_AFRICAN_DIVISIONS = [
   'Carry Optics',
   'Limited 10',
   'Stock Service Pistol',
@@ -883,7 +883,7 @@ const NOT_SOUTH_AFRICAN_DIVISIONS = [
  * Demanding the strings match lets every invented role through on a
  * paraphrase, which is the failure this exists to catch.
  */
-function bestFirearmMatch(
+export function bestFirearmMatch(
   named: string,
   battery: readonly string[],
 ): string | null {

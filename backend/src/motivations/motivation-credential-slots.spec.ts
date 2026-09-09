@@ -138,11 +138,39 @@ describe('the slots', () => {
 });
 
 describe('unit standard 117705', () => {
-  it('passes the state through untouched', () => {
-    const r = credentialSlots(
-      input({ knowledge: { state: 'MISSING', alert: 'We cannot see 117705.' } }),
+  const missing = { state: 'MISSING' as const, alert: 'We cannot see 117705.' };
+
+  it('⚠️ SAYS NOTHING UNTIL THERE IS A DOCUMENT TO SAY IT ABOUT', () => {
+    // It fired on an application with four certificates in the Centre and NONE
+    // chosen yet — telling a member their training was missing a unit standard
+    // before anything had been read. That is the accusation MandatoryKnowledge
+    // splits UNREAD from MISSING precisely to avoid, made one level up.
+    const r = credentialSlots(input({ knowledge: missing }));
+    expect(r.proficiency.held).toHaveLength(0);
+    expect(r.knowledge.alert).toBeNull();
+  });
+
+  it('⚠️ AND THE STATE STILL TRAVELS, so a caller can still tell', () => {
+    expect(credentialSlots(input({ knowledge: missing })).knowledge.state).toBe(
+      'MISSING',
     );
-    expect(r.knowledge).toEqual({ state: 'MISSING', alert: 'We cannot see 117705.' });
+  });
+
+  it('says it the moment a statement of results is attached', () => {
+    const r = credentialSlots(
+      input({
+        knowledge: missing,
+        attached: [
+          {
+            kind: 'PROFICIENCY_CERTIFICATE',
+            letter: 'C',
+            origin: 'vault',
+            unread: false,
+          },
+        ],
+      }),
+    );
+    expect(r.knowledge).toEqual(missing);
   });
 });
 

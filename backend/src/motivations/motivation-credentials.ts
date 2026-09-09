@@ -109,6 +109,20 @@ const COMPETENCY_KINDS = new Set(['COMPETENCY_CERTIFICATE']);
 
 
 /**
+ * "SECTION 16" on a licence card → the `section_held` card key, or ''.
+ *
+ * ⚠️ '' RATHER THAN A GUESS. A card whose section row did not read, or read as
+ * something this does not recognise, leaves the row unanswered — and the
+ * document then says nothing at all about that firearm's section, which is the
+ * correct output. Mapping an unknown to "section 16" because most of them are
+ * would reinstate exactly the failure the field was added to stop.
+ */
+export function sectionCardKey(raw: string): string {
+  const m = /\b(?:s(?:ection)?\s*)?(13|15|16|17|20)\b/i.exec(raw ?? '');
+  return m ? `section_${m[1]}` : '';
+}
+
+/**
  * How many `existing_firearm_N_*` rows the registry carries.
  *
  * ⚠️ RE-EXPORTED, NOT DECLARED. It was declared here and the registry it
@@ -974,6 +988,22 @@ export function credentialOffer(
       `${p}expiry`,
       `Firearm ${row} — licence expires`,
       c.expiresOn ?? '',
+      c.title,
+      c.id,
+    );
+    /**
+     * ⚠️ THE SECTION, WHICH THE VAULT HAS ALWAYS HELD AND NOTHING EVER USED.
+     * `section` is in WANTED.FIREARM_LICENCE and has been read off every card
+     * scanned since the Licence Centre shipped; no row on the form asked for
+     * it, so the writer guessed instead — MO000071 put a section 16 Marlin
+     * under section 15. The card prints "SECTION 16"; the row stores the card
+     * SET's key, so a member correcting a bad read taps the same set the
+     * document filled.
+     */
+    offer(
+      `${p}section_held`,
+      `Firearm ${row} — licensed under`,
+      sectionCardKey(cardRow('section')),
       c.title,
       c.id,
     );

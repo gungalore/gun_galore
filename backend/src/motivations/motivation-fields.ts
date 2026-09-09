@@ -9,6 +9,7 @@ import {
   HUNT_TERRAIN,
   HUNT_WHERE,
   OVERLAP_ANGLES,
+  OWNED_SECTION_HELD,
   PRIMARY_USE,
   S13_CARRY_STYLE,
   S13_MOVEMENTS,
@@ -94,7 +95,7 @@ import { answerValue } from '../common/card-placeholder';
 // the whole reason the version is stamped rather than assumed. Every removal
 // above is a RETIREMENT — fieldByKey still finds the key — and not a deletion,
 // so the wizard's whole-blob autosave cannot drop an answer somebody gave.
-export const FIELD_REGISTRY_VERSION = '2026-09-08';
+export const FIELD_REGISTRY_VERSION = '2026-09-09';
 
 // ── THE SAPS 271 IS ALWAYS PRODUCED, AND NOBODY IS ASKED ────────────
 //
@@ -680,6 +681,8 @@ export const OWNED_ROW_COLUMNS = [
   // typed one is — see the note on ownedRowTaken about which direction is
   // safe to be wrong in.
   'primary_use',
+  // A tapped section is somebody having been in this row, same as a purpose.
+  'section_held',
   'licence_no',
   'barrel_serial',
   'frame_serial',
@@ -882,6 +885,30 @@ function ownedFirearmRow(n: number): MotivationField[] {
       kind: 'cards',
       section: OWNED_SECTION,
       options: PRIMARY_USE,
+      scope: 'profile',
+    },
+    {
+      /**
+       * ⚠️ WITHOUT THIS THE WRITER INVENTS ONE. See OWNED_SECTION_HELD: the
+       * rows carried make, calibre, serial and expiry and no section, the
+       * prompt asked for one per held firearm, and MO000071 shipped a section
+       * 16 Marlin described as being under section 15. A DFO holding the
+       * licence copies in Annexure G reads the contradiction off the page.
+       *
+       * ⚠️ AND IT IS `docSourced`, WHICH IS A PROMISE THIS ONE CAN KEEP. Every
+       * licence card prints the section, `licence-card-ocr.service.ts` has
+       * always read it into the vault, and credentialOffer now proposes it —
+       * so for a member whose licences are in the Centre this arrives answered
+       * before they ever see the row. Unlike `primary_use` directly above,
+       * which can never be docSourced because nothing printed on a licence
+       * says what a firearm is FOR.
+       */
+      key: `${p}section_held`,
+      docSourced: 'CURRENT_LICENCE',
+      label: 'Licensed under',
+      kind: 'cards',
+      section: OWNED_SECTION,
+      options: OWNED_SECTION_HELD,
       scope: 'profile',
     },
     {
@@ -3068,6 +3095,25 @@ const NOT_ASKED_BY_TYPE: Partial<
   Record<MotivationLicenceType, ReadonlySet<string>>
 > = {
   S24_RENEWAL: new Set<string>([FIREARM_SOURCE_KEY]),
+  /**
+   * ⚠️ RELOADING IS HUNTING AND SPORT CONTENT, AND IT REACHED AN S13 AS
+   * "EXPERIENCE". The three questions are profile-scoped and were asked of
+   * everybody, so a self-defence applicant answered them once for a hunting
+   * application and the writer then had them in the pack — MO000071 argued
+   * from handloading in a section 13. A DFO reading a self-defence motivation
+   * that discusses working up loads is reading about a hobby, not a threat.
+   *
+   * ⚠️ FILTERED, NOT DELETED. NOT_ASKED_BY_TYPE removes what is ASKED and
+   * never what is ACCEPTED — `fieldByKey` searches the unfiltered list — so a
+   * member who answered these on a hunting application keeps the answer, and
+   * their S13 draft still saves. `documentScope` is the other half: it refuses
+   * the words even if something else puts them in the pack.
+   */
+  S13_SELF_DEFENCE: new Set<string>([
+    'reloads',
+    'reload_calibres',
+    'reload_since',
+  ]),
 };
 
 /**

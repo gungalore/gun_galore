@@ -402,3 +402,69 @@ describe('⚠️ the blocker never invites the member to silence it', () => {
     expect(out[0].message).not.toContain('""');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// SECTION 6(2): NO LICENCE WHILE THE COMPETENCY HAS LAPSED.
+//
+// MO000071, section 7: "competency certificate C9882094 … remains valid until
+// 2026-08-26", in a document dated 9 September 2026. It was written, graded 94
+// and rendered — telling the Registrar, in the applicant's own voice, that the
+// certificate behind the application had expired a fortnight earlier.
+// ────────────────────────────────────────────────────────────────────
+describe('a competency that has run out', () => {
+  const AT = new Date('2026-09-09T06:00:00Z');
+  const codes = (answers: Record<string, string>) =>
+    applicationBlockers(MotivationLicenceType.S13_SELF_DEFENCE, answers, AT).map(
+      (b) => b.code,
+    );
+
+  it('blocks generation and names the date', () => {
+    const out = applicationBlockers(
+      MotivationLicenceType.S13_SELF_DEFENCE,
+      { competency_expiry: '2026-08-26' },
+      AT,
+    );
+    const b = out.find((x) => x.code === 'competency-expired')!;
+    expect(b).toBeDefined();
+    expect(b.field).toBe('competency_expiry');
+    expect(b.message).toContain('26 August 2026');
+    // ⚠️ AND IT TELLS THEM THE WORK IS KEPT. A refusal that reads as "start
+    // again" is how somebody abandons an application they had finished.
+    expect(b.message).toContain('kept');
+  });
+
+  it('says nothing on the day it expires', () => {
+    // A certificate is valid THROUGH its expiry date; refusing somebody a day
+    // early is a wrong "no" on the strength of an off-by-one.
+    expect(codes({ competency_expiry: '2026-09-09' })).not.toContain(
+      'competency-expired',
+    );
+  });
+
+  it('says nothing while it is still current', () => {
+    expect(codes({ competency_expiry: '2027-01-31' })).not.toContain(
+      'competency-expired',
+    );
+  });
+
+  it('⚠️ SAYS NOTHING WHEN THERE IS NO READABLE DATE', () => {
+    // This file's own rule: we do not refuse somebody for a box they have not
+    // reached yet, and a date we cannot parse is not a date that has passed.
+    for (const v of ['', '   ', 'unknown', '26/08/2026', 'not on the card']) {
+      expect(codes({ competency_expiry: v })).not.toContain('competency-expired');
+    }
+    expect(codes({})).not.toContain('competency-expired');
+  });
+
+  it('reaches the same verdict whenever it is re-checked', () => {
+    // The clock is injected for the same reason sa-id.ts injects one: a pack
+    // re-verified months later must grade as it was built.
+    expect(
+      applicationBlockers(
+        MotivationLicenceType.S13_SELF_DEFENCE,
+        { competency_expiry: '2026-08-26' },
+        new Date('2026-08-01T00:00:00Z'),
+      ).map((b) => b.code),
+    ).not.toContain('competency-expired');
+  });
+});

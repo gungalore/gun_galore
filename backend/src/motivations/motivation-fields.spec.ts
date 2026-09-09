@@ -1281,6 +1281,10 @@ describe('the owned-firearms table', () => {
         'make',
         'model',
         'primary_use',
+        // ⚠️ ADDED 2026-09-09 AFTER THE WRITER INVENTED ONE. The rows carried
+        // no section, the prompt asked for one per held firearm, and MO000071
+        // put a section 16 Marlin under section 15.
+        'section_held',
         'serial',
         'type',
         'use',

@@ -37,7 +37,10 @@ import {
 
 export interface Blocker {
   /** Stable code, for the client to key behaviour off. */
-  code: 'section-forbids-firearm' | 'competency-missing-endorsement';
+  code: 'section-forbids-firearm'
+    | 'competency-missing-endorsement'
+    /** Section 6(2): no licence may be issued while the competency has lapsed. */
+    | 'competency-expired';
   /** The field the applicant should be sent to. */
   field: string;
   /** Said to the applicant, naming the way forward. */
@@ -215,6 +218,31 @@ export function requiredEndorsement(
   return need.kind === 'one' ? need.endorsement : null;
 }
 
+/** A YYYY-MM-DD answer as a UTC midnight, or null. */
+function parseDay(raw: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((raw ?? '').trim());
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Today at UTC midnight, so a comparison is by day and not by hour. */
+function startOfDay(at: Date): Date {
+  return new Date(
+    Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()),
+  );
+}
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/** "26 August 2026" — how the member sees a date everywhere else. */
+function prettyDay(d: Date): string {
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 /**
  * Everything standing between this application and a grantable outcome.
  *
@@ -224,9 +252,42 @@ export function requiredEndorsement(
 export function applicationBlockers(
   licenceType: MotivationLicenceType,
   answers: Record<string, string>,
+  // The clock is injected rather than read, the rule sa-id.ts and the PDF
+  // renderer both follow: an application re-checked months later must reach
+  // the same verdict it was built on. Optional, so callers are unchanged.
+  asAt = new Date(),
 ): Blocker[] {
   const out: Blocker[] = [];
   const section = sectionOf(licenceType);
+
+  // ── 0. Is the competency still current? ───────────────────────────
+  //
+  // ⚠️ SECTION 6(2): NO LICENCE MAY BE ISSUED TO SOMEBODY WITHOUT A VALID
+  // COMPETENCY. This is not a weak application, it is one that cannot be
+  // granted — the same class of fact as a rifle under section 13 — so it
+  // belongs here rather than in the quality gate.
+  //
+  // ⚠️ AND IT SHIPPED. MO000071, section 7: "competency certificate C9882094 …
+  // remains valid until 2026-08-26", in a document dated 9 September 2026. The
+  // pack was written, graded 94 and rendered, and it told the Registrar in the
+  // applicant's own voice that the certificate behind the application had
+  // lapsed a fortnight earlier.
+  //
+  // ⚠️ ONLY ON A DATE WE CAN READ, and only when it is genuinely past. An
+  // unparseable or absent expiry means we do not know, and this file's own
+  // header forbids refusing somebody for a box they have not reached yet.
+  const compExpiry = parseDay(answers.competency_expiry ?? '');
+  if (compExpiry && compExpiry.getTime() < startOfDay(asAt).getTime()) {
+    out.push({
+      code: 'competency-expired',
+      field: 'competency_expiry',
+      message:
+        `Your competency certificate expired on ${prettyDay(compExpiry)}. ` +
+        'A licence cannot be issued while it has lapsed, so renew it with SAPS ' +
+        'first — your answers and documents are kept, and the motivation will ' +
+        'be written the moment the new certificate is on file.',
+    });
+  }
 
   // ── 1. Does this section permit this firearm at all? ──────────────
   //

@@ -73,6 +73,20 @@ function renderRow(r: Omit<ArsenalRow, 'line'>): string {
  * @param sections row index → "section 16", from the member's licence cards.
  *                 A row with no entry carries no section, deliberately.
  */
+/**
+ * A tapped `section_held` card key as the paragraph writes it.
+ *
+ * Returns undefined when nothing was tapped, so the caller can fall through to
+ * the vault; returns '' for "I am not sure", which is a stated answer and must
+ * NOT fall through.
+ */
+function sectionFromAnswer(key: string): string | undefined {
+  if (!key) return undefined;
+  if (key === 'unsure') return '';
+  const m = /^section_(\d{2})$/.exec(key);
+  return m ? `section ${m[1]}` : undefined;
+}
+
 export function arsenalRows(
   answers: Record<string, string>,
   sections: Record<number, string> = {},
@@ -90,7 +104,20 @@ export function arsenalRows(
       type: a('type'),
       calibre: a('calibre'),
       serial: ownedFirearmSerial(answers, n),
-      section: sections[n] ?? '',
+      /**
+       * ⚠️ THE MEMBER'S ANSWER BEATS THE VAULT LOOKUP, AND THE ORDER MATTERS.
+       * `existing_firearm_N_section_held` is filled from the licence card by
+       * credentialOffer and can then be CORRECTED by the member — a bad OCR on
+       * one card is exactly the case the row exists for. Reading the vault
+       * first would overwrite that correction on every generation and the
+       * member would never find out why.
+       *
+       * ⚠️ AND "I am not sure" IS AN ANSWER, NOT A GAP. It resolves to no
+       * section, so the prompt forbids the claim and the validator refuses one
+       * — which is the correct output, and better than falling through to a
+       * vault row that may be about a different firearm entirely.
+       */
+      section: sectionFromAnswer(a('section_held')) ?? sections[n] ?? '',
       /**
        * ⚠️ ONLY WHAT SOMETHING STATED. `primary_use` is the member's own words
        * or a card they tapped; an endorsement fills it too once §5.5a lands.

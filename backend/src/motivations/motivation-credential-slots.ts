@@ -215,7 +215,22 @@ export function credentialSlots(
     neededLabel,
     competency,
     proficiency,
-    knowledge: input.knowledge,
+    /**
+     * ⚠️ THE ALERT WAITS FOR A DOCUMENT TO BE ABOUT. It fired on an
+     * application with four certificates in the Centre and NONE chosen yet,
+     * telling a member their training was missing a unit standard before
+     * anything had been read — which is the accusation `MandatoryKnowledge`
+     * splits UNREAD from MISSING precisely to avoid, made at the level above
+     * instead.
+     *
+     * ⚠️ THE STATE STILL TRAVELS. Only the sentence is held back: a caller
+     * that wants to know 117705 has not been seen yet still can, and the
+     * moment a statement of results is attached the alert appears against the
+     * document it is actually about.
+     */
+    knowledge: proficiency.held.length
+      ? input.knowledge
+      : { state: input.knowledge.state, alert: null },
     pairNote: pairNoteFor(
       competency.held.length,
       proficiency.held.length,

@@ -269,6 +269,36 @@ export const SPORT_FORMATS: readonly CardOption[] = [
  * change because a second application was started. Suggestions are ranked from
  * the row's own calibre, which is why one list serves every row.
  */
+/**
+ * Which section a firearm the applicant ALREADY HOLDS is licensed under.
+ *
+ * ⚠️ IT SHIPPED WITHOUT THIS AND THE WRITER FILLED THE GAP. MO000071, section
+ * 9: "a MARLIN rifle in .45-70 Government under section 15". The Marlin is a
+ * section 16. The rows carried make, calibre, serial and expiry and no
+ * section, the prompt asked for one per firearm, and the model supplied five —
+ * three right by luck. A DFO holding the licence copies in Annexure G reads
+ * the contradiction off the page.
+ *
+ * ⚠️ AND IT IS READ OFF THE CARD, NOT ASKED FIRST. Every licence card prints
+ * it, `licence-card-ocr.service.ts` has always read it, and `credentialOffer`
+ * now proposes it — so for a member whose licences are in the vault this
+ * arrives already answered with vault provenance. The cards are for the member
+ * who has not scanned that one yet, and for correcting a bad read.
+ *
+ * ⚠️ "I am not sure" IS AN ANSWER AND NOT A GAP. A member who taps it has told
+ * us something true, and the document then says nothing about that firearm's
+ * section — which is the correct output. Leaving the row blank instead invites
+ * the same guess all over again.
+ */
+export const OWNED_SECTION_HELD: readonly CardOption[] = [
+  { key: 'section_13', sentence: 'I hold it under section 13, for self-defence.' },
+  { key: 'section_15', sentence: 'I hold it under section 15, as an occasional hunter or sports shooter.' },
+  { key: 'section_16', sentence: 'I hold it under section 16, as a dedicated hunter or dedicated sports shooter.' },
+  { key: 'section_17', sentence: 'I hold it under section 17, as part of a private collection.' },
+  { key: 'section_20', sentence: 'I hold it on a section 20 permit, in the course of a business.' },
+  { key: 'unsure', sentence: 'I am not sure which section it is licensed under.' },
+];
+
 export const PRIMARY_USE: readonly CardOption[] = [
   { key: 'self_defence_carry', sentence: 'I carry it for self-defence.', rankBy: 'calibre' },
   { key: 'home_defence', sentence: 'I keep it at home for defence of the house.', rankBy: 'calibre' },
@@ -511,5 +541,6 @@ export const CARD_SETS: Readonly<Record<string, readonly CardOption[]>> = {
   sport_reasons: SPORT_REASONS,
   sport_formats: SPORT_FORMATS,
   primary_use: PRIMARY_USE,
+  section_held: OWNED_SECTION_HELD,
   overlap_angle: OVERLAP_ANGLES,
 };
