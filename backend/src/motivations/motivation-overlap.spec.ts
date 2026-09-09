@@ -432,6 +432,7 @@ describe('overlapFromAnswers', () => {
     const r = overlapFromAnswers(S15, {
       firearm_calibre: '.270 Winchester',
       existing_firearm_1_calibre: '.308 Win',
+      existing_firearm_1_section_held: 'section_15',
       existing_firearm_1_make: 'Tikka',
       existing_firearm_1_type: 'Rifle',
     });
@@ -444,9 +445,133 @@ describe('overlapFromAnswers', () => {
     const r = overlapFromAnswers(S15, {
       firearm_calibre: '12 gauge',
       existing_firearm_1_calibre: '.22 LR',
+      existing_firearm_1_section_held: 'section_15',
       existing_firearm_4_calibre: '20 gauge',
+      existing_firearm_4_section_held: 'section_15',
     });
     expect(r.needsJustification).toBe(true);
+  });
+
+  // ────────────────────────────────────────────────────────────────
+  // A FIREARM HELD UNDER ANOTHER SECTION IS NOT AN OVERLAP AT ALL.
+  //
+  // Operator, 2026-09-09, on a section 13 application raising the box against
+  // a section 16 handgun: "the cz is section 16 so it does not matter and it
+  // cant be carried as a self defense weapon. This box can only pop up if
+  // there is a section 13 license already in the vault, period."
+  //
+  // A licence is issued under a section FOR A PURPOSE. A handgun on a section
+  // 16 licence is held for sport or hunting and is not licensed to be carried
+  // for defence — so a section 13 application is asking for the FIRST firearm
+  // licensed to do that job, not a second one to do the same job.
+  //
+  // ⚠️ THIS SUPERSEDES 3765c07a, which only made the writer LEAD with the
+  // section difference. Softening an argument that should not exist is still
+  // an argument.
+  // ────────────────────────────────────────────────────────────────
+
+  it("⚠️ THE OPERATOR'S CASE: a section 16 handgun, a section 13 application", () => {
+    const r = overlapFromAnswers(S13, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '9mm Parabellum',
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '6.35mm Browning',
+      existing_firearm_1_make: 'CZ',
+      existing_firearm_1_section_held: 'section_16',
+    });
+    expect(r.needsJustification).toBe(false);
+    expect(r.prompt).toBeNull();
+    expect(r.writerNote).toBeNull();
+    expect(r.suggestedAngle).toBeNull();
+  });
+
+  it('and raises it where a section 13 IS already held', () => {
+    // The same two handguns, one card value different. This is the case the
+    // box exists for, and s13(3) caps it at one licence besides.
+    const r = overlapFromAnswers(S13, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '9mm Parabellum',
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '6.35mm Browning',
+      existing_firearm_1_make: 'CZ',
+      existing_firearm_1_section_held: 'section_13',
+    });
+    expect(r.needsJustification).toBe(true);
+    expect(r.prompt).toContain('CZ');
+  });
+
+  it('⚠️ TREATS AN UNKNOWN SECTION AS NOT THE SAME ONE', () => {
+    // "period" — and the cost is accepted deliberately. A same-section
+    // duplicate whose card we could not read loses its argument; the
+    // alternative is a paragraph arguing with a firearm that was never in
+    // competition. Either way the battery table still names it and still
+    // gives it a sentence: heading 6 is conditional on holding ANYTHING, not
+    // on an overlap.
+    for (const section of ['', 'unsure', 'section_17', 'section_20']) {
+      const r = overlapFromAnswers(S13, {
+        firearm_type: 'Handgun',
+        firearm_calibre: '9mm Parabellum',
+        existing_firearm_1_type: 'Handgun',
+        existing_firearm_1_calibre: '.38 Special',
+        existing_firearm_1_section_held: section,
+      });
+      expect(r.needsJustification).toBe(false);
+    }
+  });
+
+  it('⚠️ READS THE KEY THE REGISTRY ACTUALLY WRITES', () => {
+    // This module read `existing_firearm_N_section` — a key nothing has ever
+    // written. The field landed on 2026-09-09 as `section_held`, with the
+    // statutory-cap warnings, so the section axis had never once fired in
+    // production and every held firearm looked like an unknown section.
+    const withRealKey = overlapFromAnswers(S13, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '9mm Parabellum',
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '.38 Special',
+      existing_firearm_1_section_held: 'section_13',
+    });
+    const withDeadKey = overlapFromAnswers(S13, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '9mm Parabellum',
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '.38 Special',
+      existing_firearm_1_section: 'section_13',
+    });
+    expect(withRealKey.needsJustification).toBe(true);
+    expect(withDeadKey.needsJustification).toBe(false);
+  });
+
+  it('keeps a section 16 rifle competing with a section 16 application', () => {
+    // The rule is "the same section", not "never". A dedicated hunter's second
+    // rifle in the same class is exactly what the argument is for.
+    const r = overlapFromAnswers(S16, {
+      firearm_calibre: '.270 Win',
+      existing_firearm_1_calibre: '.308 Win',
+      existing_firearm_1_make: 'Tikka',
+      existing_firearm_1_type: 'Rifle',
+      existing_firearm_1_section_held: 'section_16',
+    });
+    expect(r.needsJustification).toBe(true);
+  });
+
+  it('counts only the competing rows, not every firearm held', () => {
+    // One of each. Only the section 13 handgun may raise the box.
+    const r = overlapFromAnswers(S13, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '9mm Parabellum',
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '6.35mm Browning',
+      existing_firearm_1_make: 'CZ',
+      existing_firearm_1_section_held: 'section_16',
+      existing_firearm_2_type: 'Handgun',
+      existing_firearm_2_calibre: '.38 Special',
+      existing_firearm_2_make: 'Taurus',
+      existing_firearm_2_section_held: 'section_13',
+    });
+    expect(r.needsJustification).toBe(true);
+    expect(r.prompt).toContain('Taurus');
+    expect(r.prompt).not.toContain('CZ');
   });
 
   it('is quiet when nothing is owned yet', () => {
@@ -458,14 +583,20 @@ describe('overlapFromAnswers', () => {
   it('derives dedicated status from the LICENCE TYPE, not from a claim', () => {
     // A section 16 application IS the dedicated path. Reading it off an answer
     // would let the applicant soften the question by typing something.
-    const answers = {
+    // ⚠️ TWO FIXTURES NOW, NOT ONE SHARED ONE. A held firearm only competes
+    // when it is under the SECTION BEING APPLIED FOR, so one row cannot be an
+    // overlap for both a section 15 and a section 16 application. That is the
+    // rule under test elsewhere; here it just means the fixture has to be
+    // honest about which application each reading belongs to.
+    const held = (section: string) => ({
       firearm_calibre: '.270 Win',
       existing_firearm_1_calibre: '.308 Win',
-    };
-    expect(overlapFromAnswers(S16, answers).writerNote).toMatch(
+      existing_firearm_1_section_held: section,
+    });
+    expect(overlapFromAnswers(S16, held('section_16')).writerNote).toMatch(
       /holds dedicated status/,
     );
-    expect(overlapFromAnswers(S15, answers).writerNote).toMatch(
+    expect(overlapFromAnswers(S15, held('section_15')).writerNote).toMatch(
       /does NOT hold dedicated status/,
     );
   });
@@ -475,6 +606,7 @@ describe('overlapFromAnswers', () => {
     const r = overlapFromAnswers(S15, {
       firearm_calibre: '.30-06 Springfield',
       existing_firearm_1_calibre: '.308 Winchester',
+      existing_firearm_1_section_held: 'section_15',
       existing_firearm_1_make: 'CZ',
       existing_firearm_1_type: 'Rifle',
     });
@@ -501,6 +633,8 @@ describe('overlapFromAnswers', () => {
       existing_firearm_1_type: 'Handgun',
       existing_firearm_1_calibre: '9mm Parabellum',
       existing_firearm_1_make: 'Glock',
+      // The Glock is on a section 16 licence too, so it genuinely competes.
+      existing_firearm_1_section_held: 'section_16',
     });
     expect(r.needsJustification).toBe(true);
     expect(r.prompt).toContain('9mm Parabellum Glock handgun');
@@ -514,6 +648,9 @@ describe('overlapFromAnswers', () => {
       firearm_type: 'Handgun',
       firearm_calibre: '9mm',
       existing_firearm_1_type: 'Handgun',
+      // The section is what decides whether it competes at all; the calibre
+      // being unreadable is the thing under test here.
+      existing_firearm_1_section_held: 'section_13',
     });
     expect(r.needsJustification).toBe(true);
     // Nothing to name it by, so it is given an article rather than read out
@@ -940,11 +1077,23 @@ describe('the action and section axes weaken or sharpen a matched note', () => {
     expect(r.writerNote).toMatch(/the duplication is real/);
   });
 
-  it('⚠️ THE OPERATOR’S OWN CASE: a section 16 handgun, a section 13 application', () => {
-    // "If someone owns a handgun and its on section 16. Then the new applicant
-    // is allowed to apply for a section 13 of that firearm if they do meet all
-    // the other conditions." The overlap is still raised — a DFO counts the
-    // register — and it is disposed of by the licence rather than argued.
+  it('describes a mismatched section honestly IF it is ever handed one', () => {
+    // ⚠️ THIS IS NO LONGER A LIVE PATH, AND THE TITLE USED TO SAY IT WAS.
+    // It read "THE OPERATOR'S OWN CASE: a section 16 handgun, a section 13
+    // application", and the case was answered twice on 2026-09-09. First by
+    // softening the argument — say the section difference and stop there.
+    // Then by the operator going further: "the cz is section 16 so it does not
+    // matter and it cant be carried as a self defense weapon. This box can
+    // only pop up if there is a section 13 license already in the vault,
+    // period." overlapFromAnswers now drops the row before checkOverlap sees
+    // it, so this combination cannot arise in production — see the
+    // overlapFromAnswers block for the case as it now behaves.
+    //
+    // What is left under test is the PRIMITIVE. checkOverlap is exported and
+    // takes what it is given; asked about a mismatched section it must still
+    // describe it truthfully rather than press a duplication the licence
+    // disposes of. Deleting that branch would make a direct caller silently
+    // wrong the day the upstream filter is loosened.
     const r = checkOverlap(
       '9mm Luger',
       [
@@ -965,8 +1114,14 @@ describe('the action and section axes weaken or sharpen a matched note', () => {
     expect(r.writerNote).toMatch(/section 16 \(dedicated hunter or sport shooter\)/);
     expect(r.writerNote).toMatch(/does not cover the purpose of this application/);
     expect(r.writerNote).not.toMatch(/CLOSER duplication/);
-    // And the member is offered the sentence that says so, first.
-    expect((r.suggestedAngle ?? [])[0]?.key).toBe('different_section');
+    // ⚠️ AND THE MEMBER IS OFFERED NO SUCH SENTENCE ANY MORE. The
+    // `different_section` card is gone: the box only appears when the sections
+    // MATCH, which made "I hold that one under a different section" false
+    // wherever anybody could see it — in a sentence that goes verbatim into a
+    // document they sign.
+    expect((r.suggestedAngle ?? []).map((a) => a.key)).not.toContain(
+      'different_section',
+    );
   });
 
   it('never lets the strength clause slip into the applicant-facing prompt', () => {
@@ -1136,6 +1291,7 @@ describe('overlapFromAnswers reads existing_firearm_N_primary_use', () => {
     const r = overlapFromAnswers(S15, {
       firearm_calibre: '.270 Winchester',
       existing_firearm_1_calibre: '.308 Win',
+      existing_firearm_1_section_held: 'section_15',
       existing_firearm_1_primary_use: 'plains_game',
       existing_firearm_1_use: 'the old free-text answer, never shown once the card is tapped',
     });
@@ -1149,6 +1305,7 @@ describe('overlapFromAnswers reads existing_firearm_N_primary_use', () => {
     const r = overlapFromAnswers(S15, {
       firearm_calibre: '.270 Winchester',
       existing_firearm_1_calibre: '.308 Win',
+      existing_firearm_1_section_held: 'section_15',
       existing_firearm_1_use: 'bushveld plains game to 200m',
     });
     expect(r.writerNote).toContain('bushveld plains game to 200m');
@@ -1158,6 +1315,7 @@ describe('overlapFromAnswers reads existing_firearm_N_primary_use', () => {
     const r = overlapFromAnswers(S15, {
       firearm_calibre: '.270 Winchester',
       existing_firearm_1_calibre: '.308 Win',
+      existing_firearm_1_section_held: 'section_15',
       existing_firearm_1_primary_use: 'not_a_real_key',
     });
     expect(r.writerNote).not.toContain('not_a_real_key');
@@ -1169,6 +1327,7 @@ describe('overlapFromAnswers reads existing_firearm_N_primary_use', () => {
       firearm_calibre: '.270 Winchester',
       firearm_action: 'Semi-automatic (self-loading)',
       existing_firearm_1_calibre: '.308 Win',
+      existing_firearm_1_section_held: 'section_16',
       // ⚠️ NO REGISTRY FIELD YET — read defensively (see HeldFirearm.action).
       // This proves the plumbing works the day it lands.
       existing_firearm_1_action: 'Bolt action',

@@ -918,6 +918,25 @@ export default function LicenceCentreSheetPage() {
                 }}
                 signed={sellerSigned}
                 /*
+                  ⚠️ THE PANEL POLLED; THE PAGE DID NOT. The consent, the
+                  seller's licence copies and the filled-in Part F land as
+                  documents ON THE APPLICATION, and every surface that shows
+                  them — the checklist rows, the annexure index, the coverage
+                  meter, and this card's own `signed` line — is drawn from
+                  `sheet`. Nothing re-read it, so a member watched the panel
+                  say "signed" and still had to reload the page before the
+                  paperwork appeared. Operator, 2026-09-09: "I have to refresh
+                  the page to import it."
+                */
+                onArrived={async (status) => {
+                  await load();
+                  setToast(
+                    status === 'COMPLETED'
+                      ? 'The seller has signed. Their consent and licence are on your application.'
+                      : 'The seller declined. Nothing has been added to your application.',
+                  );
+                }}
+                /*
                   ⚠️ IT FILLS THE EMPTY ONES AND NEVER OVERWRITES. Adopting used
                   to write every field the card carried, which is why the offer
                   had to be shown once and then hidden for good — "inviting them

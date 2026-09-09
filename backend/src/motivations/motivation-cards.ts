@@ -378,28 +378,26 @@ export const OVERLAP_ANGLES: readonly CardOption[] = [
     sentence:
       'The firearm I already hold is for a different purpose and would not be used for this one.',
   },
-  {
-    /**
-     * ⚠️ THE STRONGEST ANSWER THERE IS TO AN OVERLAP, AND IT WAS NOT ON OFFER.
-     * Operator, 2026-09-09: "If someone owns a handgun and its on section 16.
-     * Then the new applicant is allowed to apply for a section 13 of that
-     * firearm if they do meet all the other conditions."
-     *
-     * `different_purpose` above says the held firearm WOULD NOT be used for
-     * this one, which is a statement about the applicant's intentions. This
-     * says the licence does not cover it, which is a statement about the
-     * licence — and a reviewer can check it against the card in Annexure G
-     * without taking anybody's word for anything.
-     *
-     * ⚠️ IT DOES NOT SAY THE FIREARM MAY NOT BE USED. It says the LICENCE is
-     * not a licence for this purpose, which is what the card actually
-     * establishes. The stronger claim is a proposition about the Act, and this
-     * sentence goes verbatim into a document somebody signs.
-     */
-    key: 'different_section',
-    sentence:
-      'The firearm I already hold is licensed under a different section of the Act, for a different purpose, and that licence does not cover the purpose I am applying for now.',
-  },
+  /**
+   * ⚠️ `different_section` WAS HERE AND IS GONE, and the reason is that the
+   * question it answered is no longer asked.
+   *
+   * It shipped on 2026-09-09 as the strongest answer to an overlap: "the
+   * firearm I already hold is licensed under a different section of the Act
+   * … and that licence does not cover the purpose I am applying for now."
+   * Later the same day the operator went further — "the cz is section 16 so
+   * it does not matter … This box can only pop up if there is a section 13
+   * license already in the vault, period" — and overlapFromAnswers now drops
+   * a held firearm whose section is not the one applied for BEFORE any of
+   * this runs.
+   *
+   * So the box can only appear when the sections MATCH, which makes that
+   * sentence false wherever a member could ever see it — and it is a sentence
+   * that goes verbatim into a document they sign. The answer did not get
+   * weaker; it moved upstream, from something the applicant asserts to the
+   * reason the question is never put to them.
+   */
+
   {
     key: 'different_calibre',
     sentence:
@@ -491,7 +489,6 @@ export const OVERLAP_ANGLES_BY_SECTION: Readonly<
     // licence issued for hunting or sport; that licence does not cover keeping
     // or carrying it for defence, so the overlap a reviewer sees in the
     // register is disposed of in one sentence they can check.
-    'different_section',
     'concealable',
     'home_and_carry',
     'different_purpose',
@@ -502,7 +499,6 @@ export const OVERLAP_ANGLES_BY_SECTION: Readonly<
     'in_for_repair',
   ],
   hunting: [
-    'different_section',
     'different_quarry',
     'different_range',
     'terrain_reach',
@@ -515,7 +511,6 @@ export const OVERLAP_ANGLES_BY_SECTION: Readonly<
     'in_for_repair',
   ],
   sport: [
-    'different_section',
     'different_division',
     'match_and_practice',
     'different_format',

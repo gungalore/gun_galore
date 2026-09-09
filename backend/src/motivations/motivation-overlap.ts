@@ -948,18 +948,17 @@ function suggestedAngleFor(
   const leadKeys: string[] = [];
 
   /**
-   * ⚠️ A DIFFERENT SECTION LEADS EVERYTHING, because it is the one answer a
-   * reviewer can verify without believing anybody. The card says the held
-   * licence does not cover this purpose; the licence copy in the annexures
-   * says the same thing on its face.
+   * ⚠️ THE `different_section` LEAD IS GONE WITH ITS CARD. overlapFromAnswers
+   * now drops a held firearm whose section is not the one applied for before
+   * any of this runs, so the box can only appear when the sections MATCH —
+   * which made "I hold that one under a different section" false wherever a
+   * member could see it. See the note where the card used to be in
+   * motivation-cards.ts, and the filter in overlapFromAnswers.
+   *
+   * `mySection` still feeds the same-section half of overlapStrengthClause
+   * below, which is where the fact now does its work: in the writer's note,
+   * telling it the duplication is real and must be answered on its merits.
    */
-  if (mySection && matched.some((h) => {
-    const held = classifyHeldSection(h.section);
-    return !!held && held !== mySection;
-  })) {
-    leadKeys.push('different_section');
-  }
-
   if (purposeConflicts(matched, licenceType)) {
     leadKeys.push('different_purpose');
   }
@@ -1311,13 +1310,29 @@ function ownedRows(answers: Record<string, string>): OwnedRow[] {
           ? usedForSentences.join(' ')
           : at('use') || undefined,
         usedForKeys: usedForKeys.length ? usedForKeys : undefined,
-        // ⚠️ NEITHER KEY EXISTS IN THE REGISTRY YET — see the note on
-        // HeldFirearm.action/.section. Read defensively so this file needs no
-        // change the day either field lands; until then `at()` returns '' and
-        // both stay undefined, which the strength clause treats as "no
-        // information" rather than "no overlap".
+        /**
+         * ⚠️ `section` READ THE WRONG KEY, AND IT IS THE WHOLE REASON A
+         * SECTION 16 HANDGUN RAISED A SECTION 13 OVERLAP.
+         *
+         * The note that stood here said neither key existed in the registry
+         * yet and to "read defensively so this file needs no change the day
+         * either field lands". `existing_firearm_N_section_held` landed on
+         * 2026-09-09 with the statutory-cap warnings — under a different name.
+         * This kept reading `existing_firearm_N_section`, which nothing ever
+         * writes, so `section` was undefined on every row ever loaded and the
+         * section axis has never once fired in production.
+         *
+         * The values are the OWNED_SECTION_HELD card keys — `section_13`,
+         * `section_16`, `unsure` — and classifyHeldSection folds them to the
+         * same three-value shape as the section applied for.
+         *
+         * ⚠️ `action` IS STILL DEAD, and honestly so: there is no
+         * `existing_firearm_N_action` column in OWNED_ROW_COLUMNS and nothing
+         * writes one. It stays read defensively for the day one lands, which
+         * is what this comment used to claim about both.
+         */
         action: at('action') || undefined,
-        section: at('section') || undefined,
+        section: at('section_held') || undefined,
       },
       make,
       licenceNo: at('licence_no'),
@@ -1408,13 +1423,61 @@ export function overlapFromAnswers(
     rows.splice(self, 1);
   }
 
+  /**
+   * ⚠️ A FIREARM HELD UNDER ANOTHER SECTION IS NOT AN OVERLAP AT ALL.
+   *
+   * Operator, 2026-09-09, on a section 13 application raising an overlap
+   * against a section 16 handgun: "the cz is section 16 so it does not matter
+   * and it cant be carried as a self defense weapon. This box can only pop up
+   * if there is a section 13 license already in the vault, period."
+   *
+   * They are right, and it is not only a UI complaint. A licence is issued
+   * under a section FOR A PURPOSE. A handgun on a section 16 licence is held
+   * for dedicated sport or hunting; it is not licensed to be carried for
+   * defence, so a section 13 application is asking for the FIRST firearm
+   * licensed to do that job, not a second one to do the same job. There is no
+   * duplication to answer. Raising it puts a paragraph into a SAPS submission
+   * arguing against a problem the applicant does not have — and invites the
+   * reviewer to weigh a question nobody asked.
+   *
+   * ⚠️ THIS SUPERSEDES 3765c07a, WHICH ONLY SOFTENED THE ARGUMENT. That change
+   * made the writer LEAD with the section difference — "say this first and stop
+   * there". The operator's answer now is that the document should not raise it
+   * at all. Softening an argument that should not exist is still an argument.
+   *
+   * ⚠️ NOTHING IS HIDDEN BY THIS. Every held firearm still gets a row in the
+   * battery table and a sentence on its role and the gap, under heading 6,
+   * whether or not it shares a section — see MOTIVATION-GUIDE-BOOK Part 5.1
+   * brief 6, and `held_firearms` in motivation-structure.ts, which is
+   * conditional on holding anything at all and not on an overlap. The section
+   * 16 CZ is still named, still described as licensed under section 16, and
+   * still disposed of in one sentence. What goes is the separate argument that
+   * it duplicates the firearm applied for.
+   *
+   * ⚠️ AND AN UNKNOWN SECTION COUNTS AS "NOT THE SAME ONE". 'unsure', a blank
+   * card, a section 17 collection, a section 20 permit — none of them is the
+   * section being applied for, so none raises the box. That can miss a genuine
+   * same-section duplicate whose card we could not read, and the operator's
+   * "period" accepts that: the cost is one argument the writer does not make,
+   * against a paragraph arguing with a firearm that was never in competition.
+   * The battery sentence still names the firearm either way.
+   *
+   * ⚠️ OFF ON A RENEWAL, where sectionAppliedFor is deliberately null — see
+   * its note. A renewal has already removed the firearm being renewed from
+   * `rows`; what is left is a genuine second holding.
+   */
+  const applied = sectionAppliedFor(licenceType);
+  const competing = applied
+    ? rows.filter((r) => classifyHeldSection(r.held.section) === applied)
+    : rows;
+
   const dedicatedStatus =
     licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||
     licenceType === MotivationLicenceType.S16_DEDICATED_SPORT;
 
   return checkOverlap(
     (answers.firearm_calibre ?? '').trim(),
-    rows.map((r) => r.held),
+    competing.map((r) => r.held),
     {
       dedicatedStatus,
       appliedForType: answers.firearm_type,

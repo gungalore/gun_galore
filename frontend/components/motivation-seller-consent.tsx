@@ -74,6 +74,25 @@ export interface SellerConsentProps {
    * page implements this with setAnswer, and the card details survive.
    */
   onAdopt?: (fields: Record<string, string>) => void;
+  /**
+   * The seller has just answered — reload the application around this panel.
+   *
+   * ⚠️ THE PANEL ALREADY POLLED; THE PAGE DID NOT. This panel has refreshed
+   * its own status every 30 seconds since it shipped, so it could say "signed"
+   * without a reload — but the consent, the seller's licence copies and the
+   * filled-in Part F land as documents ON THE APPLICATION, and every surface
+   * that shows them (the checklist rows, the annexure index, the coverage
+   * meter, and this card's own "Signed." line, which is a prop) is drawn from
+   * the page's `sheet`. Nothing re-read it, so the member watched the panel
+   * change and had to reload the page before the paperwork appeared.
+   * Operator, 2026-09-09: "I have to refresh the page to import it."
+   *
+   * ⚠️ FIRED ON THE TRANSITION, NEVER ON THE READING. A callback on every poll
+   * would re-fetch the whole sheet every 30 seconds for as long as the tab is
+   * open, and reloading the sheet under a member who is typing is worse than
+   * the bug.
+   */
+  onArrived?: (status: 'COMPLETED' | 'DECLINED') => void;
 }
 
 export default function MotivationSellerConsent({
@@ -81,6 +100,7 @@ export default function MotivationSellerConsent({
   applicantName,
   firearm,
   onAdopt,
+  onArrived,
 }: SellerConsentProps) {
   const { getToken } = useAuth();
   const [name, setName] = useState('');
@@ -140,6 +160,31 @@ export default function MotivationSellerConsent({
     };
   }, []);
 
+  /**
+   * ⚠️ THE CALLBACK LIVES IN A REF SO `refreshStatus` STAYS STABLE. It is a
+   * useCallback dependency of both the mount effect and the 30-second
+   * interval; taking an inline prop directly would give it a new identity on
+   * every parent render, and the interval would be torn down and rebuilt each
+   * time — which on a page that re-renders per keystroke is a poll that never
+   * completes a cycle.
+   */
+  const arrivedRef = useRef(onArrived);
+  useEffect(() => {
+    arrivedRef.current = onArrived;
+  }, [onArrived]);
+
+  /**
+   * The last status this panel actually saw, so a CHANGE can be told from a
+   * reading.
+   *
+   * ⚠️ SEEDED BY THE FIRST READ WITHOUT FIRING. A panel that mounts on an
+   * application whose seller signed last week must not announce it and reload
+   * the sheet: the page has this moment loaded, the paperwork is already on
+   * it, and a toast saying "the seller has signed" about something a week old
+   * is us reporting our own first glance as news.
+   */
+  const seen = useRef<'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED' | null>(null);
+
   const refreshStatus = useCallback(async () => {
     try {
       const r = await motivationsApi.sellerConsentStatus(getToken, motivationId);
@@ -148,6 +193,19 @@ export default function MotivationSellerConsent({
       setCardFirearm(r.cardFirearm);
       setFrontId(r.licenceFrontUploadId);
       setStatement(r.statement);
+
+      const before = seen.current;
+      seen.current = r.status;
+      // A transition into a resolved state, seen by a panel that was already
+      // watching. Not the first read, and not a repeat of a state we have
+      // already reported.
+      if (
+        before !== null &&
+        before !== r.status &&
+        (r.status === 'COMPLETED' || r.status === 'DECLINED')
+      ) {
+        arrivedRef.current?.(r.status);
+      }
     } catch {
       /* fail-soft: the send form still works without a status read */
     }
@@ -196,6 +254,30 @@ export default function MotivationSellerConsent({
     if (status !== 'INVITED') return;
     const t = setInterval(() => void refreshStatus(), 30_000);
     return () => clearInterval(t);
+  }, [status, refreshStatus]);
+
+  /**
+   * And the moment the member comes back to the tab.
+   *
+   * ⚠️ THIRTY SECONDS IS FINE FOR A PAGE NOBODY IS WATCHING AND FEELS BROKEN
+   * FOR ONE SOMEBODY IS. The real sequence is: send the link, put the laptop
+   * down, ring the seller, come back. "Coming back" is a focus event, and
+   * answering it costs one request at exactly the moment a person is asking
+   * the question — which is worth more than a shorter interval running all
+   * day. Browsers also throttle timers in a hidden tab, so the interval alone
+   * can be minutes late on precisely this journey.
+   */
+  useEffect(() => {
+    if (status !== 'INVITED') return;
+    const wake = () => {
+      if (document.visibilityState === 'visible') void refreshStatus();
+    };
+    window.addEventListener('focus', wake);
+    document.addEventListener('visibilitychange', wake);
+    return () => {
+      window.removeEventListener('focus', wake);
+      document.removeEventListener('visibilitychange', wake);
+    };
   }, [status, refreshStatus]);
 
   // What the form already knows, joined the same way the server would. Shown

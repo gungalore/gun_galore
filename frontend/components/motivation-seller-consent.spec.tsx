@@ -104,3 +104,89 @@ describe('the invite form asks for everything the server requires', () => {
     expect(body.firearm.label).toBe('CZ Shadow 2 9mm');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// TELLING THE PAGE THE SELLER ANSWERED.
+//
+// ⚠️ THE PANEL POLLED; THE PAGE DID NOT. This panel has refreshed its own
+// status every 30 seconds since it shipped, so it could say "signed" without a
+// reload — but the consent, the seller's licence copies and the filled-in
+// Part F land as documents ON THE APPLICATION, and every surface that shows
+// them is drawn from the page's sheet. Nothing re-read it.
+//
+// Operator, 2026-09-09: "I have to refresh the page to import it."
+// ────────────────────────────────────────────────────────────────────
+
+describe('telling the page the seller answered', () => {
+  const settled = () =>
+    waitFor(() => expect(api.sellerConsentStatus).toHaveBeenCalled());
+
+  it('fires once the status moves from invited to signed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onArrived = vi.fn();
+      api.sellerConsentStatus.mockResolvedValue({ status: 'INVITED' });
+      render(<MotivationSellerConsent {...base} onArrived={onArrived} />);
+      await settled();
+      expect(onArrived).not.toHaveBeenCalled();
+
+      api.sellerConsentStatus.mockResolvedValue({ status: 'COMPLETED' });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await waitFor(() => expect(onArrived).toHaveBeenCalledWith('COMPLETED'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('⚠️ NEVER ON THE FIRST READ, however it lands', async () => {
+    // A panel mounting on an application whose seller signed last week must
+    // not announce it and reload the sheet: the page has this moment loaded,
+    // the paperwork is already on it, and a toast about something a week old
+    // is us reporting our own first glance as news.
+    const onArrived = vi.fn();
+    api.sellerConsentStatus.mockResolvedValue({ status: 'COMPLETED' });
+    render(<MotivationSellerConsent {...base} onArrived={onArrived} />);
+    await settled();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onArrived).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ NEVER TWICE FOR ONE ANSWER', async () => {
+    // A callback on every poll would re-fetch the whole sheet every 30
+    // seconds for as long as the tab is open, and reloading the sheet under a
+    // member who is typing is worse than the bug.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onArrived = vi.fn();
+      api.sellerConsentStatus.mockResolvedValue({ status: 'INVITED' });
+      render(<MotivationSellerConsent {...base} onArrived={onArrived} />);
+      await settled();
+      api.sellerConsentStatus.mockResolvedValue({ status: 'COMPLETED' });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await waitFor(() => expect(onArrived).toHaveBeenCalledTimes(1));
+      // The poll stops once the status resolves, but a focus event still
+      // refreshes — and it must not re-announce.
+      window.dispatchEvent(new Event('focus'));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(onArrived).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports a decline too', async () => {
+    // Silence would leave the applicant waiting on somebody who has answered.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onArrived = vi.fn();
+      api.sellerConsentStatus.mockResolvedValue({ status: 'INVITED' });
+      render(<MotivationSellerConsent {...base} onArrived={onArrived} />);
+      await settled();
+      api.sellerConsentStatus.mockResolvedValue({ status: 'DECLINED' });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await waitFor(() => expect(onArrived).toHaveBeenCalledWith('DECLINED'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

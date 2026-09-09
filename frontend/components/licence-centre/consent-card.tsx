@@ -29,6 +29,8 @@ export interface ConsentCardProps {
   /** True once the seller has actually signed. Drives the Part F line. */
   signed: boolean;
   onAdopt?: (fields: Record<string, string>) => void;
+  /** The seller answered while the page was open. Reload the application. */
+  onArrived?: (status: 'COMPLETED' | 'DECLINED') => void;
 }
 
 export default function ConsentCard({
@@ -37,6 +39,7 @@ export default function ConsentCard({
   firearm,
   signed,
   onAdopt,
+  onArrived,
 }: ConsentCardProps) {
   return (
     <div className="gg-tile my-[10px] rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[14px] py-3">
@@ -49,6 +52,7 @@ export default function ConsentCard({
         applicantName={applicantName}
         firearm={firearm}
         onAdopt={onAdopt}
+        onArrived={onArrived}
       />
 
       {/*
