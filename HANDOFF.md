@@ -194,6 +194,24 @@ no purpose themselves (`hunt_game_class`, `hunt_reasons`, `sport_reasons`,
 follows on a held row. An S16_DEDICATED_HUNTER application gets only the
 hunting list; a section 24 renewal gets nothing.
 
+### The capability carve-out, deployed `09118e3b`
+
+Operator's decision after being told the words were on the hard refuse list:
+allow them in the comparison paragraph and nowhere else. Their sentence: *"the
+.300winmag is suited for giraffe hunting so the .300prc will do the same but I
+will have the same stopping power and accuracy at further ranges."*
+
+`COMPARISON_TERMS` — terminal ballistics, stopping power, muzzle energy and
+velocity, foot-pounds, bullet weight, penetration, expansion — now leave the
+whole-document catalogue sweep and are judged PER SENTENCE. A sentence may
+carry one only where it BOTH names a firearm the applicant holds AND says that
+firearm falls short of something. Naming a firearm is not comparing.
+
+⚠️ **`magazine capacit` IS NOT ON THE LIST, ON PURPOSE**, nor are the frame,
+the trigger, the finish or the manufacturer's history. None of those is a
+comparison. `renderOverlap` carries the same boundary so the prompt and the
+gate agree; the cache baseline moved by exactly eight lines on all six types.
+
 ### Open, for the operator
 
 ⚠️ **A HANDGUN CANNOT FALL UNDER SECTION 14, so it gets 13/15/16 and not 14.**
