@@ -1263,6 +1263,19 @@ export const motivationsApi = {
        * describes: a refusal naming a box that was not on screen anywhere.
        */
       email: string;
+      /**
+       * Which ways the link goes out — any combination.
+       *
+       * ⚠️ THE LAST TWO GO TO THE APPLICANT, not the seller: the link comes to
+       * them and they pass it on. Omitted means both seller channels, which is
+       * what this always did.
+       */
+      channels?: {
+        sellerSms: boolean;
+        sellerEmail: boolean;
+        meSms: boolean;
+        meEmail: boolean;
+      };
       applicantName: string;
       firearm: Record<string, string | undefined>;
     },

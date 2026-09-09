@@ -110,6 +110,26 @@ export default function MotivationSellerConsent({
    * See the note on the input below.
    */
   const [email, setEmail] = useState('');
+
+  /**
+   * Which ways the link goes out.
+   *
+   * Operator, 2026-09-09: "we should also have three options for the consent.
+   * SMS, Email an Sent me the link via SMS or Email (those two must be tick
+   * boxes as well). It must be able to sent to all tick boxes."
+   *
+   * ⚠️ DEFAULTS TO WHAT THIS ALWAYS DID — both to the seller — so an applicant
+   * who ignores the boxes gets exactly the old behaviour. The last two go to
+   * THEM, for a seller standing beside them or on WhatsApp, and neither needs
+   * a seller contact detail; the server validates per channel for that reason.
+   */
+  const [channels, setChannels] = useState({
+    sellerSms: true,
+    sellerEmail: true,
+    meSms: false,
+    meEmail: false,
+  });
+  const noChannel = !Object.values(channels).some(Boolean);
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
@@ -297,6 +317,7 @@ export default function MotivationSellerConsent({
         name,
         phone,
         email,
+        channels,
         applicantName,
         firearm: { ...firearm, label: labelToSend },
       });
@@ -555,7 +576,58 @@ export default function MotivationSellerConsent({
           className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
         />
       </label>
-      <label className="mt-2 block text-xs text-[var(--text-secondary)]">
+      {/* ⚠️ HOW IT TRAVELS, ASKED BEFORE WHAT WE NEED TO SEND IT.
+        *
+        * Operator, 2026-09-09: "we should also have three options for the
+        * consent. SMS, Email an Sent me the link via SMS or Email (those two
+        * must be tick boxes as well). It must be able to sent to all tick
+        * boxes."
+        *
+        * The boxes come FIRST because they decide which contact details are
+        * needed at all: somebody sending the link to themselves to pass on has
+        * neither the seller's number nor their address, and being asked for
+        * both before being allowed to say so is the form arguing with itself.
+        * The server validates per channel for the same reason. */}
+      <fieldset className="mt-3 rounded-[var(--r-sm)] border border-[var(--border)] p-3">
+        <legend className="px-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+          How should we send it?
+        </legend>
+        {(
+          [
+            ['sellerSms', 'SMS to them'],
+            ['sellerEmail', 'Email to them'],
+            ['meSms', 'SMS the link to me, I will pass it on'],
+            ['meEmail', 'Email the link to me, I will pass it on'],
+          ] as [keyof typeof channels, string][]
+        ).map(([key, text]) => (
+          <label
+            key={key}
+            className="flex min-h-[36px] items-center gap-2 text-sm text-[var(--text-primary)]"
+          >
+            <input
+              type="checkbox"
+              checked={channels[key]}
+              onChange={(e) =>
+                setChannels((c) => ({ ...c, [key]: e.target.checked }))
+              }
+            />
+            {text}
+          </label>
+        ))}
+        {noChannel && (
+          <p className="mt-1 text-xs text-[var(--red)]">
+            Pick at least one.
+          </p>
+        )}
+      </fieldset>
+
+      {/* ⚠️ ONLY WHERE A TICKED CHANNEL USES IT. Asking for the seller's
+        * number so we can not send to it is the question the server stopped
+        * demanding — see the per-channel validation in invite(). */}
+      <label
+        className="mt-2 block text-xs text-[var(--text-secondary)]"
+        hidden={!channels.sellerSms}
+      >
         Their mobile number
         <input
           value={phone}
@@ -582,7 +654,10 @@ export default function MotivationSellerConsent({
         * describes, about the serial number it used to demand: "The refusal
         * named a box that was not on screen anywhere." Same function, same
         * mistake, second time. */}
-      <label className="mt-2 block text-xs text-[var(--text-secondary)]">
+      <label
+        className="mt-2 block text-xs text-[var(--text-secondary)]"
+        hidden={!channels.sellerEmail}
+      >
         Their email address
         <input
           value={email}
@@ -653,9 +728,16 @@ export default function MotivationSellerConsent({
         */
         disabled={
           busy ||
+          noChannel ||
           name.trim().length < 2 ||
-          phone.trim().length < 9 ||
-          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
+          /* ⚠️ PER CHANNEL, LIKE THE SERVER. The gate used to demand both a
+             number and an address unconditionally — right when both were being
+             used, and a locked button for somebody who ticked only "send it to
+             me". A button that enables into a refusal is how the missing email
+             box went unnoticed; one that never enables is worse. */
+          (channels.sellerSms && phone.trim().length < 9) ||
+          (channels.sellerEmail &&
+            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) ||
           !labelToSend
         }
         className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"

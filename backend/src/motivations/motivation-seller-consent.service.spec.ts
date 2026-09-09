@@ -1157,3 +1157,65 @@ describe('primarySerial — a serial the OCR ran into the label beside it', () =
     ).toBe('81815');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THREE WAYS TO SEND ONE LINK, IN ANY COMBINATION.
+//
+// Operator, 2026-09-09: "we should also have three options for the consent.
+// SMS, Email an Sent me the link via SMS or Email (those two must be tick
+// boxes as well). It must be able to sent to all tick boxes. Also we need to
+// check the email and number of the seller if they are on our database and
+// puch a notification to their profile and app if they are."
+//
+// ⚠️ ADDITIVE, NOT A LOOSENING. The seller's SMS is still the gate WHEN IT IS
+// TICKED — a bad number is a typo the applicant can fix in the moment — and
+// the invite is still refused outright if nothing reached anybody.
+// ────────────────────────────────────────────────────────────────────
+
+describe('choosing how the link travels', () => {
+  it('⚠️ ASKS FOR NO SELLER CONTACT THE CHANNELS DO NOT USE', async () => {
+    // Somebody standing beside the seller has neither their number nor their
+    // address, and demanding both so we can not send to them is the form
+    // arguing with itself.
+    // ⚠️ THE APPLICANT'S OWN NUMBER IS WHAT THIS CHANNEL USES, so the double
+    // carries one. `findMember` also reads the user table; both calls come
+    // back with this row, which is the applicant themselves and is skipped.
+    const { svc, sms } = make({
+      user: { id: USER_ID, phone: '082 111 2222', email: 'me@example.co.za' },
+    });
+    await expect(
+      svc.invite({
+        ...ARGS,
+        phone: '',
+        email: '',
+        channels: { sellerSms: false, sellerEmail: false, meSms: true },
+      } as never),
+    ).resolves.toMatchObject({ status: 'INVITED' });
+    // The one SMS that went was to the APPLICANT, not the seller.
+    expect(sms.mock.calls).toHaveLength(1);
+    expect(sms.mock.calls[0][0].reference).toContain('consent-self-');
+    expect(sms.mock.calls[0][0].to).toBe('082 111 2222');
+  });
+
+  it('refuses an invite with nothing ticked', async () => {
+    const { svc } = make();
+    await expect(
+      svc.invite({
+        ...ARGS,
+        channels: {
+          sellerSms: false,
+          sellerEmail: false,
+          meSms: false,
+          meEmail: false,
+        },
+      } as never),
+    ).rejects.toThrow(/at least one/i);
+  });
+
+  it('⚠️ STILL SENDS BOTH WHEN NOBODY CHOSE, which is what it always did', async () => {
+    const { svc, sms, notifications } = make();
+    await svc.invite(ARGS as never);
+    expect(sms).toHaveBeenCalledTimes(1);
+    expect(notifications.sellerConsentInvite).toHaveBeenCalledTimes(1);
+  });
+});

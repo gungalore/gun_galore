@@ -16,6 +16,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import {
   ConsentSectionF,
   MotivationSellerConsentService,
+  type ConsentChannels,
   type FirearmSnapshot,
 } from './motivation-seller-consent.service';
 import { LicenceCardOcrService } from './licence-card-ocr.service';
@@ -68,6 +69,16 @@ export class MotivationsConsentController {
        * omission hard to see: fixing two of them changes nothing on screen.
        */
       email?: string;
+      /**
+       * Which ways the link goes out — any combination. Omitted means both
+       * seller channels, which is what this always did; see DEFAULT_CHANNELS.
+       *
+       * ⚠️ READ LOOSELY AND COERCED TO BOOLEANS. A bare @Body() is not a DTO
+       * and the global ValidationPipe has no forbidNonWhitelisted, so anything
+       * at all can arrive here. `=== true` means a string "false" from a
+       * hand-rolled client cannot switch a channel on.
+       */
+      channels?: Partial<Record<keyof ConsentChannels, unknown>>;
       firearm?: FirearmSnapshot;
       applicantName?: string;
     },
@@ -87,6 +98,15 @@ export class MotivationsConsentController {
       name: body.name ?? '',
       phone: body.phone ?? '',
       email: body.email ?? '',
+      // Only a literal true turns a channel on — see the note on the type.
+      channels: body.channels
+        ? {
+            sellerSms: body.channels.sellerSms === true,
+            sellerEmail: body.channels.sellerEmail === true,
+            meSms: body.channels.meSms === true,
+            meEmail: body.channels.meEmail === true,
+          }
+        : undefined,
       firearm: body.firearm,
       baseUrl: origin,
     });

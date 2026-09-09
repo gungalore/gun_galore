@@ -559,6 +559,44 @@ export function cardToApplicationFirearm(
   return out;
 }
 
+/**
+ * The ways one consent link can travel.
+ *
+ * Operator, 2026-09-09: "we should also have three options for the consent.
+ * SMS, Email an Sent me the link via SMS or Email (those two must be tick
+ * boxes as well). It must be able to sent to all tick boxes."
+ *
+ * ⚠️ THE LAST TWO GO TO THE APPLICANT. A seller standing beside them, or one
+ * they talk to on WhatsApp, does not need us to hold their number — the
+ * applicant takes the link and passes it on. That is why `invite()` validates
+ * a contact detail only for the channel that uses it.
+ */
+export interface ConsentChannels {
+  /** SMS to the seller. */
+  sellerSms: boolean;
+  /** Email to the seller. */
+  sellerEmail: boolean;
+  /** SMS the link to the applicant, to pass on themselves. */
+  meSms: boolean;
+  /** Email the link to the applicant, to pass on themselves. */
+  meEmail: boolean;
+}
+
+/**
+ * ⚠️ BOTH SELLER CHANNELS, WHICH IS WHAT THIS ALWAYS DID. An omitted
+ * `channels` is a caller written before there was a choice — the panel before
+ * today, and every resend — and the old behaviour is the right default: "the
+ * email carries the link; it survives being read on a desktop, it can hold an
+ * explanation, and it does not cost an SMS credit to resend. The number is the
+ * nudge that makes him look."
+ */
+const DEFAULT_CHANNELS: ConsentChannels = {
+  sellerSms: true,
+  sellerEmail: true,
+  meSms: false,
+  meEmail: false,
+};
+
 @Injectable()
 export class MotivationSellerConsentService {
   private readonly logger = new Logger(MotivationSellerConsentService.name);
@@ -581,6 +619,52 @@ export class MotivationSellerConsentService {
    * an unserialled one gives a DFO nothing to match against the licence being
    * transferred. Refused by name rather than sent half-empty.
    */
+  /**
+   * Is this seller already one of our members?
+   *
+   * Operator, 2026-09-09: "we need to check the email and number of the seller
+   * if they are on our database and puch a notification to their profile and
+   * app if they are."
+   *
+   * ⚠️ MATCHED ON THE DIGITS, NOT THE STRING. "082 000 0000", "0820000000" and
+   * "+27 82 000 0000" are one number and a member typed whichever they were
+   * given; comparing the raw text finds almost nobody. The last nine digits are
+   * what survives a country code either way, and are enough to identify a South
+   * African mobile.
+   *
+   * ⚠️ AND IT IS AN EXTRA WAY TO REACH THEM, NEVER A REPLACEMENT. Finding a
+   * member does not stop the SMS or the email: they may have push blocked, or
+   * not open the app for a week, and the invitation has to stand on its own.
+   */
+  private async findMember(phone: string, email: string) {
+    const digits = phone.replace(/[^0-9]/g, '');
+    const tail = digits.slice(-9);
+    const address = email.trim().toLowerCase();
+    const byEmail = address
+      ? await this.prisma.user.findFirst({
+          where: { email: { equals: address, mode: 'insensitive' } },
+          select: { id: true },
+        })
+      : null;
+    if (byEmail) return byEmail;
+    if (tail.length < 9) return null;
+    /**
+     * ⚠️ A SUFFIX MATCH CANNOT BE AN INDEXED QUERY, so this reads the members
+     * who have a phone at all and compares in memory. The platform holds two
+     * users today; when that stops being true this needs a normalised column
+     * written at save time, not a bigger scan.
+     */
+    const withPhones = await this.prisma.user.findMany({
+      where: { phone: { not: null } },
+      select: { id: true, phone: true },
+    });
+    return (
+      withPhones.find(
+        (u) => (u.phone ?? '').replace(/[^0-9]/g, '').slice(-9) === tail,
+      ) ?? null
+    );
+  }
+
   async invite(args: {
     motivationId: string;
     /**
@@ -605,6 +689,24 @@ export class MotivationSellerConsentService {
      * type error nobody sees until deploy.
      */
     email?: string;
+    /**
+     * Which ways the link goes out. Any combination, all four optional.
+     *
+     * ⚠️ IT USED TO BE BOTH, ALWAYS, AND THAT WAS A RULE NOT A CHOICE. The old
+     * comment argued it well — "the email carries the link; the number is the
+     * nudge that makes him look" — and it is still the right DEFAULT, which is
+     * what an omitted `channels` gets. What it could not do is the case the
+     * operator named: "we should also have three options for the consent. SMS,
+     * Email an Sent me the link via SMS or Email (those two must be tick boxes
+     * as well). It must be able to sent to all tick boxes."
+     *
+     * ⚠️ `meSms` / `meEmail` GO TO THE APPLICANT, NOT THE SELLER. They are for
+     * somebody standing next to the seller, or messaging them on WhatsApp:
+     * the link comes to them and they pass it on. So they need no seller
+     * contact detail at all, which is why the validation below is per channel
+     * rather than a blanket demand for both.
+     */
+    channels?: Partial<ConsentChannels>;
     firearm: FirearmSnapshot;
     baseUrl: string;
   }) {
@@ -637,7 +739,19 @@ export class MotivationSellerConsentService {
     const phone = args.phone.trim();
     const email = (args.email ?? '').trim();
     if (name.length < 2) throw new BadRequestException('Enter their name.');
-    if (!/^\+?\d[\d\s-]{7,}$/.test(phone)) {
+
+    /**
+     * ⚠️ VALIDATED PER CHANNEL, BECAUSE THE OLD RULE REFUSED A VALID INVITE.
+     * Demanding both a number and an address is right when both are being
+     * used; somebody who ticks only "send me the link" has neither to give,
+     * and asking them for the seller's email so we can not send to it is the
+     * form arguing with itself.
+     */
+    const want = { ...DEFAULT_CHANNELS, ...(args.channels ?? {}) };
+    if (!want.sellerSms && !want.sellerEmail && !want.meSms && !want.meEmail) {
+      throw new BadRequestException('Choose at least one way to send it.');
+    }
+    if (want.sellerSms && !/^\+?\d[\d\s-]{7,}$/.test(phone)) {
       throw new BadRequestException('Enter a valid mobile number.');
     }
     // ⚠️ BOTH, NOT EITHER. The email carries the link — it survives being
@@ -649,7 +763,7 @@ export class MotivationSellerConsentService {
     // Deliberately forgiving: anything with an @ between two non-spaces. A
     // stricter pattern here rejects real addresses and the only cost of a
     // wrong one is a bounce we can see.
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (want.sellerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw new BadRequestException('Enter a valid email address for them.');
     }
 
@@ -749,42 +863,177 @@ export class MotivationSellerConsentService {
       });
 
       const link = `${args.baseUrl.replace(/\/$/, '')}/consent/${token}`;
-      const sent = await this.sms.sendSms({
-        to: phone,
-        message:
-          `${args.applicantName} is applying for a licence for your ` +
-          `${label} and needs your consent as the current owner.\n\n${link}\n\n` +
-          `This link works for 48 hours. All Outdoor.`,
-        reference: `consent-${row.id}`,
-      });
-      if (!sent.success) {
-        throw new BadRequestException(
-          'Could not send the SMS. Check the number and try again.',
+      const sellerMessage =
+        `${args.applicantName} is applying for a licence for your ` +
+        `${label} and needs your consent as the current owner.\n\n${link}\n\n` +
+        `This link works for 48 hours. All Outdoor.`;
+
+      /**
+       * ⚠️ EVERY TICKED CHANNEL, AND THE GATE IS "DID ANY OF THEM GO".
+       *
+       * The SMS used to be the gate outright, on the reasoning that a bad
+       * number is a typo the applicant can fix in the moment. That still
+       * holds for the seller's SMS and is why its failure is named — but it
+       * cannot be the gate when the applicant did not tick it. What must
+       * never happen is a silent nothing: an invite reporting success having
+       * reached no one.
+       */
+      const failures: string[] = [];
+      let delivered = 0;
+
+      /**
+       * ⚠️ STILL THE GATE WHEN IT IS TICKED, AND THAT RULE IS UNCHANGED. A bad
+       * number is a typo the applicant can fix in the moment — so it is worth
+       * stopping for, and the row this call created is deleted by the catch
+       * below so they can simply correct it and send again.
+       *
+       * The multi-channel work is ADDITIVE: it lets somebody send by other
+       * routes, not send by SMS badly. What changed is only that the SMS can
+       * no longer be a gate on an invite that never asked for it.
+       */
+      if (want.sellerSms) {
+        const sent = await this.sms.sendSms({
+          to: phone,
+          message: sellerMessage,
+          reference: `consent-${row.id}`,
+        });
+        if (!sent.success) {
+          throw new BadRequestException(
+            'Could not send the SMS. Check the number and try again.',
+          );
+        }
+        delivered++;
+      }
+
+      /**
+       * ⚠️ TO THE APPLICANT, FOR THEM TO PASS ON. Their own contact details,
+       * never the seller's — the whole point of this channel is that we do
+       * not have the seller's. The wording says whose link it is, because a
+       * bare consent link arriving on your own phone reads like phishing.
+       */
+      if (want.meSms || want.meEmail) {
+        const me = await this.prisma.user.findUnique({
+          where: { id: user.id },
+          select: { phone: true, email: true },
+        });
+        const mine =
+          `Here is the consent link for ${name} to sign for the ${label}. ` +
+          `Send it to them — it works for 48 hours.\n\n${link}\n\nAll Outdoor.`;
+        if (want.meSms) {
+          if (!me?.phone) {
+            failures.push('the SMS to you (no number on your profile)');
+          } else {
+            const sent = await this.sms.sendSms({
+              to: me.phone,
+              message: mine,
+              reference: `consent-self-${row.id}`,
+            });
+            if (sent.success) delivered++;
+            else failures.push('the SMS to you');
+          }
+        }
+        if (want.meEmail) {
+          if (!me?.email) {
+            failures.push('the email to you (no address on your profile)');
+          } else {
+            try {
+              await this.notifications.sellerConsentInvite({
+                email: me.email,
+                sellerName: name,
+                applicantName: args.applicantName,
+                firearmLine: label,
+                url: link,
+                expiresInHours: Math.round(CONSENT_TOKEN_TTL_MS / 3_600_000),
+              });
+              delivered++;
+            } catch {
+              failures.push('the email to you');
+            }
+          }
+        }
+      }
+
+      /**
+       * ⚠️ NOT ALLOWED TO FAIL THE INVITE, and that reasoning is unchanged: a
+       * bad number is a typo the applicant can fix in the moment, a bounced
+       * address is discovered later and there is nothing useful to say about
+       * it here. NotificationsService parks a failed send and retries it.
+       */
+      if (want.sellerEmail) {
+        try {
+          await this.notifications.sellerConsentInvite({
+            email,
+            sellerName: name,
+            applicantName: args.applicantName,
+            firearmLine: label,
+            url: link,
+            expiresInHours: Math.round(CONSENT_TOKEN_TTL_MS / 3_600_000),
+          });
+          delivered++;
+        } catch (err) {
+          failures.push('the email to them');
+          this.logger.error(
+            `Seller consent ${row.id}: the email did not go — ${(err as Error).message}`,
+          );
+        }
+      }
+
+      /**
+       * ⚠️ IS THE SELLER ONE OF OURS? Operator, 2026-09-09: "we need to check
+       * the email and number of the seller if they are on our database and
+       * puch a notification to their profile and app if they are."
+       *
+       * A member who is already signed in does not need to find an SMS: the
+       * row is in their inbox and the push wakes the app. `dismissible:
+       * false` is what makes it BOTH — persist() fans out to web push only
+       * for action-required rows, and signing somebody's consent is about as
+       * action-required as this product gets.
+       *
+       * ⚠️ NEVER FATAL, AND NEVER THE ONLY CHANNEL. It is an extra way to
+       * reach somebody we happen to know, not a replacement for the link that
+       * was already sent — a member may have push blocked, or not open the
+       * app for a week. It also does not count towards `delivered`: a row in
+       * an inbox is not proof the invitation went out.
+       */
+      try {
+        const known = await this.findMember(phone, email);
+        if (known && known.id !== user.id) {
+          await this.notifications.persist({
+            userId: known.id,
+            category: 'SELLER',
+            type: 'seller_consent_requested',
+            title: 'Somebody needs your consent',
+            body:
+              `${args.applicantName} is applying for a licence for the ` +
+              `${label} and needs your consent as the current owner.`,
+            url: `/consent/${token}`,
+            linkedType: 'motivation',
+            linkedId: args.motivationId,
+            dismissible: false,
+          });
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Seller consent ${row.id}: could not notify the seller in-app — ${(err as Error).message}`,
         );
       }
 
-      // ⚠️ THE EMAIL IS SENT AFTER THE SMS AND IS NOT ALLOWED TO FAIL THE
-      // INVITE. The SMS is the gate because a bad number is a typo the
-      // applicant can fix in the moment; a bounced email is discovered later
-      // and there is nothing useful to say about it here. NotificationsService
-      // already parks a failed send in the outbox and retries it, so throwing
-      // on top of that would undo an invitation that has, in fact, gone out.
-      //
-      // The two channels carry the same link on purpose: the email holds the
-      // explanation and survives being read on a desktop, the SMS is what
-      // makes him look at his inbox.
-      try {
-        await this.notifications.sellerConsentInvite({
-          email,
-          sellerName: name,
-          applicantName: args.applicantName,
-          firearmLine: label,
-          url: link,
-          expiresInHours: Math.round(CONSENT_TOKEN_TTL_MS / 3_600_000),
-        });
-      } catch (err) {
-        this.logger.error(
-          `Seller consent ${row.id}: the SMS went but the email did not — ${(err as Error).message}`,
+      /**
+       * ⚠️ AN INVITE THAT REACHED NOBODY IS NOT AN INVITE. Every requested
+       * channel failed, so there is nothing for the seller to open and the
+       * applicant must be told now rather than waiting on a signature that
+       * cannot come. The catch below deletes the row this call created.
+       */
+      if (!delivered) {
+        throw new BadRequestException(
+          failures.length
+            ? `We could not send ${failures.join(' or ')}. Check the details and try again.`
+            : 'We could not send that just now. Please try again.',
+        );
+      }
+      if (failures.length) {
+        this.logger.warn(
+          `Seller consent ${row.id}: sent, but ${failures.join(' and ')} failed.`,
         );
       }
     } catch (err) {
