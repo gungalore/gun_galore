@@ -52,6 +52,8 @@ function sectionOf(t: MotivationLicenceType): LicenceSection | null {
   switch (t) {
     case 'S13_SELF_DEFENCE':
       return 'S13';
+    case 'S14_RESTRICTED_SELF_DEFENCE':
+      return 'S14';
     case 'S15_OCCASIONAL_HUNTER':
       return 'S15';
     case 'S16_DEDICATED_HUNTER':

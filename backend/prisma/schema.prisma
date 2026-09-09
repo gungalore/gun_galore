@@ -4059,6 +4059,16 @@ model InsightsDigest {
 
 enum MotivationLicenceType {
   S13_SELF_DEFENCE // s13 — self-defence
+  /// s14 — a RESTRICTED firearm (semi-automatic rifle or shotgun) for
+  /// self-defence. Everything section 13 asks, plus two more things: that a
+  /// section 13 firearm "will not provide sufficient protection", and
+  /// reasonable information motivating the need for a restricted one.
+  ///
+  /// ⚠️ ONE AT A TIME (s14(5)) AND TWO YEARS (s27) — the shortest validity of
+  /// the five, so a s14 holder is back at the counter three times as often as
+  /// a s16 one. It is also the only section whose own words say "motivate",
+  /// and the only one for which the DFO completes SAPS 271 section K.
+  S14_RESTRICTED_SELF_DEFENCE
   S15_OCCASIONAL_HUNTER // s15 — occasional hunter / sport shooter
   S16_DEDICATED_HUNTER // s16 — dedicated hunter
   S16_DEDICATED_SPORT // s16 — dedicated sport shooter

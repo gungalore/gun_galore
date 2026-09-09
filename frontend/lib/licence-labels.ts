@@ -46,7 +46,26 @@ export const LICENCE_TYPES: readonly LicenceTypeOption[] = [
     value: 'S13_SELF_DEFENCE',
     label: 'Self-defence',
     section: 'Section 13',
-    blurb: 'One firearm — a handgun or a shotgun that is not fully automatic.',
+    // ⚠️ "NOT FULLY OR SEMI-AUTOMATIC" FOR THE SHOTGUN. s13(1)(a) excludes a
+    // semi-automatic shotgun; only the handgun limb stops at fully automatic.
+    // The blurb said "not fully automatic" for both, which offered a member a
+    // section their firearm cannot go under.
+    blurb:
+      'One firearm — a handgun, or a shotgun that is neither fully nor semi-automatic.',
+  },
+  {
+    /**
+     * ⚠️ ADDED 2026-09-09, AND UNTIL THEN THE PRODUCT HAD A DEAD END IN IT.
+     * `sectionAllows` refuses a semi-automatic rifle or shotgun under section
+     * 13 and its refusal names section 14 as the way forward — a section this
+     * list did not offer. A member with a semi-automatic shotgun for
+     * self-defence was told where to go and given no way to go there.
+     */
+    value: 'S14_RESTRICTED_SELF_DEFENCE',
+    label: 'Self-defence, restricted firearm',
+    section: 'Section 14',
+    blurb:
+      'A semi-automatic rifle or shotgun for self-defence. You must show that a section 13 firearm would not provide sufficient protection. One at a time, and it runs for two years.',
   },
   {
     value: 'S15_OCCASIONAL_HUNTER',

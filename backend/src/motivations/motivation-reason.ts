@@ -101,6 +101,16 @@ export interface ReasonResult {
  * rejects an angle outside its own list rather than trusting the prompt.
  */
 export const REASON_ANGLES: Record<MotivationLicenceType, readonly string[]> = {
+  /**
+   * ⚠️ NOT SECTION 13'S ANGLES. A section 14 firearm stays on the premises it
+   * was motivated for — it is not concealed and it is not carried — so
+   * `concealability_for_carry` is the wrong question and would put the
+   * applicant's own words behind a claim s14 does not support.
+   */
+  [MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE]: [
+    'home_defence_vs_carry',
+    'first_self_defence_firearm',
+  ],
   [MotivationLicenceType.S13_SELF_DEFENCE]: [
     'concealability_for_carry',
     'home_defence_vs_carry',

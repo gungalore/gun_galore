@@ -657,6 +657,16 @@ export function buildAnnexures(
 
 /** Uploads that materially strengthen each licence type. */
 const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
+  // Section 14 asks everything section 13 asks and two things more; the
+  // paperwork is the same paperwork.
+  S14_RESTRICTED_SELF_DEFENCE: [
+    'IDENTITY_DOCUMENT',
+    'COMPETENCY_CERTIFICATE',
+    'ADDRESS_CONFIRMATION',
+    'SAFE_PHOTOGRAPHS',
+    'INCIDENT_REPORT',
+    'FIREARM_SOURCE_PROOF',
+  ],
   S13_SELF_DEFENCE: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',

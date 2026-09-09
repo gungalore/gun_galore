@@ -2282,6 +2282,18 @@ const COMMON_FIELDS: readonly MotivationField[] = [
 
 /** Extra fields per licence type, appended to the common set. */
 const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
+  /**
+   * ⚠️ THE SAME QUESTIONS AS SECTION 13, AND THAT IS DELIBERATE RATHER THAN
+   * LAZY. s14(4) is s13's test plus two more, and both of those are argued
+   * from facts the section 13 questions already gather — the risk, the
+   * existing measures, the premises. What section 14 needs ON TOP is section
+   * K's own facts (distances to the nearest neighbour and police station,
+   * urban or rural, how many firearms are held), and those live in the common
+   * set and in the owned rows, not in a type-specific question.
+   *
+   * Filled by `s14Fields()` below so the two lists cannot drift.
+   */
+  S14_RESTRICTED_SELF_DEFENCE: [],
   S13_SELF_DEFENCE: [
     // ── THE CASE, AS CARDS ──────────────────────────────────────────
     //
@@ -3079,9 +3091,46 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
   ],
 };
 
+/**
+ * ⚠️ SECTION 14 SHARES SECTION 13'S QUESTIONS BY ASSIGNMENT, NOT BY COPY. Two
+ * hand-kept lists of the same questions is how one of them ends up a question
+ * short, and the member on the short one is asked less about the harder
+ * application.
+ */
+(TYPE_FIELDS as Record<MotivationLicenceType, readonly MotivationField[]>)[
+  MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE
+] = TYPE_FIELDS[MotivationLicenceType.S13_SELF_DEFENCE];
+
+/**
+ * The two sections that are about self-defence.
+ *
+ * ⚠️ ONE PREDICATE, BECAUSE THERE WERE EIGHT `=== S13_SELF_DEFENCE` BRANCHES
+ * AND SECTION 14 HAD TO JOIN EVERY ONE OF THEM. Crime figures, the areas
+ * picker, the press cuttings, the overlap wording, the reason angles and the
+ * document scope all key off "is this a self-defence application" and all of
+ * them said it by naming section 13. A section 14 applicant needs the precinct
+ * figures MORE than a section 13 one, not less — s14(4) asks them to show a
+ * handgun is not enough where they live — and a branch missed here is a
+ * section that silently loses its evidence.
+ *
+ * ⚠️ NOT "is it NOT hunting or sport". A section 24 renewal of a section 13
+ * licence is a self-defence document too, and it is not in this list, because
+ * the renewal path reads its own underlying section. Adding it here would give
+ * a hunting renewal crime statistics.
+ */
+export const SELF_DEFENCE_TYPES: readonly MotivationLicenceType[] = [
+  MotivationLicenceType.S13_SELF_DEFENCE,
+  MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE,
+];
+
+export function isSelfDefence(t: MotivationLicenceType): boolean {
+  return SELF_DEFENCE_TYPES.includes(t);
+}
+
 /** Human label for the document header and the UI. */
 export const LICENCE_TYPE_LABELS: Record<MotivationLicenceType, string> = {
   S13_SELF_DEFENCE: 'Section 13 — Self-defence',
+  S14_RESTRICTED_SELF_DEFENCE: 'Section 14 — Self-defence, restricted firearm',
   S15_OCCASIONAL_HUNTER: 'Section 15 — Occasional hunter / sport shooter',
   S16_DEDICATED_HUNTER: 'Section 16 — Dedicated hunter',
   S16_DEDICATED_SPORT: 'Section 16 — Dedicated sport shooter',

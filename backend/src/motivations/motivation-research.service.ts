@@ -222,6 +222,7 @@ export function targetsFor(
  */
 const USE_CLASS: Record<MotivationLicenceType, string> = {
   S13_SELF_DEFENCE: 'self-defence',
+  S14_RESTRICTED_SELF_DEFENCE: 'self-defence',
   S15_OCCASIONAL_HUNTER: 'hunting',
   S16_DEDICATED_HUNTER: 'hunting',
   S16_DEDICATED_SPORT: 'sport shooting',

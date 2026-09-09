@@ -1,5 +1,6 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import {
+  isSelfDefence,
   allowedValues,
   factPackFields,
   fieldByKey,
@@ -521,7 +522,7 @@ describe('the nearest SAPS station', () => {
     expect(isVisible(f!, {})).toBe(true);
 
     for (const type of ALL) {
-      if (type === T) continue;
+      if (isSelfDefence(type)) continue;
       expect(fieldsFor(type).some((x) => x.key === 'police_station')).toBe(
         false,
       );
@@ -556,8 +557,16 @@ describe('press clippings the applicant chose', () => {
     const f = fieldsFor(T).find((x) => x.key === PRESS_CLIPPINGS_KEY);
     expect(f).toBeDefined();
 
+    // ⚠️ SELF-DEFENCE MEANS BOTH SECTIONS SINCE 2026-09-09. A section 14
+    // applicant needs the cuttings MORE than a section 13 one: s14(4) asks
+    // them to show a handgun is not enough where they live.
     for (const type of ALL) {
-      if (type === T) continue;
+      if (isSelfDefence(type)) {
+        expect(
+          fieldsFor(type).some((x) => x.key === PRESS_CLIPPINGS_KEY),
+        ).toBe(true);
+        continue;
+      }
       expect(
         fieldsFor(type).some((x) => x.key === PRESS_CLIPPINGS_KEY),
       ).toBe(false);

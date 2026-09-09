@@ -303,12 +303,35 @@ describe('what a section will allow — §7.1', () => {
     expect(sectionAllows('S15', 'rifle-carbine', null).ok).toBe(true);
   });
 
-  it('does not pretend to screen s14, s16 or s16A beyond the muzzle loader', () => {
-    // Deliberate. s14(1)(b) admits anything the Minister declares restricted,
-    // and s16(1)(b) and (c) overlap on the semi-automatic shotgun with a
-    // five-shot limit we do not hold a magazine capacity to test. Refusing on
-    // a guess would be the same class of error as the two above.
-    expect(sectionAllows('S14', 'shotgun', false).ok).toBe(true);
+  it('⚠️ SCREENS SECTION 14 NOW, because the product offers it', () => {
+    // It fell through to `ok` while there was no section 14 route to reach.
+    // s14(1)(a): a restricted firearm is a "semi-automatic rifle or shotgun,
+    // which cannot readily be converted into a fully automatic firearm". A
+    // handgun is not one however it cycles, and neither is a manual long gun —
+    // and each refusal names the section that WOULD work.
+    expect(sectionAllows('S14', 'rifle-carbine', true).ok).toBe(true);
+    expect(sectionAllows('S14', 'shotgun', true).ok).toBe(true);
+
+    const handgun = sectionAllows('S14', 'handgun', true);
+    expect(handgun.ok).toBe(false);
+    expect(handgun.why).toContain('section 13');
+
+    const manual = sectionAllows('S14', 'shotgun', false);
+    expect(manual.ok).toBe(false);
+    expect(manual.why).toContain('section 13');
+  });
+
+  it('⚠️ STILL SAYS NOTHING WHERE THE ACTION IS UNKNOWN', () => {
+    // Same rule as everywhere else in this file: unknown means no check.
+    // Refusing on a guess is the failure the s15 rule produced for months.
+    expect(sectionAllows('S14', 'rifle-carbine', null).ok).toBe(true);
+    expect(sectionAllows('S14', 'shotgun', null).ok).toBe(true);
+  });
+
+  it('does not pretend to screen s16 or s16A beyond the muzzle loader', () => {
+    // Deliberate. s16(1)(b) and (c) overlap on the semi-automatic shotgun, and
+    // the five-shot limit is warned about on the applicant's checklist rather
+    // than refused here — see motivation-warnings.ts.
     expect(sectionAllows('S16', 'shotgun', true).ok).toBe(true);
     expect(sectionAllows('S16A', 'handgun', true).ok).toBe(true);
   });

@@ -151,6 +151,19 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   // work still buys is the 14-day window and the inspection, which are true
   // and which the SAFE_WHY text now explains: take the photographs, and know
   // the safe is also inspected later.
+  /**
+   * ⚠️ IDENTICAL TO SECTION 13 ON PAPER, AND HARDER IN PRACTICE. The Act asks
+   * a section 14 applicant for everything section 13 asks and then two more
+   * things (s14(4)), so the REQUIRED list is the same list — what differs is
+   * the argument, not the paperwork. The premises evidence a section 14 turns
+   * on rides in as OTHER, because the Regulations name no such document.
+   */
+  S14_RESTRICTED_SELF_DEFENCE: [
+    'IDENTITY_DOCUMENT',
+    'COMPETENCY_CERTIFICATE',
+    'ADDRESS_CONFIRMATION',
+    'SAFE_PHOTOGRAPHS',
+  ],
   S13_SELF_DEFENCE: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
@@ -242,6 +255,7 @@ const EXPECTED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   // without the other." The pair rule in motivation-autolink enforces that, and
   // it can only enforce it over kinds this application actually wants.
   S13_SELF_DEFENCE: ['PROFICIENCY_CERTIFICATE', 'FIREARM_SOURCE_PROOF'],
+  S14_RESTRICTED_SELF_DEFENCE: ['PROFICIENCY_CERTIFICATE', 'FIREARM_SOURCE_PROOF'],
   S15_OCCASIONAL_HUNTER: ['PROFICIENCY_CERTIFICATE', 'FIREARM_SOURCE_PROOF'],
   S16_DEDICATED_HUNTER: [
     'PROFICIENCY_CERTIFICATE',
@@ -277,6 +291,11 @@ const EXPECTED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
  */
 const STRENGTHENS: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   S13_SELF_DEFENCE: ['INCIDENT_REPORT'],
+  // ⚠️ THE INCIDENT REPORT CARRIES MORE WEIGHT HERE THAN ANYWHERE. s14(4)
+  // asks the applicant to show a section 13 firearm "will not provide
+  // sufficient protection", and the only evidence that argues that honestly is
+  // what has actually happened at these premises.
+  S14_RESTRICTED_SELF_DEFENCE: ['INCIDENT_REPORT'],
   // The shooting log is the difference between saying you hunt and showing
   // it. Nothing in the Act asks for one; the packs that get taken seriously
   // all carry one.

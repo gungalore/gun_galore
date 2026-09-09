@@ -60,6 +60,28 @@ describe('section 13(3) — one at a time', () => {
   });
 });
 
+describe('section 14(5) — one at a time', () => {
+  it('warns when a section 14 licence is already held', () => {
+    expect(
+      codes(MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE, {
+        ...held(1, { existing_firearm_1_section_held: 'section_14' }),
+      }),
+    ).toContain('section-14-cap');
+  });
+
+  it('⚠️ DOES NOT COUNT A SECTION 13 FIREARM', () => {
+    // s14(5) caps licences under THIS section, exactly as s13(3) does. Holding
+    // a section 13 handgun is not an obstacle to a section 14 application — it
+    // is usually the applicant's own evidence, because s14(4) asks them to
+    // show that firearm will not provide sufficient protection.
+    expect(
+      codes(MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE, {
+        ...held(1, { existing_firearm_1_section_held: 'section_13' }),
+      }),
+    ).not.toContain('section-14-cap');
+  });
+});
+
 describe('section 15(3) — four, three, and one handgun', () => {
   const four = {
     ...held(1, { existing_firearm_1_section_held: 'section_15' }),

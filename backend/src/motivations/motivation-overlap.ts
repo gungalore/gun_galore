@@ -444,6 +444,7 @@ function sectionAppliedFor(
   licenceType: MotivationLicenceType | undefined,
 ): HeldSection | null {
   switch (licenceType) {
+    case MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE:
     case MotivationLicenceType.S13_SELF_DEFENCE:
       return '13';
     case MotivationLicenceType.S15_OCCASIONAL_HUNTER:
@@ -554,6 +555,7 @@ function typeTestFor(
   licenceType: MotivationLicenceType | undefined,
 ): 'leads' | 'secondary' | 'off' {
   switch (licenceType) {
+    case MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE:
     case MotivationLicenceType.S13_SELF_DEFENCE:
     case MotivationLicenceType.S16_DEDICATED_SPORT:
       return 'leads';
@@ -873,6 +875,7 @@ function purposeFamilyOfApplication(
   licenceType: MotivationLicenceType | undefined,
 ): PurposeFamily | null {
   switch (licenceType) {
+    case MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE:
     case MotivationLicenceType.S13_SELF_DEFENCE:
       return 'self_defence';
     case MotivationLicenceType.S15_OCCASIONAL_HUNTER:
@@ -1130,7 +1133,8 @@ export function checkOverlap(
         ? `${opener} ${list} — the same TYPE of firearm (${typeLabel}) as the one applied for. ` +
             `On this licence type that is the duplication a reviewer sees, not the cartridge: two ${typeLabel}s are two ${typeLabel}s whatever they chamber. ` +
             'Answer why this firearm does not duplicate the ROLE of the one already held — ' +
-            (opts.licenceType === MotivationLicenceType.S13_SELF_DEFENCE
+            (opts.licenceType === MotivationLicenceType.S13_SELF_DEFENCE ||
+            opts.licenceType === MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE
               ? 'where and how each one is kept or carried, and what this one does that the other cannot'
               : 'a different division, a different course of fire, a different role') +
             '. ' +

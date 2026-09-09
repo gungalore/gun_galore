@@ -68,7 +68,13 @@ describe('structure planning', () => {
             ids.indexOf('conclusion'),
           );
         } else {
-          expect(t).toBe(MotivationLicenceType.S13_SELF_DEFENCE);
+          // ⚠️ BOTH SELF-DEFENCE SECTIONS DROPPED IT. Printed as "My record"
+          // it came out a list of the documents attached, which the annexure
+          // index already is.
+          expect([
+            MotivationLicenceType.S13_SELF_DEFENCE,
+            MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE,
+          ]).toContain(t);
         }
       }
     }
@@ -562,6 +568,7 @@ describe('the corpus sections', () => {
       // precisely the template rot the approved corpus itself contains.
       const SECTION_OF: Record<MotivationLicenceType, string> = {
         S13_SELF_DEFENCE: '13',
+        S14_RESTRICTED_SELF_DEFENCE: '14',
         S15_OCCASIONAL_HUNTER: '15',
         S16_DEDICATED_HUNTER: '16',
         S16_DEDICATED_SPORT: '16',

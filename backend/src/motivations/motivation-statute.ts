@@ -45,6 +45,33 @@ import { MotivationLicenceType } from '@prisma/client';
 /** How current this transcription is. Rendered into the prompt. */
 export const AS_AT = 'as amended to 2013 (Act 37 of 2013)';
 
+/**
+ * ⚠️ A PARTIAL SECTION, AND THE BLOCK SAYS SO. What is transcribed here is
+ * s14(1), (4), (5) and (6) — the subsections that state what the applicant
+ * must show and what the licence then permits. Subsections (2) and (3) are NOT
+ * carried, because they were not in the source this file was proofread
+ * against; rule 4 already forbids quoting anything that is not in the block,
+ * and the closing line says it again where the writer will see it.
+ *
+ * Source: MOTIVATION-GUIDE-BOOK Part 2.3, which quotes the Act as it stands
+ * (s14 has never been amended).
+ */
+const S14 = `14. Licence to possess restricted firearm for self-defence
+
+(1) For purposes of this Act, a restricted firearm is any -
+
+    (a) semi-automatic rifle or shotgun, which cannot readily be converted into a fully automatic firearm; or
+
+    (b) firearm declared by the Minister, by notice in the Gazette, to be a restricted firearm.
+
+(4) The Registrar may issue a licence in terms of this section to any natural person who shows that a firearm contemplated in section 13(1) will not provide sufficient protection, and who submits reasonable information to motivate the need for a restricted firearm for self-defence purposes.
+
+(5) No person may hold more than one licence issued in terms of this section.
+
+(6) A firearm in respect of which a licence has been issued in terms of this section may be used where it is safe to use the firearm and for a lawful purpose.
+
+[Subsections (2) and (3) of section 14 are not reproduced here. Do not quote them, do not paraphrase them, and do not refer to them.]`;
+
 const S13 = `13. Licence to possess firearm for self-defence
 
 (1) A firearm in respect of which a licence may be issued in terms of this section is any -
@@ -136,6 +163,7 @@ const S24 = `24. Renewal of firearm licences
  */
 const BY_TYPE: Record<MotivationLicenceType, string> = {
   S13_SELF_DEFENCE: S13,
+  S14_RESTRICTED_SELF_DEFENCE: S14,
   S15_OCCASIONAL_HUNTER: S15,
   S16_DEDICATED_HUNTER: S16,
   S16_DEDICATED_SPORT: S16,

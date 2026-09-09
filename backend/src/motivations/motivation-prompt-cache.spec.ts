@@ -161,6 +161,16 @@ const BEFORE_THE_REORDER: Record<
    * The note above says to edit the counts only when a line was meant to be
    * added or removed; eight were, on purpose.
    */
+  /**
+   * ⚠️ 99 LINES, ONE MORE THAN THE SECTION 13. Section 14's skeleton keeps
+   * `personal_circumstances` — the section 13 dropped it — because SAPS 271
+   * section K is completed for this section and no other, and the DFO
+   * transcribes the premises facts out of the document.
+   */
+  S14_RESTRICTED_SELF_DEFENCE: {
+    lines: 99,
+    sha: 'b0d505d1f8d4954f0421ac31e01de8a4d068bababaa064f737cda1b13f94ac25',
+  },
   S13_SELF_DEFENCE: {
     lines: 98,
     sha: '3f40c2dcdc4a878795e1c419b633cc05d0cfa2b5b5e1bd13b8fc76b04c24b673',

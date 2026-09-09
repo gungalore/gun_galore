@@ -538,7 +538,8 @@ export function overlapAnglesFor(
   licenceType: string,
 ): readonly CardOption[] {
   const group =
-    licenceType === 'S13_SELF_DEFENCE'
+    licenceType === 'S13_SELF_DEFENCE' ||
+    licenceType === 'S14_RESTRICTED_SELF_DEFENCE'
       ? 'selfDefence'
       : licenceType === 'S16_DEDICATED_SPORT'
         ? 'sport'

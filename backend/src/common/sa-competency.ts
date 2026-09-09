@@ -1109,6 +1109,31 @@ export function sectionAllows(
     return { ok: true };
   }
 
+  /**
+   * ⚠️ SECTION 14 IS THE NARROWEST OF THE FIVE, AND IT FELL THROUGH TO `ok`.
+   * s14(1)(a): a restricted firearm is a "semi-automatic rifle or shotgun,
+   * which cannot readily be converted into a fully automatic firearm". A
+   * handgun is not a restricted firearm however it cycles — a semi-automatic
+   * pistol is an ordinary section 13 firearm — and neither is a manually
+   * operated rifle or shotgun. Both belong under another section, and saying
+   * which one is the difference between a refusal and a redirection.
+   */
+  if (section === 'S14') {
+    if (category === 'handgun') {
+      return {
+        ok: false,
+        why: 'Section 14 is for a RESTRICTED firearm — a semi-automatic rifle or shotgun. A handgun is not a restricted firearm, whatever its action: a semi-automatic pistol is licensed under section 13 for self-defence.',
+      };
+    }
+    if (selfLoading === false) {
+      return {
+        ok: false,
+        why: 'Section 14 takes only a semi-automatic rifle or shotgun. A manually operated rifle or shotgun is not a restricted firearm — a manual shotgun for self-defence is section 13, and a manual rifle is section 15 or section 16.',
+      };
+    }
+    return { ok: true };
+  }
+
   if (section === 'S15' && selfLoading === true && category !== 'handgun') {
     return {
       ok: false,

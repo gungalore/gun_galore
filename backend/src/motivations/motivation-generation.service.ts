@@ -48,6 +48,7 @@ import { areasOnRoute, decodePolyline } from './motivation-route';
 import { cartridgeFacts, findCartridge } from './motivation-cartridge';
 import { arsenalRows, type ArsenalRow } from './motivation-arsenal';
 import { documentScope } from './motivation-scope';
+import { isSelfDefence } from './motivation-fields';
 import { packableIncidents } from './motivation-incident-filter';
 import { displayCalibre } from './saps-vocabulary';
 import { ownedFirearmSections } from './owned-firearm-sections';
@@ -432,7 +433,10 @@ export class MotivationGenerationService {
       // let the writer argue from what threat_circumstances and
       // daily_movements actually say.
       let precinctBlock: string | undefined;
-      if (row.licenceType === MotivationLicenceType.S13_SELF_DEFENCE) {
+      // ⚠️ SECTION 14 TOO. s14(4) asks the applicant to show a section 13
+      // firearm is not enough WHERE THEY LIVE, so the precinct figures and
+      // the cuttings are more load-bearing here than on a section 13.
+      if (isSelfDefence(row.licenceType)) {
         const station = (answers.police_station ?? '').trim();
         if (station) {
           try {
@@ -615,7 +619,10 @@ export class MotivationGenerationService {
       // no clippings block, no PRESS_CLIPPINGS annexure, and the document
       // argues from threat_circumstances and daily_movements alone.
       let pressClips: NewsIncident[] = [];
-      if (row.licenceType === MotivationLicenceType.S13_SELF_DEFENCE) {
+      // ⚠️ SECTION 14 TOO. s14(4) asks the applicant to show a section 13
+      // firearm is not enough WHERE THEY LIVE, so the precinct figures and
+      // the cuttings are more load-bearing here than on a section 13.
+      if (isSelfDefence(row.licenceType)) {
         const ids = parsePressClippingIds(answers[PRESS_CLIPPINGS_KEY]);
         if (ids.length) {
           try {
@@ -1124,7 +1131,7 @@ export class MotivationGenerationService {
       select: { licenceType: true, answersEncrypted: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
-    if (row.licenceType !== MotivationLicenceType.S13_SELF_DEFENCE) {
+    if (!isSelfDefence(row.licenceType)) {
       return null;
     }
 
@@ -1171,7 +1178,7 @@ export class MotivationGenerationService {
       select: { licenceType: true, answersEncrypted: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
-    if (row.licenceType !== MotivationLicenceType.S13_SELF_DEFENCE) {
+    if (!isSelfDefence(row.licenceType)) {
       return { station: null, incidents: [] };
     }
 
@@ -1266,7 +1273,7 @@ export class MotivationGenerationService {
       select: { licenceType: true, answersEncrypted: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
-    if (row.licenceType !== MotivationLicenceType.S13_SELF_DEFENCE) {
+    if (!isSelfDefence(row.licenceType)) {
       return {
         station: null,
         withinKm: AREA_RADIUS_KM,

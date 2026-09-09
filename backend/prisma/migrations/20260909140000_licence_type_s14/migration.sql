@@ -1,0 +1,26 @@
+-- SECTION 14: A RESTRICTED FIREARM FOR SELF-DEFENCE.
+--
+-- The product offered four sections and a renewal, and had no route for the
+-- fifth. `sectionAllows` has always refused a semi-automatic rifle or shotgun
+-- under section 13 — correctly, s13(1)(a) admits only a shotgun that is
+-- neither fully nor semi-automatic — and its own refusal message names section
+-- 14 as the way forward. There was no section 14 to go to. A member reaching
+-- that message was at a dead end inside our own product.
+--
+-- s14(1): a restricted firearm is a semi-automatic rifle or shotgun that
+-- cannot readily be converted into a fully automatic firearm.
+-- s14(4): the Registrar may licence one to a person who shows that a section
+-- 13(1) firearm "will not provide sufficient protection", and who submits
+-- reasonable information to motivate the need.
+-- s14(5): one at a time. s27: two years, the shortest of the five.
+--
+-- ⚠️ IT IS THE ONLY SECTION WHOSE OWN WORDS SAY "MOTIVATE", and the only one
+-- for which the DFO completes section K of the SAPS 271 — urban or rural,
+-- distance to the nearest neighbour and police station, whether the area is
+-- crime-rated, whether the work or residence is high-risk, how many firearms
+-- are held. The motivation has to give the DFO every one of those facts to
+-- transcribe. See MOTIVATION-GUIDE-BOOK Part 5.2.
+--
+-- ⚠️ ADDITIVE ONLY. No row changes type; nothing is backfilled. Every
+-- application already on file keeps the section it was started under.
+ALTER TYPE "MotivationLicenceType" ADD VALUE IF NOT EXISTS 'S14_RESTRICTED_SELF_DEFENCE';

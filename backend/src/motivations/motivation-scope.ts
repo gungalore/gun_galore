@@ -250,7 +250,14 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
   const issues: string[] = [];
   const names = batteryNames(ctx.arsenal);
   const byName = new Map(names.map((n, i) => [n, ctx.arsenal[i]]));
-  const isS13 = ctx.licenceType === MotivationLicenceType.S13_SELF_DEFENCE;
+  /**
+   * ⚠️ SECTION 14 IS A SELF-DEFENCE DOCUMENT AND TAKES THE SAME SCOPE RULES.
+   * No hunting, sport, competition or reloading words outside a sentence about
+   * a firearm already held under section 15, 16 or 17.
+   */
+  const isS13 =
+    ctx.licenceType === MotivationLicenceType.S13_SELF_DEFENCE ||
+    ctx.licenceType === MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE;
   const isSporting =
     ctx.licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER ||
     ctx.licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SectionChooser from './section-chooser';
-import { LICENCE_TYPES } from '@/lib/licence-labels';
+import { LICENCE_TYPES, type LicenceTypeOption } from '@/lib/licence-labels';
 
 // ────────────────────────────────────────────────────────────────────
 // THE ONE DOOR INTO AN APPLICATION.
@@ -21,11 +21,30 @@ const base = {
   onChoose: vi.fn(),
 };
 
+/**
+ * The one card for one licence type, found by its WHOLE accessible name.
+ *
+ * ⚠️ NOT BY THE LABEL ALONE — TWO LABELS ARE NOW PREFIXES OF OTHER TEXT.
+ * "Self-defence" is a substring of "Self-defence, restricted firearm" (section
+ * 14, added 2026-09-09) and "Section 16" carries two types, so a bare
+ * /label/i matched two buttons and threw. The card's accessible name is its
+ * three spans run together with no separator — "Section 13" + label + blurb —
+ * and matching all three is unique for every type today and for any type added
+ * under an existing section later.
+ */
+const rx = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const cardFor = (t: LicenceTypeOption) =>
+  screen.getByRole('button', {
+    name: new RegExp(`^${rx(t.section)}\\s*${rx(t.label)}\\s*${rx(t.blurb)}$`, 'i'),
+  });
+
+const typeFor = (value: string) => LICENCE_TYPES.find((t) => t.value === value)!;
+
 describe('what it offers', () => {
   it('one card per licence type, each naming its section', () => {
     render(<SectionChooser {...base} />);
     for (const t of LICENCE_TYPES) {
-      const card = screen.getByRole('button', { name: new RegExp(t.label, 'i') });
+      const card = cardFor(t);
       expect(card).toBeInTheDocument();
       expect(card.textContent).toContain(t.section);
     }
@@ -37,8 +56,16 @@ describe('what it offers', () => {
     const onChoose = vi.fn();
     render(<SectionChooser {...base} onChoose={onChoose} />);
     return userEvent
-      .click(screen.getByRole('button', { name: /self-defence/i }))
+      .click(cardFor(typeFor('S13_SELF_DEFENCE')))
       .then(() => expect(onChoose).toHaveBeenCalledWith('S13_SELF_DEFENCE'));
+  });
+
+  it('⚠️ OFFERS SECTION 14, which sectionAllows sends people to', () => {
+    // `sectionAllows` refuses a semi-automatic rifle or shotgun under section
+    // 13 and names section 14 as the way forward. Until 2026-09-09 this list
+    // did not offer it, so that refusal was a dead end.
+    render(<SectionChooser {...base} />);
+    expect(cardFor(typeFor('S14_RESTRICTED_SELF_DEFENCE'))).toBeInTheDocument();
   });
 
   it('⚠️ SAYS THE CHOICE IS FIXED, WHILE IT IS STILL FREE TO CHANGE', () => {

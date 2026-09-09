@@ -33,6 +33,12 @@ import { AS_AT, renderStatute, statutoryTextFor } from './motivation-statute';
 
 /** Which sections of the Act each type turns on. Kept short and factual. */
 const LEGAL_FRAME: Record<MotivationLicenceType, string> = {
+  S14_RESTRICTED_SELF_DEFENCE:
+    'Section 14 of the Firearms Control Act 60 of 2000 — a licence to possess a RESTRICTED firearm for self-defence. ' +
+    'A restricted firearm is a semi-automatic rifle or shotgun that cannot readily be converted into a fully automatic firearm (s14(1)(a)). ' +
+    'The applicant must show TWO things over and above a section 13 case: that a section 13 firearm — a handgun, or a shotgun that is neither fully nor semi-automatic — WILL NOT PROVIDE SUFFICIENT PROTECTION in their circumstances, and reasonable information motivating the need for a restricted one (s14(4)). ' +
+    'Section 14(5) allows one such licence at a time, and the licence runs for two years rather than five or ten. ' +
+    '⚠️ THIS IS THE HARDEST OF THE FIVE AND THE ONLY SECTION WHOSE OWN WORDS SAY "MOTIVATE". Every claim must be a fact the applicant gave: the premises and their approach roads, distances in kilometres to the nearest neighbour and police station, the response times actually experienced, the number of attackers in incidents reported for that area. Never supply tactical theory, never anything military, and never suggest the firearm will be carried in public.',
   S13_SELF_DEFENCE:
     'Section 13 of the Firearms Control Act 60 of 2000 — a licence to possess a firearm for self-defence. ' +
     'The Registrar must be satisfied the applicant needs THIS firearm for self-defence and that no other means would reasonably suffice. ' +
@@ -80,6 +86,11 @@ const LEGAL_FRAME: Record<MotivationLicenceType, string> = {
 
 /** What a reviewer of this type is really weighing. Guides emphasis. */
 const WHAT_MATTERS: Record<MotivationLicenceType, string> = {
+  S14_RESTRICTED_SELF_DEFENCE:
+    'Everything a section 13 turns on, and then the deficiency: what a handgun or a manual shotgun cannot do HERE. ' +
+    'The SAPS 271 gives the reviewer\u2019s own list away, because section K is completed for this section and no other: urban, rural, farm or smallholding; ' +
+    'the distance to the nearest neighbour and to the nearest police station; whether the area is crime-rated; whether the residence or the work is high-risk; how many firearms the applicant holds. ' +
+    'State every one of those facts the applicant gave, plainly, so the DFO can transcribe them.',
   S13_SELF_DEFENCE:
     'Specific, personal circumstances beat general crime statistics every time. What matters is this applicant, their routine, ' +
     'their location and what has actually happened to or near them — and what else they have already done about it.',
@@ -131,6 +142,8 @@ const WHAT_MATTERS: Record<MotivationLicenceType, string> = {
  * that names the firearm; nothing after 1800 words is read."
  */
 const PROSE_TARGET: Record<MotivationLicenceType, string> = {
+  S14_RESTRICTED_SELF_DEFENCE:
+    'About 1100 to 1600 words. The section on why a section 13 firearm will not provide sufficient protection carries the weight, and the premises facts section K asks for must all appear.',
   S13_SELF_DEFENCE:
     'About 900 to 1400 words. The section on why a firearm is applicable to these circumstances carries the weight.',
   S15_OCCASIONAL_HUNTER:
@@ -799,6 +812,12 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
 const BRIEF_OVERRIDES: Partial<
   Record<MotivationLicenceType, Partial<Record<SectionId, string>>>
 > = {
+  [MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE]: {
+    the_firearm:
+      'TWO PARAGRAPHS AT MOST, 120 WORDS: the type, make, model and calibre; that it is semi-automatic and cannot readily be converted into a fully automatic firearm (s14(1)(a)); the manufactured capacity, stated plainly and without emphasis; and one sentence on why that type answers the deficiency the section above described. \u26a0\ufe0f NOTHING MILITARY. No "engage", no "suppress", no "firepower", no "tactical", no rate of fire, no shots per second, no ballistics, no product copy, no "battle-proven". \u26a0\ufe0f AND NEVER SUGGEST IT WILL BE CARRIED IN PUBLIC \u2014 a restricted firearm licensed under section 14 stays on the premises it was motivated for.',
+    existing_measures:
+      'What is already in place at these premises and where each measure stops \u2014 the fencing and its length, the gates, the dogs, the lighting, the alarm, the radio or farm-watch network, the armed-response contract and the response time actually experienced, and the section 13 firearm if one is held and why it is insufficient. \u26a0\ufe0f THIS IS THE FIRST LIMB OF s14(4) IN ALL BUT NAME. The applicant must show a section 13 firearm "will not provide sufficient protection"; a list of measures with no sentence on where each one stops has not shown it. Only what the facts carry: never invent a measure to knock down, never say one failed on an occasion the applicant did not describe, and never disparage the police or an armed-response company \u2014 the honest sentence is that a response takes minutes and an attack takes seconds.',
+  },
   [MotivationLicenceType.S13_SELF_DEFENCE]: {
     the_firearm:
       'ONE PARAGRAPH, AT MOST SIXTY WORDS, AND FOUR FACTS: the type and make applied for, the calibre, why a handgun rather than a rifle or shotgun (it can be carried on the person, which is the whole point of a firearm kept for defence), and one sentence that the calibre is a common service calibre whose ammunition is readily available so I can practise. ⚠️ NOTHING ELSE. No action type, no barrel, no capacity, no trigger system, no frame material, no ballistics, no comparison with other models, no manufacturer’s history. A self-defence application is not about the firearm; it is about the risk, and a paragraph describing the product reads as somebody who wants this one rather than somebody who needs one.',

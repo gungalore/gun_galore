@@ -267,6 +267,26 @@ const HEADING_ALTERNATES: Record<SectionId, readonly string[]> = {
 const TYPE_HEADING_ALTERNATES: Partial<
   Record<MotivationLicenceType, Partial<Record<SectionId, readonly string[]>>>
 > = {
+  S14_RESTRICTED_SELF_DEFENCE: {
+    /**
+     * ⚠️ THE HEADING IS THE TEST, WORD FOR WORD. s14(4)'s first limb is that a
+     * section 13 firearm "will not provide sufficient protection" — so the
+     * section that carries it says so, rather than repeating section 13's
+     * "why I need a firearm".
+     */
+    the_threat: [
+      'Why a section 13 firearm will not provide sufficient protection:',
+      'Why a handgun or manual shotgun is not sufficient here:',
+      'The risk, and why a section 13 firearm does not answer it:',
+      'What a section 13 firearm cannot do in these circumstances:',
+    ],
+    statutory_application: [
+      'Application in terms of section 14 of the Act:',
+      'How I meet the requirements of section 14:',
+      'Section 14 applied to my circumstances:',
+      'The statutory test for a restricted firearm, applied:',
+    ],
+  },
   S13_SELF_DEFENCE: {
     the_calibre: [
       'The calibre and why it suits defensive use:',
@@ -420,6 +440,29 @@ const SECTION_SKELETONS: Record<
    * that the document may state only the certificate NUMBER and that it is
    * valid — which is one clause of the statutory section, not a section.
    */
+  /**
+   * ⚠️ THE SECTION 13 SHAPE PLUS `personal_circumstances`, AND THE EXTRA
+   * SECTION IS NOT DECORATION. Section K of the SAPS 271 is completed for a
+   * section 14 and for no other section: urban or rural, the distance to the
+   * nearest neighbour and to the nearest police station, whether the area is
+   * crime-rated, whether the residence or work is high-risk, how many firearms
+   * are held. The DFO transcribes those facts, so the document has to state
+   * every one of them — which is a circumstances section, and it is why this
+   * skeleton keeps the one the section 13 dropped.
+   *
+   * MOTIVATION-GUIDE-BOOK Part 5.2.
+   */
+  S14_RESTRICTED_SELF_DEFENCE: [
+    'introduction',
+    'personal_circumstances',
+    'the_threat',
+    'storage_safety',
+    'existing_measures',
+    'the_firearm',
+    'comparison',
+    'statutory_application',
+    'conclusion',
+  ],
   S13_SELF_DEFENCE: [
     'introduction',
     'the_threat',

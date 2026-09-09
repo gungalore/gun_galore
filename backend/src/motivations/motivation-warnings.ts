@@ -117,6 +117,21 @@ export function applicationWarnings(
     });
   }
 
+  /** ⚠️ SECTION 14(5): ONE AT A TIME, exactly as section 13(3). */
+  if (
+    licenceType === MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE &&
+    count(14) >= 1
+  ) {
+    out.push({
+      code: 'section-14-cap',
+      authority: 'section 14(5)',
+      message:
+        'The Act allows one section 14 licence at a time, and your answers say you already hold one. ' +
+        'If you are keeping that firearm, this application may be refused on that ground. ' +
+        'If you are selling it, or re-licensing the same firearm, say so in the motivation before you lodge.',
+    });
+  }
+
   /**
    * ⚠️ SECTION 15(3): FOUR, THREE IF A SECTION 13 IS HELD, AND ONLY ONE
    * HANDGUN. The handgun limb is the one most easily tripped and the one the
