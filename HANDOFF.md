@@ -153,6 +153,47 @@ national Long Range Rifle shooting leagues".
   it loaded…", "I stage the firearm securely…" and "thick coastal coastal
   thickets". Nothing downstream proofreads a use; the writer lifts it whole.
 
+### The giraffe, deployed `515a41cd` and `e5ad8a66`
+
+⚠️ **A GENERATED SENTENCE MUST NEVER CLAIM THE APPLICANT HAS DONE SOMETHING.**
+A live run stored *"I hunt giraffe on vast bushveld farms during regulated
+culling contracts"* against a held .300 Winchester Magnum. Operator: *"the I
+hunt gireaffe shit aint going to fly, that a blatant lie."* Right, and it is
+MO000071's fault in a different coat — a generated fact about the APPLICANT, in
+a document signed under s120(9) of the Act. The present tense filled the gap on
+a held firearm by manufacturing a history.
+
+**Two honest voices now, and neither is a history.** The operator allowed both:
+*"the .300winmag is suited for giraffe hunting so the .300prc will do the same
+… or the intent wording works fine as well."*
+
+| voice | used for | example |
+|---|---|---|
+| **suitability** (`uses`) | a firearm already held | "It is used for harvesting blue wildebeest and gemsbok during winter biltong expeditions." |
+| **intent** (`usesProspective`) | the firearm applied for | "I intend to use it for the systematic culling of large plains game populations under structured association management contracts." |
+
+⚠️ **ENFORCED, NOT ASKED** — the giraffe is proof that a rule the model is only
+asked to follow holds until it does not. The suitability voice refuses any
+sentence carrying a first-person pronoun; the intent voice refuses any sentence
+with no intent marker, which is a positive test and cannot be walked around.
+Both writer-side blocks say the same thing, because one verb could undo either.
+
+⚠️ **AND RULE 11: PREFER THE ORDINARY TO THE EXOTIC.** Giraffe, buffalo and
+elephant are not what a plains-game rifle is for, and a list that reaches for
+them reads as somebody who has never hunted.
+
+**Why the basket exists at all** (operator): *"lets say I have a section 16 300
+winmag. Now I want a 300 prc, they both can do the exact same thing … so it can
+pick one for the 300 winmag I already own and state another reason why I would
+want the 300 prc."* The `<intended-uses>` block says in terms that a reason
+already spent on a firearm in `<arsenal>` may not be spent again.
+
+The applied-for firearm is offered intent uses ONLY where the applicant stated
+no purpose themselves (`hunt_game_class`, `hunt_reasons`, `sport_reasons`,
+`sport_formats`, `intended_quarry` all empty) — the same rule `licensedFor`
+follows on a held row. An S16_DEDICATED_HUNTER application gets only the
+hunting list; a section 24 renewal gets nothing.
+
 ### Open, for the operator
 
 ⚠️ **A HANDGUN CANNOT FALL UNDER SECTION 14, so it gets 13/15/16 and not 14.**
