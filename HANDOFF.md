@@ -212,6 +212,39 @@ the trigger, the finish or the manufacturer's history. None of those is a
 comparison. `renderOverlap` carries the same boundary so the prompt and the
 gate agree; the cache baseline moved by exactly eight lines on all six types.
 
+### Why deletion "did not work", deployed `fff935dd` (full)
+
+Operator: *"safe pictures and proficiencies wont delete."* **Neither kind was
+the problem.**
+
+⚠️ **THE DELETE ROUTE WAS THROTTLED AT TEN A MINUTE.** The vault event log
+shows exactly ten deletes between 16:15:27 and 16:16:03 and none after — five
+licences, four competencies, one proficiency. Everything from the eleventh on
+returned 429, `credential-card.tsx` renders any failure as "We could not delete
+that just now", and the kinds reached eleventh were the safe photographs and
+the remaining proficiencies. The ceiling is 60 now, matching the upload route
+which learned the same lesson in the other direction; a 429 says what it is, in
+the shared client, so no caller has to know.
+
+⚠️ **AND THE ONE PROFICIENCY THAT DID DELETE ONLY DELETED HALF OF ITSELF.** Two
+scans of one certificate point at each other through `otherSideId` and
+`documentsOf()` folds them into a single row; deleting one side left the other
+standing and the list promoted it to lead — same title, same thumbnail, same
+place. Both sides go now, bytes included, and any pointer left aiming at either
+is cleared (`otherSideId` is a plain string, not a relation).
+
+⚠️ **THE TIDY-UP IS `try/catch`, NOT `.catch()`** — the erasure has already
+happened by that line, and a missing method is a synchronous throw.
+
+Every other delete route in the licence stack was audited: the credential erase
+was the only one throttled below the global default.
+
+**The applications list is now two piles.** COMPLETED is the only status that
+means finished; everything else is In progress, a FAILED run included, because
+FAILED became regenerable today. Each row carries its own SAPS 271 — the 271
+stopped being an opt-in on 2026-09-08 — except a section 24, which is lodged on
+the 518(a) and says so rather than offering a button that returns 409.
+
 ### Open, for the operator
 
 ⚠️ **A HANDGUN CANNOT FALL UNDER SECTION 14, so it gets 13/15/16 and not 14.**
