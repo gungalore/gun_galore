@@ -330,12 +330,46 @@ describe('profile — every head shape, not just a rimless bottleneck', () => {
   });
 });
 
+/** The radius the silhouette carries at x, or NaN if there is no vertex there. */
+function P_at(P: ReturnType<typeof profile>, x: number): number {
+  const hit = P.find((p) => Math.abs(p[0] - x) < 1e-9);
+  return hit ? hit[1] : Number.NaN;
+}
+
 describe('profile — the seated shank is clamped to the round', () => {
-  it('keeps the 6 mm shank on a cartridge with room for it', () => {
-    // 6,5 Creedmoor has 23 mm of bullet proud of the mouth, so the clamp must
-    // be invisible here: the silhouette is the prototype's, vertex for vertex.
-    const P = profile(CREEDMOOR);
-    expect(P.some((p) => p[0] === CREEDMOOR.L3 + 6 && p[1] === CREEDMOOR.G1 / 2)).toBe(true);
+  it('⚠️ TAKES THE BEARING SURFACE FROM THE ROUND, not a flat 6 mm', () => {
+    // The prototype stood a fixed 6 mm of full-diameter bullet proud of the
+    // case mouth. On 6,5 Creedmoor, with 23 mm exposed, that is a quarter of
+    // it and unremarkable; on a 9 mm Luger, with 10,5 mm exposed, it was more
+    // than half — so the nose had four millimetres to happen in and the round
+    // drew as a cylinder with a blob stuck on the end. Operator, 2026-09-09:
+    // "yours looks like a fucking dick head or a mushroom".
+    //
+    // A fraction of what is actually exposed, floored and capped, suits a
+    // pistol round and a rifle round with one rule.
+    for (const D of [CREEDMOOR, LUGER_9]) {
+      const exposed = D.L6 - D.L3;
+      const want = D.L3 + Math.min(Math.max(exposed * 0.22, 0.6), 3);
+      expect(P_at(profile(D), want)).toBeCloseTo(D.G1 / 2, 6);
+    }
+  });
+
+  it('⚠️ LEAVES THE SHANK FLAT AND TIGHTENS INTO THE TIP, which a semicircle does not', () => {
+    // The old nose was `sqrt(1 − t²)`: full diameter for most of its run, then
+    // an almost vertical drop. A tangent ogive is the opposite, and "tangent"
+    // is the testable half — the curve must leave the bearing surface with no
+    // corner, and it must never bulge WIDER than the bullet, which the old
+    // `+ 0.35 (1 − t)` term did at exactly that join.
+    const D = LUGER_9;
+    const r = D.G1 / 2;
+    const nose = profile(D).filter((p) => p[0] > D.L3);
+    for (const p of nose) expect(p[1]).toBeLessThanOrEqual(r + 1e-9);
+
+    // Radius falls away slowly at first and fastest near the tip.
+    const drop = (a: number, b: number) => nose[a][1] - nose[b][1];
+    const firstQuarter = drop(0, Math.floor(nose.length / 4));
+    const lastQuarter = drop(nose.length - 1 - Math.floor(nose.length / 4), nose.length - 1);
+    expect(lastQuarter).toBeGreaterThan(firstQuarter);
   });
 
   it('does not run the shank past the tip when the bullet barely stands proud', () => {

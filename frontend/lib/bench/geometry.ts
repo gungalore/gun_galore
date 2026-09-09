@@ -63,6 +63,83 @@ export const MS = 0.3048;
 export const MM_PER_INCH = 25.4;
 
 /**
+ * The seated bullet's nose, from the top of the bearing surface to the tip.
+ *
+ * ⚠️ A TANGENT OGIVE WITH A SPHERICAL TIP, WHICH IS WHAT A BULLET IS. What was
+ * here was `sqrt(1 − t²)` — a semicircle — with a `+ 0.35 (1 − t)` term added
+ * on top of it. Two faults, and together they drew the wrong object:
+ *
+ *   - A semicircle holds nearly full diameter for most of its run and then
+ *     falls away almost vertically at the end. A bullet does the opposite: it
+ *     leaves the shank flat and tightens continuously into the tip. Operator,
+ *     2026-09-09, on the result: "yours looks like a fucking dick head or a
+ *     mushroom".
+ *   - The `+ 0.35 (1 − t)` term ADDED 0.35 mm of radius at the start of the
+ *     curve, so the nose bulged wider than the bullet exactly where it left
+ *     the case, giving it a lip.
+ *
+ * A tangent ogive is an arc of radius `R` that meets the bearing surface flat
+ * — no corner, which is the whole meaning of "tangent" — and it is the shape
+ * every jacketed bullet made since about 1900 actually has. `R` is not chosen
+ * by eye: it is the only radius that both meets the shank flat AND reaches the
+ * tip in the length the round has, so it comes out of the round's own figures.
+ * For a 9 mm Luger that lands at about 1.1 calibres, which is the classic
+ * round nose; for a .223 at about 3.4, which is a spitzer. The drawing does
+ * not decide that — the case length and the overall length do.
+ *
+ * ⚠️ AND THE TIP IS A SPHERE TANGENT TO THAT ARC, not a point and not a cap
+ * bolted on. A round-nose bullet has a small radius at the very front, and an
+ * arc that simply stops leaves either a needle or a visible corner. The centre
+ * of that sphere sits on the axis at `len − rn`, and internal tangency puts it
+ * exactly `R − rn` from the ogive's centre — which is what fixes `R` above.
+ *
+ * ⚠️ IT DEGRADES TO AN ELLIPSE WHEN THE NOSE IS SHORTER THAN THE BULLET IS
+ * WIDE. Below `len = r` no tangent ogive exists: the algebra returns an `R`
+ * under `r`, the centre crosses the axis and the tangency point comes out with
+ * a NEGATIVE radius, which draws a nose folded inside out. Nothing throws.
+ * A wadcutter, or bad data, takes a quarter ellipse instead.
+ */
+function noseInto(out: Point[], x0: number, r: number, len: number): void {
+  if (len <= 0.01 || r <= 0) {
+    out.push([x0 + Math.max(len, 0), 0]);
+    return;
+  }
+
+  const N = 18;
+  if (len < r) {
+    for (let i = 1; i <= N; i++) {
+      const t = i / N;
+      out.push([x0 + len * t, r * Math.sqrt(Math.max(1 - t * t, 0))]);
+    }
+    out[out.length - 1] = [x0 + len, 0];
+    return;
+  }
+
+  /** The tip's own radius. */
+  const rn = Math.min(0.22 * r, len * 0.28);
+  /** The ogive radius that meets the shank flat and the tip sphere tangentially. */
+  const R = ((len - rn) ** 2 + r * r - rn * rn) / (2 * (r - rn));
+  /** Its centre sits below the axis, on the normal through the shank. */
+  const cy = r - R;
+  /** Where the ogive hands over to the tip sphere. */
+  const xT = (R * (len - rn)) / (R - rn);
+  const yT = (rn * (R - r)) / (R - rn);
+
+  for (let i = 1; i <= N; i++) {
+    const x = (xT * i) / N;
+    out.push([x0 + x, cy + Math.sqrt(Math.max(R * R - x * x, 0))]);
+  }
+
+  const T = 6;
+  const a0 = Math.atan2(yT, xT - (len - rn));
+  for (let i = 1; i <= T; i++) {
+    const a = a0 * (1 - i / T);
+    out.push([x0 + len - rn + rn * Math.cos(a), rn * Math.sin(a)]);
+  }
+  out[out.length - 1] = [x0 + len, 0];
+}
+
+/**
  * The half-profile, from case head to bullet tip, in millimetres.
  *
  * The case is a straight run of vertices off the C.I.P. figures; the ogive is
@@ -75,31 +152,29 @@ export function profile(D: Dims): Point[] {
   p.push([D.R, D.E1 / 2], [D.E - 0.9, D.E1 / 2], [D.E, D.P1 / 2]);
   p.push([D.L1, D.P2 / 2], [D.L2, D.H1 / 2], [D.L3, D.H2 / 2]);
   p.push([D.L3, D.G1 / 2]);
+
   /**
-   * ⚠️ THE 6 mm SHANK IS CLAMPED TO THE ROUND'S OWN LENGTH.
+   * ⚠️ THE BEARING SURFACE IS PROPORTIONAL, NOT A FLAT 6 mm. Six millimetres
+   * of full-diameter bullet standing proud of the case mouth is most of a
+   * 9 mm Luger's entire exposed length — it left barely four millimetres for
+   * the nose, so the round drew as a cylinder with a blob on the end. A short
+   * run of shank and then the curve is what a seated bullet looks like, and
+   * taking it as a fraction of what is actually exposed means the same rule
+   * suits a pistol round and a rifle round.
    *
-   * The prototype seated the bullet with a flat 6 mm of full-diameter shank
-   * proud of the case mouth and then curved to the tip. On a rifle round that
-   * is 6 mm out of 20-odd; on a short pistol case — a .380 ACP, a wadcutter
-   * COAL — `L6 − L3` can be under 6, and the shank then ran PAST the tip. The
-   * ogive loop's `len` went negative, the silhouette folded back on itself,
-   * and the drawing came out with a nose pointing the wrong way. Nothing
-   * failed; it just drew a cartridge that does not exist.
-   *
-   * Half a millimetre is kept clear of L6 so the nose is always at least a
-   * short curve rather than a vertical face, and the lower clamp holds the
-   * shank at the case mouth for data so degenerate that L6 is barely past L3.
+   * The old clamp is kept in spirit: the nose can never start past the tip.
    */
-  const shank = Math.max(D.L3, Math.min(D.L3 + 6, D.L6 - 0.5));
+  const exposed = Math.max(0, D.L6 - D.L3);
+  const shank = Math.min(D.L3 + Math.min(Math.max(exposed * 0.22, 0.6), 3), D.L6);
   p.push([shank, D.G1 / 2]);
-  const n = 14;
-  const len = Math.max(0, D.L6 - shank);
-  for (let i = 1; i <= n; i++) {
-    const t = i / n;
-    p.push([shank + len * t, (D.G1 / 2) * Math.sqrt(1 - t * t) * (1 - 0.04 * t) + 0.35 * (1 - t)]);
-  }
-  p[p.length - 1] = [D.L6, 0.55];
-  p.push([D.L6, 0]);
+  noseInto(p, shank, D.G1 / 2, D.L6 - shank);
+  /**
+   * ⚠️ THE TIP IS SET FROM L6, NOT ARRIVED AT BY ADDING UP. `shank` plus
+   * `L6 − shank` is L6 in arithmetic and not always in floating point, and the
+   * silhouette closing a thousandth of a millimetre short of the overall
+   * length is invisible on the page and fails an exact assertion.
+   */
+  p[p.length - 1] = [D.L6, 0];
   return p;
 }
 
