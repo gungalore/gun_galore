@@ -639,10 +639,20 @@ export default function SellerConsentPage() {
 /**
  * The section F boxes the seller can fill, in the order the form prints them.
  *
- * Deliberately short of the full section: his surname and initials are asked
- * for separately by the form and we will not split a name to get them, and
- * item 15 is a yes/no we do not put to him here. What is left is what a person
- * can type on a phone without resenting it.
+ * ⚠️ THE SURNAME AND INITIALS ARE ASKED HERE, AND UNTIL NOW THEY WERE ASKED
+ * NOWHERE. This comment used to say they "are asked for separately by the form
+ * and we will not split a name to get them" — true of the SAPS 271, which
+ * prints item 4 Surname and item 5 Initials as their own boxes, and of
+ * saps271-map.ts, which refuses to split "van der Merwe" or "du Toit" to fill
+ * them. But the conclusion drawn was to leave them off THIS form too, so the
+ * two boxes were wired end to end — accepted by the API, written by the map,
+ * with coordinates measured — and had no input anywhere that could fill them.
+ * Item 4, item 5 and item 82 printed blank on every private sale.
+ *
+ * Operator, 2026-09-09: "Surname missing of current owner."
+ *
+ * He is the one person who knows which part of his name is his surname, so he
+ * is asked. Item 15 is still a yes/no we do not put to him here.
  */
 const SECTION_F_FIELDS: {
   key: string;
@@ -650,6 +660,17 @@ const SECTION_F_FIELDS: {
   placeholder?: string;
   numeric?: true;
 }[] = [
+  // In the order the form prints them: item 4, then item 5, then the address.
+  {
+    key: 'surname',
+    label: 'Your surname',
+    placeholder: 'As it appears on your identity document',
+  },
+  {
+    key: 'initials',
+    label: 'Your initials',
+    placeholder: 'For example GJP',
+  },
   {
     key: 'residentialAddress',
     label: 'Your residential address',

@@ -92,7 +92,11 @@ describe('what the profile can reach', () => {
 
   it('joins the address parts the profile keeps separately', () => {
     expect(profileOffer(T, FULL, {}).values.residential_address).toBe(
-      'Unit 4 12 Kerk Street, Universitas, Bloemfontein, FREE_STATE',
+      // ⚠️ "FREE_STATE" UNTIL 2026-09-09, AND THAT WAS THE BUG THIS TEST
+      // FROZE. The profile keeps the province as an enum; the address was
+      // composed from it raw, so a real SAPS 271 printed the applicant's own
+      // address as "Cape Town, WESTERN_CAPE" — twice, on a form they sign.
+      'Unit 4 12 Kerk Street, Universitas, Bloemfontein, Free State',
     );
   });
 
@@ -168,5 +172,45 @@ describe('what it asks for back', () => {
   it('does not list a gap it managed to fill', () => {
     const o = profileOffer(T, FULL, {});
     expect(o.missingFromProfile).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE PROVINCE, AS A PERSON WRITES IT.
+//
+// Operator, 2026-09-09, on a real SAPS 271: the applicant's residential and
+// postal addresses both ended "Cape Town, WESTERN_CAPE". The account profile
+// keeps the province as an ENUM and the address was composed from it raw.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the province in a composed address', () => {
+  const addressFor = (province: string) =>
+    profileOffer(
+      T,
+      {
+        addrStreet: '36 Sterappel Crescent',
+        addrSuburb: 'Langeberg Glen',
+        addrCity: 'Cape Town',
+        addrProvince: province,
+      } as never,
+      {},
+    ).values.residential_address;
+
+  it('⚠️ NEVER PRINTS THE ENUM', () => {
+    expect(addressFor('WESTERN_CAPE')).toContain('Western Cape');
+    expect(addressFor('WESTERN_CAPE')).not.toContain('WESTERN_CAPE');
+    expect(addressFor('NORTH_WEST')).toContain('North West');
+    expect(addressFor('FREE_STATE')).toContain('Free State');
+  });
+
+  it('spells KwaZulu-Natal, which title case cannot produce', () => {
+    expect(addressFor('KWAZULU_NATAL')).toContain('KwaZulu-Natal');
+  });
+
+  it('⚠️ LEAVES A HUMAN-WRITTEN PROVINCE EXACTLY AS THEY WROTE IT', () => {
+    // Not every row is an enum. Somebody who typed their own address must not
+    // have it re-cased under them.
+    expect(addressFor('Western Cape')).toContain('Western Cape');
+    expect(addressFor('KwaZulu-Natal')).toContain('KwaZulu-Natal');
   });
 });

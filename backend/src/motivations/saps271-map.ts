@@ -691,8 +691,38 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
   }
 
   // ── the six history questions ──
+  /**
+   * ⚠️ ITEM 65 IS ONLY ASKED WHEN SOMETHING WAS LOST OR STOLEN, AND THE FORM
+   * ASKS IT ANYWAY.
+   *
+   * `history_negligence` carries `showIf: { history_lost_stolen, equals: Yes }`
+   * — rightly, because "was a case of negligence opened regarding the
+   * stolen/lost firearm" is not a question to put to somebody who has never
+   * lost one. So a member who answered No to item 64 was never asked item 65,
+   * had no answer to give it, and the box printed BLANK on a form they sign
+   * while 62, 63, 64, 66 and 67 all carried their X.
+   *
+   * Operator, 2026-09-09: "WAS A CASE OF NEGLIGENCE OPENED AND INVESTIGATED
+   * REGARDING THE STOLEN/LOST FIREARM? tick missing".
+   *
+   * ⚠️ THIS IS ENTAILMENT, NOT AN ASSUMPTION. Nothing lost or stolen means
+   * there was no stolen-or-lost firearm for a negligence case to be about, so
+   * No is the only answer the facts admit. It is written ONLY where item 64 is
+   * an explicit No — an unanswered 64 leaves 65 unanswered too and both are
+   * reported as left blank, because two blanks are honest where a guess is
+   * not.
+   */
+  const answered: Record<string, string> = { ...answers };
+  if (
+    a('history_lost_stolen') === 'No' &&
+    !a('history_negligence')
+  ) {
+    answered.history_negligence = 'No';
+  }
+  const said_ = (key: string) => (answered[key] ?? '').trim();
+
   for (const q of HISTORY) {
-    const said = a(q.answer);
+    const said = said_(q.answer);
     if (said === 'Yes') {
       tick(q.yes);
       for (const d of q.detail) put(d.to, a(d.from));

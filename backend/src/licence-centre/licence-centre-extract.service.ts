@@ -772,6 +772,28 @@ export class LicenceCentreExtractService {
       }
 
       out.details[key] = value;
+      /**
+       * ⚠️ AND `competency_issued` GOES IN THE COLUMN TOO, BECAUSE TWO READERS
+       * LOOK THERE AND FOUND NOTHING.
+       *
+       * It is read as a DETAIL on purpose — see the note above; it carries a
+       * meaning `issuedOn` alone does not. But `credentialOffer` fills the
+       * motivation's own `competency_issued` from `Credential.issuedOn`, and
+       * the expiry derivation counts from that same column. Neither reads
+       * `details`. So the one date a competency card actually prints was read
+       * correctly, stored, and invisible to both.
+       *
+       * On the box today all four competency credentials have `issuedOn` NULL
+       * while every proficiency has one, and item 1.6 of the SAPS 271 printed
+       * blank beside an expiry that had been derived. Operator, 2026-09-09:
+       * "competency date of issue not filled in when it is on the competency
+       * form."
+       *
+       * ⚠️ NEVER OVER A DATE ALREADY READ. `issued_on` is the general key and
+       * wins if the model returned both; this only fills a column that would
+       * otherwise stay empty.
+       */
+      if (key === 'competency_issued' && !out.issuedOn) out.issuedOn = value;
       if ((f?.confidence ?? '').toLowerCase() === 'low') {
         out.lowConfidence.push(key);
       }
@@ -1006,11 +1028,21 @@ export function userPrompt(
           // becomes the detail that carries onto a motivation. The Textract
           // reader already writes both from one reading; this keeps the vision
           // fallback answering identically.
-          'The date of issue is printed one digit per box in a yyyy-mm-dd row',
-          'labelled "Date of issue". Return it as BOTH competency_issued and',
-          'issued_on, the same date in each.',
-          'IGNORE the official date stamp - that is when the copy was printed,',
-          'which is often years after it was issued.',
+          // ⚠️ WHERE TO LOOK, NOT ONLY WHAT TO LOOK FOR. Operator, 2026-09-09:
+          // "look at the date in the blocks on the right 2/3 of the page and
+          // ignore the stamp date at the bottom left of the competency."
+          //
+          // The card carries TWO dates and they are years apart. Telling the
+          // model which one is wanted is worth less than telling it where the
+          // right one sits: "ignore the stamp" is a rule it has to apply after
+          // deciding what is a stamp, and the position decides that for it.
+          'The date of issue sits in the RIGHT-HAND TWO-THIRDS of the page,',
+          'printed one digit per box in a yyyy-mm-dd row labelled',
+          '"Date of issue". Return it as BOTH competency_issued and issued_on,',
+          'the same date in each.',
+          'IGNORE the date in the official stamp at the BOTTOM LEFT of the',
+          'page - that is when the copy was stamped, often years after the',
+          'certificate was issued, and it is not the date of issue.',
         ]
       : [
           'The expiry date matters more than anything else here: it is what a',

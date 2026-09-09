@@ -173,3 +173,45 @@ describe('the postal code boxes', () => {
     ).toBeFalsy();
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// WHAT MO000074 PRINTED BLANK.
+//
+// Operator, 2026-09-09, reading a real generated pack: "WAS A CASE OF
+// NEGLIGENCE OPENED AND INVESTIGATED REGARDING THE STOLEN/LOST FIREARM? tick
+// missing".
+// ────────────────────────────────────────────────────────────────────
+
+describe('item 65 — the question that is only asked when 64 is Yes', () => {
+  const ticksOf = (answers: Record<string, string>) =>
+    buildSaps271({
+      licenceType: MotivationLicenceType.S13_SELF_DEFENCE,
+      answers,
+      asAt: new Date('2026-09-09T00:00:00Z'),
+    }).ticks;
+
+  it('⚠️ TICKS NO WHEN NOTHING WAS LOST OR STOLEN', () => {
+    // `history_negligence` carries showIf history_lost_stolen = Yes, so a
+    // member who answered No to item 64 was never asked item 65 and the box
+    // printed blank while 62, 63, 64, 66 and 67 all carried their X. Nothing
+    // lost means there was no stolen-or-lost firearm for a negligence case to
+    // be about: No is the only answer the facts admit.
+    expect(ticksOf({ history_lost_stolen: 'No' })).toContain('h_negligence_no');
+  });
+
+  it('leaves it blank when item 64 itself is unanswered', () => {
+    // Two blanks are honest where a guess is not.
+    const ticks = ticksOf({});
+    expect(ticks).not.toContain('h_negligence_no');
+    expect(ticks).not.toContain('h_negligence_yes');
+  });
+
+  it('⚠️ NEVER OVERRIDES AN ANSWER THE MEMBER GAVE', () => {
+    expect(
+      ticksOf({ history_lost_stolen: 'Yes', history_negligence: 'Yes' }),
+    ).toContain('h_negligence_yes');
+    expect(
+      ticksOf({ history_lost_stolen: 'Yes', history_negligence: 'No' }),
+    ).toContain('h_negligence_no');
+  });
+});

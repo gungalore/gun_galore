@@ -61,6 +61,33 @@ export interface ProfileOffer {
   missingFromProfile: string[];
 }
 
+/**
+ * The province as a person writes it, not as the column stores it.
+ *
+ * ⚠️ `WESTERN_CAPE` PRINTED ON A SAPS 271, TWICE — items 13 and 15. The
+ * account profile keeps the province as an ENUM, and composeAddress joined it
+ * into the address string raw, so the applicant's own residential and postal
+ * addresses ended "Cape Town, WESTERN_CAPE" on a form they sign and on the
+ * motivation's cover.
+ *
+ * Underscores to spaces and title case, which is right for all nine: Western
+ * Cape, Eastern Cape, Northern Cape, North West, Free State, KwaZulu-Natal,
+ * Gauteng, Limpopo, Mpumalanga. KwaZulu-Natal is the one that title case
+ * cannot produce, so it is named.
+ */
+function provinceLabel(raw: string | null | undefined): string {
+  const v = (raw ?? '').trim();
+  if (!v) return '';
+  // Already written out by a human — leave it exactly as they wrote it.
+  if (!/^[A-Z][A-Z_]*$/.test(v)) return v;
+  if (v === 'KWAZULU_NATAL') return 'KwaZulu-Natal';
+  return v
+    .toLowerCase()
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 /** Join the address parts the profile keeps separately into one block. */
 function composeAddress(p: ProfileSource): string {
   return [
@@ -68,7 +95,7 @@ function composeAddress(p: ProfileSource): string {
     p.addrAddress2,
     p.addrSuburb,
     p.addrCity,
-    p.addrProvince,
+    provinceLabel(p.addrProvince),
   ]
     .map((x) => (x ?? '').trim())
     .filter(Boolean)

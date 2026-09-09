@@ -586,6 +586,7 @@ export class MotivationRenderService {
       where: { id, userId: user.id },
       select: {
         id: true,
+        userId: true,
         referenceNumber: true,
         licenceType: true,
         status: true,
@@ -633,7 +634,22 @@ export class MotivationRenderService {
       );
     }
 
-    const answers = this.shared.readAnswers(row.answersEncrypted);
+    /**
+     * ⚠️ THE PROFILE UNDERNEATH, THE SAME AS THE 271 AND THE WRITER.
+     *
+     * The BODY was written from merged answers, but everything this method
+     * draws around it was not: the battery table, the cover particulars and
+     * the statutory-cap warnings all read `answers` directly. Several of the
+     * fields they need are `scope: 'profile'` and live on the member —
+     * `existing_firearm_N_section_held` among them, which is what the cap
+     * warnings count and what the overlap check reads. Unmerged, a printed
+     * pack could show a battery table with no sections in it while the review
+     * sheet showed them filled.
+     */
+    const answers = await this.shared.answersFor(
+      row.userId,
+      row.answersEncrypted,
+    );
 
     // The annexure index closes the printed document so a reviewer can find
     // anything the body cross-references.
@@ -1418,6 +1434,7 @@ export class MotivationRenderService {
       where: { id, userId: user.id },
       select: {
         id: true,
+        userId: true,
         referenceNumber: true,
         licenceType: true,
         answersEncrypted: true,
@@ -1451,7 +1468,30 @@ export class MotivationRenderService {
     // there is nothing left to check the answer against. Brief §2.5,
     // `MOTIVATION-INTAKE-PLAN.md` §1. `fill_saps271` itself is retired in
     // motivation-fields.ts and kept only so an old draft still saves.
-    const answers = this.shared.readAnswers(row.answersEncrypted);
+    /**
+     * ⚠️ THE PROFILE UNDERNEATH, OR HALF THE FORM PRINTS BLANK.
+     *
+     * `readAnswers` opens THIS APPLICATION's blob and nothing else. Every
+     * `scope: 'profile'` field — the safe, whether it is mounted and to what,
+     * marital status, the premises — is stored on the MEMBER
+     * (MemberProfileAnswers), because a wall does not move between
+     * applications. So the 271 asked `a('safe_present')`, got nothing, and
+     * left items 26/27 and the whole of 68, 68.1, 69 and 69.1 unticked on a
+     * form the applicant signs — while the review sheet, which does layer the
+     * profile, showed those answers as given.
+     *
+     * Operator, 2026-09-09: "Maritial status missing", "All safe questions
+     * ticks missing".
+     *
+     * `answersFor` is the same door the writer already uses (see
+     * motivation-generation.service.ts) — profile underneath, application on
+     * top, because a value on this application is the member having changed it
+     * here.
+     */
+    const answers = await this.shared.answersFor(
+      row.userId,
+      row.answersEncrypted,
+    );
 
     const account = await this.prisma.user.findUnique({
       where: { id: user.id },
