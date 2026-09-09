@@ -912,6 +912,32 @@ export class MotivationGenerationService {
        * retry budget turns into a bill. That is a different failure from a
        * near miss and it should not cost the same.
        */
+      /**
+       * ⚠️ THE BEST ATTEMPT IS KEPT, NOT THE LAST ONE, AND A RETRY CAN MAKE IT
+       * WORSE.
+       *
+       * Measured on MO000074, 2026-09-09: one run's first attempt carried a
+       * SINGLE mechanical issue; its retry — told exactly what that issue was
+       * — came back with three, including two the first draft had not had. The
+       * loop then failed the application on the retry's three, having thrown
+       * away a document that was one sentence from filing.
+       *
+       * Feedback makes a retry better ON AVERAGE, not monotonically. Nothing
+       * about "here is what you got wrong" stops a model rewriting a clean
+       * paragraph badly while it fixes the one that was flagged. So every
+       * attempt is scored and the cleanest is what proceeds or what is
+       * reported — bookkeeping, not another model call.
+       */
+      let best = { text: attempt.text, mechanics, structureOk };
+      const keepIfBetter = () => {
+        if (
+          (structureOk ? 0 : 1) + mechanics.length <
+          (best.structureOk ? 0 : 1) + best.mechanics.length
+        ) {
+          best = { text: attempt.text, mechanics, structureOk };
+        }
+      };
+
       const MAX_ATTEMPTS = 3;
       for (
         let attemptNo = 2;
@@ -941,10 +967,18 @@ export class MotivationGenerationService {
           ...packConsistency(attempt.text, answers, annexures),
           ...scopeOf(attempt.text),
         ];
+        keepIfBetter();
         // Not converging: the next round would read the same instruction and
-        // produce the same draft. Stop and fail rather than pay for it.
+        // produce the same draft. Stop rather than pay for it — `best` already
+        // holds whichever attempt came closest.
         if (mechanics.length && mechanics.length >= before) break;
       }
+
+      // ⚠️ WHATEVER PROCEEDS OR IS REPORTED IS THE CLEANEST DRAFT, not the last
+      // one written. See `best` above.
+      attempt = { ...attempt, text: best.text };
+      mechanics = best.mechanics;
+      structureOk = best.structureOk;
 
       // ⚠️ A DOCUMENT THAT FAILS THE MECHANICAL CHECKS TWICE IS NEVER FILED.
       // A wrong serial or a citation to a tab that does not exist is not a
