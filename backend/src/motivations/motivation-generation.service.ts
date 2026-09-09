@@ -891,9 +891,36 @@ export class MotivationGenerationService {
           .catch(() => undefined);
       }
 
-      if (!structureOk || mechanics.length) {
+      /**
+       * ⚠️ TWO RETRIES, NOT ONE, BECAUSE THE RETRY STOPPED BEING BLIND.
+       *
+       * The single retry was set when a second attempt was a fresh seed and
+       * the IDENTICAL prompt: "a second identical result means the variation
+       * engine is broken", which was true of a rerun that had learnt nothing.
+       * It carries the previous draft's own failures now, and attempts
+       * CONVERGE — measured on MO000074, 2026-09-09: nine mechanical issues on
+       * the first attempt, three on the second, the same three each run.
+       *
+       * Stopping at two therefore threw away a document that was two words and
+       * one sentence from filing, and told the applicant we could not finish
+       * it. A third attempt is one more model call against a failure that
+       * currently costs them the entire pack.
+       *
+       * ⚠️ AND IT STOPS EARLY WHEN IT IS NOT CONVERGING. A round that fixes
+       * nothing — the same count or worse — is a writer that cannot see the
+       * problem, and paying for a fourth read of the same instruction is how a
+       * retry budget turns into a bill. That is a different failure from a
+       * near miss and it should not cost the same.
+       */
+      const MAX_ATTEMPTS = 3;
+      for (
+        let attemptNo = 2;
+        attemptNo <= MAX_ATTEMPTS && (!structureOk || mechanics.length);
+        attemptNo++
+      ) {
+        const before = mechanics.length;
         this.logger.warn(
-          `Motivation ${row.id}: regenerating (structureOk=${structureOk}, sameness=${sameness.toFixed(2)}, mechanics=${mechanics.length})`,
+          `Motivation ${row.id}: regenerating ${attemptNo}/${MAX_ATTEMPTS} (structureOk=${structureOk}, sameness=${sameness.toFixed(2)}, mechanics=${before})`,
         );
         seed = crypto.randomInt(0, 2 ** 31 - 1);
         plan = planFor(row.licenceType, seed, planOpts);
@@ -914,6 +941,9 @@ export class MotivationGenerationService {
           ...packConsistency(attempt.text, answers, annexures),
           ...scopeOf(attempt.text),
         ];
+        // Not converging: the next round would read the same instruction and
+        // produce the same draft. Stop and fail rather than pay for it.
+        if (mechanics.length && mechanics.length >= before) break;
       }
 
       // ⚠️ A DOCUMENT THAT FAILS THE MECHANICAL CHECKS TWICE IS NEVER FILED.
