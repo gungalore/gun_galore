@@ -195,6 +195,26 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * every type here because every fixture pack carries an overlap note. Edit
  * these counts only when a line was meant to be added or removed.
  */
+/**
+ * RE-BASELINED A FIFTH TIME ON 2026-09-10 - the brief stopped quoting its own
+ * bad example.
+ *
+ * The general `the_firearm` brief carried a fully formed catalogue sentence,
+ * naming a real make and model, as an example of what NOT to write. MO000075
+ * came back having rewritten it almost word for word on an application for
+ * that very rifle, tripped documentScope on "platform" twice, and the
+ * applicant was emailed to say we could not finish their document. The
+ * example is now described rather than quoted; see the note on the brief.
+ *
+ * WHICH TYPES MOVED IS THE CHECK, AND IT IS A SHARP ONE. Section 13 and
+ * section 14 carry their OWN `the_firearm` override and use none of the
+ * general brief, so their hashes are byte-identical - proof the edit landed
+ * where it was aimed and nowhere else. The four types that share the general
+ * brief moved their hash and held their line count exactly (110, 110, 110,
+ * 104), which is the signature of a rewording rather than an addition. If a
+ * future edit here moves a LINE COUNT, that is a different kind of change and
+ * wants its own note.
+ */
 const BEFORE_THE_REORDER: Record<
   MotivationLicenceType,
   { lines: number; sha: string }
@@ -232,19 +252,19 @@ const BEFORE_THE_REORDER: Record<
   },
   S15_OCCASIONAL_HUNTER: {
     lines: 110,
-    sha: '4bedad60cc8ebe92459b49b1456034b565e78ad945d989c58a20e948cba66515',
+    sha: 'a27a801ed9b5da7c9e487f6b7919e35ea2c922b138a7af93fca7d6027dcd8d1f',
   },
   S16_DEDICATED_HUNTER: {
     lines: 110,
-    sha: '932d4b549ac99dd819539a9b96480617340bcb6d2b3cb5f21570ff4ac8104250',
+    sha: '12854c1a7a501e237167a985e5f7761dd2ff9daac19a8c914e04b6df0f037204',
   },
   S16_DEDICATED_SPORT: {
     lines: 110,
-    sha: '5f8d08151358585a417d2b71e6718cbe5e3bf64dae6e9c9e03abe55198b40214',
+    sha: '031890448aa3336f0b27ba6f65db5f0f2322400d3f6c239a77533f3e4bb8361c',
   },
   S24_RENEWAL: {
     lines: 104,
-    sha: '8797f74e00b0979aeb3d1de83b70496d165738d28693be541c4e3b52a887a949',
+    sha: 'f5b146a9bf2cc5822cded1f2fc14f49ff8499b7106693df61e657ce6e048006c',
   },
 };
 
