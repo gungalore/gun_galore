@@ -438,9 +438,43 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
   // measured, all three sat empty on every form we produced, and only the
   // SELLER's equivalents were ever filled — so an applicant's own address went
   // in without its code while the current owner's did not.
+  /**
+   * ⚠️ AND WHERE THE CODE IS ONLY EVER TYPED, IT IS TAKEN OFF THE ADDRESS.
+   *
+   * Operator, 2026-09-09: "Some places you missed the postal code." Only
+   * `residential_postal_code` has a way of filling itself — it is docSourced
+   * from the proof of address and offered from the account profile.
+   * `postal_postal_code` and `employer_postal_code` have neither, so unless
+   * somebody typed a four-digit number into a box of its own, those two print
+   * blank beside an address that ends in the code.
+   *
+   * ⚠️ THIS READS A NUMBER THE APPLICANT ALREADY GAVE; IT DOES NOT INVENT ONE.
+   * A South African postal code is exactly four digits, and it is written last
+   * in an address. Taking the trailing four digits of the address the member
+   * typed is transcription, not inference — the same standing rule that says
+   * fill it in, arm it, let them change it. Where the address does NOT end in
+   * four digits nothing is written: absent stays absent.
+   *
+   * ⚠️ NEVER OVER A TYPED ANSWER. The member's own box wins; this only reaches
+   * a code that was going to be blank.
+   */
+  const postalCodeIn = (address: string): string => {
+    const m = /(?:^|[\s,])(\d{4})\s*$/.exec(address.trim());
+    return m ? m[1] : '';
+  };
+
   put('g_residential_postal_code', a('residential_postal_code'));
   put('g_postal_postal_code', a('postal_postal_code'));
   put('g_business_postal_code', a('employer_postal_code'));
+  for (const [box, code, address] of [
+    ['g_residential_postal_code', 'residential_postal_code', 'residential_address'],
+    ['g_postal_postal_code', 'postal_postal_code', 'postal_address'],
+    ['g_business_postal_code', 'employer_postal_code', 'employer_address'],
+  ] as const) {
+    if (a(code)) continue;
+    const derived = postalCodeIn(a(address));
+    if (derived) put(box, derived);
+  }
   put('g_postal_address', a('postal_address'));
   put('g_residence_type', a('residence_type'));
   put('g_occupation', a('occupation'));

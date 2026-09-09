@@ -1,4 +1,6 @@
+import { MotivationLicenceType } from '@prisma/client';
 import { SAPS271_COORDS } from './saps271-coords';
+import { buildSaps271 } from './saps271-map';
 
 // ────────────────────────────────────────────────────────────────────
 // EVERY CHARACTER GRID MUST BE EVENLY PITCHED.
@@ -111,5 +113,63 @@ describe('character-cell grids', () => {
       const digits = spec.cells.filter((c) => !c.sep).length;
       expect({ key, digits }).toEqual({ key, digits: 8 });
     }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE POSTAL CODE THE MEMBER ALREADY TYPED, IN ITS OWN BOX.
+//
+// Operator, 2026-09-09: "Some places you missed the postal code." Only
+// `residential_postal_code` can fill itself — docSourced from the proof of
+// address, offered from the account profile. The postal-address and employer
+// codes have neither, so they printed blank beside an address ending in the
+// code.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the postal code boxes', () => {
+  const text = (answers: Record<string, string>) =>
+    buildSaps271({
+      licenceType: MotivationLicenceType.S13_SELF_DEFENCE,
+      answers,
+      asAt: new Date('2026-09-09T00:00:00Z'),
+    }).text;
+
+  it('takes the code off the address where no box was typed', () => {
+    const t = text({
+      postal_address: 'PO Box 1234, Bellville, 7530',
+      employer_address: '12 Voortrekker Road, Parow 7500',
+    });
+    expect(t.g_postal_postal_code).toBe('7530');
+    expect(t.g_business_postal_code).toBe('7500');
+  });
+
+  it('⚠️ NEVER OVER A TYPED ANSWER', () => {
+    // The member's own box wins. This only reaches a code that was going to
+    // be blank.
+    const t = text({
+      postal_address: 'PO Box 1234, Bellville, 7530',
+      postal_postal_code: '7535',
+    });
+    expect(t.g_postal_postal_code).toBe('7535');
+  });
+
+  it('⚠️ WRITES NOTHING WHERE THE ADDRESS DOES NOT END IN A CODE', () => {
+    // Absent stays absent, which is a different thing from wrong. A street
+    // number is not a postal code and must never be printed as one.
+    for (const address of [
+      'PO Box 1234, Bellville',
+      '12 Voortrekker Road',
+      'Plot 51, Rietfontein, Gauteng',
+      '',
+    ]) {
+      expect(text({ postal_address: address }).g_postal_postal_code).toBeFalsy();
+    }
+  });
+
+  it('does not mistake a longer number for a code', () => {
+    // Four digits exactly, and standing on its own at the end.
+    expect(
+      text({ postal_address: 'Unit 12, Erf 102345' }).g_postal_postal_code,
+    ).toBeFalsy();
   });
 });

@@ -889,10 +889,34 @@ export function credentialOffer(
     const make = first(c.details, 'make');
     const model = first(c.details, 'model');
     const calibre = first(c.details, 'calibre');
-    // One number. A licence card usually prints the same serial against the
-    // barrel, the receiver and the frame; where it differs, the barrel is the
-    // one the card prints first. See ownedFirearmSerial in motivation-fields.
-    const serial = first(c.details, 'barrel_serial', 'frame_serial', 'serial');
+    /**
+     * One number. A licence card usually prints the same serial against the
+     * barrel, the receiver and the frame; where it differs, the barrel is the
+     * one the card prints first. See ownedFirearmSerial in motivation-fields.
+     *
+     * ⚠️ `receiver_serial` WAS NOT ON THIS LIST, AND ON A LEVER ACTION IT IS
+     * THE ONLY ROW THAT CARRIES A NUMBER.
+     *
+     * Operator, 2026-09-09: "the Marlin has NONE for the barrel but does have
+     * a serial for the reciever, make sure its there. Its missing inside the
+     * 271." A Marlin 1895 card reads BARREL: NONE, FRAME: NONE, RECEIVER:
+     * MR90189D. `first()` walks these keys through answerValue, which strips
+     * the card's NONE correctly — and then ran out of keys, returned empty,
+     * and the row was stored with NO SERIAL AT ALL. Item 2.1 of the SAPS 271
+     * printed the firearm with its serial boxes blank, on a form the
+     * applicant signs.
+     *
+     * Last, not first: where a card prints a real number on more than one row
+     * the barrel is still what the card leads with, and this only reaches a
+     * firearm whose other rows say nothing.
+     */
+    const serial = first(
+      c.details,
+      'barrel_serial',
+      'frame_serial',
+      'serial',
+      'receiver_serial',
+    );
     const licence = first(c.details, 'licence_number');
     const type = normaliseFirearmType(first(c.details, 'firearm_type', 'type'));
 
@@ -975,10 +999,39 @@ export function credentialOffer(
       c.title,
       c.id,
     );
+    /**
+     * ⚠️ `||` LOST THE SERIAL ON EVERY CARD THAT PRINTS "NONE" AGAINST THE
+     * FRAME, WHICH IS EVERY RIFLE.
+     *
+     * The SAPS 271's item 2.1 has no receiver column — barrel and frame only —
+     * so a receiver serial has to ride in the frame box. This chose between
+     * them with `||`, which tests for EMPTINESS, and a card that reads
+     * "FRAME: NONE / RECEIVER: MR90189D" makes `cardRow('frame_serial')` the
+     * truthy string "NONE". The receiver serial was never reached, the row
+     * stored NONE, and ownedFirearmSerial then read that through answerValue
+     * — which strips the placeholder — so the row had NO SERIAL AT ALL and
+     * the 271 printed the firearm with its serial boxes blank.
+     *
+     * Operator, 2026-09-09: "the Marlin has NONE for the barrel but does have
+     * a serial for the reciever, make sure its there. Its missing inside the
+     * 271." That is this line.
+     *
+     * ⚠️ AND THE VERBATIM "NONE" SURVIVES WHERE IT IS THE WHOLE TRUTH. Where
+     * neither row carries a number, the card's own word is still what we
+     * store — see the note above, and the printed seller-consent declaration
+     * that reproduces the card. What changes is only which row wins when one
+     * of them says nothing and the other says something.
+     */
+    const frameOrReceiver =
+      answerValue(cardRow('frame_serial'))
+        ? cardRow('frame_serial')
+        : answerValue(cardRow('receiver_serial'))
+          ? cardRow('receiver_serial')
+          : cardRow('frame_serial') || cardRow('receiver_serial');
     offer(
       `${p}frame_serial`,
       `Firearm ${row} — frame or receiver serial number`,
-      cardRow('frame_serial') || cardRow('receiver_serial'),
+      frameOrReceiver,
       c.title,
       c.id,
     );

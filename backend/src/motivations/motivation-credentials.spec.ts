@@ -146,6 +146,75 @@ describe('what the Licence Centre offers a motivation', () => {
     expect(o.values.existing_firearm_1_type).toBe('Rifle');
   });
 
+  it('⚠️ THE MARLIN: BARREL NONE, FRAME NONE, RECEIVER MR90189D', () => {
+    // Operator, 2026-09-09: "the Marlin has NONE for the barrel but does have
+    // a serial for the reciever, make sure its there. Its missing inside the
+    // 271."
+    //
+    // The SAPS 271's item 2.1 has no receiver column, so a receiver serial
+    // rides in the frame box. The choice between them was `||`, which tests
+    // for EMPTINESS — and a card reading "FRAME: NONE" makes that the truthy
+    // string "NONE", so the receiver serial was never reached. The row stored
+    // NONE, ownedFirearmSerial read it through answerValue which strips the
+    // placeholder, and the firearm printed on the form with its serial boxes
+    // BLANK.
+    const marlin = licence({
+      id: 'c-marlin',
+      details: {
+        make: 'Marlin',
+        model: '1895',
+        calibre: '.45-70 Government',
+        barrel_serial: 'NONE',
+        frame_serial: 'NONE',
+        receiver_serial: 'MR90189D',
+        licence_number: 'LIC-045',
+        firearm_type: 'Lever Action Rifle',
+      },
+    });
+    const o = offerWith(TYPE, [marlin], {});
+    expect(o.values.existing_firearm_1_serial).toBe('MR90189D');
+    // The row therefore HAS a serial, which is what item 2.1 prints.
+    // ownedFirearmSerial reads `_serial` first; motivation-fields.spec.ts
+    // covers that reader on its own.
+  });
+
+  it('⚠️ KEEPS THE CARD’S "NONE" WHERE IT IS THE WHOLE TRUTH', () => {
+    // Only which row WINS changed. A card with nothing on either row still
+    // stores the card's own word — the printed seller-consent declaration
+    // reproduces what the card says, NONE included.
+    const noSerials = licence({
+      id: 'c-none',
+      details: {
+        make: 'Musgrave',
+        calibre: '.30-06',
+        barrel_serial: 'NONE',
+        frame_serial: 'NONE',
+        receiver_serial: 'NONE',
+        licence_number: 'LIC-046',
+        firearm_type: 'Bolt Action Rifle',
+      },
+    });
+    const o = offerWith(TYPE, [noSerials], {});
+    expect(o.values.existing_firearm_1_serial).toBeFalsy();
+  });
+
+  it('still prefers the frame row when it carries a real number', () => {
+    const both = licence({
+      id: 'c-both',
+      details: {
+        make: 'CZ',
+        calibre: '9mm',
+        barrel_serial: 'NONE',
+        frame_serial: 'F12345',
+        receiver_serial: 'R99999',
+        licence_number: 'LIC-047',
+        firearm_type: 'Pistol',
+      },
+    });
+    const o = offerWith(TYPE, [both], {});
+    expect(o.values.existing_firearm_1_serial).toBe('F12345');
+  });
+
   it('lists the four things the operator asked for, per firearm', () => {
     // Operator, 2026-09-07: "when listing the fire arms I already own it
     // should only be the make, model, serial number and expiry date listed,
