@@ -6,6 +6,99 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-09**.
 
+## 2026-09-09 (latest) — the guide book applied, everything except the estate
+
+Operator: *"apply the whole document apart from the estate. One other rule,
+only paperwork required by the dfo are attached as annexures. all other things
+like the cartridge specs and clippings and those things must be in the body of
+the document itself and form part of the flow."*
+
+⚠️ **NOT DEPLOYED.** Eight commits sit on `feat/takealot-ux-parity` ahead of the
+box, from `7312768e` to `2a136885`. Backend tsc CLEAN, 4 356 tests pass;
+frontend tsc CLEAN, 1 654 tests pass, `npm run build` exits 0 and
+`.next/BUILD_ID` is written. ⚠️ **It is a FULL deploy** — it carries
+`20260909140000_licence_type_s14`, a new enum value.
+
+The book itself is vendored at `docs/MOTIVATION-GUIDE-BOOK.md`. Where it
+disagrees with an earlier decision it wins, because it is dated 2026-09-09 and
+the operator asked for all of it.
+
+### What shipped
+
+| Commit | What |
+|---|---|
+| `7312768e` | The book in the repo, and the section 13 statement of law corrected (s13(1)(a) excludes a semi-automatic SHOTGUN; "not fully automatic" offered a member a section their firearm cannot go under). |
+| `3d9802a5` | Annexure discipline. Only paperwork a DFO asks the original of is an annexure; the cartridge drawing, the precinct table and the press cuttings moved into the body flow. |
+| `ecf43224` | The book's writing rules, enforced in `motivation-scope.ts` rather than instructed in a prompt. |
+| `c642a92c` | Cap warnings on the applicant's own checklist page — never in the motivation, which would hand the Registrar the refusal. |
+| `a5dab9c8` | **Section 14.** The product had a dead end: `sectionAllows` refuses a semi-automatic rifle or shotgun under section 13 and names section 14 as the way forward, and nothing offered it. |
+| `27799080` | **The fixed skeleton.** Twelve numbered headings, the same ones every time. |
+| `c9b8957d` | Layout: ragged right, an initial line on every page, and no service name anywhere in the pack. |
+| `fc08dcb9` | The take-with-you sheet is route-aware and section-aware. |
+| `2a136885` | The statutory block set as a quote rather than as prose. |
+
+### Two reversals worth knowing about
+
+⚠️ **`motivation-structure.ts` NOW DOES THE OPPOSITE OF WHAT IT WAS BUILT FOR.**
+It randomised headings, openings and cadence from a seed so a reviewer would not
+recognise our documents. Failure mode 9: that produced "a document that read as
+stitched together". A DFO does not compare applicants' letters for plagiarism;
+they compare the facts to the annexures, and one consistent spine makes that
+faster. The plan is now a pure function of the licence type and four facts about
+the applicant. **The seed is kept as an identifier only.**
+
+Consequence: sameness stopped being a reason to regenerate — a fresh seed gives
+the same plan — and became an admin alert (`motivation-sameness-high`). A high
+score now means the PROSE is repeating, which is a different and worse problem.
+
+⚠️ **"PREPARED BY ALL OUTDOOR" AND THE LOGO ARE OFF THE LODGED PACK**, which
+reverses an explicit instruction (operator, 2026-08-24). Part 1 rule 2 is
+absolute: *"no service name anywhere in the lodged pack. No 'prepared by', no
+footer brand, no 'we'. The applicant signs it as their own letter."* Failure
+mode 20 is the same point from the other end. The footer now carries the
+applicant's full names, ID number, the motivation line, the page number and an
+`INITIAL: ____` rule. Our MO reference came off the cover and the footer too
+(Part 7.2 ends "Nothing else") and is printed once, on the take-with-you sheet,
+which is torn off before the counter — plus the filename and the PDF Title.
+**If the operator wants the branding back, that is one decision to reverse, not
+a code problem.**
+
+### Three defects found by rendering a pack and looking at it
+
+- Every contents line read **"1. introduction"**. Headings reached the renderer
+  already uppercased and `titleCase` folds by lowercasing then capitalising the
+  first character — which on a numbered heading is a digit.
+- The section band numbered itself **01, 02, 03 as it drew**. The numbers are
+  the book's twelve now, gaps included (a section 15 runs 1, 3, 5, 6, 7, 8, 9,
+  11, 12), so it takes them off the heading.
+- **Section marks have never drawn.** `sectionMarksFor` keys them uppercased and
+  colon-stripped; the renderer looked them up with the raw heading line.
+
+### Still outstanding from the book
+
+- **Part 7.4 — the competency table.** The book names three body tables; we draw
+  the battery and the precinct figures, not the competency one (certificate
+  number, date of issue, endorsements, unit standards, provider).
+- **Part 7.5 — who supplies the statute.** The book says the RENDERER generates
+  the quoted block from Part 2 and the writer supplies only the sentences. Today
+  the writer reproduces the supplied block and the renderer styles it (Part 7.5's
+  look, not its mechanism). Moving it needs a labelled contract between the two.
+- **Part 7.7 — annexure divider pages.** No divider page per annexure (letter at
+  48 pt, title at 14 pt, "(n pages)"). The index exists; the dividers do not.
+- **Part 7.3 — where the annexure index lives.** The book puts it on the contents
+  page; ours is its own page.
+- **Part 7.1 — "black on white, no colour except in photographs".** The five
+  layouts draw tinted bands, a gradient masthead and a red ring node. That is a
+  house-style decision the operator picked from a picker, so it was left alone
+  rather than deleted. **Their call.**
+- **Failure mode 6 — a renewal's underlying section.** The book says the
+  underlying section drives a renewal; we do not record it, so the association
+  heading on a renewal is gated on membership instead. It needs one question or
+  a read off the licence card.
+- **The estate route**, excluded on instruction.
+
+---
+
 ## 2026-09-09 — a firearm held under another section ANSWERS the overlap
 
 Deployed `3765c07a` (backend only).
