@@ -145,17 +145,36 @@ const COMMUTE_TIMEOUT_MS = 6_000;
  *
  * ⚠️ GENERATING IS STILL EXCLUDED, and that is the whole reason this is a CAS.
  * Two clicks must not both call the model. QUALITY_REVIEW is excluded for the same
- * reason — a pass is still in flight. FAILED and ABANDONED stay out: an admin
- * owns those.
+ * reason — a pass is still in flight. ABANDONED stays out: that is somebody
+ * deliberately walking away.
+ *
+ * ⚠️ FAILED IS IN, AND LEAVING IT OUT MADE THE PRODUCT CONTRADICT ITS OWN SMS.
+ * The note here used to read "FAILED and ABANDONED stay out: an admin owns
+ * those." Meanwhile notifyOutcome sends the applicant: "we could not finish
+ * document MO000074. Nothing is lost and nothing was charged. Open it and try
+ * again" — with a link. They open it, the button is enabled, they press it, and
+ * the server answers 409 "This document cannot be prepared again from here.
+ * Contact support." Measured on MO000074 on 2026-09-09, through the real page.
+ *
+ * A FAILED row is OUR writer failing its own mechanical checks twice — a wrong
+ * calibre string, an Americanism. There is nothing for an admin to adjudicate
+ * and nothing the applicant did wrong; they are the one person who cannot fix
+ * it and the only one we sent to fix it.
+ *
+ * The two things that made FAILED look dangerous are both already handled: the
+ * seat is claimed once per motivation and not once per attempt, so a retry
+ * takes no second seat, and the controller's 10-per-hour throttle is what
+ * bounds the spend.
  *
  * ⚠️ REGENERATING SPENDS REAL MONEY — a measured S16 run cost $1.64 — but it
  * does NOT take a second seat: the seat is claimed once per motivation, not
  * once per attempt (see the claim below). The ceiling is the controller's
  * 10-per-hour throttle.
  */
-const REGENERABLE: MotivationStatus[] = [
+export const REGENERABLE: MotivationStatus[] = [
   ...EDITABLE,
   MotivationStatus.COMPLETED,
+  MotivationStatus.FAILED,
 ];
 
 @Injectable()

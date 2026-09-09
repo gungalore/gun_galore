@@ -1,3 +1,5 @@
+import { MotivationStatus } from '@prisma/client';
+import { REGENERABLE } from './motivation-generation.service';
 import { MotivationLicenceType } from '@prisma/client';
 import { documentScope, southAfricanise } from './motivation-scope';
 import { arsenalRows } from './motivation-arsenal';
@@ -379,5 +381,37 @@ describe('folding the spelling this document is filed in', () => {
     expect(southAfricanise('the programme')).toBe('the programme');
     expect(southAfricanise('a prize and the size')).toBe('a prize and the size');
     expect(southAfricanise('kilometers')).toBe('kilometres');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// A FAILED DOCUMENT CAN BE TRIED AGAIN, BECAUSE WE TOLD THEM IT COULD.
+//
+// notifyOutcome sends: "we could not finish document MO000074. Nothing is lost
+// and nothing was charged. Open it and try again" — with a link. Until
+// 2026-09-09 FAILED was excluded from REGENERABLE on the reasoning that "an
+// admin owns those", so the member opened it, pressed the enabled button, and
+// got 409 "This document cannot be prepared again from here. Contact support."
+// Measured on MO000074 through the real page.
+//
+// A FAILED row is our own writer failing its own mechanical checks twice.
+// There is nothing for an admin to adjudicate, and the applicant is the one
+// person who cannot fix it.
+// ────────────────────────────────────────────────────────────────────
+
+describe('what a member may ask to be written again', () => {
+  it('⚠️ INCLUDES FAILED, WHICH IS WHAT THE SMS PROMISES', () => {
+    expect(REGENERABLE).toContain(MotivationStatus.FAILED);
+  });
+
+  it('still refuses a run that is in flight', () => {
+    // Two clicks must not both call the model — that is duplicated spend and a
+    // race on the row.
+    expect(REGENERABLE).not.toContain(MotivationStatus.GENERATING);
+    expect(REGENERABLE).not.toContain(MotivationStatus.QUALITY_REVIEW);
+  });
+
+  it('⚠️ STILL REFUSES ABANDONED — that is somebody walking away', () => {
+    expect(REGENERABLE).not.toContain(MotivationStatus.ABANDONED);
   });
 });

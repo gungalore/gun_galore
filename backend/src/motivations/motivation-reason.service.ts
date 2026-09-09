@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { MotivationLicenceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
+import { southAfricanise } from './motivation-scope';
 import { encryptJson, decryptJson } from '../common/blob-crypto';
 import { answerValue } from '../common/card-placeholder';
 import { parseProvenance, stamp } from '../common/answer-provenance';
@@ -334,7 +335,25 @@ export class MotivationReasonService {
     const m = text.match(/\{[\s\S]*\}/);
     try {
       const raw = JSON.parse(m ? m[0] : text) as Record<string, unknown>;
-      const paragraph = String(raw.paragraph ?? '').trim();
+      /**
+       * ⚠️ SPELLING IS FOLDED BEFORE THE CHECK SEES IT, THE SAME AS THE MAIN
+       * WRITER — AND THIS PATH WAS COSTING A MODEL CALL A PAGE LOAD.
+       *
+       * `reasonIssues` rejects an Americanism (rule 8, and rightly: a document
+       * lodged with the SAPS under an Act that spells it "licence" must not say
+       * "authorized"). But a rejection here throws the whole paragraph away and
+       * asks again. Read off the box on 2026-09-09, MO000074 rejected on
+       * "recogniz", then "specializ", then "utiliz" across consecutive
+       * attempts — three paid calls thrown away over a letter, on a paragraph
+       * that was otherwise fine.
+       *
+       * `southAfricanise` changes spelling and nothing else, so it cannot
+       * launder a real fault; the check stays and now fires only on something
+       * the fold could not fix.
+       */
+      const paragraph = southAfricanise(
+        String(raw.paragraph ?? '').trim(),
+      );
       if (!paragraph) return null;
       return {
         angle: String(raw.angle ?? ''),
