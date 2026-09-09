@@ -308,6 +308,13 @@ describe('all fourteen owned firearms reach the paper', () => {
         [`existing_firearm_${n}_type`]: 'Rifle',
         [`existing_firearm_${n}_make`]: `MAKE${n}`,
         [`existing_firearm_${n}_serial`]: `SERIAL${n}`,
+        // ⚠️ THE BARREL COLUMN NEEDS ITS OWN VALUE NOW. Since 2026-09-09 the
+        // barrel box is never borrowed from the row's serial — a card that
+        // prints NONE against the barrel must not be given the receiver's
+        // number (see saps271-map). This fixture is the ORDINARY card, which
+        // prints the same number against both, and that is what makes the
+        // two-column geometry below measurable at all.
+        [`existing_firearm_${n}_barrel_serial`]: `SERIAL${n}`,
       };
     }
     const { pdf } = await svc.build({

@@ -145,18 +145,30 @@ describe('what item 2.1 prints', () => {
     expect(v.text.g_owned_1_barrel_serial).toBe('ZABA01892');
   });
 
-  it('⚠️ FILLS BOTH SERIAL COLUMNS, AND SAYS WHERE THE SECOND ONE CAME FROM', () => {
-    // This left the barrel column blank on the reasoning that one answer must
-    // not become two assertions. Operator, 2026-09-08, who fills these forms:
-    // "we only need to fill in the first 5 fields." A South African licence
-    // card prints the SAME number against the barrel, the frame and the
-    // receiver in the ordinary case, and an empty box the applicant would fill
-    // with a pen is work handed back to them, not caution.
-    //
-    // It is still said out loud, because the applicant is signing it.
+  /**
+   * ⚠️ THE BARREL BOX WENT BACK TO BLANK, AND THIS TEST RECORDS BOTH RULINGS.
+   *
+   * 2026-09-08 it started copying the row's one serial into both columns:
+   * "we only need to fill in the first 5 fields", and a South African card
+   * prints the same number against barrel, frame and receiver in the ordinary
+   * case, so an empty box was work handed back.
+   *
+   * 2026-09-09, on a real 271: "On the 271 it filled the MARLIN's barrel
+   * serial in as the same serial as the reciever when the license state that
+   * it is NONE." The Marlin's card says barrel NONE, receiver MR90189D — and
+   * `answerValue()` strips the placeholder at the answer boundary, so an empty
+   * `_barrel_serial` cannot be told from a card that said NONE.
+   *
+   * Both rulings hold where the card gives a barrel number: it is stored and
+   * it prints (the test below). Where it does not, a blank box the applicant
+   * completes beats a false serial on a form where s120(9)(f) makes one an
+   * offence — which is the reason the original code gave for leaving it blank.
+   */
+  it('⚠️ LEAVES THE BARREL BOX BLANK RATHER THAN BORROWING THE RECEIVER', () => {
     const v = build(row(1));
-    expect(v.text.g_owned_1_barrel_serial).toBe('SER1');
+    expect(v.text.g_owned_1_barrel_serial).toBeUndefined();
     expect(v.text.g_owned_1_frame_serial).toBe('SER1');
+    // Never silent: put() drops an empty in silence, so the table says so.
     expect(v.leftBlank).toContainEqual({
       field: 'saps271_item_2.1_barrel_serial',
       because: expect.stringContaining('check it against the card'),

@@ -13,6 +13,7 @@ import {
   parseEndorsements,
 } from '../common/sa-competency';
 import { answerValue, isCardPlaceholder } from '../common/card-placeholder';
+import { looksLikeLicenceNumber } from '../licence-centre/credential-duplicates';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT THE LICENCE CENTRE ALREADY KNOWS.
@@ -849,7 +850,33 @@ export function credentialOffer(
     calibre: string,
   ): { how: 'identifier' | 'guess'; row: number } | null => {
     for (const r of onForm) {
-      if (licence && r.licence && r.licence === norm(licence)) {
+      /**
+       * ⚠️ A LICENCE NUMBER THAT CANNOT BE ONE IDENTIFIES NOTHING, AND THIS
+       * KEPT FOUR FIREARMS OFF A SIGNED FORM.
+       *
+       * Read off MO000075 on 2026-09-09: six firearms in the vault, TWO on the
+       * application and two on the 271. The reader had put the holder's
+       * 13-digit ID number into `licence_number` on three cards and a bare
+       * four-digit number on the other four — the same value every time — so
+       * the CZ claimed row 1 and the Nordiske, the second CZ and the Glock
+       * were each judged "already on the form" against it; the Marlin claimed
+       * row 2 and the Mauser and the Howa went the same way. Operator: "Not
+       * all my firearms I posses licenses for are listed on the motivation or
+       * 271."
+       *
+       * ⚠️ AND IT WAS SILENT, BECAUSE 'identifier' MEANS "the same firearm,
+       * nothing to say". Only the `guess` branch below tells anybody. A wrong
+       * identifier match is the one that disappears a rifle without a word.
+       *
+       * `looksLikeLicenceNumber` is the same guard `documentFingerprints` uses
+       * for the duplicate flag — one bad read, two places it did damage.
+       */
+      if (
+        licence &&
+        r.licence &&
+        r.licence === norm(licence) &&
+        looksLikeLicenceNumber(licence)
+      ) {
         return { how: 'identifier', row: r.row };
       }
       if (serial && r.serials.includes(norm(serial))) {

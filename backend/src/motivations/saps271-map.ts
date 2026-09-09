@@ -627,7 +627,29 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
      * section E does for the firearm being applied for. Only where we hold
      * nothing for the component does the row's one serial stand in for it.
      */
-    const barrelCol = a(`${p}barrel_serial`) || serialForRow;
+    /**
+     * ⚠️ AND THE BARREL COLUMN NO LONGER BORROWS THE ROW'S SERIAL. Operator,
+     * 2026-09-09: "On the 271 it filled the MARLIN's barrel serial in as the
+     * same serial as the reciever when the license state that it is NONE."
+     *
+     * The card says barrel NONE, receiver MR90189D. `answerValue()` strips a
+     * placeholder at the answer boundary — which is the standing rule and is
+     * right — so `_barrel_serial` arrives EMPTY, and `|| serialForRow` then
+     * cannot tell "the card said NONE" from "we hold nothing", and printed the
+     * receiver's number into the barrel box. On a form where s120(9)(f) makes
+     * a false statement an offence.
+     *
+     * The frame/receiver column still takes the row's serial, because that IS
+     * what the row's serial is: `receiver_serial` writes `_serial` (see
+     * FIELD_ALIASES) and the frame or receiver is the firearm. Where a card
+     * prints one number against all three components — the ordinary case —
+     * `_barrel_serial` carries it and the box fills exactly as before. Where it
+     * does not, the box is blank and is reported in leftBlank, which is the
+     * behaviour this had before 2026-09-08 and the reason given for it then:
+     * copying one number into the barrel box "would assert a barrel serial we
+     * were never given".
+     */
+    const barrelCol = a(`${p}barrel_serial`);
     const frameCol = a(`${p}frame_serial`) || serialForRow;
     put(`g_owned_${n}_barrel_serial` as Saps271FieldName, barrelCol);
     put(`g_owned_${n}_frame_serial` as Saps271FieldName, frameCol);
@@ -654,9 +676,11 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
     if (!inUse) continue;
     ownedRowsFilled++;
     if (!serialForRow) ownedRowsWithoutSerial++;
-    else if (barrelCol === frameCol && !a(`${p}barrel_serial`)) {
-      ownedDuplicatedSerial++;
-    }
+    // ⚠️ NOW COUNTS AN EMPTY BARREL BOX, NOT A BORROWED ONE. The box is left
+    // blank where the card gave us nothing for the barrel, so the note that
+    // used to disclose a duplication now asks for the one thing we could not
+    // supply. Same field, same purpose: nothing on this table is silent.
+    else if (!barrelCol) ownedDuplicatedSerial++;
   }
 
   // ⚠️ SAID OUT LOUD, BECAUSE put() DROPS AN EMPTY IN SILENCE. Every serial
@@ -676,8 +700,8 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
       field: 'saps271_item_2.1_barrel_serial',
       because:
         ownedDuplicatedSerial === 1
-          ? 'one firearm you own has the same serial number printed in both the barrel and the frame/receiver column, because that is the one number we hold — check it against the card, and if the card prints a different number or NONE against the barrel, correct that box'
-          : `${ownedDuplicatedSerial} of the firearms you own have the same serial number printed in both the barrel and the frame/receiver column, because that is the one number we hold — check them against the cards, and correct any box where the card prints a different number or NONE`,
+          ? 'one firearm you own has its barrel serial box blank, because the licence we read gave a number for the frame or receiver and nothing for the barrel — check it against the card and write in whatever it prints there, including NONE'
+          : `${ownedDuplicatedSerial} of the firearms you own have their barrel serial box blank, because the licences we read gave a number for the frame or receiver and nothing for the barrel — check them against the cards and write in whatever each one prints there, including NONE`,
     });
   }
   if (ownedRowsWithoutSerial) {
