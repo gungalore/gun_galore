@@ -43,6 +43,19 @@ const REMINGTON = {
   L1: 36.52, L2: 39.55, L3: 44.7, L6: 57.4, H1: 6.43, H2: 6.43, G1: 5.7,
 };
 
+/**
+ * Bottlenecked, and the LONGEST nose held — 3 calibres of exposed bullet.
+ *
+ * ⚠️ IT IS HERE BECAUSE IT IS WHERE THE TIP BROKE. The operator's own rifle.
+ * A tip radius that was a flat fraction of the bullet passed unnoticed on
+ * every short nose and only showed itself on this one, so a fixture set that
+ * stopped at .223 could not see the fault.
+ */
+const CREEDMOOR = {
+  R: 1.37, R1: 11.99, E: 3.84, E1: 10.39, P1: 11.95, P2: 11.74,
+  L1: 37.84, L2: 41.52, L3: 48.77, L6: 71.76, H1: 7.49, H2: 7.49, G1: 6.72,
+};
+
 const dims = (sheet: Record<string, number | null>): DrawingDims =>
   completeDims(sheet)!.dims;
 
@@ -132,6 +145,89 @@ describe('the profile', () => {
       expect(P[i][0]).toBeGreaterThanOrEqual(P[i - 1][0]);
     }
     expect(P[P.length - 1][0]).toBe(20.0);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE TIP FOLLOWS THE OGIVE.
+//
+// Operator, 2026-09-09: "the tip was wrong and did not follow the correct
+// o-give."
+//
+// The nose is an ogive arc closed by a small sphere, and the sphere used to be
+// a flat 22 % of the bullet radius on every cartridge alike. On a 6.5
+// Creedmoor that is a 1.5 mm ball on a 6.7 mm bullet: by the time a
+// three-calibre ogive reaches the front it is far narrower than that, so the
+// outline left the arc half a millimetre short of the tip, bulged back out to
+// meet the ball, and ended on a vertical face.
+//
+// ⚠️ WHICH IS WHY THE MEASURE IS TAKEN NEAR THE TIP AND NOWHERE ELSE. Both
+// shapes are ogives and over the body of the nose they differ by a few percent
+// — a test of the whole curve barely moves. The fault is entirely in the last
+// 2 % of the length, where it also happens to be the only thing anyone looks
+// at. Old: 20 % of the bullet's radius still standing there. New: 6 %.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * How wide the drawn nose still is at `back` of its length short of the tip,
+ * as a fraction of the bullet's own radius. 0 is a needle; 1 is a cylinder.
+ */
+const tipWidthFrac = (
+  sheet: Record<string, number | null>,
+  back: number,
+): number => {
+  const D = dims(sheet);
+  const P = profile(D);
+  // The nose starts at the last vertex still at full bullet diameter.
+  let start = 0;
+  for (let i = 0; i < P.length; i++) {
+    if (Math.abs(P[i][1] - D.G1 / 2) < 1e-9) start = P[i][0];
+  }
+  const at = D.L6 - (D.L6 - start) * back;
+  for (let i = 1; i < P.length; i++) {
+    const [x0, y0] = P[i - 1];
+    const [x1, y1] = P[i];
+    if (at >= x0 && at <= x1 && x1 > x0) {
+      const t = (at - x0) / (x1 - x0);
+      return (y0 + t * (y1 - y0)) / (D.G1 / 2);
+    }
+  }
+  throw new Error('the nose does not span the point measured');
+};
+
+describe('the tip', () => {
+  it('⚠️ COMES TO A POINT ON A RIFLE ROUND, instead of stopping on a face', () => {
+    // Before the fix these were 0.196 and 0.160 — a fifth of the bullet still
+    // standing, one part in fifty from the end, which is a stub and not a
+    // point. The threshold sits between the two so this test could only ever
+    // have been written by looking at the render.
+    expect(tipWidthFrac(CREEDMOOR, 0.02)).toBeLessThan(0.1);
+    expect(tipWidthFrac(REMINGTON, 0.02)).toBeLessThan(0.1);
+  });
+
+  it('⚠️ AND STAYS BLUNT ON A PISTOL ROUND, which is the other half of it', () => {
+    // A rule that sharpens everything would pass the test above and draw a
+    // 9 mm Luger as a dart. A short nose IS a round nose: the tip radius has
+    // to fall away as the nose lengthens, not simply be made small.
+    //
+    // ⚠️ AND UNDER THE OLD RULE THIS ORDER RAN BACKWARDS — Luger 0.121 against
+    // the .223's 0.159. A fixed fraction of the BULLET, on a nose whose own
+    // width at the front falls with its LENGTH, made the pistol round the
+    // sharper of the two. So the fault was never only that the ball was too
+    // big; it was scaled off the wrong quantity.
+    const luger = tipWidthFrac(LUGER, 0.02);
+    const remington = tipWidthFrac(REMINGTON, 0.02);
+    const creedmoor = tipWidthFrac(CREEDMOOR, 0.02);
+    expect(luger).toBeGreaterThan(remington);
+    expect(remington).toBeGreaterThan(creedmoor);
+  });
+
+  it('closes exactly on the axis at the overall length', () => {
+    for (const sheet of [LUGER, SPECIAL, REMINGTON, CREEDMOOR]) {
+      const D = dims(sheet);
+      const P = profile(D);
+      expect(P[P.length - 1]).toEqual([D.L6, 0]);
+    }
   });
 });
 

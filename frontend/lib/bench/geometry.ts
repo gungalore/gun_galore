@@ -163,6 +163,13 @@ export const MM_PER_INCH = 25.4;
  * of that sphere sits on the axis at `len − rn`, and internal tangency puts it
  * exactly `R − rn` from the ogive's centre — which is what fixes `R` above.
  *
+ * ⚠️ TANGENCY IS NECESSARY AND NOT SUFFICIENT. A sphere can meet the arc
+ * perfectly flat and still read as a cap bolted on, because what the eye
+ * follows is CURVATURE, not slope: hand over from a 62 mm arc to a 0.74 mm one
+ * across a tenth of a millimetre and the point visibly stops being the ogive.
+ * The join is invisible only while the sphere is too small to see, which is
+ * what sizing `rn` below is for.
+ *
  * ⚠️ IT DEGRADES TO AN ELLIPSE WHEN THE NOSE IS SHORTER THAN THE BULLET IS
  * WIDE. Below `len = r` no tangent ogive exists: the algebra returns an `R`
  * under `r`, the centre crosses the axis and the tangency point comes out with
@@ -185,8 +192,40 @@ function noseInto(out: Point[], x0: number, r: number, len: number): void {
     return;
   }
 
-  /** The tip's own radius. */
-  const rn = Math.min(0.22 * r, len * 0.28);
+  /**
+   * The tip's own radius.
+   *
+   * ⚠️ IT SCALES WITH HOW POINTED THE ROUND IS, AND A FLAT FRACTION OF THE
+   * BULLET RADIUS DOES NOT. This was `0.22 r` for every cartridge alike — on a
+   * 6.5 Creedmoor a 1.5 mm ball on the end of a 6.7 mm bullet. By the time a
+   * three-calibre ogive reaches the front it has narrowed to well under that,
+   * so the sphere stopped softening the point and BECAME the point: the
+   * outline left the arc half a millimetre short, bulged back out to meet the
+   * ball, and ended on a vertical face. Operator, 2026-09-09: "the tip was
+   * wrong and did not follow the correct o-give."
+   *
+   * The rule that works is the one real bullets follow — a SHORT nose is a
+   * round nose and a LONG nose is a spitzer — so the tip radius falls away as
+   * the nose lengthens, measured in calibres of the bullet it sits on. A 9 mm
+   * Luger's nose is 0.9 calibres and keeps a 16 % tip, which is the round nose
+   * it has; a .223's is 1.7 and keeps 7 %; a 6.5 Creedmoor's is 3.0 and keeps
+   * 3 %, which is a point. One expression, no special cases, and the ogive
+   * radii the cartridges already drew at — 1.1, 3.4 and 9.3 calibres — barely
+   * move, because this changes the last half-millimetre and not the curve.
+   *
+   * ⚠️ THE OLD RULE WAS NOT MERELY TOO BIG, IT RAN BACKWARDS. Because it was a
+   * fraction of the BULLET and the ogive's own width at the front falls with
+   * nose LENGTH, it left a 9 mm blunter in principle and sharper in fact than
+   * a .223. The backend spec measures all three and pins the order.
+   *
+   * ⚠️ IT IS A SHAPE RULE, NOT A PUBLISHED FIGURE. No C.I.P. sheet prints a
+   * tip radius or a meplat, which is the same reason the note above says the
+   * ogive is cosmetic. It decides how the drawn bullet LOOKS and is never
+   * dimensioned on the page.
+   */
+  const noseCalibres = len / (2 * r);
+  const tipFrac = 0.3 / (1 + noseCalibres * noseCalibres);
+  const rn = Math.min(tipFrac * r, len * 0.28);
   /** The ogive radius that meets the shank flat and the tip sphere tangentially. */
   const R = ((len - rn) ** 2 + r * r - rn * rn) / (2 * (r - rn));
   /** Its centre sits below the axis, on the normal through the shank. */

@@ -213,6 +213,13 @@ export function completeDims(
  * of that sphere sits on the axis at `len − rn`, and internal tangency puts it
  * exactly `R − rn` from the ogive's centre — which is what fixes `R` above.
  *
+ * ⚠️ TANGENCY IS NECESSARY AND NOT SUFFICIENT. A sphere can meet the arc
+ * perfectly flat and still read as a cap bolted on, because what the eye
+ * follows is CURVATURE, not slope: hand over from a 66 mm arc to a 0.74 mm one
+ * across a tenth of a millimetre and the point visibly stops being the ogive.
+ * The join is invisible only while the sphere is too small to see, which is
+ * what sizing `rn` below is for.
+ *
  * ⚠️ IT DEGRADES TO AN ELLIPSE WHEN THE NOSE IS SHORTER THAN THE BULLET IS
  * WIDE. Below `len = r` no tangent ogive exists: the algebra returns an `R`
  * under `r`, the centre crosses the axis and the tangency point comes out with
@@ -235,8 +242,36 @@ function noseInto(out: Point[], x0: number, r: number, len: number): void {
     return;
   }
 
-  /** The tip's own radius. */
-  const rn = Math.min(0.22 * r, len * 0.28);
+  /**
+   * The tip's own radius.
+   *
+   * ⚠️ IT SCALES WITH HOW POINTED THE ROUND IS, AND A FLAT FRACTION OF THE
+   * BULLET RADIUS DOES NOT. This was `0.22 r` for every cartridge alike — on a
+   * 6.5 Creedmoor a 1.5 mm ball on the end of a 6.7 mm bullet. By the time a
+   * three-calibre ogive reaches the front it has narrowed to well under that,
+   * so the sphere stopped softening the point and BECAME the point: the
+   * outline left the arc half a millimetre short, bulged back out to meet the
+   * ball, and ended on a vertical face. Operator, 2026-09-09: "the tip was
+   * wrong and did not follow the correct o-give."
+   *
+   * The rule that works is the one real bullets follow — a SHORT nose is a
+   * round nose and a LONG nose is a spitzer — so the tip radius falls away as
+   * the nose lengthens, measured in calibres of the bullet it sits on. A 9 mm
+   * Luger's nose is 0.9 calibres and keeps a 16 % tip, which is the round nose
+   * it has; a .223's is 1.7 and keeps 7 %; a 6.5 Creedmoor's is 3.1 and keeps
+   * under 3 %, which is a point. One expression, no special cases, and the
+   * ogive radii the cartridges already drew at — 1.1, 3.4 and 9.9 calibres —
+   * barely move, because this changes the last half-millimetre and not the
+   * curve.
+   *
+   * ⚠️ IT IS A SHAPE RULE, NOT A PUBLISHED FIGURE. No C.I.P. sheet prints a
+   * tip radius or a meplat. So it decides how the drawn bullet LOOKS and is
+   * never dimensioned on the page — the same standing as the bearing-surface
+   * fraction in `profile`, and the reason neither is ever called out.
+   */
+  const noseCalibres = len / (2 * r);
+  const tipFrac = 0.3 / (1 + noseCalibres * noseCalibres);
+  const rn = Math.min(tipFrac * r, len * 0.28);
   /** The ogive radius that meets the shank flat and the tip sphere tangentially. */
   const R = ((len - rn) ** 2 + r * r - rn * rn) / (2 * (r - rn));
   /** Its centre sits below the axis, on the normal through the shank. */
@@ -583,6 +618,71 @@ export function cartridgeDrawing(
     role: 'caption',
   });
 
+  /**
+   * ⚠️ THE SLIGHT ANGLE IS TWO ELLIPSES, NOT A ROTATION.
+   *
+   * Operator, 2026-09-09: "continue with the cartridge 3D, make it at a very
+   * slight angle to make it very realisitic looking."
+   *
+   * Turning the whole drawing a few degrees is the obvious reading and it is
+   * the wrong one HERE: every diameter callout is a horizontal line landing on
+   * the silhouette, and every length runs along the axis. Rotate the body and
+   * the dimension lines either rotate with it — measurements printed on a
+   * slant, which a DFO reads as a sloppy drawing — or stay put and stop
+   * touching the thing they measure.
+   *
+   * What a cartridge photographed from a few degrees off the axis actually
+   * shows is its END FACES: the head becomes a shallow ellipse, and a flat
+   * bullet tip becomes a smaller one. That is the whole cue. The silhouette
+   * stays square to the page, the callouts still land, and the object reads as
+   * round rather than as a cut-out.
+   *
+   * ⚠️ THE SQUASH IS 0.15, AND IT WAS CHOSEN BY LOOKING. At 0.34 — about
+   * twenty degrees — the head becomes a broad disc that bulges past the rim
+   * plane, and the R1 extension line, whose datum IS that plane, ends in empty
+   * paper beside it. The measurement stops touching the thing it measures,
+   * which is the failure a rotation of the whole drawing would have caused
+   * everywhere at once.
+   *
+   * At 0.15 the ellipse is about two millimetres across on a 166 mm drawing:
+   * plainly round on paper at 300 dpi, and still inside the rim plane so every
+   * callout lands where it did. "a very slight angle" is the operator's phrase
+   * and it is also the constraint.
+   */
+  const TILT = 0.15;
+  const faceRx = (r: number) => Math.max(0.35, r * S * TILT);
+  const headR = D.R1 / 2;
+  const headFace =
+    `<ellipse cx="${f2(px(0))}" cy="${f2(axisY)}" rx="${f2(faceRx(headR))}" ` +
+    `ry="${f2(headR * S)}" fill="url(#headFace)" class="headFace"/>` +
+    /**
+     * ⚠️ THE PRIMER POCKET, AND THE FIRST VERSION DREW THE WRONG CIRCLE. It
+     * took `D.R / 2` — half the rim THICKNESS, which is a length along the
+     * axis, not a radius — and rendered a dot the size of a full stop in the
+     * middle of the head. `R1` is the rim DIAMETER; a large-rifle primer is
+     * roughly 5.3 mm in an 11.5 mm head, so it is a little under half of it.
+     *
+     * It is what stops the head reading as a plain brass disc, and it is the
+     * "finer detail like the rim part" the operator asked for when this
+     * drawing was first built.
+     */
+    `<ellipse cx="${f2(px(0))}" cy="${f2(axisY)}" rx="${f2(faceRx(headR * 0.46))}" ` +
+    `ry="${f2(headR * 0.46 * S)}" class="headRing"/>`;
+  /**
+   * ⚠️ NO FACE ON THE BULLET, AND THE FIRST ATTEMPT PROVED WHY.
+   *
+   * A face was drawn at the tip from `G1`, on the reading that it was the
+   * meplat of a flat or hollow point. It is not — it is a bullet DIAMETER, so
+   * the drawing came out with a brown disc the full width of the bullet
+   * floating on the point of a spitzer. Rendered and looked at, which is the
+   * only way that was ever going to be caught.
+   *
+   * There is no meplat figure on a C.I.P. sheet, and a spitzer has none worth
+   * drawing anyway. So the tip stays a point: inventing a face there is
+   * exactly the fault this comment set out to avoid, committed by reaching for
+   * the nearest letter that happened to be a radius.
+   */
+
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${widthMm} ${n2(heightMm)}" width="${widthMm}mm" height="${n2(heightMm)}mm">
 <defs>
   ${grad('caseBrass', caseR, BRASS)}
@@ -592,6 +692,19 @@ export function cartridgeDrawing(
     <stop offset="0.12" stop-color="#fffaf0" stop-opacity="0.5"/>
     <stop offset="0.8" stop-color="#fffaf0" stop-opacity="0.5"/>
     <stop offset="1" stop-color="#fffaf0" stop-opacity="0"/>
+  </linearGradient>
+  <!--
+    ⚠️ THE HEAD FACE IS LIT FROM THE OTHER SIDE, and that is what sells the
+    angle. The body's own gradient runs top-dark / middle-bright / bottom-dark
+    across a surface curving TOWARDS the viewer; the head is a flat disc turned
+    slightly AWAY, so it takes a flatter, darker wash with its highlight low
+    and to the left, where the same light would catch its edge. Lighting it
+    like the body makes the two read as one flat shape again.
+  -->
+  <linearGradient id="headFace" gradientUnits="userSpaceOnUse" x1="0" y1="${f2(py(D.R1 / 2))}" x2="0" y2="${f2(py(-D.R1 / 2))}">
+    <stop offset="0" stop-color="#6b5a2e"/>
+    <stop offset="0.55" stop-color="#a08a46"/>
+    <stop offset="1" stop-color="#5a4a24"/>
   </linearGradient>
   <marker id="ar" viewBox="0 0 6 6" refX="3" refY="3" markerWidth="4" markerHeight="4" orient="auto">
     <path d="M0 3 L6 0 L6 6 z" fill="#1a1613"/>
@@ -605,6 +718,9 @@ export function cartridgeDrawing(
   .edgeCu{fill:none;stroke:#3f200c;stroke-width:0.28;stroke-linejoin:round}
   .spec{fill:none;stroke:url(#glint);stroke-width:0.9;stroke-linecap:round}
   .mouth{fill:none;stroke:#4a3c22;stroke-width:0.32}
+  /* The two faces the slight angle reveals. See the head-face note below. */
+  .headFace{stroke:#4a3c22;stroke-width:0.22}
+  .headRing{fill:none;stroke:#4a3c22;stroke-width:0.18}
 </style>
 <polygon points="${closed(casePts)}" fill="url(#caseBrass)"/>
 <polygon points="${closed(bulletPts)}" fill="url(#jacket)"/>
@@ -613,6 +729,7 @@ export function cartridgeDrawing(
 <polygon points="${closed(casePts)}" class="edge"/>
 <polygon points="${closed(bulletPts)}" class="edgeCu"/>
 <path d="M${f2(px(D.L3))} ${f2(py(D.H2 / 2))} L${f2(px(D.L3))} ${f2(py(-D.H2 / 2))}" class="mouth"/>
+${headFace}
 <path d="M${f2(px(-0.8))} ${f2(axisY)} L${f2(px(D.L6 + 0.8))} ${f2(axisY)}" class="axis"/>
 ${parts.join('\n')}
 </svg>`;
