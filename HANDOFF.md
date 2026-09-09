@@ -6,6 +6,138 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-09**.
 
+## 2026-09-09 (later) — MOTIVATION-S13-OUTPUT-REVIEW.md §4, items 1 to 5
+
+Deployed: `9edf30f9`, `bd966943`, `12b0aacc`, `07289a06`, `aec47df2`. The last
+carried a Prisma migration; `prisma migrate deploy` applied it and all three
+services came back online with both health checks and the public site twice.
+
+### The document can no longer state what nothing supplied
+
+`documentScope()` (`motivation-scope.ts`) runs beside `packConsistency` on every
+generation, so a failure costs ONE regeneration and then an admin alert —
+**never a question back to the applicant**, who cannot fix the writer's
+vocabulary by answering something else. It refuses:
+
+- a **section** named for a held firearm that is not the one on its card, and
+  any section at all for a firearm no card placed. Three of MO000071's five
+  guesses were right; a guess that is right by chance is still a guess.
+- a **purpose** for a held firearm nothing supplied — rule 12, enforced.
+- **catalogue copy anywhere**, not only in the reason paragraph. `validateReason`
+  has policed this since it shipped and has only ever seen its own paragraph.
+- hunting, sport and reloading words in an S13, **judged per sentence**. ⚠️ A
+  blanket ban would delete the strongest paragraph an S13 has: "licensed under
+  section 16 for hunting, and a section 16 firearm may not be carried for
+  self-defence". A sentence about a held firearm keeps the vocabulary.
+- any **date until which a competency is valid**. A SAPS competency prints no
+  expiry, so every such date is derived, and MO000071's was derived wrongly.
+
+`existing_firearm_N_section_held` is a real column now, filled off the licence
+card by `credentialOffer` — the vault has read `section` off every card scanned
+since the Centre shipped and nothing ever used it — and **the member's answer
+beats the vault lookup**, so a correction is not overwritten next generation.
+
+### The gates before a model call is spent
+
+- **Competency currency** is an `applicationBlockers` entry: section 6(2) makes
+  a lapsed competency an application that cannot be granted, which is the same
+  class of fact as a rifle under section 13. Valid THROUGH the expiry date; the
+  clock is injected so a re-check months later reaches the same verdict.
+- Reloading is **not asked on an S13** (`NOT_ASKED_BY_TYPE`, so old answers are
+  still accepted and old drafts still save).
+- The **117705 alert waits for a statement of results to be about**. It fired on
+  an application with four certificates in the Centre and none chosen.
+
+### The S13 is ordered as the approved corpus orders it
+
+`introduction → the_threat → storage_safety → existing_measures → the_firearm →
+comparison → statutory_application → conclusion`.
+
+`personal_circumstances`, `the_calibre` and `compliance_history` are gone from
+the S13 skeleton; `existing_measures` is new and is the half of the section 13
+test the document never made — what is already being done about the risk, and
+where each measure stops. `experience` folds into the statutory section.
+
+⚠️ **THE ROOM WAS THE INSTRUCTION.** `the_firearm` had 2–4 paragraphs and a
+brief asking for the action, barrel, capacity and ballistics. On an S13 it is
+one paragraph, sixty words, four facts, and a brief forbidding everything else.
+
+⚠️ **AN S13 NOW HAS NO PERMUTING PAIR** — its pair was experience/storage. The
+anti-template load falls entirely on heading alternates, the opening, the
+closing, the cadence and the conditional comparison section. **Watch the admin
+sameness report**; the fix is more heading alternates, not a looser order.
+
+### What the pack prints
+
+- The **battery table moved under the comparison heading**, where the argument
+  is, and carries **Type, Section and Purpose**. Section prints an em dash where
+  no card established one; Purpose is stated or absent and never derived from
+  the section number.
+- The **press-clippings annexure opens with the SAPS quarterly table** for each
+  precinct cited — home station plus up to two the applicant ticked — with the
+  release named on every table.
+- The **cartridge is drawn** (see the earlier entry) and the writer is told it
+  does not know whether a drawing was placed or where, so it must never refer
+  to one.
+- Annexure titles drop the second person; the calibre prints as a calibre
+  (`displayCalibre`), and `packConsistency` accepts either form.
+
+### What the member is offered
+
+- The **incident picker refuses sexual offences and court-diary items** and
+  anything classified `other`. It offered a child rape in Atlantis. The filter
+  runs on the picker, the area list AND the stored ids, because a draft can
+  hold something chosen before the filter existed.
+- The **take-to-the-station list is route-aware** — a private sale is no longer
+  told to bring the dealer's tax invoice — and "Character references, if you
+  have them" is gone until there is a slot to put one in.
+- **Proof of address says what else it shows.** MO000071's was a rental
+  statement carrying the applicant's rent and a R134 arrears line.
+- "Use my current location" is off the Employer's address; the six component
+  rows stay off the sheet until a reader fills one; the 271 meter holds its
+  tongue while the header still has a count.
+
+### The endorsement, and The Bench
+
+`CredentialKind.ASSOCIATION_ENDORSEMENT` exists (migration
+`20260909100000_credential_association_endorsement`), the classifier has one
+test for it — **does the page name a firearm by serial** — and the Document
+Centre offers it instead of filing one as dedicated status. An endorsement
+matched to an owned row **by serial** fills that row's purpose.
+
+⚠️ **It stays out of `VAULTABLE`, for `CURRENT_LICENCE`'s reason**: the Centre
+is the route, and adopting from an application would file a second row.
+
+**The Bench draws 83 more cartridges.** `canDraw` wanted all thirteen letters
+and only 132 of 215 sheets print them, so 9 mm Luger and .38 Special drew
+nothing. The pack's `completeDims` is ported into `lib/bench/geometry.ts`, kept
+identical on purpose, and the 2D drawing never annotates a letter it filled in.
+
+### Still open, and needing the operator
+
+1. ⚠️ **§1.7's article body / screenshot is NOT done and is not mine to decide.**
+   The review asks for the article body or a page screenshot in the clippings
+   annexure, "with the paraphrase rule relaxed for an annexed source". The
+   operator ruled the opposite way on 2026-09-07 and `news/news.types.ts`
+   records it in their own words: "just the picture and headline and subscript
+   ... Never the body of the article ... reproducing it is the publisher's
+   right, not ours." Two rulings a day apart, opposite ways, on somebody else's
+   copyright. The half both agree on — the precinct figures table — is built.
+2. **`association-activities.ts` is not built.** Brief §5.5a wants a per-
+   association library of exercises with each eligibility rule verbatim, seeded
+   from natshoot.co.za and sahunters.co.za, and says in as many words that the
+   operator reviews it before it ships. Until it exists, `UNPROVABLE_RULE_WORDS`
+   keeps refusing the claims it would let the writer prove.
+3. **`cipSheetEnabled`.** The spliced facsimile page now renders only when we
+   hold no figures for the round, and its heading no longer names a source.
+   Retire the flag, or leave it as the fallback — a decision, not a defect.
+4. ⚠️ **`MO000072` is the only motivation on the box**, S13, still `DRAFT`.
+   MOTIVATION-S13-OUTPUT-REVIEW.md asks for it to be deleted; that predates
+   MO000071 going, and deleting it now leaves production with nothing to test
+   against.
+
+---
+
 ## 2026-09-09 — the cartridge drawing, the arsenal, and the SAPS 271 back on screen
 
 Deployed: `df04ec15` (full), `641f79e0` (backend), `65c1d72b` (full),
@@ -115,15 +247,10 @@ the only surface for a capability the way `pack-finish` was: that is now twice.
 
 ### Open, and needing the operator
 
-1. **The Bench itself still refuses these cartridges.**
-   `frontend/lib/bench/geometry.ts`'s `canDraw` requires all thirteen letters,
-   so a member opening The Bench for 9 mm Luger or .38 Special gets no drawing —
-   83 of 215 sheets. The backend now derives them; the frontend does not. Same
-   fix, same file shape, deliberately not done here because it changes what
-   members see.
-2. **`cipSheetEnabled` and its label.** The spliced page is captioned
-   "(C.I.P. data)", which names a source in a contents page. It only renders now
-   when we hold no figures. Retire it, or rename the label.
+1. ✅ **The Bench draws them now** — `completeDims` was ported into
+   `lib/bench/geometry.ts` later the same day. See the entry above.
+2. ✅ **The label no longer names a source.** Whether to retire
+   `cipSheetEnabled` altogether is still a decision; see above.
 3. ⚠️ **`MO000072` is the ONLY motivation on the box**, S13 self-defence, still
    `DRAFT`. `MOTIVATION-S13-OUTPUT-REVIEW.md` asks for it to be deleted; that
    ask predates MO000071 going, and deleting it now would leave production with
@@ -132,15 +259,10 @@ the only surface for a capability the way `pack-finish` was: that is now twice.
    motivation and still offers the SAPS 271, which is correct — the form fills
    from the answers and does not wait on the writer.
 
-### Still outstanding from `MOTIVATION-S13-OUTPUT-REVIEW.md` §4
+### Outstanding from `MOTIVATION-S13-OUTPUT-REVIEW.md` §4
 
-Item 1 is half done: the arsenal reaches the writer as rows
-(`motivation-arsenal.ts`, with a section only where a licence card established
-one **by serial**), which stops it inventing five firearms from a count. The
-**endorsement OCR and shelf entry** (brief §5.5a) and the **section/role
-validator** are not. Items 2–5 — competency currency, the writer's section
-order and banned phrases, the annexure work, and the sheet cosmetics — are
-untouched.
+⚠️ **Superseded — items 1 to 5 all shipped later the same day.** See the entry
+above this one for what each of them turned into and what is still open.
 
 ---
 
