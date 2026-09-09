@@ -477,3 +477,60 @@ describe('sport vocabulary in a section 13 battery paragraph', () => {
     ).toEqual([]);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE WORD THAT COST A WHOLE MOTIVATION.
+//
+// MO000074, 2026-09-09: a complete 1 432-word section 13 document refused, and
+// the applicant told "we could not finish document MO000074", because one
+// sentence began "Furthermore,". Deleting the word costs the sentence nothing.
+// ────────────────────────────────────────────────────────────────────
+
+describe('filler that can be deleted, and claims that cannot', () => {
+  it('⚠️ DROPS THE WORD THAT FAILED MO000074, AND RECAPITALISES', () => {
+    expect(
+      southAfricanise(
+        'I leave before five. Furthermore, my daily commute takes me through ' +
+          'high-risk precincts.',
+      ),
+    ).toBe(
+      'I leave before five. My daily commute takes me through high-risk precincts.',
+    );
+  });
+
+  it('drops it at the very start of the document too', () => {
+    expect(southAfricanise('Moreover, the street has no guard.')).toBe(
+      'The street has no guard.',
+    );
+  });
+
+  it('leaves nothing behind for the check to find', () => {
+    const after = southAfricanise('I work late. In conclusion, I need this.');
+    expect(
+      documentScope(after, { licenceType: S13, arsenal: [] }).filter((i) =>
+        /filler/.test(i),
+      ),
+    ).toEqual([]);
+  });
+
+  it('⚠️ NEVER TOUCHES A CLAIM — those must still fail', () => {
+    // Cut "peace of mind" or "law-abiding" and the sentence means something
+    // else, or nothing. A document making them should not be filed.
+    for (const claim of [
+      'I want a firearm for peace of mind.',
+      'I am a law-abiding citizen.',
+      'I keep it in case something happens.',
+    ]) {
+      expect(southAfricanise(claim)).toBe(claim);
+      expect(
+        documentScope(claim, { licenceType: S13, arsenal: [] }).length,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('⚠️ SENTENCE-INITIAL ONLY — mid-sentence it may be a fact', () => {
+    // A night-shift worker's routine genuinely happens at the end of the day.
+    const s = 'I return home at the end of the day, often after eleven.';
+    expect(southAfricanise(s)).toBe(s);
+  });
+});

@@ -535,5 +535,52 @@ export function southAfricanise(text: string): string {
   for (const [pattern, replacement] of SPELLING) {
     out = out.replace(pattern, (m) => likeFor(replacement, m));
   }
+  return dropOpeningFiller(out);
+}
+
+/**
+ * Connectives that can be deleted from the head of a sentence, losing nothing.
+ *
+ * ⚠️ MO000074 WAS THROWN AWAY OVER ONE OF THESE. A complete 1 432-word section
+ * 13 motivation was refused, and the applicant told "we could not finish
+ * document MO000074", because a sentence began:
+ *
+ *   "Furthermore, my daily work commute takes me through high-risk precincts
+ *    where violent crime is prevalent."
+ *
+ * `SLOP_PHRASES` is right that it reads as generated — book Part 8.3 — but the
+ * check is MECHANICAL, and a mechanical failure costs the whole pack. Deleting
+ * the word costs the sentence nothing at all.
+ *
+ * ⚠️ FOUR WORDS, AND THE REST OF SLOP_PHRASES STAYS FATAL. This is the line,
+ * and it is not "which phrases are worst": it is which can be REMOVED without
+ * changing what the sentence says. "Peace of mind", "in case", "law-abiding"
+ * and "responsible firearm owner" are CLAIMS sitting inside a sentence — cut
+ * them and the sentence means something else, or nothing. Those must still
+ * fail, because a document making them is a document that should not be filed.
+ *
+ * ⚠️ SENTENCE-INITIAL ONLY. "At the end of the day" mid-sentence may be part of
+ * a real answer about somebody's routine — a night-shift worker's commute is
+ * exactly that — and deleting it there would edit a fact.
+ */
+const OPENING_FILLER = [
+  'furthermore',
+  'moreover',
+  'in conclusion',
+  'at the end of the day',
+] as const;
+
+function dropOpeningFiller(text: string): string {
+  let out = text;
+  for (const phrase of OPENING_FILLER) {
+    // Start of the text, or straight after a full stop or a newline.
+    const re = new RegExp(
+      `(^|[.!?]\\s+|\\n\\s*)${phrase}\\s*,\\s*([a-z])`,
+      'gi',
+    );
+    out = out.replace(re, (_m, lead: string, next: string) => {
+      return `${lead}${next.toUpperCase()}`;
+    });
+  }
   return out;
 }
