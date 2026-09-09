@@ -621,6 +621,16 @@ export interface MotivationPdfInput {
    * station is holding paper and not a phone.
    */
   takeWithYou?: { label: string; note?: string }[];
+  /**
+   * Where the Act is stricter than what the CFR sometimes accepts.
+   *
+   * ⚠️ THIS PAGE AND NOWHERE ELSE. The motivation never argues against its own
+   * application — a Registrar reading "this may exceed the section 15 limit"
+   * in the applicant's own words has been handed their refusal. The sheet
+   * these print on is removed at the counter and never lodged.
+   * See motivation-warnings.ts and MOTIVATION-GUIDE-BOOK Part 3.2 / 10.6.
+   */
+  warnings?: { authority: string; message: string }[];
 }
 
 /**
@@ -2468,6 +2478,44 @@ export class MotivationPdfService {
       // show a reader which of them they are holding.
       K.label(chrome, 'BEFORE YOU GO', MARGIN, doc.y, contentWidth);
       doc.y += K.px(8.5) * 1.2 + K.mm(3);
+
+      /**
+       * ⚠️ THE WARNINGS COME FIRST, BOXED, BECAUSE THEY CHANGE WHETHER TO GO
+       * AT ALL. Everything below this is a list of things to carry; a cap the
+       * applicant is over is a reason to speak to the DFO before spending the
+       * fee, the fingerprints and the wait. Each carries the subsection it
+       * comes from so the member can check it rather than take our word.
+       */
+      for (const w of input.warnings ?? []) {
+        if (doc.y > K.BODY_BOTTOM - K.mm(30)) doc.addPage();
+        const top = doc.y;
+        doc.y = top + K.mm(3);
+        doc
+          .font(F.sansBold)
+          .fontSize(K.px(9))
+          .fillColor(C.deep)
+          .text(w.authority.toUpperCase(), MARGIN + K.mm(3), doc.y, {
+            width: contentWidth - K.mm(6),
+            characterSpacing: 0.3,
+          });
+        doc.y += K.mm(1);
+        doc
+          .font(B.body)
+          .fontSize(K.BODY_SIZE)
+          .fillColor(C.ink)
+          .text(w.message, MARGIN + K.mm(3), doc.y, {
+            width: contentWidth - K.mm(6),
+            lineGap: K.px(1.5),
+          });
+        doc.y += K.mm(3);
+        doc
+          .rect(MARGIN, top, contentWidth, doc.y - top)
+          .lineWidth(0.8)
+          .strokeColor(C.accent)
+          .stroke();
+        doc.x = MARGIN;
+        doc.y += K.mm(4);
+      }
       doc
         .font(F.sans)
         .fontSize(K.px(22))

@@ -1,4 +1,8 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
+import {
+  applicationWarnings,
+  type ApplicationWarning,
+} from './motivation-warnings';
 // ⚠️ ONE DEFINITION OF "HOW MANY SAFE PHOTOGRAPHS", shared with
 // documentStatus. Two surfaces disagreeing about it is how a member gets a
 // green tick on one screen and an amber row on the next.
@@ -167,6 +171,15 @@ export interface ChecklistProgress {
   oursTotal: number;
   /** Count the applicant still has to gather themselves. */
   theirsTotal: number;
+  /**
+   * Where the Act is stricter than what the CFR sometimes accepts.
+   *
+   * ⚠️ ON THE APPLICANT'S OWN PAGE, NEVER IN THE MOTIVATION. See
+   * motivation-warnings.ts: a document that argues against its own application
+   * hands the Registrar their refusal in the applicant's own words. These
+   * print on the sheet that is removed at the counter.
+   */
+  warnings: ApplicationWarning[];
 }
 
 export const UPLOAD_KIND_LABELS: Record<MotivationUploadKind, string> = {
@@ -1286,6 +1299,7 @@ export function buildChecklist(
       : {}),
   }));
 
+  const warnings = applicationWarnings(licenceType, context.answers ?? {});
   const oursDone = ours.filter((i) => i.done).length;
 
   return {
@@ -1324,6 +1338,7 @@ export function buildChecklist(
         items: theirs,
       },
     ],
+    warnings,
     oursDone,
     oursTotal: ours.length,
     theirsTotal: theirs.length,

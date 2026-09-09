@@ -42,6 +42,7 @@ import {
 } from './motivation-checklist';
 import { MotivationSellerConsentService } from './motivation-seller-consent.service';
 import { buildPriorNoticeRequest } from './motivation-prior-notice';
+import { applicationWarnings } from './motivation-warnings';
 import { buildCompletedStatement } from './motivation-character-statement';
 import { WITNESS_FORM_VERSION } from './motivation-witness-form';
 import { readFile } from 'node:fs/promises';
@@ -763,6 +764,11 @@ export class MotivationRenderService {
       cartridgeDrawing: await this.cartridgeDrawingFor(answers.firearm_calibre),
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
+      // ⚠️ THE APPLICANT'S PAGE, NOT THE REGISTRAR'S. See MotivationPdfInput.
+      warnings: applicationWarnings(row.licenceType, answers).map((w) => ({
+        authority: w.authority,
+        message: w.message,
+      })),
       takeWithYou: buildChecklist(row.licenceType, kinds)
         .sections.find((sec) => sec.key === 'theirs')
         ?.items.map((i) => ({ label: i.label, note: i.note })),

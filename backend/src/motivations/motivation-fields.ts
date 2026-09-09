@@ -95,7 +95,7 @@ import { answerValue } from '../common/card-placeholder';
 // the whole reason the version is stamped rather than assumed. Every removal
 // above is a RETIREMENT — fieldByKey still finds the key — and not a deletion,
 // so the wizard's whole-blob autosave cannot drop an answer somebody gave.
-export const FIELD_REGISTRY_VERSION = '2026-09-09';
+export const FIELD_REGISTRY_VERSION = '2026-09-09b';
 
 // ── THE SAPS 271 IS ALWAYS PRODUCED, AND NOBODY IS ASKED ────────────
 //
@@ -1343,6 +1343,36 @@ const COMMON_FIELDS: readonly MotivationField[] = [
       'Break action',
     ],
     required: true,
+  },
+  {
+    /**
+     * ⚠️ THE ONE FIGURE SECTION 16 TURNS ON FOR A SEMI-AUTOMATIC SHOTGUN.
+     * s16(1)(c) admits a "semi-automatic shotgun manufactured to fire no more
+     * than five shots in succession without having to be reloaded" — the
+     * paragraph substituted by Act 43 of 2003, in force, whose deletion in Act
+     * 28 of 2006 never commenced. Nothing asked for it, so nothing could warn
+     * an applicant that a six-shot shotgun is outside the section they are
+     * applying under. MOTIVATION-GUIDE-BOOK Part 3.2.
+     *
+     * ⚠️ ASKED OF EVERY SEMI-AUTOMATIC, NOT ONLY SHOTGUNS, because `showIf`
+     * takes ONE key and the condition is really "shotgun AND semi-automatic".
+     * The wider question is not wasted: section 14(4) asks an applicant to
+     * motivate a restricted firearm and the manufactured capacity is a fact
+     * that argument turns on too.
+     *
+     * ⚠️ MANUFACTURED CAPACITY, NOT WHAT IS IN IT. The Act's test is what the
+     * firearm was built to do. A plugged magazine does not change the answer
+     * and a member who gives the plugged number has said something the DFO
+     * will read against the serial number's own record.
+     */
+    key: 'firearm_capacity',
+    label: 'Manufactured capacity',
+    kind: 'short',
+    section: 'The firearm',
+    showIf: { key: 'firearm_action', equals: 'Semi-automatic (self-loading)' },
+    help: 'How many shots it was MADE to fire without reloading — not how many you load. It is on the box, the manual or the dealer’s invoice.',
+    formOnly: true,
+    maxLength: 20,
   },
   {
     key: 'firearm_make',
