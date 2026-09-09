@@ -60,6 +60,10 @@ void (async () => {
         'enough of them to deal with an attack without stopping to reload. Because the ' +
         'dimensions are standardised, any manufacturer’s ammunition fits, so I am not tied ' +
         'to one supplier or one price.',
+      'Why I need a firearm for self-defence:',
+      'Kraaifontein recorded 95 burglaries at residential premises and 16 robberies at ' +
+        'residential premises in April to June 2026. My shift ends at 22:00 and I drive ' +
+        'home on the R101; the last four kilometres has no street lighting.',
       'Comparison with the firearms I already hold:',
       'I hold two rifles, both licensed for hunting. Neither can be carried on my person ' +
         'and neither may lawfully be used for self-defence, so neither answers the risk ' +
@@ -69,6 +73,38 @@ void (async () => {
         'room at my residence. No other person has the combination.',
     ].join('\n\n'),
     batteryHeading: 'COMPARISON WITH THE FIREARMS I ALREADY HOLD',
+    exposureHeading: 'WHY I NEED A FIREARM FOR SELF-DEFENCE',
+    precinctTables: [
+      {
+        station: 'Kraaifontein — Cape Town, Western Cape',
+        source: 'SAPS quarterly crime statistics, April–June 2026 release',
+        rows: [
+          { category: 'Burglary at residential premises', latest: '95 in Apr–Jun 2026', trend: 'up 12% year on year' },
+          { category: 'Robbery at residential premises', latest: '16 in Apr–Jun 2026', trend: 'up 6% year on year' },
+          { category: 'Common robbery', latest: '54 in Apr–Jun 2026', trend: 'down 3% year on year' },
+        ],
+      },
+    ],
+    pressClippings: [
+      {
+        index: 1,
+        total: 2,
+        sourceName: 'TygerBurger',
+        publishedOn: '2026-06-18',
+        headline: 'Armed robbery at Kraaifontein shopping centre',
+        standfirst: 'Three men held up staff at gunpoint on Tuesday evening before fleeing in a waiting vehicle.',
+        url: 'https://tygerburger.co.za/kraaifontein-robbery',
+      },
+      {
+        index: 2,
+        total: 2,
+        sourceName: 'Cape Argus',
+        publishedOn: '2026-05-04',
+        headline: 'House robbery in Bothasig leaves family shaken',
+        standfirst: 'The family was held for twenty minutes while the house was ransacked.',
+        url: 'https://capeargus.co.za/bothasig-house-robbery',
+      },
+    ],
     ownedFirearms: [
       {
         make: 'Marlin 1895',

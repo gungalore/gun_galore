@@ -397,6 +397,27 @@ export interface MotivationPdfInput {
    */
   batteryHeading?: string;
   /**
+   * The printed heading of the section that argues the applicant's exposure to
+   * risk — uppercased, colon stripped — under which the crime evidence belongs.
+   *
+   * ⚠️ THE FIGURES AND THE CUTTINGS ARE PART OF THE ARGUMENT, NOT A TAB AT THE
+   * BACK. Operator, 2026-09-09: "only paperwork required by the dfo are
+   * attached as annexures. all other things like the cartridge specs and
+   * clippings and those things must be in the body of the document itself and
+   * form part of the flow, it must not be just placed there because it has to
+   * be there."
+   *
+   * A precinct table and a newspaper cutting are published material we
+   * assembled — the applicant holds no original and no DFO will ask to see
+   * one. They print where the paragraph that uses them is, so a reader meets
+   * the claim and its evidence in one movement instead of turning to the back
+   * and losing the sentence.
+   *
+   * Absent on a plan with no exposure section, and the evidence then prints
+   * under a heading of its own rather than being dropped.
+   */
+  exposureHeading?: string;
+  /**
    * "Barrett self-loading rifle, serial BR009252" — the firearm named in the
    * running footer, so a loose sheet can be filed against the right
    * application. Optional: a renewal or a pack with no firearm chosen yet
@@ -704,8 +725,14 @@ function clippingDateLabel(iso: string): string {
  * the publisher's right, not ours."
  */
 export interface PressClippingPage {
-  /** The ONE letter the whole "Press clippings" annexure shares. */
-  letter: string;
+  /**
+   * ⚠️ NO LETTER. A cutting is not an annexure — operator, 2026-09-09: "only
+   * paperwork required by the dfo are attached as annexures. all other things
+   * like the cartridge specs and clippings and those things must be in the
+   * body of the document itself and form part of the flow". The applicant
+   * holds no original of a newspaper page; there is nothing for a DFO to ask
+   * to see. These print inside the exposure section they are evidence for.
+   */
   /** 1-based position among the clippings actually printed. */
   index: number;
   total: number;
@@ -1185,6 +1212,196 @@ export class MotivationPdfService {
     };
 
     /**
+     * The crime evidence: the precinct figures, then the cuttings.
+     *
+     * ⚠️ IN THE FLOW, AT BODY SCALE. As an annexure each cutting took a page
+     * of its own with a masthead, a full-width picture and a rule — which is
+     * what a reprinted document looks like. In the body they are exhibits
+     * inside a paragraph's own argument, so the picture is a third of the
+     * column, several fit on a page, and the reader's eye never leaves the
+     * section.
+     */
+    let crimeDrawn = false;
+
+    const hasCrimeEvidence = () =>
+      (input.precinctTables?.length ?? 0) > 0 ||
+      (input.pressClippings?.length ?? 0) > 0;
+
+    const drawCrimeEvidence = () => {
+      if (crimeDrawn || !hasCrimeEvidence()) return;
+      crimeDrawn = true;
+
+      for (const t of input.precinctTables ?? []) {
+        if (doc.y > K.BODY_BOTTOM - 90) doc.addPage();
+        doc
+          .font(F.sansBold)
+          .fontSize(K.px(11))
+          .fillColor(C.deep)
+          .text(t.station, MARGIN + K.SECTION_INDENT, doc.y, {
+            width: contentWidth - K.SECTION_INDENT,
+          });
+        doc.y += 1;
+        doc
+          .font(B.bodyItalic)
+          .fontSize(8.5)
+          .fillColor(C.mut)
+          .text(t.source, MARGIN + K.SECTION_INDENT, doc.y, {
+            width: contentWidth - K.SECTION_INDENT,
+          });
+        doc.y += 5;
+
+        const tw = contentWidth - K.SECTION_INDENT;
+        const cols = [
+          { head: 'Category', w: Math.round(tw * 0.44) },
+          { head: 'Latest quarter', w: Math.round(tw * 0.32) },
+          { head: 'Trend', w: 0 },
+        ];
+        cols[2].w = tw - cols[0].w - cols[1].w;
+
+        const headTop = doc.y;
+        doc.rect(MARGIN + K.SECTION_INDENT, headTop, tw, 17).fill(C.band);
+        let hx = MARGIN + K.SECTION_INDENT + 5;
+        for (const c of cols) {
+          doc
+            .font(FONT_BOLD)
+            .fontSize(7.5)
+            .fillColor(C.ink)
+            .text(c.head.toUpperCase(), hx, headTop + 6, {
+              width: c.w - 8,
+              characterSpacing: 0.3,
+              lineBreak: false,
+            });
+          hx += c.w;
+        }
+        doc.y = headTop + 17;
+
+        for (const r of t.rows) {
+          if (doc.y > K.BODY_BOTTOM - 26) doc.addPage();
+          const top = doc.y + 4;
+          let bottom = top;
+          let cx = MARGIN + K.SECTION_INDENT + 5;
+          for (const [i, v] of [r.category, r.latest, r.trend].entries()) {
+            doc
+              .font(FONT)
+              .fontSize(8.5)
+              .fillColor(BLACK)
+              .text(v || '—', cx, top, { width: cols[i].w - 8 });
+            bottom = Math.max(bottom, doc.y);
+            cx += cols[i].w;
+          }
+          const ruleY = bottom + 4;
+          doc
+            .moveTo(MARGIN + K.SECTION_INDENT, ruleY)
+            .lineTo(MARGIN + contentWidth, ruleY)
+            .lineWidth(0.5)
+            .strokeColor(C.hair)
+            .stroke();
+          doc.y = ruleY;
+        }
+        doc.x = MARGIN;
+        doc.y += PARA_GAP;
+      }
+
+      /**
+       * ⚠️ A CUTTING IS AN EXHIBIT, NOT A REPRINT. Masthead line, headline,
+       * picture at a third of the column, standfirst, source line — boxed by a
+       * hairline so the reader can see where the applicant's own words stop
+       * and the newspaper's begin. That boundary is the whole reason the block
+       * is ruled: a quoted headline sitting loose in a first-person letter
+       * reads as the applicant's assertion.
+       */
+      for (const clip of input.pressClippings ?? []) {
+        const cw = contentWidth - K.SECTION_INDENT;
+        const x0 = MARGIN + K.SECTION_INDENT;
+        if (doc.y > K.BODY_BOTTOM - K.mm(45)) doc.addPage();
+
+        const top = doc.y;
+        doc.y = top + K.mm(3);
+
+        doc
+          .font(F.sans)
+          .fontSize(K.px(8.5))
+          .fillColor(C.mut)
+          .text(
+            `${clip.sourceName} · ${clippingDateLabel(clip.publishedOn)}`,
+            x0 + K.mm(3),
+            doc.y,
+            { width: cw - K.mm(6), lineBreak: false, ellipsis: true },
+          );
+        doc.y += K.mm(1.5);
+
+        doc
+          .font(F.sansBold)
+          .fontSize(K.px(11.5))
+          .fillColor(C.deep)
+          .text(clip.headline, x0 + K.mm(3), doc.y, {
+            width: cw - K.mm(6),
+            lineGap: K.px(1),
+          });
+        doc.y += K.mm(2);
+        doc.x = MARGIN;
+
+        if (clip.image && clip.image.width > 0 && clip.image.height > 0) {
+          const ratio = clip.image.height / clip.image.width;
+          let w = Math.min(cw - K.mm(6), K.mm(52));
+          let h = w * ratio;
+          const maxH = K.BODY_BOTTOM - doc.y - K.mm(20);
+          if (maxH > K.mm(10)) {
+            if (h > maxH) {
+              h = maxH;
+              w = ratio > 0 ? h / ratio : w;
+            }
+            const imgTop = doc.y;
+            try {
+              doc.image(clip.image.bytes, x0 + K.mm(3), imgTop, {
+                width: w,
+                height: h,
+              });
+              doc.y = imgTop + h + K.mm(2.5);
+            } catch {
+              // A fetched file pdfkit rejects must not kill the PDF. No
+              // placeholder box — the same rule the annexure version had.
+            }
+          }
+        }
+        doc.x = MARGIN;
+
+        const standfirst = clip.standfirst?.trim();
+        if (standfirst) {
+          doc
+            .font(B.bodyItalic)
+            .fontSize(K.px(9.5))
+            .fillColor(C.ink)
+            .text(standfirst, x0 + K.mm(3), doc.y, {
+              width: cw - K.mm(6),
+              lineGap: K.px(1),
+            });
+          doc.y += K.mm(2);
+          doc.x = MARGIN;
+        }
+
+        doc
+          .font(F.sans)
+          .fontSize(K.px(8))
+          .fillColor(C.mut)
+          .text(`${clip.url} — as published`, x0 + K.mm(3), doc.y, {
+            width: cw - K.mm(6),
+            lineBreak: false,
+            ellipsis: true,
+          });
+        doc.y += K.mm(3);
+
+        doc
+          .rect(x0, top, cw, doc.y - top)
+          .lineWidth(0.5)
+          .strokeColor(C.hair)
+          .stroke();
+        doc.x = MARGIN;
+        doc.y += PARA_GAP;
+      }
+    };
+
+    /**
      * The battery table — every firearm already licensed to the applicant.
      *
      * ⚠️ THIS TABLE IS EVIDENCE, NOT DECORATION. Section 13 caps a
@@ -1366,8 +1583,22 @@ export class MotivationPdfService {
       .map((b) => b.trim())
       .filter(Boolean);
 
+    /**
+     * ⚠️ AFTER THE PARAGRAPHS, NOT UNDER THE HEADING. The drawing and the
+     * battery table are illustrations of their whole section and lead it; the
+     * crime evidence is what the exposure paragraphs have just CITED, so it
+     * belongs at the foot of that section where the reader has already been
+     * told what to look for. This flag carries the intent from the heading to
+     * the next heading.
+     */
+    let pendingCrime = false;
+
     for (const block of blocks) {
       if (isHeading(block)) {
+        if (pendingCrime) {
+          drawCrimeEvidence();
+          pendingCrime = false;
+        }
         /**
          * ⚠️ THE DRAWING GOES UNDER THE WRITER'S OWN HEADING. Every S13 plan
          * opens a section on the cartridge, and that is the one place in the
@@ -1389,6 +1620,17 @@ export class MotivationPdfService {
           !!input.batteryHeading &&
           !batteryDrawn &&
           block.replace(/:\s*$/, '').toUpperCase() === input.batteryHeading;
+        /**
+         * ⚠️ THE EVIDENCE GOES WHERE THE ARGUMENT IS. The precinct figures and
+         * the cuttings print under the exposure heading, after the paragraphs
+         * that cite them, so a reader meets the claim and the thing that
+         * proves it without turning to the back of the pack.
+         */
+        const wantsCrime =
+          !!input.exposureHeading &&
+          !crimeDrawn &&
+          hasCrimeEvidence() &&
+          block.replace(/:\s*$/, '').toUpperCase() === input.exposureHeading;
 
         // Keep a heading with at least a couple of lines of its paragraph:
         // if we are near the bottom, start the page now rather than orphan it.
@@ -1407,6 +1649,7 @@ export class MotivationPdfService {
         renderHeading(block.replace(/:\s*$/, '').toUpperCase());
         if (wantsCartridge) drawCartridge();
         if (wantsBattery) drawBattery();
+        pendingCrime = wantsCrime;
       } else {
         // A parenthetical annexure reference is its own line in their
         // documents — "(Refer to Annexure B: Proficiency Certificates)" —
@@ -1493,6 +1736,20 @@ export class MotivationPdfService {
           final: true,
         });
       }
+    }
+
+    /**
+     * ⚠️ THE EVIDENCE IS NEVER DROPPED IN SILENCE. Where the writer opened an
+     * exposure section this already printed at the foot of it; this is the
+     * draft that never raised the subject, or a licence type whose plan has no
+     * such section. It gets a heading of its own rather than disappearing —
+     * losing the precinct figures a member ticked areas to obtain is the one
+     * outcome worse than an extra heading.
+     */
+    if (hasCrimeEvidence() && !crimeDrawn) {
+      if (doc.y > K.BODY_BOTTOM - mmGap(40)) doc.addPage();
+      renderHeading('Reported crime where I live and travel');
+      drawCrimeEvidence();
     }
 
     // ⚠️ ONLY IF THE WRITER NEVER GAVE IT A HOME. `drawCartridge` puts the
@@ -1609,13 +1866,16 @@ export class MotivationPdfService {
       doc.addPage();
       doc.x = MARGIN;
       doc.y = K.BODY_TOP;
-      const pnLetter = input.annexures?.find(
-        (a2) => a2.kind === 'PRIOR_NOTICE_REQUEST',
-      )?.letter;
+      /**
+       * ⚠️ NO ANNEXURE LETTER. The PAJA request is its own lodged document and
+       * sits BETWEEN the motivation and the annexures — it is not a copy of
+       * anything the applicant holds, so there is nothing for a DFO to ask the
+       * original of. MOTIVATION-GUIDE-BOOK Part 4.1 and Part 9.1; operator,
+       * 2026-09-09: "only paperwork required by the dfo are attached as
+       * annexures".
+       */
       toc.push({
-        heading: pnLetter
-          ? `ANNEXURE ${pnLetter} — ${input.priorNotice.title}`
-          : input.priorNotice.title,
+        heading: input.priorNotice.title,
         page: doc.bufferedPageRange().count,
       });
 
@@ -1627,10 +1887,10 @@ export class MotivationPdfService {
       // like a web layout wedged between serif ones. It now takes the same
       // treatment as a section: the annexure letter in small caps, the title,
       // a rule, and the body in the serif with the hanging hairline.
-      if (pnLetter) {
-        K.label(chrome, `ANNEXURE ${pnLetter}`, MARGIN, doc.y, contentWidth);
-        doc.y += K.px(8.5) * 1.2 + K.mm(3);
-      }
+      // It carries no annexure letter, so the small-caps line above the title
+      // says what the page IS instead of which tab it sits behind.
+      K.label(chrome, 'LODGED WITH THE APPLICATION', MARGIN, doc.y, contentWidth);
+      doc.y += K.px(8.5) * 1.2 + K.mm(3);
       doc
         .font(F.sans)
         .fontSize(K.px(19))
@@ -1761,216 +2021,11 @@ export class MotivationPdfService {
     // across several copies. One entry in the annexure index, several pages
     // behind it, never a letter per clipping.
     /**
-     * ⚠️ THE FIGURES LEAD THE CUTTINGS, because the cuttings are examples OF
-     * them. The body argues "eleven house robberies in the quarter, and here
-     * are three of them"; the annexure showed only the three, so a reviewer
-     * checking the claim had nowhere to turn. This sheet is the claim itself,
-     * with the release named on it.
+     * ⚠️ THE CUTTINGS USED TO PRINT HERE, ONE PER PAGE, AS AN ANNEXURE. They
+     * are body content now — see drawCrimeEvidence above and the note on
+     * `exposureHeading`. What remains at this point in the pack is only what a
+     * DFO can ask to see the original of.
      */
-    const tables = input.precinctTables ?? [];
-    if (tables.length && (input.pressClippings ?? []).length) {
-      doc.addPage();
-      doc.x = MARGIN;
-      doc.y = K.BODY_TOP;
-      const letter = input.pressClippings![0].letter;
-      // The same masthead shape every clipping page uses, so the sheet reads
-      // as the first page of that annexure rather than as a loose table.
-      K.label(
-        chrome,
-        `Annexure ${letter} — reported crime in the precincts cited`,
-        MARGIN,
-        doc.y,
-        contentWidth,
-      );
-      doc.y += K.px(8.5) * 1.2 + K.mm(4);
-
-      for (const t of tables) {
-        if (doc.y > K.BODY_BOTTOM - 90) doc.addPage();
-        doc
-          .font(F.sansBold)
-          .fontSize(K.px(12))
-          .fillColor(C.deep)
-          .text(t.station, MARGIN, doc.y, { width: contentWidth });
-        doc.y += 2;
-        doc
-          .font(B.bodyItalic)
-          .fontSize(8.5)
-          .fillColor(C.mut)
-          .text(t.source, MARGIN, doc.y, { width: contentWidth });
-        doc.y += 6;
-
-        const cols = [
-          { head: 'Category', w: 190 },
-          { head: 'Latest quarter', w: 150 },
-          { head: 'Trend', w: contentWidth - 340 },
-        ];
-        const headTop = doc.y;
-        doc.rect(MARGIN, headTop, contentWidth, 18).fill(C.band);
-        let hx = MARGIN + 5;
-        for (const c of cols) {
-          doc
-            .font(FONT_BOLD)
-            .fontSize(7.5)
-            .fillColor(C.ink)
-            .text(c.head.toUpperCase(), hx, headTop + 6, {
-              width: c.w - 8,
-              characterSpacing: 0.3,
-              lineBreak: false,
-            });
-          hx += c.w;
-        }
-        doc.y = headTop + 18;
-
-        for (const r of t.rows) {
-          if (doc.y > K.BODY_BOTTOM - 26) doc.addPage();
-          const top = doc.y + 4;
-          let bottom = top;
-          let cx = MARGIN + 5;
-          for (const [i, v] of [r.category, r.latest, r.trend].entries()) {
-            doc
-              .font(FONT)
-              .fontSize(8.5)
-              .fillColor(BLACK)
-              .text(v || '—', cx, top, { width: cols[i].w - 8 });
-            bottom = Math.max(bottom, doc.y);
-            cx += cols[i].w;
-          }
-          const ruleY = bottom + 4;
-          doc
-            .moveTo(MARGIN, ruleY)
-            .lineTo(MARGIN + contentWidth, ruleY)
-            .lineWidth(0.5)
-            .strokeColor(C.hair)
-            .stroke();
-          doc.y = ruleY;
-        }
-        doc.x = MARGIN;
-        doc.y += PARA_GAP;
-      }
-    }
-
-    for (const clip of input.pressClippings ?? []) {
-      doc.addPage();
-      doc.x = MARGIN;
-      doc.y = K.BODY_TOP;
-
-      if (clip.index === 1) {
-        toc.push({
-          heading: `ANNEXURE ${clip.letter} — PRESS CLIPPINGS`,
-          page: doc.bufferedPageRange().count,
-        });
-      }
-
-      const masthead =
-        `Annexure ${clip.letter} — ${clip.sourceName}, ${clippingDateLabel(clip.publishedOn)}` +
-        (clip.total > 1 ? ` (${clip.index} of ${clip.total})` : '');
-      K.label(chrome, masthead, MARGIN, doc.y, contentWidth);
-      doc.y += K.px(8.5) * 1.2 + K.mm(4);
-
-      // The headline, in the pack's heading face — the same sans the other
-      // generated pages (the annexure index, the prior-notice title) use for
-      // a page-level title, never the body face.
-      doc
-        .font(F.sansBold)
-        .fontSize(K.px(15))
-        .fillColor(C.deep)
-        .text(clip.headline, MARGIN, doc.y, {
-          width: contentWidth,
-          lineGap: K.px(2),
-        });
-      // ⚠️ NO heightOfString HERE. pdfkit's own .text() already moved doc.y
-      // to just past what it drew — the same convention every other title
-      // on this page uses (see the ANNEXURES heading above). Adding the
-      // height again would double-count it and leave a headline-sized gap
-      // of blank page under every clipping.
-      doc.y += K.mm(5);
-      doc.x = MARGIN;
-
-      // The standfirst and the closing rule + link are measured BEFORE the
-      // picture is sized, so a long picture can never crowd them off the
-      // bottom of the page — the picture yields, not the text.
-      const standfirst = clip.standfirst?.trim() || undefined;
-      doc.font(B.body).fontSize(K.BODY_SIZE);
-      const standfirstH = standfirst
-        ? doc.heightOfString(standfirst, { width: contentWidth, lineGap: K.px(2) })
-        : 0;
-      const footerH = K.mm(2) + K.px(9) * 1.3;
-      const reserve = (standfirst ? standfirstH + K.mm(4) : 0) + K.mm(2) + footerH;
-
-      if (clip.image && clip.image.width > 0 && clip.image.height > 0) {
-        const ratio = clip.image.height / clip.image.width;
-        let w = contentWidth;
-        let h = w * ratio;
-        const maxH = K.BODY_BOTTOM - doc.y - reserve;
-        if (maxH > 0) {
-          if (h > maxH) {
-            h = maxH;
-            w = ratio > 0 ? h / ratio : contentWidth;
-          }
-          // ⚠️ imgTop CAPTURED BEFORE THE CALL, AND doc.y SET ABSOLUTELY
-          // AFTER IT — never `doc.y += h`. Whether pdfkit's own .image()
-          // moves the cursor for an absolutely-positioned image is not
-          // relied on either way here; an absolute set can never double- or
-          // under-count regardless of what pdfkit did internally.
-          const imgTop = doc.y;
-          try {
-            doc.image(
-              clip.image.bytes,
-              MARGIN + (contentWidth - w) / 2,
-              imgTop,
-              { width: w, height: h },
-            );
-            doc.y = imgTop + h + K.mm(4);
-          } catch {
-            // ⚠️ A FETCHED FILE pdfkit REJECTS MUST NOT KILL THE WHOLE PDF —
-            // same posture as the reprinted copies below. Treated exactly
-            // like a missing picture: no image, no placeholder, doc.y left
-            // where it was.
-          }
-        }
-        // ⚠️ NO PLACEHOLDER, EITHER WAY. If there is genuinely no room left
-        // (a very long headline and standfirst on a small page), the picture
-        // is dropped rather than drawn over the text below it — the same
-        // "no picture, no box" rule that governs a missing fetch, just
-        // reached from the other direction.
-      }
-      doc.x = MARGIN;
-
-      if (standfirst) {
-        doc
-          .font(B.body)
-          .fontSize(K.BODY_SIZE)
-          .fillColor(C.ink)
-          .text(standfirst, MARGIN, doc.y, {
-            width: contentWidth,
-            lineGap: K.px(2),
-          });
-        // Same rule as the headline above: .text() already advanced doc.y.
-        // standfirstH was measured only to RESERVE room before the picture
-        // was sized, not to be added again here.
-        doc.y += K.mm(4);
-        doc.x = MARGIN;
-      }
-
-      const ruleY = doc.y;
-      doc
-        .moveTo(MARGIN, ruleY)
-        .lineTo(MARGIN + contentWidth, ruleY)
-        .lineWidth(0.5)
-        .strokeColor(C.hair)
-        .stroke();
-      doc.y = ruleY + K.mm(2);
-      doc
-        .font(F.sans)
-        .fontSize(K.px(9))
-        .fillColor(C.mut)
-        .text(`${clip.url} — as published`, MARGIN, doc.y, {
-          width: contentWidth,
-          lineBreak: false,
-          ellipsis: true,
-        });
-      doc.x = MARGIN;
-    }
 
     // ── The character witness statements ──────────────────────────────
     //

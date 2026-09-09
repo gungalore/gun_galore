@@ -315,10 +315,22 @@ function sectionMarksFor(
  * the day an alternate is added.
  */
 function comparisonHeadingOf(plan: unknown): string | undefined {
+  return headingOf(plan, 'comparison');
+}
+
+/**
+ * The printed heading of one section of the stored plan.
+ *
+ * ⚠️ READ OFF THE PLAN, NEVER MATCHED ON WORDS. Every section has four heading
+ * alternates per licence type and the plan picks one by seed; a regex over
+ * "already hold" or "risk" would work for three of them and silently stop the
+ * day a fifth is written.
+ */
+function headingOf(plan: unknown, id: string): string | undefined {
   const sections = (plan as { sections?: { id?: string; heading?: string }[] })
     ?.sections;
   if (!Array.isArray(sections)) return undefined;
-  const hit = sections.find((s) => s?.id === 'comparison' && s?.heading);
+  const hit = sections.find((s) => s?.id === id && s?.heading);
   return hit?.heading?.replace(/:\s*$/, '').toUpperCase();
 }
 
@@ -482,16 +494,9 @@ export class MotivationRenderService {
    * result straight through without an extra empty-array check.
    */
   private async buildPressClippings(
-    annexures: AnnexureEntry[],
     incidents: NewsIncident[],
   ): Promise<PressClippingPage[] | undefined> {
     if (!incidents.length) return undefined;
-    const letter = annexures.find((a) => a.kind === 'PRESS_CLIPPINGS')?.letter;
-    // ⚠️ SHOULD NEVER HAPPEN — the caller only reaches PRESS_CLIPPINGS
-    // presence in `annexures` when incidents.length is already truthy — but
-    // if the two ever drift, printing pages with no letter to caption them
-    // is worse than printing nothing.
-    if (!letter) return undefined;
 
     const pages: PressClippingPage[] = [];
     for (let i = 0; i < incidents.length; i++) {
@@ -512,7 +517,6 @@ export class MotivationRenderService {
         );
       }
       pages.push({
-        letter,
         index: i + 1,
         total: incidents.length,
         sourceName: incident.sourceName,
@@ -660,17 +664,16 @@ export class MotivationRenderService {
 
     // ONE lettering, built once, used by the index AND by the captions on the
     // reprinted copies. See annexureImages.
-    const annexures = buildAnnexures(
-      kinds,
-      pressIncidents.length
-        ? ['PRIOR_NOTICE_REQUEST', 'PRESS_CLIPPINGS']
-        : ['PRIOR_NOTICE_REQUEST'],
-    );
+    /**
+     * ⚠️ NOTHING GENERATED TAKES A LETTER ANY MORE. Operator, 2026-09-09:
+     * "only paperwork required by the dfo are attached as annexures." An
+     * annexure is a copy of a document the applicant possesses; the PAJA
+     * request and the press cuttings are neither, so the first is its own
+     * lodged page and the second prints inside the exposure section.
+     */
+    const annexures = buildAnnexures(kinds);
     const printable = await this.annexureImages(row.uploads ?? [], annexures);
-    const pressClippings = await this.buildPressClippings(
-      annexures,
-      pressIncidents,
-    );
+    const pressClippings = await this.buildPressClippings(pressIncidents);
 
     return this.pdf.render({
       referenceNumber: row.referenceNumber,
@@ -728,6 +731,12 @@ export class MotivationRenderService {
       // no comparison section — a first application holds nothing to compare —
       // and the renderer then prints it as its own section as it always did.
       batteryHeading: comparisonHeadingOf(row.structurePlan),
+      // ⚠️ THE PRECINCT FIGURES AND THE CUTTINGS PRINT UNDER THE EXPOSURE
+      // SECTION, at the foot of the paragraphs that cite them. Operator,
+      // 2026-09-09: they "must be in the body of the document itself and form
+      // part of the flow, it must not be just placed there because it has to
+      // be there."
+      exposureHeading: headingOf(row.structurePlan, 'the_threat'),
       firearmPhoto: await this.coverPhotoForRender(row, answers),
       characterStatements,
       sellerConsent,

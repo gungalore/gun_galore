@@ -122,48 +122,28 @@ describe('the prior-notice request', () => {
   });
 });
 
-describe('lettering a document we generate', () => {
-  it('gives the prior-notice request a letter of its own', () => {
-    const entries = buildAnnexures(
-      [MotivationUploadKind.IDENTITY_DOCUMENT],
-      ['PRIOR_NOTICE_REQUEST'],
-    );
-    const pn = entries.find((e) => e.kind === 'PRIOR_NOTICE_REQUEST');
-    expect(pn).toBeDefined();
-    expect(pn?.generated).toBe(true);
-    expect(pn?.count).toBe(1);
-    expect(pn?.certification).toBe('none');
-  });
-
-  it('letters it in reading order, not at the end', () => {
-    // ⚠️ THE POSITION IS COPIED FROM A REAL PACK. The operator's reference
-    // list has it at G — after the safe photographs, before the existing
-    // licences — and an index whose letters run in a different order from the
-    // one a DFO is used to costs attention that should go to the argument.
-    const entries = buildAnnexures(
-      [
-        MotivationUploadKind.IDENTITY_DOCUMENT,
-        MotivationUploadKind.SAFE_PHOTOGRAPHS,
-        MotivationUploadKind.CURRENT_LICENCE,
-      ],
-      ['PRIOR_NOTICE_REQUEST'],
-    );
-    const at = (kind: string) => entries.findIndex((e) => e.kind === kind);
-    expect(at('SAFE_PHOTOGRAPHS')).toBeLessThan(at('PRIOR_NOTICE_REQUEST'));
-    expect(at('PRIOR_NOTICE_REQUEST')).toBeLessThan(at('CURRENT_LICENCE'));
-    // Letters stay a contiguous A, B, C… run with no gap where an unbuilt
-    // document would otherwise have sat.
-    expect(entries.map((e) => e.letter)).toEqual(['A', 'B', 'C', 'D']);
-  });
-
-  it('omits it entirely when it has not been built', () => {
-    // A lettered gap is worse than an absent annexure: a reviewer goes looking
-    // for the missing letter.
+describe('⚠️ THE PAJA REQUEST IS NOT AN ANNEXURE', () => {
+  // Operator, 2026-09-09: "only paperwork required by the dfo are attached as
+  // annexures." An annexure is a copy of a document the APPLICANT possesses
+  // and a DFO can ask to see the original of. The prior-notice request is
+  // neither: we generate it, it is signed separately, and it is lodged in its
+  // own right. MOTIVATION-GUIDE-BOOK Part 4.1 puts it between the motivation
+  // and the annexures, which is where the renderer now prints it.
+  //
+  // It took letter G until this date, which also meant every annexure after it
+  // shifted by one relative to the packs this product is modelled on.
+  it('takes no letter, and letters nothing else out of place', () => {
     const entries = buildAnnexures([
       MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
       MotivationUploadKind.CURRENT_LICENCE,
     ]);
+    expect(entries.map((e) => e.kind)).toEqual([
+      MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
+      MotivationUploadKind.CURRENT_LICENCE,
+    ]);
+    expect(entries.map((e) => e.letter)).toEqual(['A', 'B', 'C']);
     expect(entries.some((e) => e.generated)).toBe(false);
-    expect(entries.map((e) => e.letter)).toEqual(['A', 'B']);
   });
 });

@@ -927,7 +927,14 @@ describe('MotivationsService.generate', () => {
       };
     }
 
-    it('cites each clipping by paper, date and its own annexure letter', async () => {
+    it('⚠️ CITES A CLIPPING BY PAPER AND DATE, NEVER BY AN ANNEXURE LETTER', async () => {
+      // Operator, 2026-09-09: "only paperwork required by the dfo are attached
+      // as annexures. all other things like the cartridge specs and clippings
+      // and those things must be in the body of the document itself and form
+      // part of the flow." The applicant holds no original of a newspaper page,
+      // so a cutting is cited the way a person cites a newspaper in a letter —
+      // in the sentence that relies on it — and it prints in the exposure
+      // section beside that sentence.
       const { svc, prisma, claude, news } = build({
         uploads: requiredDocs(T13),
       });
@@ -940,19 +947,21 @@ describe('MotivationsService.generate', () => {
 
       expect(news.byIds).toHaveBeenCalledWith(['inc-1']);
       const pack = claude.generate.mock.calls[0][0];
-      expect(pack.research).toContain(
-        'PRESS CLIPPINGS — supplied fact, attached as annexure:',
-      );
+      expect(pack.research).toContain('never by');
+      expect(pack.research).toContain('an annexure letter, because they are not annexures');
+
       const line = (pack.research as string)
         .split('\n')
         .find((l: string) => l.includes('Lowvelder'))!;
       expect(line).toBeDefined();
-      const m = /\(Annexure ([A-Z])\)$/.exec(line);
-      expect(m).not.toBeNull();
-      expect(pack.annexures).toContainEqual({
-        letter: m![1],
-        label: 'Press clippings',
-      });
+      // The paper and the date are in the line; a letter is not.
+      expect(line).not.toMatch(/\(Annexure [A-Z]\)/);
+      // And nothing in the pack's annexure index is a press clipping.
+      expect(
+        (pack.annexures as { label: string }[]).some((a) =>
+          /clipping/i.test(a.label),
+        ),
+      ).toBe(false);
     });
 
     it('never fetches or cites anything when nothing was chosen', async () => {

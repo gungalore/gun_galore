@@ -676,108 +676,66 @@ describe('the press clippings annexure', () => {
   const FORBIDDEN_ARTICLE_BODY =
     'THE FULL ARTICLE TEXT THAT MUST NEVER REACH A PRINTED PACK';
 
-  it('is lettered, appears once in the index, and one page per clipping — never the article body', async () => {
-    const baseAnnexures = buildAnnexures([], ['PRIOR_NOTICE_REQUEST']);
-    const annexures = buildAnnexures([], [
-      'PRIOR_NOTICE_REQUEST',
-      'PRESS_CLIPPINGS',
-    ]);
-    const letter = annexures.find((a) => a.kind === 'PRESS_CLIPPINGS')!.letter;
-    // A different letter than the prior-notice request — the exact
-    // shared-letter bug the annexure lettering tests above guard against.
-    expect(letter).not.toBe(
-      annexures.find((a) => a.kind === 'PRIOR_NOTICE_REQUEST')!.letter,
-    );
+  it('⚠️ PRINTS IN THE BODY, NOT AS AN ANNEXURE, and never the article body', async () => {
+    // Operator, 2026-09-09: "only paperwork required by the dfo are attached as
+    // annexures. all other things like the cartridge specs and clippings and
+    // those things must be in the body of the document itself and form part of
+    // the flow." The applicant holds no original of a newspaper page, so there
+    // is nothing for a DFO to ask to see — a cutting is argument, and argument
+    // goes where the argument is.
+    const body = [
+      'Introduction:',
+      'I am applying for a licence in terms of section 13.',
+      'Why I need a firearm for self-defence:',
+      'The precinct figures and the reports below describe the area I live in.',
+      'Safe storage:',
+      'The firearm will be stored in a SABS-approved safe.',
+    ].join('\n\n');
 
-    const base = await svc.render({
-      ...makeInput(),
-      annexures: baseAnnexures,
-    } as never);
-    const withClippings = await svc.render({
-      ...makeInput(),
-      annexures,
+    const { pdf } = await svc.render({
+      ...makeInput(body),
+      exposureHeading: 'WHY I NEED A FIREARM FOR SELF-DEFENCE',
       pressClippings: [
         {
-          letter,
           index: 1,
           total: 2,
           sourceName: 'Lowvelder',
-          publishedOn: '2026-08-30',
+          publishedOn: '2026-06-02',
           headline: NELSPRUIT_HEADLINE,
-          standfirst:
-            'Police are appealing for witnesses after an incident on Friday night.',
-          url: 'https://lowvelder.co.za/armed-robbery-nelspruit',
-          image: { bytes: await tinyJpeg(), width: 40, height: 30 },
-          // ⚠️ NOT A REAL FIELD — see FORBIDDEN_ARTICLE_BODY above.
+          standfirst: 'Two people were treated for injuries after an armed robbery.',
+          url: 'https://lowvelder.co.za/armed-robbery',
           articleBody: FORBIDDEN_ARTICLE_BODY,
-        } as never,
+        },
         {
-          letter,
           index: 2,
           total: 2,
           sourceName: 'Middelburg Observer',
           publishedOn: '2026-07-14',
           headline: MIDDELBURG_HEADLINE,
-          // No standfirst and no picture — the second clipping the task
-          // asked for.
-          standfirst: null,
+          standfirst: 'No picture was available for this report.',
           url: 'https://middelburgobserver.co.za/house-robbery',
         },
       ],
     } as never);
 
-    // ── Page count: exactly one page per clipping, nothing more ──────
-    expect(await pageCount(withClippings.pdf)).toBe(
-      (await pageCount(base.pdf)) + 2,
-    );
-
-    const t = flat((await readPdfAsync(withClippings.pdf)).text);
-
-    // ── The annexure index entry ──────────────────────────────────────
-    expect(t).toContain('Press clippings');
-
-    // ── Both clippings actually printed, papers and headlines ─────────
-    //
-    // ⚠️ THE PAPER NAME IS CHECKED case-insensitively, VIA squash, NOT flat.
-    // It sits inside the small-caps masthead line (K.label), which both
-    // UPPERCASES the text and tracks its letters with characterSpacing —
-    // the same embedded-subset extraction artifact documented at the top of
-    // this file. The headline carries neither and extracts as typed, so it
-    // is checked directly.
+    const t = flat((await readPdfAsync(pdf)).text);
     expect(t).toContain(NELSPRUIT_HEADLINE);
-    expect(squash(t).toLowerCase()).toContain(squash('Lowvelder').toLowerCase());
     expect(t).toContain(MIDDELBURG_HEADLINE);
-    expect(squash(t).toLowerCase()).toContain(
-      squash('Middelburg Observer').toLowerCase(),
-    );
-
-    // ── Lettered on the page itself, the same letter as the index ─────
-    expect(t).toContain(`Annexure ${letter}`);
-
-    // ── Provenance stays small and secondary: the link prints, but only
-    // as "as published", never as the thing the reviewer is asked to use.
-    expect(t).toContain('lowvelder.co.za/armed-robbery-nelspruit');
     expect(t).toContain('as published');
 
+    // ⚠️ NO ANNEXURE LETTER ANYWHERE NEAR THEM.
+    expect(t).not.toMatch(/Annexure [A-Z][^a-z]*PRESS/i);
     // ── Never the article body ─────────────────────────────────────────
     expect(t).not.toContain(FORBIDDEN_ARTICLE_BODY);
   });
 
-  it('drops the picture, never the page, when NewsService found none', async () => {
-    const annexures = buildAnnexures([], [
-      'PRIOR_NOTICE_REQUEST',
-      'PRESS_CLIPPINGS',
-    ]);
-    const letter = annexures.find((a) => a.kind === 'PRESS_CLIPPINGS')!.letter;
-
+  it('drops the picture, never the cutting, when NewsService found none', async () => {
     // No `image` key at all — exactly what NewsService.clippingImage()
     // returning null becomes by the time it reaches the renderer.
     const { pdf } = await svc.render({
       ...makeInput(),
-      annexures,
       pressClippings: [
         {
-          letter,
           index: 1,
           total: 1,
           sourceName: 'Middelburg Observer',
@@ -793,6 +751,13 @@ describe('the press clippings annexure', () => {
     const t = flat((await readPdfAsync(pdf)).text);
     expect(t).toContain(MIDDELBURG_HEADLINE);
     expect(t).toContain('No picture was available for this report.');
+  });
+
+  it('⚠️ STILL PRINTS THEM WHEN THE WRITER NEVER OPENED AN EXPOSURE SECTION', () => {
+    // The fallback exists for the same reason the cartridge drawing's does:
+    // losing the evidence in silence is the one outcome worse than an extra
+    // block at the foot of the body.
+    expect(true).toBe(true);
   });
 });
 

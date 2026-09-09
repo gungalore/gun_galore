@@ -652,34 +652,35 @@ export class MotivationGenerationService {
           select: { kind: true, coversKinds: true },
         })
       ).map((u) => u.kind);
-      const generatedAnnexures: GeneratedAnnexureId[] = pressClips.length
-        ? ['PRIOR_NOTICE_REQUEST', 'PRESS_CLIPPINGS']
-        : ['PRIOR_NOTICE_REQUEST'];
-      const rawAnnexures = buildAnnexures(uploadKinds, generatedAnnexures);
+      const rawAnnexures = buildAnnexures(uploadKinds);
       const annexures = rawAnnexures.map((a) => ({
         letter: a.letter,
         label: a.label,
       }));
 
-      // ⚠️ EACH LINE ENDS WITH ITS ANNEXURE LETTER, so the writer can close
-      // an argument with "(Annexure X)" rather than inventing its own
-      // reference or leaving the claim uncited. All the clippings share ONE
-      // letter — PRESS_CLIPPINGS is one annexure with several pages under
-      // it, the same shape as the safe photographs — so every line gets the
-      // same letter.
+      /**
+       * ⚠️ NO ANNEXURE LETTER ANY MORE, AND THAT IS THE POINT. Operator,
+       * 2026-09-09: "only paperwork required by the dfo are attached as
+       * annexures. all other things like the cartridge specs and clippings and
+       * those things must be in the body of the document itself and form part
+       * of the flow, it must not be just placed there because it has to be
+       * there."
+       *
+       * A cutting is published material we assembled; the applicant holds no
+       * original of it and no DFO will ask to see one. So it is cited the way
+       * a person cites a newspaper in a letter — by paper and date, in the
+       * sentence that uses it — and the cutting itself prints in the exposure
+       * section beside the argument it supports.
+       */
       let pressClippingsBlock: string | undefined;
       if (pressClips.length) {
-        const letter = rawAnnexures.find(
-          (a) => a.kind === 'PRESS_CLIPPINGS',
-        )?.letter;
-        if (letter) {
-          pressClippingsBlock = [
-            'PRESS CLIPPINGS — supplied fact, attached as annexure:',
-            ...clippingFactLines(pressClips).map(
-              (line) => `${line} (Annexure ${letter})`,
-            ),
-          ].join('\n');
-        }
+        pressClippingsBlock = [
+          'PRESS CLIPPINGS — supplied fact, printed in the body of this',
+          'document beside the paragraph that uses them. Cite each one by its',
+          'PAPER and its DATE inside the sentence that relies on it — never by',
+          'an annexure letter, because they are not annexures.',
+          ...clippingFactLines(pressClips),
+        ].join('\n');
       }
 
       /**

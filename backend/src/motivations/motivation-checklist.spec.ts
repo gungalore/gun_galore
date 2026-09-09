@@ -635,7 +635,7 @@ describe('resolving an upload to its annexure', () => {
     // caption on a real applicant's copy, raw enum name and all. Still live
     // for the association pair, and for the retired safe kinds an older
     // application carries.
-    const entries = buildAnnexures(KINDS, ['PRIOR_NOTICE_REQUEST']);
+    const entries = buildAnnexures(KINDS);
     const byKind = annexureByKind(entries);
 
     for (const kind of KINDS) {
@@ -650,7 +650,7 @@ describe('resolving an upload to its annexure', () => {
 
   it('gives every member of a group the same letter', () => {
     const byKind = annexureByKind(
-      buildAnnexures(KINDS, ['PRIOR_NOTICE_REQUEST']),
+      buildAnnexures(KINDS),
     );
     const safe = [
       MotivationUploadKind.SAFE_PHOTOGRAPHS,
@@ -679,7 +679,7 @@ describe('resolving an upload to its annexure', () => {
     //
     // Resolving through the SAME entry list is what makes that impossible,
     // and this asserts the property rather than the mechanism.
-    const index = buildAnnexures(KINDS, ['PRIOR_NOTICE_REQUEST']);
+    const index = buildAnnexures(KINDS);
     const byKind = annexureByKind(index);
 
     for (const kind of KINDS) {
@@ -687,72 +687,56 @@ describe('resolving an upload to its annexure', () => {
       const fromIndex = index.find((e) => e.letter === fromCopies.letter)!;
       expect(fromIndex.label).toBe(fromCopies.label);
     }
-
-    // And the generated document still holds a letter of its own that no
-    // upload can claim.
-    const pn = index.find((e) => e.kind === 'PRIOR_NOTICE_REQUEST')!;
-    expect([...byKind.values()].map((e) => e.letter)).not.toContain(pn.letter);
   });
 
-  it('never maps the generated document to an upload kind', () => {
-    const byKind = annexureByKind(
-      buildAnnexures([MotivationUploadKind.IDENTITY_DOCUMENT], [
-        'PRIOR_NOTICE_REQUEST',
-      ]),
-    );
-    for (const entry of byKind.values()) {
+  it('⚠️ LETTERS NOTHING WE GENERATED — an annexure is a copy of a document the applicant holds', () => {
+    // Operator, 2026-09-09: "only paperwork required by the dfo are attached as
+    // annexures." The test is POSSESSION. The PAJA letter and the press
+    // cuttings both left the list: the cuttings are body content now, and the
+    // PAJA letter is its own lodged document sitting between the motivation
+    // and the annexures.
+    for (const entry of buildAnnexures(KINDS)) {
       expect(entry.generated).toBeUndefined();
     }
   });
 
   it('is empty when nothing was uploaded', () => {
-    expect(annexureByKind(buildAnnexures([], ['PRIOR_NOTICE_REQUEST'])).size).toBe(
-      0,
-    );
+    expect(annexureByKind(buildAnnexures([])).size).toBe(0);
   });
 });
 
-describe('PRESS_CLIPPINGS annexure', () => {
-  // ⚠️ ONLY LETTERED WHEN ASKED FOR. Unlike PRIOR_NOTICE_REQUEST — always
-  // built — the clippings annexure is conditional on the member having
-  // actually chosen some, so a pack with none must not reserve a tab that
-  // will print nothing behind it.
-  it('takes no letter unless asked for', () => {
-    const entries = buildAnnexures([], ['PRIOR_NOTICE_REQUEST']);
-    expect(entries.find((e) => e.kind === 'PRESS_CLIPPINGS')).toBeUndefined();
+describe('what may be an annexure at all', () => {
+  // ⚠️ THE RULE IS POSSESSION, NOT USEFULNESS. Precinct crime figures, press
+  // cuttings and a cartridge's dimensions are published material we assembled:
+  // there is no original for the applicant to produce and no counter clerk
+  // will ask for one. They are argument, and argument belongs in the body
+  // where it is being made. A CAS printout is different — the applicant holds
+  // it — so it keeps its letter.
+  it('letters the applicant’s own incident report', () => {
+    const entries = buildAnnexures([MotivationUploadKind.INCIDENT_REPORT]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].letter).toBe('A');
   });
 
-  it('is lettered, labelled and uncertified when asked for', () => {
-    const entries = buildAnnexures([], [
-      'PRIOR_NOTICE_REQUEST',
-      'PRESS_CLIPPINGS',
+  it('⚠️ FOLLOWS THE GUIDE BOOK’S FIXED ORDER, so a DFO finds each in the same place', () => {
+    // MOTIVATION-GUIDE-BOOK Part 9.1. Letters stay contiguous: a kind that is
+    // absent takes no letter, it does not leave a gap.
+    const entries = buildAnnexures([
+      MotivationUploadKind.OTHER,
+      MotivationUploadKind.CURRENT_LICENCE,
+      MotivationUploadKind.COMPETENCY_CERTIFICATE,
+      MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.ADDRESS_CONFIRMATION,
+      MotivationUploadKind.PROFICIENCY_CERTIFICATE,
     ]);
-    const entry = entries.find((e) => e.kind === 'PRESS_CLIPPINGS');
-    expect(entry).toMatchObject({
-      label: 'Press clippings',
-      certification: 'none',
-      generated: true,
-    });
-    expect(entry!.letter).toMatch(/^[A-Z]$/);
-    // And it takes a DIFFERENT letter than the prior-notice request — the
-    // exact "one generated document quietly shares another's letter" bug
-    // the safe/association groups exist to prevent for uploads.
-    const pn = entries.find((e) => e.kind === 'PRIOR_NOTICE_REQUEST');
-    expect(entry!.letter).not.toBe(pn!.letter);
-  });
-
-  it('sits after the applicant\'s own incident report, before the tail entries', () => {
-    const entries = buildAnnexures(
-      [MotivationUploadKind.INCIDENT_REPORT, MotivationUploadKind.PREVIOUS_MOTIVATION],
-      ['PRESS_CLIPPINGS'],
-    );
-    const letters = entries.map((e) => e.kind);
-    expect(letters.indexOf(MotivationUploadKind.INCIDENT_REPORT)).toBeLessThan(
-      letters.indexOf('PRESS_CLIPPINGS'),
-    );
-    expect(letters.indexOf('PRESS_CLIPPINGS')).toBeLessThan(
-      letters.indexOf(MotivationUploadKind.PREVIOUS_MOTIVATION),
-    );
+    expect(entries.map((e) => [e.letter, e.kind])).toEqual([
+      ['A', MotivationUploadKind.IDENTITY_DOCUMENT],
+      ['B', MotivationUploadKind.COMPETENCY_CERTIFICATE],
+      ['C', MotivationUploadKind.PROFICIENCY_CERTIFICATE],
+      ['D', MotivationUploadKind.ADDRESS_CONFIRMATION],
+      ['E', MotivationUploadKind.CURRENT_LICENCE],
+      ['F', MotivationUploadKind.OTHER],
+    ]);
   });
 });
 

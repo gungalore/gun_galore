@@ -243,12 +243,17 @@ export const UPLOAD_KIND_LABELS: Record<MotivationUploadKind, string> = {
  * motivation-fields.ts and NewsService), we fetch and print them, and the
  * applicant never handles a file for this one at all.
  */
-export type GeneratedAnnexureId = 'PRIOR_NOTICE_REQUEST' | 'PRESS_CLIPPINGS';
+export type GeneratedAnnexureId = never;
 
-export const GENERATED_ANNEXURE_LABELS: Record<GeneratedAnnexureId, string> = {
-  PRIOR_NOTICE_REQUEST: 'Request for prior notice and written reasons',
-  PRESS_CLIPPINGS: 'Press clippings',
-};
+/**
+ * ⚠️ EMPTY SINCE 2026-09-09, AND KEPT AS A TYPE RATHER THAN DELETED. Both
+ * entries left: the press clippings became body content (see ANNEXURE_ORDER)
+ * and the PAJA letter is its own lodged document rather than an annexure. The
+ * shape survives because `buildAnnexures` still takes the parameter and older
+ * callers still pass an empty array; a future generated annexure — if one is
+ * ever right — has somewhere to go without reintroducing the plumbing.
+ */
+export const GENERATED_ANNEXURE_LABELS: Record<GeneratedAnnexureId, string> = {};
 
 /** Either an uploaded document or one we generate. */
 export type AnnexureKind = MotivationUploadKind | GeneratedAnnexureId;
@@ -302,17 +307,43 @@ const LETTER_GROUPS: Partial<
   },
 };
 
+/**
+ * ⚠️ AN ANNEXURE IS A COPY OF A DOCUMENT THE APPLICANT POSSESSES. Nothing else.
+ *
+ * Operator, 2026-09-09: "only paperwork required by the dfo are attached as
+ * annexures. all other things like the cartridge specs and clippings and those
+ * things must be in the body of the document itself and form part of the flow,
+ * it must not be just placed there because it has to be there."
+ *
+ * So the test is possession, not usefulness. A licence card, a competency
+ * certificate, a farm letter and a CAS printout are paperwork the applicant
+ * holds and a DFO asks to see the original of — they are annexures. Precinct
+ * crime figures, press cuttings and a cartridge's dimensions are published
+ * material WE assembled; there is no original for the applicant to produce and
+ * no counter clerk will ask for one. They are argument, and argument belongs
+ * in the body where it is being made.
+ *
+ * ⚠️ PRESS_CLIPPINGS AND PRIOR_NOTICE_REQUEST BOTH LEFT THIS LIST ON
+ * 2026-09-09. The cuttings and the precinct tables now render inside the
+ * exposure section they are evidence for. The PAJA letter was never an
+ * annexure in the packs this product is modelled on either: it is its own
+ * lodged document and sits between the motivation and the annexures
+ * (MOTIVATION-GUIDE-BOOK Part 4.1).
+ *
+ * ⚠️ THE ORDER IS FIXED BY KIND AND THE LETTERS STAY CONTIGUOUS — a kind that
+ * is absent takes no letter. A DFO who sees the same order on every pack finds
+ * the competency in the same place every time, which is the whole point of
+ * lettering them at all. This order is MOTIVATION-GUIDE-BOOK Part 9.1.
+ */
 const ANNEXURE_ORDER: AnnexureKind[] = [
-  // A-C — who the applicant is and what they are qualified to hold.
+  // A-D — who the applicant is, what they are qualified to hold, where they
+  // live. Address matters twice over: the application is lodged at the DFO for
+  // the area where the applicant ordinarily resides.
   'IDENTITY_DOCUMENT',
-  'PROFICIENCY_CERTIFICATE',
   'COMPETENCY_CERTIFICATE',
-  // D-E — where they live and what they do. Address matters twice over: the
-  // application is lodged at the DFO for the area where the applicant
-  // ordinarily resides.
+  'PROFICIENCY_CERTIFICATE',
   'ADDRESS_CONFIRMATION',
-  'EMPLOYMENT_CONFIRMATION',
-  // F — the safe. One letter, however many photographs are under it.
+  // E — the safe. One letter, however many photographs are under it.
   'SAFE_PHOTOGRAPHS',
   // Retired, but still lettered, and still IN THE SAFE'S GROUP — a row written
   // before the collapse must not fall out of the printed index, and must not
@@ -322,33 +353,32 @@ const ANNEXURE_ORDER: AnnexureKind[] = [
   'SAFE_PHOTO_BOLTS',
   'SAFE_PHOTO',
   'SAFE_INSTALLATION',
-  // G — ours, not theirs. See motivation-prior-notice.ts for why a pack
-  // carries this and why it is filed WITH the application rather than after a
-  // decision.
-  'PRIOR_NOTICE_REQUEST',
-  // H-J — the applicant's own record.
+  // F — every firearm already licensed to the applicant. SAPS 271 item G.2
+  // lists them all and a DFO matches each row against a card.
   'CURRENT_LICENCE',
-  'CHARACTER_REFERENCE',
-  'SHOOTING_ACTIVITY_LOG',
-  // K-L — the association. Membership, then good standing (the sworn
-  // statement s 16(2) names), then the endorsement for this firearm.
+  // G-I — the association. Membership, then good standing (the sworn statement
+  // section 16(2) names), then the endorsement for this firearm by serial.
   'ASSOCIATION_CARD',
   'GOOD_STANDING_LETTER',
   'ASSOCIATION_ENDORSEMENT',
-  // M-O — where the firearm is coming from, and by what authority.
+  // J — that the applicant actually does the thing: activity reports, verified
+  // scores, hunting invitations, permits, club papers.
+  'SHOOTING_ACTIVITY_LOG',
+  // K — the applicant's OWN evidence of an incident. ⚠️ This is the one
+  // crime-evidence item that stays an annexure, and possession is why: a CAS
+  // printout or an armed-response report is paperwork the applicant holds and
+  // can produce at the counter. The precinct figures and the press cuttings
+  // beside it in the argument are ours, and they are in the body.
+  'INCIDENT_REPORT',
+  // M — where the firearm is coming from, and by what authority.
   'FIREARM_SOURCE_PROOF',
   'SELLER_LICENCE',
+  // O — everything the applicant chose to add. ⚠️ EXECUTOR_APPOINTMENT is here
+  // rather than gone: the estate route is retired and nothing asks for one, but
+  // a row filed before it was retired must still letter rather than vanish.
+  'EMPLOYMENT_CONFIRMATION',
+  'CHARACTER_REFERENCE',
   'EXECUTOR_APPOINTMENT',
-  // Last: things only some applications carry.
-  'INCIDENT_REPORT',
-  // ⚠️ RIGHT AFTER THE APPLICANT'S OWN INCIDENT REPORT, NOT UP WITH THE SAPS
-  // PRECINCT FIGURES IN THE BODY. Both are evidence behind threat_circumstances,
-  // but the precinct figures ride inside the body's research the way
-  // published material always does — they carry no annexure at all. This is
-  // the one press-clipping-shaped exception that IS an annexure, and it sits
-  // beside the other applicant-supplied evidence of an incident, not among
-  // the association or firearm-source documents above it.
-  'PRESS_CLIPPINGS',
   'PREVIOUS_MOTIVATION',
   'OTHER',
 ] as const;
@@ -380,7 +410,7 @@ export type CertificationLevel = 'required' | 'expected' | 'none';
 export const CERTIFICATION: Record<AnnexureKind, CertificationLevel> = {
   // Ours, signed by the applicant in front of nobody in particular. Not a
   // copy of anything, so there is nothing to certify it against.
-  PRIOR_NOTICE_REQUEST: 'none',
+
 
   // reg 13(4)(b) — the only one the Regulations themselves require.
   IDENTITY_DOCUMENT: 'required',
@@ -424,9 +454,6 @@ export const CERTIFICATION: Record<AnnexureKind, CertificationLevel> = {
   CHARACTER_REFERENCE: 'none',
   SHOOTING_ACTIVITY_LOG: 'none',
   INCIDENT_REPORT: 'none',
-  // Ours, fetched and printed by us. Not a copy of anything the applicant
-  // holds — there is nothing for a commissioner to certify it against.
-  PRESS_CLIPPINGS: 'none',
   PREVIOUS_MOTIVATION: 'none',
 
   // Where the firearm comes from. The dealer's invoice and the seller's
