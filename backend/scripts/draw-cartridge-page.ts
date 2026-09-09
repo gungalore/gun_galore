@@ -60,10 +60,35 @@ void (async () => {
         'enough of them to deal with an attack without stopping to reload. Because the ' +
         'dimensions are standardised, any manufacturer’s ammunition fits, so I am not tied ' +
         'to one supplier or one price.',
+      'Comparison with the firearms I already hold:',
+      'I hold two rifles, both licensed for hunting. Neither can be carried on my person ' +
+        'and neither may lawfully be used for self-defence, so neither answers the risk ' +
+        'described above.',
       'Safe storage:',
       'The firearm will be stored in a SABS-approved safe bolted to a brick wall in a locked ' +
         'room at my residence. No other person has the combination.',
     ].join('\n\n'),
+    batteryHeading: 'COMPARISON WITH THE FIREARMS I ALREADY HOLD',
+    ownedFirearms: [
+      {
+        make: 'Marlin 1895',
+        calibre: '.45-70 Government',
+        serial: 'MR45701',
+        expiry: '28 October 2034',
+        type: 'Rifle',
+        section: 'Section 16',
+        status: 'Plains game',
+      },
+      {
+        make: 'Howa 1500',
+        calibre: '6.5mm Creedmoor',
+        serial: 'HW65001',
+        expiry: '12 March 2031',
+        type: 'Rifle',
+        section: 'Section 15',
+        status: '—',
+      },
+    ],
     firearmSpec: [
       { label: 'Make', value: 'Česká zbrojovka' },
       { label: 'Model', value: 'P-10 C' },

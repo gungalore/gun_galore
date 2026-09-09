@@ -76,6 +76,18 @@ export type SectionId =
   | 'the_quarry'
   | 'the_discipline'
   | 'the_threat'
+  /**
+   * What the applicant already does about the risk, and why it is not enough.
+   *
+   * ⚠️ THE APPROVED SECTION 13 ON FILE HAS THIS AND WE DID NOT. A Registrar
+   * deciding a self-defence application is answering one question — is a
+   * firearm NECESSARY — and "necessary" means the alternatives have been tried
+   * and fall short. Alarms, beams, armed response, walls, routes, the hours
+   * kept: naming them and then saying where each one stops is the argument.
+   * Without it the document asks for a firearm as a first resort, which is
+   * what section 13 exists to refuse.
+   */
+  | 'existing_measures'
   | 'experience'
   | 'the_firearm'
   // ── The three sections the approved corpus has and we did not ──────
@@ -212,6 +224,12 @@ const HEADING_ALTERNATES: Record<SectionId, readonly string[]> = {
     'Storage and safekeeping:',
     'How the firearm will be secured:',
     'Safekeeping arrangements:',
+  ],
+  existing_measures: [
+    'The measures I already have, and where they stop:',
+    'What I do now about the risk, and why it is not enough:',
+    'Existing security, and its limits:',
+    'The precautions already in place:',
   ],
   compliance_history: [
     'Compliance history:',
@@ -369,14 +387,45 @@ const SECTION_SKELETONS: Record<
   // sit at 2 because they are what the threat argument is built ON; below it,
   // the threat lands on a reader who does not yet know where this applicant
   // lives, works or drives.
+  /**
+   * ⚠️ REORDERED 2026-09-09 AGAINST THE FIRST REAL OUTPUT.
+   * MOTIVATION-S13-OUTPUT-REVIEW.md §1.5: the reason section — precinct
+   * figures tied to the areas the applicant ticked, with clipping references —
+   * "is the best part and it is buried". It sat THIRD, after a personal
+   * circumstances paragraph containing "I am single" and the employer's street
+   * address. Marital status and an employer's address are 271 boxes; they are
+   * not an argument, and putting them in front of the argument makes a
+   * reviewer work to reach it.
+   *
+   * ⚠️ THREE SECTIONS LEFT THE S13 AND ONE JOINED.
+   *
+   *  - `personal_circumstances` GOES. What it carried that mattered — where
+   *    the applicant lives, works and drives — is what `the_threat` is built
+   *    ON and now opens with; what it carried that did not is form data. The
+   *    introduction runs to two sentences of background instead.
+   *  - `the_calibre` GOES, folded into `the_firearm`. §1.4: for an S13 the two
+   *    collapse to one short paragraph — type, calibre, why a handgun and not
+   *    a rifle, one sentence on ammunition being commonly available. Kept
+   *    apart they produced 150 words on tilting barrels and polymer frames,
+   *    and a cartridge section arguing "115 to 147 grains" at a Registrar.
+   *  - `compliance_history` GOES. Printed as "My record", it came out a list
+   *    of the documents attached — which the annexure index already is.
+   *    Anything real in it belongs under the statute.
+   *  - `existing_measures` ARRIVES, between the risk and the firearm. It is
+   *    the half of the section 13 test the document never made: what is
+   *    already being done, and where it stops.
+   *
+   * ⚠️ AND `experience` FOLDS INTO THE STATUTE FOR AN S13. Competency is a
+   * statutory precondition rather than a self-defence argument, and §1.3 ruled
+   * that the document may state only the certificate NUMBER and that it is
+   * valid — which is one clause of the statutory section, not a section.
+   */
   S13_SELF_DEFENCE: [
     'introduction',
-    'personal_circumstances',
     'the_threat',
+    'storage_safety',
+    'existing_measures',
     'the_firearm',
-    'the_calibre',
-    ['experience', 'storage_safety'],
-    'compliance_history',
     'comparison',
     'statutory_application',
     'conclusion',
@@ -582,12 +631,24 @@ export function planFor(
       // Quote / apply / quote / apply does not fit in two paragraphs, and a
       // section squeezed to two reverts to the exact defect found in our own
       // draft — regulation pasted in and left hanging with nothing beneath it.
+      /**
+       * ⚠️ AND ON AN S13 THE FIREARM SECTION IS ONE PARAGRAPH, NOT TWO TO
+       * FOUR. §1.4: given room, the model filled it with a catalogue — short
+       * recoil, tilting barrel, polymer frame, Safe Action, "dust, lint, and
+       * variable maintenance cycles". None of that is a reason a person needs
+       * a firearm. A self-defence application needs the type, the calibre, why
+       * a handgun rather than a rifle, and one sentence on ammunition being
+       * commonly available; that is a paragraph. The room WAS the instruction.
+       */
       paragraphs:
         id === 'introduction' || id === 'conclusion'
           ? 1
-          : id === 'statutory_application'
-            ? 3 + Math.floor(rng() * 2) // 3-4
-            : 2 + Math.floor(rng() * 3), // 2-4
+          : id === 'the_firearm' &&
+              licenceType === MotivationLicenceType.S13_SELF_DEFENCE
+            ? 1
+            : id === 'statutory_application'
+              ? 3 + Math.floor(rng() * 2) // 3-4
+              : 2 + Math.floor(rng() * 3), // 2-4
     }));
 
   return {

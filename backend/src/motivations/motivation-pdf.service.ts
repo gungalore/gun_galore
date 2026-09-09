@@ -360,10 +360,42 @@ export interface MotivationPdfInput {
   colourway?: Scheme;
   /** The applicant's ID number, printed on the cover as the DFO expects. */
   idNumber?: string;
-  /** Firearms already held, for the comparison table. */
-  ownedFirearms?: { make: string; calibre: string; serial: string; expiry: string }[];
+  /**
+   * Firearms already held, for the comparison table.
+   *
+   * ⚠️ TYPE, SECTION AND STATUS JOINED IT ON 2026-09-09. The table carried
+   * make, calibre, serial and expiry — and section 13 caps a self-defence
+   * applicant at one firearm while section 15(3) caps an occasional sport
+   * shooter at four, so the columns a DFO actually counts against are the
+   * TYPE and the SECTION, and neither was on the page. The writer was asked
+   * for both in prose instead and supplied five of each from nothing.
+   */
+  ownedFirearms?: {
+    make: string;
+    calibre: string;
+    serial: string;
+    expiry: string;
+    type?: string;
+    section?: string;
+    status?: string;
+  }[];
   /** Manufacturer specifications for the firearm applied for. */
   firearmSpec?: { label: string; value: string }[];
+  /**
+   * The printed comparison heading — uppercased, colon stripped — under which
+   * the battery table belongs.
+   *
+   * ⚠️ THE TABLE IS EVIDENCE FOR THAT SECTION AND PRINTED THREE PAGES AFTER
+   * IT, past the summary and before the signature. Section 13 caps a
+   * self-defence applicant at one firearm and section 15(3) caps an occasional
+   * sport shooter at four, so what somebody already holds is a statutory
+   * precondition the DFO checks — and they were checking it in a paragraph
+   * with the table nowhere near it.
+   *
+   * Absent on a plan with no comparison section, and the table then prints as
+   * its own section exactly as before.
+   */
+  batteryHeading?: string;
   /**
    * "Barrett self-loading rifle, serial BR009252" — the firearm named in the
    * running footer, so a loose sheet can be filed against the right
@@ -1132,6 +1164,111 @@ export class MotivationPdfService {
     };
 
     /**
+     * The battery table — every firearm already licensed to the applicant.
+     *
+     * ⚠️ THIS TABLE IS EVIDENCE, NOT DECORATION. Section 13 caps a
+     * self-defence applicant at one firearm and section 15(3) caps an
+     * occasional sport shooter at four, so what a person already holds is a
+     * statutory precondition the DFO checks — and a reviewer should be able to
+     * check it at a glance instead of mining it out of a paragraph.
+     *
+     * ⚠️ AN EMPTY TABLE STILL PRINTS. "No firearm is currently licensed to me"
+     * is a material fact on a first application; leaving the section out
+     * because there is nothing to list would read as an omission.
+     */
+    let batteryDrawn = false;
+
+    const drawBattery = () => {
+      if (batteryDrawn) return;
+      batteryDrawn = true;
+      const owned = input.ownedFirearms ?? [];
+      if (!owned.length) {
+        // Set like the body it stands in for — this sentence IS the section's
+        // content on a first application, and it was the one line of prose in
+        // the document still in the old italic sans.
+        doc
+          .font(B.bodyItalic)
+          .fontSize(K.BODY_SIZE)
+          .fillColor(C.ink)
+          .text(
+            'No firearm is currently licensed to me. This is a first application.',
+            MARGIN + K.SECTION_INDENT,
+            doc.y,
+            { width: contentWidth - K.SECTION_INDENT, lineGap: K.BODY_LEADING },
+          );
+        doc.x = MARGIN;
+        doc.y += K.PARA_GAP;
+        return;
+      }
+
+      /**
+       * Widths sum to contentWidth (451.28) by construction; a column that
+       * overflows would silently overprint its neighbour rather than wrap.
+       *
+       * ⚠️ SEVEN COLUMNS IN THE SPACE OF FOUR, SO THE TYPE DROPS TO 8.5 pt AND
+       * THE HEADS SHORTEN. "Date of expiry" becomes "Expires" because the
+       * heading row is the part with no room to wrap; the cells wrap freely and
+       * the row grows to the tallest of them.
+       */
+      const cols: {
+        head: string;
+        w: number;
+        key: keyof (typeof owned)[0];
+      }[] = [
+        { head: 'Make and model', w: 104, key: 'make' },
+        { head: 'Type', w: 44, key: 'type' },
+        { head: 'Calibre', w: 68, key: 'calibre' },
+        { head: 'Serial', w: 74, key: 'serial' },
+        { head: 'Section', w: 46, key: 'section' },
+        { head: 'Purpose', w: 62, key: 'status' },
+        { head: 'Expires', w: contentWidth - 398, key: 'expiry' },
+      ];
+
+      const headTop = doc.y;
+      doc.rect(MARGIN, headTop, contentWidth, 20).fill(C.band);
+      let x = MARGIN + 5;
+      for (const col of cols) {
+        doc
+          .font(FONT_BOLD)
+          .fontSize(7.5)
+          .fillColor(C.ink)
+          .text(col.head.toUpperCase(), x, headTop + 7, {
+            width: col.w - 8,
+            characterSpacing: 0.3,
+            lineBreak: false,
+          });
+        x += col.w;
+      }
+      doc.y = headTop + 20;
+
+      for (const f of owned) {
+        if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 30) doc.addPage();
+        const rowTop = doc.y + 5;
+        let bottom = rowTop;
+        let cx = MARGIN + 5;
+        for (const col of cols) {
+          doc
+            .font(FONT)
+            .fontSize(8.5)
+            .fillColor(BLACK)
+            .text(String(f[col.key] ?? '—'), cx, rowTop, { width: col.w - 8 });
+          bottom = Math.max(bottom, doc.y);
+          cx += col.w;
+        }
+        const ruleY = bottom + 5;
+        doc
+          .moveTo(MARGIN, ruleY)
+          .lineTo(MARGIN + contentWidth, ruleY)
+          .lineWidth(0.5)
+          .strokeColor(C.hair)
+          .stroke();
+        doc.y = ruleY;
+      }
+      doc.x = MARGIN;
+      doc.y += PARA_GAP;
+    };
+
+    /**
      * The cartridge, drawn from the figures we hold.
      *
      * ⚠️ HALF A PAGE OF DRAWING, HALF A PAGE OF ARGUMENT — which is only true
@@ -1220,11 +1357,26 @@ export class MotivationPdfService {
           !!input.cartridgeDrawing &&
           !cartridgeDrawn &&
           /\bCARTRIDGE\b/i.test(block);
+        /**
+         * ⚠️ MATCHED ON THE PLAN'S OWN HEADING, NOT ON WORDS. `comparison` has
+         * four alternates per licence type and the plan picks one by seed;
+         * "already hold" would match three of them and quietly stop the day a
+         * fifth is written.
+         */
+        const wantsBattery =
+          !!feat.ownedTable &&
+          !!input.batteryHeading &&
+          !batteryDrawn &&
+          block.replace(/:\s*$/, '').toUpperCase() === input.batteryHeading;
 
         // Keep a heading with at least a couple of lines of its paragraph:
         // if we are near the bottom, start the page now rather than orphan it.
         // A heading about to carry the drawing needs the drawing's room too.
-        const need = wantsCartridge ? cartridgeHeight() + mmGap(24) : 110;
+        const need = wantsCartridge
+          ? cartridgeHeight() + mmGap(24)
+          : wantsBattery
+            ? 140
+            : 110;
         if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - need) doc.addPage();
         // ⚠️ CENTRED, BOLD, ALL CAPS — measured off Safari Outdoor, where
         // "CURRENT COMPETENCY STATUS" sits centred in Arial-Bold 11 with 49pt
@@ -1233,6 +1385,7 @@ export class MotivationPdfService {
         // letter signposts itself, not how a submission does.
         renderHeading(block.replace(/:\s*$/, '').toUpperCase());
         if (wantsCartridge) drawCartridge();
+        if (wantsBattery) drawBattery();
       } else {
         // A parenthetical annexure reference is its own line in their
         // documents — "(Refer to Annexure B: Proficiency Certificates)" —
@@ -1349,83 +1502,10 @@ export class MotivationPdfService {
     // AN EMPTY TABLE STILL PRINTS. "No firearm is currently licensed to the
     // applicant" is a material fact on a first application; leaving the
     // section out because there is nothing to list would read as an omission.
-    if (feat.ownedTable) {
+    if (feat.ownedTable && !batteryDrawn) {
       if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 140) doc.addPage();
       renderHeading('Firearms already licensed to me');
-
-      const owned = input.ownedFirearms ?? [];
-      if (!owned.length) {
-        // Set like the body it stands in for — this sentence IS the section's
-        // content on a first application, and it was the one line of prose in
-        // the document still in the old italic sans.
-        doc
-          .font(B.bodyItalic)
-          .fontSize(K.BODY_SIZE)
-          .fillColor(C.ink)
-          .text(
-            'No firearm is currently licensed to me. This is a first application.',
-            MARGIN + K.SECTION_INDENT,
-            doc.y,
-            {
-              width: contentWidth - K.SECTION_INDENT,
-              lineGap: K.BODY_LEADING,
-            },
-          );
-        doc.x = MARGIN;
-        doc.y += K.PARA_GAP;
-      } else {
-        // Widths sum to contentWidth (451.28) by construction; a column that
-        // overflows would silently overprint its neighbour rather than wrap.
-        const cols: { head: string; w: number; key: keyof (typeof owned)[0] }[] = [
-          { head: 'Make and model', w: 158, key: 'make' },
-          { head: 'Calibre', w: 88, key: 'calibre' },
-          { head: 'Serial number', w: 110, key: 'serial' },
-          { head: 'Date of expiry', w: contentWidth - 356, key: 'expiry' },
-        ];
-
-        const headTop = doc.y;
-        doc.rect(MARGIN, headTop, contentWidth, 20).fill(C.band);
-        let x = MARGIN + 6;
-        for (const col of cols) {
-          doc
-            .font(FONT_BOLD)
-            .fontSize(9)
-            .fillColor(C.ink)
-            .text(col.head.toUpperCase(), x, headTop + 6, {
-              width: col.w - 10,
-              characterSpacing: 0.4,
-              lineBreak: false,
-            });
-          x += col.w;
-        }
-        doc.y = headTop + 20;
-
-        for (const f of owned) {
-          if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 30) doc.addPage();
-          const rowTop = doc.y + 5;
-          let bottom = rowTop;
-          let cx = MARGIN + 6;
-          for (const col of cols) {
-            doc
-              .font(FONT)
-              .fontSize(10)
-              .fillColor(BLACK)
-              .text(String(f[col.key] ?? '—'), cx, rowTop, { width: col.w - 10 });
-            bottom = Math.max(bottom, doc.y);
-            cx += col.w;
-          }
-          const ruleY = bottom + 5;
-          doc
-            .moveTo(MARGIN, ruleY)
-            .lineTo(MARGIN + contentWidth, ruleY)
-            .lineWidth(0.5)
-            .strokeColor(C.hair)
-            .stroke();
-          doc.y = ruleY;
-        }
-        doc.x = MARGIN;
-        doc.y += PARA_GAP;
-      }
+      drawBattery();
     }
 
     // ── Signature block ───────────────────────────────────────────────

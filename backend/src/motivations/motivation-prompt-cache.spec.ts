@@ -144,9 +144,18 @@ const BEFORE_THE_REORDER: Record<
   MotivationLicenceType,
   { lines: number; sha: string }
 > = {
+  /**
+   * ⚠️ RE-BASELINED 2026-09-09, AND THE LINE COUNT MOVED — 106 → 98 — WHICH
+   * EVERY EARLIER RE-BASELINE DELIBERATELY DID NOT. MOTIVATION-S13-OUTPUT-
+   * REVIEW.md §1.5: the S13 skeleton lost `personal_circumstances`,
+   * `the_calibre` and `compliance_history` and gained `existing_measures`, so
+   * the STRUCTURE block genuinely carries two fewer sections and their briefs.
+   * The note above says to edit the counts only when a line was meant to be
+   * added or removed; eight were, on purpose.
+   */
   S13_SELF_DEFENCE: {
-    lines: 106,
-    sha: '3b1831828752920b0c662f12c294918d3f4b7c5f8a8d9af29077fa750021a423',
+    lines: 98,
+    sha: '8fea1dbf6577b0563fdde736831894dbe0775199984cf4a3588c13f60b095c94',
   },
   S15_OCCASIONAL_HUNTER: {
     lines: 106,

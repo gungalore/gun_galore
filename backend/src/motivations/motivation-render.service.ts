@@ -149,11 +149,85 @@ function saDate(raw: string): string {
  * Exported for its spec only — it is pure, and the alternative is asserting
  * about a table through a whole PDF render.
  */
+/**
+ * The section a held firearm's card puts it under, as the table prints it.
+ *
+ * ⚠️ AN EM DASH RATHER THAN A GUESS, AND THAT IS THE WHOLE POINT OF THE
+ * COLUMN. MO000071 had no section column, the prompt asked the writer for one
+ * per firearm, and it supplied five — putting a section 16 Marlin under
+ * section 15 in a document the applicant signed. A row we cannot place prints
+ * nothing, which is a fact a DFO can act on; a row we place wrongly is a
+ * contradiction they find against the licence copies two tabs away.
+ */
+function heldSection(answers: Record<string, string>, i: number): string {
+  const key = (answers[`existing_firearm_${i}_section_held`] ?? '').trim();
+  const m = /^section_(\d{2})$/.exec(key);
+  return m ? `Section ${m[1]}` : '—';
+}
+
+/**
+ * What the card and the endorsement say the firearm is FOR.
+ *
+ * ⚠️ STATED OR ABSENT — NEVER DERIVED FROM THE SECTION. "Section 16" does not
+ * tell you whether somebody hunts or shoots sport with it, and filling the
+ * column from the section number would put a role on the page that nothing
+ * supplied. Rule 12 in a table instead of in a sentence.
+ */
+function heldStatus(answers: Record<string, string>, i: number): string {
+  const p = `existing_firearm_${i}_`;
+  return (
+    (answers[`${p}use`] ?? '').trim() ||
+    OWN_USE_WORDS[(answers[`${p}primary_use`] ?? '').trim()] ||
+    '—'
+  );
+}
+
+/**
+ * The card keys as a table cell, in three or four words.
+ *
+ * ⚠️ NOT THE CARD'S OWN SENTENCE. PRIMARY_USE stores first-person sentences —
+ * "I use it for plains game." — which is right in the picker and wrong in a
+ * column six centimetres wide beside three other columns.
+ */
+const OWN_USE_WORDS: Record<string, string> = {
+  self_defence_carry: 'Self-defence, carried',
+  home_defence: 'Home defence',
+  small_game: 'Small game',
+  plains_game: 'Plains game',
+  dangerous_game: 'Dangerous game',
+  wingshooting: 'Birds',
+  clays: 'Clay targets',
+  sport_competition: 'Sport, competition',
+  sport_practice: 'Sport, practice',
+  collection: 'Collection',
+  unused: 'No longer used',
+  culling: 'Culling',
+  livestock_protection: 'Livestock protection',
+  training_others: 'Teaching others',
+  range_practice: 'Range practice',
+  dedicated_status: 'Dedicated status',
+  business_use: 'Business use',
+  inherited: 'Inherited',
+  spare_for_repair: 'Spare',
+};
+
+export interface OwnedFirearmRow {
+  make: string;
+  calibre: string;
+  serial: string;
+  expiry: string;
+  /** Handgun, rifle, shotgun — SAPS 271 item 2.1 prints it and the table did not. */
+  type: string;
+  /** "Section 16", or an em dash where no licence card established one. */
+  section: string;
+  /** What it is licensed or endorsed FOR, where something stated it. */
+  status: string;
+}
+
 export function existingFirearms(
   answers: Record<string, string>,
-): { make: string; calibre: string; serial: string; expiry: string }[] {
-  const out: { make: string; calibre: string; serial: string; expiry: string }[] =
-    [];
+): OwnedFirearmRow[] {
+  const out: OwnedFirearmRow[] = [];
   for (let i = 1; i <= OWNED_ROWS; i++) {
     const make = (answers[`existing_firearm_${i}_make`] ?? '').trim();
     const model = (answers[`existing_firearm_${i}_model`] ?? '').trim();
@@ -167,6 +241,9 @@ export function existingFirearms(
       calibre: calibre || '—',
       serial: serial || '—',
       expiry: expiry ? saDate(expiry) : '—',
+      type: (answers[`existing_firearm_${i}_type`] ?? '').trim() || '—',
+      section: heldSection(answers, i),
+      status: heldStatus(answers, i),
     });
   }
   return out;
@@ -217,6 +294,29 @@ function sectionMarksFor(
     out[s.heading.replace(/:\s*$/, '').toUpperCase()] = mark;
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * The heading the writer was told to use for the comparison section, as the
+ * renderer will print it — uppercased, colon stripped.
+ *
+ * ⚠️ THE TABLE BELONGS UNDER THE ARGUMENT IT IS EVIDENCE FOR. It printed as a
+ * section of its own AFTER the summary and before the signature, which is
+ * where a reviewer has already stopped reading — while the comparison section
+ * three pages earlier discussed the same firearms in prose with nothing to
+ * check them against.
+ *
+ * ⚠️ READ OFF THE PLAN, NEVER MATCHED ON WORDS. `comparison` has four heading
+ * alternates per licence type and the plan picks one by seed; a regex over
+ * "already hold" or "existing" would work for three of them and silently stop
+ * the day an alternate is added.
+ */
+function comparisonHeadingOf(plan: unknown): string | undefined {
+  const sections = (plan as { sections?: { id?: string; heading?: string }[] })
+    ?.sections;
+  if (!Array.isArray(sections)) return undefined;
+  const hit = sections.find((s) => s?.id === 'comparison' && s?.heading);
+  return hit?.heading?.replace(/:\s*$/, '').toUpperCase();
 }
 
 @Injectable()
@@ -611,6 +711,11 @@ export class MotivationRenderService {
       // See sectionMarks on MotivationPdfInput for why this is built from the
       // stored plan rather than inferred from the words.
       sectionMarks: sectionMarksFor(row.structurePlan, answers.firearm_type),
+      // ⚠️ THE BATTERY TABLE GOES UNDER THE COMPARISON HEADING, not after the
+      // summary where a reviewer has stopped reading. Undefined on a plan with
+      // no comparison section — a first application holds nothing to compare —
+      // and the renderer then prints it as its own section as it always did.
+      batteryHeading: comparisonHeadingOf(row.structurePlan),
       firearmPhoto: await this.coverPhotoForRender(row, answers),
       characterStatements,
       sellerConsent,

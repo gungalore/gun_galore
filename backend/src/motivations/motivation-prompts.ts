@@ -726,6 +726,8 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
     'The disciplines I shoot and what each one demands: the course of fire, the distances, the positions, the time limits, the class or division, and what the association requires to keep dedicated status. \u26a0\ufe0f ADDRESS EVERY DISCIPLINE NAMED, each in its own right \u2014 an applicant who shoots three has three reasons for the firearm, and a paragraph that covers only the first throws away two of them. Where the answers carry the published equipment rules for a discipline, work from those. This is the section that shows the firearm was chosen against a defined standard rather than a preference.',
   the_threat:
     'Why a firearm is applicable to this applicant\u2019s circumstances. Ground it in what they actually told you and in the researched context for their area \u2014 the pattern of crime there, their commute, their work, their responsibilities. \u26a0\ufe0f SOBER AND SPECIFIC. No fear-mongering, no national crime statistics used as atmosphere, and never a claim about an incident they did not report.',
+  existing_measures:
+    'What this applicant ALREADY does about the risk, and where each measure stops. Take them one at a time from the facts — the wall, the beams, the alarm, the armed response contract and its response time, the gate, the dog, the routes and hours kept, the workplace’s own security — name it, say what it protects against, and then say plainly what it cannot do. ⚠️ THIS IS THE HALF OF THE SECTION 13 TEST THE DOCUMENT USUALLY MISSES. A Registrar is deciding whether a firearm is NECESSARY, and necessary means the alternatives have been tried and fall short; a document that asks for a firearm without disposing of the alternatives is asking for it as a first resort. ⚠️ AND ONLY WHAT THE FACTS CARRY. Never invent a measure to knock down, never say a measure failed on a particular occasion unless the applicant said so, and never disparage armed response or the police — the honest sentence is that a response takes minutes and an attack takes seconds, which is a fact about distance and not a complaint.',
   experience:
     'Training, competency, proficiency, hours and years, and what they have actually done with a firearm. Concrete: dates, certificates, counts. This is the section a reviewer reads to decide whether the applicant is competent, which is what the Central Firearms Register actually cares about.',
   the_firearm:
@@ -744,14 +746,36 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
     'A short undertaking in my own voice, and then the ask. \u26a0\ufe0f END BY REQUESTING THE LICENCE. Name the section THIS application is made under, the make, the calibre and the serial, and state THIS applicant’s purpose \u2014 "I respectfully request the Registrar to issue me with a licence under section [number] for the [make] [calibre], serial [no], for [the purpose stated in the facts]." ⚠️ THE SECTION NUMBER AND THE PURPOSE COME FROM THE FACTS, NEVER FROM THIS BRIEF. The worked example here named section 16 and dedicated sport shooting, which is right for exactly one of the five licence types and wrong for the other four: a section 13 self-defence applicant, a section 15 occasional hunter, a dedicated HUNTER and a section 24 renewal were each shown a model answer asking for a dedicated sport licence, in the one paragraph whose whole job is to say what is being applied for. That request is what the document is FOR, and a motivation that never asks reads as an essay somebody attached to a form. \u26a0\ufe0f ASKING IS NOT PREDICTING. Rule 3 forbids saying the application should succeed, is likely to be approved, or meets the threshold. It does not forbid the request itself, and an earlier version of this brief confused the two and struck out the ask along with the prediction. No summary of everything above, and no thanks.',
 };
 
+/**
+ * Briefs a licence type overrides.
+ *
+ * ⚠️ ONE ENTRY, AND IT EXISTS BECAUSE THE ROOM WAS THE INSTRUCTION. The
+ * firearm brief above asks for the action, the barrel, the capacity, the mass
+ * and the ballistics — right for a hunting rifle argued against a species at a
+ * range, and on a self-defence application it produced 150 words on short
+ * recoil, tilting barrels, polymer frames and "dust, lint, and variable
+ * maintenance cycles". None of that is a reason a person needs a firearm, and
+ * "high magazine capacities" and "terminal ballistics" are phrases a Registrar
+ * reads AGAINST an applicant. A section 13 needs four facts and a paragraph.
+ */
+const BRIEF_OVERRIDES: Partial<
+  Record<MotivationLicenceType, Partial<Record<SectionId, string>>>
+> = {
+  [MotivationLicenceType.S13_SELF_DEFENCE]: {
+    the_firearm:
+      'ONE PARAGRAPH, AT MOST SIXTY WORDS, AND FOUR FACTS: the type and make applied for, the calibre, why a handgun rather than a rifle or shotgun (it can be carried on the person, which is the whole point of a firearm kept for defence), and one sentence that the calibre is a common service calibre whose ammunition is readily available so I can practise. ⚠️ NOTHING ELSE. No action type, no barrel, no capacity, no trigger system, no frame material, no ballistics, no comparison with other models, no manufacturer’s history. A self-defence application is not about the firearm; it is about the risk, and a paragraph describing the product reads as somebody who wants this one rather than somebody who needs one.',
+  },
+};
+
 export function generationUserPrompt(
   pack: FactPack,
   plan: StructurePlan,
 ): string {
+  const overrides = BRIEF_OVERRIDES[pack.licenceType] ?? {};
   const structure = plan.sections
     .map(
       (s, i) =>
-        `${i + 1}. ${s.heading}  (about ${s.paragraphs} paragraph${s.paragraphs === 1 ? '' : 's'})\n   \u2192 ${SECTION_BRIEFS[s.id]}`,
+        `${i + 1}. ${s.heading}  (about ${s.paragraphs} paragraph${s.paragraphs === 1 ? '' : 's'})\n   \u2192 ${overrides[s.id] ?? SECTION_BRIEFS[s.id]}`,
     )
     .join('\n');
 

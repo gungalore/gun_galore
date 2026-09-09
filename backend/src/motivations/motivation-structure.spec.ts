@@ -52,11 +52,24 @@ describe('structure planning', () => {
       for (let seed = 0; seed < 100; seed++) {
         const ids = planFor(t, seed).sections.map((s) => s.id);
         expect(ids.indexOf('storage_safety')).toBeLessThan(
-          ids.indexOf('compliance_history'),
-        );
-        expect(ids.indexOf('compliance_history')).toBeLessThan(
           ids.indexOf('conclusion'),
         );
+        /**
+         * ⚠️ AN S13 HAS NO COMPLIANCE SECTION SINCE 2026-09-09. Printed as "My
+         * record" it came out a list of the documents attached, which the
+         * annexure index already is; anything real in it belongs under the
+         * statute. Where the section still exists it keeps its place.
+         */
+        if (ids.includes('compliance_history')) {
+          expect(ids.indexOf('storage_safety')).toBeLessThan(
+            ids.indexOf('compliance_history'),
+          );
+          expect(ids.indexOf('compliance_history')).toBeLessThan(
+            ids.indexOf('conclusion'),
+          );
+        } else {
+          expect(t).toBe(MotivationLicenceType.S13_SELF_DEFENCE);
+        }
       }
     }
   });
@@ -440,8 +453,15 @@ describe('the corpus sections', () => {
 
   describe('the calibre', () => {
     it('argues the cartridge for everyone with a purpose to argue it for', () => {
+      /**
+       * ⚠️ EXCEPT A SECTION 13, SINCE 2026-09-09. Kept as its own section it
+       * produced an argument about "115 to 147 grains" and "3 to 5
+       * foot-pounds" in a self-defence application — figures nothing supplied,
+       * in a section whose whole subject a Registrar reads as an interest in
+       * the hardware. It is one clause of a sixty-word firearm paragraph now:
+       * a common service calibre whose ammunition is readily available.
+       */
       for (const type of [
-        MotivationLicenceType.S13_SELF_DEFENCE,
         MotivationLicenceType.S15_OCCASIONAL_HUNTER,
         MotivationLicenceType.S16_DEDICATED_HUNTER,
         MotivationLicenceType.S16_DEDICATED_SPORT,
@@ -711,13 +731,34 @@ describe('per-type section order', () => {
     // allow. If it ever collapses, every same-type document shares one exact
     // order and this file's whole thesis goes with it.
     for (const type of [
-      MotivationLicenceType.S13_SELF_DEFENCE,
       MotivationLicenceType.S15_OCCASIONAL_HUNTER,
       MotivationLicenceType.S16_DEDICATED_HUNTER,
       MotivationLicenceType.S16_DEDICATED_SPORT,
     ]) {
       expect(new Set(SEEDS.map((seed) => shapeOf(type, seed))).size).toBe(2);
     }
+
+    /**
+     * ⚠️ THE S13 HAS NO PERMUTING PAIR ANY MORE, AND THAT IS A DELIBERATE
+     * TRADE. Its pair was experience/storage; experience folded into the
+     * statutory section on 2026-09-09 because competency is a statutory
+     * precondition rather than a self-defence argument, and the document may
+     * state only the certificate number and that it is valid.
+     *
+     * So an S13's ORDER is now fixed and the anti-template load falls entirely
+     * on the heading alternates, the opening, the closing, the cadence and the
+     * conditional comparison section. ⚠️ Watch the admin sameness report: if
+     * two S13s start scoring high against each other, this is why, and the fix
+     * is more heading alternates rather than shuffling an order taken from
+     * documents a DFO has already approved.
+     */
+    expect(
+      new Set(
+        SEEDS.map((seed) =>
+          shapeOf(MotivationLicenceType.S13_SELF_DEFENCE, seed),
+        ),
+      ).size,
+    ).toBe(1);
   });
 
   it('still swaps experience and the firearm on a renewal, as it always did', () => {
