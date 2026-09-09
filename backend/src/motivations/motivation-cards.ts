@@ -379,6 +379,28 @@ export const OVERLAP_ANGLES: readonly CardOption[] = [
       'The firearm I already hold is for a different purpose and would not be used for this one.',
   },
   {
+    /**
+     * ⚠️ THE STRONGEST ANSWER THERE IS TO AN OVERLAP, AND IT WAS NOT ON OFFER.
+     * Operator, 2026-09-09: "If someone owns a handgun and its on section 16.
+     * Then the new applicant is allowed to apply for a section 13 of that
+     * firearm if they do meet all the other conditions."
+     *
+     * `different_purpose` above says the held firearm WOULD NOT be used for
+     * this one, which is a statement about the applicant's intentions. This
+     * says the licence does not cover it, which is a statement about the
+     * licence — and a reviewer can check it against the card in Annexure G
+     * without taking anybody's word for anything.
+     *
+     * ⚠️ IT DOES NOT SAY THE FIREARM MAY NOT BE USED. It says the LICENCE is
+     * not a licence for this purpose, which is what the card actually
+     * establishes. The stronger claim is a proposition about the Act, and this
+     * sentence goes verbatim into a document somebody signs.
+     */
+    key: 'different_section',
+    sentence:
+      'The firearm I already hold is licensed under a different section of the Act, for a different purpose, and that licence does not cover the purpose I am applying for now.',
+  },
+  {
     key: 'different_calibre',
     sentence:
       'This one is a different calibre, and the one I hold is the wrong cartridge for what I need it for.',
@@ -464,6 +486,12 @@ export const OVERLAP_ANGLES_BY_SECTION: Readonly<
   Record<'selfDefence' | 'hunting' | 'sport', readonly string[]>
 > = {
   selfDefence: [
+    // ⚠️ FIRST, BECAUSE ON A SELF-DEFENCE APPLICATION IT IS USUALLY THE WHOLE
+    // ANSWER. A member holding a section 15 or 16 handgun holds it under a
+    // licence issued for hunting or sport; that licence does not cover keeping
+    // or carrying it for defence, so the overlap a reviewer sees in the
+    // register is disposed of in one sentence they can check.
+    'different_section',
     'concealable',
     'home_and_carry',
     'different_purpose',
@@ -474,6 +502,7 @@ export const OVERLAP_ANGLES_BY_SECTION: Readonly<
     'in_for_repair',
   ],
   hunting: [
+    'different_section',
     'different_quarry',
     'different_range',
     'terrain_reach',
@@ -486,6 +515,7 @@ export const OVERLAP_ANGLES_BY_SECTION: Readonly<
     'in_for_repair',
   ],
   sport: [
+    'different_section',
     'different_division',
     'match_and_practice',
     'different_format',

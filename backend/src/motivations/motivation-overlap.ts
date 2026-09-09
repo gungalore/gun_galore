@@ -480,21 +480,48 @@ function overlapStrengthClause(
 ): string {
   const clauses: string[] = [];
 
+  /**
+   * ⚠️ THE SECTION GOES FIRST, AND WHEN IT DIFFERS IT SETTLES THE QUESTION.
+   * Operator, 2026-09-09: "If someone owns a handgun and its on section 16.
+   * Then the new applicant is allowed to apply for a section 13 of that
+   * firearm if they do meet all the other conditions."
+   *
+   * A licence is issued under a section FOR A PURPOSE. A handgun held under
+   * section 16 is held on a dedicated sport or hunting licence, and that
+   * licence does not cover keeping or carrying it for defence — so a section
+   * 13 application is not asking for a second firearm to do the same job. It
+   * is asking for the first one licensed to do THIS job.
+   *
+   * ⚠️ THIS USED TO READ "worth naming" AND CAME SECOND, behind an action
+   * clause that told the writer to PRESS a duplication. Two self-loading
+   * handguns under different sections would get "CLOSER duplication — press
+   * it" first and the section as an afterthought — so the document argued at
+   * length about grip angle and carry method to answer an objection the
+   * licence card already answers in a line.
+   */
+  const heldSection = classifyHeldSection(h.section);
+  const differentSection = !!mySection && !!heldSection && heldSection !== mySection;
+  if (mySection && heldSection) {
+    clauses.push(
+      heldSection === mySection
+        ? 'it is licensed under the SAME section as this application, so the duplication is real and must be answered on its merits'
+        : `it is licensed under ${HELD_SECTION_LABELS[heldSection]}, a DIFFERENT section from the one applied for — SAY THIS FIRST AND STOP THERE. A licence is issued under a section for a purpose, and that one does not cover the purpose of this application, so the applicant is not asking for a second firearm to do the same job. One sentence disposes of it, and a reviewer can check it against the licence copy in the annexures. Do not argue the two firearms as competitors for one role`,
+    );
+  }
+
   const heldAction = classifyAction(h.action);
   if (myAction && heldAction) {
     clauses.push(
       heldAction === myAction
-        ? `it is also ${FIREARM_ACTION_LABELS[myAction]}, which makes this a CLOSER duplication — press it`
+        ? differentSection
+          ? // ⚠️ NOT "press it". The actions matching is what a reviewer NOTICES
+            // in the register; the sections differing is what ANSWERS it. Told
+            // to press a duplication that the licence itself disposes of, the
+            // writer produces a defensive paragraph about a problem the
+            // applicant does not have.
+            `it is also ${FIREARM_ACTION_LABELS[myAction]}, which is what makes the two look alike on a register — mention it only to say the licences differ, do not build the paragraph on it`
+          : `it is also ${FIREARM_ACTION_LABELS[myAction]}, which makes this a CLOSER duplication — press it`
         : `it is ${FIREARM_ACTION_LABELS[heldAction]} against the ${FIREARM_ACTION_LABELS[myAction]} applied for, which is a LIGHTER duplication than an identical action would be — say so, do not argue it as if the two were the same firearm`,
-    );
-  }
-
-  const heldSection = classifyHeldSection(h.section);
-  if (mySection && heldSection) {
-    clauses.push(
-      heldSection === mySection
-        ? 'it is licensed under the SAME section as this application'
-        : `it is licensed under a DIFFERENT section (${HELD_SECTION_LABELS[heldSection]}) from this application, which is worth naming`,
     );
   }
 
@@ -914,7 +941,21 @@ function suggestedAngleFor(
   licenceType: MotivationLicenceType | undefined,
   matched: HeldFirearm[],
 ): CardOption[] {
+  const mySection = sectionAppliedFor(licenceType);
   const leadKeys: string[] = [];
+
+  /**
+   * ⚠️ A DIFFERENT SECTION LEADS EVERYTHING, because it is the one answer a
+   * reviewer can verify without believing anybody. The card says the held
+   * licence does not cover this purpose; the licence copy in the annexures
+   * says the same thing on its face.
+   */
+  if (mySection && matched.some((h) => {
+    const held = classifyHeldSection(h.section);
+    return !!held && held !== mySection;
+  })) {
+    leadKeys.push('different_section');
+  }
 
   if (purposeConflicts(matched, licenceType)) {
     leadKeys.push('different_purpose');

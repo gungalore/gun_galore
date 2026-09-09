@@ -875,8 +875,17 @@ describe('the action and section axes weaken or sharpen a matched note', () => {
       [{ calibre: '.308 Win', section: 'SECTION 13' }],
       { licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER },
     );
-    expect(r.writerNote).toMatch(/licensed under a DIFFERENT section/);
+    expect(r.writerNote).toMatch(/a DIFFERENT section from the one applied for/);
     expect(r.writerNote).toMatch(/section 13 \(self-defence\)/);
+    /**
+     * ⚠️ AND IT SAYS THE DIFFERENCE IS THE ANSWER, not that it is worth a
+     * mention. Operator, 2026-09-09: "If someone owns a handgun and its on
+     * section 16. Then the new applicant is allowed to apply for a section 13
+     * of that firearm if they do meet all the other conditions." A licence is
+     * issued under a section FOR A PURPOSE, so a firearm held under another
+     * one is not a second firearm doing the same job.
+     */
+    expect(r.writerNote).toMatch(/SAY THIS FIRST AND STOP THERE/);
   });
 
   it('says nothing about section on a renewal — nothing is being applied for under a new one', () => {
@@ -900,7 +909,64 @@ describe('the action and section axes weaken or sharpen a matched note', () => {
         licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
       },
     );
-    expect(r.writerNote).toMatch(/CLOSER duplication.*DIFFERENT section/);
+    /**
+     * ⚠️ THE SECTION LEADS AND THE ACTION FOLLOWS, WHICH IS A REVERSAL. It
+     * used to read "CLOSER duplication ... DIFFERENT section": the writer was
+     * told to press a duplication first and given the licence difference as an
+     * afterthought, so the document argued at length about an objection the
+     * licence card answers in a line. With the sections differing, matching
+     * actions are what makes the two look alike on a register — not what makes
+     * them compete for one role.
+     */
+    expect(r.writerNote).toMatch(
+      /a DIFFERENT section from the one applied for[\s\S]*makes the two look alike on a register/,
+    );
+    expect(r.writerNote).not.toMatch(/CLOSER duplication/);
+  });
+
+  it('⚠️ STILL PRESSES A CLOSER DUPLICATION WHEN THE SECTIONS AGREE', () => {
+    // The softening is about the LICENCE, not about the action. Two bolt
+    // rifles both held under section 16 really are two firearms competing for
+    // one role, and the paragraph has to answer that on its merits.
+    const r = checkOverlap(
+      '.308 Win',
+      [{ calibre: '.308 Win', action: 'Bolt action', section: 'SECTION 16' }],
+      {
+        appliedForAction: 'Bolt action',
+        licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      },
+    );
+    expect(r.writerNote).toMatch(/CLOSER duplication — press it/);
+    expect(r.writerNote).toMatch(/the duplication is real/);
+  });
+
+  it('⚠️ THE OPERATOR’S OWN CASE: a section 16 handgun, a section 13 application', () => {
+    // "If someone owns a handgun and its on section 16. Then the new applicant
+    // is allowed to apply for a section 13 of that firearm if they do meet all
+    // the other conditions." The overlap is still raised — a DFO counts the
+    // register — and it is disposed of by the licence rather than argued.
+    const r = checkOverlap(
+      '9mm Luger',
+      [
+        {
+          calibre: '9mm Luger',
+          type: 'Handgun',
+          action: 'Semi-automatic',
+          section: 'SECTION 16',
+        },
+      ],
+      {
+        appliedForType: 'Handgun',
+        appliedForAction: 'Semi-automatic',
+        licenceType: MotivationLicenceType.S13_SELF_DEFENCE,
+      },
+    );
+    expect(r.needsJustification).toBe(true);
+    expect(r.writerNote).toMatch(/section 16 \(dedicated hunter or sport shooter\)/);
+    expect(r.writerNote).toMatch(/does not cover the purpose of this application/);
+    expect(r.writerNote).not.toMatch(/CLOSER duplication/);
+    // And the member is offered the sentence that says so, first.
+    expect((r.suggestedAngle ?? [])[0]?.key).toBe('different_section');
   });
 
   it('never lets the strength clause slip into the applicant-facing prompt', () => {
