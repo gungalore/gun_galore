@@ -84,11 +84,61 @@ picker once advertised "sans-serif throughout" to members whose packs were all
 serif. If it comes back, **its mock cover needs the hero** or it will promise a
 cover nobody receives.
 
-### Still open from the operator's five
+### The figures now print beside the firearm (item 3 — done)
 
-**Item 3** — the C.I.P. dimensions belong in the body where the firearm is
-described. This is the other half of the rearrangement above: the body has just
-given up its figure, so nothing there carries the numbers yet.
+`970f79c4`. Nine figures, plain English, two to a line, under the writer's own
+cartridge heading with the prose falling in underneath. Down one column nine
+rows is a list, not a table, and would push most of a page of prose out of its
+section; paired, it is a five-line block read across in one look.
+
+⚠️ **A stood-in letter is never printed.** `cartridgeDimRows` filters on the
+same `derived` set the drawing's callouts refuse — a 9 mm Luger has no
+shoulder, so it gets no shoulder diameter. It lives beside `completeDims`
+because that is what creates the set. ⚠️ **And nothing names a source**; the
+labels are words a DFO uses and the sheet's own letters appear nowhere. Both
+are pinned by tests.
+
+The body's cartridge block owns two things now, so its latch changed from "the
+cover took it" to "is there anything left" — otherwise a hero pack lost the
+figures in silence.
+
+**The operator's five items are all closed.** Employer-address autofill was
+also verified rather than assumed: `ADDRESS_KEYS` in `sheet-row.tsx` includes
+`employer_address` and its branch runs before the `long`-field branch. The
+missing "Use my current location" there is deliberate — GPS reads where the
+MEMBER is, which is an invitation to put their kitchen table in the employer
+box.
+
+### Next — a one-page cartridge sheet for a DFO who wants more
+
+Operator, 2026-09-10: "Maybe we can give a one pager history and interesting
+fact about the cartridge in a cool pa[ge] layout if the dfo and cfr wants to
+know more about it?"
+
+⚠️ **THE CONTENT ALREADY EXISTS AND IS ALREADY PAID FOR.** `targetsFor()`'s
+`calibre` target already asks for "its origin and character — recoil, typical
+factory loads, effective range — and what it is commonly used for in South
+Africa", grounded against the web, cached 180 days on calibre + use class. The
+real 6.5 Creedmoor row in production comes back as publishable prose under its
+own headings — Origin, Character and Recoil, Typical Factory Loads, Effective
+Range, Common Uses in South Africa, Match Suitability — with sources attached.
+Nobody renders it today; the writer digests it and it is thrown away.
+
+So the job is a renderer, not a research feature. What it still needs:
+
+1. **A decision:** inside the signed body, or back matter after the signature?
+   The operator's own framing — "if the DFO wants to know more" — points at
+   back matter, outside the twelve-heading spine, but it is theirs to make.
+2. **Metric.** The payload quotes fps, yards and ft-lbs beside a figures table
+   in mm and bar. Ask for metric.
+3. ⚠️ **CHANGING THE ASK IS INERT UNTIL THE TTL EXPIRES.** `cacheKeyFor` keys
+   on calibre + use class and NOT on the ask, so a reworded brief silently
+   keeps serving 180-day-old payloads. Any wording change needs a version
+   segment in the key, or it does nothing for half a year.
+4. A small markdown pass — the payload carries `**bold**` headings and `*`
+   bullets, and nothing in the renderer parses them today.
+5. Cite the sources at the foot, which is the pattern press clippings already
+   set (paper, date, annexure letter).
 
 ## 2026-09-09 — MO000075, read off the box
 
