@@ -36,15 +36,32 @@ const LEGAL_FRAME: Record<MotivationLicenceType, string> = {
   S13_SELF_DEFENCE:
     'Section 13 of the Firearms Control Act 60 of 2000 — a licence to possess a firearm for self-defence. ' +
     'The Registrar must be satisfied the applicant needs THIS firearm for self-defence and that no other means would reasonably suffice. ' +
-    'A section 13 licence is for one firearm, a handgun or a shotgun that is not fully automatic.',
+    // ⚠️ "NOT FULLY OR SEMI-AUTOMATIC" FOR THE SHOTGUN, AND THIS LINE HAD IT
+    // WRONG. s13(1) reads: "(a) shotgun which is not fully or semi-automatic;
+    // or (b) handgun which is not fully automatic." Written as "a handgun or a
+    // shotgun that is not fully automatic" it told the writer a semi-automatic
+    // shotgun may be licensed under section 13. It may not — that is a
+    // restricted firearm under s14(1)(a). `sectionAllows` refuses one, so the
+    // wrong frame could not produce a wrong APPLICATION; it could produce a
+    // wrong statement of the law inside a document the applicant signs.
+    // Caught by MOTIVATION-GUIDE-BOOK, failure mode 4.
+    'A section 13 licence is for one firearm: a handgun that is not fully automatic, or a shotgun that is neither fully nor semi-automatic. ' +
+    'Section 13(3) allows a person only ONE section 13 licence at a time.',
   // ⚠️ THE CAPS BELONG IN THE FRAME, as section 13's own limit already is.
   // Section 15(3) is the most easily tripped numeric constraint in the Act and
   // this frame said nothing about it, so the writer argued a section 15 case
   // with no idea that the applicant may hold four of them, three if they also
   // hold a section 13, and only ONE handgun. The verbatim subsection does
   // reach the model in the statute block; naming it here is what makes it
-  // argued rather than merely available. See also: nothing in the product
-  // COUNTS these, because an owned-firearm row has no section column.
+  // argued rather than merely available.
+  //
+  // ⚠️ THE REASON NOTHING COUNTS THEM IS GONE. This used to read "nothing in
+  // the product COUNTS these, because an owned-firearm row has no section
+  // column". The rows gained `section_held` on 2026-09-09, so the count is now
+  // computable and is not computed. MOTIVATION-GUIDE-BOOK Part 3.2 says what
+  // to do with it: a WARNING on the applicant's checklist, never a block —
+  // one s13, one s14, four s15 (three where a s13 is held), one s15 handgun.
+  // STATUS: not implemented.
   S15_OCCASIONAL_HUNTER:
     'Section 15 of the Firearms Control Act 60 of 2000 — a licence to possess a firearm for occasional hunting or occasional sports shooting. ' +
     'The applicant must show the firearm suits that stated purpose and that they genuinely pursue it. ' +
