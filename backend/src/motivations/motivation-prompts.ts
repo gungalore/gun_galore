@@ -281,11 +281,15 @@ function renderIntendedUses(uses?: CandidateUses[]): string {
   return `
 <intended-uses>
 What somebody could do with the firearm APPLIED FOR. These are written for a
-class of firearm, not from anything the applicant said, and they are in the
-future tense because the applicant does not own this firearm yet — that tense
-is deliberate and must survive into the document. A sentence saying the
-applicant ALREADY does these things with this firearm is untrue and invites the
-obvious refusal: if you already do it, what is the licence for?
+class of firearm, not from anything the applicant said, and they are statements
+of INTENT because the applicant does not own this firearm yet.
+⚠️ THE TENSE IS AN ARGUMENT AND IT MUST SURVIVE INTO THE DOCUMENT. "I would
+like to hunt kudu in the bushveld" is honest — it claims nothing about a past
+nothing in this pack records. "I hunt kudu in the bushveld" claims a history
+this applicant may not have, in a document they sign under section 120(9) of
+the Act, and it invites the obvious refusal: if you already do it, what is the
+licence for? Never write "I have hunted", "I regularly", "for years", "as I
+have always" off one of these.
 PICK ONE and build the purpose from it. Do not list them, do not use more than
 one, and where the facts name the applicant's own association use that name in
 place of "my association".

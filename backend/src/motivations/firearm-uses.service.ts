@@ -264,6 +264,48 @@ const STORAGE_CLAIMS = [
   'locked away',
 ] as const;
 
+/**
+ * A sentence that claims something the applicant has never told us.
+ *
+ * ⚠️ THE DEFECT THE OPERATOR CAUGHT, AND IT WAS A REAL ONE. A live run wrote
+ * "I hunt giraffe on vast bushveld farms during regulated culling contracts"
+ * for a held .300 Winchester Magnum. Their answer: "the I hunt gireaffe shit
+ * aint going to fly, that a blatant lie."
+ *
+ * They are right, and it is MO000071's fault in a different coat: a generated
+ * sentence asserting a fact about the APPLICANT. Nothing in the pack says they
+ * have ever hunted anything, and the document is signed under s120(9) of the
+ * Act, where a false statement is an offence.
+ *
+ * ⚠️ SO THERE ARE TWO HONEST VOICES AND NEITHER OF THEM IS A HISTORY.
+ * Suitability — "it is suited to plains game at moderate ranges" — is a fact
+ * about the cartridge, true of every one ever made, and it is how a firearm
+ * already held is described. Intent — "I would like to hunt plains game" — is
+ * about the future, honest because it claims nothing about the past, and it is
+ * how the firearm applied for is described. The operator allowed both: "the
+ * .300winmag is suited for giraffe hunting so the .300prc will do the same …
+ * or the intent wording works fine as well."
+ *
+ * These two guards enforce it, because a rule the model is only ASKED to
+ * follow is a rule that holds until the day it does not.
+ */
+const FIRST_PERSON = /\b(i|i'm|i've|my|me|we|our|us)\b/i;
+
+/** An intent sentence has to actually contain some intent. */
+const INTENT_MARKERS = [
+  'would like',
+  'intend',
+  'want to',
+  'wish to',
+  'hope to',
+  'plan to',
+  'aim to',
+  'looking to',
+  'taken an interest',
+  'would use',
+  'would be able',
+] as const;
+
 /** The four axes a use depends on. Nothing here identifies anybody. */
 export interface FirearmClass {
   calibre: string;
@@ -400,9 +442,15 @@ of the KINDS OF SHOOTER who may lawfully hold one. You are NOT given a person,
 and you must not invent one: no names, no places, no farms, no clubs, no dates,
 no counts, no "I have been hunting for eleven years".
 
-For EACH kind of shooter listed, return the uses that a firearm of this class
-is genuinely suited to and that THAT shooter could lawfully put it to. Give AS
-MANY AS YOU CAN, up to twelve per shooter. Two or three is a failed answer.
+For EACH kind of shooter listed, say what a firearm of this class IS SUITED TO
+and what THAT shooter could lawfully put it to. Give AS MANY AS YOU CAN, up to
+twelve per shooter. Two or three is a failed answer.
+
+⚠️ WRITE ABOUT THE FIREARM, NEVER ABOUT A PERSON'S HISTORY. "This calibre is
+suited to plains game at moderate ranges" is a fact about the cartridge and it
+is true of every one of them. "I hunt plains game at moderate ranges" is a
+claim about somebody you have never met, and if it is not true of them it is a
+lie in a document they sign under section 120(9) of the Act.
 
 WORK THROUGH IT SYSTEMATICALLY RATHER THAN LISTING WHAT COMES TO MIND FIRST.
 Walk the axes, and take a use from each:
@@ -423,8 +471,9 @@ Walk the axes, and take a use from each:
   reactive steel; F-Class prone at fixed distances; metal silhouette against
   animal-shaped steel; benchrest grouping on paper; veld-shooting and
   hunting-rifle exercises shot standing off sticks, sitting, kneeling and
-  prone; postal shoots; club league rounds. "I shoot competitions" is a wasted
-  sentence. "I shoot F-Class prone at six hundred metres" is a use.
+  prone; postal shoots; club league rounds. "It is used in competitions" is a
+  wasted sentence. "It is a standard chambering for F-Class prone shooting at
+  six hundred metres" is a use.
 - PREPARATION. Zeroing, load development, practice that keeps the skill and
   the shot placement honest — these are real uses of the firearm.
 
@@ -432,8 +481,13 @@ For self-defence, walk the equivalent: the home, a vehicle, business premises,
 travelling, and the range practice that keeps it competent.
 
 RULES
-1. Each use is ONE short sentence in the first person, present tense, ending in
-   a full stop. "I use it for plains game at moderate ranges."
+1. Each entry is ONE short sentence ABOUT THE FIREARM, ending in a full stop.
+   Third person, no "I", no "my", no "he" or "she" — the subject is the rifle,
+   the shotgun or the calibre, never a person.
+   ✅ "It is suited to plains game at moderate ranges in open bushveld."
+   ✅ "It is a standard chambering for F-Class prone shooting at 600 m."
+   ❌ "I use it for plains game at moderate ranges."
+   ❌ "I hunt giraffe on bushveld farms under a culling contract."
 2. Plain South African English. Licence, calibre, centre-fire, metres.
 3. THE LISTS ARE WRITTEN INDEPENDENTLY OF EACH OTHER. A use for self-defence
    must not mention hunting or sport; a use for a hunter or a sports shooter
@@ -473,7 +527,11 @@ RULES
 10. NO TWO SENTENCES IN ONE LIST MAY SAY THE SAME THING. "I hunt impala in the
    bushveld" and "I use it for impala in thick bush" are one use written twice.
    A long list is wanted; a padded one is not.
-11. EVERY SENTENCE MUST BE TRUE OF THIS CLASS. Length never excuses invention:
+11. PREFER THE ORDINARY TO THE EXOTIC. The species this calibre is COMMONLY
+   used on in South Africa, not the rarest thing it could legally be pointed
+   at. Giraffe, buffalo and elephant are not what a plains-game rifle is for,
+   and a list that reaches for them reads as somebody who has never hunted.
+12. EVERY SENTENCE MUST BE TRUE OF THIS CLASS. Length never excuses invention:
    a 6.35 mm pocket pistol is not a plains-game cartridge and a .458 is not a
    small-game one. Where a shooter genuinely has little use for this class,
    give the few that are real and stop — an empty list beats a dishonest one.
@@ -699,12 +757,21 @@ export class FirearmUsesService {
     }
     lines.push(
       '',
-      'RESTATE EVERY ONE OF THEM for somebody who does NOT yet own this',
-      'firearm and is applying for a licence for it. Same activity, same',
-      'detail, same order — only the standing changes. Write each as something',
-      'intended or wanted rather than something already done: "I would like',
-      'to…", "I have taken an interest in…", "I intend to…", "I want to be',
-      'able to…". Vary the openings; do not begin every sentence the same way.',
+      'RESTATE EVERY ONE OF THEM as something the applicant INTENDS to do with',
+      'the firearm they are applying for. Same activity, same detail, same',
+      'order — only the standing changes: first person, and about the future.',
+      '"I would like to…", "I have taken an interest in…", "I intend to…",',
+      '"I want to be able to…". Vary the openings; do not begin every sentence',
+      'the same way.',
+      '',
+      '⚠️ INTENT, NEVER HISTORY. The applicant does not own this firearm and',
+      'you know nothing about what they have done before. "I would like to',
+      'hunt kudu in the bushveld" is a statement of intent and it is honest.',
+      '"I hunt kudu in the bushveld" is a claim about their past that may',
+      'simply be untrue, in a document they sign under section 120(9) of the',
+      'Act — and it invites the obvious refusal: if you already do it, what is',
+      'the licence for? Never "I have hunted", "I regularly", "for years",',
+      '"I have been", "as I have always".',
       '',
       'Change NOTHING else. Do not add uses, do not drop any, do not make them',
       'grander, and keep every rule you were given.',
@@ -726,7 +793,10 @@ export class FirearmUsesService {
       });
       const raw = JSON.parse(res.text) as Record<string, unknown>;
       return Object.fromEntries(
-        slices.map((s) => [s, this.clean(raw[SLICE_KEY[s]], s, c, PER_SLICE)]),
+        slices.map((s) => [
+          s,
+          this.clean(raw[SLICE_KEY[s]], s, c, PER_SLICE, 'applying'),
+        ]),
       ) as Partial<Record<UseSlice, string[]>>;
     } catch (err) {
       this.logger.warn(
@@ -793,6 +863,7 @@ export class FirearmUsesService {
     slice: UseSlice,
     c: FirearmClass,
     cap: number = PER_ROUND,
+    voice: Voice = 'held',
   ): string[] {
     if (!Array.isArray(v)) return [];
     const out: string[] = [];
@@ -824,6 +895,22 @@ export class FirearmUsesService {
        * here. Cheap, and it cannot refuse a well-formed sentence.
        */
       if (/\b(\w+)\s+\1\b/i.test(u)) {
+        refused++;
+        continue;
+      }
+      /**
+       * ⚠️ NEITHER VOICE MAY CLAIM A HISTORY. See FIRST_PERSON above for the
+       * giraffe. The suitability list is about the FIREARM, so a pronoun in it
+       * is a sentence about somebody we know nothing about; the intent list is
+       * about the FUTURE, so one with no intent marker has slipped back into
+       * the present tense.
+       */
+      if (voice === 'held') {
+        if (FIRST_PERSON.test(u)) {
+          refused++;
+          continue;
+        }
+      } else if (!INTENT_MARKERS.some((m) => u.toLowerCase().includes(m))) {
         refused++;
         continue;
       }

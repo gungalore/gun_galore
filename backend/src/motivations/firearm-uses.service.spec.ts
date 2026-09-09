@@ -36,10 +36,38 @@ const RIFLE = {
   section: 'section 15',
 };
 
-const HUNT = 'I use it for plains game at moderate ranges.';
-const SPORT = 'I shoot it at club precision matches.';
+/**
+ * ⚠️ SUITABILITY, NOT HISTORY. The stored voice is about the FIREARM — "the I
+ * hunt gireaffe shit aint going to fly, that a blatant lie" (operator,
+ * 2026-09-09). A first-person sentence in this voice is refused outright.
+ */
+const HUNT = 'It is suited to plains game at moderate ranges.';
+const SPORT = 'It is a standard chambering for club precision matches.';
 
-/** Twelve genuinely different sentences, for the volume and window tests. */
+/**
+ * Twelve genuinely different sentences, for the volume and window tests.
+ *
+ * ⚠️ THEY HAVE TO BE GENUINELY DIFFERENT, not twelve of one shape. `merge()`
+ * folds near-duplicates on content-word overlap, so "It is suited to impala in
+ * bushveld terrain" and "…to blesbuck in bushveld terrain" are ONE use as far
+ * as it is concerned — correctly. Pairing each species with its own terrain is
+ * what makes twelve distinct sentences rather than one repeated.
+ */
+const TERRAIN = [
+  'thornveld',
+  'Karoo',
+  'highveld',
+  'mountain',
+  'coastal',
+  'farmland',
+  'riverine',
+  'savannah',
+  'wetland',
+  'scrub',
+  'grassland',
+  'woodland',
+];
+
 const SPECIES = [
   'impala',
   'blesbuck',
@@ -61,8 +89,8 @@ function reply(over: Record<string, string[]> = {}) {
     text: JSON.stringify({
       occasional_hunter: [HUNT],
       occasional_sport_shooter: [SPORT],
-      dedicated_hunter: ['I hunt with it under my association calendar.'],
-      dedicated_sport_shooter: ['I shoot it in my registered discipline.'],
+      dedicated_hunter: ['It is used on association calendar hunts.'],
+      dedicated_sport_shooter: ['It is shot in registered disciplines.'],
       ...over,
     }),
     model: 'gemini-3.5-flash-lite',
@@ -295,15 +323,15 @@ describe('resolving a row', () => {
         round++;
         if (round === 1) {
           return reply({
-            occasional_hunter: ['I hunt impala in thick bushveld cover.'],
+            occasional_hunter: ['It is suited to impala in thick bushveld.'],
           });
         }
         return reply({
           occasional_hunter: [
             // The same use, reworded — must not be counted again.
-            'I hunt impala in bushveld cover that is thick.',
+            'It is suited to impala in bushveld that is thick.',
             // Genuinely different — must be kept.
-            'I shoot springbok on open Karoo plains in winter.',
+            'It suits springbok on open Karoo plains in winter.',
           ],
         });
       }),
@@ -313,8 +341,8 @@ describe('resolving a row', () => {
       (c) => c[0].where.classKey === useClassKey(RIFLE, 's15_hunt'),
     );
     expect(hunt[0].create.uses).toEqual([
-      'I hunt impala in thick bushveld cover.',
-      'I shoot springbok on open Karoo plains in winter.',
+      'It is suited to impala in thick bushveld.',
+      'It suits springbok on open Karoo plains in winter.',
     ]);
   });
 
@@ -337,7 +365,8 @@ describe('resolving a row', () => {
     await svc.forClass(RIFLE);
     const sent = complete.mock.calls[3][0].messages[0].content[0].text;
     expect(sent).toContain('RESTATE EVERY ONE OF THEM');
-    expect(sent).toContain('does NOT yet own this');
+    expect(sent).toContain('INTENDS to do');
+    expect(sent).toContain('INTENT, NEVER HISTORY');
     expect(sent).toContain(HUNT);
 
     const hunt = upsert.mock.calls.find(
@@ -532,12 +561,15 @@ describe('resolving a row', () => {
     // disciplines, which is how the operator came to see one consolidated list
     // where two were generated.
     const many = (p: string) =>
-      Array.from({ length: 12 }, (_, i) => `I ${p} ${SPECIES[i]} in season.`);
+      Array.from(
+        { length: 12 },
+        (_, i) => `It ${p} ${SPECIES[i]} on ${TERRAIN[i]} ground.`,
+      );
     const { svc } = build({
       complete: jest.fn(async () =>
         reply({
-          occasional_hunter: many('hunt'),
-          occasional_sport_shooter: many('shoot at'),
+          occasional_hunter: many('suits'),
+          occasional_sport_shooter: many('handles'),
         }),
       ),
     });
@@ -554,12 +586,15 @@ describe('resolving a row', () => {
    */
   it('⚠️ STORES THE WHOLE LIST AND OFFERS A WINDOW INTO IT', async () => {
     const many = (p: string) =>
-      Array.from({ length: 12 }, (_, i) => `I ${p} ${SPECIES[i]} in season.`);
+      Array.from(
+        { length: 12 },
+        (_, i) => `It ${p} ${SPECIES[i]} on ${TERRAIN[i]} ground.`,
+      );
     const { svc, upsert } = build({
       complete: jest.fn(async () =>
         reply({
-          occasional_hunter: many('hunt'),
-          occasional_sport_shooter: many('shoot at'),
+          occasional_hunter: many('suits'),
+          occasional_sport_shooter: many('handles'),
         }),
       ),
     });
@@ -579,7 +614,7 @@ describe('resolving a row', () => {
     const rows = [
       {
         classKey: useClassKey(RIFLE, 's15_hunt'),
-        uses: SPECIES.map((s) => `I hunt ${s} in season.`),
+        uses: SPECIES.map((sp, i) => `It suits ${sp} on ${TERRAIN[i]} ground.`),
       },
       { classKey: useClassKey(RIFLE, 's15_sport'), uses: [SPORT] },
     ];
@@ -613,8 +648,8 @@ describe('resolving a row', () => {
       complete: jest.fn(async () =>
         reply({
           self_defence: [
-            'I use it for hunting plains game on weekends.',
-            'I use it for self-defence in my home.',
+            'It is suited to hunting plains game on weekends.',
+            'It is suited to self-defence in the home.',
           ],
         }),
       ),
@@ -622,13 +657,16 @@ describe('resolving a row', () => {
     await expect(
       svc.forClass({ ...RIFLE, type: 'Handgun', section: 'section 13' }),
     ).resolves.toEqual([
-      { label: 'self-defence', uses: ['I use it for self-defence in my home.'] },
+      {
+        label: 'self-defence',
+        uses: ['It is suited to self-defence in the home.'],
+      },
     ]);
     const s13 = upsert.mock.calls.find((c) =>
       String(c[0].where.classKey).endsWith('|s13'),
     );
     expect(s13[0].create.uses).toEqual([
-      'I use it for self-defence in my home.',
+      'It is suited to self-defence in the home.',
     ]);
   });
 
@@ -636,7 +674,7 @@ describe('resolving a row', () => {
     const { svc } = build({
       complete: jest.fn(async () =>
         reply({
-          dedicated_hunter: ['I carry it for protection on the farm.'],
+          dedicated_hunter: ['It is carried for protection on the farm.'],
           dedicated_sport_shooter: [SPORT],
         }),
       ),
@@ -656,9 +694,9 @@ describe('resolving a row', () => {
       complete: jest.fn(async () =>
         reply({
           self_defence: [
-            'I keep it loaded with defensive rounds inside the home.',
-            'I keep it accessible in my bedroom for a night intrusion.',
-            'I use it to protect my family from an armed intruder.',
+            'It is kept loaded with defensive rounds inside the home.',
+            'It is stored in a bedroom for a night intrusion.',
+            'It is suited to protecting a household from an armed intruder.',
           ],
         }),
       ),
@@ -668,7 +706,9 @@ describe('resolving a row', () => {
     ).resolves.toEqual([
       {
         label: 'self-defence',
-        uses: ['I use it to protect my family from an armed intruder.'],
+        uses: [
+          'It is suited to protecting a household from an armed intruder.',
+        ],
       },
     ]);
   });
@@ -679,7 +719,9 @@ describe('resolving a row', () => {
     const { svc } = build({
       complete: jest.fn(async () =>
         reply({
-          occasional_hunter: ['I hunt bushbuck in thick coastal coastal bush.'],
+          occasional_hunter: [
+            'It is suited to bushbuck in thick coastal coastal bush.',
+          ],
         }),
       ),
     });
@@ -688,12 +730,65 @@ describe('resolving a row', () => {
     ]);
   });
 
+  /**
+   * ⚠️ THE GIRAFFE. A live run stored "I hunt giraffe on vast bushveld farms
+   * during regulated culling contracts" against a held .300 Winchester
+   * Magnum. Operator, 2026-09-09: "the I hunt gireaffe shit aint going to fly,
+   * that a blatant lie." Nothing in any pack says the applicant has ever
+   * hunted anything, and the document is signed under s120(9) of the Act.
+   */
+  it('⚠️ REFUSES A SENTENCE THAT CLAIMS THE APPLICANT DOES IT', async () => {
+    const { svc } = build({
+      complete: jest.fn(async () =>
+        reply({
+          occasional_hunter: [
+            'I hunt giraffe on vast bushveld farms during culling contracts.',
+            'My rifle takes kudu at two hundred metres.',
+            'It is suited to kudu in thornveld at two hundred metres.',
+          ],
+        }),
+      ),
+    });
+    await expect(svc.forClass(RIFLE)).resolves.toEqual([
+      {
+        label: 'occasional hunting',
+        uses: ['It is suited to kudu in thornveld at two hundred metres.'],
+      },
+      { label: 'occasional sport shooting', uses: [SPORT] },
+    ]);
+  });
+
+  it('⚠️ AND REFUSES AN INTENT SENTENCE WITH NO INTENT IN IT', async () => {
+    // The restatement is what makes the applied-for firearm honest. A sentence
+    // that slipped back into the present tense is the giraffe again.
+    let call = 0;
+    const { svc, upsert } = build({
+      complete: jest.fn(async () => {
+        call++;
+        if (call <= 3) return reply();
+        return reply({
+          occasional_hunter: [
+            'I hunt plains game at moderate ranges.',
+            'I would like to hunt plains game at moderate ranges.',
+          ],
+        });
+      }),
+    });
+    await svc.forClass(RIFLE);
+    const hunt = upsert.mock.calls.find(
+      (c) => c[0].where.classKey === useClassKey(RIFLE, 's15_hunt'),
+    );
+    expect(hunt[0].create.usesProspective).toEqual([
+      'I would like to hunt plains game at moderate ranges.',
+    ]);
+  });
+
   it('drops catalogue copy, which the gate refuses everywhere', async () => {
     const { svc } = build({
       complete: jest.fn(async () =>
         reply({
           occasional_hunter: [
-            'I use it where terminal ballistics matter on plains game.',
+            'It is used where terminal ballistics matter on plains game.',
           ],
         }),
       ),
@@ -709,14 +804,14 @@ describe('resolving a row', () => {
       complete: jest.fn(async () =>
         reply({
           occasional_hunter: [
-            'I hunt plains game with this caliber at 200 meters.',
+            'It is suited to plains game in this caliber out to 200 meters.',
           ],
         }),
       ),
     });
     const out = await svc.forClass(RIFLE);
     expect(out[0].uses[0]).toBe(
-      'I hunt plains game with this calibre at 200 metres.',
+      'It is suited to plains game in this calibre out to 200 metres.',
     );
   });
 });
