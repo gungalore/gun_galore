@@ -26,6 +26,9 @@ import {
   asFormat,
 } from './motivation-pdf.service';
 import { NewsService } from '../news/news.service';
+import { CrimeStatsService } from '../crime-stats/crime-stats.service';
+import { parseTravelledAreas } from './motivation-danger-areas';
+import { TRAVELLED_AREAS_KEY } from './motivation-fields';
 import type { NewsIncident } from '../news/news.types';
 import { imageSize, isEmbeddable } from './motivation-annexure-layout';
 import { SettingsService, FLAGS } from '../settings/settings.service';
@@ -336,6 +339,7 @@ export class MotivationRenderService {
     private readonly witnesses: MotivationWitnessService,
     private readonly shared: MotivationSharedService,
     private readonly news: NewsService,
+    private readonly crimeStats: CrimeStatsService,
   ) {}
 
   /**
@@ -706,6 +710,14 @@ export class MotivationRenderService {
       annexures,
       priorNotice,
       pressClippings,
+      // ⚠️ THE FIGURES THE CUTTINGS ARE EXAMPLES OF. The body argues "eleven
+      // house robberies in the quarter, and here are three of them", and the
+      // annexure carried only the three — so a reviewer checking the claim had
+      // nowhere to turn. Empty for a non-S13, for a station we cannot place,
+      // or when there are no cuttings to head.
+      precinctTables: (pressClippings ?? []).length
+        ? await this.precinctTablesFor(answers)
+        : undefined,
       // ⚠️ KEYED ON THE HEADING AS IT IS PRINTED — uppercased, colon stripped —
       // because that is the only string the renderer has when it draws one.
       // See sectionMarks on MotivationPdfInput for why this is built from the
@@ -835,6 +847,80 @@ export class MotivationRenderService {
       );
       return undefined;
     }
+  }
+
+  /**
+   * The SAPS quarterly figures for the precincts this pack cites, as tables.
+   *
+   * ⚠️ THE HOME STATION AND THE ONES THEY TICKED, IN THAT ORDER, AND NO MORE
+   * THAN THREE ALTOGETHER. Twelve stations of quarterly tables is not evidence,
+   * it is a spreadsheet — the same finding the fact-pack side already applies
+   * to the precincts the writer is given.
+   *
+   * ⚠️ FAIL-SOFT PER STATION. One precinct we cannot place costs its own table
+   * and nothing else; the release name travels on every table, because a
+   * figure whose release is not named is a figure a reviewer cannot check.
+   */
+  private async precinctTablesFor(answers: Record<string, string>): Promise<
+    | {
+        station: string;
+        source: string;
+        rows: { category: string; latest: string; trend: string }[];
+      }[]
+    | undefined
+  > {
+    const home = (answers.police_station ?? '').trim();
+    if (!home) return undefined;
+    const province = (answers.police_station_province ?? '').trim() || undefined;
+
+    /**
+     * ⚠️ THE AREAS THEY TICKED, NOT A RADIUS WE DREW. `travelled_areas` is an
+     * answer the member gave — which is exactly what makes another precinct's
+     * numbers admissible about THIS applicant. The key is the area name, which
+     * is what CrimeStatsService resolves a station from.
+     */
+    const wanted = [
+      home,
+      ...parseTravelledAreas(answers[TRAVELLED_AREAS_KEY]).map((a) => a.key),
+    ]
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const seen = new Set<string>();
+    const out: {
+      station: string;
+      source: string;
+      rows: { category: string; latest: string; trend: string }[];
+    }[] = [];
+
+    for (const name of wanted) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (out.length >= 3) break;
+      try {
+        const f = await this.crimeStats.precinct(name, province);
+        if (!f) continue;
+        out.push({
+          station: `${f.station.name} — ${f.station.district}, ${f.station.province}`,
+          source: `SAPS quarterly crime statistics, ${f.release.periodLabel} release`,
+          rows: f.categories.map((c) => ({
+            category: c.category,
+            latest: `${c.latest.count} in ${c.latest.label}`,
+            trend:
+              c.yearOnYearPct === null
+                ? (c.note ?? '—')
+                : `${c.yearOnYearPct >= 0 ? 'up' : 'down'} ${Math.abs(
+                    c.yearOnYearPct,
+                  ).toFixed(0)}% year on year`,
+          })),
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Precinct table skipped for "${name}": ${(err as Error).message}`,
+        );
+      }
+    }
+    return out.length ? out : undefined;
   }
 
   /**

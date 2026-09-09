@@ -733,7 +733,7 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'cl
     // still what their page says and a station that follows it is not wrong.
     key: 'proof_of_residence',
     label: 'Proof of your residential address, not older than 3 months',
-    note: 'It has to carry your NAME, your ADDRESS, and a date inside the last three months — a municipal bill, bank statement or lease. A bill in your spouse’s or your landlord’s name does not prove your address. No certification needed. (SAPS’s website does say "certified proof of residence"; certifying is free at any police station if your DFO asks for it.) This is also what settles which DFO your application goes to: the one for the area where you ordinarily live.',
+    note: 'It has to carry your NAME, your ADDRESS, and a date inside the last three months. A municipal bill or a bank letter is the cleanest choice — a lease or a rental statement proves the address too, and also shows what you pay and anything outstanding, and the whole page goes into your pack. A bill in your spouse’s or your landlord’s name does not prove your address. No certification needed. (SAPS’s website does say "certified proof of residence"; certifying is free at any police station if your DFO asks for it.) This is also what settles which DFO your application goes to: the one for the area where you ordinarily live.',
   },
   {
     // ⚠️ "TWO" WAS OURS, NOT SAPS'S, AND SO WAS THE TWO-YEAR RULE. Neither
@@ -1095,6 +1095,44 @@ function saps271FormNote(
  * the first photograph, which is the failure the three separate kinds existed
  * to prevent.
  */
+/**
+ * Rows that only apply on some routes.
+ *
+ * ⚠️ THE LIST WENT TO EVERY APPLICANT WHATEVER THEY ANSWERED. MO000071 was a
+ * private-owner purchase and its take-to-the-station pages told the applicant
+ * to bring "the dealer's tax invoice for the firearm" — there is no dealer and
+ * there will be no tax invoice, so the list sent somebody to a counter looking
+ * for a document that does not exist. Every row here is a row that is right
+ * for one route and wrong for another; a row with no entry applies to
+ * everybody, which is the safe default for anything added later.
+ */
+const BRING_ONLY_WHEN: Record<
+  string,
+  (answers: Record<string, string>) => boolean
+> = {
+  /**
+   * A tax invoice comes from a dealer. On a private sale the proof of purchase
+   * is the seller's own paperwork and the signed consent, which are elsewhere
+   * in the pack; on an inherited firearm there is no purchase at all.
+   */
+  tax_invoice: (a) =>
+    !/private|inherit|estate|deceased/i.test(a[FIREARM_SOURCE_KEY] ?? ''),
+  /**
+   * ⚠️ AND CHARACTER REFERENCES WERE OFFERED WITH NOWHERE TO PUT THEM. The row
+   * says "if you have them" while the sheet has no character-reference slot,
+   * so an applicant who took the advice arrived holding a letter the pack
+   * could not carry. CHARACTER_REFERENCE exists as an upload kind and the
+   * witness flow collects signed statements — the row belongs where those are
+   * gathered, and until it is offered there it is not offered at all.
+   */
+  character_references: () => false,
+};
+
+function bringApplies(key: string, answers: Record<string, string>): boolean {
+  const rule = BRING_ONLY_WHEN[key];
+  return rule ? rule(answers) : true;
+}
+
 export function buildChecklist(
   licenceType: MotivationLicenceType,
   haveKinds: MotivationUploadKind[],
@@ -1199,7 +1237,7 @@ export function buildChecklist(
       ? S16_MUST_BRING
       : []),
     ...(licenceType === 'S24_RENEWAL' ? s24Bring(context.answers ?? {}) : []),
-  ];
+  ].filter((i) => bringApplies(i.key, context.answers ?? {}));
   const theirs: ChecklistItem[] = bring.map((i) => ({
     ...i,
     owner: 'applicant' as const,

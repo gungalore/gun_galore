@@ -466,6 +466,27 @@ export interface MotivationPdfInput {
    */
   pressClippings?: PressClippingPage[];
   /**
+   * The SAPS quarterly figures for the precincts the motivation cites, printed
+   * at the head of the press-clippings annexure.
+   *
+   * ⚠️ THE CUTTINGS WITHOUT THE FIGURES ARE ANECDOTE. The body already argues
+   * from these numbers — "eleven house robberies in the quarter, and here are
+   * three of them" — and the annexure showed only the three, so a reviewer
+   * checking the claim had nowhere to turn. MOTIVATION-S13-OUTPUT-REVIEW.md
+   * §1.7 asks for the station's quarterly table beside its cuttings; this is
+   * that table.
+   *
+   * ⚠️ AND IT IS OURS TO PRINT. The figures are a published government release
+   * and the row says which one, which is the whole difference between this and
+   * reproducing a newspaper's article body.
+   */
+  precinctTables?: {
+    station: string;
+    /** "SAPS quarterly crime statistics, April–June 2026 release". */
+    source: string;
+    rows: { category: string; latest: string; trend: string }[];
+  }[];
+  /**
    * The SIGNED character witness statements, one page-set per witness.
    *
    * ⚠️ ONLY THE ONES ACTUALLY SIGNED. A witness who was invited and has not
@@ -1739,6 +1760,95 @@ export class MotivationPdfService {
     // "i of n" — the same shape as the safe photographs sharing one letter
     // across several copies. One entry in the annexure index, several pages
     // behind it, never a letter per clipping.
+    /**
+     * ⚠️ THE FIGURES LEAD THE CUTTINGS, because the cuttings are examples OF
+     * them. The body argues "eleven house robberies in the quarter, and here
+     * are three of them"; the annexure showed only the three, so a reviewer
+     * checking the claim had nowhere to turn. This sheet is the claim itself,
+     * with the release named on it.
+     */
+    const tables = input.precinctTables ?? [];
+    if (tables.length && (input.pressClippings ?? []).length) {
+      doc.addPage();
+      doc.x = MARGIN;
+      doc.y = K.BODY_TOP;
+      const letter = input.pressClippings![0].letter;
+      // The same masthead shape every clipping page uses, so the sheet reads
+      // as the first page of that annexure rather than as a loose table.
+      K.label(
+        chrome,
+        `Annexure ${letter} — reported crime in the precincts cited`,
+        MARGIN,
+        doc.y,
+        contentWidth,
+      );
+      doc.y += K.px(8.5) * 1.2 + K.mm(4);
+
+      for (const t of tables) {
+        if (doc.y > K.BODY_BOTTOM - 90) doc.addPage();
+        doc
+          .font(F.sansBold)
+          .fontSize(K.px(12))
+          .fillColor(C.deep)
+          .text(t.station, MARGIN, doc.y, { width: contentWidth });
+        doc.y += 2;
+        doc
+          .font(B.bodyItalic)
+          .fontSize(8.5)
+          .fillColor(C.mut)
+          .text(t.source, MARGIN, doc.y, { width: contentWidth });
+        doc.y += 6;
+
+        const cols = [
+          { head: 'Category', w: 190 },
+          { head: 'Latest quarter', w: 150 },
+          { head: 'Trend', w: contentWidth - 340 },
+        ];
+        const headTop = doc.y;
+        doc.rect(MARGIN, headTop, contentWidth, 18).fill(C.band);
+        let hx = MARGIN + 5;
+        for (const c of cols) {
+          doc
+            .font(FONT_BOLD)
+            .fontSize(7.5)
+            .fillColor(C.ink)
+            .text(c.head.toUpperCase(), hx, headTop + 6, {
+              width: c.w - 8,
+              characterSpacing: 0.3,
+              lineBreak: false,
+            });
+          hx += c.w;
+        }
+        doc.y = headTop + 18;
+
+        for (const r of t.rows) {
+          if (doc.y > K.BODY_BOTTOM - 26) doc.addPage();
+          const top = doc.y + 4;
+          let bottom = top;
+          let cx = MARGIN + 5;
+          for (const [i, v] of [r.category, r.latest, r.trend].entries()) {
+            doc
+              .font(FONT)
+              .fontSize(8.5)
+              .fillColor(BLACK)
+              .text(v || '—', cx, top, { width: cols[i].w - 8 });
+            bottom = Math.max(bottom, doc.y);
+            cx += cols[i].w;
+          }
+          const ruleY = bottom + 4;
+          doc
+            .moveTo(MARGIN, ruleY)
+            .lineTo(MARGIN + contentWidth, ruleY)
+            .lineWidth(0.5)
+            .strokeColor(C.hair)
+            .stroke();
+          doc.y = ruleY;
+        }
+        doc.x = MARGIN;
+        doc.y += PARA_GAP;
+      }
+    }
+
     for (const clip of input.pressClippings ?? []) {
       doc.addPage();
       doc.x = MARGIN;

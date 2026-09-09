@@ -410,8 +410,16 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
     // a competent applicant physically holds. An applicant reading
     // "certificate" and owning a printout concludes they cannot apply yet.
     'Without competency for this type of firearm, SAPS cannot process the application at all. The card or the CFR printout both count — whichever you were issued.',
+  /**
+   * ⚠️ IT GOES IN THE PACK WHOLE, AND WHAT ELSE IS ON IT GOES WITH IT.
+   * MO000071's proof of address was a rental statement. It proved the address —
+   * and it put the applicant's rent, and a R134 arrears line, in front of a
+   * police official who had asked for neither. The member chose the document
+   * without being told that; the fix is to tell them, and to say which kind
+   * carries the least beside the address.
+   */
   ADDRESS_CONFIRMATION:
-    'A photograph or scan is fine — no certification needed for our copy. Use something recent: the DFO will want proof of address from the last three months. We read the address off it.',
+    'A photograph or scan is fine — no certification needed for our copy. Use something recent: the DFO will want proof of address from the last three months. We read the address off it. ⚠️ Whatever you attach is printed into your pack in full, so pick the one that shows the least besides your name and address — a municipal account or a letter from your bank is usually cleaner than a lease or a rental statement, which also shows what you pay and anything outstanding.',
   ASSOCIATION_CARD:
     'Dedicated status is the basis of a section 16 application, so this is part of the case rather than an extra. The certificate itself — the one with your dedicated number on it.',
   // ⚠️ THE ONE THE ACT ACTUALLY NAMES. Section 16(2) requires "a sworn

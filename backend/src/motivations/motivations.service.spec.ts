@@ -363,7 +363,9 @@ function build(
     witnesses as never,
     shared,
     news as never,
-  );
+      // The precinct tables that head the press-clippings annexure.
+    { precinct: async () => null } as never,
+);
   const witnessFlow = new MotivationWitnessesService(
     prisma as never,
     quota as never,
