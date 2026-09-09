@@ -7,11 +7,15 @@ import type { CredentialKind } from '@prisma/client';
 // must be rejected with the reason why everywhere on this website", and: "givn
 // an optio to manually type the mssing field".
 //
-// ⚠️ THE TWO HALVES ARE ONE RULE AND MUST SHIP TOGETHER. A document refused
-// with no way to correct it is worse than one filed with a gap — it is the
-// same fault as the SMS that promised a retry the product refused. The reason
-// goes into `readNotes`, which the card and the review screen already render;
-// the correction goes through PATCH :id/details.
+// ⚠️ THE FIX IS A RESCAN, NOT A FORM. A typed-in correction shipped alongside
+// this and was withdrawn the same day — operator, 2026-09-09: "lets leave this
+// option. they ,must just rescan." So the reason has one job: say what is
+// missing plainly enough that the second photograph gets it. It goes into
+// `readNotes`, which the card and the review screen already render.
+//
+// ⚠️ WHICH IS WHY THE REASON HAS TO NAME THE FIELDS. "This scan is incomplete"
+// sends somebody back to photograph the same card the same way. "We could not
+// read the barrel serial number" tells them what to get into frame.
 //
 // ⚠️ AND THE LIST IS DELIBERATELY SHORT. A field is on it only where the
 // document ALWAYS prints something — otherwise a valid paper is refused for a
@@ -99,7 +103,7 @@ export function incompleteNote(missing: readonly string[]): string {
     `We could not read ${list} off this card. ` +
     'A firearm licence prints every one of these — a number, or the word NONE ' +
     'where the part carries no number — so this is our reading and not your ' +
-    'document. Open it and type in what the card says, or photograph it again ' +
-    'in better light.'
+    'document. Photograph it again with that part of the card in frame, in ' +
+    'good light and square on.'
   );
 }

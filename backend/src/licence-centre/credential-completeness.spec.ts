@@ -9,8 +9,10 @@ import {
 // A SCAN THAT LOST A FIELD SAYS SO, AND SAYS WHICH.
 //
 // Operator, 2026-09-09: "If not all fields came through in a scan the scan
-// must be rejected with the reason why everywhere on this website", and, in
-// the same breath, "givn an optio to manually type the mssing field".
+// must be rejected with the reason why everywhere on this website" — and, once
+// the typed-in correction had shipped, "lets leave this option. they ,must
+// just rescan." So the reason's only job is to make the SECOND photograph
+// better than the first, which is why it names the fields.
 //
 // ⚠️ THE RULE RESTS ON AN INVARIANT THEY STATED, AND ONLY WHERE THEY STATED
 // IT: "the license card will always have either a serial or say NONE for all
@@ -82,7 +84,8 @@ describe('what a firearm licence must give us', () => {
     expect(note).toContain('the section it is licensed under');
     // ⚠️ IT BLAMES US, NOT THEM. The card had the word; we lost it.
     expect(note).toContain('our reading and not your');
-    expect(note).toContain('type in what the card says');
+    // And it says what to do: photograph it again, with that part in frame.
+    expect(note).toContain('Photograph it again');
   });
 
   it('joins one, two and three the way a person would', () => {
