@@ -159,6 +159,27 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * Edit these counts only when a line was meant to be added or removed.
  */
 /**
+ * ⚠️ RE-BASELINED A FIFTH TIME ON 2026-09-09 — the card, and nothing else.
+ *
+ * MO000075 failed on one word. The `the_firearm` brief asked for "the action,
+ * the barrel, the capacity, the mass" and the writer answered with "built on
+ * the Howa 1500 platform, utilising a turn-bolt, push-feed repeating action
+ * housed in a robust one-piece forged steel receiver" — exactly what that ask
+ * invites, and refused by documentScope on "platform".
+ *
+ * Operator, 2026-09-09: "we dont need the barrel length, capacity or the maas.
+ * we need whats on the license card, nothing else." So the invitation is gone
+ * rather than the words being banned around it: the firearm is described with
+ * the type, make, model and calibre a licence card carries, and the section
+ * spends itself on the USE instead of on the object.
+ *
+ * ⚠️ FOUR TYPES MOVED BY ONE LINE AND TWO DID NOT, which is the check. S13 and
+ * S14 carry their own `the_firearm` override — the S14 one already banned
+ * product copy in as many words — so they use none of this and are unchanged
+ * at 110 and 109. The three sporting types and the renewal use the general
+ * brief and each gained the one paragraph.
+ */
+/**
  * ⚠️ RE-BASELINED A FOURTH TIME ON 2026-09-09 — the capability carve-out.
  *
  * `renderOverlap` gained eight lines telling the writer that terminal
@@ -210,20 +231,20 @@ const BEFORE_THE_REORDER: Record<
     sha: '89b9170f78cdf52bd28c60d8e8a89ab84d1d5c186f9fdb2108e3537f3d2b7233',
   },
   S15_OCCASIONAL_HUNTER: {
-    lines: 109,
-    sha: '2170ac9853351c3a73527ecfffe6c5ea6cdf3fc189dccecc92fedd57ee399d48',
+    lines: 110,
+    sha: '4bedad60cc8ebe92459b49b1456034b565e78ad945d989c58a20e948cba66515',
   },
   S16_DEDICATED_HUNTER: {
-    lines: 109,
-    sha: '026c337b88dddbd7c26240d9ebffa3c51679d5f3fbc98809cbff143a5053faf5',
+    lines: 110,
+    sha: '932d4b549ac99dd819539a9b96480617340bcb6d2b3cb5f21570ff4ac8104250',
   },
   S16_DEDICATED_SPORT: {
-    lines: 109,
-    sha: '2b9e6055df8c60098c61b5234aae86edfc6cc6b84beabfb52c0cadf1df9f58a4',
+    lines: 110,
+    sha: '5f8d08151358585a417d2b71e6718cbe5e3bf64dae6e9c9e03abe55198b40214',
   },
   S24_RENEWAL: {
-    lines: 103,
-    sha: '0f17428dd7b00304bf1ba24d01c34b9a20da1b71ddb999bc8618ff9de6fd33f5',
+    lines: 104,
+    sha: '8797f74e00b0979aeb3d1de83b70496d165738d28693be541c4e3b52a887a949',
   },
 };
 
