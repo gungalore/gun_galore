@@ -184,3 +184,37 @@ describe('finding the cartridge a member typed', () => {
     expect(found('9 mm Luger / 9x19 mm')).toBe('9 mm Luger');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE "MM" THAT COST A PACK ITS CARTRIDGE.
+//
+// A SAPS card prints "6.5MM CREEDMOOR". The reference file calls it
+// "6,5 Creedmoor". calibreKey strips punctuation and nothing else, so those
+// reduce to 65MMCREEDMOOR and 65CREEDMOOR — no exact hit, no unique prefix,
+// no match at all.
+//
+// ⚠️ AND IT WAS NOT ONE DRAWING. The same lookup feeds the fact pack's
+// cartridge block, so the writer had no measurements either. Read off MO000075
+// on 2026-09-09.
+// ────────────────────────────────────────────────────────────────────
+
+describe('a calibre written with mm and filed without', () => {
+  const rows = [
+    { name: '6,5 Creedmoor', slug: '6-5-creedmoor', aliases: [] },
+    { name: '6 mm Creedmoor', slug: '6-mm-creedmoor', aliases: [] },
+    { name: '6.5 PRC', slug: '6-5-prc', aliases: [] },
+  ];
+
+  it('⚠️ FINDS THE CREEDMOOR THE CARD NAMES', () => {
+    expect(findCartridge(rows, '6.5MM CREEDMOOR')?.name).toBe('6,5 Creedmoor');
+  });
+
+  it('⚠️ AND DOES NOT CONFUSE IT WITH THE 6 mm, which is a different round', () => {
+    expect(findCartridge(rows, '6MM CREEDMOOR')?.name).toBe('6 mm Creedmoor');
+    expect(findCartridge(rows, '6,5 Creedmoor')?.name).toBe('6,5 Creedmoor');
+  });
+
+  it('leaves an exact name alone — the stripped form is only a fallback', () => {
+    expect(findCartridge(rows, '6.5 PRC')?.name).toBe('6.5 PRC');
+  });
+});

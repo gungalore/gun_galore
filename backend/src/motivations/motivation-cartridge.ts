@@ -127,6 +127,26 @@ export function calibreCandidates(raw: string): string[] {
   push(contracted);
 
   /**
+   * ⚠️ "6.5MM CREEDMOOR" AND "6,5 Creedmoor" ARE ONE CARTRIDGE, AND THE "MM"
+   * WAS THE WHOLE DIFFERENCE.
+   *
+   * `calibreKey` strips punctuation and nothing else, so a SAPS card reading
+   * "6.5MM CREEDMOOR" reduces to 65MMCREEDMOOR while the reference file's
+   * "6,5 Creedmoor" reduces to 65CREEDMOOR. No exact hit, no unique prefix, no
+   * match — and the cost was not one drawing. The same lookup feeds the fact
+   * pack's cartridge block, so the writer had no measurements either, which is
+   * how a pack ships with nothing in the firearm section and no drawing in the
+   * annexures. Read off MO000075 on 2026-09-09.
+   *
+   * ⚠️ A CANDIDATE, NOT A CHANGE TO THE KEY. `calibreKey` reduces BOTH sides,
+   * and stripping mm there would fold "6 mm Creedmoor" and "6,5 Creedmoor"
+   * closer together for every lookup in the system. As a candidate it is tried
+   * AFTER the printed form, so an exact name still wins and this only ever
+   * catches what would otherwise have matched nothing at all.
+   */
+  push(text.replace(/(\d)\s*mm\b/gi, '$1'));
+
+  /**
    * ⚠️ PARABELLUM IS LUGER — THAT IS A STANDARDS FACT, NOT A GUESS. The same
    * round carries two names in different markets and a member writes whichever
    * one is stamped on their box. Everything in this list is one cartridge under
