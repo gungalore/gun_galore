@@ -424,6 +424,16 @@ export interface MotivationPdfInput {
    * simply omits it rather than printing an empty clause.
    */
   firearmLine?: string;
+  /**
+   * The cover's particulars table, already ordered and already filtered.
+   *
+   * MOTIVATION-GUIDE-BOOK Part 7.2 names the rows and ends with "Nothing
+   * else." Built in the render service, next to the answers it reads.
+   *
+   * Absent on a caller that has not been updated, and the cover then falls
+   * back to the single combined firearm line it always drew.
+   */
+  coverParticulars?: [string, string][];
   /** Generation timestamp. Passed in, never read from the clock here, so the
    *  same input always renders the same bytes (testable, reproducible). */
   generatedAt: Date;
@@ -672,21 +682,6 @@ export function titleCase(heading: string): string {
 const mmGap = (n: number): number => K.mm(n);
 
 /**
- * "Gerhard Johan Petrus Fourie" -> "Gerhard J P Fourie".
- *
- * First name in full, middle names as initials, surname in full — how the
- * handoff sets the banner and the footer, and how a South African legal
- * document conventionally shortens a name without losing which person it is.
- */
-function shortenName(full: string): string {
-  const parts = full.trim().split(/\s+/).filter(Boolean);
-  if (parts.length <= 2) return full.trim();
-  const [first, ...rest] = parts;
-  const surname = rest.pop() as string;
-  return [first, ...rest.map((n) => n[0].toUpperCase()), surname].join(' ');
-}
-
-/**
  * A short line that starts with its section number reads as a heading.
  *
  * ⚠️ THE TEST USED TO BE A TRAILING COLON, AND THE COLON IS GONE. Headings are
@@ -718,7 +713,10 @@ function isHeading(line: string): boolean {
  */
 function splitHeading(heading: string): { number: string; title: string } {
   const m = /^(\d{1,2})\.\s+(.*)$/.exec(heading.trim());
-  if (m) return { number: m[1].padStart(2, '0'), title: m[2] };
+  // ⚠️ NOT ZERO-PADDED. The band used to draw a running "01, 02, 03";
+  // these are the book's twelve, so "9" and "11" are what the contents
+  // page and the SAPS 271's own spine say, and "09" would not match.
+  if (m) return { number: m[1], title: m[2] };
   return { number: '', title: heading.trim().replace(/:\s*$/, '') };
 }
 
@@ -895,7 +893,11 @@ export class MotivationPdfService {
     // part of the style: they are the information a DFO opens the folder for,
     // and every cover hands back the y at which they resume.
     let coverY = coverMasthead(chrome, L.cover, {
-      referenceNumber: input.referenceNumber,
+      // ⚠️ EMPTY ON PURPOSE — Part 7.2's cover carries "Nothing else".
+      // The reference is in the PDF Title, the filename, and on the
+      // take-with-you sheet, which is never lodged. See `reference` in
+      // motivation-pdf-cover.ts.
+      referenceNumber: '',
       licenceTypeLabel: input.licenceTypeLabel,
     });
     if (input.firearmPhoto) {
@@ -1023,28 +1025,36 @@ export class MotivationPdfService {
     }
 
     // The grid: a 42 mm label column, hairline between rows.
+    /**
+     * ⚠⚠ THE REFERENCE AND THE ANNEXURE COUNT ARE OFF THE COVER.
+     *
+     * MOTIVATION-GUIDE-BOOK Part 7.2 enumerates the particulars table and
+     * ends "Nothing else." Our MO reference means nothing to a DFO and is
+     * ours, not the applicant's — it survives in the PDF's Title metadata
+     * and in the download filename. The annexure count is on the contents
+     * page, which is where the index it counts actually lives (Part 7.3),
+     * and a count on the cover that disagreed with that index by one is a
+     * discrepancy on the first page a reviewer reads.
+     */
     const rows: [string, string][] = [
       ['Applicant', input.applicantName],
       ...(input.idNumber
         ? ([['Identity number', input.idNumber]] as [string, string][])
         : []),
-      ['Reference', input.referenceNumber],
-      ...(input.firearmLine
-        ? ([['Firearm', input.firearmLine]] as [string, string][])
-        : []),
-      [
-        'Prepared',
-        input.generatedAt.toLocaleDateString('en-ZA', {
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-        }),
-      ],
-      ...(input.annexures?.length
-        ? ([
-            ['Annexures', `${input.annexures.length} attached`],
-          ] as [string, string][])
-        : []),
+      ...(input.coverParticulars ??
+        ([
+          ...(input.firearmLine
+            ? ([['Firearm', input.firearmLine]] as [string, string][])
+            : []),
+          [
+            'Date',
+            input.generatedAt.toLocaleDateString('en-ZA', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            }),
+          ],
+        ] as [string, string][])),
     ];
 
     const labelW = K.mm(42);
@@ -1224,6 +1234,8 @@ export class MotivationPdfService {
      * A heading with no number — anything generated before the fixed skeleton
      * — draws with no number at all rather than with an invented one.
      */
+    /** Which of the book's twelve numbers the body actually printed. */
+    const printedNumbers = new Set<string>();
     const renderHeading = (heading: string) => {
 
       // Keep a heading with at least a couple of lines of its section: if we
@@ -1235,6 +1247,7 @@ export class MotivationPdfService {
       toc.push({ heading, page: doc.bufferedPageRange().count });
 
       const { number: num, title } = splitHeading(heading);
+      if (num) printedNumbers.add(num);
       // ⚠️ NORMALISED THE SAME WAY THE KEY WAS BUILT. `sectionMarksFor` keys by
       // the heading uppercased with the colon stripped — "the heading exactly as
       // it is printed" — and this looked it up with the raw line off the
@@ -1693,7 +1706,20 @@ export class MotivationPdfService {
         // above it. Ours were left-aligned sentence case with a trailing
         // colon ("The firearm and why it suits the purpose:"), which is how a
         // letter signposts itself, not how a submission does.
-        renderHeading(block.replace(/:\s*$/, '').toUpperCase());
+        /**
+         * ⚠️ PASSED VERBATIM. THE BAND DOES THE SHOUTING, NOT THIS LINE.
+         *
+         * It used to arrive here already uppercased, because the band sets
+         * headings in caps and that was the shortest way to get it. The
+         * contents page reads the SAME string back, through `titleCase`,
+         * whose fold is lowercase-everything-then-capitalise-the-first-
+         * character — and the first character of a numbered heading is a
+         * digit. So every contents line came out "1. introduction".
+         *
+         * The colon is still stripped, for documents written before the
+         * headings stopped carrying one.
+         */
+        renderHeading(block.replace(/:\s*$/, ''));
         if (wantsCartridge) drawCartridge();
         if (wantsBattery) drawBattery();
         pendingCrime = wantsCrime;
@@ -1713,7 +1739,16 @@ export class MotivationPdfService {
           .fillColor(isRef ? C.deep : C.ink)
           .text(block, MARGIN + K.SECTION_INDENT, doc.y, {
             width: contentWidth - K.SECTION_INDENT,
-            align: isRef ? 'left' : 'justify',
+            /**
+             * ⚠️ RAGGED RIGHT, NEVER JUSTIFIED. MOTIVATION-GUIDE-BOOK Part
+             * 7.1. Justification in pdfkit is word-spacing only — there is no
+             * hyphenation and no letter-fit — so a line carrying a serial
+             * number, a calibre and a station name opens rivers of white the
+             * width of a word. On the professionally prepared packs a DFO
+             * already knows, the body is ranged left, and a ragged edge is
+             * what a typed page looks like when nobody has stretched it.
+             */
+            align: 'left',
             lineGap: BODY_LEADING,
           });
         doc.x = MARGIN;
@@ -1827,9 +1862,15 @@ export class MotivationPdfService {
     // AN EMPTY TABLE STILL PRINTS. "No firearm is currently licensed to the
     // applicant" is a material fact on a first application; leaving the
     // section out because there is nothing to list would read as an omission.
-    if (feat.ownedTable && !batteryDrawn) {
+    // ⚠️ AND NOT WHEN THE BODY ALREADY PRINTED HEADING 6. The table is
+    // hung under the writer's own heading where there is one; this fallback
+    // is for a document that has none, and firing it anyway would list
+    // "6. Firearms already licensed to me" twice in the contents.
+    if (feat.ownedTable && !batteryDrawn && !printedNumbers.has('6')) {
       if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 140) doc.addPage();
-      renderHeading('Firearms already licensed to me');
+      // Numbered as heading 6, the same as the plan's own — this only
+      // fires when the writer produced no such heading to hang it under.
+      renderHeading('6. Firearms already licensed to me');
       drawBattery();
     }
 
@@ -2008,7 +2049,8 @@ export class MotivationPdfService {
             .fillColor(C.ink)
             .text(block, bodyX + (numbered ? K.mm(6) : 0), doc.y, {
               width: bodyW - (numbered ? K.mm(6) : 0),
-              align: numbered ? 'left' : 'justify',
+              // Ragged right here too — Part 7.1, and see the body block.
+              align: 'left',
               lineGap: K.BODY_LEADING,
             });
           doc.y += numbered ? K.mm(2.5) : K.PARA_GAP;
@@ -2517,6 +2559,25 @@ export class MotivationPdfService {
       doc.y += K.px(8.5) * 1.2 + K.mm(3);
 
       /**
+       * ⚠️ THE ONE PLACE OUR REFERENCE IS PRINTED, AND IT IS THE PAGE
+       * THAT IS NEVER LODGED.
+       *
+       * It came off the cover and out of the footer with Part 7.2 and Part
+       * 7.1 — an MO number means nothing to a DFO, and on a document the
+       * applicant signs as their own it reads as somebody else's case
+       * number. It belongs here: this sheet is torn off before the counter,
+       * and it is the number the member quotes to us when they write in.
+       */
+      doc
+        .font(F.sans)
+        .fontSize(K.px(9))
+        .fillColor(C.mut)
+        .text(`Your reference: ${input.referenceNumber}`, MARGIN, doc.y, {
+          width: contentWidth,
+        });
+      doc.y += K.mm(4);
+
+      /**
        * ⚠️ THE WARNINGS COME FIRST, BOXED, BECAUSE THEY CHANGE WHETHER TO GO
        * AT ALL. Everything below this is a list of things to carry; a cap the
        * applicant is over is a reason to speak to the DFO before spending the
@@ -2797,7 +2858,6 @@ export class MotivationPdfService {
     // "Gerhard Johan Petrus Fourie" -> "Gerhard J P Fourie", as the handoff's
     // banner and footer both set it. A full name at 8 pt with 0.28em tracking
     // does not fit the strip beside the reference and the firearm.
-    const shortName = shortenName(input.applicantName);
 
     // The banner's right-hand label: which section this page belongs to.
     //
@@ -2912,7 +2972,16 @@ export class MotivationPdfService {
         // and the page on every page, so nothing identifying is lost when the
         // banner goes.
         if (L.runningBanner) {
-          K.banner(chrome, `${shortName} \u25c7 Motivation`, pageLabels[i] ?? '');
+          // ⚠️ THE HEADER SAYS WHAT THE DOCUMENT IS, NOT WHOSE IT IS.
+          // MOTIVATION-GUIDE-BOOK Part 7.1: "on body pages the short title
+          // 'Motivation for a section N licence'." The applicant's name is in
+          // the footer of the same page, so the banner was the second place it
+          // appeared and the only place the document did not say what it was.
+          K.banner(
+            chrome,
+            `Motivation \u25c7 ${input.licenceTypeLabel}`,
+            pageLabels[i] ?? '',
+          );
         }
         // ⚠️ DRAWN BEFORE THE FOOTER, WHICH IS WHY THE FOOTER TAKES AN INSET.
         // The bar runs the full height of the page; the footer's wash band is
@@ -2940,10 +3009,31 @@ export class MotivationPdfService {
       // whatever the render recorded, so adding a block anywhere numbers
       // correctly without touching this line.
       const shifted = i + 1 + shiftFor(i);
+      /**
+       * ⚠️ THE FOOTER NAMES THE APPLICANT, NOT US, AND NOT OUR REFERENCE.
+       *
+       * MOTIVATION-GUIDE-BOOK Part 7.1: "Running footer on every body page:
+       * applicant's full names, ID number, 'Motivation: [make] [model]
+       * [calibre], serial [serial], section N', and 'Page n of N'." Our MO
+       * reference is not on that list and means nothing to a DFO; the
+       * applicant's identity number is what makes a loose sheet filable at a
+       * counter. The reference survives in the PDF's own Title metadata and in
+       * the download filename, which is where an operator looks for it.
+       *
+       * ⚠️ AND THE FULL NAME, NOT THE SHORTENED ONE. `shortenName` exists
+       * because the strip used to carry a logo and a byline as well; with
+       * those gone (Part 1 rule 2) there is room, and "J.P. Pietersen" on a
+       * page whose signature block reads "Jan Pieter Pietersen" is a
+       * discrepancy in a document whose whole job is that they agree.
+       */
       K.footerStrip(
         chrome,
-        [input.referenceNumber, `Page ${shifted} of ${totalPages}`],
-        [shortName, input.firearmLine ?? '', input.licenceTypeLabel],
+        [input.applicantName, `Page ${shifted} of ${totalPages}`],
+        [
+          input.idNumber ?? '',
+          input.firearmLine ? `Motivation: ${input.firearmLine}` : '',
+          input.licenceTypeLabel,
+        ],
         L.edgeBar ? EDGE_BAR_W : 0,
       );
 

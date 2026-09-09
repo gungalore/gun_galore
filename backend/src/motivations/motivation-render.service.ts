@@ -273,6 +273,52 @@ function firearmLine(answers: Record<string, string>): string | undefined {
 }
 
 /**
+ * The cover's particulars table, in the book's own order.
+ *
+ * MOTIVATION-GUIDE-BOOK Part 7.2: "a particulars table (Applicant, Identity
+ * number, Firearm type and action, Make, Model, Calibre, Serial number(s),
+ * Section applied under, Date). … Nothing else."
+ *
+ * ⚠️ ROWS, NOT ONE COMBINED LINE, AND THAT IS THE POINT OF THE TABLE. A DFO
+ * transcribing onto the SAPS 271 copies these one field at a time; a single
+ * "Howa 1500 bolt-action rifle, serial B742119" makes them parse a sentence to
+ * find the model. The combined line survives for the footer and the PAJA
+ * letter, where it is prose.
+ *
+ * ⚠️ AN ABSENT FIELD DROPS ITS ROW RATHER THAN PRINTING A DASH. A blank
+ * against "Serial number" on the cover of a licence application reads as a
+ * firearm with no serial.
+ */
+function coverParticulars(
+  answers: Record<string, string>,
+  licenceTypeLabel: string,
+  generatedAt: Date,
+): [string, string][] {
+  const v = (k: string) => (answers[k] ?? '').trim();
+  const typeAndAction = [v('firearm_type'), v('firearm_action')]
+    .filter(Boolean)
+    .join(', ');
+  const rows: [string, string][] = [];
+  const push = (label: string, value: string) => {
+    if (value) rows.push([label, value]);
+  };
+  push('Firearm type and action', typeAndAction);
+  push('Make', v('firearm_make'));
+  push('Model', v('firearm_model'));
+  push('Calibre', v('firearm_calibre'));
+  push('Serial number', v('firearm_serial'));
+  push('Section applied under', licenceTypeLabel);
+  push(
+    'Date',
+    generatedAt.toLocaleDateString('en-ZA', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }),
+  );
+  return rows;
+}
+/**
  * Heading -> subject mark, read off the stored structure plan.
  *
  * ⚠️ NOTHING IS INVENTED WHEN THE PLAN IS MISSING. Motivations written before
@@ -700,6 +746,12 @@ export class MotivationRenderService {
       // pack does it — a loose sheet has to identify its own application.
       firearmLine: firearmLine(answers),
       generatedAt: row.completedAt ?? new Date(),
+      // The cover's particulars table, Part 7.2, one field per row.
+      coverParticulars: coverParticulars(
+        answers,
+        LICENCE_TYPE_LABELS[row.licenceType],
+        row.completedAt ?? new Date(),
+      ),
       // ⚠️ ON THE COVER BECAUSE THE DFO FILES ON IT. Every professional pack
       // identifies the applicant by ID number on its first page: it is the
       // key the Central Firearms Register runs on, and a folder that carries

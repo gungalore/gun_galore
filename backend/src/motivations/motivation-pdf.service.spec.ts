@@ -259,10 +259,16 @@ describe('MotivationPdfService', () => {
     expect(a.pdf.length).toBe(b.pdf.length);
   });
 
-  it('carries the disclaimer and the document reference', async () => {
-    const { pdf } = await svc.render(makeInput());
-    const { text } = await readPdfAsync(pdf);
-    expect(flat(text)).toContain('MO000123');
+  it('carries the disclaimer, and our reference only where it is not lodged', async () => {
+    // ⚠️ THE REFERENCE LEFT THE COVER AND THE FOOTER. Part 7.2 ends
+    // "Nothing else." and Part 7.1 enumerates the footer without it; an MO
+    // number means nothing to a DFO and reads, on a document the applicant
+    // signs as their own, as somebody else's case number. It survives on the
+    // take-with-you sheet, which is torn off before the counter, and in the
+    // filename and PDF metadata.
+    const out = await svc.render(makeInput());
+    const { text } = await readPdfAsync(out.pdf);
+    expect(out.filename).toContain('MO000123');
     expect(flat(text)).toMatch(/not legal advice/i);
   });
 
@@ -375,17 +381,13 @@ describe('the unpaid mark', () => {
     const { text } = await readPdfAsync(paid.pdf);
     expect(squash(text)).not.toContain(squash(WATERMARK_TEXT));
     expect(flat(text)).not.toContain('Preview copy');
-    // ⚠️ THIS USED TO ASSERT THE PACK CONTAINED NO IMAGE AT ALL, as a proxy
-    // for "no watermark" — true only while the watermark was the sole picture
-    // in the document. Operator, 2026-08-24: "add ALLOUTDOORS logo on the
-    // footer of each page and say Prepared by All Outdoor", so a paid pack now
-    // carries the mark on every page BY DESIGN. The proxy is retired; what is
-    // actually meant — no unpaid mark — is asserted above, and the branding
-    // that IS wanted is asserted here.
-    // squash(), not flat() — the footer is set with wide character spacing, so
-    // it extracts as "P R E P A R E D  B Y ...". Same reason the watermark
-    // assertion above squashes.
-    expect(squash(text)).toContain(squash('PREPARED BY ALL OUTDOOR'));
+    // ⚠️ AND NO BRANDING EITHER, WHICH REVERSES WHAT THIS ONCE ASSERTED.
+    // Operator, 2026-08-24: "add ALLOUTDOORS logo on the footer of each page
+    // and say Prepared by All Outdoor" — overtaken by MOTIVATION-GUIDE-BOOK
+    // Part 1 rule 2 (2026-09-09): no service name anywhere in the lodged
+    // pack. squash(), not flat(): the footer is set with wide character
+    // spacing and extracts as "P R E P A R E D  B Y ...".
+    expect(squash(text)).not.toContain(squash('PREPARED BY ALL OUTDOOR'));
   });
 });
 

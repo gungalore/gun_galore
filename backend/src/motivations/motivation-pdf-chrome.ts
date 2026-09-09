@@ -364,60 +364,61 @@ export function footerStrip(
   const size = px(8);
   const tracking = size * 0.28;
 
-  // ── the brand mark, bottom left ───────────────────────────────────
-  //
-  // Operator, 2026-08-24: "add ALLOUTDOORS logo on the footer of each page and
-  // say Prepared by All Outdoor."
-  //
-  // ⚠️ THE STRIP'S CENTRED LINE IS MEASURED AGAINST WHAT IS LEFT, not against
-  // the full width. fitSegments sheds segments from the tail until the line
-  // fits, so handing it the whole content width while a logo occupies the left
-  // end would let a long firearm name run underneath the mark. The width the
-  // mark and the byline take is subtracted before the line is fitted.
-  //
-  // ⚠️ AND IT DEGRADES TO WORDS. logoPath() returns null rather than throwing
-  // when the asset is missing, and this pass runs AFTER every page has been
-  // emitted — a throw here fails the whole download rather than losing a small
-  // picture. Same reasoning as the unpaid mark that shares this asset.
-  // ⚠️ THE MONOGRAM, NOT THE LOCKUP, AND THIS WAS A REAL DEFECT. The strip
-  // drew the full lockup at 0.34 of a 10 mm footer — 3.4 mm — which sets
-  // "ALL Outdoor" at about 0.8 mm. It rendered as a gritty smear beside the
-  // byline on every page of every pack. The monogram carries no small type,
-  // so the same height reads as a mark instead of as dirt, and it is set a
-  // touch larger now that there is no wordmark to crush.
-  const markH = FOOTER_H * 0.46;
-  const mark = brandMark({ monogram: true });
   const midY = PAGE_H - FOOTER_H + FOOTER_H / 2;
-  let leftEdge = PAD_X;
-  if (mark) {
-    try {
-      doc.image(mark.path, PAD_X, midY - markH / 2, { height: markH });
-      leftEdge = PAD_X + markH * mark.aspect + px(5);
-    } catch {
-      /* unreadable asset — the byline alone still says who prepared it */
-    }
-  }
-  // ⚠️ THE TRACKING HAS TO BE ADDED BY HAND. widthOfString does not include
-  // characterSpacing, so measuring with it and then drawing into exactly that
-  // width wraps the last word — this line rendered as "PREPARED BY ALL" over
-  // "OUTDOOR" on every page of the pack until the per-character allowance was
-  // added. lineBreak:false does not save it: pdfkit still breaks when the
-  // string cannot fit the box at all.
-  const byline = 'PREPARED BY ALL OUTDOOR';
+
+  /**
+   * ⚠️ THE BRAND MARK AND THE "PREPARED BY ALL OUTDOOR" BYLINE ARE GONE,
+   * AND THAT REVERSES AN EXPLICIT INSTRUCTION.
+   *
+   * Operator, 2026-08-24: "add ALLOUTDOORS logo on the footer of each page and
+   * say Prepared by All Outdoor." MOTIVATION-GUIDE-BOOK Part 1 rule 2, decided
+   * 2026-09-09, is the later word and it is absolute: "First person,
+   * applicant's voice, no service name anywhere in the lodged pack. No
+   * 'prepared by', no footer brand, no 'we'. The applicant signs it as their
+   * own letter." Failure mode 20 is the same point from the other end — a
+   * letter that says "I prepared this" with somebody else's name in every
+   * footer contradicts itself on every page, in front of the official deciding
+   * whether to believe it.
+   *
+   * `brandMark` stays imported: the unpaid preview mark uses it, and a preview
+   * is not a lodged pack.
+   */
+  const leftEdge = PAD_X;
+  const bylineW = 0;
+
+  /**
+   * The initial line, at the left of every page's footer.
+   *
+   * Part 7.1: "A signature line ('Initial: ______') in the footer of every page
+   * of the motivation so the applicant initials each page, as the Engala packs
+   * do." It is what stops a page being added to or taken out of a bound
+   * submission after it was signed, and every professionally prepared pack in
+   * the corpus carries one.
+   */
+  const initial = 'INITIAL:';
   doc.font(f.sansSemi).fontSize(size);
-  const bylineW =
-    doc.widthOfString(byline) + tracking * byline.length + px(3);
+  const initialW =
+    doc.widthOfString(initial) + tracking * initial.length + px(3);
   doc
     .fillColor(c.mut)
-    .text(byline, leftEdge, midY - size * 0.7, {
-      width: bylineW,
+    .text(initial, PAD_X, midY - size * 0.7, {
+      width: initialW,
       align: 'left',
       characterSpacing: tracking,
       lineBreak: false,
     });
-
-  // What is left for the application's own line, centred in the remainder.
-  const used = leftEdge - PAD_X + bylineW + px(6);
+  const ruleX = PAD_X + initialW;
+  const ruleW = mm(22);
+  doc
+    .moveTo(ruleX, midY + size * 0.45)
+    .lineTo(ruleX + ruleW, midY + size * 0.45)
+    .lineWidth(0.5)
+    .strokeColor(c.hair)
+    .stroke();
+  const initialBlockW = initialW + ruleW + px(8);
+  // What is left for the application's own line, ranged right of the
+  // initial line.
+  const used = leftEdge - PAD_X + bylineW + initialBlockW;
   const room = Math.max(px(40), CONTENT_W - used);
   const line = fitSegments(doc, keep, optional, room, tracking);
   doc

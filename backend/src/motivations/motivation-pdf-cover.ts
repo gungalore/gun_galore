@@ -48,6 +48,23 @@ function reference(
   y: number,
   opts: { width: number; align: 'left' | 'center' | 'right'; colour: string },
 ): void {
+  /**
+   * ⚠️ OUR REFERENCE IS NOT PRINTED ON THE COVER ANY MORE.
+   *
+   * MOTIVATION-GUIDE-BOOK Part 7.2 enumerates what the cover carries and ends
+   * "Nothing else." An MO number means nothing to a Designated Firearms
+   * Officer, and on the first page of a document the applicant signs as their
+   * own it reads as a case number somebody else opened on them.
+   *
+   * It is not lost: it is the PDF's Title metadata, it is the download
+   * filename, and it is on the take-with-you sheet, which is removed at the
+   * counter and never lodged.
+   *
+   * The helper stays, and every masthead still calls it, because the five
+   * covers position their reference line differently and this is where that
+   * lives. Passing it nothing draws nothing.
+   */
+  if (!text.trim()) return;
   const size = K.px(9.5);
   doc
     .font(f.sansSemi)

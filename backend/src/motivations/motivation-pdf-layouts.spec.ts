@@ -234,8 +234,12 @@ describe('the five layouts', () => {
       const out = await svc.render({ ...base, layout: key } as never);
       const ps = pages(out.pdf).slice(0, -1);
       for (const p of ps) {
-        expect(p).toContain('MO000123');
-        expect(squash(p)).toContain(squash('PREPARED BY ALL OUTDOOR'));
+        // ⚠️ THE APPLICANT, NOT US. MOTIVATION-GUIDE-BOOK Part 1 rule 2
+        // keeps the service's name out of the lodged pack entirely, and
+        // Part 7.1 names what goes there instead.
+        expect(squash(p)).toContain(squash('GERHARD FOURIE'));
+        expect(squash(p)).toContain(squash('INITIAL:'));
+        expect(squash(p)).not.toContain(squash('PREPARED BY ALL OUTDOOR'));
       }
     }
   });
