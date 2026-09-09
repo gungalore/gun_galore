@@ -3,6 +3,7 @@ import {
   NO_VISION_KINDS,
   defaultsToNeverExpires,
   isPhotograph,
+  settledByNature,
 } from './credential-kinds';
 import { expiryState } from './licence-dates';
 
@@ -135,5 +136,70 @@ describe('when the never-expires box starts already ticked', () => {
       if (isPhotograph(k) || exempt.has(k)) continue;
       expect(defaultsToNeverExpires(k)).toBe(false);
     }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// TICKED IS NOT THE SAME AS SETTLED.
+//
+// `neverExpires` says what the answer is; `dateSource` says somebody stands
+// behind it. Everything downstream reads the SECOND one — the auto-attach
+// candidate query takes rows where `confirmedAt` or `dateSource` is set — so a
+// safe photograph carrying only the tick was never a candidate, and could
+// never reach an application by itself. On production, three of the four safe
+// photographs on file were in exactly that state.
+//
+// Operator, 2026-09-09: "the safe pictures should automatically be set that
+// the date never expires."
+// ────────────────────────────────────────────────────────────────────
+
+describe('documents whose date question answers itself', () => {
+  it('settles every photograph, ticked AND armed', () => {
+    for (const k of NO_VISION_KINDS) {
+      const out = settledByNature(k);
+      expect(out).not.toBeNull();
+      expect(out!.neverExpires).toBe(true);
+      // The half that was missing. Without it the row reads as a date nobody
+      // has answered, and the auto-attach skips it.
+      expect(out!.dateSource).toBe('none');
+      expect(out!.dateSourceNote).toMatch(/never expiring/i);
+    }
+  });
+
+  it('⚠️ WRITES NO EXPIRY DATE — the CHECK constraint forbids one', () => {
+    // `Credential_never_expires_has_no_date` refuses a standing tick beside a
+    // date. A caller merging these columns over a row that carries one has to
+    // clear the date or drop the tick; these columns must never supply one.
+    expect(
+      Object.keys(settledByNature(CredentialKind.SAFE_PHOTOGRAPHS)!),
+    ).not.toContain('expiresOn');
+  });
+
+  it('fits the column', () => {
+    // dateSource is VarChar(16).
+    expect(
+      settledByNature(CredentialKind.SAFE_PHOTOGRAPHS)!.dateSource.length,
+    ).toBeLessThanOrEqual(16);
+  });
+
+  it('⚠️ ANSWERS FOR NOBODY ELSE, and that is the line', () => {
+    // The warning at the top of credential-kinds.ts is about kinds where only
+    // the member can see the answer: a green barcoded ID does not expire and a
+    // passport does, and both are IDENTITY_DOCUMENT. A photograph of a gun
+    // safe is not that case — there is provably nothing printed on it, which
+    // is why no vision call is spent on one.
+    for (const k of [
+      CredentialKind.IDENTITY_DOCUMENT,
+      CredentialKind.PROFICIENCY,
+      CredentialKind.COMPETENCY,
+      CredentialKind.FIREARM_LICENCE,
+    ]) {
+      expect(settledByNature(k)).toBeNull();
+    }
+    // Including the two that START ticked for a different reason: the tick is
+    // a default the member can change, and settling the date would take that
+    // decision away from them.
+    expect(defaultsToNeverExpires(CredentialKind.IDENTITY_DOCUMENT)).toBe(true);
+    expect(settledByNature(CredentialKind.IDENTITY_DOCUMENT)).toBeNull();
   });
 });

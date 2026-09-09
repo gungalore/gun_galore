@@ -44,7 +44,11 @@ import {
   type DatedLicence,
   firearmFacets,
 } from './credential-firearm-facets';
-import { defaultsToNeverExpires, isPhotograph } from './credential-kinds';
+import {
+  defaultsToNeverExpires,
+  isPhotograph,
+  settledByNature,
+} from './credential-kinds';
 import {
   SIDE_MISSING,
   documentSide,
@@ -1032,6 +1036,17 @@ export class LicenceCentreService {
           // expire and a passport does, and only the member can see which
           // they are holding.
           neverExpires: defaultsToNeverExpires(resolved),
+          /**
+           * ⚠️ AND SETTLED, NOT ONLY TICKED, FOR A PHOTOGRAPH. The tick says
+           * what the answer is; `dateSource` says somebody stands behind it,
+           * and the auto-attach candidate query reads the SECOND one. A safe
+           * photograph carried the tick and nothing else, so it was never a
+           * candidate — see settledByNature, which owns the reasoning.
+           *
+           * Spread last so it wins over the line above for the kinds it
+           * covers, and writes nothing at all for the kinds it does not.
+           */
+          ...(settledByNature(resolved) ?? {}),
           addedVia: kind ? 'member' : 'scan',
         },
         select: { id: true },

@@ -96,3 +96,46 @@ const NEVER_EXPIRES: ReadonlySet<CredentialKind> = new Set<CredentialKind>([
 export function defaultsToNeverExpires(kind: CredentialKind): boolean {
   return NEVER_EXPIRES.has(kind);
 }
+
+/**
+ * The date columns for a document whose date question answers ITSELF.
+ *
+ * Operator, 2026-09-09: "the safe pictures should automatically be set that the
+ * date never expires."
+ *
+ * ⚠️ TICKED IS NOT THE SAME AS SETTLED, AND THE GAP IS WHY SAFE PHOTOGRAPHS
+ * NEVER REACHED AN APPLICATION. `neverExpires` says what the answer is;
+ * `dateSource` says that somebody stands behind it, and everything downstream
+ * reads the SECOND one. The auto-attach candidate query takes rows where
+ * `confirmedAt` or `dateSource` is set — a "date somebody stands behind,
+ * whether that somebody is the member or our own arming" — and a photograph of
+ * a safe had neither, so it was never a candidate at all. On production, three
+ * of the four safe photographs on file were in exactly that state.
+ *
+ * ⚠️ AND THIS IS NOT US GUESSING ON THE MEMBER'S BEHALF, which is the mistake
+ * the top of this file was rewritten to undo. That warning is about kinds where
+ * only the member can see the answer — a green barcoded ID does not expire and
+ * a passport does, and both are IDENTITY_DOCUMENT. A photograph of a gun safe
+ * is not that case: there is provably nothing printed on it, which is why no
+ * vision call is spent on one (see PHOTOGRAPH_KINDS). Asking a member to
+ * confirm the expiry date of a photograph is work we invented for them.
+ *
+ * ⚠️ `expiresOn` IS NEVER WRITTEN HERE, and must not be: the model's CHECK
+ * constraint `Credential_never_expires_has_no_date` refuses a standing tick
+ * beside a date, so a caller merging these columns over a row that already
+ * carries one has to clear the date or drop the tick.
+ */
+export function settledByNature(
+  kind: CredentialKind,
+): { neverExpires: true; dateSource: string; dateSourceNote: string } | null {
+  if (!isPhotograph(kind)) return null;
+  return {
+    neverExpires: true,
+    // Fits `@db.VarChar(16)`. Reads as a third source beside 'read' and
+    // 'derived': nobody read it and nobody computed it, because there is
+    // nothing to read.
+    dateSource: 'none',
+    dateSourceNote:
+      'A photograph has no expiry date on it, so we have marked this one as never expiring. Change it if you want a reminder about it.',
+  };
+}

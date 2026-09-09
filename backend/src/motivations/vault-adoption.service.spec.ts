@@ -154,6 +154,40 @@ describe('adopting one upload', () => {
     expect(credentialCreate.mock.calls[0][0].data.title).toMatch(/bolts/i);
   });
 
+  it('⚠️ SETTLES A PHOTOGRAPH’S DATE, TICKED AND ARMED', async () => {
+    // Operator, 2026-09-09: "the safe pictures should automatically be set
+    // that the date never expires."
+    //
+    // ⚠️ THIS PATH LEFT THEM UNSETTLED FOREVER, AND IT IS THE PATH THEY ALL
+    // COME IN ON. Adoption writes only what `datesFor` returns; a photograph
+    // carries no dates in its reading, because no vision call is spent on one,
+    // so the "no dates" early return handed back {} and the row landed with
+    // neverExpires false, dateSource null and confirmedAt null. That row is
+    // invisible to the auto-attach, whose candidate query wants a date
+    // somebody stands behind. On production all four safe photographs came in
+    // through here and three were in exactly that state.
+    const { svc, credentialCreate } = build({
+      upload: {
+        kind: MotivationUploadKind.SAFE_PHOTOGRAPHS,
+        storageKey: 'motivations/2026/08/a.enc',
+        purgedAt: null,
+        mimeType: 'image/jpeg',
+        sha256: 'sha-a',
+        extractionEncrypted: null,
+        extractionOk: false,
+        extractedFields: [],
+        motivation: { referenceNumber: 'MO000117' },
+      },
+    });
+    await expect(svc.adoptUpload('u1', 'up1')).resolves.toBe(true);
+    const data = credentialCreate.mock.calls[0][0].data;
+    expect(data.neverExpires).toBe(true);
+    expect(data.dateSource).toBe('none');
+    // ⚠️ AND NO DATE BESIDE THE TICK. `Credential_never_expires_has_no_date`
+    // refuses that pair outright.
+    expect(data.expiresOn).toBeUndefined();
+  });
+
   it('leaves every other kind exactly where it was', async () => {
     // The identity naming is the whole reason there is no translation table.
     const { svc, credentialCreate } = build();

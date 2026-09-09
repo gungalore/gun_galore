@@ -16,6 +16,7 @@ import { documentLabel } from './motivation-documents';
 import { mayArmReadExpiry } from '../licence-centre/credential-auto-date';
 import { recomputeDerivedCompetencies } from '../licence-centre/credential-derive-recompute';
 import { parseIsoDate } from '../licence-centre/licence-dates';
+import { settledByNature } from '../licence-centre/credential-kinds';
 
 // ────────────────────────────────────────────────────────────────────
 // KEEPING THE PAPERWORK FROM AN APPLICATION.
@@ -289,6 +290,27 @@ export class VaultAdoptionService {
     /** A licence landed and armed, so the competencies must be re-dated. */
     recompute: boolean;
   } {
+    /**
+     * ⚠️ A PHOTOGRAPH IS SETTLED THE MOMENT IT ARRIVES, AND UNTIL NOW THIS
+     * PATH LEFT IT UNSETTLED FOREVER.
+     *
+     * The comment above says a safe photograph "arrives pre-ticked
+     * (defaultsToNeverExpires)" — true on the Document Centre's own upload
+     * path, and never true here. Adoption writes only what `datesFor` returns,
+     * a photograph carries no dates in its reading (no vision call is spent on
+     * one), so the early return below handed back `{}` and the row landed with
+     * `neverExpires` false, `dateSource` null and `confirmedAt` null.
+     *
+     * That row is invisible to the auto-attach: its candidate query wants a
+     * date somebody stands behind. On production all four safe photographs on
+     * file came in through THIS path and three were in exactly that state, so
+     * the safe photographs could never reach an application by themselves —
+     * whatever else was fixed downstream. Operator, 2026-09-09: "the safe
+     * pictures should automatically be set that the date never expires."
+     */
+    const settled = settledByNature(kind);
+    if (settled) return { write: settled, recompute: false };
+
     const details = this.readDetails(blob);
     const issuedOn = parseIsoDate(details.issued_on ?? details.issue_date ?? null);
     const expiresOn = parseIsoDate(details.expires_on ?? details.expiry_date ?? null);
