@@ -264,5 +264,15 @@ export function cartridgeFacts(row: CartridgeRow | null): string | null {
     'else about the cartridge: do NOT add velocity, energy, stopping power,',
     'expansion, penetration, grain weights or any comparison with another',
     'cartridge. Do not name where these figures come from.',
+    '',
+    // ⚠️ THE PACK MAY OR MAY NOT CARRY THE DRAWING, AND THE WRITER CANNOT
+    // KNOW WHICH. It only appears where we hold figures for the calibre, and
+    // where it goes on the page is the renderer's decision, taken long after
+    // the prose is written. A sentence pointing at it is a sentence that comes
+    // out wrong — pointing at a picture that is not there, or is underneath.
+    'The pack may carry a scale drawing of this cartridge. You do not know',
+    'whether it does, and you do not decide where it goes, so never refer to',
+    'it: no "the drawing above", no "as illustrated", no "see the diagram".',
+    'Write the paragraph so it stands on its own with no picture beside it.',
   ].join('\n');
 }

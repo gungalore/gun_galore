@@ -366,18 +366,32 @@ const BRASS: [number, string][] = [
   [1, '#5b471c'],
 ];
 
-/** Gilding metal: paler and pinker than the case, as a jacket is. */
+/**
+ * Gilding metal — the jacket, and it is COPPER, not more brass.
+ *
+ * ⚠️ THE FIRST PAIR WERE BOTH BRASS, ONE A SHADE PALER. Cartridge brass is
+ * roughly 70 % copper and 30 % zinc and comes out yellow; a jacket is about
+ * 95 % copper and reads distinctly red beside it. Lit with the same stops in
+ * a lighter tint, the two metals differed only in exposure, so the round read
+ * as one turned piece with a seam rather than as a bullet seated in a case.
+ * Operator, 2026-09-09: "the case and the bullet should be different color.
+ * case brass and bullet head copper. make it realistic."
+ *
+ * The lighting is deliberately the SAME structure as the brass — dark top
+ * edge, highlight a quarter down, long roll into shadow, bounce at the bottom
+ * — because both are turned surfaces under one light. Only the hue moves.
+ */
 const JACKET: [number, string][] = [
-  [0, '#7a6533'],
-  [0.06, '#ad9257'],
-  [0.16, '#e5d3a3'],
-  [0.26, '#faf1d6'],
-  [0.36, '#efdcaf'],
-  [0.52, '#d8bd7c'],
-  [0.72, '#ab9053'],
-  [0.9, '#7c6537'],
-  [0.97, '#9a8047'],
-  [1, '#66532a'],
+  [0, '#5c2f13'],
+  [0.06, '#8c4a1f'],
+  [0.16, '#c97a45'],
+  [0.26, '#f0b98a'],
+  [0.36, '#dc9a63'],
+  [0.52, '#bd7238'],
+  [0.72, '#95521f'],
+  [0.9, '#63340f'],
+  [0.97, '#7d451a'],
+  [1, '#4d2710'],
 ];
 
 const CALLOUT_MM = 2.7;
@@ -588,6 +602,7 @@ export function cartridgeDrawing(
   .ext{fill:none;stroke:#9c948a;stroke-width:0.18;stroke-dasharray:1.2 1}
   .axis{fill:none;stroke:#9c948a;stroke-width:0.16;stroke-dasharray:4 1.4 0.7 1.4}
   .edge{fill:none;stroke:#4a3c22;stroke-width:0.28;stroke-linejoin:round}
+  .edgeCu{fill:none;stroke:#3f200c;stroke-width:0.28;stroke-linejoin:round}
   .spec{fill:none;stroke:url(#glint);stroke-width:0.9;stroke-linecap:round}
   .mouth{fill:none;stroke:#4a3c22;stroke-width:0.32}
 </style>
@@ -596,7 +611,7 @@ export function cartridgeDrawing(
 <path d="${spec(casePts)}" class="spec"/>
 <path d="${spec(bulletPts)}" class="spec"/>
 <polygon points="${closed(casePts)}" class="edge"/>
-<polygon points="${closed(bulletPts)}" class="edge"/>
+<polygon points="${closed(bulletPts)}" class="edgeCu"/>
 <path d="M${f2(px(D.L3))} ${f2(py(D.H2 / 2))} L${f2(px(D.L3))} ${f2(py(-D.H2 / 2))}" class="mouth"/>
 <path d="M${f2(px(-0.8))} ${f2(axisY)} L${f2(px(D.L6 + 0.8))} ${f2(axisY)}" class="axis"/>
 ${parts.join('\n')}

@@ -34,17 +34,32 @@ void (async () => {
     applicantName: 'Gerhard Johan Petrus Fourie',
     licenceTypeLabel: 'Section 13 — Self-defence',
     format: 'comprehensive',
+    /*
+     * ⚠️ THIS IS FILLER FOR CHECKING THE LAYOUT, AND IT STILL HAS TO READ LIKE
+     * A PERSON. The first version had the applicant say the round was "drawn to
+     * scale from the dimensions on record rather than described from memory" —
+     * nobody writes that about their own application, and it pointed at "the
+     * drawing above" when the drawing renders below. Operator, 2026-09-09:
+     * "the description looks like AI slop ... and you state that the drawing
+     * above when it's below the paragraph."
+     *
+     * The prose must never mention the picture at all: whether one is placed
+     * depends on holding figures for the calibre, and where it goes is the
+     * renderer's decision. That rule is now in the fact pack itself — see the
+     * closing lines of `cartridgeFacts()`.
+     */
     body: [
       'The firearm and why it suits the purpose:',
-      'The pistol I am applying for is chambered in 9 mm Luger. That chambering is what the ' +
-        'argument in this section turns on, and the drawing above it is the round itself, drawn ' +
-        'to scale from the dimensions on record rather than described from memory.',
+      'I am applying for a pistol chambered in 9 mm Luger. It is the chambering my ' +
+        'competency training was done on, ammunition for it is carried by every dealer ' +
+        'I can reach, and I can afford to shoot it often enough to stay competent.',
       'The cartridge:',
-      'A 9 mm Luger round is 29.69 mm long overall and seats a 9.03 mm bullet in a 19.15 mm ' +
-        'case. The case is tapered, so it feeds and extracts reliably from a self-loading ' +
-        'pistol, and the round is short enough that a magazine of practical size holds enough ' +
-        'of them to answer an attack without a reload. The pressure the round is built to ' +
-        'contain is what gives it its performance in a barrel of the length a handgun carries.',
+      'A 9 mm Luger round is 29.69 mm long and seats a 9.03 mm bullet in a 19.15 mm case. ' +
+        'The case is tapered, which is why it feeds and extracts reliably in a self-loading ' +
+        'pistol, and the round is short enough that a magazine of a size I can carry holds ' +
+        'enough of them to deal with an attack without stopping to reload. Because the ' +
+        'dimensions are standardised, any manufacturer’s ammunition fits, so I am not tied ' +
+        'to one supplier or one price.',
       'Safe storage:',
       'The firearm will be stored in a SABS-approved safe bolted to a brick wall in a locked ' +
         'room at my residence. No other person has the combination.',
