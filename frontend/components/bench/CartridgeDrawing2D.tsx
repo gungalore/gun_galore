@@ -25,7 +25,7 @@
  */
 
 import { useId, useMemo } from 'react';
-import { canDraw, paths, type Dims, type Paths, fmtLength, type Units } from '@/lib/bench/geometry';
+import { completeDims, paths, type Dims, type Paths, fmtLength, type Units } from '@/lib/bench/geometry';
 import { BULLET_FILL, BULLET_STROKE, CASE_FILL, CASE_STROKE } from './CartridgeThumb';
 import type { CartridgeDrawing2DProps } from './contract';
 
@@ -255,16 +255,29 @@ export function CartridgeDrawing2D({
        API, so a hole here is a runtime possibility rather than a compile
        one. A partial set renders a plausible, wrong cartridge; the spec
        card's text fallback is the correct outcome instead. */
-    if (!canDraw(dims)) return null;
-    const s = scaleFor(dims.L6, dims.R1);
-    const p = paths(dims, s, X0, Y0);
+    const completed = completeDims(dims);
+    if (!completed) return null;
+    const D = completed.dims;
+    const s = scaleFor(D.L6, D.R1);
+    const p = paths(D, s, X0, Y0);
     return {
       casePath: p.casePath,
       bulletPath: p.bulletPath,
       ax0: p.px(-3),
-      ax1: p.px(dims.L6 + 4),
-      rows: buildRows(dims, p.px, p.py, s, units),
-      shoulder: shoulderOf(dims, p.px, p.py),
+      ax1: p.px(D.L6 + 4),
+      /**
+       * ⚠️ THE DRAWING MAY USE A DERIVED LETTER; THE DIMENSION WEB MAY NOT
+       * ANNOTATE ONE. A case with no shoulder still has to be cut somewhere,
+       * and completeDims collapses the shoulder onto the mouth to do it — but
+       * printing "L1" against that collapse states a published figure that
+       * does not exist.
+       */
+      rows: buildRows(D, p.px, p.py, s, units).filter(
+        (r) => !completed.derived.has(r.k as keyof Dims),
+      ),
+      shoulder: completed.derived.has('L1')
+        ? null
+        : shoulderOf(D, p.px, p.py),
     };
   }, [dims, units]);
 

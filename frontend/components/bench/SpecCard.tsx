@@ -26,7 +26,7 @@ import {
   DIM_KEYS,
   DRAWN_LETTERS_2D,
   DRAWN_LETTERS_3D,
-  canDraw,
+  completeDims,
   type Dims,
   type Units,
   MM_PER_INCH,
@@ -454,9 +454,15 @@ export function SpecCard({
    *
    * ⚠️ STRINGS ARE NOT COERCED TO NUMBERS. A numeric field that came back as
    * text means the figure was not read cleanly, and parseFloat-ing it feeds
-   * the profile a number nobody vouched for. canDraw() is all-or-nothing for
-   * the same reason — see its comment in lib/bench/geometry.ts: a partial set
-   * does not fail visibly, it draws a smooth, confident, wrong shape.
+   * the profile a number nobody vouched for.
+   *
+   * ⚠️ AND completeDims REPLACED canDraw HERE, WHICH IS NOT A LOOSENING. All
+   * thirteen or nothing was refusing 83 of the 215 sheets held — including
+   * 9 mm Luger and .38 Special, the two cartridges members ask about most —
+   * because a case with no shoulder does not print one and a rimmed revolver
+   * case prints no extractor groove. What is filled in is a collapse the sheet
+   * already describes; a sheet missing a figure nothing can stand in for still
+   * returns null and still falls through to the text.
    */
   const dims = useMemo<Dims | null>(() => {
     if (!raw) return null;
@@ -465,7 +471,7 @@ export function SpecCard({
       const v = raw[k];
       if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
     }
-    return canDraw(out) ? out : null;
+    return completeDims(out)?.dims ?? null;
   }, [raw]);
 
   const canLathe = Boolean(dims) && webgl && !latheFailed;

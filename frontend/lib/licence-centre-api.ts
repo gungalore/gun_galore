@@ -30,6 +30,13 @@ export type CredentialKind =
   | 'COMPETENCY_CERTIFICATE'
   /** Everything an association says about a member. See KIND_LABELS. */
   | 'DEDICATED_DISCIPLINE'
+  /**
+   * The association's endorsement of ONE firearm — type, calibre, make, action
+   * and serial — added 2026-09-09. It is not DEDICATED_DISCIPLINE: that is
+   * about the PERSON and is reusable, this names one gun, so an older one
+   * describes the wrong one.
+   */
+  | 'ASSOCIATION_ENDORSEMENT'
   | 'DEDICATED_STATUS'
   | 'DEDICATED_HUNTER'
   | 'PROFESSIONAL_HUNTER'
@@ -544,6 +551,8 @@ export const KIND_LABELS: Record<CredentialKind, string> = {
   // the same member — and one page routinely does several of those jobs at
   // once. Four menu entries made the member choose, and made us guess.
   DEDICATED_DISCIPLINE: 'Association status or membership',
+  // Named for the thing it is about, because a member holds one per firearm.
+  ASSOCIATION_ENDORSEMENT: 'Firearm endorsement',
   PROFICIENCY: 'Proficiency certificate',
   OTHER: 'Something else',
   // ── retired, never offered ───────────────────────────────────────────

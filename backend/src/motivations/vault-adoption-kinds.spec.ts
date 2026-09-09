@@ -108,6 +108,14 @@ describe('⚠️ every document the Centre can lend, it can also keep', () => {
     // licence the Centre already holds. So it is lent and not kept, on
     // purpose. Revisit only with the operator.
     FIREARM_LICENCE: 'tied to one firearm; the Licence Centre owns this route',
+    // ⚠️ SAME ARGUMENT AS THE LICENCE ABOVE, AND IT ARRIVED THE SAME DAY THE
+    // KIND DID. An endorsement is worth keeping — the member owns that firearm
+    // across applications — but since 2026-09-09 the Document Centre's
+    // association section offers it directly, so that is the route by which it
+    // reaches the vault. Adopting it from an application as well files a
+    // second row for a document the Centre already holds.
+    ASSOCIATION_ENDORSEMENT:
+      'names one firearm; the Document Centre owns this route',
   };
 
   it('has no kind that can be lent but not kept', () => {

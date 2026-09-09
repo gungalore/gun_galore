@@ -284,6 +284,34 @@ export const WANTED: Record<CredentialKind, string[]> = {
   // registration, and they are NOT the same number — the operator's SA Hunters
   // pack carries three. Each is named separately so none can be read into
   // another's field and end up as the wrong reference on an application.
+  /**
+   * ⚠️ WANTED IS BOTH THE QUESTION AND THE FILTER, so the firearm fields have
+   * to be here or an endorsement's whole point is discarded on the way back.
+   * The document names ONE gun — type, calibre, make, action, serial — and the
+   * serial is what joins it to an owned row, which is what finally lets an
+   * owned firearm say what it is licensed FOR without the writer guessing.
+   *
+   * ⚠️ AND BOTH ACCREDITATION NUMBERS. A body accredited for hunting AND for
+   * sport prints two, and which one endorsed this firearm is what decides
+   * whether the row reads "hunting" or "sport shooting". One field for both is
+   * how the operator's sport status came to be filed as DEDICATED_HUNTER.
+   */
+  ASSOCIATION_ENDORSEMENT: [
+    'association',
+    'accreditation_number',
+    'holder_name',
+    'membership_number',
+    'status_number',
+    'status_type',
+    'endorsement_number',
+    'firearm_type',
+    'calibre',
+    'make',
+    'action',
+    'serial',
+    'issued_on',
+    'signed_by',
+  ],
   DEDICATED_DISCIPLINE: [
     'association',
     'holder_name',
@@ -855,6 +883,8 @@ export function userPrompt(
     // member "photograph the letter and we will read it for you", and a reader
     // that was never told where the date is on the page is how that promise
     // goes unkept.
+    ASSOCIATION_ENDORSEMENT:
+      'an association\u2019s ENDORSEMENT OF ONE SPECIFIC FIREARM \u2014 a page naming a single gun by type, calibre, make, action and serial and confirming it suits the discipline the member is dedicated in. It is not a status certificate and not a letter of good standing: those are about the PERSON and carry no firearm. Read the firearm row into firearm_type, calibre, make, action and serial, the endorsement\u2019s own reference into endorsement_number, and the association\u2019s accreditation number into accreditation_number. Where the page carries two accreditation numbers \u2014 one for hunting, one for sport \u2014 give the one against the discipline this endorsement is issued under, and say which discipline that is in status_type. If the page names no firearm at all, this is the wrong kind: it is a DEDICATED_DISCIPLINE document',
     DEDICATED_DISCIPLINE:
       'a document from a shooting or hunting association about one of its members — a membership certificate, a dedicated sport shooter or dedicated hunter status certificate, a section 16 letter of good standing, or a professional hunter registration. ONE DOCUMENT OFTEN DOES SEVERAL OF THOSE JOBS AT ONCE: read everything on it. Say which discipline it awards in status_type (dedicated sport shooter, dedicated hunter, both, or professional hunter), and set good_standing to yes ONLY where the document itself says the member is in good standing. On a letter of good standing the membership or status is stated to run between two dates: the later of them — the "valid until", "valid to" or "expires" date — is expires_on, and the earlier one is issued_on. The numbers are NOT the same number — a status number, a membership number and a good-standing reference can all appear on one page, so read each into its own field and leave any that is absent blank rather than repeating another',
     DEDICATED_STATUS: 'a dedicated sport shooter status certificate',
@@ -1110,6 +1140,17 @@ export const CLASSIFY_USER = [
   '',
   '  A member may hold several of these from different associations. That is',
   '  normal - file each one as DEDICATED_DISCIPLINE.',
+  '',
+  'ASSOCIATION_ENDORSEMENT - an association endorsement of ONE SPECIFIC',
+  '  FIREARM. It names a single gun by type, calibre, make, action and serial,',
+  '  and confirms that gun suits the discipline the member is dedicated in.',
+  '',
+  '  ⚠️ THE FIREARM IS THE WHOLE TEST, AND IT IS THE ONLY TEST. The letterhead,',
+  '  the association, the member number and the dedicated number all look',
+  '  exactly like a DEDICATED_DISCIPLINE document, because they are the same',
+  '  association writing about the same member. If the page names a firearm by',
+  '  serial, it is this. If it does not, it is DEDICATED_DISCIPLINE. Do not',
+  '  decide on the wording, the title or how official it looks.',
   'PROFICIENCY - a firearm proficiency or unit-standard training certificate.',
   '  Two documents both file here: the PFTC "Statement of Results" (the back),',
   '  and the training provider\'s own certificate (the front), which is a',

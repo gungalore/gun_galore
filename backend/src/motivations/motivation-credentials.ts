@@ -1030,6 +1030,54 @@ export function credentialOffer(
     });
   }
 
+  /**
+   * ── AN ENDORSEMENT SAYS WHAT A FIREARM IS FOR ─────────────────────
+   *
+   * ⚠️ THE ONE COLUMN NO LICENCE CARD COULD EVER FILL. `primary_use` is marked
+   * "NEVER docSourced, and it never can be" in the registry — a licence copy
+   * carries make, calibre and serial and nothing printed on it says what the
+   * firearm is FOR. That is true of a licence, and it is exactly what an
+   * association endorsement is: a page confirming that ONE named gun suits the
+   * discipline the member is dedicated in.
+   *
+   * ⚠️ SO THE WRITER STOPPED HAVING TO GUESS. MO000071 invented five roles —
+   * "long-range game harvesting", "dedicated precision sport shooting rifle
+   * chambered for extended-range accuracy" — because the rows carried none and
+   * the prompt asked for one each. `documentScope` now refuses an invented
+   * role; this is the other half, which is supplying the real one.
+   *
+   * ⚠️ MATCHED BY SERIAL ONLY, the same rule owned-firearm-sections.ts follows
+   * and for the same reason: two of a battery can share a make and a calibre —
+   * the corpus's own example holds four 9mm handguns — and the wrong role on a
+   * signed document is the failure this exists to stop.
+   */
+  for (const c of credentials) {
+    if (c.kind !== 'ASSOCIATION_ENDORSEMENT') continue;
+    const endorsed = norm(
+      first(c.details, 'serial', 'barrel_serial', 'frame_serial'),
+    );
+    if (!endorsed) continue;
+    const hit = onForm.find((r) => r.serials.includes(endorsed));
+    if (!hit) continue;
+
+    /**
+     * The discipline in the words the row prints, or the status type as read.
+     * ⚠️ NOTHING IS DERIVED FROM THE ASSOCIATION'S NAME. A body accredited for
+     * hunting AND sport prints two accreditation numbers, and reading "Hunters"
+     * off a letterhead is how the operator's sport status was once filed as
+     * DEDICATED_HUNTER.
+     */
+    const discipline = first(c.details, 'status_type', 'discipline');
+    if (!discipline) continue;
+    offer(
+      `existing_firearm_${hit.row}_use`,
+      `Firearm ${hit.row} — what it is licensed for`,
+      discipline,
+      c.title,
+      c.id,
+    );
+  }
+
   // ── dedicated status — one SLOT per association ──────────────────
   //
   // ⚠️ SEVERAL ASSOCIATIONS IS THE NORMAL CASE. The professional motivations
@@ -1472,6 +1520,15 @@ export const CREDENTIAL_TO_UPLOAD: Record<
     MotivationUploadKind.GOOD_STANDING_LETTER,
   ],
   PROFICIENCY: [MotivationUploadKind.PROFICIENCY_CERTIFICATE],
+  /**
+   * ⚠️ IT FILLS THE SLOT, AND IT IS STILL IN NEVER_AUTOLINK. Mapping a kind to
+   * a slot says where it CAN go, not that it goes there unasked — an
+   * endorsement names one firearm, so an older one describes the wrong gun,
+   * which is the rule motivation-autolink.ts has always applied to it. What
+   * changes is that a member picking one from their Centre now has somewhere
+   * to put it.
+   */
+  ASSOCIATION_ENDORSEMENT: [MotivationUploadKind.ASSOCIATION_ENDORSEMENT],
   // Retired kinds, kept so rows filed before the consolidation still map.
   DEDICATED_STATUS: [MotivationUploadKind.ASSOCIATION_CARD],
   DEDICATED_HUNTER: [MotivationUploadKind.ASSOCIATION_CARD],

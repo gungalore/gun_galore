@@ -5,6 +5,7 @@ import {
   paths,
   thumbOf,
   canDraw,
+  completeDims,
   coalCheck,
   fmtVelocity,
   type Dims,
@@ -392,5 +393,66 @@ describe('profile — the seated shank is clamped to the round', () => {
       expect(P[i][0]).toBeGreaterThanOrEqual(P[i - 1][0]);
     }
     expect(paths(flush, 2, 4, 60).bulletPath).not.toMatch(/NaN/);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE 83 SHEETS THE BENCH DREW NOTHING FOR.
+//
+// `canDraw` wants all thirteen letters. Of the 215 sheets held, 132 print
+// them — a case with no shoulder does not print one, and a rimmed revolver
+// case prints no extractor groove either. So a member opening The Bench for
+// 9 mm Luger or .38 Special, the two cartridges they are likeliest to ask
+// about, got the spec card's text fallback and no drawing at all.
+// ────────────────────────────────────────────────────────────────────
+describe('completeDims', () => {
+  /** Rimless, tapered, no shoulder. P2, L1, L2 and H1 are not printed. */
+  const LUGER = {
+    R: 1.27, R1: 9.96, E: 2.98, E1: 8.79, P1: 9.93, P2: null,
+    L1: null, L2: null, L3: 19.15, L6: 29.69, H1: null, H2: 9.65, G1: 9.03,
+  };
+  /** Rimmed, straight-walled. No extractor groove is printed either. */
+  const SPECIAL = {
+    R: 1.5, R1: 11.18, E: null, E1: null, P1: 9.63, P2: null,
+    L1: null, L2: null, L3: 29.34, L6: 39.37, H1: null, H2: 9.63, G1: 9.12,
+  };
+
+  it('draws the two cartridges members actually ask about', () => {
+    expect(completeDims(LUGER)).not.toBeNull();
+    expect(completeDims(SPECIAL)).not.toBeNull();
+    expect(completeDims(CREEDMOOR)).not.toBeNull();
+  });
+
+  it('still refuses a sheet missing a figure nothing can stand in for', () => {
+    expect(completeDims(null)).toBeNull();
+    expect(completeDims({})).toBeNull();
+    expect(completeDims({ ...LUGER, G1: null })).toBeNull();
+    expect(completeDims({ ...LUGER, L6: 19.15 })).toBeNull();
+  });
+
+  it('collapses an absent shoulder onto the mouth rather than inventing one', () => {
+    const D = completeDims(LUGER)!.dims;
+    expect(D.L1).toBe(D.L3);
+    expect(D.P2).toBe(D.H2);
+    expect(completeDims(CREEDMOOR)!.dims.L1).toBe(CREEDMOOR.L1);
+  });
+
+  it('⚠️ HOLDS THE GROOVE CLEAR OF THE RIM, or the head draws as a bow tie', () => {
+    const D = completeDims(SPECIAL)!.dims;
+    expect(D.E).toBeGreaterThanOrEqual(D.R + 0.9);
+    const P = profile(D);
+    for (let i = 1; i < P.length; i++) {
+      expect(P[i][0]).toBeGreaterThanOrEqual(P[i - 1][0]);
+    }
+  });
+
+  it('⚠️ REPORTS WHAT IT FILLED IN, so the table never annotates a collapse', () => {
+    expect([...completeDims(LUGER)!.derived].sort()).toEqual([
+      'H1',
+      'L1',
+      'L2',
+      'P2',
+    ]);
+    expect([...completeDims(CREEDMOOR)!.derived]).toEqual([]);
   });
 });

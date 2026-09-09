@@ -106,30 +106,29 @@ export const VAULTABLE: ReadonlySet<MotivationUploadKind> = new Set([
   // statement to apply for a rifle. Losing it means going back to a training
   // provider for a reprint of a course passed a decade ago.
   MotivationUploadKind.PROFICIENCY_CERTIFICATE,
-  // ⚠️ ASSOCIATION_ENDORSEMENT IS NOT HERE AND CANNOT SIMPLY BE ADDED. It
-  // looks like the same pull-but-never-save omission as the five above, and an
-  // audit on 2026-09-07 flagged it as one. It is not: the rule at the head of
-  // this list is that every member has a CredentialKind OF THE SAME NAME, and
-  // there is no endorsement kind — CredentialKind has none, and the classifier
-  // has no concept of one. Adding the enum value is a schema change with a
-  // migration, not a one-line set entry.
-  //
-  // ⚠️ AND THE DOCUMENT CENTRE ALREADY INVITES ONE. Its association section
-  // tells the member a section 16 application needs "the status certificate, a
-  // letter of good standing and the endorsement", with addKind
-  // DEDICATED_DISCIPLINE — so an endorsement filed there is stored as a
-  // dedicated-status document and is then offered into association_name,
-  // association_number and dedicated_since, and auto-suggested as an
-  // ASSOCIATION_CARD, which S16_AUTO_ATTACH forbids in capitals because an
-  // endorsement names ONE firearm. Whoever closes this must close both halves.
-  //
-  // ⚠️ CURRENT_LICENCE IS DELIBERATELY NOT HERE, AND IT WAS TRIED. A firearm
-  // licence is pullable from the Centre and looks like the same omission, but
-  // the spec below already ruled on it: it is tied to one firearm, and the
-  // Licence Centre is the route by which a member's own licences reach the
-  // vault — adopting them from an application as well would file a second row
-  // for a licence the Centre already holds. Left to the operator to decide,
-  // not overruled here.
+  /**
+   * ⚠️ ASSOCIATION_ENDORSEMENT IS STILL NOT HERE, AND THE REASON CHANGED ON
+   * 2026-09-09 WITHOUT THE ANSWER CHANGING.
+   *
+   * The note that stood here said it could not be added because CredentialKind
+   * had no such value — a schema change, not a one-line set entry. That is now
+   * done: the migration is 20260909100000_credential_association_endorsement,
+   * the classifier has the concept, and the Document Centre's association
+   * section offers it instead of filing one as DEDICATED_DISCIPLINE (which
+   * then offered it into association_name and dedicated_since and suggested it
+   * as an ASSOCIATION_CARD).
+   *
+   * ⚠️ IT STAYS OUT FOR CURRENT_LICENCE'S REASON, WHICH IS ABOUT ROUTES AND
+   * NOT ABOUT KEEPING. An endorsement is worth keeping — the member owns that
+   * firearm across applications — but the Centre is now the route by which one
+   * reaches the vault, and adopting it from an application as well files a
+   * second row for a document the Centre already holds. Same argument, same
+   * conclusion, and vault-adoption.service.spec.ts pins both.
+   *
+   * ⚠️ AND NEVER_AUTOLINK IS UNTOUCHED EITHER WAY: an endorsement names ONE
+   * firearm, so an older one describes the wrong gun and it is never attached
+   * unasked.
+   */
 ]);
 
 /**

@@ -50,6 +50,76 @@ export function canDraw(d: Partial<Dims> | null | undefined): d is Dims {
 
 export type Point = [number, number];
 
+/** The figures no cartridge can be drawn without. */
+const REQUIRED: (keyof Dims)[] = ['R', 'R1', 'P1', 'L3', 'L6', 'G1'];
+
+const num = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+
+export interface CompletedDims {
+  dims: Dims;
+  /** Letters the sheet did NOT print. Drawn, and never annotated. */
+  derived: ReadonlySet<keyof Dims>;
+}
+
+/**
+ * A complete set of figures, or null.
+ *
+ * ⚠️ ALL THIRTEEN REFUSED THE TWO CARTRIDGES MEMBERS ACTUALLY ASK ABOUT. Of
+ * the 215 sheets held, only 132 print every letter — a case with no shoulder
+ * does not print one, and a rimmed revolver case prints no extractor groove
+ * either — so `canDraw` alone drew nothing for 9 mm Luger or .38 Special, and
+ * the spec card fell through to its text fallback for 83 cartridges.
+ *
+ * ⚠️ A DERIVED LETTER IS A COLLAPSE, NEVER AN INVENTION. Where a case has no
+ * shoulder the shoulder is placed AT the mouth and the diameters either side
+ * of it are the mouth's own, so the body runs from P1 to the mouth as the real
+ * case does. Where there is no extractor groove the groove diameter is the
+ * body's, so the flange stands proud of a straight wall. The silhouette drawn
+ * is the silhouette the sheet describes.
+ *
+ * ⚠️ AND `derived` IS WHY THE TABLE STAYS HONEST. The drawing may need a
+ * figure to know what shape to cut and still have no business annotating it as
+ * though it were published.
+ *
+ * ⚠️ KEPT IDENTICAL TO backend/src/motivations/motivation-cartridge-drawing.ts,
+ * which draws the same cartridge into a member's licence pack. The shape they
+ * see here and the shape they print must be one shape.
+ */
+export function completeDims(
+  d: Partial<Record<keyof Dims, number | null | undefined>> | null | undefined,
+): CompletedDims | null {
+  if (!d) return null;
+  for (const k of REQUIRED) if (num(d[k]) === undefined) return null;
+
+  const derived = new Set<keyof Dims>();
+  for (const k of DIM_KEYS) if (num(d[k]) === undefined) derived.add(k);
+
+  const R = num(d.R)!;
+  const R1 = num(d.R1)!;
+  const P1 = num(d.P1)!;
+  const L3 = num(d.L3)!;
+  const L6 = num(d.L6)!;
+  const G1 = num(d.G1)!;
+  const mouth = num(d.H2) ?? num(d.H1) ?? num(d.P2) ?? P1;
+  /**
+   * ⚠️ THE GROOVE IS HELD CLEAR OF THE RIM, OR THE SILHOUETTE FOLDS. `profile`
+   * reads a vertex at `E − 0.9`; on a rimmed case with no groove that lands
+   * BEHIND the rim vertex and the outline crosses itself. Nothing fails.
+   */
+  const E = Math.max(num(d.E) ?? R, R + 0.9);
+  const E1 = num(d.E1) ?? P1;
+  const L1 = num(d.L1) ?? L3;
+  const L2 = num(d.L2) ?? L1;
+  const P2 = num(d.P2) ?? (L1 >= L3 ? mouth : P1);
+  const H1 = num(d.H1) ?? mouth;
+
+  const dims: Dims = { R, R1, E, E1, P1, P2, L1, L2, L3, L6, H1, H2: mouth, G1 };
+  return canDraw(dims) && L6 > L3 && L3 > E ? { dims, derived } : null;
+}
+
+
+
 /** feet per second → metres per second. */
 export const MS = 0.3048;
 

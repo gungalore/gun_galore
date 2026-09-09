@@ -5108,6 +5108,26 @@ enum CredentialKind {
   /// a log that stops eighteen months ago reads worse than a short current
   /// one. The picker says so; see reuseCaution.
   SHOOTING_ACTIVITY_LOG
+
+  /// The association's endorsement that ONE SPECIFIC firearm — type, calibre,
+  /// make, action, serial — suits the discipline the member is dedicated in.
+  ///
+  /// ⚠️ NOT DEDICATED_DISCIPLINE, AND THE DIFFERENCE IS THE FIREARM. A status
+  /// certificate is about the PERSON and is reusable on every application; an
+  /// endorsement names one gun, so an older one describes the wrong one —
+  /// which is why NEVER_AUTOLINK has always refused to attach it unasked. It
+  /// was filed as DEDICATED_DISCIPLINE for want of a kind of its own, and was
+  /// then offered into association_name and dedicated_since and suggested as
+  /// an ASSOCIATION_CARD.
+  ///
+  /// ⚠️ NOT A REQUIREMENT OF THE ACT. It comes from the Hunters Forum
+  /// guidelines of 2 September 2005; associations issue it and DFOs expect it.
+  /// Copy must never say the Act demands it.
+  ///
+  /// Its serial is what joins it to an owned firearm, and its discipline is
+  /// what that firearm is licensed FOR — the one fact the owned rows could
+  /// never fill from a document.
+  ASSOCIATION_ENDORSEMENT
 }
 
 model Credential {

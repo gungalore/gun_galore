@@ -1,0 +1,33 @@
+-- THE ENDORSEMENT GETS A KIND OF ITS OWN.
+--
+-- MOTIVATION-REBUILD-BRIEF.md §5.5a asks for ASSOCIATION_ENDORSEMENT reading:
+-- the association's accreditation numbers, the member and dedicated numbers,
+-- the status type, and the firearm row it endorses — type, calibre, make,
+-- action, serial — linked to an owned firearm by that serial, so the firearm's
+-- purpose comes off a document instead of out of the writer.
+--
+-- ⚠️ IT COULD NOT BE ADOPTED BECAUSE IT HAD NO KIND. vault-adoption.service.ts
+-- records this exactly: an endorsement uploaded on an application was pulled
+-- and never saved, because the rule at the head of its adopt list is that
+-- every entry has a CredentialKind OF THE SAME NAME, and CredentialKind had
+-- none. It was flagged as the same omission as five other kinds on 2026-09-07
+-- and it was not one: adding the value is a schema change, which is this file.
+--
+-- ⚠️ AND THE DOCUMENT CENTRE WAS FILING THEM AS DEDICATED STATUS. Its
+-- association section offers "the status certificate, a letter of good
+-- standing and the endorsement" under addKind DEDICATED_DISCIPLINE — so an
+-- endorsement filed there was stored as a status document and then offered
+-- into association_name, association_number and dedicated_since, and
+-- auto-suggested as an ASSOCIATION_CARD, which S16_AUTO_ATTACH forbids in
+-- capitals because an endorsement names ONE firearm. Both halves close
+-- together; see licence-centre-extract.service.ts and motivation-documents.ts.
+--
+-- ⚠️ ADDITIVE ONLY. No row changes kind here: an endorsement already filed as
+-- DEDICATED_DISCIPLINE stays where it is and stays readable. Re-filing one is
+-- a decision about somebody's own document and belongs to them, not to a
+-- migration — the Centre offers it once the kind exists.
+--
+-- NOTE for Postgres < 12: ALTER TYPE ... ADD VALUE cannot run inside a
+-- transaction block. Prisma runs each statement separately, and the box is on
+-- 16, where it is transactional and safe.
+ALTER TYPE "CredentialKind" ADD VALUE IF NOT EXISTS 'ASSOCIATION_ENDORSEMENT';

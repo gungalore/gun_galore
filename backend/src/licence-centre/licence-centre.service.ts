@@ -2639,6 +2639,8 @@ const DEFAULT_TITLE: Record<CredentialKind, string> = {
   DEDICATED_STATUS: 'Dedicated status',
   PROFICIENCY: 'Proficiency certificate',
   GOOD_STANDING: 'Letter of good standing',
+  // Named for the thing it is about, because a member holds one per firearm.
+  ASSOCIATION_ENDORSEMENT: 'Firearm endorsement',
   // The documents the Centre gained when it absorbed the application
   // paperwork. Named as a member would say them out loud, not as the enum.
   IDENTITY_DOCUMENT: 'ID document',

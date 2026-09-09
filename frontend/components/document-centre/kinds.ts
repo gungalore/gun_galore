@@ -189,6 +189,18 @@ export const SECTIONS: readonly DocSection[] = [
     // header: rows filed under them still exist and still have to be findable.
     kinds: [
       'DEDICATED_DISCIPLINE',
+      /**
+       * ⚠️ THE SECTION INVITED THIS AND HAD NOWHERE TO PUT IT. Its empty line
+       * has always asked for "the status certificate, a letter of good
+       * standing and the endorsement" — and the only kind on offer was
+       * DEDICATED_DISCIPLINE, so an endorsement filed here was stored as a
+       * status document, then offered into association_name,
+       * association_number and dedicated_since, and auto-suggested as an
+       * ASSOCIATION_CARD, which S16_AUTO_ATTACH forbids in capitals because an
+       * endorsement names ONE firearm and an older one describes the wrong
+       * gun. CredentialKind gained the value on 2026-09-09.
+       */
+      'ASSOCIATION_ENDORSEMENT',
       'DEDICATED_STATUS',
       'DEDICATED_HUNTER',
       'PROFESSIONAL_HUNTER',

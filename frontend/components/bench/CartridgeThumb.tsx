@@ -12,7 +12,7 @@
  * already names the cartridge, and a screen reader gets nothing from a shape.
  */
 
-import { canDraw, thumbOf } from '@/lib/bench/geometry';
+import { completeDims, thumbOf } from '@/lib/bench/geometry';
 import type { CartridgeThumbProps } from './contract';
 
 /* ── The brass and the copper ────────────────────────────────────────
@@ -71,9 +71,17 @@ export function CartridgeThumb({ dims, size = 'desktop', className }: CartridgeT
      the honest outcome, and the caller's text fallback covers it. The prop is
      typed `Partial<Dims>`, and the API hands these over as a loose record, so
      this guard is doing real work rather than satisfying the compiler. */
-  if (!canDraw(dims)) return null;
+  /**
+   * ⚠️ COMPLETED, NOT MERELY CHECKED. `canDraw` alone drew nothing for the two
+   * cartridges members ask about most — 9 mm Luger and .38 Special print no
+   * shoulder, and 83 of the 215 sheets held are missing at least one letter
+   * for the same reason. See completeDims: what is filled in is a collapse the
+   * sheet already describes, never a figure invented.
+   */
+  const completed = completeDims(dims);
+  if (!completed) return null;
 
-  const { casePath, bulletPath, thumbBox } = thumbOf(dims);
+  const { casePath, bulletPath, thumbBox } = thumbOf(completed.dims);
   const { w, h } = SIZES[size];
 
   return (

@@ -26,7 +26,7 @@ import CoalGauge from './CoalGauge';
 import LoadChart from './LoadChart';
 import {
   DIM_KEYS,
-  canDraw,
+  completeDims,
   coalCheck,
   fmtVelocity,
   type Dims,
@@ -360,10 +360,14 @@ export function LoadCard({
           borderBottom: '0.5px solid var(--border-divider)',
         }}
       >
-        {/* Only when all thirteen figures are there. A silhouette built from a
-            partial sheet collapses the missing vertex onto its neighbour and
-            draws a different cartridge, perfectly confidently. */}
-        {canDraw(dims) && (
+        {/* ⚠️ completeDims, NOT canDraw. All thirteen or nothing refused 83 of
+            the 215 sheets held — a case with no shoulder does not print one —
+            so the thumbnail was blank for 9 mm Luger and .38 Special. What it
+            fills in is a collapse the sheet already describes; a sheet missing
+            a figure nothing can stand in for still draws nothing, because a
+            silhouette built from a partial set collapses the missing vertex
+            onto its neighbour and draws a different cartridge, confidently. */}
+        {completeDims(dims) && (
           <div style={{ flex: 'none', marginTop: 4 }}>
             <CartridgeThumb dims={dims} size="desktop" />
           </div>

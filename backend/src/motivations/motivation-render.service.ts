@@ -944,7 +944,14 @@ export class MotivationRenderService {
       if (!sheet) return undefined;
       return {
         bytes: sheet.bytes,
-        label: `The cartridge — ${sheet.name} (C.I.P. data)`,
+        /**
+         * ⚠️ NO SOURCE IN THE HEADING. It lands in the contents page, and
+         * CLAUDE.md's Bench rule is a copyright boundary rather than a style
+         * note: nothing on any surface built from that corpus names where a
+         * figure comes from. This label read "(C.I.P. data)" and printed it
+         * straight into the table of contents of a document we sell.
+         */
+        label: `The cartridge — ${sheet.name}`,
       };
     } catch {
       return undefined;
