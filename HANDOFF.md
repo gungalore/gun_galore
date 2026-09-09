@@ -6,7 +6,74 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-09**.
 
-## 2026-09-09 (latest) — the guide book applied, everything except the estate
+## 2026-09-09 (latest) — why the safe photographs never reached an application
+
+Operator: *"why doesn't the safe pictures pull in from the vault?"* and then
+*"the safe pictures should automatically be set that the date never expires."*
+
+**Deployed `b3b8b36e`** (full deploy). Rollback point
+**`alloutdoor-20260909-142658.dump`**. Backend tsc CLEAN, 4 367 tests pass;
+frontend tsc CLEAN, 1 658 tests pass, build exits 0. Health after reload:
+backend 200 ×2, frontend 200 ×2, alloutdoor.co.za 200 ×2, three services online,
+no errors in the backend log beyond the standing Peach MOCK-mode warnings.
+
+### FOUR faults on one path, each enough on its own
+
+1. **The one-or-nothing rule ate all three photographs.** `decideAutolink`
+   refuses any kind with more than one candidate — two competency certificates
+   is a question, and a coin toss puts the wrong one in front of a DFO. A safe
+   is three frames and `SAFE_PHOTO_MIN` is 3, so three photographs looked like
+   an ambiguity. Measured before the fix: three in, ZERO attached. One in, one
+   attached, and the row still read "not done". `SAFE_PHOTOGRAPHS` now sits in
+   `TAKE_ALL_KINDS` beside `CURRENT_LICENCE`. ⚠️ **The old test passed ONE
+   candidate**, which is why it survived — there is nothing ambiguous about one.
+
+2. **The once-per-application guard refused the re-run the tick triggers.** M6's
+   design is: hold back, report `needsPlaceConfirm`, tick, run again with
+   `placeConfirmed`. The first run stamps `autolinkedAt` (held-back rows land in
+   `skipped`, so `considered > 0`) and the second returned `already-done`. The
+   tick could never do anything, on any application, since it shipped. A place
+   re-run now passes the guard with `wanted` narrowed to `SAFE_PHOTOGRAPHS`, so
+   it cannot resurrect anything else the member deleted — which is what the
+   guard exists for.
+
+3. **Nothing asked the tick.** The panel lived in `suggested-documents.tsx`,
+   imported by NOBODY — another Phase-4 orphan, like the pre-filled 271 and the
+   delete button. And the review sheet read `needsPlaceConfirm` *after* an early
+   return that fires in exactly the case that raises it. Lifted into
+   `components/motivation/place-confirm.tsx`, used by both, mounted at page
+   level — not inside a section, because they all start closed.
+
+4. ⚠️ **TICKED IS NOT THE SAME AS SETTLED, and this one made the other three
+   unreachable.** `neverExpires` says what the answer is; `dateSource` says
+   somebody stands behind it, and the candidate query reads the SECOND one. A
+   safe photograph had neither, so it was never a candidate at all. On the box:
+   four safe photographs, ALL adopted from an application, three with
+   `neverExpires` false and both date columns null — because the ADOPTION path
+   never applied even the tick (it writes only what `datesFor` returns, and a
+   photograph carries no dates). `settledByNature(kind)` now settles them on
+   both write paths, and migration `20260909160000_photographs_never_expire`
+   backfilled the three. Verified after the deploy: all four are candidates now,
+   and the member-confirmed one was correctly left untouched.
+
+⚠️ **`settledByNature` answers for photographs and for nothing else**, and the
+line is deliberate. The warning at the top of `credential-kinds.ts` is about
+kinds where only the member can see the answer — a green barcoded ID does not
+expire and a passport does, and both are `IDENTITY_DOCUMENT`. A photograph of a
+gun safe is not that case: there is provably nothing printed on it, which is why
+no vision call is spent on one. A test pins the distinction.
+
+**What always worked, and still does:** the library picker asks the same tick
+and attaches one document at a time. Nothing was ever lost from the vault.
+
+**Not eyeballed in a browser.** The place-confirm panel needs a signed-in member
+with safe photographs in their Centre and none on the application, which cannot
+be staged locally — it is covered by a jsdom spec and a check that every CSS
+token it uses is defined. Worth a look on the box.
+
+---
+
+## 2026-09-09 — the guide book applied, everything except the estate
 
 Operator: *"apply the whole document apart from the estate. One other rule,
 only paperwork required by the dfo are attached as annexures. all other things
