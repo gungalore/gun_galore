@@ -4,9 +4,93 @@ What the last session did, where everything stands, and what the next one should
 pick up. **Rules do not live here — they live in `CLAUDE.md`.** This file is
 state, and it is meant to be overwritten.
 
-Last updated: **2026-09-09**.
+Last updated: **2026-09-10**.
 
-## 2026-09-09 (latest) — MO000075, read off the box
+## 2026-09-10 (latest) — the cartridge: its tip, and its place in the pack
+
+Deployed as **4c0a9548**. Rollback point:
+`/var/backups/alloutdoor/db/alloutdoor-20260910-003146.dump`.
+
+### The bullet's tip stopped on a flat face instead of following the ogive
+
+`a66990c0`. The nose is a tangent ogive closed by a small sphere, and the
+sphere was a flat **22 % of the bullet's radius on every cartridge alike**. On
+a 6.5 Creedmoor that is a 1.5 mm ball on a 6.7 mm bullet: by the time a
+three-calibre ogive reaches the front it is far narrower than that, so the
+sphere stopped softening the point and became it — the outline left the arc
+half a millimetre short, bulged back out, and ended on a vertical face.
+
+The tip radius now falls away as the nose lengthens, in calibres of the bullet
+it sits on, which is what real bullets do: a short nose is a round nose, a long
+nose is a spitzer. Luger keeps 16 %, .223 7 %, Creedmoor 3 %.
+
+⚠️ **The old rule was scaled off the wrong quantity and ran backwards** — a
+fraction of the BULLET, on a nose whose own width at the front falls with its
+LENGTH, made the pistol round the *sharper* of the two at the tip (0.121
+against the .223's 0.159). The spec pins the order across three real sheets.
+
+⚠️ **The same nose code is in `frontend/lib/bench/geometry.ts`**, which is the
+upstream of the port, and it was fixed there too. A member must not see one
+shape on The Bench and another in their pack.
+
+### The cartridge is now the cover's hero
+
+`4c0a9548`, operator item 4 of five. The drawing **moves** to the cover rather
+than joining it, and it stays on the `cartridgeDrawing` input because two other
+decisions read that field to know a drawing exists — the spliced C.I.P. sheet
+is suppressed by it, and the contents page counts on it.
+
+⚠️ **THE COVER NOW MEASURES WHAT IT OWES BEFORE IT DRAWS ITS IMAGE, and that
+is the part worth knowing.** Drawn at the full 182 mm column the hero block came
+to 73 mm, the cover ran 19 mm over, and the whole particulars table moved to
+page two behind a cover with a hole in it — **silently**, because the
+renderer's own overflow net catches it and moves it tidily. Nothing throws.
+
+Two things had to change for that: the particulars grid is measured *before*
+the cover image (`particularRows` / `measureGrid`), and the address block
+measures and draws through **one** code path (`dossierHead(top, draw)`),
+because a second copy of its increments would drift the first time one moved.
+
+The room is not a constant, because the masthead is not: the five covers hand
+back between **76 mm (Ledger) and 100 mm (Plate)**, which is most of a hero.
+Plate then landed on the bottom margin to the point, so the reserve keeps 5 mm
+back. The spec renders all five layouts with the book's Part 7.2 table in full
+and fails if any puts it on page two.
+
+### Open — the logo on a lodged pack
+
+⚠️ **Every cover carries the All Outdoor mark and wordmark**, and CLAUDE.md
+records the guide-book rule as *no service name anywhere in a lodged pack*. The
+cover code predates that rule and was never revisited. **Put to the operator,
+not yet answered** — do not "fix" it either way without their word.
+
+### The motivation templates were never removed from the backend
+
+Asked and answered 2026-09-10. Only **two frontend files** went, in the
+Motivation Centre rebuild (`7f2b2628`):
+`frontend/components/motivation-template-picker.tsx` (496 lines) and
+`motivation-template-preview.tsx` (511), both mounted solely in the deleted
+wizard at `frontend/app/motivations/[id]/page.tsx`. Recover with
+`git show 7f2b2628^:<path>`.
+
+Everything behind them is **live**: `GET /motivations/templates`
+(`templateCatalogue()`), `PATCH /motivations/:id/template`, the
+`templateFormat` / `templateColourway` / `templateLayout` columns, and the
+renderer reading all three. There are **zero frontend callers today**.
+
+⚠️ **The preview is a client-side mock, not a render** — the catalogue ships
+layout tokens so the client can draw a fake page cheaply, which is how the
+picker once advertised "sans-serif throughout" to members whose packs were all
+serif. If it comes back, **its mock cover needs the hero** or it will promise a
+cover nobody receives.
+
+### Still open from the operator's five
+
+**Item 3** — the C.I.P. dimensions belong in the body where the firearm is
+described. This is the other half of the rearrangement above: the body has just
+given up its figure, so nothing there carries the numbers yet.
+
+## 2026-09-09 — MO000075, read off the box
 
 Every fault below was diagnosed from production data rather than guessed, and
 each one is deployed. Rollback points are the dumps deploy.sh printed.
