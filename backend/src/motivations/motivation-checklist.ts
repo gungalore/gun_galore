@@ -757,6 +757,21 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'cl
     verifyBeforeUse: true,
   },
   {
+    /**
+     * Part 10.1 item 1. It is first because it is the only row that is about
+     * the pack itself rather than about something to carry, and because two of
+     * its three instructions are things that cannot be fixed at the counter.
+     *
+     * ⚠️ SINGLE-SIDED, AND THE FORM UNSIGNED ON TOP. A double-sided pack
+     * has to be taken apart to certify or stamp a page, and a SAPS form signed
+     * at home is a form signed out of the DFO's sight, which is the one thing
+     * regulation 13 does not allow.
+     */
+    key: 'printed_pack',
+    label: 'The pack itself, printed single-sided',
+    note: 'Print it single-sided — pages get certified, stamped and copied at the counter. The SAPS form goes on top, UNSIGNED. Sign the motivation and the PAJA letter at home, after reading them, and initial every page of the motivation in the space at the foot — that is what stops a page being swapped after you signed.',
+  },
+  {
     key: 'id_copies',
     // ⚠️ THE ONE CERTIFICATION THE REGULATIONS ACTUALLY IMPOSE on an
     // individual applicant: regulation 13(4)(b) requires a certified copy of
@@ -861,6 +876,19 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'cl
     note: 'SAPS’s own list asks for your original competency certificate, so take it — the plastic card or the CFR printout, whichever you were issued; a club checklist from a real submitted pack names both. The copy in your pack is what gets certified against it at the counter. If you have not applied for competency yet, that is a separate, earlier application with its own training, fingerprints, fee and waiting period — section 6(2) means no licence can be issued until it has been granted.',
   },
   {
+    /**
+     * Part 10.1 item 4. Separate from the competency row above because they
+     * are two different documents from two different steps: the proficiency
+     * Statement of Results comes from the training provider and proves the
+     * unit standards, and the competency certificate comes from SAPS on the
+     * strength of it. An applicant who brings one and not the other is sent
+     * home, and "your competency papers" is what makes that happen.
+     */
+    key: 'proficiency_copy',
+    label: 'Your proficiency Statement of Results — the original, plus a copy',
+    note: 'The training provider’s Statement of Results for the unit standards you passed, for the type of firearm you are applying for. The copy in your pack is certified against it at the counter. It is a different document from your SAPS competency certificate and the DFO wants both.',
+  },
+  {
     key: 'passport_photos',
     label: 'Two passport photographs',
     // ⚠️ FOUR QUALIFIERS, AND WE WERE STATING TWO. SAPS's own application
@@ -936,6 +964,85 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'cl
 ];
 
 /**
+ * WHAT THE ROUTE ADDS — dealer or private sale.
+ *
+ * MOTIVATION-GUIDE-BOOK Part 10.2. These are the documents that belong to
+ * somebody ELSE and travel with the applicant, which is why they are the ones
+ * most often missing: the applicant has done everything on their own list and
+ * the counter turns them away over a page the seller was supposed to sign.
+ *
+ * ⚠️ THE ESTATE ROUTE IS DELIBERATELY ABSENT. Operator, 2026-09-09: apply
+ * the whole book "apart from the estate". An inherited firearm needs the
+ * executor's papers and a section F completed as type E, and none of that is
+ * built — offering half of it would send somebody to a counter with a pack
+ * that cannot be accepted.
+ */
+const ROUTE_MUST_BRING: Record<
+  string,
+  Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[]
+> = {
+  [SOURCE_DEALER]: [
+    {
+      key: 'dealer_350a',
+      label: "The dealer's SAPS 350(a) stock return, stamped",
+      note: 'Your dealer completes it and stamps it, together with sections E and F of the SAPS 271 — that half of the form is theirs, not yours. Bring their invoice with it. The firearm stays with the dealer until the licence is issued; do not take it home.',
+      verifyBeforeUse: true,
+    },
+  ],
+  [SOURCE_PRIVATE]: [
+    {
+      key: 'seller_papers',
+      label: "The seller's papers: consent, licence and ID",
+      // ⚠️ BOTH SIDES OF THE LICENCE. The back carries the endorsement and
+      // the expiry, and a copy of the front alone is the commonest reason a
+      // private-sale pack goes back over the counter.
+      note: 'The consent your seller signed is in your pack. Take copies of BOTH SIDES of their licence for this firearm and of their identity document, and make sure they have completed their half of section F on the SAPS 271. The firearm stays with the seller until your licence is issued.',
+    },
+  ],
+};
+
+/**
+ * WHAT THE SECTION ADDS, for the types that have no list of their own above.
+ *
+ * MOTIVATION-GUIDE-BOOK Part 10.3. Section 13 asks for no extra paperwork at
+ * all — what it asks for is that the applicant can ANSWER, which is a
+ * different kind of preparation and one nothing else on the sheet covers.
+ */
+const SECTION_MUST_BRING: Partial<
+  Record<
+    MotivationLicenceType,
+    Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[]
+  >
+> = {
+  S13_SELF_DEFENCE: [
+    {
+      key: 's13_be_ready_to_answer',
+      label: 'Be ready to answer questions about where you live and work',
+      note: 'No extra paperwork. But the DFO may go through section K of the form with you even though it is written for section 14 — how far you are from the nearest police station and from your nearest neighbours, whether your area is crime-rated, and what your daily routine is. Know those answers before you get to the counter; they are in your motivation.',
+    },
+  ],
+  S14_RESTRICTED_SELF_DEFENCE: [
+    {
+      key: 's14_section_k',
+      label: 'Expect section K to be completed with you',
+      note: 'Section K of the SAPS 271 is filled in for a section 14 and for no other section: urban, rural, farm or smallholding; the distance in kilometres to your nearest neighbour and to your nearest police station; whether the area is crime-rated; whether your home or your work is high-risk; and how many firearms you hold. Every one of those is in your motivation — read it before you go.',
+    },
+    {
+      key: 's14_premises_visit',
+      label: 'Expect the DFO to come and look at the premises',
+      note: 'A section 14 application is about a place as much as a person. Expect an inspection of the property and of the safe, and expect it to be arranged rather than announced.',
+    },
+  ],
+  S15_OCCASIONAL_HUNTER: [
+    {
+      key: 's15_papers',
+      label: 'Your hunting or shooting papers',
+      note: 'Whatever you have that shows you actually hunt or shoot: the farm letter or invitation, past permits, club membership and shoot results. If you belong to an accredited association, bring the membership card as well — and note that your motivation describes you as a MEMBER and never claims dedicated status, which is what section 15 requires.',
+    },
+  ],
+};
+
+/**
  * What a section 16 applicant must bring ON TOP of the common list.
  *
  * Section 16 is the one type where a third party — the accredited association
@@ -955,6 +1062,17 @@ const S16_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>
     key: 's16_status',
     label: 'Your dedicated hunter or dedicated sport shooter certificate',
     note: 'The certificate with your dedicated number on it. Bring the original as well as the copy.',
+  },
+  {
+    /**
+     * Part 10.3. Not a document the DFO asks for by name — it is what the
+     * ASSOCIATION asks for before it will endorse anything, and an applicant
+     * whose report is outstanding finds that out when the endorsement is
+     * refused, weeks after they thought the pack was ready.
+     */
+    key: 's16_activity_report',
+    label: 'Your annual activity report to the association',
+    note: 'Submit it before you ask for the endorsement. An association will not endorse a firearm for a member whose activity reporting is behind, and the DFO may ask to see the latest one.',
   },
   {
     key: 's16_endorsement',
@@ -989,6 +1107,13 @@ const S16_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>
  * licence-centre.module.spec.ts asserts the dependency runs one way only.
  */
 const S24_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[] = [
+  {
+    // Part 10.3. The obvious one, and the one nothing on the sheet said: a
+    // renewal is a renewal OF something, and the DFO checks the original.
+    key: 's24_original_licence',
+    label: 'The original licence you are renewing',
+    note: 'Bring the licence itself — the card or the certificate, front and back — not only the copy in your pack. The DFO checks the copy against it.',
+  },
   {
     key: 's24_ninety_days',
     label: 'Lodge at least 90 days before the expiry date',
@@ -1280,8 +1405,22 @@ export function buildChecklist(
   // ⚠️ THE COMMON LIST WAS THE WHOLE LIST for every licence type, so a
   // section 16 applicant walked to the counter with no mention of the three
   // association documents their application rests on.
+  /**
+   * ⚠️ ROUTE-AWARE AND SECTION-AWARE, WHICH IS THE WHOLE POINT OF THE
+   * SHEET. MOTIVATION-GUIDE-BOOK Part 10.2 and 10.3. The rows that get people
+   * turned away are almost never on the common list — they are the dealer's
+   * stamped 350(a), the seller's licence copied on one side only, the
+   * association endorsement that was never issued because an activity report
+   * was outstanding. Each of those belongs to exactly one route or one
+   * section, and printed on everybody's sheet they are noise that trains a
+   * reader to skim.
+   */
   const bring = [
     ...APPLICANT_MUST_BRING,
+    ...(ROUTE_MUST_BRING[
+      (context.answers?.[FIREARM_SOURCE_KEY] ?? '').trim()
+    ] ?? []),
+    ...(SECTION_MUST_BRING[licenceType] ?? []),
     ...(licenceType === 'S16_DEDICATED_HUNTER' ||
     licenceType === 'S16_DEDICATED_SPORT'
       ? S16_MUST_BRING

@@ -860,3 +860,130 @@ describe('the richer checklist row', () => {
     ]));
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// ROUTE-AWARE AND SECTION-AWARE — MOTIVATION-GUIDE-BOOK Part 10.2 and 10.3.
+//
+// The rows that actually get people turned away are almost never on the common
+// list: the dealer's stamped SAPS 350(a), the seller's licence copied on one
+// side only, the association endorsement that was never issued because an
+// activity report was outstanding. Each belongs to exactly one route or one
+// section, and printed on everybody's sheet they are noise that trains a
+// reader to skim the one row that mattered.
+// ────────────────────────────────────────────────────────────────────
+
+describe('what the route and the section add to the sheet', () => {
+  const S13 = MotivationLicenceType.S13_SELF_DEFENCE;
+  const S14 = MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE;
+  const S15 = MotivationLicenceType.S15_OCCASIONAL_HUNTER;
+  const S16H = MotivationLicenceType.S16_DEDICATED_HUNTER;
+  const S24 = MotivationLicenceType.S24_RENEWAL;
+
+  const keysFor = (
+    t: MotivationLicenceType,
+    answers: Record<string, string> = {},
+  ) =>
+    buildChecklist(t, [], false, { answers })
+      .sections.flatMap((s) => s.items)
+      .map((i) => i.key);
+
+  it('gives a dealer purchase the 350(a) and a private sale the seller papers', () => {
+    const dealer = keysFor(S13, { [FIREARM_SOURCE_KEY]: SOURCE_DEALER });
+    expect(dealer).toContain('dealer_350a');
+    expect(dealer).not.toContain('seller_papers');
+
+    const priv = keysFor(S13, { [FIREARM_SOURCE_KEY]: SOURCE_PRIVATE });
+    expect(priv).toContain('seller_papers');
+    expect(priv).not.toContain('dealer_350a');
+  });
+
+  it('⚠️ OFFERS NEITHER ON AN ESTATE, AND THAT IS DELIBERATE', () => {
+    // Operator, 2026-09-09: apply the whole book "apart from the estate". An
+    // inherited firearm needs the executor's papers and a section F completed
+    // as type E, none of which is built; half of it would send somebody to a
+    // counter with a pack that cannot be accepted.
+    const estate = keysFor(S13, { [FIREARM_SOURCE_KEY]: SOURCE_ESTATE });
+    expect(estate).not.toContain('dealer_350a');
+    expect(estate).not.toContain('seller_papers');
+  });
+
+  it('says nothing about a route the applicant has not chosen yet', () => {
+    const none = keysFor(S13);
+    expect(none).not.toContain('dealer_350a');
+    expect(none).not.toContain('seller_papers');
+  });
+
+  it('tells a section 13 applicant to be ready to ANSWER, not to carry more', () => {
+    // Part 10.3: "s 13: nothing further." What it does ask for is that the
+    // applicant can answer the section K questions the DFO may put anyway.
+    const c = buildChecklist(S13, [], false, { answers: {} });
+    const row = c.sections
+      .flatMap((s) => s.items)
+      .find((i) => i.key === 's13_be_ready_to_answer');
+    expect(row).toBeDefined();
+    expect(row!.note).toMatch(/nearest police station/i);
+  });
+
+  it('warns a section 14 applicant about section K and the premises visit', () => {
+    const keys = keysFor(S14);
+    expect(keys).toContain('s14_section_k');
+    expect(keys).toContain('s14_premises_visit');
+    // And nobody else gets them — section K is completed for a section 14 and
+    // for no other section.
+    for (const t of [S13, S15, S16H, S24]) {
+      expect(keysFor(t)).not.toContain('s14_section_k');
+    }
+  });
+
+  it('asks a section 15 applicant for the papers that show they take part', () => {
+    const keys = keysFor(S15);
+    expect(keys).toContain('s15_papers');
+    expect(keysFor(S16H)).not.toContain('s15_papers');
+  });
+
+  it('⚠️ TELLS A SECTION 15 MEMBER THEIR MOTIVATION CLAIMS NO DEDICATED STATUS', () => {
+    // The Act still defines an occasional hunter as somebody who is NOT a
+    // member of an accredited association. A member who tells the DFO they are
+    // "dedicated" has argued themselves out of the section they applied under.
+    const row = buildChecklist(S15, [], false, { answers: {} })
+      .sections.flatMap((s) => s.items)
+      .find((i) => i.key === 's15_papers');
+    expect(row!.note).toMatch(/never claims dedicated status/i);
+  });
+
+  it('asks a section 16 applicant for the activity report before the endorsement', () => {
+    const keys = keysFor(S16H);
+    expect(keys).toContain('s16_activity_report');
+    expect(keys).toContain('s16_endorsement');
+    expect(keys.indexOf('s16_activity_report')).toBeLessThan(
+      keys.indexOf('s16_endorsement'),
+    );
+  });
+
+  it('asks a renewal for the original licence being renewed', () => {
+    expect(keysFor(S24)).toContain('s24_original_licence');
+    expect(keysFor(S13)).not.toContain('s24_original_licence');
+  });
+
+  it('tells everybody how to print and initial the pack', () => {
+    // Part 10.1 item 1, and the only row on the sheet about the pack itself.
+    for (const t of ALL) {
+      const row = buildChecklist(t, [], false, { answers: {} })
+        .sections.flatMap((s) => s.items)
+        .find((i) => i.key === 'printed_pack');
+      expect(row).toBeDefined();
+      expect(row!.note).toMatch(/single-sided/i);
+      expect(row!.note).toMatch(/UNSIGNED/);
+      expect(row!.note).toMatch(/initial every page/i);
+    }
+  });
+
+  it('asks for the proficiency Statement of Results as its own document', () => {
+    // Two documents from two different steps. An applicant who brings one and
+    // not the other is sent home, and "your competency papers" is what makes
+    // that happen.
+    const keys = keysFor(S13);
+    expect(keys).toContain('competency_copy');
+    expect(keys).toContain('proficiency_copy');
+  });
+});
