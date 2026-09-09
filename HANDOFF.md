@@ -8,8 +8,9 @@ Last updated: **2026-09-09**.
 
 ## 2026-09-09 — the cartridge drawing, the arsenal, and the SAPS 271 back on screen
 
-Deployed: `df04ec15` (full) then `641f79e0` (backend only). Three services
-online, both health checks and the public site twice each.
+Deployed: `df04ec15` (full), `641f79e0` (backend), `65c1d72b` (full),
+`36104303` (backend). Three services online each time, both health checks and
+the public site twice each.
 
 ### The cartridge, drawn rather than reproduced
 
@@ -36,6 +37,28 @@ Three traps, all of which produced a drawing that rendered without error:
   fontconfig offered — differently here and on the box. The SVG now carries
   geometry only; `DrawingText` travels beside it and pdfkit sets the lettering
   in the document's own type, which also makes it selectable in the PDF.
+- ⚠️ **The nose is a tangent ogive, and the bearing surface is proportional.**
+  What was there was `sqrt(1 − t²)` — a semicircle, which holds full diameter
+  and then drops vertically — plus a `+ 0.35 (1 − t)` term that bulged the
+  radius OUTWARD at the join, and a flat 6 mm shank that on a 9 mm Luger is
+  more than half the exposed bullet. Operator: *"yours looks like a fucking
+  dick head or a mushroom"*. The ogive radius is not tuned: it is the only one
+  that meets the shank flat and still reaches the tip in the length the round
+  has, so 9 mm Luger falls out at ~1.1 calibres (round nose) and .223 at ~3.4
+  (spitzer) from their own figures. Below a nose length of one bullet radius no
+  tangent ogive exists — the algebra returns a negative tangency radius and
+  draws a nose folded inside out — so a wadcutter takes a quarter ellipse.
+  ⚠️ **Changed in `lib/bench/geometry.ts` AND the backend port together.** The
+  Bench had this nose too, on its 2D drawing and revolved on its 3D view.
+- ⚠️ **Case brass and jacket copper, not two brasses.** Cartridge brass is ~70 %
+  copper and yellow; a jacket is ~95 % and reads red. Lit with the same stops
+  in a lighter tint the two differed only in exposure and the round read as one
+  turned piece with a seam. Same lighting structure, different hue.
+- ⚠️ **The prose must never point at the drawing.** Whether one is placed
+  depends on holding figures for the calibre, and where it lands is the
+  renderer's decision taken long after the writing — so "the drawing above"
+  comes out pointing at nothing, or at something underneath. `cartridgeFacts()`
+  now says so to the writer in as many words.
 - ⚠️ **`completeDims` derives the letters a sheet does not print.** Only **132 of
   the 215 sheets** carry all thirteen: a case with no shoulder does not print
   one, and a rimmed revolver case prints no extractor groove either. The strict
