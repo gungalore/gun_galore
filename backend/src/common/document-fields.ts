@@ -92,6 +92,26 @@ export const FIELD_ALIASES: Record<string, readonly FieldAlias[]> = {
     // ownedFirearmSerial, and it does.
     { vault: 'frame_serial', motivation: 'existing_firearm_{n}_frame_serial' },
     { vault: 'barrel_serial', motivation: 'existing_firearm_{n}_barrel_serial' },
+    /**
+     * ⚠️ AND THE RECEIVER, WHICH GOES TO THE LIVE BOX RATHER THAN A RETIRED
+     * ONE. The two above name the retired keys because the wizard collapsed
+     * its two serial boxes into `_serial` on 2026-09-07 and neither of them
+     * may claim it — whichever ran last would overwrite the other, and on a
+     * card where they genuinely differ that is the wrong number on a signed
+     * form. The receiver has no retired key of its own and no competitor for
+     * the live one, so it takes it.
+     *
+     * ⚠️ WHICH IS ALSO THE RIGHT ANSWER FOR THE FIREARM THAT NEEDED IT. The
+     * operator's Marlin prints NONE for the frame and NONE for the barrel and
+     * carries its number on the receiver; `ownedFirearmSerial` reads `_serial`
+     * first, so that number now wins over two placeholders instead of losing
+     * to them. Where a card prints one number against all three components —
+     * the common case — every key gets the same value and nothing changes.
+     */
+    {
+      vault: 'receiver_serial',
+      motivation: 'existing_firearm_{n}_serial',
+    },
     // ⚠️ NO MOTIVATION BOX YET, AND IT IS THE MOST USEFUL FIELD ON THE CARD.
     // The section decides the licence's term (LICENCE_YEARS) and therefore the
     // competency expiry that follows it, and credential-auto-date refuses to

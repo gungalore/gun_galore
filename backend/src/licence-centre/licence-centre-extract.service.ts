@@ -263,6 +263,24 @@ export const WANTED: Record<CredentialKind, string[]> = {
     'calibre',
     'frame_serial',
     'barrel_serial',
+    /**
+     * ⚠️ THE RECEIVER SERIAL, AND ITS ABSENCE LOST A FIREARM ITS IDENTITY.
+     * WANTED is both the question and the filter, so this key missing meant
+     * the reader was never asked for it AND would have discarded it anyway —
+     * the exact trap the note on 'model' above records, in a second place.
+     *
+     * The operator's Marlin prints NONE for the frame and NONE for the barrel
+     * and carries its number on the RECEIVER. Read into the vault it therefore
+     * had no serial at all: `ownedFirearmSections` matches an owned row to its
+     * card by serial and only by serial, so that firearm could never be placed
+     * under a section, its candidate uses were withheld (a row with no section
+     * gets none, deliberately), and SAPS 271 item 2.1 printed a blank where a
+     * serial belongs. Operator, 2026-09-09: "the Marlin has NONE for the
+     * barrel but does have a serial for the reciever, make sure its there."
+     * `serialsOf` in owned-firearm-sections.ts has read this key since it was
+     * written; nothing was ever putting one there.
+     */
+    'receiver_serial',
     'section',
   ],
   COMPETENCY_CERTIFICATE: [
@@ -959,6 +977,25 @@ export function userPrompt(
           'firearm_type is the Type row EXACTLY as printed, including any S/L,',
           'N/S/L or M/O in front of it - that prefix says whether the firearm is',
           'self-loading and must not be dropped or expanded.',
+          // ⚠️ THE READER WAS GUESSING WHICH NUMBER THIS WAS, and it guessed
+          // two different wrong ones. Across the operator's seven cards it put
+          // the holder's 13-digit ID number in licence_number on one layout
+          // and a bare 4-digit number on the other — the same value on every
+          // card of each layout. Four firearms were then flagged as copies of
+          // each other (documentFingerprints keys a licence on that number),
+          // and the 271's "Licence or permit no" box takes the same field.
+          'licence_number is the number of THIS LICENCE - the one the card',
+          'calls Licence No, Licence Number, Permit No or Reference. It is',
+          'unique to this one firearm.',
+          'NEVER the holder\'s ID number (13 digits), never a date or a year,',
+          'never a page or item number, and never a number shared with another',
+          'card. If the card prints no licence number, leave it out entirely -',
+          'an absent field is correct and a guessed one is worse than nothing.',
+          // The serials, and which row each one comes off.
+          'frame_serial, barrel_serial and receiver_serial each come off THEIR',
+          'OWN row. A card prints NONE against a component that carries no',
+          'number: transcribe that NONE rather than leaving the key out, and',
+          'never copy one row\'s number into another row\'s key.',
           '',
         ]
       : []),

@@ -53,6 +53,31 @@ function tag(prefix: string, v: string | undefined): string | null {
 }
 
 /**
+ * Could this string be a firearm licence number at all?
+ *
+ * ⚠️ TWO SHAPES ARE NEVER ONE, and both turned up in the wild on the same day:
+ *
+ *   • THIRTEEN DIGITS is a South African ID number. Every card belonging to
+ *     one person carries the same one, so keying a licence on it makes every
+ *     firearm a duplicate of the first.
+ *   • FOUR DIGITS OR FEWER, all numeric, is a year, a page number or an item
+ *     count. A licence number is longer than that and is not a bare year.
+ *
+ * ⚠️ DELIBERATELY PERMISSIVE OTHERWISE. This decides whether a number is worth
+ * COMPARING, not whether it is valid, and SAPS licence numbers vary by era and
+ * province. Refusing a real one costs a duplicate we would have caught; the
+ * serials still identify the card. Accepting a bad one tells somebody their
+ * licences are copies of each other.
+ */
+export function looksLikeLicenceNumber(v: string | undefined): boolean {
+  const n = norm(v);
+  if (!n) return false;
+  if (/^\d{13}$/.test(n)) return false;
+  if (/^\d{1,4}$/.test(n)) return false;
+  return n.length >= 5;
+}
+
+/**
  * The identities a document carries, as comparable strings. Two rows of the
  * same kind sharing ANY one of them are the same document.
  */
@@ -64,7 +89,35 @@ export function documentFingerprints(s: DuplicateSubject): string[] {
       // The licence number when it is printed; otherwise the serials. A
       // frame serial names the firearm on every South African card, so it is
       // the strongest of the three.
-      out.push(tag('licence', d.licence_number), tag('frame', d.frame_serial), tag('serial', d.serial_number), tag('barrel', d.barrel_serial));
+      /**
+       * ⚠️ THE SERIALS FIRST, AND THE LICENCE NUMBER ONLY IF IT LOOKS LIKE
+       * ONE. Read off the operator's own vault on 2026-09-09: the reader had
+       * put the holder's 13-digit ID number into `licence_number` on three
+       * cards and a bare four-digit number on four others — the same value
+       * every time — so a Nordiske .223, a Glock 9mm, a Mauser .30-06 and a
+       * Howa 6.5 Creedmoor were all flagged as copies of a CZ or a Marlin.
+       * Five of six firearms called duplicates of an unrelated one.
+       *
+       * The reader is told to do better (see the FIREARM_LICENCE guidance in
+       * licence-centre-extract.service.ts), and `looksLikeLicenceNumber` is
+       * what holds when it does not. A duplicate flag is the one place a bad
+       * read is loud rather than quiet: it tells a member their licences are
+       * copies of each other.
+       *
+       * ⚠️ AND `serial_number` WAS A KEY NOTHING EVER WROTE. The vault stores
+       * `serial`, `frame_serial`, `barrel_serial` and `receiver_serial`; that
+       * tag has matched nothing since it was written, and the receiver serial
+       * — the only number a Marlin carries — was invisible here as well.
+       */
+      out.push(
+        tag('frame', d.frame_serial),
+        tag('barrel', d.barrel_serial),
+        tag('receiver', d.receiver_serial),
+        tag('serial', d.serial),
+        looksLikeLicenceNumber(d.licence_number)
+          ? tag('licence', d.licence_number)
+          : null,
+      );
       break;
     case 'COMPETENCY_CERTIFICATE':
       out.push(tag('competency', d.competency_number));

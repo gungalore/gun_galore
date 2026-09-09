@@ -1,4 +1,9 @@
-import { documentFingerprints, duplicateNote, findDuplicate } from './credential-duplicates';
+import {
+  documentFingerprints,
+  duplicateNote,
+  findDuplicate,
+  looksLikeLicenceNumber,
+} from './credential-duplicates';
 
 const day = new Date('2026-09-01T10:00:00Z');
 const cand = (over: Partial<Parameters<typeof findDuplicate>[1][number]>) => ({
@@ -77,5 +82,87 @@ describe('findDuplicate', () => {
     expect(duplicateNote({ title: 'Licence - .30-06', createdAt: day })).toContain(
       '"Licence - .30-06", which you added on 2026-09-01',
     );
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// WHAT THE OPERATOR'S OWN VAULT HELD ON 2026-09-09.
+//
+// Seven firearm licence cards, six firearms, and FIVE flagged as duplicates.
+// The reader had put the holder's 13-digit ID number into `licence_number` on
+// three cards and a bare four-digit number on the other four — the same value
+// every time — so a Nordiske .223, a Glock 9mm, a Mauser .30-06 and a Howa
+// 6.5 Creedmoor were each called a copy of an unrelated CZ or Marlin.
+//
+// ⚠️ A DUPLICATE FLAG IS WHERE A BAD READ IS LOUD. It tells a member their
+// licences are copies of each other, on the screen where they check them.
+// ────────────────────────────────────────────────────────────────────
+
+const licence = (details: Record<string, string>) => ({
+  kind: 'FIREARM_LICENCE' as const,
+  details,
+  issuedOn: null,
+});
+
+describe('a licence number that cannot be one', () => {
+  it('⚠️ IGNORES A 13-DIGIT ID NUMBER, so one person is not one firearm', () => {
+    expect(looksLikeLicenceNumber('8001015009087')).toBe(false);
+    const f = documentFingerprints(
+      licence({ licence_number: '8001015009087', frame_serial: 'AB1234' }),
+    );
+    expect(f).toEqual(['frame:AB1234']);
+  });
+
+  it('⚠️ IGNORES A BARE YEAR, which four of the cards carried', () => {
+    expect(looksLikeLicenceNumber('2035')).toBe(false);
+    expect(documentFingerprints(licence({ licence_number: '2035' }))).toEqual(
+      [],
+    );
+  });
+
+  it('keeps a real one', () => {
+    expect(looksLikeLicenceNumber('SAPS/2019/0004471')).toBe(true);
+    expect(
+      documentFingerprints(licence({ licence_number: 'SAPS/2019/0004471' })),
+    ).toEqual(['licence:SAPS20190004471']);
+  });
+
+  it('⚠️ READS THE RECEIVER SERIAL, which nothing was reading', () => {
+    // The operator's Marlin prints NONE for the frame and NONE for the barrel
+    // and carries its number on the receiver.
+    const f = documentFingerprints(
+      licence({
+        frame_serial: 'NONE',
+        barrel_serial: 'NONE',
+        receiver_serial: 'MR90189D',
+      }),
+    );
+    expect(f).toEqual(['receiver:MR90189D']);
+  });
+
+  it('⚠️ TWO DIFFERENT FIREARMS ARE NOT A DUPLICATE PAIR', () => {
+    // The whole failure in one assertion: same bad licence_number, different
+    // serials, and they must not match.
+    const day = new Date('2026-09-09T10:00:00Z');
+    const cz = {
+      id: 'cz',
+      title: 'CZ 6.35',
+      createdAt: day,
+      ...licence({ licence_number: '2035', barrel_serial: '12345' }),
+    };
+    const glock = licence({ licence_number: '2035', frame_serial: 'ABCD12345' });
+    expect(findDuplicate(glock, [cz])).toBeNull();
+  });
+
+  it('still catches the same card scanned twice', () => {
+    const day = new Date('2026-09-09T10:00:00Z');
+    const first = {
+      id: 'a',
+      title: 'CZ 6.35',
+      createdAt: day,
+      ...licence({ licence_number: '2035', barrel_serial: '12345' }),
+    };
+    const again = licence({ licence_number: '2035', barrel_serial: '12345' });
+    expect(findDuplicate(again, [first])?.id).toBe('a');
   });
 });
