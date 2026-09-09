@@ -1,5 +1,6 @@
 import { MotivationLicenceType } from '@prisma/client';
 import { arsenalBlock, type ArsenalRow } from './motivation-arsenal';
+import type { CandidateUses } from './firearm-uses.service';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 import { factPackFields, LICENCE_TYPE_LABELS } from './motivation-fields';
 import { answerValue } from '../common/card-placeholder';
@@ -236,6 +237,64 @@ export interface FactPack {
    * Three readers, one source, so they cannot disagree serial for serial.
    */
   arsenal?: ArsenalRow[];
+
+  /**
+   * What the applicant might do with the firearm they are APPLYING for.
+   *
+   * ⚠️ THE OTHER TENSE, AND IT IS AN ARGUMENT. Operator, 2026-09-09: "if I
+   * state that I already, the obvious question will be why do you need a
+   * firearm for it if you already do." These sentences are written for
+   * somebody who does not own the firearm yet.
+   *
+   * ⚠️ PRESENT ONLY WHERE THE APPLICANT STATED NOTHING THEMSELVES. Where they
+   * tapped what they hunt or what they shoot, that is the purpose and this is
+   * absent — the same rule `licensedFor` follows on a held row.
+   */
+  intendedUses?: CandidateUses[];
+}
+
+/**
+ * What the applicant might do with the firearm they are applying for.
+ *
+ * ⚠️ THE WHOLE REASON A BASKET OF REASONS EXISTS. Operator, 2026-09-09: "lets
+ * say I have a section 16 300 winmag. Now I want a 300 prc, they both can do
+ * the exact same thing, so this is why the basket of reasons exists. so it can
+ * pick one for the 300 winmag I already own and state another reason why I
+ * would want the 300 prc."
+ *
+ * Two rifles that do the same thing is the hardest case a motivation faces,
+ * and the answer is not to pretend they differ — it is to spend a DIFFERENT
+ * reason on each, so the held one is accounted for and the new one still has
+ * something left to argue.
+ */
+function renderIntendedUses(uses?: CandidateUses[]): string {
+  const groups = (uses ?? []).filter((g) => g.uses.length);
+  if (!groups.length) return '';
+  const lists = groups
+    .map((g) => {
+      const items = g.uses
+        .map((u) => `    <use>${u.replace(/[<>]/g, '')}</use>`)
+        .join('\n');
+      return `  <uses for="${g.label.replace(/["<>]/g, '')}">\n${items}\n  </uses>`;
+    })
+    .join('\n');
+  return `
+<intended-uses>
+What somebody could do with the firearm APPLIED FOR. These are written for a
+class of firearm, not from anything the applicant said, and they are in the
+future tense because the applicant does not own this firearm yet — that tense
+is deliberate and must survive into the document. A sentence saying the
+applicant ALREADY does these things with this firearm is untrue and invites the
+obvious refusal: if you already do it, what is the licence for?
+PICK ONE and build the purpose from it. Do not list them, do not use more than
+one, and where the facts name the applicant's own association use that name in
+place of "my association".
+⚠️ AND IT MUST NOT BE A REASON ALREADY SPENT ON A FIREARM THEY HOLD. Where a
+firearm in <arsenal> has been given a purpose, this firearm needs a different
+one — two rifles that do the same job is the case this document has to answer,
+not repeat.
+${lists}
+</intended-uses>`;
 }
 
 /** The annexure list, rendered as citation instructions. */
@@ -925,6 +984,7 @@ ${CLOSING_GUIDE[plan.closing]}
 ${CADENCE_GUIDE[plan.cadence]}
 ${renderOverlap(pack.overlapNote)}
 ${arsenalBlock(pack.arsenal ?? [])}
+${renderIntendedUses(pack.intendedUses)}
 ${renderResearch(pack.research)}
 ${renderAnnexures(pack.annexures)}
 ${UNTRUSTED_NOTICE}

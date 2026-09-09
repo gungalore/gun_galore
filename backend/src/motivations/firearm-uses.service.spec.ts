@@ -261,9 +261,10 @@ describe('resolving a row', () => {
       'occasional hunting',
       'occasional sport shooting',
     ]);
-    // ⚠️ THREE ROUNDS, ONE WRITE PER LIST. The rounds are where the volume
-    // comes from; the table is written once at the end, not per round.
-    expect(complete).toHaveBeenCalledTimes(3);
+    // ⚠️ THREE ROUNDS PLUS THE RESTATEMENT, ONE WRITE PER LIST. The rounds are
+    // where the volume comes from; the fourth call turns the tense; the table
+    // is written once at the end, not per round.
+    expect(complete).toHaveBeenCalledTimes(4);
     expect(upsert).toHaveBeenCalledTimes(4);
     const keys = upsert.mock.calls.map((c) => c[0].where.classKey);
     expect(keys).toContain(useClassKey(RIFLE, 's16_sport'));
@@ -315,6 +316,94 @@ describe('resolving a row', () => {
       'I hunt impala in thick bushveld cover.',
       'I shoot springbok on open Karoo plains in winter.',
     ]);
+  });
+
+  /**
+   * ⚠️ THE TENSE IS AN ARGUMENT, NOT A STYLE. Operator, 2026-09-09: "if I
+   * state that I already, the obvious question will be why do you need a
+   * firearm for it if you already do." A firearm in the safe is used in the
+   * present tense truthfully; one on an application form is not owned yet.
+   */
+  it('⚠️ RESTATES EVERY USE FOR A FIREARM NOBODY OWNS YET', async () => {
+    const WANT = 'I would like to hunt plains game at moderate ranges.';
+    let call = 0;
+    const { svc, upsert, complete } = build({
+      complete: jest.fn(async () => {
+        call++;
+        if (call <= 3) return reply();
+        return reply({ occasional_hunter: [WANT] });
+      }),
+    });
+    await svc.forClass(RIFLE);
+    const sent = complete.mock.calls[3][0].messages[0].content[0].text;
+    expect(sent).toContain('RESTATE EVERY ONE OF THEM');
+    expect(sent).toContain('does NOT yet own this');
+    expect(sent).toContain(HUNT);
+
+    const hunt = upsert.mock.calls.find(
+      (c) => c[0].where.classKey === useClassKey(RIFLE, 's15_hunt'),
+    );
+    // ⚠️ BOTH VOICES ON ONE ROW. The present tense is the truth for a firearm
+    // already licensed; the future tense is the truth for one applied for.
+    expect(hunt[0].create.uses).toEqual([HUNT]);
+    expect(hunt[0].create.usesProspective).toEqual([WANT]);
+  });
+
+  it('⚠️ SERVES THE VOICE THE CALLER ASKED FOR', async () => {
+    const rows = [
+      {
+        classKey: useClassKey(RIFLE, 's15_hunt'),
+        uses: [HUNT],
+        usesProspective: ['I would like to hunt plains game.'],
+      },
+      {
+        classKey: useClassKey(RIFLE, 's15_sport'),
+        uses: [SPORT],
+        usesProspective: ['I would like to shoot club matches.'],
+      },
+    ];
+    const held = await build({ rows }).svc.forClass(RIFLE, '', 'held');
+    const applying = await build({ rows }).svc.forClass(RIFLE, '', 'applying');
+    expect(held[0].uses).toEqual([HUNT]);
+    expect(applying[0].uses).toEqual(['I would like to hunt plains game.']);
+  });
+
+  it('⚠️ AN APPLICATION NARROWS WHAT A CARD CANNOT', async () => {
+    // A card saying "section 16" does not say hunter or sports shooter, so a
+    // HELD firearm gets both. An S16_DEDICATED_HUNTER application says which.
+    const rows = [
+      { classKey: useClassKey(RIFLE, 's16_hunt'), uses: ['hunt'] },
+      { classKey: useClassKey(RIFLE, 's16_sport'), uses: ['sport'] },
+    ];
+    const c = { ...RIFLE, section: 'section 16' };
+    const both = await build({ rows }).svc.forClass(c);
+    const one = await build({ rows }).svc.forClass(c, '', 'held', ['s16_hunt']);
+    expect(both.map((g) => g.label)).toEqual([
+      'dedicated hunting',
+      'dedicated sport shooting',
+    ]);
+    expect(one.map((g) => g.label)).toEqual(['dedicated hunting']);
+  });
+
+  it('⚠️ A FAILED RESTATEMENT NEVER COSTS THE PRESENT-TENSE LIST', async () => {
+    // Most firearms in a pack are already held and never need the other voice.
+    let call = 0;
+    const { svc, upsert } = build({
+      complete: jest.fn(async () => {
+        call++;
+        if (call <= 3) return reply();
+        throw new Error('503 from the provider');
+      }),
+    });
+    await expect(svc.forClass(RIFLE)).resolves.toEqual([
+      { label: 'occasional hunting', uses: [HUNT] },
+      { label: 'occasional sport shooting', uses: [SPORT] },
+    ]);
+    const hunt = upsert.mock.calls.find(
+      (c) => c[0].where.classKey === useClassKey(RIFLE, 's15_hunt'),
+    );
+    expect(hunt[0].create.uses).toEqual([HUNT]);
+    expect(hunt[0].create.usesProspective).toEqual([]);
   });
 
   it('⚠️ A LATER ROUND THAT FAILS KEEPS THE EARLIER ONES', async () => {

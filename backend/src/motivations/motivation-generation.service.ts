@@ -66,7 +66,39 @@ import {
   FirearmUsesService,
   useClassKey,
   type CandidateUses,
+  type UseSlice,
 } from './firearm-uses.service';
+
+/**
+ * The section the application itself is lodged under, as a licence card writes
+ * it, and which discipline it asks for.
+ *
+ * ⚠️ `appliedSectionNumber` COULD NOT ANSWER EITHER QUESTION. It returns a
+ * bare number, has no case for S14 (which falls through to ''), and it cannot
+ * say that S16_DEDICATED_HUNTER means hunting and not sport — which is the
+ * whole point of asking here.
+ *
+ * ⚠️ A RENEWAL IS ABSENT FROM BOTH, deliberately. Section 24 does not record
+ * the section of the licence being renewed.
+ */
+const APPLIED_SECTION: Partial<Record<MotivationLicenceType, string>> = {
+  [MotivationLicenceType.S13_SELF_DEFENCE]: 'section 13',
+  [MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE]: 'section 14',
+  [MotivationLicenceType.S15_OCCASIONAL_HUNTER]: 'section 15',
+  [MotivationLicenceType.S16_DEDICATED_HUNTER]: 'section 16',
+  [MotivationLicenceType.S16_DEDICATED_SPORT]: 'section 16',
+};
+
+const APPLIED_SLICES: Partial<Record<MotivationLicenceType, UseSlice[]>> = {
+  [MotivationLicenceType.S13_SELF_DEFENCE]: ['s13'],
+  [MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE]: ['s14'],
+  // ⚠️ ONE ENUM VALUE COVERS BOTH. Section 15 is the occasional hunter OR the
+  // occasional sports shooter and the product does not split them, so both
+  // lists are offered and the writer chooses.
+  [MotivationLicenceType.S15_OCCASIONAL_HUNTER]: ['s15_hunt', 's15_sport'],
+  [MotivationLicenceType.S16_DEDICATED_HUNTER]: ['s16_hunt'],
+  [MotivationLicenceType.S16_DEDICATED_SPORT]: ['s16_sport'],
+};
 import { geocodeZa, type LatLng } from '../news/news-geo';
 import {
   buildAnnexures,
@@ -744,6 +776,21 @@ export class MotivationGenerationService {
       const arsenal = await this.arsenalFor(row.userId, answers);
 
       /**
+       * ⚠️ AND THE FIREARM BEING APPLIED FOR, IN THE OTHER TENSE. Operator,
+       * 2026-09-09, on why the basket exists at all: "lets say I have a
+       * section 16 300 winmag. Now I want a 300 prc, they both can do the
+       * exact same thing, so this is why the basket of reasons exists. so it
+       * can pick one for the 300 winmag I already own and state another reason
+       * why I would want the 300 prc."
+       *
+       * ⚠️ WHICH ONLY WORKS IF THE TENSES DIFFER. "I use it for plains game"
+       * is true of the Win Mag in the safe and false of the PRC on the form —
+       * and worse than false: "if I state that I already, the obvious question
+       * will be why do you need a firearm for it if you already do."
+       */
+      const intendedUses = await this.intendedUsesFor(row.licenceType, answers);
+
+      /**
        * ⚠️ THE CARTRIDGE, MEASURED RATHER THAN RECALLED. Operator, 2026-09-09:
        * "why arent we pulling in the dimension sheet of the cartridge its
        * using from The Bench?" MO000071 spent two sections on "115 to 147
@@ -773,6 +820,7 @@ export class MotivationGenerationService {
           firearm_calibre: displayCalibre(answers.firearm_calibre),
         },
         arsenal,
+        intendedUses,
         derived: this.deriveFacts(answers),
         // Only when there is genuinely an overlap. Passing a note otherwise
         // would have the document argue against a problem it does not have.
@@ -1708,6 +1756,59 @@ export class MotivationGenerationService {
       if (found.length) uses[r.index] = found;
     }
     return arsenalRows(answers, sections, uses);
+  }
+
+  /**
+   * What the applicant might do with the firearm they are APPLYING for.
+   *
+   * ⚠️ ONLY WHERE THEY HAVE STATED NOTHING THEMSELVES, which is the same rule
+   * `licensedFor` follows on a held row and for the same reason. The wizard
+   * asks what they hunt, where, why they shoot and in what formats; where any
+   * of that is answered it IS the purpose, it is theirs, and offering the
+   * writer a generated alternative beside it invites a nicer sentence than the
+   * truth. Rule 12 is enforced by absence, not by hope.
+   *
+   * ⚠️ THE APPLICATION NARROWS THE DISCIPLINE WHERE A CARD CANNOT. A held
+   * section 16 firearm is offered both hunting and sport reasons because the
+   * card does not say which; an S16_DEDICATED_HUNTER application says exactly
+   * which, so only that list is asked for.
+   *
+   * ⚠️ AND A RENEWAL GETS NOTHING. Section 24 does not record the section of
+   * the licence being renewed, so there is no discipline to ask under — and a
+   * renewal argues continuity rather than a new purpose anyway.
+   */
+  private async intendedUsesFor(
+    licenceType: MotivationLicenceType,
+    answers: Record<string, string>,
+  ): Promise<CandidateUses[]> {
+    const stated = [
+      'hunt_game_class',
+      'hunt_reasons',
+      'sport_reasons',
+      'sport_formats',
+      'intended_quarry',
+    ].some((k) => (answers[k] ?? '').trim() !== '');
+    if (stated) return [];
+
+    const wanted = APPLIED_SLICES[licenceType];
+    if (!wanted?.length) return [];
+
+    return this.firearmUses.forClass(
+      {
+        calibre: answers.firearm_calibre ?? '',
+        type: answers.firearm_type ?? '',
+        action:
+          answers.firearm_action === 'Semi-automatic (self-loading)'
+            ? 'Self-loading'
+            : (answers.firearm_action ?? '').trim()
+              ? 'Manual'
+              : '',
+        section: APPLIED_SECTION[licenceType] ?? '',
+      },
+      answers.firearm_serial || answers.firearm_calibre || '',
+      'applying',
+      wanted,
+    );
   }
 
   /**

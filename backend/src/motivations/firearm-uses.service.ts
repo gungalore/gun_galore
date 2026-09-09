@@ -201,6 +201,23 @@ const SLICES_FOR_SECTION: Record<string, readonly UseSlice[]> = {
  * HUNTING list and an occasional SPORT list, and the writer chooses which
  * argument it is making before it chooses a sentence.
  */
+/**
+ * Which tense a list is written in, and it is an ARGUMENT rather than a style.
+ *
+ * ⚠️ Operator, 2026-09-09: "if I state that I already, the obvious question
+ * will be why do you need a firearm for it if you already do." A firearm in
+ * the safe is used in the present tense, truthfully; a firearm on an
+ * application form is not owned yet, so a sentence saying "I use it for plains
+ * game" is both untrue and an argument against granting the licence.
+ */
+export type Voice = 'held' | 'applying';
+
+/** Both voices of one class, as one generation produces them. */
+interface Generated {
+  held: Partial<Record<UseSlice, string[]>>;
+  applying: Partial<Record<UseSlice, string[]>>;
+}
+
 export interface CandidateUses {
   /** "occasional hunting", "dedicated sport shooting", "self-defence". */
   label: string;
@@ -480,17 +497,34 @@ export class FirearmUsesService {
    * `documentScope` only relaxes its invented-purpose rule for a row that
    * actually came back with something.
    */
-  async forClass(c: FirearmClass, seed = ''): Promise<CandidateUses[]> {
+  async forClass(
+    c: FirearmClass,
+    seed = '',
+    voice: Voice = 'held',
+    only?: readonly UseSlice[],
+  ): Promise<CandidateUses[]> {
     // Nothing to key on. A row with no calibre and no type is not a firearm.
     if (!c.calibre?.trim() && !c.type?.trim()) return [];
 
     // ⚠️ NO SECTION, NO USES. See the banner: we do not know whether this is a
     // self-defence firearm or a sporting one, and guessing writes the wrong
     // sentence onto a signed document.
-    const wanted = SLICES_FOR_SECTION[(c.section ?? '').trim().toLowerCase()];
-    if (!wanted?.length) return [];
+    const bySection =
+      SLICES_FOR_SECTION[(c.section ?? '').trim().toLowerCase()] ?? [];
+    /**
+     * ⚠️ THE APPLICATION NARROWS WHAT A CARD CANNOT. A licence card saying
+     * "section 16" does not say whether it was issued to a hunter or a sports
+     * shooter, so a held firearm is offered both. An APPLICATION says exactly
+     * which — S16_DEDICATED_HUNTER is not S16_DEDICATED_SPORT — so the caller
+     * passes the one, and the firearm applied for is not offered the wrong
+     * discipline's reasons.
+     */
+    const wanted = only?.length
+      ? bySection.filter((s) => only.includes(s))
+      : bySection;
+    if (!wanted.length) return [];
 
-    const hit = await this.read(c, wanted);
+    const hit = await this.read(c, wanted, voice);
     if (hit === null) return [];
     if (hit.length) return label(wanted, hit, seed);
 
@@ -498,7 +532,7 @@ export class FirearmUsesService {
     if (!generated) return [];
     return label(
       wanted,
-      wanted.map((s) => generated[s] ?? []),
+      wanted.map((s) => generated[voice][s] ?? []),
       seed,
     );
   }
@@ -513,13 +547,19 @@ export class FirearmUsesService {
   private async read(
     c: FirearmClass,
     wanted: readonly UseSlice[],
+    voice: Voice,
   ): Promise<string[][] | null> {
     try {
       const rows = await this.prisma.firearmUseProfile.findMany({
         where: { classKey: { in: wanted.map((s) => useClassKey(c, s)) } },
-        select: { classKey: true, uses: true },
+        select: { classKey: true, uses: true, usesProspective: true },
       });
-      const bySlice = new Map(rows.map((r) => [r.classKey, r.uses]));
+      const bySlice = new Map(
+        rows.map((r) => [
+          r.classKey,
+          voice === 'applying' ? (r.usesProspective ?? []) : r.uses,
+        ]),
+      );
       // ⚠️ ALL OR NOTHING. A section 16 row wants two slices and one
       // generation writes both, so holding one and not the other means the
       // write was interrupted — regenerating both is cheaper than reasoning
@@ -555,9 +595,7 @@ export class FirearmUsesService {
    * ⚠️ THE COST IS PAID ONCE, EVER, PER CLASS. Three calls the first time
    * anybody holds a .30-06; nothing for every applicant after them.
    */
-  private async generate(
-    c: FirearmClass,
-  ): Promise<Partial<Record<UseSlice, string[]>> | null> {
+  private async generate(c: FirearmClass): Promise<Generated | null> {
     if (!this.llm.isConfigured()) return null;
 
     const slices = eligibleSlices(c.type, c.action);
@@ -607,15 +645,95 @@ export class FirearmUsesService {
     }
 
     if (!rounds) return null;
-    const result = Object.fromEntries(
+    const held = Object.fromEntries(
       slices.map((s) => [s, out[s]]),
     ) as Partial<Record<UseSlice, string[]>>;
+    const applying = await this.restate(c, slices, out);
     this.logger.log(
       `Use profile ${c.calibre}/${c.type}: ${rounds} round(s), ` +
-        slices.map((s) => `${s}=${out[s].length}`).join(' '),
+        slices
+          .map((s) => `${s}=${out[s].length}/${applying[s]?.length ?? 0}`)
+          .join(' '),
     );
-    await this.store(c, slices, result, model);
-    return result;
+    await this.store(c, slices, { held, applying }, model);
+    return { held, applying };
+  }
+
+  /**
+   * The same uses, restated for a firearm the applicant does not own yet.
+   *
+   * ⚠️ THE TENSE IS AN ARGUMENT, NOT A STYLE. Operator, 2026-09-09: "send it a
+   * fourth querry to state that the whole answer should be phrased as 'would
+   * like to' or 'I have taken an interest in' … because if I state that I
+   * already, the obvious question will be why do you need a firearm for it if
+   * you already do."
+   *
+   * That is the whole of it. "I use it for plains game at 300 m" is true of a
+   * rifle in the safe and false of one on an application form — and a DFO
+   * reading it about the firearm applied for has been handed the reason to
+   * refuse: you are already doing this, so what is the licence for?
+   *
+   * ⚠️ A RESTATEMENT, NOT A SECOND GENERATION. Asking for a fresh prospective
+   * list would give a different set of activities, and the two voices would
+   * then disagree about what this class of firearm is even for. It is the same
+   * material, turned.
+   *
+   * ⚠️ AND IT NEVER COSTS THE PRESENT-TENSE LIST. A failure here returns the
+   * lists empty and the row still stores everything `uses` holds; a firearm
+   * already held — which is most of them — never needed this voice at all.
+   */
+  private async restate(
+    c: FirearmClass,
+    slices: readonly UseSlice[],
+    have: Record<string, string[]>,
+  ): Promise<Partial<Record<UseSlice, string[]>>> {
+    if (slices.every((s) => !have[s].length)) return {};
+    const lines = [
+      'Here are the uses you gave for this class of firearm.',
+      '',
+    ];
+    for (const s of slices) {
+      lines.push(`  ${SLICE_KEY[s]}:`);
+      if (!have[s].length) lines.push('    (nothing)');
+      for (const u of have[s]) lines.push(`    - ${u}`);
+    }
+    lines.push(
+      '',
+      'RESTATE EVERY ONE OF THEM for somebody who does NOT yet own this',
+      'firearm and is applying for a licence for it. Same activity, same',
+      'detail, same order — only the standing changes. Write each as something',
+      'intended or wanted rather than something already done: "I would like',
+      'to…", "I have taken an interest in…", "I intend to…", "I want to be',
+      'able to…". Vary the openings; do not begin every sentence the same way.',
+      '',
+      'Change NOTHING else. Do not add uses, do not drop any, do not make them',
+      'grander, and keep every rule you were given.',
+    );
+
+    try {
+      const res = await this.llm.complete({
+        maxTokens: 4000,
+        timeoutMs: 90_000,
+        system: SYSTEM,
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: lines.join('\n') }],
+          },
+        ],
+        json: { schema: schemaFor(slices) },
+        purpose: 'motivation.firearm-uses',
+      });
+      const raw = JSON.parse(res.text) as Record<string, unknown>;
+      return Object.fromEntries(
+        slices.map((s) => [s, this.clean(raw[SLICE_KEY[s]], s, c, PER_SLICE)]),
+      ) as Partial<Record<UseSlice, string[]>>;
+    } catch (err) {
+      this.logger.warn(
+        `Use profile restatement failed for ${c.calibre}/${c.type}: ${(err as Error).message}`,
+      );
+      return {};
+    }
   }
 
   /** One round's question, carrying everything the earlier rounds produced. */
@@ -670,7 +788,12 @@ export class FirearmUsesService {
    * where it costs nothing, rather than in the writer's draft, where it costs
    * a regeneration and can fail the run to an admin.
    */
-  private clean(v: unknown, slice: UseSlice, c: FirearmClass): string[] {
+  private clean(
+    v: unknown,
+    slice: UseSlice,
+    c: FirearmClass,
+    cap: number = PER_ROUND,
+  ): string[] {
     if (!Array.isArray(v)) return [];
     const out: string[] = [];
     let refused = 0;
@@ -705,7 +828,7 @@ export class FirearmUsesService {
         continue;
       }
       out.push(u);
-      if (out.length >= PER_ROUND) break;
+      if (out.length >= cap) break;
     }
     if (refused) {
       // Not an error — the screen is doing its job — but a class that loses
@@ -721,11 +844,12 @@ export class FirearmUsesService {
   private async store(
     c: FirearmClass,
     slices: readonly UseSlice[],
-    out: Partial<Record<UseSlice, string[]>>,
+    out: Generated,
     model: string,
   ): Promise<void> {
     for (const slice of slices) {
-      const uses = out[slice] ?? [];
+      const uses = out.held[slice] ?? [];
+      const usesProspective = out.applying[slice] ?? [];
       try {
         // ⚠️ upsert, NOT create. Two applications on the same calibre race
         // here, and losing that race must cost the second one its write, never
@@ -739,9 +863,10 @@ export class FirearmUsesService {
             action: c.action ?? '',
             slice,
             uses,
+            usesProspective,
             model,
           },
-          update: { uses, model },
+          update: { uses, usesProspective, model },
         });
       } catch (err) {
         this.logger.warn(`Use profile write failed: ${(err as Error).message}`);

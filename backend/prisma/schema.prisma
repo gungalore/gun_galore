@@ -5187,9 +5187,20 @@ model FirearmUseProfile {
   /// Which section-and-discipline this row answers. See UseSlice.
   slice String
 
-  /// The generated uses, one sentence each, first person. Empty is a real
-  /// answer: this calibre suits nothing under this section.
+  /// The generated uses, one sentence each, first person, PRESENT TENSE —
+  /// for a firearm the applicant already holds, where "I use it for" is true.
+  /// Empty is a real answer: this calibre suits nothing under this section.
   uses String[]
+
+  /// The same uses restated PROSPECTIVELY — "I would like to", "I have taken
+  /// an interest in" — for the firearm being APPLIED FOR, which the applicant
+  /// does not own yet.
+  ///
+  /// ⚠️ THE TENSE IS AN ARGUMENT, NOT A STYLE. Operator, 2026-09-09: "if I
+  /// state that I already, the obvious question will be why do you need a
+  /// firearm for it if you already do." A present-tense sentence about a
+  /// firearm nobody owns is both untrue and self-defeating.
+  usesProspective String[]
 
   /// Which model wrote them, so a bad batch can be found and cleared.
   model String?
