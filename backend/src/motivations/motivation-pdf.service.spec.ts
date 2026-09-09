@@ -991,6 +991,49 @@ describe('the cartridge drawing', () => {
     expect(t).not.toContain('THECARTRIDGE—9MMLUGER');
   });
 
+  // ── The figures ───────────────────────────────────────────────────
+  //
+  // Operator, 2026-09-09, item 3 of five: "the CIP dimensions should be inside
+  // the application where the firearm is described."
+
+  const dims = [
+    { label: 'Overall length', value: '29.69 mm' },
+    { label: 'Case length', value: '19.15 mm' },
+    { label: 'Bullet diameter', value: '9.03 mm' },
+    { label: 'Maximum average pressure', value: '2350 bar' },
+  ];
+
+  it('⚠️ PUTS THE FIGURES IN THE BODY when the cover took the picture', async () => {
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: hero,
+      cartridgeDims: dims,
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+
+    for (const row of dims) {
+      expect(t).toContain(row.label);
+      expect(t).toContain(row.value);
+    }
+    // ⚠️ AND THE PICTURE IS STILL ONLY ON THE COVER. The body gets the numbers
+    // instead of the drawing, not as well as it.
+    expect(t.split('overall 29.69 mm').length - 1).toBe(1);
+  });
+
+  it('⚠️ AND GIVES THEM A HEADING when the writer never raised the subject', async () => {
+    // Without this the figures would land in whatever section happened to be
+    // open. The fallback exists for exactly this and had to learn that the
+    // body still owns something once the drawing moved to the cover.
+    const { pdf } = await svc.render({
+      ...makeInput('Introduction:\n\nI am applying under section 13.'),
+      cartridgeDrawing: hero,
+      cartridgeDims: dims,
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t.replace(/\s+/g, '')).toContain('THECARTRIDGE—9MMLUGER');
+    expect(t).toContain('Maximum average pressure');
+  });
+
   it('⚠️ LEAVES THE PARTICULARS TABLE ON THE COVER, on every layout', async () => {
     // ⚠️ THIS IS THE TEST THE FIRST HERO FAILED. Drawn at the full column it
     // came to 73 mm, the cover ran over, and the whole grid moved to page two

@@ -1,5 +1,6 @@
 import {
   canDraw,
+  cartridgeDimRows,
   cartridgeDrawing,
   completeDims,
   profile,
@@ -194,6 +195,75 @@ const tipWidthFrac = (
   }
   throw new Error('the nose does not span the point measured');
 };
+
+// ────────────────────────────────────────────────────────────────────
+// THE FIGURES THAT GO BESIDE THE FIREARM.
+//
+// Operator, 2026-09-09, item 3 of five: "the CIP dimensions should be inside
+// the application where the firearm is described."
+// ────────────────────────────────────────────────────────────────────
+
+describe('the printed figures', () => {
+  const rowsFor = (sheet: Record<string, number | null>, pmax?: number) => {
+    const c = completeDims(sheet)!;
+    return cartridgeDimRows(c.dims, c.derived, pmax ?? null);
+  };
+  const labels = (rows: { label: string }[]) => rows.map((r) => r.label);
+
+  it('reads as words, in the order somebody checks a chambering', () => {
+    expect(labels(rowsFor(REMINGTON, 4300))).toEqual([
+      'Overall length',
+      'Case length',
+      'Bullet diameter',
+      'Neck diameter',
+      'Shoulder diameter',
+      'Base diameter',
+      'Rim diameter',
+      'Rim thickness',
+      'Maximum average pressure',
+    ]);
+    expect(rowsFor(REMINGTON, 4300)[0].value).toBe('57.40 mm');
+    expect(rowsFor(REMINGTON, 4300)[8].value).toBe('4300 bar');
+  });
+
+  it('⚠️ NEVER PRINTS A LETTER THE SHEET DID NOT CARRY', () => {
+    // 9 mm Luger prints no P2 — it has no shoulder. completeDims stands one in
+    // so the silhouette can be CUT, placing it at the mouth; printing that as
+    // a shoulder diameter states a measurement of a feature the cartridge does
+    // not have, in a document the applicant signs.
+    expect(completeDims(LUGER)!.derived.has('P2')).toBe(true);
+    expect(labels(rowsFor(LUGER))).not.toContain('Shoulder diameter');
+
+    // .38 Special has no extractor groove either, and no shoulder.
+    expect(labels(rowsFor(SPECIAL))).not.toContain('Shoulder diameter');
+  });
+
+  it('drops the pressure rather than inventing one', () => {
+    // A sheet we hold no pressure for simply loses the row. A blank or a zero
+    // beside "Maximum average pressure" reads as a figure, and a wrong one is
+    // worse than a missing one on a page about a chambering.
+    expect(labels(rowsFor(REMINGTON))).not.toContain(
+      'Maximum average pressure',
+    );
+    expect(labels(rowsFor(REMINGTON, 4300))).toContain(
+      'Maximum average pressure',
+    );
+  });
+
+  it('⚠️ NAMES NO SOURCE ANYWHERE, which is a copyright boundary', () => {
+    // CLAUDE.md's Bench rule, and it does not stop at the Bench: the spliced
+    // page this stands in for was captioned with somebody else's name and
+    // printed straight into our table of contents.
+    const all = rowsFor(CREEDMOOR, 4350)
+      .map((r) => `${r.label} ${r.value}`)
+      .join(' ');
+    for (const word of ['C.I.P.', 'CIP', 'SAAMI', 'manual', 'published']) {
+      expect(all).not.toContain(word);
+    }
+    // And no bare sheet letters either — "P2" is not a word.
+    expect(all).not.toMatch(/\b(P1|P2|L1|L3|L6|H1|H2|G1|E1|R1)\b/);
+  });
+});
 
 describe('the tip', () => {
   it('⚠️ COMES TO A POINT ON A RIFLE ROUND, instead of stopping on a face', () => {

@@ -49,6 +49,7 @@ import { readFile } from 'node:fs/promises';
 import sharp from 'sharp';
 import { findCartridge } from './motivation-cartridge';
 import {
+  cartridgeDimRows,
   cartridgeDrawing,
   completeDims,
   type DrawingText,
@@ -763,6 +764,17 @@ export class MotivationRenderService {
     const printable = await this.annexureImages(row.uploads ?? [], annexures);
     const pressClippings = await this.buildPressClippings(pressIncidents);
 
+    /**
+     * ⚠️ ONE LOOKUP, TWO PLACES ON THE PAGE. The drawing is the cover's hero
+     * and the figures go in the body beside the firearm, and both come off the
+     * same matched sheet — built once so a round that matches for one can
+     * never fail to match for the other.
+     */
+    const cartridge = await this.cartridgeDrawingFor(
+      answers.firearm_calibre,
+      heroSubtitle(answers),
+    );
+
     return this.pdf.render({
       referenceNumber: row.referenceNumber,
       // The applicant's REAL name — the documented exception to the site-wide
@@ -854,10 +866,15 @@ export class MotivationRenderService {
       // cartridge its using from The Bench?" Both are still built because the
       // spliced page is the fallback when we hold no figures for the round;
       // the renderer prints one or the other, never both.
-      cartridgeDrawing: await this.cartridgeDrawingFor(
-        answers.firearm_calibre,
-        heroSubtitle(answers),
-      ),
+      cartridgeDrawing: cartridge,
+      /**
+       * ⚠️ THE FIGURES GO WHERE THE PICTURE NO LONGER IS. The drawing is the
+       * cover's hero and carries two lengths; the set a reviewer checks a
+       * chambering against belongs beside the prose describing the firearm.
+       * Operator, 2026-09-09: "the CIP dimensions should be inside the
+       * application where the firearm is described."
+       */
+      cartridgeDims: cartridge?.dims,
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
       // ⚠️ THE APPLICANT'S PAGE, NOT THE REGISTRAR'S. See MotivationPdfInput.
@@ -899,6 +916,7 @@ export class MotivationRenderService {
         texts: DrawingText[];
         label: string;
         hero?: { subtitle: string };
+        dims?: { label: string; value: string }[];
       }
     | undefined
   > {
@@ -965,6 +983,11 @@ export class MotivationRenderService {
          * body its figure back must not have to remember to reinstate it.
          */
         ...(heroLine ? { hero: { subtitle: heroLine } } : {}),
+        dims: cartridgeDimRows(
+          completed.dims,
+          completed.derived,
+          hit.dims.pmaxBar ?? hit.pmaxBar,
+        ),
       };
     } catch (err) {
       this.logger?.warn?.(

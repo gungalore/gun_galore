@@ -646,6 +646,21 @@ export interface MotivationPdfInput {
     };
   };
   /**
+   * The cartridge's dimensions, printed beside the firearm they belong to.
+   *
+   * Operator, 2026-09-09, item 3 of five: "the CIP dimensions should be inside
+   * the application where the firearm is described."
+   *
+   * ⚠️ ONLY FIGURES THE SHEET ACTUALLY PRINTED. `completeDims` stands letters
+   * in so a shape can be CUT — a case with no shoulder is drawn with its
+   * shoulder at the mouth — and a stood-in letter has no business being
+   * printed as though it were published. The caller filters on `derived`, the
+   * same set the drawing's own callouts refuse.
+   *
+   * ⚠️ AND THE LABELS NAME NO SOURCE, for the reason the drawing does not.
+   */
+  cartridgeDims?: { label: string; value: string }[];
+  /**
    * What the applicant physically carries to the DFO.
    *
    * ⚠️ THE TICK BOXES STAY DIGITAL — that decision holds (operator,
@@ -1819,30 +1834,109 @@ export class MotivationPdfService {
      * taper, a mouth and a seated bullet, at scale, carrying the figures the
      * sheet printed and no others.
      */
+    let cartridgeDrawn = false;
+
     /**
-     * ⚠️ A HERO IS ALREADY DRAWN BEFORE THE BODY STARTS, so the latch opens
-     * closed. Every path below is guarded on it — the writer's own cartridge
-     * heading, and the fallback that catches a pack whose plan has no such
-     * heading — so setting it here is the whole of "the cover took it".
+     * The picture, unless the cover took it.
+     *
+     * ⚠️ A HERO IS ALREADY DRAWN BEFORE THE BODY STARTS. What stays behind is
+     * the block's OTHER half — the figures — so the latch can no longer simply
+     * be set closed the way it was when the cover took the whole thing.
      */
-    let cartridgeDrawn = !!input.cartridgeDrawing?.hero;
+    const bodyPicture = input.cartridgeDrawing?.hero
+      ? undefined
+      : input.cartridgeDrawing;
+
+    /**
+     * The cartridge's own dimensions, beside the firearm they belong to.
+     *
+     * Operator, 2026-09-09, item 3 of five: "the CIP dimensions should be
+     * inside the application where the firearm is described."
+     *
+     * ⚠️ IT IS THE OTHER HALF OF MOVING THE DRAWING TO THE COVER. The hero
+     * carries two lengths and nothing else, on purpose — a cover is not an
+     * engineering sheet. The figures a reviewer actually checks a chambering
+     * against belong next to the prose that describes the firearm, and until
+     * this they had nowhere to be: the body had given up its figure and the
+     * spliced sheet it replaced is suppressed.
+     *
+     * ⚠️ AND IT NAMES NO SOURCE. CLAUDE.md's Bench rule is a copyright
+     * boundary rather than a style note, and it does not stop at the Bench —
+     * the spliced page this stands in for was captioned with somebody else's
+     * name and printed straight into our table of contents. The operator's
+     * words name WHICH figures, not what the page may call them.
+     */
+    const bodyDims = input.cartridgeDims?.length ? input.cartridgeDims : undefined;
+
+    /** Whether the body still owns anything to put under a cartridge heading. */
+    const hasCartridgeBlock = !!bodyPicture || !!bodyDims;
+
+    const DIM_ROW = K.px(12) * 1.6;
 
     /** How much room the block needs, so a heading is never orphaned above it. */
     const cartridgeHeight = (): number => {
-      const cd = input.cartridgeDrawing;
-      if (!cd) return 0;
-      return K.mm(cd.heightMm) * (contentWidth / K.mm(cd.widthMm));
+      const picture = bodyPicture
+        ? K.mm(bodyPicture.heightMm) *
+          (contentWidth / K.mm(bodyPicture.widthMm))
+        : 0;
+      const dims = bodyDims ? K.mm(3) + bodyDims.length * DIM_ROW : 0;
+      return picture + dims;
+    };
+
+    /**
+     * The figures, two to a line.
+     *
+     * ⚠️ TWO COLUMNS BECAUSE NINE ROWS DOWN A 182 mm PAGE IS A LIST, NOT A
+     * TABLE, and it would push most of a page's worth of prose out of the
+     * section it belongs to. Paired, the whole set is a five-line block a
+     * reviewer reads across in one look — which is what it is for.
+     */
+    const drawCartridgeDims = (rows: { label: string; value: string }[]) => {
+      const colW = contentWidth / 2;
+      const labelW = colW * 0.62;
+      doc.y += K.mm(3);
+      for (let i = 0; i < rows.length; i += 2) {
+        if (doc.y > K.BODY_BOTTOM - DIM_ROW) doc.addPage();
+        const y = doc.y;
+        for (const [col, row] of [rows[i], rows[i + 1]].entries()) {
+          if (!row) continue;
+          const x = MARGIN + col * colW;
+          doc
+            .font(B.body)
+            .fontSize(K.px(12))
+            .fillColor(C.sub)
+            .text(row.label, x, y, { width: labelW - K.mm(2), lineBreak: false });
+          doc
+            .font(B.bodySemi)
+            .fillColor(C.ink)
+            .text(row.value, x + labelW, y, {
+              width: colW - labelW - K.mm(3),
+              lineBreak: false,
+            });
+        }
+        doc.y = y + DIM_ROW;
+        doc
+          .moveTo(MARGIN, doc.y - K.mm(1.2))
+          .lineTo(MARGIN + contentWidth, doc.y - K.mm(1.2))
+          .lineWidth(0.4)
+          .strokeColor(C.hair)
+          .stroke();
+      }
+      doc.x = MARGIN;
+      doc.y += PARA_GAP;
     };
 
     const drawCartridge = () => {
-      const cd = input.cartridgeDrawing;
-      if (!cd || cartridgeDrawn) return;
+      if (!hasCartridgeBlock || cartridgeDrawn) return;
       cartridgeDrawn = true;
 
-      const y0 = doc.y;
-      const drawH = placeDrawing(cd, MARGIN, y0, contentWidth);
-      doc.x = MARGIN;
-      doc.y = y0 + drawH + PARA_GAP;
+      if (bodyPicture) {
+        const y0 = doc.y;
+        const drawH = placeDrawing(bodyPicture, MARGIN, y0, contentWidth);
+        doc.x = MARGIN;
+        doc.y = y0 + drawH + PARA_GAP;
+      }
+      if (bodyDims) drawCartridgeDims(bodyDims);
     };
 
     doc.addPage();
@@ -1880,7 +1974,7 @@ export class MotivationPdfService {
          * an interruption.
          */
         const wantsCartridge =
-          !!input.cartridgeDrawing &&
+          hasCartridgeBlock &&
           !cartridgeDrawn &&
           /\bCARTRIDGE\b/i.test(block);
         /**
@@ -2066,7 +2160,7 @@ export class MotivationPdfService {
     // written first. That block only runs for a pack carrying `firearmSpec`,
     // so a draft with no manufacturer data AND no cartridge heading lost the
     // drawing entirely — the one case the fallback exists for.
-    if (input.cartridgeDrawing && !cartridgeDrawn) {
+    if (hasCartridgeBlock && input.cartridgeDrawing && !cartridgeDrawn) {
       if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20)) doc.addPage();
       renderHeading(input.cartridgeDrawing.label);
       drawCartridge();

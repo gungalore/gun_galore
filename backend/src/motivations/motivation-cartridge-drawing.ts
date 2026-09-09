@@ -334,6 +334,61 @@ export function profile(D: DrawingDims): Point[] {
   return p;
 }
 
+/**
+ * The figures the body prints beside the firearm, in the order a reader wants
+ * them: what the round IS, then what it measures, then what it runs at.
+ *
+ * ⚠️ EVERY LABEL IS PLAIN ENGLISH AND NAMES NO SOURCE. The sheet's own letters
+ * mean nothing to a DFO — "P2" is not a word — and the standard they come from
+ * may not be named on a page we publish. See the drawing module and CLAUDE.md's
+ * Bench rule: it is a copyright boundary, not a style note.
+ *
+ * ⚠️ AND THE SET STOPS WHERE A READER STOPS. A sheet carries thirteen letters,
+ * several of which locate the shoulder and the extractor groove along the axis.
+ * Printing all thirteen makes the block an engineering drawing in words, which
+ * is the fault the hero was trimmed to avoid; these nine are the ones that
+ * identify a chambering and let somebody check it.
+ */
+export const DIM_LABELS: [keyof DrawingDims | 'pmax', string, 'mm' | 'bar'][] = [
+  ['L6', 'Overall length', 'mm'],
+  ['L3', 'Case length', 'mm'],
+  ['G1', 'Bullet diameter', 'mm'],
+  ['H2', 'Neck diameter', 'mm'],
+  ['P2', 'Shoulder diameter', 'mm'],
+  ['P1', 'Base diameter', 'mm'],
+  ['R1', 'Rim diameter', 'mm'],
+  ['R', 'Rim thickness', 'mm'],
+  ['pmax', 'Maximum average pressure', 'bar'],
+];
+
+export function cartridgeDimRows(
+  dims: DrawingDims,
+  derived: ReadonlySet<keyof DrawingDims>,
+  pmaxBar: number | null | undefined,
+): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = [];
+  for (const [key, label, unit] of DIM_LABELS) {
+    if (key === 'pmax') {
+      if (typeof pmaxBar === 'number' && Number.isFinite(pmaxBar)) {
+        out.push({ label, value: `${Math.round(pmaxBar)} ${unit}` });
+      }
+      continue;
+    }
+    /**
+     * ⚠️ A STOOD-IN LETTER IS NEVER PRINTED. `completeDims` fills the gaps so
+     * a shape can be cut — a case with no shoulder gets its shoulder placed at
+     * the mouth — and printing that as a shoulder diameter states a
+     * measurement of a feature the cartridge does not have. It is the same set
+     * the drawing's own callouts refuse.
+     */
+    if (derived.has(key)) continue;
+    const v = dims[key];
+    if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+    out.push({ label, value: `${v.toFixed(2)} ${unit}` });
+  }
+  return out;
+}
+
 /** What the caption prints beside the drawing. */
 export interface DrawingLabels {
   /** The cartridge's standardised name. */
