@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import ConfirmPanel from '@/components/document-centre/confirm-panel';
 import { KINDS } from '@/components/document-centre/kinds';
+import MissingFields, {
+  missingFrom,
+} from '@/components/document-centre/missing-fields';
 import { filedUnsure } from '@/lib/document-review-rules';
 import {
   CredentialRow,
@@ -288,6 +291,17 @@ export default function CredentialCard({
               </p>
             ))}
           </div>
+          {/* ⚠️ THE FIX SITS WITH THE REASON. A rejection here and a
+              correction on another screen is two screens for one problem, and
+              the second one does not get found. */}
+          {row.attention.includes('incomplete-read') && (
+            <MissingFields
+              id={row.id}
+              fields={missingFrom(row.readNotes)}
+              token={token}
+              onSaved={onChanged}
+            />
+          )}
         </div>
       )}
 

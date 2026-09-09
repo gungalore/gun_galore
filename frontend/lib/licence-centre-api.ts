@@ -500,6 +500,26 @@ export const licenceCentreApi = {
       { title },
     ),
 
+  /**
+   * Type in what the scan could not read.
+   *
+   * ⚠️ THE HALF THAT MAKES THE REJECTION FAIR. A document refused for a missing
+   * field with no way to supply it is a dead end wearing a reason. The server
+   * takes only keys the kind actually has and keeps the card's own word
+   * verbatim — "NONE" included, because that is what the card says.
+   */
+  correctDetails: (
+    t: TokenGetter,
+    id: string,
+    details: Record<string, string>,
+  ) =>
+    request<{ changed: string[]; stillMissing: string[] }>(
+      t,
+      `/${id}/details`,
+      { method: 'PATCH', body: JSON.stringify({ details }) },
+      { changed: [], stillMissing: [] },
+    ),
+
   remove: (t: TokenGetter, id: string) =>
     request<{ removed: boolean }>(
       t,
