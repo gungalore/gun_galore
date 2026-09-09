@@ -339,6 +339,25 @@ export const WANTED: Record<CredentialKind, string[]> = {
     'good_standing_number',
     'good_standing',
     'joined_on',
+    /**
+     * ⚠️ THE DAY THE STATUS WAS AWARDED, WHICH NOTHING WAS READING. The
+     * motivation asks `dedicated_since` — "Dedicated status held since" —
+     * marked docSourced: 'ASSOCIATION_CARD', which is a promise to the member
+     * that the document fills it. Nothing did: the alias table said so out
+     * loud ("Nothing in the vault reads a dedicated-since date, so
+     * `dedicated_since` is asked of the member") and the member typed it every
+     * time. Operator, 2026-09-09: "dedicated status held since, should be
+     * retrieved from the certificate."
+     *
+     * ⚠️ IT IS NOT `joined_on` AND IT IS NOT `issued_on`. You join an
+     * association, and later you qualify — for a SAHGCA or NARFO member those
+     * are routinely years apart, and `deriveFacts` counts `years_dedicated`
+     * from this one, so the wrong date does not merely mislabel a box: it
+     * makes the motivation argue from the wrong number. `issued_on` is when
+     * THIS piece of paper was printed, which for an annually reissued
+     * certificate is this year whatever the status dates from.
+     */
+    'status_since',
     // Professional Hunter registration, which is NOT dedicated status. Kept
     // readable so the distinction survives on the row instead of being
     // inferred from which pile the document landed in.
@@ -926,7 +945,7 @@ export function userPrompt(
     ASSOCIATION_ENDORSEMENT:
       'an association\u2019s ENDORSEMENT OF ONE SPECIFIC FIREARM \u2014 a page naming a single gun by type, calibre, make, action and serial and confirming it suits the discipline the member is dedicated in. It is not a status certificate and not a letter of good standing: those are about the PERSON and carry no firearm. Read the firearm row into firearm_type, calibre, make, action and serial, the endorsement\u2019s own reference into endorsement_number, and the association\u2019s accreditation number into accreditation_number. Where the page carries two accreditation numbers \u2014 one for hunting, one for sport \u2014 give the one against the discipline this endorsement is issued under, and say which discipline that is in status_type. If the page names no firearm at all, this is the wrong kind: it is a DEDICATED_DISCIPLINE document',
     DEDICATED_DISCIPLINE:
-      'a document from a shooting or hunting association about one of its members — a membership certificate, a dedicated sport shooter or dedicated hunter status certificate, a section 16 letter of good standing, or a professional hunter registration. ONE DOCUMENT OFTEN DOES SEVERAL OF THOSE JOBS AT ONCE: read everything on it. Say which discipline it awards in status_type (dedicated sport shooter, dedicated hunter, both, or professional hunter), and set good_standing to yes ONLY where the document itself says the member is in good standing. On a letter of good standing the membership or status is stated to run between two dates: the later of them — the "valid until", "valid to" or "expires" date — is expires_on, and the earlier one is issued_on. The numbers are NOT the same number — a status number, a membership number and a good-standing reference can all appear on one page, so read each into its own field and leave any that is absent blank rather than repeating another',
+      'a document from a shooting or hunting association about one of its members — a membership certificate, a dedicated sport shooter or dedicated hunter status certificate, a section 16 letter of good standing, or a professional hunter registration. ONE DOCUMENT OFTEN DOES SEVERAL OF THOSE JOBS AT ONCE: read everything on it. Say which discipline it awards in status_type (dedicated sport shooter, dedicated hunter, both, or professional hunter), and set good_standing to yes ONLY where the document itself says the member is in good standing. On a letter of good standing the membership or status is stated to run between two dates: the later of them — the "valid until", "valid to" or "expires" date — is expires_on, and the earlier one is issued_on. THREE DATES ON ONE PAGE ARE THREE DIFFERENT FACTS: joined_on is the day the member JOINED the association; status_since is the day the DEDICATED STATUS itself was awarded, printed as "dedicated since", "status granted", "dedicated status held since" or "registered as a dedicated ... since"; issued_on is the day THIS piece of paper was printed. A member joins, and later qualifies, so joined_on is usually the earliest — never copy one of these into another, and leave any that is not printed blank. The numbers are NOT the same number — a status number, a membership number and a good-standing reference can all appear on one page, so read each into its own field and leave any that is absent blank rather than repeating another',
     DEDICATED_STATUS: 'a dedicated sport shooter status certificate',
     DEDICATED_HUNTER: 'a dedicated hunter status certificate',
     PROFESSIONAL_HUNTER:

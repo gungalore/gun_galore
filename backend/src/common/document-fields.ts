@@ -185,9 +185,20 @@ export const FIELD_ALIASES: Record<string, readonly FieldAlias[]> = {
     // status held since" and is what deriveFacts counts `years_dedicated`
     // from; for a SAHGCA or NARFO member the two are routinely years apart —
     // you join, and then you qualify. `association_joined` is the box that
-    // asks what this value answers. Nothing in the vault reads a
-    // dedicated-since date, so `dedicated_since` is asked of the member.
+    // asks what this value answers.
     { vault: 'joined_on', motivation: 'association_joined' },
+    /**
+     * ⚠️ AND THE DATE THE STATUS ITSELF WAS AWARDED, WHICH THE MEMBER USED TO
+     * TYPE. The line above this one used to end "Nothing in the vault reads a
+     * dedicated-since date, so `dedicated_since` is asked of the member" —
+     * true, and a broken promise, because the field carries
+     * docSourced: 'ASSOCIATION_CARD' and told them the document would fill it.
+     * `status_since` is now read off the certificate (see WANTED
+     * .DEDICATED_DISCIPLINE), separately from the join date and from the date
+     * the paper was printed. Operator, 2026-09-09: "dedicated status held
+     * since, should be retrieved from the certificate."
+     */
+    { vault: 'status_since', motivation: 'dedicated_since' },
     { vault: 'holder_name', motivation: null },
     // ⚠️ NULL BECAUSE IT HAS NO BOX, NOT BECAUSE IT IS UNUSED. `status_type`
     // is the only genuine record of WHICH dedicated status a document awards

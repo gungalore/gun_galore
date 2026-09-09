@@ -530,6 +530,11 @@ export class MotivationSheetService {
           select: {
             id: true,
             kind: true,
+            // ⚠️ THE SECOND ROLE THIS DOCUMENT PLAYS, and it was not selected.
+            // One membership certificate is the association card AND the
+            // letter of good standing; without this the sheet's checklist
+            // could only ever count the first. See the documentStatus call.
+            coversKinds: true,
             mimeType: true,
             extractionOk: true,
             // Which Document Centre credential this page is a copy of, or null
@@ -727,7 +732,28 @@ export class MotivationSheetService {
       })),
       needs: documentStatus(
         row.licenceType,
-        (row.uploads ?? []).map((u) => u.kind),
+        /**
+         * ⚠️ kind AND coversKinds, WHICH THIS ONE CALLER WAS DROPPING. One
+         * membership certificate is both the association card and the letter
+         * of good standing — that is why DEDICATED_DISCIPLINE maps to both
+         * upload kinds, and why the vault records the second role in
+         * `coversKinds`. Counting only `kind` leaves the review sheet asking
+         * for a paper already in the pack.
+         *
+         * Operator, 2026-09-09: "it askes for my letter of good standing if my
+         * status says its valid until next year." Their MO000075 carries
+         * exactly one such row — ASSOCIATION_CARD with {GOOD_STANDING_LETTER}
+         * against it — and the sheet was reading past the second half of it.
+         *
+         * ⚠️ THE OTHER TWO CALLERS ALREADY DID THIS and say so in as many
+         * words (motivation-documents.service.ts, motivation-generation
+         * .service.ts). The sheet is the surface the member actually reads,
+         * so it was the one place the mistake was visible.
+         *
+         * ⚠️ buildAnnexures STILL SEES `kind` ALONE, deliberately: the
+         * document gets ONE annexure letter, because it is one page.
+         */
+        (row.uploads ?? []).flatMap((u) => [u.kind, ...(u.coversKinds ?? [])]),
         answers,
       ),
       credentials,

@@ -40,7 +40,14 @@ function build(
   opts: {
     provenance?: Record<string, unknown>;
     profile?: Record<string, string>;
-    uploads?: { id: string; kind: string; mimeType: string; extractionOk: boolean }[];
+    uploads?: {
+      id: string;
+      kind: string;
+      mimeType: string;
+      extractionOk: boolean;
+      /** The second role one document plays — see the good-standing suite. */
+      coversKinds?: string[];
+    }[];
     licenceType?: MotivationLicenceType;
     seller?: { status: string; invitedName?: string } | null;
     /** Document Centre rows, for the competency/proficiency pair. */
@@ -563,5 +570,61 @@ describe('the profile is part of what the application says', () => {
           sheet.items.find((i) => i.key === 'marital_status')?.value,
         ).toBe('Married');
       });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// ONE CERTIFICATE, TWO ROLES, ONE ROW ON THE CHECKLIST.
+//
+// A SA Hunters or NARFO membership certificate declares the member "in good
+// standing" AND awards the dedicated status, on one page with one validity
+// window — which is why DEDICATED_DISCIPLINE maps to BOTH upload kinds and
+// why the vault records the second role in `coversKinds`.
+//
+// ⚠️ THE SHEET WAS READING PAST THE SECOND HALF OF IT. Operator, 2026-09-09:
+// "it askes for my letter of good standing if my status says its valid until
+// next year." Their MO000075 carried exactly one such row — ASSOCIATION_CARD
+// with {GOOD_STANDING_LETTER} against it — and the checklist asked for a paper
+// already in the pack. The other two callers of documentStatus had counted
+// coversKinds since the day the kind was consolidated.
+// ────────────────────────────────────────────────────────────────────
+
+describe('a certificate that is also the letter of good standing', () => {
+  const card = (coversKinds: string[]) => ({
+    id: 'u-1',
+    kind: 'ASSOCIATION_CARD',
+    mimeType: 'image/jpeg',
+    extractionOk: true,
+    coversKinds,
+  });
+
+  it('⚠️ STOPS ASKING FOR THE LETTER once one document covers both', async () => {
+    const { svc } = build(
+      {},
+      {
+        licenceType: MotivationLicenceType.S16_DEDICATED_SPORT,
+        uploads: [card(['GOOD_STANDING_LETTER'])],
+      },
+    );
+    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    // ⚠️ `needs` IS THE WHOLE TIER LIST — what the pack wants, attached or
+    // not. `missingRequired` is what is still outstanding, which is what the
+    // member is chased for.
+    expect(sheet.needs.missingRequired).not.toContain('GOOD_STANDING_LETTER');
+    expect(sheet.needs.missingRequired).not.toContain('ASSOCIATION_CARD');
+  });
+
+  it('still asks where the document covers only itself', async () => {
+    const { svc } = build(
+      {},
+      {
+        licenceType: MotivationLicenceType.S16_DEDICATED_SPORT,
+        uploads: [card([])],
+      },
+    );
+    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    expect(sheet.needs.missingRequired).toContain('GOOD_STANDING_LETTER');
+    // The card itself is attached either way, so only the second role moves.
+    expect(sheet.needs.missingRequired).not.toContain('ASSOCIATION_CARD');
   });
 });
