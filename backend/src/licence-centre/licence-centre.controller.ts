@@ -268,6 +268,26 @@ export class LicenceCentreController {
     return this.svc.rename(clerkId, id, title ?? '');
   }
 
+  /**
+   * Type in what the scan could not read.
+   *
+   * ⚠️ THE HALF THAT MAKES THE REJECTION FAIR. A document refused for a
+   * missing field, with no way to supply it, is a dead end wearing a reason.
+   * See credential-completeness.ts.
+   *
+   * Throttled like the rename: it decrypts, merges and re-encrypts a document
+   * blob, and a stuck field should not be able to do that in a loop.
+   */
+  @Patch(':id/details')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  correctDetails(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body('details') details: Record<string, string>,
+  ) {
+    return this.svc.correctDetails(clerkId, id, details ?? {});
+  }
+
   @Patch(':id/mute')
   mute(
     @CurrentUser() clerkId: string,

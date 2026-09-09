@@ -60,6 +60,11 @@ import {
   otherSideNote,
   sideMissingNote,
 } from './credential-duplicates';
+import {
+  INCOMPLETE,
+  incompleteNote,
+  missingMustRead,
+} from './credential-completeness';
 import { assessAddressProof } from './address-proof';
 import { MotivationsService } from '../motivations/motivations.service';
 import {
@@ -1397,6 +1402,26 @@ export class LicenceCentreService {
           `Could not run the attention checks for credential ${created.id}: ${(err as Error).message}`,
         );
       }
+      /**
+       * ⚠️ DID EVERY GUARANTEED FIELD COME BACK? Operator, 2026-09-09: "If not
+       * all fields came through in a scan the scan must be rejected with the
+       * reason why everywhere on this website", and "givn an optio to manually
+       * type the mssing field".
+       *
+       * Outside the try above deliberately: those checks compare this document
+       * against OTHERS and a database hiccup must not cost somebody their row,
+       * while this one reads the document we just read and cannot fail that
+       * way.
+       *
+       * See credential-completeness.ts for why the list is the firearm licence
+       * and nothing else today, and PATCH :id/details for the half that fixes
+       * what this reports.
+       */
+      const shortRead = missingMustRead(resolved, reading?.details);
+      if (shortRead.length) {
+        attention.push(INCOMPLETE);
+        attentionNotes.push(incompleteNote(shortRead));
+      }
       if (reading) {
         const shape = readingShape(reading.details, (WANTED_FIELDS as Record<string, string[]>)[resolved] ?? []);
         if (resolved === 'PROFICIENCY') {
@@ -1944,6 +1969,123 @@ export class LicenceCentreService {
    * reflex. An empty name falls back to the plain kind rather than leaving a
    * blank row — there is no way to have no name at all.
    */
+  /**
+   * The member types in what the scan could not read.
+   *
+   * ⚠️ THE OTHER HALF OF THE REJECTION, AND IT SHIPS WITH IT. Operator,
+   * 2026-09-09: "If not all fields came through in a scan the scan must be
+   * rejected with the reason why everywhere on this website" — and, in the
+   * same breath, "givn an optio to manually type the mssing field". A document
+   * refused with no way to correct it is the SMS that promised a retry the
+   * product refused: the member is told what is wrong and given nothing to do
+   * about it.
+   *
+   * ⚠️ ONLY KEYS THIS KIND ACTUALLY HAS. `WANTED[kind]` is the whole
+   * vocabulary of a document — the same list the reader is asked for and the
+   * same list it is filtered against — so anything else is silently dropped
+   * rather than stored under a name no reader will ever look for.
+   *
+   * ⚠️ AND THE CARD'S OWN WORD IS KEPT VERBATIM. "NONE" is what a licence
+   * prints against a part that carries no number, and the member typing it is
+   * transcribing their card exactly as the reader would have. answerValue()
+   * belongs at answer boundaries, not here — see card-placeholder.ts, and
+   * section E of the SAPS 271, which prints that word.
+   *
+   * Recomputes the attention flags from the merged details, so supplying the
+   * last missing row clears the rejection on the spot rather than waiting for
+   * a re-scan.
+   */
+  async correctDetails(
+    clerkId: string,
+    id: string,
+    patch: Record<string, string>,
+  ) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.credential.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        kind: true,
+        detailsEncrypted: true,
+        attention: true,
+        readNotes: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Document not found');
+
+    const allowed = new Set(
+      (WANTED_FIELDS as Record<string, string[]>)[row.kind] ?? [],
+    );
+    const details = { ...this.readDetails(row.detailsEncrypted) };
+    const changed: string[] = [];
+    for (const [k, v] of Object.entries(patch ?? {})) {
+      if (!allowed.has(k)) continue;
+      const value = String(v ?? '')
+        .trim()
+        .slice(0, 200);
+      if (!value || details[k] === value) continue;
+      details[k] = value;
+      changed.push(k);
+    }
+    if (!changed.length) throw new BadRequestException('Nothing to change.');
+
+    /**
+     * ⚠️ THE NOTE GOES WITH THE CODE. `readNotes` is prose the card renders and
+     * `attention` is what the UI keys on; clearing one and leaving the other
+     * puts a row on screen either complaining with no reason or reasoning with
+     * no complaint. The incomplete note is rebuilt from what is STILL missing,
+     * so filling two of three rows updates the sentence rather than removing
+     * it.
+     */
+    const stillMissing = missingMustRead(row.kind, details);
+    const notes = row.readNotes.filter((n) => !n.startsWith('We could not read'));
+    const attention = row.attention.filter((a) => a !== INCOMPLETE);
+    if (stillMissing.length) {
+      attention.push(INCOMPLETE);
+      notes.push(incompleteNote(stillMissing));
+    }
+
+    await this.prisma.credential.update({
+      where: { id },
+      data: {
+        detailsEncrypted: encryptJson(details),
+        attention,
+        readNotes: notes,
+        // It was read by a person now, and a person is the better reader.
+        extractionOk: true,
+      },
+    });
+    this.vaultLog?.note({
+      stage: 'member',
+      outcome: 'corrected',
+      code: 'typed-in',
+      userId: user.id,
+      credentialId: id,
+      detail: { kind: row.kind, fields: changed, stillMissing },
+    });
+
+    /**
+     * ⚠️ A CORRECTED CARD CAN CHANGE A COMPETENCY DATE AND UNBLOCK AN ATTACH,
+     * exactly as confirming an expiry does. Typing in the section is the case
+     * that matters: LICENCE_YEARS reads it, and the competency that follows a
+     * licence cannot be dated without one. Never fatal — the correction the
+     * member asked for has already been stored.
+     */
+    try {
+      await this.recomputeIfLicenceChanged(user.id, {
+        kind: row.kind,
+        coversKinds: [],
+      });
+      await this.motivations?.rearmAutolinkFor?.(user.id);
+    } catch (err) {
+      this.logger.warn(
+        `Credential ${id}: could not re-run the sweeps after a correction: ${(err as Error).message}`,
+      );
+    }
+    return { changed, stillMissing };
+  }
+
   async rename(clerkId: string, id: string, title: string) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
