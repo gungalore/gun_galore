@@ -349,6 +349,12 @@ function build(
     // test here takes the miss path and the llm double decides what comes
     // back — which is what the generation tests were already asserting on.
     new MotivationResearchService(prisma as never, claude as never),
+    // ⚠️ A STUB, UNLIKE THE RESEARCH SERVICE ABOVE, AND FOR THE OPPOSITE
+    // REASON. Candidate uses are a SECOND model call per firearm class, and
+    // `claude` here is a scripted queue of responses — a real one would eat
+    // the drafts these tests assert on. Returning nothing is also the state
+    // every assertion in this file was written against.
+    { forClass: async () => [] } as never,
   );
   const render = new MotivationRenderService(
     prisma as never,

@@ -107,6 +107,77 @@ describe('the roles a document may state', () => {
     );
     expect(out).toEqual([]);
   });
+
+  /**
+   * ⚠️ THE OPERATOR'S OVERRIDE OF GUIDE-BOOK PART 1 RULE 7, 2026-09-09.
+   * Candidate uses are generated per firearm CLASS and attached to the row, so
+   * a row carrying them DOES have something behind the sentence. See
+   * firearm-uses.service.ts for the reasoning and for what stays refused.
+   */
+  it('accepts a purpose the generated uses supplied', () => {
+    const generated = {
+      ...s13,
+      arsenal: arsenalRows(
+        {
+          existing_firearm_1_make: 'Howa',
+          existing_firearm_1_calibre: '6.5mm Creedmoor',
+          existing_firearm_1_serial: 'HW65001',
+        },
+        { 1: 'section 15' },
+        { 1: ['I use it for plains game at moderate ranges.'] },
+      ),
+    };
+    const out = documentScope(
+      'My Howa in 6.5mm Creedmoor is licensed under section 15 and I use it for plains game hunting.',
+      generated,
+    );
+    expect(out).toEqual([]);
+  });
+
+  it('⚠️ STILL REFUSES A ROW THAT GOT NO USES EITHER', () => {
+    // A model outage returns [], and then there really is nothing in the pack
+    // behind the sentence. `forClass` fails soft precisely so this stays true.
+    const none = {
+      ...s13,
+      arsenal: arsenalRows(
+        {
+          existing_firearm_1_make: 'Howa',
+          existing_firearm_1_calibre: '6.5mm Creedmoor',
+          existing_firearm_1_serial: 'HW65001',
+        },
+        { 1: 'section 15' },
+        { 1: [] },
+      ),
+    };
+    const out = documentScope(
+      'My Howa in 6.5mm Creedmoor is licensed under section 15 and I use it for plains game hunting.',
+      none,
+    );
+    expect(out.join(' ')).toContain(
+      'nothing in the pack states what it is licensed for',
+    );
+  });
+
+  it('⚠️ DOES NOT RELAX THE SECTION, WHICH IS A DIFFERENT KIND OF CLAIM', () => {
+    // A section is checkable against a card in the same pack; a use is not.
+    const generated = {
+      ...s13,
+      arsenal: arsenalRows(
+        {
+          existing_firearm_1_make: 'Marlin',
+          existing_firearm_1_calibre: '.45-70 Government',
+          existing_firearm_1_serial: 'MR45701',
+        },
+        { 1: 'section 16' },
+        { 1: ['I use it for large plains game at close range.'] },
+      ),
+    };
+    const out = documentScope(
+      'I hold a MARLIN rifle in .45-70 Government under section 15.',
+      generated,
+    );
+    expect(out.join(' ')).toContain('the licence card says section 16');
+  });
 });
 
 describe('the register of the whole document', () => {

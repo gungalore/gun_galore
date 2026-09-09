@@ -38,6 +38,16 @@ export interface ArsenalRow {
   section: string;
   /** What the licence or an endorsement says it is FOR, or ''. */
   licensedFor: string;
+  /**
+   * What a firearm of this CLASS is plausibly used for in South Africa.
+   *
+   * ⚠️ GENERATED FROM THE CALIBRE, TYPE, ACTION AND SECTION — NOT READ OFF
+   * ANYTHING, AND NOT THE APPLICANT'S OWN WORDS. See firearm-uses.service.ts
+   * for the operator's override of guide-book Part 1 rule 7 and the reasoning
+   * behind it. `licensedFor` still wins wherever the applicant actually stated
+   * a use; this is what the writer cherry-picks from when they did not.
+   */
+  candidateUses?: string[];
   expires: string;
   /** One line, as the prompt renders it. */
   line: string;
@@ -83,12 +93,28 @@ function renderRow(r: Omit<ArsenalRow, 'line'>): string {
    * section is already on the row above; naming it is what the writer is for.
    */
   if (r.licensedFor) put('licensed_for', r.licensedFor);
-  else
+  else if (!r.candidateUses?.length)
     bits.push(
       'licensed_for="NOT STATED — say nothing about what this firearm is for; ' +
         'name it, its calibre and its section, and stop"',
     );
   put('expires', r.expires);
+  /**
+   * ⚠️ THE CANDIDATE USES, AND ONLY WHERE THE APPLICANT STATED NOTHING.
+   *
+   * A use the applicant actually gave is the better fact and needs no help;
+   * offering alternatives beside it would invite the writer to pick a nicer one
+   * than the truth. So `licensed_for` wins outright and these are what the
+   * writer works from when there is nothing to win against.
+   *
+   * See firearm-uses.service.ts for whose decision this is and why.
+   */
+  if (!r.licensedFor && r.candidateUses?.length) {
+    const uses = r.candidateUses
+      .map((u) => `    <use>${u.replace(/[<>]/g, '')}</use>`)
+      .join('\n');
+    return `<firearm ${bits.join(' ')}>\n  <uses>\n${uses}\n  </uses>\n</firearm>`;
+  }
   return `<firearm ${bits.join(' ')}/>`;
 }
 
@@ -115,6 +141,14 @@ function sectionFromAnswer(key: string): string | undefined {
 export function arsenalRows(
   answers: Record<string, string>,
   sections: Record<number, string> = {},
+  /**
+   * Row index → the uses a firearm of that class is suited to.
+   *
+   * ⚠️ RESOLVED BY THE CALLER, LIKE `sections`, AND FOR THE SAME REASON: this
+   * module is pure and the lookup needs Prisma and a model. See
+   * firearm-uses.service.ts.
+   */
+  uses: Record<number, string[]> = {},
 ): ArsenalRow[] {
   const out: ArsenalRow[] = [];
   for (let n = 1; n <= OWNED_ROWS; n++) {
@@ -151,6 +185,7 @@ export function arsenalRows(
        * absence rather than by hope.
        */
       licensedFor: a('use') || a('primary_use'),
+      candidateUses: uses[n],
       expires: a('expiry'),
     };
     // A row with nothing nameable on it is not evidence of a firearm.
@@ -177,6 +212,14 @@ export function arsenalBlock(rows: readonly ArsenalRow[]): string {
     'firearm with what is here and stop. State a section only where the row',
     'carries one. Never describe a section 15 or 16 firearm with self-defence,',
     'protection, carry, backup or home-defence words.',
+    'Where a row carries <uses>, those are uses a firearm of that CLASS is',
+    'suited to in South Africa — not the applicant’s own words, and not read',
+    'off any document. PICK ONE that fits this application and write the gap',
+    'sentence from it. Do not list them, never more than one per firearm, and',
+    'never contradict the section on the row. A section 15 or 16 row offers',
+    'both hunting and sport uses because the licence card does not say which',
+    'the applicant holds it for: choose the one consistent with the rest of',
+    'this document, and do not claim both for one firearm.',
     ...rows.map((r) => r.line),
     '</arsenal>',
   ].join('\n');

@@ -378,7 +378,25 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
        * specific restricted sport use" — five firearms, five invented roles,
        * none of them supplied by anything.
        */
-      if (row && !row.licensedFor) {
+      /**
+       * ⚠️ A GENERATED USE COUNTS AS SOMETHING THE PACK STATES. Operator
+       * override, 2026-09-09: candidate uses are now generated per firearm
+       * CLASS from the calibre, type, action and section, and attached to the
+       * row, so a row carrying `<uses>` DOES have something behind the
+       * sentence. Their reasoning, and the Act agrees with it: "The use of the
+       * firearm I declare is not set in stone… Main thing is that I do it
+       * safely and legally." See firearm-uses.service.ts.
+       *
+       * ⚠️ A ROW WITH NEITHER STILL REFUSES — the model was down, the calibre
+       * was unreadable, the type was blank. Then there really is nothing behind
+       * the sentence and this rule stands exactly as written. That is why
+       * `forClass` returns [] instead of throwing.
+       *
+       * ⚠️ THE SECTION IS NOT OVERRIDDEN. The check above, on a section that
+       * contradicts the card, is untouched: a section is checkable against a
+       * document in the same pack, and a use is not.
+       */
+      if (row && !row.licensedFor && !row.candidateUses?.length) {
         for (const w of SPORTING_WORDS) {
           if (contains(s, w)) {
             flag(

@@ -134,3 +134,58 @@ describe('a held firearm whose purpose nobody stated', () => {
     expect(line).toContain('licensed_for=');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// AND WHERE NOBODY STATED ONE, THE GENERATED USES.
+//
+// Operator override of guide-book Part 1 rule 7, 2026-09-09. Candidate uses
+// are generated per firearm CLASS — calibre, type, action, section — and
+// attached to the row for the writer to cherry-pick from. Nothing is asked of
+// the member: "I don't want an applicant to sit and read and tick fucking
+// boxes."
+// ────────────────────────────────────────────────────────────────────
+
+describe('the candidate uses on a row', () => {
+  const answers = {
+    existing_firearm_1_make: 'Howa',
+    existing_firearm_1_calibre: '6.5mm Creedmoor',
+    existing_firearm_1_serial: 'HW65001',
+    existing_firearm_1_section_held: 'section_15',
+  };
+  const uses = [
+    'I use it for plains game at moderate ranges.',
+    'I use it on a club range to keep my shooting current.',
+  ];
+
+  it('offers them to the writer, and drops the NOT STATED warning', () => {
+    const line = arsenalRows(answers, {}, { 1: uses })[0].line;
+    expect(line).not.toContain('NOT STATED');
+    expect(line).toContain('<uses>');
+    for (const u of uses) expect(line).toContain(`<use>${u}</use>`);
+  });
+
+  it('⚠️ A STATED PURPOSE STILL WINS OUTRIGHT', () => {
+    // Offering alternatives beside the applicant's own answer would invite the
+    // writer to pick a nicer one than the truth.
+    const line = arsenalRows(
+      { ...answers, existing_firearm_1_use: 'plains game hunting' },
+      {},
+      { 1: uses },
+    )[0].line;
+    expect(line).toContain('licensed_for="plains game hunting"');
+    expect(line).not.toContain('<uses>');
+  });
+
+  it('⚠️ AN EMPTY LIST IS THE OLD BEHAVIOUR, NOT A QUIET PASS', () => {
+    // forClass returns [] on a model outage, and then the row must go back to
+    // telling the writer to say nothing — which is what documentScope checks.
+    const line = arsenalRows(answers, {}, { 1: [] })[0].line;
+    expect(line).toContain('NOT STATED');
+    expect(line).not.toContain('<uses>');
+  });
+
+  it('still carries the section, which is never generated', () => {
+    const line = arsenalRows(answers, {}, { 1: uses })[0].line;
+    expect(line).toMatch(/section="section 15"/i);
+  });
+});

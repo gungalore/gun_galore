@@ -57,6 +57,48 @@ function serialsOf(details: Record<string, string>): string[] {
     .filter(Boolean);
 }
 
+/** One value per serial the vault knows, or '' where the cards disagree. */
+function indexBySerial(
+  licences: readonly LicenceDetails[],
+  read: (details: Record<string, string>) => string,
+): Map<string, string> {
+  const bySerial = new Map<string, string>();
+  for (const l of licences) {
+    const value = read(l.details ?? {});
+    if (!value) continue;
+    for (const s of serialsOf(l.details ?? {})) {
+      // ⚠️ FIRST CARD WINS, AND A CONFLICT IS DROPPED. Two cards claiming
+      // different sections for one serial means one of them was misread, and
+      // writing either is a coin toss on somebody's application.
+      const seen = bySerial.get(s);
+      if (seen === undefined) bySerial.set(s, value);
+      else if (seen !== value) bySerial.set(s, '');
+    }
+  }
+  return bySerial;
+}
+
+/** The row → value join, by serial and by serial only. */
+function perRow(
+  answers: Record<string, string>,
+  bySerial: Map<string, string>,
+): Record<number, string> {
+  const out: Record<number, string> = {};
+  for (let n = 1; n <= OWNED_ROWS; n++) {
+    const p = `existing_firearm_${n}_`;
+    for (const col of ['serial', 'barrel_serial', 'frame_serial']) {
+      const s = norm(answers[`${p}${col}`] ?? '');
+      if (!s) continue;
+      const value = bySerial.get(s);
+      if (value) {
+        out[n] = value;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Section per owned-firearm row, for the rows we can actually prove one for.
  *
@@ -67,36 +109,40 @@ export function ownedFirearmSections(
   answers: Record<string, string>,
   licences: readonly LicenceDetails[],
 ): Record<number, string> {
-  const bySerial = new Map<string, string>();
-  for (const l of licences) {
-    const section = sectionFromText(l.details?.section);
-    if (!section) continue;
-    const phrase = sectionPhrase(section);
-    if (!phrase) continue;
-    for (const s of serialsOf(l.details ?? {})) {
-      // ⚠️ FIRST CARD WINS, AND A CONFLICT IS DROPPED. Two cards claiming
-      // different sections for one serial means one of them was misread, and
-      // writing either is a coin toss on somebody's application.
-      const seen = bySerial.get(s);
-      if (seen === undefined) bySerial.set(s, phrase);
-      else if (seen !== phrase) bySerial.set(s, '');
-    }
-  }
+  return perRow(
+    answers,
+    indexBySerial(licences, (d) => {
+      const section = sectionFromText(d.section);
+      return section ? sectionPhrase(section) : '';
+    }),
+  );
+}
 
-  const out: Record<number, string> = {};
-  for (let n = 1; n <= OWNED_ROWS; n++) {
-    const p = `existing_firearm_${n}_`;
-    for (const col of ['serial', 'barrel_serial', 'frame_serial']) {
-      const s = norm(answers[`${p}${col}`] ?? '');
-      if (!s) continue;
-      const phrase = bySerial.get(s);
-      if (phrase) {
-        out[n] = phrase;
-        break;
-      }
-    }
-  }
-  return out;
+/**
+ * The Type row each owned firearm's licence card actually prints.
+ *
+ * ⚠️ THE FORM'S OWN `type` BOX CANNOT HOLD IT. Its choices are Rifle, Shotgun,
+ * Handgun and Combination, and a self-loading rifle is a different firearm to
+ * a bolt-action one — a different section of the Act, a different set of
+ * lawful uses. The card prints the distinction ("S/L RIFLE") and
+ * licence-centre-extract reads it verbatim, including the S/L, for exactly
+ * this reason.
+ *
+ * ⚠️ AND IT IS ONLY EVER USED TO ASK A QUESTION, never to write a sentence.
+ * It is one axis of the firearm CLASS sent for candidate uses; what the
+ * document says about a held firearm still comes off the row.
+ *
+ * @returns row index (1-based) → the card's `firearm_type` verbatim. Rows with
+ *          no serial, no match, or disagreeing cards are ABSENT.
+ */
+export function ownedFirearmCardTypes(
+  answers: Record<string, string>,
+  licences: readonly LicenceDetails[],
+): Record<number, string> {
+  return perRow(
+    answers,
+    indexBySerial(licences, (d) => (d.firearm_type ?? '').trim()),
+  );
 }
 
 /**

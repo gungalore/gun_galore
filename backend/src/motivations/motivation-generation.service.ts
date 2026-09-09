@@ -57,7 +57,15 @@ import {
 } from './motivation-fields';
 import { packableIncidents } from './motivation-incident-filter';
 import { displayCalibre } from './saps-vocabulary';
-import { ownedFirearmSections } from './owned-firearm-sections';
+import {
+  ownedFirearmCardTypes,
+  ownedFirearmSections,
+} from './owned-firearm-sections';
+import {
+  actionFromCardType,
+  FirearmUsesService,
+  useClassKey,
+} from './firearm-uses.service';
 import { geocodeZa, type LatLng } from '../news/news-geo';
 import {
   buildAnnexures,
@@ -193,6 +201,9 @@ export class MotivationGenerationService {
     private readonly news: NewsService,
     // Structured, cached background — see the note at the research call below.
     private readonly research: MotivationResearchService,
+    // What a firearm of a given CLASS is used for, generated once per class
+    // and shared by everyone who holds one. See firearm-uses.service.ts.
+    private readonly firearmUses: FirearmUsesService,
   ) {}
 
   /**
@@ -1612,23 +1623,78 @@ export class MotivationGenerationService {
     answers: Record<string, string>,
   ): Promise<ArsenalRow[]> {
     let sections: Record<number, string> = {};
+    let cardTypes: Record<number, string> = {};
     try {
       const rows = await this.prisma.credential.findMany({
         where: { userId, kind: 'FIREARM_LICENCE', purgedAt: null },
         select: { detailsEncrypted: true },
       });
-      sections = ownedFirearmSections(
-        answers,
-        rows.map((r) => ({
-          details:
-            decryptJson<Record<string, string>>(r.detailsEncrypted ?? '') ?? {},
-        })),
-      );
+      const licences = rows.map((r) => ({
+        details:
+          decryptJson<Record<string, string>>(r.detailsEncrypted ?? '') ?? {},
+      }));
+      sections = ownedFirearmSections(answers, licences);
+      cardTypes = ownedFirearmCardTypes(answers, licences);
     } catch {
       // A vault read that throws costs the sections, never the rows.
       sections = {};
+      cardTypes = {};
     }
-    return arsenalRows(answers, sections);
+
+    /**
+     * ⚠️ TWO PASSES, BECAUSE THE CLASS IS READ OFF THE ROW. The first builds
+     * the rows so each one's calibre, type and section are settled — the
+     * member's own correction of a bad OCR included — and the second attaches
+     * what a firearm of that class is used for. Generating from the raw
+     * answers instead would ask about a section the member had already fixed.
+     *
+     * ⚠️ ONE LOOKUP PER CLASS, NOT PER FIREARM. A battery of four 9mm
+     * handguns under section 13 is ONE class: resolved per row they would all
+     * miss the cache together and buy four generations of the same answer,
+     * with the upsert deciding which one survived. The corpus's own example
+     * battery is exactly that shape.
+     *
+     * ⚠️ IN PARALLEL AND NEVER FATAL. `forClass` returns [] rather than
+     * throwing (a model outage must not fail somebody's application), so a
+     * row that comes back empty is the state this feature replaces, not an
+     * error.
+     */
+    const rows = arsenalRows(answers, sections);
+    const classes = new Map<
+      string,
+      { calibre: string; type: string; action: string; section: string }
+    >();
+    const classOf = new Map<number, string>();
+    for (const r of rows) {
+      const c = {
+        calibre: r.calibre,
+        type: r.type,
+        // ⚠️ THE ONE BIT THE FORM'S FOUR CHOICES CANNOT HOLD, and the only
+        // thing taken off the card's free-text Type row. Keeping the card's
+        // words out of the class key is deliberate: "S/L RIFLE" and
+        // "SELF-LOADING RIFLE" are the same firearm and must not each buy
+        // their own generation.
+        action: actionFromCardType(cardTypes[r.index] ?? ''),
+        // Not part of the class key — it chooses which slices are read back.
+        section: r.section,
+      };
+      const key = `${useClassKey(c, 's13')}|${c.section}`;
+      classes.set(key, c);
+      classOf.set(r.index, key);
+    }
+
+    const keys = [...classes.keys()];
+    const resolved = await Promise.all(
+      keys.map((k) => this.firearmUses.forClass(classes.get(k)!)),
+    );
+    const byClass = new Map(keys.map((k, i) => [k, resolved[i]]));
+
+    const uses: Record<number, string[]> = {};
+    for (const r of rows) {
+      const found = byClass.get(classOf.get(r.index) ?? '') ?? [];
+      if (found.length) uses[r.index] = found;
+    }
+    return arsenalRows(answers, sections, uses);
   }
 
   /**

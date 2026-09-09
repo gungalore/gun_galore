@@ -5140,6 +5140,67 @@ enum CredentialKind {
   ASSOCIATION_ENDORSEMENT
 }
 
+/// WHAT A FIREARM OF THIS CLASS IS PLAUSIBLY USED FOR, IN SOUTH AFRICA.
+///
+/// ⚠️ KEYED ON THE CLASS, NOT ON THE MEMBER OR THE FIREARM. A .30-06 bolt
+/// rifle held under section 16 has the same set of plausible uses whoever owns
+/// it, so one row serves every applicant who ever holds one. An applicant with
+/// five firearms of three classes costs three generations, once, and the
+/// second applicant with a .30-06 costs none.
+///
+/// ⚠️ NO PERSONAL DATA, DELIBERATELY, AND THAT IS WHY IT CAN BE SHARED. The
+/// key is a cartridge, a type, an action and a section — facts about a
+/// category of firearm, not about anybody. Nothing here is encrypted because
+/// nothing here is anybody's.
+///
+/// Operator, 2026-09-09: "let it generate as much uses for that firearm it can
+/// and we can attach that. then when the time comes it can look at all the
+/// firearms and their uses and cherry pick each use case."
+/// What a firearm of one CLASS is plausibly used for, per section of the Act.
+///
+/// One row per class AND SLICE — a slice being a section, and for sections 15
+/// and 16 a discipline (occasional/dedicated, hunter/sports shooter). A .30-06
+/// bolt rifle therefore holds four rows: s15_hunt, s15_sport, s16_hunt,
+/// s16_sport. One generation writes them all, and the member's own licence card
+/// chooses which the writer is shown.
+///
+/// ⚠️ KEYED ON THE CLASS, NOT ON THE MEMBER OR THE FIREARM. The same rows serve
+/// every applicant who ever holds one, which is what makes this the general
+/// reference the operator asked for rather than a per-application cost.
+///
+/// ⚠️ NO PERSONAL DATA, WHICH IS WHY IT IS SHARED AND WHY NOTHING IS ENCRYPTED.
+/// A cartridge, a type, an action and a section are facts about a CATEGORY of
+/// firearm. Nothing in this table is anybody's.
+model FirearmUseProfile {
+  id String @id @default(cuid())
+
+  /// calibre|type|action|slice, normalised — lowercase, punctuation stripped.
+  /// See useClassKey.
+  classKey String @unique
+
+  /// The axes, kept readable so a human can audit what was generated for what
+  /// without decoding the key.
+  calibre String
+  type    String
+  action  String
+
+  /// Which section-and-discipline this row answers. See UseSlice.
+  slice String
+
+  /// The generated uses, one sentence each, first person. Empty is a real
+  /// answer: this calibre suits nothing under this section.
+  uses String[]
+
+  /// Which model wrote them, so a bad batch can be found and cleared.
+  model String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([calibre])
+  @@index([slice])
+}
+
 model Credential {
   id     String         @id @default(cuid())
   userId String

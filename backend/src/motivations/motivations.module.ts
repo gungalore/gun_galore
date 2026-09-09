@@ -44,6 +44,10 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
 import { VaultLogService } from '../common/vault-log.service';
 import { VaultAdoptionService } from './vault-adoption.service';
 import { MotivationReasonService } from './motivation-reason.service';
+// What a firearm of a given CLASS is lawfully used for, generated once per
+// class and shared by every member who holds one. Not exported: the writer is
+// its only caller and the table is not a public lookup.
+import { FirearmUsesService } from './firearm-uses.service';
 
 /**
  * Firearm-licence motivation writer (Phase 1 — LICENCE-SERVICES-AND-FEED.md).
@@ -113,6 +117,7 @@ import { MotivationReasonService } from './motivation-reason.service';
     // directly for the same reason.
     VaultAdoptionService,
     MotivationReasonService,
+    FirearmUsesService,
   ],
   // MotivationRetentionService is exported so the account-deletion path can
   // remove a user's encrypted documents BEFORE the cascade takes the rows that
