@@ -13,11 +13,19 @@ only paperwork required by the dfo are attached as annexures. all other things
 like the cartridge specs and clippings and those things must be in the body of
 the document itself and form part of the flow."*
 
-⚠️ **NOT DEPLOYED.** Eight commits sit on `feat/takealot-ux-parity` ahead of the
-box, from `7312768e` to `2a136885`. Backend tsc CLEAN, 4 356 tests pass;
-frontend tsc CLEAN, 1 654 tests pass, `npm run build` exits 0 and
-`.next/BUILD_ID` is written. ⚠️ **It is a FULL deploy** — it carries
-`20260909140000_licence_type_s14`, a new enum value.
+**Deployed `c6ba1835`** (full deploy, 2026-09-09 ~13:11 SAST). Ten commits,
+`7312768e` through `c6ba1835`. Backend tsc CLEAN, 4 356 tests pass; frontend tsc
+CLEAN, 1 654 tests pass, build exits 0.
+
+- **Rollback point: `alloutdoor-20260909-131036.dump`** (pre-deploy backup).
+- `20260909140000_licence_type_s14` applied. Verified in `pg_enum`:
+  `S14_RESTRICTED_SELF_DEFENCE` is present, last in sort order. Purely additive
+  (`ALTER TYPE … ADD VALUE IF NOT EXISTS`), no row changed type, nothing
+  backfilled. The box runs Postgres 16, so the statement is transaction-safe and
+  the value is not used in the same transaction.
+- Health after reload: backend 200 ×2, frontend 200 ×2, alloutdoor.co.za 200 ×2.
+  `pm2 list` shows all three online. Backend stderr since the reload carries only
+  the standing Peach MOCK-mode warnings.
 
 The book itself is vendored at `docs/MOTIVATION-GUIDE-BOOK.md`. Where it
 disagrees with an earlier decision it wins, because it is dated 2026-09-09 and
