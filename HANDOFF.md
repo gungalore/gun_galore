@@ -6,7 +6,83 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-09**.
 
-## 2026-09-09 (latest) — MO000074: why a real pack could not be produced
+## 2026-09-09 (latest) — What a firearm is FOR, generated per class
+
+Deployed `a81c74cd`, full deploy — it carries migration
+`20260909180000_firearm_use_profile`. All three services online, both health
+checks passed, public site 200 twice. `FirearmUseProfile` exists on the box and
+is EMPTY: it fills itself the first time a class is asked for.
+
+### The rule that was overridden, and by whom
+
+Guide-book Part 1 rule 7 (and prompt rule 12): a held firearm's purpose comes
+from the applicant's stated use or from an endorsement naming that serial, and
+where neither exists the writer names the firearm and its calibre and stops.
+MO000074 failed three times because the writer would not stop — it wrote that
+the Mauser, the Marlin and the Howa were each "for hunting", and nothing in the
+pack said so.
+
+⚠️ **THE OPERATOR OVERRODE THAT RULE ON 2026-09-09, AND THE ACT AGREES WITH
+THEM.** ss 13(4), 14(6), 15(4) and 16(3) each say a licensed firearm "may be
+used where it is safe to use the firearm and for a lawful purpose" — a
+permission attached to the licence, not a test, and not a commitment to the
+quarry anybody named. Their words: *"The use of the firearm I declare is not
+set in stone. If I state that I will be hunting a kudu with my 30-06 and decide
+I want to shoot tin cans with it, thats fine. Main thing is that I do it safely
+and legally."* A first design that offered the member a menu was rejected: *"I
+don't want an applicant to sit and read and tick fucking boxes."*
+
+### What was built
+
+`backend/src/motivations/firearm-uses.service.ts`, `FirearmUseProfile`.
+
+- **One row per class AND SLICE.** A class is calibre + type + action; a slice
+  is a section, and for 15 and 16 a discipline (`s13`, `s14`, `s15_hunt`,
+  `s15_sport`, `s16_hunt`, `s16_sport`). ONE model call fills every slice a
+  class can fall into — written against each other, so occasional and dedicated
+  do not blur — and the member's own licence card chooses which the writer
+  sees.
+- **Keyed on the class, not the member.** The operator's own battery is the
+  case that shaped it: their 6.5 Creedmoor is section 15 and the rest are
+  section 16, in one pack. The second applicant with a .30-06 pays nothing,
+  whatever section they hold it under. No personal data, so nothing is
+  encrypted.
+- **`eligibleSlices()` asks `sectionAllows()`**, which already holds the Act
+  and already holds the two directions it was got wrong in once before: a
+  semi-automatic shotgun is never s13, a handgun is never s14 however it
+  cycles, a semi-automatic rifle is never s15. An unstated action rules nothing
+  out.
+- ⚠️ **EVERY SENTENCE IS SCREENED THROUGH `documentScope()` BEFORE IT IS
+  STORED**, as the licence type its slice belongs to. Section discipline is
+  therefore enforced rather than asked for, and a sentence that would fail the
+  gate costs nothing instead of a regeneration. Spelling is folded first, so
+  "caliber" is a fix and not a loss. Measured live: it dropped 1 of 3 on three
+  of four classes.
+- **`documentScope`'s invented-purpose rule now accepts a row carrying
+  candidate uses.** A row with NEITHER a stated use nor generated ones still
+  refuses — which is why `forClass()` returns `[]` and never throws.
+- ⚠️ **THE SECTION IS NOT OVERRIDDEN AND MUST NOT BE.** It comes off the card
+  and only chooses a slice. A section is checkable against a document in the
+  same pack; a use is not. That is MO000071's actual defect.
+- `ownedFirearmCardTypes()` reads the card's Type row, which prints "S/L RIFLE"
+  where the form's four choices cannot — reduced to one word for the key, or
+  three spellings would buy three generations.
+
+### Open, for the operator
+
+⚠️ **A HANDGUN CANNOT FALL UNDER SECTION 14, so it gets 13/15/16 and not 14.**
+The operator's message said "when we have a handgun or manual shotgun, it has
+to give the section 13, 14, 15 and 16 reasons"; s14 is for a RESTRICTED firearm
+— a semi-automatic rifle or shotgun — and a semi-automatic pistol is an
+ordinary s13 firearm. Their own general rule ("all sections it can fall into")
+is what shipped. They have been told and can overrule it.
+
+⚠️ **A ROW WITH NO SECTION STILL GETS NOTHING.** Where no card placed a firearm
+we cannot tell a self-defence pistol from a sporting one, and offering both
+sets is how a self-defence firearm acquires a hunting sentence. That is the old
+behaviour, deliberately kept.
+
+## 2026-09-09 — MO000074: why a real pack could not be produced
 
 The operator generated a real section 13 application and it FAILED, with an
 SMS: *"we could not finish document MO000074. Nothing is lost and nothing was
