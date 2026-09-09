@@ -39,6 +39,22 @@ const RIFLE = {
 const HUNT = 'I use it for plains game at moderate ranges.';
 const SPORT = 'I shoot it at club precision matches.';
 
+/** Twelve genuinely different sentences, for the volume and window tests. */
+const SPECIES = [
+  'impala',
+  'blesbuck',
+  'springbok',
+  'kudu',
+  'gemsbok',
+  'warthog',
+  'duiker',
+  'steenbok',
+  'bushbuck',
+  'nyala',
+  'zebra',
+  'eland',
+];
+
 /** A model response, keyed the way the model is actually asked. */
 function reply(over: Record<string, string[]> = {}) {
   return {
@@ -238,18 +254,83 @@ describe('resolving a row', () => {
     ]);
   });
 
-  it('generates every eligible list at once and stores each', async () => {
+  it('generates every eligible list and stores each', async () => {
     const { svc, complete, upsert } = build({});
     const groups = await svc.forClass(RIFLE);
     expect(groups.map((g) => g.label)).toEqual([
       'occasional hunting',
       'occasional sport shooting',
     ]);
-    // ONE call, four rows — that is what makes the table general.
-    expect(complete).toHaveBeenCalledTimes(1);
+    // ⚠️ THREE ROUNDS, ONE WRITE PER LIST. The rounds are where the volume
+    // comes from; the table is written once at the end, not per round.
+    expect(complete).toHaveBeenCalledTimes(3);
     expect(upsert).toHaveBeenCalledTimes(4);
     const keys = upsert.mock.calls.map((c) => c[0].where.classKey);
     expect(keys).toContain(useClassKey(RIFLE, 's16_sport'));
+  });
+
+  /**
+   * ⚠️ THE ROUNDS ARE THE WHOLE ANSWER TO "we need a huge list of reasons".
+   * Asked once the model gives two to five whatever the cap says; asked again
+   * with its own answer in front of it, it goes and finds more.
+   */
+  it('⚠️ SHOWS THE MODEL WHAT IT ALREADY SAID, AND FORBIDS REPEATING IT', async () => {
+    const { svc, complete } = build({});
+    await svc.forClass(RIFLE);
+    const first = complete.mock.calls[0][0].messages[0].content[0].text;
+    const second = complete.mock.calls[1][0].messages[0].content[0].text;
+    expect(first).not.toContain('ALREADY GIVEN');
+    expect(second).toContain('YOU HAVE ALREADY GIVEN THESE');
+    expect(second).toContain(HUNT);
+    expect(second).toContain('genuinely different');
+  });
+
+  it('⚠️ FOLDS A REWORDING RATHER THAN COUNTING IT TWICE', async () => {
+    // The model mostly obeys "do not repeat" and then reaches for a synonym.
+    // An exact-match check catches almost none of those.
+    let round = 0;
+    const { svc, upsert } = build({
+      complete: jest.fn(async () => {
+        round++;
+        if (round === 1) {
+          return reply({
+            occasional_hunter: ['I hunt impala in thick bushveld cover.'],
+          });
+        }
+        return reply({
+          occasional_hunter: [
+            // The same use, reworded — must not be counted again.
+            'I hunt impala in bushveld cover that is thick.',
+            // Genuinely different — must be kept.
+            'I shoot springbok on open Karoo plains in winter.',
+          ],
+        });
+      }),
+    });
+    await svc.forClass(RIFLE);
+    const hunt = upsert.mock.calls.find(
+      (c) => c[0].where.classKey === useClassKey(RIFLE, 's15_hunt'),
+    );
+    expect(hunt[0].create.uses).toEqual([
+      'I hunt impala in thick bushveld cover.',
+      'I shoot springbok on open Karoo plains in winter.',
+    ]);
+  });
+
+  it('⚠️ A LATER ROUND THAT FAILS KEEPS THE EARLIER ONES', async () => {
+    // Round 1 is the one that matters; 2 and 3 are enrichment.
+    let round = 0;
+    const { svc } = build({
+      complete: jest.fn(async () => {
+        round++;
+        if (round === 1) return reply();
+        throw new Error('503 from the provider');
+      }),
+    });
+    await expect(svc.forClass(RIFLE)).resolves.toEqual([
+      { label: 'occasional hunting', uses: [HUNT] },
+      { label: 'occasional sport shooting', uses: [SPORT] },
+    ]);
   });
 
   it('⚠️ ASKS IN WORDS, AND NAMES NO SECTION ANYWHERE', async () => {
@@ -307,7 +388,7 @@ describe('resolving a row', () => {
       rows: [{ classKey: useClassKey(RIFLE, 's15_hunt'), uses: [HUNT] }],
     });
     await svc.forClass(RIFLE);
-    expect(complete).toHaveBeenCalledTimes(1);
+    expect(complete).toHaveBeenCalled();
   });
 
   it('returns [] when no model is configured at all', async () => {
@@ -357,24 +438,70 @@ describe('resolving a row', () => {
     ]);
   });
 
-  it('⚠️ KEEPS BOTH LISTS WHOLE RATHER THAN MERGING THEM', async () => {
+  it('⚠️ KEEPS BOTH LISTS SEPARATE RATHER THAN MERGING THEM', async () => {
     // An earlier version capped the FIREARM at eight sentences across both
     // disciplines, which is how the operator came to see one consolidated list
     // where two were generated.
     const many = (p: string) =>
-      Array.from({ length: 12 }, (_, i) => `I ${p} it on outing ${i}.`);
+      Array.from({ length: 12 }, (_, i) => `I ${p} ${SPECIES[i]} in season.`);
     const { svc } = build({
       complete: jest.fn(async () =>
         reply({
-          occasional_hunter: many('hunt with'),
-          occasional_sport_shooter: many('shoot'),
+          occasional_hunter: many('hunt'),
+          occasional_sport_shooter: many('shoot at'),
         }),
       ),
     });
     const out = await svc.forClass(RIFLE);
     expect(out).toHaveLength(2);
-    expect(out[0].uses).toHaveLength(12);
-    expect(out[1].uses).toHaveLength(12);
+    expect(out[0].label).toBe('occasional hunting');
+    expect(out[1].label).toBe('occasional sport shooting');
+  });
+
+  /**
+   * ⚠️ THE TABLE HOLDS EVERYTHING; THE PROMPT DOES NOT. Forty sentences per
+   * list across five held firearms is four hundred suggestions wrapped around
+   * a handful of facts, and the writer argues from the FACTS.
+   */
+  it('⚠️ STORES THE WHOLE LIST AND OFFERS A WINDOW INTO IT', async () => {
+    const many = (p: string) =>
+      Array.from({ length: 12 }, (_, i) => `I ${p} ${SPECIES[i]} in season.`);
+    const { svc, upsert } = build({
+      complete: jest.fn(async () =>
+        reply({
+          occasional_hunter: many('hunt'),
+          occasional_sport_shooter: many('shoot at'),
+        }),
+      ),
+    });
+    const out = await svc.forClass(RIFLE, 'MR90189D');
+    const hunt = upsert.mock.calls.find(
+      (c) => c[0].where.classKey === useClassKey(RIFLE, 's15_hunt'),
+    );
+    expect(hunt[0].create.uses).toHaveLength(12);
+    expect(out[0].uses).toHaveLength(10);
+    // Every offered sentence is one that was actually stored.
+    for (const u of out[0].uses) expect(hunt[0].create.uses).toContain(u);
+  });
+
+  it('⚠️ THE WINDOW MOVES WITH THE SERIAL, so two members differ', async () => {
+    // Everybody holding a .30-06 being handed the same ten sentences in the
+    // same order is how a battery of documents starts to look like one.
+    const rows = [
+      {
+        classKey: useClassKey(RIFLE, 's15_hunt'),
+        uses: SPECIES.map((s) => `I hunt ${s} in season.`),
+      },
+      { classKey: useClassKey(RIFLE, 's15_sport'), uses: [SPORT] },
+    ];
+    const a = await build({ rows }).svc.forClass(RIFLE, 'MR90189D');
+    const b = await build({ rows }).svc.forClass(RIFLE, 'HW65001');
+    expect(a[0].uses).toHaveLength(10);
+    expect(b[0].uses).toHaveLength(10);
+    expect(a[0].uses).not.toEqual(b[0].uses);
+    // Stable for one firearm, or a retry becomes a different document.
+    const again = await build({ rows }).svc.forClass(RIFLE, 'MR90189D');
+    expect(again[0].uses).toEqual(a[0].uses);
   });
 
   it('does not ask about a row that names no firearm', async () => {
@@ -429,6 +556,32 @@ describe('resolving a row', () => {
     await expect(
       svc.forClass({ ...RIFLE, section: 'section 16' }),
     ).resolves.toEqual([{ label: 'dedicated sport shooting', uses: [SPORT] }]);
+  });
+
+  it('⚠️ DROPS A SENTENCE ABOUT WHERE THE FIREARM LIVES', async () => {
+    // A live run produced "I keep it loaded…", "I keep it accessible in my
+    // bedroom" and "I stage the firearm securely…" for a 12 gauge. The pack
+    // answers storage from the applicant's own premises, in its own heading,
+    // with photographs of the safe annexed; this table knows none of that.
+    const { svc } = build({
+      complete: jest.fn(async () =>
+        reply({
+          self_defence: [
+            'I keep it loaded with defensive rounds inside the home.',
+            'I keep it accessible in my bedroom for a night intrusion.',
+            'I use it to protect my family from an armed intruder.',
+          ],
+        }),
+      ),
+    });
+    await expect(
+      svc.forClass({ ...RIFLE, type: 'Handgun', section: 'section 13' }),
+    ).resolves.toEqual([
+      {
+        label: 'self-defence',
+        uses: ['I use it to protect my family from an armed intruder.'],
+      },
+    ]);
   });
 
   it('drops catalogue copy, which the gate refuses everywhere', async () => {

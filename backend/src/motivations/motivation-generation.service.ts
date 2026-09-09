@@ -1666,6 +1666,7 @@ export class MotivationGenerationService {
       { calibre: string; type: string; action: string; section: string }
     >();
     const classOf = new Map<number, string>();
+    const seeds = new Map<string, string>();
     for (const r of rows) {
       const c = {
         calibre: r.calibre,
@@ -1682,11 +1683,22 @@ export class MotivationGenerationService {
       const key = `${useClassKey(c, 's13')}|${c.section}`;
       classes.set(key, c);
       classOf.set(r.index, key);
+      // First row of a class fixes the window for all of them.
+      if (!seeds.has(key)) seeds.set(key, r.serial || r.make || key);
     }
 
     const keys = [...classes.keys()];
     const resolved = await Promise.all(
-      keys.map((k) => this.firearmUses.forClass(classes.get(k)!)),
+      /**
+       * ⚠️ SEEDED ON THE SERIAL, so two members holding the same calibre are
+       * not offered the same ten sentences in the same order — the table holds
+       * up to forty per list and the writer sees a window into it. Stable for
+       * one firearm across regenerations, which is what keeps a retry a second
+       * attempt at the same document rather than a different one.
+       */
+      keys.map((k) =>
+        this.firearmUses.forClass(classes.get(k)!, seeds.get(k) ?? k),
+      ),
     );
     const byClass = new Map(keys.map((k, i) => [k, resolved[i]]));
 

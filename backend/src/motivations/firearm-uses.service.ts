@@ -207,6 +207,46 @@ export interface CandidateUses {
   uses: string[];
 }
 
+/**
+ * Storage and carry claims, which are not this table's to make.
+ *
+ * ⚠️ THE PROMPT ASKS AND THE MODEL STILL OBLIGES. Rule 7 forbids these and a
+ * live run produced "I keep it loaded with appropriate defensive loads for the
+ * protection of my family inside the home", "I keep it accessible in my
+ * bedroom" and "I stage the firearm securely inside my commercial retail
+ * office" anyway — three sentences about where a shotgun lives, generated for
+ * a table that knows nothing about anybody's premises.
+ *
+ * The pack answers storage from the applicant's own answers, in its own
+ * numbered heading, with photographs of the safe annexed. A sentence here that
+ * contradicts that heading is a contradiction inside one signed document, and
+ * a firearm "kept loaded and accessible" is the specific contradiction a DFO
+ * is looking for. `documentScope` does not police it because nothing else in
+ * the pipeline invents storage facts.
+ */
+const STORAGE_CLAIMS = [
+  'keep it loaded',
+  'kept loaded',
+  'loaded and ready',
+  'keep it accessible',
+  'kept accessible',
+  'keep it within',
+  'stage the firearm',
+  'staged',
+  'in my safe',
+  'in a safe',
+  'in the safe',
+  'my gun safe',
+  'bedside',
+  'under my bed',
+  'in my bedroom',
+  'stored',
+  'store it',
+  'storage',
+  'unlocked',
+  'locked away',
+] as const;
+
 /** The four axes a use depends on. Nothing here identifies anybody. */
 export interface FirearmClass {
   calibre: string;
@@ -302,15 +342,36 @@ export function useClassKey(
 }
 
 /**
- * How many sentences one LIST may hold.
+ * How many times the model is asked, and how much it may give each time.
  *
- * ⚠️ PER LIST, NOT PER FIREARM, AND THE LISTS ARE NOT MERGED. An earlier
- * version capped the firearm at eight across both disciplines, which is how
- * the operator came to see one consolidated list where two were generated:
- * "that would give two lists instead of one consolidated list". A section 15
- * rifle may now carry twelve hunting sentences AND twelve sport ones.
+ * ⚠️ THE ROUNDS ARE WHERE THE VOLUME COMES FROM, NOT THE CAP. Asked once, the
+ * model answers with two to five and stops however high `maxItems` is set;
+ * asked again with its own previous answer in front of it and told not to
+ * repeat, it goes and finds more. Operator, 2026-09-09: "We need a huge list
+ * of reasons."
+ *
+ * ⚠️ PER LIST, NOT PER FIREARM. An earlier version capped the firearm at eight
+ * across both disciplines, which is how one consolidated list appeared where
+ * two were generated. A section 15 rifle may now hold forty hunting sentences
+ * AND forty sport ones.
  */
-const PER_SLICE = 12;
+const ROUNDS = 3;
+const PER_ROUND = 12;
+const PER_SLICE = 40;
+
+/**
+ * How many of a list actually reach the writer.
+ *
+ * ⚠️ THE TABLE HOLDS EVERYTHING; THE PROMPT DOES NOT. Forty sentences per list
+ * × two lists × five held firearms is four hundred suggestions wrapped around
+ * a handful of facts, and the writer's job is to argue from the FACTS. It
+ * needs a varied menu, not the whole cookbook.
+ *
+ * ⚠️ AND THE WINDOW MOVES PER FIREARM, so two applicants holding the same
+ * calibre are not handed the same ten sentences — which is what
+ * `motivation-sameness` exists to catch.
+ */
+const OFFER_PER_LIST = 10;
 
 const SYSTEM = `
 You describe what a class of firearm is lawfully and ordinarily used for in
@@ -323,11 +384,29 @@ and you must not invent one: no names, no places, no farms, no clubs, no dates,
 no counts, no "I have been hunting for eleven years".
 
 For EACH kind of shooter listed, return the uses that a firearm of this class
-is genuinely suited to and that THAT shooter could lawfully put it to. Cover
-the range: the obvious one, the ordinary ones, and the honest edge cases. Give
-as MANY as are genuinely true for that shooter — up to twelve — because the
-lists are read side by side and a thin one is a case somebody cannot argue
-from.
+is genuinely suited to and that THAT shooter could lawfully put it to. Give AS
+MANY AS YOU CAN, up to twelve per shooter. Two or three is a failed answer.
+
+WORK THROUGH IT SYSTEMATICALLY RATHER THAN LISTING WHAT COMES TO MIND FIRST.
+Walk the axes, and take a use from each:
+
+- QUARRY. Every species this calibre honestly suits, from the smallest it is
+  not wasteful on to the largest it is adequate for. Name them.
+- TERRAIN AND REGION. Bushveld, thornveld, Karoo scrub, highveld grassland,
+  mountain, coastal thicket, farmland, open plains, inland pans.
+- METHOD. Walk-and-stalk, a hide or blind, over water, over bait where lawful,
+  a driven bird shoot, from a vehicle where lawful, lawful problem-animal and
+  vermin control for a landowner.
+- DISTANCE. What it is used for close in, at middle distance, and far out.
+- SEASON AND OCCASION. Opening weekend, a winter biltong trip, a culling
+  contract, a club day, a league round, a provincial shoot.
+- FORMAT. For a sports shooter, the disciplines this class is genuinely shot
+  in by name, and the formats and positions within them.
+- PREPARATION. Zeroing, load development, practice that keeps the skill and
+  the shot placement honest — these are real uses of the firearm.
+
+For self-defence, walk the equivalent: the home, a vehicle, business premises,
+travelling, and the range practice that keeps it competent.
 
 RULES
 1. Each use is ONE short sentence in the first person, present tense, ending in
@@ -354,10 +433,13 @@ RULES
    on a signed document.
 8. NEVER CITE THE LAW. No section numbers, no "in terms of the Act", no
    statute. These are sentences about shooting, not about legislation.
-9. If the calibre is plainly unsuited to one of these shooters, return FEWER
-   sentences for them, or none at all. A 6.35 mm pocket pistol is not a
-   plains-game cartridge and a .458 is not a small-game one. An honest short
-   list beats a padded one, and an empty list beats a dishonest one.
+9. NO TWO SENTENCES IN ONE LIST MAY SAY THE SAME THING. "I hunt impala in the
+   bushveld" and "I use it for impala in thick bush" are one use written twice.
+   A long list is wanted; a padded one is not.
+10. EVERY SENTENCE MUST BE TRUE OF THIS CLASS. Length never excuses invention:
+   a 6.35 mm pocket pistol is not a plains-game cartridge and a .458 is not a
+   small-game one. Where a shooter genuinely has little use for this class,
+   give the few that are real and stop — an empty list beats a dishonest one.
 `.trim();
 
 @Injectable()
@@ -378,7 +460,7 @@ export class FirearmUsesService {
    * `documentScope` only relaxes its invented-purpose rule for a row that
    * actually came back with something.
    */
-  async forClass(c: FirearmClass): Promise<CandidateUses[]> {
+  async forClass(c: FirearmClass, seed = ''): Promise<CandidateUses[]> {
     // Nothing to key on. A row with no calibre and no type is not a firearm.
     if (!c.calibre?.trim() && !c.type?.trim()) return [];
 
@@ -390,13 +472,14 @@ export class FirearmUsesService {
 
     const hit = await this.read(c, wanted);
     if (hit === null) return [];
-    if (hit.length) return label(wanted, hit);
+    if (hit.length) return label(wanted, hit, seed);
 
     const generated = await this.generate(c);
     if (!generated) return [];
     return label(
       wanted,
       wanted.map((s) => generated[s] ?? []),
+      seed,
     );
   }
 
@@ -429,7 +512,29 @@ export class FirearmUsesService {
     }
   }
 
-  /** Every eligible slice for this class, in one call, then stored. */
+  /**
+   * Every eligible list for this class, over several rounds, then stored.
+   *
+   * ⚠️ ONE CALL WAS NEVER GOING TO PRODUCE A BIG LIST, whatever the cap said.
+   * Asked once, the model gives its best two to five and stops — that is what
+   * "list the uses" means to it, and raising `maxItems` from 8 to 12 changed
+   * nothing. Operator, 2026-09-09: "what can we querry it to give more
+   * reasons? We need a huge list of reasons."
+   *
+   * So it is asked REPEATEDLY, and each round after the first is shown
+   * everything already collected and told to give only what is not there. That
+   * is the lever: a model that cannot see its previous answer rewords it, and
+   * a model that can see it goes looking for new ground — different species,
+   * different terrain, a different method, a different season.
+   *
+   * ⚠️ AND THE ROUNDS ARE SMALL ON PURPOSE. Twelve sentences × five lists is
+   * already 2,000 tokens of JSON; asking for forty in one response invites a
+   * truncated body, and a truncated body is a `JSON.parse` throw that costs
+   * the whole class. Three modest rounds are safer than one enormous one.
+   *
+   * ⚠️ THE COST IS PAID ONCE, EVER, PER CLASS. Three calls the first time
+   * anybody holds a .30-06; nothing for every applicant after them.
+   */
   private async generate(
     c: FirearmClass,
   ): Promise<Partial<Record<UseSlice, string[]>> | null> {
@@ -438,51 +543,103 @@ export class FirearmUsesService {
     const slices = eligibleSlices(c.type, c.action);
     if (!slices.length) return null;
 
-    let out: Partial<Record<UseSlice, string[]>> = {};
+    const out: Record<string, string[]> = Object.fromEntries(
+      slices.map((s) => [s, [] as string[]]),
+    );
     let model = '';
-    try {
-      const res = await this.llm.complete({
-        maxTokens: 3000,
-        timeoutMs: 90_000,
-        system: SYSTEM,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: [
-                  'Firearm class:',
-                  `  calibre: ${c.calibre || 'not stated'}`,
-                  `  type: ${c.type || 'not stated'}`,
-                  `  action: ${c.action || 'not stated'}`,
-                  '',
-                  'Answer for each of these shooters separately:',
-                  ...slices.map((s) => `  ${SLICE_KEY[s]}: ${SLICE_LABEL[s]}`),
-                ].join('\n'),
-              },
-            ],
-          },
-        ],
-        json: { schema: schemaFor(slices) },
-        purpose: 'motivation.firearm-uses',
-      });
-      model = res.model;
-      const raw = JSON.parse(res.text) as Record<string, unknown>;
-      // ⚠️ FILTERED TO THE SLICES WE ASKED FOR. A key we did not offer is a
-      // section this class cannot fall into, whatever the model called it.
-      out = Object.fromEntries(
-        slices.map((s) => [s, this.clean(raw[SLICE_KEY[s]], s, c)]),
-      ) as Partial<Record<UseSlice, string[]>>;
-    } catch (err) {
-      this.logger.warn(
-        `Use profile generation failed for ${c.calibre}/${c.type}: ${(err as Error).message}`,
-      );
-      return null;
+    let rounds = 0;
+
+    for (let round = 0; round < ROUNDS; round++) {
+      // Nothing left to ask for — every list is full.
+      if (slices.every((s) => out[s].length >= PER_SLICE)) break;
+      let raw: Record<string, unknown>;
+      try {
+        const res = await this.llm.complete({
+          maxTokens: 4000,
+          timeoutMs: 90_000,
+          system: SYSTEM,
+          messages: [
+            {
+              role: 'user',
+              content: [{ type: 'text', text: this.ask(c, slices, out, round) }],
+            },
+          ],
+          json: { schema: schemaFor(slices) },
+          purpose: 'motivation.firearm-uses',
+        });
+        model = res.model;
+        raw = JSON.parse(res.text) as Record<string, unknown>;
+      } catch (err) {
+        this.logger.warn(
+          `Use profile round ${round + 1} failed for ${c.calibre}/${c.type}: ${(err as Error).message}`,
+        );
+        // ⚠️ A LATER ROUND THAT FAILS KEEPS THE EARLIER ONES. Round 1 is the
+        // one that matters; rounds 2 and 3 are enrichment, and losing them
+        // must not lose the class.
+        break;
+      }
+      rounds++;
+      for (const s of slices) {
+        // ⚠️ FILTERED TO THE LISTS WE ASKED FOR. A key we did not offer is a
+        // purpose this class cannot hold, whatever the model called it.
+        out[s] = merge(out[s], this.clean(raw[SLICE_KEY[s]], s, c));
+      }
     }
 
-    await this.store(c, slices, out, model);
-    return out;
+    if (!rounds) return null;
+    const result = Object.fromEntries(
+      slices.map((s) => [s, out[s]]),
+    ) as Partial<Record<UseSlice, string[]>>;
+    this.logger.log(
+      `Use profile ${c.calibre}/${c.type}: ${rounds} round(s), ` +
+        slices.map((s) => `${s}=${out[s].length}`).join(' '),
+    );
+    await this.store(c, slices, result, model);
+    return result;
+  }
+
+  /** One round's question, carrying everything the earlier rounds produced. */
+  private ask(
+    c: FirearmClass,
+    slices: readonly UseSlice[],
+    have: Record<string, string[]>,
+    round: number,
+  ): string {
+    const lines = [
+      'Firearm class:',
+      `  calibre: ${c.calibre || 'not stated'}`,
+      `  type: ${c.type || 'not stated'}`,
+      `  action: ${c.action || 'not stated'}`,
+      '',
+      'Answer for each of these shooters separately:',
+      ...slices.map((s) => `  ${SLICE_KEY[s]}: ${SLICE_LABEL[s]}`),
+    ];
+    if (round === 0) return lines.join('\n');
+
+    /**
+     * ⚠️ THE WHOLE POINT OF A SECOND ROUND IS THIS BLOCK. Without it the model
+     * returns its first answer in new words and the union grows by nothing.
+     */
+    lines.push(
+      '',
+      'YOU HAVE ALREADY GIVEN THESE. Do not repeat any of them, and do not',
+      'reword them:',
+    );
+    for (const s of slices) {
+      lines.push(`  ${SLICE_KEY[s]}:`);
+      if (!have[s].length) lines.push('    (nothing yet)');
+      for (const u of have[s]) lines.push(`    - ${u}`);
+    }
+    lines.push(
+      '',
+      'Now give FURTHER uses, genuinely different from those: a different',
+      'species or quarry, a different terrain or province, a different method,',
+      'a different distance, a different time of year, a different format of',
+      'competition, or the preparation and practice that surrounds the main',
+      'use. If you genuinely have nothing further for one of these shooters,',
+      'return an empty list for them rather than rewording what is above.',
+    );
+    return lines.join('\n');
   }
 
   /**
@@ -510,8 +667,14 @@ export class FirearmUsesService {
         refused++;
         continue;
       }
+      // See STORAGE_CLAIMS: the pack answers storage from the applicant's own
+      // premises, and this table knows nothing about them.
+      if (STORAGE_CLAIMS.some((w) => u.toLowerCase().includes(w))) {
+        refused++;
+        continue;
+      }
       out.push(u);
-      if (out.length >= PER_SLICE) break;
+      if (out.length >= PER_ROUND) break;
     }
     if (refused) {
       // Not an error — the screen is doing its job — but a class that loses
@@ -582,6 +745,120 @@ function schemaFor(slices: readonly UseSlice[]) {
 
 
 /**
+ * A later round folded into what we already hold, without the repeats.
+ *
+ * ⚠️ THE MODEL REWORDS RATHER THAN REFUSES. Told not to repeat itself it
+ * mostly obliges, but "I hunt impala in the bushveld" comes back as "I use it
+ * for impala in thick bush" often enough that an exact-match check catches
+ * almost nothing. So the comparison is on the CONTENT WORDS — the sentence
+ * stripped of its punctuation and of the scaffolding every one of these
+ * sentences shares — and two sentences sharing most of theirs are one use.
+ */
+function merge(have: readonly string[], added: readonly string[]): string[] {
+  const out = [...have];
+  const seen = have.map(contentWords);
+  for (const u of added) {
+    if (out.length >= PER_SLICE) break;
+    const words = contentWords(u);
+    if (!words.size) continue;
+    if (seen.some((s) => overlaps(s, words))) continue;
+    out.push(u);
+    seen.push(words);
+  }
+  return out;
+}
+
+/** Everything every one of these sentences says, so it distinguishes nothing. */
+const SCAFFOLDING = new Set([
+  'i',
+  'it',
+  'for',
+  'the',
+  'a',
+  'an',
+  'my',
+  'and',
+  'or',
+  'of',
+  'on',
+  'in',
+  'at',
+  'to',
+  'with',
+  'use',
+  'uses',
+  'used',
+  'using',
+  'this',
+  'that',
+  'firearm',
+  'rifle',
+  'shotgun',
+  'handgun',
+  'where',
+  'when',
+  'during',
+  'from',
+  'its',
+  'as',
+  'by',
+  'is',
+  'are',
+  'be',
+]);
+
+function contentWords(s: string): Set<string> {
+  return new Set(
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !SCAFFOLDING.has(w)),
+  );
+}
+
+/**
+ * Two sentences saying the same thing.
+ *
+ * ⚠️ MEASURED AGAINST THE SHORTER ONE. "I hunt impala" against "I hunt impala
+ * in the bushveld in winter" shares everything the short one has, and calling
+ * that 40% similar because the long one has more words would let a sentence
+ * back in by padding it.
+ */
+function overlaps(a: Set<string>, b: Set<string>): boolean {
+  const [small, big] = a.size <= b.size ? [a, b] : [b, a];
+  if (!small.size) return false;
+  let shared = 0;
+  for (const w of small) if (big.has(w)) shared++;
+  return shared / small.size >= 0.7;
+}
+
+/**
+ * The window of a list that reaches the writer, rotated per firearm.
+ *
+ * ⚠️ NOT THE HEAD OF THE LIST. Everybody holding a .30-06 would be handed the
+ * same ten sentences in the same order, which is how a battery of documents
+ * starts to look like one document. `offset` comes from the firearm's own
+ * serial, so it is stable for a member across regenerations and different
+ * between members.
+ */
+export function offerFrom(uses: readonly string[], offset: number): string[] {
+  if (uses.length <= OFFER_PER_LIST) return [...uses];
+  const start = ((offset % uses.length) + uses.length) % uses.length;
+  return Array.from(
+    { length: OFFER_PER_LIST },
+    (_, i) => uses[(start + i) % uses.length],
+  );
+}
+
+/** A small stable number off a serial, for the window above. */
+export function offsetFor(seed: string): number {
+  let h = 0;
+  for (const ch of seed ?? '') h = (h * 31 + ch.charCodeAt(0)) % 100_000;
+  return h;
+}
+
+/**
  * The slices, named, with the empty ones dropped.
  *
  * ⚠️ ONE ENTRY PER DISCIPLINE, NEVER MERGED. A section 16 row comes back as a
@@ -592,8 +869,13 @@ function schemaFor(slices: readonly UseSlice[]) {
 function label(
   slices: readonly UseSlice[],
   uses: readonly string[][],
+  seed: string,
 ): CandidateUses[] {
+  const offset = offsetFor(seed);
   return slices
-    .map((s, i) => ({ label: SLICE_TITLE[s], uses: uses[i] ?? [] }))
+    .map((s, i) => ({
+      label: SLICE_TITLE[s],
+      uses: offerFrom(uses[i] ?? [], offset),
+    }))
     .filter((g) => g.uses.length);
 }
