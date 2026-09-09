@@ -539,17 +539,19 @@ describe('the overlap direction in the generation prompt', () => {
     expect(p).toMatch(/MAY NOT DO IS ASSERT A NEW FACT/);
   });
 
-  it('briefs the comparison SECTION to argue, not to wait', () => {
+  it('briefs the BATTERY SECTION to argue, not to wait', () => {
     // The section brief and the overlap note are two different levers and
     // both used to point the wrong way. This is the section one: it reaches
-    // the model only when the plan carries `comparison`, which happens only
-    // when a same-class holding exists.
+    // the model only when the plan carries `held_firearms`, which happens when
+    // the applicant holds anything at all — not, as it once did, only when a
+    // SAME-CLASS holding exists. The DFO reads the licence record against the
+    // request either way.
     const p = generationUserPrompt(
       withNote('already holds .308 Win'),
-      planFor(PACK.licenceType, 7, { hasOverlap: true }),
+      planFor(PACK.licenceType, 7, { holdsFirearms: true }),
     );
-    expect(p).toMatch(/THIS ARGUMENT IS MINE TO MAKE, NOT MINE TO WAIT FOR/);
-    expect(p).toMatch(/Never write that I gave no reason/);
+    expect(p).toMatch(/Where I gave a reason of my own, lead with it/);
+    expect(p).toMatch(/WHERE THE DIRECTION ABOVE NAMES A SAME-CLASS HOLDING/);
     // The invention ban survives, aimed at FACTS rather than at the argument.
     expect(p).toMatch(/assert a NEW FACT/);
     expect(p).not.toMatch(/ONLY THE REASON I GAVE/);

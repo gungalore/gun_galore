@@ -696,6 +696,16 @@ function alternateHeader(
   drawMark?: (x: number, y: number, size: number) => void,
 ): number {
   const upper = title.toUpperCase();
+  /**
+   * The number and a separator, or nothing at all.
+   *
+   * ⚠️ A DOCUMENT WRITTEN BEFORE THE FIXED SKELETON CARRIES NO NUMBER IN ITS
+   * HEADINGS, and the renderer passes an empty string rather than inventing
+   * one. Concatenated blind that printed a separator with nothing in front of
+   * it — " — SAFE STORAGE" — on every page of every old motivation, which are
+   * re-rendered from stored text on every download.
+   */
+  const lead = (sep: string) => (number ? `${number}${sep}` : '');
 
   if (style === 'underline') {
     // Centred small caps over a hairline the full width of the column.
@@ -754,7 +764,7 @@ function alternateHeader(
       .font(f.sansBold)
       .fontSize(size)
       .fillColor(c.deep)
-      .text(`${number}  ${upper}`, tx, y, {
+      .text(`${lead('  ')}${upper}`, tx, y, {
         width: CONTENT_W - (tx - PAD_X),
         characterSpacing: size * 0.2,
         lineBreak: false,
@@ -775,7 +785,7 @@ function alternateHeader(
     .font(f.sansSemi)
     .fontSize(size)
     .fillColor(c.mut)
-    .text(`${number} — ${upper}`, PAD_X, y, {
+    .text(`${lead(' — ')}${upper}`, PAD_X, y, {
       width: CONTENT_W,
       characterSpacing: tracking,
       lineBreak: false,
@@ -817,7 +827,9 @@ export function sectionHeader(
   if (style !== 'band') {
     return alternateHeader(chrome, number, title, y, style, drawMark);
   }
-  const label = `${number} · ${title.toUpperCase()}`;
+  const label = number
+    ? `${number} · ${title.toUpperCase()}`
+    : title.toUpperCase();
   const size = px(11);
   const padX = px(15);
   const padY = px(7);

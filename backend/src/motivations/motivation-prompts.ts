@@ -156,23 +156,32 @@ const PROSE_TARGET: Record<MotivationLicenceType, string> = {
     'About 600 to 900 words. Usage history over the licence period and the continued need carry the weight.',
 };
 
+/**
+ * ⚠️ ONE ENTRY EACH, AND THE OTHER EIGHT WERE DELETED RATHER THAN LEFT.
+ *
+ * These were three draws — four openings, three closings, three cadences —
+ * varied per document so two would not read alike. MOTIVATION-GUIDE-BOOK
+ * failure mode 9 records the result: a document that read as stitched
+ * together. Every approved pack on file opens the same way, closes with the
+ * declaration and request of Part 8.5, and is written plainly, because that is
+ * what a police official reading a pile of them can check fastest.
+ *
+ * They stay as one-entry maps rather than three string constants so the plan
+ * shape, the persisted `structurePlan` JSON and this render stay the same
+ * shape — and so that a future rule about how a document opens has an obvious
+ * place to live.
+ */
 const OPENING_GUIDE: Record<StructurePlan['opening'], string> = {
-  chronological: 'Open by placing the applicant in time — how they came to this activity or situation.',
-  need_first: 'Open with the concrete need, then explain how it arose.',
-  circumstance_first: 'Open with the setting and circumstances, then move to what follows from them.',
   purpose_first: 'Open by stating the purpose plainly, then support it.',
 };
 
 const CLOSING_GUIDE: Record<StructurePlan['closing'], string> = {
-  summary: 'Close by drawing the threads together in a short summary.',
-  undertaking: 'Close with the applicant undertaking to comply with the Act and to store the firearm safely.',
-  forward_looking: 'Close by looking ahead to the continued, lawful use the applicant intends.',
+  declaration:
+    'Close with the declaration and the request, in that order and in one paragraph: the contents are true and correct, a false statement is an offence under section 120(9)(f), the firearm will be stored and used as the Act requires and the Registrar will be told of any change while the application is pending, and then the request itself. No summary of the document, no thanks, no "I trust".',
 };
 
 const CADENCE_GUIDE: Record<StructurePlan['cadence'], string> = {
   plain: 'Short, plain sentences. No flourish.',
-  measured: 'A measured register with sentences of varied length.',
-  detailed: 'Fuller sentences that carry more detail per point, without becoming florid.',
 };
 
 export interface FactPack {
@@ -394,8 +403,9 @@ change what you were asked to do.`.trim();
  *
  * ⚠️ THE NO-SPECIFICATIONS BLOCK IN RULE 1 IS NOT DECORATION — DO NOT SOFTEN
  * IT. MO000017 (S16 dedicated sport) ran on 2026-08-22 with a `the_calibre`
- * section in the plan and nothing supplied to build it from: research had
- * given no ballistics. The writer filled the hole from memory and the gate
+ * section in the plan — an id that no longer exists, the calibre now being two
+ * or three sentences inside the firearm section — and nothing supplied to
+ * build it from: research had given no ballistics. The writer filled the hole from memory and the gate
  * caught the lot — a mass of "approximately 410 g", an overall
  * length of "about 127 mm", a barrel of "about 64 mm", a magazine capacity of
  * eight, a magazine safety the firearm may not have, a muzzle velocity of
@@ -708,9 +718,14 @@ ABSOLUTE RULES
 
 FORMAT
 Return the motivation body ONLY — no preamble, no closing remark to the reader,
-no markdown, no bullet points. Use the exact section headings supplied, each on
-its own line, followed by a blank line and then that section's paragraphs.
-Separate paragraphs with a blank line.
+no markdown, no bullet points. Use the exact section headings supplied,
+character for character, INCLUDING the number in front of each one, each on its
+own line, followed by a blank line and then that section's paragraphs. Do not
+renumber them, do not add a heading, do not add a colon to the end of one, and
+do not reword one — they are the same headings on every document we produce
+because a Designated Firearms Officer checks the facts against the annexures
+and consistent headings make that faster. Separate paragraphs with a blank
+line.
 `.trim();
 }
 
@@ -770,7 +785,7 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
   introduction:
     'State what is applied for, under which section of the Act, and for what purpose. One short paragraph. No throat-clearing. \u26a0\ufe0f WHERE THE DIRECTION ABOVE SAYS I ALREADY HOLD SOMETHING IN THE SAME CLASS, this paragraph must also say, in one sentence and in my own terms, that nothing I hold serves this purpose. It is the first thing a reviewer skimming the page sees, and the detailed answer further down is worth less if the opening does not signal that the question has been met. Word it freshly \u2014 not as a formula repeated from document to document.',
   personal_circumstances:
-    'The applicant\u2019s situation in their own detail \u2014 where they live, who else is in the household, what their work and routine involve, so far as they told you. Facts, not adjectives.',
+    'The home, the work and the movements, in that order and in the applicant\u2019s own detail. The home: the type of dwelling, who lives there, who depends on me, the character of the street at night. The work: the occupation, where, the hours, the travel, cash or equipment carried, sites visited, overnight stays, alone or not. The movements: the routes and times that recur \u2014 the early commute, the late return, the farm road \u2014 stated as my own routine. \u26a0\ufe0f FACTS, NOT ADJECTIVES, AND NOT FORM DATA. My employer\u2019s street address, my spouse\u2019s identity number and my marital status stated for its own sake are boxes on the SAPS 271; in this document they are a paragraph a reviewer has to read before reaching the argument. \u26a0\ufe0f AND NO HUNTING OR SPORT WORDS ANYWHERE IN IT \u2014 a routine that mentions the range or the farm I hunt on has put a different section\u2019s purpose into a self-defence application.',
   the_quarry:
     'What I hunt and where. Name the species, the terrain and the province or region, the typical range a shot is taken at, the conditions. Where the research gives the animals\u2019 weight range or the ground\u2019s character, use it. \u26a0\ufe0f GO FURTHER THAN NAMING THEM: for each species, say what hunting it actually demands \u2014 the energy needed at the range it is taken at, whether the shot is usually standing or from a rest, whether the animal is likely to run on, what the terrain does to shot placement and follow-up. This is the section that shows I understand my quarry rather than merely wanting a rifle. Do not invent species or places I did not mention.',
   the_discipline:
@@ -780,19 +795,21 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
   existing_measures:
     'What this applicant ALREADY does about the risk, and where each measure stops. Take them one at a time from the facts — the wall, the beams, the alarm, the armed response contract and its response time, the gate, the dog, the routes and hours kept, the workplace’s own security — name it, say what it protects against, and then say plainly what it cannot do. ⚠️ THIS IS THE HALF OF THE SECTION 13 TEST THE DOCUMENT USUALLY MISSES. A Registrar is deciding whether a firearm is NECESSARY, and necessary means the alternatives have been tried and fall short; a document that asks for a firearm without disposing of the alternatives is asking for it as a first resort. ⚠️ AND ONLY WHAT THE FACTS CARRY. Never invent a measure to knock down, never say a measure failed on a particular occasion unless the applicant said so, and never disparage armed response or the police — the honest sentence is that a response takes minutes and an attack takes seconds, which is a fact about distance and not a complaint.',
   experience:
-    'Training, competency, proficiency, hours and years, and what they have actually done with a firearm. Concrete: dates, certificates, counts. This is the section a reviewer reads to decide whether the applicant is competent, which is what the Central Firearms Register actually cares about.',
+    'The competency certificate by NUMBER, its date of issue and what it is endorsed for; then the unit standards passed and the provider, and any course, refresher or regular practice the applicant actually stated. ⚠️ NO EXPIRY DATE, EVER. A competency expiry printed in prose has twice been wrong on a document somebody signed, and the certificate itself carries the date; the renderer prints the table. ⚠️ AND NOTHING ABOUT RELOADING. It is a different authorisation under a different section and it belongs in no motivation for a licence to possess.',
   the_firearm:
-    'Why THIS firearm for THAT purpose \u2014 the section above defines the requirement and this one answers it. Use the specification the facts and the research block actually give you: the cartridge, the ballistics at the ranges named, the action, the barrel, the capacity, the mass. \u26a0\ufe0f AND NOTHING THEY DO NOT \u2014 rule 1 applies to every figure here as it does in the calibre section; a dimension or a capacity you recalled rather than read is invented, however ordinary it sounds.\n\n   \u26a0\ufe0f BE CONCRETE ABOUT USE, NOT JUST SUITABILITY. Say how I will actually use it: in which discipline and at which stage or course of fire, or on which species and at what range; what the action, the trigger, the barrel length or the sighting arrangement lets me do that another firearm would not; and what it means for practice volume, recoil, follow-up shots or carrying it all day. Draw the line from the requirement to the choice and then to the use.\n\n   If a specification looks over- or under-matched to the stated purpose, address it plainly rather than ignoring it. \u26a0\ufe0f THIS IS ELABORATION, NOT PADDING: every sentence must be about THIS firearm and THIS applicant\u2019s use of it. Nothing about the manufacturer\u2019s history, nothing about the sport in general.',
-  the_calibre:
-    'The CARTRIDGE argued against the requirement the purpose section set \u2014 not the platform, which the firearm section answers. What it means for a humane kill on the species named or for the course of fire entered, what the recoil does to follow-up shots and to how much practice is affordable, why it is the sensible cartridge for the use described. \u26a0\ufe0f FIGURES ONLY WHERE YOU WERE GIVEN THEM. Where the research block carries ballistics, use them \u2014 what the cartridge holds at the range a shot is actually taken at. Where it does not, GIVE NO FIGURES AT ALL: no velocity, no energy, no bullet weight, no capacity, no dimension, no date, no account of who designed it or why. Rule 1 bites harder in this section than anywhere else in the document, because this is the section that reaches for cartridge knowledge, and cartridge knowledge you were not given is invention. Argue instead from what IS supplied \u2014 the stated purpose, the discipline or the quarry, the ranges and conditions described, the recoil this applicant will actually be shooting \u2014 and write a shorter section without apology. \u26a0\ufe0f IT MUST REACH THIS APPLICANT. A history of the cartridge that never arrives at this quarry or this discipline is the padding rule 7 forbids, and it reads the same in every document carrying it.',
-  comparison:
-    'Why the firearm applied for does not duplicate one I already hold \u2014 the objection the Registrar raises on its own, met before it is put. Name the held firearm as it appears in the facts and say what differs: the division or discipline, the course of fire, the quarry or the terrain, the role each firearm plays. \u26a0\ufe0f ONE SHORT PARAGRAPH PER FIREARM, NOT ONE PASSAGE COVERING THEM ALL. The direction above lists what I hold, one at a time. Take them one at a time: name it, say what I use it for where I have said, and close on why it cannot do the job this application is about. A reviewer pulls my licence record and counts before they read a word of this, so a document that enumerates and disposes of each holding has answered them in the order they asked. \u26a0\ufe0f AND VARY THE CLOSE. Four paragraphs ending in the same sentence is a template showing through, and it is the one thing that makes a real argument read as a form letter. \u26a0\ufe0f THIS ARGUMENT IS MINE TO MAKE, NOT MINE TO WAIT FOR. Where I gave a reason of my own, lead with it. Where I did not, reason it out from the licence type, the purpose, the discipline or the quarry, the ranges and the ground, my experience and record, and what each firearm is chambered for and is therefore suited to. That reasoning is RATIONALE under rule 8 and it is your craft to supply, exactly as a paid motivation writer supplies it. What you may never do is assert a NEW FACT to make it work: a firearm I do not own, a discipline I did not name, an event that did not happen. Never write that I gave no reason, never leave the objection standing, and never suggest the overlap does not matter. This section is in the plan only because a same-class holding exists \u2014 the direction above says which one.',
+    'Why THIS firearm for THAT purpose \u2014 the section above defines the requirement and this one answers it. Use the specification the facts and the research block actually give you: the cartridge, the ballistics at the ranges named, the action, the barrel, the capacity, the mass. \u26a0\ufe0f AND NOTHING THEY DO NOT \u2014 rule 1 applies to every figure here; a dimension or a capacity you recalled rather than read is invented, however ordinary it sounds.\n\n   \u26a0\ufe0f THE CALIBRE IS ARGUED HERE, IN TWO OR THREE SENTENCES, AND NOWHERE ELSE. It used to have a heading of its own and what filled it was a cartridge essay \u2014 a history, a designer, a velocity table \u2014 that reached this applicant late or never. So: what the cartridge means for a humane kill on the species named, or for the course of fire entered, or for a shot taken inside a house; what the recoil does to follow-up shots and to how much practice is affordable. FIGURES ONLY WHERE YOU WERE GIVEN THEM. Where the research block carries none, give none \u2014 no velocity, no energy, no bullet weight, no dimension, no date, no account of who designed it \u2014 and argue from the purpose, the quarry or discipline, the ranges and the conditions instead. A shorter passage needs no apology. Never a ballistics table.\n\n   \u26a0\ufe0f BE CONCRETE ABOUT USE, NOT JUST SUITABILITY. Say how I will actually use it: in which discipline and at which stage or course of fire, or on which species and at what range; what the action, the trigger, the barrel length or the sighting arrangement lets me do that another firearm would not; and what it means for practice volume, recoil, follow-up shots or carrying it all day. Draw the line from the requirement to the choice and then to the use.\n\n   If a specification looks over- or under-matched to the stated purpose, address it plainly rather than ignoring it. \u26a0\ufe0f THIS IS ELABORATION, NOT PADDING: every sentence must be about THIS firearm and THIS applicant\u2019s use of it. Nothing about the manufacturer\u2019s history, nothing about the sport in general.',
+  held_firearms:
+    'ONE SENTENCE PER FIREARM, THIRTY TO SIXTY WORDS EACH, TAKEN ONE AT A TIME FROM THE LIST ABOVE. The renderer prints the table \u2014 make and model, type, calibre, serial, section, licensed purpose, expiry \u2014 so do not repeat it. What you write is the role and the gap: what the firearm is licensed for, and why it cannot do the job this application is about. \u26a0\ufe0f BUILT ONLY FROM THE CARD AND THE STATED USE. Where a card gives no purpose, write \u201cThe [make] [calibre] is licensed under section [N].\u201d and stop; never invent a role, never write \u201cbackup\u201d or \u201csecondary\u201d, and never describe a held firearm with hunting or sport adjectives it was not given. \u26a0\ufe0f NEVER DISPARAGE A FIREARM I ALREADY HOLD \u2014 state its role and the gap. \u26a0\ufe0f AND VARY THE CLOSE: four sentences ending the same way is a template showing through. Where I gave a reason of my own, lead with it; where I did not, reason it out from the purpose, the discipline or the quarry, the ranges and what each firearm is chambered for. That reasoning is yours to supply, as a paid motivation writer supplies it. What you may never do is assert a NEW FACT to make it work \u2014 a firearm I do not own, a discipline I did not name, an event that did not happen. \u26a0\ufe0f WHERE THE DIRECTION ABOVE NAMES A SAME-CLASS HOLDING, that one is answered here in full and first: it is the objection the Registrar raises on their own, and a document that leaves it standing invites them to draw their own conclusion.',
+  association:
+    'The association, its SAPS accreditation number, my membership number, the date I joined, the dedicated status type and the date it was granted, my last activity report, and the endorsement for this serial and what it says \u2014 each cited to its annexure letter where one exists. \u26a0\ufe0f ONLY WHAT THE FACTS CARRY, and nothing quoted from the association\u2019s own marketing. \u26a0\ufe0f ON A SECTION 15 THIS SECTION NAMES MEMBERSHIP AND STOPS THERE: \u201cI am a member of [association], membership number [number], since [date].\u201d The word \u201cdedicated\u201d may not appear anywhere in a section 15 document, in any sentence about me \u2014 the Act still defines an occasional hunter and an occasional sports person as somebody who is NOT a member of an accredited association, and claiming dedicated status argues me out of the section I am applying under.',
+  use_since_licensing:
+    'What I have actually done with this firearm since it was licensed, and what has changed. This is a renewal: it shows continuity, it does not re-argue the original application from scratch. Where the licence is a self-defence one, whether the circumstances that gave rise to the need have changed, any incident since, the current precinct figures for my home station, and the security measures still in place. Where it is a hunting or sport licence, the hunts or shoots since it was issued with the years and places as I gave them, and for a dedicated licence the association, the continued status, and the activity reports submitted each year. \u26a0\ufe0f \u201cNOTHING HAS CHANGED\u201d IS NOT A SECTION. It is the facts that show it, or it is nothing.',
   statutory_application:
     'THE ONLY SECTION THAT MAY QUOTE \u2014 and rule 4 decides whether it does. Where a <statutory-text> block was supplied, set that text out verbatim and numbered as in the source, then answer each quoted element immediately beneath it with my own facts: the element, then the fact that satisfies it, in order; quote only what you apply and leave nothing quoted hanging. \u26a0\ufe0f WHERE NO SUCH BLOCK WAS SUPPLIED, QUOTE NOTHING \u2014 name the section by number, take its requirements in turn in plain language, and put my facts against each of them. That is a complete section, not a lesser one, and inventing the wording of the Act to fill it is rule 1 applied to the law instead of the applicant. Either way this is where a reviewer checks the application against the Act, so it is the one place legal language belongs; every other section stays in plain words.',
   storage_safety:
     'The safe, its standard, where it is installed and how it is fixed, who has access, and how the firearm is handled and transported. Specific to what they described.',
   compliance_history:
-    'Licences held, applications made, anything on record, and the applicant\u2019s clean standing where they have stated it. Never assert an absence of a criminal record unless they supplied it \u2014 SAPS verifies this themselves.',
+    'ONE SHORT PARAGRAPH, AND ONLY BECAUSE ONE OF THE SIX DECLARATION ANSWERS IS A YES. Take each disclosed item in this shape and no other: \u201cIn [year] a case was opened at [station] under CAS [number] for [charge]; the outcome was [outcome].\u201d Nothing else \u2014 no explanation offered for it, no character evidence, no mitigation. \u26a0\ufe0f AND NEVER THE OTHER DIRECTION: no \u201cI have no criminal record\u201d, no \u201cI am a law-abiding citizen\u201d, no clean-standing claim of any kind. SAPS runs that check themselves, an unevidenced claim of good character is what the reviewer is reading the annexures to decide, and a section that volunteers one has argued against itself.',
   conclusion:
     'ONE PARAGRAPH, IN THIS ORDER, IN MY OWN WORDS: that the contents are true and correct to the best of my knowledge; that I understand a false statement in an application is an offence in terms of section 120(9)(f) of the Firearms Control Act 60 of 2000; that I will store and use the firearm as the Act requires and will inform the Registrar of any change in my circumstances while the application is pending; and then the request itself \u2014 "I respectfully request that a licence be issued to me under section [N] of the Firearms Control Act 60 of 2000 to possess the [make] [model] [calibre] [type], serial [serial], for [purpose]." No summary of the document, no thanks, no "I trust", no "I look forward to". \u26a0\ufe0f THE SECTION NUMBER, THE FIREARM AND THE PURPOSE COME FROM THE FACTS, never from this brief. \u26a0\ufe0f AND ASKING IS NOT PREDICTING: rule 3 forbids saying the application should succeed; it does not forbid the request, and a motivation that never asks reads as an essay somebody attached to a form. \u2014 previously: A short undertaking in my own voice, and then the ask. \u26a0\ufe0f END BY REQUESTING THE LICENCE. Name the section THIS application is made under, the make, the calibre and the serial, and state THIS applicant’s purpose \u2014 "I respectfully request the Registrar to issue me with a licence under section [number] for the [make] [calibre], serial [no], for [the purpose stated in the facts]." ⚠️ THE SECTION NUMBER AND THE PURPOSE COME FROM THE FACTS, NEVER FROM THIS BRIEF. The worked example here named section 16 and dedicated sport shooting, which is right for exactly one of the five licence types and wrong for the other four: a section 13 self-defence applicant, a section 15 occasional hunter, a dedicated HUNTER and a section 24 renewal were each shown a model answer asking for a dedicated sport licence, in the one paragraph whose whole job is to say what is being applied for. That request is what the document is FOR, and a motivation that never asks reads as an essay somebody attached to a form. \u26a0\ufe0f ASKING IS NOT PREDICTING. Rule 3 forbids saying the application should succeed, is likely to be approved, or meets the threshold. It does not forbid the request itself, and an earlier version of this brief confused the two and struck out the ask along with the prediction. No summary of everything above, and no thanks.',
 };
@@ -829,10 +846,15 @@ export function generationUserPrompt(
   plan: StructurePlan,
 ): string {
   const overrides = BRIEF_OVERRIDES[pack.licenceType] ?? {};
+  // \u26a0\ufe0f NO INDEX IN FRONT OF THE HEADING. The headings carry their own fixed
+  // numbers now (book Part 4.2), and they do NOT re-sequence when a section is
+  // omitted \u2014 a section 15 runs 1, 3, 5, 6, 7, 8, 9, 11, 12. Numbering the
+  // list here as well produced "1. 3. My hunting" and, worse, told a writer
+  // reading its own instructions that the heading was numbered 1.
   const structure = plan.sections
     .map(
-      (s, i) =>
-        `${i + 1}. ${s.heading}  (about ${s.paragraphs} paragraph${s.paragraphs === 1 ? '' : 's'})\n   \u2192 ${overrides[s.id] ?? SECTION_BRIEFS[s.id]}`,
+      (s) =>
+        `${s.heading}  (about ${s.paragraphs} paragraph${s.paragraphs === 1 ? '' : 's'})\n   \u2192 ${overrides[s.id] ?? SECTION_BRIEFS[s.id]}`,
     )
     .join('\n');
 

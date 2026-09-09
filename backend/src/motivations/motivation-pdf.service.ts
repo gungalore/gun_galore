@@ -686,10 +686,40 @@ function shortenName(full: string): string {
   return [first, ...rest.map((n) => n[0].toUpperCase()), surname].join(' ');
 }
 
-/** A short line ending in a colon reads as a section heading. */
+/**
+ * A short line that starts with its section number reads as a heading.
+ *
+ * ⚠️ THE TEST USED TO BE A TRAILING COLON, AND THE COLON IS GONE. Headings are
+ * numbered and colon-free since the skeleton was fixed (MOTIVATION-GUIDE-BOOK
+ * Part 7.1). The number is the better test in both directions: a paragraph can
+ * end in a colon — a sentence introducing a quoted subsection does — and none
+ * of them begins "7. ".
+ *
+ * ⚠️ THE COLON FORM IS STILL ACCEPTED, for documents generated before the
+ * change. Their text is stored and re-rendered on every download, and a
+ * motivation whose headings all became paragraphs would print as one
+ * unbroken wall with no contents page.
+ */
 function isHeading(line: string): boolean {
   const t = line.trim();
-  return t.length > 0 && t.length <= 80 && t.endsWith(':');
+  if (t.length === 0 || t.length > 80) return false;
+  return /^\d{1,2}\.\s/.test(t) || t.endsWith(':');
+}
+
+/**
+ * A heading split into the number the book gives it and its title.
+ *
+ * ⚠️ THE NUMBER IS THE BOOK'S, NOT A RUNNING COUNT, and the difference shows
+ * on every document that omits a section. A section 15 runs 1, 3, 5, 6, 7, 8,
+ * 9, 11, 12 — the gaps say that heading 2 is for a self-defence application
+ * and heading 10 is for somebody with something to declare. Numbering them
+ * 1..9 as they are drawn would renumber the spine the SAPS 271 mirrors, and
+ * the contents page would disagree with every other pack a DFO has read.
+ */
+function splitHeading(heading: string): { number: string; title: string } {
+  const m = /^(\d{1,2})\.\s+(.*)$/.exec(heading.trim());
+  if (m) return { number: m[1].padStart(2, '0'), title: m[2] };
+  return { number: '', title: heading.trim().replace(/:\s*$/, '') };
 }
 
 /** One scanned copy, ready to draw. */
@@ -1183,15 +1213,18 @@ export class MotivationPdfService {
      * A numbered section header, as the handoff draws them: a ring node, then
      * the title on a highlight band.
      *
-     * ⚠️ NUMBERED IN SEQUENCE, and the number is assigned HERE rather than
-     * carried on the section plan. motivation-structure.ts shuffles the middle
-     * sections by seed, so a number baked into the plan would come out
-     * "01, 04, 02" on the page. The reader wants to know this is the third
-     * thing they are reading, not which slot it occupies in a registry.
+     * ⚠️ THE NUMBER COMES OFF THE HEADING, NOT OFF A COUNTER HERE. It used to
+     * be a running 01, 02, 03 assigned as sections were drawn, because the
+     * plan shuffled the middle sections by seed and a stored number would have
+     * printed "01, 04, 02". The skeleton is fixed now and the twelve numbers
+     * are the book's own (Part 4.2), gaps included — so counting here would
+     * renumber a section 15 document 1..9 and put its contents page out of
+     * step with every other pack a DFO reads.
+     *
+     * A heading with no number — anything generated before the fixed skeleton
+     * — draws with no number at all rather than with an invented one.
      */
-    let sectionNo = 0;
     const renderHeading = (heading: string) => {
-      sectionNo += 1;
 
       // Keep a heading with at least a couple of lines of its section: if we
       // are near the foot of the page, start the next one now rather than
@@ -1201,12 +1234,16 @@ export class MotivationPdfService {
 
       toc.push({ heading, page: doc.bufferedPageRange().count });
 
-      const num = String(sectionNo).padStart(2, '0');
-      const mark = input.sectionMarks?.[heading];
+      const { number: num, title } = splitHeading(heading);
+      // ⚠️ NORMALISED THE SAME WAY THE KEY WAS BUILT. `sectionMarksFor` keys by
+      // the heading uppercased with the colon stripped — "the heading exactly as
+      // it is printed" — and this looked it up with the raw line off the
+      // document, which matched nothing and silently drew no marks at all.
+      const mark = input.sectionMarks?.[heading.replace(/:\s*$/, '').toUpperCase()];
       doc.y = K.sectionHeader(
         chrome,
         num,
-        heading,
+        title,
         doc.y,
         mark
           ? (mx, my, ms) => drawMark(chrome, mark, mx, my, ms, C.deep, 0.55)

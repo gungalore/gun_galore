@@ -140,6 +140,24 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * Both were content changes and both moved the baseline rather than weakening
  * the assertion. All five line counts held at 106/106/102/102/94 through both.
  */
+/**
+ * ⚠️ RE-BASELINED A THIRD TIME ON 2026-09-09 — the fixed skeleton.
+ *
+ * MOTIVATION-GUIDE-BOOK Part 4.2 replaced the seeded heading alternates with
+ * twelve numbered headings that never vary, Part 5 said which of them each
+ * section of the Act omits, and the calibre section was folded into the
+ * firearm section. Three briefs were rewritten to the book (the battery, the
+ * record, competency), two were added (association, the renewal's record of
+ * use), and the opening / closing / cadence draws collapsed to one value each.
+ *
+ * ⚠️ AND THE COUNTS MOVED IN BOTH DIRECTIONS, which is the check that this was
+ * a restructure and not a loss. The section 13 gained four lines (98 → 102):
+ * it got `personal_circumstances` back — the book keeps it and bans the form
+ * data that made it read as padding — while losing the calibre section. The
+ * section 15 lost five (106 → 101) because the calibre went and nothing
+ * replaced it. The two section 16 routes went 102 → 101 for the same reason.
+ * Edit these counts only when a line was meant to be added or removed.
+ */
 const BEFORE_THE_REORDER: Record<
   MotivationLicenceType,
   { lines: number; sha: string }
@@ -168,28 +186,28 @@ const BEFORE_THE_REORDER: Record<
    * transcribes the premises facts out of the document.
    */
   S14_RESTRICTED_SELF_DEFENCE: {
-    lines: 99,
-    sha: 'b0d505d1f8d4954f0421ac31e01de8a4d068bababaa064f737cda1b13f94ac25',
+    lines: 101,
+    sha: '8120a5dfdad571cc788fedb79470cada8ccf8d2e176be93ddd46d24ca234b47f',
   },
   S13_SELF_DEFENCE: {
-    lines: 98,
-    sha: '3f40c2dcdc4a878795e1c419b633cc05d0cfa2b5b5e1bd13b8fc76b04c24b673',
+    lines: 102,
+    sha: '4d5ce6728a22adf9c92c1c6c7f522e811fd5c4be66a7c60f7ad2db4189055c3a',
   },
   S15_OCCASIONAL_HUNTER: {
-    lines: 106,
-    sha: '54e5f5e17371e965ec3000b247868d76ad75bb02b569bb3081c934630ffe5236',
+    lines: 101,
+    sha: '8c7782f37d186f6b5684e7b537dc6cdac1bc598c8cf6474fc616287e174e295b',
   },
   S16_DEDICATED_HUNTER: {
-    lines: 102,
-    sha: '71ddf4b4a7b1013fec1f88f7103c4271fdad279cec315f8705df75434e248f14',
+    lines: 101,
+    sha: '9fd9cef272ff1bd56c12db99f7fa3d5cec45673f9c4bf15fdc6090c50178d1be',
   },
   S16_DEDICATED_SPORT: {
-    lines: 102,
-    sha: '3a476793ca0956c0a9e96298282a62b1adf0d0458651b52ee02ca5e4109b9378',
+    lines: 101,
+    sha: '440cf426031f15c3ac80a43db9873c6bf53dca4f796859b54b87725e7119a71c',
   },
   S24_RENEWAL: {
-    lines: 94,
-    sha: 'c661649dafae3a8c4e0805bb39d42b7db522ec3247fdb8a15ecc68e23c66ccf3',
+    lines: 95,
+    sha: 'f06e62b50a21f9b39e6929704351ba2541e5a52ddfa68d5443f2c55af8dbeb69',
   },
 };
 

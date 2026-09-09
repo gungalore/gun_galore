@@ -301,31 +301,32 @@ function sectionMarksFor(
 }
 
 /**
- * The heading the writer was told to use for the comparison section, as the
- * renderer will print it — uppercased, colon stripped.
+ * The heading of the battery section, as the renderer will print it.
  *
  * ⚠️ THE TABLE BELONGS UNDER THE ARGUMENT IT IS EVIDENCE FOR. It printed as a
  * section of its own AFTER the summary and before the signature, which is
- * where a reviewer has already stopped reading — while the comparison section
- * three pages earlier discussed the same firearms in prose with nothing to
- * check them against.
+ * where a reviewer has already stopped reading — while the section three pages
+ * earlier discussed the same firearms in prose with nothing to check them
+ * against.
  *
- * ⚠️ READ OFF THE PLAN, NEVER MATCHED ON WORDS. `comparison` has four heading
- * alternates per licence type and the plan picks one by seed; a regex over
- * "already hold" or "existing" would work for three of them and silently stop
- * the day an alternate is added.
+ * ⚠️ READ OFF THE PLAN, NOT ASSUMED, EVEN THOUGH THE HEADINGS ARE FIXED NOW.
+ * The section is dropped entirely on a first application, and rows written
+ * before the fixed skeleton carry the old `comparison` id and its wording — so
+ * both ids are looked for, and a row with neither simply gets no table rather
+ * than one under a heading that is not there.
  */
-function comparisonHeadingOf(plan: unknown): string | undefined {
-  return headingOf(plan, 'comparison');
+function batteryHeadingOf(plan: unknown): string | undefined {
+  return headingOf(plan, 'held_firearms') ?? headingOf(plan, 'comparison');
 }
 
 /**
  * The printed heading of one section of the stored plan.
  *
- * ⚠️ READ OFF THE PLAN, NEVER MATCHED ON WORDS. Every section has four heading
- * alternates per licence type and the plan picks one by seed; a regex over
- * "already hold" or "risk" would work for three of them and silently stop the
- * day a fifth is written.
+ * ⚠️ READ OFF THE PLAN, NEVER MATCHED ON WORDS. The wording is fixed today,
+ * but a section is dropped when the applicant's facts do not carry it, and
+ * rows written before the fixed skeleton carry their own picked-by-seed
+ * alternates — so a regex over "already hold" or "risk" would find nothing on
+ * an old document and something on a new one that has no such section.
  */
 function headingOf(plan: unknown, id: string): string | undefined {
   const sections = (plan as { sections?: { id?: string; heading?: string }[] })
@@ -731,7 +732,7 @@ export class MotivationRenderService {
       // summary where a reviewer has stopped reading. Undefined on a plan with
       // no comparison section — a first application holds nothing to compare —
       // and the renderer then prints it as its own section as it always did.
-      batteryHeading: comparisonHeadingOf(row.structurePlan),
+      batteryHeading: batteryHeadingOf(row.structurePlan),
       // ⚠️ THE PRECINCT FIGURES AND THE CUTTINGS PRINT UNDER THE EXPOSURE
       // SECTION, at the foot of the paragraphs that cite them. Operator,
       // 2026-09-09: they "must be in the body of the document itself and form

@@ -2,704 +2,499 @@ import * as crypto from 'node:crypto';
 import { MotivationLicenceType } from '@prisma/client';
 
 // ────────────────────────────────────────────────────────────────────
-// ANTI-TEMPLATE VARIATION — the thing this product lives or dies on.
+// THE FIXED SKELETON — twelve numbered headings, the same ones every time.
 //
-// The operator chose full automation with no human in the loop. That makes one
-// failure mode existential: if every motivation we produce has the same shape,
-// a DFO or CFR reviewer eventually recognises the pattern, and the moment they
-// do, every document we have ever produced is tainted — including the ones our
-// paying customers already submitted. It is not enough for the WORDS to differ.
-// The SHAPE has to differ too.
+// ⚠️ THIS FILE USED TO DO THE OPPOSITE, AND THE REVERSAL IS DELIBERATE.
+// It randomised headings, openings and cadence from a stored seed, to stop a
+// reviewer recognising our documents. MOTIVATION-GUIDE-BOOK failure mode 9
+// records what that produced: "Randomising headings, openings and cadence to
+// defeat template detection, which produced inline headings and a document
+// that read as stitched together."
 //
-// So the structure is decided HERE, in code, from a stored seed — not by the
-// model. Claude is handed a plan and told to phrase it. Two consequences worth
-// stating: the variation is reproducible (an admin can show exactly why two
-// documents differ), and it is verifiable (we check the returned document
-// actually follows the plan, rather than trusting that it did).
+// The premise was wrong, not the implementation. A Designated Firearms Officer
+// does not compare applicants' letters for plagiarism; they compare the facts
+// in the letter to the annexures behind it. Consistent headings make that job
+// faster, which is the only thing the layout is for — and the professionally
+// prepared packs a DFO already knows all use the same spine, mirroring the
+// SAPS 271's own sections. Varying ours made our documents harder to check and
+// solved a problem nobody has reported.
 //
-// The second half of the file is the detector: fingerprint() reduces a document
-// to its STRUCTURE with the content stripped out, so two motivations written
-// about completely different people still score high if they were built the
-// same way. That is the early-warning signal — measured continuously, surfaced
-// on the admin page, rather than discovered by a regulator.
+// So the structure is still decided HERE, in code, and the model is still
+// handed a plan and told to phrase it. What changed is that the plan is now a
+// pure function of the licence type and of five facts about the applicant —
+// no draws, no permutations. Variation lives where it always belonged: in the
+// facts, which differ per applicant anyway.
 //
-// PURE AND I/O-FREE on purpose: no Prisma, no Nest, no Anthropic. It is the
+// Book Part 4.2 (the fixed skeleton), Part 5 (which sections each section of
+// the Act omits) and Part 7.1 (headings numbered, on their own line, no
+// trailing colon, never varied in wording between documents).
+//
+// The second half of the file is the detector: fingerprint() reduces a
+// document to its STRUCTURE with the content stripped out. ⚠️ It is a
+// MEASUREMENT now, not a trigger — with the skeleton fixed, two documents of
+// the same type are SUPPOSED to score alike, and regenerating on a high score
+// would spend a second model call to arrive at the same plan. What it is still
+// good for is noticing that two documents came out structurally identical,
+// which would mean the facts stopped reaching the writer.
+//
+// PURE AND I/O-FREE on purpose: no Prisma, no Nest, no model client. It is the
 // most heavily tested part of the module because it is the hardest to notice
 // going wrong.
 // ────────────────────────────────────────────────────────────────────
 
-/** Deterministic PRNG. Same seed, same plan, forever. */
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function pick<T>(rng: () => number, xs: readonly T[]): T {
-  return xs[Math.floor(rng() * xs.length)];
-}
-
-/** Fisher-Yates, seeded. */
-function shuffle<T>(rng: () => number, xs: readonly T[]): T[] {
-  const out = [...xs];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
-
 export type SectionId =
   | 'introduction'
   | 'personal_circumstances'
-  // ── The purpose sections ───────────────────────────────────────────
+  // ── The purpose section — heading 3, four ids ──────────────────────
   //
-  // ⚠️ THREE IDS FOR ONE JOB, ON PURPOSE. Operator, 2026-08-20: "We need
-  // to talk about the discipline they will be shooting or the animals they
-  // will hunt or varmint or why the self defence is applicable."
+  // ⚠️ FOUR IDS FOR ONE SLOT, ON PURPOSE. They all sit at number 3 and only
+  // one of them is ever in a plan. They are separate ids rather than one
+  // 'purpose' id because the HEADING differs in kind, not merely in wording —
+  // "My hunting" and "Why a section 13 firearm will not provide sufficient
+  // protection" are not alternates of each other — and because each carries a
+  // different brief.
   //
-  // Before this the document went straight from the applicant's circumstances
-  // to the firearm, which meant it could assert a need without ever setting
-  // out what the firearm is FOR. That is the section a paid writer spends
-  // their effort on, and it is the one a reviewer reads to decide whether the
-  // applicant has thought about this at all.
-  //
-  // They are separate ids rather than one 'purpose' id with per-type headings
-  // because the HEADINGS have to differ in kind, not just in wording — "The
-  // quarry and the ground I hunt" and "The discipline and its course of fire"
-  // are not alternates of each other, and a self-defence applicant must never
-  // be handed either.
+  //  - `the_threat`          s13 and s14
+  //  - `the_quarry`          s15 hunting, s16 dedicated hunter
+  //  - `the_discipline`      s15 sport, s16 dedicated sports shooter
+  //  - `use_since_licensing` s24, which argues continuity rather than need
+  | 'the_threat'
   | 'the_quarry'
   | 'the_discipline'
-  | 'the_threat'
+  | 'use_since_licensing'
   /**
-   * What the applicant already does about the risk, and why it is not enough.
+   * What the applicant already does about the risk, and where each measure
+   * stops. Section 13 and 14 only.
    *
-   * ⚠️ THE APPROVED SECTION 13 ON FILE HAS THIS AND WE DID NOT. A Registrar
-   * deciding a self-defence application is answering one question — is a
-   * firearm NECESSARY — and "necessary" means the alternatives have been tried
-   * and fall short. Alarms, beams, armed response, walls, routes, the hours
-   * kept: naming them and then saying where each one stops is the argument.
-   * Without it the document asks for a firearm as a first resort, which is
-   * what section 13 exists to refuse.
+   * ⚠️ THIS IS THE SECOND LIMB OF THE SECTION 13 TEST IN ALL BUT NAME. A
+   * Registrar deciding a self-defence application is answering one question —
+   * is a firearm NECESSARY — and "necessary" means the alternatives fall
+   * short. Book Part 5.1 brief 4: "a document that lists security measures
+   * without saying where each one stops has asked for a firearm as a first
+   * resort."
    */
   | 'existing_measures'
-  | 'experience'
   | 'the_firearm'
-  // ── The three sections the approved corpus has and we did not ──────
-  //
-  // Read off a corpus of motivations SAPS has already approved — four section
-  // 16 dedicated sport documents, a section 16 dedicated hunter pack, a
-  // section 13 pack with area crime statistics. Every one of them carries
-  // these three, and their absence was the widest gap between what we produce
-  // and what a DFO has already signed off on.
-  //
-  // `the_calibre` is separate from `the_firearm` because they answer different
-  // questions. The firearm section argues the PLATFORM — action, barrel,
-  // capacity, how it is carried and handled. The calibre section argues the
-  // CARTRIDGE against the requirement: what it carries at the range the shot
-  // is actually taken at, and what that means for a humane kill or for a
-  // course of fire. Folded into one section they collapse into a paragraph
-  // that is shallow about both, which is exactly what the gap analysis found
-  // in the generated section 15 draft — the ballistic argument one line deep.
-  //
-  // `comparison` is CONDITIONAL — see SECTION_SKELETONS and planFor. It
-  // answers "you already hold one of these". Where an overlap exists, the gap
-  // analysis calls its absence the single likeliest ground of refusal; where
-  // none exists it is pure padding, an argument against a problem the
-  // applicant does not have. So it is in no plan by default.
-  //
-  // `statutory_application` is the ONLY section that quotes the Act. Approved
-  // motivations quote the licence section and the general application
-  // regulation verbatim and then answer each quoted element with a fact. Our
-  // draft quoted the regulation and then simply listed certificates — the
-  // quote left hanging with nothing applied beneath it. Quoting belongs HERE
-  // and nowhere else in the document; everywhere else is plain language.
-  //
-  // ⚠️ NOT `discipline_rules`, deliberately. Courses of fire, the PAJA notice
-  // and the annexure index are PACK ASSEMBLY (motivation-pdf-merge.ts) —
-  // cited, not rewritten. A writer section for them would set the model to
-  // reproducing a rulebook it has no way to verify, which is the invention
-  // failure mode this whole module exists to prevent.
-  | 'the_calibre'
-  | 'comparison'
-  | 'statutory_application'
+  /**
+   * The battery: the table of what is already licensed, then one sentence per
+   * firearm on why it cannot do this job.
+   *
+   * ⚠️ CONDITIONAL ON HOLDING SOMETHING, NOT ON AN OVERLAP. It used to be
+   * called `comparison` and appeared only where the applicant held a firearm
+   * in the SAME CLASS as the one applied for. Book Part 5.1 brief 6 and Part
+   * 6.5 make it the battery section: every held firearm gets a row and a
+   * sentence, because the DFO reads the licence record against the request
+   * whether or not two entries happen to be the same class. On a first
+   * application it is omitted and the introduction says "No firearm is
+   * currently licensed to me" instead.
+   */
+  | 'held_firearms'
+  | 'experience'
+  /**
+   * Association membership and dedicated status.
+   *
+   * Mandatory for both section 16 routes (dedicated status is what the section
+   * turns on), present on a section 15 only where the applicant is in fact a
+   * member — and on a section 15 it names membership and NEVER dedicated
+   * status, which is the wording the Act's definition still turns on.
+   */
+  | 'association'
   | 'storage_safety'
+  /** The six SAPS 271 declaration items — present only if one is a Yes. */
   | 'compliance_history'
+  /**
+   * The ONLY section that quotes the Act. Approved motivations quote the
+   * licence section verbatim and answer each quoted element with a fact; ours
+   * once quoted a regulation and then listed certificates, the quote left
+   * hanging with nothing applied beneath it. Quoting belongs HERE and nowhere
+   * else; everywhere else is plain language.
+   */
+  | 'statutory_application'
   | 'conclusion';
+
+/**
+ * The heading NUMBER, fixed by the book and shared by the four purpose ids.
+ *
+ * ⚠️ THE NUMBERS DO NOT RE-SEQUENCE WHEN A SECTION IS OMITTED. A section 15
+ * document runs 1, 3, 5, 6, 7, 8, 9, 11, 12 — the gaps are the point. The
+ * spine mirrors the SAPS 271's own sections, so a DFO who reads these packs
+ * regularly can see at a glance that heading 10 is absent because there is
+ * nothing to declare, rather than counting to work out which section they are
+ * looking at. Book Part 4.2 and Part 7.8.
+ */
+const SECTION_NUMBER: Record<SectionId, number> = {
+  introduction: 1,
+  personal_circumstances: 2,
+  the_threat: 3,
+  the_quarry: 3,
+  the_discipline: 3,
+  use_since_licensing: 3,
+  existing_measures: 4,
+  the_firearm: 5,
+  held_firearms: 6,
+  experience: 7,
+  association: 8,
+  storage_safety: 9,
+  compliance_history: 10,
+  statutory_application: 11,
+  conclusion: 12,
+};
+
+/** The heading TITLE, word for word from book Part 4.2. */
+const SECTION_TITLES: Record<SectionId, string> = {
+  introduction: 'Introduction',
+  personal_circumstances: 'My circumstances',
+  the_threat: 'Why I need a firearm for self-defence',
+  the_quarry: 'My hunting',
+  the_discipline: 'My sport shooting',
+  use_since_licensing: 'How I have used this firearm since it was licensed',
+  existing_measures: 'What I already do and where it stops',
+  the_firearm: 'The firearm applied for and why it suits the purpose',
+  held_firearms: 'Firearms already licensed to me',
+  experience: 'My competency and training',
+  association: 'Association membership and dedicated status',
+  storage_safety: 'Safe storage and transport',
+  compliance_history: 'My record',
+  statutory_application: 'Section applied to my application',
+  conclusion: 'Declaration and request',
+};
+
+/**
+ * Per-type heading overrides. Two sections earn one, and only two.
+ *
+ *  - `statutory_application` has to name the section it is quoting. A reviewer
+ *    reads the contents page before the body, and "section 16" standing over a
+ *    self-defence application is worse than no heading at all. The bare
+ *    fallback above is never printed; every type sets it.
+ *  - `association` on a section 15 says MEMBERSHIP and stops there. Book Part
+ *    5.3 brief 8: "Nothing about dedicated status." The section 1 definition of
+ *    an occasional hunter still excludes association members — the 2006
+ *    amendment that would have removed those words never commenced — so a
+ *    section 15 document that claims dedicated status argues itself out of the
+ *    section it is applying under.
+ *
+ * The purpose heading needs no override: it is carried by which of the four
+ * purpose ids the skeleton uses.
+ */
+const TYPE_TITLES: Record<
+  MotivationLicenceType,
+  Partial<Record<SectionId, string>>
+> = {
+  S13_SELF_DEFENCE: {
+    statutory_application: 'Section 13 applied to my application',
+  },
+  S14_RESTRICTED_SELF_DEFENCE: {
+    // Book Part 5.2 brief 3: this heading replaces the section 13 purpose
+    // heading and carries both limbs of s14(4).
+    the_threat: 'Why a section 13 firearm will not provide sufficient protection',
+    statutory_application: 'Section 14 applied to my application',
+  },
+  S15_OCCASIONAL_HUNTER: {
+    association: 'Association membership',
+    statutory_application: 'Section 15 applied to my application',
+  },
+  S16_DEDICATED_HUNTER: {
+    statutory_application: 'Section 16 applied to my application',
+  },
+  S16_DEDICATED_SPORT: {
+    statutory_application: 'Section 16 applied to my application',
+  },
+  S24_RENEWAL: {
+    statutory_application: 'Section 24 applied to my application',
+  },
+};
+
+/**
+ * The heading as it is printed and as the writer is told to write it.
+ *
+ * ⚠️ NUMBERED, AND NO TRAILING COLON. Book Part 7.1. The colon was how the PDF
+ * renderer told a heading from a paragraph; the number does that job better,
+ * because a paragraph can end in a colon and none of them starts with "7. ".
+ */
+export function headingFor(
+  licenceType: MotivationLicenceType,
+  id: SectionId,
+): string {
+  const title = TYPE_TITLES[licenceType]?.[id] ?? SECTION_TITLES[id];
+  return `${SECTION_NUMBER[id]}. ${title}`;
+}
 
 export interface SectionPlan {
   id: SectionId;
-  /** The heading to print. One of several alternates, chosen by seed. */
+  /** The heading to print, exactly as printed. Fixed per (type, id). */
   heading: string;
   /** Roughly how many paragraphs this section should run to. */
   paragraphs: number;
 }
 
 export interface StructurePlan {
+  /**
+   * ⚠️ AN IDENTIFIER NOW, NOT AN INPUT. The structure no longer varies, so the
+   * seed does not change the plan. It is kept, stored and reported because it
+   * ties a filed document to the row that produced it, and because a
+   * regeneration takes a fresh one so the two attempts can be told apart.
+   */
   seed: number;
   sections: SectionPlan[];
-  /** How the document opens — changes the whole feel of the first paragraph. */
-  opening: 'chronological' | 'need_first' | 'circumstance_first' | 'purpose_first';
-  /** How it closes. */
-  closing: 'summary' | 'undertaking' | 'forward_looking';
-  /** Sentence-length register the prose should sit at. */
-  cadence: 'plain' | 'measured' | 'detailed';
+  /** Fixed. Kept as a field because the prompt renders a guide from it. */
+  opening: 'purpose_first';
+  closing: 'declaration';
+  cadence: 'plain';
 }
 
 /**
- * Heading alternates. Same meaning, different words — a reviewer skimming two
- * documents should not see the same table of contents twice.
+ * How many paragraphs each section runs to, from the book's own briefs.
+ *
+ * ⚠️ A BUDGET, NOT A QUOTA, and the anti-padding rule outranks it in both
+ * directions. Book Part 4.3: "A shorter document built only from the
+ * applicant's facts beats a longer one padded to the band."
  */
-const HEADING_ALTERNATES: Record<SectionId, readonly string[]> = {
-  introduction: [
-    'Introduction:',
-    'Purpose of this application:',
-    'Background to this application:',
-    'Why I am applying:',
-  ],
-  personal_circumstances: [
-    'My circumstances:',
-    'Personal circumstances:',
-    'My situation:',
-    'Circumstances relevant to this application:',
-  ],
-  experience: [
-    'Experience and training:',
-    'My experience:',
-    'Training and track record:',
-    'Relevant experience:',
-  ],
-  the_quarry: [
-    'The quarry and the ground I hunt:',
-    'What I hunt, and where:',
-    'The species and the terrain:',
-    'The game I hunt and the conditions:',
-  ],
-  the_discipline: [
-    'The discipline and its requirements:',
-    'The discipline I shoot:',
-    'My discipline and its course of fire:',
-    'What the discipline demands:',
-  ],
-  the_threat: [
-    'Why a firearm, and why now:',
-    'The risk I am seeking to meet:',
-    'My exposure to risk:',
-    'The circumstances that give rise to this application:',
-  ],
-  the_firearm: [
-    'The firearm applied for:',
-    'The firearm and why it suits the purpose:',
-    'Suitability of the firearm:',
-    'Why this firearm:',
-  ],
-  // The generic sets for the three corpus sections. Where the heading has to
-  // differ in KIND per licence type rather than merely in wording, the
-  // overrides in TYPE_HEADING_ALTERNATES win and these are the fallback.
-  the_calibre: [
-    'The calibre:',
-    'The cartridge and what it has to do:',
-    'Why this calibre:',
-    'The calibre and its suitability:',
-  ],
-  comparison: [
-    'Comparison with the firearms I already hold:',
-    'Why this firearm does not duplicate what I hold:',
-    'How this firearm differs from the ones I have:',
-    'My existing firearms, and why this one is additional:',
-  ],
-  statutory_application: [
-    'Application in terms of the Act:',
-    'How I meet the requirements of the Act:',
-    'The statutory requirements, applied to my circumstances:',
-    'Compliance with the Firearms Control Act 60 of 2000:',
-  ],
-  storage_safety: [
-    'Safe storage:',
-    'Storage and safekeeping:',
-    'How the firearm will be secured:',
-    'Safekeeping arrangements:',
-  ],
-  existing_measures: [
-    'The measures I already have, and where they stop:',
-    'What I do now about the risk, and why it is not enough:',
-    'Existing security, and its limits:',
-    'The precautions already in place:',
-  ],
-  compliance_history: [
-    'Compliance history:',
-    'My record:',
-    'Licensing history:',
-    'Previous applications and licences:',
-  ],
-  conclusion: [
-    'Conclusion:',
-    'In closing:',
-    'Summary:',
-    'Undertaking:',
-  ],
+const PARAGRAPHS: Record<SectionId, number> = {
+  introduction: 1,
+  personal_circumstances: 3,
+  the_threat: 3,
+  the_quarry: 3,
+  the_discipline: 3,
+  use_since_licensing: 2,
+  existing_measures: 2,
+  the_firearm: 2,
+  // The table carries the facts; the prose is one sentence per firearm.
+  held_firearms: 1,
+  experience: 1,
+  association: 1,
+  storage_safety: 1,
+  compliance_history: 1,
+  // Quote an element, answer it with a fact, then the next. The count is the
+  // number of elements the section's statute block sets out.
+  statutory_application: 4,
+  conclusion: 1,
 };
 
-/**
- * Per-type heading overrides.
- *
- * ⚠️ ONLY WHERE THE HEADING DIFFERS IN KIND, not merely in wording — the same
- * rule that gave the purpose sections three ids instead of one. Two sections
- * earn an override:
- *
- *  - `statutory_application` has to name the section it is quoting. A reviewer
- *    reads the table of contents before the body, and "section 16" standing
- *    over a self-defence application is worse than no heading at all.
- *  - `the_calibre` argues the cartridge against a requirement, and the
- *    requirement differs in kind by type: a humane kill on a named species, a
- *    course of fire, or a shot taken inside a house. The heading says which.
- *
- * `comparison` gets no override. "Why is this not a duplicate of what you
- * already hold" is the same question whoever is asking it.
- *
- * Anything not listed here falls back to HEADING_ALTERNATES.
- */
-const TYPE_HEADING_ALTERNATES: Partial<
-  Record<MotivationLicenceType, Partial<Record<SectionId, readonly string[]>>>
+const TYPE_PARAGRAPHS: Record<
+  MotivationLicenceType,
+  Partial<Record<SectionId, number>>
 > = {
+  /**
+   * ⚠️ ONE PARAGRAPH FOR THE FIREARM, AND THE ROOM WAS THE INSTRUCTION.
+   * Given two to four, the model filled them with a catalogue — short recoil,
+   * tilting barrel, polymer frame, "variable maintenance cycles". Book Part
+   * 5.1 brief 5: one paragraph, at most sixty words, four facts.
+   */
+  S13_SELF_DEFENCE: { the_firearm: 1 },
+  // Book Part 5.2: circumstances three to four paragraphs (section K's facts
+  // all have to appear), the purpose section three to four, the firearm two.
   S14_RESTRICTED_SELF_DEFENCE: {
-    /**
-     * ⚠️ THE HEADING IS THE TEST, WORD FOR WORD. s14(4)'s first limb is that a
-     * section 13 firearm "will not provide sufficient protection" — so the
-     * section that carries it says so, rather than repeating section 13's
-     * "why I need a firearm".
-     */
-    the_threat: [
-      'Why a section 13 firearm will not provide sufficient protection:',
-      'Why a handgun or manual shotgun is not sufficient here:',
-      'The risk, and why a section 13 firearm does not answer it:',
-      'What a section 13 firearm cannot do in these circumstances:',
-    ],
-    statutory_application: [
-      'Application in terms of section 14 of the Act:',
-      'How I meet the requirements of section 14:',
-      'Section 14 applied to my circumstances:',
-      'The statutory test for a restricted firearm, applied:',
-    ],
+    personal_circumstances: 4,
+    the_threat: 4,
   },
-  S13_SELF_DEFENCE: {
-    the_calibre: [
-      'The calibre and why it suits defensive use:',
-      'Why this cartridge for self-defence:',
-      'The cartridge and what I need it to do:',
-      'Calibre, control and the defensive role:',
-    ],
-    statutory_application: [
-      'Application in terms of section 13 of the Act:',
-      'How I meet the requirements of section 13:',
-      'Section 13 applied to my circumstances:',
-      'The statutory test for self-defence, applied:',
-    ],
-  },
-  S15_OCCASIONAL_HUNTER: {
-    the_calibre: [
-      'The calibre and the quarry it must take:',
-      'Why this cartridge suits the species I hunt:',
-      'The cartridge and a humane kill:',
-      'Calibre, range and the animals I hunt:',
-    ],
-    statutory_application: [
-      'Application in terms of section 15 of the Act:',
-      'How I meet the requirements of section 15:',
-      'Section 15 applied to my circumstances:',
-      'The statutory test for occasional hunting and sport shooting, applied:',
-    ],
-  },
+  S15_OCCASIONAL_HUNTER: { statutory_application: 3 },
   S16_DEDICATED_HUNTER: {
-    the_calibre: [
-      'The calibre and the quarry it must take:',
-      'Why this cartridge suits the species I hunt:',
-      'The cartridge and a humane kill:',
-      'Calibre, range and the animals I hunt:',
-    ],
-    statutory_application: [
-      'Application in terms of section 16 of the Act:',
-      'How I meet the requirements of section 16:',
-      'Section 16 applied to my circumstances:',
-      'The statutory test for dedicated status, applied:',
-    ],
+    the_quarry: 4,
+    the_firearm: 3,
+    association: 2,
+    statutory_application: 3,
   },
   S16_DEDICATED_SPORT: {
-    the_calibre: [
-      'The calibre and the course of fire:',
-      'Why this cartridge suits the discipline:',
-      'The cartridge and what the discipline demands of it:',
-      'Calibre, class and course of fire:',
-    ],
-    statutory_application: [
-      'Application in terms of section 16 of the Act:',
-      'How I meet the requirements of section 16:',
-      'Section 16 applied to my circumstances:',
-      'The statutory test for dedicated status, applied:',
-    ],
+    the_discipline: 4,
+    the_firearm: 3,
+    association: 2,
+    statutory_application: 3,
   },
-  // No calibre override: a renewal gets no calibre section at all. See
-  // SECTION_SKELETONS.
-  S24_RENEWAL: {
-    statutory_application: [
-      'Application in terms of section 24 of the Act:',
-      'How I meet the requirements for renewal:',
-      'Section 24 applied to this renewal:',
-      'The statutory test for renewal, applied:',
-    ],
-  },
+  S24_RENEWAL: { the_firearm: 1, statutory_application: 2 },
 };
 
-function headingAlternatesFor(
-  licenceType: MotivationLicenceType,
-  id: SectionId,
-): readonly string[] {
-  return TYPE_HEADING_ALTERNATES[licenceType]?.[id] ?? HEADING_ALTERNATES[id];
-}
-
 /**
- * A slot in a skeleton: one section, or a small group whose members may swap
- * among themselves while the group as a whole keeps its place in the order.
- */
-type SectionSlot = SectionId | readonly SectionId[];
-
-/**
- * The order each licence type's document runs in.
+ * The order each licence type's document runs in, and which of the twelve
+ * headings it carries at all.
  *
- * ⚠️ THESE ORDERS ARE NOT OURS TO INVENT. They are read off motivations SAPS
- * has already approved, plus the one correction the gap analysis makes to our
- * own section 15 draft: NEED BEFORE FIREARM. A reviewer reads top-down, and
- * every approved document in the corpus runs identity → competence → security
- * → purpose → firearm fit → statute → conclusion. We had ONE shared shape for
- * all five types, which is how an S15 came to argue the rifle before it had
- * said a word about what it would be hunting.
+ * ⚠️ THESE ORDERS ARE NOT OURS TO INVENT, AND THEY NO LONGER PERMUTE. Book
+ * Part 4.2 fixes the spine; Part 5 says which headings each section of the Act
+ * omits — 2 and 4 for everything except a self-defence application, and for a
+ * renewal as well, which shows continuity rather than need.
  *
- * ⚠️ THIS COSTS SHAPE VARIATION, AND THAT IS A DELIBERATE TRADE. The old plan
- * permuted four sections freely — 24 orders for an S13; a skeleton permutes
- * one pair, which is 2. The rule at the top of this file decides it: variation
- * is only allowed where it does not damage the document, and an order taken
- * from documents a DFO has already approved is not something to shuffle for
- * novelty. What carries the anti-template load now is FIVE skeletons instead
- * of one, the conditional comparison section, heading alternates four deep per
- * section (per type, where they differ in kind) and the opening / closing /
- * cadence draws. ⚠️ Watch the admin sameness report: if same-type documents
- * start scoring high against each other, this is the first place to look, and
- * the fix is more heading alternates rather than loosening the order.
- *
- * The pair that still permutes is experience and storage. They are independent
- * of each other and the corpus itself runs them both ways round, so swapping
- * them is corpus-supported rather than invented.
- *
- * `comparison` appears in every skeleton but is DROPPED unless the applicant
- * actually holds a same-class firearm — see planFor.
+ * The conditional members (`held_firearms`, `association`, `compliance_history`)
+ * appear in every skeleton that can carry them and are dropped by planFor when
+ * the applicant's own facts do not support them. See PlanOptions.
  */
 const SECTION_SKELETONS: Record<
   MotivationLicenceType,
-  readonly SectionSlot[]
+  readonly SectionId[]
 > = {
-  // Corpus S13: personal details → daily pattern of life → the threat → why a
-  // firearm and why this one → competency → security → statute. Circumstances
-  // sit at 2 because they are what the threat argument is built ON; below it,
-  // the threat lands on a reader who does not yet know where this applicant
-  // lives, works or drives.
-  /**
-   * ⚠️ REORDERED 2026-09-09 AGAINST THE FIRST REAL OUTPUT.
-   * MOTIVATION-S13-OUTPUT-REVIEW.md §1.5: the reason section — precinct
-   * figures tied to the areas the applicant ticked, with clipping references —
-   * "is the best part and it is buried". It sat THIRD, after a personal
-   * circumstances paragraph containing "I am single" and the employer's street
-   * address. Marital status and an employer's address are 271 boxes; they are
-   * not an argument, and putting them in front of the argument makes a
-   * reviewer work to reach it.
-   *
-   * ⚠️ THREE SECTIONS LEFT THE S13 AND ONE JOINED.
-   *
-   *  - `personal_circumstances` GOES. What it carried that mattered — where
-   *    the applicant lives, works and drives — is what `the_threat` is built
-   *    ON and now opens with; what it carried that did not is form data. The
-   *    introduction runs to two sentences of background instead.
-   *  - `the_calibre` GOES, folded into `the_firearm`. §1.4: for an S13 the two
-   *    collapse to one short paragraph — type, calibre, why a handgun and not
-   *    a rifle, one sentence on ammunition being commonly available. Kept
-   *    apart they produced 150 words on tilting barrels and polymer frames,
-   *    and a cartridge section arguing "115 to 147 grains" at a Registrar.
-   *  - `compliance_history` GOES. Printed as "My record", it came out a list
-   *    of the documents attached — which the annexure index already is.
-   *    Anything real in it belongs under the statute.
-   *  - `existing_measures` ARRIVES, between the risk and the firearm. It is
-   *    the half of the section 13 test the document never made: what is
-   *    already being done, and where it stops.
-   *
-   * ⚠️ AND `experience` FOLDS INTO THE STATUTE FOR AN S13. Competency is a
-   * statutory precondition rather than a self-defence argument, and §1.3 ruled
-   * that the document may state only the certificate NUMBER and that it is
-   * valid — which is one clause of the statutory section, not a section.
-   */
-  /**
-   * ⚠️ THE SECTION 13 SHAPE PLUS `personal_circumstances`, AND THE EXTRA
-   * SECTION IS NOT DECORATION. Section K of the SAPS 271 is completed for a
-   * section 14 and for no other section: urban or rural, the distance to the
-   * nearest neighbour and to the nearest police station, whether the area is
-   * crime-rated, whether the residence or work is high-risk, how many firearms
-   * are held. The DFO transcribes those facts, so the document has to state
-   * every one of them — which is a circumstances section, and it is why this
-   * skeleton keeps the one the section 13 dropped.
-   *
-   * MOTIVATION-GUIDE-BOOK Part 5.2.
-   */
+  S13_SELF_DEFENCE: [
+    'introduction',
+    'personal_circumstances',
+    'the_threat',
+    'existing_measures',
+    'the_firearm',
+    'held_firearms',
+    'experience',
+    'storage_safety',
+    'compliance_history',
+    'statutory_application',
+    'conclusion',
+  ],
+  // Identical spine to the section 13. What differs is the purpose heading,
+  // the weight of the circumstances section (section K of the SAPS 271 is
+  // completed for section 14 and no other section) and the briefs.
   S14_RESTRICTED_SELF_DEFENCE: [
     'introduction',
     'personal_circumstances',
     'the_threat',
-    'storage_safety',
     'existing_measures',
     'the_firearm',
-    'comparison',
+    'held_firearms',
+    'experience',
+    'storage_safety',
+    'compliance_history',
     'statutory_application',
     'conclusion',
   ],
-  S13_SELF_DEFENCE: [
-    'introduction',
-    'the_threat',
-    'storage_safety',
-    'existing_measures',
-    'the_firearm',
-    'comparison',
-    'statutory_application',
-    'conclusion',
-  ],
-  // Gap analysis, fix 5: the draft ran competency → storage → firearm →
-  // hunting, so every "which is why this rifle suits it" pointed forward at a
-  // section the reader had not reached. The quarry now comes first.
+  // ⚠️ THE PURPOSE ID IS SUBSTITUTED PER APPLICANT. A section 15 is hunting OR
+  // sport — book failure mode 5 is treating it as hunting only — so the
+  // skeleton names the hunting id and planFor swaps in `the_discipline` where
+  // the applicant answered the sport cards and not the hunting ones.
   S15_OCCASIONAL_HUNTER: [
     'introduction',
-    'personal_circumstances',
-    ['experience', 'storage_safety'],
     'the_quarry',
     'the_firearm',
-    'the_calibre',
+    'held_firearms',
+    'experience',
+    'association',
+    'storage_safety',
     'compliance_history',
-    'comparison',
     'statutory_application',
     'conclusion',
   ],
   S16_DEDICATED_HUNTER: [
     'introduction',
-    ['experience', 'storage_safety'],
     'the_quarry',
     'the_firearm',
-    'the_calibre',
+    'held_firearms',
+    'experience',
+    'association',
+    'storage_safety',
     'compliance_history',
-    'comparison',
     'statutory_application',
     'conclusion',
   ],
   S16_DEDICATED_SPORT: [
     'introduction',
-    ['experience', 'storage_safety'],
     'the_discipline',
     'the_firearm',
-    'the_calibre',
+    'held_firearms',
+    'experience',
+    'association',
+    'storage_safety',
     'compliance_history',
-    'comparison',
     'statutory_application',
     'conclusion',
   ],
-  // ⚠️ A RENEWAL GETS NO PURPOSE SECTION, and that is not an oversight.
-  // Section 24 renews an EXISTING licence: the purpose was accepted when it
-  // was granted, and re-arguing it invites a reviewer to reopen a question
-  // nobody asked. A renewal's job is to show continued compliance and
-  // continued use, which is what the sections it does have are for.
-  //
-  // ⚠️ AND NO CALIBRE SECTION EITHER, for the same reason one step on. The
-  // calibre section argues the cartridge against a stated requirement; with no
-  // purpose section there is no stated requirement, so it would be suitability
-  // argued against nothing — the padding the anti-padding rule exists to stop.
-  // The renewal keeps its order otherwise: experience and the firearm still
-  // swap, exactly as they did before, and the two corpus sections it does gain
-  // sit ahead of the conclusion.
   S24_RENEWAL: [
     'introduction',
-    ['experience', 'the_firearm'],
+    'use_since_licensing',
+    'the_firearm',
+    'held_firearms',
+    'experience',
+    'association',
     'storage_safety',
     'compliance_history',
-    'comparison',
     'statutory_application',
     'conclusion',
   ],
 };
 
-/**
- * ⚠️ ONE OPENING, NOT FOUR — 2026-09-08.
- *
- * Four were randomised so two documents would not begin alike. Every approved
- * pack on file opens the same way and it works: name, identity number,
- * citizenship, address, employer, then one sentence naming the firearm and the
- * section applied for. Randomising away from that meant three applicants in
- * four got an opening the corpus does not use, to solve a problem — a DFO
- * comparing two strangers' motivations for sameness — that nobody has ever
- * reported. MOTIVATION-UX-REVIEW.md §3.5.
- *
- * The array stays an array so `pick` and the plan shape are untouched; there
- * is simply one thing to pick.
- */
-const OPENINGS: StructurePlan['opening'][] = ['purpose_first'];
-const CLOSINGS: StructurePlan['closing'][] = [
-  'summary',
-  'undertaking',
-  'forward_looking',
-];
-/**
- * ⚠️ FIXED TO `plain` — 2026-09-08.
- *
- * Three cadences meant two applicants in three received "measured" or
- * "detailed" prose, which is to say: longer sentences, for variety's sake, on
- * a document a reviewing officer reads in a hurry. Variation belongs in the
- * FACTS, which differ per applicant anyway, not in the register.
- *
- * ⚠️ THE SIMILARITY DETECTOR SURVIVES AND IS NOW A TEST-TIME GUARD ONLY —
- * see SIMILARITY_REGENERATE_THRESHOLD. It stops being a reason to reword and
- * becomes a way to notice that two documents came out structurally identical,
- * which would mean the facts stopped reaching the writer.
- */
-const CADENCES: StructurePlan['cadence'][] = ['plain'];
-
 export interface PlanOptions {
   /**
-   * True when the applicant already holds a firearm in the same class as the
-   * one applied for — that is, when the FactPack will carry an `overlapNote`.
-   * Drives the conditional comparison section.
+   * True when the applicant holds at least one licensed firearm.
    *
-   * ⚠️ PASSED IN, NEVER RE-DERIVED HERE. The overlap is decided by
-   * `overlapFromAnswers` in motivation-overlap.ts, which knows how to read
-   * calibres out of the registry fields and classify them into quarry classes.
-   * Working it out a second time from the answers would give us two answers to
-   * one question, and the day they disagreed the document would either argue
-   * against an overlap the writer was never briefed on, or stay silent about
-   * one it was — the second being the refusal ground the whole section exists
-   * to close.
+   * Drives heading 6. False is a first application, where the book puts "No
+   * firearm is currently licensed to me" in the introduction instead — a
+   * sentence, not a section, because there is no table to draw and no gap to
+   * argue.
    */
-  hasOverlap?: boolean;
+  holdsFirearms?: boolean;
+  /**
+   * True when any of the six SAPS 271 declaration items (G.62 to G.67) is a
+   * Yes. Drives heading 10.
+   *
+   * ⚠️ THE HEADING IS OMITTED ENTIRELY WHEN EVERY ANSWER IS NO, and nothing is
+   * said. Book Part 5.1 brief 10. A paragraph volunteering "I have no criminal
+   * record" is on the banned list twice over: SAPS checks it themselves, and
+   * an unevidenced claim of good character is what the reviewer is reading the
+   * annexures to decide.
+   */
+  hasRecord?: boolean;
+  /**
+   * True when the applicant belongs to an accredited association. Drives
+   * heading 8 on a section 15 and on a renewal; the section 16 routes carry it
+   * always, because dedicated status is what those sections turn on.
+   *
+   * ⚠️ ON A RENEWAL THIS STANDS IN FOR THE UNDERLYING SECTION, which the
+   * product does not yet record. Book Part 5.6 brief 8 says the section is for
+   * section 16 renewals only. Gating on membership gives a section 16 renewal
+   * its section, and at worst gives a section 15 member a true paragraph
+   * naming their association — which is the safe direction to be wrong in.
+   */
+  isAssociationMember?: boolean;
+  /**
+   * Which variant a section 15 is. Ignored for every other type.
+   *
+   * Book Part 5.3: "The generator picks one from the applicant's answer; the
+   * document never mixes both unless the applicant genuinely does both, and
+   * then hunting leads." So this is one choice, not two sections — see
+   * `s15Purpose` in motivation-fields.ts, which reads it off the answers.
+   */
+  purpose?: 'hunting' | 'sport';
 }
 
 /**
- * Build the plan for a motivation. Deterministic: the same
- * (type, seed, options) always produces the same plan, which is what lets an
- * admin reproduce and explain a document months later.
+ * Build the plan for a motivation.
  *
- * ⚠️ `hasOverlap` IS PART OF THAT KEY, alongside the seed. Reproducing a plan
- * from a stored `variantSeed` alone will differ from the filed document
- * whenever there was an overlap. It is still reproducible — the overlap is a
- * pure function of the applicant's stored answers — but it has to be
- * recomputed, not assumed.
+ * Deterministic, and now trivially so: the same (type, options) always
+ * produces the same plan, and the seed is carried through untouched. That is
+ * what lets an admin reproduce and explain a document months later — and,
+ * since the structure no longer varies, what makes a REGENERATION a second
+ * attempt at the same plan rather than a different document.
  */
 export function planFor(
   licenceType: MotivationLicenceType,
   seed: number,
   opts: PlanOptions = {},
 ): StructurePlan {
-  const rng = mulberry32(seed);
+  const budget = TYPE_PARAGRAPHS[licenceType];
 
-  const order: SectionId[] = [];
-  for (const slot of SECTION_SKELETONS[licenceType]) {
-    // A group keeps the skeleton's positions; only its members swap.
-    if (typeof slot === 'string') order.push(slot);
-    else order.push(...shuffle(rng, slot));
-  }
-
-  // ⚠️ THE PURPOSE SECTION MUST COME BEFORE THE FIREARM SECTION.
-  //
-  // The two are a pair: the purpose section defines the requirement (this
-  // quarry at these ranges, this course of fire, this exposure) and the
-  // firearm section answers it (therefore this calibre, this barrel, this
-  // action). Run the other way round the document justifies a choice before
-  // stating the problem, and every "which is why this rifle suits it" in the
-  // firearm section points at a section the reader has not reached yet.
-  //
-  // The free shuffle this was written against produced exactly that on the
-  // first seed it was tried on: "Suitability of the firearm" at 2, "What I
-  // hunt, and where" at 3.
-  //
-  // ⚠️ NOW A BACKSTOP, NOT THE MECHANISM. The skeletons already order the pair
-  // correctly, so this never fires today. It stays because the property is
-  // load-bearing and cheap to hold: an edit to a skeleton, or a purpose
-  // section dropped into a permuting group, would otherwise invert the pair
-  // silently and the only symptom would be a document that reads backwards.
-  const purposeIdx = order.findIndex(
-    (id) => id === 'the_quarry' || id === 'the_discipline' || id === 'the_threat',
-  );
-  const firearmIdx = order.indexOf('the_firearm');
-  if (purposeIdx !== -1 && firearmIdx !== -1 && purposeIdx > firearmIdx) {
-    [order[purposeIdx], order[firearmIdx]] = [
-      order[firearmIdx],
-      order[purposeIdx],
-    ];
-  }
-
-  // ⚠️ NO OVERLAP, NO COMPARISON SECTION. The section answers "you already
-  // hold one of these", and there are two ways to get it wrong. Leaving it out
-  // when the applicant DOES hold a same-class firearm is, on the gap analysis,
-  // the single likeliest ground of refusal — a reviewer sees both entries on
-  // the licence record and is left to draw their own conclusion. Putting it in
-  // when they do not is worse than useless: the document opens an argument
-  // about a difficulty nobody raised, and the writer, briefed with no
-  // overlapNote to work from, has nothing to fill it with but invention.
-  const sections = order
-    .filter((id) => id !== 'comparison' || opts.hasOverlap === true)
+  const sections = SECTION_SKELETONS[licenceType]
+    .map((id) =>
+      id === 'the_quarry' &&
+      licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER &&
+      opts.purpose === 'sport'
+        ? ('the_discipline' as SectionId)
+        : id,
+    )
+    .filter((id) => {
+      if (id === 'held_firearms') return opts.holdsFirearms === true;
+      if (id === 'compliance_history') return opts.hasRecord === true;
+      if (id === 'association') {
+        return (
+          licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||
+          licenceType === MotivationLicenceType.S16_DEDICATED_SPORT ||
+          opts.isAssociationMember === true
+        );
+      }
+      return true;
+    })
     .map((id) => ({
       id,
-      heading: pick(rng, headingAlternatesFor(licenceType, id)),
-      // Introduction and conclusion stay short; the body carries the argument.
-      //
-      // ⚠️ BODY SECTIONS RUN 2-4, RAISED FROM 1-3. Operator, 2026-08-20: the
-      // motivation has to show the applicant knows what they are doing with a
-      // firearm, and a section allotted a single paragraph cannot demonstrate
-      // competence — it can only assert it. The floor of 2 is the change that
-      // matters; the ceiling moved with it so the range stays three wide.
-      //
-      // ⚠️ THIS IS ROOM, NOT AN INSTRUCTION TO FILL IT. The anti-padding rule
-      // in the system prompt is untouched and still forbids potted histories
-      // and general essays, and the prompt now says plainly where the extra
-      // paragraph is meant to come from: the applicant's own training, storage
-      // and handling, in their own detail.
-      //
-      // ⚠️ THE STATUTORY SECTION ALONE HAS A FLOOR OF 3. It is the one section
-      // that quotes the Act, and the quote is only half its job: the approved
-      // pattern is quote an element, answer it with a fact, then the next.
-      // Quote / apply / quote / apply does not fit in two paragraphs, and a
-      // section squeezed to two reverts to the exact defect found in our own
-      // draft — regulation pasted in and left hanging with nothing beneath it.
-      /**
-       * ⚠️ AND ON AN S13 THE FIREARM SECTION IS ONE PARAGRAPH, NOT TWO TO
-       * FOUR. §1.4: given room, the model filled it with a catalogue — short
-       * recoil, tilting barrel, polymer frame, Safe Action, "dust, lint, and
-       * variable maintenance cycles". None of that is a reason a person needs
-       * a firearm. A self-defence application needs the type, the calibre, why
-       * a handgun rather than a rifle, and one sentence on ammunition being
-       * commonly available; that is a paragraph. The room WAS the instruction.
-       */
-      paragraphs:
-        id === 'introduction' || id === 'conclusion'
-          ? 1
-          : id === 'the_firearm' &&
-              licenceType === MotivationLicenceType.S13_SELF_DEFENCE
-            ? 1
-            : id === 'statutory_application'
-              ? 3 + Math.floor(rng() * 2) // 3-4
-              : 2 + Math.floor(rng() * 3), // 2-4
+      heading: headingFor(licenceType, id),
+      paragraphs: budget[id] ?? PARAGRAPHS[id],
     }));
 
   return {
     seed,
     sections,
-    opening: pick(rng, OPENINGS),
-    closing: pick(rng, CLOSINGS),
-    cadence: pick(rng, CADENCES),
+    opening: 'purpose_first',
+    closing: 'declaration',
+    cadence: 'plain',
   };
 }
 
@@ -752,7 +547,11 @@ function structuralTokens(documentText: string): string[] {
   const tokens: string[] = [];
 
   for (const line of lines) {
-    if (line.endsWith(':') && line.length <= 80) {
+    // ⚠️ NUMBERED, NOT COLON-TERMINATED. Headings stopped ending in a colon
+    // when the skeleton was fixed (Part 7.1), and this test was the colon.
+    // Left alone it classified every heading as prose and the fingerprint
+    // silently stopped measuring structure at all.
+    if (/^\d{1,2}\.\s/.test(line) && line.length <= 80) {
       // A heading. Keep it as a marker, normalised.
       tokens.push('H:' + line.toLowerCase().replace(/[^a-z ]/g, '').trim());
       continue;

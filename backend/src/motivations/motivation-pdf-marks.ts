@@ -114,8 +114,15 @@ const SECTION_MARKS: Partial<Record<SectionId, MarkName>> = {
   the_quarry: 'trophy',
   the_discipline: 'activity',
   the_threat: 'shield',
+  // A renewal's purpose section is the record of how the firearm has been
+  // used, which is the licence itself doing its job — the document mark.
+  use_since_licensing: 'document',
   experience: 'activity',
   the_firearm: 'rifle',
+  // The battery. The mark is the licence record it prints, not a firearm:
+  // drawing a rifle here would put one beside a list that may be all handguns.
+  held_firearms: 'document',
+  association: 'document',
   storage_safety: 'safe',
   compliance_history: 'document',
 };

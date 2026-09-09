@@ -48,7 +48,13 @@ import { areasOnRoute, decodePolyline } from './motivation-route';
 import { cartridgeFacts, findCartridge } from './motivation-cartridge';
 import { arsenalRows, type ArsenalRow } from './motivation-arsenal';
 import { documentScope } from './motivation-scope';
-import { isSelfDefence } from './motivation-fields';
+import {
+  hasDeclaredRecord,
+  holdsFirearms,
+  isAssociationMember,
+  isSelfDefence,
+  s15Purpose,
+} from './motivation-fields';
 import { packableIncidents } from './motivation-incident-filter';
 import { displayCalibre } from './saps-vocabulary';
 import { ownedFirearmSections } from './owned-firearm-sections';
@@ -761,13 +767,29 @@ export class MotivationGenerationService {
       // both failures — a second identical result means the variation engine
       // is broken, which is an admin problem rather than a user one.
       //
-      // ⚠️ THE PLAN NEEDS THE OVERLAP, not just the seed. The comparison
-      // section is only in the plan when the applicant actually holds a
-      // same-class firearm — the same condition that puts `overlapNote` in the
-      // pack. Both are read off THIS check so the writer can never be handed a
-      // section with no instruction behind it, or an instruction with no
-      // section to put it in.
-      const planOpts = { hasOverlap: !!overlap.writerNote };
+      /**
+       * ⚠️ THE PLAN NEEDS FOUR FACTS ABOUT THE APPLICANT, not just the seed.
+       * Three of the twelve fixed headings are omitted on the applicant's own
+       * answers rather than on the licence type — the battery table where
+       * nothing is held, the record where nothing is declared, the association
+       * where there is none — and a section 15 chooses between two purpose
+       * headings. Each is a pure read of the answers; see motivation-fields.ts.
+       *
+       * ⚠️ `hasOverlap` IS GONE FROM HERE AND THAT IS THE CHANGE, NOT AN
+       * OMISSION. Heading 6 used to appear only where the applicant held a
+       * SAME-CLASS firearm. Book Part 5.1 brief 6 and Part 6.5 make it the
+       * battery section: every held firearm gets a row and a sentence, because
+       * the DFO reads the licence record against the request whether or not two
+       * entries happen to be the same class. The overlap still decides the
+       * writer's DIRECTION — `overlapNote` below — it no longer decides whether
+       * there is a section to put it in.
+       */
+      const planOpts = {
+        holdsFirearms: holdsFirearms(answers),
+        hasRecord: hasDeclaredRecord(answers),
+        isAssociationMember: isAssociationMember(answers),
+        purpose: s15Purpose(answers),
+      };
       let seed = row.variantSeed;
       let plan = planFor(row.licenceType, seed, planOpts);
       let attempt = await this.model.generate(pack, plan);
@@ -799,11 +821,38 @@ export class MotivationGenerationService {
         ...scopeOf(attempt.text),
       ];
 
-      if (
-        !structureOk ||
-        sameness > SIMILARITY_REGENERATE_THRESHOLD ||
-        mechanics.length
-      ) {
+      /**
+       * ⚠️ SAMENESS IS NO LONGER A REASON TO REGENERATE, and taking it out is
+       * the point rather than an oversight.
+       *
+       * The skeleton is fixed now (book Part 4.2), so a fresh seed produces
+       * the SAME plan — a second call to arrive at the same twelve headings,
+       * paid for, on a document whose structure is supposed to match every
+       * other document of its type. Two motivations of one section scoring
+       * alike is now the design working.
+       *
+       * It is still MEASURED and still stored, because a score at the ceiling
+       * says something else entirely: that the facts stopped reaching the
+       * writer and two different applicants got the same prose. That is an
+       * admin's problem to look at, so it raises a card and does not spend the
+       * applicant's generation on it.
+       */
+      if (sameness > SIMILARITY_REGENERATE_THRESHOLD) {
+        this.logger.warn(
+          `Motivation ${row.id}: sameness ${sameness.toFixed(2)} over ${SIMILARITY_REGENERATE_THRESHOLD}`,
+        );
+        void this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'motivation-sameness-high',
+              urgent: false,
+              context: `Motivation ${row.id} scored ${sameness.toFixed(2)} against recent ${row.licenceType} documents. The skeleton is fixed, so structural overlap is expected; a score this high means the PROSE is repeating and the applicant's own facts may not be reaching the writer.`,
+            },
+          })
+          .catch(() => undefined);
+      }
+
+      if (!structureOk || mechanics.length) {
         this.logger.warn(
           `Motivation ${row.id}: regenerating (structureOk=${structureOk}, sameness=${sameness.toFixed(2)}, mechanics=${mechanics.length})`,
         );

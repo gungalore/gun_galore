@@ -3127,6 +3127,91 @@ export function isSelfDefence(t: MotivationLicenceType): boolean {
   return SELF_DEFENCE_TYPES.includes(t);
 }
 
+// ────────────────────────────────────────────────────────────────────
+// THE FOUR FACTS THAT DECIDE WHICH HEADINGS A DOCUMENT CARRIES.
+//
+// MOTIVATION-GUIDE-BOOK Part 4.2 fixes twelve headings and Part 5 says which
+// are omitted per section of the Act. Three of the twelve are omitted on the
+// APPLICANT's facts rather than on the licence type, and a fourth chooses
+// between two purpose headings. `planFor` takes them as options because
+// motivation-structure.ts is pure and never sees an answer blob; they are
+// computed here, next to the field keys they read, so a renamed key breaks one
+// place.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * Does the applicant hold at least one licensed firearm?
+ *
+ * Drives heading 6, "Firearms already licensed to me". False is a first
+ * application, where the book puts "No firearm is currently licensed to me" in
+ * the introduction instead — a sentence, because there is no table to draw and
+ * no gap to argue.
+ */
+export function holdsFirearms(answers: Record<string, string>): boolean {
+  for (let n = 1; n <= OWNED_ROWS; n++) if (ownedRowTaken(answers, n)) return true;
+  return false;
+}
+
+/** The six SAPS 271 declaration items, G.62 to G.67. */
+const DECLARATION_KEYS = [
+  'history_conviction',
+  'history_pending_case',
+  'history_lost_stolen',
+  'history_negligence',
+  'history_declared_unfit',
+  'history_confiscated',
+] as const;
+
+/**
+ * Is any declaration answer a Yes?
+ *
+ * Drives heading 10, "My record". ⚠️ THE HEADING IS OMITTED ENTIRELY WHEN
+ * EVERY ANSWER IS NO, and the document says nothing — book Part 5.1 brief 10.
+ * A paragraph volunteering "I have no criminal record" is banned twice over:
+ * SAPS runs that check themselves, and an unevidenced claim of good character
+ * is exactly what the reviewer is reading the annexures to decide.
+ */
+export function hasDeclaredRecord(answers: Record<string, string>): boolean {
+  return DECLARATION_KEYS.some(
+    (k) => (answers[k] ?? '').trim().toLowerCase() === 'yes',
+  );
+}
+
+/**
+ * Does the applicant belong to an accredited association?
+ *
+ * Drives heading 8 on a section 15 and on a renewal. The two section 16 routes
+ * carry that heading always, because dedicated status is what they turn on.
+ */
+export function isAssociationMember(answers: Record<string, string>): boolean {
+  return (answers.association_name ?? '').trim() !== '';
+}
+
+/**
+ * Which variant a section 15 application is.
+ *
+ * ⚠️ FAILURE MODE 5 IS TREATING SECTION 15 AS HUNTING ONLY. It is hunting OR
+ * sport, and the heading, the brief and half the vocabulary differ. Book Part
+ * 5.3: "The generator picks one from the applicant's answer; the document
+ * never mixes both unless the applicant genuinely does both, and then hunting
+ * leads" — so this returns ONE variant, and hunting wins a tie.
+ *
+ * Hunting is also the default when neither set of cards was tapped: the type
+ * is named for the occasional hunter, and a document with the hunting heading
+ * and thin facts is a weaker application, where one with the sport heading and
+ * hunting facts is a wrong one.
+ */
+export function s15Purpose(
+  answers: Record<string, string>,
+): 'hunting' | 'sport' {
+  const any = (keys: readonly string[]) =>
+    keys.some((k) => (answers[k] ?? '').trim() !== '');
+  if (any(['hunt_game_class', 'hunt_terrain', 'hunt_where', 'hunt_reasons']))
+    return 'hunting';
+  if (any(['sport_reasons', 'sport_formats'])) return 'sport';
+  return 'hunting';
+}
+
 /** Human label for the document header and the UI. */
 export const LICENCE_TYPE_LABELS: Record<MotivationLicenceType, string> = {
   S13_SELF_DEFENCE: 'Section 13 — Self-defence',

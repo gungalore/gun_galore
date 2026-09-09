@@ -1,219 +1,461 @@
 import { MotivationLicenceType } from '@prisma/client';
 import {
   planFor,
+  headingFor,
   expectedHeadings,
   followsPlan,
   fingerprint,
   similarity,
   maxSimilarity,
   SIMILARITY_REGENERATE_THRESHOLD,
+  type PlanOptions,
+  type SectionId,
 } from './motivation-structure';
 
-// This engine exists because full automation makes one failure mode
-// existential: if every motivation has the same shape, a CFR reviewer
-// eventually notices, and when they do, every document we have produced is
-// tainted — including ones already submitted by paying customers.
+// ────────────────────────────────────────────────────────────────────
+// THE FIXED SKELETON, AND WHAT IS LEFT OF THE DETECTOR.
 //
-// So the properties under test are: the plan is deterministic (an admin can
-// reproduce and explain any document), it genuinely varies across seeds, it
-// never varies where variation would damage the document, and the detector
-// can tell "same shape, different people" from "genuinely different".
+// ⚠️ THIS FILE USED TO TEST THE OPPOSITE PROPERTY. It asserted that the plan
+// varied across seeds — different headings, a real "plan space", permuting
+// pairs — because a CFR reviewer recognising our shape was treated as the
+// existential risk. MOTIVATION-GUIDE-BOOK failure mode 9 records what that
+// produced, and Part 4.2 and Part 7.1 replace it: twelve numbered headings,
+// the same ones every time, because a DFO compares the facts to the annexures
+// rather than one applicant's letter to another's, and a consistent spine
+// makes that faster.
+//
+// So what is proven here is the reverse of what used to be: the plan is a pure
+// function of the licence type and four facts about the applicant; the
+// headings are word-for-word the book's; the numbers do not re-sequence when a
+// section is omitted; and each section of the Act omits exactly the headings
+// its chapter says it does.
+//
+// The sameness detector survives as a MEASUREMENT — see the block above it.
+// ────────────────────────────────────────────────────────────────────
 
 const ALL_TYPES = Object.values(MotivationLicenceType);
 
-describe('structure planning', () => {
-  it('is deterministic — the same seed always gives the same plan', () => {
-    for (const t of ALL_TYPES) {
-      expect(planFor(t, 12345)).toEqual(planFor(t, 12345));
+/** Everything on, so a plan carries every heading its type can carry. */
+const FULL: PlanOptions = {
+  holdsFirearms: true,
+  hasRecord: true,
+  isAssociationMember: true,
+};
+
+const idsFor = (type: MotivationLicenceType, opts: PlanOptions = FULL) =>
+  planFor(type, 1, opts).sections.map((s) => s.id);
+
+const numbersOf = (type: MotivationLicenceType, opts: PlanOptions = FULL) =>
+  planFor(type, 1, opts).sections.map((s) => Number(s.heading.split('.')[0]));
+
+describe('the fixed skeleton', () => {
+  it('is a pure function of the type and the options — the seed does nothing', () => {
+    // The seed is kept and stored because it ties a filed document to the row
+    // that produced it. It is no longer an input to the shape.
+    for (const type of ALL_TYPES) {
+      const a = planFor(type, 1, FULL);
+      const b = planFor(type, 2 ** 31 - 1, FULL);
+      expect(expectedHeadings(a)).toEqual(expectedHeadings(b));
+      expect(a.sections.map((s) => s.paragraphs)).toEqual(
+        b.sections.map((s) => s.paragraphs),
+      );
+      expect(a.seed).toBe(1);
+      expect(b.seed).toBe(2 ** 31 - 1);
     }
   });
 
-  it('different seeds give different plans', () => {
-    const a = planFor(MotivationLicenceType.S13_SELF_DEFENCE, 1);
-    const b = planFor(MotivationLicenceType.S13_SELF_DEFENCE, 2);
-    expect(a).not.toEqual(b);
+  it('always opens on the introduction and closes on the declaration', () => {
+    for (const type of ALL_TYPES) {
+      const ids = idsFor(type);
+      expect(ids[0]).toBe('introduction');
+      expect(ids[ids.length - 1]).toBe('conclusion');
+    }
   });
 
-  it('always opens with the introduction and closes with the conclusion', () => {
-    // Variation is only allowed where it does not damage the document. A
-    // motivation that does not begin by saying what it applies for, or ends
-    // without an undertaking, reads as broken however novel its middle is.
-    for (const t of ALL_TYPES) {
-      for (let seed = 0; seed < 200; seed++) {
-        const plan = planFor(t, seed);
-        expect(plan.sections[0].id).toBe('introduction');
-        expect(plan.sections[plan.sections.length - 1].id).toBe('conclusion');
+  it('runs in ascending heading number, with no section twice', () => {
+    for (const type of ALL_TYPES) {
+      const nums = numbersOf(type);
+      expect(nums).toEqual([...nums].sort((a, b) => a - b));
+      expect(new Set(nums).size).toBe(nums.length);
+      expect(new Set(idsFor(type)).size).toBe(idsFor(type).length);
+    }
+  });
+
+  it('⚠️ DOES NOT RE-SEQUENCE THE NUMBERS WHEN A SECTION IS OMITTED', () => {
+    // The gaps are the point. A section 15 with nothing held and nothing to
+    // declare runs 1, 3, 5, 7, 9, 11, 12 — a DFO who reads these packs sees at
+    // a glance that heading 2 is a self-defence heading and that there was
+    // nothing to declare, rather than counting to work out which spine this is.
+    expect(numbersOf(MotivationLicenceType.S15_OCCASIONAL_HUNTER, {})).toEqual([
+      1, 3, 5, 7, 9, 11, 12,
+    ]);
+    expect(numbersOf(MotivationLicenceType.S13_SELF_DEFENCE, {})).toEqual([
+      1, 2, 3, 4, 5, 7, 9, 11, 12,
+    ]);
+  });
+
+  it('numbers and titles are the book’s, word for word', () => {
+    expect(headingFor(MotivationLicenceType.S13_SELF_DEFENCE, 'introduction')).toBe(
+      '1. Introduction',
+    );
+    expect(
+      headingFor(MotivationLicenceType.S13_SELF_DEFENCE, 'personal_circumstances'),
+    ).toBe('2. My circumstances');
+    expect(headingFor(MotivationLicenceType.S13_SELF_DEFENCE, 'the_threat')).toBe(
+      '3. Why I need a firearm for self-defence',
+    );
+    expect(
+      headingFor(MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE, 'the_threat'),
+    ).toBe('3. Why a section 13 firearm will not provide sufficient protection');
+    expect(
+      headingFor(MotivationLicenceType.S15_OCCASIONAL_HUNTER, 'the_quarry'),
+    ).toBe('3. My hunting');
+    expect(
+      headingFor(MotivationLicenceType.S16_DEDICATED_SPORT, 'the_discipline'),
+    ).toBe('3. My sport shooting');
+    expect(headingFor(MotivationLicenceType.S24_RENEWAL, 'use_since_licensing')).toBe(
+      '3. How I have used this firearm since it was licensed',
+    );
+    expect(headingFor(MotivationLicenceType.S13_SELF_DEFENCE, 'held_firearms')).toBe(
+      '6. Firearms already licensed to me',
+    );
+    expect(headingFor(MotivationLicenceType.S13_SELF_DEFENCE, 'conclusion')).toBe(
+      '12. Declaration and request',
+    );
+  });
+
+  it('⚠️ NEVER ENDS A HEADING IN A COLON — Part 7.1', () => {
+    // The colon was how the PDF renderer told a heading from a paragraph, and
+    // it is now the number that does that. A colon creeping back would print
+    // "3. My hunting:" and read as a chat transcript rather than a document.
+    for (const type of ALL_TYPES) {
+      for (const h of expectedHeadings(planFor(type, 1, FULL))) {
+        expect(h).not.toMatch(/:\s*$/);
+        expect(h).toMatch(/^\d{1,2}\. \S/);
       }
     }
   });
 
-  it('keeps storage and compliance in their fixed places, always', () => {
-    for (const t of ALL_TYPES) {
-      for (let seed = 0; seed < 100; seed++) {
-        const ids = planFor(t, seed).sections.map((s) => s.id);
-        expect(ids.indexOf('storage_safety')).toBeLessThan(
-          ids.indexOf('conclusion'),
-        );
-        /**
-         * ⚠️ AN S13 HAS NO COMPLIANCE SECTION SINCE 2026-09-09. Printed as "My
-         * record" it came out a list of the documents attached, which the
-         * annexure index already is; anything real in it belongs under the
-         * statute. Where the section still exists it keeps its place.
-         */
-        if (ids.includes('compliance_history')) {
-          expect(ids.indexOf('storage_safety')).toBeLessThan(
-            ids.indexOf('compliance_history'),
-          );
-          expect(ids.indexOf('compliance_history')).toBeLessThan(
-            ids.indexOf('conclusion'),
-          );
-        } else {
-          // ⚠️ BOTH SELF-DEFENCE SECTIONS DROPPED IT. Printed as "My record"
-          // it came out a list of the documents attached, which the annexure
-          // index already is.
-          expect([
-            MotivationLicenceType.S13_SELF_DEFENCE,
-            MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE,
-          ]).toContain(t);
-        }
-      }
+  it('names the section it is quoting, for every type', () => {
+    const section: Record<MotivationLicenceType, string> = {
+      S13_SELF_DEFENCE: '11. Section 13 applied to my application',
+      S14_RESTRICTED_SELF_DEFENCE: '11. Section 14 applied to my application',
+      S15_OCCASIONAL_HUNTER: '11. Section 15 applied to my application',
+      S16_DEDICATED_HUNTER: '11. Section 16 applied to my application',
+      S16_DEDICATED_SPORT: '11. Section 16 applied to my application',
+      S24_RENEWAL: '11. Section 24 applied to my application',
+    };
+    for (const type of ALL_TYPES) {
+      expect(headingFor(type, 'statutory_application')).toBe(section[type]);
     }
   });
 
-  it('never drops or duplicates a section', () => {
-    for (const t of ALL_TYPES) {
-      for (let seed = 0; seed < 100; seed++) {
-        const ids = planFor(t, seed).sections.map((s) => s.id);
-        expect(new Set(ids).size).toBe(ids.length);
-        expect(ids).toContain('the_firearm');
-        expect(ids).toContain('storage_safety');
-      }
+  it('the introduction and the declaration are one paragraph each', () => {
+    for (const type of ALL_TYPES) {
+      const plan = planFor(type, 1, FULL);
+      const byId = new Map(plan.sections.map((s) => [s.id, s.paragraphs]));
+      expect(byId.get('introduction')).toBe(1);
+      expect(byId.get('conclusion')).toBe(1);
     }
   });
 
-  it('explores a real plan space rather than producing two shapes', () => {
-    // The actual anti-template property. If this collapses to a handful of
-    // combinations, the engine is decorative.
-    const seen = new Set<string>();
-    const t = MotivationLicenceType.S13_SELF_DEFENCE;
-    for (let seed = 0; seed < 1000; seed++) {
-      const p = planFor(t, seed);
-      seen.add(
-        [
-          p.sections.map((s) => `${s.id}:${s.heading}`).join('>'),
-          p.opening,
-          p.closing,
-          p.cadence,
-        ].join('|'),
+  it('the opening, closing and cadence are fixed', () => {
+    for (const type of ALL_TYPES) {
+      const plan = planFor(type, 99, FULL);
+      expect(plan.opening).toBe('purpose_first');
+      expect(plan.closing).toBe('declaration');
+      expect(plan.cadence).toBe('plain');
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// WHICH HEADINGS A SECTION OF THE ACT CARRIES AT ALL.
+//
+// Book Part 5. Headings 2 and 4 are the self-defence pair — circumstances and
+// what the applicant already does about the risk — and every other chapter
+// omits them. Headings 6, 8 and 10 turn on the applicant's own answers.
+// ────────────────────────────────────────────────────────────────────
+
+describe('what each section of the Act omits', () => {
+  it('gives circumstances and existing measures to s13 and s14 only', () => {
+    for (const type of ALL_TYPES) {
+      const ids = idsFor(type);
+      const selfDefence =
+        type === MotivationLicenceType.S13_SELF_DEFENCE ||
+        type === MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE;
+      expect(ids.includes('personal_circumstances')).toBe(selfDefence);
+      expect(ids.includes('existing_measures')).toBe(selfDefence);
+    }
+  });
+
+  it('gives every type exactly one purpose section', () => {
+    const purposes: SectionId[] = [
+      'the_threat',
+      'the_quarry',
+      'the_discipline',
+      'use_since_licensing',
+    ];
+    for (const type of ALL_TYPES) {
+      const ids = idsFor(type);
+      expect(ids.filter((id) => purposes.includes(id))).toHaveLength(1);
+    }
+  });
+
+  it('⚠️ GIVES A RENEWAL ONE TOO, which it used to have none of', () => {
+    // Failure mode 6: treating a renewal as sectionless so it cannot argue
+    // s24(3). The renewal's purpose section is continuity — what has been done
+    // with the firearm since it was licensed — not a fresh need argument.
+    expect(idsFor(MotivationLicenceType.S24_RENEWAL)).toContain(
+      'use_since_licensing',
+    );
+  });
+
+  it('gives a self-defence applicant the threat and never a hunting section', () => {
+    for (const type of [
+      MotivationLicenceType.S13_SELF_DEFENCE,
+      MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE,
+    ]) {
+      const ids = idsFor(type);
+      expect(ids).toContain('the_threat');
+      expect(ids).not.toContain('the_quarry');
+      expect(ids).not.toContain('the_discipline');
+      expect(ids).not.toContain('association');
+    }
+  });
+
+  it('always states the purpose before justifying the firearm', () => {
+    // The pair: the purpose section defines the requirement, the firearm
+    // section answers it. Run the other way round, every "which is why this
+    // rifle suits it" points at a section the reader has not reached.
+    for (const type of ALL_TYPES) {
+      const ids = idsFor(type);
+      const purpose = ids.findIndex((id) =>
+        ['the_threat', 'the_quarry', 'the_discipline', 'use_since_licensing'].includes(
+          id,
+        ),
+      );
+      expect(purpose).toBeGreaterThan(-1);
+      expect(purpose).toBeLessThan(ids.indexOf('the_firearm'));
+    }
+  });
+
+  it('⚠️ HAS NO CALIBRE SECTION ANYWHERE — it is folded into the firearm', () => {
+    // It had a heading of its own and what filled it was a cartridge essay
+    // that reached the applicant late or never (failure mode 11). The book
+    // gives it two or three sentences inside heading 5.
+    for (const type of ALL_TYPES) {
+      expect(idsFor(type).join(' ')).not.toContain('calibre');
+    }
+  });
+});
+
+describe('the three headings the applicant’s own answers decide', () => {
+  it('drops the battery on a first application and prints it otherwise', () => {
+    for (const type of ALL_TYPES) {
+      expect(idsFor(type, { ...FULL, holdsFirearms: false })).not.toContain(
+        'held_firearms',
+      );
+      expect(idsFor(type, { ...FULL, holdsFirearms: true })).toContain(
+        'held_firearms',
       );
     }
-    // ⚠️ THE ORDER IS NO LONGER WHAT CARRIES THIS. Per-type skeletons replaced
-    // the free shuffle, so an S13 has one order with one pair swapping inside
-    // it. The space is now four heading alternates on each of ten sections x 4
-    // openings x 3 closings x 3 cadences, which is still enormous — but it is
-    // WORDS, and this file's whole thesis is that the shape has to differ too.
-    // The shape variation that remains is across types and on the conditional
-    // comparison section. Read the admin sameness report, not this number.
-    expect(seen.size).toBeGreaterThan(400);
   });
 
-  it('varies the headings, not just the order', () => {
-    const t = MotivationLicenceType.S16_DEDICATED_HUNTER;
-    const introHeadings = new Set<string>();
-    for (let seed = 0; seed < 300; seed++) {
-      introHeadings.add(planFor(t, seed).sections[0].heading);
-    }
-    expect(introHeadings.size).toBeGreaterThan(1);
+  it('⚠️ NO LONGER WAITS FOR A SAME-CLASS OVERLAP', () => {
+    // It used to appear only where the applicant held a firearm in the same
+    // class as the one applied for. The DFO reads the licence record against
+    // the request whether or not two entries happen to be the same class, so
+    // every held firearm now gets a row and a sentence.
+    const ids = idsFor(MotivationLicenceType.S16_DEDICATED_SPORT, {
+      holdsFirearms: true,
+    });
+    expect(ids).toContain('held_firearms');
   });
 
-  it('keeps the introduction and conclusion to one paragraph', () => {
-    for (let seed = 0; seed < 100; seed++) {
-      const p = planFor(MotivationLicenceType.S24_RENEWAL, seed);
-      expect(p.sections[0].paragraphs).toBe(1);
-      expect(p.sections[p.sections.length - 1].paragraphs).toBe(1);
+  it('drops the record unless something is declared', () => {
+    for (const type of ALL_TYPES) {
+      expect(idsFor(type, { ...FULL, hasRecord: false })).not.toContain(
+        'compliance_history',
+      );
+      expect(idsFor(type, { ...FULL, hasRecord: true })).toContain(
+        'compliance_history',
+      );
     }
   });
 
-  it('survives extreme seeds', () => {
-    for (const seed of [0, 1, 2 ** 31 - 1, 2 ** 32 - 1]) {
-      const p = planFor(MotivationLicenceType.S15_OCCASIONAL_HUNTER, seed);
-      expect(p.sections.length).toBeGreaterThan(4);
-      expect(p.sections.every((s) => !!s.heading)).toBe(true);
+  it('gives section 16 the association section whether or not the flag is set', () => {
+    // Dedicated status IS the section, so the heading is never conditional on
+    // the two section 16 routes.
+    for (const type of [
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+      MotivationLicenceType.S16_DEDICATED_SPORT,
+    ]) {
+      expect(idsFor(type, { isAssociationMember: false })).toContain('association');
+    }
+  });
+
+  it('gives a section 15 the association section only where there is one', () => {
+    const s15 = MotivationLicenceType.S15_OCCASIONAL_HUNTER;
+    expect(idsFor(s15, { isAssociationMember: false })).not.toContain('association');
+    expect(idsFor(s15, { isAssociationMember: true })).toContain('association');
+    // ⚠️ AND IT NAMES MEMBERSHIP, NEVER DEDICATED STATUS. The Act still
+    // defines an occasional hunter as somebody who is NOT a member of an
+    // accredited association, so a section 15 claiming dedicated status argues
+    // itself out of the section it is applying under.
+    expect(headingFor(s15, 'association')).toBe('8. Association membership');
+    expect(headingFor(MotivationLicenceType.S16_DEDICATED_HUNTER, 'association')).toBe(
+      '8. Association membership and dedicated status',
+    );
+  });
+});
+
+describe('the section 15 variant', () => {
+  const s15 = MotivationLicenceType.S15_OCCASIONAL_HUNTER;
+
+  it('gives a hunter the quarry and a sport shooter the discipline', () => {
+    expect(idsFor(s15, { purpose: 'hunting' })).toContain('the_quarry');
+    expect(idsFor(s15, { purpose: 'hunting' })).not.toContain('the_discipline');
+    expect(idsFor(s15, { purpose: 'sport' })).toContain('the_discipline');
+    expect(idsFor(s15, { purpose: 'sport' })).not.toContain('the_quarry');
+  });
+
+  it('defaults to hunting when nothing says otherwise', () => {
+    expect(idsFor(s15, {})).toContain('the_quarry');
+  });
+
+  it('⚠️ SWAPS NOBODY ELSE’S PURPOSE SECTION', () => {
+    // The option is a section 15 answer. A dedicated sports shooter asked for
+    // `purpose: 'hunting'` still gets the discipline, because their section is
+    // what decides it.
+    expect(
+      idsFor(MotivationLicenceType.S16_DEDICATED_SPORT, { purpose: 'hunting' }),
+    ).toContain('the_discipline');
+    expect(
+      idsFor(MotivationLicenceType.S13_SELF_DEFENCE, { purpose: 'sport' }),
+    ).toContain('the_threat');
+  });
+});
+
+describe('paragraph budgets', () => {
+  const budget = (type: MotivationLicenceType, id: SectionId) =>
+    planFor(type, 1, FULL).sections.find((s) => s.id === id)?.paragraphs;
+
+  it('⚠️ GIVES A SECTION 13 FIREARM SECTION ONE PARAGRAPH', () => {
+    // Given two to four it filled them with a catalogue — short recoil,
+    // tilting barrel, polymer frame. Book Part 5.1 brief 5: one paragraph, at
+    // most sixty words, four facts. The room WAS the instruction.
+    expect(budget(MotivationLicenceType.S13_SELF_DEFENCE, 'the_firearm')).toBe(1);
+  });
+
+  it('gives a section 14 more room where section K’s facts have to appear', () => {
+    expect(
+      budget(MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE, 'personal_circumstances'),
+    ).toBe(4);
+    expect(
+      budget(MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE, 'the_threat'),
+    ).toBe(4);
+  });
+
+  it('gives the statutory section room to quote AND apply', () => {
+    // Quote an element, answer it with a fact, then the next. Squeezed to one
+    // it reverts to regulation pasted in with nothing beneath it.
+    for (const type of ALL_TYPES) {
+      expect(budget(type, 'statutory_application')).toBeGreaterThanOrEqual(2);
     }
   });
 });
 
 describe('plan verification', () => {
-  const plan = planFor(MotivationLicenceType.S16_DEDICATED_HUNTER, 42);
-
-  function docFromPlan(headings: string[]): string {
-    return headings
-      .map((h) => `${h}\n\nSome body text for this section goes here.`)
-      .join('\n\n');
-  }
+  const plan = planFor(MotivationLicenceType.S16_DEDICATED_HUNTER, 42, FULL);
+  const docFromPlan = (headings: string[]) =>
+    headings.map((h) => `${h}\n\nSome text for this section.`).join('\n\n');
 
   it('accepts a document that follows the plan', () => {
-    const res = followsPlan(docFromPlan(expectedHeadings(plan)), plan);
-    expect(res).toEqual({ ok: true, missing: [], outOfOrder: false });
+    expect(followsPlan(docFromPlan(expectedHeadings(plan)), plan).ok).toBe(true);
   });
 
   it('catches a missing section', () => {
-    const headings = expectedHeadings(plan).slice(1);
-    const res = followsPlan(docFromPlan(headings), plan);
-    expect(res.ok).toBe(false);
-    expect(res.missing).toHaveLength(1);
+    const short = expectedHeadings(plan).slice(1);
+    const out = followsPlan(docFromPlan(short), plan);
+    expect(out.ok).toBe(false);
+    expect(out.missing).toHaveLength(1);
   });
 
   it('catches sections in the wrong order', () => {
-    // We ask for a structure and then VERIFY it. A document that ignored the
-    // plan means the variation engine did nothing — the failure we cannot
-    // afford to miss.
-    const headings = [...expectedHeadings(plan)];
-    [headings[1], headings[3]] = [headings[3], headings[1]];
-    const res = followsPlan(docFromPlan(headings), plan);
-    expect(res.ok).toBe(false);
-    expect(res.outOfOrder).toBe(true);
+    const swapped = [...expectedHeadings(plan)];
+    [swapped[1], swapped[2]] = [swapped[2], swapped[1]];
+    const out = followsPlan(docFromPlan(swapped), plan);
+    expect(out.ok).toBe(false);
+    expect(out.outOfOrder).toBe(true);
   });
 
   it('is case-insensitive about headings but not about their presence', () => {
     const shouted = expectedHeadings(plan).map((h) => h.toUpperCase());
     expect(followsPlan(docFromPlan(shouted), plan).ok).toBe(true);
   });
+
+  it('⚠️ CATCHES A RENUMBERED HEADING', () => {
+    // The writer is told not to renumber, and this is what happens when it
+    // does anyway: "1. Introduction, 2. My hunting" instead of "1., 3.".
+    const renumbered = expectedHeadings(plan).map((h, i) =>
+      h.replace(/^\d{1,2}\./, `${i + 1}.`),
+    );
+    expect(followsPlan(docFromPlan(renumbered), plan).ok).toBe(false);
+  });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE SAMENESS DETECTOR — a measurement, not a trigger.
+//
+// ⚠️ IT NO LONGER REGENERATES ANYTHING. With the skeleton fixed, a fresh seed
+// produces the same plan, so spending a second model call on a high score buys
+// nothing. Two motivations of one section scoring alike is now the design
+// working. What a score at the ceiling still says is that the PROSE is
+// repeating — that the applicant's own facts stopped reaching the writer — and
+// that raises an admin card instead.
+// ────────────────────────────────────────────────────────────────────
 
 describe('the sameness detector', () => {
   const DOC_A = [
-    'Introduction:',
+    '1. Introduction',
     'I am applying for a licence in terms of section 16 of the Act. I have hunted for eleven years.',
-    'Experience and training:',
+    '7. My competency and training',
     'I completed my competency in 2018. I hunt plains game in the Free State each winter.',
-    'Safe storage:',
+    '9. Safe storage and transport',
     'The firearm will be kept in a safe bolted to a brick wall. Nobody else has the code.',
   ].join('\n\n');
 
   // Same SHAPE, completely different person, different facts and names.
   const DOC_B_SAME_SHAPE = [
-    'Introduction:',
+    '1. Introduction',
     'I am applying for a licence in terms of section 16 of the Act. I have hunted for four years.',
-    'Experience and training:',
+    '7. My competency and training',
     'I completed my competency in 2022. I hunt plains game in Limpopo each autumn.',
-    'Safe storage:',
+    '9. Safe storage and transport',
     'The firearm will be kept in a safe bolted to a concrete wall. Nobody else has the code.',
   ].join('\n\n');
 
   // Genuinely different document: different headings, different rhythm.
   const DOC_C_DIFFERENT = [
-    'Why I am applying:',
+    '3. Why I need a firearm for self-defence',
     'My work takes me onto isolated farms after dark, often carrying cash.',
-    'Circumstances relevant to this application:',
+    '2. My circumstances',
     'Two armed robberies happened on my route during the past year.',
-    'Storage and safekeeping:',
+    '9. Safe storage and transport',
     'A wall-mounted safe in the main bedroom will hold it when it is not carried.',
   ].join('\n\n');
 
+  it('still reads a numbered heading as a heading', () => {
+    // ⚠️ THE MARKER USED TO BE THE TRAILING COLON. Left alone when the colon
+    // went, this classified every heading as prose and the detector silently
+    // stopped measuring structure at all — while still returning a number.
+    expect(fingerprint('9. Safe storage and transport\n\nA safe.').length).toBe(0);
+    const shape = fingerprint(DOC_A).length;
+    expect(shape).toBeGreaterThan(0);
+  });
+
   it('scores two same-shaped documents high even with different content', () => {
-    // The whole point: names, dates, places and calibres are stripped, so what
-    // is left is how the document was BUILT.
     const s = similarity(fingerprint(DOC_A), fingerprint(DOC_B_SAME_SHAPE));
     expect(s).toBeGreaterThan(SIMILARITY_REGENERATE_THRESHOLD);
   });
@@ -261,11 +503,11 @@ describe('the sameness detector', () => {
     expect(maxSimilarity(fingerprint(DOC_A), [])).toBe(0);
   });
 
-  it('the threshold is loose enough not to spin on legitimate overlap', () => {
+  it('the threshold stays loose', () => {
     // Motivations for the same section share vocabulary by necessity — there
-    // are only so many ways to describe a safe bolted to a wall. A threshold
-    // that is too tight would regenerate on every document and burn the beta
-    // budget on retries.
+    // are only so many ways to describe a safe bolted to a wall — and now
+    // share their headings by design. It is an alerting threshold, so a tight
+    // one would raise a card on every document.
     expect(SIMILARITY_REGENERATE_THRESHOLD).toBeGreaterThan(0.4);
     expect(SIMILARITY_REGENERATE_THRESHOLD).toBeLessThan(0.8);
   });
@@ -279,7 +521,7 @@ describe('the sameness detector', () => {
 
 describe('who the sameness engine is actually guarding against', () => {
   it('treats two documents about one life as legitimately alike', () => {
-    // The engine exists so the CFR never sees a flood of near-identical
+    // The engine exists so nobody at the CFR meets a flood of near-identical
     // documents from DIFFERENT people. A second application by the SAME person
     // describes the same commute, the same premises and the same history — it
     // SHOULD read alike, and forcing it apart would manufacture exactly the
@@ -296,500 +538,5 @@ describe('who the sameness engine is actually guarding against', () => {
     expect(similarity(first, second)).toBeGreaterThan(
       SIMILARITY_REGENERATE_THRESHOLD,
     );
-    // So if their own earlier document were left in the corpus, a returning
-    // applicant would be regenerated away from their own account of their life.
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────
-// THE PURPOSE SECTION.
-//
-// Operator, 2026-08-20: "We need to talk about the discipline they will be
-// shooting or the animals they will hunt or varmint or why the self defence is
-// applicable." Before this the plan went from the applicant's circumstances
-// straight to the firearm, so a document could assert a need without ever
-// setting out what the firearm was FOR.
-//
-// What is proven here is that the RIGHT purpose section reaches the right
-// applicant, in every permutation the seed can produce — a self-defence
-// applicant handed "The quarry and the ground I hunt" is worse than no section
-// at all.
-// ────────────────────────────────────────────────────────────────────
-
-describe('the purpose section', () => {
-  const idsFor = (type: MotivationLicenceType, seed: number) =>
-    planFor(type, seed).sections.map((s) => s.id);
-
-  // Enough seeds to walk the shuffle rather than sample one arrangement.
-  const SEEDS = Array.from({ length: 200 }, (_, i) => i * 7919 + 13);
-
-  it('gives a hunter the quarry and never the discipline or the threat', () => {
-    for (const type of [
-      MotivationLicenceType.S15_OCCASIONAL_HUNTER,
-      MotivationLicenceType.S16_DEDICATED_HUNTER,
-    ]) {
-      for (const seed of SEEDS) {
-        const ids = idsFor(type, seed);
-        expect(ids).toContain('the_quarry');
-        expect(ids).not.toContain('the_discipline');
-        expect(ids).not.toContain('the_threat');
-      }
-    }
-  });
-
-  it('gives a sport shooter the discipline and never the quarry', () => {
-    for (const seed of SEEDS) {
-      const ids = idsFor(MotivationLicenceType.S16_DEDICATED_SPORT, seed);
-      expect(ids).toContain('the_discipline');
-      expect(ids).not.toContain('the_quarry');
-      expect(ids).not.toContain('the_threat');
-    }
-  });
-
-  it('gives a self-defence applicant the threat and never a hunting section', () => {
-    for (const seed of SEEDS) {
-      const ids = idsFor(MotivationLicenceType.S13_SELF_DEFENCE, seed);
-      expect(ids).toContain('the_threat');
-      expect(ids).not.toContain('the_quarry');
-      expect(ids).not.toContain('the_discipline');
-    }
-  });
-
-  it('gives a renewal no purpose section at all', () => {
-    // ⚠️ DELIBERATE. Section 24 renews an EXISTING licence: the purpose was
-    // accepted when it was granted, and re-arguing it invites a reviewer to
-    // reopen a question nobody asked.
-    for (const seed of SEEDS) {
-      const ids = idsFor(MotivationLicenceType.S24_RENEWAL, seed);
-      expect(ids).not.toContain('the_quarry');
-      expect(ids).not.toContain('the_discipline');
-      expect(ids).not.toContain('the_threat');
-    }
-  });
-
-  it('always states the purpose before justifying the firearm', () => {
-    // ⚠️ THE PAIR IS DIRECTIONAL. The purpose section defines the requirement;
-    // the firearm section answers it. Run the other way round, every "which is
-    // why this rifle suits it" points at a section the reader has not reached.
-    // The shuffle produced exactly that inversion on the first seed it was
-    // tried against, which is why the constraint exists.
-    for (const type of Object.values(MotivationLicenceType)) {
-      for (const seed of SEEDS) {
-        const ids = idsFor(type, seed);
-        const purpose = ids.findIndex(
-          (id) =>
-            id === 'the_quarry' ||
-            id === 'the_discipline' ||
-            id === 'the_threat',
-        );
-        if (purpose === -1) continue; // renewals have none, by design
-        expect(purpose).toBeLessThan(ids.indexOf('the_firearm'));
-      }
-    }
-  });
-
-  it('still varies the order of everything else', () => {
-    // The constraint above must not have collapsed the shuffle into one
-    // arrangement — that would defeat the whole point of this file.
-    const seen = new Set(
-      SEEDS.map((seed) =>
-        idsFor(MotivationLicenceType.S16_DEDICATED_HUNTER, seed).join('>'),
-      ),
-    );
-    expect(seen.size).toBeGreaterThan(1);
-  });
-
-  it('still opens on the introduction and closes on the conclusion', () => {
-    // The purpose section joined the MOVABLE set, so this is the guard that it
-    // cannot have displaced the two sections whose position is load-bearing.
-    for (const type of Object.values(MotivationLicenceType)) {
-      for (const seed of SEEDS.slice(0, 60)) {
-        const ids = idsFor(type, seed);
-        expect(ids[0]).toBe('introduction');
-        expect(ids[ids.length - 1]).toBe('conclusion');
-      }
-    }
-  });
-
-  it('gives the purpose section room to make an argument', () => {
-    // A single paragraph can assert a purpose; it cannot demonstrate one.
-    for (const type of Object.values(MotivationLicenceType)) {
-      for (const seed of SEEDS.slice(0, 60)) {
-        for (const sec of planFor(type, seed).sections) {
-          if (
-            sec.id === 'the_quarry' ||
-            sec.id === 'the_discipline' ||
-            sec.id === 'the_threat'
-          ) {
-            expect(sec.paragraphs).toBeGreaterThanOrEqual(2);
-          }
-        }
-      }
-    }
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────
-// THE THREE SECTIONS READ OFF THE APPROVED CORPUS.
-//
-// Every motivation in the corpus SAPS has already approved carries a calibre
-// argument, an answer to any same-class holding, and a statutory section that
-// quotes the Act and then applies the applicant's facts to each quoted
-// element. We had none of the three, and the gap analysis put two of them at
-// the top of its list.
-//
-// What is proven here is that each one reaches the right applicant in the
-// right PLACE. A calibre section that lands before the firearm it is about, or
-// a statutory heading naming the wrong section of the Act over a table of
-// contents a reviewer reads first, is worse than not having the section.
-// ────────────────────────────────────────────────────────────────────
-
-describe('the corpus sections', () => {
-  // Enough seeds to walk the permuting pair rather than sample one side of it.
-  const SEEDS = Array.from({ length: 200 }, (_, i) => i * 7919 + 13);
-
-  const idsFor = (
-    type: MotivationLicenceType,
-    seed: number,
-    opts?: { hasOverlap?: boolean },
-  ) => planFor(type, seed, opts).sections.map((s) => s.id);
-
-  const headingFor = (type: MotivationLicenceType, seed: number, id: string) =>
-    planFor(type, seed).sections.find((s) => s.id === id)?.heading;
-
-  describe('the calibre', () => {
-    it('argues the cartridge for everyone with a purpose to argue it for', () => {
-      /**
-       * ⚠️ EXCEPT A SECTION 13, SINCE 2026-09-09. Kept as its own section it
-       * produced an argument about "115 to 147 grains" and "3 to 5
-       * foot-pounds" in a self-defence application — figures nothing supplied,
-       * in a section whose whole subject a Registrar reads as an interest in
-       * the hardware. It is one clause of a sixty-word firearm paragraph now:
-       * a common service calibre whose ammunition is readily available.
-       */
-      for (const type of [
-        MotivationLicenceType.S15_OCCASIONAL_HUNTER,
-        MotivationLicenceType.S16_DEDICATED_HUNTER,
-        MotivationLicenceType.S16_DEDICATED_SPORT,
-      ]) {
-        for (const seed of SEEDS) {
-          expect(idsFor(type, seed)).toContain('the_calibre');
-        }
-      }
-    });
-
-    it('gives a renewal no calibre section', () => {
-      // ⚠️ DELIBERATE, and the same reasoning as the missing purpose section
-      // taken one step on. The calibre section argues the cartridge AGAINST a
-      // stated requirement; a renewal states no requirement, so the section
-      // would be suitability argued against nothing — padding, which the
-      // rubric marks down and the anti-padding rule forbids.
-      for (const seed of SEEDS) {
-        expect(idsFor(MotivationLicenceType.S24_RENEWAL, seed)).not.toContain(
-          'the_calibre',
-        );
-      }
-    });
-
-    it('always follows straight on from the firearm it is about', () => {
-      // The pair is directional in the same way purpose and firearm are: the
-      // firearm section argues the platform, the calibre section argues the
-      // cartridge that platform fires. Split them and the reader meets the
-      // ballistics of a rifle they have not been introduced to.
-      for (const type of Object.values(MotivationLicenceType)) {
-        for (const seed of SEEDS) {
-          const ids = idsFor(type, seed);
-          const calibre = ids.indexOf('the_calibre');
-          if (calibre === -1) continue; // renewals have none, by design
-          expect(calibre).toBe(ids.indexOf('the_firearm') + 1);
-        }
-      }
-    });
-
-    it('names the requirement in its heading, per licence type', () => {
-      // The headings differ in KIND, not merely in wording — the same test
-      // that gave the purpose sections three ids rather than one. A hunter's
-      // calibre section is about a humane kill on a named species; a sport
-      // shooter's is about a course of fire. Neither is an alternate wording
-      // of the other, so the two sets must not intersect at all.
-      const hunter = new Set(
-        SEEDS.map((s) =>
-          headingFor(
-            MotivationLicenceType.S16_DEDICATED_HUNTER,
-            s,
-            'the_calibre',
-          ),
-        ),
-      );
-      const sport = new Set(
-        SEEDS.map((s) =>
-          headingFor(
-            MotivationLicenceType.S16_DEDICATED_SPORT,
-            s,
-            'the_calibre',
-          ),
-        ),
-      );
-      for (const h of hunter) expect(sport.has(h)).toBe(false);
-      expect(hunter.size).toBeGreaterThan(1);
-      expect(sport.size).toBeGreaterThan(1);
-    });
-  });
-
-  describe('the statutory application', () => {
-    it('is in every plan, whatever is being applied for', () => {
-      // Every type has a section of the Act to satisfy, renewals included.
-      for (const type of Object.values(MotivationLicenceType)) {
-        for (const seed of SEEDS) {
-          expect(idsFor(type, seed)).toContain('statutory_application');
-        }
-      }
-    });
-
-    it('is the last thing argued, immediately before the conclusion', () => {
-      // The corpus order: everything the applicant has to say, then the
-      // statute measured against it, then the undertaking. Quoting the Act
-      // before the facts exist to answer it is the defect the gap analysis
-      // found — the quote left hanging with nothing applied beneath it.
-      for (const type of Object.values(MotivationLicenceType)) {
-        for (const seed of SEEDS) {
-          const ids = idsFor(type, seed);
-          expect(ids[ids.length - 2]).toBe('statutory_application');
-          expect(ids[ids.length - 1]).toBe('conclusion');
-        }
-      }
-    });
-
-    it('never names a section of the Act belonging to another application', () => {
-      // ⚠️ THE FAILURE THIS CATCHES IS BOTH EMBARRASSING AND FATAL. A reviewer
-      // reads the table of contents first, and "Application in terms of
-      // section 16 of the Act" standing over a self-defence application tells
-      // them the document was assembled out of somebody else's — which is
-      // precisely the template rot the approved corpus itself contains.
-      const SECTION_OF: Record<MotivationLicenceType, string> = {
-        S13_SELF_DEFENCE: '13',
-        S14_RESTRICTED_SELF_DEFENCE: '14',
-        S15_OCCASIONAL_HUNTER: '15',
-        S16_DEDICATED_HUNTER: '16',
-        S16_DEDICATED_SPORT: '16',
-        S24_RENEWAL: '24',
-      };
-      for (const type of Object.values(MotivationLicenceType)) {
-        for (const seed of SEEDS) {
-          const heading = headingFor(type, seed, 'statutory_application') ?? '';
-          const named = /section (\d+)/i.exec(heading);
-          // Not every alternate names a number; those that do must be right.
-          if (named) expect(named[1]).toBe(SECTION_OF[type]);
-        }
-      }
-    });
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────
-// THE COMPARISON SECTION IS CONDITIONAL, AND BOTH DIRECTIONS COST US.
-//
-// Missing when the applicant holds a same-class firearm: the gap analysis
-// calls it the single likeliest ground of refusal — the reviewer sees both
-// entries on the licence record and is left to draw their own conclusion.
-//
-// Present when they hold nothing of the sort: the document opens an argument
-// about a difficulty nobody raised, and the writer — briefed with no
-// overlapNote to work from — has nothing to fill it with except invention,
-// which is the one failure this module exists to prevent.
-//
-// So it is driven by the overlap check and by nothing else.
-// ────────────────────────────────────────────────────────────────────
-
-describe('the comparison section', () => {
-  const SEEDS = Array.from({ length: 120 }, (_, i) => i * 7919 + 13);
-
-  const idsFor = (
-    type: MotivationLicenceType,
-    seed: number,
-    opts?: { hasOverlap?: boolean },
-  ) => planFor(type, seed, opts).sections.map((s) => s.id);
-
-  it('is in no plan by default', () => {
-    // The default has to be OFF. A caller that forgets to pass the overlap
-    // produces a document that does not raise the question, which a reviewer
-    // may or may not press; the other default has us arguing with ourselves
-    // about a firearm the applicant does not own.
-    for (const type of Object.values(MotivationLicenceType)) {
-      for (const seed of SEEDS) {
-        expect(idsFor(type, seed)).not.toContain('comparison');
-        expect(idsFor(type, seed, {})).not.toContain('comparison');
-        expect(idsFor(type, seed, { hasOverlap: false })).not.toContain(
-          'comparison',
-        );
-      }
-    }
-  });
-
-  it('appears for every licence type once an overlap exists', () => {
-    for (const type of Object.values(MotivationLicenceType)) {
-      for (const seed of SEEDS) {
-        expect(idsFor(type, seed, { hasOverlap: true })).toContain('comparison');
-      }
-    }
-  });
-
-  it('answers the record after it has been stated, and before the statute', () => {
-    // Order of argument: here is what I already hold, here is why this one is
-    // not a duplicate of it, and only then the statutory test. Run the other
-    // way round and the comparison answers a record the reader has not seen.
-    for (const type of Object.values(MotivationLicenceType)) {
-      for (const seed of SEEDS) {
-        const ids = idsFor(type, seed, { hasOverlap: true });
-        expect(ids.indexOf('compliance_history')).toBeLessThan(
-          ids.indexOf('comparison'),
-        );
-        expect(ids.indexOf('comparison')).toBe(
-          ids.indexOf('statutory_application') - 1,
-        );
-      }
-    }
-  });
-
-  it('disturbs nothing else in the order when it is added', () => {
-    // Adding a section must not reshuffle the document around it. If it did,
-    // an admin reproducing a plan would get a different order depending on a
-    // flag they had to remember to pass.
-    for (const type of Object.values(MotivationLicenceType)) {
-      for (const seed of SEEDS) {
-        const without = idsFor(type, seed);
-        const withIt = idsFor(type, seed, { hasOverlap: true }).filter(
-          (id) => id !== 'comparison',
-        );
-        expect(withIt).toEqual(without);
-      }
-    }
-  });
-
-  it('is still deterministic once the overlap is part of the key', () => {
-    // ⚠️ hasOverlap JOINS THE SEED AS PART OF THE KEY. Reproducing a filed
-    // document from its stored variantSeed alone will differ whenever there
-    // was an overlap. It is still reproducible — the overlap is a pure
-    // function of the applicant's stored answers — but it must be recomputed
-    // rather than assumed away.
-    for (const type of Object.values(MotivationLicenceType)) {
-      expect(planFor(type, 12345, { hasOverlap: true })).toEqual(
-        planFor(type, 12345, { hasOverlap: true }),
-      );
-    }
-  });
-
-  it('flows through to the headings we verify the document against', () => {
-    // followsPlan checks the returned document against expectedHeadings. A
-    // section the plan asks for but the check does not know about is a section
-    // the model can quietly drop, which is the whole failure followsPlan
-    // exists to catch.
-    const plan = planFor(MotivationLicenceType.S15_OCCASIONAL_HUNTER, 42, {
-      hasOverlap: true,
-    });
-    const comparison = plan.sections.find((s) => s.id === 'comparison');
-    expect(comparison).toBeDefined();
-    expect(expectedHeadings(plan)).toContain(comparison!.heading);
-
-    const body = (h: string) =>
-      `${h}\n\nSome body text for this section goes here.`;
-    expect(
-      followsPlan(expectedHeadings(plan).map(body).join('\n\n'), plan).ok,
-    ).toBe(true);
-
-    const dropped = expectedHeadings(plan)
-      .filter((h) => h !== comparison!.heading)
-      .map(body)
-      .join('\n\n');
-    expect(followsPlan(dropped, plan).missing).toEqual([comparison!.heading]);
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────
-// PER-TYPE SKELETONS.
-//
-// The five licence types used to share one shape, which is how a section 15
-// came to argue the rifle before it had said a word about what it would be
-// hunting. The orders are now read off approved documents, one per type. What
-// is asserted here is that they are genuinely different from each other, and
-// that the variation the skeletons cost has not been taken all the way to zero.
-// ────────────────────────────────────────────────────────────────────
-
-describe('per-type section order', () => {
-  const SEEDS = Array.from({ length: 60 }, (_, i) => i * 7919 + 13);
-
-  const shapeOf = (type: MotivationLicenceType, seed: number, hasOverlap = false) =>
-    planFor(type, seed, { hasOverlap })
-      .sections.map((s) => s.id)
-      .join('>');
-
-  it('gives each licence type its own shape', () => {
-    // The anti-template payload of the change: five skeletons where there was
-    // one. Two types may share a section list, but never a whole order.
-    const shapes = Object.values(MotivationLicenceType).map((type) =>
-      shapeOf(type, 42, true),
-    );
-    expect(new Set(shapes).size).toBe(shapes.length);
-  });
-
-  it('keeps the credentials pair swapping, so an order is not one fixed list', () => {
-    // Experience and storage are independent of each other and the corpus runs
-    // them both ways round, so this is the one permutation the skeletons still
-    // allow. If it ever collapses, every same-type document shares one exact
-    // order and this file's whole thesis goes with it.
-    for (const type of [
-      MotivationLicenceType.S15_OCCASIONAL_HUNTER,
-      MotivationLicenceType.S16_DEDICATED_HUNTER,
-      MotivationLicenceType.S16_DEDICATED_SPORT,
-    ]) {
-      expect(new Set(SEEDS.map((seed) => shapeOf(type, seed))).size).toBe(2);
-    }
-
-    /**
-     * ⚠️ THE S13 HAS NO PERMUTING PAIR ANY MORE, AND THAT IS A DELIBERATE
-     * TRADE. Its pair was experience/storage; experience folded into the
-     * statutory section on 2026-09-09 because competency is a statutory
-     * precondition rather than a self-defence argument, and the document may
-     * state only the certificate number and that it is valid.
-     *
-     * So an S13's ORDER is now fixed and the anti-template load falls entirely
-     * on the heading alternates, the opening, the closing, the cadence and the
-     * conditional comparison section. ⚠️ Watch the admin sameness report: if
-     * two S13s start scoring high against each other, this is why, and the fix
-     * is more heading alternates rather than shuffling an order taken from
-     * documents a DFO has already approved.
-     */
-    expect(
-      new Set(
-        SEEDS.map((seed) =>
-          shapeOf(MotivationLicenceType.S13_SELF_DEFENCE, seed),
-        ),
-      ).size,
-    ).toBe(1);
-  });
-
-  it('still swaps experience and the firearm on a renewal, as it always did', () => {
-    // ⚠️ THE RENEWAL WAS LEFT ALONE ON PURPOSE. Its old movable pair is its
-    // new permuting group, so a renewal produced before this change and one
-    // produced after differ only by the two sections it gained.
-    const seen = new Set(
-      SEEDS.map((seed) => shapeOf(MotivationLicenceType.S24_RENEWAL, seed)),
-    );
-    expect(seen.size).toBe(2);
-  });
-
-  it('gives the statutory section room to quote AND apply', () => {
-    // ⚠️ A FLOOR OF 3, where every other body section floors at 2. Quote an
-    // element, answer it with a fact, then the next: that does not fit into
-    // two paragraphs, and a section squeezed to two reverts to the defect the
-    // gap analysis found — regulation pasted in and left hanging.
-    for (const type of Object.values(MotivationLicenceType)) {
-      for (const seed of SEEDS) {
-        const sec = planFor(type, seed).sections.find(
-          (s) => s.id === 'statutory_application',
-        );
-        expect(sec!.paragraphs).toBeGreaterThanOrEqual(3);
-      }
-    }
   });
 });

@@ -269,21 +269,13 @@ export function buildPreview(
       ],
     ),
   );
-  out.push(
-    section(
-      'the_calibre',
-      'The calibre',
-      'We research what this calibre carries at the ranges you shoot. You are not asked.',
-      [],
-    ),
-  );
 
   // ── What they already hold, and how this one differs ────────────
   const owned = ownedLines(answers);
   const angles = cardSentences(answers, 'overlap_angle');
   out.push(
     section(
-      'comparison',
+      'held_firearms',
       'Firearms I already own',
       'The firearms on your licences, with what each one is for.',
       [
