@@ -584,6 +584,21 @@ describe('resolving a row', () => {
     ]);
   });
 
+  it('⚠️ DROPS A DOUBLED WORD, which nothing downstream proofreads', async () => {
+    // A live run produced "in thick coastal coastal thickets". The writer
+    // lifts a sentence whole, so the typo would reach a signed document.
+    const { svc } = build({
+      complete: jest.fn(async () =>
+        reply({
+          occasional_hunter: ['I hunt bushbuck in thick coastal coastal bush.'],
+        }),
+      ),
+    });
+    await expect(svc.forClass(RIFLE)).resolves.toEqual([
+      { label: 'occasional sport shooting', uses: [SPORT] },
+    ]);
+  });
+
   it('drops catalogue copy, which the gate refuses everywhere', async () => {
     const { svc } = build({
       complete: jest.fn(async () =>

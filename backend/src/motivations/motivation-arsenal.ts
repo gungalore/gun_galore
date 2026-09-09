@@ -235,6 +235,12 @@ export function arsenalBlock(rows: readonly ArsenalRow[]): string {
     'document — and then ONE sentence from inside it. Never mix the two lists',
     'for one firearm, never use more than one sentence per firearm, never list',
     'them, and never contradict the section on the row.',
+    'These sentences say "my association" and "my sport-shooting body" rather',
+    'than naming one, because they were written for a class of firearm and not',
+    'for this applicant. WHERE THE FACTS NAME THE APPLICANT’S OWN ASSOCIATION,',
+    'use that name in place of the generic words — a section 16 applicant is a',
+    'member of an accredited association and the facts carry which. Where the',
+    'facts name none, keep the generic words: never supply an association.',
     ...rows.map((r) => r.line),
     '</arsenal>',
   ].join('\n');

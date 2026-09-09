@@ -400,8 +400,14 @@ Walk the axes, and take a use from each:
 - DISTANCE. What it is used for close in, at middle distance, and far out.
 - SEASON AND OCCASION. Opening weekend, a winter biltong trip, a culling
   contract, a club day, a league round, a provincial shoot.
-- FORMAT. For a sports shooter, the disciplines this class is genuinely shot
-  in by name, and the formats and positions within them.
+- FORMAT, AND BE SPECIFIC. Name the disciplines this class is genuinely shot
+  in IN SOUTH AFRICA, and the formats, positions, distances and target types
+  inside them — precision rifle matches shot from improvised positions against
+  reactive steel; F-Class prone at fixed distances; metal silhouette against
+  animal-shaped steel; benchrest grouping on paper; veld-shooting and
+  hunting-rifle exercises shot standing off sticks, sitting, kneeling and
+  prone; postal shoots; club league rounds. "I shoot competitions" is a wasted
+  sentence. "I shoot F-Class prone at six hundred metres" is a use.
 - PREPARATION. Zeroing, load development, practice that keeps the skill and
   the shot placement honest — these are real uses of the firearm.
 
@@ -422,21 +428,35 @@ RULES
    competes in a registered discipline. Write them differently, because they
    are different people. Likewise a hunter is not a sports shooter: never give
    a hunting sentence under a sport-shooting list, or the other way round.
-5. NO PRODUCT COPY. No ballistics tables, no muzzle energy, no stopping power,
-   no magazine capacity, no "platform", no manufacturer history, no marketing.
-6. Nothing unlawful or unsafe: no carrying a rifle in public, no hunting with a
+5. NAME THE DISCIPLINE, NEVER THE BODY. No association, federation, club or
+   range by name — say "my association", "my sport-shooting body", "the club
+   range". The discipline is a fact about the SPORT and you should name it
+   precisely; which association somebody belongs to is a fact about THEM.
+   ⚠️ This is not because the association may not be named in the finished
+   document — a section 16 applicant IS an accredited member and the pack
+   carries which body, so the writer substitutes the real name when it uses
+   one of these sentences. It is because THIS list is written once for a class
+   of firearm and served to every applicant who ever holds one, and a name
+   baked in here would be served to the members of every other association.
+6. NO PRODUCT COPY, AND A CARTRIDGE'S VIRTUES ARE NOT USES. No ballistic
+   coefficients, no recoil, no barrel life, no muzzle energy, no stopping
+   power, no magazine capacity, no "platform", no "tactical", no component
+   availability, no manufacturer history, no marketing. "It is accurate and
+   recoils lightly" says nothing about what somebody does with it, and a
+   Registrar reads it as an appetite rather than a need.
+7. Nothing unlawful or unsafe: no carrying a rifle in public, no hunting with a
    firearm the law does not permit for it, no night hunting except where it is
    genuinely lawful vermin control on land.
-7. NOTHING ABOUT STORAGE OR CARRYING. Not where it is kept, not whether it is
+8. NOTHING ABOUT STORAGE OR CARRYING. Not where it is kept, not whether it is
    loaded, not what safe it lives in. The application answers that from the
    applicant's own premises, and a sentence here that contradicts it is a fault
    on a signed document.
-8. NEVER CITE THE LAW. No section numbers, no "in terms of the Act", no
+9. NEVER CITE THE LAW. No section numbers, no "in terms of the Act", no
    statute. These are sentences about shooting, not about legislation.
-9. NO TWO SENTENCES IN ONE LIST MAY SAY THE SAME THING. "I hunt impala in the
+10. NO TWO SENTENCES IN ONE LIST MAY SAY THE SAME THING. "I hunt impala in the
    bushveld" and "I use it for impala in thick bush" are one use written twice.
    A long list is wanted; a padded one is not.
-10. EVERY SENTENCE MUST BE TRUE OF THIS CLASS. Length never excuses invention:
+11. EVERY SENTENCE MUST BE TRUE OF THIS CLASS. Length never excuses invention:
    a 6.35 mm pocket pistol is not a plains-game cartridge and a .458 is not a
    small-game one. Where a shooter genuinely has little use for this class,
    give the few that are real and stop — an empty list beats a dishonest one.
@@ -670,6 +690,17 @@ export class FirearmUsesService {
       // See STORAGE_CLAIMS: the pack answers storage from the applicant's own
       // premises, and this table knows nothing about them.
       if (STORAGE_CLAIMS.some((w) => u.toLowerCase().includes(w))) {
+        refused++;
+        continue;
+      }
+      /**
+       * ⚠️ A DOUBLED WORD, WHICH IS A TYPO ON A SIGNED DOCUMENT. A live run
+       * produced "in thick coastal coastal thickets". Nothing downstream
+       * proofreads these — the writer lifts a sentence whole — so the one
+       * class of model typo that can be caught without a dictionary is caught
+       * here. Cheap, and it cannot refuse a well-formed sentence.
+       */
+      if (/\b(\w+)\s+\1\b/i.test(u)) {
         refused++;
         continue;
       }
