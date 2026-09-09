@@ -257,3 +257,49 @@ ever since, and the CZ 75 changed handgun design for good.
     expect(packConsistency(CLEAN + ROT, answers, ANNEXURES, AS_AT)).toEqual([]);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE CALIBRE, IN ANY HONEST FORM — MO000074.
+//
+// The card stores "9MM PAR ( 9X19MM )" and the fact pack hands the model
+// displayCalibre of it, "9mm Parabellum (9x19mm)". The check demanded one of
+// those two strings VERBATIM, so a writer naming the calibre the way every
+// approved pack in the corpus does — "9mm Parabellum" — was reported as having
+// lost it. The pack regenerated once, failed the same way, and the applicant
+// was sent "we could not finish document MO000074".
+// ────────────────────────────────────────────────────────────────────
+
+describe('naming the calibre', () => {
+  const answers = {
+    firearm_calibre: '9MM PAR ( 9X19MM )',
+    firearm_serial: 'ZABA01892',
+    id_number: '8501015800081',
+  };
+  const doc = (body: string) =>
+    packConsistency(
+      `${body} Serial ZABA01892. Identity number 8501015800081.`,
+      answers,
+      [],
+    ).filter((i) => i.includes('calibre'));
+
+  it('⚠️ ACCEPTS THE FORM A PERSON ACTUALLY WRITES', () => {
+    expect(doc('The firearm is a Glock 17 in 9mm Parabellum.')).toEqual([]);
+  });
+
+  it('accepts the card’s own string, and the tidied one with its bracket', () => {
+    expect(doc('Chambered in 9MM PAR ( 9X19MM ).')).toEqual([]);
+    expect(doc('Chambered in 9mm Parabellum (9x19mm).')).toEqual([]);
+  });
+
+  it('accepts the metric name on its own', () => {
+    expect(doc('Chambered in 9x19mm.')).toEqual([]);
+  });
+
+  it('⚠️ STILL REFUSES A DOCUMENT THAT NEVER NAMES IT', () => {
+    // And "9mm" alone is not enough: a document that gives the diameter and
+    // not the cartridge has not identified the firearm, which is what this
+    // check exists to catch.
+    expect(doc('The firearm is a Glock 17.').length).toBe(1);
+    expect(doc('The firearm is a Glock 17 in 9mm.').length).toBe(1);
+  });
+});

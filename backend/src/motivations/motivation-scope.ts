@@ -450,3 +450,60 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
  */
 export const S13_MIN_WORDS = 900;
 export const S13_MAX_WORDS = 1400;
+
+/**
+ * Fold the Americanisms the writer sometimes reaches for into the spellings
+ * this document is filed in.
+ *
+ * ⚠️ MO000074 WAS THROWN AWAY OVER "organization" AND "specialized". The scope
+ * check is right that they do not belong — book rule 3, plain South African
+ * usage — but it is a MECHANICAL check, and a mechanical failure costs the
+ * applicant the whole pack: one regeneration, the same two words, then FAILED
+ * and an SMS reading "we could not finish document MO000074". Two spellings
+ * are not a reason to refuse somebody their licence application.
+ *
+ * ⚠️ THIS CHANGES SPELLING AND NOTHING ELSE. Every pair below is the same word
+ * — the -ise/-ize alternation and four nouns SA English spells differently.
+ * No fact moves, no sentence is rewritten, nothing is added or dropped. That
+ * is what makes it safe to do silently, and it is the only kind of edit that
+ * would be.
+ *
+ * ⚠️ STEMS, NOT WHOLE WORDS, SO EVERY INFLECTION FOLLOWS. "organiz" catches
+ * organize, organized, organizing and organization in one pair — the same
+ * reason AMERICANISMS is written as stems.
+ *
+ * ⚠️ AND THE CHECK STAYS. This runs BEFORE it, so the check now fires only on
+ * something this could not fix — which is the signal worth having.
+ */
+const SPELLING: readonly (readonly [RegExp, string])[] = [
+  [/\bcaliber\b/gi, 'calibre'],
+  [/\bdefense\b/gi, 'defence'],
+  [/\boffense\b/gi, 'offence'],
+  [/meters\b/gi, 'metres'],
+  [/authoriz/gi, 'authoris'],
+  [/utiliz/gi, 'utilis'],
+  [/recogniz/gi, 'recognis'],
+  [/organiz/gi, 'organis'],
+  [/analyz/gi, 'analys'],
+  [/specializ/gi, 'specialis'],
+  [/maximiz/gi, 'maximis'],
+  [/minimiz/gi, 'minimis'],
+  // The corpus's own word: the association's shooting programme.
+  [/\bprogram\b/gi, 'programme'],
+];
+
+/** Keep the writer's capitalisation: "Organization" -> "Organisation". */
+function likeFor(replacement: string, matched: string): string {
+  if (!matched) return replacement;
+  return matched[0] === matched[0].toUpperCase()
+    ? replacement[0].toUpperCase() + replacement.slice(1)
+    : replacement;
+}
+
+export function southAfricanise(text: string): string {
+  let out = text;
+  for (const [pattern, replacement] of SPELLING) {
+    out = out.replace(pattern, (m) => likeFor(replacement, m));
+  }
+  return out;
+}

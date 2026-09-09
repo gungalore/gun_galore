@@ -15,7 +15,7 @@
 
 import { OWNED_ROWS, ownedFirearmSerial } from './motivation-fields';
 import { readSaId } from './sa-id';
-import { displayCalibre } from './saps-vocabulary';
+import { calibreForms } from './saps-vocabulary';
 
 export interface AnnexureRef {
   letter: string;
@@ -371,17 +371,21 @@ export function packConsistency(
     );
   }
   /**
-   * ⚠️ EITHER FORM COUNTS, BECAUSE THE WRITER IS GIVEN THE TIDY ONE. The stored
-   * answer is the card's own string — "9MM PAR ( 9X19MM )" — and the fact pack
-   * hands the model `displayCalibre` of it. Comparing only against the stored
-   * form would report every correctly written document as having lost the
-   * calibre, and the fix for THAT would have been to stop tidying it.
+   * ⚠️ EVERY HONEST FORM COUNTS, BECAUSE THE WRITER IS GIVEN THE TIDY ONE. The
+   * stored answer is the card's own string — "9MM PAR ( 9X19MM )" — and the
+   * fact pack hands the model `displayCalibre` of it. Comparing only against
+   * the stored form would report every correctly written document as having
+   * lost the calibre, and the fix for THAT would have been to stop tidying it.
+   *
+   * ⚠️ AND THE BRACKET IS OPTIONAL, WHICH IS WHAT MO000074 DIED ON. Demanding
+   * "9mm Parabellum (9x19mm)" verbatim failed a document that named the
+   * calibre the way every approved pack in the corpus does. See calibreForms,
+   * which owns the list and the reasoning.
    */
   const calibre = (answers.firearm_calibre ?? '').trim();
   if (
     calibre &&
-    !doc.includes(squash(calibre)) &&
-    !doc.includes(squash(displayCalibre(calibre)))
+    !calibreForms(calibre).some((f) => doc.includes(squash(f)))
   ) {
     issues.push(
       `The calibre the applicant gave (${calibre}) does not appear in the document.`,

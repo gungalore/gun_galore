@@ -1,6 +1,8 @@
 import { MotivationLicenceType } from '@prisma/client';
-import { documentScope } from './motivation-scope';
+import { documentScope, southAfricanise } from './motivation-scope';
 import { arsenalRows } from './motivation-arsenal';
+
+const S13 = MotivationLicenceType.S13_SELF_DEFENCE;
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT MO000071 SHIPPED.
@@ -324,5 +326,58 @@ describe('the mirror of the section discipline', () => {
     expect(
       documentScope('I need a firearm for self-defence.', s13),
     ).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// SPELLING IS FOLDED, NOT FAILED — MO000074.
+//
+// The scope check is right that "organization" does not belong in a document
+// filed in South African English. But it is a MECHANICAL check, and a
+// mechanical failure costs the applicant the whole pack: one regeneration, the
+// same two words, then FAILED and an SMS reading "we could not finish document
+// MO000074". Two spellings are not a reason to refuse somebody their licence
+// application.
+// ────────────────────────────────────────────────────────────────────
+
+describe('folding the spelling this document is filed in', () => {
+  it('fixes the two words MO000074 died on', () => {
+    expect(southAfricanise('the organization I belong to')).toBe(
+      'the organisation I belong to',
+    );
+    expect(southAfricanise('a specialized discipline')).toBe(
+      'a specialised discipline',
+    );
+  });
+
+  it('leaves nothing behind for the check to find', () => {
+    const before =
+      'I recognize the caliber, utilized meters of defense, and analyzed the program.';
+    const after = southAfricanise(before);
+    expect(documentScope(after, { licenceType: S13, arsenal: [] })).toEqual(
+      expect.not.arrayContaining([expect.stringMatching(/South African English/)]),
+    );
+  });
+
+  it('keeps the writer’s capitalisation', () => {
+    expect(southAfricanise('Organization')).toBe('Organisation');
+    expect(southAfricanise('Defense')).toBe('Defence');
+  });
+
+  it('⚠️ CHANGES SPELLING AND NOTHING ELSE', () => {
+    // The whole reason it is safe to do silently. A sentence with none of
+    // these words must come back byte-identical.
+    const untouched =
+      'I apply under section 13 for a Glock 17 in 9mm Parabellum, serial ZABA01892, for self-defence.';
+    expect(southAfricanise(untouched)).toBe(untouched);
+  });
+
+  it('⚠️ DOES NOT EAT A WORD THAT MERELY CONTAINS ONE', () => {
+    // The four whole-word pairs are bounded; the -ise stems deliberately are
+    // not, so every inflection follows. "programme" must not become
+    // "programmeme", and a "prize" is not a "prise".
+    expect(southAfricanise('the programme')).toBe('the programme');
+    expect(southAfricanise('a prize and the size')).toBe('a prize and the size');
+    expect(southAfricanise('kilometers')).toBe('kilometres');
   });
 });

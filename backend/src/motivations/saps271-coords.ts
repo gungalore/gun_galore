@@ -265,9 +265,9 @@ export const SAPS271_COORDS = {
   "g_competency_for_handgun": {
     "page": 5,
     "kind": "tick",
-    "x": 177.3,
+    "x": 184.4,
     "y": 421.1,
-    "w": 3.1,
+    "w": 17.8,
     "h": 18.1
   },
   "g_competency_for_rifle": {

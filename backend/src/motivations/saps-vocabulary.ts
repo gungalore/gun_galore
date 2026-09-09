@@ -105,3 +105,40 @@ export function displayCalibre(raw: string | undefined | null): string {
 
   return v.trim();
 }
+
+/**
+ * Every way the SAME calibre may honestly be written in the document.
+ *
+ * ⚠️ MO000074 FAILED THE WHOLE PACK OVER THIS, AND THE WRITER WAS RIGHT.
+ * The card stores "9MM PAR ( 9X19MM )" and the fact pack hands the model
+ * displayCalibre of it — "9mm Parabellum (9x19mm)". The consistency check then
+ * demanded one of those two strings VERBATIM. A writer naming the calibre the
+ * way every approved pack in the corpus does — "9mm Parabellum" — was reported
+ * as having lost it, the pack was regenerated once, failed the same way, and
+ * the applicant was sent an SMS saying we could not finish their document.
+ *
+ * So the check accepts any of: the card's own string, the tidied form, the
+ * tidied form WITHOUT its bracketed metric equivalent, and that equivalent on
+ * its own. Every one of them is a form of the string we handed the model —
+ * this widens what counts as writing it, not what counts as true.
+ *
+ * ⚠️ NOT A FUZZY MATCH. "9mm" alone is NOT on the list: a document that names
+ * the diameter and not the cartridge has not identified the firearm, and that
+ * is what this check exists to catch.
+ */
+export function calibreForms(raw: string | undefined | null): string[] {
+  const stored = (raw ?? '').trim();
+  if (!stored) return [];
+  const tidy = displayCalibre(stored);
+  const forms = new Set<string>([stored, tidy]);
+
+  const bracket = /\(([^)]+)\)/.exec(tidy);
+  if (bracket) {
+    // "9mm Parabellum (9x19mm)" -> "9mm Parabellum" and "9x19mm".
+    const head = tidy.slice(0, bracket.index).trim();
+    if (head) forms.add(head);
+    const inner = bracket[1].trim();
+    if (inner) forms.add(inner);
+  }
+  return [...forms].filter(Boolean);
+}

@@ -47,7 +47,7 @@ import {
 import { areasOnRoute, decodePolyline } from './motivation-route';
 import { cartridgeFacts, findCartridge } from './motivation-cartridge';
 import { arsenalRows, type ArsenalRow } from './motivation-arsenal';
-import { documentScope } from './motivation-scope';
+import { documentScope, southAfricanise } from './motivation-scope';
 import {
   hasDeclaredRecord,
   holdsFirearms,
@@ -792,7 +792,27 @@ export class MotivationGenerationService {
       };
       let seed = row.variantSeed;
       let plan = planFor(row.licenceType, seed, planOpts);
-      let attempt = await this.model.generate(pack, plan);
+      /**
+       * ⚠️ SPELLING IS FOLDED BEFORE ANYTHING IS CHECKED, AND MO000074 IS WHY.
+       *
+       * The scope check is right that "organization" and "specialized" do not
+       * belong in a document filed in South African English — but it is a
+       * MECHANICAL check, and a mechanical failure costs the applicant the
+       * whole pack: one regeneration, the same two words, then FAILED and an
+       * SMS reading "we could not finish document MO000074". Two spellings are
+       * not a reason to refuse somebody their licence application.
+       *
+       * `southAfricanise` changes spelling and nothing else — the -ise/-ize
+       * alternation and four nouns. No fact moves and no sentence is rewritten,
+       * which is what makes it safe to do silently and the only kind of edit
+       * that would be. The check stays and now fires only on something this
+       * could not fix, which is the signal worth having.
+       */
+      const write = async () => {
+        const r = await this.model.generate(pack, plan);
+        return { ...r, text: southAfricanise(r.text) };
+      };
+      let attempt = await write();
       let tokensIn = attempt.usage.promptTokens + researchIn;
       let tokensOut = attempt.usage.completionTokens + researchOut;
 
@@ -858,7 +878,7 @@ export class MotivationGenerationService {
         );
         seed = crypto.randomInt(0, 2 ** 31 - 1);
         plan = planFor(row.licenceType, seed, planOpts);
-        attempt = await this.model.generate(pack, plan);
+        attempt = await write();
         tokensIn += attempt.usage.promptTokens;
         tokensOut += attempt.usage.completionTokens;
         structureOk = followsPlan(attempt.text, plan).ok;
