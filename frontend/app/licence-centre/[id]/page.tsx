@@ -203,6 +203,24 @@ export default function LicenceCentreSheetPage() {
    */
   const [extraOwned, setExtraOwned] = useState(0);
 
+  /**
+   * How many EXTRA association slots the member has asked for.
+   *
+   * ⚠️ THE REGISTRY ALWAYS MEANT THESE TO BE HIDDEN. Both extra association
+   * blocks carry the note "the wizard hides the empty rows behind 'add another
+   * association' — operator, 2026-08-20 — so the single-body applicant never
+   * sees them", and nothing implemented it: six empty boxes sat under the
+   * member's real association, two of them labelled "Another association you
+   * belong to". Operator, 2026-09-09: "the another association must be gone
+   * and just a option for Add Another association."
+   *
+   * ⚠️ AN ANSWERED SLOT IS NEVER HIDDEN, whatever this counter says. Several
+   * associations is the normal case for a section 16 applicant — the
+   * professional motivations we studied list three — so a slot with anything
+   * in it opens on its own.
+   */
+  const [extraAssociations, setExtraAssociations] = useState(0);
+
   /** A save into the Document Centre is in flight. */
   const [keeping, setKeeping] = useState(false);
 
@@ -1087,10 +1105,54 @@ export default function LicenceCentreSheetPage() {
      * member has picked — Phase 4 deleted the wizard, so the annexure has been
      * unreachable since. Mounting this is what restores it.
      */
-    if (sectionId === 'case' && areas) {
+    if (sectionId === 'case') {
+      /**
+       * ⚠️ THE SECOND AND THIRD ASSOCIATION FOLD AWAY UNTIL ASKED FOR. Same
+       * shape as the owned-firearm rows above: a slot with an answer in it
+       * shows, an empty one waits behind the button, and asking for one opens
+       * it straight away because the member tapped it in order to type.
+       */
+      const slotOf = (k: string) => {
+        const m = /^association_([23])_/.exec(k);
+        return m ? Number(m[1]) : 0;
+      };
+      const answered = new Set(
+        visible.filter((i) => slotOf(i.key) && i.value.trim()).map((i) => slotOf(i.key)),
+      );
+      const emptySlots = [2, 3].filter((n) => !answered.has(n));
+      const openSlots = new Set([
+        ...answered,
+        ...emptySlots.slice(0, extraAssociations),
+      ]);
+      const shown = visible.filter(
+        (i) => !slotOf(i.key) || openSlots.has(slotOf(i.key)),
+      );
+      const moreAssociations = emptySlots.length > extraAssociations;
+      const associationBlock = moreAssociations ? (
+        <button
+          type="button"
+          onClick={() => setExtraAssociations((v) => v + 1)}
+          className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[var(--r-sm)] border border-dashed border-[var(--border-hover)] px-4 text-[13.5px] font-medium text-[var(--red)]"
+        >
+          <span aria-hidden="true" className="text-[16px] leading-none">
+            +
+          </span>
+          Add another association
+        </button>
+      ) : null;
+
+      if (!areas) {
+        return (
+          <>
+            {shown.map(row)}
+            {associationBlock}
+          </>
+        );
+      }
       return (
         <>
-          {visible.map(row)}
+          {shown.map(row)}
+          {associationBlock}
           <DangerAreas
             areas={areas.areas}
             station={areas.station}
