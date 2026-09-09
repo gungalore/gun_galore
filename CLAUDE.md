@@ -14,7 +14,7 @@ fix the rule here.
 repo and says which ones still describe the running system. Read it before
 concluding something is undocumented.
 
-Last full audit of this file against the running system: **2026-09-07**.
+Last full audit of this file against the running system: **2026-09-09**.
 
 ---
 
@@ -867,14 +867,15 @@ licence-expiry reminder to a list of applications.
 `licence-centre`** (`@Controller('licence-centre')`). The rename left that split
 behind; both names are live and mean the same thing.
 
-### The five licence types
+### The six licence types
 
 `MotivationLicenceType` is the spine — every registry section, document tier,
 checklist and PDF branch keys off it:
 
 | Value | What it is |
 |---|---|
-| `S13_SELF_DEFENCE` | self-defence |
+| `S13_SELF_DEFENCE` | self-defence: a handgun, or a shotgun that is neither fully nor semi-automatic |
+| `S14_RESTRICTED_SELF_DEFENCE` | self-defence with a RESTRICTED firearm — a semi-automatic rifle or shotgun. Added 2026-09-09; before it the product had a dead end, because `sectionAllows` refuses a semi-auto under s13 and names s14 as the way forward. One at a time, two-year licence, and the only section whose own words say "motivate". |
 | `S15_OCCASIONAL_HUNTER` | occasional hunter **or occasional sports shooter** |
 | `S16_DEDICATED_HUNTER` | dedicated hunter, accredited hunting association |
 | `S16_DEDICATED_SPORT` | dedicated sports shooter, accredited sport-shooting body |
@@ -885,6 +886,52 @@ is an application for a NEW licence under sections 13–20. This product does no
 fill in the 518(a); an S24 pack ships the motivation alone and says so. The 271
 itself is an **opt-in extra**, not the product — one early question decides it, and
 answering yes un-hides roughly forty-eight form-only questions.
+
+### The motivation itself — a FIXED skeleton, not a varied one
+
+`docs/MOTIVATION-GUIDE-BOOK.md` is the legal manual the whole pipeline is built
+against (operator, 2026-09-09: apply all of it "apart from the estate"). Where
+it disagrees with an earlier decision, it wins.
+
+⚠️ **`motivation-structure.ts` DOES THE OPPOSITE OF WHAT ITS NAME SUGGESTS IT
+MIGHT.** It used to randomise headings, openings and cadence from a stored seed
+so a reviewer would not recognise our documents. Book failure mode 9 records the
+result: a document that read as stitched together. A DFO does not compare
+applicants' letters for plagiarism — they compare the facts to the annexures,
+and one consistent spine makes that faster.
+
+**Twelve numbered headings, the same ones every time**, per book Part 4.2:
+introduction, my circumstances, the purpose, what I already do and where it
+stops, the firearm, firearms already licensed to me, competency, association,
+safe storage, my record, section N applied, declaration and request.
+
+- ⚠️ **The numbers do NOT re-sequence when a section is omitted.** A section 15
+  runs 1, 3, 5, 6, 7, 8, 9, 11, 12. The gaps say heading 2 is a self-defence
+  heading and heading 10 is for somebody with something to declare.
+- Headings **2 and 4** are self-defence only. Headings **6, 8 and 10** turn on
+  the applicant's own answers, read by four pure helpers in
+  `motivation-fields.ts`.
+- **No trailing colon.** The PDF tells a heading from a paragraph by its NUMBER;
+  the colon test is kept only for documents written before the change.
+- The plan is a pure function of (type, options). **`StructurePlan.seed` is an
+  identifier, not an input** — so a regeneration is a second attempt at the same
+  plan, and sameness stopped being a reason to regenerate. It is measured and
+  raises `motivation-sameness-high`, because a high score now means the PROSE is
+  repeating rather than the shape.
+
+⚠️ **NO SERVICE NAME ANYWHERE IN A LODGED PACK** — book Part 1 rule 2. No
+"prepared by", no footer brand, no "we"; the applicant signs it as their own
+letter. This reverses the operator's 2026-08-24 instruction to put the logo and
+"Prepared by All Outdoor" in every footer, and the reversal is theirs to undo if
+they want it back. The footer carries the applicant's full names, ID number, the
+motivation line, "Page n of N" and an `INITIAL: ____` rule. **Our MO reference is
+off the cover and the footer too** (Part 7.2 ends "Nothing else") and prints once
+on the take-with-you sheet, which is torn off before the counter.
+
+⚠️ **An annexure is a copy of a document the applicant HOLDS, and nothing else.**
+Operator, 2026-09-09: "only paperwork required by the dfo are attached as
+annexures." The cartridge drawing, the precinct figures and the press cuttings
+are part of the body's own flow, under the argument they are evidence for.
 
 ### Document tiers — four, not three
 
