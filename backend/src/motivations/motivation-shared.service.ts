@@ -282,21 +282,77 @@ export class MotivationSharedService {
    * it twice is how they come to disagree, and a member told the pack is
    * complete on one screen and short on the next stops believing either.
    */
+  /**
+   * Does this member hold 117705, ANYWHERE?
+   *
+   * ⚠️ IT WAS ONLY LOOKING INSIDE PACKS, AND THAT IS THE WRONG PLACE FOR A
+   * QUESTION ABOUT THE MEMBER. This read `motivationUpload` alone — statements
+   * already ATTACHED to an application — so a member whose knowledge unit sits
+   * on a handgun statement they have not attached to a rifle application looked
+   * exactly like somebody who never did the course.
+   *
+   * Which is the case sa-proficiency-cover.ts was written for, in the
+   * operator's own words: "I did my 117705 with my handgun. but i have to
+   * supply that statement of results along with the rifle statement of results
+   * if I apply for a rifle. So both codes needs to be visible." The module got
+   * that right and the wiring handed it half the evidence.
+   *
+   * Read off MO000075 on 2026-09-09: 117705 sits on the handgun statement of
+   * results in their vault, correctly parsed, and the pack carried the two
+   * rifle proficiencies. Operator: "it also did not insert the Proficiency
+   * with the knowledge of the firearms control act."
+   *
+   * ⚠️ THE VAULT GIVES CODES, NOT OCR, AND THAT IS BETTER EVIDENCE. A
+   * credential carries `details.unit_standard` — "117705, 119649" — already
+   * parsed by the reader, where an upload carries the raw page. Both go in:
+   * parseUnitStandards reads digits out of either, and a member is CONFIRMED
+   * if any document anywhere carries the code.
+   *
+   * ⚠️ AND AN UNREADABLE COUNT STILL MEANS SOMETHING. A vault row whose
+   * `unit_standard` is empty is a statement we could not read, exactly like an
+   * upload with no OCR text, and it must go on counting towards `unreadable`
+   * rather than being silently dropped — "we have not read it" is not "it is
+   * missing", and only one of those is an accusation.
+   */
   async proficiencyFor(userId: string) {
-    const statements = await this.prisma.motivationUpload.findMany({
-      where: {
-        motivation: { userId },
-        kind: 'PROFICIENCY_CERTIFICATE',
-        ocrTextEncrypted: { not: null },
-      },
-      select: { ocrTextEncrypted: true },
-    });
-    return proficiencyCover(
-      statements.map(
+    const [statements, vault] = await Promise.all([
+      this.prisma.motivationUpload.findMany({
+        where: {
+          motivation: { userId },
+          kind: 'PROFICIENCY_CERTIFICATE',
+          ocrTextEncrypted: { not: null },
+        },
+        select: { ocrTextEncrypted: true },
+      }),
+      this.prisma.credential.findMany({
+        where: { userId, kind: 'PROFICIENCY', purgedAt: null },
+        select: { detailsEncrypted: true },
+      }),
+    ]);
+    return proficiencyCover([
+      ...statements.map(
         (u) =>
           decryptJson<{ text?: string }>(u.ocrTextEncrypted ?? '')?.text ?? null,
       ),
-    );
+      /**
+       * ⚠️ A ROW WITH NO DETAILS IS UNREADABLE, NOT A THROW. decryptText
+       * refuses an empty string by design — "No ciphertext to decrypt" — and a
+       * proficiency filed before the reader could see it has exactly that. It
+       * counts towards `unreadable`, which is the state that means "we have
+       * not read it" rather than "you do not hold it".
+       */
+      ...vault.map((c) => {
+        if (!c.detailsEncrypted) return null;
+        try {
+          return (
+            decryptJson<Record<string, string>>(c.detailsEncrypted)
+              ?.unit_standard ?? null
+          );
+        } catch {
+          return null;
+        }
+      }),
+    ]);
   }
 
   /**

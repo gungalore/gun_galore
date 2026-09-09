@@ -1,6 +1,7 @@
 import {
   ROW_CAUTION_DAYS,
   competencyCovers,
+  proficiencyCovers,
   expiryFromReading,
   uploadCaution,
 } from './motivation-upload-row';
@@ -90,5 +91,39 @@ describe('whether a competency covers the firearm applied for', () => {
     const covers = 'S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN';
     expect(competencyCovers(covers, 'rifle-sl')).toBe(true);
     expect(competencyCovers(covers, 'shotgun')).toBe(true);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE KNOWLEDGE UNIT IS NOT A FIREARM ENDORSEMENT.
+//
+// 117705 — Knowledge of the Firearms Control Act — backs every competency
+// there is, and a member does it ONCE. Operator: "I did my 117705 with my
+// handgun. but i have to supply that statement of results along with the rifle
+// statement of results if I apply for a rifle. So both codes needs to be
+// visible."
+//
+// ⚠️ THE ENDORSEMENT GATE WAS DROPPING THAT PAGE. For a rifle application the
+// handgun statement's endorsement list is [handgun], so it was skipped as an
+// "endorsement-mismatch" before pickProficiencyPair — whose entire law branch
+// exists to attach whichever certificate carries the Act. Operator,
+// 2026-09-09: "it also did not insert the Proficiency with the knowledge of
+// the firearms control act."
+// ────────────────────────────────────────────────────────────────────
+
+describe('the statement that carries the Act', () => {
+  it('⚠️ IS NEVER AN ENDORSEMENT MISMATCH, whatever is being applied for', () => {
+    // The operator's own handgun statement: the law unit and the handgun unit.
+    expect(proficiencyCovers('117705, 119649', 'rifle-mo')).toBe(true);
+    expect(proficiencyCovers('117705, 119649', 'shotgun')).toBe(true);
+  });
+
+  it('still refuses a statement that carries neither', () => {
+    // A handgun-only statement has nothing to say about a rifle application.
+    expect(proficiencyCovers('119649', 'rifle-mo')).toBe(false);
+  });
+
+  it('still admits the one that covers what is needed', () => {
+    expect(proficiencyCovers('119651', 'rifle-mo')).toBe(true);
   });
 });

@@ -1,7 +1,9 @@
 import { MotivationUploadKind } from '@prisma/client';
 import {
   Endorsement,
+  MANDATORY_UNIT_STANDARD,
   parseEndorsements,
+  parseUnitStandards,
   readStatementOfResults,
 } from '../common/sa-competency';
 
@@ -165,6 +167,33 @@ export function proficiencyCovers(
   needed: Endorsement | null,
 ): boolean {
   if (!needed) return true;
+  /**
+   * ⚠️ THE KNOWLEDGE UNIT IS NOT A FIREARM ENDORSEMENT, AND THIS DROPPED THE
+   * ONLY PAGE THAT PROVES IT.
+   *
+   * 117705 — Knowledge of the Firearms Control Act — backs every competency
+   * there is, and a member does it once. The operator did theirs on a handgun
+   * statement in 2014, so for a RIFLE application that statement's endorsement
+   * list is [handgun], this returned false, and the page was skipped as an
+   * "endorsement-mismatch" before `pickProficiencyPair` could see it — even
+   * though that function has a branch whose entire job is to attach whichever
+   * certificate carries the Act.
+   *
+   * Operator, 2026-09-09: "it also did not insert the Proficiency with the
+   * knowledge of the firearms control act." And, when the module behind it was
+   * written: "I did my 117705 with my handgun. but i have to supply that
+   * statement of results along with the rifle statement of results if I apply
+   * for a rifle. So both codes needs to be visible."
+   *
+   * ⚠️ IT LETS THE PAGE PAST THIS GATE, IT DOES NOT ATTACH IT. What happens
+   * next is still pickProficiencyPair's decision: the firearm's own standard
+   * is chosen first, and the Act is taken from whichever certificate carries
+   * it and is not already going in. A statement that carries both settles both
+   * on its own.
+   */
+  if (parseUnitStandards(covers ?? '').includes(MANDATORY_UNIT_STANDARD)) {
+    return true;
+  }
   const held = readStatementOfResults(covers ?? '').endorsements;
   if (!held.length) return true;
   return held.includes(needed);
