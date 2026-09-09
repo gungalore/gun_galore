@@ -817,6 +817,27 @@ function renderOverlap(note: string | undefined): string {
     // it for them." The invention ban survives inside the note, aimed where
     // it belongs: at new FACTS, not at the argument.
     'Deal with it plainly and early. The note above says how.',
+    /**
+     * ⚠️ THE ONE PLACE CAPABILITY VOCABULARY IS ALLOWED, AND ONLY HERE.
+     * Operator, 2026-09-09: "the .300winmag is suited for giraffe hunting so
+     * the .300prc will do the same but I will have the same stopping power and
+     * accuracy at further ranges, that would be fine." They chose to allow it
+     * in the comparison after being told it was on the refuse list.
+     *
+     * It is allowed here because the comparison CANNOT BE MADE WITHOUT IT: the
+     * whole argument for a second firearm in the same section is what the
+     * first one cannot do. Everywhere else the same words describe an appetite
+     * rather than a need, which is the 150 words MO000071 shipped.
+     * `documentScope` enforces the same boundary; see COMPARISON_TERMS.
+     */
+    'Where — and ONLY where — you are saying what a firearm already held',
+    'cannot do, you may name the capability that separates them: terminal',
+    'ballistics, muzzle energy or velocity, penetration, expansion, bullet',
+    'weight. Say it in one clause, inside a sentence that names the held',
+    'firearm and says plainly what it falls short of. Nowhere else in this',
+    'document may any of those words appear, and magazine capacity may not',
+    'appear anywhere at all — it is never an argument for a licence and a',
+    'Registrar reads it against the applicant.',
     '',
   ].join('\n');
 }

@@ -201,6 +201,72 @@ const SPORTING_WORDS = [
   'culling',
 ] as const;
 
+/**
+ * Capability terms, allowed ONLY where the document is comparing one firearm
+ * to another — and catalogue copy anywhere else.
+ *
+ * ⚠️ THE OPERATOR'S CARVE-OUT, 2026-09-09, AND IT IS DELIBERATELY NARROW.
+ * Their example: "the .300winmag is suited for giraffe hunting so the .300prc
+ * will do the same but I will have the same stopping power and accuracy at
+ * further ranges, that would be fine." I flagged that "stopping power" was on
+ * the refuse list; they chose to allow it in the comparison and nowhere else.
+ *
+ * ⚠️ WHY THE COMPARISON EARNS IT AND NOTHING ELSE DOES. "What can the firearm
+ * I already hold not do?" is the strongest paragraph in a pack — the whole
+ * argument for a second rifle in the same section rests on it — and it cannot
+ * be made without saying what the difference IS. Everywhere else the same
+ * words describe an appetite rather than a need, which is what MO000071 shipped
+ * 150 words of and what a Registrar reads against the applicant.
+ *
+ * ⚠️ AND `magazine capacit` IS NOT ON THIS LIST, ON PURPOSE. CLAUDE.md names
+ * it and "terminal ballistics" as the two phrases a Registrar reads against
+ * the applicant; the second is a genuine capability difference and the first
+ * is never an argument for a licence. Nor are the frame, the trigger, the
+ * finish or the manufacturer's history: none of those is a comparison, they
+ * are a product page.
+ */
+const COMPARISON_TERMS = [
+  'terminal ballistic',
+  'stopping power',
+  'muzzle energy',
+  'muzzle velocity',
+  'foot-pound',
+  'foot pound',
+  'grain bullet',
+  'expansion',
+  'penetration',
+] as const;
+
+/**
+ * A sentence that is actually comparing, rather than merely admiring.
+ *
+ * ⚠️ NAMING A FIREARM IS NOT ENOUGH. "The Glock has proven terminal ballistics"
+ * names a held firearm and is pure catalogue copy. A comparison says one thing
+ * falls short of another, so the sentence has to carry that shape as well.
+ */
+const COMPARING = [
+  'cannot',
+  'can not',
+  'does not',
+  'do not',
+  'is not',
+  'are not',
+  'neither',
+  'whereas',
+  'while',
+  'unlike',
+  'compared',
+  'comparison',
+  'than',
+  'falls short',
+  'no substitute',
+  'limited to',
+  'beyond',
+  'short of',
+  'instead of',
+  'rather than',
+] as const;
+
 /** Reloading, which is never an S13 fact at all. */
 const RELOADING_WORDS = ['reload', 'handload', 'propellant', 'primer'] as const;
 
@@ -272,7 +338,15 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
     if (!issues.includes(msg)) issues.push(msg);
   };
 
+  /**
+   * ⚠️ THE CAPABILITY TERMS ARE JUDGED PER SENTENCE, NOT OVER THE WHOLE TEXT.
+   * See COMPARISON_TERMS. Everything else in these two lists is catalogue copy
+   * wherever it appears and is still caught here, in one pass.
+   */
   for (const w of [...CATALOGUE_PHRASES, ...PRODUCT_PAGE_WORDS]) {
+    if (COMPARISON_TERMS.includes(w as (typeof COMPARISON_TERMS)[number])) {
+      continue;
+    }
     if (contains(text, w)) {
       flag(
         `the document says "${w}", which is catalogue copy rather than a reason`,
@@ -447,6 +521,28 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
               );
               break;
             }
+          }
+        }
+      }
+
+      /**
+       * ⚠️ THE CAPABILITY TERMS, ALLOWED ONLY IN A COMPARISON. See
+       * COMPARISON_TERMS: "the .300 Winchester Magnum I hold cannot reach that
+       * far" is the argument for the application and cannot be made without
+       * naming the difference; "the pistol offers proven terminal ballistics"
+       * is a product page. The sentence has to BE a comparison — naming a
+       * firearm is not enough — and it has to name one, so a loose sentence
+       * about cartridges in general is still refused.
+       */
+      const comparing =
+        !!row && COMPARING.some((w) => contains(s, w) || lc(s).includes(w));
+      if (!comparing) {
+        for (const w of COMPARISON_TERMS) {
+          if (contains(s, w)) {
+            flag(
+              `the document says "${w}" outside any sentence comparing this firearm with one already held, which is catalogue copy rather than a reason`,
+            );
+            break;
           }
         }
       }

@@ -205,6 +205,49 @@ describe('the register of the whole document', () => {
     expect(all).toContain('terminal ballistic');
   });
 
+  /**
+   * ⚠️ THE OPERATOR'S CARVE-OUT, 2026-09-09. Their example sentence: "the
+   * .300winmag is suited for giraffe hunting so the .300prc will do the same
+   * but I will have the same stopping power and accuracy at further ranges."
+   * I flagged that "stopping power" was on the refuse list; they chose to
+   * allow it in the comparison and nowhere else.
+   */
+  it('allows a capability term where the document is COMPARING', () => {
+    const out = documentScope(
+      'The Howa in 6.5mm Creedmoor cannot deliver the same terminal ballistics at those distances.',
+      s13,
+    );
+    expect(out.join(' ')).not.toContain('terminal ballistic');
+  });
+
+  it('⚠️ STILL REFUSES IT WHERE THE DOCUMENT IS MERELY ADMIRING', () => {
+    // Naming a firearm is not comparing. This is a product page.
+    const out = documentScope(
+      'The Howa in 6.5mm Creedmoor offers proven terminal ballistics.',
+      s13,
+    );
+    expect(out.join(' ')).toContain('terminal ballistic');
+  });
+
+  it('⚠️ AND REFUSES IT WHERE NO FIREARM IS NAMED AT ALL', () => {
+    // A loose sentence about cartridges in general is not a comparison.
+    const out = documentScope(
+      'A larger cartridge does not offer the same stopping power.',
+      s13,
+    );
+    expect(out.join(' ')).toContain('stopping power');
+  });
+
+  it('⚠️ MAGAZINE CAPACITY STAYS FATAL EVEN INSIDE A COMPARISON', () => {
+    // CLAUDE.md names it as a phrase a Registrar reads against the applicant,
+    // and it is never an argument for a licence.
+    const out = documentScope(
+      'The Howa in 6.5mm Creedmoor cannot match the magazine capacity I need.',
+      s13,
+    );
+    expect(out.join(' ')).toContain('magazine capacit');
+  });
+
   it('catches the product copy that shipped in section 4', () => {
     const out = documentScope(
       'A short-recoil, tilting barrel action in a polymer frame with a Safe Action trigger tolerates dust, lint and variable maintenance cycles.',

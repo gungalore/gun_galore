@@ -158,6 +158,22 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * replaced it. The two section 16 routes went 102 → 101 for the same reason.
  * Edit these counts only when a line was meant to be added or removed.
  */
+/**
+ * ⚠️ RE-BASELINED A FOURTH TIME ON 2026-09-09 — the capability carve-out.
+ *
+ * `renderOverlap` gained eight lines telling the writer that terminal
+ * ballistics, muzzle energy and velocity, penetration, expansion and bullet
+ * weight may be named ONLY in a sentence saying what a firearm already held
+ * cannot do — and nowhere else, with magazine capacity banned outright.
+ * Operator's decision after being told the words were on the refuse list; see
+ * COMPARISON_TERMS in motivation-scope.ts, which enforces the same boundary.
+ *
+ * ⚠️ AND EVERY TYPE MOVED BY EXACTLY EIGHT, which is the check that this was
+ * an addition and not a loss: 101 → 109 on five of them and 102 → 110 on the
+ * section 13, whose skeleton is one line longer. The overlap block renders on
+ * every type here because every fixture pack carries an overlap note. Edit
+ * these counts only when a line was meant to be added or removed.
+ */
 const BEFORE_THE_REORDER: Record<
   MotivationLicenceType,
   { lines: number; sha: string }
@@ -186,28 +202,28 @@ const BEFORE_THE_REORDER: Record<
    * transcribes the premises facts out of the document.
    */
   S14_RESTRICTED_SELF_DEFENCE: {
-    lines: 101,
-    sha: '8120a5dfdad571cc788fedb79470cada8ccf8d2e176be93ddd46d24ca234b47f',
+    lines: 109,
+    sha: '79ab014471c4de1c90a80cdd51c0d62b64cdb98f3e9b32681ade84122231d959',
   },
   S13_SELF_DEFENCE: {
-    lines: 102,
-    sha: '4d5ce6728a22adf9c92c1c6c7f522e811fd5c4be66a7c60f7ad2db4189055c3a',
+    lines: 110,
+    sha: '89b9170f78cdf52bd28c60d8e8a89ab84d1d5c186f9fdb2108e3537f3d2b7233',
   },
   S15_OCCASIONAL_HUNTER: {
-    lines: 101,
-    sha: '8c7782f37d186f6b5684e7b537dc6cdac1bc598c8cf6474fc616287e174e295b',
+    lines: 109,
+    sha: '2170ac9853351c3a73527ecfffe6c5ea6cdf3fc189dccecc92fedd57ee399d48',
   },
   S16_DEDICATED_HUNTER: {
-    lines: 101,
-    sha: '9fd9cef272ff1bd56c12db99f7fa3d5cec45673f9c4bf15fdc6090c50178d1be',
+    lines: 109,
+    sha: '026c337b88dddbd7c26240d9ebffa3c51679d5f3fbc98809cbff143a5053faf5',
   },
   S16_DEDICATED_SPORT: {
-    lines: 101,
-    sha: '440cf426031f15c3ac80a43db9873c6bf53dca4f796859b54b87725e7119a71c',
+    lines: 109,
+    sha: '2b9e6055df8c60098c61b5234aae86edfc6cc6b84beabfb52c0cadf1df9f58a4',
   },
   S24_RENEWAL: {
-    lines: 95,
-    sha: 'f06e62b50a21f9b39e6929704351ba2541e5a52ddfa68d5443f2c55af8dbeb69',
+    lines: 103,
+    sha: '0f17428dd7b00304bf1ba24d01c34b9a20da1b71ddb999bc8618ff9de6fd33f5',
   },
 };
 
