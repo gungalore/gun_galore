@@ -105,16 +105,61 @@ const SLICE_SECTION: Record<UseSlice, LicenceSection> = {
   s16_sport: 'S16',
 };
 
-/** How each slice is described to the model. */
+/**
+ * What each slice is CALLED on the row the writer reads.
+ *
+ * ⚠️ THE LABEL TRAVELS WITH THE SENTENCES, because the breakdown is the point.
+ * Operator, 2026-09-09: "likethe 6.5 creedmore you shouldve asked for
+ * occational hunting and occational sport shooting. that would give two lists
+ * instead of one consolidated list". A section 15 row carries TWO labelled
+ * lists and the writer picks a list first and a sentence second — merging them
+ * loses exactly the distinction that was generated.
+ */
+const SLICE_TITLE: Record<UseSlice, string> = {
+  s13: 'self-defence',
+  s14: 'self-defence with a self-loading firearm',
+  s15_hunt: 'occasional hunting',
+  s15_sport: 'occasional sport shooting',
+  s16_hunt: 'dedicated hunting',
+  s16_sport: 'dedicated sport shooting',
+};
+
+/**
+ * What the MODEL is asked for, and what it answers under.
+ *
+ * ⚠️ THE WORDS, NEVER THE SECTION. Operator, 2026-09-09: "you can keep the
+ * section in you database, but what we serve gemini should be dedicated
+ * hunter, dedicated sport shooter, occational hunter occational sport
+ * shooter." So the slice ids and the `section` column stay as they are — a
+ * section is how the Act files a purpose and it is what a licence card prints
+ * — and nothing that crosses the wire mentions one. Asking in section numbers
+ * gets prose about the Act; asking in words gets prose about hunting.
+ *
+ * These are also the JSON keys the response comes back under, for the same
+ * reason: a schema property called `s15_hunt` is a section number by another
+ * name.
+ */
+const SLICE_KEY: Record<UseSlice, string> = {
+  s13: 'self_defence',
+  s14: 'self_defence_self_loading',
+  s15_hunt: 'occasional_hunter',
+  s15_sport: 'occasional_sport_shooter',
+  s16_hunt: 'dedicated_hunter',
+  s16_sport: 'dedicated_sport_shooter',
+};
+
+/** How each purpose is put to the model, in words. */
 const SLICE_LABEL: Record<UseSlice, string> = {
-  s13: 'section 13 — licensed for SELF-DEFENCE',
-  s14: 'section 14 — licensed for SELF-DEFENCE as a restricted firearm (a semi-automatic rifle or shotgun)',
-  s15_hunt: 'section 15 — licensed to an OCCASIONAL HUNTER',
-  s15_sport: 'section 15 — licensed to an OCCASIONAL SPORTS SHOOTER',
+  s13: 'SELF-DEFENCE — kept to protect the applicant and their family',
+  s14: 'SELF-DEFENCE with a self-loading rifle or shotgun — the same purpose, with a firearm the law treats more strictly',
+  s15_hunt:
+    'OCCASIONAL HUNTER — somebody who hunts a season or a few trips a year, belonging to no association',
+  s15_sport:
+    'OCCASIONAL SPORT SHOOTER — somebody who shoots at a club now and then, accredited to no body',
   s16_hunt:
-    'section 16 — licensed to a DEDICATED HUNTER, accredited to a hunting association',
+    'DEDICATED HUNTER — an accredited member of a hunting association, hunting to that association’s calendar',
   s16_sport:
-    'section 16 — licensed to a DEDICATED SPORTS SHOOTER, accredited to a sport-shooting body',
+    'DEDICATED SPORT SHOOTER — an accredited member of a sport-shooting body, competing in a registered discipline',
 };
 
 /**
@@ -148,6 +193,19 @@ const SLICES_FOR_SECTION: Record<string, readonly UseSlice[]> = {
   'section 15': ['s15_hunt', 's15_sport'],
   'section 16': ['s16_hunt', 's16_sport'],
 };
+
+/**
+ * One labelled list of uses, as the writer is offered it.
+ *
+ * ⚠️ NEVER FLATTENED. See SLICE_TITLE: a section 15 firearm gets an occasional
+ * HUNTING list and an occasional SPORT list, and the writer chooses which
+ * argument it is making before it chooses a sentence.
+ */
+export interface CandidateUses {
+  /** "occasional hunting", "dedicated sport shooting", "self-defence". */
+  label: string;
+  uses: string[];
+}
 
 /** The four axes a use depends on. Nothing here identifies anybody. */
 export interface FirearmClass {
@@ -244,14 +302,15 @@ export function useClassKey(
 }
 
 /**
- * How many sentences one firearm is offered.
+ * How many sentences one LIST may hold.
  *
- * ⚠️ A CAP, BECAUSE A SECTION 15 OR 16 ROW READS TWO SLICES. Five firearms at
- * eight sentences each is already a page of prompt; sixteen each is a fact
- * pack in which the facts are outnumbered by suggestions.
+ * ⚠️ PER LIST, NOT PER FIREARM, AND THE LISTS ARE NOT MERGED. An earlier
+ * version capped the firearm at eight across both disciplines, which is how
+ * the operator came to see one consolidated list where two were generated:
+ * "that would give two lists instead of one consolidated list". A section 15
+ * rifle may now carry twelve hunting sentences AND twelve sport ones.
  */
-const PER_ROW = 8;
-const PER_SLICE = 8;
+const PER_SLICE = 12;
 
 const SYSTEM = `
 You describe what a class of firearm is lawfully and ordinarily used for in
@@ -259,44 +318,46 @@ SOUTH AFRICA, for a licence application under the Firearms Control Act 60 of
 2000.
 
 You are given a CLASS of firearm — a calibre, a type and an action — and a list
-of the sections of the Act that class can be licensed under. You are NOT given
-a person, and you must not invent one: no names, no places, no farms, no clubs,
-no dates, no counts, no "I have been hunting for eleven years".
+of the KINDS OF SHOOTER who may lawfully hold one. You are NOT given a person,
+and you must not invent one: no names, no places, no farms, no clubs, no dates,
+no counts, no "I have been hunting for eleven years".
 
-For EACH section listed, return the uses that a firearm of this class is
-genuinely suited to and that somebody licensed under THAT section could
-lawfully put it to. Cover the range: the obvious one, the ordinary ones, and
-the honest edge cases.
+For EACH kind of shooter listed, return the uses that a firearm of this class
+is genuinely suited to and that THAT shooter could lawfully put it to. Cover
+the range: the obvious one, the ordinary ones, and the honest edge cases. Give
+as MANY as are genuinely true for that shooter — up to twelve — because the
+lists are read side by side and a thin one is a case somebody cannot argue
+from.
 
 RULES
 1. Each use is ONE short sentence in the first person, present tense, ending in
    a full stop. "I use it for plains game at moderate ranges."
 2. Plain South African English. Licence, calibre, centre-fire, metres.
-3. THE SECTIONS ARE ANSWERED INDEPENDENTLY OF EACH OTHER. A use written under
-   section 13 is a self-defence use and must not mention hunting or sport; a
-   use written under section 15 or 16 is a hunting or sport use and must not
-   mention self-defence, carrying, home defence or a "backup". This is section
-   discipline and it is the one thing that makes these uses safe to put in a
-   document.
-4. AND SECTION 15 IS NOT SECTION 16. Section 15 is the OCCASIONAL hunter or
-   sports shooter: a season, a few weekends, a club they belong to. Section 16
-   is the DEDICATED hunter or sports shooter, accredited to an association,
-   shooting to a calendar and a discipline. Write them differently, because
-   they are different applicants. Likewise a hunter is not a sports shooter:
-   do not give a hunting sentence under a sport slice.
+3. THE LISTS ARE WRITTEN INDEPENDENTLY OF EACH OTHER. A use for self-defence
+   must not mention hunting or sport; a use for a hunter or a sports shooter
+   must not mention self-defence, carrying, home defence or a "backup". This is
+   the one thing that makes these sentences safe to put in a document.
+4. AND OCCASIONAL IS NOT DEDICATED. The occasional hunter or sports shooter
+   goes out a season or a few weekends and belongs to no association. The
+   dedicated hunter or sports shooter is accredited, shoots to a calendar and
+   competes in a registered discipline. Write them differently, because they
+   are different people. Likewise a hunter is not a sports shooter: never give
+   a hunting sentence under a sport-shooting list, or the other way round.
 5. NO PRODUCT COPY. No ballistics tables, no muzzle energy, no stopping power,
    no magazine capacity, no "platform", no manufacturer history, no marketing.
 6. Nothing unlawful or unsafe: no carrying a rifle in public, no hunting with a
-   firearm the Act does not permit for it, no night hunting except where it is
+   firearm the law does not permit for it, no night hunting except where it is
    genuinely lawful vermin control on land.
 7. NOTHING ABOUT STORAGE OR CARRYING. Not where it is kept, not whether it is
-   loaded, not what safe it lives in. The application has its own storage
-   section answered from the applicant's own premises, and a sentence here that
-   contradicts it is a fault on a signed document.
-8. If the calibre is plainly unsuited to a section, return FEWER sentences for
-   it, or none at all. A 6.35 mm pocket pistol is not a plains-game cartridge
-   and a .458 is not a small-game one. An honest short list beats a padded one,
-   and an empty list beats a dishonest one.
+   loaded, not what safe it lives in. The application answers that from the
+   applicant's own premises, and a sentence here that contradicts it is a fault
+   on a signed document.
+8. NEVER CITE THE LAW. No section numbers, no "in terms of the Act", no
+   statute. These are sentences about shooting, not about legislation.
+9. If the calibre is plainly unsuited to one of these shooters, return FEWER
+   sentences for them, or none at all. A 6.35 mm pocket pistol is not a
+   plains-game cartridge and a .458 is not a small-game one. An honest short
+   list beats a padded one, and an empty list beats a dishonest one.
 `.trim();
 
 @Injectable()
@@ -317,7 +378,7 @@ export class FirearmUsesService {
    * `documentScope` only relaxes its invented-purpose rule for a row that
    * actually came back with something.
    */
-  async forClass(c: FirearmClass): Promise<string[]> {
+  async forClass(c: FirearmClass): Promise<CandidateUses[]> {
     // Nothing to key on. A row with no calibre and no type is not a firearm.
     if (!c.calibre?.trim() && !c.type?.trim()) return [];
 
@@ -329,11 +390,14 @@ export class FirearmUsesService {
 
     const hit = await this.read(c, wanted);
     if (hit === null) return [];
-    if (hit.length) return trim(hit);
+    if (hit.length) return label(wanted, hit);
 
     const generated = await this.generate(c);
     if (!generated) return [];
-    return trim(wanted.map((s) => generated[s] ?? []));
+    return label(
+      wanted,
+      wanted.map((s) => generated[s] ?? []),
+    );
   }
 
   /**
@@ -393,8 +457,8 @@ export class FirearmUsesService {
                   `  type: ${c.type || 'not stated'}`,
                   `  action: ${c.action || 'not stated'}`,
                   '',
-                  'Answer each of these sections separately:',
-                  ...slices.map((s) => `  ${s}: ${SLICE_LABEL[s]}`),
+                  'Answer for each of these shooters separately:',
+                  ...slices.map((s) => `  ${SLICE_KEY[s]}: ${SLICE_LABEL[s]}`),
                 ].join('\n'),
               },
             ],
@@ -408,7 +472,7 @@ export class FirearmUsesService {
       // ⚠️ FILTERED TO THE SLICES WE ASKED FOR. A key we did not offer is a
       // section this class cannot fall into, whatever the model called it.
       out = Object.fromEntries(
-        slices.map((s) => [s, this.clean(raw[s], s, c)]),
+        slices.map((s) => [s, this.clean(raw[SLICE_KEY[s]], s, c)]),
       ) as Partial<Record<UseSlice, string[]>>;
     } catch (err) {
       this.logger.warn(
@@ -496,36 +560,40 @@ export class FirearmUsesService {
 function schemaFor(slices: readonly UseSlice[]) {
   const properties: Record<string, unknown> = {};
   for (const s of slices) {
-    properties[s] = {
+    // ⚠️ NAMED IN WORDS, LIKE EVERYTHING ELSE THAT CROSSES THE WIRE. See
+    // SLICE_KEY: a schema property called `s15_hunt` is a section number by
+    // another name, and the operator asked for the words.
+    properties[SLICE_KEY[s]] = {
       type: 'array',
       items: { type: 'string' },
       maxItems: PER_SLICE,
     };
   }
-  // Every eligible slice is REQUIRED, so "nothing fits here" comes back as an
+  // Every eligible list is REQUIRED, so "nothing fits here" comes back as an
   // empty array we can store rather than as a key we cannot tell from a
   // truncated response.
-  return { type: 'object', properties, required: [...slices] };
+  return {
+    type: 'object',
+    properties,
+    required: slices.map((s) => SLICE_KEY[s]),
+  };
 }
 
 
 
 /**
- * Two slices down to one offering, taking from each in turn.
+ * The slices, named, with the empty ones dropped.
  *
- * ⚠️ INTERLEAVED, NOT CONCATENATED. A section 16 row is offered hunting AND
- * sport because the card does not say which — and a straight concatenation cut
- * at eight would show the writer eight hunting sentences and no sport one,
- * which is the same as not asking.
+ * ⚠️ ONE ENTRY PER DISCIPLINE, NEVER MERGED. A section 16 row comes back as a
+ * dedicated-hunting list AND a dedicated-sport list because the licence card
+ * does not say which the applicant holds it for, and the writer needs to see
+ * that it is choosing between two arguments.
  */
-function trim(slices: readonly string[][]): string[] {
-  const out: string[] = [];
-  for (let i = 0; out.length < PER_ROW; i++) {
-    const before = out.length;
-    for (const s of slices) {
-      if (i < s.length && out.length < PER_ROW) out.push(s[i]);
-    }
-    if (out.length === before) break;
-  }
-  return out;
+function label(
+  slices: readonly UseSlice[],
+  uses: readonly string[][],
+): CandidateUses[] {
+  return slices
+    .map((s, i) => ({ label: SLICE_TITLE[s], uses: uses[i] ?? [] }))
+    .filter((g) => g.uses.length);
 }

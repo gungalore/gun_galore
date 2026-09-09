@@ -124,7 +124,14 @@ describe('the roles a document may state', () => {
           existing_firearm_1_serial: 'HW65001',
         },
         { 1: 'section 15' },
-        { 1: ['I use it for plains game at moderate ranges.'] },
+        {
+          1: [
+            {
+              label: 'occasional hunting',
+              uses: ['I use it for plains game at moderate ranges.'],
+            },
+          ],
+        },
       ),
     };
     const out = documentScope(
@@ -169,7 +176,14 @@ describe('the roles a document may state', () => {
           existing_firearm_1_serial: 'MR45701',
         },
         { 1: 'section 16' },
-        { 1: ['I use it for large plains game at close range.'] },
+        {
+          1: [
+            {
+              label: 'dedicated hunting',
+              uses: ['I use it for large plains game at close range.'],
+            },
+          ],
+        },
       ),
     };
     const out = documentScope(

@@ -6,21 +6,27 @@ import {
 } from './firearm-uses.service';
 
 // ────────────────────────────────────────────────────────────────────
-// WHAT A FIREARM OF THIS CLASS IS USED FOR, PER SECTION OF THE ACT.
+// WHAT A FIREARM OF THIS CLASS IS USED FOR, PER KIND OF SHOOTER.
 //
 // The operator's override of guide-book Part 1 rule 7 (2026-09-09): candidate
-// uses are generated per firearm CLASS — for every section that class can
-// lawfully fall into, in one call — and the member's own licence card chooses
-// which slice the writer is shown. Nothing here is asked of the member.
+// uses are generated per firearm CLASS — for every kind of shooter that class
+// can lawfully be held by, in one call — and the member's own licence card
+// chooses which lists the writer is shown. Nothing is asked of the member.
+//
+// ⚠️ THE MODEL IS ASKED IN WORDS, NEVER IN SECTION NUMBERS. Operator: "you can
+// keep the section in you database, but what we serve gemini should be
+// dedicated hunter, dedicated sport shooter, occational hunter occational
+// sport shooter." The slice ids below are the DATABASE's; the keys in reply()
+// are what crosses the wire.
+//
+// ⚠️ AND THE LISTS ARE NEVER MERGED. "that would give two lists instead of one
+// consolidated list."
 //
 // ⚠️ THE FAIL-SOFT PATHS ARE HALF THE POINT OF THIS FILE. `documentScope`
 // relaxes its invented-purpose rule ONLY for a row that actually carries uses,
 // so a service that threw — or that quietly returned a half-answer — would
 // either fail somebody's application or hand the writer a licence to invent.
 // Every failure below must produce [] and no exception.
-//
-// ⚠️ AND ELIGIBILITY IS THE OTHER HALF. A slice the Act does not admit is a
-// section on a page a DFO can refuse on sight.
 // ────────────────────────────────────────────────────────────────────
 
 const RIFLE = {
@@ -33,13 +39,14 @@ const RIFLE = {
 const HUNT = 'I use it for plains game at moderate ranges.';
 const SPORT = 'I shoot it at club precision matches.';
 
+/** A model response, keyed the way the model is actually asked. */
 function reply(over: Record<string, string[]> = {}) {
   return {
     text: JSON.stringify({
-      s15_hunt: [HUNT],
-      s15_sport: [SPORT],
-      s16_hunt: ['I hunt with it under my association calendar.'],
-      s16_sport: ['I shoot it in my registered discipline.'],
+      occasional_hunter: [HUNT],
+      occasional_sport_shooter: [SPORT],
+      dedicated_hunter: ['I hunt with it under my association calendar.'],
+      dedicated_sport_shooter: ['I shoot it in my registered discipline.'],
       ...over,
     }),
     model: 'gemini-3.5-flash-lite',
@@ -79,8 +86,8 @@ describe('the class key', () => {
 
   it('⚠️ IS THE CLASS AND THE SLICE, AND NOTHING ELSE', () => {
     // The section on a member's card chooses which rows are READ. It is not
-    // part of the class, because one generation fills every section the class
-    // can fall into — which is what lets the operator's section 15 Creedmoor
+    // part of the class, because one generation fills every purpose the class
+    // can be held for — which is what lets the operator's section 15 Creedmoor
     // and somebody else's section 16 one share a table.
     const { calibre, type, action } = RIFLE;
     expect(useClassKey({ calibre, type, action }, 's16_hunt')).toBe(
@@ -98,9 +105,9 @@ describe('the class key', () => {
   });
 
   it('keeps a self-loading rifle apart from a bolt one', () => {
-    expect(useClassKey({ ...RIFLE, action: 'Self-loading' }, 's16_hunt')).not.toBe(
-      useClassKey(RIFLE, 's16_hunt'),
-    );
+    expect(
+      useClassKey({ ...RIFLE, action: 'Self-loading' }, 's16_hunt'),
+    ).not.toBe(useClassKey(RIFLE, 's16_hunt'));
   });
 });
 
@@ -113,15 +120,35 @@ describe('the action, off the card', () => {
 
   it('⚠️ TELLS A MANUAL CARD FROM NO CARD AT ALL', () => {
     // A card printing "RIFLE" is SAYING the rifle is not self-loading; no card
-    // says nothing, and an unstated action never rules a section out.
+    // says nothing, and an unstated action never rules a purpose out.
     expect(actionFromCardType('RIFLE')).toBe('Manual');
     expect(actionFromCardType('SHOTGUN')).toBe('Manual');
     expect(actionFromCardType('')).toBe('');
   });
 });
 
-describe('which sections a class can fall into', () => {
-  it('a handgun: self-defence, and either sporting section', () => {
+describe('which shooters a class can be held by', () => {
+  it('⚠️ A MANUAL SHOTGUN YIELDS FIVE LISTS', () => {
+    // Operator: "so a manual shotgun should yield 5 sets of uses for example."
+    expect(eligibleSlices('Shotgun', 'Manual')).toEqual([
+      's13',
+      's15_hunt',
+      's15_sport',
+      's16_hunt',
+      's16_sport',
+    ]);
+  });
+
+  it('a bolt rifle yields four — it is nobody’s self-defence firearm', () => {
+    expect(eligibleSlices('Rifle', 'Manual')).toEqual([
+      's15_hunt',
+      's15_sport',
+      's16_hunt',
+      's16_sport',
+    ]);
+  });
+
+  it('a handgun: self-defence, and either sporting discipline', () => {
     expect(eligibleSlices('Handgun', 'Self-loading')).toEqual([
       's13',
       's15_hunt',
@@ -131,37 +158,27 @@ describe('which sections a class can fall into', () => {
     ]);
   });
 
-  it('⚠️ NEVER SECTION 14 FOR A HANDGUN, whatever its action', () => {
+  it('⚠️ NEVER THE RESTRICTED LIST FOR A HANDGUN, whatever its action', () => {
     // s14 is for a RESTRICTED firearm — a semi-automatic rifle or shotgun. A
     // semi-automatic pistol is an ordinary section 13 firearm.
     expect(eligibleSlices('Handgun', 'Manual')).not.toContain('s14');
     expect(eligibleSlices('Handgun', 'Self-loading')).not.toContain('s14');
   });
 
-  it('a manual shotgun: 13, 15 and 16 — never 14', () => {
-    const out = eligibleSlices('Shotgun', 'Manual');
-    expect(out).toContain('s13');
-    expect(out).not.toContain('s14');
-    expect(out).toContain('s16_sport');
-  });
-
-  it('⚠️ A SEMI-AUTOMATIC SHOTGUN IS 14, NOT 13', () => {
-    // s13(1)(a) takes a shotgun that is "not fully or semi-automatic".
-    const out = eligibleSlices('Shotgun', 'Self-loading');
-    expect(out).not.toContain('s13');
-    expect(out).toContain('s14');
-  });
-
-  it('a manual rifle: the sporting sections only', () => {
-    expect(eligibleSlices('Rifle', 'Manual')).toEqual([
-      's15_hunt',
-      's15_sport',
+  it('⚠️ A SELF-LOADING SHOTGUN GETS THREE, NOT FIVE', () => {
+    // It loses BOTH ends: s13(1)(a) takes a shotgun "not fully or
+    // semi-automatic", and s15(1)(b) says the same of the occasional sections.
+    // What is left is the restricted self-defence list and the two dedicated
+    // ones — which is why eligibility is asked of sectionAllows and not
+    // assumed from the manual shotgun's five.
+    expect(eligibleSlices('Shotgun', 'Self-loading')).toEqual([
+      's14',
       's16_hunt',
       's16_sport',
     ]);
   });
 
-  it('⚠️ A SEMI-AUTOMATIC RIFLE IS 14 OR 16, NOT 15', () => {
+  it('⚠️ A SELF-LOADING RIFLE IS NEVER AN OCCASIONAL FIREARM', () => {
     const out = eligibleSlices('Rifle', 'Self-loading');
     expect(out).toContain('s14');
     expect(out).not.toContain('s15_hunt');
@@ -176,7 +193,7 @@ describe('which sections a class can fall into', () => {
     expect(out).toContain('s14');
   });
 
-  it('a combination gun gets every slice, because no category fits it', () => {
+  it('a combination gun gets every list, because no category fits it', () => {
     expect(eligibleSlices('Combination', '')).toHaveLength(6);
   });
 });
@@ -191,8 +208,12 @@ describe('resolving a row', () => {
         { classKey: useClassKey(RIFLE, 's15_sport'), uses: [SPORT] },
       ],
     });
-    return svc.forClass(RIFLE).then((uses) => {
-      expect(uses).toEqual([HUNT, SPORT]);
+    return svc.forClass(RIFLE).then((groups) => {
+      // ⚠️ TWO LABELLED LISTS, NOT ONE MERGED ONE.
+      expect(groups).toEqual([
+        { label: 'occasional hunting', uses: [HUNT] },
+        { label: 'occasional sport shooting', uses: [SPORT] },
+      ]);
       expect(complete).not.toHaveBeenCalled();
     });
   });
@@ -203,18 +224,27 @@ describe('resolving a row', () => {
     const { svc } = build({
       rows: [
         { classKey: useClassKey(RIFLE, 's16_hunt'), uses: ['dedicated hunt'] },
-        { classKey: useClassKey(RIFLE, 's16_sport'), uses: ['dedicated sport'] },
+        {
+          classKey: useClassKey(RIFLE, 's16_sport'),
+          uses: ['dedicated sport'],
+        },
       ],
     });
     return expect(
       svc.forClass({ ...RIFLE, section: 'section 16' }),
-    ).resolves.toEqual(['dedicated hunt', 'dedicated sport']);
+    ).resolves.toEqual([
+      { label: 'dedicated hunting', uses: ['dedicated hunt'] },
+      { label: 'dedicated sport shooting', uses: ['dedicated sport'] },
+    ]);
   });
 
-  it('generates every eligible slice at once and stores each', async () => {
+  it('generates every eligible list at once and stores each', async () => {
     const { svc, complete, upsert } = build({});
-    const uses = await svc.forClass(RIFLE);
-    expect(uses).toEqual([HUNT, SPORT]);
+    const groups = await svc.forClass(RIFLE);
+    expect(groups.map((g) => g.label)).toEqual([
+      'occasional hunting',
+      'occasional sport shooting',
+    ]);
     // ONE call, four rows — that is what makes the table general.
     expect(complete).toHaveBeenCalledTimes(1);
     expect(upsert).toHaveBeenCalledTimes(4);
@@ -222,19 +252,20 @@ describe('resolving a row', () => {
     expect(keys).toContain(useClassKey(RIFLE, 's16_sport'));
   });
 
-  it('asks the model for the slices, and never for one the Act refuses', async () => {
+  it('⚠️ ASKS IN WORDS, AND NAMES NO SECTION ANYWHERE', async () => {
     const { svc, complete } = build({});
     await svc.forClass(RIFLE);
     const sent = complete.mock.calls[0][0].messages[0].content[0].text;
     expect(sent).toContain('6.5mm Creedmoor');
     expect(sent).toContain('OCCASIONAL HUNTER');
-    expect(sent).toContain('DEDICATED SPORTS SHOOTER');
+    expect(sent).toContain('DEDICATED SPORT SHOOTER');
     expect(sent).not.toContain('SELF-DEFENCE');
+    expect(sent).not.toMatch(/section\s*1[3-6]/i);
     expect(complete.mock.calls[0][0].json.schema.required).toEqual([
-      's15_hunt',
-      's15_sport',
-      's16_hunt',
-      's16_sport',
+      'occasional_hunter',
+      'occasional_sport_shooter',
+      'dedicated_hunter',
+      'dedicated_sport_shooter',
     ]);
   });
 
@@ -242,9 +273,7 @@ describe('resolving a row', () => {
     // We do not know whether it is a self-defence pistol or a sporting one,
     // and handing over both sets is how a s13 firearm gets a hunting sentence.
     const { svc, findMany, complete } = build({});
-    await expect(
-      svc.forClass({ ...RIFLE, section: '' }),
-    ).resolves.toEqual([]);
+    await expect(svc.forClass({ ...RIFLE, section: '' })).resolves.toEqual([]);
     expect(findMany).not.toHaveBeenCalled();
     expect(complete).not.toHaveBeenCalled();
   });
@@ -272,8 +301,8 @@ describe('resolving a row', () => {
   });
 
   it('regenerates when only half a class was written', async () => {
-    // One generation writes every slice, so holding one and not the other
-    // means the write was interrupted.
+    // One generation writes every list, so holding one and not the other means
+    // the write was interrupted.
     const { svc, complete } = build({
       rows: [{ classKey: useClassKey(RIFLE, 's15_hunt'), uses: [HUNT] }],
     });
@@ -295,16 +324,21 @@ describe('resolving a row', () => {
         throw new Error('unique constraint');
       }),
     });
-    await expect(svc.forClass(RIFLE)).resolves.toEqual([HUNT, SPORT]);
+    await expect(svc.forClass(RIFLE)).resolves.toEqual([
+      { label: 'occasional hunting', uses: [HUNT] },
+      { label: 'occasional sport shooting', uses: [SPORT] },
+    ]);
   });
 
-  it('stores an empty slice rather than dropping it', async () => {
-    // Rule 7: an empty list beats a dishonest one, and storing it stops the
+  it('stores an empty list rather than dropping it', async () => {
+    // Rule 9: an empty list beats a dishonest one, and storing it stops the
     // next applicant paying to be told the same thing.
     const { svc, upsert } = build({
-      complete: jest.fn(async () => reply({ s15_sport: [] })),
+      complete: jest.fn(async () => reply({ occasional_sport_shooter: [] })),
     });
-    await expect(svc.forClass(RIFLE)).resolves.toEqual([HUNT]);
+    await expect(svc.forClass(RIFLE)).resolves.toEqual([
+      { label: 'occasional hunting', uses: [HUNT] },
+    ]);
     const sport = upsert.mock.calls.find(
       (c) => c[0].where.classKey === useClassKey(RIFLE, 's15_sport'),
     );
@@ -313,89 +347,34 @@ describe('resolving a row', () => {
 
   it('drops junk the model returned rather than printing it', async () => {
     const { svc } = build({
-      complete: jest.fn(async () => reply({ s15_hunt: ['', '  ', 'ok', HUNT] })),
-    });
-    await expect(svc.forClass(RIFLE)).resolves.toEqual([HUNT, SPORT]);
-  });
-
-  it('⚠️ INTERLEAVES THE TWO DISCIPLINES RATHER THAN CONCATENATING', async () => {
-    // Eight hunting sentences and no sport one is the same as not asking.
-    const many = (p: string) => Array.from({ length: 8 }, (_, i) => `${p} ${i}.`);
-    const { svc } = build({
       complete: jest.fn(async () =>
-        reply({ s15_hunt: many('hunt'), s15_sport: many('sport') }),
+        reply({ occasional_hunter: ['', '  ', 'ok', HUNT] }),
       ),
     });
-    const out = await svc.forClass(RIFLE);
-    expect(out).toHaveLength(8);
-    expect(out.filter((u) => u.startsWith('sport'))).toHaveLength(4);
+    await expect(svc.forClass(RIFLE)).resolves.toEqual([
+      { label: 'occasional hunting', uses: [HUNT] },
+      { label: 'occasional sport shooting', uses: [SPORT] },
+    ]);
   });
 
-  /**
-   * ⚠️ THE SCREEN. Every sentence is judged by the SAME gate that would reject
-   * the finished document, before it is ever stored — so section discipline is
-   * enforced rather than merely asked for, and a sentence that would cost a
-   * regeneration costs nothing instead.
-   */
-  it('⚠️ DROPS A HUNTING SENTENCE OFFERED UNDER SECTION 13', async () => {
-    const { svc, upsert } = build({
-      complete: jest.fn(async () => ({
-        text: JSON.stringify({
-          s13: [
-            'I use it for hunting plains game on weekends.',
-            'I use it for self-defence in my home.',
-          ],
-          s15_hunt: [HUNT],
-          s15_sport: [SPORT],
-          s16_hunt: [HUNT],
-          s16_sport: [SPORT],
-        }),
-        model: 'gemini-3.5-flash-lite',
-      })),
-    });
-    await expect(
-      svc.forClass({ ...RIFLE, type: 'Handgun', section: 'section 13' }),
-    ).resolves.toEqual(['I use it for self-defence in my home.']);
-    const s13 = upsert.mock.calls.find((c) =>
-      String(c[0].where.classKey).endsWith('|s13'),
-    );
-    expect(s13[0].create.uses).toEqual(['I use it for self-defence in my home.']);
-  });
-
-  it('⚠️ DROPS A SELF-DEFENCE SENTENCE OFFERED UNDER SECTION 16', async () => {
+  it('⚠️ KEEPS BOTH LISTS WHOLE RATHER THAN MERGING THEM', async () => {
+    // An earlier version capped the FIREARM at eight sentences across both
+    // disciplines, which is how the operator came to see one consolidated list
+    // where two were generated.
+    const many = (p: string) =>
+      Array.from({ length: 12 }, (_, i) => `I ${p} it on outing ${i}.`);
     const { svc } = build({
       complete: jest.fn(async () =>
         reply({
-          s16_hunt: ['I carry it for protection on the farm.'],
-          s16_sport: [SPORT],
+          occasional_hunter: many('hunt with'),
+          occasional_sport_shooter: many('shoot'),
         }),
-      ),
-    });
-    await expect(
-      svc.forClass({ ...RIFLE, section: 'section 16' }),
-    ).resolves.toEqual([SPORT]);
-  });
-
-  it('drops catalogue copy, which the gate refuses everywhere', async () => {
-    const { svc } = build({
-      complete: jest.fn(async () =>
-        reply({
-          s15_hunt: ['I use it where terminal ballistics matter on plains game.'],
-        }),
-      ),
-    });
-    await expect(svc.forClass(RIFLE)).resolves.toEqual([SPORT]);
-  });
-
-  it('⚠️ FOLDS AN AMERICANISM RATHER THAN THROWING THE SENTENCE AWAY', async () => {
-    // "caliber" is a spelling to fix, not a use to lose.
-    const { svc } = build({
-      complete: jest.fn(async () =>
-        reply({ s15_hunt: ['I hunt plains game with this caliber at 200 meters.'] }),
       ),
     });
     const out = await svc.forClass(RIFLE);
-    expect(out[0]).toBe('I hunt plains game with this calibre at 200 metres.');
+    expect(out).toHaveLength(2);
+    expect(out[0].uses).toHaveLength(12);
+    expect(out[1].uses).toHaveLength(12);
   });
 
   it('does not ask about a row that names no firearm', async () => {
@@ -405,5 +384,82 @@ describe('resolving a row', () => {
     ).resolves.toEqual([]);
     expect(findMany).not.toHaveBeenCalled();
     expect(complete).not.toHaveBeenCalled();
+  });
+
+  /**
+   * ⚠️ THE SCREEN. Every sentence is judged by the SAME gate that would reject
+   * the finished document, before it is ever stored — so the discipline is
+   * enforced rather than asked for, and a sentence that would cost a
+   * regeneration costs nothing instead.
+   */
+  it('⚠️ DROPS A HUNTING SENTENCE OFFERED AS SELF-DEFENCE', async () => {
+    const { svc, upsert } = build({
+      complete: jest.fn(async () =>
+        reply({
+          self_defence: [
+            'I use it for hunting plains game on weekends.',
+            'I use it for self-defence in my home.',
+          ],
+        }),
+      ),
+    });
+    await expect(
+      svc.forClass({ ...RIFLE, type: 'Handgun', section: 'section 13' }),
+    ).resolves.toEqual([
+      { label: 'self-defence', uses: ['I use it for self-defence in my home.'] },
+    ]);
+    const s13 = upsert.mock.calls.find((c) =>
+      String(c[0].where.classKey).endsWith('|s13'),
+    );
+    expect(s13[0].create.uses).toEqual([
+      'I use it for self-defence in my home.',
+    ]);
+  });
+
+  it('⚠️ DROPS A SELF-DEFENCE SENTENCE OFFERED TO A DEDICATED HUNTER', async () => {
+    const { svc } = build({
+      complete: jest.fn(async () =>
+        reply({
+          dedicated_hunter: ['I carry it for protection on the farm.'],
+          dedicated_sport_shooter: [SPORT],
+        }),
+      ),
+    });
+    // The hunting list is emptied by the screen and drops out entirely.
+    await expect(
+      svc.forClass({ ...RIFLE, section: 'section 16' }),
+    ).resolves.toEqual([{ label: 'dedicated sport shooting', uses: [SPORT] }]);
+  });
+
+  it('drops catalogue copy, which the gate refuses everywhere', async () => {
+    const { svc } = build({
+      complete: jest.fn(async () =>
+        reply({
+          occasional_hunter: [
+            'I use it where terminal ballistics matter on plains game.',
+          ],
+        }),
+      ),
+    });
+    await expect(svc.forClass(RIFLE)).resolves.toEqual([
+      { label: 'occasional sport shooting', uses: [SPORT] },
+    ]);
+  });
+
+  it('⚠️ FOLDS AN AMERICANISM RATHER THAN THROWING THE SENTENCE AWAY', async () => {
+    // "caliber" is a spelling to fix, not a use to lose.
+    const { svc } = build({
+      complete: jest.fn(async () =>
+        reply({
+          occasional_hunter: [
+            'I hunt plains game with this caliber at 200 meters.',
+          ],
+        }),
+      ),
+    });
+    const out = await svc.forClass(RIFLE);
+    expect(out[0].uses[0]).toBe(
+      'I hunt plains game with this calibre at 200 metres.',
+    );
   });
 });

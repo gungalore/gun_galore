@@ -396,7 +396,11 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
        * contradicts the card, is untouched: a section is checkable against a
        * document in the same pack, and a use is not.
        */
-      if (row && !row.licensedFor && !row.candidateUses?.length) {
+      if (
+        row &&
+        !row.licensedFor &&
+        !row.candidateUses?.some((g) => g.uses.length)
+      ) {
         for (const w of SPORTING_WORDS) {
           if (contains(s, w)) {
             flag(

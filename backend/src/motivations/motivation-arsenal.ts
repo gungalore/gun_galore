@@ -1,4 +1,5 @@
 import { answerValue } from '../common/card-placeholder';
+import type { CandidateUses } from './firearm-uses.service';
 import { OWNED_ROWS, ownedFirearmSerial, ownedRowTaken } from './motivation-fields';
 
 // ────────────────────────────────────────────────────────────────────
@@ -41,13 +42,19 @@ export interface ArsenalRow {
   /**
    * What a firearm of this CLASS is plausibly used for in South Africa.
    *
-   * ⚠️ GENERATED FROM THE CALIBRE, TYPE, ACTION AND SECTION — NOT READ OFF
-   * ANYTHING, AND NOT THE APPLICANT'S OWN WORDS. See firearm-uses.service.ts
-   * for the operator's override of guide-book Part 1 rule 7 and the reasoning
-   * behind it. `licensedFor` still wins wherever the applicant actually stated
-   * a use; this is what the writer cherry-picks from when they did not.
+   * ⚠️ GENERATED FROM THE CALIBRE, TYPE AND ACTION — NOT READ OFF ANYTHING,
+   * AND NOT THE APPLICANT'S OWN WORDS. See firearm-uses.service.ts for the
+   * operator's override of guide-book Part 1 rule 7 and the reasoning behind
+   * it. `licensedFor` still wins wherever the applicant actually stated a use;
+   * this is what the writer cherry-picks from when they did not.
+   *
+   * ⚠️ ONE ENTRY PER DISCIPLINE, AND THEY ARE NEVER MERGED. A section 15 row
+   * carries an occasional-HUNTING list and an occasional-SPORT list, because
+   * the card does not say which the applicant holds it for and the two are
+   * different arguments. Operator, 2026-09-09: "that would give two lists
+   * instead of one consolidated list".
    */
-  candidateUses?: string[];
+  candidateUses?: CandidateUses[];
   expires: string;
   /** One line, as the prompt renders it. */
   line: string;
@@ -93,7 +100,7 @@ function renderRow(r: Omit<ArsenalRow, 'line'>): string {
    * section is already on the row above; naming it is what the writer is for.
    */
   if (r.licensedFor) put('licensed_for', r.licensedFor);
-  else if (!r.candidateUses?.length)
+  else if (!r.candidateUses?.some((g) => g.uses.length))
     bits.push(
       'licensed_for="NOT STATED — say nothing about what this firearm is for; ' +
         'name it, its calibre and its section, and stop"',
@@ -109,11 +116,18 @@ function renderRow(r: Omit<ArsenalRow, 'line'>): string {
    *
    * See firearm-uses.service.ts for whose decision this is and why.
    */
-  if (!r.licensedFor && r.candidateUses?.length) {
-    const uses = r.candidateUses
-      .map((u) => `    <use>${u.replace(/[<>]/g, '')}</use>`)
+  const groups = (r.candidateUses ?? []).filter((g) => g.uses.length);
+  if (!r.licensedFor && groups.length) {
+    const lists = groups
+      .map((g) => {
+        const uses = g.uses
+          .map((u) => `      <use>${u.replace(/[<>]/g, '')}</use>`)
+          .join('\n');
+        const label = g.label.replace(/["<>]/g, '');
+        return `    <uses for="${label}">\n${uses}\n    </uses>`;
+      })
       .join('\n');
-    return `<firearm ${bits.join(' ')}>\n  <uses>\n${uses}\n  </uses>\n</firearm>`;
+    return `<firearm ${bits.join(' ')}>\n${lists}\n  </firearm>`;
   }
   return `<firearm ${bits.join(' ')}/>`;
 }
@@ -148,7 +162,7 @@ export function arsenalRows(
    * module is pure and the lookup needs Prisma and a model. See
    * firearm-uses.service.ts.
    */
-  uses: Record<number, string[]> = {},
+  uses: Record<number, CandidateUses[]> = {},
 ): ArsenalRow[] {
   const out: ArsenalRow[] = [];
   for (let n = 1; n <= OWNED_ROWS; n++) {
@@ -212,14 +226,15 @@ export function arsenalBlock(rows: readonly ArsenalRow[]): string {
     'firearm with what is here and stop. State a section only where the row',
     'carries one. Never describe a section 15 or 16 firearm with self-defence,',
     'protection, carry, backup or home-defence words.',
-    'Where a row carries <uses>, those are uses a firearm of that CLASS is',
-    'suited to in South Africa — not the applicant’s own words, and not read',
-    'off any document. PICK ONE that fits this application and write the gap',
-    'sentence from it. Do not list them, never more than one per firearm, and',
-    'never contradict the section on the row. A section 15 or 16 row offers',
-    'both hunting and sport uses because the licence card does not say which',
-    'the applicant holds it for: choose the one consistent with the rest of',
-    'this document, and do not claim both for one firearm.',
+    'A row may carry one or more <uses for="…"> lists. Those are uses a',
+    'firearm of that CLASS is suited to in South Africa — not the applicant’s',
+    'own words, and not read off any document.',
+    'A section 15 or 16 row carries TWO lists, one for hunting and one for',
+    'sport, because the licence card does not say which the applicant holds it',
+    'for. CHOOSE THE LIST FIRST — the one consistent with the rest of this',
+    'document — and then ONE sentence from inside it. Never mix the two lists',
+    'for one firearm, never use more than one sentence per firearm, never list',
+    'them, and never contradict the section on the row.',
     ...rows.map((r) => r.line),
     '</arsenal>',
   ].join('\n');

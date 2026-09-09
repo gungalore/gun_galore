@@ -65,6 +65,7 @@ import {
   actionFromCardType,
   FirearmUsesService,
   useClassKey,
+  type CandidateUses,
 } from './firearm-uses.service';
 import { geocodeZa, type LatLng } from '../news/news-geo';
 import {
@@ -1689,7 +1690,7 @@ export class MotivationGenerationService {
     );
     const byClass = new Map(keys.map((k, i) => [k, resolved[i]]));
 
-    const uses: Record<number, string[]> = {};
+    const uses: Record<number, CandidateUses[]> = {};
     for (const r of rows) {
       const found = byClass.get(classOf.get(r.index) ?? '') ?? [];
       if (found.length) uses[r.index] = found;

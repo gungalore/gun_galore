@@ -152,16 +152,22 @@ describe('the candidate uses on a row', () => {
     existing_firearm_1_serial: 'HW65001',
     existing_firearm_1_section_held: 'section_15',
   };
+  const HUNT = 'I use it for plains game at moderate ranges.';
+  const SPORT = 'I use it on a club range to keep my shooting current.';
   const uses = [
-    'I use it for plains game at moderate ranges.',
-    'I use it on a club range to keep my shooting current.',
+    { label: 'occasional hunting', uses: [HUNT] },
+    { label: 'occasional sport shooting', uses: [SPORT] },
   ];
 
-  it('offers them to the writer, and drops the NOT STATED warning', () => {
+  it('⚠️ OFFERS TWO LABELLED LISTS, NOT ONE MERGED ONE', () => {
+    // Operator, 2026-09-09: "that would give two lists instead of one
+    // consolidated list". The writer chooses the ARGUMENT before the sentence.
     const line = arsenalRows(answers, {}, { 1: uses })[0].line;
     expect(line).not.toContain('NOT STATED');
-    expect(line).toContain('<uses>');
-    for (const u of uses) expect(line).toContain(`<use>${u}</use>`);
+    expect(line).toContain('<uses for="occasional hunting">');
+    expect(line).toContain('<uses for="occasional sport shooting">');
+    expect(line).toContain(`<use>${HUNT}</use>`);
+    expect(line).toContain(`<use>${SPORT}</use>`);
   });
 
   it('⚠️ A STATED PURPOSE STILL WINS OUTRIGHT', () => {
@@ -173,7 +179,7 @@ describe('the candidate uses on a row', () => {
       { 1: uses },
     )[0].line;
     expect(line).toContain('licensed_for="plains game hunting"');
-    expect(line).not.toContain('<uses>');
+    expect(line).not.toContain('<uses');
   });
 
   it('⚠️ AN EMPTY LIST IS THE OLD BEHAVIOUR, NOT A QUIET PASS', () => {
@@ -181,7 +187,17 @@ describe('the candidate uses on a row', () => {
     // telling the writer to say nothing — which is what documentScope checks.
     const line = arsenalRows(answers, {}, { 1: [] })[0].line;
     expect(line).toContain('NOT STATED');
-    expect(line).not.toContain('<uses>');
+    expect(line).not.toContain('<uses');
+  });
+
+  it('a list that came back empty is dropped, not printed empty', () => {
+    const line = arsenalRows(
+      answers,
+      {},
+      { 1: [{ label: 'occasional hunting', uses: [] }, uses[1]] },
+    )[0].line;
+    expect(line).not.toContain('occasional hunting');
+    expect(line).toContain('<uses for="occasional sport shooting">');
   });
 
   it('still carries the section, which is never generated', () => {
