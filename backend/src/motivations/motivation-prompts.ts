@@ -5,7 +5,6 @@ import { sanitizePromptValue } from '../common/prompt-sanitize';
 import { factPackFields, LICENCE_TYPE_LABELS } from './motivation-fields';
 import { answerValue } from '../common/card-placeholder';
 import { cardSentences } from './motivation-preview';
-import { disciplineLabel } from './motivation-field-options';
 import type { SectionId, StructurePlan } from './motivation-structure';
 import { AS_AT, renderStatute, statutoryTextFor } from './motivation-statute';
 
@@ -302,7 +301,9 @@ ${lists}
 }
 
 /** The annexure list, rendered as citation instructions. */
-function renderAnnexures(annexures?: { letter: string; label: string }[]): string {
+function renderAnnexures(
+  annexures?: { letter: string; label: string }[],
+): string {
   if (!annexures?.length) return '';
   return `
 THE PACK'S ANNEXURES. The printed submission will attach these documents,
@@ -360,27 +361,21 @@ function renderFacts(pack: FactPack): string {
   const fields = factPackFields(pack.licenceType);
   const lines: string[] = [];
 
-  // ⚠️ THE DISCIPLINE IS STORED AS SLUGS AND THE WRITER WAS HANDED THEM.
-  //
-  // `discipline` is a multi field, comma-joined in the registry's own order,
-  // and it stores VALUES, not labels: the prompt read
-  // `<answer field="discipline">ipsc-practical-pistol-handgun, other</answer>`
-  // — and a bare `other` where the applicant chose Something Else and typed
-  // what they actually shoot into `discipline_other`. The brief for the case
-  // section orders the model to "ADDRESS EVERY DISCIPLINE NAMED", so it was
-  // being told to argue from a token nobody outside this codebase has ever
-  // seen, on the one section a section 16 sport application turns on.
-  //
-  // `disciplineLabel` was written for exactly this, with an `otherText`
-  // parameter, and had no callers anywhere in either tree.
-  const asProse = (key: string, value: string): string =>
-    key === 'discipline'
-      ? value
-          .split(',')
-          .map((part) => disciplineLabel(part, pack.answers.discipline_other))
-          .filter(Boolean)
-          .join(', ')
-      : value;
+  /**
+   * ⚠️ THE DISCIPLINE EXPANSION LIVED HERE AND IS GONE WITH THE QUESTION.
+   *
+   * `discipline` was a multi field storing SLUGS — the prompt read
+   * `<answer field="discipline">ipsc-practical-pistol-handgun, other</answer>`
+   * — so this turned them back into words before the writer saw them. The
+   * three discipline questions were retired on 2026-09-09 (see RETIRED_FIELDS
+   * in motivation-fields.ts): what a firearm of that class is genuinely shot
+   * in now comes from firearm-uses.service.ts, in words, with its positions
+   * and distances, instead of from a list the applicant ticked.
+   *
+   * The key is no longer in `factPackFields`, so nothing reached this branch
+   * any more. Left as a note rather than as code that cannot run.
+   */
+  const asProse = (key: string, value: string): string => value;
 
   // ⚠️ A CARD ANSWER IS STORED AS SLUGS, AND THE SLUGS MUST NOT REACH THE
   // WRITER — THE SAME BUG AS `discipline` ABOVE, ONE KIND WIDER.
@@ -1236,9 +1231,7 @@ than supplied — score that as ungrounded, however plausible it reads.
 Firearms Control Act 60 of 2000, ${AS_AT}:
 
 <statutory-text>
-${statutoryTextFor(
-    pack.licenceType,
-  )}
+${statutoryTextFor(pack.licenceType)}
 </statutory-text>
 `
 }

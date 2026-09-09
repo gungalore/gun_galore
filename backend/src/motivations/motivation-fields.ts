@@ -7,6 +7,7 @@ import {
   HUNT_GAME_CLASS,
   HUNT_REASONS,
   HUNT_TERRAIN,
+  FIREARM_USE_KIND,
   HUNT_WHERE,
   OVERLAP_ANGLES,
   OWNED_SECTION_HELD,
@@ -993,6 +994,58 @@ const RETIRED_FIELDS: readonly MotivationField[] = [
     kind: 'choice',
     section: 'The SAPS 271 form',
     choices: [SAPS271_DEALER, SAPS271_FILL],
+  },
+  /**
+   * 2026-09-09: THE DISCIPLINE QUESTIONS, REPLACED BY THE GENERATED USES.
+   *
+   * "The disciplines you shoot", "Name the discipline" and "What the
+   * discipline requires of the firearm" asked the applicant to summarise, from
+   * memory, the one thing a section 16 sport motivation turns on — and the
+   * first of them was REQUIRED, so an application could not be generated until
+   * somebody had ticked a list of formats.
+   *
+   * ⚠️ THE ANSWER NOW COMES FROM THE FIREARM, NOT FROM THE MEMBER. Operator,
+   * 2026-09-09: "the gemini research on what this weapon is good for is
+   * exactly why I implemented it was to get rid of these questions."
+   * firearm-uses.service.ts generates, per firearm CLASS and per kind of
+   * shooter, the disciplines that class is genuinely shot in — with their
+   * positions, distances and target types — and the writer picks from that.
+   * "It is a standard chambering for F-Class prone shooting at six hundred
+   * metres" is the sentence this box was asking the member to compose.
+   *
+   * ⚠️ WHICH IS THE STANDING RULE, NOT A NEW ONE. "Automate it — do not ask":
+   * a confirm step guarding a value we already hold is work we invented for
+   * the member, and a required one is a wall.
+   *
+   * Retired rather than deleted, like everything else here: the wizard resends
+   * the whole answers blob on every autosave, so a key that simply vanished
+   * would fail sanitiseAnswers on every keystroke for anybody whose draft
+   * holds it. Readers that still look for `discipline` — the fact pack, the
+   * reason writer — find it on an old draft and find nothing on a new one,
+   * which is the same thing they already do for an unanswered optional field.
+   */
+  {
+    key: 'discipline',
+    label: 'The disciplines you shoot',
+    kind: 'multi',
+    section: 'Experience',
+    optionSource: 'shooting-disciplines',
+    allowOther: true,
+    maxLength: 600,
+  },
+  {
+    key: 'discipline_other',
+    label: 'Name the discipline',
+    kind: 'short',
+    section: 'Experience',
+    maxLength: 160,
+  },
+  {
+    key: 'discipline_requirement',
+    label: 'What the discipline requires of the firearm',
+    kind: 'long',
+    section: 'Experience',
+    maxLength: 2000,
   },
 ];
 
@@ -2464,51 +2517,34 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
   // Reported as HANDOFF.md open item 1 and flagged as an operator decision
   // because it changes what somebody signs. Confirmed to land here.
   S15_OCCASIONAL_HUNTER: [
-    {
-      key: 'hunt_game_class',
-      label: 'What you hunt',
-      kind: 'cards',
-      section: 'Experience',
-      options: HUNT_GAME_CLASS,
-      help: 'Tap what applies. Leave it blank if you shoot rather than hunt.',
-    },
-    {
-      key: 'hunt_terrain',
-      label: 'The country you hunt in',
-      kind: 'cards',
-      section: 'Experience',
-      options: HUNT_TERRAIN,
-    },
-    {
-      key: 'hunt_where',
-      label: 'Whose land',
-      kind: 'cards',
-      section: 'Experience',
-      options: HUNT_WHERE,
-    },
-    {
-      key: 'hunt_reasons',
-      label: 'Why you hunt',
-      kind: 'cards',
-      section: 'Experience',
-      options: HUNT_REASONS,
-    },
     // ⚠️ THE SPORT CARDS, ON THE SECTION 15 PATH. This is the half that was
     // missing — see the block comment above.
     {
-      key: 'sport_reasons',
-      label: 'Why you shoot',
+      /**
+       * ⚠️ THE ONLY TICK-BOX LEFT IN THIS SECTION, AND IT IS A ROUTER.
+       * Operator, 2026-09-09: "we just need to ask if the applicant will be
+       * using it for hunting or Sport shooting or both, that the only tick
+       * boxes I want to see. and that will decide from which pool of reasons
+       * we are going to motivate that firearm."
+       *
+       * Everything the other card grids used to ask — what you hunt, the
+       * country you hunt in, whose land, why you shoot, what you shoot — is
+       * generated per firearm CLASS by firearm-uses.service.ts, with the
+       * quarry, the terrain and the discipline already in the sentence. The
+       * one thing that cannot be generated is which of its two pools this
+       * applicant wants drawn from.
+       *
+       * ⚠️ THE LICENCE TYPE CANNOT ANSWER IT. S15_OCCASIONAL_HUNTER is one
+       * value covering the occasional hunter AND the occasional sports
+       * shooter, and a dedicated hunter may shoot sport with the same rifle.
+       * "Both" is a real answer and it takes both pools.
+       */
+      key: 'firearm_use_kind',
+      label: 'What you will use it for',
       kind: 'cards',
       section: 'Experience',
-      options: SPORT_REASONS,
-      help: 'Tap what applies. Leave it blank if you hunt rather than shoot.',
-    },
-    {
-      key: 'sport_formats',
-      label: 'What you shoot',
-      kind: 'cards',
-      section: 'Experience',
-      options: SPORT_FORMATS,
+      options: FIREARM_USE_KIND,
+      required: true,
     },
     {
       key: 'hunting_history',
@@ -2542,6 +2578,33 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
   ],
   S16_DEDICATED_HUNTER: [
+    {
+      /**
+       * ⚠️ THE ONLY TICK-BOX LEFT IN THIS SECTION, AND IT IS A ROUTER.
+       * Operator, 2026-09-09: "we just need to ask if the applicant will be
+       * using it for hunting or Sport shooting or both, that the only tick
+       * boxes I want to see. and that will decide from which pool of reasons
+       * we are going to motivate that firearm."
+       *
+       * Everything the other card grids used to ask — what you hunt, the
+       * country you hunt in, whose land, why you shoot, what you shoot — is
+       * generated per firearm CLASS by firearm-uses.service.ts, with the
+       * quarry, the terrain and the discipline already in the sentence. The
+       * one thing that cannot be generated is which of its two pools this
+       * applicant wants drawn from.
+       *
+       * ⚠️ THE LICENCE TYPE CANNOT ANSWER IT. S15_OCCASIONAL_HUNTER is one
+       * value covering the occasional hunter AND the occasional sports
+       * shooter, and a dedicated hunter may shoot sport with the same rifle.
+       * "Both" is a real answer and it takes both pools.
+       */
+      key: 'firearm_use_kind',
+      label: 'What you will use it for',
+      kind: 'cards',
+      section: 'Experience',
+      options: FIREARM_USE_KIND,
+      required: true,
+    },
     {
       key: 'association_name',
     docSourced: 'ASSOCIATION_CARD',
@@ -2698,36 +2761,6 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       reach: 'far',
     },
     {
-      key: 'hunt_game_class',
-      label: 'What you hunt',
-      kind: 'cards',
-      section: 'Experience',
-      options: HUNT_GAME_CLASS,
-      help: 'Tap what applies.',
-      required: true,
-    },
-    {
-      key: 'hunt_terrain',
-      label: 'The country you hunt in',
-      kind: 'cards',
-      section: 'Experience',
-      options: HUNT_TERRAIN,
-    },
-    {
-      key: 'hunt_where',
-      label: 'Whose land',
-      kind: 'cards',
-      section: 'Experience',
-      options: HUNT_WHERE,
-    },
-    {
-      key: 'hunt_reasons',
-      label: 'Why you hunt',
-      kind: 'cards',
-      section: 'Experience',
-      options: HUNT_REASONS,
-    },
-    {
       // Optional and prefilled from the cards above since 2026-09-08. It was
       // `required` and 3000 characters wide, and the UX walkthrough found it
       // rendering as a grey row on the step a DFO actually reads, opening to
@@ -2743,42 +2776,6 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       attachKind: 'SHOOTING_ACTIVITY_LOG',
     },
     {
-      // OPTIONAL here, unlike the sport shooter's. A dedicated hunter's
-      // motivation stands on the hunting record; a shooting discipline is
-      // supporting evidence where they shoot one, and a new required field
-      // would block applications that were complete yesterday.
-      //
-      // MULTI-SELECT since 2026-08-21 (operator): plenty of people shoot more
-      // than one, and a form that makes them pick their favourite loses the
-      // rest of the argument.
-      key: 'discipline',
-      label: 'Shooting disciplines you compete in',
-      kind: 'multi',
-      section: 'Experience',
-      optionSource: 'shooting-disciplines',
-      optionScope: 'hunting',
-      allowOther: true,
-      prefills: 'discipline_requirement',
-      help: 'Optional. Only if you shoot a formal discipline as well as hunting \u2014 several of these are run specifically for hunters.',
-      maxLength: 160,
-    },
-    {
-      key: 'discipline_other',
-      label: 'Name the discipline',
-      kind: 'short',
-      section: 'Experience',
-      showIf: { key: 'discipline', equals: 'other' },
-      maxLength: 160,
-    },
-    {
-      key: 'discipline_requirement',
-      label: 'What the discipline requires of the firearm',
-      kind: 'long',
-      section: 'Experience',
-      help: 'Filled in from the body\u2019s published rules when you pick a discipline. Check it and make it yours.',
-      maxLength: 2000,
-    },
-    {
       key: 'activity_record',
       label: 'Anything else about your association activities',
       kind: 'long',
@@ -2788,6 +2785,33 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
   ],
   S16_DEDICATED_SPORT: [
+    {
+      /**
+       * ⚠️ THE ONLY TICK-BOX LEFT IN THIS SECTION, AND IT IS A ROUTER.
+       * Operator, 2026-09-09: "we just need to ask if the applicant will be
+       * using it for hunting or Sport shooting or both, that the only tick
+       * boxes I want to see. and that will decide from which pool of reasons
+       * we are going to motivate that firearm."
+       *
+       * Everything the other card grids used to ask — what you hunt, the
+       * country you hunt in, whose land, why you shoot, what you shoot — is
+       * generated per firearm CLASS by firearm-uses.service.ts, with the
+       * quarry, the terrain and the discipline already in the sentence. The
+       * one thing that cannot be generated is which of its two pools this
+       * applicant wants drawn from.
+       *
+       * ⚠️ THE LICENCE TYPE CANNOT ANSWER IT. S15_OCCASIONAL_HUNTER is one
+       * value covering the occasional hunter AND the occasional sports
+       * shooter, and a dedicated hunter may shoot sport with the same rifle.
+       * "Both" is a real answer and it takes both pools.
+       */
+      key: 'firearm_use_kind',
+      label: 'What you will use it for',
+      kind: 'cards',
+      section: 'Experience',
+      options: FIREARM_USE_KIND,
+      required: true,
+    },
     {
       key: 'association_name',
     docSourced: 'ASSOCIATION_CARD',
@@ -2944,55 +2968,6 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       reach: 'far',
     },
     {
-      // WAS a free-text box reading "Practical, precision, clay, service
-      // rifle, and so on." — which asked the applicant to summarise, from
-      // memory, the one thing a section 16 motivation turns on. The list is
-      // now the real one, and picking from it seeds the equipment rules.
-      // ⚠️ MULTI-SELECT SINCE 2026-08-21, AND THE OLD HELP TEXT WAS THE TELL.
-      // It read "If you shoot several, pick the one this application is about
-      // — the others belong in your competition record", which is a form
-      // apologising for its own shape. Operator: let them pick as many as they
-      // shoot. The motivation is stronger for naming all of them, because a
-      // firearm that serves three disciplines has three reasons to exist.
-      key: 'discipline',
-      label: 'The disciplines you shoot',
-      kind: 'multi',
-      section: 'Experience',
-      optionSource: 'shooting-disciplines',
-      allowOther: true,
-      prefills: 'discipline_requirement',
-      help: 'Pick every discipline this firearm is for. What each one requires of the firearm is filled in below.',
-      required: true,
-      // Several disciplines, comma-joined — the old 160 fitted exactly one.
-      maxLength: 600,
-    },
-    {
-      key: 'discipline_other',
-      label: 'Name the discipline',
-      kind: 'short',
-      section: 'Experience',
-      showIf: { key: 'discipline', equals: 'other' },
-      help: 'What it is called, and which club or body runs it.',
-      required: true,
-      maxLength: 160,
-    },
-    {
-      key: 'sport_reasons',
-      label: 'Why you need your own firearm for it',
-      kind: 'cards',
-      section: 'Experience',
-      options: SPORT_REASONS,
-      help: 'Tap the ones that are true of you.',
-      required: true,
-    },
-    {
-      key: 'sport_formats',
-      label: 'What you shoot, and how often',
-      kind: 'cards',
-      section: 'Experience',
-      options: SPORT_FORMATS,
-    },
-    {
       // Optional and prefilled from the cards above since 2026-09-08 — the
       // record itself is what the attached scorecards and register pages show,
       // and asking somebody to retype it in prose alongside them was asking
@@ -3004,17 +2979,6 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       help: 'Optional. Attach scorecards, targets or your attendance register — that is the annexure which shows you actually shoot.',
       maxLength: 3000,
       attachKind: 'SHOOTING_ACTIVITY_LOG',
-    },
-    {
-      key: 'discipline_requirement',
-      label: 'What the discipline requires of the firearm',
-      kind: 'long',
-      section: 'Experience',
-      help: 'Picking a discipline above fills this in from that body\u2019s published rules. Check it against the current handbook and make it yours \u2014 rules change, and this goes out over your signature.',
-      // ⚠️ Deliberately NOT required. It is prefilled, and a required field
-      // that fills itself in teaches people to skim the one paragraph on the
-      // page they most need to read.
-      maxLength: 2000,
     },
   ],
   S24_RENEWAL: [

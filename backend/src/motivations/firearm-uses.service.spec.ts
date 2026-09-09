@@ -815,3 +815,49 @@ describe('resolving a row', () => {
     );
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE ONE TICK-BOX, AND WHAT IT DOES.
+//
+// Operator, 2026-09-09: "we just need to ask if the applicant will be using it
+// for hunting or Sport shooting or both, that the only tick boxes I want to
+// see. and that will decide from which pool of reasons we are going to
+// motivate that firearm."
+//
+// `slicesWanted` lives in motivation-generation.service.ts because it needs
+// the licence type; what it produces is fed straight into forClass's `only`
+// filter, which is what this suite pins.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the pool the tick chooses', () => {
+  const rows = [
+    { classKey: useClassKey(RIFLE, 's16_hunt'), uses: ['hunt one'] },
+    { classKey: useClassKey(RIFLE, 's16_sport'), uses: ['sport one'] },
+  ];
+  const s16 = { ...RIFLE, section: 'section 16' };
+
+  it('hunting takes the hunting pool alone', async () => {
+    const out = await build({ rows }).svc.forClass(s16, '', 'held', [
+      's16_hunt',
+    ]);
+    expect(out.map((g) => g.label)).toEqual(['dedicated hunting']);
+  });
+
+  it('sport takes the sport pool alone', async () => {
+    const out = await build({ rows }).svc.forClass(s16, '', 'held', [
+      's16_sport',
+    ]);
+    expect(out.map((g) => g.label)).toEqual(['dedicated sport shooting']);
+  });
+
+  it('⚠️ BOTH TAKES BOTH, as two labelled lists', async () => {
+    const out = await build({ rows }).svc.forClass(s16, '', 'held', [
+      's16_hunt',
+      's16_sport',
+    ]);
+    expect(out.map((g) => g.label)).toEqual([
+      'dedicated hunting',
+      'dedicated sport shooting',
+    ]);
+  });
+});

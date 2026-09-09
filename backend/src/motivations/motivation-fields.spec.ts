@@ -364,26 +364,31 @@ describe('isVisible', () => {
 
   // ⚠️ REQUIRED AND UNASKABLE AT THE SAME TIME.
   //
-  // `discipline` is kind: 'multi' and is stored comma-joined in the registry's
-  // own order. `discipline_other` — "Name the discipline" — is gated on
-  // `equals: 'other'`, and "vlakteskiet-chasa, other" is not that string. So a
-  // section 16 sports shooter who picked Something Else ALONGSIDE a real
-  // discipline could never be shown the box, while the field stayed
-  // required: true and quietly dropped out of requiredKeys.
+  // A `multi` answer is stored comma-joined in the registry's own order, and a
+  // field gated on `equals: 'other'` used to test the WHOLE string — so
+  // "vlakteskiet-chasa, other" did not match and the box behind it could never
+  // be shown, while the field stayed required and quietly dropped out of
+  // requiredKeys.
+  //
+  // ⚠️ THE FIELDS THIS WAS FOUND ON ARE RETIRED. `discipline` and
+  // `discipline_other` went on 2026-09-09 — see RETIRED_FIELDS — so the rule
+  // is pinned against a synthetic field instead of a live pair. The rule is
+  // isVisible's, not theirs, and it outlives whichever field exposed it.
   it('⚠️ sees a value inside a multi answer, not only a multi answer of one', () => {
-    const sport = fieldsFor(MotivationLicenceType.S16_DEDICATED_SPORT);
-    const other = sport.find((x) => x.key === 'discipline_other');
-    expect(other).toBeDefined();
-    expect(other!.showIf).toMatchObject({ key: 'discipline', equals: 'other' });
+    const other = {
+      key: 'named_other',
+      label: 'Name it',
+      kind: 'short' as const,
+      section: 'Experience',
+      showIf: { key: 'picked', equals: 'other' },
+    };
 
     // On its own it always worked.
-    expect(isVisible(other!, { discipline: 'other' })).toBe(true);
-    // Beside a real discipline it did not.
-    expect(
-      isVisible(other!, { discipline: 'vlakteskiet-chasa, other' }),
-    ).toBe(true);
+    expect(isVisible(other, { picked: 'other' })).toBe(true);
+    // Beside a real value it did not.
+    expect(isVisible(other, { picked: 'vlakteskiet-chasa, other' })).toBe(true);
     // And a list without it still closes the gate.
-    expect(isVisible(other!, { discipline: 'vlakteskiet-chasa' })).toBe(false);
+    expect(isVisible(other, { picked: 'vlakteskiet-chasa' })).toBe(false);
     expect(isVisible(other!, { discipline: '' })).toBe(false);
   });
 });
@@ -807,57 +812,55 @@ describe('the form and the validator agree on what a choice may be', () => {
     }
   });
 
-  it('accepts SEVERAL disciplines at once, comma-joined', () => {
-    // ⚠️ THE SAME BUG, ONE LAYER ALONG. The single-select failure was
-    // `field.choices ?? YES_NO` in the choice branch; the multi branch had
-    // `field.choices ?? []`, which is the identical mistake with an identical
-    // symptom — every discipline silently discarded — and making the field
-    // multi-select would have walked straight back into it.
-    const t = MotivationLicenceType.S16_DEDICATED_SPORT;
-    const offered = expandFields(fieldsFor(t))
-      .find((f) => f.key === 'discipline')!
-      .optionGroups!.flatMap((g) => g.options.map((o) => o.value));
-    const three = offered.slice(0, 3);
+  // ⚠️ THE MULTI BRANCH OF THE VALIDATOR, PINNED ON WHATEVER MULTI FIELD IS
+  // LIVE. The single-select failure was `field.choices ?? YES_NO`; the multi
+  // branch had `field.choices ?? []`, the identical mistake with an identical
+  // symptom — every value silently discarded.
+  //
+  // ⚠️ IT USED TO BE PINNED ON `discipline`, WHICH IS RETIRED (2026-09-09; see
+  // RETIRED_FIELDS). The rule belongs to sanitiseAnswers, not to that field,
+  // so it moved to `competency_for` — multi, five choices, and asked on every
+  // section 16.
+  const MULTI_KEY = 'competency_for';
+  const multiChoices = (t: MotivationLicenceType) =>
+    expandFields(fieldsFor(t)).find((f) => f.key === MULTI_KEY)!.choices!;
 
+  it('accepts SEVERAL values at once, comma-joined', () => {
+    const t = MotivationLicenceType.S16_DEDICATED_SPORT;
+    const three = multiChoices(t).slice(0, 3);
     const { answers, refused } = sanitiseAnswers(t, {
-      discipline: three.join(', '),
+      [MULTI_KEY]: three.join(', '),
     });
     expect(refused).toEqual([]);
-    expect(answers.discipline!.split(',').map((x) => x.trim()).sort()).toEqual(
-      [...three].sort(),
-    );
+    expect(
+      answers[MULTI_KEY]!.split(',')
+        .map((x) => x.trim())
+        .sort(),
+    ).toEqual([...three].sort());
   });
 
   it('normalises the order, so the same three compare equal either way', () => {
-    // Two applicants who picked the same disciplines in a different order have
+    // Two applicants who picked the same values in a different order have
     // given the same answer, and the stored value has to say so — otherwise
     // the sameness detector reads them as different documents.
     const t = MotivationLicenceType.S16_DEDICATED_SPORT;
-    const offered = expandFields(fieldsFor(t))
-      .find((f) => f.key === 'discipline')!
-      .optionGroups!.flatMap((g) => g.options.map((o) => o.value));
-    const three = offered.slice(0, 3);
-
-    const forward = sanitiseAnswers(t, { discipline: three.join(', ') });
+    const three = multiChoices(t).slice(0, 3);
+    const forward = sanitiseAnswers(t, { [MULTI_KEY]: three.join(', ') });
     const backward = sanitiseAnswers(t, {
-      discipline: [...three].reverse().join(', '),
+      [MULTI_KEY]: [...three].reverse().join(', '),
     });
-    expect(forward.answers.discipline).toBe(backward.answers.discipline);
+    expect(forward.answers[MULTI_KEY]).toBe(backward.answers[MULTI_KEY]);
   });
 
-  it('refuses the whole set if ONE discipline is not real', () => {
+  it('refuses the whole set if ONE value is not real', () => {
     // Half-accepting would store a subset of what they picked and show a form
     // that quietly lost one of their answers.
     const t = MotivationLicenceType.S16_DEDICATED_SPORT;
-    const offered = expandFields(fieldsFor(t))
-      .find((f) => f.key === 'discipline')!
-      .optionGroups!.flatMap((g) => g.options.map((o) => o.value));
-
     const { answers, refused } = sanitiseAnswers(t, {
-      discipline: `${offered[0]}, competitive napping`,
+      [MULTI_KEY]: `${multiChoices(t)[0]}, competitive napping`,
     });
-    expect(refused).toEqual(['discipline']);
-    expect(answers.discipline).toBeUndefined();
+    expect(refused).toEqual([MULTI_KEY]);
+    expect(answers[MULTI_KEY]).toBeUndefined();
   });
 
   it('still refuses a value that is NOT on the list', () => {
@@ -865,21 +868,26 @@ describe('the form and the validator agree on what a choice may be', () => {
     // switched off, so the other half is pinned too.
     const t = MotivationLicenceType.S16_DEDICATED_SPORT;
     const { answers, refused } = sanitiseAnswers(t, {
-      discipline: 'competitive napping',
+      [MULTI_KEY]: 'competitive napping',
     });
-    expect(refused).toEqual(['discipline']);
-    expect(answers.discipline).toBeUndefined();
+    expect(refused).toEqual([MULTI_KEY]);
+    expect(answers[MULTI_KEY]).toBeUndefined();
   });
 
-  it('accepts the "something else" sentinel, which a field hangs off', () => {
-    // discipline_other is revealed by showIf discipline === 'other', so
-    // refusing the sentinel would make that question permanently unreachable.
-    const t = MotivationLicenceType.S16_DEDICATED_SPORT;
-    const { answers, refused } = sanitiseAnswers(t, { discipline: 'other' });
-    expect(refused).toEqual([]);
-    expect(answers.discipline).toBe('other');
-    expect(requiredKeys(t, answers)).toContain('discipline_other');
-  });
+  /**
+   * ⚠️ THE "SOMETHING ELSE" SENTINEL HAD ONE FIELD AND IT IS RETIRED.
+   *
+   * `discipline` was the only live `multi` carrying `allowOther`, and this
+   * pinned that `sanitiseAnswers` accepts the bare `other` token — refusing it
+   * would have made the box behind its `showIf` permanently unreachable. The
+   * three discipline questions went on 2026-09-09 (RETIRED_FIELDS), so there
+   * is no live field left to exercise it against and a synthetic one would
+   * only test the test.
+   *
+   * The rule itself is unchanged in sanitiseAnswers. Restore this the moment a
+   * multi field carries `allowOther` again — the showIf half is still pinned,
+   * in the isVisible suite above.
+   */
 
   it('a HUNTER is not offered, and cannot store, a pure sport discipline', () => {
     // The scope filter feeds the dropdown and the validator from one

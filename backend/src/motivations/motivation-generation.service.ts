@@ -93,12 +93,42 @@ const APPLIED_SLICES: Partial<Record<MotivationLicenceType, UseSlice[]>> = {
   [MotivationLicenceType.S13_SELF_DEFENCE]: ['s13'],
   [MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE]: ['s14'],
   // ⚠️ ONE ENUM VALUE COVERS BOTH. Section 15 is the occasional hunter OR the
-  // occasional sports shooter and the product does not split them, so both
-  // lists are offered and the writer chooses.
+  // occasional sports shooter and the product does not split them.
   [MotivationLicenceType.S15_OCCASIONAL_HUNTER]: ['s15_hunt', 's15_sport'],
-  [MotivationLicenceType.S16_DEDICATED_HUNTER]: ['s16_hunt'],
-  [MotivationLicenceType.S16_DEDICATED_SPORT]: ['s16_sport'],
+  [MotivationLicenceType.S16_DEDICATED_HUNTER]: ['s16_hunt', 's16_sport'],
+  [MotivationLicenceType.S16_DEDICATED_SPORT]: ['s16_hunt', 's16_sport'],
 };
+
+/**
+ * Which pool the applicant asked for, out of the ones the section admits.
+ *
+ * ⚠️ THE MEMBER'S ONE TICK DECIDES THIS. Operator, 2026-09-09: "we just need
+ * to ask if the applicant will be using it for hunting or Sport shooting or
+ * both … and that will decide from which pool of reasons we are going to
+ * motivate that firearm." `firearm_use_kind` is the only tick-box left in the
+ * Experience section and this is the whole of what it does.
+ *
+ * ⚠️ THE LICENCE TYPE STILL BOUNDS IT. A section 13 application has no
+ * sporting pool to choose from whatever anybody ticks, so the tick filters
+ * what the section already admits rather than replacing it. And an unanswered
+ * tick takes everything the section admits — the field is required, but a
+ * draft written before it existed is not broken by it.
+ */
+function slicesWanted(
+  licenceType: MotivationLicenceType,
+  answers: Record<string, string>,
+): UseSlice[] {
+  const admits = APPLIED_SLICES[licenceType] ?? [];
+  const tick = (answers.firearm_use_kind ?? '').trim();
+  if (!tick || tick === 'both') return admits;
+  if (tick === 'hunting') {
+    return admits.filter((s) => !s.endsWith('_sport'));
+  }
+  if (tick === 'sport') {
+    return admits.filter((s) => !s.endsWith('_hunt'));
+  }
+  return admits;
+}
 import { geocodeZa, type LatLng } from '../news/news-geo';
 import {
   buildAnnexures,
@@ -1781,17 +1811,23 @@ export class MotivationGenerationService {
     licenceType: MotivationLicenceType,
     answers: Record<string, string>,
   ): Promise<CandidateUses[]> {
-    const stated = [
-      'hunt_game_class',
-      'hunt_reasons',
-      'sport_reasons',
-      'sport_formats',
-      'intended_quarry',
-    ].some((k) => (answers[k] ?? '').trim() !== '');
-    if (stated) return [];
+    /**
+     * ⚠️ ONLY `intended_quarry` IS LEFT OF THIS GATE, and that is the point.
+     * It used to test five keys, four of which were the card grids the
+     * generated uses replaced on 2026-09-09 — asking whether the applicant had
+     * described their own purpose. `firearm_use_kind` is NOT such a key: it
+     * says which pool to draw from, not what the applicant does, so ticking it
+     * must not suppress the pool it just chose.
+     *
+     * What survives is the one box where somebody types a purpose in their own
+     * words. Where they have, it is theirs and it wins outright — the same rule
+     * `licensedFor` follows on a held row, enforced by absence rather than by
+     * hope.
+     */
+    if ((answers.intended_quarry ?? '').trim() !== '') return [];
 
-    const wanted = APPLIED_SLICES[licenceType];
-    if (!wanted?.length) return [];
+    const wanted = slicesWanted(licenceType, answers);
+    if (!wanted.length) return [];
 
     return this.firearmUses.forClass(
       {

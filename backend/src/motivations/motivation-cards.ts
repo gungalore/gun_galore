@@ -170,6 +170,33 @@ export const HUNT_TERRAIN: readonly CardOption[] = [
 ];
 
 /** Whose land. This is the access question a DFO asks. */
+/**
+ * THE ONE QUESTION LEFT IN THE EXPERIENCE SECTION.
+ *
+ * Operator, 2026-09-09: "we just need to ask if the applicant will be using it
+ * for hunting or Sport shooting or both, that the only tick boxes I want to
+ * see. and that will decide from which pool of reasons we are going to
+ * motivate that firearm."
+ *
+ * ⚠️ IT IS A ROUTER, NOT A CONFESSION. Every other tick-box in that section
+ * asked the applicant to describe what they do — what they hunt, the country
+ * they hunt in, whose land, why they shoot, what they shoot — and
+ * firearm-uses.service.ts now generates all of that per firearm CLASS, in
+ * words, with the quarry and the terrain and the discipline in them. What it
+ * cannot know is which of its two pools this applicant wants drawn from, and
+ * that is one tap.
+ *
+ * ⚠️ THE LICENCE TYPE CANNOT ANSWER IT. S15_OCCASIONAL_HUNTER is one enum
+ * value covering the occasional hunter AND the occasional sports shooter, and
+ * a dedicated hunter may shoot sport with the same rifle. "Both" is a real
+ * answer and it takes both pools.
+ */
+export const FIREARM_USE_KIND: readonly CardOption[] = [
+  { key: 'hunting', sentence: 'I will use it for hunting.' },
+  { key: 'sport', sentence: 'I will use it for sport shooting.' },
+  { key: 'both', sentence: 'I will use it for both hunting and sport shooting.' },
+];
+
 export const HUNT_WHERE: readonly CardOption[] = [
   { key: 'invitation', sentence: 'I hunt on farms where I am invited by the landowner.' },
   { key: 'own_land', sentence: 'I hunt on land my family or I own or lease.' },
@@ -562,6 +589,7 @@ export const CARD_SETS: Readonly<Record<string, readonly CardOption[]>> = {
   s13_carry_style: S13_CARRY_STYLE,
   hunt_game_class: HUNT_GAME_CLASS,
   hunt_terrain: HUNT_TERRAIN,
+  firearm_use_kind: FIREARM_USE_KIND,
   hunt_where: HUNT_WHERE,
   hunt_reasons: HUNT_REASONS,
   sport_reasons: SPORT_REASONS,
