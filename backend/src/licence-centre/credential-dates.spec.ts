@@ -191,7 +191,7 @@ describe('documents whose date question answers itself', () => {
     for (const k of [
       CredentialKind.IDENTITY_DOCUMENT,
       CredentialKind.PROFICIENCY,
-      CredentialKind.COMPETENCY,
+      CredentialKind.COMPETENCY_CERTIFICATE,
       CredentialKind.FIREARM_LICENCE,
     ]) {
       expect(settledByNature(k)).toBeNull();
