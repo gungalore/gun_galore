@@ -62,7 +62,32 @@ function renderRow(r: Omit<ArsenalRow, 'line'>): string {
   put('calibre', r.calibre);
   put('serial', r.serial);
   put('section', r.section);
-  put('licensed_for', r.licensedFor);
+  /**
+   * ⚠️ AN ABSENT PURPOSE IS SAID OUT LOUD, BECAUSE SILENCE READS AS PERMISSION.
+   *
+   * `put` omits an empty value, so a row whose purpose nobody stated simply had
+   * no `licensed_for` at all — and the writer filled the gap, every time. On
+   * MO000074 (2026-09-09) it wrote that the Mauser, the Marlin and the Howa
+   * were each "for hunting"; nothing in the pack says so, and `documentScope`
+   * refused the document three times over for it.
+   *
+   * Rule 12 and MOTIVATION-GUIDE-BOOK Part 1 rule 7 both say the same thing:
+   * a held firearm's purpose comes from the applicant's stated use or from an
+   * endorsement naming that serial, and where neither exists the writer names
+   * the firearm and its calibre and says nothing about what it is for. The
+   * model cannot follow a rule about an attribute it cannot see is missing.
+   *
+   * ⚠️ NOT A PURPOSE DERIVED FROM THE SECTION. "Section 16 means dedicated
+   * hunting or sport" is true of the Act and is not a fact about THIS licence —
+   * which of the two it was issued for is exactly what nobody has stated. The
+   * section is already on the row above; naming it is what the writer is for.
+   */
+  if (r.licensedFor) put('licensed_for', r.licensedFor);
+  else
+    bits.push(
+      'licensed_for="NOT STATED — say nothing about what this firearm is for; ' +
+        'name it, its calibre and its section, and stop"',
+    );
   put('expires', r.expires);
   return `<firearm ${bits.join(' ')}/>`;
 }

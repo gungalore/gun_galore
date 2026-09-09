@@ -95,3 +95,42 @@ describe('the block', () => {
     );
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// AN ABSENT PURPOSE IS SAID OUT LOUD.
+//
+// `put` omits an empty value, so a row whose purpose nobody stated had no
+// `licensed_for` at all — and the writer filled the gap every time. On
+// MO000074 it wrote that the Mauser, the Marlin and the Howa were each "for
+// hunting"; nothing in the pack says so, and documentScope refused the whole
+// document three times over for it.
+// ────────────────────────────────────────────────────────────────────
+
+describe('a held firearm whose purpose nobody stated', () => {
+  const rowFor = (over: Record<string, string>) =>
+    arsenalRows({
+      existing_firearm_1_make: 'Marlin',
+      existing_firearm_1_calibre: '.45-70 Government',
+      existing_firearm_1_serial: 'MR90189D',
+      existing_firearm_1_section_held: 'section_16',
+      ...over,
+    })[0];
+
+  it('⚠️ TELLS THE WRITER TO SAY NOTHING, RATHER THAN SAYING NOTHING', () => {
+    const line = rowFor({}).line;
+    expect(line).toContain('NOT STATED');
+    expect(line).toMatch(/say nothing about what this firearm is for/i);
+  });
+
+  it('still carries the section, which IS stated', () => {
+    // Naming the section is what the writer is for; deriving a purpose from it
+    // would be a fact about the Act, not about this licence.
+    expect(rowFor({}).line).toMatch(/section="section 16"/i);
+  });
+
+  it('says nothing extra once a purpose IS stated', () => {
+    const line = rowFor({ existing_firearm_1_primary_use: 'plains_game' }).line;
+    expect(line).not.toContain('NOT STATED');
+    expect(line).toContain('licensed_for=');
+  });
+});
