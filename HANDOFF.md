@@ -68,6 +68,34 @@ don't want an applicant to sit and read and tick fucking boxes."*
   where the form's four choices cannot — reduced to one word for the key, or
   three spellings would buy three generations.
 
+### Two corrections the same day, deployed `ef72be07` (backend only)
+
+⚠️ **THE LISTS WERE BEING MERGED BEFORE THE WRITER SAW THEM.** The table held
+the disciplines apart correctly and then `forClass()` interleaved them into one
+flat array capped at eight. Operator: *"that would give two lists instead of
+one consolidated list."* A row now renders `<uses for="occasional hunting">`
+and `<uses for="occasional sport shooting">` as separate blocks and the writer
+chooses the LIST first — the argument — then one sentence inside it. The
+per-firearm cap is gone; the per-list cap is twelve.
+
+⚠️ **AND GEMINI WAS BEING ASKED IN SECTION NUMBERS.** *"use the fucking words
+and not the sections"*, then *"you can keep the section in you database, but
+what we serve gemini should be dedicated hunter, dedicated sport shooter,
+occational hunter occational sport shooter."* Slice ids and the `section`
+column are unchanged; `SLICE_KEY` maps each to the words it is asked and
+answered under, those are the JSON schema properties, the labels are people
+rather than subsections, and rule 8 forbids the model citing statute at all.
+
+### What it actually produces
+
+Measured against the live model, not asserted:
+
+| class | lists |
+|---|---|
+| 12 gauge, manual shotgun | **5** — self-defence, occasional hunting, occasional sport, dedicated hunting, dedicated sport |
+| 6.5 Creedmoor, bolt rifle | **4** — no self-defence list exists for a rifle |
+| self-loading shotgun | **3** — loses s13 at one end and s15 at the other |
+
 ### Open, for the operator
 
 ⚠️ **A HANDGUN CANNOT FALL UNDER SECTION 14, so it gets 13/15/16 and not 14.**
