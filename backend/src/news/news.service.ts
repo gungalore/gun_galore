@@ -357,11 +357,28 @@ function clamp(n: number, lo: number, hi: number): number {
  * the document can be checked against the annexure it points at.
  */
 export function clippingFactLines(clips: readonly NewsIncident[]): string[] {
-  return clips.map(
+  const lines = clips.map(
     (c, i) =>
       `Press clipping ${i + 1}: ${c.sourceName}, ${c.publishedOn} — "${c.headline}"` +
       (c.standfirst ? ` — ${c.standfirst}` : '') +
       (c.crimeType ? ` [${c.crimeType}]` : '') +
       (c.places.length ? ` (${c.places.join(', ')})` : ''),
   );
+  if (!lines.length) return lines;
+  /**
+   * ⚠️ THE HEADLINE IS THE PAPER'S WORDS AND THE CATEGORY IS SAPS'S. MO000071
+   * wrote "grip-attacks" into the exposure section — a literal rendering of
+   * the Afrikaans "gryp", which is not a crime category anybody uses in
+   * English and reads to a Registrar as somebody who does not know the
+   * vocabulary. Every clipping already carries its category in brackets; the
+   * instruction says to use it and to leave the paper's phrasing in the
+   * headline where it belongs.
+   */
+  lines.push(
+    'When naming what a clipping reports, use the SAPS category in brackets ' +
+      '— common robbery, house robbery, hijacking, murder, assault, burglary. ' +
+      'Never translate a headline’s own word for a crime, and never invent a ' +
+      'category name. Quote a headline only inside quotation marks.',
+  );
+  return lines;
 }

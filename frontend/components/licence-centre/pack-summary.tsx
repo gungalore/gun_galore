@@ -26,6 +26,20 @@ export interface PackSummaryProps {
   sourceRoute: 'dealer' | 'seller' | 'estate' | 'unstated';
   /** What SAPS wants, by tier — the take-to-SAPS list. */
   needs: { kind: string; label: string; tier: string; have: boolean }[];
+  /**
+   * How many answers are still outstanding on the sheet above this.
+   *
+   * ⚠️ TWO PROGRESS FIGURES ON ONE SCREEN CONTRADICTED EACH OTHER. The header
+   * read "16 things left" while this section scored "37% of the boxes", and
+   * both were right about different denominators — the header counts the
+   * questions a member must answer, the meter counts the form's boxes, and a
+   * member reading them together cannot tell which one is their job.
+   *
+   * The header count is the one to act on, so while it is above zero the meter
+   * holds its tongue. Omitted entirely — as the pack screen does, where there
+   * is no header count to disagree with — it shows as it always has.
+   */
+  outstanding?: number;
 }
 
 const F_LINE: Record<PackSummaryProps['sourceRoute'], string> = {
@@ -44,8 +58,10 @@ export default function PackSummary({
   licenceType,
   sourceRoute,
   needs,
+  outstanding,
 }: PackSummaryProps) {
   const isRenewal = licenceType === 'S24_RENEWAL';
+  const waiting = (outstanding ?? 0) > 0;
 
   return (
     <div>
@@ -55,7 +71,16 @@ export default function PackSummary({
         one; the meter takes the licence type so it does not name a form this
         application does not use.
       */}
-      <Saps271Meter coverage={coverage} licenceType={licenceType} />
+      {waiting ? (
+        <p className="m-0 text-[13.5px] leading-[1.45] text-[var(--text-secondary)]">
+          {outstanding === 1
+            ? 'One answer is still outstanding above.'
+            : `${outstanding} answers are still outstanding above.`}{' '}
+          Finish those and we will score your SAPS 271 here.
+        </p>
+      ) : (
+        <Saps271Meter coverage={coverage} licenceType={licenceType} />
+      )}
 
       {!isRenewal ? (
         <p className="m-0 mt-2 text-[12.5px] leading-[1.4] text-[var(--gold-strong)]">

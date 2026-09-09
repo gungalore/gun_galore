@@ -69,7 +69,12 @@ describe('annexure lettering', () => {
       MotivationUploadKind.SAFE_PHOTOGRAPHS,
     ]);
     expect(a.map((x) => x.letter)).toEqual(['A', 'B']);
-    expect(a[1].label).toBe('Photographs of your safe');
+    // ⚠️ "the safe", NOT "your safe". buildAnnexures titles for the DOCUMENT, not
+    // for the shelf: "Refer to Annexure E: Photographs of your safe" has a
+    // first-person letter to the Registrar addressing the reader about their
+    // own safe. UPLOAD_KIND_LABELS keeps the second person for every screen
+    // that is actually talking to the member.
+    expect(a[1].label).toBe('Photographs of the safe');
     // The count is what drives "(n of 3)" on each printed copy, so all three
     // have to be accumulated under the one letter rather than the first
     // winning and the rest being dropped.

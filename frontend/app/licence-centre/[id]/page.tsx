@@ -658,6 +658,17 @@ export default function LicenceCentreSheetPage() {
           licenceType={sheet.application.licenceType}
           sourceRoute={SOURCE_ROUTE[sourceValue] ?? 'unstated'}
           needs={sheet.needs.needs}
+          /*
+            ⚠️ ONE PROGRESS FIGURE PER SCREEN. The header on this page counts
+            the answers still outstanding; the 271 meter counts the form's
+            boxes. Both were on screen together reading different numbers, and
+            a member cannot tell which one is their job. The header count wins
+            here; the meter has the pack screen to itself.
+          */
+          outstanding={sheet.sections.reduce(
+            (n, sec) => n + sec.missing.length,
+            0,
+          )}
         />
       );
     }

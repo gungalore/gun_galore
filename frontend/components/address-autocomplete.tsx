@@ -29,6 +29,17 @@ interface Props {
   onChange: (address: string, placeId?: string) => void;
   onComponents?: (components: ParsedAddressComponents) => void;
   placeholder?: string;
+  /**
+   * Hide "Use my current location".
+   *
+   * ⚠️ IT IS WRONG FOR SOMEBODY ELSE'S ADDRESS, AND IT APPEARED UNDER ONE. The
+   * button offers the phone's GPS fix, which is where the MEMBER is standing —
+   * useful for their own home, meaningless under "Employer's address", where
+   * it invites a member sitting at their kitchen table to fill in their
+   * employer's address with their house. An employer's address is typed, or
+   * read off the employment letter.
+   */
+  hideLocate?: boolean;
 }
 
 // Minimal local types — avoids requiring @types/google.maps at build time.
@@ -211,6 +222,7 @@ export function AddressAutocomplete({
   onChange,
   onComponents,
   placeholder = 'Search for address…',
+  hideLocate = false,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<GAutocomplete | null>(null);
@@ -482,7 +494,7 @@ export function AddressAutocomplete({
           <path d="M10.5 10.5l3 3" strokeLinecap="round" />
         </svg>
       </div>
-      {!noKey && !authFailed && scriptLoaded && (
+      {!noKey && !authFailed && scriptLoaded && !hideLocate && (
         <button
           type="button"
           onClick={useMyLocation}

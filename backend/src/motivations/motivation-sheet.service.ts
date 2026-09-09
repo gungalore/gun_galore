@@ -347,12 +347,16 @@ const SECTIONS: { id: string; title: string; blurb: string }[] = [
   {
     id: 'declarations',
     title: 'Declarations',
-    // ⚠️ FIVE, NOT SIX, AND THE WORD THAT WAS WRONG WAS "everybody". The
-    // registry does carry six history questions — the coverage meter counts
-    // six and is right to — but `history_negligence` only appears once a
-    // firearm has been lost or stolen. Five is what a member is asked, and
-    // the pack meter on the same screen was already saying so.
-    blurb: 'Five questions everybody is asked, and answering "no" adds nothing to your motivation.',
+    // ⚠️ FIVE AND THE SIXTH, BECAUSE THE TWO NUMBERS ON THIS SCREEN DISAGREED.
+    // The registry carries six history questions and the 271 coverage meter
+    // counts six, correctly; `history_negligence` only appears once a firearm
+    // has been lost or stolen, so five is what most members are asked. Saying
+    // "five" flatly left a member reading "Five questions" beside a meter
+    // scoring them out of six on the same page, with nothing explaining it.
+    // Naming the condition costs eight words and settles it.
+    blurb:
+      'Five questions everybody is asked, and one more if a firearm has ever ' +
+      'been lost or stolen. Answering "no" adds nothing to your motivation.',
   },
   {
     id: 'pack',
@@ -554,7 +558,44 @@ export class MotivationSheetService {
     // not applicable to somebody who holds nothing similar.
     const overlap = overlapFromAnswers(row.licenceType, answers);
 
-    const served = expandFields(fieldsFor(row.licenceType));
+    /**
+     * ⚠️ THE SIX COMPONENT ROWS STAY OFF THE SHEET UNTIL SOMETHING FILLS ONE.
+     *
+     * Barrel, frame and receiver — serial and make each — are SAPS 271 section
+     * E 1.7–1.12, and on a real card two of the three read NONE. Walking an
+     * S13 handgun with no licence card read yet, they sat there as six empty
+     * boxes asking a member to describe parts of a firearm they have not
+     * bought, on a form where a wrong answer is an offence under section
+     * 120(9)(f).
+     *
+     * ⚠️ THE READER IS THE TRIGGER, NOT THE MEMBER. `common/firearm-identity`
+     * reads all four serials off a licence card or a dealer's invoice, so the
+     * moment one is read every one of the six appears — including the empty
+     * ones, because a card that prints NONE against the barrel is a fact worth
+     * showing and correcting. Before that they are the 271's to fill and
+     * nobody's to type.
+     *
+     * ⚠️ SERVED, NOT REGISTERED. `showIf` takes ONE key, and gating each row on
+     * one of its five siblings either loops or hides everything when the card
+     * happened to number a different component. The condition is "has any of
+     * these six been filled", which the server can ask and a per-field clause
+     * cannot.
+     */
+    const COMPONENT_ROWS = [
+      'barrel_serial',
+      'barrel_make',
+      'frame_serial',
+      'frame_make',
+      'receiver_serial',
+      'receiver_make',
+    ];
+    const componentsRead = COMPONENT_ROWS.some(
+      (k) => (answers[k] ?? '').trim() !== '',
+    );
+
+    const served = expandFields(fieldsFor(row.licenceType)).filter(
+      (f) => componentsRead || !COMPONENT_ROWS.includes(f.key),
+    );
 
     const items: SheetItem[] = served.map((f) => {
       const state = this.stateOf(f, answers, provenance, overlap);

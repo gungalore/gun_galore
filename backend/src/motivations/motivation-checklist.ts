@@ -508,6 +508,33 @@ export interface AnnexureEntry {
  * copies stay individually citable through the "(2 of 4)" captions
  * motivation-annexure-layout.ts prints above each one.
  */
+/**
+ * Second-person labels rewritten for a first-person document.
+ *
+ * ⚠️ THE ANNEXURE INDEX IS NOT THE MEMBER'S SCREEN. "Photographs of your safe"
+ * is exactly right on the document shelf, where the product is talking to the
+ * member. Inside the motivation it becomes "Refer to Annexure E: Photographs
+ * of your safe" — a first-person letter to the Registrar suddenly addressing
+ * the reader about THEIR safe. Same for "Copy of your ID" and "Your letter of
+ * good standing".
+ *
+ * ⚠️ AN OVERRIDE MAP RATHER THAN A REWRITE OF UPLOAD_KIND_LABELS, because the
+ * shelf, the checklist and the picker all read that table and all of them are
+ * addressed to the member. Only the annexure index changes register.
+ */
+const ANNEXURE_TITLES: Partial<Record<MotivationUploadKind, string>> = {
+  IDENTITY_DOCUMENT: 'Copy of the applicant’s identity document',
+  GOOD_STANDING_LETTER: 'Letter of good standing',
+  SAFE_PHOTOGRAPHS: 'Photographs of the safe',
+  SAFE_PHOTO: 'Photographs of the safe (earlier upload)',
+  SHOOTING_ACTIVITY_LOG: 'Record of shooting activities',
+};
+
+/** How an annexure is titled inside the document itself. */
+export function annexureTitle(kind: MotivationUploadKind): string {
+  return ANNEXURE_TITLES[kind] ?? UPLOAD_KIND_LABELS[kind];
+}
+
 export function buildAnnexures(
   kinds: MotivationUploadKind[],
   /**
@@ -563,7 +590,9 @@ export function buildAnnexures(
       out.push({
         letter,
         kind: uploadKind,
-        label: group.label,
+        // The safe group's own label is second person too — it IS
+        // "Photographs of your safe" — so the same override applies.
+        label: annexureTitle(uploadKind) ?? group.label,
         count,
         certification: CERTIFICATION[uploadKind] ?? 'none',
       });
@@ -574,7 +603,10 @@ export function buildAnnexures(
     out.push({
       letter: String.fromCharCode(65 + i),
       kind: uploadKind,
-      label: UPLOAD_KIND_LABELS[uploadKind],
+      // ⚠️ THE DOCUMENT'S OWN REGISTER, NOT THE SHELF'S. See annexureTitle:
+      // "Refer to Annexure E: Photographs of your safe" has a first-person
+      // letter to the Registrar addressing the reader about their safe.
+      label: annexureTitle(uploadKind),
       count,
       certification: CERTIFICATION[uploadKind] ?? 'none',
     });

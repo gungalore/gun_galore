@@ -138,6 +138,14 @@ function Control({
         value={value}
         onChange={(address: string) => onChange(address)}
         placeholder={item.help ?? 'Start typing your address'}
+        /*
+          ⚠️ NOT UNDER SOMEBODY ELSE'S ADDRESS. "Use my current location" reads
+          the phone's GPS, which is where the MEMBER is — right for their own
+          home, and an invitation to put their kitchen table into the
+          Employer's address box. An employer's address is typed or read off
+          the employment letter.
+        */
+        hideLocate={item.key === 'employer_address'}
       />
     );
   }

@@ -15,6 +15,7 @@
 
 import { OWNED_ROWS, ownedFirearmSerial } from './motivation-fields';
 import { readSaId } from './sa-id';
+import { displayCalibre } from './saps-vocabulary';
 
 export interface AnnexureRef {
   letter: string;
@@ -369,8 +370,19 @@ export function packConsistency(
       `The firearm's serial number (${serial}) does not appear in the document — the motivation must identify the exact firearm applied for.`,
     );
   }
+  /**
+   * ⚠️ EITHER FORM COUNTS, BECAUSE THE WRITER IS GIVEN THE TIDY ONE. The stored
+   * answer is the card's own string — "9MM PAR ( 9X19MM )" — and the fact pack
+   * hands the model `displayCalibre` of it. Comparing only against the stored
+   * form would report every correctly written document as having lost the
+   * calibre, and the fix for THAT would have been to stop tidying it.
+   */
   const calibre = (answers.firearm_calibre ?? '').trim();
-  if (calibre && !doc.includes(squash(calibre))) {
+  if (
+    calibre &&
+    !doc.includes(squash(calibre)) &&
+    !doc.includes(squash(displayCalibre(calibre)))
+  ) {
     issues.push(
       `The calibre the applicant gave (${calibre}) does not appear in the document.`,
     );

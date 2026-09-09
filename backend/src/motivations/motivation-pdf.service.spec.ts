@@ -411,12 +411,12 @@ describe('the annexure index', () => {
     expect(t).toContain('ANNEXURES');
     expect(t).toContain('Annexure A');
     // Several files of one kind still fold under one letter with a count.
-    expect(t).toMatch(/Copy of your ID \(2 items\)/i);
+    expect(t).toMatch(/Copy of the applicant.s identity document \(2 items\)/i);
     // The safe folds too, as of 2026-08-20: one letter, a count, and the
     // individual shots captioned "(1 of 3)" on the printed copies. It used to
     // spend a letter per shot, which pushed every later annexure down and put
     // our index out of step with the one a DFO reads every day.
-    expect(t).toMatch(/Annexure B\s*Photographs of your safe \(3 items\)/i);
+    expect(t).toMatch(/Annexure B\s*Photographs of the safe \(3 items\)/i);
     // The index stops at B: nothing after the safe, because the safe no
     // longer eats C and D.
     expect(t).not.toMatch(/Annexure C/i);

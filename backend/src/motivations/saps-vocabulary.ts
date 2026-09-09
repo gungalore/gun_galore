@@ -48,3 +48,60 @@ export function normaliseFirearmType(raw: string | undefined): FirearmType | '' 
   }
   return '';
 }
+
+/**
+ * A calibre as it should be PRINTED, from whatever was typed or read.
+ *
+ * ⚠️ "9MM PAR ( 9X19MM )" APPEARED THREE TIMES IN MO000071, VERBATIM. That is
+ * how the string sits on the operator's licence card — screaming case, a space
+ * inside each bracket, an abbreviation nobody writes out — and it went into a
+ * signed motivation three times exactly as read. A card is a source, not a
+ * house style.
+ *
+ * ⚠️ IT NORMALISES SHAPE, NEVER MEANING. Spacing, bracket padding and case are
+ * furniture; "PAR" is expanded because it is an abbreviation of one word and
+ * nothing else. What this must NEVER do is decide that "9 mm" means 9 mm
+ * Luger — that is `findCartridge`'s job, it refuses ambiguous stems on
+ * purpose, and a printer quietly resolving them would put a cartridge name in
+ * a document nobody chose.
+ *
+ * ⚠️ AND AN UNRECOGNISED STRING COMES BACK TIDIED, NOT DROPPED. A calibre we
+ * do not know is still the calibre on the applicant's card.
+ */
+export function displayCalibre(raw: string | undefined | null): string {
+  let v = (raw ?? '').trim();
+  if (!v) return '';
+
+  // Bracket padding: "( 9X19MM )" → "(9x19mm)". Done before anything else so
+  // the case pass sees whole words.
+  v = v.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')');
+  // Collapse runs of space, and put one space before an opening bracket.
+  v = v.replace(/\s+/g, ' ').replace(/\s*\(/g, ' (');
+
+  /**
+   * ⚠️ SCREAMING CASE IS LOWERED; MIXED CASE IS LEFT ALONE. ".300 Win Mag" is
+   * already how a person writes it, and title-casing everything would turn
+   * "6.5mm Creedmoor" into "6.5Mm Creedmoor". Only a string that is ALL
+   * capitals is being shouted by a card reader rather than written by anybody.
+   */
+  if (v === v.toUpperCase() && /[A-Z]{2}/.test(v)) {
+    v = v
+      .toLowerCase()
+      .replace(/\b([a-z])/g, (m, c: string) => c.toUpperCase())
+      // "9Mm" back to "9mm", and the same for the metric units.
+      .replace(/\bMm\b/g, 'mm')
+      .replace(/(\d)\s?Mm\b/g, '$1mm')
+      .replace(/\bX(\d)/g, 'x$1');
+  }
+
+  // The abbreviations a card prints, expanded to the words a document uses.
+  v = v
+    .replace(/\bPar\b/g, 'Parabellum')
+    .replace(/\bRem\b\.?/g, 'Remington')
+    .replace(/\bWin\b\.?/g, 'Winchester')
+    .replace(/\bSprg?\b\.?/g, 'Springfield')
+    .replace(/\bMag\b\.?/g, 'Magnum')
+    .replace(/\bGovt?\b\.?/g, 'Government');
+
+  return v.trim();
+}

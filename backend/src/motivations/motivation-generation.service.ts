@@ -48,6 +48,8 @@ import { areasOnRoute, decodePolyline } from './motivation-route';
 import { cartridgeFacts, findCartridge } from './motivation-cartridge';
 import { arsenalRows, type ArsenalRow } from './motivation-arsenal';
 import { documentScope } from './motivation-scope';
+import { packableIncidents } from './motivation-incident-filter';
+import { displayCalibre } from './saps-vocabulary';
 import { ownedFirearmSections } from './owned-firearm-sections';
 import { geocodeZa, type LatLng } from '../news/news-geo';
 import {
@@ -617,7 +619,13 @@ export class MotivationGenerationService {
         const ids = parsePressClippingIds(answers[PRESS_CLIPPINGS_KEY]);
         if (ids.length) {
           try {
-            pressClips = await this.news.byIds(ids);
+            /**
+             * ⚠️ FILTERED AGAIN ON THE WAY OUT, NOT ONLY ON THE WAY IN. The
+             * ids are stored on the application and an older draft can hold
+             * one chosen before the filter existed; nothing that reaches an
+             * annexure gets there on the strength of when it was picked.
+             */
+            pressClips = packableIncidents(await this.news.byIds(ids));
           } catch (err) {
             this.logger.warn(
               `Motivation ${row.id}: press clippings lookup skipped — ${(err as Error).message}`,
@@ -703,7 +711,22 @@ export class MotivationGenerationService {
 
       const pack: FactPack = {
         licenceType: row.licenceType,
-        answers,
+        /**
+         * ⚠️ THE CALIBRE IS TIDIED ON THE WAY TO THE WRITER, AND NOWHERE ELSE.
+         * "9MM PAR ( 9X19MM )" is how the string sits on the operator's licence
+         * card — screaming case, a space inside each bracket, an abbreviation
+         * nobody writes out — and it printed into MO000071 three times exactly
+         * as read. A card is a source, not a house style.
+         *
+         * ⚠️ THE STORED ANSWER IS UNTOUCHED. It is what the card says and what
+         * the 271 boxes take; only the copy handed to the model is normalised,
+         * so nothing downstream of the vault sees a value the member did not
+         * give. `packConsistency` knows about both forms.
+         */
+        answers: {
+          ...answers,
+          firearm_calibre: displayCalibre(answers.firearm_calibre),
+        },
         arsenal,
         derived: this.deriveFacts(answers),
         // Only when there is genuinely an overlap. Passing a note otherwise
@@ -1162,9 +1185,19 @@ export class MotivationGenerationService {
           province: (answers.police_station_province ?? '').trim(),
         },
         months: 12,
-        limit: 12,
+        // ⚠️ ASK FOR MORE THAN WE SHOW, BECAUSE THE FILTER TAKES SOME. Twelve
+        // in and twelve out meant a precinct whose last quarter was mostly
+        // court reporting offered the member three cuttings.
+        limit: 24,
       });
-      return { station, incidents };
+      /**
+       * ⚠️ THE PICKER OFFERED A CHILD-RAPE CASE AND A COURT POSTPONEMENT. See
+       * motivation-incident-filter: a report the applicant would not want in
+       * their own pack must never be offered to them in the first place, and a
+       * court diary entry is a report about a case rather than about a
+       * neighbourhood.
+       */
+      return { station, incidents: packableIncidents(incidents).slice(0, 12) };
     } catch (err) {
       // Same fail-soft posture as every other lookup here — a broken feed
       // costs the picker its list, never a 500 on a step the member is just
@@ -1262,6 +1295,10 @@ export class MotivationGenerationService {
         // about areas, and a short list of them needs a long list of reports.
         limit: AREA_INCIDENT_TAKE,
       });
+      // ⚠️ AND THE AREAS ARE BUILT ONLY FROM REPORTS THAT COULD BE ANNEXED.
+      // An area whose entire evidence is a court diary entry is an area we
+      // would ask the member to tick and then have nothing to print for.
+      incidents = packableIncidents(incidents);
     } catch (err) {
       this.logger.warn(
         `Motivation ${id}: area lookup failed — ${(err as Error).message}`,

@@ -87,7 +87,11 @@ describe('incidentsFor', () => {
     expect(incidentsNear).toHaveBeenCalledWith({
       station: { name: 'Brooklyn', province: 'Gauteng' },
       months: 12,
-      limit: 12,
+      // ⚠️ TWICE WHAT IS SHOWN, BECAUSE THE FILTER TAKES SOME. Sexual offences
+      // and court-diary items are dropped before the member sees the list, and
+      // twelve in meant a precinct whose last quarter was mostly court
+      // reporting offered three cuttings.
+      limit: 24,
     });
   });
 
