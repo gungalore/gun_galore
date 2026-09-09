@@ -6,7 +6,81 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-09**.
 
-## 2026-09-09 (latest) — What a firearm is FOR, generated per class
+## 2026-09-09 (latest) — MO000075, read off the box
+
+Every fault below was diagnosed from production data rather than guessed, and
+each one is deployed. Rollback points are the dumps deploy.sh printed.
+
+### One bad field kept four firearms off a signed form
+
+⚠️ **`licence_number` WAS NOT A LICENCE NUMBER.** The reader had no guidance
+for it, so it wrote the holder's 13-digit **ID number** on three cards and a
+bare **four-digit** number on the other four — the same value every time. That
+one bad read did damage in three places:
+
+| where | what it did |
+|---|---|
+| `documentFingerprints` | flagged five of six firearms as duplicates of an unrelated one |
+| `alreadyOnForm` | judged four firearms "already listed", so **two of six** reached the motivation and the 271 — silently, because an `identifier` match means "nothing to say" |
+| SAPS 271 item 2.1 | put the ID number in "Licence or permit no" |
+
+`looksLikeLicenceNumber` now guards both comparisons, and the reader is told
+what a licence number is and the two things it never is.
+
+⚠️ **AND `receiver_serial` WAS READ BY NOBODY.** WANTED is both the question and
+the filter, so the key missing from FIREARM_LICENCE meant the reader was never
+asked AND would have discarded it. The Marlin prints NONE for frame and barrel
+and carries its number on the receiver — so in the vault it had no serial at
+all, could never be matched to a section, and its candidate uses were withheld.
+
+### A scan that loses a field is rejected, with the reason, and can be typed in
+
+Operator: *"If not all fields came through in a scan the scan must be rejected
+with the reason why everywhere on this website"* + *"givn an optio to manually
+type the mssing field"*. **Both halves shipped together** — a rejection with no
+fix is the SMS that promised a retry the product refused.
+
+⚠️ **THE LIST IS THE FIREARM LICENCE AND NOTHING ELSE.** It rests on an
+invariant stated for that document only: *"the license card will always have
+either a serial or say NONE for all fields. It will never ever have an emty
+field."* **To extend it, the operator must name the guaranteed rows per kind** —
+a proficiency carries a certificate number OR an SCV number OR an
+authentication code, not all three, and rejecting those would refuse real
+paperwork.
+
+### 117705 was read correctly and thrown away twice
+
+- `proficiencyCovers` dropped the handgun statement as an "endorsement
+  mismatch" on a rifle application — before `pickProficiencyPair`, whose law
+  branch exists to attach exactly that page. Thirty such skips in the log.
+- `proficiencyFor` read attached packs only, so a member whose knowledge unit
+  sits on an unattached statement looked like somebody who never did the
+  course. It reads the vault too now.
+
+### Also fixed
+
+- **Deleting stopped at ten.** The route was throttled 10/min; the operator
+  deleted ten in 36 seconds and read the 429s as "safe pictures and
+  proficiencies wont delete". Now 60, and a 429 says what it is.
+- **A proficiency deleted half of itself** — two scans of one certificate, one
+  side removed, the other promoted to lead so nothing changed on screen.
+- **The good-standing row** — the review sheet was the one caller of
+  `documentStatus` dropping `coversKinds`.
+- **MO000075 failed on "platform"** — the firearm brief *asked* for "the
+  action, the barrel, the capacity, the mass". It now takes what a licence card
+  carries and spends the section on the use.
+- **The Marlin's barrel box** no longer borrows the receiver's serial.
+
+### Still open
+
+1. **The cartridge drawing** — not in the pack at all; CIP dimensions belong in
+   the firearm section; the rendered cartridge wanted as a cover hero with its
+   dimensions and the make/calibre as a subscript. Not started.
+2. **Consent channels** — SMS / Email / send-me-the-link as tick boxes, any
+   combination, plus looking the seller up in our own users and notifying them
+   in-app. Today both phone and email are REQUIRED and both always send.
+
+## 2026-09-09 — What a firearm is FOR, generated per class
 
 Deployed `a81c74cd`, full deploy — it carries migration
 `20260909180000_firearm_use_profile`. All three services online, both health
