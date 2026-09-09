@@ -702,6 +702,33 @@ function isHeading(line: string): boolean {
 }
 
 /**
+ * Is this paragraph a subsection quoted out of the Act?
+ *
+ * MOTIVATION-GUIDE-BOOK Part 7.5: the quoted subsections are set in a lightly
+ * indented block at 10.5 pt, with the applicant's sentence under each element
+ * in normal body type.
+ *
+ * ⚠️ SCOPED TO HEADING 11, WHICH IS WHY THE CALLER TRACKS THE SECTION.
+ * Heading 11 is the only section that may quote the Act at all (rule 5), and a
+ * paragraph anywhere else that happens to open with a bracket — an aside, an
+ * annexure cross-reference — has to stay ordinary body copy.
+ *
+ * ⚠️ AND IT MATCHES THE STATUTE'S OWN NUMBERING, NOT THE WRITER'S. A quote
+ * opens "(4) The Registrar may issue …" or "(a) semi-automatic rifle …",
+ * straight out of the supplied block. The applicant's answer opens "Section
+ * 13(2)(a). I need …" and stays in body type, which is the contrast the whole
+ * treatment exists for.
+ */
+export function isQuotedSubsection(
+  block: string,
+  inStatutorySection: boolean,
+): boolean {
+  return (
+    inStatutorySection && /^\((?:\d{1,2}|[a-z])\)\s/.test(block.trim())
+  );
+}
+
+/**
  * A heading split into the number the book gives it and its title.
  *
  * ⚠️ THE NUMBER IS THE BOOK'S, NOT A RUNNING COUNT, and the difference shows
@@ -1651,6 +1678,8 @@ export class MotivationPdfService {
      * told what to look for. This flag carries the intent from the heading to
      * the next heading.
      */
+    /** True while the body is inside heading 11 — see `isStatute` below. */
+    let inStatutorySection = false;
     let pendingCrime = false;
 
     for (const block of blocks) {
@@ -1720,6 +1749,7 @@ export class MotivationPdfService {
          * headings stopped carrying one.
          */
         renderHeading(block.replace(/:\s*$/, ''));
+        inStatutorySection = /^11\.\s/.test(block.trim());
         if (wantsCartridge) drawCartridge();
         if (wantsBattery) drawBattery();
         pendingCrime = wantsCrime;
@@ -1728,17 +1758,23 @@ export class MotivationPdfService {
         // documents — "(Refer to Annexure B: Proficiency Certificates)" —
         // never justified into the paragraph above it.
         const isRef = /^\(Refer to Annexure/i.test(block);
+        // Part 7.5 — see isQuotedSubsection.
+        const isStatute = isQuotedSubsection(block, inStatutorySection);
         // ⚠️ THE BODY IS SET IN THE SERIF, INDENTED UNDER THE SECTION RULE.
         // The handoff runs a 1 px hairline down the left of every section's
         // body at a 7 mm indent, which is what separates the argument from
         // the furniture. Annexure cross-references are set italic in `deep`,
         // as inline <em> in the reference.
+        // 10.5 pt against an 11 pt body, and a further 6 mm of indent: enough
+        // that a reviewer can see at a glance which words are the Act's and
+        // which are the applicant's, without the quote reading as a footnote.
+        const statuteIndent = isStatute ? K.mm(6) : 0;
         doc
           .font(isRef ? B.bodyItalic : B.body)
-          .fontSize(BODY_SIZE)
-          .fillColor(isRef ? C.deep : C.ink)
-          .text(block, MARGIN + K.SECTION_INDENT, doc.y, {
-            width: contentWidth - K.SECTION_INDENT,
+          .fontSize(isStatute ? BODY_SIZE * (10.5 / 11) : BODY_SIZE)
+          .fillColor(isRef ? C.deep : isStatute ? C.sub : C.ink)
+          .text(block, MARGIN + K.SECTION_INDENT + statuteIndent, doc.y, {
+            width: contentWidth - K.SECTION_INDENT - statuteIndent,
             /**
              * ⚠️ RAGGED RIGHT, NEVER JUSTIFIED. MOTIVATION-GUIDE-BOOK Part
              * 7.1. Justification in pdfkit is word-spacing only — there is no

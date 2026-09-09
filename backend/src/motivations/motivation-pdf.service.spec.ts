@@ -3,7 +3,10 @@ import {
   FORMAT_FEATURES,
   MotivationPdfService,
   asFormat,
-  asScheme, titleCase } from './motivation-pdf.service';
+  asScheme,
+  isQuotedSubsection,
+  titleCase,
+} from './motivation-pdf.service';
 import { WATERMARK_TEXT } from './motivation-pdf-chrome';
 import { buildAnnexures } from './motivation-checklist';
 import { MotivationUploadKind } from '@prisma/client';
@@ -966,5 +969,53 @@ describe('the cartridge drawing', () => {
     const a = await svc.render(makeInput(withCartridgeSection) as never);
     const b = await svc.render(makeInput(withCartridgeSection) as never);
     expect(await pageCount(a.pdf)).toBe(await pageCount(b.pdf));
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE STATUTORY BLOCK — MOTIVATION-GUIDE-BOOK Part 7.5.
+//
+// "The quoted subsections are set in a lightly indented block in the same
+// serif at 10.5 pt, each element on its own line with its number, and the
+// applicant's sentence under each element in normal body type."
+//
+// The type sizes are the renderer's; what is testable, and what actually
+// decides whether the page reads correctly, is WHICH paragraphs get the
+// treatment.
+// ────────────────────────────────────────────────────────────────────
+
+describe('telling the Act’s words from the applicant’s', () => {
+  it('sets a quoted subsection as a quote', () => {
+    for (const quote of [
+      '(1) For purposes of this Act, a restricted firearm is any —',
+      '(4) The Registrar may issue a licence in terms of this section …',
+      '(a) semi-automatic rifle or shotgun, which cannot readily be converted …',
+      '(12) Something with two digits.',
+    ]) {
+      expect(isQuotedSubsection(quote, true)).toBe(true);
+    }
+  });
+
+  it('⚠️ LEAVES THE APPLICANT’S OWN SENTENCE IN BODY TYPE', () => {
+    // This is the contrast the treatment exists for. The writer answers each
+    // quoted element beneath it, and those sentences open with the section
+    // reference rather than with the statute's bracket.
+    for (const answer of [
+      'Section 13(2)(a). I need a firearm for self-defence: the figures above.',
+      'I hold competency certificate 1234567.',
+      '13(1) is met by the firearm applied for.',
+    ]) {
+      expect(isQuotedSubsection(answer, true)).toBe(false);
+    }
+  });
+
+  it('⚠️ NEVER FIRES OUTSIDE HEADING 11', () => {
+    // Heading 11 is the only section that may quote the Act. A paragraph
+    // elsewhere that opens with a bracket — an aside, an annexure
+    // cross-reference — stays ordinary body copy.
+    expect(isQuotedSubsection('(4) The Registrar may issue …', false)).toBe(false);
+    expect(
+      isQuotedSubsection('(Refer to Annexure B: Proficiency Certificates)', false),
+    ).toBe(false);
   });
 });
