@@ -256,7 +256,7 @@ export const UPLOAD_KIND_LABELS: Record<MotivationUploadKind, string> = {
  * motivation-fields.ts and NewsService), we fetch and print them, and the
  * applicant never handles a file for this one at all.
  */
-export type GeneratedAnnexureId = never;
+export type GeneratedAnnexureId = 'SELLER_CONSENT';
 
 /**
  * ⚠️ EMPTY SINCE 2026-09-09, AND KEPT AS A TYPE RATHER THAN DELETED. Both
@@ -266,7 +266,19 @@ export type GeneratedAnnexureId = never;
  * callers still pass an empty array; a future generated annexure — if one is
  * ever right — has somewhere to go without reintroducing the plumbing.
  */
-export const GENERATED_ANNEXURE_LABELS: Record<GeneratedAnnexureId, string> = {};
+export const GENERATED_ANNEXURE_LABELS: Record<GeneratedAnnexureId, string> = {
+  /**
+   * The page the previous owner signs, giving the applicant leave to apply for
+   * a licence over his firearm.
+   *
+   * Operator, 2026-09-10, wrote "Annexure" across it on a rendered pack. It had
+   * been printing as a sheet of its own with a line in the contents, which is
+   * how a document we generate for the APPLICANT is treated — and this one is
+   * not that. It is a third party's signed statement about a firearm, which is
+   * exactly what an annexure is.
+   */
+  SELLER_CONSENT: "The previous owner's consent",
+};
 
 /** Either an uploaded document or one we generate. */
 export type AnnexureKind = MotivationUploadKind | GeneratedAnnexureId;
@@ -404,6 +416,17 @@ const ANNEXURE_ORDER: AnnexureKind[] = [
   'EXECUTOR_APPOINTMENT',
   'PREVIOUS_MOTIVATION',
   'OTHER',
+  /**
+   * ⚠️ LAST, AND THAT IS A PLACEMENT DECISION RATHER THAN AN ORDERING ONE.
+   *
+   * Every other annexure is an uploaded IMAGE, laid out by `planAnnexurePages`
+   * two to a sheet. This one is a page we RENDER, so it cannot be interleaved
+   * into that loop without teaching the planner about something that is not a
+   * picture. Lettering it last and printing it last is the one arrangement
+   * where the index and the pages cannot disagree — and an index a reviewer
+   * cannot follow is worse than an annexure late in the sequence.
+   */
+  'SELLER_CONSENT',
 ] as const;
 
 /**
@@ -485,6 +508,13 @@ export const CERTIFICATION: Record<AnnexureKind, CertificationLevel> = {
   // arrange. The executor's letter of appointment is issued by the Master.
   FIREARM_SOURCE_PROOF: 'none',
   SELLER_LICENCE: 'none',
+  /**
+   * ⚠️ NO COMMISSIONER OF OATHS. It is already signed by the person whose
+   * firearm it is, in front of the applicant, with his own licence reproduced
+   * above the signature. Asking him to swear it as well is a second trip for
+   * somebody who is not even the applicant.
+   */
+  SELLER_CONSENT: 'none',
   EXECUTOR_APPOINTMENT: 'none',
 
   // Photographs.

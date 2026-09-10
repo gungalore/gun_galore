@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { MotivationPdfService } from './motivation-pdf.service';
 import { consentFormFor } from './motivation-consent-statement';
+import { buildAnnexures } from './motivation-checklist';
 
 // ⚠️ THE CONSENT SHEET WAS BUILT BY A FUNCTION NOTHING CALLED. The applicant's
 // screen said it was in their pack; only the licence photographs were. This
@@ -65,13 +66,38 @@ describe('the previous owner’s consent reaches the pack', () => {
     expect(all).toContain('NONE');
   });
 
-  it('names it in the contents', async () => {
+  it('⚠️ IS AN ANNEXURE, AND IS LETTERED AND CAPTIONED AS ONE', async () => {
+    /**
+     * Operator, 2026-09-10, wrote "Annexure" across this page on a rendered
+     * pack. It used to print before the annexure index with a line of its own
+     * in the CONTENTS — the treatment for a page we generate for the
+     * applicant, which this is not. It is a third party's signed statement
+     * about a firearm.
+     *
+     * ⚠️ SO IT IS NO LONGER IN THE CONTENTS. If that assertion comes back
+     * somebody has given it two homes, and a reviewer following the index will
+     * be sent to the wrong sheet.
+     */
+    const annexures = buildAnnexures(['IDENTITY_DOCUMENT'], ['SELLER_CONSENT']);
     const out = await new MotivationPdfService().render({
       ...base,
       sellerConsent: consent,
+      annexures,
     } as never);
-    const contents = pageTexts(out.pdf).find((p) => /CONTENTS/i.test(p)) ?? '';
-    expect(contents).toMatch(/PREVIOUS OWNER/i);
+    const pages = pageTexts(out.pdf);
+
+    const entry = annexures.find((a) => a.kind === 'SELLER_CONSENT')!;
+    expect(entry.label).toMatch(/previous owner/i);
+
+    // Captioned on the page it starts on, like every other annexure.
+    const captioned = pages.some((pg) =>
+      pg.includes('Annexure ' + entry.letter + ' '),
+    );
+    expect(captioned).toBe(true);
+
+    // And gone from the contents.
+    const contents = pages.find((pg) => /CONTENTS/i.test(pg)) ?? '';
+    expect(contents).not.toMatch(/PREVIOUS OWNER/i);
   });
 
   it('costs a pack with no consent nothing at all', async () => {

@@ -3028,16 +3028,15 @@ export class MotivationPdfService {
       });
     }
 
-    // The previous owner's consent, on its own sheet and in the contents.
-    // Same renderer as a witness statement, so it inherits the scale-to-one-A4-
-    // page behaviour the operator asked for ("Everything on one page").
-    if (input.sellerConsent) {
-      const startedOn = renderStatementForm(chrome, input.sellerConsent);
-      toc.push({
-        heading: "THE PREVIOUS OWNER'S CONSENT",
-        page: startedOn,
-      });
-    }
+    /**
+     * ⚠️ THE PREVIOUS OWNER'S CONSENT IS AN ANNEXURE NOW, so it no longer
+     * prints here and takes no line of its own in the contents. Operator,
+     * 2026-09-10, wrote "Annexure" across it on a rendered pack: it is a third
+     * party's signed statement about a firearm, which is what an annexure is,
+     * and it was printing as though it were a page we generate for the
+     * applicant. It is drawn after the annexure images instead — see the note
+     * on 'SELLER_CONSENT' in ANNEXURE_ORDER for why last.
+     */
 
     // ── Annexure index ────────────────────────────────────────────────
     if (input.annexures?.length) {
@@ -3406,6 +3405,45 @@ export class MotivationPdfService {
               .stroke();
           }
         }
+      }
+    }
+
+    /**
+     * ⚠️ THE PREVIOUS OWNER'S CONSENT, LAST OF THE ANNEXURES.
+     *
+     * Operator, 2026-09-10, wrote "Annexure" across it on a rendered pack. It
+     * is a third party's signed statement about a firearm — which is what an
+     * annexure is — and it had been printing before the index as though it
+     * were a page we generate for the applicant.
+     *
+     * ⚠️ DRAWN HERE RATHER THAN INTERLEAVED, because every other annexure is
+     * an uploaded IMAGE laid out two to a sheet by `planAnnexurePages`, and
+     * this is a page we render. Lettering it last (see ANNEXURE_ORDER) and
+     * printing it last is the one arrangement where the index and the pages
+     * cannot disagree.
+     */
+    if (input.sellerConsent) {
+      const entry = input.annexures?.find((a) => a.kind === 'SELLER_CONSENT');
+      const startedOn = renderStatementForm(chrome, input.sellerConsent);
+      if (entry) {
+        /**
+         * The caption goes on AFTER the form, at the page it actually started
+         * on: `renderStatementForm` owns its own page and would otherwise
+         * paint over anything written first.
+         */
+        const range = doc.bufferedPageRange();
+        doc.switchToPage(startedOn - 1 + range.start);
+        doc
+          .font(FONT_BOLD)
+          .fontSize(9.5)
+          .fillColor(BLACK)
+          .text(
+            `Annexure ${entry.letter} ${String.fromCharCode(8212)} ${entry.label}`,
+            MARGIN,
+            K.BODY_TOP - K.mm(6),
+            { width: contentWidth, lineBreak: false },
+          );
+        doc.switchToPage(range.start + range.count - 1);
       }
     }
 

@@ -952,7 +952,16 @@ export class MotivationRenderService {
      * request and the press cuttings are neither, so the first is its own
      * lodged page and the second prints inside the exposure section.
      */
-    const annexures = buildAnnexures(kinds);
+    /**
+     * ⚠️ THE CONSENT TAKES A LETTER, so it has to be known here rather than
+     * discovered later: this same call feeds the index, every "Refer to
+     * Annexure X" the writer is given, and the captions on the pages
+     * themselves. It is built above, so its presence is already settled.
+     */
+    const annexures = buildAnnexures(
+      kinds,
+      sellerConsent ? ['SELLER_CONSENT'] : [],
+    );
     const printable = await this.annexureImages(row.uploads ?? [], annexures);
     const pressClippings = await this.buildPressClippings(pressIncidents);
 

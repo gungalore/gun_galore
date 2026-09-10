@@ -47,6 +47,7 @@ function build(motivation: unknown, precinct: jest.Mock) {
     {} as never, // research — unused by precinctFor()
     {} as never, // firearmUses — unused by precinctFor()
     {} as never, // quarryPlates — unused by precinctFor()
+    {} as never, // prefill — unused by precinctFor()
   );
   return { svc, prisma };
 }

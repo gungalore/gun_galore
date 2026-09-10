@@ -27,6 +27,9 @@ import {
 } from './motivation-research.service';
 import { huntsAtAll, quarriesFor } from './motivation-quarry';
 import { QuarryPlateService } from './quarry-plate.service';
+import { MotivationPrefillService } from './motivation-prefill.service';
+import { credentialOffer } from './motivation-credentials';
+
 import { MotivationModelService } from './motivation-model.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -287,7 +290,46 @@ export class MotivationGenerationService {
     // The quarry photograph for the cartridge page. Drawn here rather than at
     // render time — see the call below.
     private readonly quarryPlates: QuarryPlateService,
+    // The member's vault, for the owned-firearm top-up below.
+    private readonly prefill: MotivationPrefillService,
   ) {}
+
+  /**
+   * Put any licensed firearm the vault knows about onto the form.
+   *
+   * MUTATES `answers` and persists, returning how many values were written.
+   * Fail-soft: a vault that will not open costs the top-up and nothing else.
+   */
+  private async topUpOwnedFirearms(
+    row: { id: string; userId: string; licenceType: MotivationLicenceType },
+    answers: Record<string, string>,
+  ): Promise<number> {
+    try {
+      const vault = await this.prefill.credentialsFor(row.userId, {
+        includeUnconfirmed: true,
+      });
+      if (!vault.length) return 0;
+
+      const offer = credentialOffer(row.licenceType, vault, answers, null);
+      const owned = Object.entries(offer.values).filter(
+        ([k]) => /^existing_firearm_\d+_/.test(k) && !answers[k],
+      );
+      if (!owned.length) return 0;
+
+      for (const [k, v] of owned) answers[k] = v;
+
+      await this.prisma.motivation.update({
+        where: { id: row.id },
+        data: { answersEncrypted: encryptJson(answers) },
+      });
+      return owned.length;
+    } catch (err) {
+      this.logger.warn(
+        `Motivation ${row.id}: owned-firearm top-up skipped — ${(err as Error).message}`,
+      );
+      return 0;
+    }
+  }
 
   /**
    * GENERATE — the whole pipeline.
@@ -359,6 +401,48 @@ export class MotivationGenerationService {
      * nothing.
      */
     const answers = await this.shared.answersFor(row.userId, row.answersEncrypted);
+
+    /**
+     * ⚠️ EVERY LICENSED FIREARM IN THE VAULT GOES ON THE FORM, WITHOUT
+     * BEING ASKED FOR.
+     *
+     * Operator, 2026-09-10, on a pack listing two of his five: "they should be
+     * in the application automatically."
+     *
+     * ⚠️ AND IT IS NOT A CONVENIENCE. Section 15(3) caps an occasional sports
+     * shooter at four firearms and section 13 caps a self-defence applicant at
+     * one, so what a person already holds is a statutory precondition the DFO
+     * checks against the declaration they sign. Three licensed firearms
+     * missing from that list is the kind of wrong nobody notices until a
+     * counter does.
+     *
+     * They were not missing through a bug in the reading — the vault had all
+     * five, read correctly. They were OFFERED and never accepted, because the
+     * offer is applied when an application is CREATED and nothing revisits it.
+     * MO000075 was created before the licence-number fix of 2026-09-09, so at
+     * the time the offer collapsed four cards onto one row; the fix landed and
+     * reached nothing that already existed.
+     *
+     * ⚠️ IT CAN NEVER OVERWRITE AN ANSWER. `credentialOffer` is given the
+     * current answers and skips every key they already carry, so `values` is
+     * by construction only what is NOT on the form. CLAUDE.md's rule: fill it
+     * in, arm it, let them change it.
+     *
+     * ⚠️ OWNED FIREARMS ONLY. The offer can fill competency and association
+     * boxes too; those have their own timing rules (the wrong competency
+     * chosen before the firearm is known was a real fault) and are left to the
+     * paths that already own them.
+     *
+     * ⚠️ BEFORE missingRequired, so a firearm supplied only by the vault
+     * counts towards a complete application rather than blocking it.
+     */
+    const added = await this.topUpOwnedFirearms(row, answers);
+    if (added) {
+      this.logger.log(
+        `Motivation ${row.id}: filled ${added} owned-firearm value(s) from the vault`,
+      );
+    }
+
     const missing = missingRequired(row.licenceType, answers);
     if (missing.length) {
       throw new ConflictException({

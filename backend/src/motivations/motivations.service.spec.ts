@@ -366,6 +366,10 @@ function build(
     // ⚠️ A STUB THAT DRAWS NOTHING. A real one would reach the picture model
     // on every generation; these tests assert on documents, not photographs.
     { makeFor: async () => undefined } as never,
+    // ⚠️ A VAULT WITH NOTHING IN IT. The owned-firearm top-up runs before
+    // every generation; these tests assert on drafts, and an empty vault is
+    // the state every one of them was written against.
+    { credentialsFor: async () => [] } as never,
   );
   const render = new MotivationRenderService(
     prisma as never,
