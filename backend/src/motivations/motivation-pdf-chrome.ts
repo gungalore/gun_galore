@@ -75,7 +75,24 @@ export const SECTION_INDENT = mm(7);
 export const CONTENT_W = PAGE_W - PAD_X * 2;
 /** Where a body page's content starts and must stop. */
 export const BODY_TOP = BANNER_H + PAD_TOP;
-export const BODY_BOTTOM = PAGE_H - FOOTER_H - mm(6);
+/**
+ * Where it must stop.
+ *
+ * ⚠️ 12 mm, NOT 6. Operator, 2026-09-10, wrote "OVERFLOW" across the foot
+ * of two body pages of a rendered pack. Measured, the last line was not
+ * actually inside the footer strip — it was about two millimetres above it,
+ * because 6 mm of clearance is measured to the TOP of the next line box and a
+ * descender on the last line eats most of what is left. Two millimetres reads
+ * as a collision whether or not the glyphs touch, and on a line ending in a
+ * bracket or a comma they very nearly do.
+ *
+ * ⚠️ IT SHORTENS EVERY COLUMN ON EVERY PAGE. The cartridge feature's slots
+ * are computed from this, so raising it takes 6 mm off the text capacity there
+ * — which the measured figures had spare (183 mm against about 145 mm of
+ * article). Anything else that fits the page exactly will paginate one line
+ * earlier, which is the intended effect.
+ */
+export const BODY_BOTTOM = PAGE_H - FOOTER_H - mm(12);
 
 // ── type ────────────────────────────────────────────────────────────
 export const BODY_SIZE = px(14.5);

@@ -385,7 +385,17 @@ const ANNEXURE_ORDER: AnnexureKind[] = [
   'INCIDENT_REPORT',
   // M — where the firearm is coming from, and by what authority.
   'FIREARM_SOURCE_PROOF',
-  'SELLER_LICENCE',
+  /**
+   * ⚠️ THE SELLER'S LICENCE IS NOT AN ANNEXURE, BECAUSE THE CONSENT PAGE
+   * ALREADY CARRIES IT. Operator, 2026-09-10, wrote "Remove" across both
+   * sheets of "Annexure H — The current owner's licence" on a rendered pack:
+   * the consent the previous owner signs prints the front AND the back of that
+   * same card above his signature, so the annexure was the same two images a
+   * second time, four pages into a document somebody reads at a counter.
+   *
+   * ⚠️ THE UPLOAD IS NOT DELETED, ONLY UNLETTERED. It stays in the member's
+   * vault and on the consent page; it simply stops printing twice.
+   */
   // O — everything the applicant chose to add. ⚠️ EXECUTOR_APPOINTMENT is here
   // rather than gone: the estate route is retired and nothing asks for one, but
   // a row filed before it was retired must still letter rather than vanish.

@@ -287,3 +287,28 @@ export function quarryPrompt(species: readonly QuarrySpecies[]): string {
     'watermark, no overlay, no markings of any kind on the animals.',
   ].join(' ');
 }
+
+/**
+ * Does this application put the firearm to hunting at all?
+ *
+ * Operator, 2026-09-10, asked whether the quarry photograph belongs on a
+ * dedicated-SPORT pack: "if its hunting or hunting/sport shooting, yes. both
+ * on section 15 and 16."
+ *
+ * ⚠️ THE USE, NOT THE SECTION. Section 16 splits into a dedicated HUNTER
+ * and a dedicated SPORTS PERSON, and section 15 covers an occasional hunter
+ * OR an occasional sports shooter — so the licence type alone answers this
+ * for neither of them. `firearm_use_kind` is the one question the operator
+ * kept when the discipline questions were retired ("we just need to ask if the
+ * applicant will be using it for hunting or Sport shooting or both, that the
+ * only tick boxes I want to see"), and it is the honest gate.
+ *
+ * ⚠️ AND A SPORT-ONLY PACK GETS NO GAME. Pictures of quarry in an
+ * application that never mentions hunting argue a purpose nobody applied for,
+ * which is the fault CLAUDE.md already names for range words in a self-defence
+ * document.
+ */
+export function huntsAtAll(firearmUseKind: string | undefined): boolean {
+  const v = (firearmUseKind ?? '').trim().toLowerCase();
+  return v === 'hunting' || v === 'both';
+}

@@ -25,7 +25,7 @@ import {
   sectionOf,
   type ResearchPack,
 } from './motivation-research.service';
-import { quarriesFor } from './motivation-quarry';
+import { huntsAtAll, quarriesFor } from './motivation-quarry';
 import { QuarryPlateService } from './quarry-plate.service';
 import { MotivationModelService } from './motivation-model.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
@@ -772,7 +772,7 @@ export class MotivationGenerationService {
       //
       // ⚠️ AND THE SPECIES COME OUT OF THE RESEARCH THE DOCUMENT ITSELF
       // PRINTS, so the picture and the page can never name different animals.
-      if (research && (answers.hunt_game_class ?? '').trim()) {
+      if (research && huntsAtAll(answers.firearm_use_kind)) {
         const calibreText = sectionOf(research, BLOCK_LABELS.calibre) ?? '';
         const species = quarriesFor({
           cartridgeText: calibreText,

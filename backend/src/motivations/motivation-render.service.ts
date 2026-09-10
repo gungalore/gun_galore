@@ -23,7 +23,11 @@ import { tryDecryptText } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
 import { QuarryPlateService } from './quarry-plate.service';
-import { quarryCaption, quarryFromKey } from './motivation-quarry';
+import {
+  huntsAtAll,
+  quarryCaption,
+  quarryFromKey,
+} from './motivation-quarry';
 import { asLayout } from './motivation-pdf-layouts';
 import { consentFormFor } from './motivation-consent-statement';
 import {
@@ -1379,15 +1383,12 @@ export class MotivationRenderService {
     { png: Buffer; widthMm: number; heightMm: number; caption: string } | undefined
   > {
     /**
-     * ⚠️ GATED ON THE APPLICANT HAVING SAID THEY HUNT, NOT ON THE CARTRIDGE.
-     * A 6,5 Creedmoor suits impala whether or not this applicant has ever
-     * hunted one, and MO000075 is a DEDICATED SPORT application. Game in it
-     * would argue a purpose nobody applied for — the same fault CLAUDE.md
-     * already names for putting range or farm words in a self-defence
-     * document, and section 16 splits hunter from sports person precisely
-     * because they are different licences.
+     * ⚠️ GATED ON THE STATED USE, NOT ON THE SECTION AND NOT ON THE
+     * CARTRIDGE. A 6,5 Creedmoor suits impala whether or not this applicant
+     * has ever hunted one. Operator, 2026-09-10: "if its hunting or
+     * hunting/sport shooting, yes. both on section 15 and 16."
      */
-    if (!(answers.hunt_game_class ?? '').trim()) return undefined;
+    if (!huntsAtAll(answers.firearm_use_kind)) return undefined;
 
     const plate = await this.quarry.storedFor(motivationId).catch(() => undefined);
     if (!plate) return undefined;

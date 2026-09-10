@@ -987,3 +987,26 @@ describe('what the route and the section add to the sheet', () => {
     expect(keys).toContain('proficiency_copy');
   });
 });
+
+describe('⚠️ WHAT IS DELIBERATELY NOT AN ANNEXURE', () => {
+  it('⚠️ A SELLER LICENCE NEVER TAKES A LETTER', () => {
+    /**
+     * Operator, 2026-09-10, wrote "Remove" across both sheets of "Annexure H
+     * — The current owner's licence" on a rendered pack. The consent the
+     * previous owner signs already prints the front AND the back of that same
+     * card above his signature, so the annexure was the same two images a
+     * second time, four pages into a document read at a counter.
+     *
+     * The upload is not deleted, only unlettered: it stays in the vault and on
+     * the consent page. If this goes red somebody has put it back.
+     */
+    const a = buildAnnexures([
+      'IDENTITY_DOCUMENT',
+      'SELLER_LICENCE',
+      'SELLER_LICENCE',
+    ] as never);
+    expect(a.map((x) => x.kind)).not.toContain('SELLER_LICENCE');
+    // And the letters it would have taken are not left as a gap.
+    expect(a.map((x) => x.letter)).toEqual(['A']);
+  });
+});

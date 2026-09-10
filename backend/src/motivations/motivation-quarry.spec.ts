@@ -1,4 +1,5 @@
 import {
+  huntsAtAll,
   MAX_IN_PLATE,
   QUARRY,
   quarriesFor,
@@ -197,5 +198,36 @@ describe('the registry and the brief', () => {
     // about the ram.
     expect(quarryPrompt([quarryByKey('impala')!])).toContain('ram');
     expect(quarryPrompt([quarryByKey('kudu')!])).toContain('bull');
+  });
+});
+
+describe('who gets a quarry photograph at all', () => {
+  /**
+   * Operator, 2026-09-10, asked whether it belongs on a dedicated-SPORT pack:
+   * "if its hunting or hunting/sport shooting, yes. both on section 15 and 16."
+   */
+  it('a hunter, and somebody who does both', () => {
+    expect(huntsAtAll('hunting')).toBe(true);
+    expect(huntsAtAll('both')).toBe(true);
+  });
+
+  it('⚠️ NEVER A SPORT-ONLY APPLICATION', () => {
+    // Game in a document that never mentions hunting argues a purpose nobody
+    // applied for. MO000075 is exactly this case: dedicated sport, section 16.
+    expect(huntsAtAll('sport')).toBe(false);
+  });
+
+  it('⚠️ AND NEVER ON A MISSING OR UNKNOWN ANSWER', () => {
+    // Absent stays absent. A pack whose use was never recorded gets no
+    // picture rather than a guessed one.
+    expect(huntsAtAll(undefined)).toBe(false);
+    expect(huntsAtAll('')).toBe(false);
+    expect(huntsAtAll('   ')).toBe(false);
+    expect(huntsAtAll('self_defence')).toBe(false);
+  });
+
+  it('reads the answer however it is cased', () => {
+    expect(huntsAtAll('Hunting')).toBe(true);
+    expect(huntsAtAll(' BOTH ')).toBe(true);
   });
 });
