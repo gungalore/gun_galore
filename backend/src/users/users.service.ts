@@ -286,7 +286,7 @@ export class UsersService {
    * this platform shows other members, so "Gerhard" and "gerhard" being two
    * accounts is not an untidiness — it is impersonation one rename away.
    *
-   * This check used to be Clerk's. It is ours now, which also means every
+   * This check used to be the identity provider's. It is ours now, which also means every
    * write to `username` must write `usernameLower` in the same statement or
    * the unique index silently stops matching what is displayed.
    */
@@ -308,7 +308,7 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { id: userId } });
   }
 
-  // Record sign-up consent (POPIA accountability) for the current Clerk user.
+  // Record sign-up consent (POPIA accountability) for the current identity-provider user.
   // Timestamps are set-once — a repeat call never moves the original consent
   // moment. Age affirmation + Terms + Privacy are captured together at sign-up;
   // marketing is a separate, explicit opt-in (only stamped when true, and
@@ -390,9 +390,9 @@ export class UsersService {
    * obvious guess.
    *
    *   1. OUR DATABASE FIRST, in one transaction. Until accountClosedAt is
-   *      committed, the Clerk webhook has no way to know this was a closure —
+   *      committed, the identity-provider webhook has no way to know this was a closure —
    *      and its old default was to hard-delete the row, taking the complaints
-   *      register with it. Deleting the Clerk user first would race exactly
+   *      register with it. Deleting the identity-provider user first would race exactly
    *      that.
    *   2. CLERK SECOND. The webhook fires, sees accountClosedAt, does nothing
    *      but tombstone the userId.
@@ -446,9 +446,9 @@ export class UsersService {
   }
 
   async deleteById(userId: string): Promise<void> {
-    // H3 — Clerk user.deleted webhook handler. Hard delete fails for
+    // H3 — identity-provider user.deleted webhook handler. Hard delete fails for
     // any user with transactions/ratings/offers (FK RESTRICT in the
-    // financial models), which would 500 the webhook and make Clerk
+    // financial models), which would 500 the webhook and make the identity provider
     // retry forever AND leave the seller's PII on file indefinitely.
     //
     // This minimal interim fix wraps the delete in try/catch so the
@@ -470,7 +470,7 @@ export class UsersService {
     // home address and account of their own security circumstances exactly
     // where they were.
     //
-    // Never throws — this is a webhook, and an exception makes Clerk retry
+    // Never throws — this is a webhook, and an exception makes the identity provider retry
     // forever while the account stays undeleted.
     const target = await this.prisma.user.findFirst({
       where: { id: userId },
@@ -479,13 +479,13 @@ export class UsersService {
     if (target) {
       // Guarded HERE as well as inside purgeForUser. That method swallows its
       // own failures, but a webhook must not depend on a promise another module
-      // makes — if it ever stops keeping it, Clerk retries forever and the
+      // makes — if it ever stops keeping it, the identity provider retries forever and the
       // account is never deleted at all.
       try {
         const purged = await this.motivationRetention.purgeForUser(target.id);
         if (purged.motivations > 0) {
           this.logger.log(
-            `Erasure for clerk user ${userId}: removed ${purged.motivations} motivation(s) and ${purged.filesRemoved} encrypted document(s)` +
+            `Erasure for user ${userId}: removed ${purged.motivations} motivation(s) and ${purged.filesRemoved} encrypted document(s)` +
               (purged.filesFailed > 0
                 ? `; ${purged.filesFailed} file(s) FAILED to delete and need removing by hand`
                 : ''),
@@ -493,7 +493,7 @@ export class UsersService {
         }
       } catch (err) {
         this.logger.error(
-          `Erasure for clerk user ${userId}: motivation purge threw, continuing with account deletion: ${(err as Error).message}`,
+          `Erasure for user ${userId}: motivation purge threw, continuing with account deletion: ${(err as Error).message}`,
         );
       }
 
@@ -506,7 +506,7 @@ export class UsersService {
         const lc = await this.licenceCentreRetention.purgeForUser(target.id);
         if (lc.credentials > 0) {
           this.logger.log(
-            `Erasure for clerk user ${userId}: removed ${lc.credentials} Licence Centre document(s), ${lc.filesRemoved} file(s)` +
+            `Erasure for user ${userId}: removed ${lc.credentials} Licence Centre document(s), ${lc.filesRemoved} file(s)` +
               (lc.filesFailed > 0
                 ? `; ${lc.filesFailed} file(s) FAILED to delete and need removing by hand`
                 : ''),
@@ -514,7 +514,7 @@ export class UsersService {
         }
       } catch (err) {
         this.logger.error(
-          `Erasure for clerk user ${userId}: licence-centre purge threw, continuing with account deletion: ${(err as Error).message}`,
+          `Erasure for user ${userId}: licence-centre purge threw, continuing with account deletion: ${(err as Error).message}`,
         );
       }
 
@@ -524,7 +524,7 @@ export class UsersService {
         const k = await this.kyc.purgeKycFiles(target.id);
         if (k.removed > 0 || k.failed > 0) {
           this.logger.log(
-            `Erasure for clerk user ${userId}: removed ${k.removed} KYC file(s)` +
+            `Erasure for user ${userId}: removed ${k.removed} KYC file(s)` +
               (k.failed > 0
                 ? `; ${k.failed} FAILED to delete and need removing by hand`
                 : ''),
@@ -532,20 +532,20 @@ export class UsersService {
         }
       } catch (err) {
         this.logger.error(
-          `Erasure for clerk user ${userId}: KYC file purge threw, continuing with account deletion: ${(err as Error).message}`,
+          `Erasure for user ${userId}: KYC file purge threw, continuing with account deletion: ${(err as Error).message}`,
         );
       }
     }
 
     // ⚠️ AN ALREADY-CLOSED ACCOUNT IS DONE. Its identity has been snapshotted
     // onto an AccountClosure row, its uniqueness claims released and its
-    // documents purged — and the closure flow deletes the Clerk user itself,
+    // documents purged — and the closure flow deletes the identity-provider user itself,
     // so this webhook is the ECHO of that deletion, not a new instruction.
     // Running the scrub again would null columns the closure deliberately held
     // (the SAP 534 identity) and log a second erasure that never happened.
     if (target?.accountClosedAt) {
       this.logger.log(
-        `Clerk user ${userId} deleted — account already closed at ${target.accountClosedAt.toISOString()}, nothing to do`,
+        `identity-provider user ${userId} deleted — account already closed at ${target.accountClosedAt.toISOString()}, nothing to do`,
       );
       // Tombstone the userId so /sellers/:userId 404s for free and a future
       // sign-up cannot collide with it.
@@ -683,7 +683,7 @@ export class UsersService {
       });
 
       this.logger.log(
-        `Erasure for clerk user ${userId}: row preserved and scrubbed` +
+        `Erasure for user ${userId}: row preserved and scrubbed` +
           (firearmHold > 0
             ? `; identity HELD — ${firearmHold} firearm transaction(s) need Section C of the SAP 534`
             : '') +
@@ -702,11 +702,11 @@ export class UsersService {
   // PATCH /users/me body. Only the fields in ProfileUpdate are accepted;
   // every other column on User is off-limits via this endpoint.
   //
-  // Username changes are mirrored to Clerk so the seller's identity
-  // profile stays in sync. We push to Clerk BEFORE writing to our DB —
-  // if Clerk rejects (username taken globally, invalid format, etc.) the
+  // Username changes are mirrored to the identity provider so the seller's identity
+  // profile stays in sync. We push to the identity provider BEFORE writing to our DB —
+  // if the identity provider rejects (username taken globally, invalid format, etc.) the
   // seller gets a single error and our DB stays consistent. Address /
-  // name fields are NOT pushed because Clerk doesn't own them (KYC does).
+  // name fields are NOT pushed because the identity provider doesn't own them (KYC does).
   // Submitted by the post-first-publish profile modal. One shot —
   // all fields required, Peach AVS validates the bank quartet, SA ID
   // is encrypted at rest (purged after the KYC selfie passes), and
@@ -1161,7 +1161,7 @@ export class UsersService {
    * token for a deleted account gets a clean 404 rather than a foreign-key
    * error further down.
    *
-   * This used to translate a Clerk subject into a User.id. There is only one
+   * This used to translate an identity provider subject into a User.id. There is only one
    * identifier now, so the translation is gone and the existence check is all
    * that remains — which is why it returns nothing and callers no longer
    * rebind the id.

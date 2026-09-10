@@ -10,7 +10,7 @@ import { AccountClosureService } from './account-closure.service';
 
 const CLEAN = {
   id: 'u1',
-  userId: 'clerk_1',
+  userId: 'user_1',
   username: 'turbosnail',
   email: 'a@b.com',
   phone: '0743039999',

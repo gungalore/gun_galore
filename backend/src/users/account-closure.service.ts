@@ -21,7 +21,7 @@ import { PrismaService } from '../prisma/prisma.service';
 //   C. they can register again afterwards, with the same identity
 //
 // ⚠️ THIS IS NOT A POPIA ERASURE BUTTON, and conflating the two is what made
-// the old Clerk webhook destroy a complaints register. An erasure request is a
+// the old identity-provider webhook destroy a complaints register. An erasure request is a
 // separate, support-reviewed path; the confirmation copy says so plainly.
 //
 // ⚠️ WHY C IS HARD. Four uniqueness claims sit on User — username, email,
@@ -315,10 +315,10 @@ export class AccountClosureService {
   /**
    * Close an account.
    *
-   * ⚠️ THIS DOES OUR DATABASE AND NOTHING ELSE. The Clerk deletion and the
+   * ⚠️ THIS DOES OUR DATABASE AND NOTHING ELSE. The the identity provider deletion and the
    * listing re-index happen AFTER, in the caller, and both are deliberately
    * outside the transaction — a Meilisearch hiccup must not roll back a
-   * closure, and a Clerk outage must not either. See ACCOUNT-CLOSURE.md §4 for
+   * closure, and an identity provider outage must not either. See ACCOUNT-CLOSURE.md §4 for
    * what each failure costs.
    *
    * Returns the cancelled listing ids so the caller can re-index them.
@@ -341,7 +341,7 @@ export class AccountClosureService {
     },
   ): Promise<{ userId: string; cancelledListingIds: string[] }> {
     // ⚠️ ALREADY CLOSED IS A NO-OP, AND IT IS CHECKED BEFORE THE BLOCKERS.
-    // The Clerk webhook can arrive twice and a member can double-submit; a
+    // The identity-provider webhook can arrive twice and a member can double-submit; a
     // repeat must return quietly, not throw ALREADY_CLOSED at somebody whose
     // account is in exactly the state they asked for. Checking it after the
     // blocker set would also mean a closed account with an old open offer

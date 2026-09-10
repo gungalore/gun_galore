@@ -88,7 +88,7 @@ describe('TransactionsService.cancelByBuyer', () => {
     const { service, prisma, notifications, refundPayment } = makeService({
       tx: { ...baseTx },
     });
-    await service.cancelByBuyer('TX1', 'clerk_B', 'Changed my mind');
+    await service.cancelByBuyer('TX1', 'user_B', 'Changed my mind');
 
     expect(refundPayment).toHaveBeenCalledWith('pay_1', 100_000);
     const claim = prisma.transaction.updateMany.mock.calls[0][0];
@@ -103,7 +103,7 @@ describe('TransactionsService.cancelByBuyer', () => {
   it('rejects a non-owner', async () => {
     const { service } = makeService({ tx: { ...baseTx }, buyer: { id: 'OTHER' } });
     await expect(
-      service.cancelByBuyer('TX1', 'clerk_X', 'mine'),
+      service.cancelByBuyer('TX1', 'user_X', 'mine'),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -112,7 +112,7 @@ describe('TransactionsService.cancelByBuyer', () => {
       tx: { ...baseTx, shippingMethod: 'PRIVATE_ARRANGE' },
     });
     await expect(
-      service.cancelByBuyer('TX1', 'clerk_B', 'Changed my mind'),
+      service.cancelByBuyer('TX1', 'user_B', 'Changed my mind'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(refundPayment).not.toHaveBeenCalled();
   });
@@ -122,7 +122,7 @@ describe('TransactionsService.cancelByBuyer', () => {
       tx: { ...baseTx, dispatchedAt: new Date() },
     });
     await expect(
-      service.cancelByBuyer('TX1', 'clerk_B', 'Changed my mind'),
+      service.cancelByBuyer('TX1', 'user_B', 'Changed my mind'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(refundPayment).not.toHaveBeenCalled();
   });
@@ -131,7 +131,7 @@ describe('TransactionsService.cancelByBuyer', () => {
     const { service, refundPayment } = makeService({
       tx: { ...baseTx, cancelledByBuyerAt: new Date() },
     });
-    await service.cancelByBuyer('TX1', 'clerk_B', 'Changed my mind');
+    await service.cancelByBuyer('TX1', 'user_B', 'Changed my mind');
     expect(refundPayment).not.toHaveBeenCalled();
   });
 
@@ -141,7 +141,7 @@ describe('TransactionsService.cancelByBuyer', () => {
       refundSuccess: false,
     });
     await expect(
-      service.cancelByBuyer('TX1', 'clerk_B', 'Changed my mind'),
+      service.cancelByBuyer('TX1', 'user_B', 'Changed my mind'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.transaction.update).toHaveBeenCalledWith(
       expect.objectContaining({

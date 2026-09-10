@@ -136,8 +136,8 @@ export class MotivationRetentionService {
    *
    * So this deletes both, files first, and is called BEFORE either branch runs.
    *
-   * MUST NOT THROW. The caller is a Clerk webhook: an exception there makes
-   * Clerk retry forever and leaves the account undeleted. A failure is logged
+   * MUST NOT THROW. The caller is a identity-provider webhook: an exception there makes
+   * the identity provider retry forever and leaves the account undeleted. A failure is logged
    * loudly and swallowed, and what could not be removed is returned so the
    * caller can say so.
    */

@@ -11,9 +11,10 @@ import {
 /**
  * Password floor.
  *
- * Twelve, not the fifteen the Clerk-hosted form demanded. Fifteen was the
- * Clerk instance's setting, not a decision anyone here made, and a floor that
- * high pushes people onto a sticky note or a reused password. NIST's guidance
+ * Twelve, not the fifteen the old hosted form demanded. Fifteen was the
+ * identity provider's own instance setting, not a decision anyone here made,
+ * and a floor that high pushes people onto a sticky note or a reused
+ * password. NIST's guidance
  * is length over composition rules, so there is deliberately no "must contain
  * a symbol" regex to go with it.
  */
@@ -49,7 +50,7 @@ export class RegisterDto {
   @MaxLength(20)
   phone?: string;
 
-  // Sign-up consent (POPIA accountability). These used to ride in Clerk's
+  // Sign-up consent (POPIA accountability). These used to ride in the identity provider's
   // unsafeMetadata and reach us through a webhook, which meant the consent and
   // the account could exist apart. They are part of the request now.
   @IsOptional() @IsBoolean() terms?: boolean;

@@ -24,7 +24,7 @@ export class UpdateUserDto {
 
   // ── Profile fields (support edits — "help a member fix their profile").
   // Every change is audited per-field. Email is deliberately NOT here:
-  // it is Clerk-owned (login identity) and must be changed by the member
+  // it is the identity provider-owned (login identity) and must be changed by the member
   // through account settings, never by an admin.
   @IsOptional()
   @IsString()

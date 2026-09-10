@@ -1249,7 +1249,7 @@ export class AdminHealthController {
 // box, or UptimeRobot/healthchecks.io — which also covers whole-VPS death
 // the in-process watchdog can't see). Deliberately OUTSIDE the AdminJwt
 // controller so a headless monitor can hit it with a shared secret instead
-// of a Clerk-minted admin JWT. Returns 200 when every monitored cron is
+// of a provider-minted admin JWT. Returns 200 when every monitored cron is
 // fresh, 503 with the stale keys otherwise, so the monitor alerts on non-200.
 // ---------------------------------------------------------------
 @Controller('health')

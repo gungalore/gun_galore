@@ -185,7 +185,7 @@ export class ContactDetailFilterService {
    * @param origin Free-form tag for log lines — e.g. "offer-note",
    *               "counter-note", "rating-comment". Used only for
    *               operator triage; not exposed to the user.
-   * @param userId Optional Clerk ID of the user who submitted the
+   * @param userId Optional the identity provider ID of the user who submitted the
    *               text. When provided, blocks are persisted into the
    *               ContactDetailRejection table for the T&S queue +
    *               command-center fee-bypass card. Callers from

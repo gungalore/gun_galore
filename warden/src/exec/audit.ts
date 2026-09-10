@@ -115,7 +115,7 @@ const WHOLE_MATCH_NETS: ReadonlyArray<readonly [RegExp, string]> = [
   // boundary would let exactly that case through.
   [/sk-ant-[A-Za-z0-9_-]{10,}/g, 'anthropic-api-key-shape'],
   [/\bBearer\s+[A-Za-z0-9._~+/-]{16,}=*/g, 'bearer-token'],
-  // A signed JWT — an admin token or a Clerk session lands in an error body
+  // A signed JWT — an admin token or a member session lands in an error body
   // looking exactly like this.
   [/\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}/g, 'jwt-shape'],
   // `PGPASSWORD=…`, `RESEND_API_KEY=…` echoed by a script's `set -x` or an env

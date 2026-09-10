@@ -620,7 +620,7 @@ export class MotivationDocumentsService {
 
     // ⚠️ THE APPLICATION IS OPENED ONCE FOR THE WHOLE RUN. M17. This used to
     // call addFromLibrary per document, and every one of those calls resolved
-    // the Clerk subject again and re-read the motivation again — two round
+    // the provider subject again and re-read the motivation again — two round
     // trips per document to learn two things that cannot change inside a run.
     const openRow = await this.openForAttach(user.id, row.id);
 
@@ -1187,7 +1187,7 @@ export class MotivationDocumentsService {
    * The application, opened once for a run of attachments.
    *
    * ⚠️ HOISTED SO A BATCH DOES NOT RE-ASK. M17. The auto-link loop called
-   * addFromLibrary per document, and every call re-resolved the Clerk subject,
+   * addFromLibrary per document, and every call re-resolved the provider subject,
    * re-read the motivation and re-counted its uploads — three round trips per
    * document to learn three things that cannot change inside one run.
    */

@@ -13,7 +13,7 @@ export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
 export class CreateAdminDto {
   // The target user's email — must already exist in our User table
-  // (i.e. they've signed up via Clerk). The service refuses unknown
+  // (i.e. they've signed up). The service refuses unknown
   // emails so we never create orphan admins.
   @IsEmail()
   email!: string;

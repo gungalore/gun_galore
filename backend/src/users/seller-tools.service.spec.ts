@@ -33,7 +33,7 @@ describe('SellerToolsService.payoutStatement', () => {
       releasedRow({ id: 'TX2', sellerPayout: 50_000, listingPrice: 60_000, commissionZar: 5_000, processingFee: 2_000, shippingCost: 0, buyerTotal: 67_000 }),
       releasedRow({ id: 'TX3', paymentStatus: 'REFUNDED', sellerPayout: 99_999 }),
     ]);
-    const out = await service.payoutStatement('clerk_s');
+    const out = await service.payoutStatement('user_s');
     expect(out.summary.orderCount).toBe(2); // refunded excluded
     expect(out.summary.netPayout).toBe(139_000); // 89k + 50k, NOT the refunded 99,999
     expect(out.summary.grossSales).toBe(160_000);
@@ -43,17 +43,17 @@ describe('SellerToolsService.payoutStatement', () => {
 
   it('defaults to a 90-day window and rejects from>to', async () => {
     const { service, prisma } = makeService([]);
-    await service.payoutStatement('clerk_s');
+    await service.payoutStatement('user_s');
     const where = prisma.transaction.findMany.mock.calls[0][0].where;
     expect(where.sellerId).toBe('S1');
     await expect(
-      service.payoutStatement('clerk_s', '2026-06-30', '2026-06-01'),
+      service.payoutStatement('user_s', '2026-06-30', '2026-06-01'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('builds a CSV with a header row, order rows, and a TOTAL line; escapes commas', async () => {
     const { service } = makeService([releasedRow()]);
-    const csv = await service.payoutStatementCsv('clerk_s');
+    const csv = await service.payoutStatementCsv('user_s');
     const lines = csv.trim().split('\n');
     expect(lines[0]).toContain('Reference,Date,Item');
     // Title contains a comma → must be quoted

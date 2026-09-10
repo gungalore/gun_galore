@@ -104,13 +104,13 @@ const file = { buffer: Buffer.from('bytes'), mimetype: 'image/jpeg' };
 describe('a retired kind sent by a stale client', () => {
   it.each(FORWARD)('files %s as %s', async (retired, current) => {
     const { svc, create } = build();
-    await svc.create('clerk_1', retired, '', file);
+    await svc.create('user_1', retired, '', file);
     expect(create.mock.calls[0][0].data.kind).toBe(current);
   });
 
   it('spends no vision call on a safe photograph filed under an old name', async () => {
     const { svc, extract } = build();
-    await svc.create('clerk_1', 'SAFE_PHOTO_BOLTS', '', file);
+    await svc.create('user_1', 'SAFE_PHOTO_BOLTS', '', file);
     expect(extract.read).not.toHaveBeenCalled();
   });
 
@@ -118,7 +118,7 @@ describe('a retired kind sent by a stale client', () => {
     // Worse than the upload, if anything: this lands on a row the member has
     // already been shown as correctly filed.
     const { svc, update } = build();
-    await svc.confirmExpiry('clerk_1', 'c1', {
+    await svc.confirmExpiry('user_1', 'c1', {
       expiresOn: '',
       neverExpires: true,
       kind: 'SAFE_PHOTO_AJAR',

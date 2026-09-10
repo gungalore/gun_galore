@@ -91,7 +91,7 @@ describe('a phone scan that has landed', () => {
         createdAt: ago(1),
       },
     ]);
-    const res = await controller.status('clerk_1', 'h1');
+    const res = await controller.status('user_1', 'h1');
     expect(res.added).toBe(1);
     expect(res.state).toBe('uploaded');
   });
@@ -105,7 +105,7 @@ describe('a phone scan that has landed', () => {
         createdAt: ago(1),
       })),
     );
-    const res = await controller.status('clerk_1', 'h1');
+    const res = await controller.status('user_1', 'h1');
     expect(res.added).toBe(NO_VISION_KINDS.length);
   });
 
@@ -121,7 +121,7 @@ describe('a phone scan that has landed', () => {
         createdAt: ago(1),
       },
     ]);
-    const res = await controller.status('clerk_1', 'h1');
+    const res = await controller.status('user_1', 'h1');
     expect(res.added).toBe(0);
     expect(res.state).toBe('waiting');
   });
@@ -134,7 +134,7 @@ describe('a phone scan that has landed', () => {
         createdAt: ago(60),
       },
     ]);
-    expect((await controller.status('clerk_1', 'h1')).added).toBe(1);
+    expect((await controller.status('user_1', 'h1')).added).toBe(1);
   });
 
   it('counts a document whose read succeeded', async () => {
@@ -145,7 +145,7 @@ describe('a phone scan that has landed', () => {
         createdAt: ago(1),
       },
     ]);
-    expect((await controller.status('clerk_1', 'h1')).added).toBe(1);
+    expect((await controller.status('user_1', 'h1')).added).toBe(1);
   });
 
   it('ignores anything filed before the link was made', async () => {
@@ -156,7 +156,7 @@ describe('a phone scan that has landed', () => {
         createdAt: new Date(MINTED.getTime() - 1000),
       },
     ]);
-    expect((await controller.status('clerk_1', 'h1')).added).toBe(0);
+    expect((await controller.status('user_1', 'h1')).added).toBe(0);
   });
 
   it('treats a safe photograph on a motivation the same way', async () => {
@@ -169,7 +169,7 @@ describe('a phone scan that has landed', () => {
         createdAt: ago(1),
       },
     ]);
-    expect((await controller.status('clerk_1', 'h1')).added).toBe(1);
+    expect((await controller.status('user_1', 'h1')).added).toBe(1);
   });
 });
 
@@ -182,7 +182,7 @@ describe('an ID document handed off to the phone', () => {
 
   it('waits while the phone has sent nothing', async () => {
     const { controller, count } = makeController('kyc', []);
-    const res = await controller.status('clerk_1', 'h1');
+    const res = await controller.status('user_1', 'h1');
     expect(res.added).toBe(0);
     expect(res.state).toBe('waiting');
     // No row query at all — there is no row to ask about.
@@ -193,7 +193,7 @@ describe('an ID document handed off to the phone', () => {
     const { controller } = makeController('kyc', [], {
       uploadedAt: new Date().toISOString(),
     });
-    const res = await controller.status('clerk_1', 'h1');
+    const res = await controller.status('user_1', 'h1');
     expect(res.added).toBe(1);
     expect(res.state).toBe('uploaded');
   });
@@ -205,7 +205,7 @@ describe('an ID document handed off to the phone', () => {
     const { controller } = makeController('kyc', [], {
       openedAt: new Date().toISOString(),
     });
-    const res = await controller.status('clerk_1', 'h1');
+    const res = await controller.status('user_1', 'h1');
     expect(res.added).toBe(0);
     expect(res.state).toBe('connected');
   });
@@ -222,7 +222,7 @@ describe('an ID document handed off to the phone', () => {
         createdAt: ago(1),
       },
     ]);
-    expect((await controller.status('clerk_1', 'h1')).added).toBe(0);
+    expect((await controller.status('user_1', 'h1')).added).toBe(0);
   });
 });
 
@@ -268,7 +268,7 @@ describe('the end of a scanning session', () => {
         createdAt: ago(1),
       },
     ])
-      .controller.status('clerk_1', 'h1')
+      .controller.status('user_1', 'h1')
       .then((res) => {
         expect(res.added).toBe(1);
         expect(res.finished).toBe(false);
@@ -288,7 +288,7 @@ describe('the end of a scanning session', () => {
       {},
       new Date(),
     );
-    const res = await controller.status('clerk_1', 'h1');
+    const res = await controller.status('user_1', 'h1');
     expect(res.finished).toBe(true);
     expect(res.pending).toBe(0);
   });
@@ -311,7 +311,7 @@ describe('the end of a scanning session', () => {
         createdAt: ago(2),
       },
     ]);
-    const res = await controller.status('clerk_1', 'h1');
+    const res = await controller.status('user_1', 'h1');
     expect(res.added).toBe(1);
     expect(res.pending).toBe(1);
   });

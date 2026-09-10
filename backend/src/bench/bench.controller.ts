@@ -36,7 +36,7 @@ const NoStore = () => Header('Cache-Control', 'private, no-store');
  * 🚨 EVERY ROUTE TAKES AuthGuard, READS INCLUDED. The reads were on
  * OptionalAuthGuard so a guest could try the finder from a bench passed in
  * the query string — but the guest bench is deferred (SPEC-BUILD §10), the
- * `/bench` PAGE is behind Clerk, and nothing in the client has ever sent a
+ * `/bench` PAGE is behind the identity provider, and nothing in the client has ever sent a
  * guest shelf. What that left was the whole consolidated catalogue readable by
  * anybody who could type a URL: every cartridge, every powder, every bullet
  * weight, and 28 000 charge ranges derived from reloading manuals. CLAUDE.md's

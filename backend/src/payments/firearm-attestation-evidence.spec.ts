@@ -98,7 +98,7 @@ function makeService(listing: Record<string, unknown>) {
       service as unknown as {
         reserveAndCreateLine: (c: string, d: CreateTransactionDto) => Promise<unknown>;
       }
-    ).reserveAndCreateLine('clerk_b', dto);
+    ).reserveAndCreateLine('user_b', dto);
 
   return { service, prisma, reserve, created };
 }

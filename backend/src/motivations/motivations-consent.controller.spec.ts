@@ -28,7 +28,7 @@ function make() {
 describe('POST :id/seller-consent', () => {
   it('⚠️ FORWARDS THE SELLER EMAIL, which is what the service refuses without', async () => {
     const { invite, controller } = make();
-    await controller.invite('clerk_1', 'mo-1', req, {
+    await controller.invite('user_1', 'mo-1', req, {
       name: 'Pieter Botha',
       phone: '0821234567',
       email: 'pieter@example.co.za',
@@ -42,7 +42,7 @@ describe('POST :id/seller-consent', () => {
 
   it('forwards the name, the number and the firearm with it', async () => {
     const { invite, controller } = make();
-    await controller.invite('clerk_1', 'mo-1', req, {
+    await controller.invite('user_1', 'mo-1', req, {
       name: 'Pieter Botha',
       phone: '0821234567',
       email: 'pieter@example.co.za',
@@ -52,7 +52,7 @@ describe('POST :id/seller-consent', () => {
     expect(invite).toHaveBeenCalledWith(
       expect.objectContaining({
         motivationId: 'mo-1',
-        applicantId: 'clerk_1',
+        applicantId: 'user_1',
         applicantName: 'Johan Pretorius',
         name: 'Pieter Botha',
         phone: '0821234567',
@@ -64,7 +64,7 @@ describe('POST :id/seller-consent', () => {
   it('passes an absent email through as empty rather than undefined', async () => {
     // The service's own check turns that into a sentence the member can read.
     const { invite, controller } = make();
-    await controller.invite('clerk_1', 'mo-1', req, {
+    await controller.invite('user_1', 'mo-1', req, {
       name: 'Pieter Botha',
       phone: '0821234567',
       firearm: { make: 'CZ' } as never,
@@ -77,7 +77,7 @@ describe('POST :id/seller-consent', () => {
   it('refuses before calling the service when the firearm is missing', async () => {
     const { invite, controller } = make();
     await expect(
-      controller.invite('clerk_1', 'mo-1', req, {
+      controller.invite('user_1', 'mo-1', req, {
         name: 'Pieter Botha',
         phone: '0821234567',
         email: 'pieter@example.co.za',

@@ -67,7 +67,7 @@ test('an unreadable env file is unknown — never "nothing is configured"', asyn
 test('the frontend check states the build-time caveat rather than implying it read the live bundle', async () => {
   const ctx = fakeContext({
     files: {
-      '/app/frontend/.env.production': 'NEXT_PUBLIC_API_URL=https://alloutdoor.co.za/api\nNEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_x\nCLERK_SECRET_KEY=sk_live_y\n',
+      '/app/frontend/.env.production': 'NEXT_PUBLIC_API_URL=https://alloutdoor.co.za/api\nNEXT_PUBLIC_SITE_URL=https://alloutdoor.co.za\nJWT_MEMBER_SECRET=x\n',
     },
   });
   const result = await runOne(frontendEnvCheck, ctx);

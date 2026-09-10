@@ -990,7 +990,7 @@ export class MotivationsService {
    * AND the encrypted files off our disk.
    *
    * This did not exist anywhere in the platform before — the only erasure path
-   * was the Clerk user.deleted webhook, which nulls references and openly
+   * was the identity-provider user.deleted webhook, which nulls references and openly
    * admits it does not remove stored assets. It is affordable here because we
    * know exactly which files belong to a motivation.
    *

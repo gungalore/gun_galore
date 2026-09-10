@@ -157,7 +157,7 @@ export class ListingsController {
   }
 
   // Public listing detail. OptionalAuthGuard makes this owner-aware without
-  // rejecting anonymous callers: if the seller's Clerk token is present,
+  // rejecting anonymous callers: if the seller's the identity provider token is present,
   // @CurrentUser() resolves their id and findById adds the owner-only fields
   // (hidden reserve, auto-accept threshold, moderation-banner data) and lifts
   // the public-status gate for their own listing. Everyone else gets the

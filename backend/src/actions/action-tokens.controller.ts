@@ -367,7 +367,7 @@ export class ActionTokensController {
   /**
    * Confirm the token's authorised user still exists and hand the id back.
    *
-   * This used to translate a User.id into the Clerk subject the services
+   * This used to translate a User.id into the identity-provider subject the services
    * wanted. They want User.id now, so all that is left is the existence check
    * — worth keeping, because a token outliving its user should 404 rather
    * than fail deeper in a payload builder.
@@ -776,7 +776,7 @@ export class ActionTokensController {
     // KYC is about the user themselves — no offer/listing/tx to fetch.
     // Like CHECKOUT, we just hand the frontend a redirect target; the
     // verify page at /kyc/verify?t=<token> runs the VerifyNow flow with
-    // the token authorising the (otherwise Clerk-gated) KYC endpoints.
+    // the token authorising the (otherwise sign-in-gated) KYC endpoints.
     return {
       kind: 'KYC_VERIFY' as const,
       expiresAt: resolved.expiresAt.toISOString(),

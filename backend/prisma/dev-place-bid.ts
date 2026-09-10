@@ -1,5 +1,5 @@
 // Place a bid directly via Prisma so we can verify the auction panel updates.
-// (We bypass the controller because the real flow needs a Clerk JWT.)
+// (We bypass the controller because the real flow needs an identity provider JWT.)
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';

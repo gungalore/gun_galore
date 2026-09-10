@@ -11,7 +11,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SupportService } from './support.service';
 
-// User-facing support tickets (Phase 7 P7.2). Clerk-guarded; every method
+// User-facing support tickets (Phase 7 P7.2). the identity provider-guarded; every method
 // scopes to the signed-in user inside the service.
 @Controller('support')
 @UseGuards(AuthGuard)

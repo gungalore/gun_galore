@@ -8,7 +8,7 @@ describe('ReceiptService — buyer purchase receipt', () => {
   };
   let service: ReceiptService;
 
-  const buyer = { id: 'buyer1', userId: 'clerk_buyer' };
+  const buyer = { id: 'buyer1', userId: 'user_buyer' };
   const baseTx = {
     id: 'tx1',
     buyerId: 'buyer1',
@@ -37,7 +37,7 @@ describe('ReceiptService — buyer purchase receipt', () => {
   it('returns a PDF for the buyer of a paid order', async () => {
     const { pdf, filename } = await service.generateReceiptPdf(
       'tx1',
-      'clerk_buyer',
+      'user_buyer',
     );
     expect(filename).toBe('gun-galore-receipt-GG-0001.pdf');
     // Valid PDF starts with the %PDF- magic bytes.
@@ -48,10 +48,10 @@ describe('ReceiptService — buyer purchase receipt', () => {
   it('rejects a non-buyer (e.g. the seller)', async () => {
     prisma.user.findUnique.mockResolvedValue({
       id: 'seller1',
-      userId: 'clerk_seller',
+      userId: 'user_seller',
     });
     await expect(
-      service.generateReceiptPdf('tx1', 'clerk_seller'),
+      service.generateReceiptPdf('tx1', 'user_seller'),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -61,14 +61,14 @@ describe('ReceiptService — buyer purchase receipt', () => {
       paidAt: null,
     });
     await expect(
-      service.generateReceiptPdf('tx1', 'clerk_buyer'),
+      service.generateReceiptPdf('tx1', 'user_buyer'),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('throws NotFound when the transaction does not exist', async () => {
     prisma.transaction.findUnique.mockResolvedValue(null);
     await expect(
-      service.generateReceiptPdf('missing', 'clerk_buyer'),
+      service.generateReceiptPdf('missing', 'user_buyer'),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

@@ -14,7 +14,7 @@ import { extractAccessToken } from './extract-token';
  * Stamps `request.userId` with User.id — the one and only user identifier —
  * which is what `@CurrentUser()` reads.
  *
- * ⚠️ Unlike the Clerk guard this replaced, it does NOT provision a user row.
+ * ⚠️ Unlike the guard this replaced, it does NOT provision a user row.
  * It never needs to: our own sign-up creates the row before any token exists,
  * so a valid token whose user is missing is a deleted account, not a race.
  */

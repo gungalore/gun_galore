@@ -66,7 +66,10 @@ interface BufferedEvent {
 export class ActivityService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ActivityService.name);
   private buffer: BufferedEvent[] = [];
-  private adminClerkIds = new Set<string>();
+  // ⚠️ ONE SET WHERE THERE WERE TWO. The old pair held the same operators
+  // under two identifiers — the provider subject and the User.id — because a
+  // hook could stamp either. There is one identifier now, so a second set
+  // could only ever disagree with the first.
   private adminUserIds = new Set<string>();
   private flushTimer: NodeJS.Timeout | null = null;
   private adminTimer: NodeJS.Timeout | null = null;
@@ -101,7 +104,6 @@ export class ActivityService implements OnModuleInit, OnModuleDestroy {
       const a = input.actor ?? {};
       const userId = a.userId ?? null;
       // Exclude admin/operator traffic.
-      if (userId && this.adminClerkIds.has(userId)) return;
       if (userId && this.adminUserIds.has(userId)) return;
 
       if (this.buffer.length >= this.MAX_BUFFER) this.buffer.shift(); // drop oldest
@@ -140,23 +142,18 @@ export class ActivityService implements OnModuleInit, OnModuleDestroy {
 
   private async refreshAdmins(): Promise<void> {
     try {
+      // ⚠️ AdminUser.userId, NOT AdminUser.id. The first is the MEMBER row an
+      // admin is linked to — which is what shows up in analytics traffic; the
+      // second is the admin record's own primary key and matches nobody's
+      // events. Selecting the wrong one silently excludes nothing and lets
+      // every operator's browsing into the member statistics.
       const admins = await this.prisma.adminUser.findMany({
         where: { isActive: true, userId: { not: null } },
-        select: { id: true },
+        select: { userId: true },
       });
-      const clerkIds = admins
-        .map((a) => a.id)
-        .filter((c): c is string => !!c);
-      this.adminClerkIds = new Set(clerkIds);
-      if (clerkIds.length) {
-        const users = await this.prisma.user.findMany({
-          where: { id: { in: clerkIds } },
-          select: { id: true },
-        });
-        this.adminUserIds = new Set(users.map((u) => u.id));
-      } else {
-        this.adminUserIds = new Set();
-      }
+      this.adminUserIds = new Set(
+        admins.map((a) => a.userId).filter((id): id is string => !!id),
+      );
     } catch (err) {
       this.logger.warn(`admin-exclusion refresh failed: ${(err as Error).message}`);
     }

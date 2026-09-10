@@ -145,11 +145,11 @@ export class AdminHealthService {
         requiresEnv: ['MEILISEARCH_HOST'],
       },
       {
-        name: 'Clerk (auth)',
-        url: 'https://api.clerk.com/v1',
+        name: 'Didit (identity)',
+        url: 'https://verification.didit.me',
         category: 'auth',
         method: 'HEAD',
-        requiresEnv: ['CLERK_SECRET_KEY'],
+        requiresEnv: ['DIDIT_API_KEY'],
       },
       {
         name: 'Resend (email)',

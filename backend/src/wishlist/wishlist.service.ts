@@ -31,15 +31,15 @@ export class WishlistService {
     private readonly activity: ActivityService,
   ) {}
 
-  /** Resolve the platform user from the Clerk ID — every endpoint
+  /** Resolve the platform user from the identity provider ID — every endpoint
    * needs this, so DRY it out. Throws if the user isn't provisioned
-   * yet (very rare — would only hit during a Clerk webhook race). */
+   * yet (very rare — would only hit during a identity-provider webhook race). */
   /**
    * Assert the caller's User row still exists, so a request carrying a valid
    * token for a deleted account gets a clean 404 rather than a foreign-key
    * error further down.
    *
-   * This used to translate a Clerk subject into a User.id. There is only one
+   * This used to translate an identity provider subject into a User.id. There is only one
    * identifier now, so the translation is gone and the existence check is all
    * that remains — which is why it returns nothing and callers no longer
    * rebind the id.

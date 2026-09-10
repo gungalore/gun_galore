@@ -61,7 +61,7 @@ export class TransactionsController {
   // ---------------------------------------------------------------
   // Create transaction + Peach checkout (buyer)
   //
-  // Accepts EITHER a Clerk session OR a CHECKOUT action token via
+  // Accepts EITHER a member session OR a CHECKOUT action token via
   // ?t=<token>. When called via token, we double-check the token's
   // targetId matches the body's listingId — otherwise a stolen
   // token could be used to buy a DIFFERENT listing than the SMS
@@ -96,7 +96,7 @@ export class TransactionsController {
   // Verify Peach payment result (called from /checkout/complete)
   // ---------------------------------------------------------------
   // INTENTIONALLY UNAUTHENTICATED — the return-from-gateway flow has no
-  // Clerk session (SMS-token buyers were never signed in) and no token
+  // the identity provider session (SMS-token buyers were never signed in) and no token
   // (the CHECKOUT token wasn't passed back). Security relies on:
   //   1. The endpoint re-fetches authoritative payment status from
   //      Peach using the STORED payment id on the transaction — an
@@ -376,7 +376,7 @@ export class TransactionsController {
   // ---------------------------------------------------------------
   // Signed-in seller's Accept button on /transactions/[id]. Mirrors the
   // /actions/:token/accept-transaction endpoint that the SMS one-tap
-  // uses, just guarded by Clerk session instead of a token. Idempotent.
+  // uses, just guarded by the identity provider session instead of a token. Idempotent.
   @Post(':id/accept')
   @UseGuards(AuthGuard)
   @HttpCode(200)

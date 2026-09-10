@@ -21,7 +21,7 @@ describe('ReportsService', () => {
   it('creates a LISTING_REPORTED AdminAlert with the listing id + reason', async () => {
     prisma.listing.findUnique.mockResolvedValue({ id: 'L1' });
     prisma.user.findUnique.mockResolvedValue({ id: 'U_reporter' });
-    await service.reportListing('L1', 'clerk_reporter', 'scam', 'looks fake');
+    await service.reportListing('L1', 'user_reporter', 'scam', 'looks fake');
     const arg = prisma.adminAlert.create.mock.calls[0][0];
     expect(arg.data.type).toBe('LISTING_REPORTED');
     expect(arg.data.referenceId).toBe('L1');
@@ -49,7 +49,7 @@ describe('ReportsService', () => {
     prisma.user.findUnique
       .mockResolvedValueOnce({ id: 'S1' }) // seller lookup by userId
       .mockResolvedValueOnce({ id: 'U_reporter' }); // reporter
-    await service.reportSeller('clerk_seller', 'clerk_reporter', 'suspicious');
+    await service.reportSeller('user_seller', 'user_reporter', 'suspicious');
     const arg = prisma.adminAlert.create.mock.calls[0][0];
     expect(arg.data.type).toBe('SELLER_REPORTED');
     expect(arg.data.referenceId).toBe('S1');
@@ -57,7 +57,7 @@ describe('ReportsService', () => {
 
   it('blocks self-reporting', async () => {
     await expect(
-      service.reportSeller('clerk_same', 'clerk_same', 'scam'),
+      service.reportSeller('user_same', 'user_same', 'scam'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

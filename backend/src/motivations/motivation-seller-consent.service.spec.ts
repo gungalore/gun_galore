@@ -94,23 +94,23 @@ const ARGS = {
 };
 
 describe('who the token is minted for', () => {
-  it('⚠️ mints against User.id, NEVER the Clerk subject', async () => {
+  it('⚠️ mints against User.id, NEVER the provider subject', async () => {
     // THE BUG, IN ONE ASSERTION. `authorisedUserId` is a required FK to
-    // User.id; a Clerk sub there is a constraint violation and a 500, every
+    // User.id; a provider subject there is a constraint violation and a 500, every
     // single time. Nothing but the value's SHAPE distinguishes the two.
     const { svc, mint } = make();
     await svc.invite(ARGS as never);
     expect(mint).toHaveBeenCalledTimes(1);
     expect(mint.mock.calls[0][0].authorisedUserId).toBe(USER_ID);
     // ⚠️ THE SECOND HALF OF THIS TEST IS GONE BECAUSE THE BUG IS GONE. It
-    // asserted the minted token was bound to User.id and NOT to the Clerk
+    // asserted the minted token was bound to User.id and NOT to the identity provider
     // subject — two different strings, and minting against the wrong one
     // authorised the wrong record. There is one identifier now, so there is
     // no wrong one left to pick. What survives is the assertion above: the
     // token is bound to the applicant, never to whoever is calling.
   });
 
-  it('resolves the Clerk subject by userId, not by id', async () => {
+  it('resolves the provider subject by userId, not by id', async () => {
     const { svc, prisma } = make();
     await svc.invite(ARGS as never);
     expect(prisma.user.findUnique).toHaveBeenCalledWith(

@@ -138,7 +138,7 @@ describe('deleting a document', () => {
       coversKinds: [],
       storageKey: 'k/1',
     });
-    return svc.remove('clerk_1', 'cred-1').then(() => {
+    return svc.remove('user_1', 'cred-1').then(() => {
       expect(recompute).toHaveBeenCalledTimes(1);
       expect(recompute).toHaveBeenCalledWith(
         expect.anything(),
@@ -160,7 +160,7 @@ describe('deleting a document', () => {
       coversKinds: [CredentialKind.FIREARM_LICENCE],
       storageKey: 'k/1',
     });
-    await svc.remove('clerk_1', 'cred-1');
+    await svc.remove('user_1', 'cred-1');
     expect(recompute).toHaveBeenCalledTimes(1);
   });
 
@@ -173,7 +173,7 @@ describe('deleting a document', () => {
       coversKinds: [],
       storageKey: 'k/1',
     });
-    await svc.remove('clerk_1', 'cred-1');
+    await svc.remove('user_1', 'cred-1');
     expect(recompute).not.toHaveBeenCalled();
   });
 
@@ -189,7 +189,7 @@ describe('deleting a document', () => {
       coversKinds: [],
       storageKey: 'k/1',
     });
-    await svc.remove('clerk_1', 'cred-1');
+    await svc.remove('user_1', 'cred-1');
     expect(prisma.motivationUpload.updateMany).toHaveBeenCalledTimes(1);
     const args = uploadUpdates[0] as {
       where: Record<string, unknown>;
@@ -216,7 +216,7 @@ describe('deleting a document', () => {
       coversKinds: [],
       storageKey: 'k/1',
     });
-    await svc.remove('clerk_1', 'cred-1');
+    await svc.remove('user_1', 'cred-1');
     expect(order).toEqual(['motivationUpload.updateMany', 'credential.delete']);
   });
 
@@ -231,7 +231,7 @@ describe('deleting a document', () => {
       coversKinds: [],
       storageKey: 'k/1',
     });
-    await svc.remove('clerk_1', 'cred-1');
+    await svc.remove('user_1', 'cred-1');
     expect(prisma.motivationUpload.updateMany).toHaveBeenCalledTimes(1);
   });
 
@@ -247,7 +247,7 @@ describe('deleting a document', () => {
     prisma.motivationUpload.updateMany.mockRejectedValueOnce(
       new Error('database on fire'),
     );
-    await expect(svc.remove('clerk_1', 'cred-1')).resolves.toEqual({
+    await expect(svc.remove('user_1', 'cred-1')).resolves.toEqual({
       removed: true,
     });
     expect(prisma.credential.delete).toHaveBeenCalledTimes(1);
@@ -260,7 +260,7 @@ describe('deleting a document', () => {
       coversKinds: [],
       storageKey: 'k/1',
     });
-    await svc.remove('clerk_1', 'cred-1');
+    await svc.remove('user_1', 'cred-1');
     const select = (prisma.credential.findFirst.mock.calls[0] as unknown as [
       { select: Record<string, boolean> },
     ])[0].select;
@@ -287,7 +287,7 @@ describe('confirming a date', () => {
     // "We read this date off the document you uploaded" over a date the member
     // had just corrected by hand.
     const { svc, updates } = build(row as unknown as Row);
-    await svc.confirmExpiry('clerk_1', 'cred-1', { expiresOn: '2032-11-28' });
+    await svc.confirmExpiry('user_1', 'cred-1', { expiresOn: '2032-11-28' });
     expect(updates[0]).toMatchObject({
       dateSource: null,
       dateSourceNote: null,
@@ -306,7 +306,7 @@ describe('confirming a date', () => {
       kind: CredentialKind.OTHER,
       coversKinds: [CredentialKind.FIREARM_LICENCE],
     } as unknown as Row);
-    await svc.confirmExpiry('clerk_1', 'cred-1', { expiresOn: '2032-11-28' });
+    await svc.confirmExpiry('user_1', 'cred-1', { expiresOn: '2032-11-28' });
     expect(recompute).toHaveBeenCalledTimes(1);
   });
 
@@ -315,7 +315,7 @@ describe('confirming a date', () => {
       ...row,
       kind: CredentialKind.OTHER,
     } as unknown as Row);
-    await svc.confirmExpiry('clerk_1', 'cred-1', {
+    await svc.confirmExpiry('user_1', 'cred-1', {
       expiresOn: '2032-11-28',
       kind: CredentialKind.FIREARM_LICENCE,
     });
@@ -326,7 +326,7 @@ describe('confirming a date', () => {
     // Leaving the licence set is exactly as much of a change as joining it:
     // the competency that was dated off this row now has nothing behind it.
     const { svc } = build(row as unknown as Row);
-    await svc.confirmExpiry('clerk_1', 'cred-1', {
+    await svc.confirmExpiry('user_1', 'cred-1', {
       expiresOn: '2032-11-28',
       kind: CredentialKind.OTHER,
     });
@@ -338,7 +338,7 @@ describe('confirming a date', () => {
       ...row,
       kind: CredentialKind.ADDRESS_CONFIRMATION,
     } as unknown as Row);
-    await svc.confirmExpiry('clerk_1', 'cred-1', { expiresOn: '2032-11-28' });
+    await svc.confirmExpiry('user_1', 'cred-1', { expiresOn: '2032-11-28' });
     expect(recompute).not.toHaveBeenCalled();
   });
 
@@ -349,7 +349,7 @@ describe('confirming a date', () => {
     // credentialOffer will take an unconfirmed row's make but not its date — so
     // without this the sweep's answer is frozen at the moment of upload.
     const { svc, rearm } = build(row as unknown as Row);
-    await svc.confirmExpiry('clerk_1', 'cred-1', { expiresOn: '2032-11-28' });
+    await svc.confirmExpiry('user_1', 'cred-1', { expiresOn: '2032-11-28' });
     expect(rearm).toHaveBeenCalledWith('user-1');
   });
 
@@ -360,7 +360,7 @@ describe('confirming a date', () => {
       ...row,
       kind: CredentialKind.IDENTITY_DOCUMENT,
     } as unknown as Row);
-    await svc.confirmExpiry('clerk_1', 'cred-1', { expiresOn: '2032-11-28' });
+    await svc.confirmExpiry('user_1', 'cred-1', { expiresOn: '2032-11-28' });
     expect(rearm).toHaveBeenCalledTimes(1);
   });
 
@@ -370,7 +370,7 @@ describe('confirming a date', () => {
     const { svc, rearm } = build(row as unknown as Row);
     rearm.mockRejectedValueOnce(new Error('motivations unavailable'));
     await expect(
-      svc.confirmExpiry('clerk_1', 'cred-1', { expiresOn: '2032-11-28' }),
+      svc.confirmExpiry('user_1', 'cred-1', { expiresOn: '2032-11-28' }),
     ).resolves.toMatchObject({ confirmed: true });
   });
 
@@ -378,7 +378,7 @@ describe('confirming a date', () => {
     // The other half of the H7 loop — see the create() test below. This call
     // has always been here; until now there was no row for it to resolve.
     const { svc, notifications } = build(row as unknown as Row);
-    await svc.confirmExpiry('clerk_1', 'cred-1', { expiresOn: '2032-11-28' });
+    await svc.confirmExpiry('user_1', 'cred-1', { expiresOn: '2032-11-28' });
     expect(notifications.resolveByEntity).toHaveBeenCalledWith(
       'credential',
       'cred-1',
@@ -485,7 +485,7 @@ describe('a read date that could not be armed', () => {
       details: { make: 'HOWA' },
       lowConfidence: [],
     });
-    await svc.create('clerk_1', CredentialKind.FIREARM_LICENCE, '', FILE);
+    await svc.create('user_1', CredentialKind.FIREARM_LICENCE, '', FILE);
 
     expect(persisted).toHaveLength(1);
     expect(persisted[0]).toMatchObject({
@@ -513,7 +513,7 @@ describe('a read date that could not be armed', () => {
       details: { section: 'S16' },
       lowConfidence: [],
     });
-    await svc.create('clerk_1', CredentialKind.FIREARM_LICENCE, '', FILE);
+    await svc.create('user_1', CredentialKind.FIREARM_LICENCE, '', FILE);
     expect(persisted).toHaveLength(0);
   });
 
@@ -527,7 +527,7 @@ describe('a read date that could not be armed', () => {
       details: { make: 'HOWA' },
       lowConfidence: [],
     });
-    await svc.create('clerk_1', CredentialKind.FIREARM_LICENCE, '', FILE);
+    await svc.create('user_1', CredentialKind.FIREARM_LICENCE, '', FILE);
     expect(persisted).toHaveLength(0);
   });
 });
@@ -552,7 +552,7 @@ describe('filing a new document', () => {
 
   it('🚨 RE-ARMS AUTO-ATTACH on every open draft', async () => {
     const { svc, rearm } = buildUpload(READ);
-    await svc.create('clerk_1', CredentialKind.FIREARM_LICENCE, '', FILE);
+    await svc.create('user_1', CredentialKind.FIREARM_LICENCE, '', FILE);
     expect(rearm).toHaveBeenCalledWith('user-1');
   });
 
@@ -563,7 +563,7 @@ describe('filing a new document', () => {
     const { svc, rearm } = buildUpload(READ);
     rearm.mockRejectedValueOnce(new Error('motivations unavailable'));
     await expect(
-      svc.create('clerk_1', CredentialKind.FIREARM_LICENCE, '', FILE),
+      svc.create('user_1', CredentialKind.FIREARM_LICENCE, '', FILE),
     ).resolves.toMatchObject({ id: 'cred-new' });
   });
 });
@@ -596,7 +596,7 @@ describe('deleting a credential re-arms the sweep', () => {
 
   it('⚠️ RE-ARMS, so the survivor can finally be chosen', async () => {
     const { svc, rearm } = build(dup);
-    await svc.remove('clerk_1', 'c-dup');
+    await svc.remove('user_1', 'c-dup');
     expect(rearm).toHaveBeenCalledWith('user-1');
   });
 
@@ -605,7 +605,7 @@ describe('deleting a credential re-arms the sweep', () => {
     // convenience and the delete is the member's instruction.
     const { svc, rearm } = build(dup);
     rearm.mockRejectedValueOnce(new Error('module edge down'));
-    await expect(svc.remove('clerk_1', 'c-dup')).resolves.toEqual({
+    await expect(svc.remove('user_1', 'c-dup')).resolves.toEqual({
       removed: true,
     });
   });

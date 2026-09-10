@@ -53,7 +53,7 @@ export type ActionTokenPurpose =
   // targetType = 'user', targetId = authorisedUserId = the seller. The
   // token does NOT bypass the identity proof itself (real SA ID + live
   // selfie face-matched against Home Affairs are still required); it only
-  // removes the Clerk-login wall when the SMS opens in an external
+  // removes the sign-in wall when the SMS opens in an external
   // browser. 7-day TTL — KYC isn't time-critical like a 24h checkout.
   | 'KYC_VERIFY'
   // SWAP_PROPOSAL_DECISION — the listing owner's one-tap link from the

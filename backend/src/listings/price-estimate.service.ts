@@ -42,7 +42,7 @@ function roundTo50(cents: number): number {
 // Per-user daily ceiling on the billed web-anchor (one model call),
 // independent of IP or the query string — the real backstop against a
 // denial-of-wallet loop (IP-based throttling + cache-key variation can both be
-// gamed; a per-Clerk-user counter can't). Over the cap → skip the web anchor.
+// gamed; a per-the identity provider-user counter can't). Over the cap → skip the web anchor.
 const MAX_WEB_ANCHOR_PER_USER_PER_DAY = 40;
 
 // Fraction of a NEW SA retail price a secondhand item typically fetches, by
@@ -89,7 +89,7 @@ export interface PriceEstimateInput {
   model?: string;
   title?: string;
   condition?: string;
-  // Clerk user id — used ONLY to enforce the per-user daily web-anchor cap.
+  // identity-provider user id — used ONLY to enforce the per-user daily web-anchor cap.
   // Absent from the Ask GG path (bounded by the message quota instead).
   userId?: string;
 }

@@ -29,7 +29,7 @@ import {
 // ────────────────────────────────────────────────────────────────────
 // TWO CONTROLLERS IN ONE FILE, AND THE SPLIT IS THE POINT.
 //
-// The first is behind Clerk and belongs to the applicant: invite a witness,
+// The first is behind the identity provider and belongs to the applicant: invite a witness,
 // see how they are getting on, read a finished statement, delete it.
 //
 // The second has NO GUARD AT ALL, because the person using it is a member of

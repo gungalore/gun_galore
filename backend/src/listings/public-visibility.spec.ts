@@ -5,7 +5,7 @@
 // visitor — or Meta's crawler — can retrieve, and every one of these tests
 // describes a way the site previously handed firearm data to anonymous callers.
 //
-// The rule under test is always the same: no verified Clerk id ⇒ publicVisible
+// The rule under test is always the same: no verified the identity provider id ⇒ publicVisible
 // only. Never a user-agent check, never a header — serving a crawler something
 // different from a logged-out human is cloaking, and would make the block worse.
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
@@ -73,7 +73,7 @@ describe('ListingsService — signed-out visibility gate', () => {
 
   it('does NOT restrict the browse for a signed-in member', async () => {
     const { service, prisma } = makeListings();
-    await service.browse({ page: 1, limit: 20 } as never, 'clerk_123');
+    await service.browse({ page: 1, limit: 20 } as never, 'user_123');
     const where = (prisma.listing.findMany.mock.calls[0][0] as {
       where: Record<string, unknown>;
     }).where;
@@ -94,7 +94,7 @@ describe('ListingsService — signed-out visibility gate', () => {
     const { service } = makeListings({ listing: FIREARM_LISTING });
     // Every member sees the full catalogue — the gate keys on having a
     // session, not on owning the listing.
-    await expect(service.findById('L1', 'clerk_someone_else')).resolves.toMatchObject(
+    await expect(service.findById('L1', 'user_someone_else')).resolves.toMatchObject(
       { id: 'L1' },
     );
   });
@@ -128,7 +128,7 @@ describe('ListingsService — signed-out visibility gate', () => {
 
   it('folds every brand for a signed-in member', async () => {
     const { service, prisma } = makeListings();
-    await service.listBrands(60, 'clerk_123');
+    await service.listBrands(60, 'user_123');
     const where = (prisma.listing.groupBy.mock.calls[0][0] as {
       where: Record<string, unknown>;
     }).where;
@@ -180,7 +180,7 @@ describe('CategoriesService — signed-out visibility gate', () => {
 
   it('lists the whole tree for a member', async () => {
     const { service, prisma } = makeCategories();
-    await service.findAll('clerk_123');
+    await service.findAll('user_123');
     expect(prisma.category.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { isActive: true } }),
     );
@@ -205,7 +205,7 @@ describe('CategoriesService — signed-out visibility gate', () => {
       },
     });
     await expect(
-      service.findBySlugTree('firearms', 'clerk_123'),
+      service.findBySlugTree('firearms', 'user_123'),
     ).resolves.toMatchObject({ category: { slug: 'firearms' } });
   });
 

@@ -6,7 +6,7 @@
 // belong to US and must go dark the moment `accountClosedAt` is set.
 //
 // The window these guard is real and not brief: closure sets accountClosedAt
-// inside the DB transaction, but the Clerk delete (step 3) and the userId
+// inside the DB transaction, but the identity-provider delete (step 3) and the userId
 // tombstone the webhook writes (step 4) both land afterwards, outside it. Any
 // filter that relies on the tombstone alone serves a closed member's profile
 // for as long as that takes — and forever if the webhook never arrives.
@@ -18,7 +18,7 @@ import { isReservedUsername } from './username-policy';
 
 const LIVE_SELLER = {
   id: 'U1',
-  userId: 'clerk_live',
+  userId: 'user_live',
   username: 'karoo_kudu',
   avatarUrl: null,
   sellerTier: 'TRUSTED',
@@ -43,10 +43,10 @@ describe('SellersPublicController — closed accounts have no public profile', (
 
   it('narrows the lookup with accountClosedAt: null', async () => {
     const { controller, prisma } = make(LIVE_SELLER);
-    await controller.getSellerProfile('clerk_live');
+    await controller.getSellerProfile('user_live');
     expect(prisma.user.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'clerk_live', accountClosedAt: null },
+        where: { id: 'user_live', accountClosedAt: null },
       }),
     );
   });
@@ -56,7 +56,7 @@ describe('SellersPublicController — closed accounts have no public profile', (
     // only thing standing between an old profile link and a live storefront
     // header is the where-clause above returning null.
     const { controller } = make(null);
-    await expect(controller.getSellerProfile('clerk_closed')).rejects.toThrow(
+    await expect(controller.getSellerProfile('user_closed')).rejects.toThrow(
       NotFoundException,
     );
   });
@@ -67,7 +67,7 @@ describe('SellersPublicController — closed accounts have no public profile', (
     // the only thing retiring the verified tick — worth pinning that the tick
     // is all we ever publish.
     const { controller } = make(LIVE_SELLER);
-    const res = await controller.getSellerProfile('clerk_live');
+    const res = await controller.getSellerProfile('user_live');
     expect(res).toMatchObject({ username: 'karoo_kudu', idVerified: true });
     expect(res).not.toHaveProperty('kycStatus');
   });
@@ -94,11 +94,11 @@ describe('RatingsService.findForSeller — reviews received follow the profile',
     // its own — and every row it returns carries a reviewer handle and the
     // LISTING TITLE, which is the members-only detail the closure took down.
     const { service, prisma } = make(null);
-    await expect(service.findForSeller('clerk_closed')).rejects.toThrow(
+    await expect(service.findForSeller('user_closed')).rejects.toThrow(
       NotFoundException,
     );
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
-      where: { id: 'clerk_closed', accountClosedAt: null },
+      where: { id: 'user_closed', accountClosedAt: null },
     });
     expect(prisma.rating.findMany).not.toHaveBeenCalled();
   });
@@ -111,7 +111,7 @@ describe('RatingsService.findForSeller — reviews received follow the profile',
     // site already falls back. This test is what stops someone "helpfully"
     // adding firstName to the include later.
     const { service, prisma } = make({ id: 'U1' });
-    await service.findForSeller('clerk_live');
+    await service.findForSeller('user_live');
     const args = prisma.rating.findMany.mock.calls[0][0];
     expect(args.include.rater).toEqual({ select: { username: true } });
   });

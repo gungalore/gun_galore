@@ -27,7 +27,7 @@ export class SupportService {
    * token for a deleted account gets a clean 404 rather than a foreign-key
    * error further down.
    *
-   * This used to translate a Clerk subject into a User.id. There is only one
+   * This used to translate an identity provider subject into a User.id. There is only one
    * identifier now, so the translation is gone and the existence check is all
    * that remains — which is why it returns nothing and callers no longer
    * rebind the id.

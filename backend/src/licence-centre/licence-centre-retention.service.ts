@@ -102,8 +102,8 @@ export class LicenceCentreRetentionService {
   /**
    * Everything one member has, bytes included.
    *
-   * ⚠️ MUST NOT THROW. The caller is the Clerk `user.deleted` webhook: an
-   * exception there makes Clerk retry forever and leaves the account
+   * ⚠️ MUST NOT THROW. The caller is the account-deletion path: an
+   * exception there makes the identity provider retry forever and leaves the account
    * undeleted. A failure is logged loudly and swallowed, and what could not be
    * removed is returned so the caller can say so.
    *

@@ -40,8 +40,10 @@ export const BACKEND_ENV_MANIFEST: readonly EnvVar[] = [
   // ── fails closed ──────────────────────────────────────────────────────
   { name: 'JWT_ADMIN_SECRET', tier: 'fails-closed', disables: 'the API hard-throws at boot in production' },
   { name: 'DATABASE_URL', tier: 'fails-closed', disables: 'nothing works — no database connection at all' },
-  { name: 'CLERK_SECRET_KEY', tier: 'fails-closed', disables: 'no request can be authenticated' },
-  { name: 'CLERK_WEBHOOK_SECRET', tier: 'fails-closed', disables: 'Clerk webhooks are dropped unverified — new sign-ups get no User row until their first authed request lazily upserts one' },
+  { name: 'JWT_MEMBER_SECRET', tier: 'fails-closed', disables: 'the API hard-throws at boot in production — and if it merely differed from the frontend copy, every signed-in member would be bounced to sign-in while the API accepted them' },
+  { name: 'DIDIT_API_KEY', tier: 'fails-closed', disables: 'no email code at sign-up and no seller verification — the API hard-throws at boot in production' },
+  { name: 'DIDIT_WORKFLOW_ID', tier: 'fails-closed', disables: 'seller verification cannot start — the API hard-throws at boot in production' },
+  { name: 'DIDIT_WEBHOOK_SECRET', tier: 'fails-closed', disables: 'verification outcomes are dropped unverified — a seller who finishes on Didit stays PENDING forever, silently' },
   { name: 'BOBGO_WEBHOOK_SECRET', tier: 'fails-closed', disables: 'Bob Go tracking callbacks are rejected — Bob Go is the live courier rail' },
   { name: 'PEACH_SECRET', tier: 'fails-closed', disables: 'inbound Peach webhooks are rejected, so orders never confirm as paid' },
   { name: 'HEALTH_PING_SECRET', tier: 'fails-closed', disables: '/api/health/crons always answers "not configured" — and Warden’s own cron-freshness check goes unknown with it' },
@@ -89,14 +91,14 @@ export const BACKEND_ENV_MANIFEST: readonly EnvVar[] = [
   { name: 'ALLOW_LOCAL_ORIGINS', tier: 'optional', disables: 'nothing — but true in production is itself a fault' },
   { name: 'MEILISEARCH_HOST', tier: 'optional', disables: 'search falls back' },
   { name: 'ANTHROPIC_ADMIN_API_KEY', tier: 'optional', disables: 'AI spend monitoring — prod currently holds a regular key here, so spend alerts are not functioning' },
-  { name: 'CLERK_AUTHORIZED_PARTIES', tier: 'optional', disables: 'nothing — token audience checking is looser' },
+  { name: 'DIDIT_MODE', tier: 'optional', disables: 'nothing directly — but anything other than "live" hard-throws at boot in production, on purpose: sandbox identity checks approve canned data' },
+  { name: 'DIDIT_BASE_URL', tier: 'optional', disables: 'nothing — defaults to https://verification.didit.me' },
   { name: 'SUPPORT_EMAIL', tier: 'optional', disables: 'nothing — a default address is used' },
 ];
 
 export const FRONTEND_ENV_MANIFEST: readonly EnvVar[] = [
   { name: 'NEXT_PUBLIC_API_URL', tier: 'fails-closed', disables: 'the browser has no API to call' },
-  { name: 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', tier: 'fails-closed', disables: 'nobody can sign in' },
-  { name: 'CLERK_SECRET_KEY', tier: 'fails-closed', disables: 'server-side auth in the Next process' },
+  { name: 'JWT_MEMBER_SECRET', tier: 'fails-closed', disables: 'the middleware cannot verify a session cookie, so every signed-in member is bounced to sign-in. Must be the SAME value as the backend copy, and must NOT carry a NEXT_PUBLIC_ prefix — that would inline the signing secret into the browser bundle' },
   { name: 'INTERNAL_API_URL', tier: 'feature', disables: 'server-side rendering calls go out over the public URL instead of loopback' },
   { name: 'NEXT_PUBLIC_SITE_URL', tier: 'feature', disables: 'falls back to https://gungalore.co.za — the WRONG host for All Outdoor' },
   { name: 'NEXT_PUBLIC_PAYMENT_MODE', tier: 'feature', disables: 'the UI can offer a payment path the API will refuse — it mirrors the backend PAYMENT_MODE and a mismatch is the fault' },

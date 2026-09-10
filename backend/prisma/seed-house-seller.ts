@@ -13,7 +13,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 //
 // Idempotent:
 //  - Upserts the house User on its stable userId `system_house_seller`
-//    (a synthetic id — this account has no real Clerk session and never
+//    (a synthetic id — this account has no real the identity provider session and never
 //    signs in). Reruns leave an existing row's mutable fields alone.
 //  - Records the resolved User.id in Setting('house_seller_user_id') so
 //    DealsService can resolve the house seller without a hardcoded id.

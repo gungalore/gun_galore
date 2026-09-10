@@ -86,7 +86,7 @@ describe('which applications a document is already in', () => {
       credentials: [{ id: 'cred-1', kind: 'IDENTITY_DOCUMENT', sha256: SHARED }],
       uploads: [],
     });
-    await svc.usage('clerk_1');
+    await svc.usage('user_1');
 
     // The upload query is bounded by the owning motivation's member…
     expect(seen.uploadWhere).toMatchObject({
@@ -110,7 +110,7 @@ describe('which applications a document is already in', () => {
         },
       ],
     });
-    await svc.usage('clerk_1');
+    await svc.usage('user_1');
     expect(seen.motivationWhere).toMatchObject({ userId: 'user-1' });
   });
 
@@ -137,7 +137,7 @@ describe('which applications a document is already in', () => {
         },
       ],
     });
-    const out = await svc.usage('clerk_1');
+    const out = await svc.usage('user_1');
     expect(out['cred-1']).toHaveLength(1);
     expect(out['cred-1'][0].referenceNumber).toBe('MO000123');
     // Second in the pack, so not the first letter.
@@ -164,7 +164,7 @@ describe('which applications a document is already in', () => {
         },
       ],
     });
-    const out = await svc.usage('clerk_1');
+    const out = await svc.usage('user_1');
     expect(out['cred-1']).toHaveLength(1);
   });
 
@@ -175,12 +175,12 @@ describe('which applications a document is already in', () => {
       credentials: [{ id: 'cred-1', kind: 'IDENTITY_DOCUMENT', sha256: 'a' }],
       uploads: [],
     });
-    expect(await svc.usage('clerk_1')).toEqual({});
+    expect(await svc.usage('user_1')).toEqual({});
   });
 
   it('does not query at all for a member holding nothing', async () => {
     const { svc, prisma } = build({ credentials: [] });
-    expect(await svc.usage('clerk_1')).toEqual({});
+    expect(await svc.usage('user_1')).toEqual({});
     expect(prisma.motivationUpload.findMany).not.toHaveBeenCalled();
   });
 });

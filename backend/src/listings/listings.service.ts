@@ -1667,7 +1667,7 @@ export class ListingsService {
    * before. Spread into every public-discovery Prisma `where` alongside the
    * `isDealListing: false` chokepoint.
    *
-   * Anonymity is decided ONLY by the presence of a verified Clerk id supplied
+   * Anonymity is decided ONLY by the presence of a verified the identity provider id supplied
    * by OptionalAuthGuard — never by a header, a query param or a user-agent.
    * Serving different content to a crawler than to a logged-out human is
    * cloaking; this returns the same thing to both.
@@ -1688,7 +1688,7 @@ export class ListingsService {
 
     // Seller-scoped browses always go via Prisma — the Meilisearch
     // index stores sellerId (our internal cuid), not sellerId, so
-    // matching a Clerk ID against it would need a pre-resolve step.
+    // matching a provider id against it would need a pre-resolve step.
     // The seller-profile page never combines q with a sellerId
     // in practice, so this is the cleaner path.
     if (sellerId) return this.browseViaPrisma(dto, userId);
@@ -2603,7 +2603,7 @@ export class ListingsService {
   // design — it powers the server-rendered PDP — so it MUST NOT hand out the
   // seller's private fields (see PUBLIC_LISTING_SELECT for the full block-list
   // and why). It IS, however, owner-aware: when the caller presents a valid
-  // Clerk token for the seller (via OptionalAuthGuard → userId), they also
+  // the identity provider token for the seller (via OptionalAuthGuard → userId), they also
   // get their hidden reserve / auto-accept threshold (to pre-fill the edit
   // form) and the moderation-banner fields, and may see the listing at any
   // status. Anonymous / non-owner callers get the public projection and only

@@ -141,7 +141,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
       .mockResolvedValueOnce(core({ n: 2 }) as never);
 
     const res = await service.createOrderCheckout(
-      'clerk_B',
+      'user_B',
       { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] },
       'https://x',
     );
@@ -164,7 +164,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
       .mockResolvedValueOnce(core({ n: 2, sellerId: 'S2' }) as never);
 
     const res = await service.createOrderCheckout(
-      'clerk_B',
+      'user_B',
       { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] },
       'https://x',
     );
@@ -186,7 +186,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
       .mockResolvedValueOnce(core({ n: 2, sellerId: 'S1' }) as never);
 
     await service.createOrderCheckout(
-      'clerk_B',
+      'user_B',
       { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] }, // same seller, PUDO, same locker
       'https://x',
     );
@@ -211,7 +211,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
     const spy = jest.spyOn(service as never, 'reserveAndCreateLine');
     await expect(
       service.createOrderCheckout(
-        'clerk_B',
+        'user_B',
         { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L1')] },
         'https://x',
       ),
@@ -222,7 +222,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
   it('rejects an empty cart', async () => {
     const { service } = makeService();
     await expect(
-      service.createOrderCheckout('clerk_B', { buyerTermsAccepted: true, lines: [] }, 'https://x'),
+      service.createOrderCheckout('user_B', { buyerTermsAccepted: true, lines: [] }, 'https://x'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -231,7 +231,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
     const spy = jest.spyOn(service as never, 'reserveAndCreateLine');
     await expect(
       service.createOrderCheckout(
-        'clerk_B',
+        'user_B',
         { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] },
         'https://x',
       ),
@@ -255,7 +255,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
       .mockResolvedValueOnce(core({ n: 2, shippingHandlingCents: 1_500, buyerTotal: 16_500 }) as never);
 
     const res = await service.createOrderCheckout(
-      'clerk_B',
+      'user_B',
       { buyerTermsAccepted: true, lines: [firearmLineDto('L1'), lineDto('L2')] },
       'https://x',
     );
@@ -283,7 +283,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
       );
 
     const res = await service.createOrderCheckout(
-      'clerk_B',
+      'user_B',
       { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] },
       'https://x',
     );

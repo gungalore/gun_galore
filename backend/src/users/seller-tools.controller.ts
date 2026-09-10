@@ -10,7 +10,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SellerToolsService, SellerPeriod } from './seller-tools.service';
 
-// Seller self-service tools (Phase 6). All Clerk-guarded + scoped to the
+// Seller self-service tools (Phase 6). All the identity provider-guarded + scoped to the
 // signed-in seller inside the service (every query filters on their id).
 @Controller('sellers/me')
 @UseGuards(AuthGuard)

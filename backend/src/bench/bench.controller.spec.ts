@@ -49,7 +49,7 @@ function makeBench(stored: unknown[]) {
  * were publishing the whole consolidated catalogue to anybody who could type a
  * URL — so the handlers take `@CurrentUser()` like the writes always did.
  */
-const SIGNED_IN = 'clerk_1';
+const SIGNED_IN = 'user_1';
 
 describe('The Bench — the calibre survives the controller', () => {
   it('carries a stored calibre through to the results query', async () => {
@@ -123,7 +123,7 @@ describe('The Bench — the calibre survives the controller', () => {
  * 🚨 THE GUEST SHELF IS GONE FROM THIS CONTROLLER, AND THE TESTS FOR IT WITH
  * IT. `?powders=` / `?bullets=` / `?cartridges=` let anybody who could type a
  * URL read the whole consolidated catalogue — every cartridge, every powder,
- * 28 000 charge ranges — from a page that is itself behind Clerk. The guest
+ * 28 000 charge ranges — from a page that is itself behind the identity provider. The guest
  * bench is deferred (SPEC-BUILD §10); when it is built it gets its own
  * decision, its own route, and its own tests. Deleting the parser rather than
  * leaving it unreachable is deliberate: unreachable code comes back the day

@@ -1266,7 +1266,7 @@ describe('The Bench — one chip per bullet', () => {
 });
 
 describe('The Bench — the clerk-sub / User.id trap', () => {
-  it('resolves the Clerk sub to a User.id before touching UserBench', async () => {
+  it('resolves the provider subject to a User.id before touching UserBench', async () => {
     const prisma = makePrisma();
     const svc = new BenchService(prisma as never);
     await svc.getBench('user_2abcCLERKsub');

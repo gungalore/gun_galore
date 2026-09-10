@@ -16,7 +16,7 @@ function build() {
 describe('what the beacon will accept', () => {
   it('takes the four install-funnel types', () => {
     const { controller, record } = build();
-    controller.ingest('clerk_1', {
+    controller.ingest('user_1', {
       deviceId: 'd1',
       events: [
         { eventType: 'install_shown' },
@@ -159,9 +159,9 @@ describe('the limits that stop it being a firehose', () => {
 
   it('stamps the signed-in clerk id when there is one, null when there is not', () => {
     const { controller, record } = build();
-    controller.ingest('clerk_9', { events: [{ eventType: 'page_view' }] });
+    controller.ingest('user_9', { events: [{ eventType: 'page_view' }] });
     controller.ingest(undefined, { events: [{ eventType: 'page_view' }] });
-    expect(record.mock.calls[0][0].actor.userId).toBe('clerk_9');
+    expect(record.mock.calls[0][0].actor.userId).toBe('user_9');
     expect(record.mock.calls[1][0].actor.userId).toBeNull();
   });
 });

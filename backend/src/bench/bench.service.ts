@@ -348,10 +348,10 @@ export class BenchService {
   }
 
   /**
-   * Clerk subject → User.id.
+   * the identity provider subject → User.id.
    *
    * ⚠️ THESE ARE NOT THE SAME STRING AND TYPESCRIPT CANNOT TELL THEM APART.
-   * `@CurrentUser()` hands back the Clerk `sub`; `UserBench.userId` is a cuid
+   * `@CurrentUser()` hands back the identity provider `sub`; `UserBench.userId` is a cuid
    * from our own User table. Both are `string`, so swapping them compiles
    * cleanly and then silently reads or writes the wrong person's bench — or,
    * more often, nobody's, which looks like "my shelf keeps emptying".
@@ -376,7 +376,7 @@ export class BenchService {
   async getBench(clerkSub: string): Promise<BenchView> {
     // ⚠️ NO User ROW IS AN EMPTY SHELF, NOT A 404, AND ONLY ON THE READ.
     // AuthGuard lazily provisions the row, but it refuses to create one for a
-    // Clerk user with no email — so a signed-in caller can genuinely arrive
+    // identity-provider user with no email — so a signed-in caller can genuinely arrive
     // here with nothing. Every read on this module goes through here
     // (BenchController.benchFor is the one door), and a 404 on the results,
     // the powder chips AND the spec card is a page that looks broken to

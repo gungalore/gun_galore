@@ -77,20 +77,20 @@ const back = {
 describe('deleting a proficiency', () => {
   it('⚠️ TAKES BOTH PAGES, so the document actually leaves the screen', async () => {
     const { svc, deleted } = build(front, back);
-    await svc.remove('clerk_1', 'p-front');
+    await svc.remove('user_1', 'p-front');
     expect(deleted).toEqual(['p-front', 'p-back']);
   });
 
   it('erases the other page’s bytes too, not just its row', async () => {
     const { svc, files } = build(front, back);
-    await svc.remove('clerk_1', 'p-front');
+    await svc.remove('user_1', 'p-front');
     const keys = files.remove.mock.calls.map((c) => c[0] as string);
     expect(keys).toEqual(['credentials/a.enc', 'credentials/b.enc']);
   });
 
   it('clears a pointer left aiming at the row that just went', async () => {
     const { svc, prisma } = build(front, back);
-    await svc.remove('clerk_1', 'p-front');
+    await svc.remove('user_1', 'p-front');
     const cleared = prisma.credential.updateMany.mock.calls.find(
       (c) => c[0]?.data?.otherSideId === null,
     );
@@ -109,14 +109,14 @@ describe('deleting a proficiency', () => {
       .mockImplementationOnce(async () => {
         throw new Error('disk gone');
       });
-    await expect(svc.remove('clerk_1', 'p-front')).resolves.toBeDefined();
+    await expect(svc.remove('user_1', 'p-front')).resolves.toBeDefined();
     expect(deleted).toEqual(['p-front']);
   });
 
   it('a one-sided document still deletes exactly itself', async () => {
     const solo = { ...front, id: 'solo', otherSideId: null };
     const { svc, deleted } = build(solo);
-    await svc.remove('clerk_1', 'solo');
+    await svc.remove('user_1', 'solo');
     expect(deleted).toEqual(['solo']);
   });
 });

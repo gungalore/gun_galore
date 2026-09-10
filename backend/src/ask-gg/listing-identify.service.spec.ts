@@ -87,7 +87,7 @@ describe('identify-listing — quota gate', () => {
   // meter moved.
   it('meters off the usage rollup the route itself writes', async () => {
     const { svc, usage } = build({ usedPhotoIds: 2 });
-    await svc.identifyForListing('clerk_1', [PHOTO]);
+    await svc.identifyForListing('user_1', [PHOTO]);
     expect(usage.aggregate).toHaveBeenCalledTimes(1);
     const where = usage.aggregate.mock.calls[0][0].where as {
       userId: string;
@@ -103,12 +103,12 @@ describe('identify-listing — quota gate', () => {
 
   it('a FREE member at the cap gets 403 free-photo-quota-exhausted', async () => {
     const { svc, complete } = build({ usedPhotoIds: 5, freePhotoCap: 5 });
-    await expect(svc.identifyForListing('clerk_1', [PHOTO])).rejects.toThrow(
+    await expect(svc.identifyForListing('user_1', [PHOTO])).rejects.toThrow(
       ForbiddenException,
     );
     // The Sell page branches on this exact code.
     try {
-      await svc.identifyForListing('clerk_1', [PHOTO]);
+      await svc.identifyForListing('user_1', [PHOTO]);
     } catch (e) {
       const body = (e as ForbiddenException).getResponse() as {
         code: string;
@@ -125,14 +125,14 @@ describe('identify-listing — quota gate', () => {
 
   it('a FREE member under the cap goes through', async () => {
     const { svc, complete } = build({ usedPhotoIds: 4, freePhotoCap: 5 });
-    await svc.identifyForListing('clerk_1', [PHOTO]);
+    await svc.identifyForListing('user_1', [PHOTO]);
     expect(complete).toHaveBeenCalledTimes(1);
   });
 
   it('MEMBER and PRO are not per-user capped', async () => {
     for (const tier of [SubscriptionTier.MEMBER, SubscriptionTier.PRO]) {
       const { svc, complete, usage } = build({ tier, usedPhotoIds: 9999 });
-      await svc.identifyForListing('clerk_1', [PHOTO]);
+      await svc.identifyForListing('user_1', [PHOTO]);
       expect(complete).toHaveBeenCalledTimes(1);
       expect(usage.aggregate).not.toHaveBeenCalled();
     }
@@ -149,14 +149,14 @@ describe('identify-listing — per-request photo cap', () => {
   it('rejects more photos than the tier allows, before spending', async () => {
     const { svc, complete } = build({ tier: SubscriptionTier.MEMBER });
     await expect(
-      svc.identifyForListing('clerk_1', Array(6).fill(PHOTO)),
+      svc.identifyForListing('user_1', Array(6).fill(PHOTO)),
     ).rejects.toThrow(BadRequestException);
     expect(complete).not.toHaveBeenCalled();
   });
 
   it('rejects an empty upload', async () => {
     const { svc } = build();
-    await expect(svc.identifyForListing('clerk_1', [])).rejects.toThrow(
+    await expect(svc.identifyForListing('user_1', [])).rejects.toThrow(
       BadRequestException,
     );
   });
@@ -165,7 +165,7 @@ describe('identify-listing — per-request photo cap', () => {
 describe('identify-listing — spend rollup', () => {
   it('records one identification and its cost', async () => {
     const { svc, usage } = build();
-    await svc.identifyForListing('clerk_1', [PHOTO]);
+    await svc.identifyForListing('user_1', [PHOTO]);
     const args = usage.upsert.mock.calls[0][0] as {
       create: { photoIdCount: number; costUsdCents: number };
       update: Record<string, unknown>;
@@ -180,14 +180,14 @@ describe('identify-listing — spend rollup', () => {
 
   it('a model failure still returns a proposal-less answer, not a 500', async () => {
     const { svc } = build({ throws: new Error('provider down') });
-    const out = await svc.identifyForListing('clerk_1', [PHOTO]);
+    const out = await svc.identifyForListing('user_1', [PHOTO]);
     expect(out.proposal).toBeNull();
     expect(out.costUsd).toBeNull();
   });
 
   it('an unconfigured provider is a no-op, not a crash', async () => {
     const { svc, complete } = build({ configured: false });
-    const out = await svc.identifyForListing('clerk_1', [PHOTO]);
+    const out = await svc.identifyForListing('user_1', [PHOTO]);
     expect(out.proposal).toBeNull();
     expect(complete).not.toHaveBeenCalled();
   });
@@ -266,7 +266,7 @@ describe('the prompt the photos are sent with', () => {
 
   it('is sent under the askgg.identify-photos purpose', async () => {
     const { svc, complete } = build();
-    await svc.identifyForListing('clerk_1', [PHOTO], { categoryHint: 'optics' });
+    await svc.identifyForListing('user_1', [PHOTO], { categoryHint: 'optics' });
     const req = (complete.mock.calls as unknown as Array<
       [
         {

@@ -62,7 +62,7 @@ function makeService(
       blockers: eligibility.blockers ?? [],
     }),
     close: jest.fn().mockResolvedValue({
-      userId: 'clerk_1',
+      userId: 'user_1',
       cancelledListingIds: ['L1', 'L2'],
     }),
   };
@@ -81,7 +81,7 @@ function makeService(
     {} as never, // sms
     closures as never,
   );
-  // The real client would try to reach Clerk over the network.
+  // The real client would try to reach the identity provider over the network.
   // The session revoker the admin close calls after the commit. Reached
   // through the instance because it is a constructor arg, not a field we set.
   const revokeAllForUser = (
@@ -92,7 +92,7 @@ function makeService(
 
 const openUser = {
   id: 'U1',
-  userId: 'clerk_1',
+  userId: 'user_1',
   username: 'boet',
   email: 'boet@example.co.za',
   accountClosedAt: null,

@@ -892,7 +892,7 @@ function makeService(
     user: {
       findUnique: jest.fn().mockResolvedValue({
         id: 'u1',
-        userId: 'clerk_1',
+        userId: 'user_1',
         isBanned: false,
         sellingBannedAt: null,
       }),
@@ -954,7 +954,7 @@ describe('previewDraft — ammunition ban', () => {
   it('rejects the ammo category', async () => {
     const { service } = makeService();
     await expect(
-      service.previewDraft('clerk_1', {
+      service.previewDraft('user_1', {
         ...cleanDraft,
         categoryId: 'cat-ammo',
       } as never),
@@ -964,7 +964,7 @@ describe('previewDraft — ammunition ban', () => {
   it('rejects live ammunition hidden in an innocent category', async () => {
     const { service } = makeService({ category: RELOADING_CATEGORY });
     await expect(
-      service.previewDraft('clerk_1', {
+      service.previewDraft('user_1', {
         ...cleanDraft,
         title: 'Reloading bundle',
         description: 'Includes 500 rounds of factory ammunition.',
@@ -975,7 +975,7 @@ describe('previewDraft — ammunition ban', () => {
   it('rejects the count+calibre profile the old guard could not see', async () => {
     const { service } = makeService({ category: RELOADING_CATEGORY });
     await expect(
-      service.previewDraft('clerk_1', {
+      service.previewDraft('user_1', {
         ...cleanDraft,
         title: '500 rounds of 9mm for sale, R6 each',
         description: 'Collect in Pretoria.',
@@ -986,7 +986,7 @@ describe('previewDraft — ammunition ban', () => {
   it('rejects the boilerplate-suffixed advert on the preview path too', async () => {
     const { service } = makeService({ category: RELOADING_CATEGORY });
     await expect(
-      service.previewDraft('clerk_1', {
+      service.previewDraft('user_1', {
         ...cleanDraft,
         title: '500rds 9mm Luger FMJ, R6 each, no offers',
         description: 'Collect in Pretoria, no time wasters.',
@@ -997,7 +997,7 @@ describe('previewDraft — ammunition ban', () => {
   it('rejects primers with the PRIMER message, not the ammunition one', async () => {
     const { service } = makeService({ category: RELOADING_CATEGORY });
     await expect(
-      service.previewDraft('clerk_1', {
+      service.previewDraft('user_1', {
         ...cleanDraft,
         title: '1000 CCI large rifle primers',
         description: 'Sealed sleeve.',
@@ -1007,7 +1007,7 @@ describe('previewDraft — ammunition ban', () => {
 
   it('lets a genuine reloading-components draft through the gate', async () => {
     const { service } = makeService({ category: RELOADING_CATEGORY });
-    const result = await service.previewDraft('clerk_1', cleanDraft as never);
+    const result = await service.previewDraft('user_1', cleanDraft as never);
     // Moderation is disabled in this harness, so a draft that survives the
     // ammunition gate comes back as a clean, publishable preview.
     expect(result.canPublish).toBe(true);
@@ -1016,7 +1016,7 @@ describe('previewDraft — ammunition ban', () => {
 
   it('lets an honest used-rifle draft through the gate', async () => {
     const { service } = makeService({ category: RELOADING_CATEGORY });
-    const result = await service.previewDraft('clerk_1', {
+    const result = await service.previewDraft('user_1', {
       ...cleanDraft,
       title: 'Bergara B14 HMR .308 Winchester',
       description: 'Excellent condition, 400 rounds and nothing more.',
@@ -1029,7 +1029,7 @@ describe('create — ammunition ban', () => {
   it('rejects the ammo category', async () => {
     const { service } = makeService();
     await expect(
-      service.create('clerk_1', {
+      service.create('user_1', {
         ...cleanDraft,
         categoryId: 'cat-ammo',
       } as never),
@@ -1044,7 +1044,7 @@ describe('create — ammunition ban', () => {
       category: { ...AMMO_CATEGORY, isActive: false },
     });
     await expect(
-      service.create('clerk_1', {
+      service.create('user_1', {
         ...cleanDraft,
         categoryId: 'cat-ammo',
       } as never),
@@ -1054,7 +1054,7 @@ describe('create — ammunition ban', () => {
   it('rejects a quantity of rounds offered from an innocent category', async () => {
     const { service } = makeService({ category: RELOADING_CATEGORY });
     await expect(
-      service.create('clerk_1', {
+      service.create('user_1', {
         ...cleanDraft,
         title: 'Live ammunition for sale, 500 rounds 9mm',
       } as never),
@@ -1064,7 +1064,7 @@ describe('create — ammunition ban', () => {
   it('rejects the packaging-laundered phrasing', async () => {
     const { service } = makeService({ category: RELOADING_CATEGORY });
     await expect(
-      service.create('clerk_1', {
+      service.create('user_1', {
         ...cleanDraft,
         title: 'Range clear-out',
         description: '500 rounds of .223 Remington for sale, R7 each.',
@@ -1078,7 +1078,7 @@ describe('create — ammunition ban', () => {
     // unrelated required field — proof the gate let it past rather than that
     // the whole call succeeded.
     await expect(
-      service.create('clerk_1', {
+      service.create('user_1', {
         ...cleanDraft,
         price: undefined,
       } as never),
@@ -1088,7 +1088,7 @@ describe('create — ammunition ban', () => {
   it('does NOT reject honest wear copy on a used rifle', async () => {
     const { service } = makeService({ category: RELOADING_CATEGORY });
     await expect(
-      service.create('clerk_1', {
+      service.create('user_1', {
         ...cleanDraft,
         title: 'Bergara B14 HMR, 1200 rounds, one owner',
         description: 'Buyer must supply their own ammunition.',
@@ -1125,7 +1125,7 @@ describe('update — ammunition ban', () => {
       listing: liveListing,
     });
     await expect(
-      service.update('L1', 'clerk_1', {
+      service.update('L1', 'user_1', {
         title: 'Live ammunition for sale, 500 rounds of 9mm',
       }),
     ).rejects.toThrow(AMMUNITION_BAN_MESSAGE);
@@ -1137,7 +1137,7 @@ describe('update — ammunition ban', () => {
       listing: liveListing,
     });
     await expect(
-      service.update('L1', 'clerk_1', {
+      service.update('L1', 'user_1', {
         description: 'Now bundled with loaded ammo.',
       }),
     ).rejects.toThrow(AMMUNITION_BAN_MESSAGE);
@@ -1149,7 +1149,7 @@ describe('update — ammunition ban', () => {
       listing: { ...liveListing, title: 'Range clear-out', description: '' },
     });
     await expect(
-      service.update('L1', 'clerk_1', {
+      service.update('L1', 'user_1', {
         description: 'Bulk 5.56 - 1000 available, R9 each.',
       }),
     ).rejects.toThrow(AMMUNITION_BAN_MESSAGE);
@@ -1164,7 +1164,7 @@ describe('update — ammunition ban', () => {
       },
     });
     await expect(
-      service.update('L1', 'clerk_1', { title: 'Reloading bundle' }),
+      service.update('L1', 'user_1', { title: 'Reloading bundle' }),
     ).rejects.toThrow(AMMUNITION_BAN_MESSAGE);
   });
 
@@ -1174,7 +1174,7 @@ describe('update — ammunition ban', () => {
       listing: liveListing,
     });
     await expect(
-      service.update('L1', 'clerk_1', { categoryId: 'cat-ammo' }),
+      service.update('L1', 'user_1', { categoryId: 'cat-ammo' }),
     ).rejects.toThrow(AMMUNITION_BAN_MESSAGE);
   });
 
@@ -1188,7 +1188,7 @@ describe('update — ammunition ban', () => {
       .fn()
       .mockRejectedValue(new Error('reached the write'));
     await expect(
-      service.update('L1', 'clerk_1', {
+      service.update('L1', 'user_1', {
         description: '1000 x 147gr projectiles added, plus once-fired brass.',
       }),
     ).rejects.toThrow('reached the write');
@@ -1265,7 +1265,7 @@ describe('update — Claude moderation backstop', () => {
 
   it('runs the moderator on a description edit (it never used to)', async () => {
     const kit = harness('APPROVE');
-    await kit.service.update('L1', 'clerk_1', {
+    await kit.service.update('L1', 'user_1', {
       description: 'Now with a hard case and a bipod.',
     });
     expect(kit.moderation.moderate).toHaveBeenCalledTimes(1);
@@ -1273,7 +1273,7 @@ describe('update — Claude moderation backstop', () => {
 
   it('judges the EFFECTIVE merged values, not just the incoming field', async () => {
     const kit = harness('APPROVE');
-    await kit.service.update('L1', 'clerk_1', {
+    await kit.service.update('L1', 'user_1', {
       title: 'Bergara B14 HMR — price drop',
     });
     const arg = moderateInput(kit.moderation.moderate);
@@ -1284,7 +1284,7 @@ describe('update — Claude moderation backstop', () => {
 
   it('sends a REJECTed edit to PENDING_REVIEW and evicts the search doc', async () => {
     const kit = harness('REJECT');
-    const updated = await kit.service.update('L1', 'clerk_1', {
+    const updated = await kit.service.update('L1', 'user_1', {
       description: 'Ammunition-adjacent phrasing a pattern cannot see.',
     });
     expect(updateData(kit.prisma.listing.update).status).toBe('PENDING_REVIEW');
@@ -1296,7 +1296,7 @@ describe('update — Claude moderation backstop', () => {
     const kit = harness('AUTO_FIX_AND_APPROVE', {
       cleanedDescription: 'Call me on [REDACTED]',
     });
-    await kit.service.update('L1', 'clerk_1', {
+    await kit.service.update('L1', 'user_1', {
       description: 'Call me on 082 123 4567',
     });
     const data = updateData(kit.prisma.listing.update);
@@ -1307,7 +1307,7 @@ describe('update — Claude moderation backstop', () => {
 
   it('does NOT burn a Claude call on a price-only edit', async () => {
     const kit = harness('APPROVE');
-    await kit.service.update('L1', 'clerk_1', { price: 140000 });
+    await kit.service.update('L1', 'user_1', { price: 140000 });
     expect(kit.moderation.moderate).not.toHaveBeenCalled();
   });
 
@@ -1323,7 +1323,7 @@ describe('update — Claude moderation backstop', () => {
       images: [],
       category: RELOADING_CATEGORY,
     });
-    await kit.service.update('L1', 'clerk_1', {
+    await kit.service.update('L1', 'user_1', {
       description: 'Tidied up the wording.',
     });
     expect(kit.moderation.moderate).not.toHaveBeenCalled();

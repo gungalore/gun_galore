@@ -35,9 +35,9 @@ import {
 
 // Per-method guards instead of class-level, so the two endpoints
 // reachable from the SMS-link checkout flow (GET + PATCH /me) can
-// accept EITHER a Clerk session OR a CHECKOUT action token, while
+// accept EITHER a member session OR a CHECKOUT action token, while
 // the more sensitive endpoints (KYC upload, profile-complete with
-// banking, phone OTP) stay Clerk-only.
+// banking, phone OTP) stay provider-only.
 @Controller('users')
 export class UsersController {
   constructor(
@@ -58,7 +58,7 @@ export class UsersController {
   // each contributes ~33% to the percent. Email isn't counted — it's
   // implicit (the seller can't reach this endpoint without it).
   @Get('me')
-  @UseGuards(AuthOrTokenGuard) // accept Clerk OR ?t=<checkout-token>
+  @UseGuards(AuthOrTokenGuard) // accept the identity provider OR ?t=<checkout-token>
   async me(
     @CurrentUser() userId: string,
     @Req() req: Request & { viaActionToken?: boolean },
@@ -142,7 +142,7 @@ export class UsersController {
       listingsCount: user._count.listings,
     });
     // When reached via a CHECKOUT action token (a replayable 24h
-    // URL-bearer credential, not a full Clerk session) NEVER return the
+    // URL-bearer credential, not a full the identity provider session) NEVER return the
     // user's banking details. The token is for completing a checkout, not
     // for reading the seller's payout account. Strip bank* fields.
     if (req.viaActionToken) {
@@ -178,7 +178,7 @@ export class UsersController {
   // ─────────────────── Account summary (Account board) ───────────────
   // Powers every stat line on the Account hub in one call — listing
   // counts by status, offers/bids awaiting an outcome, parcels in
-  // transit, total released payout. Clerk-only (unlike GET /me, this is
+  // transit, total released payout. provider-only (unlike GET /me, this is
   // never reachable via a checkout action token — it surfaces the
   // seller's payout total, which is exactly the kind of banking-adjacent
   // figure the token-bearer strip in `me` above exists to withhold).
@@ -259,7 +259,7 @@ export class UsersController {
   }
 
   @Patch('me')
-  @UseGuards(AuthOrTokenGuard) // accept Clerk OR ?t=<checkout-token>
+  @UseGuards(AuthOrTokenGuard) // accept the identity provider OR ?t=<checkout-token>
   async updateMe(
     @CurrentUser() userId: string,
     @Body() patch: ProfileUpdate,
@@ -290,7 +290,7 @@ export class UsersController {
   }
 
   // ─────────────────── Address book (Phase 2) ────────────────────────
-  // Multiple saved delivery addresses. Clerk-only (managing the book
+  // Multiple saved delivery addresses. provider-only (managing the book
   // needs a real account; the SMS-token checkout flow still works via
   // the inline address override on the checkout form).
   @Get('me/addresses')
@@ -383,7 +383,7 @@ export class UsersController {
   // paid to this account by the daily FNB EFT batch; refund
   // notifications link buyers here when no bank details are on file
   // (profile-complete can't be reused — it demands the full seller
-  // pack: SA ID, address, username, phone). Clerk-only: banking is
+  // pack: SA ID, address, username, phone). provider-only: banking is
   // sensitive, never reachable via a checkout action token.
   @Patch('me/bank-details')
   @UseGuards(AuthGuard)
@@ -398,7 +398,7 @@ export class UsersController {
   // below (their phone matters for tracking + sale notifications);
   // buyers just need a number on file so we can SMS dispatch /
   // out-for-delivery / "where's my parcel" alerts. Per operator
-  // decision: we don't OTP buyers because Clerk doesn't do phones
+  // decision: we don't OTP buyers because the identity provider doesn't do phones
   // (we'd be paying SMSPortal per signup for verification on top
   // of normal transactional SMS).
   //
@@ -454,7 +454,7 @@ export class UsersController {
 
   // ───────────────── Campaign attribution (post-signup) ──────────────
   // Marks which marketing campaign this member arrived on. The email signup
-  // path already carries the key through Clerk unsafeMetadata; OAuth cannot
+  // path already carries the key through the identity provider unsafeMetadata; OAuth cannot
   // (authenticateWithRedirect takes no metadata), so the client flushes it
   // here once the session is live — the same handoff the consent record uses.
   // FIRST-TOUCH: the service only writes when the column is still null, so a

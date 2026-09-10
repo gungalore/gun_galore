@@ -187,7 +187,7 @@ export class VaultConsentService {
    * one they were attached to?
    *
    * Called from the motivations side, which is why it takes our own user id
-   * rather than a Clerk one.
+   * rather than an identity provider one.
    */
   async mayOfferAcross(userId: string): Promise<boolean> {
     const u = await this.prisma.user.findUnique({

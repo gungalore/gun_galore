@@ -65,7 +65,7 @@ describe('SupportService', () => {
 
   it('blocks a reply from a non-owner', async () => {
     // ⚠️ The CALLER is U2 and the ticket belongs to U1. The caller id used to
-    // be a Clerk subject the service translated; it is User.id directly now,
+    // be an identity provider subject the service translated; it is User.id directly now,
     // so this is the whole of the ownership check.
     const { service } = make({ userId: 'U2', ticketUserId: 'U1' });
     await expect(service.replyAsUser('U2', 'T1', 'hi')).rejects.toBeInstanceOf(ForbiddenException);

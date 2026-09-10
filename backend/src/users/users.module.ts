@@ -21,7 +21,7 @@ import { KycModule } from '../kyc/kyc.module';
 // gone too.)
 @Global()
 @Module({
-  // MotivationsModule for MotivationRetentionService: the Clerk
+  // MotivationsModule for MotivationRetentionService: the identity provider
   // user.deleted handler has to remove a member's encrypted licence
   // documents itself, because the cascade that removes their rows cannot
   // reach the filesystem. No cycle — nothing in motivations/ imports users.

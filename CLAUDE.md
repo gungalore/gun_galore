@@ -107,12 +107,12 @@ air-rifle}-scopes, hunting--shooting-sticks-and-bipods.
 
 **Rules when touching this:**
 
-- Anonymity comes from `OptionalClerkGuard` (never rejects, stamps
-  `request.clerkUserId`). A public read path with **no guard at all** is a leak.
+- Anonymity comes from `OptionalAuthGuard` (never rejects, stamps
+  `request.userId`). A public read path with **no guard at all** is a leak.
 - Every public read path goes through the same gate. Grep `publicOnly(` in
   `listings.service.ts`. ⚠️ Remember the non-obvious ones: seller reviews (they
   embed listing titles), and **the public seller storefront** —
-  `GET /api/sellers/:clerkId` + `/sellers/[clerkId]` is anonymous-reachable and
+  `GET /api/sellers/:id` + `/sellers/[id]` is anonymous-reachable and
   renders that seller's listings, so its browse call must stay behind
   `publicOnly()`.
 - `findById` returns **404**, never 403 and never "sign in to view" — that would
@@ -325,24 +325,24 @@ the next session must know.
 
 Values come from `.env` only. This section names variables, never values.
 
-**Frontend**: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
-`NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL`,
-`NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL`,
-`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_SCANNER_V3`,
+**Frontend**: `JWT_MEMBER_SECRET` (⚠️ NOT `NEXT_PUBLIC_` — it verifies the
+session cookie in `middleware.ts` and in server components, and a
+`NEXT_PUBLIC_` prefix would inline the signing secret into the browser
+bundle), `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_SCANNER_V3`,
 `NEXT_PUBLIC_DISABLE_PWA` (absent in production, which is the correct resting
 state — do not read its absence as the switch being broken).
 
-**Backend**: `DATABASE_URL`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`,
-`JWT_ADMIN_SECRET`, `ID_HASH_SECRET`, `HEALTH_PING_SECRET`, `VERIFYNOW_API_KEY`,
-`VERIFYNOW_BASE_URL`, `VERIFYNOW_MODE`, `GEMINI_API_KEY`, `LLM_PROVIDER`,
+**Backend**: `DATABASE_URL`, `JWT_MEMBER_SECRET`, `JWT_ADMIN_SECRET`,
+`ID_HASH_SECRET`, `HEALTH_PING_SECRET`, `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`,
+`DIDIT_WEBHOOK_SECRET`, `DIDIT_MODE`, `DIDIT_BASE_URL`, `GEMINI_API_KEY`,
+`LLM_PROVIDER`,
 `LLM_MODEL`, `LLM_IMAGE_MODEL`, `ANTHROPIC_API_KEY` (rollback only),
 `CLOUDINARY_CLOUD_NAME`,
 `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `MEILISEARCH_HOST`,
 `MEILISEARCH_API_KEY`, `SMSPORTAL_CLIENT_ID`, `SMSPORTAL_API_SECRET`,
 `RESEND_API_KEY`, `PUDO_API_KEY`, `BOBGO_API_KEY`, `BOBGO_BASE_URL`,
 `BOBGO_WEBHOOK_SECRET`, `GOOGLE_MAPS_API_KEY`, `GOOGLE_VISION_API_KEY`,
-`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`,
-`AWS_KYC_LIVENESS_ROLE_ARN`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
 `VAPID_SUBJECT`, `WARDEN_TOKEN`, `WARDEN_BASE_URL`,
 `RELOADING_MANUALS_INBOX_DIR`, `RELOADING_MANUALS_STORAGE_DIR`, the
 `ZOHO_BOOKS_*` set, `COMING_SOON_GATE`, `ALLOW_LOCAL_ORIGINS`, and for Peach:
@@ -372,16 +372,21 @@ evaluation. `ODOO_*` and `TCG_*` are gone.
   Anything reasoning "Turbopack in dev" is wrong here.
 - **Backend:** NestJS + TypeScript. **ORM:** Prisma 7. **DB:** PostgreSQL.
 - **Search:** Meilisearch. **Images:** Cloudinary.
-- **Auth:** Clerk (buyers + sellers); custom JWT (admin).
-- **SMS:** SMSPortal. **Email:** Resend. **KYC:** VerifyNow (+ AWS Rekognition
-  for face-match and liveness).
-  ⚠️ **AWS Textract is GONE — every document read is Gemini** (operator,
-  2026-09-08). It was removed from all three places it lived: the Licence
-  Centre's credential reader, `readFirearm()`, and the KYC identity read.
-  Reads use `json: { schema }` so the provider enforces the shape. **AWS did
-  not leave** — `aws-kyc.service.ts` still uses Rekognition for face-match
-  and Face Liveness, so the client, the region and
-  `AWS_KYC_LIVENESS_ROLE_ARN` all stay.
+- **Auth:** self-hosted for members; custom JWT for admin. Two secrets,
+  `JWT_MEMBER_SECRET` and `JWT_ADMIN_SECRET`, and ⚠️ **they must differ** — the
+  same value on both and a member token verifies on an admin route. Both
+  hard-throw at boot in production.
+- **SMS:** SMSPortal (notifications). **Email:** Resend (transactional).
+  **Identity, email codes and phone codes:** Didit.
+  ⚠️ **AWS IS GONE ENTIRELY.** Textract went in 2026-09-08; Rekognition
+  face-match and Face Liveness went with the Didit cut-over, and with them
+  `aws-kyc.service.ts`, `AWS_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY`/`_REGION`,
+  `AWS_KYC_LIVENESS_ROLE_ARN` and `infra/aws/kyc-iam-policy.json`. Nothing in
+  this codebase calls AWS any more.
+  ⚠️ **Gemini still reads DOCUMENTS, just not IDENTITY ones.** The Licence
+  Centre's credential reader and `readFirearm()` are unchanged; only the KYC
+  identity read moved, because Didit reads the document as part of its own
+  session. Reads still use `json: { schema }` so the provider enforces shape.
 - **Shipping:** Pudo (lockers) + **Bob Go** (door). See Shipping.
 - **Payments:** Peach — built, **inert**. See Money.
 - **Accounting:** Zoho Books (live). Odoo was the earlier plan and is archived —
@@ -465,6 +470,15 @@ stats, news clippings, complaints, the reloading corpus, Warden.
   and now names the **door shape**, served by Bob Go.
 - **Manual EFT pay-in**, **Stitch**, **Odoo**, **Sentry**, the legacy `/admin`
   dashboard, the 63-file email template pack.
+- **Clerk** — removed 2026-09-10. Member auth is self-hosted; see the Auth
+  section. `User.clerkId` is **dropped**, not orphaned: `User.id` is now the
+  only user identifier and `@CurrentUser()` returns it. Nothing named
+  `clerkId` survives anywhere, so a reference to one is stale code, not a
+  compatibility shim. **Google sign-in and 2FA went with it** — both lived in
+  Clerk's hosted surfaces and neither was rebuilt.
+- **VerifyNow** and **AWS Rekognition** (KYC face-match + Face Liveness) —
+  removed 2026-09-10 with the Didit cut-over. See the KYC section for the one
+  capability that went with them and has no free replacement.
 
 ⚠️ **An orphaned Prisma model is not evidence a feature is live.** Several removed
 features deliberately kept their tables, and live sweeps still read those columns
@@ -556,10 +570,33 @@ KoraPay were all evaluated and rejected. **There is no Stitch code in this repo.
   `profileCompletedAt` set. `collectDue` skips anyone failing it and surfaces them
   as blocked money in the admin payouts-due preview rather than silently omitting
   them. `bankVerifiedAt` joins the gate only once BANV is live.
-- ⚠️ **`VERIFYNOW_MODE` defaults to sandbox and production boot only LOGS an
-  error** — the hard throw was deferred. A production box can and does boot with
-  sandbox KYC, which means identity checks pass on canned data. This is a real open
-  item, not a solved one.
+- ⚠️ **`DIDIT_MODE` HARD-THROWS AT BOOT unless it is `live` in production**,
+  and that is the fix for a real incident class, not belt-and-braces. Its
+  predecessor `VERIFYNOW_MODE` defaulted to sandbox and production boot only
+  LOGGED an error, so a production box could — and did — run with sandbox KYC,
+  passing every identity on canned data with nobody the wiser. Do not add a
+  softer second copy of this check: that is how the hard one gets deleted.
+- ⚠️ **THE FREE TIER DEPENDS ON THE WORKFLOW STAYING NON-WHITE-LABEL.** Didit
+  gives 500/month each of ID verification, passive liveness, face match and IP
+  analysis. Setting `is_white_label_enabled: true` on the workflow adds
+  $0.20/session **and drops it out of the free tier entirely** — $0.56 instead
+  of $0.00 for the same verification. Check it in the console before pointing
+  `DIDIT_WORKFLOW_ID` at a new workflow.
+- ⚠️ **NO HOME AFFAIRS CHECK RUNS ANY MORE, AND NO COPY MAY CLAIM ONE.**
+  VerifyNow returned the applicant's official name and date of birth, which is
+  what let the verdict cross-check the typed details against the state rather
+  than only against the document they uploaded. Didit's free tier has no
+  equivalent, so names come from the document and the DOB is checked against
+  the ID number's own digits. The paid replacements are
+  `zaf_africa_national_id` ($1.10) and `zaf_dha_photo` ($1.10); until the
+  operator turns them on, the anchored high-value re-check is gone too.
+- ⚠️ **THE VERDICT ARRIVES BY WEBHOOK, NOT FROM THE REQUEST.** `POST
+  /api/webhooks/didit` is public and HMAC-verified; a bad signature returns
+  **200** with the handler skipped, never a 401 — the same convention the Peach
+  webhooks use, so grepping logs for 401s finds nothing. Didit delivers from
+  the single static IP **18.203.201.92** (`User-Agent: DiditWebhook/2.0`), so
+  **Cloudflare's WAF must allow it** or every delivery is dropped at the edge
+  with nothing in any application log.
 - Never use the word "KYC" in user-facing text — say "Verified" / "Verification".
 
 ---
@@ -683,7 +720,7 @@ hook. Badge query is `WHERE userId=? AND resolvedAt IS NULL`.
 
 API: `persist(...)`, `persistByEmail(email, ...)`, and
 `resolveByEntity(linkedType, linkedId, {userId?, resolvedBy?})`, called from action
-handlers across the codebase. Feed endpoints are Clerk-guarded and throttled
+handlers across the codebase. Feed endpoints are session-guarded and throttled
 120/min/user (the badge polls every 60s across tabs).
 
 ---
@@ -803,8 +840,8 @@ time. SW is disabled in dev.
   for both audiences with no flash. The same script locks pinch-zoom in standalone
   only; browser users keep zoom for accessibility.
 - iOS splash images are wired via `apple-touch-startup-image`.
-- `middleware.ts` keeps `/offline` and `/sw.js` public so Clerk does not rewrite
-  them; `tsconfig.json` includes the `webworker` lib.
+- `middleware.ts` keeps `/offline` and `/sw.js` public so the auth gate does not
+  rewrite them; `tsconfig.json` includes the `webworker` lib.
 
 ---
 
@@ -836,7 +873,8 @@ that is wrong, gate the route — do not leave a claim of a control that is not
 there.
 
 ⚠️ **`/admin(.*)` is a PUBLIC route in `middleware.ts` on purpose** — the admin
-runs its own JWT, not Clerk — so nothing upstream turns a signed-out visitor away.
+runs its own JWT, separate from the member one — so nothing upstream turns a
+signed-out visitor away.
 The session gate lives in the layout, not the pages. It shipped once with
 `requireDeskToken()` exported and called by nobody: a stranger got the operator's
 chrome, the board names and a screenful of 401s.
@@ -1164,7 +1202,7 @@ Rules that survive from the V2 work:
 
 **Backend `scan/`** is the server-side fallback: **one route**, `POST /scan/detect`,
 guarded by `ScanHandoffGuard` **only** — deliberately a separate controller from
-the licence-centre one, because that controller's ClerkGuard would 401 the phone.
+the licence-centre one, because that controller's `AuthGuard` would 401 the phone.
 
 ---
 
@@ -1176,7 +1214,7 @@ powders, bullets, cartridges they own — and the screen answers with consolidat
 loads. It replaced Load Lab.
 
 ⚠️ **Members-only, no-store, including the reads.** Every `/api/bench` route takes
-`ClerkGuard` and every method carries `@NoStore()`. `@Header` is method-only in
+`AuthGuard` and every method carries `@NoStore()`. `@Header` is method-only in
 Nest, so this cannot be declared once on the controller: a route added without it
 is a viewer-varying response the browser will hand to the next person on that
 machine. A guest bench is deferred and gets its own decision.

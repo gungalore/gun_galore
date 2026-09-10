@@ -671,7 +671,7 @@ export class MotivationSellerConsentService {
      * The CLERK subject, not our User.id — resolved below.
      *
      * ⚠️ NAMED FOR WHAT IT IS. It was `applicantUserId`, the controller passed
-     * the Clerk subject into it, and the name was the whole reason nobody
+     * the provider subject into it, and the name was the whole reason nobody
      * spotted that the value was wrong all the way down to a foreign key.
      */
     applicantId: string;
@@ -713,7 +713,7 @@ export class MotivationSellerConsentService {
     // ⚠️ RESOLVE THE CLERK SUBJECT TO OUR OWN USER ROW. `User.id` is a cuid
     // and `User.userId` is `user_...`; they are different values, and
     // ActionToken.authorisedUserId is a REQUIRED foreign key to User.id. The
-    // controller passed the Clerk subject straight through, so every invite
+    // controller passed the provider subject straight through, so every invite
     // this flow ever attempted died on a foreign-key violation — a 500, before
     // any SMS. The witness flow does not have the bug because it resolves
     // through requireOwnMotivation first; this is the same resolution.
@@ -1577,7 +1577,7 @@ export class MotivationSellerConsentService {
    * that back as "the card records" would be circular. cardFirearm is null
    * until the government document has actually been read and confirmed.
    *
-   * ⚠️ OWNER-GATED. Resolves the Clerk subject to our User row and checks the
+   * ⚠️ OWNER-GATED. Resolves the provider subject to our User row and checks the
    * motivation is theirs — the same lesson as the invite route; the id in the
    * path is never trusted on its own. "Not found" rather than "not yours".
    */

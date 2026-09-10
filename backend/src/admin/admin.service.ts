@@ -65,7 +65,7 @@ export class AdminService {
     private readonly sms: SmsService,
     // @Global (UsersModule). closeAccount() delegates the whole closure
     // transaction here rather than hand-rolling an admin-side copy — the
-    // ordering in that service is load-bearing (the Clerk delete must run
+    // ordering in that service is load-bearing (the identity-provider delete must run
     // AFTER our DB write, and the userId tombstone AFTER the webhook lands),
     // and a second implementation would drift out of step with it.
     private readonly closures: AccountClosureService,
@@ -2059,7 +2059,7 @@ export class AdminService {
   // Order / financial CSV export (Phase 7 P7.3) — admin accounting.
   // Date-ranged (by createdAt), optional status filter. Admin-only, so it
   // may include party usernames + emails (the admin already sees these in
-  // the dossier); it does NOT include bank-account numbers, Clerk ids, or
+  // the dossier); it does NOT include bank-account numbers, the identity provider ids, or
   // the encrypted SA ID. Range capped at 180 days + 20k rows.
   // ------------------------------------------------------------------
   async exportTransactionsCsv(
@@ -2783,7 +2783,7 @@ export class AdminService {
   // Admin management — only SUPERADMIN can create new admins.
   // ---------------------------------------------------------------
   // Listing is open to any admin (so monitoring admins can see who
-  // else has access). Create takes a Clerk-linked user's email; we
+  // else has access). Create takes a member-linked user's email; we
   // look up our local User row + lift the userId so future SMS / email
   // alerts pull contact info from there rather than a duplicate column.
   //
@@ -2824,9 +2824,9 @@ export class AdminService {
     const email = targetEmail.trim().toLowerCase();
     if (!email) throw new BadRequestException('Email is required');
 
-    // Look up the Clerk-mirrored User. We refuse to create an admin for
-    // an email that isn't already a Clerk user — that's the contract the
-    // user wanted: admins go through Clerk too, so phone/email come from
+    // Look up the member-linked User. We refuse to create an admin for
+    // an email that isn't already a identity-provider user — that's the contract the
+    // user wanted: admins go through the identity provider too, so phone/email come from
     // there. If they need to be promoted, they have to sign up at the
     // public /sign-up first.
     const linkedUser = await this.prisma.user.findUnique({
@@ -2848,7 +2848,7 @@ export class AdminService {
       throw new BadRequestException('That email is already an admin');
     }
 
-    // A random throwaway password — login goes through Clerk in
+    // A random throwaway password — login goes through the identity provider in
     // practice (future change), but the schema requires a hash, so we
     // fill it with something the admin can't guess + reset later.
     const placeholderHash = await bcrypt.hash(

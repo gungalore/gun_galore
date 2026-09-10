@@ -418,7 +418,7 @@ export class KycService {
       data: { kycRequiredAt: new Date() },
     });
 
-    // Mint a KYC_VERIFY token so the SMS link works without a Clerk
+    // Mint a KYC_VERIFY token so the SMS link works without an identity provider
     // login (the SMS opens in the phone's default browser, which has no
     // PWA session). 7-day TTL. If minting fails we fall back to the bare
     // /kyc/verify URL (login-gated) rather than dropping the SMS.

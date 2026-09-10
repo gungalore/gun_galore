@@ -1,7 +1,7 @@
 // Test: mint a CHECKOUT-purpose token tied to an existing BUY_NOW
 // active listing + its accepted-offer buyer (or any user). Then
 // verify the /a/<token> redirect AND the /checkout/[id]?t=<token>
-// page renders without Clerk auth.
+// page renders without the identity provider auth.
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomBytes } from 'node:crypto';
@@ -59,7 +59,7 @@ const entryResp = await fetch(`http://localhost:3000/a/${token}`, {
   redirect: 'manual',
 });
 
-// 3. /checkout/[id]?t=<token> page — should render WITHOUT Clerk
+// 3. /checkout/[id]?t=<token> page — should render WITHOUT the identity provider
 const checkoutResp = await fetch(
   `http://localhost:3000/checkout/${listing.id}?t=${token}`,
   { redirect: 'manual' },

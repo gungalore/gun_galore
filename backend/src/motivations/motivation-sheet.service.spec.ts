@@ -432,7 +432,7 @@ describe('the seller half reaches the sheet', () => {
       { firearm_source: 'From a private owner' },
       { seller: { status: 'COMPLETED', invitedName: 'Pieter Botha' } },
     );
-    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const sheet = await svc.sheetFor('user_1', 'mo-1');
     const f = sections(sheet.coverage).find((x) => x.id === 'F');
     expect(f).toBeDefined();
     expect(f!.status).toBe('complete');
@@ -444,7 +444,7 @@ describe('the seller half reaches the sheet', () => {
       { firearm_source: 'From a private owner' },
       { seller: { status: 'INVITED', invitedName: 'Pieter Botha' } },
     );
-    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const sheet = await svc.sheetFor('user_1', 'mo-1');
     const f = sections(sheet.coverage).find((x) => x.id === 'F');
     expect(f!.status).toBe('theirs');
     expect(f!.note).toContain('Nothing for you to do');
@@ -454,7 +454,7 @@ describe('the seller half reaches the sheet', () => {
     // Part F is not the applicant's work. A row scoring them 0% on somebody
     // else's half reads as their failure.
     const { svc } = build({ firearm_source: 'From a dealer' });
-    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const sheet = await svc.sheetFor('user_1', 'mo-1');
     expect(sections(sheet.coverage).find((x) => x.id === 'F')).toBeUndefined();
   });
 });
@@ -481,7 +481,7 @@ describe('the Document Centre count behind the pair', () => {
         { id: 'c-b', kind: 'PROFICIENCY', otherSideId: 'c-a' },
       ],
     });
-    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const sheet = await svc.sheetFor('user_1', 'mo-1');
     expect(sheet.credentials.proficiency.inCentre).toBe(1);
   });
 
@@ -489,7 +489,7 @@ describe('the Document Centre count behind the pair', () => {
     const { svc } = build(handgun, {
       credentials: [{ id: 'c-b', kind: 'PROFICIENCY', otherSideId: 'c-a' }],
     });
-    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const sheet = await svc.sheetFor('user_1', 'mo-1');
     expect(sheet.credentials.proficiency.inCentre).toBe(1);
   });
 
@@ -508,7 +508,7 @@ describe('the Document Centre count behind the pair', () => {
         } as never,
       ],
     });
-    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const sheet = await svc.sheetFor('user_1', 'mo-1');
     expect(sheet.credentials.competency.inCentre).toBe(0);
     expect(sheet.credentials.competency.held).toHaveLength(1);
     expect(sheet.credentials.competency.held[0].origin).toBe('vault');
@@ -526,7 +526,7 @@ describe('the Document Centre count behind the pair', () => {
         } as never,
       ],
     });
-    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const sheet = await svc.sheetFor('user_1', 'mo-1');
     expect(sheet.credentials.neededLabel).toBe('Handgun');
     expect(sheet.credentials.pairNote).toContain('statement of results');
     expect(sheet.credentials.competency.held[0].origin).toBe('member');
@@ -551,7 +551,7 @@ describe('the profile is part of what the application says', () => {
       { firearm_type: 'Handgun' },
       { profile: { marital_status: 'Single', safe_present: 'Yes' } },
     );
-    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const sheet = await svc.sheetFor('user_1', 'mo-1');
     expect(sheet.missing).not.toContain('marital_status');
     expect(sheet.missing).not.toContain('safe_present');
   });
@@ -564,7 +564,7 @@ describe('the profile is part of what the application says', () => {
       { marital_status: 'Married' },
       { profile: { marital_status: 'Single' } },
     )
-      .svc.sheetFor('clerk_1', 'mo-1')
+      .svc.sheetFor('user_1', 'mo-1')
       .then((sheet) => {
         expect(
           sheet.items.find((i) => i.key === 'marital_status')?.value,
@@ -606,7 +606,7 @@ describe('a certificate that is also the letter of good standing', () => {
         uploads: [card(['GOOD_STANDING_LETTER'])],
       },
     );
-    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const sheet = await svc.sheetFor('user_1', 'mo-1');
     // ⚠️ `needs` IS THE WHOLE TIER LIST — what the pack wants, attached or
     // not. `missingRequired` is what is still outstanding, which is what the
     // member is chased for.
@@ -622,7 +622,7 @@ describe('a certificate that is also the letter of good standing', () => {
         uploads: [card([])],
       },
     );
-    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const sheet = await svc.sheetFor('user_1', 'mo-1');
     expect(sheet.needs.missingRequired).toContain('GOOD_STANDING_LETTER');
     // The card itself is attached either way, so only the second role moves.
     expect(sheet.needs.missingRequired).not.toContain('ASSOCIATION_CARD');

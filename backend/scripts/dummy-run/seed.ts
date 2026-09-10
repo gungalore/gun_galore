@@ -33,7 +33,15 @@ export interface Ctx {
   };
 }
 
-const CLERK_PREFIX = 'dr_';
+/**
+ * Every row this script creates is prefixed so the cleanup can find it again.
+ *
+ * ⚠️ THE PREFIX AND THE WIPE PREDICATE ARE ONE DECISION. deleteMany below
+ * matches on it; change one without the other and the dummy run silently
+ * stops cleaning up after itself, leaving test members in the database that
+ * look exactly like real ones.
+ */
+const DUMMY_PREFIX = 'dr_';
 
 /**
  * Wipe every transactional table (children → parents), leaving the base seed
@@ -92,9 +100,9 @@ export async function cleanup(prisma: PrismaService) {
       console.warn(`[cleanup] ${model}.deleteMany failed: ${(e as Error).message}`);
     }
   }
-  // Finally the cast — scoped to dr_ clerkIds (belt & braces; nothing else
+  // Finally the cast — scoped to dr_ ids (belt & braces; nothing else
   // creates Users on this DB anyway).
-  await p.user.deleteMany({ where: { id: { startsWith: CLERK_PREFIX } } });
+  await p.user.deleteMany({ where: { id: { startsWith: DUMMY_PREFIX } } });
 }
 
 /**
@@ -132,12 +140,17 @@ async function upsertUser(
   key: string,
   opts: { topSeller?: boolean; subscriptionTier?: string } = {},
 ): Promise<Actor> {
-  const userId = `${CLERK_PREFIX}${key}`;
+  const userId = `${DUMMY_PREFIX}${key}`;
   const email = `${userId}@dummyrun.local`;
   const username = `dr_${key}`;
   const now = new Date();
   const data: any = {
-    userId,
+    id: userId,
+    usernameLower: username.toLowerCase(),
+    // ⚠️ NOT A HASH OF ANYTHING. bcrypt.compare returns false for a malformed
+    // hash, so these accounts can never be signed in to — which is the point:
+    // the dummy run drives services directly, it does not sign in.
+    passwordHash: '!locked-no-password',
     email,
     username,
     firstName: key.charAt(0).toUpperCase() + key.slice(1),

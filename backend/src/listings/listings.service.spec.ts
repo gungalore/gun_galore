@@ -94,7 +94,7 @@ describe('ListingsService — browse filters & brand facet', () => {
  * unauthenticated GET /listings/:id must not hand out the seller's hidden
  * reserve / auto-accept threshold, the current bidder, the firearm serial +
  * licence-holder real name, the pickup address, or the admin/model moderation
- * internals. The seller (identified by a Clerk token) still gets the fields
+ * internals. The seller (identified by a session token) still gets the fields
  * their edit form + moderation banner need.
  */
 describe('ListingsService — findById projection & owner-awareness', () => {

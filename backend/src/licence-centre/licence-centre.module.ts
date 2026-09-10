@@ -50,7 +50,7 @@ import { MotivationsModule } from '../motivations/motivations.module';
     VaultLogService,
     AdminJwtGuard,
   ],
-  // Exported only so the Clerk user.deleted handler can remove the encrypted
+  // Exported only so the identity-provider user.deleted handler can remove the encrypted
   // files before the cascade takes the rows that point at them.
   exports: [LicenceCentreRetentionService],
 })

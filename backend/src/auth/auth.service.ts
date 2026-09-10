@@ -420,7 +420,7 @@ export class AuthService {
 
   /**
    * The viewer object the frontend renders its chrome from — the shape
-   * `useUser()` used to hand back, minus everything Clerk owned.
+   * `useUser()` used to hand back, minus everything the identity provider owned.
    */
   async me(userId: string) {
     const user = await this.prisma.user.findUnique({

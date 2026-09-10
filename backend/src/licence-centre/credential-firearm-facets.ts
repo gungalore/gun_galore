@@ -24,7 +24,7 @@ import {
 // ⚠️ PURE, AND DELIBERATELY SO. Every rule below is a judgement about a
 // firearm — which category, which action, which licence a competency's date
 // follows — and each one is wrong in a way a member would notice. They are
-// testable here without a database, a Clerk session or an AES key.
+// testable here without a database, a member session or an AES key.
 // ────────────────────────────────────────────────────────────────────
 
 /**

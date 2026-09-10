@@ -329,16 +329,16 @@ describe('UsersService.deleteById', () => {
     // and a vault document would outlive the erasure request that was supposed
     // to remove it. purgeForUser deletes the rows explicitly for this reason.
     const { svc, licenceCentre } = build();
-    await svc.deleteById('clerk_1');
+    await svc.deleteById('user_1');
     expect(licenceCentre.purgeForUser).toHaveBeenCalledTimes(1);
   });
 
   it('still scrubs the account when the licence purge throws', async () => {
-    // The caller is a Clerk webhook: an exception makes Clerk retry forever
+    // The caller is a identity-provider webhook: an exception makes the identity provider retry forever
     // and the account is never dealt with at all.
     const { svc, licenceCentre, order } = build();
     licenceCentre.purgeForUser.mockRejectedValueOnce(new Error('disk gone'));
-    await expect(svc.deleteById('clerk_1')).resolves.not.toThrow();
+    await expect(svc.deleteById('user_1')).resolves.not.toThrow();
     expect(order).toContain('user.scrub');
   });
 
@@ -350,7 +350,7 @@ describe('UsersService.deleteById', () => {
     // all by cascade. Operator, 2026-08-22: "if a user commited a crime or
     // something they cant just vanish by deleting and wiping evidence."
     const { svc, prisma, order } = build();
-    await svc.deleteById('clerk_1');
+    await svc.deleteById('user_1');
     expect(prisma.user.deleteMany).not.toHaveBeenCalled();
     expect(order).not.toContain('user.delete');
   });
@@ -360,7 +360,7 @@ describe('UsersService.deleteById', () => {
     // departure as an enforcement action, including the ones an admin uses to
     // find people we have actually banned.
     const { svc, s } = build();
-    await svc.deleteById('clerk_1');
+    await svc.deleteById('user_1');
     expect(s()).not.toHaveProperty('isBanned');
   });
 
@@ -371,7 +371,7 @@ describe('UsersService.deleteById', () => {
     // them made a statutory firearm-transfer form unregenerable, with the
     // whole of Section C blank on re-download.
     const { svc, s } = build({ firearmTxns: 1 });
-    await svc.deleteById('clerk_1');
+    await svc.deleteById('user_1');
     for (const k of [
       'firstName',
       'lastName',
@@ -388,7 +388,7 @@ describe('UsersService.deleteById', () => {
 
   it('erases the identity when no firearm transfer is involved', async () => {
     const { svc, s } = build({ firearmTxns: 0 });
-    await svc.deleteById('clerk_1');
+    await svc.deleteById('user_1');
     expect(s()).toMatchObject({
       firstName: null,
       lastName: null,
@@ -407,13 +407,13 @@ describe('UsersService.deleteById', () => {
     // quartet while money is due makes it permanently unpayable, with no alert
     // and nobody left to re-collect the details from.
     const { svc, s } = build({ payoutsDue: 1 });
-    await svc.deleteById('clerk_1');
+    await svc.deleteById('user_1');
     expect(s()).not.toHaveProperty('bankAccountNumber');
   });
 
   it('clears the bank details when nothing is owed', async () => {
     const { svc, s } = build({ payoutsDue: 0 });
-    await svc.deleteById('clerk_1');
+    await svc.deleteById('user_1');
     expect(s()).toMatchObject({ bankAccountNumber: null, bankName: null });
   });
 
@@ -421,7 +421,7 @@ describe('UsersService.deleteById', () => {
     // Without this a cron could still address an erased member — at the
     // sentinel address.
     const { svc, s } = build();
-    await svc.deleteById('clerk_1');
+    await svc.deleteById('user_1');
     expect(s()).toMatchObject({
       notifyEmailEnabled: false,
       notifySmsEnabled: false,
@@ -435,7 +435,7 @@ describe('UsersService.deleteById', () => {
     // referencing them, invisible to the nightly sweep, which finds files
     // THROUGH rows.
     const { svc, retention, order } = build();
-    await svc.deleteById('clerk_1');
+    await svc.deleteById('user_1');
     expect(retention.purgeForUser).toHaveBeenCalledWith('u-1');
     expect(order).toEqual([
       'motivations.purge',
@@ -445,16 +445,16 @@ describe('UsersService.deleteById', () => {
   });
 
   it('does not throw out of the webhook when the purge fails', async () => {
-    // Clerk retries forever on a non-2xx, and the account stays undeleted.
+    // the identity provider retries forever on a non-2xx, and the account stays undeleted.
     const { svc, retention } = build();
     retention.purgeForUser.mockRejectedValueOnce(new Error('disk on fire'));
-    await expect(svc.deleteById('clerk_1')).resolves.toBeUndefined();
+    await expect(svc.deleteById('user_1')).resolves.toBeUndefined();
   });
 
   it('skips the purge for a clerk id we never had a row for', async () => {
     const { svc, prisma, retention } = build();
     prisma.user.findFirst.mockResolvedValueOnce(null);
-    await svc.deleteById('clerk_unknown');
+    await svc.deleteById('user_unknown');
     expect(retention.purgeForUser).not.toHaveBeenCalled();
   });
 });

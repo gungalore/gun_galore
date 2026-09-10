@@ -42,7 +42,7 @@ export class SellersPublicController {
         id: userId,
         // A closed account has no public profile. The closure scrubs the row,
         // and this is the half that holds regardless of what the scrub did:
-        // the Clerk delete and its webhook are steps 3 and 4 of the closure,
+        // the identity-provider delete and its webhook are steps 3 and 4 of the closure,
         // both outside the DB transaction, so between the member clicking
         // Close and the webhook arriving the row still carries its real
         // userId. Without this line every /sellers/<userId> link the member

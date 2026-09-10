@@ -329,7 +329,7 @@ describe('The Bench — the log reads back in the order it was fired', () => {
     ]);
   });
 
-  it('reads only the caller’s own rows, keyed on the User.id and never the Clerk sub', async () => {
+  it('reads only the caller’s own rows, keyed on the User.id and never the provider subject', async () => {
     const prisma = makePrisma([]);
     await new BenchService(prisma as never).log(SUB);
 
