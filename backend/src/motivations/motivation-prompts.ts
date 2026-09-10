@@ -354,6 +354,44 @@ ${research.trim()}
  * truncate at 120 characters, destroying the very thing we are asked to write
  * from.
  */
+const MONTHS_IN_WORDS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/**
+ * "2027-06-30" as "30 June 2027".
+ *
+ * ⚠️ ONLY A WHOLE, REAL ISO DAY. Anything else — a range, a partial date, a
+ * word, an impossible 31 February — comes back exactly as it arrived. This is
+ * a presentation change to a value the applicant supplied, and a formatter
+ * that quietly rewrites what it does not recognise would be inventing a fact.
+ */
+export function spelledDate(value: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!m) return value;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const at = new Date(Date.UTC(y, mo - 1, d));
+  if (
+    at.getUTCFullYear() !== y ||
+    at.getUTCMonth() !== mo - 1 ||
+    at.getUTCDate() !== d
+  ) {
+    return value;
+  }
+  return `${d} ${MONTHS_IN_WORDS[mo - 1]} ${y}`;
+}
+
 function renderFacts(pack: FactPack): string {
   // factPackFields, not fieldsFor: everything marked formOnly is withheld from
   // the model. Phone numbers and a spouse's ID have no business in a prompt,
@@ -417,7 +455,32 @@ function renderFacts(pack: FactPack): string {
     // and this is the one boundary where that can happen — so the strip that
     // used to sit between the card and the answer sits between the answer and
     // the prose instead.
-    const value = asProse(f.key, answerValue(pack.answers[f.key] ?? ''));
+    const raw = asProse(f.key, answerValue(pack.answers[f.key] ?? ''));
+    /**
+     * ⚠️ A DATE IS HANDED OVER AS WORDS, NOT AS DIGITS THE WRITER MUST RETYPE.
+     *
+     * The wizard stores ISO, and this used to pass "2027-06-30" straight
+     * through — so the model's job was to copy ten digits into prose, and it
+     * kept getting them wrong. MO000075 failed on 2026-09-10 with
+     * "2030-06-30" against a supplied 2027-06-30, and on the run before with
+     * "2004-06-07" against 2024-06-07. In both the fact was present, correct
+     * and one keystroke away in the draft. A single wrong digit inside an ISO
+     * date is still a perfectly well-formed date, which is what makes it a
+     * wrong FACT in a document somebody signs rather than a typo.
+     *
+     * "30 June 2027" is the same fact where a slip has to be a whole wrong
+     * word rather than one wrong character, and it is what the letter should
+     * have said in the first place: a motivation to the Registrar reading
+     * "my membership remains valid until 2027-06-30" is a database row, not
+     * a sentence.
+     *
+     * ⚠️ THE CHECKER ALREADY READS BOTH. packConsistency parses the document
+     * and the answers through the same `datesIn`, which handles "30 June 2027"
+     * and ISO alike, so a document that copies this verifies against an answer
+     * still stored as ISO. And the SAPS 271 prefill reads the ANSWERS, never
+     * the document, so nothing that needs digits loses them.
+     */
+    const value = f.kind === 'date' ? spelledDate(raw) : raw;
     if (!value) continue;
     if (f.kind === 'long' || f.kind === 'cards') {
       const body = f.kind === 'cards' ? cardBody(f.key, value) : value;
