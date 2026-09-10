@@ -6,7 +6,91 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-10**.
 
-## 2026-09-10 (latest) — the cartridge: its tip, and its place in the pack
+## 2026-09-10 (latest, second deploy) — the reader stopped paying twice, and the pack got a palette
+
+Deployed as **1cdfe457**. Rollback point:
+`/var/backups/alloutdoor/db/alloutdoor-20260910-093334.dump`. Carried a
+migration (`DocumentReadCache`), applied cleanly.
+
+### The brief handed the writer the very sentence it was forbidding
+
+`324b4182`. MO000075 would not generate: refused twice by `documentScope` on
+"platform" and "engage targets", and the applicant emailed to say we could not
+finish it. The rest of the draft was clean — structureOk, sameness 0.00.
+
+The cause was ours. The general `the_firearm` brief quoted a fully formed
+catalogue sentence naming a real make and model, and the draft rewrote it almost
+word for word on an application for that very rifle. ⚠️ **A WELL-FORMED
+NEGATIVE EXAMPLE IS A TEMPLATE** — the model matched the pattern and read past
+the prohibition around it. Faults are now described, never quoted, and no
+example may name a real make or model.
+
+"engage targets" was a second gap: written in the DISCIPLINE section, where
+nothing warned, because the ban was only ever stated in the brief for the
+firearm section. `documentScope` is document-wide and the instruction was not.
+Rule 6 now carries it — in the SYSTEM prompt, so it costs nothing per document.
+
+⚠️ **THE BALLISTICS WORDS ARE DELIBERATELY NOT IN THAT LIST.**
+`COMPARISON_TERMS` carves them out where a sentence says what a held firearm
+cannot do. Banning them everywhere would have killed the strongest paragraph in
+a same-class application.
+
+### We were paying six times to read the same ten licences
+
+`49d7e006`. The `AiUsage` ledger carried exactly ten
+`motivation.extract.current_licence` calls and four `proficiency_certificate`
+calls, repeated **six times over three days** against the same stored files —
+177 calls against 23 documents. Every pick of a vault document into a pack
+re-read the bytes.
+
+⚠️ **RE-READING IS A DECISION, NOT AN OVERSIGHT**, so `DocumentReadCache`
+caches the reader's OUTPUT. Carrying values across from the vault by name had
+already produced four bugs. Nothing here reintroduces a mapping.
+
+Keyed on sha256(bytes) + kind + licence type + asked fields + `READER_VERSION`.
+⚠️ The version and field list are in the key deliberately: the research cache
+next door keys on its subject and not its question, so rewording that brief is
+inert for 180 days. ⚠️ The owned-firearm SLOT is deliberately *not* in the key —
+payloads are stored normalised at row 1 and remapped out, or a ten-firearm
+applicant still pays ten times.
+
+⚠️ **AN EMPTY READ IS NEVER REMEMBERED** — `[]` means both "blank document"
+and "model timed out", and caching the second as the first makes a marginal
+document unreadable for thirty days. Payload encrypted, 30-day expiry, swept
+nightly, and **purged when the document is deleted** — a cached transcription
+outliving the card would make the delete a lie.
+
+### The banners are tints, and the house scheme finally looks like the house
+
+`1cdfe457`. Operator wanted more spectrum, then banners at 50%, then no white
+text. The hues were never the problem — accents already spanned 19°–350°; the
+banners were 0–18% saturation on all eleven.
+
+⚠️ **ON PAPER THERE IS NO 50% OPACITY** — the sheet is the backdrop, so the
+schemes store the composited result. ⚠️ **AND THE BANNER NEEDED ITS OWN
+COLOURS**: `deep`/`deep2` read like a banner pair but are an INK role used by
+twenty call sites as fill for headings, labels, fields and marks on white paper.
+`bannerFrom`/`bannerTo` are new; nothing else moved. Banner text comes from
+`onBanner()`, derived from luminance rather than stored, and the brand mark
+flips with it.
+
+⚠️ **THE HOUSE SCHEME HAD BEEN MATCHING A RETIRED SITE.** Its note said "the
+site is a #0f0f0f ground" — true on 2026-08-24, and the white theme landed three
+days later. Its banner is now the site's own pale surfaces.
+
+Three hues added (indigo 262°, petrol 176°, burgundy 348°); **Sand removed** —
+it sat 1° from Stone and their tints were 1.0 apart out of 441, identical at
+65%. Thirteen schemes that are actually thirteen. `asScheme()` validates on
+read, so no stored preference breaks.
+
+### Next: the Design step
+
+The picker is the piece still missing — see the note under the previous entry.
+The palette and the layouts above are what it will offer, and the sample render
+approach is proven: `MotivationPdfService.render()` is pure and costs no model
+call, so a real cover can be rendered per layout for free.
+
+## 2026-09-10 — the cartridge: its tip, and its place in the pack
 
 Deployed as **4c0a9548**. Rollback point:
 `/var/backups/alloutdoor/db/alloutdoor-20260910-003146.dump`.
