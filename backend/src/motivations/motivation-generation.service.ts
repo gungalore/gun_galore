@@ -1074,10 +1074,27 @@ export class MotivationGenerationService {
           ...scopeOf(attempt.text),
         ];
         keepIfBetter();
-        // Not converging: the next round would read the same instruction and
-        // produce the same draft. Stop rather than pay for it — `best` already
-        // holds whichever attempt came closest.
-        if (mechanics.length && mechanics.length >= before) break;
+        /**
+         * ⚠️ THE EARLY BREAK IS GONE, AND IT WAS COSTING US THE THIRD
+         * ATTEMPT EVERY TIME.
+         *
+         * It stopped as soon as an attempt was no better than the one before,
+         * reasoning that "the next round would read the same instruction and
+         * produce the same draft". That was true when the failures were
+         * SYSTEMATIC — a brief that invited catalogue copy, a marker that was
+         * being suppressed — and every one of those is now fixed at its source.
+         *
+         * What is left is variance. Across nine hundred words and forty-odd
+         * refused phrases, each draft trips something different: platform, then
+         * terminal ballistic, then engage targets, then two mistyped digits in
+         * a date the facts state plainly. Under that, "attempt two was no
+         * better than attempt one" is ONE SAMPLE, not evidence about attempt
+         * three — and MO000075 never reached attempt three once, in five days
+         * of failing. Every log reads `regenerating 2/3` and then stops.
+         *
+         * An attempt is five seconds and about a cent. Take all three, keep the
+         * cleanest, and let the repair pass mend what is only a word.
+         */
       }
 
       // ⚠️ WHATEVER PROCEEDS OR IS REPORTED IS THE CLEANEST DRAFT, not the last
