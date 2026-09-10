@@ -17,7 +17,7 @@
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
     "test:cov": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
     "seed": "ts-node --project tsconfig.json -r dotenv/config prisma/seed.ts",
     "seed:help": "ts-node --transpile-only --project tsconfig.json prisma/seed-help-centre.ts",
     "seed:house": "ts-node --transpile-only --project tsconfig.json prisma/seed-house-seller.ts",
@@ -26,7 +26,8 @@
     "saps271:checksum": "node scripts/saps271-checksum.js",
     "crime-stats:load": "ts-node --transpile-only --project tsconfig.json scripts/crime-stats-load.ts",
     "crime-stats:fixture": "node scripts/crime-stats-make-fixture.cjs",
-    "news:poll": "ts-node --transpile-only --project tsconfig.json scripts/news-poll.ts"
+    "news:poll": "ts-node --transpile-only --project tsconfig.json scripts/news-poll.ts",
+    "test:e2e:setup": "node scripts/e2e-db.mjs"
   },
   "prisma": {
     "seed": "ts-node --project tsconfig.json prisma/seed.ts"
