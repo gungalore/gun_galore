@@ -122,9 +122,11 @@ const SCHEME_NAMES: Record<Scheme, string> = {
   fogblue: 'Fog Blue',
   clay: 'Clay',
   olive: 'Olive',
-  sand: 'Sand',
   graphite: 'Graphite',
   mauve: 'Mauve',
+  indigo: 'Indigo',
+  petrol: 'Petrol',
+  burgundy: 'Burgundy',
 };
 
 export interface TemplateCatalogue {

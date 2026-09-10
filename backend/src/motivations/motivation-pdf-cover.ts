@@ -37,7 +37,7 @@ const SUBTITLE = 'APPLICATION FOR A FIREARM LICENCE';
 export const EDGE_BAR_W = K.mm(9);
 
 export function edgeBar({ doc, c }: K.Chrome): void {
-  doc.rect(0, 0, EDGE_BAR_W, K.PAGE_H).fill(c.deep);
+  doc.rect(0, 0, EDGE_BAR_W, K.PAGE_H).fill(c.bannerFrom);
 }
 
 /** Reference line, in the small caps every cover opens with. */
@@ -151,11 +151,11 @@ export function coverMasthead(
 function bannerCover(chrome: K.Chrome, input: CoverInput): number {
   const { doc, c, f } = chrome;
   const g = doc.linearGradient(0, 0, K.PAGE_W, K.COVER_BANNER_H);
-  g.stop(0, c.deep).stop(0.6, c.deep2).stop(1, c.deep2);
+  g.stop(0, c.bannerFrom).stop(0.6, c.bannerTo).stop(1, c.bannerTo);
   doc.rect(0, 0, K.PAGE_W, K.COVER_BANNER_H).fill(g);
 
   placeMark(chrome, {
-    light: true,
+    light: K.bannerIsDark(c),
     x: K.PAD_X,
     y: K.mm(11),
     height: K.mm(13),
@@ -163,7 +163,7 @@ function bannerCover(chrome: K.Chrome, input: CoverInput): number {
   reference(chrome, input.referenceNumber, K.PAD_X, K.mm(15), {
     width: K.CONTENT_W,
     align: 'right',
-    colour: '#ffffff',
+    colour: K.onBanner(c),
   });
 
   let cy = K.mm(34);
@@ -171,7 +171,7 @@ function bannerCover(chrome: K.Chrome, input: CoverInput): number {
   doc
     .font(f.sansBold)
     .fontSize(size)
-    .fillColor('#ffffff')
+    .fillColor(K.onBanner(c))
     .text(TITLE, 0, cy, {
       width: K.PAGE_W,
       align: 'center',
@@ -192,10 +192,10 @@ function bannerCover(chrome: K.Chrome, input: CoverInput): number {
     .rect((K.PAGE_W - boxW) / 2, cy, boxW, boxH)
     .lineWidth(0.8)
     .strokeOpacity(0.55)
-    .strokeColor('#ffffff')
+    .strokeColor(K.onBanner(c))
     .stroke()
     .strokeOpacity(1);
-  doc.fillColor('#ffffff').text(SUBTITLE, 0, cy + K.px(8), {
+  doc.fillColor(K.onBanner(c)).text(SUBTITLE, 0, cy + K.px(8), {
     width: K.PAGE_W,
     align: 'center',
     characterSpacing: sub * 0.3,
@@ -206,7 +206,7 @@ function bannerCover(chrome: K.Chrome, input: CoverInput): number {
   sectionLine(chrome, input.licenceTypeLabel, 0, cy, {
     width: K.PAGE_W,
     align: 'center',
-    colour: '#ffffff',
+    colour: K.onBanner(c),
     opacity: 0.82,
   });
 
@@ -383,7 +383,7 @@ function ledgerCover(chrome: K.Chrome, input: CoverInput): number {
   // mark's own aspect is the tallest it can be and still clear the bar.
   placeMark(chrome, {
     monogram: true,
-    light: true,
+    light: K.bannerIsDark(c),
     x: K.mm(0.9),
     y: K.mm(11),
     height: K.mm(7.2) / K.MARK_ASPECT,

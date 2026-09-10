@@ -199,6 +199,35 @@ export interface Chrome {
 }
 
 /**
+ * What colour text and marks take ON the banner.
+ *
+ * ⚠️ DERIVED FROM THE BANNER'S OWN LUMINANCE, NEVER STORED. A stored flag
+ * and a colour are two facts that can disagree, and the day they do the title
+ * is white on a pale tint and nobody sees it until a member prints one. This
+ * asks the colour itself, so a scheme added later cannot get it wrong.
+ *
+ * ⚠️ AND THE MARK FLIPS WITH IT. brandMark({light}) picks the white-ink
+ * lockup; on a tinted banner that is an invisible logo on every page.
+ */
+export function onBanner(c: Chrome['c']): string {
+  return bannerIsDark(c) ? '#ffffff' : c.ink;
+}
+
+/** Whether the banner is dark enough to knock text out of it in white. */
+export function bannerIsDark(c: Chrome['c']): boolean {
+  const v = (h: string) => {
+    const n = parseInt(h.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x) => {
+      const k = x / 255;
+      return k <= 0.03928 ? k / 12.92 : ((k + 0.055) / 1.055) ** 2.4;
+    });
+  };
+  const [r, g, b] = v(c.bannerTo);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.35;
+}
+
+
+/**
  * The 16 mm running banner: applicant on the left, section on the right.
  *
  * Drawn at the TOP of every page but the cover, which carries its own 80 mm
@@ -210,7 +239,7 @@ export function banner(
   rightLabel: string,
 ): void {
   const g = doc.linearGradient(0, 0, PAGE_W, BANNER_H);
-  g.stop(0, c.deep).stop(1, c.deep2);
+  g.stop(0, c.bannerFrom).stop(1, c.bannerTo);
   doc.rect(0, 0, PAGE_W, BANNER_H).fill(g);
 
   const y = BANNER_H / 2 - px(9) * 0.72;
@@ -223,7 +252,7 @@ export function banner(
   // which is the most-seen element in the document. A rotated 3 pt square is
   // the same mark, in the same place, and cannot go missing.
   const [lead, tail] = splitOnDiamond(leftLabel.toUpperCase());
-  doc.font(f.sans).fontSize(size).fillColor('#ffffff');
+  doc.font(f.sans).fontSize(size).fillColor(onBanner(c));
   doc.text(lead, PAD_X, y, { characterSpacing: tracking, lineBreak: false });
 
   if (tail !== null) {
@@ -234,11 +263,11 @@ export function banner(
     const r = size * 0.26;
     doc.save();
     doc.translate(cx, cy).rotate(45);
-    doc.rect(-r, -r, r * 2, r * 2).fillOpacity(0.85).fill('#ffffff');
+    doc.rect(-r, -r, r * 2, r * 2).fillOpacity(0.85).fill(onBanner(c));
     doc.fillOpacity(1);
     doc.restore();
     doc
-      .fillColor('#ffffff')
+      .fillColor(onBanner(c))
       .text(tail, cx + gap, y, { characterSpacing: tracking, lineBreak: false });
   }
   // The right label is set right-aligned in its own half, SHORTENED TO FIT.
@@ -247,7 +276,7 @@ export function banner(
   const rHalf = CONTENT_W / 2;
   doc.font(f.sans).fontSize(size);
   doc
-    .fillColor('#ffffff')
+    .fillColor(onBanner(c))
     .fillOpacity(0.8)
     .text(
       ellipsise(doc, rightLabel.toUpperCase(), rHalf, rTracking),

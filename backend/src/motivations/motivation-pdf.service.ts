@@ -191,9 +191,11 @@ export type Scheme =
   | 'fogblue'
   | 'clay'
   | 'olive'
-  | 'sand'
   | 'graphite'
-  | 'mauve';
+  | 'mauve'
+  | 'indigo'
+  | 'petrol'
+  | 'burgundy';
 
 import type { DrawingText } from './motivation-cartridge-drawing';
 
@@ -223,13 +225,44 @@ export interface SchemeColours {
    * signature. On the All Outdoor scheme the two are the same value.
    */
   accent: string;
+  /**
+   * The cover banner and the running band, as a gradient.
+   *
+   * ⚠️ SEPARATE FROM `deep`/`deep2`, AND THAT IS THE WHOLE POINT. Those two
+   * are an INK role: twenty call sites set them as the fill for a section
+   * heading, a band label, a form field and a mark, all on white paper.
+   * Operator, 2026-09-10: "don't use solid colors. rather have them at 50%
+   * opacity and text on them very clear if possible" - and tinting deep would
+   * have turned every one of those into pale text on a pale page. The banner
+   * gets its own pair; nothing else moves.
+   *
+   * ⚠️ ON PAPER THERE IS NO SUCH THING AS 50% OPACITY. The sheet IS the
+   * backdrop, so a half-strength fill over white is arithmetically a lighter
+   * solid. These hold the composited result rather than asking the renderer
+   * for an alpha that means nothing once the page is printed.
+   */
+  bannerFrom: string;
+  bannerTo: string;
 }
 
 export const SCHEMES: Record<Scheme, SchemeColours> = {
   // ⚠️ THE HOUSE SCHEME, AND THE DEFAULT SINCE 2026-08-24. Operator: "make
-  // them match the website branding." The site is a #0f0f0f ground, a #C8102E
-  // brand and Archivo display — so deep/deep2 are the site's own near-blacks
-  // and the accent is its red.
+  // them match the website branding." It carries the site's ink (#141414) and
+  // the site's red (#C8102E), and the ink is what prints on paper.
+  //
+  // ⚠️ ITS BANNER WAS NEAR-BLACK, MATCHING A SITE THAT NO LONGER EXISTS. The
+  // note here said "the site is a #0f0f0f ground" and it was true on the day
+  // it was written; the white theme landed THREE DAYS LATER (operator,
+  // 2026-08-27: "white back ground only on the whole website") and this was
+  // never revisited. So the house scheme spent a fortnight being the one
+  // colourway that looked nothing like the house.
+  //
+  // ⚠️ AND IT IS THE LAST WHITE TEXT IN THE PACK. Operator, 2026-09-10: "I
+  // don't really like the white text." Every other scheme is a tint with dark
+  // ink; this one held out because a near-black at half strength is flat grey
+  // with no hue in it at all. Answering with the site's own pale surfaces
+  // solves both at once - the brand is carried by the red rule and the dark
+  // lockup, which is exactly how the site carries it.
   //
   // ⚠️ `band` IS NEUTRAL AND WAS BRIEFLY NOT. A pale red wash seemed like the
   // obvious way to brand it, and on a rendered body page it is five pink chips
@@ -244,24 +277,26 @@ export const SCHEMES: Record<Scheme, SchemeColours> = {
   // with #0f0f0f would drink a cartridge, band on any office laser and
   // photocopy as a black rectangle. Matching a dark-mode site on paper means
   // carrying its INK and its TYPE across, never its background.
-  alloutdoor: { deep: '#1f1f1f', deep2: '#0f0f0f', ink: '#141414', sub: '#3f3f3f', mut: '#7d7d7d', band: '#f0f0f0', hair: '#e0e0e0', wash: '#f7f7f7', accent: '#C8102E' },
-  eucalyptus: { deep: '#587068', deep2: '#40524c', ink: '#29342f', sub: '#475650', mut: '#869590', band: '#dfe9e5', hair: '#dbe4e0', wash: '#f2f7f5', accent: '#2f6b56' },
-  slate:      { deep: '#565e6e', deep2: '#3f4654', ink: '#2a2f38', sub: '#4c5460', mut: '#8a8f99', band: '#e3e2ec', hair: '#e2e0da', wash: '#f6f5f2', accent: '#3b5b8a' },
-  stone:      { deep: '#6b645c', deep2: '#4e4841', ink: '#33302b', sub: '#57524b', mut: '#948e85', band: '#e9e4dc', hair: '#e4dfd7', wash: '#f7f5f1', accent: '#8a6a3d' },
-  sage:       { deep: '#5f6b5e', deep2: '#454f45', ink: '#2c332c', sub: '#4d574d', mut: '#8a938a', band: '#e2e8df', hair: '#dfe3da', wash: '#f4f6f2', accent: '#44753f' },
-  fogblue:    { deep: '#58687a', deep2: '#3f4c5b', ink: '#29323c', sub: '#485664', mut: '#8795a3', band: '#e0e7ed', hair: '#dde3e8', wash: '#f3f6f8', accent: '#2f6f8f' },
-  clay:       { deep: '#7a615a', deep2: '#594641', ink: '#362c29', sub: '#5c4f4a', mut: '#998a81', band: '#ece2dd', hair: '#e6ddd6', wash: '#f8f4f1', accent: '#a0522d' },
-  olive:      { deep: '#6a6a52', deep2: '#4d4d3b', ink: '#30302a', sub: '#55554a', mut: '#90907f', band: '#e7e7d9', hair: '#e2e2d5', wash: '#f6f6ef', accent: '#69762c' },
-  sand:       { deep: '#8a7c62', deep2: '#665b47', ink: '#38332a', sub: '#5d5648', mut: '#9c9484', band: '#eee7d8', hair: '#e8e1d2', wash: '#f9f6ee', accent: '#a5762f' },
-  graphite:   { deep: '#4a4a4e', deep2: '#333336', ink: '#26262a', sub: '#46464b', mut: '#8b8b90', band: '#e4e4e7', hair: '#e0e0e2', wash: '#f4f4f5', accent: '#5c5c66' },
-  mauve:      { deep: '#6e5f6a', deep2: '#50454d', ink: '#322c31', sub: '#544a51', mut: '#93878f', band: '#e9e1e7', hair: '#e3dce1', wash: '#f7f3f6', accent: '#7a4a70' },
+  alloutdoor:  { deep: '#1f1f1f', deep2: '#0f0f0f', ink: '#141414', sub: '#3f3f3f', mut: '#7d7d7d', band: '#f0f0f0', hair: '#e0e0e0', wash: '#f7f7f7', accent: '#C8102E', bannerFrom: '#f4f2ec', bannerTo: '#e7e3d9' },
+  eucalyptus:  { deep: '#587068', deep2: '#40524c', ink: '#29342f', sub: '#475650', mut: '#869590', band: '#dfe9e5', hair: '#dbe4e0', wash: '#f2f7f5', accent: '#278665', bannerFrom: '#a0b6ae', bannerTo: '#95aaa2' },
+  slate:       { deep: '#565e6e', deep2: '#3f4654', ink: '#2a2f38', sub: '#4c5460', mut: '#8a8f99', band: '#e3e2ec', hair: '#e2e0da', wash: '#f6f5f2', accent: '#29528e', bannerFrom: '#a0a8b6', bannerTo: '#959eaa' },
+  stone:       { deep: '#6b645c', deep2: '#4e4841', ink: '#33302b', sub: '#57524b', mut: '#948e85', band: '#e9e4dc', hair: '#e4dfd7', wash: '#f7f5f1', accent: '#8e6429', bannerFrom: '#b6aca0', bannerTo: '#aaa195' },
+  sage:        { deep: '#5f6b5e', deep2: '#454f45', ink: '#2c332c', sub: '#4d574d', mut: '#8a938a', band: '#e2e8df', hair: '#dfe3da', wash: '#f4f6f2', accent: '#318627', bannerFrom: '#a2b6a0', bannerTo: '#97aa95' },
+  fogblue:     { deep: '#58687a', deep2: '#3f4c5b', ink: '#29323c', sub: '#485664', mut: '#8795a3', band: '#e0e7ed', hair: '#dde3e8', wash: '#f3f6f8', accent: '#296d8e', bannerFrom: '#a0aeb6', bannerTo: '#95a3aa' },
+  clay:        { deep: '#7a615a', deep2: '#594641', ink: '#362c29', sub: '#5c4f4a', mut: '#998a81', band: '#ece2dd', hair: '#e6ddd6', wash: '#f8f4f1', accent: '#914827', bannerFrom: '#b6a6a0', bannerTo: '#aa9c95' },
+  olive:       { deep: '#6a6a52', deep2: '#4d4d3b', ink: '#30302a', sub: '#55554a', mut: '#90907f', band: '#e7e7d9', hair: '#e2e2d5', wash: '#f6f6ef', accent: '#758627', bannerFrom: '#b2b6a0', bannerTo: '#a6aa95' },
+  graphite:    { deep: '#4a4a4e', deep2: '#333336', ink: '#26262a', sub: '#46464b', mut: '#8b8b90', band: '#e4e4e7', hair: '#e0e0e2', wash: '#f4f4f5', accent: '#5c5c70', bannerFrom: '#a0a0b6', bannerTo: '#9595aa' },
+  mauve:       { deep: '#6e5f6a', deep2: '#50454d', ink: '#322c31', sub: '#544a51', mut: '#93878f', band: '#e9e1e7', hair: '#e3dce1', wash: '#f7f3f6', accent: '#813772', bannerFrom: '#b6a0b2', bannerTo: '#aa95a6' },
+  indigo:      { deep: '#5b4c76', deep2: '#45375d', ink: '#2f2c35', sub: '#4d4658', mut: '#8c8599', band: '#e4e1ea', hair: '#dfdce5', wash: '#f4f3f7', accent: '#4e298e', bannerFrom: '#a8a0b6', bannerTo: '#9c95aa' },
+  petrol:      { deep: '#4c7673', deep2: '#375d5b', ink: '#2c3535', sub: '#465857', mut: '#859998', band: '#e1eae9', hair: '#dce5e4', wash: '#f3f7f7', accent: '#278680', bannerFrom: '#a0b6b4', bannerTo: '#95aaa8' },
+  burgundy:    { deep: '#764c54', deep2: '#5d373e', ink: '#352c2e', sub: '#58464a', mut: '#998589', band: '#eae1e3', hair: '#e5dcde', wash: '#f7f3f3', accent: '#8b2337', bannerFrom: '#b6a0a4', bannerTo: '#aa959a' },
 };
 
 /** Eucalyptus first \u2014 the handoff's default, and the picker opens on it. */
 export const SCHEME_KEYS: Scheme[] = [
   'alloutdoor',
-  'eucalyptus', 'slate', 'stone', 'sage', 'fogblue',
-  'clay', 'olive', 'sand', 'graphite', 'mauve',
+  'eucalyptus', 'sage', 'petrol', 'fogblue', 'slate', 'indigo',
+  'mauve', 'burgundy', 'clay', 'stone', 'olive', 'graphite',
 ];
 
 /**
