@@ -1962,46 +1962,44 @@ export class MotivationPdfService {
     /**
      * The cartridge, set as a feature.
      *
-     * Operator, 2026-09-10: "The dimension sheet should shrink to a third of
-     * the page with the history, description and facts written around it like
-     * a news article style."
+     * Operator, 2026-09-10, with a sketch: one heading across the top, the
+     * dimension sheet at the top of the RIGHT column, and the article running
+     * full height down the left and underneath the drawing on the right.
      *
-     * ⚠️ THE DRAWING RUNS THE FULL COLUMN AND THE TEXT SETS IN TWO BELOW IT,
-     * which is what a feature does with a wide picture. Wrapping the text
-     * around it was the other reading and it is the wrong shape for the
-     * subject: a cartridge is long and thin, and squeezed into a third of the
-     * COLUMN it is a centimetre of brass nobody can read a dimension off. Full
-     * width, about a quarter of the page deep, and the article underneath it.
+     * ⚠️ THE DRAWING IS AN INSET, NOT A BAND. The first attempt ran it the
+     * full column width with the text below, which is what a feature does with
+     * a wide photograph — and it is not what was asked for. Set into the top of
+     * one column it takes about a third of the page and the prose closes round
+     * it on two sides, which is the shape a magazine uses for a diagram.
      *
-     * ⚠️ AND THE COLUMNS ARE BALANCED BY MEASUREMENT, not by halving the
-     * paragraphs. `heightOfString` is asked what each one costs at the column
-     * width and they are dealt into whichever side is shorter, so a long
-     * opening paragraph cannot leave one column full and the other empty.
+     * ⚠️ AND THE COLUMNS FILL BY WHICHEVER IS SHORTER, which is what makes
+     * the two sides end level without any arithmetic about how much text there
+     * is. The right column simply starts lower — under the drawing — so the
+     * left fills first and the last group lands wherever it balances.
      */
-    const drawCartridgeArticle = (a: {
-      title: string;
-      paragraphs: string[];
-    }) => {
-      const GUTTER = K.mm(7);
+    const drawCartridgeFeature = (
+      a: { title: string; paragraphs: string[] },
+      picture?: { png: Buffer; widthMm: number; heightMm: number; texts: DrawingText[] },
+    ) => {
+      const GUTTER = K.mm(6);
       const colW = (contentWidth - GUTTER) / 2;
+      const rightX = MARGIN + colW + GUTTER;
+      const top = doc.y + K.mm(1);
 
-      doc.y += K.mm(2);
-      doc
-        .font(B.bodySemi)
-        .fontSize(K.px(13))
-        .fillColor(C.deep)
-        .text(a.title, MARGIN, doc.y, { width: contentWidth });
-      doc.y += K.mm(2);
+      let rightTop = top;
+      if (picture) {
+        const h = placeDrawing(picture, rightX, top, colW);
+        rightTop = top + h + K.mm(3);
+      }
 
-      doc.font(B.body).fontSize(K.px(12.5));
-      const gap = K.px(12.5) * 0.7;
+      doc.font(B.body).fontSize(K.px(12));
+      const gap = K.px(12) * 0.7;
 
       /**
        * ⚠️ A SUBHEADING TRAVELS WITH ITS OWN PARAGRAPHS. Dealt one at a
-       * time the balancer put ORIGIN at the top of one column and the sentence
-       * about 1902 at the top of the other, which reads as two headings and
-       * two orphaned facts. Caught by extracting the text of a rendered page
-       * and reading it, not by looking at the code.
+       * time the columns came out as ORIGIN at the top of one and the sentence
+       * about 1902 at the top of the other — two headings and two orphaned
+       * facts. Caught by extracting a rendered page and reading it.
        */
       const groups: string[][] = [];
       for (const para of a.paragraphs) {
@@ -2009,64 +2007,111 @@ export class MotivationPdfService {
         else groups[groups.length - 1].push(para);
       }
 
-      const cost = groups.map((g) =>
-        g.reduce(
-          (n, t) => n + doc.heightOfString(stripMarks(t), { width: colW }) + gap,
-          0,
-        ),
-      );
-      const left: string[] = [];
-      const right: string[] = [];
-      let lh = 0;
-      let rh = 0;
-      groups.forEach((g, i) => {
-        if (lh <= rh) {
-          left.push(...g);
-          lh += cost[i];
-        } else {
-          right.push(...g);
-          rh += cost[i];
-        }
-      });
+      let ly = top;
+      let ry = rightTop;
+      const spill: string[][] = [];
 
-      const top = doc.y;
-      const column = (items: string[], x: number) => {
-        let y = top;
-        for (const raw of items) {
+      const put = (group: string[], x: number, y: number): number => {
+        let at = y;
+        for (const raw of group) {
           const sub = subheadingOf(raw);
           if (sub) {
-            doc.font(B.bodySemi).fontSize(K.px(11)).fillColor(C.sub);
-            doc.text(sub.toUpperCase(), x, y, {
+            doc.font(B.bodySemi).fontSize(K.px(10.5)).fillColor(C.sub);
+            doc.text(sub.toUpperCase(), x, at, {
               width: colW,
-              characterSpacing: K.px(11) * 0.06,
+              characterSpacing: K.px(10.5) * 0.06,
             });
-            y = doc.y + K.mm(1);
+            at = doc.y + K.mm(0.8);
             continue;
           }
-          doc.font(B.body).fontSize(K.px(12.5)).fillColor(C.ink);
-          doc.text(stripMarks(raw), x, y, { width: colW, align: 'left' });
-          y = doc.y + gap;
+          doc.font(B.body).fontSize(K.px(12)).fillColor(C.ink);
+          doc.text(stripMarks(raw), x, at, { width: colW });
+          at = doc.y + gap;
         }
-        return y;
+        return at;
       };
-      const endL = column(left, MARGIN);
-      const endR = column(right, MARGIN + colW + GUTTER);
+
+      const costOf = (group: string[]) => {
+        doc.font(B.body).fontSize(K.px(12));
+        return group.reduce(
+          (n, t) =>
+            n + doc.heightOfString(stripMarks(t), { width: colW }) + gap,
+          0,
+        );
+      };
+
+      for (const group of groups) {
+        const cost = costOf(group);
+        /**
+         * ⚠️ NEITHER COLUMN RUNS OFF THE PAGE. pdfkit will happily set text
+         * past the bottom margin when it is given an explicit y, and the
+         * footer would print straight over it. What will not fit is held back
+         * and set full width overleaf rather than being lost.
+         */
+        const toLeft = ly <= ry;
+        const y = toLeft ? ly : ry;
+        if (y + cost > K.BODY_BOTTOM) {
+          const other = toLeft ? ry : ly;
+          if (other + cost > K.BODY_BOTTOM) {
+            spill.push(group);
+            continue;
+          }
+          if (toLeft) ry = put(group, rightX, ry);
+          else ly = put(group, MARGIN, ly);
+          continue;
+        }
+        if (toLeft) ly = put(group, MARGIN, ly);
+        else ry = put(group, rightX, ry);
+      }
 
       doc.x = MARGIN;
-      doc.y = Math.max(endL, endR) + PARA_GAP;
+      doc.y = Math.max(ly, ry) + PARA_GAP;
+
+      if (spill.length) {
+        doc.addPage();
+        doc.x = MARGIN;
+        doc.y = K.BODY_TOP;
+        for (const group of spill) {
+          for (const raw of group) {
+            const sub = subheadingOf(raw);
+            if (sub) {
+              doc.font(B.bodySemi).fontSize(K.px(10.5)).fillColor(C.sub);
+              doc.text(sub.toUpperCase(), MARGIN, doc.y, {
+                width: contentWidth,
+                characterSpacing: K.px(10.5) * 0.06,
+              });
+              doc.y += K.mm(0.8);
+              continue;
+            }
+            doc.font(B.body).fontSize(K.px(12)).fillColor(C.ink);
+            doc.text(stripMarks(raw), MARGIN, doc.y, { width: contentWidth });
+            doc.y += gap;
+          }
+        }
+        doc.y += PARA_GAP;
+      }
     };
 
     const drawCartridge = () => {
       if (!hasCartridgeBlock || cartridgeDrawn) return;
       cartridgeDrawn = true;
 
+      if (article) {
+        drawCartridgeFeature(article, bodyPicture);
+        return;
+      }
+      /**
+       * ⚠️ NO ARTICLE MEANS NO COLUMNS. A drawing on its own is a figure and
+       * takes the whole column, as it did before the feature existed — the
+       * research can be absent (a cartridge nobody has looked up, a call that
+       * failed) and the picture must still land.
+       */
       if (bodyPicture) {
         const y0 = doc.y;
         const drawH = placeDrawing(bodyPicture, MARGIN, y0, contentWidth);
         doc.x = MARGIN;
-        doc.y = y0 + drawH + K.mm(2);
+        doc.y = y0 + drawH + PARA_GAP;
       }
-      if (article) drawCartridgeArticle(article);
     };
 
     doc.addPage();
