@@ -2106,14 +2106,36 @@ export class MotivationPdfService {
        * it may start. pdfkit will happily set text straight over an image when
        * it is given an explicit y — the footer already proved that once.
        */
+      doc.font(B.body).fontSize(K.px(12));
+      const gap = K.px(12) * 0.7;
+
+      /**
+       * ⚠️ THE RIGHT COLUMN STARTS ON ONE OF THE LEFT COLUMN'S LINES.
+       *
+       * Operator, 2026-09-10, reading the rendered page: "there is a paragraph
+       * underneath the CIP that does not line up with the other text." It used
+       * to start wherever the C.I.P. sheet happened to end — an arbitrary
+       * number of points below `top` — so the first thing under the sheet sat
+       * between two lines of the column beside it, which is what the eye
+       * catches.
+       *
+       * ⚠️ AND ONLY THE START. A full baseline grid — snapping after every
+       * paragraph and every subheading too — was tried and reverted: subheadings
+       * are set smaller than the body and the paragraph gap is 0.7 em, so
+       * rounding each of them up to a whole line added about 30 mm over a
+       * seven-section article. That pushed the last section onto a second sheet
+       * and put a blank line under every heading. The columns still drift by
+       * fractions further down; they no longer start out of step, which is the
+       * part that reads as broken.
+       */
+      const lineH = doc.currentLineHeight(true);
+
       let rightTop = top;
       if (picture) {
         const h = placeDrawing(picture, rightX, top, colW);
-        rightTop = top + h + K.mm(3);
+        rightTop =
+          top + Math.ceil((h + K.mm(3)) / lineH - 1e-6) * lineH;
       }
-
-      doc.font(B.body).fontSize(K.px(12));
-      const gap = K.px(12) * 0.7;
 
       /**
        * ⚠️ A SUBHEADING TRAVELS WITH ITS OWN PARAGRAPHS. Dealt one at a

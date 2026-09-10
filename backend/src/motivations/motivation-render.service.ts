@@ -1448,8 +1448,22 @@ export class MotivationRenderService {
         texts: [],
       };
     } catch (err) {
+      /**
+       * ⚠️ THE STACK, BECAUSE THE MESSAGE ALONE WAS NOT ENOUGH. This failed
+       * on every render in production on 2026-09-10 with "Value is none of
+       * these types `String`, `Path`," and nothing else — a napi-level type
+       * error with no indication of which library raised it. The same call
+       * succeeded from a script on the same box, in the same directory, with
+       * the same bytes, five at a time. Without a frame there is nothing to
+       * work from.
+       */
+      const e = err as Error;
       this.logger?.warn?.(
-        `C.I.P. inset failed for "${name}": ${(err as Error).message}`,
+        `C.I.P. inset failed for "${name}": ${e.message} | ${(e.stack ?? '')
+          .split(String.fromCharCode(10))
+          .slice(1, 4)
+          .map((l) => l.trim())
+          .join(' <- ')}`,
       );
       return undefined;
     }

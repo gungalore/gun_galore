@@ -249,6 +249,16 @@ const COMMUTE_TIMEOUT_MS = 6_000;
  * once per attempt (see the claim below). The ceiling is the controller's
  * 10-per-hour throttle.
  */
+/**
+ * How long a GENERATING row may sit untouched before it is treated as dead.
+ *
+ * ⚠️ GENEROUS ON PURPOSE. The slowest real pass observed was about two
+ * minutes — three drafts, a gate at 38 s and a verify at 52 s — so ten minutes
+ * cannot collide with a live one, and a member whose deploy-killed generation
+ * stranded them waits ten minutes rather than forever.
+ */
+export const STALE_GENERATION_MS = 10 * 60 * 1000;
+
 export const REGENERABLE: MotivationStatus[] = [
   ...EDITABLE,
   MotivationStatus.COMPLETED,
@@ -429,8 +439,35 @@ export class MotivationGenerationService {
     // COMPARE-AND-SWAP. Two clicks on Generate must not both call the model —
     // that is duplicated spend and a race on the row. Only the request that
     // moves the status out of an editable state proceeds.
+    /**
+     * ⚠️ A GENERATION THAT DIED MID-FLIGHT MUST NOT LOCK THE MEMBER OUT
+     * FOREVER, AND IT DID.
+     *
+     * `pm2 reload` is a restart on this box — fork mode, one instance, which
+     * CLAUDE.md says in as many words — so a deploy while somebody is
+     * generating kills the request in flight. The row stays GENERATING, and
+     * because GENERATING is not in REGENERABLE, every retry from then on is
+     * answered "This document is already being prepared. Give it a moment."
+     * MO000075 sat like that on 2026-09-10 until the status was edited by
+     * hand. The same happens on a crash, an OOM, or the nightly reboot.
+     *
+     * So a GENERATING row that nothing has touched for STALE_GENERATION_MS is
+     * treated as abandoned and may be claimed again. The window is far longer
+     * than a real pass — three attempts, a gate and a verify came to about two
+     * minutes on the slowest run observed — so this can never race a live one.
+     */
+    const staleBefore = new Date(Date.now() - STALE_GENERATION_MS);
     const claimed = await this.prisma.motivation.updateMany({
-      where: { id: row.id, status: { in: REGENERABLE } },
+      where: {
+        id: row.id,
+        OR: [
+          { status: { in: REGENERABLE } },
+          {
+            status: MotivationStatus.GENERATING,
+            updatedAt: { lt: staleBefore },
+          },
+        ],
+      },
       data: { status: MotivationStatus.GENERATING },
     });
     if (claimed.count === 0) {
