@@ -6,6 +6,57 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-10**.
 
+## 2026-09-10 (latest, third deploy) — the Design step
+
+Deployed as **5aa6155b**. Rollback point:
+`/var/backups/alloutdoor/db/alloutdoor-20260910-100307.dump`. No migration.
+
+Five layouts and a colour catalogue have been served since August with **no
+caller** — Phase 4 deleted the wizard that had one. Every pack ever made took
+`asLayout(null)`; MO000075's three template columns are still null.
+
+The card sits on the review sheet **above the sticky footer**, closed by
+default, with the red button still primary underneath. The footer's own note
+argues the placement: a separate step for a cosmetic choice is the
+confirm-guarding-a-value-we-already-hold shape ruled out on 2026-08-25.
+
+⚠️ **THE SAMPLES ARE REAL RENDERS.** `GET /motivations/:id/design-sample`
+runs the actual renderer over the applicant's own cover and returns page one.
+**No model call** — the expensive half of a motivation is the prose, and
+rendering is a pure function over figures already held. The old picker drew its
+own approximation in 511 lines and drifted: it advertised Report as
+"sans-serif throughout" to members whose packs were serif. A drawing of a
+document can lie about the document; this cannot.
+
+⚠️ **CLOSED, IT FETCHES NOTHING** — otherwise every member loading the sheet
+costs the box five document renders they never look at. Pinned by a spec.
+
+⚠️ **THE CLIENT COLOUR TYPE HAD UNDER-DECLARED THE RESPONSE AGAIN.** Its own
+comment records doing this once before. `accent` reached the renderer on
+2026-08-24 and never reached the type. The component now uses the API's types
+rather than a local copy — which is how it drifted both times.
+
+Also: one axis per PATCH (a colour click can never reset a chosen layout);
+`null` means NEVER CHOSEN rather than default, so the server owns the fallback;
+blob URLs revoked through a ref (five alive at once, replaced per swatch).
+
+**Verified live** in the operator's own browser on MO000075: the card opens,
+thirteen swatches and five layout cards render, each carrying a genuine cover
+with the cartridge hero.
+
+### ⚠️ STILL OPEN: the prompt fix is deployed but UNPROVEN
+
+`MO000075` is still `status = FAILED`, carrying the failure reason from
+**00:53 on 2026-09-10** — before `324b4182` shipped. Nobody has pressed "Write
+my motivation" since. The draft visible on the sheet is the RETAINED REJECTED
+one, which is easy to mistake for a fresh success.
+
+**Next session: regenerate MO000075 and watch `pm2 logs`.** Expect no
+`regenerating 2/3` and no `motivation-verify-failed` AdminAlert. If it fails
+again on a catalogue word, the phrase-level repair pass discussed on 2026-09-10
+is the fix — send back only the offending sentences rather than regenerating a
+whole clean document over two words.
+
 ## 2026-09-10 (latest, second deploy) — the reader stopped paying twice, and the pack got a palette
 
 Deployed as **1cdfe457**. Rollback point:
