@@ -1,3 +1,4 @@
+import { withoutRefusedCopy } from './motivation-scope';
 import { Injectable, Logger } from '@nestjs/common';
 import { MotivationLicenceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -101,6 +102,18 @@ export const RESEARCH_TTL_DAYS = 180;
  * writer and a later re-read must key the same fact the same way or the second
  * one silently misses. Lower-cased, whitespace collapsed, pipe-separated.
  */
+/**
+ * Bump when an ASK changes in a way that should change the answer.
+ *
+ * ⚠️ THE KEY DID NOT CARRY THE QUESTION, AND THAT MADE A FIX INERT FOR HALF
+ * A YEAR. It keys on the SUBJECT — the make, the model, the calibre — so
+ * rewording the brief changed nothing at all until the row expired 180 days
+ * later. MO000075 was refused three times on catalogue copy that came straight
+ * out of its own firearm research; rewording the ask without this would have
+ * shipped, looked right, and still handed the writer the same marketing.
+ */
+export const RESEARCH_ASK_VERSION = '2026-09-10';
+
 export function cacheKeyFor(
   target: ResearchTarget,
   parts: readonly (string | undefined)[],
@@ -108,7 +121,7 @@ export function cacheKeyFor(
   const norm = parts
     .map((p) => (p ?? '').toLowerCase().replace(/\s+/g, ' ').trim())
     .filter(Boolean);
-  return [target, ...norm].join('|').slice(0, 400);
+  return [target, RESEARCH_ASK_VERSION, ...norm].join('|').slice(0, 400);
 }
 
 /**
@@ -139,9 +152,11 @@ export function targetsFor(
       cacheKey: cacheKeyFor('firearm', [make, model, calibre, useClass]),
       ask: [
         `THE FIREARM: ${[type, action, make, model, calibre].filter(Boolean).join(' ')}.`,
-        'Find the manufacturer and model background, its design features,',
-        'action and configuration, and what the model is built and used for.',
-        `Say what bears on ${useClass} use in South Africa specifically.`,
+        'What is this model USED FOR, and by whom, in South Africa —',
+        `which ${useClass} disciplines or quarry it is chosen for, at what`,
+        'ranges and in what conditions, and what it is poorly suited to.',
+        'NOT a specification: no receiver, no bolt, no trigger, no barrel, no',
+        'safety, no finish, no manufacturer history. Describe the USE.',
       ].join(' '),
     });
   }
@@ -432,10 +447,32 @@ export class MotivationResearchService {
       );
     }
 
+    /**
+     * ⚠️ SCRUBBED BEFORE IT IS STORED, NOT BEFORE IT IS USED. A payload the
+     * writer must never see should not be sitting in a cache for 180 days
+     * waiting for somebody to read it out of curiosity - and scrubbing on the
+     * way in means every reader gets the same text, including the ones written
+     * later that forget to ask.
+     *
+     * ⚠️ AND IT IS A GUARANTEE, NOT AN INSTRUCTION. MO000075 was refused three
+     * times on "platform" and the sentence came almost word for word out of
+     * this very payload: a grounded search for a rifle MODEL returns the
+     * manufacturer's marketing. The brief already forbade those words twice
+     * over; the writer used them because they were in front of it, in a block
+     * it is told to treat as fact. A sentence removed cannot be quoted.
+     */
+    const clean = withoutRefusedCopy(text);
+    if (clean !== text) {
+      this.logger.warn(
+        `Research for ${target}: dropped catalogue copy the writer would have ` +
+          `been refused for repeating.`,
+      );
+    }
+
     const entry: ResearchEntry = {
       target,
       cacheKey,
-      payload: text,
+      payload: clean,
       sources,
       usage,
     };

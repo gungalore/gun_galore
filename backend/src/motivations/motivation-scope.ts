@@ -38,7 +38,7 @@ import type { ArsenalRow } from './motivation-arsenal';
  * writing; they are what the model produced unprompted for a self-defence
  * application, in a document the applicant was expected to sign.
  */
-const CATALOGUE_PHRASES = [
+export const CATALOGUE_PHRASES = [
   'terminal ballistic',
   'stopping power',
   'magazine capacit',
@@ -225,6 +225,91 @@ const SPORTING_WORDS = [
  * finish or the manufacturer's history: none of those is a comparison, they
  * are a product page.
  */
+/**
+ * Sentences the writer would be REFUSED for repeating.
+ *
+ * ⚠️ THE RESEARCH IS HELD TO THE SAME STANDARD AS THE DOCUMENT, and it was
+ * not. MO000075 was refused three times running on "platform", and the sentence
+ * it was refused for is almost word for word out of its own firearm research:
+ * "built on the Howa 1500 platform ... a turn-bolt, push-feed repeating action
+ * based on a robust one-piece forged steel receiver". The writer was not
+ * inventing catalogue copy. It was faithfully reporting what we handed it,
+ * because a grounded web search for a rifle MODEL returns the manufacturer's
+ * own marketing.
+ *
+ * ⚠️ SO THIS IS A GUARANTEE RATHER THAN AN INSTRUCTION. The brief already
+ * told the writer not to use these words, in the system prompt and in the
+ * section brief, and it used them anyway - because they were in front of it,
+ * in a block it is told to treat as fact. A sentence removed cannot be quoted.
+ *
+ * ⚠️ WHOLE SENTENCES, NEVER WORDS. Cutting the word out leaves a sentence
+ * asserting something with a hole in it, which is worse than losing the point:
+ * the writer is told to use only what it is given, so a mangled fact is a fact
+ * it may repeat. Losing a sentence about a receiver costs the document nothing.
+ */
+/**
+ * The parts of a firearm the document may not be built out of.
+ *
+ * Operator, 2026-09-09: "we dont need the barrel length, capacity or the maas.
+ * we need whats on the license card, nothing else."
+ *
+ * ⚠️ THE BRIEF HAS FORBIDDEN THESE SINCE SEPTEMBER AND NOTHING ENFORCED IT.
+ * documentScope never checked them, so the only thing standing between a
+ * product page and a signed application was an instruction — and the research
+ * was handing the writer the parts list to build one from, under a heading
+ * called "Design Features, Action, and Configuration".
+ *
+ * ⚠️ RESEARCH ONLY, NEVER THE DOCUMENT. A finished motivation may have an
+ * honest reason to say "barrel" — a barrel is a licensed component with its own
+ * serial, and section E of the SAPS 271 asks for it. Refusing the word outright
+ * would refuse a true sentence. What this does is narrower and safer: it
+ * declines to PUT the parts list in front of the writer in the first place.
+ */
+const SPEC_WORDS = [
+  'receiver',
+  'bolt body',
+  'bolt handle',
+  'locking lug',
+  'extractor',
+  'ejector',
+  'trigger',
+  'barrel',
+  'safety mechanism',
+  'three-position safety',
+  'stock',
+  'chassis',
+  'hammer-forged',
+  'headspace',
+  'twist rate',
+] as const;
+
+export function withoutRefusedCopy(payload: string): string {
+  const banned = [
+    ...CATALOGUE_PHRASES.filter(
+      (w) => !COMPARISON_TERMS.includes(w as (typeof COMPARISON_TERMS)[number]),
+    ),
+    ...PRODUCT_PAGE_WORDS,
+    ...SPEC_WORDS,
+  ];
+  return payload
+    .split(String.fromCharCode(10))
+    .map((line) => {
+      /**
+       * ⚠️ LINE BY LINE, BECAUSE THE PAYLOAD IS A LIST AS OFTEN AS PROSE.
+       * The firearm brief comes back as markdown bullets - "**Barrel:** Features
+       * a cold hammer-forged steel barrel" - and splitting on full stops would
+       * leave the heading behind with its bullet marker and no content.
+       */
+      const keep = line
+        .split(/(?<=[.!?])\s+/)
+        .filter((sentence) => !banned.some((w) => contains(sentence, w)));
+      return keep.join(' ');
+    })
+    .filter((line, i, all) => line.trim() || (i > 0 && all[i - 1].trim()))
+    .join(String.fromCharCode(10))
+    .trim();
+}
+
 const COMPARISON_TERMS = [
   'terminal ballistic',
   'stopping power',

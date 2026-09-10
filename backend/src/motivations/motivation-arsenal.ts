@@ -99,11 +99,30 @@ function renderRow(r: Omit<ArsenalRow, 'line'>): string {
    * which of the two it was issued for is exactly what nobody has stated. The
    * section is already on the row above; naming it is what the writer is for.
    */
+  /**
+   * ⚠️ THE WARNING IS NOT SUPPRESSED BY THE CANDIDATE USES, AND SUPPRESSING
+   * IT PUT THE BUG STRAIGHT BACK. This was `else if (!candidateUses...)`, so a
+   * firearm whose purpose nobody stated lost the "say nothing" instruction the
+   * moment the use generator had anything to offer for its class — and the
+   * writer read the basket as a statement of what the licence is FOR.
+   * MO000075, 2026-09-10: "the document says the applicant's CZ Handgun 6.35MM
+   * BROWNING is for 'hunt', and nothing in the pack states what it is licensed
+   * for." Which is the identical refusal MO000074 took on 2026-09-09, on a
+   * document with no candidate uses at all.
+   *
+   * ⚠️ THE TWO SAY DIFFERENT THINGS AND BOTH ARE TRUE. This one is about
+   * THIS LICENCE: nobody has stated its purpose, so the document may not. The
+   * candidates below are about the CLASS of firearm - what a handgun in this
+   * calibre can be used for - and they are there to argue a comparison, never
+   * to fill in a purpose nobody gave.
+   */
   if (r.licensedFor) put('licensed_for', r.licensedFor);
-  else if (!r.candidateUses?.some((g) => g.uses.length))
+  else
     bits.push(
-      'licensed_for="NOT STATED — say nothing about what this firearm is for; ' +
-        'name it, its calibre and its section, and stop"',
+      'licensed_for="NOT STATED — nobody has said what THIS licence is for, ' +
+        'so the document must not say either. Name the firearm, its calibre ' +
+        'and its section, and stop. Any uses listed below describe what this ' +
+        'CLASS of firearm can do; they are not what this one is licensed for"',
     );
   put('expires', r.expires);
   /**

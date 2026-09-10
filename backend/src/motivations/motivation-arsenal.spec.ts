@@ -119,7 +119,7 @@ describe('a held firearm whose purpose nobody stated', () => {
   it('⚠️ TELLS THE WRITER TO SAY NOTHING, RATHER THAN SAYING NOTHING', () => {
     const line = rowFor({}).line;
     expect(line).toContain('NOT STATED');
-    expect(line).toMatch(/say nothing about what this firearm is for/i);
+    expect(line).toMatch(/the document must not say either/i);
   });
 
   it('still carries the section, which IS stated', () => {
@@ -163,11 +163,28 @@ describe('the candidate uses on a row', () => {
     // Operator, 2026-09-09: "that would give two lists instead of one
     // consolidated list". The writer chooses the ARGUMENT before the sentence.
     const line = arsenalRows(answers, {}, { 1: uses })[0].line;
-    expect(line).not.toContain('NOT STATED');
+    expect(line).toContain('<uses for="occasional hunting">');
     expect(line).toContain('<uses for="occasional hunting">');
     expect(line).toContain('<uses for="occasional sport shooting">');
     expect(line).toContain(`<use>${HUNT}</use>`);
     expect(line).toContain(`<use>${SPORT}</use>`);
+  });
+
+  it('⚠️ STILL SAYS THE PURPOSE IS UNSTATED, EVEN WITH USES TO OFFER', () => {
+    // ⚠️ THIS SPEC ASSERTED THE OPPOSITE UNTIL 2026-09-10, and production
+    // disproved it. The warning was suppressed whenever the use generator had
+    // anything for the class, on the reading that the candidates spoke for
+    // themselves. They do not: MO000075 was refused with "the document says the
+    // applicant's CZ Handgun 6.35MM BROWNING is for 'hunt', and nothing in the
+    // pack states what it is licensed for" — the writer read the basket as a
+    // statement of what the licence was FOR. Which is the identical refusal
+    // MO000074 took the day before, on a row with no candidates at all.
+    //
+    // The two say different things and both are true: this licence's purpose is
+    // unstated, AND this class of firearm can do these things.
+    const line = arsenalRows(answers, {}, { 1: uses })[0].line;
+    expect(line).toContain('NOT STATED');
+    expect(line).toContain('<uses for="occasional hunting">');
   });
 
   it('⚠️ A STATED PURPOSE STILL WINS OUTRIGHT', () => {
