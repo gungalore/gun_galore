@@ -181,6 +181,14 @@ is the operator's own hint: a `responseSchema` call through `common/llm/gemini-s
 all three together. Only the Textract half goes; the AWS client, the region config and
 `AWS_KYC_LIVENESS_ROLE_ARN` stay.
 
+> ⚠️ **SUPERSEDED 2026-09-10 — AWS DID leave, in a later change.** The paragraph
+> above was true when this plan shipped. The Didit cut-over then removed the
+> Rekognition half as well: `aws-kyc.service.ts`, `aws-kyc-findings.ts` and the
+> whole of `infra/aws/` are deleted, and nothing under `backend/src/` reads an
+> `AWS_*` name. The file table below still names files that no longer exist —
+> read this document for the argument, not for the current shape of the tree.
+> See `docs/history/CLERK-REMOVAL.md`.
+
 | File | Action | Test |
 |---|---|---|
 | `backend/src/licence-centre/licence-centre-textract.service.ts` | **delete** | — |

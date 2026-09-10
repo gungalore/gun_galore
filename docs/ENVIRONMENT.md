@@ -738,13 +738,34 @@ redirect out of `/admin/logout`.
 # Reconciliation notes, 2026-08-12
 
 > **Addendum, 2026-09-10 — the auth and KYC cut-over.** Clerk, VerifyNow and
-> AWS Rekognition were all removed on the same day, so a further seven names
+> AWS Rekognition were all removed on the same day, so a further **ten** names
 > joined the dead list below and must be **deleted from the live `.env`**:
-> `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`, `CLERK_AUTHORIZED_PARTIES`,
-> `VERIFYNOW_API_KEY`, `VERIFYNOW_BASE_URL`, `VERIFYNOW_MODE`,
-> `VERIFYNOW_BASIC_REPORT_TYPE` and `AWS_KYC_LIVENESS_ROLE_ARN`. Rotate the
-> Clerk and VerifyNow keys rather than merely deleting them — they were real
-> credentials sitting in a file on disk.
+>
+> | Dead name | Rotate? |
+> |---|---|
+> | `CLERK_SECRET_KEY` | 🔑 **yes** |
+> | `CLERK_WEBHOOK_SECRET` | 🔑 **yes** |
+> | `CLERK_AUTHORIZED_PARTIES` | no — not a secret |
+> | `VERIFYNOW_API_KEY` | 🔑 **yes** |
+> | `VERIFYNOW_BASE_URL` | no |
+> | `VERIFYNOW_MODE` | no |
+> | `VERIFYNOW_BASIC_REPORT_TYPE` | no |
+> | `AWS_ACCESS_KEY_ID` | 🔑 **yes** — delete the IAM user |
+> | `AWS_SECRET_ACCESS_KEY` | 🔑 **yes** — delete the IAM user |
+> | `AWS_REGION` | no |
+> | `AWS_KYC_LIVENESS_ROLE_ARN` | no — an ARN, not a credential |
+>
+> ⚠️ **Rotating is not the same as deleting, and only rotating actually does
+> anything.** Every 🔑 above is a live credential that has been sitting in a
+> file on disk; removing the line from `.env` leaves it working for anybody
+> who already has it. Kill each one at its provider.
+>
+> ⚠️ **`AWS_REGION` and `AWS_ACCESS_KEY_ID` were missing from this list until
+> 2026-09-10.** Only `AWS_KYC_LIVENESS_ROLE_ARN` was named, which reads as
+> though the AWS *credentials* were still in use — they are not. Nothing under
+> `backend/src/` reads any `AWS_*` name; `aws-kyc.service.ts` and `infra/aws/`
+> are deleted. `backend/.env.example` carries the same list under its
+> `─── RETIRED ───` section; the two are meant to stay in step.
 >
 > Two names went the other way and **must be set before the next production
 > boot, or the process refuses to start**: `JWT_MEMBER_SECRET` (on **both**
