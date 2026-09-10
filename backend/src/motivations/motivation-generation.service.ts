@@ -1,3 +1,4 @@
+import { applyRepairs, repairTargets } from './motivation-repair';
 import { withoutRefusedCopy } from './motivation-scope';
 import {
   ConflictException,
@@ -1084,6 +1085,59 @@ export class MotivationGenerationService {
       attempt = { ...attempt, text: best.text };
       mechanics = best.mechanics;
       structureOk = best.structureOk;
+
+      /**
+       * ⚠️ MEND THE SENTENCE BEFORE BINNING THE DOCUMENT.
+       *
+       * The gate is all-or-nothing over nine hundred words, and MO000075 spent
+       * two days failing it — "platform", then "terminal ballistic", then
+       * "engage targets". A DIFFERENT word each time, on a draft that was
+       * structurally clean every time. That is variance, not a bug still to
+       * find: across forty-odd refused phrases a model will occasionally reach
+       * for one, and regenerating the whole document to fix two words both pays
+       * to rewrite fifteen hundred of them and rolls the dice again on every
+       * phrase that was already fine.
+       *
+       * ⚠️ ONLY WHERE EVERY COMPLAINT IS ABOUT A WORD. repairTargets
+       * returns null for anything else — a wrong section, a missing annexure, a
+       * purpose nobody stated — because those are the writer corrupting facts,
+       * and a pass that "mended" a wrong serial by rephrasing it would be the
+       * worst thing in this file.
+       *
+       * ⚠️ AND THE FULL GATE RUNS AGAIN OVER THE RESULT. The repair is not
+       * trusted: packConsistency and documentScope both re-run, so a rewrite
+       * that introduced a fact or traded one refused word for another fails
+       * exactly as the draft would have.
+       */
+      const targets = repairTargets(best.text, mechanics);
+      if (targets) {
+        const fixed = await this.model.repairSentences(targets);
+        if (fixed) {
+          const mended = applyRepairs(best.text, fixed.sentences);
+          const after = [
+            ...packConsistency(mended, answers, annexures),
+            ...scopeOf(mended),
+          ];
+          if (
+            mended !== best.text &&
+            !after.length &&
+            followsPlan(mended, plan).ok
+          ) {
+            this.logger.log(
+              `Motivation ${row.id}: mended ${targets.length} sentence(s) rather than regenerating`,
+            );
+            attempt = { ...attempt, text: mended };
+            tokensIn += fixed.usage.promptTokens;
+            tokensOut += fixed.usage.completionTokens;
+            mechanics = [];
+            structureOk = true;
+          } else if (after.length) {
+            this.logger.warn(
+              `Motivation ${row.id}: repair did not clear the gate (${after[0]})`,
+            );
+          }
+        }
+      }
 
       // ⚠️ A DOCUMENT THAT FAILS THE MECHANICAL CHECKS TWICE IS NEVER FILED.
       // A wrong serial or a citation to a tab that does not exist is not a

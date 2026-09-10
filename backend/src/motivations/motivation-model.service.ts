@@ -1,3 +1,9 @@
+import {
+  repairUserPrompt,
+  REPAIR_SCHEMA,
+  REPAIR_SYSTEM,
+  type RepairTarget,
+} from './motivation-repair';
 import { Injectable, Logger } from '@nestjs/common';
 import { MotivationLicenceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -366,6 +372,61 @@ export class MotivationModelService {
    * verifier must not un-pass it. Findings are stored with the quality
    * verdict for the applicant and the operator to read.
    */
+  /**
+   * Rewrite named sentences so refused words do not appear in them.
+   *
+   * ⚠️ IT MENDS A SENTENCE; IT DOES NOT WRITE A DOCUMENT. See
+   * motivation-repair.ts for why this exists at all: the gate is all-or-nothing
+   * over nine hundred words, and MO000075 spent two days being binned for two
+   * words at a time, a different pair each attempt.
+   *
+   * Returns null on anything unexpected. The caller then fails the document
+   * exactly as it would have without this.
+   */
+  async repairSentences(
+    targets: readonly RepairTarget[],
+  ): Promise<{
+    sentences: { original: string; replacement: string }[];
+    usage: ModelUsage;
+  } | null> {
+    if (!this.llm.isConfigured() || !targets.length) return null;
+    try {
+      const res = await this.llm.complete({
+        maxTokens: 900,
+        // A rewrite of four sentences must spend its budget on the sentences.
+        thinking: { budgetTokens: 0 },
+        system: REPAIR_SYSTEM,
+        messages: [{ role: 'user', content: repairUserPrompt(targets) }],
+        json: { schema: REPAIR_SCHEMA },
+        purpose: 'motivation.repair',
+        timeoutMs: 45_000,
+      });
+      const parsed = JSON.parse(res.text.trim()) as {
+        sentences?: { original?: unknown; replacement?: unknown }[];
+      };
+      const sentences = (parsed.sentences ?? [])
+        .filter(
+          (x) =>
+            typeof x?.original === 'string' && typeof x?.replacement === 'string',
+        )
+        .map((x) => ({
+          original: x.original as string,
+          replacement: x.replacement as string,
+        }));
+      return {
+        sentences,
+        usage: {
+          model: res.model,
+          promptTokens: res.usage?.inputTokens ?? 0,
+          completionTokens: res.usage?.outputTokens ?? 0,
+        },
+      };
+    } catch (err) {
+      this.logger.warn(`Sentence repair failed: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
   async verifyDocument(args: {
     pack: FactPack;
     documentText: string;

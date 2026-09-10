@@ -283,6 +283,48 @@ const SPEC_WORDS = [
   'twist rate',
 ] as const;
 
+/**
+ * The phrase a scope complaint is about, if it is about one.
+ *
+ * ⚠️ TWO COMPLAINTS OPEN WITH THIS SHAPE AND BOTH ARE VOCABULARY. Every
+ * other thing documentScope refuses is a CLAIM - a wrong section, an annexure
+ * that does not exist, a purpose nobody stated - and none of those can be
+ * mended by rewriting a sentence. Only a word can. So this is deliberately
+ * narrow: it returns a phrase for the two catalogue complaints and null for
+ * everything else, and the repair pass runs only when every complaint yields
+ * one.
+ *
+ * ⚠️ IT PARSES OUR OWN MESSAGE, WHICH IS A COUPLING. The alternative was a
+ * second copy of the vocabulary lists and the comparison carve-out, which would
+ * be right until the day the two disagreed and then wrong in the direction of
+ * letting catalogue copy through. A spec asserts every message this can be
+ * asked about is parseable, so a reworded complaint fails loudly here.
+ */
+export function phraseIn(issue: string): string | null {
+  const m = /^the document says "([^"]+)"/.exec(issue);
+  return m ? m[1] : null;
+}
+
+/**
+  * A blank line: the unit a writer works in, and where the paragraph's
+  * subject resets. Built here rather than written inline because a literal
+  * newline inside a regex is exactly the character a heredoc eats.
+  */
+const PARA_BREAK = new RegExp(
+  String.fromCharCode(10) + '\s*' + String.fromCharCode(10),
+);
+
+/** The sentences carrying a phrase, verbatim, for a targeted rewrite. */
+export function sentencesWith(text: string, phrase: string): string[] {
+  const out: string[] = [];
+  for (const para of text.split(PARA_BREAK)) {
+    for (const s of sentences(para)) {
+      if (contains(s, phrase) && !out.includes(s)) out.push(s);
+    }
+  }
+  return out;
+}
+
 export function withoutRefusedCopy(payload: string): string {
   const banned = [
     ...CATALOGUE_PHRASES.filter(
