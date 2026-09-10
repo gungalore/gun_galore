@@ -6,7 +6,40 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-10**.
 
-## 2026-09-10 (latest) — THE THIRD ATTEMPT, and the cartridge page
+## 2026-09-10 (latest) — THE THIRD ATTEMPT, the cartridge page, and the date
+
+Deployed as **3c47def6**. Rollback: `alloutdoor-20260910-123916.dump`.
+Before it **ae27307e** (`alloutdoor-20260910-122548.dump`).
+
+### ⚠️ THE WRITER KEPT MISTYPING A DATE IT WAS GIVEN
+
+`3c47def6`. MO000075 failed three times on this, the 12:33 run included:
+
+```
+supplied 2027-06-30   drafted 2030-06-30
+supplied 2024-06-07   drafted 2004-06-07
+```
+
+The wizard stores ISO and the fact pack handed it straight over, so the
+writer's job in the association paragraph was to copy ten characters.
+⚠️ **A WRONG DIGIT IN AN ISO DATE IS STILL A WELL-FORMED DATE**, which is
+what makes it a wrong FACT in a signed document rather than a typo.
+
+Neither existing mechanism helps. This is not the variance the third attempt
+was for — it is the SAME error each time. And the repair pass refuses a CLAIM
+on purpose: mending one means choosing which fact was meant, and a model can
+pick a different supplied date, satisfy the check and still be wrong.
+
+So `renderFacts` spells dates: `spelledDate("2027-06-30")` — `"30 June 2027"`.
+A slip must now be a whole wrong word. It is also what the letter should always
+have said — "valid until 2027-06-30" is a database row, not a sentence.
+
+⚠️ **NOTHING DOWNSTREAM LOSES DIGITS.** `packConsistency` reads document and
+answers through one `datesIn`, which parses "30 June 2027" and ISO alike; the
+SAPS 271 prefill reads the ANSWERS, never the document. `spelledDate` hands
+back anything it cannot fully parse, 31 February included.
+
+## 2026-09-10 — THE THIRD ATTEMPT, and the cartridge page
 
 Deployed as **ae27307e**. Rollback: `alloutdoor-20260910-122548.dump`.
 Before it, **595cd0f8** (rollback `alloutdoor-20260910-115127.dump`).
