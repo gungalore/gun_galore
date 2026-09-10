@@ -6,6 +6,71 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-10**.
 
+## 2026-09-10 (latest, fifth deploy) — two silent failures, one after the other
+
+Deployed as **459c0e68**. Rollback: `alloutdoor-20260910-104712.dump`.
+
+### The catalogue copy came from our own research, not the writer
+
+`8489239f`. MO000075 was refused a THIRD time. Removing the bad example from
+the brief on 2026-09-09 did nothing, because the brief was never the source.
+
+The refused sentence is almost word for word out of the pack's own firearm
+research: "built on the Howa 1500 platform ... a turn-bolt, push-feed repeating
+action based on a robust one-piece forged steel receiver". ⚠️ **THE WRITER
+WAS NOT INVENTING IT.** It was reporting what we handed it, in a block it is
+told to treat as fact — because a grounded web search for a rifle MODEL returns
+the manufacturer's marketing. An instruction cannot beat the evidence in front
+of the model.
+
+The `firearm` ask was requesting exactly that ("design features, action and
+configuration") and was never revisited when the operator ruled "we need whats
+on the license card, nothing else". It now asks what the model is USED for.
+
+⚠️ **AND THE KEY NOW CARRIES THE QUESTION.** `RESEARCH_ASK_VERSION` is in
+`cacheKeyFor`, or the reword would have been inert for 180 days. This trap was
+written down that morning and needed the same afternoon.
+
+⚠️ **THE GUARANTEE IS MECHANICAL.** `withoutRefusedCopy` drops any research
+SENTENCE carrying vocabulary the writer would be refused for repeating, plus a
+research-only spec list. Whole sentences, never words. The spec words are
+deliberately NOT in `documentScope` — a motivation may honestly say "barrel".
+
+Second refusal, same document: the `licensed_for="NOT STATED"` marker was
+emitted only when a row had NO candidate uses, so the use generator suppressed
+a fix from the day before. Always emitted now, and a spec that asserted the
+suppression now pins the reverse and carries the evidence.
+
+### The Design samples were empty on a phone
+
+`fee2039a` then `459c0e68`. Two failures, both silent, both mine.
+
+⚠️ **PDF-IN-IFRAME RENDERS NOTHING ON iOS.** Verified on desktop Chrome,
+where it could not fail. The pack screen already carries a note saying an embed
+can fail silently; this reproduced it five times on a mobile-first product.
+Rasterised with pdf.js to a canvas now.
+
+⚠️ **THEN pdf.js NEEDED A REAL WORKER** and `workerSrc=''` + `disableWorker`
+is not a thing in v4 — every card stayed empty a second time. The worker ships
+at `/pdfjs/4.10.38/pdf.worker.min.mjs`; **versioned path**, same rule as /scan
+assets, and a spec fails if the path and package.json drift.
+
+⚠️ **AND THE PER-CARD `catch` WAS BARE**, so when all five failed the console
+was clean. A caught error nobody can read is the same fault as the empty box.
+It logs now — and the log is what named the worker problem.
+
+⚠️ **jsdom HAS NO CANVAS**, so no unit test on this stack can see a thumbnail
+render. The spec says so out loud. Verify in a real browser at a real viewport.
+Confirmed at 430px: `<img alt="Banner sample cover">` in the DOM, no failure
+message, clean console.
+
+### Still open
+
+**MO000075 has not been regenerated since `8489239f`.** Press "Write my
+motivation" and watch `pm2 logs`. Expect no `regenerating 2/3`. If it fails on
+a catalogue word again, the phrase-level repair pass is the fix — send back the
+offending sentences rather than binning a clean document over two words.
+
 ## 2026-09-10 (latest, third deploy) — the Design step
 
 Deployed as **5aa6155b**. Rollback point:
