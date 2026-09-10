@@ -38,6 +38,23 @@ import { TRAVELLED_AREAS_KEY } from './motivation-fields';
 import type { NewsIncident } from '../news/news.types';
 import { imageSize, isEmbeddable } from './motivation-annexure-layout';
 import { SettingsService, FLAGS } from '../settings/settings.service';
+
+/**
+ * How hard the C.I.P. sheet is rasterised for the feature's inset.
+ *
+ * ⚠️ 4 IS CHOSEN, NOT DEFAULTED. It puts an A4 page at about 2 450 px wide;
+ * set into an 82 mm column that is roughly 1 000 dpi, and the trimmed PNG runs
+ * around 470 KB against packs that are already eleven megabytes. Lower and the
+ * sheet's small type breaks up under a reader zooming in on it, which is the
+ * whole reason it is on the page.
+ */
+const CIP_INSET_SCALE = 4;
+
+/** The half of `pdf-to-img` this uses: PDF bytes in, one PNG per page out. */
+type CipRasteriser = (
+  input: Buffer,
+  opts: { scale: number },
+) => Promise<AsyncIterable<Buffer>>;
 import { type SectionId } from './motivation-structure';
 import {
   buildAnnexures,
@@ -1178,7 +1195,30 @@ export class MotivationRenderService {
        * Only built when the cover took the hero; without one the body already
        * receives the full drawing and a second raster would be waste.
        */
-      const inset = heroLine ? await raster({ hero: false }) : undefined;
+      /**
+       * ⚠️ THE FEATURE'S INSET IS THE C.I.P. SHEET ITSELF, NOT OUR DRAWING.
+       *
+       * Operator, 2026-09-10, having seen the page render with our own
+       * geometry in it: "rendered correctly but it's the wrong image. I need
+       * this as the scaled down image", and then "i want the CIP sheet in
+       * there, not negotiable ... we are not selling the sheet itself, we are
+       * using it in our document as proof."
+       *
+       * ⚠️ THE SHEET CARRIES A REPRODUCTION NOTICE ON ITS FACE — "Reproduction
+       * forbidden as well as in the form of extracts without approval of
+       * C.I.P." That was put to the operator and this is their decision on
+       * their own company's exposure, recorded here rather than argued again
+       * in a later session. The mechanism is not new either: `cipSheetFor`
+       * has spliced the whole page into packs as a fallback since it shipped,
+       * behind FLAGS.cipSheetEnabled, which this respects.
+       *
+       * Falls back to our own drawing when there is no sheet for the round,
+       * when the flag is off, or when the raster fails — the feature page must
+       * never lose its picture over this.
+       */
+      const inset = heroLine
+        ? ((await this.cipInset(printed)) ?? (await raster({ hero: false })))
+        : undefined;
 
       const png = drawing.png;
 
@@ -1294,6 +1334,80 @@ export class MotivationRenderService {
    * republication of somebody else's work, and that question was still open
    * when this shipped — turning it off costs the page and nothing else.
    */
+  /**
+   * The C.I.P. datasheet for a round, rasterised for the feature's inset.
+   *
+   * ⚠️ RASTER, BECAUSE THE BODY IS pdfkit AND pdfkit TAKES PNG OR JPEG. At
+   * scale 4 an A4 sheet comes back about 2 450 px wide, which set into an
+   * 82 mm column is roughly a thousand dots to the inch — crisp in print and
+   * still real detail at 400% on screen. Vector through pdf-lib would be
+   * smaller and sharper still, but it needs the rectangle and the page index
+   * threaded out of pdfkit and back in afterwards; that is the upgrade if the
+   * small type ever disappoints, not the first attempt.
+   *
+   * ⚠️ TRIMMED, BECAUSE `sheetFor` CENTRES US LETTER ONTO A4 and the white
+   * bands that leaves are inset height spent on nothing. `trim()` stops at the
+   * sheet's own printed border, so what is placed is the frame and its
+   * contents and no margin.
+   *
+   * ⚠️ AND IT NEVER THROWS. Every failure here — no sheet for the round, the
+   * data directory absent, a page that will not rasterise — returns undefined
+   * and the caller falls back to our own drawing.
+   */
+  private async cipInset(calibre: string): Promise<
+    | { png: Buffer; widthMm: number; heightMm: number; texts: DrawingText[] }
+    | undefined
+  > {
+    const name = calibre.trim();
+    if (!name) return undefined;
+    const on = await this.settings.get(FLAGS.cipSheetEnabled).catch(() => true);
+    if (!on) return undefined;
+    try {
+      const sheet = await this.cip.sheetFor(name);
+      if (!sheet) return undefined;
+
+      // ⚠️ ESM-ONLY, AND THE BACKEND COMPILES TO CommonJS. TypeScript lowers
+      // this to require(), which Node 22.12+ resolves for an ES module — the
+      // same mechanism the PDF spec's reader relies on. Verified on the box
+      // before it was written in; it is not an assumption.
+      const mod = (await import('pdf-to-img')) as unknown as {
+        pdf?: CipRasteriser;
+        default?: { pdf?: CipRasteriser };
+      };
+      const toImages = mod.pdf ?? mod.default?.pdf;
+      if (!toImages) return undefined;
+
+      const pages = await toImages(sheet.bytes, { scale: CIP_INSET_SCALE });
+      let first: Buffer | undefined;
+      for await (const page of pages) {
+        first = page;
+        break;
+      }
+      if (!first) return undefined;
+
+      const png = await sharp(first).trim().png().toBuffer();
+      const { width, height } = await sharp(png).metadata();
+      if (!width || !height) return undefined;
+
+      /**
+       * Only the ASPECT matters: `placeDrawing` scales to the column width it
+       * is given, so these two are a ratio wearing units.
+       */
+      return {
+        png,
+        widthMm: 210,
+        heightMm: (210 * height) / width,
+        // The sheet carries its own labels; ours belong to our own geometry.
+        texts: [],
+      };
+    } catch (err) {
+      this.logger?.warn?.(
+        `C.I.P. inset failed for "${name}": ${(err as Error).message}`,
+      );
+      return undefined;
+    }
+  }
+
   private async cipSheetFor(
     calibre: string | undefined,
   ): Promise<{ bytes: Buffer; label: string } | undefined> {
