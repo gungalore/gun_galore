@@ -134,9 +134,45 @@ function stripMarks(text: string): string {
 }
 
 /** A paragraph that is only a bold run-in heading, e.g. **Origin**. */
+/**
+ * The heading a paragraph opens with, if it is one.
+ *
+ * TWO SHAPES, because the research has produced both:
+ *
+ *   **Origin**            a heading on a line of its own
+ *   Origin: Developed...  a RUN-IN, the heading and its sentence together
+ *
+ * ⚠️ THE RUN-IN FORM EMPTIED A WHOLE COLUMN. Groups are built by splitting
+ * on subheadings, and a brief that used run-ins produced exactly ONE group —
+ * the entire article, atomic and unsplittable. The balancer then put all of it
+ * in whichever column could hold it and left the other blank, which is what
+ * MO000075 printed on 2026-09-10. The formatting changed under us the day the
+ * ask gained a length instruction; nothing warned, because one group is a
+ * perfectly valid layout.
+ *
+ * ⚠️ NARROW ON PURPOSE. A run-in is at most four words before the colon and
+ * must be followed by real prose on the same line, so "Note: " qualifies and
+ * "It is standardised with a case length of 48.77 mm: the figure above" does
+ * not. Every sentence containing a colon is not a heading.
+ */
 function subheadingOf(text: string): string | null {
-  const m = /^\s*\*\*(.+?)\*\*\s*:?\s*$/.exec(text);
-  return m ? m[1].trim() : null;
+  const bold = /^\s*\*\*(.+?)\*\*\s*:?\s*$/.exec(text);
+  if (bold) return bold[1].trim();
+  return null;
+}
+
+/**
+ * A run-in heading and the prose after it, split apart.
+ *
+ * Returns null when the paragraph does not open with one.
+ */
+function runInOf(text: string): { head: string; rest: string } | null {
+  const m = /^\s*([A-Z][A-Za-z][A-Za-z ]{0,28}?):\s+(\S.*)$/s.exec(text);
+  if (!m) return null;
+  const head = m[1].trim();
+  // Four words at most, and never a sentence that merely contains a colon.
+  if (head.split(/\s+/).length > 4) return null;
+  return { head, rest: m[2].trim() };
 }
 
 const MARGIN = K.PAD_X;
@@ -2143,8 +2179,27 @@ export class MotivationPdfService {
        * about 1902 at the top of the other — two headings and two orphaned
        * facts. Caught by extracting a rendered page and reading it.
        */
+      /**
+       * ⚠️ RUN-INS ARE TURNED INTO REAL HEADINGS FIRST. The research writes
+       * either "**Origin**" on its own line or "Origin: Developed in ..." as a
+       * run-in, and it changed from the first to the second the day the ask
+       * gained a length instruction. Left alone the run-in form makes ONE
+       * group of the whole article, which cannot be split, so the balancer
+       * fills one column and leaves the other blank.
+       */
+      const paras: string[] = [];
+      for (const raw of a.paragraphs) {
+        const run = subheadingOf(raw) ? null : runInOf(raw);
+        if (run) {
+          paras.push(`**${run.head}**`);
+          paras.push(run.rest);
+        } else {
+          paras.push(raw);
+        }
+      }
+
       const groups: string[][] = [];
-      for (const para of a.paragraphs) {
+      for (const para of paras) {
         if (subheadingOf(para) || !groups.length) groups.push([para]);
         else groups[groups.length - 1].push(para);
       }
@@ -2199,6 +2254,21 @@ export class MotivationPdfService {
        * right, and the head goes left. Both columns finish level on the line
        * above the photograph, which is what a fixed slot is for.
        */
+      /**
+       * ⚠️ AND A GROUP TOO BIG FOR A COLUMN IS BROKEN UP ANYWAY. Grouping
+       * keeps a heading with its own paragraphs, which is right; but a single
+       * group larger than the shorter column can only ever go in one place,
+       * and the page then has a blank column beside it. Where that happens the
+       * group is dealt out paragraph by paragraph instead: a heading stranded
+       * at the foot of a column is a smaller fault than half a page of white.
+       */
+      const colCap = Math.max(0, K.BODY_BOTTOM - top);
+      for (let i = 0; i < groups.length; i++) {
+        if (groups[i].length > 1 && costOf(groups[i]) > colCap) {
+          groups.splice(i, 1, ...groups[i].map((x) => [x]));
+        }
+      }
+
       const costs = groups.map((g) => costOf(g));
       const rightCap = Math.max(0, floor - rightTop);
       const textTotal = costs.reduce((n, c) => n + c, 0);

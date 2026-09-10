@@ -1185,6 +1185,45 @@ describe('the cartridge drawing', () => {
     expect(t).toContain('introduced in 1902');
   });
 
+  it('⚠️ USES BOTH COLUMNS WHEN THE RESEARCH WRITES RUN-IN HEADINGS', async () => {
+    /**
+     * ⚠️ THIS PRINTED HALF A BLANK PAGE IN PRODUCTION. The research writes
+     * either "**Origin**" on a line of its own or "Origin: Developed in ..."
+     * as a run-in, and it switched to the second the day the calibre ask
+     * gained a length instruction. Groups are split on subheadings, so the
+     * run-in form made ONE atomic group of the whole article — it could only
+     * go in one column, and MO000075 rendered on 2026-09-10 with the entire
+     * left column empty.
+     *
+     * Nothing failed. One group is a perfectly valid layout, which is why no
+     * assertion here caught it and the operator did.
+     */
+    const runIn = {
+      title: '9 mm Luger',
+      paragraphs: [
+        'Origin: It was introduced in 1902 by Georg Luger for the Pistole Parabellum, and has been in continuous production ever since.',
+        'Character: A short, straight-walled case at modest pressure, which is what makes it cheap to make and mild to shoot.',
+        'Factory loads: Carried by most dealers in South Africa in bullet weights from 7,5 to 9,5 grams.',
+        'Common uses in South Africa: The most widely available centrefire pistol chambering here by a wide margin.',
+        'Effective range: Sighted work to about 50 metres, and defensive distances well inside that.',
+        'Match suitability: Well matched to practical pistol disciplines shot at close and medium range.',
+      ],
+    };
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: { ...hero, inset: drawing },
+      cartridgeArticle: runIn,
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+
+    // The run-in heads are set as headings, and their prose survives.
+    expect(t.replace(/\s+/g, '')).toContain('ORIGIN');
+    expect(t).toContain('introduced in 1902');
+    expect(t).toContain('Sighted work to about 50 metres');
+    // And the colon-plus-heading is not left in the body text as well.
+    expect(t).not.toContain('Origin: It was introduced');
+  });
+
   it('⚠️ KEEPS A RUN-IN HEADING WITH ITS OWN PARAGRAPH', async () => {
     // Balanced one paragraph at a time, the two columns came out as two
     // headings at the top and their sentences underneath the wrong one.

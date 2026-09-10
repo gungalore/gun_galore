@@ -126,6 +126,37 @@ export class CipSheetService {
    * Returns null for anything it cannot serve. A missing sheet is a missing
    * annexure and nothing more.
    */
+  /**
+   * The datasheet EXACTLY as it was published, unwrapped.
+   *
+   * ⚠️ `sheetFor` RE-EMBEDS THE PAGE, AND THAT IS WHAT BROKE THE INSET.
+   * pdf-lib's `embedPages` + `drawPage` wraps the original page as a Form
+   * XObject so it can be scaled onto A4 — correct for a page that is bound
+   * into the pack, and fatal for one that has to be RASTERISED: pdf.js threw
+   * "Value is none of these types `String`, `Path`," out of
+   * `CanvasGraphics.paintFormXObjectBegin` on every render from the day the
+   * inset shipped, and the pack silently fell back to our own drawing.
+   *
+   * The inset is trimmed to the sheet's own printed border anyway, so the A4
+   * fitting it loses was never used. Returns the file's bytes and nothing
+   * else.
+   */
+  async rawSheetFor(
+    cartridgeName: string,
+  ): Promise<{ name: string; bytes: Buffer } | null> {
+    const hit = this.lookup(cartridgeName);
+    if (!hit) return null;
+    try {
+      const bytes = await fs.promises.readFile(
+        path.join(SHEETS_DIR, path.basename(hit.file)),
+      );
+      return { name: hit.name, bytes };
+    } catch {
+      this.logger.warn(`C.I.P. sheet missing on disk: ${hit.file}`);
+      return null;
+    }
+  }
+
   async sheetFor(cartridgeName: string): Promise<CipSheet | null> {
     const hit = this.lookup(cartridgeName);
     if (!hit) return null;

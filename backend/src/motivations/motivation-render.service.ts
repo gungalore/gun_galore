@@ -1410,7 +1410,14 @@ export class MotivationRenderService {
     const on = await this.settings.get(FLAGS.cipSheetEnabled).catch(() => true);
     if (!on) return undefined;
     try {
-      const sheet = await this.cip.sheetFor(name);
+      /**
+       * ⚠️ THE RAW FILE, NOT THE A4-FITTED COPY. `sheetFor` re-embeds the page
+       * as a Form XObject so it can be scaled onto A4; pdf.js cannot rasterise
+       * that here and threw out of `paintFormXObjectBegin` on every render
+       * since the inset shipped. The trim below removes the margins the A4
+       * fitting was for.
+       */
+      const sheet = await this.cip.rawSheetFor(name);
       if (!sheet) return undefined;
 
       // ⚠️ ESM-ONLY, AND THE BACKEND COMPILES TO CommonJS. TypeScript lowers
