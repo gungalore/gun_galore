@@ -233,6 +233,7 @@ describe('mapUsage', () => {
       outputTokens: 9,
       cachedInputTokens: 0,
       thinkingTokens: 0,
+      imageTokens: 0,
     });
   });
 
@@ -249,7 +250,45 @@ describe('mapUsage', () => {
       outputTokens: 0,
       cachedInputTokens: 0,
       thinkingTokens: 0,
+      imageTokens: 0,
     });
+  });
+
+  /**
+   * ⚠️ THE MODALITY SPLIT IS A MONEY ASSERTION, NOT A SHAPE ONE.
+   *
+   * An image model reports ONE candidatesTokenCount covering the prose and the
+   * picture together, and Google charges $1.50/1M for the first and $30/1M for
+   * the second. The numbers below are the first real plate this platform
+   * generated, on 2026-09-10: 1 470 output tokens of which 1 120 were the
+   * image. Priced as plain text that call reads as a tenth of a cent; priced
+   * correctly it is three and a half.
+   */
+  it('⚠️ SEPARATES PICTURE TOKENS FROM PROSE TOKENS', () => {
+    const usage = mapUsage([
+      {
+        usageMetadata: {
+          promptTokenCount: 65,
+          candidatesTokenCount: 1470,
+          candidatesTokensDetails: [{ modality: 'IMAGE', tokenCount: 1120 }],
+        },
+      },
+    ] as never);
+    expect(usage.outputTokens).toBe(1470);
+    expect(usage.imageTokens).toBe(1120);
+  });
+
+  it('counts no image tokens for an ordinary text call', () => {
+    const usage = mapUsage([
+      {
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 9,
+          candidatesTokensDetails: [{ modality: 'TEXT', tokenCount: 9 }],
+        },
+      },
+    ] as never);
+    expect(usage.imageTokens).toBe(0);
   });
 });
 
@@ -294,6 +333,58 @@ describe('costUsdMicros', () => {
         cachedInputTokens: 1_000_000,
       }),
     ).toBe(10_000);
+  });
+
+  /**
+   * ⚠️ THE IMAGE HALF OF AN IMAGE CALL COSTS TWENTY TIMES THE PROSE HALF.
+   *
+   * Rate card read 2026-09-10 for gemini-3.1-flash-lite-image: in $0.25/1M,
+   * text out $1.50/1M, IMAGE out $30.00/1M. Both arrive inside one
+   * candidatesTokenCount, so image tokens are subtracted from the text count
+   * before either rate is applied — bill them twice and the ledger trebles,
+   * bill them all as text and it reports a thirtieth of the truth.
+   */
+  it('⚠️ PRICES PICTURE TOKENS AT THE PICTURE RATE', () => {
+    expect(
+      costUsdMicros({
+        model: 'gemini-3.1-flash-lite-image',
+        inputTokens: 0,
+        outputTokens: 1_000_000,
+        imageTokens: 1_000_000,
+      }),
+    ).toBe(30_000_000);
+    // The same tokens with nothing declared as image are prose.
+    expect(
+      costUsdMicros({
+        model: 'gemini-3.1-flash-lite-image',
+        inputTokens: 0,
+        outputTokens: 1_000_000,
+      }),
+    ).toBe(1_500_000);
+  });
+
+  it('prices the first real plate at about three and a half cents', () => {
+    // The actual call, 2026-09-10: 65 in, 1 470 out, 1 120 of them the image.
+    const micros = costUsdMicros({
+      model: 'gemini-3.1-flash-lite-image',
+      inputTokens: 65,
+      outputTokens: 1470,
+      imageTokens: 1120,
+    });
+    expect(micros).toBeGreaterThan(33_000);
+    expect(micros).toBeLessThan(35_000);
+  });
+
+  it('⚠️ NEVER COUNTS THE PICTURE TWICE', () => {
+    // If image tokens were ADDED rather than carved out of the output count,
+    // this would price above the image-only figure above.
+    const carved = costUsdMicros({
+      model: 'gemini-3.1-flash-lite-image',
+      inputTokens: 0,
+      outputTokens: 1_000_000,
+      imageTokens: 1_000_000,
+    });
+    expect(carved).toBe(30_000_000);
   });
 
   it('prices an unknown model — Anthropic included — at zero', () => {

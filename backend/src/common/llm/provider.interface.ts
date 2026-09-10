@@ -1,4 +1,6 @@
 import type {
+  LlmImageRequest,
+  LlmImageResponse,
   LlmProvider,
   LlmRequest,
   LlmResponse,
@@ -29,4 +31,19 @@ export interface LlmProviderClient {
   complete(req: LlmRequest): Promise<LlmResponse>;
 
   stream(req: LlmRequest): AsyncGenerator<LlmStreamEvent>;
+
+  /**
+   * Make a picture.
+   *
+   * ⚠️ OPTIONAL, AND ABSENT MEANS ABSENT. The Anthropic path is rollback
+   * insurance and has no image model at all; giving it a method that throws
+   * would put the "can this provider do it" question inside the provider,
+   * where LlmService cannot answer it before spending a call. A provider that
+   * cannot draw simply does not define this, and the adapter raises
+   * `unsupported` with the provider named.
+   */
+  generateImage?(req: LlmImageRequest): Promise<LlmImageResponse>;
+
+  /** The image model used when a request does not name one. */
+  defaultImageModel?(): string;
 }

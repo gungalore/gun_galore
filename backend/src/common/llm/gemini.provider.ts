@@ -100,6 +100,9 @@ import { toGeminiSchema } from './gemini-schema';
 import type { LlmProviderClient } from './provider.interface';
 import {
   LlmError,
+  type LlmBlob,
+  type LlmImageRequest,
+  type LlmImageResponse,
   type LlmMessage,
   type LlmPart,
   type LlmRequest,
@@ -111,6 +114,22 @@ import {
 } from './llm.types';
 
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+
+/**
+ * The picture model. Operator, 2026-09-10: "use nana banana lite (the cheapest
+ * model)."
+ *
+ * ⚠️ TAKEN FROM THE ACCOUNT'S OWN MODEL LIST, NOT FROM MEMORY. "Nano Banana
+ * Lite" is a nickname; the id was read off `GET /v1beta/models` on this
+ * platform's key on 2026-09-10, which answered with seven image models and
+ * exactly one lite. The same discipline the Anthropic path uses for its dated
+ * snapshots — a guessed model id is a 404 at the worst moment.
+ *
+ * Overridable with LLM_IMAGE_MODEL, so a repricing or a better model is an env
+ * edit and a reload rather than a deploy.
+ */
+const DEFAULT_IMAGE_MODEL =
+  process.env.LLM_IMAGE_MODEL || 'gemini-3.1-flash-lite-image';
 
 /**
  * The thinking setting in the dialect the model generation understands.
@@ -228,6 +247,79 @@ export class GeminiProvider implements LlmProviderClient {
     );
 
     return this.toResponse(raw, model);
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // IMAGE
+  // ══════════════════════════════════════════════════════════════════
+  /**
+   * One prompt in, pictures out.
+   *
+   * ⚠️ NO `responseModalities`, BECAUSE THE MODEL DOES NOT NEED ONE. Probed
+   * against the live API on 2026-09-10 before this was written: an image model
+   * asked plainly for a picture returns `inlineData` and needs nothing set. A
+   * config field this code has not proved is a 400 waiting for the first
+   * caller.
+   *
+   * ⚠️ AND IT READS EVERY `inlineData` PART, not the first. The response also
+   * carries a `thoughtSignature` part beside the picture; picking parts[0]
+   * would have worked on the probe and broken the day the order changed.
+   */
+  async generateImage(req: LlmImageRequest): Promise<LlmImageResponse> {
+    const model = req.model ?? DEFAULT_IMAGE_MODEL;
+
+    const parts: Part[] = [
+      ...(req.references ?? []).map((b) => ({
+        inlineData: { mimeType: b.mimeType, data: b.data },
+      })),
+      { text: req.prompt },
+    ];
+
+    const raw = await this.withRetry(req, (signal) =>
+      this.sdk().models.generateContent({
+        model,
+        contents: [{ role: 'user', parts }],
+        config: { abortSignal: signal },
+      }),
+    );
+
+    const out = firstCandidateParts(raw);
+    const images: LlmBlob[] = [];
+    for (const p of out) {
+      const inline = (p as { inlineData?: { mimeType?: string; data?: string } })
+        .inlineData;
+      if (inline?.data) {
+        images.push({
+          mimeType: inline.mimeType ?? 'image/jpeg',
+          data: inline.data,
+        });
+      }
+    }
+
+    if (!images.length) {
+      /**
+       * ⚠️ A REFUSAL ARRIVES AS AN EMPTY ANSWER, NOT AS AN ERROR. The safety
+       * filters on an image model return a candidate with no picture in it, so
+       * a caller that trusted the shape would store a zero-byte plate and
+       * print a blank box in a lodged document.
+       */
+      throw new LlmError(
+        'safety',
+        `Gemini ${model} returned no image for ${req.purpose}`,
+      );
+    }
+
+    return {
+      images,
+      text: textOf(out),
+      model,
+      provider: 'gemini',
+      usage: mapUsage([raw]),
+    };
+  }
+
+  defaultImageModel(): string {
+    return DEFAULT_IMAGE_MODEL;
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -443,7 +535,10 @@ export class GeminiProvider implements LlmProviderClient {
    * retrying it spends money on an answer nobody will read.
    */
   private async withRetry<T>(
-    req: LlmRequest,
+    // ⚠️ STRUCTURAL, NOT `LlmRequest`. The image call needs the same timeout,
+    // the same backoff and the same never-retry-an-abort rule, and it is not
+    // an LlmRequest. These two fields are all this ever read.
+    req: { timeoutMs?: number; signal?: AbortSignal },
     call: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     const timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -749,17 +844,37 @@ export function mapUsage(chunks: GenerateContentResponse[]): LlmUsage {
           responseTokenCount?: number;
           cachedContentTokenCount?: number;
           thoughtsTokenCount?: number;
+          /**
+           * ⚠️ THE MODALITY SPLIT, AND THE BILL DEPENDS ON IT. An image model
+           * reports one `candidatesTokenCount` covering prose AND picture, and
+           * charges twenty times as much for the picture half. The first real
+           * plate came back 1 470 / 1 120.
+           */
+          candidatesTokensDetails?: {
+            modality?: string;
+            tokenCount?: number;
+          }[];
         }
       | undefined;
     if (!u) continue;
+    const imageTokens = (u.candidatesTokensDetails ?? [])
+      .filter((d) => (d.modality ?? '').toUpperCase() === 'IMAGE')
+      .reduce((n, d) => n + (d.tokenCount ?? 0), 0);
     return {
       inputTokens: u.promptTokenCount ?? 0,
       outputTokens: u.candidatesTokenCount ?? u.responseTokenCount ?? 0,
       cachedInputTokens: u.cachedContentTokenCount ?? 0,
       thinkingTokens: u.thoughtsTokenCount ?? 0,
+      imageTokens,
     };
   }
-  return { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, thinkingTokens: 0 };
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedInputTokens: 0,
+    thinkingTokens: 0,
+    imageTokens: 0,
+  };
 }
 
 /**

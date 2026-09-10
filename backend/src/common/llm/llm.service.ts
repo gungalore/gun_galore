@@ -25,6 +25,8 @@ import type { LlmProviderClient } from './provider.interface';
 import {
   LlmError,
   type LlmPing,
+  type LlmImageRequest,
+  type LlmImageResponse,
   type LlmProvider,
   type LlmRequest,
   type LlmResponse,
@@ -153,6 +155,57 @@ export class LlmService {
   }
 
   // ══════════════════════════════════════════════════════════════════
+  // IMAGE
+  // ══════════════════════════════════════════════════════════════════
+  /**
+   * Make a picture, through the same door as everything else.
+   *
+   * ⚠️ THE LEDGER IS THE WHOLE REASON THIS IS NOT A DIRECT CALL. A plate is
+   * about three and a half US cents against a text call's fraction of one, so
+   * image spend that bypassed AiUsage would be the single biggest thing
+   * /admin/credits could not see. Same row, same purpose column, priced at the
+   * image rate — see llm.pricing.
+   *
+   * ⚠️ AND THE PROVIDER MAY SIMPLY NOT DRAW. The Anthropic path is rollback
+   * insurance with no image model at all, so this refuses BEFORE spending
+   * anything and names the provider, rather than failing somewhere inside a
+   * mapper with a shape error.
+   */
+  async generateImage(req: LlmImageRequest): Promise<LlmImageResponse> {
+    const provider = this.active();
+    const startedAt = Date.now();
+    const model =
+      req.model ?? provider.defaultImageModel?.() ?? this.model;
+
+    if (!provider.generateImage) {
+      const err = new LlmError(
+        'unsupported',
+        `${this.provider} has no image model on this platform`,
+      );
+      this.record(req, model, startedAt, undefined, err);
+      throw err;
+    }
+
+    if (!provider.isConfigured()) {
+      const err = new LlmError(
+        'not_configured',
+        `${this.provider} is not configured — no API key`,
+      );
+      this.record(req, model, startedAt, undefined, err);
+      throw err;
+    }
+
+    try {
+      const res = await provider.generateImage({ ...req, model });
+      this.record(req, res.model, startedAt, res.usage);
+      return res;
+    } catch (err) {
+      this.record(req, model, startedAt, undefined, err);
+      throw err;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
   // PING — used by /admin/health
   // ══════════════════════════════════════════════════════════════════
   /**
@@ -213,7 +266,9 @@ export class LlmService {
    * chart, a thrown row costs a member their answer.
    */
   private record(
-    req: LlmRequest,
+    // ⚠️ STRUCTURAL, so an image call books into the same ledger. Only these
+    // two fields were ever read off the request.
+    req: { purpose: string; grounding?: { web?: boolean } },
     model: string,
     startedAt: number,
     usage?: LlmUsage,
@@ -232,11 +287,13 @@ export class LlmService {
     const outputTokens = usage?.outputTokens ?? 0;
     const cachedInputTokens = usage?.cachedInputTokens ?? 0;
     const thinkingTokens = usage?.thinkingTokens ?? 0;
+    const imageTokens = usage?.imageTokens ?? 0;
     const cost = costUsdMicros({
       model,
       inputTokens,
       outputTokens,
       cachedInputTokens,
+      imageTokens,
     });
 
     // One line per call. Purpose, model, tokens, ms — never content.

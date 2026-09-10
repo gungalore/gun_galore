@@ -32,6 +32,17 @@ interface ModelPrice {
   outputPerMillion: number;
   /** Cache-hit input tokens, billed cheaper than fresh input. */
   cachedInputPerMillion: number;
+  /**
+   * Output tokens that are PICTURE rather than prose, where the model makes
+   * pictures.
+   *
+   * ⚠️ TWENTY TIMES THE TEXT RATE ON THE ONE MODEL THAT HAS IT, which is why
+   * it cannot share `outputPerMillion`. An image call reports both in one
+   * `candidatesTokenCount` — 1 470 on the first real one, of which 1 120 were
+   * the picture — so pricing the lot at the text rate would have reported
+   * three cents of spend as one tenth of one.
+   */
+  imageOutputPerMillion?: number;
 }
 
 const PRICES: Record<string, ModelPrice> = {
@@ -44,6 +55,25 @@ const PRICES: Record<string, ModelPrice> = {
     inputPerMillion: 0.3,
     outputPerMillion: 2.5,
     cachedInputPerMillion: 0.03,
+  },
+  /**
+   * Nano Banana 2 Lite — the quarry plates.
+   *
+   * ⚠️ READ FROM THE SAME PRICING PAGE ON 2026-09-10: input $0.25/1M, text
+   * and thinking output $1.50/1M, IMAGE output $30.00/1M (Google also quotes
+   * it as $0.0336 for a 1K image). Measured against the first real call —
+   * 65 in, 350 text, 1 120 image — that is $0.0341, so a plate costs about
+   * three and a half US cents.
+   *
+   * ⚠️ AND IT IS PAID ONCE PER SPECIES, EVER. A plate is stored and reused,
+   * so the whole common South African game list is a little over a dollar for
+   * the lifetime of the platform.
+   */
+  'gemini-3.1-flash-lite-image': {
+    inputPerMillion: 0.25,
+    outputPerMillion: 1.5,
+    cachedInputPerMillion: 0.025,
+    imageOutputPerMillion: 30,
   },
 };
 
@@ -72,6 +102,16 @@ export function costUsdMicros(args: {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number;
+  /**
+   * How many of `outputTokens` were a picture.
+   *
+   * ⚠️ INSIDE `outputTokens`, exactly like `thinkingTokens` — Gemini reports
+   * one `candidatesTokenCount` and breaks the modalities out beside it — so
+   * these are SUBTRACTED before the text rate is applied and then charged at
+   * the image rate. Counting them twice would treble the reported spend;
+   * leaving them at the text rate would report a thirtieth of it.
+   */
+  imageTokens?: number;
 }): number {
   const price = PRICES[args.model];
   if (!price) return 0;
@@ -79,10 +119,14 @@ export function costUsdMicros(args: {
   const cached = Math.max(0, args.cachedInputTokens ?? 0);
   const freshInput = Math.max(0, args.inputTokens - cached);
 
+  const image = Math.max(0, args.imageTokens ?? 0);
+  const textOutput = Math.max(0, Math.max(0, args.outputTokens) - image);
+
   const usd =
     (freshInput / 1_000_000) * price.inputPerMillion +
     (cached / 1_000_000) * price.cachedInputPerMillion +
-    (Math.max(0, args.outputTokens) / 1_000_000) * price.outputPerMillion;
+    (textOutput / 1_000_000) * price.outputPerMillion +
+    (image / 1_000_000) * (price.imageOutputPerMillion ?? price.outputPerMillion);
 
   return Math.round(usd * 1_000_000);
 }

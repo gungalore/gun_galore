@@ -132,6 +132,15 @@ export interface LlmUsage {
   /** Tokens served from the provider's cache, where it says so. */
   cachedInputTokens?: number;
   thinkingTokens?: number;
+  /**
+   * How many of `outputTokens` were a picture rather than prose.
+   *
+   * ⚠️ INSIDE `outputTokens`, like `thinkingTokens`. Gemini reports one
+   * `candidatesTokenCount` and breaks the modalities out beside it. The image
+   * rate is twenty times the text rate, so the ledger has to be able to tell
+   * them apart — see llm.pricing.
+   */
+  imageTokens?: number;
 }
 
 export type LlmStopReason =
@@ -190,6 +199,16 @@ export type LlmErrorCode =
   | 'safety'
   | 'timeout'
   | 'network'
+  /**
+   * The active provider cannot do this AT ALL.
+   *
+   * ⚠️ NOT THE SAME AS `not_configured`, AND THE DIFFERENCE MATTERS TO WHOEVER
+   * READS THE ALERT. A missing key is fixed by setting one; a provider with no
+   * image model is fixed by switching provider back, and telling an operator
+   * to "check the API key" when LLM_PROVIDER=anthropic is set would send them
+   * looking for a problem that is not there.
+   */
+  | 'unsupported'
   | 'unknown';
 
 /**
@@ -226,4 +245,57 @@ export interface LlmPing {
   model: string;
   error?: string;
   latencyMs: number;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// MAKING A PICTURE.
+//
+// Operator, 2026-09-10: "We are going to insert the quarry it can hunt on the
+// same page. lets wire in that nano banana use nana banana lite (the cheapest
+// model)."
+//
+// ⚠️ ITS OWN SHAPE, NOT A FLAG ON LlmRequest. Nothing an image call needs is
+// what a text call needs — no tools, no JSON schema, no streaming, no thinking
+// budget — and nothing it RETURNS is a text response. Bolting a modality onto
+// LlmRequest would have every text call site carrying fields that can never
+// apply to it, and would make `LlmResponse.text` meaningless for half its
+// implementations.
+//
+// ⚠️ AND IT IS STILL THE ONE ADAPTER. CLAUDE.md: no service builds its own
+// client or picks its own model. The ledger, the log line and the model
+// default stay in LlmService exactly as they are for text, so image spend
+// lands in the same AiUsage table /admin/credits already reads.
+// ────────────────────────────────────────────────────────────────────
+
+export interface LlmImageRequest {
+  /** What to draw. */
+  prompt: string;
+  /**
+   * Reference pictures, where the model is being asked to work from one.
+   * Unused today; the API takes them and leaving it out would mean changing
+   * this shape the first time somebody wants a house style.
+   */
+  references?: LlmBlob[];
+  /** Overrides the configured image model. */
+  model?: string;
+  /**
+   * ⚠️ THERE IS NO ASPECT-RATIO KNOB HERE ON PURPOSE. Gemini has an
+   * `imageConfig` and this code has never sent one; the plates come back
+   * 1408×768 unasked, which is the landscape the page wants. Declaring a
+   * field nothing has proved would be a knob that 400s the first time
+   * somebody turns it.
+   */
+  /** Ledger and log label, like every other call. */
+  purpose: string;
+  timeoutMs?: number;
+}
+
+export interface LlmImageResponse {
+  /** Every picture the model returned, in order. Usually one. */
+  images: LlmBlob[];
+  /** Any prose it produced alongside them. Usually empty. */
+  text: string;
+  model: string;
+  provider: LlmProvider;
+  usage: LlmUsage;
 }
