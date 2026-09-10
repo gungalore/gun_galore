@@ -59,6 +59,12 @@ import {
  * August and the client type in September. If the server sends a field, the
  * client type is where it must be visible.
  */
+/**
+ * ⚠️ MUST MATCH package.json. pdf.js refuses to run against a worker built
+ * from another version, and the failure is at runtime on a member's phone.
+ */
+const PDFJS_VERSION = '4.10.38';
+
 export interface DesignPickerProps {
   token: TokenGetter;
   motivationId: string;
@@ -115,14 +121,21 @@ export default function DesignPicker({
     const timer = setTimeout(() => {
       void (async () => {
         /**
-         * ⚠️ THE WORKER IS OFF ON PURPOSE. Wiring pdf.js's worker through
-         * Next and past the service worker is a build problem for no gain here:
-         * one A4 page at thumbnail size rasterises in well under a frame, and a
-         * worker that fails to resolve renders nothing at all - which is the
-         * failure this whole change exists to stop repeating.
+         * ⚠️ IT NEEDS A REAL WORKER, AND TRYING TO AVOID ONE COST A DEPLOY.
+         * The first attempt set workerSrc to '' and passed disableWorker, on
+         * the reading that one thumbnail did not deserve the plumbing. pdf.js 4
+         * has no such escape: every page failed, every card stayed empty, and
+         * the only reason anybody found out is that the card says so out loud.
+         *
+         * ⚠️ AND IT IS A VERSIONED PATH, NEVER A BARE FILENAME. CLAUDE.md's
+         * rule for /scan assets is the same rule for the same reason: the
+         * service worker caches by URL, so a worker overwritten in place is
+         * served from cache at the old version against a library that has
+         * moved. Bump the path when pdfjs-dist moves.
          */
         const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-        (pdfjs.GlobalWorkerOptions as { workerSrc: string }).workerSrc = '';
+        (pdfjs.GlobalWorkerOptions as { workerSrc: string }).workerSrc =
+          `/pdfjs/${PDFJS_VERSION}/pdf.worker.min.mjs`;
 
         const drawn: Record<string, string> = {};
         await Promise.all(
@@ -133,10 +146,7 @@ export default function DesignPicker({
                 motivationId,
                 { layout: l.key, colourway: pickedColour },
               );
-              const doc = await pdfjs.getDocument({
-                data: bytes,
-                disableWorker: true,
-              } as never).promise;
+              const doc = await pdfjs.getDocument({ data: bytes }).promise;
               const page = await doc.getPage(1);
               const base = page.getViewport({ scale: 1 });
               const viewport = page.getViewport({ scale: 420 / base.width });
@@ -148,8 +158,16 @@ export default function DesignPicker({
               await page.render({ canvas, canvasContext: ctx, viewport } as never)
                 .promise;
               drawn[l.key] = canvas.toDataURL('image/png');
-            } catch {
-              /* one card that will not draw must not take the other four */
+            } catch (err) {
+              /**
+               * ⚠️ ONE CARD MUST NOT TAKE THE OTHER FOUR - BUT SAY WHY.
+               * This swallowed silently for one deploy, so when every
+               * sample failed the console was clean and the cause was
+               * invisible. A caught error nobody can read is the same
+               * fault as an embed that renders an empty box.
+               */
+              // eslint-disable-next-line no-console
+              console.warn(`design sample ${l.key} did not draw:`, err);
             }
           }),
         );

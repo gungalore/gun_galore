@@ -66,6 +66,24 @@ function setup() {
   );
 }
 
+import pkg from '../../package.json';
+import { readdirSync } from 'node:fs';
+
+describe('the pdf.js worker', () => {
+  it('⚠️ IS SHIPPED, AT A PATH THAT MATCHES THE INSTALLED VERSION', () => {
+    // pdf.js refuses to run against a worker built from another version, and
+    // the failure is at runtime on a member's phone with a clean build. The
+    // first attempt shipped with no worker at all: every sample failed, every
+    // card was empty, and desktop testing could not have caught it either.
+    const installed = pkg.dependencies['pdfjs-dist'].replace(/^[^0-9]*/, '');
+    const shipped = readdirSync('public/pdfjs');
+    expect(shipped).toContain(installed);
+    expect(readdirSync(`public/pdfjs/${installed}`)).toContain(
+      'pdf.worker.min.mjs',
+    );
+  });
+});
+
 describe('the design card', () => {
   it('⚠️ COSTS NOTHING UNTIL IT IS OPENED', async () => {
     setup();
