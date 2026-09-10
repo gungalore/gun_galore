@@ -6,7 +6,75 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-10**.
 
-## 2026-09-10 (latest) — THE THIRD ATTEMPT, the cartridge page, and the date
+## 2026-09-10 (latest) — THE CARTRIDGE PAGE, THE QUARRY, AND SIX RED MARKS
+
+Deployed as **6a1482eb**.
+
+### The cartridge feature page
+
+Three fixed slots, sizes chosen from measured geometry rather than content:
+the C.I.P. sheet 88x119 mm at the top of the right column, a 21:9 quarry
+photograph 182x78 mm across the foot, and about 183 mm of column for text.
+`MEASURE_SLOT=1` on a render prints the measurements the numbers came from.
+
+⚠️ **THE RESEARCH ASK IS SIZED TO THE SLOT.** 0.899 mm per word measured with
+the real face, so the slot holds about 204 words; the ask asks for 190 in about
+7 sections. Existing briefs already ran 192 — the bare page was never a
+word-count problem, it was the missing third slot.
+
+⚠️ **AND A RUN-IN HEADING EMPTIED HALF OF IT.** The research writes either
+`**Origin**` or `Origin: ...`, and it switched to the second the day the ask
+gained a length instruction. Groups split on subheadings, so run-ins made ONE
+atomic group of the whole article and the balancer left a column blank.
+Nothing failed; one group is a valid layout, which is why no test caught it.
+
+### Nano Banana Lite
+
+`gemini-3.1-flash-lite-image`, read off `GET /v1beta/models` on our own key.
+`LlmService.generateImage` is the one door; image output is $30/1M against
+$1.50/1M for text and BOTH arrive in one `candidatesTokenCount`, so the image
+half is carved out and priced separately — about 3.4 US cents a plate.
+
+⚠️ **DRAWN AT GENERATION, NOT AT RENDER.** The pack renders on every
+download and the model takes 10-20 s against a 60 s nginx ceiling.
+
+Gated on `firearm_use_kind` being hunting or both — operator: "if its hunting
+or hunting/sport shooting, yes. both on section 15 and 16." Species come from
+the research the page itself prints, whole-word matched ("eland" is inside
+"Zeeland"), and only from the WELL-MATCHED half of the brief.
+
+### Six red marks on a rendered pack
+
+- **OVERFLOW** — `BODY_BOTTOM` leaves 12 mm, not 6. A paragraph now moves
+  whole rather than splitting, BUT only once the page is 70% full
+  (`breakBeforeParagraph`, pure and tested — the two operator rules pull
+  against each other and it holds them in tension).
+- **CIP?** — the inset failed on every render since it shipped. Its stack
+  named `paintFormXObjectBegin`; it rasterises the RAW sheet now instead of
+  the A4 re-embed. ⚠️ **UNPROVEN** — never reproduced outside the running
+  service. The stack logging stays.
+- **Quarry** — see above.
+- **2?** — every licensed firearm in the vault now fills the form
+  automatically, before `missingRequired`. It can never overwrite an answer.
+- **Annexure** — the previous owner’s consent is a lettered annexure.
+- **Remove** — `SELLER_LICENCE` no longer letters; the consent page already
+  carries both sides of that card.
+
+### ⚠️ A DEPLOY STRANDED A MEMBER MID-GENERATION
+
+`pm2 reload` is a restart here. The row stayed GENERATING, which is not in
+REGENERABLE, so every retry answered "already being prepared" forever and the
+status had to be edited by hand. A GENERATING row untouched for ten minutes
+can now be re-claimed. **Do not deploy while the operator is generating.**
+
+### Still open
+
+- The C.I.P. inset is unproven — the next download decides it.
+- `gemini-3.1-flash-lite-image` had never run in production before today.
+- The quarry plate has never rendered end-to-end from a real generation:
+  MO000075 is dedicated SPORT, so it is correctly gated out of it.
+
+## 2026-09-10 — THE THIRD ATTEMPT, the cartridge page, and the date
 
 Deployed as **3c47def6**. Rollback: `alloutdoor-20260910-123916.dump`.
 Before it **ae27307e** (`alloutdoor-20260910-122548.dump`).
