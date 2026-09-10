@@ -244,6 +244,16 @@ export interface SheetResponse {
      * once and, because this is served, never asks again.
      */
     declarationAcceptedAt: string | null;
+    /**
+     * How the document is set, if they have chosen.
+     *
+     * ⚠️ NULL MEANS NEVER CHOSEN, NOT DEFAULT. The renderer validates on
+     * read, so the picker shows the stored value and lets the server own the
+     * fallback - a second copy of it here is how a member gets shown a
+     * selection their document does not have.
+     */
+    templateLayout: string | null;
+    templateColourway: string | null;
   };
   sections: SheetSection[];
   items: SheetItem[];

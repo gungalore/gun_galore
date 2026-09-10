@@ -164,6 +164,17 @@ export interface SheetResponse {
      * again.
      */
     declarationAcceptedAt: string | null;
+    /**
+     * How the document is set, if they have chosen.
+     *
+     * ⚠️ NULL MEANS "NEVER CHOSEN", NOT "DEFAULT". The renderer validates on
+     * READ - asLayout/asScheme map anything unrecognised, null included, onto
+     * the current defaults - so serving the raw column lets the picker show
+     * what is stored without a second copy of that fallback on the client, and
+     * without claiming somebody picked Banner when they simply never looked.
+     */
+    templateLayout: string | null;
+    templateColourway: string | null;
   };
   sections: SheetSection[];
   items: SheetItem[];
@@ -523,6 +534,8 @@ export class MotivationSheetService {
         label: true,
         status: true,
         declarationAcceptedAt: true,
+        templateLayout: true,
+        templateColourway: true,
         answersEncrypted: true,
         answerProvenance: true,
         uploads: {
@@ -695,6 +708,8 @@ export class MotivationSheetService {
         declarationAcceptedAt: row.declarationAcceptedAt
           ? row.declarationAcceptedAt.toISOString()
           : null,
+        templateLayout: row.templateLayout,
+        templateColourway: row.templateColourway,
       },
       sections,
       items,

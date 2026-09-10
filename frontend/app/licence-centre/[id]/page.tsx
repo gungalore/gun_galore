@@ -16,6 +16,7 @@ import SheetDisclosure from '@/components/licence-centre/sheet-disclosure';
 import SheetRow from '@/components/licence-centre/sheet-row';
 import DeclarationRow from '@/components/licence-centre/declaration-row';
 import DocumentShelf from '@/components/licence-centre/document-shelf';
+import DesignPicker from '@/components/licence-centre/design-picker';
 import SheetFooter from '@/components/licence-centre/sheet-footer';
 import SheetToast from '@/components/licence-centre/sheet-toast';
 import ConsentCard from '@/components/licence-centre/consent-card';
@@ -1369,6 +1370,20 @@ export default function LicenceCentreSheetPage() {
             {renderRows(s.id)}
           </SheetSection>
         ))}
+
+        {/*
+          ⚠️ ABOVE THE FOOTER, NOT ON A SCREEN OF ITS OWN. The footer's own
+          note argues it: a separate step for a cosmetic choice is the
+          confirm-guarding-a-value-we-already-hold shape the operator ruled
+          out. This sits where the consequence is, closed by default, with the
+          red button still the primary action underneath it.
+        */}
+        <DesignPicker
+          token={getToken}
+          motivationId={id}
+          layout={sheet.application.templateLayout}
+          colourway={sheet.application.templateColourway}
+        />
 
         <SheetFooter
           missingCount={sheet.missing.length}

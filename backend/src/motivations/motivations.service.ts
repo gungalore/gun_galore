@@ -1324,6 +1324,15 @@ export class MotivationsService {
     return this.render.renderPdf(clerkId, id);
   }
 
+  /** @see MotivationRenderService.designSample */
+  designSample(
+    clerkId: string,
+    id: string,
+    choice: { layout?: string; colourway?: string },
+  ) {
+    return this.render.designSample(clerkId, id, choice);
+  }
+
   /** @see MotivationWitnessesService.listWitnesses */
   listWitnesses(clerkId: string, id: string) {
     return this.witnesses.listWitnesses(clerkId, id);

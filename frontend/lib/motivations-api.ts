@@ -279,9 +279,11 @@ export type Colourway =
   | 'fogblue'
   | 'clay'
   | 'olive'
-  | 'sand'
   | 'graphite'
-  | 'mauve';
+  | 'mauve'
+  | 'indigo'
+  | 'petrol'
+  | 'burgundy';
 
 export interface TemplateFormatOption {
   key: TemplateFormat;
@@ -324,6 +326,24 @@ export interface TemplateColourOption {
   hair: string;
   /** Panel and footer backgrounds. */
   wash: string;
+  /**
+   * The one saturated colour on the page: the rule under a cover title.
+   *
+   * ⚠️ AND IT WENT MISSING FOR A FORTNIGHT. `accent` was added to the
+   * renderer on 2026-08-24 and never reached this type, so the note above about
+   * under-declaring the response was true again the moment it was written.
+   */
+  accent: string;
+  /**
+   * The cover banner and the running band.
+   *
+   * ⚠️ SEPARATE FROM deep/deep2, WHICH ARE AN INK ROLE. The banner is a
+   * tint now and those two are still the dark fill for headings and marks on
+   * white paper; a picker that drew a swatch from `deep2` would show a colour
+   * no cover has.
+   */
+  bannerFrom: string;
+  bannerTo: string;
 }
 
 /**
@@ -1686,6 +1706,38 @@ export const motivationsApi = {
     });
     if (!r.ok) {
       throw new MotivationApiError('We could not open the document.', r.status);
+    }
+    return URL.createObjectURL(await r.blob());
+  },
+
+  /**
+   * One page: their own cover, in a layout and colourway they are trying on.
+   *
+   * ⚠️ A REAL RENDER, NOT A DRAWING OF ONE. The server runs the actual
+   * document renderer and returns page one - no model call, so it is free. The
+   * picker this replaces drew its own approximation in the browser and told
+   * members Report was "sans-serif throughout" while their packs came out
+   * serif. Whatever this shows is what they will get.
+   *
+   * ⚠️ THE CALLER MUST revokeObjectURL. Five of these are alive at once on
+   * the design step and they are replaced on every colour change; leaked, they
+   * hold a whole PDF each until the tab closes.
+   */
+  designSampleBlobUrl: async (
+    t: TokenGetter,
+    id: string,
+    choice: { layout?: string; colourway?: string },
+  ): Promise<string> => {
+    const token = await t();
+    const q = new URLSearchParams();
+    if (choice.layout) q.set('layout', choice.layout);
+    if (choice.colourway) q.set('colourway', choice.colourway);
+    const r = await fetch(
+      `${API_URL}/motivations/${id}/design-sample?${q.toString()}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
+    if (!r.ok) {
+      throw new MotivationApiError('We could not draw that sample.', r.status);
     }
     return URL.createObjectURL(await r.blob());
   },

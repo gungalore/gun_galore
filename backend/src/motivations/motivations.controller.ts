@@ -9,6 +9,7 @@ import {
   HttpCode,
   MaxFileSizeValidator,
   Param,
+  Query,
   ParseFilePipe,
   Patch,
   Post,
@@ -235,6 +236,43 @@ export class MotivationsController {
    * change it and download again without regenerating — the body is stored
    * text and the PDF is re-rendered on every download anyway.
    */
+  /**
+   * One page: their own cover, in a layout and colourway they are trying on.
+   *
+   * Operator, 2026-09-10: "Can we give them mock ups of each template which
+   * costs nothing and generate the motivation from there on?"
+   *
+   * NO MODEL CALL. Rendering is a pure function over figures already held, so
+   * this is milliseconds of CPU and nothing on the bill — which is what lets
+   * the picker show five REAL covers instead of a drawing of five.
+   *
+   * ⚠️ SAME `no-store` AS THE PACK. It carries the applicant's name, their
+   * ID number and their firearm, and it must not sit in a shared proxy or a
+   * browser cache just because it is only a preview.
+   *
+   * ⚠️ AND NOTHING IS SAVED. Trying a colour on is not choosing it; the
+   * choice is a separate PATCH the member makes deliberately.
+   */
+  @Get(':id/design-sample')
+  async designSample(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Query('layout') layout: string | undefined,
+    @Query('colourway') colourway: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const pdf = await this.motivations.designSample(clerkId, id, {
+      layout,
+      colourway,
+    });
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': String(pdf.length),
+      'Cache-Control': 'private, no-store',
+    });
+    return new StreamableFile(pdf);
+  }
+
   @Patch(':id/template')
   setTemplate(
     @CurrentUser() clerkId: string,

@@ -1,3 +1,4 @@
+import { PDFDocument } from 'pdf-lib';
 import {
   BadRequestException,
   ConflictException,
@@ -100,6 +101,21 @@ import {
  * is not legal advice, and that the decision is not ours to make. It says it
  * in the voice of the person signing.
  */
+/**
+ * What the design sample says under the cover.
+ *
+ * ⚠️ DELIBERATELY NOT THE APPLICANT'S OWN WORDS. Most people reach the
+ * design choice BEFORE anything is written, so there is usually no draft to
+ * show - and half a real argument presented as a sample is worse than none.
+ * Two lines of plain text is enough to prove the body face and the heading
+ * style, which is all the second page of a sample is for.
+ */
+const SAMPLE_BODY = [
+  'Introduction:',
+  'This page shows how your document is set. The words here are a sample; ' +
+    'your own motivation is written from your answers.',
+].join(String.fromCharCode(10) + String.fromCharCode(10));
+
 const DISCLAIMER_TEXT =
   'I prepared this motivation with assistance from All Outdoor, from ' +
   'information I supplied, and I submit it as my own. It is not legal ' +
@@ -601,6 +617,106 @@ export class MotivationRenderService {
       });
     }
     return pages;
+  }
+
+  /**
+   * One page: this applicant's own cover, in a layout and colourway they are
+   * trying on. Nothing is saved and nothing is generated.
+   *
+   * Operator, 2026-09-10: "Can we give them mock ups of each template which
+   * costs nothing and generate the motivation from there on?"
+   *
+   * ⚠️ IT IS THE REAL RENDERER, NOT A MOCK, AND THAT IS THE WHOLE POINT.
+   * The expensive half of a motivation is the PROSE — `motivation.generate` is
+   * a model call. Rendering is a pure function over figures we already hold, so
+   * a genuine cover costs nothing but the milliseconds. The picker this
+   * replaces drew its own approximation in the browser, and told members Report
+   * was "sans-serif throughout" while every one of their packs came out serif.
+   * A drawing of a document can drift from the document; this cannot.
+   *
+   * ⚠️ AND IT CARRIES THE HERO, because the hero IS the cover now. A sample
+   * without it would be honest about the colour and lying about the page.
+   *
+   * ⚠️ THE BODY IS TWO CANNED LINES AND NEVER THE APPLICANT'S OWN. A draft
+   * exists only after generation, most people reach this screen before that,
+   * and half a real argument shown as a sample is worse than none. What the
+   * sample is FOR is the cover — the masthead, the mark, the tint, the hero and
+   * the particulars — and every one of those is genuinely theirs.
+   */
+  /**
+   * The cover alone.
+   *
+   * ⚠️ THE RENDERER HAS NO ONE-PAGE MODE, AND SHOULD NOT GROW ONE. Asking it
+   * to stop after the cover would be a second code path through the thing the
+   * sample exists to be honest about - and the first time the two diverged,
+   * the sample would be the one nobody checked. So it draws the whole document
+   * as it always does and this takes page one off the front.
+   */
+  private async firstPageOf(pdf: Uint8Array | Buffer): Promise<Buffer> {
+    const src = await PDFDocument.load(pdf);
+    const out = await PDFDocument.create();
+    const [page] = await out.copyPages(src, [0]);
+    out.addPage(page);
+    return Buffer.from(await out.save());
+  }
+
+  async designSample(
+    clerkId: string,
+    id: string,
+    choice: { layout?: string; colourway?: string },
+  ): Promise<Buffer> {
+    await this.quota.assertEnabled();
+    const user = await this.shared.requireUser(clerkId);
+
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        referenceNumber: true,
+        licenceType: true,
+        answersEncrypted: true,
+        completedAt: true,
+        templateColourway: true,
+        templateLayout: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const answers = this.shared.readAnswers(row.answersEncrypted);
+    const at = row.completedAt ?? new Date();
+    const cartridge = await this.cartridgeDrawingFor(
+      answers.firearm_calibre,
+      heroSubtitle(answers),
+    );
+
+    const { pdf } = await this.pdf.render({
+      referenceNumber: row.referenceNumber,
+      applicantName: answers.full_name || 'The applicant',
+      licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
+      idNumber: answers.id_number?.trim() || undefined,
+      firearmLine: firearmLine(answers),
+      coverParticulars: coverParticulars(
+        answers,
+        LICENCE_TYPE_LABELS[row.licenceType],
+        at,
+      ),
+      /**
+       * ⚠️ FALLING BACK TO WHAT IS STORED, NOT TO THE DEFAULT. The picker
+       * sends one axis at a time — a colour swatch changes the colour and says
+       * nothing about the layout — so an absent value means "leave that as it
+       * is", never "reset it". asLayout/asScheme then validate.
+       */
+      layout: asLayout(choice.layout ?? row.templateLayout),
+      colourway: asScheme(choice.colourway ?? row.templateColourway),
+      body: SAMPLE_BODY,
+      disclaimer: DISCLAIMER_TEXT,
+      templateVersion: TEMPLATE_VERSION,
+      generatedAt: at,
+      cartridgeDrawing: cartridge,
+      cartridgeDims: cartridge?.dims,
+    });
+
+    return this.firstPageOf(pdf);
   }
 
   async renderPdf(clerkId: string, id: string) {

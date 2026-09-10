@@ -122,6 +122,9 @@ export const sheet = (over: Partial<SheetResponse> = {}): SheetResponse => ({
     status: 'DRAFT',
     // Nothing signed yet — the footer asks, which is the state under test.
     declarationAcceptedAt: null,
+    // Never chosen — which is what every real row holds today.
+    templateLayout: null,
+    templateColourway: null,
   },
   sections: [
     { id: 'firearm', title: 'The firearm', blurb: 'What you are applying for.', missing: [] },
