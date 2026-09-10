@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Suspense, type CSSProperties } from 'react
 import { av } from '@/lib/asset-version';
 import { SUPPORT_EMAIL } from '@/lib/brand';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../../lib/auth';
 import Image from 'next/image';
 import Link from 'next/link';
 import { QRCodeSVG } from 'qrcode.react';

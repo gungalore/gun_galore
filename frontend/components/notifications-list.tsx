@@ -9,7 +9,7 @@
 // shell shows the empty state until the API lands.
 
 import { useEffect, useState, useCallback } from 'react';
-import { useAuth, SignInButton } from '@clerk/nextjs';
+import { useAuth, SignInButton } from '../lib/auth';
 import {
   fetchFeed,
   dismissNotifications,

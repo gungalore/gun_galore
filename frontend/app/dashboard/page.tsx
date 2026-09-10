@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { auth } from '@clerk/nextjs/server';
+import { serverAuth as auth } from '../../lib/auth-server';
 import { TrustDashboard, SellerTier } from '@/lib/types';
 import { RatingReply } from './rating-reply';
 import { PageReveal } from '@/components/page-reveal';

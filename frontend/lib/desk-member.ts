@@ -49,7 +49,7 @@ export interface Standing {
  * The user fields the Member drawer renders — and nothing else.
  *
  * Everything the dossier also returns (idNumberEncrypted, kycIdHash, the
- * address block, phoneOtpHash, clerkId, the notification preferences) is
+ * address block, phoneOtpHash, userId, the notification preferences) is
  * deliberately absent: none of it is needed to approve a verification, judge a
  * payout or decide a ban, and a field that is typed is a field that ends up
  * rendered.

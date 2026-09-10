@@ -56,23 +56,17 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'res.cloudinary.com',
       },
-      // Clerk-hosted avatars + initial fallbacks. Both hostnames appear
-      // in the wild — `img.clerk.com` is the new format, `images.clerk.dev`
-      // is the legacy one — so allowlist both.
-      {
-        protocol: 'https',
-        hostname: 'img.clerk.com',
-      },
-      {
-        protocol: 'https',
-        hostname: 'images.clerk.dev',
-      },
+      // ⚠️ THE IDENTITY PROVIDER'S AVATAR HOSTS ARE GONE FROM THIS LIST, and
+      // that is only safe because avatars moved to Cloudinary above. If a row
+      // somewhere still holds an img.clerk.com URL, next/image will refuse it
+      // with a 400 rather than rendering a broken image — which is the loud
+      // failure you want, not a silent one.
     ],
   },
   // Security headers (audit H9 + H10 + HDR-4). Applied to every route.
   // CSP intentionally only sets `frame-ancestors` for now — a full
-  // script-src / connect-src CSP needs per-environment tuning (Clerk,
-  // Cloudinary, Stitch checkout origin, Anthropic) and Report-Only
+  // script-src / connect-src CSP needs per-environment tuning (Cloudinary,
+  // Didit's hosted verification, the payment gateway) and Report-Only
   // observation before enforcement. The frame-ancestors directive
   // alone gives us anti-clickjacking and is safe to ship today.
   //

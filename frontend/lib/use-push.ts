@@ -26,7 +26,7 @@
 //                   the row.
 
 import { useCallback, useEffect, useState } from 'react';
-import { useAuth, useUser } from '@clerk/nextjs';
+import { useAuth, useUser } from './auth';
 import { useStandalone } from './use-standalone';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';

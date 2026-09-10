@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../../../lib/auth';
 import { PhotoDropzone } from '@/components/photo-dropzone';
 import { SUPPORT_EMAIL } from '@/lib/brand';
 

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, FormEvent, ReactNode } from 'react';
 import { av } from '@/lib/asset-version';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useAuth, useUser } from '@clerk/nextjs';
+import { useAuth, useUser, useSession } from '../../../lib/auth';
 import { Me } from '@/lib/types';
 import {
   AddressAutocomplete,
@@ -155,7 +155,7 @@ function StatusBanner({
 // "Incorrect password. Please try again."). Surface that instead of a
 // generic failure so the inline photo / password / email-verify forms
 // give the same quality of feedback Clerk's own modal did.
-function clerkErrorMsg(err: unknown): string {
+function authErrorMsg(err: unknown): string {
   const e = err as { errors?: { longMessage?: string; message?: string }[] };
   return (
     e?.errors?.[0]?.longMessage ??
@@ -491,11 +491,15 @@ export default function EditProfilePage() {
   // Email + identity state for the Verification section. Email + its
   // verified flag come from Clerk (system of record for email); ID
   // verification status comes from our KYC pipeline via /users/me.
-  const { user: clerkUser } = useUser();
+  const { user: viewer } = useUser();
+  // Re-reads /auth/me so the avatar, the email badge and the completeness
+  // ring reflect a change the moment it lands, instead of on the next
+  // navigation. The provider used to do this reactively for us.
+  const { refresh: refreshViewer } = useSession();
   const emailAddr =
-    clerkUser?.primaryEmailAddress?.emailAddress ?? me?.email ?? null;
+    viewer?.primaryEmailAddress?.emailAddress ?? me?.email ?? null;
   const emailVerified =
-    clerkUser?.primaryEmailAddress?.verification?.status === 'verified';
+    viewer?.primaryEmailAddress?.verification?.status === 'verified';
   const kyc = me?.kycStatus ?? 'NONE';
 
   // ── Clerk-managed bits, edited INLINE (no identity modal) ──────────
@@ -503,7 +507,7 @@ export default function EditProfilePage() {
   // but Clerk's frontend SDK exposes each one (setProfileImage,
   // updatePassword, prepare/attemptVerification), so we render our own
   // controls in the house style instead of opening Clerk's UserProfile
-  // modal. clerkUser updates reactively after each call, so badges and
+  // modal. viewer updates reactively after each call, so badges and
   // avatars refresh without a reload.
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -529,7 +533,7 @@ export default function EditProfilePage() {
     const file = e.target.files?.[0];
     // Reset so picking the same file twice still fires onChange.
     e.target.value = '';
-    if (!file || !clerkUser) return;
+    if (!file || !viewer) return;
     if (file.size > 10 * 1024 * 1024) {
       setPhotoStatus({ tone: 'error', msg: 'Photo must be under 10 MB.' });
       return;
@@ -537,24 +541,47 @@ export default function EditProfilePage() {
     setPhotoBusy(true);
     setPhotoStatus(null);
     try {
-      await clerkUser.setProfileImage({ file });
+      const token = await getToken();
+      const body = new FormData();
+      body.append('file', file);
+      const res = await fetch(`${API_URL}/users/me/avatar`, {
+        method: 'POST',
+        credentials: 'include',
+        // ⚠️ NO Content-Type HEADER. The browser has to set it itself so the
+        // multipart boundary is included; naming it by hand produces a body
+        // the server cannot parse.
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string;
+      };
+      if (!res.ok) throw new Error(data.message ?? 'Upload failed.');
+      await refreshViewer();
       setPhotoStatus({ tone: 'success', msg: 'Photo updated.' });
     } catch (err) {
-      setPhotoStatus({ tone: 'error', msg: clerkErrorMsg(err) });
+      setPhotoStatus({ tone: 'error', msg: authErrorMsg(err) });
     } finally {
       setPhotoBusy(false);
     }
   }
 
   async function handleRemovePhoto() {
-    if (!clerkUser) return;
+    if (!viewer) return;
     setPhotoBusy(true);
     setPhotoStatus(null);
     try {
-      await clerkUser.setProfileImage({ file: null });
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/users/me/avatar`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error('Could not remove the photo.');
+      await refreshViewer();
       setPhotoStatus({ tone: 'success', msg: 'Photo removed.' });
     } catch (err) {
-      setPhotoStatus({ tone: 'error', msg: clerkErrorMsg(err) });
+      setPhotoStatus({ tone: 'error', msg: authErrorMsg(err) });
     } finally {
       setPhotoBusy(false);
     }
@@ -562,7 +589,7 @@ export default function EditProfilePage() {
 
   async function handleChangePassword(e: FormEvent) {
     e.preventDefault();
-    if (!clerkUser) return;
+    if (!viewer) return;
     if (newPassword.length < 8) {
       setPwStatus({
         tone: 'error',
@@ -577,31 +604,71 @@ export default function EditProfilePage() {
     setPwBusy(true);
     setPwStatus(null);
     try {
-      // currentPassword is required when one exists; an OAuth-only
-      // account (passwordEnabled=false) sets its first password instead.
-      await clerkUser.updatePassword({
-        newPassword,
-        ...(clerkUser.passwordEnabled ? { currentPassword: curPassword } : {}),
+      // ⚠️ THE CURRENT PASSWORD IS ALWAYS REQUIRED NOW. It used to be optional
+      // for an OAuth-only account that had never set one; every account has a
+      // password today, so an unconditional check is the honest gate — and it
+      // is what stops a borrowed session from changing the credential.
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/auth/change-password`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          currentPassword: curPassword,
+          newPassword,
+        }),
       });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string | string[];
+      };
+      if (!res.ok) {
+        throw new Error(
+          Array.isArray(data.message)
+            ? data.message[0]
+            : (data.message ?? 'Could not change your password.'),
+        );
+      }
       setPwOpen(false);
       setCurPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setPwStatus({ tone: 'success', msg: 'Password changed.' });
+      setPwStatus({
+        tone: 'success',
+        msg: 'Password changed. Every other device has been signed out.',
+      });
     } catch (err) {
-      setPwStatus({ tone: 'error', msg: clerkErrorMsg(err) });
+      setPwStatus({ tone: 'error', msg: authErrorMsg(err) });
     } finally {
       setPwBusy(false);
     }
   }
 
+  // ⚠️ THIS CARD IS NOW UNREACHABLE, AND THAT IS THE POINT. It only ever
+  // rendered while the member's email was unverified — a state that existed
+  // because the identity provider let somebody sign in first and prove their
+  // address later. Our sign-up refuses a session until the code is entered, so
+  // a signed-in member's address is verified by construction.
+  //
+  // The handlers stay wired to the real endpoints rather than being deleted,
+  // because "unreachable" is a claim about today's sign-up flow, not a law —
+  // and a member whose row predates it must not be stranded with a dead button.
   async function handleSendEmailCode() {
-    const email = clerkUser?.primaryEmailAddress;
+    const email = viewer?.primaryEmailAddress;
     if (!email) return;
     setEmailBusy(true);
     setEmailStatus(null);
     try {
-      await email.prepareVerification({ strategy: 'email_code' });
+      const res = await fetch(`${API_URL}/auth/resend-email-code`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.emailAddress }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) throw new Error(data.message ?? 'Could not send a code.');
       setEmailMode('code');
       setEmailCode('');
       setEmailStatus({
@@ -609,24 +676,33 @@ export default function EditProfilePage() {
         msg: `Code sent to ${email.emailAddress}.`,
       });
     } catch (err) {
-      setEmailStatus({ tone: 'error', msg: clerkErrorMsg(err) });
+      setEmailStatus({ tone: 'error', msg: authErrorMsg(err) });
     } finally {
       setEmailBusy(false);
     }
   }
 
   async function handleVerifyEmailCode() {
-    const email = clerkUser?.primaryEmailAddress;
+    const email = viewer?.primaryEmailAddress;
     if (!email) return;
     setEmailBusy(true);
     setEmailStatus(null);
     try {
-      await email.attemptVerification({ code: emailCode.trim() });
-      // clerkUser refreshes reactively → the badge flips to ✓ Verified
-      // and this whole block unmounts (it only renders while unverified).
+      const res = await fetch(`${API_URL}/auth/verify-email`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.emailAddress,
+          code: emailCode.trim(),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) throw new Error(data.message ?? 'That code is not right.');
+      await refreshViewer();
       setEmailMode('idle');
     } catch (err) {
-      setEmailStatus({ tone: 'error', msg: clerkErrorMsg(err) });
+      setEmailStatus({ tone: 'error', msg: authErrorMsg(err) });
     } finally {
       setEmailBusy(false);
     }
@@ -652,7 +728,7 @@ export default function EditProfilePage() {
   const idDone = kyc === 'VERIFIED' || kyc === 'UNDER_REVIEW';
   const addressFilled = !!me && !missing.includes('address');
   const bankingFilled = !!me?.bankAccountNumber;
-  const photoFilled = !!clerkUser?.hasImage;
+  const photoFilled = !!viewer?.hasImage;
 
   const statusOf = (filled: boolean, required: boolean): StepStatus =>
     filled ? 'complete' : required ? 'active' : 'idle';
@@ -1528,16 +1604,16 @@ export default function EditProfilePage() {
                 fontWeight: 500,
               }}
             >
-              {clerkUser?.hasImage && clerkUser?.imageUrl ? (
+              {viewer?.hasImage && viewer?.imageUrl ? (
                 <Image
-                  src={clerkUser.imageUrl}
+                  src={viewer.imageUrl}
                   alt=""
                   width={56}
                   height={56}
                   style={{ objectFit: 'cover' }}
                 />
               ) : (
-                (clerkUser?.username || username || 'G')
+                (viewer?.username || username || 'G')
                   .charAt(0)
                   .toUpperCase()
               )}
@@ -1549,11 +1625,11 @@ export default function EditProfilePage() {
               >
                 {photoBusy
                   ? 'Uploading…'
-                  : clerkUser?.hasImage
+                  : viewer?.hasImage
                     ? 'Change photo'
                     : 'Upload photo'}
               </SecondaryButton>
-              {clerkUser?.hasImage && (
+              {viewer?.hasImage && (
                 <SecondaryButton onClick={handleRemovePhoto} disabled={photoBusy}>
                   Remove
                 </SecondaryButton>
@@ -1598,7 +1674,7 @@ export default function EditProfilePage() {
                     setPwStatus(null);
                   }}
                 >
-                  {clerkUser?.passwordEnabled
+                  {viewer?.passwordEnabled
                     ? 'Change password'
                     : 'Set a password'}
                 </SecondaryButton>
@@ -1610,7 +1686,7 @@ export default function EditProfilePage() {
               </div>
             ) : (
               <form onSubmit={handleChangePassword} className="space-y-3">
-                {clerkUser?.passwordEnabled && (
+                {viewer?.passwordEnabled && (
                   <Field label="Current password">
                     <input
                       type="password"

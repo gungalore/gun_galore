@@ -1,4 +1,4 @@
-import { auth } from '@clerk/nextjs/server';
+import { serverAuth as auth } from '../../../../lib/auth-server';
 import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Offer } from '@/lib/types';

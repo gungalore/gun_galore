@@ -8,6 +8,13 @@ import { memberJwtSecret } from './member-jwt-secret';
 export const ACCESS_TTL_SECONDS = 15 * 60;
 /** How long a refresh token is good for, sliding on each use. */
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * How long a just-rotated refresh token keeps working.
+ *
+ * Long enough for a second browser tab that woke at the same moment to finish
+ * its own refresh; far too short to be worth stealing.
+ */
+export const REFRESH_GRACE_MS = 30 * 1000;
 
 export interface SessionPayload {
   /** User.id — the one and only user identifier. */
@@ -113,12 +120,38 @@ export class SessionService {
     meta: { userAgent?: string; ip?: string } = {},
   ): Promise<IssuedSession> {
     const presented = this.hash(refreshToken);
-    const session = await this.prisma.session.findUnique({
+    let session = await this.prisma.session.findUnique({
       where: { refreshHash: presented },
       select: { id: true, userId: true, revokedAt: true, expiresAt: true },
     });
 
-    if (!session) throw new UnauthorizedException();
+    if (!session) {
+      // Nothing matches the CURRENT hash. Before treating that as a forgery,
+      // check whether this is the token we rotated away from moments ago —
+      // which is what a second tab refreshing in parallel looks like.
+      const recent = await this.prisma.session.findFirst({
+        where: {
+          prevRefreshHash: presented,
+          prevRefreshExpiresAt: { gt: new Date() },
+          revokedAt: null,
+        },
+        select: { id: true, userId: true, refreshHash: true },
+      });
+      if (recent) {
+        // ⚠️ DO NOT ROTATE AGAIN. Handing this caller a third token would
+        // invalidate the one the winning tab is already holding, and the two
+        // tabs would take turns logging each other out forever. Mint a fresh
+        // ACCESS token against the session and leave the refresh side alone.
+        return {
+          accessToken: await this.mintAccess(recent.userId, recent.id),
+          refreshToken,
+          sessionId: recent.id,
+          accessExpiresAt: new Date(Date.now() + ACCESS_TTL_SECONDS * 1000),
+          refreshExpiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+        };
+      }
+      throw new UnauthorizedException();
+    }
 
     if (session.revokedAt || session.expiresAt < new Date()) {
       // Presented against a session we already closed → treat as replay.
@@ -137,6 +170,9 @@ export class SessionService {
       where: { id: session.id, refreshHash: presented, revokedAt: null },
       data: {
         refreshHash: this.hash(next),
+        // What we just rotated away from, honoured for REFRESH_GRACE_MS.
+        prevRefreshHash: presented,
+        prevRefreshExpiresAt: new Date(Date.now() + REFRESH_GRACE_MS),
         lastSeenAt: new Date(),
         expiresAt: refreshExpiresAt,
         userAgent: meta.userAgent?.slice(0, 500),

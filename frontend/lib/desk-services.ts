@@ -91,11 +91,13 @@ export const DESK_SERVICES: DeskService[] = [
 
   /* ── Identity ─────────────────────────────────────────────────────── */
   {
-    name: 'Clerk',
-    url: 'https://dashboard.clerk.com/apps/app_3DUrDNtWGfkFJugZxQQjsXb4o8S/instances/ins_3DUrDK5eeRq9ZPYSv1aeqqB2Isb',
+    name: 'Didit',
+    url: 'https://business.didit.me/',
     group: 'Identity',
-    purpose: 'Member sign-in. The production instance.',
-    caution: 'pk_live is domain-locked, so the auth cluster never renders on localhost.',
+    purpose:
+      'Seller identity verification, plus the email and phone codes at sign-up.',
+    caution:
+      'The KYC workflow must stay non-white-label or it leaves the free tier and costs $0.20 a session on top.',
   },
   {
     name: 'VerifyNow',

@@ -15,7 +15,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../lib/auth';
 import {
   fetchActiveCount,
   type ActiveCount,

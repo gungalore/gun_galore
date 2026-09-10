@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../lib/auth';
 
 // Nav notification bell — replaces the old always-on sticky "Urgent
 // Notifications" strip. A bell sits in the top nav (desktop + mobile-web;

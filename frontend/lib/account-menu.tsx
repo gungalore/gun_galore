@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from './auth';
 import {
   ACCOUNT_GROUPS,
   LogoutIcon,

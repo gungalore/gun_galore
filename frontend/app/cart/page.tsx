@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAuth, SignInButton } from '@clerk/nextjs';
+import { useAuth, SignInButton } from '../../lib/auth';
 import {
   useCart,
   removeFromCart,
@@ -263,7 +263,7 @@ export default function CartPage() {
   // Group lines by seller (Phase 8d — a cart can mix sellers). One payment
   // covers all; each seller ships + is paid independently.
   //
-  // `sellerId` (the seller's clerkId) is carried on the group because it, not
+  // `sellerId` (the seller's userId) is carried on the group because it, not
   // the handle, is the identity here: a seller can hold no username at all
   // (see cart-store.ts) and every nameless one is written into the cart under
   // the same literal, so handles do not tell two sellers apart. `name` is

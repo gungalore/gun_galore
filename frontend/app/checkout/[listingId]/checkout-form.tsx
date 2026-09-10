@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../../lib/auth';
 import { useSearchParams } from 'next/navigation';
 import {
   Listing,

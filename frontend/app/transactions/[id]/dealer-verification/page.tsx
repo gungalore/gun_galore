@@ -18,7 +18,7 @@
 
 import { useState, useEffect, FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../../../lib/auth';
 import { DownloadSaps534Button } from '../download-saps534-button';
 import { processImage } from '@/lib/process-image';
 

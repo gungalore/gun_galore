@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useAuth, useUser, useClerk } from '@clerk/nextjs';
+import { useAuth, useUser } from '../../lib/auth';
 import Link from 'next/link';
 import type { Address } from '@/lib/types';
 import { PROVINCE_LABELS } from '@/lib/utils';
@@ -69,9 +69,7 @@ type FallbackChannel = (typeof FALLBACK_OPTIONS)[number][0];
 
 export default function SettingsPage() {
   const { getToken } = useAuth();
-  const { user, isLoaded: userLoaded } = useUser();
-  const { openUserProfile } = useClerk();
-  const mfaOn = !!user?.twoFactorEnabled;
+  const { user } = useUser();
   const [loading, setLoading] = useState(true);
   const [emailOn, setEmailOn] = useState(true);
   const [smsOn, setSmsOn] = useState(true);
@@ -674,7 +672,17 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* ─── Security (2FA via Clerk) ─── */}
+          {/* ─── Security ─── */}
+          {/*
+            ⚠️ THIS USED TO OFFER TWO-FACTOR AUTHENTICATION, AND IT NO LONGER
+            EXISTS. The button opened the identity provider's hosted profile
+            modal, which owned the second factor; nothing replaced it when the
+            provider went. Leaving the row in place with a dead button would
+            have told sellers — the members most worth attacking, because their
+            accounts hold payout details — that their account had a control it
+            does not have. Saying so plainly is the only honest option until
+            2FA is actually built.
+          */}
           <section style={card} className="p-4 mb-6">
             <h2
               className="text-base mb-1"
@@ -683,45 +691,34 @@ export default function SettingsPage() {
               Security
             </h2>
             <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
-              Two-factor authentication adds a second step at sign-in. Strongly
-              recommended for sellers — your account can hold payout details.
+              Your password is the only thing protecting your account. Use one
+              you do not use anywhere else — especially if you sell, because
+              your account can hold payout details.
             </p>
             <div className="flex items-center justify-between py-2">
               <div>
                 <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                  Two-factor authentication
+                  Password
                 </p>
                 <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  {!userLoaded
-                    ? 'Checking…'
-                    : mfaOn
-                      ? '✓ Enabled — your account has 2FA.'
-                      : 'Not enabled.'}
+                  Changing it signs you out everywhere else.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => openUserProfile()}
+              <a
+                href="/profile/edit#password"
                 className="text-sm px-3 py-1.5 rounded-[6px] whitespace-nowrap"
-                style={
-                  mfaOn
-                    ? {
-                        background: 'var(--bg-inset)',
-                        color: 'var(--text-secondary)',
-                        border: '0.5px solid var(--border)',
-                        cursor: 'pointer',
-                      }
-                    : {
-                        background: 'var(--red)',
-                        color: '#fff',
-                        border: 'none',
-                        cursor: 'pointer',
-                      }
-                }
+                style={{
+                  background: 'var(--bg-inset)',
+                  color: 'var(--text-secondary)',
+                  border: '0.5px solid var(--border)',
+                }}
               >
-                {mfaOn ? 'Manage' : 'Enable 2FA'}
-              </button>
+                Change
+              </a>
             </div>
+            <p className="text-xs pt-2" style={{ color: 'var(--text-faint)' }}>
+              Two-factor authentication is not available yet.
+            </p>
           </section>
 
           {/* ─── Address book ─── */}

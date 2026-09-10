@@ -15,7 +15,7 @@
 // that would silently fail.
 
 import { useEffect, useState } from 'react';
-import { useUser } from '@clerk/nextjs';
+import { useUser } from '../lib/auth';
 import { usePush } from '@/lib/use-push';
 
 const DISMISS_KEY = 'gg-push-banner-dismissed-until';

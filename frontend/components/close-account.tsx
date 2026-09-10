@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useClerk } from '@clerk/nextjs';
+import { useClerk } from '../lib/auth';
 import {
   ACCOUNT_CLOSURE_REASONS,
   closeAccount,

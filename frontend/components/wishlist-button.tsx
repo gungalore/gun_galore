@@ -19,7 +19,7 @@
 // is mid-browse and doesn't want to be yanked to the sign-in screen.
 
 import { useState } from 'react';
-import { SignInButton } from '@clerk/nextjs';
+import { SignInButton } from '../lib/auth';
 import { useWishlist } from '@/lib/use-wishlist';
 
 interface Props {

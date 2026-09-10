@@ -33,7 +33,7 @@ vi.mock('@/lib/motivations-api', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   motivationsApi: api,
 }));
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('../lib/auth', () => ({
   useAuth: () => ({ getToken: async () => 't', isLoaded: true, isSignedIn: true }),
 }));
 

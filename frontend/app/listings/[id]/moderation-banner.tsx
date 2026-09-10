@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useUser } from '@clerk/nextjs';
+import { useUser } from '../../../lib/auth';
 
 // Shows only to the seller of the listing — never to buyers.
 // Surfaces what Claude decided so the seller knows why their listing is
@@ -17,14 +17,14 @@ import { useUser } from '@clerk/nextjs';
 // moderation re-audit, so the seller knows what to expect.
 export default function ModerationBanner({
   listingId,
-  sellerClerkId,
+  sellerId,
   status,
   decision,
   reasons,
   autoFixApplied,
 }: {
   listingId: string;
-  sellerClerkId: string;
+  sellerId: string;
   status: string;
   decision:
     | 'APPROVE'
@@ -36,7 +36,7 @@ export default function ModerationBanner({
   autoFixApplied: boolean;
 }) {
   const { user, isLoaded } = useUser();
-  if (!isLoaded || !user || user.id !== sellerClerkId) return null;
+  if (!isLoaded || !user || user.id !== sellerId) return null;
 
   // Only show a banner for non-active states or auto-fix events.
   const showAutoFix = decision === 'AUTO_FIX_AND_APPROVE' && autoFixApplied;

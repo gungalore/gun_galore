@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { auth } from '@clerk/nextjs/server';
+import { serverAuth as auth } from '../../lib/auth-server';
 import { ListingCard } from '@/components/listing-card';
 import { PageReveal } from '@/components/page-reveal';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';

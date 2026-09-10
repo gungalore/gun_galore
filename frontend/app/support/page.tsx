@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { SUPPORT_EMAIL, SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../lib/auth';
 
 const API_URL =
   process.env.INTERNAL_API_URL ??

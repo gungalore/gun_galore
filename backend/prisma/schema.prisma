@@ -3994,19 +3994,28 @@ model UserEvent {
 // away comes back, that is a replay: the token was copied, and the honest
 // response is to revoke the whole row rather than guess which holder is real.
 model Session {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                   String    @id @default(cuid())
+  userId               String
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// sha256 of the current refresh token. Unique so a replay collides.
-  refreshHash String    @unique
-  userAgent   String?
-  ip          String?
-  createdAt   DateTime  @default(now())
-  lastSeenAt  DateTime  @default(now())
-  expiresAt   DateTime
+  refreshHash          String    @unique
+  /// The hash this session rotated AWAY from, honoured for a few seconds.
+  ///
+  /// ⚠️ WITHOUT THIS, TWO TABS SIGN THE MEMBER OUT. Both wake with the same
+  /// refresh cookie, both call refresh; one rotates, the other presents a
+  /// hash that now matches nothing and is told to sign in. The grace window
+  /// is the difference between a second tab and an attacker replaying a
+  /// stolen token an hour later.
+  prevRefreshHash      String?
+  prevRefreshExpiresAt DateTime?
+  userAgent            String?
+  ip                   String?
+  createdAt            DateTime  @default(now())
+  lastSeenAt           DateTime  @default(now())
+  expiresAt            DateTime
   /// Set on sign-out, password change, or detected replay. A revoked row is
   /// kept rather than deleted so "signed out from where" stays answerable.
-  revokedAt   DateTime?
+  revokedAt            DateTime?
 
   @@index([userId, revokedAt])
   @@index([expiresAt])

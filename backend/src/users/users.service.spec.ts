@@ -71,6 +71,8 @@ describe('UsersService — address book & notification prefs', () => {
       { sendPhoneCode: jest.fn(), checkPhoneCode: jest.fn(async () => true) } as never,
       // SessionService — closing an account revokes every live session.
       { revokeAllForUser: jest.fn(async () => 0) } as never,
+      // CloudinaryService — profile photos.
+      { uploadImage: jest.fn(async () => ({ url: 'https://cdn/x.jpg', publicId: 'x' })) } as never,
     );
   });
 
@@ -315,6 +317,8 @@ describe('UsersService.deleteById', () => {
       { sendPhoneCode: jest.fn(), checkPhoneCode: jest.fn(async () => true) } as never,
       // SessionService — closing an account revokes every live session.
       { revokeAllForUser: jest.fn(async () => 0) } as never,
+      // CloudinaryService — profile photos.
+      { uploadImage: jest.fn(async () => ({ url: 'https://cdn/x.jpg', publicId: 'x' })) } as never,
     );
     return { svc, prisma, retention, licenceCentre, order, s: () => scrubbed };
   }

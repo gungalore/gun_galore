@@ -19,7 +19,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useUser } from '@clerk/nextjs';
+import { useUser } from '../../lib/auth';
 import { useEffect, useState } from 'react';
 import { LiveSearch } from '@/components/live-search';
 import { useCart } from '@/lib/cart-store';

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../lib/auth';
 import { useScrollLock } from '@/lib/use-scroll-lock';
 import {
   AddressAutocomplete,
@@ -107,7 +107,7 @@ export function ProfileCompletionModal({
   const { getToken } = useAuth();
 
   // localStorage draft key — same modal across browser sessions for
-  // the same Clerk user (key includes their clerkId so two accounts
+  // the same Clerk user (key includes their userId so two accounts
   // on the same browser don't trip each other). Cleared on successful
   // submit. Banking quartet is intentionally INCLUDED because losing
   // it on AVS-failure → tab-close was the original trap; localStorage

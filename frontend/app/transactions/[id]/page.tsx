@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { auth } from '@clerk/nextjs/server';
+import { serverAuth as auth } from '../../../lib/auth-server';
 import { Transaction, PaymentStatus, ShippingStatus } from '@/lib/types';
 import { formatPrice, PROVINCE_LABELS } from '@/lib/utils';
 import { REFUND_ETA_COPY, paymentStatusHint } from '@/lib/status-labels';

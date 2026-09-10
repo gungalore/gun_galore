@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from './auth';
 import { useCallback } from 'react';
 
 /**

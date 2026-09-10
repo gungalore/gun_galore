@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * component spec in this folder: a fresh arrow per call changes identity on
  * every render.
  */
-vi.mock('@clerk/nextjs', () => {
+vi.mock('../../lib/auth', () => {
   const getToken = async () => 'test-token';
   return { useAuth: () => ({ getToken, isLoaded: true, isSignedIn: true }) };
 });

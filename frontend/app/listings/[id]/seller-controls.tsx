@@ -1,10 +1,10 @@
 'use client';
 
-import { useUser } from '@clerk/nextjs';
+import { useUser } from '../../../lib/auth';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../../lib/auth';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -16,11 +16,11 @@ interface EditLockState {
 
 export default function SellerControls({
   listingId,
-  sellerClerkId,
+  sellerId,
   status,
 }: {
   listingId: string;
-  sellerClerkId: string;
+  sellerId: string;
   status: string;
 }) {
   const { user, isLoaded } = useUser();
@@ -33,7 +33,7 @@ export default function SellerControls({
   // covers AUCTION (bids placed) AND TAKE_A_SHOT (active offer).
   const [lock, setLock] = useState<EditLockState | null>(null);
 
-  const isOwner = isLoaded && user && user.id === sellerClerkId;
+  const isOwner = isLoaded && user && user.id === sellerId;
   const statusAllowsEdit = ['ACTIVE', 'DRAFT', 'PENDING_REVIEW'].includes(
     status,
   );

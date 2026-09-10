@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../../../lib/auth';
 import { BuyerTermsAck } from '@/components/buyer-terms-ack';
 import { formatPrice } from '@/lib/utils';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';

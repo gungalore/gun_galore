@@ -17,7 +17,7 @@ export interface CartItem {
   title: string;
   price: number; // ZAR cents (unit price snapshot)
   imageUrl?: string;
-  sellerId: string; // clerkId of the seller — the single-seller key
+  sellerId: string; // userId of the seller — the single-seller key
   // Display text only — NOTHING may key off it, and it can be absent.
   //
   // ⚠️ A HANDLE IS NOT AN IDENTITY, AND THIS BREAKS TODAY — no closure
@@ -30,7 +30,7 @@ export interface CartItem {
   // seller blocks with `key={g.username}`. Two siblings, one key: React
   // warns, reconciliation between them is undefined, and a re-render (a
   // quantity tick) can drop a block while checkout still charges for every
-  // line. The group key is sellerId, which is a clerkId and always present.
+  // line. The group key is sellerId, which is a userId and always present.
   // A legacy row written before this field existed lands here as undefined
   // for the same reason — read() casts localStorage to CartItem[] unvalidated.
   //

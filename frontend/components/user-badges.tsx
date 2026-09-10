@@ -2,7 +2,7 @@
 
 // Phase E1 — Ask Boet subscription badges rendered next to a username
 // on every public surface (listing card, listing-detail seller chip,
-// /sellers/[clerkId] profile, Q&A answers).
+// /sellers/[userId] profile, Q&A answers).
 //
 // Two independent badges:
 //   - GG+ pill — MEMBER or PRO subscription (OD1 locked). MEMBER

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../../lib/auth';
 import { formatPrice } from '@/lib/utils';
 import { SHIPPING_STATUS, resolveStatus } from '@/lib/status-labels';
 

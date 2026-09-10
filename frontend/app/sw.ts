@@ -13,7 +13,7 @@
 //     30-day max. Same reasoning — URLs are fingerprinted.
 //   • Brand static assets in /public (logo, manifest, icons) —
 //     stale-while-revalidate. Updates land within a tab refresh.
-//   • HTML pages, /api/*, anything containing 'clerk' — deliberately
+//   • HTML pages, /api/*, every auth route — deliberately
 //     NOT cached. Network-only. Prices, auctions, bids, and auth must
 //     never go stale.
 //   • Offline fallback page at /offline for navigations that fail.
@@ -42,9 +42,9 @@ declare global {
 declare const self: ServiceWorkerGlobalScope;
 
 // CRITICAL: bypass the service worker entirely for admin routes,
-// backend API, Clerk, and the payment gateway hosted pages. These must
-// always hit the network fresh — admin data is real-time, API responses
-// contain auth state, Clerk does its own dance with cookies, and the
+// backend API, the auth routes, and the payment gateway hosted pages. These
+// must always hit the network fresh — admin data is real-time, API responses
+// contain auth state, sign-in sets httpOnly cookies, and the
 // gateway hosted pages must never be served from cache. Putting these
 // BEFORE every other rule (including defaultCache and the navigation
 // fallback) ensures nothing else can intercept them.
@@ -78,11 +78,21 @@ const networkOnlyRoutes: RuntimeCaching[] = [
     handler: new NetworkOnly(),
   },
   {
+    // ⚠️ EVERY AUTH ROUTE, AND THE LIST IS DUPLICATED FURTHER DOWN. A cached
+    // sign-in page is a page that posts to a session that has moved on, and a
+    // cached verify page shows a code entry for an account already created.
+    // The navigation-fallback exclusion near the bottom of this file names the
+    // same paths for a different reason — add a new auth route to BOTH.
+    //
+    // The hostname test that used to sit here was for the identity provider's
+    // own domain. There is no third-party auth host any more; every one of
+    // these is ours.
     matcher: ({ url }) =>
-      url.hostname.includes('clerk') ||
       url.pathname.startsWith('/sign-in') ||
       url.pathname.startsWith('/sign-up') ||
-      url.pathname.startsWith('/sso-callback'),
+      url.pathname.startsWith('/verify-email') ||
+      url.pathname.startsWith('/forgot-password') ||
+      url.pathname.startsWith('/reset-password'),
     handler: new NetworkOnly(),
   },
   {
@@ -189,18 +199,22 @@ const serwist = new Serwist({
             !path.startsWith('/a/') &&
             !path.startsWith('/checkout') &&
             !path.startsWith('/preview') &&
-            // Ask Boet is inherently online-only (Claude API + Clerk +
+            // Ask Boet is inherently online-only (model API + session +
             // live quota state). Falling through to /offline misleads
             // users into waiting instead of reconnecting. Error
             // visibly so the browser's "you're offline" UI shows.
-            // M23 — KYC verify needs the camera + VerifyNow + the
-            // KYC API endpoints. Same rationale as Ask Boet: serving
-            // /offline here misleads sellers who DO have signal but
-            // hit a brief blip mid-capture. Sign-in / sign-up rely
-            // on Clerk being reachable for the same reason.
+            // M23 — KYC verify hands off to Didit's hosted page and needs
+            // the network for it. Same rationale as Ask Boet: serving
+            // /offline here misleads sellers who DO have signal but hit a
+            // brief blip mid-capture. The auth routes need the API reachable
+            // for the same reason — and this list must stay in step with the
+            // NetworkOnly matcher above.
             !path.startsWith('/kyc') &&
             !path.startsWith('/sign-in') &&
-            !path.startsWith('/sign-up')
+            !path.startsWith('/sign-up') &&
+            !path.startsWith('/verify-email') &&
+            !path.startsWith('/forgot-password') &&
+            !path.startsWith('/reset-password')
           );
         },
       },

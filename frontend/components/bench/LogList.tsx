@@ -21,7 +21,7 @@ import { MM_PER_INCH } from '@/lib/bench/geometry';
  */
 
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../lib/auth';
 
 import type { LogListProps } from './contract';
 import { Btn, Field, IconX, OverlayShell, Tag, usePhone, type BenchSize } from './primitives';

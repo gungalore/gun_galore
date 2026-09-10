@@ -3,30 +3,25 @@
 import { useState, useEffect, useRef, useId, FormEvent } from 'react';
 import { av } from '@/lib/asset-version';
 import Link from 'next/link';
-// We import the LEGACY useSignUp from @clerk/nextjs/legacy because Clerk 7
-// has a new "Signals"-based API that returns a SignUpFutureResource — that
-// API requires a different call style. The legacy hook gives us
-// { isLoaded, signUp, setActive } which matches the imperative flow we want
-// (create → prepareEmailAddressVerification → attemptEmailAddressVerification).
-import { useSignUp } from '@clerk/nextjs/legacy';
+import { useSession } from '../../../lib/auth';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { isClerkAPIResponseError } from '@clerk/nextjs/errors';
 import { readCampaignAttrib, clearCampaignAttrib } from '@/lib/campaign-attrib';
 import { StepRail, type StepRailStep } from '@/components/step-rail';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+// ⚠️ NEXT_PUBLIC_ ONLY. This file is 'use client'; Next inlines nothing else,
+// so an INTERNAL_API_URL here is always undefined in the browser.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // Version stamp recorded with each consent so we can prove WHICH Terms /
 // Privacy Policy a user accepted (POPIA accountability). Bump when the
 // policies materially change.
 const POLICY_VERSION = '2026-07-17';
-// sessionStorage key the app-wide <ConsentSync/> flushes to the backend once
-// the session is live. Used ONLY for the Google/OAuth path (where we can't
-// attach unsafeMetadata to the redirect) — the email path records consent via
-// Clerk unsafeMetadata instead (per-user, race-free). sessionStorage (per-tab,
-// cleared on tab close) + a timestamp TTL keeps a leftover record from an
-// abandoned OAuth attempt from ever attaching to a different account.
-const PENDING_CONSENT_KEY = 'gg_pending_consent';
+// ⚠️ THE PENDING-CONSENT CHANNEL IS GONE WITH THE OAUTH PATH IT SERVED.
+// Consent used to be parked in sessionStorage during a Google redirect and
+// flushed by an app-wide <ConsentSync/> once a session existed, because there
+// was nowhere to attach it mid-redirect. Consent now travels in the register
+// request body and is written in the same transaction as the account — which
+// is what "race-free" was reaching for all along.
 
 function consentPayload(marketing: boolean) {
   return {
@@ -50,17 +45,6 @@ function safeRelativePath(raw: string | null | undefined): string | null {
 
 // OAuth-only: stash the consent (tagged with a timestamp) in per-tab
 // sessionStorage so <ConsentSync/> can record it after the redirect completes.
-function writePendingConsent(marketing: boolean) {
-  try {
-    sessionStorage.setItem(
-      PENDING_CONSENT_KEY,
-      JSON.stringify({ ...consentPayload(marketing), ts: Date.now() }),
-    );
-  } catch {
-    // Storage unavailable (private mode) — consent still gated in the UI; the
-    // record is best-effort. Never block sign-up on this.
-  }
-}
 
 type Step = 'form' | 'verify';
 
@@ -133,7 +117,11 @@ function Field({
 }
 
 export default function SignUpForm() {
-  const { isLoaded, signUp, setActive } = useSignUp();
+  const { adopt } = useSession();
+  // Nothing to wait for any more — the old hook reported when the identity
+  // provider's client had booted. Kept as a constant so the render guard
+  // below stays where it is rather than being unpicked.
+  const isLoaded = true;
   const router = useRouter();
   const searchParams = useSearchParams();
   // Where to land after sign-up — honour a same-origin ?redirect_url, else
@@ -247,43 +235,50 @@ export default function SignUpForm() {
   // ── Step 1: create the Clerk SignUp + send verification email ──────
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!isLoaded || !signUp) return;
     setFormError('');
     setSubmitting(true);
 
     try {
-      await signUp.create({
-        emailAddress: form.email.trim(),
-        password: form.password,
-        username: form.username.trim().toLowerCase(),
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
-        // Phone + consent go in unsafeMetadata — our webhook / lazy-sync read
-        // them from there. Phone → User.phone (unverified; the OTP flow marks
-        // it verified). consent → the timestamped POPIA record. Attaching
-        // consent to the Clerk user (not browser storage) makes it per-user
-        // and race-free: it can never attach to a different account.
-        unsafeMetadata: {
+      const res = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        // Consent travels WITH the account, in one request, and is written in
+        // the same transaction. It used to ride the identity provider's
+        // unsafeMetadata and reach us through a webhook, which meant the
+        // account and the POPIA record could exist apart.
+        body: JSON.stringify({
+          email: form.email.trim(),
+          password: form.password,
+          username: form.username.trim().toLowerCase(),
           phone: phoneToE164(form.phone),
-          consent: consentPayload(marketing),
-          // Campaign attribution — the key parked by the welcome banner when
-          // this visit arrived on a marketing SMS link. Rides the same
-          // per-user unsafeMetadata channel as consent so it can never attach
-          // to the wrong account. Undefined when the visit wasn't campaign-led.
+          ...consentPayload(marketing),
+          // The key parked by the welcome banner when this visit arrived on a
+          // marketing SMS link. Absent when the visit was not campaign-led.
           ...(readCampaignAttrib()
             ? { campaignKey: readCampaignAttrib() }
             : {}),
-        },
+        }),
       });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string | string[];
+      };
+      if (!res.ok) {
+        setFormError(
+          Array.isArray(data.message)
+            ? data.message[0]
+            : (data.message ?? 'Something went wrong. Please try again.'),
+        );
+        return;
+      }
+
       // Attributed — don't let a second signup in the same session claim the
       // same blast.
       clearCampaignAttrib();
-
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
       setStep('verify');
       setResendCooldown(30);
     } catch (err) {
-      setFormError(prettyClerkError(err));
+      setFormError(prettyAuthError(err));
     } finally {
       setSubmitting(false);
     }
@@ -292,42 +287,65 @@ export default function SignUpForm() {
   // ── Step 2: verify the 6-digit code Clerk emailed the user ────────
   async function handleVerify(e: FormEvent) {
     e.preventDefault();
-    if (!isLoaded || !signUp) return;
     setVerifyError('');
     setVerifying(true);
 
     try {
-      const result = await signUp.attemptEmailAddressVerification({
-        code: code.trim(),
+      const res = await fetch(`${API_URL}/auth/verify-email`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: form.email.trim(), code: code.trim() }),
       });
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        // Consent is flushed to the backend by the app-wide <ConsentSync/>
-        // once the session is live — no token juggling here.
-        router.push(redirectTarget);
-      } else {
-        // Never surface a raw Clerk status string to the user.
+      const data = (await res.json().catch(() => ({}))) as {
+        accessToken?: string;
+        expiresAt?: string;
+        message?: string;
+      };
+      if (!res.ok) {
         setVerifyError(
-          "We couldn't finish verifying your account. Request a new code, or contact support if this keeps happening.",
+          data.message ??
+            "We couldn't finish verifying your account. Request a new code, or contact support if this keeps happening.",
         );
+        return;
       }
+      // The account is live and the response carried the session. Adopt it
+      // before navigating so the destination renders signed in.
+      if (data.accessToken && data.expiresAt) {
+        await adopt(data.accessToken, data.expiresAt);
+      }
+      router.push(redirectTarget);
+      router.refresh();
     } catch (err) {
-      setVerifyError(prettyClerkError(err));
+      setVerifyError(prettyAuthError(err));
     } finally {
       setVerifying(false);
     }
   }
 
   async function handleResend() {
-    if (!isLoaded || !signUp || resendCooldown > 0) return;
+    if (resendCooldown > 0) return;
     setVerifyError('');
     setVerifyNotice('');
+    // ⚠️ START THE COOLDOWN BEFORE THE CALL, NOT AFTER. Every code costs us a
+    // Didit credit, and the provider caps sends per address on its own side —
+    // a member tapping through a slow request would burn both.
+    setResendCooldown(30);
     try {
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      const res = await fetch(`${API_URL}/auth/resend-email-code`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: form.email.trim() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) {
+        setVerifyError(data.message ?? 'Could not send a new code.');
+        return;
+      }
       setVerifyNotice(`A new code is on its way to ${form.email}.`);
-      setResendCooldown(30);
     } catch (err) {
-      setVerifyError(prettyClerkError(err));
+      setVerifyError(prettyAuthError(err));
     }
   }
 
@@ -342,28 +360,11 @@ export default function SignUpForm() {
     setVerifyNotice('');
   }
 
-  async function handleGoogleSSO() {
-    if (!isLoaded || !signUp) return;
-    if (!consentOk) {
-      setFormError(
-        'Please agree to the Terms & Privacy Policy and confirm you are 18 or older before continuing.',
-      );
-      return;
-    }
-    setFormError('');
-    setSsoLoading(true);
-    try {
-      writePendingConsent(marketing);
-      await signUp.authenticateWithRedirect({
-        strategy: 'oauth_google',
-        redirectUrl: '/sso-callback',
-        redirectUrlComplete: redirectTarget,
-      });
-    } catch (err) {
-      setFormError(prettyClerkError(err));
-      setSsoLoading(false);
-    }
-  }
+  // ⚠️ GOOGLE SIGN-IN IS GONE, AND IT WAS A REAL FEATURE — do not read its
+  // absence as an oversight. It relied on the identity provider's hosted
+  // redirect, which is what carried the OAuth handshake; nothing here can
+  // replace it without an OAuth client of our own. The brief was a username,
+  // a password and an email address, so that is what sign-up offers.
 
   // ─────────────────────────── RENDER ───────────────────────────────
 
@@ -445,55 +446,6 @@ export default function SignUpForm() {
           </div>
         )}
 
-        {/* Google SSO */}
-        <button
-          type="button"
-          onClick={handleGoogleSSO}
-          disabled={ssoLoading || !consentOk}
-          className="w-full py-2.5 rounded-[6px] text-sm flex items-center justify-center gap-2 mb-4"
-          style={{
-            background: 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
-            color: 'var(--text-primary)',
-            fontWeight: 500,
-            cursor: ssoLoading || !consentOk ? 'not-allowed' : 'pointer',
-            opacity: consentOk ? 1 : 0.5,
-          }}
-          title={
-            consentOk
-              ? undefined
-              : 'Agree to the Terms & confirm you are 18+ to continue'
-          }
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
-            <path
-              fill="#4285F4"
-              d="M15.68 8.18c0-.6-.05-1.18-.15-1.74H8v3.3h4.3a3.68 3.68 0 0 1-1.6 2.4v2h2.6c1.5-1.4 2.38-3.45 2.38-5.96Z"
-            />
-            <path
-              fill="#34A853"
-              d="M8 16c2.16 0 3.97-.72 5.3-1.95l-2.6-2c-.72.48-1.64.77-2.7.77a4.68 4.68 0 0 1-4.4-3.23H1v2.03A8 8 0 0 0 8 16Z"
-            />
-            <path
-              fill="#FBBC05"
-              d="M3.6 9.6A4.8 4.8 0 0 1 3.34 8c0-.55.1-1.1.26-1.6V4.36H1A8 8 0 0 0 0 8c0 1.3.31 2.52.86 3.6L3.6 9.6Z"
-            />
-            <path
-              fill="#EA4335"
-              d="M8 3.18c1.18 0 2.24.4 3.07 1.2l2.3-2.3A8 8 0 0 0 8 0 8 8 0 0 0 .86 4.4l2.74 2.04A4.7 4.7 0 0 1 8 3.18Z"
-            />
-          </svg>
-          {ssoLoading ? 'Redirecting…' : 'Continue with Google'}
-        </button>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3 my-4">
-          <span style={{ flex: 1, height: 1, background: 'var(--border)', opacity: 0.5 }} />
-          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-            or
-          </span>
-          <span style={{ flex: 1, height: 1, background: 'var(--border)', opacity: 0.5 }} />
-        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* First name + Surname */}
@@ -740,7 +692,6 @@ export default function SignUpForm() {
 
           {/* Clerk CAPTCHA mount point — required when smart bot protection is on.
               Clerk auto-detects and hides this when not needed. */}
-          <div id="clerk-captcha" />
 
           {(() => {
             // Username availability is ADVISORY: block only on a confirmed
@@ -951,12 +902,7 @@ function VerifyStep({
 
 // Clerk surfaces errors as `ClerkAPIError` arrays. Surface the first one
 // in plain English; fall back to a generic message.
-function prettyClerkError(err: unknown): string {
-  if (isClerkAPIResponseError(err)) {
-    const first = err.errors[0];
-    if (!first) return 'Something went wrong. Please try again.';
-    return first.longMessage ?? first.message ?? 'Something went wrong.';
-  }
+function prettyAuthError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return 'Something went wrong. Please try again.';
 }

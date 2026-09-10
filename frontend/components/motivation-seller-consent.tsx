@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../lib/auth';
 import { motivationsApi } from '@/lib/motivations-api';
 import { readFlag, writeFlag } from '@/lib/motivation-draft';
 

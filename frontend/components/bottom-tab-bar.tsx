@@ -48,7 +48,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
+import { SignInButton, useUser, useClerk, useAuth } from '../lib/auth';
 import { useStandalone } from '@/lib/use-standalone';
 import { useCart } from '@/lib/cart-store';
 import { useWishlist } from '@/lib/use-wishlist';

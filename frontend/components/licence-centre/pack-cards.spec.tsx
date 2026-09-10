@@ -8,7 +8,7 @@ import type { Saps271Coverage } from '@/lib/motivations-api';
 
 // ConsentCard wraps MotivationSellerConsent, which calls useAuth(). Same mock
 // the Bench specs use — see components/bench/BulletPicker.spec.tsx.
-vi.mock('@clerk/nextjs', () => {
+vi.mock('../../lib/auth', () => {
   const getToken = async () => 'test-token';
   return { useAuth: () => ({ getToken, isLoaded: true, isSignedIn: true }) };
 });

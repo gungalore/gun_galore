@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
-import { auth } from '@clerk/nextjs/server';
+import { serverAuth as auth } from '../../../lib/auth-server';
 import { apiFetch } from '@/lib/api';
 import { BRAND_NAME } from '@/lib/brand';
 import { Listing, CategoryAttributeDef } from '@/lib/types';
@@ -140,7 +140,7 @@ export default async function ListingDetailPage({
   // Buy Now CTA can swap to a non-purchase state. The backend
   // already rejects self-purchase, but the button shouldn't even
   // appear — it's confusing UX and was triggering a 400 round-trip.
-  const isOwnListing = !!userId && userId === listing.seller.clerkId;
+  const isOwnListing = !!userId && userId === listing.seller.userId;
 
   // Take a Shot is an OPTION on every BUY_NOW / AUCTION listing now, not a
   // third selling mode — the seller turns offers on or off per listing, and
@@ -430,7 +430,7 @@ export default async function ListingDetailPage({
               messaging entirely; sellers reply from /dashboard. */}
           <QuestionsPanel
             listingId={listing.id}
-            sellerClerkId={listing.seller.clerkId}
+            sellerId={listing.seller.userId}
           />
           </div>
         </div>
@@ -608,7 +608,7 @@ export default async function ListingDetailPage({
                 <SellerRating
                   rating={listing.seller.averageRating}
                   count={listing.seller._count?.ratingsReceived}
-                  href={`/sellers/${listing.seller.clerkId}`}
+                  href={`/sellers/${listing.seller.userId}`}
                 />
               </div>
             )}
@@ -616,7 +616,7 @@ export default async function ListingDetailPage({
           {/* Seller-only moderation banner — shows above the CTA. */}
           <ModerationBanner
             listingId={listing.id}
-            sellerClerkId={listing.seller.clerkId}
+            sellerId={listing.seller.userId}
             status={listing.status}
             // These moderation fields only come back from the owner-aware
             // endpoint for the seller themselves; coalesce for the public
@@ -825,7 +825,7 @@ export default async function ListingDetailPage({
                       imageUrl:
                         listing.images?.find((i) => i.isPrimary)?.url ??
                         listing.images?.[0]?.url,
-                      sellerId: listing.seller.clerkId,
+                      sellerId: listing.seller.userId,
                       sellerUsername: listing.seller.username ?? 'Seller',
                       isFirearm: listing.isFirearm,
                       shippingMethods: listing.shippingMethods,
@@ -845,12 +845,12 @@ export default async function ListingDetailPage({
             <OfferPanel
               listingId={listing.id}
               listingPrice={listing.price}
-              sellerClerkId={listing.seller.clerkId}
+              sellerId={listing.seller.userId}
             />
           ) : listing.listingType === 'AUCTION' ? (
             <AuctionPanel
               listingId={listing.id}
-              sellerClerkId={listing.seller.clerkId}
+              sellerId={listing.seller.userId}
             />
           ) : listing.status !== 'ACTIVE' ? (
             <div
@@ -883,7 +883,7 @@ export default async function ListingDetailPage({
               <OfferPanel
                 listingId={listing.id}
                 listingPrice={listing.price}
-                sellerClerkId={listing.seller.clerkId}
+                sellerId={listing.seller.userId}
                 secondary
               />
             )}
@@ -1151,7 +1151,7 @@ export default async function ListingDetailPage({
             size={44}
           />
           <Link
-            href={`/sellers/${listing.seller.clerkId}`}
+            href={`/sellers/${listing.seller.userId}`}
             className="block flex-1 min-w-0 rounded-[6px] p-3 text-sm"
             style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', textDecoration: 'none' }}
           >
@@ -1203,12 +1203,12 @@ export default async function ListingDetailPage({
 
           {/* Seller controls live OUTSIDE the seller Link — these are
               only rendered for the listing's owner anyway (the component
-              gates on clerkId match), and they need their own click
+              gates on userId match), and they need their own click
               targets (Edit / Cancel) that don't navigate to the seller
               profile page. */}
           <SellerControls
             listingId={listing.id}
-            sellerClerkId={listing.seller.clerkId}
+            sellerId={listing.seller.userId}
             status={listing.status}
           />
         </div>

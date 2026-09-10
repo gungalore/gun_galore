@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, FormEvent } from 'react';
-import { useUser, useAuth, SignInButton } from '@clerk/nextjs';
+import { useUser, useAuth, SignInButton } from '../../../lib/auth';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -57,7 +57,7 @@ function timeLeft(iso: string): { text: string; urgent: boolean } | null {
 export default function OfferPanel({
   listingId,
   listingPrice,
-  sellerClerkId,
+  sellerId,
   secondary = false,
 }: {
   listingId: string;
@@ -70,7 +70,7 @@ export default function OfferPanel({
    * which would have refused every offer on them.
    */
   listingPrice: number | null;
-  sellerClerkId: string;
+  sellerId: string;
   // True when this panel sits ALONGSIDE a primary CTA (Buy Now / Place a
   // bid) rather than being the page's only action — i.e. any BUY_NOW or
   // AUCTION listing with acceptsOffers on. Keeps the fresh, never-made-an-
@@ -119,7 +119,7 @@ export default function OfferPanel({
   // first "no offer yet" render; one click reveals the same form below.
   const [expanded, setExpanded] = useState(!secondary);
 
-  const isOwner = isLoaded && user?.id === sellerClerkId;
+  const isOwner = isLoaded && user?.id === sellerId;
 
   // /offers/mine returns every offer this buyer has ever made, each with its
   // listing.id — filter to this listing client-side. No new endpoint needed.

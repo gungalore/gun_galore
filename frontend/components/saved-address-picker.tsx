@@ -14,7 +14,7 @@
 // Presentation + read only — it never writes to the address book or the order.
 
 import { useEffect, useRef, useState } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../lib/auth';
 import type { Address } from '@/lib/types';
 import { PROVINCE_LABELS } from '@/lib/utils';
 

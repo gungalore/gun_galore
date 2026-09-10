@@ -10,7 +10,7 @@ import { DEFAULT_TOLERANCE, WEIGHT_TOLERANCES } from './contract';
  * function per call re-fetches the bench on every render — see the same note
  * in components/bench/BulletPicker.spec.tsx.
  */
-vi.mock('@clerk/nextjs', () => {
+vi.mock('../../lib/auth', () => {
   const getToken = async () => 'test-token';
   return { useAuth: () => ({ getToken, isLoaded: true, isSignedIn: true }) };
 });

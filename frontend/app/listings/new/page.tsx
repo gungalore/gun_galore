@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../../lib/auth';
 import { Category, CategoryAttributeDef, Me } from '@/lib/types';
 import { BRAND_NAME } from '@/lib/brand';
 import { CONDITION_LABELS } from '@/lib/utils';
@@ -1140,7 +1140,7 @@ export default function NewListingPage() {
 
   // The category tree is VIEWER-VARYING and must carry the Clerk token.
   //
-  // GET /categories is OptionalClerkGuard + publicOnly(clerkId): with no
+  // GET /categories is OptionalClerkGuard + publicOnly(userId): with no
   // Authorization header the server returns only `publicVisible` rows. This
   // used to be a bare `fetch`, which meant a signed-in seller was served the
   // ANONYMOUS tree — 71 of 187 active categories missing, including the whole

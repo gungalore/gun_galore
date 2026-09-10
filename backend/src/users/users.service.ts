@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DiditService } from '../didit/didit.service';
 import { DiditError } from '../didit/didit.types';
 import { SessionService } from '../auth/session.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { SmsService } from '../sms/sms.service';
 import {
   User,
@@ -111,6 +112,10 @@ export interface ProfileUpdate {
 // so the check has something to compare against, exactly as before.
 const PHONE_CODE_LENGTH = 6;
 
+/** Profile photo limits. Matches what the edit form tells the member. */
+const AVATAR_MIME_RE = /^image\/(jpeg|png|webp)$/;
+const AVATAR_MAX_BYTES = 10 * 1024 * 1024;
+
 // The accepted values for the fallback channel, spelled out rather than
 // derived, because updateNotificationPrefs has to check an untrusted string
 // against them at runtime and a TS union type is gone by then. Listed
@@ -160,6 +165,9 @@ export class UsersService {
     // not revocable, so revoking the refresh side is what actually locks a
     // closed account out.
     private readonly sessions: SessionService,
+    // @Global CloudinaryModule — profile photos are public by design and go
+    // to the CDN. Identity documents deliberately do not; see setAvatar.
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   // ── Peach bank-account verification (AVS) ─────────────────────────
@@ -220,6 +228,55 @@ export class UsersService {
         `BANV request failed for user ${userId}: ${(err as Error).message}`,
       );
     }
+  }
+
+  /**
+   * Replace the member's profile photo.
+   *
+   * ⚠️ AVATARS ARE PUBLIC BY DESIGN, WHICH IS WHY THEY GO TO THE CDN AND THE
+   * IDENTITY DOCUMENTS DO NOT. Every other member sees this image next to a
+   * username; a KYC selfie is the opposite kind of file and lives encrypted on
+   * our own disk. Do not be tempted to unify the two paths.
+   */
+  async setAvatar(
+    userId: string,
+    file: { buffer: Buffer; mimetype: string; size: number },
+  ): Promise<{ avatarUrl: string }> {
+    if (!AVATAR_MIME_RE.test(file.mimetype)) {
+      throw new BadRequestException('Use a JPEG, PNG or WebP image.');
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      throw new BadRequestException('Photo must be under 10 MB.');
+    }
+    let uploaded: { url: string };
+    try {
+      // Deterministic public id, so a re-upload REPLACES the old image rather
+      // than leaving every photo the member ever had readable on the CDN.
+      uploaded = await this.cloudinary.uploadImage(
+        file.buffer,
+        'avatars',
+        `avatar-${userId}`,
+      );
+    } catch (err) {
+      this.logger.error(`Avatar upload failed for ${userId}: ${(err as Error).message}`);
+      throw new BadRequestException(
+        'We could not save that photo. Please try again.',
+      );
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: uploaded.url },
+    });
+    return { avatarUrl: uploaded.url };
+  }
+
+  /** Clear the profile photo. The CDN copy is left to expire. */
+  async removeAvatar(userId: string): Promise<{ avatarUrl: null }> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: null },
+    });
+    return { avatarUrl: null };
   }
 
   /**

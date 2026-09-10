@@ -1,5 +1,61 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
+// ⚠️ THE NARROW SUBPATH, NOT 'jose'. The package index pulls in the JWE
+// decrypt path, which reaches for CompressionStream — a Node API the Edge
+// runtime does not have — and every build printed two warnings about code we
+// never call. We verify a JWS; this is the only entry point we need.
+import { jwtVerify } from 'jose/jwt/verify';
+import { routeMatcher } from './lib/route-matcher';
+
+// ⚠️ The matcher lives in lib/route-matcher.ts WITH A SPEC, not inline here.
+// It decides which pages a signed-out visitor can see, and the failure that
+// matters — a pattern matching too much — makes a members-only page public
+// without anything going wrong on screen. See the spec for what is locked.
+const createRouteMatcher = (patterns: string[]) => {
+  const match = routeMatcher(patterns);
+  return (req: NextRequest) => match(req.nextUrl.pathname);
+};
+
+/** Must match ACCESS_COOKIE / REFRESH_COOKIE in the backend. */
+const ACCESS_COOKIE = 'ao_at';
+const REFRESH_COOKIE = 'ao_rt';
+
+let cachedKey: Uint8Array | null = null;
+function memberSecret(): Uint8Array {
+  if (!cachedKey) {
+    cachedKey = new TextEncoder().encode(
+      process.env.JWT_MEMBER_SECRET ??
+        'dev-only-member-secret-NOT-for-production',
+    );
+  }
+  return cachedKey;
+}
+
+/**
+ * Is there a signed-in member behind this request?
+ *
+ * ⚠️ THIS IS A RENDER DECISION, NOT THE GATE. The backend re-verifies on every
+ * API call and decides what data comes back; this only decides whether to show
+ * a page or bounce to sign-in. That is why an EXPIRED access token with a
+ * refresh cookie still counts: the access token lives fifteen minutes, and
+ * bouncing a member to sign-in every quarter of an hour — when their session
+ * is perfectly good and the client is about to refresh it — would be a bug
+ * nobody could reproduce on a fresh login.
+ *
+ * A forged refresh cookie buys nothing: the page renders, every API call 401s,
+ * and the public/members split is enforced server-side regardless.
+ */
+async function hasSession(request: NextRequest): Promise<boolean> {
+  const access = request.cookies.get(ACCESS_COOKIE)?.value;
+  if (access) {
+    try {
+      await jwtVerify(access, memberSecret());
+      return true;
+    } catch {
+      // Expired or malformed — fall through to the refresh cookie.
+    }
+  }
+  return !!request.cookies.get(REFRESH_COOKIE)?.value;
+}
 
 const isPublicRoute = createRouteMatcher([
   // The phone's half of the desktop QR handoff. ⚠️ IT MUST BE PUBLIC: the
@@ -145,7 +201,7 @@ const isComingSoonBypassRoute = createRouteMatcher([
 
 const COMING_SOON_COOKIE = 'gg-preview';
 
-export default clerkMiddleware(async (auth, request) => {
+export default async function middleware(request: NextRequest) {
   // ── No middleware-level admin auth gate ────────────────────────────
   //
   // Cookie-based gating proved unreliable across browsers (some configs
@@ -154,7 +210,7 @@ export default clerkMiddleware(async (auth, request) => {
   // via lib/admin-auth and bounce themselves to /admin/login if it's
   // missing. Middleware just gets out of the way.
 
-  // ── Coming-soon gate (runs BEFORE Clerk auth) ─────────────────────
+  // ── Coming-soon gate (runs BEFORE the auth check) ─────────────────
   //
   // Three conditions let a request through to the real site:
   //   1) Gate is off (COMING_SOON_GATE !== 'on')
@@ -169,8 +225,8 @@ export default clerkMiddleware(async (auth, request) => {
   if (process.env.COMING_SOON_GATE === 'on') {
     const url = request.nextUrl;
     // Token-authed pages (SMS one-tap): /checkout/*?t= and /kyc/verify?t=
-    // are authorised by the action token in the URL, not Clerk — let them
-    // through the coming-soon gate the same way.
+    // are authorised by the action token in the URL, not by a session — let
+    // them through the coming-soon gate the same way.
     //
     // /checkout/complete is allowed UNCONDITIONALLY: it's where the
     // payment gateway redirects the buyer after paying, and that return
@@ -233,13 +289,9 @@ export default clerkMiddleware(async (auth, request) => {
     return;
   }
 
-  // Manual auth check + redirect — `auth.protect()` rewrites to a
-  // Clerk handshake URL when the dev_browser cookie is missing, and
-  // that URL has no page so users see a 404 instead of being sent to
-  // sign-in. Doing the check ourselves and returning a real redirect
-  // is the more reliable behaviour.
-  const { userId } = await auth();
-  if (!userId) {
+  // The auth check. See hasSession() above for why an expired access token
+  // with a live refresh cookie is treated as signed in.
+  if (!(await hasSession(request))) {
     // Pin the redirect base to a CONFIGURED public URL rather than the
     // inbound Host header — a spoofed Host must never be able to turn this
     // sign-in bounce into an off-site (open) redirect. request.url reflects
@@ -254,20 +306,18 @@ export default clerkMiddleware(async (auth, request) => {
     // Relative redirect target only — never embed a host (defence-in-depth
     // with the sign-in/sign-up forms, which also reject non-relative values).
     signInUrl.searchParams.set('redirect_url', currentPath);
-    // MUST be NextResponse.redirect, NOT Response.redirect. A bare
-    // Web-API Response.redirect() returns a response with an IMMUTABLE
-    // headers guard; clerkMiddleware then tries to attach its
-    // x-clerk-auth-* headers to it and throws `TypeError: immutable`,
-    // which surfaces as a 500 Internal Server Error on every protected
-    // route for signed-out visitors (e.g. tapping Ask GG after the
-    // Clerk session lapses). NextResponse.redirect returns mutable
-    // headers so Clerk can decorate the response cleanly.
+    // Kept as NextResponse.redirect. The original reason — a bare Web-API
+    // Response.redirect returns IMMUTABLE headers, and the wrapping middleware
+    // threw `TypeError: immutable` trying to decorate it — no longer applies
+    // now that there is no wrapper. It is still the right call: NextResponse
+    // is what the rest of this file returns, and mixing the two is how the
+    // trap gets re-set by someone adding a header later.
     return NextResponse.redirect(signInUrl);
   }
-});
+}
 
 // ⚠️ wasm AND ort ARE IN THE EXCLUSION LIST FOR A REASON. Without them the
-// on-device model's runtime and weights go through Clerk's middleware, which
+// on-device model's runtime and weights go through this middleware, which
 // 307s an unauthenticated request to sign-in. ORT then receives an HTML
 // redirect body where it expected a binary and fails with
 // "expected magic word 00 61 73 6d, found 3c 21 44 4f" — that is `<!DO`, the

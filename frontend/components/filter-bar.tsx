@@ -144,7 +144,7 @@ export function FilterBar({
   // scoped or Meili is down → options render without counts (graceful).
   facets?: Record<string, Record<string, number>>;
   // Path filter changes navigate to. Defaults to the homepage grid ('/');
-  // the seller storefront (UX-6) passes '/sellers/[clerkId]' so filtering
+  // the seller storefront (UX-6) passes '/sellers/[userId]' so filtering
   // stays scoped to that seller instead of jumping home.
   basePath?: string;
   // Seller storefront hides the province filter — one seller ≈ one location,

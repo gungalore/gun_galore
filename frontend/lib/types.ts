@@ -89,7 +89,7 @@ export interface CategoryWithCount {
 
 export interface ListingSeller {
   id: string;
-  clerkId: string;
+  userId: string;
   // Public-facing handle. All Outdoor platform policy: we DON'T
   // display real names anywhere on public listings. Use this in
   // listing-detail / card / Q&A / seller-profile views. firstName/
@@ -120,13 +120,13 @@ export interface ListingSeller {
   _count?: { ratingsReceived?: number };
 }
 
-// Public seller profile (GET /sellers/:clerkId). Superset of the
+// Public seller profile (GET /sellers/:userId). Superset of the
 // inline ListingSeller — adds avgRating + verifiedExpertAt for the
-// profile page header. Powers the /sellers/[clerkId] surface so
+// profile page header. Powers the /sellers/[userId] surface so
 // the badge tooltip can show when the badge was granted.
 export interface PublicSellerProfile {
   id: string;
-  clerkId: string;
+  userId: string;
   username: string | null;
   avatarUrl: string | null;
   sellerTier: SellerTier;
@@ -637,12 +637,12 @@ export interface Offer {
     publicLocality?: string | null;
     plannedDealerLocation?: string | null;
     // Public-facing offer surfaces — username only per platform policy.
-    // Backend offers.service.ts selects username + clerkId only.
-    seller: { username: string | null; clerkId: string };
+    // Backend offers.service.ts selects username + userId only.
+    seller: { username: string | null; userId: string };
   };
   buyer?: {
     username: string | null;
-    clerkId: string;
+    userId: string;
     totalSales: number;
   };
 }
@@ -650,7 +650,7 @@ export interface Offer {
 export interface Message {
   id: string;
   transactionId: string;
-  senderClerkId: string;
+  senderId: string;
   content: string;
   wasModerated: boolean;
   readAt: string | null;

@@ -7,7 +7,7 @@
 
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { auth } from '@clerk/nextjs/server';
+import { serverAuth as auth } from '../../lib/auth-server';
 import { PageReveal } from '@/components/page-reveal';
 
 const API_URL =

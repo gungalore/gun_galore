@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useClerk } from '@clerk/nextjs';
+import { useClerk } from '../lib/auth';
 import { useRouter } from 'next/navigation';
 
 /**

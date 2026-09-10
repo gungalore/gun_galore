@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useAuth, useUser } from '@clerk/nextjs';
+import { useAuth, useUser } from '../lib/auth';
 import { Me } from '@/lib/types';
 import { useScrollLock } from '@/lib/use-scroll-lock';
 
@@ -162,7 +162,9 @@ export function ProfileSetupPrompt() {
     if (EXCLUDED_PREFIXES.some((p) => pathname?.startsWith(p))) return;
 
     // Only greet genuinely new accounts.
-    const createdAt = user?.createdAt ? user.createdAt.getTime() : null;
+    // ⚠️ A STRING, NOT A DATE. It arrives as ISO JSON from our own API now;
+    // calling .getTime() on it threw on every mount.
+    const createdAt = user?.createdAt ? Date.parse(user.createdAt) : null;
     if (createdAt == null || Date.now() - createdAt > NEW_SIGNUP_WINDOW_MS) {
       return;
     }

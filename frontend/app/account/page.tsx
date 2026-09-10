@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { AccountSignOut } from '@/components/account-sign-out';
 import { PushToggleRow } from '@/components/push-opt-in-banner';
 import Image from 'next/image';
-import { auth } from '@clerk/nextjs/server';
+import { serverAuth as auth } from '../../lib/auth-server';
 import { Me, SellerTier } from '@/lib/types';
 import { ACCOUNT_GROUPS, type AccountMenuItem } from '@/lib/account-menu-data';
 

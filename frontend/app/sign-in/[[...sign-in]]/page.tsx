@@ -1,6 +1,9 @@
-import { SignIn } from '@clerk/nextjs';
+import { Suspense } from 'react';
 import { av } from '@/lib/asset-version';
 import Link from 'next/link';
+import { SignInForm } from './sign-in-form';
+
+export const metadata = { title: 'Sign in' };
 
 export default function SignInPage() {
   return (
@@ -9,12 +12,16 @@ export default function SignInPage() {
       style={{ background: 'var(--bg-deep)' }}
     >
       <Link href="/" aria-label="All Outdoor">
-        <img src={av('/logo-nav-dark.svg')} alt="All Outdoor" style={{ height: 44, width: 'auto' }} />
+        <img
+          src={av('/logo-nav-dark.svg')}
+          alt="All Outdoor"
+          style={{ height: 44, width: 'auto' }}
+        />
       </Link>
-      <SignIn
-        signUpUrl="/sign-up"
-        appearance={{ variables: { colorPrimary: '#C8102E', borderRadius: '6px' } }}
-      />
+      {/* useSearchParams needs a Suspense boundary in the App Router. */}
+      <Suspense fallback={null}>
+        <SignInForm />
+      </Suspense>
     </main>
   );
 }

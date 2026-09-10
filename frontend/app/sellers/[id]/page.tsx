@@ -8,7 +8,7 @@ import { ClickableAvatar } from '@/components/avatar-lightbox';
 import { FilterBar } from '@/components/filter-bar';
 import { Pagination } from '@/components/pagination';
 import { viewerFetch } from '@/lib/api-viewer';
-import { auth } from '@clerk/nextjs/server';
+import { serverAuth as auth } from '../../../lib/auth-server';
 import type { BrowseResponse, PublicSellerProfile, Category } from '@/lib/types';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -51,19 +51,24 @@ export default async function SellerProfilePage({
   params,
   searchParams,
 }: {
-  params: Promise<{ clerkId: string }>;
+  params: Promise<{ id: string }>;
   searchParams: Promise<SellerSearchParams>;
 }) {
-  const { clerkId } = await params;
+  // ⚠️ TWO DIFFERENT PEOPLE. `sellerId` is whose storefront this is; `userId`
+  // is whoever is looking at it. They used to be different TYPES — a Clerk
+  // subject in the route and a Clerk subject from the session — so conflating
+  // them was impossible; now they are both User.id and only the names keep
+  // them apart. The own-profile check below is what depends on it.
+  const { id: sellerId } = await params;
   const sp = await searchParams;
   const { userId } = await auth();
-  const isOwnProfile = !!userId && userId === clerkId;
+  const isOwnProfile = !!userId && userId === sellerId;
 
-  // Seller-scoped browse query (filters + pagination). sellerClerkId lives in
+  // Seller-scoped browse query (filters + pagination). sellerId lives in
   // the route, so it's added here server-side but NOT passed to the FilterBar
   // (which keeps it out of the user-facing URL). Province is omitted.
   const qs = new URLSearchParams();
-  qs.set('sellerClerkId', clerkId);
+  qs.set('sellerId', sellerId);
   if (sp.categoryId) qs.set('categoryId', sp.categoryId);
   if (sp.condition) qs.set('condition', sp.condition);
   if (sp.make) qs.set('make', sp.make);
@@ -82,19 +87,19 @@ export default async function SellerProfilePage({
       // Phase E1 — public seller profile with badge fields. 404 here
       // is the canonical "no such seller" so we propagate it to the
       // page's notFound() below.
-      fetch(`${API_URL}/sellers/${clerkId}`, { cache: 'no-store' }),
+      fetch(`${API_URL}/sellers/${userId}`, { cache: 'no-store' }),
       // Reviews embed the listing TITLE, so this response varies by viewer:
       // signed out, reviews on members-only listings are withheld. Raw fetch
       // (not viewerFetch) because the page needs the Response to distinguish
       // a 404 seller from an empty review list.
-      fetch(`${API_URL}/ratings/seller/${clerkId}`, {
+      fetch(`${API_URL}/ratings/seller/${userId}`, {
         cache: 'no-store',
         headers: viewerToken
           ? { Authorization: `Bearer ${viewerToken}` }
           : undefined,
       }),
-      // Scope by sellerClerkId + the active filters. Same browse assembly the
-      // homepage uses (24/page). The backend routes sellerClerkId to the
+      // Scope by sellerId + the active filters. Same browse assembly the
+      // homepage uses (24/page). The backend routes sellerId to the
       // Prisma path with every other filter applied.
       viewerFetch<BrowseResponse>(`/listings?${qs}`).catch(() => ({
         listings: [],
@@ -132,7 +137,7 @@ export default async function SellerProfilePage({
       ) as Record<string, string>,
     );
     next.set('page', String(p));
-    return `/sellers/${clerkId}?${next}`;
+    return `/sellers/${userId}?${next}`;
   }
 
   return (
@@ -189,8 +194,9 @@ export default async function SellerProfilePage({
             </p>
             </div>
           </div>
+          {/* The SELLER is the subject of the report, not the viewer. */}
           {!isOwnProfile && (
-            <ReportButton kind="seller" targetId={clerkId} label="⚑ Report" />
+            <ReportButton kind="seller" targetId={sellerId} label="⚑ Report" />
           )}
         </div>
       </div>
@@ -216,7 +222,7 @@ export default async function SellerProfilePage({
               }}
               brands={brands}
               facets={facetData.facets}
-              basePath={`/sellers/${clerkId}`}
+              basePath={`/sellers/${userId}`}
               hideProvinceFilter
               hideSearch
             />

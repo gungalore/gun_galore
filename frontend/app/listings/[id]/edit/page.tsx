@@ -2,7 +2,7 @@
 
 import { useState, useEffect, FormEvent } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../../../lib/auth';
 import { Listing, CategoryAttributeDef } from '@/lib/types';
 import { CONDITION_LABELS, PROVINCE_LABELS } from '@/lib/utils';
 

@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { auth } from '@clerk/nextjs/server';
+import { serverAuth as auth } from '../../../lib/auth-server';
 import { apiFetch } from '@/lib/api';
 import { Listing } from '@/lib/types';
 import { formatPrice, CONDITION_LABELS } from '@/lib/utils';
@@ -46,7 +46,7 @@ export default async function CheckoutPage({
   // here at all is confusing — kick them back to the listing detail
   // so they see the "this is your own listing" chip instead.
   const { userId } = await auth();
-  if (userId && userId === listing.seller.clerkId) {
+  if (userId && userId === listing.seller.userId) {
     redirect(`/listings/${listing.id}`);
   }
 

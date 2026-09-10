@@ -29,7 +29,7 @@ import type { BenchBulletOption } from './contract';
  * page never sees in production, and every assertion about the rail would be
  * fighting it.
  */
-vi.mock('@clerk/nextjs', () => {
+vi.mock('../../lib/auth', () => {
   const getToken = async () => 'test-token';
   return { useAuth: () => ({ getToken, isLoaded: true, isSignedIn: true }) };
 });

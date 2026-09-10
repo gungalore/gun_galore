@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { av } from '@/lib/asset-version';
 import Image from 'next/image';
-import { SignInButton, useUser, useClerk } from '@clerk/nextjs';
+import { SignInButton, useUser, useClerk } from '../lib/auth';
 import { useRouter, usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import { AvatarCompletionRing } from '@/components/avatar-completion-ring';

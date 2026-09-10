@@ -3,7 +3,7 @@ import { av } from '@/lib/asset-version';
 import { fontDisplay, fontBody } from './fonts';
 import { BRAND_NAME, BRAND_BLURB, SITE_URL } from '@/lib/brand';
 import { Suspense } from 'react';
-import { ClerkProvider } from '@clerk/nextjs';
+import { AuthProvider } from '../lib/auth';
 import { PublicNav, PublicFooter } from '@/components/public-chrome';
 import { SiteFooter } from '@/components/site-footer';
 import { AddedToCartDrawer } from '@/components/added-to-cart-drawer';
@@ -17,7 +17,6 @@ import { PageViewTracker } from '@/components/page-view-tracker';
 import { PushFirstLaunchPrompt } from '@/components/push-first-launch-prompt';
 import { ProfileSetupPrompt } from '@/components/profile-setup-prompt';
 import { WishlistProvider } from '@/lib/use-wishlist';
-import ConsentSync from '@/components/consent-sync';
 import { WelcomeBanner } from '@/components/welcome-banner';
 import './globals.css';
 
@@ -199,11 +198,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <AuthProvider>
       {/* WishlistProvider hydrates the user's saved-listing IDs once
           on sign-in (Set<string>) and makes the toggle helper
           available to every heart icon in the app. Mounted inside
-          ClerkProvider because the hook depends on useAuth/useUser. */}
+          AuthProvider because the hook depends on useAuth/useUser. */}
       <html
         lang="en-ZA"
         className={`${fontDisplay.variable} ${fontBody.variable}`}
@@ -280,7 +279,6 @@ export default function RootLayout({
         <body className="antialiased">
           {/* Flushes any pending sign-up consent to the backend once the
               session is live (POPIA record). No-op when signed out. */}
-          <ConsentSync />
           <WishlistProvider>
           {/* PublicNav + PublicFooter hide themselves on /admin/*
               (the admin layout owns its own chrome) so the public
@@ -376,7 +374,7 @@ export default function RootLayout({
           </WishlistProvider>
         </body>
       </html>
-    </ClerkProvider>
+    </AuthProvider>
   );
 }
 

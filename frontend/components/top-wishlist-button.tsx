@@ -18,7 +18,7 @@
 // note there on why these two can't be allowed to drift apart.
 
 import { usePathname } from 'next/navigation';
-import { useUser } from '@clerk/nextjs';
+import { useUser } from '../lib/auth';
 import { useWishlist } from '@/lib/use-wishlist';
 import { TopBarIconButton } from '@/components/top-bar-icon-button';
 

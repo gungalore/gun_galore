@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../../lib/auth';
 
 // Mirrors backend/src/shipping/tracking.service.ts:getTimeline() response.
 interface TimelineEvent {

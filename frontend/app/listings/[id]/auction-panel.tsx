@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuctionOdometer } from '@/components/auction-odometer';
 import Link from 'next/link';
-import { useUser, useAuth, SignInButton } from '@clerk/nextjs';
+import { useUser, useAuth, SignInButton } from '../../../lib/auth';
 import { HelpTip } from '@/components/help-tip';
 import { HelpText } from '@/components/help-text';
 import {
@@ -89,10 +89,10 @@ function formatRemaining(endTime: string | null): {
 
 export default function AuctionPanel({
   listingId,
-  sellerClerkId,
+  sellerId,
 }: {
   listingId: string;
-  sellerClerkId: string;
+  sellerId: string;
 }) {
   const { user, isLoaded } = useUser();
   const { getToken } = useAuth();
@@ -264,7 +264,7 @@ export default function AuctionPanel({
   // clock alone is why every ended auction — win, reserve-not-met, cancelled
   // — used to read as the same flat "Bidding has closed."
   const auctionOver = remaining.ended || state.status !== 'ACTIVE';
-  const isOwnAuction = isLoaded && user?.id === sellerClerkId;
+  const isOwnAuction = isLoaded && user?.id === sellerId;
 
   // Shared bid-submit. Both Place Bid (one-shot) and Auto Bid (proxy)
   // hit the same endpoint with the same shape — only `isOneShot`

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { SignInButton, useAuth, useUser } from '@clerk/nextjs';
+import { SignInButton, useAuth, useUser } from '../../../lib/auth';
 import { UserBadges } from '@/components/user-badges';
 import type { SubscriptionTier } from '@/lib/types';
 
@@ -78,14 +78,14 @@ function relativeDate(iso: string): string {
 
 export function QuestionsPanel({
   listingId,
-  sellerClerkId,
+  sellerId,
 }: {
   listingId: string;
-  sellerClerkId: string;
+  sellerId: string;
 }) {
   const { isSignedIn, getToken } = useAuth();
   const { user } = useUser();
-  const isOwner = isSignedIn && user?.id === sellerClerkId;
+  const isOwner = isSignedIn && user?.id === sellerId;
 
   const [items, setItems] = useState<PublicQuestion[] | null>(null);
   const [draft, setDraft] = useState('');

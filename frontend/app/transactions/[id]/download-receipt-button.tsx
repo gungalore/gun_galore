@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../../../lib/auth';
 
 const API_URL =
   process.env.INTERNAL_API_URL ??

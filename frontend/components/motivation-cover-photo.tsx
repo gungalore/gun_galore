@@ -7,7 +7,7 @@ import {
   type CoverPhotoState,
 } from '@/lib/motivations-api';
 import MotivationCoverCropper from './motivation-cover-cropper';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth } from '../lib/auth';
 
 // ────────────────────────────────────────────────────────────────────
 // THE COVER PHOTOGRAPH — approve ours, or send your own.

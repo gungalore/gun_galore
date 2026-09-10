@@ -189,10 +189,30 @@ export class UsersController {
     return this.users.getAccountSummary(userId);
   }
 
+  // ─────────────────── Profile photo ─────────────────────────────────
+
+  @Post('me/avatar')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 600_000 } })
+  @UseInterceptors(FileInterceptor('file'))
+  async setAvatar(
+    @CurrentUser() userId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('No photo was uploaded.');
+    return this.users.setAvatar(userId, file);
+  }
+
+  @Delete('me/avatar')
+  @UseGuards(AuthGuard)
+  async removeAvatar(@CurrentUser() userId: string) {
+    return this.users.removeAvatar(userId);
+  }
+
   // ─────────────────── Edit /users/me ────────────────────────────────
   // Patch any of: firstName, lastName, username, address fields.
-  // Email + avatar + password live on Clerk; phone goes through its own
-  // OTP-gated endpoints below.
+  // Password lives on /auth/change-password; the avatar is above; phone goes
+  // through its own OTP-gated endpoints below.
   // ── CLOSING AN ACCOUNT ──────────────────────────────────────────
   //
   // Operator, 2026-08-22: "It must delete the profile from the public [side],

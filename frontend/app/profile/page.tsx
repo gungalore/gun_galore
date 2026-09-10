@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { auth, currentUser } from '@clerk/nextjs/server';
+import { serverAuth as auth } from '../../lib/auth-server';
 import { Me, TrustDashboard, SellerTier } from '@/lib/types';
 import { SUPPORT_EMAIL } from '@/lib/brand';
 import { PageReveal } from '@/components/page-reveal';
@@ -139,7 +139,6 @@ export default async function ProfilePage() {
   const { userId, getToken } = await auth();
   if (!userId) redirect('/sign-in?redirect_url=/profile');
 
-  const clerkUser = await currentUser();
   const token = await getToken();
 
   // Fetch our backend's user record + the trust dashboard. The Me record
@@ -189,15 +188,21 @@ export default async function ProfilePage() {
   // the banner must not tell them to re-shoot it.
   const kycResumeAtSelfie = kycStatusDetail?.nextStep === 'selfie';
 
+  // ⚠️ USERNAME BEFORE EMAIL. The identity provider's fullName/firstName used
+  // to sit in this chain; with it gone the fallback is the member's own
+  // username, which is the only name other members ever see anyway. Email is
+  // the last resort and only ever shown to the member themselves.
   const displayName =
     [me?.firstName, me?.lastName].filter(Boolean).join(' ') ||
-    clerkUser?.fullName ||
-    clerkUser?.firstName ||
+    me?.username ||
     me?.email ||
     'You';
   const tier = me?.sellerTier ?? 'NEW';
   const kyc = me ? KYC_TONE[me.kycStatus] : KYC_TONE.NONE;
-  const avatarUrl = clerkUser?.imageUrl;
+  // ⚠️ OUR OWN COLUMN, NOT A PROVIDER'S CDN. This read the identity
+  // provider's hosted image; /account has always read User.avatarUrl from the
+  // backend, and this page was the odd one out.
+  const avatarUrl = me?.avatarUrl ?? null;
 
   return (
     <main
