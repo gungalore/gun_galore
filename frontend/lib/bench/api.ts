@@ -27,7 +27,7 @@ export class BenchApiError extends Error {
    * 🚨 FOR THE CONSOLE, NEVER FOR THE SCREEN. It used to BE the message, so
    * every `e.message` on this module — the log list's row error, the log
    * sheet's inline line, the toast — printed whatever answered: an nginx error
-   * page on a 502, a Clerk JSON blob on a 401. It is also the one string here
+   * page on a 502, a provider JSON blob on a 401. It is also the one string here
    * nothing has vetted against the copy rules, and a gateway is free to say
    * "source" or "manual" on a surface where that vocabulary is forbidden.
    */
@@ -65,7 +65,7 @@ export function isAbort(e: unknown): boolean {
  *
  * 🚨 THE RESPONSE BODY IS NEVER IT. `call()` throws with the raw text of
  * whatever answered, and on this deployment that is an nginx error page on a
- * 502 and a Clerk JSON blob on a 401 — both of which were rendered verbatim
+ * 502 and a provider JSON blob on a 401 — both of which were rendered verbatim
  * into the page, one of them several hundred bytes of HTML. It is also the one
  * string on this module nothing has vetted against the copy rules: a gateway
  * or a framework may say "source" or "manual" in an error and put it on a

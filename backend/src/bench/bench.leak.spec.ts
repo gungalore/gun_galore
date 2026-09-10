@@ -1265,25 +1265,37 @@ describe('The Bench — one chip per bullet', () => {
   });
 });
 
-describe('The Bench — the clerk-sub / User.id trap', () => {
-  it('resolves the provider subject to a User.id before touching UserBench', async () => {
+// ⚠️ THIS BLOCK USED TO GUARD A TRAP THAT NO LONGER EXISTS, and half of it
+// still guards one that very much does.
+//
+// The old trap: a caller arrived as an identity-provider SUBJECT, while
+// UserBench was keyed on a cuid, so any query that forgot to translate read or
+// wrote against a key that matched nobody — or, worse, matched somebody else.
+// There is one identifier now, so the translation is gone and cannot be
+// forgotten.
+//
+// What survives is the half that was never about translation: every write is
+// scoped by the CALLER's id as well as the row id. Drop that and one member
+// deletes another's row by guessing a cuid.
+describe('The Bench — a write is scoped to its caller', () => {
+  it('confirms the caller exists before touching UserBench', async () => {
     const prisma = makePrisma();
     const svc = new BenchService(prisma as never);
-    await svc.getBench('user_2abcCLERKsub');
+    await svc.getBench('usr_1');
 
-    // The sub goes to User.userId …
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
-      where: { id: 'user_2abcCLERKsub' },
+      where: { id: 'usr_1' },
       select: { id: true },
     });
-    // … and the cuid, never the sub, is what UserBench is keyed on.
-    expect(prisma.userBench.findUnique).toHaveBeenCalledWith({ where: { userId: 'usr_1' } });
+    expect(prisma.userBench.findUnique).toHaveBeenCalledWith({
+      where: { userId: 'usr_1' },
+    });
   });
 
   it('a log delete is scoped by userId as well as id', async () => {
     const prisma = makePrisma();
     const svc = new BenchService(prisma as never);
-    await svc.deleteLog('user_2abcCLERKsub', 'log_9');
+    await svc.deleteLog('usr_1', 'log_9');
     // Without the userId in the where, one member could delete another's row
     // by guessing a cuid.
     expect(prisma.benchLogEntry.deleteMany).toHaveBeenCalledWith({

@@ -11,6 +11,7 @@ import { randomBytes } from 'crypto';
 import { AdminRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionService } from '../auth/session.service';
+import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
@@ -41,6 +42,9 @@ export class AdminService {
     // Closing an account has to end every live session — the equivalent of
     // the identity-provider delete this replaced.
     private readonly sessions: SessionService,
+    // POPIA erasure. Owned by UsersService because it reaches the encrypted
+    // files on disk, which no cascade can.
+    private readonly usersService: UsersService,
     // ⚠️ Provided LOCALLY in AdminModule, like everywhere else that touches
     // the encrypted store — it is not @Global on purpose, so nothing starts
     // reading member files without a deliberate module change.
@@ -577,7 +581,24 @@ export class AdminService {
     ] as const;
     for (const [field, rawNext, current, clearable] of profileFields) {
       if (rawNext === undefined) continue;
-      const next = rawNext === '' ? (clearable ? null : undefined) : rawNext;
+      let next: string | null | undefined =
+        rawNext === '' ? (clearable ? null : undefined) : rawNext;
+
+      // ⚠️ A USERNAME IS RELEASED BY RENAMING IT, NOT BY NULLING IT. The
+      // column is non-null now — it is the only name other members ever see —
+      // so the null this branch used to write is a runtime constraint
+      // violation, not a cleared field. What the admin actually wants here is
+      // what closure does: hand the ORIGINAL handle back to the signup
+      // namespace by moving this row onto one nobody can claim.
+      if (field === 'username' && next === null) {
+        next = `closed-${userId.slice(-10)}`;
+        data.usernameLower = next.toLowerCase();
+      } else if (field === 'username' && typeof next === 'string') {
+        // Any other username write has to carry usernameLower with it, or the
+        // unique index stops matching what is displayed.
+        data.usernameLower = next.toLowerCase();
+      }
+
       if (next === undefined || next === current) continue;
       data[field] = next;
       actions.push({
@@ -652,6 +673,45 @@ export class AdminService {
   // forced past — see assertNoMoneyInFlight below for the one that is not,
   // and why.
   // ---------------------------------------------------------------
+  /**
+   * Action a right-to-erasure request.
+   *
+   * Thin on purpose: UsersService owns the erasure, including the parts a
+   * Prisma cascade cannot reach. What is added here is the audit row — an
+   * erasure that leaves no record of who ordered it and why is not an
+   * accountable one, and POPIA s17 asks for exactly that record.
+   */
+  async eraseAccount(userId: string, adminId: string, reason: string) {
+    const trimmed = (reason ?? '').trim();
+    if (trimmed.length < 5) {
+      throw new BadRequestException(
+        'A reason is required — it is the only record of why this member was erased.',
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    // ⚠️ AUDIT FIRST. The erasure removes the row this audit row describes, so
+    // writing the record afterwards races its own subject.
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'USER_ERASED',
+      resourceType: 'User',
+      resourceId: userId,
+      oldValue: user.email,
+      newValue: 'erased',
+      reason: trimmed,
+    });
+
+    await this.usersService.deleteById(userId);
+    this.logger.warn(`Account ${userId} ERASED by admin ${adminId}: ${trimmed}`);
+    return { erased: true };
+  }
+
   async closeAccount(userId: string, adminId: string, reason: string) {
     const trimmed = (reason ?? '').trim();
     if (trimmed.length < 5) {

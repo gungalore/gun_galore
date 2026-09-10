@@ -357,34 +357,42 @@ export class BenchService {
    * more often, nobody's, which looks like "my shelf keeps emptying".
    * Every entry point into this service resolves the sub through here first.
    */
-  private async findUserId(clerkSub: string): Promise<string | null> {
+  /**
+   * Does this member's row still exist?
+   *
+   * ⚠️ IT USED TO TRANSLATE, NOW IT ONLY CONFIRMS — and the distinction still
+   * matters to the two callers. `getBench` uses this NULLABLE form so a member
+   * with no bench yet gets an empty one rather than a 404; `resolveUserId`
+   * below is the throwing form, for the writes.
+   */
+  private async userExists(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
-      where: { id: clerkSub },
+      where: { id: userId },
       select: { id: true },
     });
-    return user?.id ?? null;
+    return !!user;
   }
 
-  private async resolveUserId(clerkSub: string): Promise<string> {
-    const userId = await this.findUserId(clerkSub);
-    if (!userId) throw new NotFoundException('No member for this session');
+  private async resolveUserId(userId: string): Promise<string> {
+    if (!(await this.userExists(userId))) {
+      throw new NotFoundException('No member for this session');
+    }
     return userId;
   }
 
   /* ── The bench itself ──────────────────────────────────────────────── */
 
-  async getBench(clerkSub: string): Promise<BenchView> {
+  async getBench(userId: string): Promise<BenchView> {
     // ⚠️ NO User ROW IS AN EMPTY SHELF, NOT A 404, AND ONLY ON THE READ.
     // AuthGuard lazily provisions the row, but it refuses to create one for a
-    // identity-provider user with no email — so a signed-in caller can genuinely arrive
-    // here with nothing. Every read on this module goes through here
+    // a row that was erased under a POPIA request — so a caller holding a
+    // still-valid token can genuinely arrive here with nothing. Every read on this module goes through here
     // (BenchController.benchFor is the one door), and a 404 on the results,
     // the powder chips AND the spec card is a page that looks broken to
     // somebody whose only problem is that they have not saved a shelf yet.
     // The WRITES still resolve strictly: without a User row the bench has
     // nowhere to be stored, and the foreign key would refuse it anyway.
-    const userId = await this.findUserId(clerkSub);
-    if (!userId) return EMPTY_BENCH();
+    if (!(await this.userExists(userId))) return EMPTY_BENCH();
 
     const row = await this.prisma.userBench.findUnique({ where: { userId } });
 
@@ -430,8 +438,8 @@ export class BenchService {
    * ValidationPipe skipped the route entirely and a non-array `bullets` was a
    * 500 while 100 000 powder ids were simply stored. See bench.dto.ts.
    */
-  async putBench(clerkSub: string, body: PutBenchDto): Promise<BenchView> {
-    const userId = await this.resolveUserId(clerkSub);
+  async putBench(userId: string, body: PutBenchDto): Promise<BenchView> {
+    await this.resolveUserId(userId);
     const data = {
       powderIds: body.powderIds ?? [],
       bullets: (body.bullets ?? []) as object,
@@ -443,7 +451,7 @@ export class BenchService {
       create: { userId, ...data },
       update: data,
     });
-    return this.getBench(clerkSub);
+    return this.getBench(userId);
   }
 
   /* ── The answer the page exists for ────────────────────────────────── */
@@ -1294,8 +1302,8 @@ export class BenchService {
 
   /* ── The log ───────────────────────────────────────────────────────── */
 
-  async log(clerkSub: string): Promise<PublicLogEntry[]> {
-    const userId = await this.resolveUserId(clerkSub);
+  async log(userId: string): Promise<PublicLogEntry[]> {
+    await this.resolveUserId(userId);
     // ⚠️ NO take. This is the member's OWN log, and logCsv() below is built
     // from this method — a cap here silently short-changes the file they
     // downloaded to keep, which is the one list on the module where a missing
@@ -1366,8 +1374,8 @@ export class BenchService {
    * unescaped, one note shifts every following column and the file silently
    * stops meaning what it says.
    */
-  async logCsv(clerkSub: string) {
-    const rows = await this.log(clerkSub);
+  async logCsv(userId: string) {
+    const rows = await this.log(userId);
     const head = [
       'Date', 'Cartridge', 'Bullet', 'Powder', 'Charge (gr)', 'COAL (mm)',
       'Primer', 'Case', 'Velocity (m/s)', 'Group (mm)', 'Notes',
@@ -1412,8 +1420,8 @@ export class BenchService {
    * silently produces an entry with no name and no flags, which looks like the
    * flags saying the load is fine.
    */
-  async addLog(clerkSub: string, body: AddLogDto) {
-    const userId = await this.resolveUserId(clerkSub);
+  async addLog(userId: string, body: AddLogDto) {
+    await this.resolveUserId(userId);
 
     const cartridge = await this.prisma.benchCartridge.findUnique({
       where: { key: body.cartridgeKey },
@@ -1457,12 +1465,12 @@ export class BenchService {
     // carry that warning too, or an entry inserted optimistically into the
     // list is the one row on the screen with nothing on it. PATCH answers the
     // same way, so a client has one shape to render rather than three.
-    return this.entry(clerkSub, row.id);
+    return this.entry(userId, row.id);
   }
 
   /** One log row in the list's own shape. */
-  private async entry(clerkSub: string, id: string): Promise<PublicLogEntry> {
-    const row = (await this.log(clerkSub)).find((r) => r.id === id);
+  private async entry(userId: string, id: string): Promise<PublicLogEntry> {
+    const row = (await this.log(userId)).find((r) => r.id === id);
     if (!row) throw new NotFoundException('Unknown log entry');
     return row;
   }
@@ -1475,8 +1483,8 @@ export class BenchService {
    * of 0 back from it is "not yours or not there", and both are a 404 to the
    * caller — telling the two apart would confirm the row exists.
    */
-  async patchLog(clerkSub: string, id: string, body: PatchLogDto) {
-    const userId = await this.resolveUserId(clerkSub);
+  async patchLog(userId: string, id: string, body: PatchLogDto) {
+    await this.resolveUserId(userId);
 
     // ⚠️ EVERY FIELD IS OPTIONAL AND NULLABLE, SO ABSENT AND null MUST NOT
     // COLLAPSE. `velocityMs: undefined` means "leave it as it was"; null means
@@ -1493,11 +1501,11 @@ export class BenchService {
     });
     if (!count) throw new NotFoundException('Unknown log entry');
 
-    return this.entry(clerkSub, id);
+    return this.entry(userId, id);
   }
 
-  async deleteLog(clerkSub: string, id: string) {
-    const userId = await this.resolveUserId(clerkSub);
+  async deleteLog(userId: string, id: string) {
+    await this.resolveUserId(userId);
     // Scoped by userId as well as id: an id alone would let one member delete
     // another's log row by guessing a cuid.
     await this.prisma.benchLogEntry.deleteMany({ where: { id, userId } });
@@ -1520,8 +1528,8 @@ export class BenchService {
    * page. Spec §10 defers the guest bench, and the auth wall is why this site
    * is not blocked.
    */
-  async share(clerkSub: string, payload: Record<string, unknown>) {
-    await this.resolveUserId(clerkSub);
+  async share(userId: string, payload: Record<string, unknown>) {
+    await this.resolveUserId(userId);
 
     // Capped by SIZE rather than by shape: the finder's controls change more
     // often than this endpoint should, and what a link may not do is store a

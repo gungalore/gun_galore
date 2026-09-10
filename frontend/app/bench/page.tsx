@@ -245,7 +245,7 @@ function BenchFinder() {
   /**
    * ⚠️ THE COPY COMES FROM THE STATUS, NEVER FROM THE BODY. `call()` throws
    * with the raw text of whatever answered — an nginx error page on a 502, a
-   * Clerk JSON blob on a 401 — and both were rendered into the page verbatim.
+   * provider JSON blob on a 401 — and both were rendered into the page verbatim.
    * The original goes to the console, where a developer can read it and a
    * member cannot. See benchErrorCopy in lib/bench/api.ts.
    */
@@ -1154,7 +1154,7 @@ function BenchFinder() {
   if (!isLoaded) return null;
 
   /**
-   * Signed out, and Clerk has finished saying so.
+   * Signed out, and the session check has finished saying so.
    *
    * 🚨 WITHOUT THIS THE PAGE SHOWS SIX SKELETON ROWS FOR EVER. `loading`
    * starts true and only the bench effect clears it, and that effect returns

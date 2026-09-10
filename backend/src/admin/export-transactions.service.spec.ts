@@ -12,6 +12,8 @@ function makeService(rows: Record<string, unknown>[]) {
     prisma as never,
     // SessionService — an admin close revokes every live session.
     { revokeAllForUser: jest.fn(async () => 0) } as never,
+    // UsersService — POPIA erasure.
+    { deleteById: jest.fn(async () => undefined) } as never,
     // The KYC dossier reads the identity document out of the encrypted store.
     { read: jest.fn(async () => Buffer.from([0xff, 0xd8])) } as never,
     {} as never, // notifications
@@ -58,7 +60,7 @@ describe('AdminService.exportTransactionsCsv', () => {
     );
   });
 
-  it('never includes bank / clerk / SA-ID columns', async () => {
+  it('never includes bank / identity / SA-ID columns', async () => {
     const { service } = makeService([row()]);
     const { csv } = await service.exportTransactionsCsv({}, 'admin1');
     const header = csv.split('\r\n')[0].toLowerCase();

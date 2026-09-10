@@ -178,7 +178,7 @@ This cuts across two things already built, and both needed changing:
 
 ⚠️ **The cap is 3, not 100, on purpose.** The attorney has NOT reviewed the
 templates — the operator's own recorded gate — and nobody has completed the flow
-against a real Clerk login. Three seats is enough to walk it end to end while the
+against a real member session. Three seats is enough to walk it end to end while the
 exposure stays small. **Raise to 100 only after both.**
 
 The cap was set BEFORE the flag was flipped. The other order leaves a window at
@@ -233,10 +233,10 @@ no firearm or motivation wording.
    missing — which matters because the two consumers fail in OPPOSITE directions:
    the crypto modules throw, while KYC falls back to a hardcoded salt and writes
    ID hashes that stop matching the moment the real secret is set.
-6. ⬜ **Exercise the wizard against a real Clerk session** — still outstanding,
-   and not something that can be done from here: production keys are
-   domain-locked, so localhost bounces every authenticated route. It needs a
-   deploy and a real login.
+6. ⬜ **Exercise the wizard against a real member session** — still outstanding,
+   and not something that can be done from here: the session cookie is scoped
+   to the production host, so localhost bounces every authenticated route. It
+   needs a deploy and a real login.
 7. ✅ **Backups exist** (2026-08-19) — `infra/backup/`, nightly 02:10 SAST,
    database AND the encrypted file tree, each dump verified with
    `pg_restore --list`.
@@ -518,7 +518,7 @@ also a unique-data moat nobody in SA publishes.
   operator posts. Feed ships LAST for exactly this reason.
 
 ## Shared infrastructure (all reused, all existing)
-Clerk auth + the members wall · KYC camera capture + Claude vision extraction · fail-closed
+Member auth (our own sessions) + the members wall · KYC camera capture + Claude vision extraction · fail-closed
 moderation service pattern · notifications (push/SMS/email) · activity/insights tracking ·
 admin kit (new modules: motivation queue viewer, checker stats, feed mod queue, awards
 config) · feature flags per module, default OFF, dark-deployable · encrypted document

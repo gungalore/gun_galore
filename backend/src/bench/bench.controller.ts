@@ -65,14 +65,14 @@ export class BenchController {
 
   @Get('me')
   @NoStore()
-  me(@CurrentUser() clerkSub: string) {
-    return this.bench.getBench(clerkSub);
+  me(@CurrentUser() userId: string) {
+    return this.bench.getBench(userId);
   }
 
   @Put('me')
   @NoStore()
-  putMe(@CurrentUser() clerkSub: string, @Body() body: PutBenchDto) {
-    return this.bench.putBench(clerkSub, body);
+  putMe(@CurrentUser() userId: string, @Body() body: PutBenchDto) {
+    return this.bench.putBench(userId, body);
   }
 
   /* ── the answer ─────────────────────────────────────────────────────── */
@@ -105,8 +105,8 @@ export class BenchController {
    */
   @Get('loads')
   @NoStore()
-  async loads(@CurrentUser() clerkSub: string, @Query() q: Record<string, string>) {
-    const bench = await this.benchFor(clerkSub, q);
+  async loads(@CurrentUser() userId: string, @Query() q: Record<string, string>) {
+    const bench = await this.benchFor(userId, q);
     return this.bench.loads(bench, filterFrom(q));
   }
 
@@ -119,8 +119,8 @@ export class BenchController {
    */
   @Get('powders')
   @NoStore()
-  async powders(@CurrentUser() clerkSub: string, @Query() q: Record<string, string>) {
-    return this.bench.powders(q.q || undefined, await this.benchFor(clerkSub, q), filterFrom(q));
+  async powders(@CurrentUser() userId: string, @Query() q: Record<string, string>) {
+    return this.bench.powders(q.q || undefined, await this.benchFor(userId, q), filterFrom(q));
   }
 
   /**
@@ -156,18 +156,18 @@ export class BenchController {
   @NoStore()
   async cartridge(
     @Param('key') key: string,
-    @CurrentUser() clerkSub: string,
+    @CurrentUser() userId: string,
     @Query() q: Record<string, string>,
   ) {
-    return this.bench.cartridge(key, await this.benchFor(clerkSub, q), filterFrom(q));
+    return this.bench.cartridge(key, await this.benchFor(userId, q), filterFrom(q));
   }
 
   /* ── the log ────────────────────────────────────────────────────────── */
 
   @Get('log')
   @NoStore()
-  log(@CurrentUser() clerkSub: string) {
-    return this.bench.log(clerkSub);
+  log(@CurrentUser() userId: string) {
+    return this.bench.log(userId);
   }
 
   /**
@@ -177,8 +177,8 @@ export class BenchController {
    */
   @Get('log.csv')
   @NoStore()
-  async logCsv(@CurrentUser() clerkSub: string, @Res() res: Response) {
-    const { csv, filename } = await this.bench.logCsv(clerkSub);
+  async logCsv(@CurrentUser() userId: string, @Res() res: Response) {
+    const { csv, filename } = await this.bench.logCsv(userId);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
@@ -187,8 +187,8 @@ export class BenchController {
   @Post('log')
   @NoStore()
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  addLog(@CurrentUser() clerkSub: string, @Body() body: AddLogDto) {
-    return this.bench.addLog(clerkSub, body);
+  addLog(@CurrentUser() userId: string, @Body() body: AddLogDto) {
+    return this.bench.addLog(userId, body);
   }
 
   /**
@@ -203,17 +203,17 @@ export class BenchController {
   @NoStore()
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   patchLog(
-    @CurrentUser() clerkSub: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() body: PatchLogDto,
   ) {
-    return this.bench.patchLog(clerkSub, id, body);
+    return this.bench.patchLog(userId, id, body);
   }
 
   @Delete('log/:id')
   @NoStore()
-  deleteLog(@CurrentUser() clerkSub: string, @Param('id') id: string) {
-    return this.bench.deleteLog(clerkSub, id);
+  deleteLog(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.bench.deleteLog(userId, id);
   }
 
   /* ── the permalink ──────────────────────────────────────────────────── */
@@ -226,8 +226,8 @@ export class BenchController {
   @Post('share')
   @NoStore()
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  share(@CurrentUser() clerkSub: string, @Body() body: ShareBenchDto) {
-    return this.bench.share(clerkSub, body.payload);
+  share(@CurrentUser() userId: string, @Body() body: ShareBenchDto) {
+    return this.bench.share(userId, body.payload);
   }
 
   @Get('share/:token')
@@ -269,7 +269,7 @@ export class BenchController {
    * search — it never touches the saved bench — and a surface that skipped it
    * would print a figure for a shelf the member can see they are not using.
    */
-  private async benchFor(clerkSub: string, q: Record<string, string>): Promise<GuestBench> {
+  private async benchFor(userId: string, q: Record<string, string>): Promise<GuestBench> {
     const off = new Set(split(q.off));
     // ⚠️ THROUGH resolveTolerance(), NEVER Number(). An empty `?tolerance=` in
     // the URL is Number('') — which is 0, not NaN — and a silent zero
@@ -282,7 +282,7 @@ export class BenchController {
     // reasoning. Every read on this module comes through here, so a member
     // whose row has not synced would otherwise get an error on the results,
     // the chips and the spec card at once.
-    const mine = await this.bench.getBench(clerkSub);
+    const mine = await this.bench.getBench(userId);
     return {
       toleranceGr,
       powderIds: mine.powders.filter((p) => !off.has(p.id)).map((p) => p.id),

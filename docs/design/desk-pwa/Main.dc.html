@@ -1,0 +1,189 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; background: #101312; color: #EEF2F0;
+      font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      font-feature-settings: 'tnum' 1; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    a { color: #EEF2F0; text-decoration: none; } a:hover { color: #FFFFFF; }
+    .mono { font-family: 'Geist Mono', ui-monospace, Consolas, monospace; }
+    .lbl { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #7F8885; font-weight: 500; }
+    .card { background: #171B1A; border: 0.5px solid #262D2B; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+    .head { font-size: 15px; line-height: 1.35; font-weight: 500; letter-spacing: -0.005em; color: #EEF2F0; }
+    .meta { font-size: 12.5px; line-height: 1.45; color: #B3BBB8; }
+    .tag { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 5px; font-size: 10.5px; font-weight: 500; white-space: nowrap; border: 0.5px solid #343C3A; color: #B3BBB8; background: #1D2221; }
+    .tag.bad  { color: #FF6B5E; border-color: rgba(255,107,94,0.34); background: rgba(255,107,94,0.14); }
+    .tag.warn { color: #F2B33D; border-color: rgba(242,179,61,0.34); background: rgba(242,179,61,0.14); }
+    .tag.info { color: #5AA7FF; border-color: rgba(90,167,255,0.34); background: rgba(90,167,255,0.14); }
+    .tag.ok   { color: #3ECF8E; border-color: rgba(62,207,142,0.34); background: rgba(62,207,142,0.14); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 14px; border-radius: 8px; border: 0.5px solid #343C3A; background: #1D2221; color: #EEF2F0; font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; white-space: nowrap; }
+    .btn.primary { background: #EEF2F0; border-color: #EEF2F0; color: #101312; }
+    .btn.ghost { background: transparent; border-color: transparent; color: #B3BBB8; }
+    .stat { min-width: 104px; flex: 0 0 auto; background: #171B1A; border: 0.5px solid #262D2B; border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+    .stat .k { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: #7F8885; }
+    .stat .v { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: #EEF2F0; }
+    .stat .s { font-size: 10.5px; color: #555E5B; }
+    .tabbar { display: flex; border-top: 0.5px solid #262D2B; background: #171B1A; }
+    .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 9px 0 10px; font-size: 10px; color: #7F8885; }
+    .tab.on { color: #EEF2F0; font-weight: 600; }
+    .scroll { overflow-y: auto; scrollbar-width: none; }
+    .scroll::-webkit-scrollbar { display: none; }
+    .hs { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 0 14px; }
+    .hs::-webkit-scrollbar { display: none; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #101312; display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- Top bar. The board's name and the one number that decides whether the
+       operator opens the app at all. -->
+  <div style="display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; border-bottom: 0.5px solid #262D2B;">
+    <div style="display: flex; flex-direction: column; gap: 1px;">
+      <div style="font-size: 17px; font-weight: 600; letter-spacing: -0.02em;">The Desk</div>
+      <div style="font-size: 11.5px; color: #7F8885;">14 cards &middot; <span style="color: #FF6B5E;">3 overdue</span></div>
+    </div>
+    <div style="flex: 1;"></div>
+    <div style="width: 44px; height: 44px; border-radius: 8px; border: 0.5px solid #343C3A; background: #1D2221; display: flex; align-items: center; justify-content: center; color: #B3BBB8;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.4" y1="16.4" x2="21" y2="21"></line></svg>
+    </div>
+  </div>
+
+  <!-- The ribbon. Five figures, scrolled sideways rather than stacked: they
+       are a glance, not a screen. -->
+  <div class="hs" style="padding-top: 12px; padding-bottom: 12px; border-bottom: 0.5px solid #262D2B;">
+    <div class="stat"><span class="k">Sales today</span><span class="v">R 48 210</span><span class="s">7 orders</span></div>
+    <div class="stat"><span class="k">Orders open</span><span class="v">23</span></div>
+    <div class="stat"><span class="k">Held</span><span class="v">R 191 400</span><span class="s">23 orders</span></div>
+    <div class="stat"><span class="k">Members</span><span class="v">+12</span></div>
+    <div class="stat"><span class="k">Site</span><span class="v" style="color: #F2B33D;">Gated</span><span class="s">payments off</span></div>
+  </div>
+
+  <div class="scroll" style="flex: 1; padding: 0 14px 18px;">
+
+    <!-- Bands are the ordering, and they survive the phone unchanged: money
+         first, housekeeping last. A band header is a rule, not a chip row. -->
+    <div style="display: flex; align-items: center; gap: 8px; padding: 16px 2px 9px;">
+      <span class="lbl">Money &amp; firearms</span>
+      <span style="flex: 1; height: 0.5px; background: #262D2B;"></span>
+      <span class="mono" style="font-size: 11px; color: #555E5B;">4</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+
+      <div class="card">
+        <div style="display: flex; align-items: baseline; gap: 8px;">
+          <span class="lbl">Firearm transfer</span>
+          <span class="mono" style="font-size: 11px; color: #555E5B; margin-left: auto;">GG-ORD-0114</span>
+        </div>
+        <div class="head">Tikka T3x Lite .308 &mdash; awaiting dealer verification</div>
+        <div class="meta">@boet &rarr; @skietrob &middot; R 18 500 held</div>
+        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          <span class="tag bad"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>3 days</span>
+        </div>
+        <div style="display: flex; gap: 8px; padding-top: 2px;">
+          <button class="btn primary" style="flex: 1;">Open &amp; verify</button>
+          <button class="btn" style="width: 44px; padding: 0;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display: flex; align-items: baseline; gap: 8px;">
+          <span class="lbl">Payout run</span>
+          <span class="mono" style="font-size: 11px; color: #555E5B; margin-left: auto;">today</span>
+        </div>
+        <div class="head">R 63 940 is ready for 11 sales</div>
+        <div class="meta">9 sellers &middot; one payout per sale</div>
+        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          <span class="tag warn">payments off</span>
+          <span class="tag">2 held back</span>
+        </div>
+        <div style="display: flex; gap: 8px; padding-top: 2px;">
+          <button class="btn primary" style="flex: 1;">Review the run</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px; padding: 20px 2px 9px;">
+      <span class="lbl">Disputes</span>
+      <span style="flex: 1; height: 0.5px; background: #262D2B;"></span>
+      <span class="mono" style="font-size: 11px; color: #555E5B;">2</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div class="card">
+        <div style="display: flex; align-items: baseline; gap: 8px;">
+          <span class="lbl">Complaint</span>
+          <span class="mono" style="font-size: 11px; color: #555E5B; margin-left: auto;">CO000123</span>
+        </div>
+        <div class="head">Rifle arrived with a cracked stock</div>
+        <div class="meta">@boet &middot; Item not as described</div>
+        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          <span class="tag bad">payout frozen</span>
+          <span class="tag warn">under review</span>
+        </div>
+        <div style="display: flex; gap: 8px; padding-top: 2px;">
+          <button class="btn primary" style="flex: 1;">Open the case</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px; padding: 20px 2px 9px;">
+      <span class="lbl">Reviews &amp; cases</span>
+      <span style="flex: 1; height: 0.5px; background: #262D2B;"></span>
+      <span class="mono" style="font-size: 11px; color: #555E5B;">5</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div class="card">
+        <div style="display: flex; align-items: baseline; gap: 8px;">
+          <span class="lbl">Listing review</span>
+          <span class="mono" style="font-size: 11px; color: #555E5B; margin-left: auto;">UM000441</span>
+        </div>
+        <div class="head">Sako 85 Bavarian .308</div>
+        <div class="meta">@turbosnail &middot; Rifles &middot; R 45 000</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Five boards, five tabs. The active tab is INK, not a colour: on this
+       surface colour is reserved for state, so a coloured tab would say
+       something needs attention when nothing does. -->
+  <div class="tabbar">
+    <div class="tab on">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"></rect><rect x="3" y="14" width="18" height="6" rx="2"></rect></svg>
+      <span>Desk</span>
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2"></rect><circle cx="12" cy="12" r="2.6"></circle></svg>
+      <span>Ledger</span>
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.4"></circle><path d="M3 19a6 6 0 0 1 12 0"></path><path d="M16 6.2a3.4 3.4 0 0 1 0 6.6"></path><path d="M17.5 19a5.6 5.6 0 0 0-1.6-4"></path></svg>
+      <span>People</span>
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h4l2.5-6 4 12 2.5-6h5"></path></svg>
+      <span>Pulse</span>
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"></path></svg>
+      <span>Site</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

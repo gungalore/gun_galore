@@ -43,6 +43,7 @@ import { ListingsModule } from '../listings/listings.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
 import { ShippingModule } from '../shipping/shipping.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   // ListingsModule so reviewListing can re-index the listing in
@@ -57,6 +58,9 @@ import { ShippingModule } from '../shipping/shipping.module';
     PaymentsModule,
     ZohoBooksModule,
     ShippingModule, // AdminTransactionsController → ShippingService (record a failed shipment)
+    // POPIA erasure lives in UsersService — it reaches the encrypted files a
+    // Prisma cascade cannot. UsersModule does not import this one, so no cycle.
+    UsersModule,
   ],
   providers: [
     AdminAuthService,

@@ -71,6 +71,8 @@ function makeService(
     prisma as never,
     // SessionService — an admin close revokes every live session.
     { revokeAllForUser: jest.fn(async () => 0) } as never,
+    // UsersService — POPIA erasure.
+    { deleteById: jest.fn(async () => undefined) } as never,
     {} as never, // files
     {} as never, // notifications
     {} as never, // listings
@@ -268,6 +270,8 @@ describe('AdminService.updateUser — clearing a username', () => {
       prisma as never,
       // SessionService — an admin close revokes every live session.
       { revokeAllForUser: jest.fn(async () => 0) } as never,
+    // UsersService — POPIA erasure.
+    { deleteById: jest.fn(async () => undefined) } as never,
       {} as never,
       {} as never,
       {} as never,
@@ -314,7 +318,13 @@ describe('AdminService.updateUser — clearing a username', () => {
   // Closure releases the handle back into the signup namespace. If a closure
   // half-completes, an admin has to be able to finish it by hand — the only
   // other remedy was a manual database edit.
-  it('clears a closed account’s username', async () => {
+  // ⚠️ RELEASES THE HANDLE BY RENAMING, NOT BY NULLING. The point of the
+  // feature is unchanged — the ORIGINAL username has to go back into the
+  // signup namespace so the member can return — but `username` is non-null
+  // now, so writing null is a constraint violation rather than a cleared
+  // field. usernameLower moves with it or the unique index keeps the original
+  // reserved, which is the exact thing this is meant to free.
+  it('releases a closed account’s username by renaming it', async () => {
     const { service, prisma } = makeUpdateService({
       ...base,
       accountClosedAt: new Date('2026-08-22'),
@@ -325,9 +335,10 @@ describe('AdminService.updateUser — clearing a username', () => {
       reason: 'finishing a half-completed closure',
     } as never);
 
-    expect(prisma.user.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ username: null }) }),
-    );
+    const data = prisma.user.update.mock.calls[0][0].data;
+    expect(data.username).not.toBe(base.username);
+    expect(String(data.username)).toMatch(/^closed-/);
+    expect(data.usernameLower).toBe(String(data.username).toLowerCase());
   });
 });
 
@@ -351,6 +362,8 @@ describe('AdminService.bulkBanUsers', () => {
       prisma as never,
       // SessionService — an admin close revokes every live session.
       { revokeAllForUser: jest.fn(async () => 0) } as never,
+    // UsersService — POPIA erasure.
+    { deleteById: jest.fn(async () => undefined) } as never,
       {} as never,
       {} as never,
       {} as never,

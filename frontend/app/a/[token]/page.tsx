@@ -172,7 +172,7 @@ export default async function ActionTokenPage({
  * Mobile-only chrome — single column, centered, max ~480px wide.
  * The logo bar at the top serves as the visual anchor + reassurance
  * ("yes you're really on All Outdoor"). No nav, no footer beyond the
- * fine print, no Clerk wrapper, no PWA install prompt — just the
+ * fine print, no auth provider wrapper, no PWA install prompt — just the
  * action page.
  */
 function MobileShell({ children }: { children: React.ReactNode }) {

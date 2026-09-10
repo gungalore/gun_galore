@@ -1,0 +1,47 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html",   "x": 0,    "y": 0, "w": 390, "h": 844, "title": "The pile" },
+    { "file": "Ledger.dc.html", "x": 470,  "y": 0, "w": 390, "h": 844, "title": "Ledger — orders" },
+    { "file": "Order.dc.html",  "x": 940,  "y": 0, "w": 390, "h": 844, "title": "Order — money levers" },
+    { "file": "People.dc.html", "x": 1410, "y": 0, "w": 390, "h": 844, "title": "People — KYC" },
+    { "file": "More.dc.html",   "x": 1880, "y": 0, "w": 390, "h": 844, "title": "Everything else" }
+  ],
+  "annotations": [
+    {
+      "id": "premise",
+      "x": 0,
+      "y": -232,
+      "w": 390,
+      "text": "The Desk on a phone — a separate installable app from the shop.\n\nIt reuses the Desk's own system exactly: ground #101312, one ink in four steps, and the rule that colour is ONLY ever state. There is no brand accent here, so the active tab is ink rather than red — a coloured tab would say something needs you when nothing does."
+    },
+    {
+      "id": "tables",
+      "x": 470,
+      "y": -232,
+      "w": 390,
+      "text": "This is the screen the port exists for.\n\nDeskTable is minWidth 1100 — nearly three of these screens. Every board table becomes a stack of cards instead: reference and status on one line, who and how much on the next, date last. Nothing scrolls sideways.\n\nThe lens switch stays one level above the status chips, as on desktop: it changes the data source, not the slice."
+    },
+    {
+      "id": "money",
+      "x": 940,
+      "y": -232,
+      "w": 390,
+      "text": "🚨 The line picker is the safety rail, not a convenience.\n\nMoney is per-LINE. Fully refunding a consolidated carrier line while its siblings are still held is refused by the server, in an order nobody can predict from this screen — so there is no \"refund the order\" button anywhere, on any surface.\n\nThe confirm restates the act in words: who, how much, what follows, and what stays untouched. The dialog clears z-index 60 so the tab bar cannot paint over the tap that commits money."
+    },
+    {
+      "id": "identity",
+      "x": 1410,
+      "y": -232,
+      "w": 390,
+      "text": "Usernames only on anything scannable. The real name and the ID document sit behind a deliberate reveal, one per document.\n\nThe bank check is labelled as done by hand, because it is — nothing here should imply an automated verification that is not live yet."
+    },
+    {
+      "id": "honesty",
+      "x": 1880,
+      "y": -232,
+      "w": 390,
+      "text": "The honest mark is the point of this screen.\n\nTwenty legacy routes are only PARTLY covered: the drawer moved to the Desk, the browsable register mostly did not. A row that opens the old panel says so, rather than looking native and then not being.\n\nThat list shrinks as the cutover proceeds — it should never be quietly hidden."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

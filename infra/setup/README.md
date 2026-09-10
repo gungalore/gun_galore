@@ -339,10 +339,14 @@ chmod 600 backend/.env frontend/.env.production
 
 Read `backend/.env.example` carefully — several of the variables are not
 optional in the way they look. `backend/src/main.ts` has a boot gate that
-*throws* on a missing or default `JWT_ADMIN_SECRET` in production (the process
-will not start, by design), and logs loud errors for missing Clerk, Peach, TCG
-and Anthropic credentials. A backend that boots but shouts is a backend running
-with a feature degraded to a manual-review or blocked path.
+*throws* on a missing or default `JWT_ADMIN_SECRET` **or `JWT_MEMBER_SECRET`**
+in production, and the process will not start. `DiditService` throws the same
+way on `DIDIT_MODE` being anything but `live` — the provider it replaced only
+*logged* that, which is how a box ran sandbox identity checks in production and
+approved canned data. Everything else only shouts: missing Peach credentials,
+a missing `DIDIT_WEBHOOK_SECRET`, and the model key for whichever `LLM_PROVIDER`
+is selected. A backend that boots but shouts is a backend running with a feature
+degraded to a manual-review or blocked path.
 
 Then build and start:
 

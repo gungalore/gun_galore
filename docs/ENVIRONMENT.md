@@ -42,8 +42,11 @@ it is actually "the integration is protecting you". The fail-closed set:
 
 | Variable              | What refuses                                                       |
 | --------------------- | ------------------------------------------------------------------ |
+| `JWT_MEMBER_SECRET`   | The whole process, at boot, in production. Hard throw.             |
 | `JWT_ADMIN_SECRET`    | The whole process, at boot, in production. Hard throw.             |
-| `CLERK_WEBHOOK_SECRET`| Inbound Clerk webhooks are dropped unverified → new sign-ups get no `User` row |
+| `DIDIT_MODE`          | The whole process, at boot, in production, unless it is `live`. Hard throw. |
+| `DIDIT_API_KEY` / `DIDIT_WORKFLOW_ID` | The whole process, at boot, in production. Hard throw. |
+| `DIDIT_WEBHOOK_SECRET`| Inbound verification outcomes are dropped unverified → a seller who finished on Didit's page stays `PENDING` forever |
 | `TCG_WEBHOOK_SECRET`  | Inbound Courier Guy tracking events rejected in production         |
 | `PEACH_SECRET`        | Inbound Peach webhooks rejected → orders never confirm as paid     |
 | `HEALTH_PING_SECRET`  | `/api/health/crons` returns 503 rather than 200                    |
@@ -84,7 +87,8 @@ Names in here that will not mean anything until you know the domain:
 - **Peach Payments** — the SA payment gateway. Card pay-in, payouts to seller
   bank accounts, and **BANV** (bank-account name verification — proving the
   seller owns the account before we pay it).
-- **VerifyNow** — the SA identity-verification bureau behind KYC.
+- **Didit** — the identity-verification provider behind KYC, and the sender of
+  the one-time codes that verify a new member's e-mail address and phone number.
 - **SMSPortal** — the SA bulk-SMS provider. Load matters here: a lot of users
   transact from an SMS link on a phone with no data.
 - **Ask Boet** — the site-wide AI assistant. "Boet" is Afrikaans/SA slang for
@@ -103,7 +107,8 @@ Names in here that will not mean anything until you know the domain:
 Not just a logging switch. In `production` it: activates the config gate in
 `main.ts`, makes the TCG webhook fail closed instead of allowing unsigned
 calls, strips localhost/LAN origins out of the CORS allow-list, and makes
-`JWT_ADMIN_SECRET` mandatory. Local: `development`.
+`JWT_MEMBER_SECRET`, `JWT_ADMIN_SECRET` and a **live** `DIDIT_MODE` mandatory —
+each of those throws at boot rather than degrading. Local: `development`.
 
 ### `PORT`
 **Optional**, default `3001`. Nest mounts everything under the global `/api`
@@ -141,44 +146,47 @@ the dump fails with an unhelpful error.
 
 Local dev needs a real database. See the local-setup notes in the README.
 
-## Auth — Clerk (buyers and sellers)
+## Auth — members (self-hosted sessions)
 
-### `CLERK_SECRET_KEY`
-**Required.** From the Clerk dashboard. `sk_test_*` for the dev instance,
-`sk_live_*` for production. Missing → every authenticated request 401s. No
-degraded mode.
+There is no identity provider. `backend/src/auth/` owns sign-up, sign-in,
+password reset and sessions; `User.id` is the only user identifier. One
+variable holds the whole thing up.
 
-Must be the matching half of the frontend's
-`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`. Both test, or both live — a mismatched
-pair fails in confusing ways (the browser thinks it is signed in; the API
-disagrees).
+### `JWT_MEMBER_SECRET`
+**Required in production. HARD-THROWS AT BOOT. Needed by BOTH processes.**
 
-### `CLERK_WEBHOOK_SECRET`
-**Required in production. FAILS CLOSED.** The Svix signing secret from Clerk
-dashboard → Webhooks.
+Signs and verifies the member session token — the 15-minute access JWT in the
+`ao_at` cookie (`sub` = `User.id`, `sid` = `Session.id`). The rotating refresh
+token in `ao_rt` is not a JWT and is not signed with this; only its sha256 is
+stored, in `Session.refreshHash`.
 
-Missing or wrong → inbound `user.created` / `updated` / `deleted` events cannot
-be verified and are dropped, so new sign-ups never get a `User` row in our
-database. There is a backstop — `ClerkGuard` lazily upserts the user on their
-first authenticated request — but a silently broken webhook hides a real
-misconfiguration. `users.service.ts` raises a deduped
-`WEBHOOK_SIGNATURE_INVALID` admin alert when verification fails. Do not dismiss
-that alert without fixing the cause.
+`src/auth/member-jwt-secret.ts` is the single source of truth, and `main.ts`
+calls it at bootstrap so a misconfigured server fails visibly at startup rather
+than 500ing on the first sign-in. In production a missing, empty, or
+known-bad-default value throws and the process refuses to start.
 
-Local: not needed unless you are testing the webhook path.
+⚠️ **It must DIFFER from `JWT_ADMIN_SECRET`.** Set both to the same value and a
+member token verifies on an admin route. That is also why there are two
+near-identical secret helpers rather than one taking a variable name — one typo
+in a shared helper produces exactly that outcome.
 
-### `CLERK_AUTHORIZED_PARTIES`
-**Optional, opt-in hardening.** Comma-separated list of origins allowed to mint
-session tokens for this API (checked against the token's `azp` claim).
+⚠️ **The frontend needs the SAME value, and it is deliberately NOT
+`NEXT_PUBLIC_`.** `frontend/middleware.ts` and `frontend/lib/auth-server.ts`
+verify the session cookie with `jose` before deciding whether to render a page
+or bounce to sign-in. Prefixing it would compile the *signing* secret into the
+browser bundle, at which point anyone could mint a token for any member.
 
-Unset → `azp` is not checked, which is Clerk's own default. It is deliberately
-opt-in: the Capacitor app shells present `capacitor://localhost` and
-`ionic://localhost` as their origin, and enabling the check while forgetting to
-enumerate one of them locks the mobile app out. If you set it, set it
-completely:
-`https://gungalore.co.za,capacitor://localhost,ionic://localhost`
+A mismatch between the two processes fails in the confusing direction: the
+backend is perfectly happy, and every protected page 307s the member to sign-in.
+Treat a change to this value as one coordinated change across both processes —
+and know that it signs everybody out, because no outstanding access token
+verifies under the new secret.
 
-## Auth — Admin (separate JWT, nothing to do with Clerk)
+Local dev needs nothing: the module substitutes a throwaway dev-only value, and
+`middleware.ts` carries the matching fallback, so sign-in works with zero
+per-developer config. Generate for production with `openssl rand -hex 32`.
+
+## Auth — Admin (a second, separate JWT)
 
 ### `JWT_ADMIN_SECRET`
 **Required in production. HARD-THROWS AT BOOT.**
@@ -217,8 +225,8 @@ Change the secret and **both** break at once. Existing ciphertext will not
 decrypt (the auth tag will not verify), and existing hashes will not match
 newly computed ones, so duplicate detection silently stops working. There is no
 recovery path: the plaintext ID was never stored anywhere else, by design. That
-is the POPIA posture — the raw ID is transient, purged entirely once VerifyNow
-passes the seller, leaving only the hash long-term.
+is the POPIA posture — the raw ID is transient, purged entirely once the seller
+passes verification, leaving only the hash long-term.
 
 **The rename trap.** The HKDF `info` string is a hard-coded literal in
 `id-crypto.ts`:
@@ -248,40 +256,94 @@ while `id-crypto.ts` throws. Hashes computed in that state will never match
 hashes computed with the real secret. Two implementations of the same hash with
 different missing-value behaviour is a wart worth knowing about.
 
-## KYC — VerifyNow
+## Identity verification — Didit
 
-### `VERIFYNOW_API_KEY`
-**Required for KYC.** Missing → the KYC lookup and the credit-balance poll both
-report "not configured"; sellers cannot be verified, so nothing can be paid
-out. Local: not needed unless you are working on KYC.
+One provider, one adapter (`src/didit/`), three jobs: the e-mail code at
+sign-up, the phone code, and the hosted seller-KYC session whose verdict comes
+back by webhook. Base URL `https://verification.didit.me`.
 
-### `VERIFYNOW_BASE_URL`
-**Optional**, default `https://api.verifynow.co.za`.
+> ⚠️ **VerifyNow is gone**, and so is AWS Rekognition (KYC face-match and Face
+> Liveness) with it. `VERIFYNOW_API_KEY`, `_BASE_URL`, `_MODE`,
+> `_BASIC_REPORT_TYPE` and `AWS_KYC_LIVENESS_ROLE_ARN` are read by nothing.
+> Delete them from a live `.env` rather than leaving them there to look
+> load-bearing.
+>
+> ⚠️ **One capability went with VerifyNow and nothing free replaces it.** It
+> returned the applicant's official name and date of birth from **Home
+> Affairs**, which let the verdict cross-check the typed details against the
+> state rather than only against the uploaded document. Names now come from the
+> document Didit reads and the date of birth is checked against the SA ID
+> number's own digits. Didit sells the equivalents as `zaf_africa_national_id`
+> ($1.10) and `zaf_dha_photo` ($1.10). Until one is turned on, **no user-facing
+> copy may claim a Home Affairs verification.**
 
-### `VERIFYNOW_MODE`
-**Required at launch.** `sandbox` (free, canned data) or `production` (real
-lookups, burns purchased credits). Defaults to `sandbox` when unset.
+### `DIDIT_API_KEY`
+**Required in production — throws at boot when unset.** The application key
+from the Didit console, sent as the `x-api-key` header.
 
-Sandbox in production **silently passes fake identities**. `main.ts` logs a
-loud WARN but still boots — deliberately, so a deploy cannot take production
-down before the launch credentials are wired. Do not treat that WARN as noise.
+⚠️ **A bad or missing key returns 403, not 401**, on this API. Anyone grepping
+logs for 401s to diagnose a credential problem finds nothing.
 
-Note for the operator: VerifyNow runs on prepaid credits. `LOW_CREDIT_THRESHOLD`
-(default 100) is the level at which the five-minute cron starts nagging admins
-to top up. When the balance hits zero, seller verification stops.
+⚠️ **Local dev does need one, and this is the one integration that is not
+optional any more.** Without a key, `POST /api/auth/register` writes the `User`
+row and then fails 400 on the code send — so nobody can finish signing up, and
+there is deliberately no dev bypass that mints a code locally. `DIDIT_MODE`
+defaults to `sandbox` outside production, which is free, but it still calls the
+real API with a real key.
 
-### `VERIFYNOW_BASIC_REPORT_TYPE`
-**Optional.** Overrides the report-type string sent on the basic lookup. Only
-set it if VerifyNow tells you to.
+### `DIDIT_WORKFLOW_ID`
+**Required in production — throws at boot when unset.** The published KYC
+workflow that `POST /v3/session/` runs against.
+
+⚠️ **It must be a NON-white-label workflow.** Didit's free tier gives 500/month
+each of `id_verification`, `passive_liveness`, `face_match` and `ip_analysis`.
+Setting `is_white_label_enabled: true` adds $0.20 a session **and drops the
+workflow out of the free tier entirely** — $0.56 instead of $0.00 for the same
+verification. Check it in the console before pointing production at a new id.
+
+### `DIDIT_WEBHOOK_SECRET`
+**Required in production. FAILS CLOSED.** Per-destination HMAC-SHA256 signing
+secret (console → API & Webhooks) for `POST /api/webhooks/didit`, which is how
+the verdict actually arrives — not from the request that created the session.
+
+Unset or wrong → outcomes cannot be verified and are dropped, so a seller who
+finished on Didit's page stays `PENDING` forever and can never be paid out.
+A bad signature returns **200** with the handler skipped, never a 401 — the same
+house rule as the Peach webhooks, so there is nothing to grep for.
+
+⚠️ **Not an env var, but it belongs here:** Didit delivers from the single
+static IP **`18.203.201.92`** (`User-Agent: DiditWebhook/2.0`). Cloudflare's WAF
+must allow it, or every delivery is dropped at the edge with nothing in any
+application log.
+
+### `DIDIT_MODE`
+**Required in production. HARD-THROWS AT BOOT unless it is `live`.** `sandbox`
+(free, canned outcomes) otherwise, which is the default when unset.
+
+That strictness is deliberate history. The provider this replaced defaulted to
+sandbox and production boot only *logged* an error, so a production box could —
+and did — run with sandbox identity checks, approving canned data with nobody
+the wiser. A verification rail that is silently fake is worse than one that is
+visibly down. Do not add a softer second copy of this check; that is how the
+hard one gets deleted.
+
+### `DIDIT_BASE_URL`
+**Optional**, default `https://verification.didit.me`. Override only if Didit
+moves the verification API.
+
+⚠️ Note this is **not** `apx.didit.me`, which is the account-management host and
+uses a different auth scheme entirely (`Authorization: Bearer`, not
+`x-api-key`).
 
 ## AI — Anthropic
 
 ### `ANTHROPIC_API_KEY`
 **Effectively required in production. Degrades, does not crash.**
 
-Powers Ask Boet, Claude-vision KYC, listing moderation, the Q&A contact-detail
-filter, firearm-licence verification, dealer verification, swap
-proof-of-possession, price estimates and reloading load-data extraction.
+Powers Ask Boet, listing moderation, the Q&A contact-detail filter,
+firearm-licence verification, dealer verification, swap proof-of-possession,
+price estimates and reloading load-data extraction. **Not identity documents** —
+Didit reads those as part of its own session.
 
 Missing, and every one of those degrades to a manual or blocked path:
 
@@ -313,7 +375,6 @@ stops working right after someone "tidied the env", check these first.
 | --- | --- | --- |
 | `ANTHROPIC_MODEL_SIMPLE` | `claude-haiku-4-5-20251001` | Cheap first pass: listing moderation, Q&A, contact filter |
 | `ANTHROPIC_MODEL_JUDGE` | `claude-sonnet-4-6` | Escalated pass: firearm-licence / dealer / swap-proof vision, OCR backfill |
-| `ANTHROPIC_MODEL_KYC` | `claude-sonnet-5` | KYC face-match and document read |
 | `ANTHROPIC_MODEL_PRICE_ESTIMATE` | `claude-haiku-4-5-20251001` | Suggested listing price |
 | `ANTHROPIC_MODEL_LOADDATA` | `claude-sonnet-4-6` | Reloading-manual data extraction |
 | `ANTHROPIC_MODEL_INSIGHTS_DIGEST` | `claude-sonnet-4-6` | Weekly analytics digest |
@@ -572,26 +633,29 @@ in. Falls back to `NEXT_PUBLIC_API_URL`, then `http://localhost:3001/api`.
 
 Production value: `http://127.0.0.1:3001/api`.
 
-## Clerk
+## Member sessions
 
-### `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
-**Required.** `pk_test_*` against the Clerk dev instance, `pk_live_*` against
-production. The publishable key encodes the Clerk frontend-API host, so a dev
-key baked into a production build points authentication at the wrong instance
-and users appear permanently signed out.
+### `JWT_MEMBER_SECRET`
+**Required. Must be the SAME value as the backend's.**
 
-Because it is `NEXT_PUBLIC_`, swapping dev→live is a **rebuild**, not a
-restart. That caught the team out during the Clerk production cutover.
+The frontend does not mint sessions — it *verifies* them. `middleware.ts` reads
+the `ao_at` cookie and checks it with `jose` to decide whether to render a page
+or bounce to `/sign-in`; `lib/auth-server.ts` does the same for server
+components. A mismatched pair fails in the confusing direction: the API is
+perfectly happy, and every protected page 307s the member back to sign-in.
 
-### `CLERK_SECRET_KEY`
-**Required.** Used by the Next middleware and server components. Must be the
-matching half of the publishable key above.
+⚠️ **No `NEXT_PUBLIC_` prefix, ever.** This is the *signing* secret, and the
+prefix would compile it into the browser bundle — at which point anyone could
+mint a token for any member. It is the one variable in this half of the document
+that must never be browser-visible.
 
-### `NEXT_PUBLIC_CLERK_SIGN_IN_URL` / `_SIGN_UP_URL` / `_AFTER_SIGN_IN_URL` / `_AFTER_SIGN_UP_URL`
-**Optional**, but set them — they are the same across environments
-(`/sign-in`, `/sign-up`, `/dashboard`, `/dashboard`) and having them in the
-file means a fresh clone routes like production. Read by the Clerk SDK, not by
-our code.
+Local dev needs nothing: `middleware.ts` falls back to the same throwaway string
+`backend/src/auth/member-jwt-secret.ts` uses, so a fresh clone signs in.
+
+There are no other member-auth variables. The sign-in, sign-up, verify-email,
+forgot-password and reset-password routes are ordinary pages in this app, and
+the cookie names (`ao_at`, `ao_rt`) are constants in the code, shared with the
+backend by being written down in both — see the comment in `middleware.ts`.
 
 ## Maps
 
@@ -609,7 +673,7 @@ local development does not need a real key.
 
 ## The coming-soon gate
 
-Enforced in `frontend/middleware.ts`, **before** Clerk auth runs. When active,
+Enforced in `frontend/middleware.ts`, **before** the session check runs. When active,
 any request that is not allowed through is **rewritten** (not redirected) to
 `/coming-soon`, with an `X-Robots-Tag: noindex, nofollow` header. Rewrite so
 the URL the visitor typed stays in the address bar; `noindex` so Google does
@@ -673,6 +737,20 @@ redirect out of `/admin/logout`.
 
 # Reconciliation notes, 2026-08-12
 
+> **Addendum, 2026-09-10 — the auth and KYC cut-over.** Clerk, VerifyNow and
+> AWS Rekognition were all removed on the same day, so a further seven names
+> joined the dead list below and must be **deleted from the live `.env`**:
+> `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`, `CLERK_AUTHORIZED_PARTIES`,
+> `VERIFYNOW_API_KEY`, `VERIFYNOW_BASE_URL`, `VERIFYNOW_MODE`,
+> `VERIFYNOW_BASIC_REPORT_TYPE` and `AWS_KYC_LIVENESS_ROLE_ARN`. Rotate the
+> Clerk and VerifyNow keys rather than merely deleting them — they were real
+> credentials sitting in a file on disk.
+>
+> Two names went the other way and **must be set before the next production
+> boot, or the process refuses to start**: `JWT_MEMBER_SECRET` (on **both**
+> processes, same value, different from `JWT_ADMIN_SECRET`) and the `DIDIT_*`
+> set with `DIDIT_MODE=live`.
+
 ## Backend: variables on the live server that no code reads
 
 Verified by grep across `backend/`, `frontend/` and `scripts/`. These are
@@ -698,11 +776,11 @@ They were real credentials and have been sitting in a file on disk.
 These are now in `backend/.env.example`. Several are also absent from the live
 server, meaning the feature is running on its coded default:
 
-`CLERK_AUTHORIZED_PARTIES`, `ANTHROPIC_ADMIN_API_KEY`, all eleven
+`ANTHROPIC_ADMIN_API_KEY`, all ten remaining
 `ANTHROPIC_MODEL_*`, `HB_RANGE_OPUS_THRESHOLD`, `PEACH_ENV`,
 `PEACH_CLIENT_ID`, `PEACH_CLIENT_SECRET`, `PEACH_MERCHANT_ID`, `PEACH_SECRET`,
 `PAYMENTS_LIVE`, `PUBLIC_API_URL`, `PUDO_API_SECRET`, `TCG_BASE_URL`,
-`SMSPORTAL_API_KEY`, `SMSPORTAL_BASE_URL`, `VERIFYNOW_BASIC_REPORT_TYPE`,
+`SMSPORTAL_API_KEY`, `SMSPORTAL_BASE_URL`,
 `LOW_CREDIT_THRESHOLD`, `SUPPORT_EMAIL`, `EMAIL_LOGO_URL`, `OCR_CHUNK_PAGES`,
 `HEALTH_PING_SECRET`.
 
@@ -740,14 +818,21 @@ NODE_ENV=development
 PORT=3001
 FRONTEND_URL=http://localhost:3000
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/gun_galore?schema=public
-CLERK_SECRET_KEY=<your Clerk dev instance key>
 ID_HASH_SECRET=<openssl rand -hex 32>
+DIDIT_API_KEY=<a sandbox key from the Didit console>
+DIDIT_WORKFLOW_ID=<the workflow that key points at>
 ```
 
-`JWT_ADMIN_SECRET` can stay blank — dev substitutes a throwaway. Everything
-else logs a "disabled" warning at boot and no-ops. You will not have image
-upload (so you cannot create listings), search, email, SMS, push, shipping,
-payments or AI, but the server boots and the app renders.
+`JWT_MEMBER_SECRET` and `JWT_ADMIN_SECRET` can both stay blank — dev substitutes
+a throwaway for each, and the frontend carries the matching member fallback, so
+sessions work with no config at all.
+
+⚠️ **`DIDIT_API_KEY` is the one third-party value local dev genuinely needs.**
+Sign-up sends a 6-digit e-mail code through Didit and there is no local bypass,
+so without a key you can create a `User` row and then never verify it. Sandbox
+mode is free. Everything else logs a "disabled" warning at boot and no-ops: you
+will not have image upload (so you cannot create listings), search, email, SMS,
+push, shipping, payments or AI, but the server boots and the app renders.
 
 Add `CLOUDINARY_*` as soon as you need to create a listing. Add
 `ANTHROPIC_API_KEY` when you want listings to auto-moderate instead of queueing
@@ -758,8 +843,9 @@ for human review.
 ```
 NEXT_PUBLIC_API_URL=http://localhost:3001/api
 INTERNAL_API_URL=http://localhost:3001/api
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<matching pk_test_ key>
-CLERK_SECRET_KEY=<same sk_test_ key as the backend>
 ```
 
-The Clerk pair must be from the same instance as the backend's key.
+Both may be omitted — they are also the coded fallbacks. If you set
+`JWT_MEMBER_SECRET` in `backend/.env`, set the **same value** here too, or the
+middleware cannot verify the cookie the backend issued and every protected page
+bounces you to sign-in while the API works perfectly.

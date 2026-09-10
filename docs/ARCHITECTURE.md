@@ -42,9 +42,8 @@ constraint on how you should work, not an oversight to fix casually.
                                          │
                     ┌────────────────────▼─────────────────────┐
                     │ nginx (same VPS)                          │
-                    │   gungalore.co.za      /api/*  ──► :3001  │
+                    │   alloutdoor.co.za     /api/*  ──► :3001  │
                     │                        everything ► :3000 │
-                    │   api.gungalore.co.za  all     ──► :3001  │
                     └───────┬──────────────────────────┬────────┘
                             │                          │
               ┌─────────────▼───────────┐  ┌───────────▼─────────────┐
@@ -61,10 +60,15 @@ constraint on how you should work, not an oversight to fix casually.
 
 Two things about that diagram are easy to get wrong:
 
-1. **The browser talks to the backend directly.** `frontend/lib/api.ts` reads
-   `NEXT_PUBLIC_API_URL` and fetches that origin. In production that is the
-   `api.gungalore.co.za` vhost. There are **no Next.js route handlers** —
-   `frontend/app/api/` does not exist. Next is a rendering layer, never a BFF.
+1. **The browser talks to the backend directly, and on the SAME ORIGIN.**
+   `frontend/lib/api.ts` reads `NEXT_PUBLIC_API_URL` and fetches that origin;
+   in production it is the apex, and `infra/nginx/alloutdoor.conf:186` proxies
+   `alloutdoor.co.za/api/` → `127.0.0.1:3001/api/` (the trailing `/api/` on
+   both sides is deliberate — Nest mounts everything under that prefix itself).
+   **There is no `api.` vhost.** The conf says so in as many words at lines
+   43–46, because older notes claimed one. Same-origin is not an accident: it
+   is what lets the session cookies in §2.1 reach the API at all. Third-party
+   webhooks (Pudo, Bob Go, Peach, Didit) post to that same `/api/*` path.
 
    > `NEXT_PUBLIC_API_URL` **must include the `/api` suffix.** Every fallback
    > in the codebase is `http://localhost:3001/api`, and callers pass bare
@@ -72,16 +76,18 @@ Two things about that diagram are easy to get wrong:
    > `http://localhost:3001` gives you a 404 on every request.
    > `frontend/.env.example` currently shows it without the suffix — that is
    > the example file being wrong, not the code.
-2. **`gungalore.co.za/api/*` is nonetheless a live path**, proxied by nginx to
-   3001, because third parties post webhooks there. `CLAUDE.md` records the
-   registered courier webhook URLs as `https://gungalore.co.za/api/shipping/
-   webhook/tcg` and `.../pudo`. Do not break that path assuming everything API
-   goes through the `api.` host.
+2. **There are three Next route handlers, and none of them is an API proxy** —
+   `app/admin/logout/route.ts`, `app/preview/route.ts` and
+   `app/admin/manifest.webmanifest/route.ts`. `frontend/app/api/` does not
+   exist. Next is a rendering layer, never a BFF.
 
-Because the browser and the backend are different origins, CORS matters.
-`main.ts` allowlists `FRONTEND_URL` plus the Capacitor app schemes
-(`capacitor://localhost`, `ionic://localhost`) in production, and additionally
-any localhost / 127.0.0.1 / 192.168.x origin in development only.
+Because the browser and the backend share an origin, **CORS is not what stands
+between them** — an ordinary page fetch never preflights. The allowlist in
+`main.ts` exists for the callers that *are* cross-origin: the Capacitor app
+shells (`capacitor://localhost`, `ionic://localhost`), plus localhost / LAN
+origins in development. `credentials: true` is why that list has to stay short;
+`ALLOW_LOCAL_ORIGINS` opens the local branch on a production box and must go
+back off before real members arrive.
 
 `app.set('trust proxy', 1)` is load-bearing: exactly one proxy hop (nginx), so
 Express derives `req.ip` from the first `X-Forwarded-For` entry. Without it,
@@ -111,7 +117,7 @@ it first. A few are infrastructure that everything else assumes:
 | Module | Why it matters |
 |---|---|
 | `PrismaModule` | `@Global`. `PrismaService` is injectable anywhere with no import. |
-| `AuthModule` | `@Global`. Exports the three Clerk guards (see below). |
+| `AuthModule` | `@Global`. Owns sign-up, sign-in and sessions, and exports the five guards (see below). |
 | `ActionTokensModule` | `@Global`. Mints the single-use tokens behind every SMS deep link. |
 | `SettingsModule` | Typed accessors over a key/value `Setting` table — the feature-flag system. |
 | `TasksModule` | `ScheduleModule.forRoot()` plus every recurring job. |
@@ -128,81 +134,142 @@ The rest are domain modules and map onto the URL space fairly directly
 
 There are **two entirely separate auth systems**, and one auxiliary one.
 
-### 2.1 Clerk — buyers and sellers
+### 2.1 Member sessions — buyers and sellers
 
-Clerk is the identity provider for every ordinary user. The frontend wraps the
-app in `<ClerkProvider>` (`frontend/app/layout.tsx`) and `clerkMiddleware`
-(`frontend/middleware.ts`) decides page-level access. The client obtains a
-session JWT and sends it to the backend as `Authorization: Bearer <token>`.
+Auth is **self-hosted**. There is no identity provider: `backend/src/auth/` owns
+sign-up, e-mail verification, sign-in, password reset and sessions, and
+**`User.id` is the one and only user identifier** — it is what `@CurrentUser()`
+returns. Clerk was removed on 2026-09-10 and `User.clerkId` was *dropped*, not
+orphaned, so a reference to a `clerkId` anywhere is stale code rather than a
+compatibility shim.
 
-The backend verifies that token itself (`backend/src/auth/clerk-verify.ts`) —
-it does not call Clerk on every request.
+**A session is a pair of tokens** (`session.service.ts`):
 
-**Our own `User` row is joined on `User.clerkId`.** Clerk owns the credential;
-we own everything else about the person (username, tier, KYC state, bank
-details, addresses). Two mechanisms keep the row in existence:
+| Token | Life | Where it lives | What it is |
+|---|---|---|---|
+| Access | 15 min | `ao_at` cookie, path `/` | HS256 JWT signed with `JWT_MEMBER_SECRET`. `sub` = `User.id`, `sid` = `Session.id`. |
+| Refresh | 30 days, sliding | `ao_rt` cookie, path `/api/auth` | 32 random bytes. The database stores **only its sha256** (`Session.refreshHash`), so a database leak cannot mint a session. |
 
-- A Clerk webhook (`user.created` / `updated` / `deleted`) verified with
-  `CLERK_WEBHOOK_SECRET`. It **fails closed** — an unverified webhook is dropped,
-  which means an unset secret silently breaks new-signup sync. `main.ts` warns
-  loudly at boot if the secret is missing.
-- A lazy backstop in `ClerkGuard`: if no `User` row exists for the verified
-  `clerkId`, it calls `UsersService.lazyProvisionFromClerk()` to fetch from
-  Clerk's Backend API and upsert. Concurrent first requests are deduplicated
-  through an in-flight promise map, because a freshly signed-up user fires
-  several authenticated requests at once and each would otherwise run its own
-  fetch-and-upsert.
+Both cookies are httpOnly. The refresh cookie is scoped to `/api/auth` so it is
+not attached to every ordinary API call — the fewer requests carry it, the fewer
+places it can leak.
 
-  There is history behind this. Dead rows from a previous dev instance squatted
-  usernames and email addresses, so a new signup could end up with no `User`
-  row at all and every action would fail with "User not found". The provisioner
-  refuses to create a row for an email-less Clerk user rather than mapping the
-  email to `''` — one such row poisons the unique constraint for everyone.
+Three decisions in that file are load-bearing:
 
-### 2.2 Two Clerk guards, and why both exist
+- **`verify()` does no database read.** Every guard calls it on every request,
+  and the access token's fifteen-minute life is what bounds a revoked session
+  still being accepted. Adding a `Session.revokedAt` lookup would put a query on
+  the hot path of the whole API to shorten a window the refresh cycle already
+  closes — a revoked session cannot mint another access token.
+- **A refresh token matching no live session revokes the whole session.** It is
+  either a forgery or a token that has *already* been rotated away, which means
+  two parties hold it and one of them stole it. We cannot tell which is the
+  member, so the honest answer is to end the session; the legitimate holder
+  signs in again and the thief gets nothing.
+- **A just-rotated refresh token keeps working for 30 seconds**
+  (`REFRESH_GRACE_MS`). Without that window, two tabs waking at the same moment
+  sign each other out.
 
-| Guard | Behaviour on no/invalid token | Use |
+**The bearer fallback is not a legacy leftover.** `extract-token.ts` reads
+`Authorization: Bearer` first, then the `ao_at` cookie. The Capacitor app shells
+are cross-*site* (`capacitor://localhost`), so a `SameSite=Lax` cookie never
+reaches them; and a Server Component has no cookie jar, so it reads the cookie
+with `cookies()` and forwards it as a header. Remove that branch and every app
+user is signed out permanently.
+
+⚠️ **`cookie-parser` is registered in `main.ts`.** It never was before this
+change — which is why the admin cookie was being *written* and never read.
+
+⚠️ **`JWT_MEMBER_SECRET` is needed by BOTH processes.** The backend signs with
+it; `frontend/middleware.ts` and `frontend/lib/auth-server.ts` verify the cookie
+with `jose`. It is deliberately **not** `NEXT_PUBLIC_` — that prefix would inline
+the signing secret into the browser bundle. `backend/src/auth/member-jwt-secret.ts`
+hard-throws in production on a missing, empty or known-default value (`main.ts`
+asserts it at bootstrap so the failure is a clean startup error rather than a 500
+on the first sign-in), and it **must differ from `JWT_ADMIN_SECRET`**: the same
+value on both and a member token verifies on an admin route.
+
+The endpoints, all under `/api/auth` and individually throttled:
+`POST register`, `verify-email`, `resend-email-code`, `login`, `refresh`,
+`logout`, `logout-all`, `forgot-password`, `reset-password`, `change-password`;
+`GET me`, `sessions`.
+
+⚠️ **The middleware's session check is a render decision, not the gate.** It
+accepts an *expired* access token when a refresh cookie is present, because
+bouncing a member to sign-in every fifteen minutes — while their session is
+perfectly good and the client is about to refresh it — is a bug nobody can
+reproduce on a fresh login. A forged refresh cookie buys nothing: the page
+renders, every API call 401s, and the public/members split is enforced
+server-side regardless.
+
+On the frontend, `frontend/lib/auth.tsx` (client) and
+`frontend/lib/auth-server.ts` (server) replace `@clerk/nextjs`, and
+`frontend/lib/route-matcher.ts` (with a spec beside it) holds the middleware's
+public-route matcher. The hook names — `useAuth()`, `useUser()`, `useSession()`
+— are deliberate drop-ins so the call sites did not have to change; `useClerk()`
+survives as a shim exposing `signOut` only, and `openUserProfile` is **absent
+rather than stubbed**, so a call site that opened Clerk's hosted profile modal
+fails the build instead of leaving a button that silently does nothing. New
+routes: `/verify-email`, `/forgot-password`, `/reset-password`. `/sso-callback`
+is gone, and `app/sellers/[clerkId]` is now `app/sellers/[id]`.
+
+**Google sign-in and 2FA are gone.** Both lived in Clerk's hosted surfaces and
+neither was rebuilt.
+
+### 2.2 The five guards
+
+All five live in `backend/src/auth/` and are provided by `AuthModule`, which is
+`@Global` — so any controller can `@UseGuards(AuthGuard)` without an import.
+
+| Guard | Behaviour on no/invalid credential | Use |
 |---|---|---|
-| `ClerkGuard` | **401** | Anything that requires a logged-in user. Also lazily provisions the `User` row. |
-| `OptionalClerkGuard` | proceeds anonymously | Public reads whose *content* depends on who is asking. |
+| `AuthGuard` | **401** | Anything that requires a signed-in member. Stamps `request.userId` and `request.sessionId`. |
+| `OptionalAuthGuard` | proceeds anonymously | Public reads whose *content* depends on who is asking. |
+| `AuthOrTokenGuard` | 401 | A session **or** a `CHECKOUT`-scoped action token as `?t=<token>`. |
+| `KycOrTokenGuard` | 401 | Same idea, scoped to `KYC_VERIFY`. |
+| `ScanHandoffGuard` | 401 | A `SCAN_HANDOFF` token from a handed-off phone, on `POST /scan/detect`. |
 
-`OptionalClerkGuard` never rejects. If a valid bearer is present it stamps
-`request.clerkUserId` (which is what the `@CurrentUser()` decorator reads);
-otherwise the request continues with that field undefined. An expired token is
-treated as anonymous, never as an error — a stale session cookie must not turn
-a public page into a 401.
+⚠️ **`AuthGuard` does NOT provision a `User` row**, and never needs to: our own
+sign-up creates the row before any token exists, so a valid token whose user is
+missing is a deleted account, not a race. (The guard it replaced had a lazy
+provisioner because an external identity provider owned the credential.)
+
+`OptionalAuthGuard` never rejects. If a valid token is present it stamps
+`request.userId`; otherwise the request continues with that field undefined. An
+expired token is treated as anonymous, never as an error — a stale session must
+not turn a public page into a 401.
 
 This is not a convenience. It is the mechanism that implements the public/
 members split in section 3: the service layer branches on "did I get a
-`clerkUserId`?" to decide which catalogue to return. `OptionalClerkGuard`
-deliberately does *not* provision the `User` row — a read does not need one,
-and pushing writes onto read paths is how you get surprise contention.
+`userId`?" to decide which catalogue to return. `OptionalAuthGuard` deliberately
+does *not* write anything — pushing writes onto read paths is how you get
+surprise contention.
 
 **A public read endpoint with no guard at all is a bug, not a simplification.**
-`categories.controller.ts` was exactly that once: with no guard, `clerkUserId`
-is always undefined, which happens to fail safe there — but the same omission
-on an endpoint that defaults to "show everything" is a data leak. Always attach
-one of the two.
+`categories.controller.ts` was exactly that once: with no guard, `userId` is
+always undefined, which happens to fail safe there — but the same omission on an
+endpoint that defaults to "show everything" is a data leak. Always attach one of
+the two.
 
-Two dual-mode guards exist for flows that arrive from an SMS link, where the
-recipient has no browser session at all:
-
-- `ClerkOrTokenGuard` — accepts a Clerk bearer **or** a `CHECKOUT`-scoped action
-  token as `?t=<token>`. Used by `POST /transactions`, `GET/PATCH /users/me`.
-  It also stamps `request.viaActionToken` and `request.actionTokenTargetId` so
-  the handler can verify the token was minted for *this* listing (otherwise the
-  holder could pay for a different item than the SMS pointed at).
-- `KycOrTokenGuard` — same idea, scoped to `KYC_VERIFY`.
+The dual-mode guards exist for flows that arrive from an SMS link, where the
+recipient has no browser session at all. `AuthOrTokenGuard` (`POST
+/transactions`, `GET/PATCH /users/me`) also stamps `request.viaActionToken` and
+`request.actionTokenTargetId` so the handler can verify the token was minted for
+*this* listing — otherwise the holder could pay for a different item than the SMS
+pointed at.
 
 They are kept separate on purpose: one guard per token purpose means a
 wrong-purpose token is rejected *and counted* toward the brute-force lock. Do
-not merge them into one permissive guard.
+not merge them into one permissive guard. `ScanHandoffGuard` is separate for a
+different reason — `POST /scan/detect` deliberately sits on its own controller,
+because a session guard on the licence-centre controller would 401 the phone.
 
 ### 2.3 Admin — a separate JWT
 
-Admins are not Clerk users. `AdminUser` is its own table with its own login
+Admins are not members. `AdminUser` is its own table with its own login
 (`AdminAuthService`), and sessions are HS256 JWTs signed with
-`JWT_ADMIN_SECRET`. `AdminJwtGuard` (`backend/src/admin/guards/admin-jwt.guard.ts`)
+`JWT_ADMIN_SECRET` — a **different** value from `JWT_MEMBER_SECRET`, or a member
+token verifies on an admin route. `AdminJwtGuard` (`backend/src/admin/guards/admin-jwt.guard.ts`)
 verifies them and stamps `request.adminUser`.
 
 `backend/src/admin/admin-jwt-secret.ts` is the single source of the secret and
@@ -211,11 +278,12 @@ verifies them and stamps `request.adminUser`.
 visibly rather than accepting forged SUPERADMIN tokens.
 
 On the frontend, admin pages are client components that read the JWT from
-`localStorage` via `frontend/lib/admin-auth.ts` and bounce themselves to
-`/admin/login`. That is why `/admin(.*)` is listed as a "public route" in the
-Clerk middleware — it is not public, it just uses a different lock. Cookie-based
-gating was tried and abandoned: some browser configurations silently dropped
-the cookie regardless of attributes.
+`localStorage` via `frontend/lib/desk-auth.ts` and bounce themselves to
+`/admin/login`. That is why `/admin(.*)` is listed as a "public route" in
+`frontend/middleware.ts` — it is not public, it just uses a different lock.
+The secondary `gg_admin_sess` cookie the old login screen also set was never
+read: `cookie-parser` was not installed until the member-auth change. Signing
+out must clear **both**, which is what `desk-auth.ts` exists to fix.
 
 #### The boot crash-loop gotcha
 
@@ -314,8 +382,8 @@ Every public read path funnels through the same helper:
 
 ```ts
 // listings.service.ts (and the identical twin in categories.service.ts)
-private publicOnly(clerkId?: string): { publicVisible?: true } {
-  return clerkId ? {} : { publicVisible: true };
+private publicOnly(userId?: string): { publicVisible?: true } {
+  return userId ? {} : { publicVisible: true };
 }
 ```
 
@@ -349,7 +417,7 @@ The fix for both is to use the two helpers and nothing else:
 
 | Context | Helper | What it does |
 |---|---|---|
-| Server Component | `viewerFetch()` — `frontend/lib/api-viewer.ts` | Reads the Clerk token via `auth()`, forwards it, forces `cache: 'no-store'` and **ignores any caller-supplied cache option**. |
+| Server Component | `viewerFetch()` — `frontend/lib/api-viewer.ts` | Reads the `ao_at` cookie via `serverAuth()` (`lib/auth-server.ts`), forwards it as a bearer, forces `cache: 'no-store'` and **ignores any caller-supplied cache option**. |
 | Client Component | `useViewerFetch()` — `frontend/lib/use-viewer-fetch.ts` | Same, from `useAuth()`. Any module-level memo cache must be keyed on signed-in state. |
 
 Both fail *soft*: if the token cannot be read, they proceed anonymously, which
@@ -383,6 +451,15 @@ rebuild, so a deploy would prerender the sitemap from a pre-deploy snapshot.
 `frontend/middleware.ts` holds `isPublicRoute` — the allowlist of paths a
 signed-out visitor may load at all. Everything else redirects to `/sign-in`.
 
+The pattern matching behind it lives in `frontend/lib/route-matcher.ts`, **with
+a spec**, rather than inline. It reproduces Clerk's `createRouteMatcher`
+semantics exactly, because every one of the ~90 patterns was authored against
+it: `(.*)` is the only wildcard and every other character is literal, so `.`
+matches a dot — without that, `/sw.js` would also publish `/swXjs`. A pattern
+matching too *little* 307s a public page and someone notices within the hour;
+a pattern matching too *much* makes a members-only page public and nobody
+notices at all.
+
 **Any new public page must be added there**, or it 307s to sign-in. Note the
 inverse case too: several entries exist purely so *removed* features serve a
 clean 404 instead of a redirect to sign-in (`/wanted`, `/competitions`).
@@ -390,9 +467,11 @@ clean 404 instead of a redirect to sign-in (`/wanted`, `/competitions`).
 Two implementation details in that file are load-bearing and commented as such:
 
 - The redirect uses `NextResponse.redirect`, **not** the Web-API
-  `Response.redirect`. The latter returns immutable headers; `clerkMiddleware`
-  then tries to attach its `x-clerk-auth-*` headers and throws
-  `TypeError: immutable`, which surfaces as a 500 on every protected route.
+  `Response.redirect`. The original reason — the latter returns immutable
+  headers, and the wrapping `clerkMiddleware` threw `TypeError: immutable`
+  trying to decorate it — no longer applies now that there is no wrapper. Keep
+  it anyway: `NextResponse` is what the rest of the file returns, and mixing the
+  two is how the trap gets re-set by whoever adds a header next.
 - The redirect base is pinned to `NEXT_PUBLIC_APP_URL`, never the inbound
   `Host` header, so a spoofed Host cannot turn the sign-in bounce into an open
   redirect.
@@ -681,8 +760,7 @@ The ones that move money or state, roughly grouped:
 | `retryRevenueDocs`, `retrySwapFeeReceipts`, `retryDealPurchaseOrders` | hourly | Self-healing Zoho Books document creation. |
 | `refreshTrustScores` | daily 03:00 | Recomputes the private 0–100 seller trust score. |
 | `savedSearchMatchSweep` | 10 min | Fires saved-search alerts. |
-| `pollCreditBalances` | 15 min | Polls SMS / KYC / AI credit balances, alerts the operator below threshold (6h dedup so it does not spam). |
-| `refreshVerifyNowBalance` | 5 min | Same, for the KYC vendor specifically. |
+| `pollCreditBalances` | 15 min | Polls every monitored vendor's balance, alerts the operator below threshold (6h dedup so it does not spam). |
 | `cronWatchdog` | 10 min | Watches the other jobs' heartbeats and raises an admin alert on a stale one. Skips a startup grace window so a fresh restart cannot false-alarm. |
 | `rollupInsights` / `pruneRawEvents` | daily 02:00 / weekly | Analytics rollup and raw-event pruning. |
 
@@ -700,15 +778,14 @@ a loud error for each missing integration secret.
 
 | Service | Used for | Key env | Behaviour when missing |
 |---|---|---|---|
-| **Clerk** | Buyer/seller identity, session JWTs, user-sync webhooks | `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`, `CLERK_AUTHORIZED_PARTIES` | Webhooks fail closed and are dropped → new signups do not sync (lazy provisioning backstops it). |
+| **Didit** | Seller identity verification (hosted session), plus the e-mail and phone one-time codes at sign-up | `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`, `DIDIT_MODE`, `DIDIT_BASE_URL` | **In production, a missing key or a non-`live` mode HARD-THROWS at boot.** Elsewhere: codes and KYC sessions report "not configured". See §8.1. |
 | **Peach Payments** | The payment gateway: Checkout V2 pay-in, Payouts, bank-account verification (BANV) | `PEACH_CLIENT_ID`, `PEACH_CLIENT_SECRET`, `PEACH_MERCHANT_ID`, `PEACH_ENTITY_ID`, `PEACH_SECRET`, `PEACH_ENV` | Runs in **mock mode**. Webhooks are rejected (fail-closed) without `PEACH_SECRET`. |
 | **Cloudinary** | All user-uploaded images (listing photos, KYC documents, complaint photos) | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Uploads fail. |
 | **Meilisearch** | Listing / locker / cartridge search | `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY` | Search disabled, app still boots. |
-| **Anthropic (Claude)** | Listing moderation, Q&A moderation, KYC vision, firearm-licence and dealer-document verification, swap proof-of-possession, Ask Boet, listing-quality scoring, weekly insights digest | `ANTHROPIC_API_KEY`, plus per-task `ANTHROPIC_MODEL_*` overrides | **Everything AI degrades to manual-review or blocked.** |
+| **Anthropic (Claude)** | Listing moderation, Q&A moderation, firearm-licence and dealer-document verification, swap proof-of-possession, Ask Boet, listing-quality scoring, weekly insights digest | `ANTHROPIC_API_KEY`, plus per-task `ANTHROPIC_MODEL_*` overrides | **Everything AI degrades to manual-review or blocked.** |
 | Anthropic Admin API | AI spend monitoring on `/admin/credits` | `ANTHROPIC_ADMIN_API_KEY` | No spend alerts. (Note: a regular key is not an admin key.) |
 | **SMSPortal** | Every outbound SMS — notifications, action links, waybill PINs | `SMSPORTAL_CLIENT_ID`, `SMSPORTAL_API_KEY`, `SMSPORTAL_API_SECRET`, `SMSPORTAL_BASE_URL` | SMS silently queues/fails; retry cron picks it up. |
 | **Resend** | Every outbound email | `RESEND_API_KEY`, `EMAIL_LOGO_URL` | Fails open — email is fire-and-forget and never blocks a flow. |
-| **VerifyNow** | Seller KYC: SA ID lookup against Home Affairs + selfie face-match | `VERIFYNOW_API_KEY`, `VERIFYNOW_BASE_URL`, `VERIFYNOW_MODE`, `VERIFYNOW_BASIC_REPORT_TYPE` | `VERIFYNOW_MODE` must be `production` in prod — sandbox means identity checks pass on canned data. Boot warns. Prepaid: watch the credit balance. |
 | **PUDO** | Locker-to-locker parcel delivery + the locker directory | `PUDO_API_KEY`, `PUDO_API_SECRET`, `PUDO_BASE_URL` | **This is production mode — creating a shipment bills real credits.** |
 | **The Courier Guy (TCG)** | Door-to-door delivery | `TCG_API_KEY`, `TCG_BASE_URL`, `TCG_WEBHOOK_SECRET` | Webhooks rejected in production without the secret (fail-closed). |
 | **Zoho Books** | Accounting — commission invoices, deal receipts, subscription documents | `ZOHO_BOOKS_*` (client id/secret, refresh token, org id, domains, `ZOHO_BOOKS_ENABLED`) | Documents are not raised; hourly retry crons self-heal once restored. |
@@ -716,6 +793,61 @@ a loud error for each missing integration secret.
 | **Web Push (VAPID)** | PWA push notifications | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | No push. Note the IPv4-first workaround in `main.ts` — this VPS has no global IPv6 and Apple's push endpoint advertises AAAA, which hung silently. |
 | **Cloudflare** | DNS, TLS, HSTS (set at the edge, deliberately not in `next.config.mjs`) | — | — |
 | **Sentry / UptimeRobot** | Error and uptime monitoring (`/api/health`, which is `@SkipThrottle`d) | — | — |
+
+### 8.1 Didit — the one adapter
+
+`backend/src/didit/` is the **only** place that builds a Didit client, picks a
+host or parses a Didit response — the same rule that governs `LlmService`.
+Callers speak the typed methods and handle `DiditError`. It does three jobs:
+
+| Job | Call | Cost |
+|---|---|---|
+| E-mail code at sign-up | `POST /v3/email/send/` + `/check/` | ~$0.03 each |
+| Phone code | `POST /v3/phone/send/` + `/check/`, channel `sms` | free, plus ~$0.105 for the ZA SMS |
+| Seller KYC | `POST /v3/session/` → hosted, phone-only page | free tier, see below |
+
+The base URL is `https://verification.didit.me` and the credential travels as
+**`x-api-key`**, not `Authorization: Bearer` — the bearer scheme belongs to
+`apx.didit.me`, which is account management and a different API entirely.
+
+⚠️ **A bad or missing key returns 403, NOT 401.** Anyone grepping logs for 401s
+to diagnose a credential problem finds nothing.
+
+⚠️ **`DIDIT_MODE` hard-throws at boot unless it is `live` in production.** That
+is the fix for a real incident class, not belt-and-braces: its predecessor
+defaulted to sandbox and production boot only *logged* an error, so a production
+box could — and did — run with sandbox KYC, passing every identity on canned
+data. Do not add a softer second copy of this check; that is how the hard one
+gets deleted.
+
+**The KYC flow is:** consent → details (ID number and date of birth, still typed
+by the member) → `POST /kyc/session` → the member finishes on Didit's hosted
+page → **the verdict arrives by webhook**, at `POST /api/webhooks/didit`. That
+route is public and HMAC-SHA256 verified; a bad signature returns **200** with
+the handler skipped, never a 401 — the same convention the Peach webhooks use.
+Outcomes land in the `DiditVerification` model.
+
+⚠️ **Didit delivers from the single static IP `18.203.201.92`** (`User-Agent:
+DiditWebhook/2.0`), so **Cloudflare's WAF must allow it** — otherwise every
+delivery is dropped at the edge with nothing in any application log, and a
+seller who finished on Didit's page stays `PENDING` forever.
+
+⚠️ **The free tier depends on the workflow staying non-white-label.** Didit gives
+500/month each of `id_verification`, `passive_liveness`, `face_match` and
+`ip_analysis`. Setting `is_white_label_enabled: true` adds $0.20 a session **and
+drops the workflow out of the free tier entirely** — $0.56 instead of $0.00 for
+the same verification. Check it in the console before pointing
+`DIDIT_WORKFLOW_ID` at a new workflow.
+
+⚠️ **A capability was LOST here and no free tier replaces it.** VerifyNow
+returned the applicant's official name and date of birth from **Home Affairs**,
+which is what let the verdict cross-check the typed details against the *state*
+rather than only against the document the member uploaded. Now: names come from
+the document Didit reads, the date-of-birth cross-check is against the SA ID
+number's own digits, and the anchored high-value re-check (`maybeUpgradeKycTier`)
+is gone. Didit sells the replacements as `zaf_africa_national_id` ($1.10) and
+`zaf_dha_photo` ($1.10). Until the operator turns one on, **no user-facing copy
+may claim a Home Affairs verification.**
 
 ---
 
@@ -851,6 +983,14 @@ Things that look like tidying and are not.
     (`pgrep`) plus a unique per-deploy log, then `curl` twice.
 20. **Run `npx prisma generate` before building on any schema-change deploy,**
     and never mask the build's exit code by piping it through `tail`.
+21. **`JWT_MEMBER_SECRET` and `JWT_ADMIN_SECRET` must be different values.**
+    Same value on both and a member token verifies on an admin route. Both
+    hard-throw at boot in production; do not "simplify" them into one helper
+    taking a variable name, which is one typo away from the same outcome.
+22. **Never give `JWT_MEMBER_SECRET` a `NEXT_PUBLIC_` prefix.** The frontend
+    genuinely needs it — middleware and server components verify the session
+    cookie with it — but that prefix would inline the signing secret into the
+    browser bundle, and anyone could then mint a token for any member.
 
 ---
 

@@ -1,20 +1,32 @@
 # BUILD PLAN — "Close my account"
 
+> ⚠️ **RE-DERIVED AFTER THE AUTH REWRITE (2026-09-10).** This plan was written against a
+> third-party identity provider, and roughly a third of it was about the handshake with
+> that provider rather than about closing an account. Clerk is gone: sessions, passwords
+> and sign-up are ours, `User.clerkId` no longer exists and `User.id` is the only user
+> identifier. **Steps 3–5 of §4 collapsed into one call, `sessions.revokeAllForUser`,**
+> and the `clerkId` tombstone was replaced by a **username rename**. Findings that were
+> about the handshake (H5, H10, H18, and half of H23) are marked *resolved by removal*
+> rather than deleted, because a reader who remembers them needs to know where they went.
+> Everything about *what a closure means* is unchanged.
+
 **Scope decision up front:** this is **not** a POPIA erasure button. It is *public disappearance + access revocation + accountability preservation*. Erasure requests stay a separate, support-reviewed path. Conflating the two is what makes today's code destroy the complaints register (`prisma/schema.prisma:3667`, `onDelete: Cascade`) for exactly the members who never traded.
 
 ---
 
 ## 0. THE ONE-LINE DIAGNOSIS
 
-Today's only erasure path — `UsersService.deleteByClerkId` (`backend/src/users/users.service.ts:621`) — gets all three requirements backwards:
+Today's only erasure path — `UsersService.deleteById` (`backend/src/users/users.service.ts:448`; it was `deleteByClerkId`, and it was reached by a `user.deleted` webhook that no longer exists) — gets all three requirements backwards:
 
 | Requirement | Today |
 |---|---|
 | **A** disappear from public | **Not met at all.** `sellers-public.controller.ts:36-38` has no filter of any kind; `PUBLIC_LISTING_SELECT.seller` (`listings/listings.service.ts:146-166`) still renders `username`; listings stay `ACTIVE`. |
 | **B** accountability survives | **Destroyed** when the hard delete at `users.service.ts:714` succeeds — `Complaint` + `ComplaintPhoto`, `SupportTicket`, `Subscription`, `LoginEvent`, `AskGgConversation` all cascade away, and `ContactDetailRejection` (the off-platform-coordination log) is SET NULL. **Also destroyed** on the scrub branch, differently: `firstName`, `lastName`, `phone`, `email`, `idNumberEncrypted` are all nulled (`:725-735`) and `Transaction` carries **no identity snapshot** (`schema.prisma:1415-1445` — buyerId/sellerId FKs and nothing else). |
-| **C** sign up again | **Dead.** `kycIdHash` (`schema.prisma:288`, `@unique`) is never released, blocking re-verification at `kyc/kyc.service.ts:211-219`, `:585-593`, `users.service.ts:838-847`. `username` (`schema.prisma:226`) is never released, blocking the signup form at `users/users-public.controller.ts:56-62`. |
+| **C** sign up again | **Dead.** `kycIdHash` (`schema.prisma:288`, `@unique`) is never released, blocking re-verification at `kyc/kyc.service.ts:211-219`, `:585-593`, `users.service.ts:838-847`. `username` (`schema.prisma:246`, `@unique`) is never released, blocking the signup form at `users/users-public.controller.ts:56-62`. |
 
 Everything below inverts that.
+
+⚠️ **AND `deleteById` NOW HAS NO CALLER AT ALL.** Its only trigger was the `user.deleted` webhook, which went with the identity provider. The method survives — it still carries the POPIA erasure for motivations, Licence Centre documents and KYC files, and it still holds the SAP 534 identity and the bank quartet back where a firearm transfer or an unpaid payout exists — but nothing routes to it. **A POPIA erasure request is therefore a hand-run today.** That is a gap to close deliberately (an admin route, support-reviewed), not by wiring the closure button to it: closure is not erasure, and §1.3 is the reason.
 
 ---
 
@@ -54,7 +66,13 @@ model AccountClosure {
   user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   closedAt        DateTime @default(now())
-  /// 'MEMBER' | 'ADMIN' | 'CLERK_WEBHOOK' — how the closure was triggered.
+  /// 'MEMBER' | 'ADMIN' — how the closure was triggered.
+  ///
+  /// ⚠️ There was a third value, 'CLERK_WEBHOOK', for a closure that reached us
+  /// because somebody deleted the member in the identity provider's own
+  /// dashboard. There is no such dashboard now — we are the identity provider —
+  /// so a closure can only start from the member or from an admin, and the
+  /// union is closed.
   closedBy        String
   /// AdminUser.id when closedBy = 'ADMIN'. Null for a self-service close.
   closedByAdminId String?
@@ -112,7 +130,7 @@ And on `User`:
 | `closedEmail`, `closedPhone`, `closedFirstName`, `closedLastName` | **Clear** | `adminSearch` keys on exactly `email / username / firstName / lastName / phone` (`admin/admin.service.ts:1046-1053`). A law-enforcement or dispute request arrives as a name or a phone number, never as a cuid. These sit in the clear on `User` today (`schema.prisma:217, 227, 241-242`); moving them to an admin-only table is a **net improvement**, not a new exposure. Protection is access control, not encryption. |
 | `kycIdHashArchived` | **Salted SHA-256** (already) | `hashSaIdNumber` (`common/id-crypto.ts:84`). Not reversible; clear storage is correct and it is the relink key. |
 | **SA ID number** | **Stays where it is** — `User.idNumberEncrypted` (`schema.prisma:298`), AES-GCM via `common/id-crypto.ts:47`. **Not copied, not nulled.** | See §7-H1: `assembleSaps534Data` (`payments/transactions.service.ts:5247-5300`) reads Section C **live** off the seller row. Nulling it, as the current scrub does at `users.service.ts:735`, makes the SAP 534 unregenerable. `schema.prisma:289-297` already states the retention basis (FCA s125 / SAP 534); `privacy/page.tsx:284` already promises it. |
-| Document bytes | **Untouched by closure** | The encrypted stores (`common/secure-file-storage.service.ts:52` — `'motivations' | 'credentials' | 'kyc'`) are *not* purged by the close button. Today `deleteByClerkId` purges all three unconditionally at `users.service.ts:658, :679, :698`, **before** the FK branch. Putting that behind a member-clickable control turns "Close my account" into a self-service document shredder — the exact thing the operator is trying to prevent. Document deletion stays on the erasure path. |
+| Document bytes | **Untouched by closure** | The encrypted stores (`common/secure-file-storage.service.ts:52` — `'motivations' | 'credentials' | 'kyc'`) are *not* purged by the close button. Today `deleteById` purges all three unconditionally, **before** the FK branch. Putting that behind a member-clickable control turns "Close my account" into a self-service document shredder — the exact thing the operator is trying to prevent. Document deletion stays on the erasure path. |
 
 ---
 
@@ -120,12 +138,12 @@ And on `User`:
 
 | Claim | Constraint | Released at closure? | Goes to | Failure if held |
 |---|---|---|---|---|
-| `username` | `schema.prisma:226` `@unique` | **RELEASED — set `null`** | `AccountClosure.closedUsername` | Signup form hard-disables submit on "Already taken" from `users-public.controller.ts:56-62`. The healer `resolveUsernameConflict` (`users.service.ts:309-345`) cannot save this: it frees a handle **only** when `clerk.users.getUser(holder.clerkId)` 404s, and it runs downstream of the gate that already blocked the form. |
+| `username` (+ `usernameLower`) | `schema.prisma:246-247`, both `@unique` | **RELEASED — RENAMED, not nulled**, to `closed-<last 10 of userId>` | `AccountClosure.closedUsername` | Signup form hard-disables submit on "Already taken" from `users-public.controller.ts:56-62`, and there is no healer to fall back on any more — the one that used to free a handle by asking the identity provider whether its holder still existed went with the provider. **⚠️ `username` is now non-null** (`String @unique`, not `String?`) because it is the only name other members ever see, so a closed row cannot simply drop it: it takes an unclaimable one of its own instead. `usernameLower` moves with it or the second unique index keeps the original reserved, which is the exact bug the release exists to fix. |
 | `email` | `schema.prisma:217` `@unique` | **RELEASED — rewritten** to `closed+<userId>@accounts.invalid` | `AccountClosure.closedEmail` | Blocks re-signup on the same address. **Not `@gungalore.local`** — see §7-H8. |
 | `phone` | app-code only, `users.service.ts:1131-1140` | **RELEASED — `null`**, plus `phoneVerified: false`, `phoneOtpHash: null`, `phoneOtpExpiresAt: null` | `AccountClosure.closedPhone` | Re-signup dies at the OTP step with *"That phone number is already linked to another All Outdoor account."* Note `phoneVerified` must be reset too — today's scrub nulls `phone` at `:728` and leaves `phoneVerified` true (`schema.prisma:232`). |
 | `bankVerificationId` | `schema.prisma:431` `@unique` | **RELEASED — `null`** | not retained | Latent `P2002` with no friendly handler. |
 | `peachCustomerId` | `schema.prisma:588` `@unique` | **RELEASED — `null`** | not retained | Latent. Dormant today (nothing in `src/` writes it). |
-| `clerkId` | `schema.prisma:216` `@unique` | **HELD through steps 1–3, tombstoned in step 4** to `closed_<userId>` | — | See §4. Tombstoning it *before* the Clerk delete makes `deleteByClerkId`'s lookup (`users.service.ts:646-652`) miss, so the webhook becomes a total no-op. Ordering is load-bearing in the opposite direction to the obvious guess. |
+| ~~`clerkId`~~ | — | **RESOLVED BY REMOVAL. The column is gone and so is the tombstone.** | — | This row used to carry the trickiest ordering constraint in the whole plan: hold the identity-provider subject through steps 1–3, then overwrite it with `closed_<userId>` in step 4, because tombstoning it any earlier made the webhook's own lookup miss and turned the handler into a silent no-op. `User.id` is the only user identifier now, it is a primary key, and it is never rewritten. **Nothing replaced the tombstone because nothing needed to** — it existed solely to stop the provider re-creating a closed account, and the username, email and phone releases below are the whole of what "the claims go back into the namespace" ever meant. |
 | `kycIdHash` | `schema.prisma:288` `@unique` | **HELD — and the block becomes a relink.** See below. | copy in `AccountClosure.kycIdHashArchived` | This is the whole ban-evasion question. |
 | `idNumberEncrypted` | not unique | **HELD** | stays on `User` | SAP 534 Section C. |
 
@@ -174,8 +192,8 @@ Option A keeps the hash and keeps duplicate registration prevented in the sense 
 
 | # | Surface | Change | file:line |
 |---|---|---|---|
-| 1 | Seller profile `/sellers/:clerkId` | **404.** Add `accountClosedAt: null` to the `where` — belt-and-braces on top of the `clerkId` tombstone. | `users/sellers-public.controller.ts:36-38` |
-| 2 | Reviews received | 404s with #1 — `findForSeller` throws `NotFoundException` on the `clerkId` miss. Nothing to change. | `ratings/ratings.service.ts:211-213` |
+| 1 | Seller profile `/sellers/:userId` | **404.** Add `accountClosedAt: null` to the `where`. ⚠️ **This is now the ONLY thing doing the job, not the belt-and-braces half of a pair.** It was written to cover the window between the member clicking Close and the identity-provider tombstone landing; with the tombstone gone the row keeps its `id` forever, so without this line every `/sellers/<id>` link the member ever shared keeps serving their storefront header. | `users/sellers-public.controller.ts:36-38` |
+| 2 | Reviews received | 404s with #1 — `findForSeller` throws `NotFoundException` when the seller lookup misses. Nothing to change. | `ratings/ratings.service.ts:211-213` |
 | 3 | Storefront grid on the profile | Empties with #4. | `listings/listings.service.ts:2715` |
 | 4 | Browse / homepage / category grids / `?q=` search | Listings cancelled **and individually re-indexed**. `reindexById` removes any non-ACTIVE doc from Meili (`:3600-3613` → `removeFromIndex :3636`). **Do not copy `common/seller-reject-policy.ts:144-147`** — its `updateMany` never re-indexes, so cancelled listings stay searchable. | `listings.service.ts:3600` |
 | 5 | SOLD / EXPIRED PDPs | **Stay up** — they are the sale record behind a `Transaction`, an `Order`, a `Rating` and (for a firearm) the SAP 534 chain. Seller chip renders `username: null` → frontend `'Anonymous seller'` fallback. | `listings.service.ts:192-197` (`PUBLICLY_VISIBLE_STATUSES`), seller block `:146-166` |
@@ -199,14 +217,16 @@ Option A keeps the hash and keeps duplicate registration prevented in the sense 
 Nothing surprising happens, **because none of it is allowed to be open.** §6 refuses closure while any open offer, live auction with bids, pending order, in-flight shipment or unresolved complaint exists. What closure actually acts on is only:
 
 - `Listing` in `DRAFT | PENDING_REVIEW | ACTIVE` (with `bidCount = 0` for auctions) → `CANCELLED`, then `reindexById` each.
-- `ActionToken` rows → **deleted.** These are a Clerk-independent auth rail: `kyc-or-token.guard.ts:76` resolves the user by `authorisedUserId`, bypassing the Clerk session entirely. `onDelete: Cascade` only fires on a hard delete, so a soft closure would leave every outstanding SMS link live.
+- `ActionToken` rows → **deleted.** These are a **second auth rail that owes nothing to the session**: `kyc-or-token.guard.ts:76` resolves the user by `authorisedUserId`, with no session token in the request at all — which is the point, because the recipient of a `WITNESS_STATEMENT` or `SELLER_CONSENT` link is often not the member. Revoking every session (§4 step 3) therefore does **not** reach them. `onDelete: Cascade` only fires on a hard delete, so a soft closure would leave every outstanding SMS link live.
 - Notification channels → all three off (`notifyEmailEnabled`, `notifySmsEnabled`, `notifyWhatsappEnabled`, `schema.prisma:504-512`).
 
 ---
 
 ## 4. ORDERING — and why each step is safe if the next fails
 
-> **The rule the whole ordering exists to protect:** the `user.deleted` webhook must never hard-delete. Not for a closed account, not for any account.
+> **The rule the whole ordering exists to protect:** the erasure path must never hard-delete. Not for a closed account, not for any account.
+
+⚠️ **THIS SECTION RAN 0–5 AND NOW RUNS 0–3.** The old steps 3 (delete the member from the identity provider), 4 (handle the `user.deleted` webhook that came back) and 5 (guard against a late `user.updated` resurrecting the row) were an entire distributed handshake between our database and somebody else's, and most of the ordering hazards in §7 were about it. There is no longer a second system to delete from and no webhook to guard against. What took their place is one call, the new step 3 below.
 
 **Step 0 — precheck (read-only, `GET /users/me/closure-eligibility`).** Runs the §6 query. Returns the open items so the UI can show them *before* the member types anything.
 
@@ -215,29 +235,30 @@ Nothing surprising happens, **because none of it is allowed to be open.** §6 re
 2. `create AccountClosure { ...snapshot, kycIdHashArchived, was* enforcement state, cancelledListingIds }`.
 3. `update User`:
    - `accountClosedAt: now`
-   - `username: null`, `email: closed+<userId>@accounts.invalid`, `phone: null`, `phoneVerified: false`, `phoneOtpHash: null`, `phoneOtpExpiresAt: null`, `avatarUrl: null`
+   - `username` **and** `usernameLower` → `closed-<last 10 of userId>` (a rename, not a null — see §2), `email: closed+<userId>@accounts.invalid`, `phone: null`, `phoneVerified: false`, `phoneOtpHash: null`, `phoneOtpExpiresAt: null`, `avatarUrl: null`
    - `bankVerificationId: null`, `peachCustomerId: null`
    - bank quartet (`bankName`, `bankAccountHolder`, `bankAccountNumber`, `bankBranchCode`, `bankAccountType`, `schema.prisma:417-421`) → `null`. **Safe only because §6 already proved no payout or refund is owed** — which is exactly the carve-out `privacy/page.tsx:290` already promises and the code has never honoured.
    - all three notify flags → `false`
-   - **NOT touched:** `isBanned`, `bannedAt`, `clerkId`, `kycIdHash`, `idNumberEncrypted`, `kycStatus`.
+   - **NOT touched:** `isBanned`, `bannedAt`, `kycIdHash`, `idNumberEncrypted`, `kycStatus`.
 4. `deleteMany ActionToken { authorisedUserId }`.
 5. Collect listing ids, `updateMany` → `CANCELLED`.
 
 **Step 2 — reindex (outside the transaction, best-effort, idempotent).** `for (const id of cancelledIds) await this.listings.reindexById(id)`. Outside on purpose: a Meili failure must not roll back the closure.
 
-**Step 3 — Clerk.** `this.clerk.users.deleteUser(clerkId)`. The client already exists at `users.service.ts:130-132`. **Never before step 1.**
+**Step 3 — revoke every session.** `sessions.revokeAllForUser(user.id)`, immediately after the commit, in both `UsersService.closeMyAccount` and `AdminService.closeAccount`. **This is what now stops somebody using a closed account**, and it is the whole of what replaced steps 3–5 of the old plan.
 
-**Step 4 — the webhook lands.** `webhooks.controller.ts:134-136` → `deleteByClerkId`. Rewritten:
-- If the row has `accountClosedAt != null` → **log and return.** No delete, no scrub, no document purge.
-- If `accountClosedAt == null` (an admin deleted the user straight in the Clerk dashboard) → run the closure path with `closedBy: 'CLERK_WEBHOOK'` instead.
-- **`await this.prisma.user.deleteMany({ where: { clerkId } })` at `users.service.ts:714` is DELETED from the codebase.** This single line is the only way `Complaint` (`schema.prisma:3667`), `ComplaintPhoto` (`:3705`), `SupportTicket`, `Subscription`, `LoginEvent` and `AskGgConversation` can ever be destroyed, and the only way `ContactDetailRejection.userId` is orphaned.
-- *Then* tombstone `clerkId` → `closed_<userId>`, so old `/sellers/:clerkId` links 404 for free.
+- **Outside the transaction and FAIL-SOFT.** It is wrapped in `try`/`catch` and a failure is logged, never rethrown. A closure the member has already been told about must not roll back because the session table was briefly unhappy — and closed-in-our-database-with-a-live-token is strictly the safer of the two failures, because every write gate already refuses the row.
+- ⚠️ **IT KILLS THE REFRESH SIDE, NOT THE ACCESS TOKEN.** `Session` holds a sha256 of the rotating refresh token; revoking marks those rows and the next refresh fails. The access JWT is stateless and lives **15 minutes**, so a closed member can still hold a working token for up to that long. That is the honest ceiling — do not describe closure as instantaneous sign-out.
+- ⚠️ **IT DOES NOT REACH `ActionToken`.** Those resolve a user without a session at all (§3.3), which is why closure deletes them explicitly in step 1.4 rather than trusting this.
+- Step 2 and step 3 are both post-commit and neither can roll the closure back, so their order relative to each other does not matter.
 
-**Step 5 — resurrection guards.**
-- `upsertFromClerk` update branch (`users.service.ts:445-460`) writes `email: data.email` and `username` and `avatarUrl` unconditionally. Add: if the matched row has `accountClosedAt != null`, do not update it. Without this, one late `user.updated` writes the real email and handle straight back onto a closed row.
-- `resolveUsernameConflict` (`:309-345`): skip closed rows entirely — they no longer hold a username.
-- Relink-by-email branch (`:412-437`): exclude closed rows. Belt-and-braces (the rewritten email is not Clerk-issuable).
-- `ClerkGuard` (`auth/clerk.guard.ts:50-66`) is already safe — it only lazy-provisions when **no** row exists.
+**Steps 4 and 5 — GONE, and resolved by removal rather than deferred.**
+
+The old step 4 handled the `user.deleted` webhook coming back from the identity provider, and the old step 5 was three "resurrection guards" stopping a late `user.updated` from writing the real email and handle back onto a closed row. Both existed only because a second system also believed it owned the member. It does not exist any more:
+
+- There is no `POST /webhooks/clerk`, no `svix` signature to verify, and no `user.deleted` event.
+- `upsertFromClerk`, `resolveUsernameConflict` and the relink-by-email branch went with it. **Nothing syncs a member's identity columns from an outside system any more.** Sign-up writes them once, against a username and email it has already proved are free; the only other writer is a deliberate admin support edit.
+- **The one line that mattered most is still deleted.** `await this.prisma.user.deleteMany(...)` was the only way `Complaint` (`schema.prisma:3667`), `ComplaintPhoto` (`:3705`), `SupportTicket`, `Subscription`, `LoginEvent` and `AskGgConversation` could ever be destroyed, and the only way `ContactDetailRejection.userId` could be orphaned. `deleteById` now always takes the preserve-and-scrub path; keep it that way.
 
 ### 4.1 What each failure costs
 
@@ -245,8 +266,8 @@ Nothing surprising happens, **because none of it is allowed to be open.** §6 re
 |---|---|---|
 | 1 | Atomic — nothing happened | Member retries. |
 | 2 | Closed, listings CANCELLED, some Meili docs stale | A cancelled listing may surface in `?q=` until the sweep. Its PDP already 404s for non-owners (`PUBLICLY_VISIBLE_STATUSES`, `listings.service.ts:192-197`), so **no live listing is ever exposed**. Self-healing. |
-| 3 | Closed in our DB, Clerk user alive | They can still sign in and see the closed-account screen. Every money gate is closed (§8 Phase 1 adds `accountClosedAt` alongside the existing `isBanned` checks). Step 5's guards stop resurrection. A sweep retries. Copy tells them to sign out. |
-| 4 | Webhook lost / duplicated / reordered | Idempotent by construction. `accountClosedAt` is set-once; the handler branches on it. Note there is **no svix-id dedupe** anywhere (`webhooks.controller.ts:56-84`) — idempotency has to come from the handler, not the transport. |
+| 3 | Closed in our DB, sessions still live | The member keeps a working refresh cookie until it expires on its own. Every money gate refuses them (§8 Phase 1 adds `accountClosedAt` alongside the existing `isBanned` checks) and every public surface has already gone, so this is a nuisance, not an exposure. **Logged, never thrown** — see step 3. Re-running the closure is a safe no-op and revokes again. |
+| ~~4~~ | ~~Webhook lost / duplicated / reordered~~ | **Cannot happen — there is no webhook.** The old note here (no `svix-id` dedupe anywhere, so idempotency had to come from the handler rather than the transport) is moot. The idempotency it argued for stayed regardless and is still worth having: `accountClosedAt` is set-once and `close()` checks it before anything else, so a double-submitting member closes once. |
 
 ---
 
@@ -254,7 +275,7 @@ Nothing surprising happens, **because none of it is allowed to be open.** §6 re
 
 **Where:** `/settings`, a new section at the bottom, below "Saved addresses" (`frontend/app/settings/page.tsx:683+`). Not in the account menu (`frontend/lib/account-menu-data.tsx:245-249`) — it is a setting, not a destination.
 
-**⚠️ Do NOT enable Clerk's own delete.** `settings/page.tsx:72, :662` calls `openUserProfile()` with no props. Clerk's stock `UserProfile` modal has a "Delete account" section gated by the instance-level `delete_self_enabled` setting. Flipping that in the Clerk dashboard surfaces a self-delete button in the shipped UI with **zero code change**, firing `user.deleted` straight at the webhook. Confirm it is off, and note it on the launch checklist.
+**✅ RESOLVED BY REMOVAL — there is no second delete button to worry about.** This used to warn that the settings page mounted a vendor profile modal whose "Delete account" section was gated by an *instance-level dashboard setting*, so a flip in somebody else's console could surface a self-delete button in our shipped UI with **zero code change** and fire `user.deleted` straight at the webhook. That modal is gone with the provider. **The screens below are now the only way to close an account**, which is the property the warning was asking for — keep it that way, and treat any new "delete" affordance in settings as a change to this document.
 
 ### 5.1 Settings section — ready to paste
 
@@ -400,15 +421,15 @@ Active `Subscription` (`status = ACTIVE`, `schema.prisma:3032`). There is no aut
 - **H2 — the hard delete at `users.service.ts:714` runs first.** Everything else is a `catch`. The member with the *cleanest* trading record gets the *most thorough* evidence wipe. Deleted entirely in Phase 0.
 - **H3 — `Complaint` (`schema.prisma:3667`) and `ComplaintPhoto` (`:3705`) are `onDelete: Cascade`.** The CPA/TPPP register, its case numbers and its private evidence rows go with the member. `SupportTicket`, `Subscription`, `AskGgConversation`, `LoginEvent`, `Address`, `ActionToken`, `Notification` likewise (confirmed against `prisma/migrations/20260812000000_baseline/migration.sql`). `ContactDetailRejection.userId` is `ON DELETE SET NULL` — the off-platform-coordination log survives with its actor removed.
 - **H4 — `kycIdHash` is currently the only ban-evasion barrier.** Releasing it, as the obvious reading of requirement C suggests, resets every enforcement column. §2.1.
-- **H5 — tombstoning `clerkId` before the Clerk delete makes the webhook a total no-op.** `deleteByClerkId` looks the row up by `clerkId` at `users.service.ts:646-652`, and `deleteMany` on a miss deletes 0 rows **without throwing**, so the `catch` never runs either. Ordering in §4 puts the tombstone in step 4, after the webhook has landed.
-- **H6 — `ActionToken` is a Clerk-independent auth rail.** `auth/kyc-or-token.guard.ts:76` resolves by `authorisedUserId`, bypassing the Clerk session. Cascade only fires on a hard delete. Closure must delete these explicitly (Step 1.4) or an outstanding SMS link lets a closed account still bid or complete a checkout. Note `/a/(.*)` is a public route in `frontend/middleware.ts`.
+- **~~H5~~ — RESOLVED BY REMOVAL, not fixed.** The hazard was that tombstoning `clerkId` before the identity-provider delete made the webhook a *total* no-op: the handler looked the row up by `clerkId`, and `deleteMany` on a miss deletes 0 rows **without throwing**, so even the `catch` never ran. It forced the counter-intuitive ordering in §4 (tombstone *after* the webhook, not before). There is no `clerkId`, no tombstone and no webhook, so the constraint that shaped the whole ordering section is simply gone. **Nothing in the current flow depends on a lookup by anything but `User.id`.**
+- **H6 — `ActionToken` is an auth rail that owes nothing to the session. STILL LIVE, and now the *only* thing of its kind.** `auth/kyc-or-token.guard.ts:76` resolves by `authorisedUserId` with no session token in the request. Cascade only fires on a hard delete. Closure must delete these explicitly (Step 1.4) or an outstanding SMS link lets a closed account still bid or complete a checkout. ⚠️ **Revoking sessions (§4 step 3) does not touch them** — the two rails are independent by design, because the person opening a `WITNESS_STATEMENT` or `SELLER_CONSENT` link is usually not the member. Note `/a/(.*)` is a public route in `frontend/middleware.ts`.
 - **H7 — nulling the bank quartet strands in-flight money.** `hasBank()` (`manual-payments.service.ts:601-605`) is the payout readiness gate; refunds read the same fields. §6 blocks closure while any payout or refund is due, which is the only safe way to do this.
 
 **SERIOUS**
 
 - **H8 — `deleted+<ts>@gungalore.local` is unroutable and nothing filters on it.** It is the only occurrence of that domain in the backend; no notification path or cron excludes it, so every closed row keeps generating hard bounces. Use `@accounts.invalid` (RFC 2606 reserved) **and** switch all three `notify*Enabled` flags off in Step 1.
 - **H9 — `isBanned: true` on the scrub branch (`users.service.ts:767`) conflates closure with enforcement, in both directions.** It puts closed accounts in the admin `'banned'` filter (`admin/admin.service.ts:396`) with no `bannedAt` and no audit event, and **one click on Unban (`:486-494`) silently reopens a closed account** — it is the only control that touches the flag. Closure must never write `isBanned`.
-- **H10 — `upsertFromClerk` un-scrubs the row.** The update branch (`users.service.ts:445-460`) writes `email`, `username` and `avatarUrl` unconditionally on every `user.updated`. The resurrection guard at `webhooks.controller.ts:105-113` checks row *existence*, never closure. Dormant today only because `user.deleted` implies the Clerk account is gone; it stops being dormant the moment a button closes a row while the Clerk user is still alive.
+- **~~H10~~ — RESOLVED BY REMOVAL.** The hazard was that the provider-sync upsert wrote `email`, `username` and `avatarUrl` onto a matched row unconditionally on every `user.updated`, and the existing guard checked row *existence* rather than closure — so one late event could write the real email and handle straight back onto a closed account. That whole sync path is deleted along with the webhook. **No outside system writes a member's identity columns any more** — sign-up writes them once, and the only other writer is a deliberate admin support edit. ⚠️ The general shape is still worth watching: **any future path that writes `email`/`username` onto an existing row must exclude `accountClosedAt != null`**, or it re-creates this exactly.
 - **H11 — admin cannot clear a username.** `admin/admin.service.ts:501` marks it non-clearable (`false`), documented at `:497-499` as *"public identity — listings/ratings render it"*. This plan overrides that documented invariant deliberately; the admin path must change with it, or a closure that fails halfway cannot be finished by hand.
 - **H12 — four published privacy commitments are false against the code.** `privacy/page.tsx:282` ("permanently de-identified within 90 days") — nothing implements it. `:283` (12-month hash hold) — held forever, no expiry job. `:284` (encrypted ID kept where a statutory document exists) — nulled unconditionally at `users.service.ts:735`. `:290` (bank details kept where a transaction is unresolved) — nulled unconditionally at `:761-765`. `:286-287` (Cloudinary images "not deleted at present") is now stale in our favour. **The page must be revised in the same release as the button.**
 - **H13 — `updateMany` never re-indexes.** `common/seller-reject-policy.ts:144-147` cancels every ACTIVE listing on a selling ban and calls nothing; Meili filters on the *indexed* status, so those listings stay searchable. Do not copy the pattern; use `reindexById` per id (`listings.service.ts:3600`).
@@ -419,12 +440,12 @@ Active `Subscription` (`status = ACTIVE`, `schema.prisma:3032`). There is no aut
 
 **MINOR**
 
-- **H18 — no webhook idempotency.** No `svix-id` dedupe (`webhooks.controller.ts:56-84`). Each replay of the current handler mints a *different* email. Handler-level idempotency is the fix.
+- **~~H18~~ — RESOLVED BY REMOVAL.** There was no `svix-id` dedupe on the webhook transport, so each replay of the handler minted a *different* sentinel email. No webhook, no replay. The handler-level idempotency it argued for was built anyway and still earns its place against a double-submitting member: `close()` returns quietly when `accountClosedAt` is already set, **before** it evaluates the blockers, so a repeat never throws ALREADY_CLOSED at somebody whose account is in exactly the state they asked for.
 - **H19 — `AdminAuditEvent.adminUserId` is a required FK** (`schema.prisma:2124-2125`), so a self-service closure cannot be audited there. `AccountClosure` is the audit record.
 - **H20 — cart `sellerUsername` is typed non-null and used as a React key.** `frontend/lib/cart-store.ts:21`, rendered at `frontend/app/cart/page.tsx:424, :447, :456`.
 - **H21 — reserved-handle list does not reserve the de-identification fallbacks.** `users-public.controller.ts` `RESERVED` contains `'anonymous'` but not `'seller'` or `'a_member'`. Low risk with our null-fallback approach, but add them.
 - **H22 — two existing tests assert the hard delete and will fail on Phase 0.** `src/users/users.service.spec.ts:307` (`expect(prisma.user.deleteMany).toHaveBeenCalled()`), `:308`, `:320`, `:334` (`expect(order).toContain('user.delete')`). They must be **rewritten to assert the opposite**, not deleted.
-- **H23 — `UserEvent` has no FK** (`userId`, `clerkId` as bare strings) and survives everything, orphaned, until the 12-month prune. Out of scope; note it.
+- **H23 — `UserEvent` has no FK** (`userId`, `deviceId`, `sessionId` all bare optional strings, `schema.prisma:3966-3970`) and survives everything, orphaned, until the 12-month prune. The `clerkId` column this finding also named is gone; the finding itself is not, because the analytics trail still outlives the account either way. Out of scope; note it.
 
 ---
 
@@ -439,21 +460,21 @@ Nothing here depends on any decision above, and every day it is not shipped is a
 3. Stop nulling `idNumberEncrypted` (`:735`) and the bank quartet (`:761-765`).
 4. Change the sentinel email to `@accounts.invalid` and switch `notifyEmailEnabled` / `notifySmsEnabled` / `notifyWhatsappEnabled` to `false`.
 5. Reset `phoneVerified` / `phoneOtpHash` / `phoneOtpExpiresAt` alongside `phone`.
-6. Verify Clerk's `delete_self_enabled` is **off** in the dashboard.
+6. ~~Verify the identity provider's `delete_self_enabled` is off in its dashboard.~~ **Resolved by removal** — no vendor dashboard, no second delete button. §5.
 
-**Tests:** rewrite `users.service.spec.ts:307, :308, :320, :334` to assert `prisma.user.deleteMany` is **never** called and the order contains no `user.delete`. New: a user with only a `Complaint` survives the webhook with the complaint intact. New: `assembleSaps534Data` still returns a full Section C after `deleteByClerkId`. New: no notification is dispatched to a scrubbed row.
+**Tests:** rewrite `users.service.spec.ts:307, :308, :320, :334` to assert `prisma.user.deleteMany` is **never** called and the order contains no `user.delete`. New: a user with only a `Complaint` survives an erasure with the complaint intact. New: `assembleSaps534Data` still returns a full Section C after `deleteById`. New: no notification is dispatched to a scrubbed row.
 
 ### Phase 1 — The model and the closure service *(admin-triggered only)*
 
 1. Migration: `User.accountClosedAt`, `AccountClosure`.
 2. `AccountClosureService.close(userId, { closedBy, closedByAdminId?, reason })` — steps 1–3 of §4.
 3. `canClose(userId)` — the whole §6 predicate set, returning structured blockers.
-4. `deleteByClerkId` becomes closure-aware (§4 step 4), including the `clerkId` tombstone.
-5. Resurrection guards (§4 step 5) in `upsertFromClerk`, `resolveUsernameConflict`, the relink-by-email branch.
+4. `deleteById` becomes closure-aware — an already-closed row is logged and left alone, never re-scrubbed. ~~…including the `clerkId` tombstone.~~ **Resolved by removal.**
+5. ~~Resurrection guards in `upsertFromClerk`, `resolveUsernameConflict`, the relink-by-email branch.~~ **Resolved by removal** — all three paths are deleted. §4.
 6. Add `accountClosedAt` to every existing `isBanned` write-gate (`listings.service.ts:813, 838, 915, 1174`; `offers.service.ts:63`; `auctions.service.ts:303`; `payments/transactions.service.ts:158-160`; `swaps/swap-proposals.service.ts:126`; `featured.service.ts:490, 648`; `subscriptions.service.ts:145`) with a distinct message — *"This account has been closed"*, never *"suspended"*.
 7. Admin: a **Close account** action distinct from Ban; an `accountClosedAt != null` chip in the user list that is **not** the red BANNED chip; a `'closed'` filter; and make `username` clearable at `admin.service.ts:501` (H11).
 
-**Tests:** each §6 blocker independently refuses; `canClose` and the in-transaction guard agree; a banned user is refused; closure is atomic (a forced failure at step 1.5 rolls back the `AccountClosure` row); closure is idempotent (second call is a no-op); the enforcement snapshot is complete; `deleteByClerkId` on a closed row is a no-op; a `user.updated` after closure does not restore the email or handle; every money gate rejects a closed user with the closed-not-banned message.
+**Tests:** each §6 blocker independently refuses; `canClose` and the in-transaction guard agree; a banned user is refused; closure is atomic (a forced failure at step 1.5 rolls back the `AccountClosure` row); closure is idempotent (second call is a no-op); the enforcement snapshot is complete; `deleteById` on a closed row is a no-op; the scrubbed row's `username` and `usernameLower` are both the `closed-…` form and the original handle is claimable again; **`sessions.revokeAllForUser` is called after the commit, and a throw from it does not fail the closure**; every money gate rejects a closed user with the closed-not-banned message.
 
 ### Phase 2 — Public erasure
 
@@ -468,9 +489,9 @@ Nothing here depends on any decision above, and every day it is not shipped is a
 
 ### Phase 3 — The member-facing button
 
-1. `GET /users/me/closure-eligibility` and `POST /users/me/close` (ClerkGuard, tight throttle) on `users.controller.ts`.
+1. `GET /users/me/closure-eligibility` and `POST /users/me/close` (`AuthGuard`, tight throttle) on `users.controller.ts`.
 2. The `/settings` section, confirmation screen, blocked screen and banned screen (§5, copy is ready to paste).
-3. A closed-account screen behind `/users/me` for the step-3-failed case.
+3. A closed-account screen behind `/users/me` for the case where step 3 fails and a live token outlives the closure.
 4. **Privacy policy revisions** (H12) — this ships in the same release, attorney-reviewed.
 
 **Tests:** E2E happy path; E2E blocked path renders each specific open item; the confirm gate requires the literal `CLOSE`; a banned member sees the support screen; double-submit closes once.

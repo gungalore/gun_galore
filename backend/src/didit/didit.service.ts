@@ -59,6 +59,39 @@ export class DiditService implements OnModuleInit {
   }
 
   /**
+   * Local development with no Didit key at all.
+   *
+   * ⚠️ THIS CAN NEVER BE TRUE IN PRODUCTION, and not by convention —
+   * `onModuleInit` below hard-throws when production boots unconfigured, so a
+   * production process that reaches this line does not exist. That is the only
+   * reason a code-printing stub is safe to have in the tree at all.
+   *
+   * It exists because `register` writes the User row and then sends the code:
+   * without a stub, nobody can complete a sign-up on a fresh clone, and the
+   * first thing a new developer meets is a 400. Same shape SmsService uses
+   * when SMSPortal is unconfigured — do the work, print the code, never
+   * pretend the send happened silently.
+   */
+  private get stubbed(): boolean {
+    return !this.apiKey && process.env.NODE_ENV !== 'production';
+  }
+
+  /** Codes minted by the stub, keyed by address. Never touched in production. */
+  private readonly stubCodes = new Map<string, string>();
+
+  private stubSend(kind: 'email' | 'phone', to: string): void {
+    const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
+    this.stubCodes.set(`${kind}:${to}`, code);
+    this.logger.warn(
+      `DIDIT NOT CONFIGURED — ${kind} code for ${to} is ${code} (development only)`,
+    );
+  }
+
+  private stubCheck(kind: 'email' | 'phone', to: string, code: string): boolean {
+    return this.stubCodes.get(`${kind}:${to}`) === code.trim();
+  }
+
+  /**
    * THIS THROWS AND KILLS THE BOOT, DELIBERATELY.
    *
    * The provider this replaced defaulted to sandbox and only LOGGED an error
@@ -151,6 +184,7 @@ export class DiditService implements OnModuleInit {
   // to carry between them. The pending code lives 5 minutes.
 
   async sendEmailCode(email: string): Promise<void> {
+    if (this.stubbed) return this.stubSend('email', email);
     const res = await this.call<DiditOtpResult>('/v3/email/send/', {
       method: 'POST',
       body: { email, options: { code_size: 6, locale: 'en' } },
@@ -168,6 +202,7 @@ export class DiditService implements OnModuleInit {
   }
 
   async checkEmailCode(email: string, code: string): Promise<boolean> {
+    if (this.stubbed) return this.stubCheck('email', email, code);
     const res = await this.call<DiditOtpResult>('/v3/email/check/', {
       method: 'POST',
       body: { email, code },
@@ -178,6 +213,7 @@ export class DiditService implements OnModuleInit {
   // ── Phone OTP ────────────────────────────────────────────────────────
 
   async sendPhoneCode(phoneE164: string): Promise<void> {
+    if (this.stubbed) return this.stubSend('phone', phoneE164);
     await this.call<DiditOtpResult>('/v3/phone/send/', {
       method: 'POST',
       body: {
@@ -197,6 +233,7 @@ export class DiditService implements OnModuleInit {
    * distinction is why this returns a boolean rather than throwing.
    */
   async checkPhoneCode(phoneE164: string, code: string): Promise<boolean> {
+    if (this.stubbed) return this.stubCheck('phone', phoneE164, code);
     const res = await this.call<DiditOtpResult>('/v3/phone/check/', {
       method: 'POST',
       body: { phone_number: phoneE164, code },
@@ -217,6 +254,10 @@ export class DiditService implements OnModuleInit {
   async createKycSession(
     input: CreateSessionInput,
   ): Promise<DiditCreatedSession> {
+    // ⚠️ DELIBERATELY NOT STUBBED, unlike the OTPs above. A stubbed code still
+    // has to be read out of a log by the person signing up; a stubbed identity
+    // verification would silently APPROVE somebody. Local KYC needs a real
+    // sandbox key — Didit's sandbox mocks every provider and bills nothing.
     const body: Record<string, unknown> = {
       workflow_id: this.workflowId,
       vendor_data: input.vendorData,

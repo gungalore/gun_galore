@@ -27,7 +27,7 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg(process.env.DATABASE_URL!),
 });
 
-const HOUSE_CLERK_ID = 'system_house_seller';
+const HOUSE_USER_ID = 'system_house_seller';
 const HOUSE_EMAIL = 'deals@gungalore.co.za';
 const HOUSE_USERNAME = 'gungalore_official';
 
@@ -35,11 +35,11 @@ async function main() {
   const now = new Date();
 
   const house = await prisma.user.upsert({
-    where: { id: HOUSE_CLERK_ID },
+    where: { id: HOUSE_USER_ID },
     // Don't clobber operator edits (e.g. a swapped username) on rerun.
     update: {},
     create: {
-      id: HOUSE_CLERK_ID,
+      id: HOUSE_USER_ID,
       email: HOUSE_EMAIL,
       username: HOUSE_USERNAME,
       usernameLower: HOUSE_USERNAME.toLowerCase(),

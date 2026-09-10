@@ -1,0 +1,164 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; background: #101312; color: #EEF2F0;
+      font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      font-feature-settings: 'tnum' 1; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    a { color: #EEF2F0; text-decoration: none; } a:hover { color: #FFFFFF; }
+    .mono { font-family: 'Geist Mono', ui-monospace, Consolas, monospace; }
+    .lbl { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #7F8885; font-weight: 500; }
+    .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 5px; font-size: 10px; font-weight: 500; white-space: nowrap; border: 0.5px solid #343C3A; color: #7F8885; background: #1D2221; }
+    .tag.warn { color: #F2B33D; border-color: rgba(242,179,61,0.34); background: rgba(242,179,61,0.14); }
+    .tag.bad  { color: #FF6B5E; border-color: rgba(255,107,94,0.34); background: rgba(255,107,94,0.14); }
+    .group { background: #171B1A; border: 0.5px solid #262D2B; border-radius: 12px; overflow: hidden; }
+    .item { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px; border-bottom: 0.5px solid #262D2B; }
+    .item:last-child { border-bottom: none; }
+    .item .ic { width: 20px; flex: 0 0 auto; color: #7F8885; display: flex; }
+    .item .nm { font-size: 14px; }
+    .item .ch { color: #555E5B; display: flex; }
+    .n { font-size: 12px; color: #7F8885; }
+    .scroll { overflow-y: auto; scrollbar-width: none; }
+    .scroll::-webkit-scrollbar { display: none; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #101312; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 0.5px solid #262D2B;">
+    <div style="width: 44px; height: 44px; margin-left: -6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #B3BBB8;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"></path></svg>
+    </div>
+    <div style="font-size: 17px; font-weight: 600; letter-spacing: -0.02em;">Everything else</div>
+  </div>
+
+  <div class="scroll" style="flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 18px;">
+
+    <!-- ⚠️ THE HONEST MARK IS THE POINT OF THIS SCREEN. Twenty legacy routes
+         are only PARTLY covered by the Desk — the drawer moved across, the
+         browsable register mostly did not. A row that opens the old panel
+         says so, rather than looking native and then not being. -->
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <span class="lbl">Cases</span>
+      <div class="group">
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"></path><path d="M5 8h14"></path><path d="M5 8l-2.5 6h5z"></path><path d="M19 8l-2.5 6h5z"></path></svg></span>
+          <span class="nm">Complaints</span>
+          <span style="flex: 1;"></span>
+          <span class="n">2 open</span>
+          <span class="ch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg></span>
+        </div>
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M9.6 9.4a2.5 2.5 0 1 1 3.2 3.1c-.6.3-.8.7-.8 1.3"></path><path d="M12 17.2v.1"></path></svg></span>
+          <span class="nm">Support</span>
+          <span style="flex: 1;"></span>
+          <span class="n">5 open</span>
+          <span class="ch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg></span>
+        </div>
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M8 9h8M8 13h5"></path></svg></span>
+          <span class="nm">Firearm transfers</span>
+          <span style="flex: 1;"></span>
+          <span class="n">4</span>
+          <span class="ch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <span class="lbl">Catalogue</span>
+      <div class="group">
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="8.5" cy="9.5" r="1.8"></circle><path d="M3.5 17l5-4 4.5 3.5 3-2.5 4.5 3.5"></path></svg></span>
+          <span class="nm">Listings</span>
+          <span style="flex: 1;"></span>
+          <span class="tag">register on the old panel</span>
+        </div>
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"></path></svg></span>
+          <span class="nm">Categories</span>
+          <span style="flex: 1;"></span>
+          <span class="tag">old panel</span>
+        </div>
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V9l8-5 8 5v11"></path><path d="M9.5 20v-6h5v6"></path></svg></span>
+          <span class="nm">Dealers</span>
+          <span style="flex: 1;"></span>
+          <span class="ch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg></span>
+        </div>
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+          <span class="nm">Dead inventory</span>
+          <span style="flex: 1;"></span>
+          <span class="n">top 5 on the pile</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <span class="lbl">Money</span>
+      <div class="group">
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2"></rect><circle cx="12" cy="12" r="2.6"></circle></svg></span>
+          <span class="nm">Payout run</span>
+          <span style="flex: 1;"></span>
+          <span class="tag warn">payments off</span>
+        </div>
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 5-7"></path><path d="M3 21h18"></path></svg></span>
+          <span class="nm">Analytics</span>
+          <span style="flex: 1;"></span>
+          <span class="tag">old panel</span>
+        </div>
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5v9M9.8 9.8h4.4M9.8 14.2h4.4"></path></svg></span>
+          <span class="nm">AI credits</span>
+          <span style="flex: 1;"></span>
+          <span class="tag">old panel</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <span class="lbl">System</span>
+      <div class="group">
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v14H4z"></path><path d="M8 9h8M8 13h8M8 17h4"></path></svg></span>
+          <span class="nm">Audit trail</span>
+          <span style="flex: 1;"></span>
+          <span class="ch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg></span>
+        </div>
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l8.5 15H3.5z"></path><path d="M12 9.5v4M12 16.4v.1"></path></svg></span>
+          <span class="nm">Alerts</span>
+          <span style="flex: 1;"></span>
+          <span class="n" style="color: #F2B33D;">3 unresolved</span>
+          <span class="ch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg></span>
+        </div>
+        <div class="item">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h4v16h-4"></path><path d="M11 8l4 4-4 4"></path><path d="M15 12H4"></path></svg></span>
+          <span class="nm" style="color: #FF6B5E;">Sign out of the Desk</span>
+        </div>
+      </div>
+      <div style="font-size: 11.5px; line-height: 1.55; color: #555E5B; padding: 2px 4px 0;">
+        Rows marked <span class="tag" style="height: 18px;">old panel</span> open the previous
+        admin in a browser tab. They are the registers the Desk has not
+        replaced yet &mdash; searching and paging the whole table, not just
+        acting on what needs you today.
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

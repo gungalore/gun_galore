@@ -133,7 +133,7 @@ the manual page text on it is not.
 
 | | Why |
 |---|---|
-| Users, `clerkId` links, sessions | 6 accounts. The new entity has no relationship with any of them. They sign up again. |
+| Users, password hashes, sessions | 6 accounts. The new entity has no relationship with any of them. They sign up again — and since auth is ours now, there is no export to negotiate with anybody: a fresh `User` row and a fresh `Session` row is the whole of it. |
 | Listings | 5 of them, and the public shop is empty anyway. Re-list. |
 | KYC records, encrypted SA ID numbers | See section 6 — the new company has no lawful basis to hold personal data collected by the old one. |
 | Cloudinary assets and URLs | New cloud under the new company. Nothing references the old URLs because there are no listings worth keeping. |
@@ -252,17 +252,48 @@ domain on a zero-history account is the worst possible sender profile, and a col
 puts order confirmations in spam. This floor cannot be compressed, which is why it is this
 high in the list.
 
-**5. Clerk — new application** · lead time: hours to 2 days for certificate issuance
+**5. Member auth and Didit** · lead time: minutes for the secret, an hour in the Didit console
 
-*The operator needs:* the Cloudflare zone.
+*The operator needs:* the Cloudflare zone, and shell access to the box.
 
-Create a new application under the All Outdoor Clerk organisation. There is **no transfer
-to negotiate and no password-hash export to worry about** — six users sign up again. This
-was the single largest risk in the old plan and the clean slate deletes it entirely.
+⚠️ **There is no identity provider to provision any more, and that deletes a whole class of
+go-live risk.** Sessions, passwords and sign-up are ours. What used to be a third-party
+application with its own domain, its own certificate issuance and its own CNAMEs is now
+one secret:
 
-Add `alloutdoor.co.za` as the production domain, publish every CNAME Clerk emits (the FAPI
-host, the accounts host, the `clkmail` hosts) as **DNS-only, grey cloud**. Proxying Clerk's
-FAPI through Cloudflare breaks certificate issuance.
+```bash
+openssl rand -hex 32        # JWT_MEMBER_SECRET
+```
+
+Put the **same value** in `backend/.env` and `frontend/.env.production`, both named
+`JWT_MEMBER_SECRET` and **without a `NEXT_PUBLIC_` prefix** — the frontend verifies the
+cookie server-side in middleware, and the prefix would ship the signing key to every
+browser. It must be a **different value from `JWT_ADMIN_SECRET`**: the same string on both
+and a member token verifies on an admin route. Missing, empty or left at the template
+default and the backend refuses to start in production.
+
+**Didit** now does identity verification and the email and phone codes. Create the
+application in the Didit console and take `DIDIT_API_KEY` from it.
+
+⚠️ **The KYC workflow must be NON-white-label.** `is_white_label_enabled: true` adds $0.20
+a session *and* drops the workflow out of the free tier entirely — $0.56 against $0.00 for
+the same verification. Check the flag in the console before pointing `DIDIT_WORKFLOW_ID` at
+a workflow.
+
+Then register the webhook destination at `https://alloutdoor.co.za/api/webhooks/didit` and
+copy that destination's signing secret into `DIDIT_WEBHOOK_SECRET`. It fails closed: unset
+or wrong and every verification outcome is dropped unverified, so a seller who finishes on
+Didit's page stays PENDING forever with nothing saying why.
+
+⚠️ **CLOUDFLARE HAS TO BE TOLD ABOUT THAT WEBHOOK.** Didit delivers from the single static
+IP **`18.203.201.92`**, `User-Agent: DiditWebhook/2.0`. The origin sits behind Cloudflare
+with a WAF in front, so that IP must be allowed for `alloutdoor.co.za` or every delivery is
+dropped **at the edge** — nothing reaches the box, and **nothing in any application log
+will say so.**
+
+⚠️ `DIDIT_MODE` must be exactly `live`. Anything else **hard-fails the boot** in
+production. The provider this replaced only logged an error, which is how a production box
+could — and did — run sandbox identity checks and pass every seller against canned data.
 
 ### Company-documentation gated — start in week one or two
 
@@ -275,16 +306,20 @@ FAPI through Cloudflare breaks certificate issuance.
 > cannot catch this because it counts SENT and FAILED rows, not STUB. Prove it with a real
 > phone (`backend/scripts/send-prod-sms-test.mjs`), never with a log line.
 
-**7. VerifyNow (KYC)** · lead time: 2–5 days
+**7. Identity verification** · *no lead time — it moved to step 5*
 
-*Needs:* company documents, and credit. The old account was down to roughly 29 credits.
+⚠️ **VerifyNow is gone, and so is the AWS Rekognition face-match and liveness that sat
+beside it.** Didit does the whole job, needs no company-document review and no prepaid
+credit, and is set up in step 5. Do not go looking for a KYC vendor to fund. Delete
+`VERIFYNOW_API_KEY`, `_BASE_URL`, `_MODE` and `_BASIC_REPORT_TYPE` from any `.env` you
+inherit rather than leaving them there to look load-bearing.
 
-The cheap Claude-vision flow (`kyc_claude_flow_enabled`, ~R3/seller vs R59.80) stays on,
-but VerifyNow is still the fallback and must be funded.
-
-> `VERIFYNOW_MODE` must be exactly `production`. Anything else silently defaults to
-> sandbox and every new seller passes KYC against canned data. `backend/.env.example:34`
-> ships `sandbox` — do not build the new `.env` from the template without checking this.
+⚠️ **One capability went with VerifyNow and nothing free replaces it.** It returned the
+applicant's name and date of birth from Home Affairs, which is what let the verdict
+cross-check the typed details against the *state* rather than only against the document.
+Didit sells the equivalent as the `zaf_africa_national_id` database check at $1.10 a
+lookup. Until the operator turns that on, names come from the document Didit reads and
+**no user-facing copy may claim a Home Affairs verification.**
 
 **8. Bob Go** · lead time: sandbox token same-day; production account 3–10 days
 
@@ -1068,10 +1103,10 @@ doing it twice.
 > database row pointing at a file that exists · all 3,894 `tsvector` values populated by
 > the generated columns, and a real full-text query returns 740 hits.
 >
-> **`npm run seed:help` is BLOCKED until Clerk is live.** It attributes authorship to an
-> existing `User` row and there are none — nobody can sign in until Clerk is configured.
-> Run it in Phase 5 once the operator has signed in once, or set
-> `ASK_GG_KB_SEED_AUTHOR_EMAIL`.
+> **`npm run seed:help` needs one `User` row to exist.** It attributes authorship to an
+> existing member and a fresh database has none. That is no longer a vendor dependency —
+> sign-up is ours, so it unblocks the moment somebody registers. Run it in Phase 5 once
+> the operator has signed up once, or set `ASK_GG_KB_SEED_AUTHOR_EMAIL`.
 
 Order matters: categories first (other seeds reference them), then everything else.
 
@@ -1162,12 +1197,12 @@ should stay OFF on a site that is not trading. Code defaults exist for every one
 
 ### Phase 5 — Environment files
 
-> **Do NOT build these from `.env.example`.** Both templates are stale in ways that fail
-> silently: the backend template documents **Odoo** in the accounting block and has zero
-> `ZOHO_BOOKS_*` keys; it has **no `ID_HASH_SECRET` entry at all**; and line 34 ships
-> `VERIFYNOW_MODE=sandbox`. The frontend template is missing `NEXT_PUBLIC_SITE_URL`,
-> `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `INTERNAL_API_URL`,
-> `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_PAYMENT_MODE` and `NEXT_PUBLIC_DISABLE_PWA`.
+> **Read `.env.example` rather than copying it.** The backend template has caught up — it
+> carries the `ZOHO_BOOKS_*` block, `ID_HASH_SECRET`, `JWT_MEMBER_SECRET` and the `DIDIT_*`
+> set, and it names the dead `ODOO_*` and `VERIFYNOW_*` variables as dead. What it still
+> ships is `DIDIT_MODE=sandbox`, which now **refuses to boot** in production instead of
+> quietly approving canned identities — a loud failure, but a failure. The frontend
+> template is still missing `NEXT_PUBLIC_VAPID_PUBLIC_KEY`.
 
 Write `~/app/backend/.env` and `~/app/frontend/.env.production` by hand. `chmod 600` both.
 
@@ -1190,11 +1225,12 @@ npx web-push generate-vapid-keys   # VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY, as a 
 | `ID_HASH_SECRET` | fresh random | Back it up in the password manager the moment it exists |
 | `DATABASE_URL` | `postgresql://alloutdoor:PASS@localhost:5432/alloutdoor_prod?schema=public` | Strip `?schema=public` when passing to `pg_dump`, never in the app |
 | `PAYMENT_MODE` / `PAYMENTS_LIVE` / `PEACH_ENV` | `paygate` / `false` / `sandbox` | The site must land inert. Do not combine a first deploy with a payments go-live |
-| `VERIFYNOW_MODE` | exactly `production` | Anything else = every seller passes KYC against canned data |
+| `DIDIT_MODE` | exactly `live` | Anything else **throws at boot** — the process will not start. The provider this replaced only warned, and a box ran sandbox identity checks in production |
+| `DIDIT_WEBHOOK_SECRET` | the destination secret from the Didit console | Fails closed — every verification outcome is dropped unverified and sellers stay PENDING forever |
 | `ZOHO_BOOKS_ENABLED` | `false` initially | Flip after the box is proven |
 | `MEILISEARCH_HOST` | `http://127.0.0.1:7700` | — |
 | `FRONTEND_URL` | `https://alloutdoor.co.za` | Drives the CORS allowlist |
-| `CLERK_AUTHORIZED_PARTIES` | must include `https://alloutdoor.co.za` | Wrong and every token is rejected — the whole site logs out with no obvious cause |
+| `JWT_MEMBER_SECRET` | strong random, **the same value in `frontend/.env.production`**, and different from `JWT_ADMIN_SECRET` | Missing or default → backend throws at boot. Different on the two sides → every member token fails to verify and the whole site logs itself out with no obvious cause. Same as the admin secret → a member token verifies on an admin route |
 | `EMAIL_LOGO_URL` | new domain | `notifications.service.ts:551-553` otherwise hard-codes an absolute URL |
 
 **Frontend values:**
@@ -1226,9 +1262,11 @@ Four lines must appear: `Meilisearch connected`, and the FTS column + GIN index 
 `ReloadingManualPage`, `AskGgKbEntry` and (if the models are kept) `HuntPdf`. Any FTS
 failure means the database role cannot `ALTER TABLE` — go back to Phase 1 Step 4.
 
-Confirm the warnings you expect are **absent**: no `VERIFYNOW_MODE is not "production"`, no
-Anthropic key warning. Confirm the warnings you expect are **present**: Peach credentials
-missing is correct at this stage.
+Confirm the warnings you expect are **absent**: no `DIDIT_WEBHOOK_SECRET is not set`, no
+model-key warning for whichever `LLM_PROVIDER` is selected. Confirm the warnings you expect
+are **present**: Peach credentials missing is correct at this stage. Note that the two
+things that *would* have been warnings — a weak `JWT_MEMBER_SECRET` and a sandbox
+`DIDIT_MODE` — are throws now, so if the process is up at all, both are right.
 
 ---
 
@@ -1242,7 +1280,9 @@ missing is correct at this stage.
 4. Issue a **Cloudflare Origin Certificate** covering `alloutdoor.co.za` and
    `*.alloutdoor.co.za`. Install at `/etc/ssl/cloudflare/alloutdoor.pem` + `.key`,
    `chmod 600` the key.
-5. Publish Clerk's CNAMEs, **DNS-only**.
+5. **Allow `18.203.201.92` through the WAF** for `alloutdoor.co.za` — Didit's single
+   webhook source (`User-Agent: DiditWebhook/2.0`). Blocked here, every verification
+   outcome dies at the edge and no application log mentions it.
 6. Publish Resend's SPF/DKIM on `send.alloutdoor.co.za`, plus exactly one `_dmarc` TXT at
    `p=none`, **DNS-only**.
 7. **Do not create the apex A record yet.**
@@ -1252,6 +1292,13 @@ missing is correct at this stage.
 
 **nginx.** `infra/nginx/alloutdoor.conf` has literal `gungalore.co.za` server names (its own
 header at line 23-27 explains why and gives the fix):
+
+> ✅ **That header is now out of date in our favour, and this is the one piece of good
+> news in the whole auth rewrite.** It says to do the rename "only together with the DNS
+> move and the Clerk FAPI domain — the frontend's Clerk keys are issued against
+> `clerk.gungalore.co.za`". Those keys no longer exist. **Nothing outside DNS is pinned to
+> the old hostname any more**, so the `gungalore.co.za` → `alloutdoor.co.za` rename is
+> unblocked and goes with the DNS move alone.
 
 ```bash
 sudo cp ~/app/infra/nginx/alloutdoor.conf /etc/nginx/sites-available/alloutdoor
@@ -1501,7 +1548,7 @@ the coming-soon gate at `https://staging.alloutdoor.co.za/preview?key=<secret>`.
 > a hard-coded `gungalore.co.za` fallback. Change it.
 
 Also test via a hosts-file override, which exercises the real apex hostname — needed for
-the Clerk FAPI, the Google Maps referrer restriction and cookie scoping. Notepad as
+the Google Maps referrer restriction and for session-cookie scoping. Notepad as
 Administrator, `C:\Windows\System32\drivers\etc\hosts`:
 
 ```
@@ -1518,10 +1565,15 @@ you are not testing what visitors see.
 - [ ] Create three test listings, then type three characters in the search box — **results
       appear.** (Empty Meilisearch is the top day-one failure.)
 - [ ] Browse a category — **filter chips appear** with counts
-- [ ] Sign up a fresh account. Backend log shows `Clerk webhook: user.created`. No
-      signature-failure alert.
-- [ ] "Continue with Google" — full round trip, and consent-sync fires afterwards (it is the
-      only POPIA consent record on the OAuth path)
+- [ ] Sign up a fresh account — username, email, password — confirm the emailed code, and
+      sign in. A `Session` row exists for it, and a hard refresh keeps you signed in (that
+      is the refresh-token rotation working, not the 15-minute access token).
+- [ ] Start seller verification and finish it on Didit's hosted page. The webhook lands and
+      `kycStatus` flips. **If it stays PENDING, check the Cloudflare WAF before anything
+      else** — a blocked `18.203.201.92` looks identical to a broken integration and logs
+      nothing.
+      *(There is no "Continue with Google" to test. Google sign-in rode the old provider's
+      hosted redirect and went with it; replacing it needs an OAuth client of our own.)*
 - [ ] Type an address at checkout — **autocomplete appears**; "use my location"
       reverse-geocodes. If either fails, the browser console names the missing Google API.
 - [ ] One transactional email arrives, **not in spam**, logo renders
@@ -1591,7 +1643,7 @@ the pm2 config.
 7. **Code fixes worth landing once the dust settles.** All pre-existing:
    add `ID_HASH_SECRET` to `.env.example` and to the hard-throw block in `main.ts:40-48`;
    delete the committed default-salt fallback at `kyc.service.ts:32-34`; add hard boot
-   assertions for `RESEND_API_KEY` and `SMSPORTAL_CLIENT_ID`; add `OptionalClerkGuard` and a
+   assertions for `RESEND_API_KEY` and `SMSPORTAL_CLIENT_ID`; add `OptionalAuthGuard` and a
    tighter `@Throttle` to `POST /shipping/quote` (`shipping.controller.ts:86-90`), which
    today has **no guard at all** and calls a metered carrier API on every anonymous request;
    update `.env.example`'s accounting block from Odoo to Zoho.
@@ -1633,7 +1685,10 @@ them. Rewrite for ALLOUTDOOR (PTY) LTD, date them from the new company's actual 
 
 **2. The TPPP application.**
 Nedbank as acquirer, Peach as gateway. Never use the word "escrow" in any document — the
-platform holds funds; it does not operate a trust account. PEP screening via VerifyNow.
+platform holds funds; it does not operate a trust account. ⚠️ **Do not write "PEP screening
+via VerifyNow" into this application again** — VerifyNow is gone, and Didit's AML/PEP
+screening is a workflow feature nobody has switched on. Either turn it on before the
+application is submitted or describe the manual control that actually exists.
 This is the critical path to trading (section 3).
 
 **3. Information Officer registration with the Information Regulator.**

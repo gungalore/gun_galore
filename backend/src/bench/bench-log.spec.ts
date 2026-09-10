@@ -329,15 +329,17 @@ describe('The Bench — the log reads back in the order it was fired', () => {
     ]);
   });
 
-  it('reads only the caller’s own rows, keyed on the User.id and never the provider subject', async () => {
+  it('reads only the caller’s own rows', async () => {
     const prisma = makePrisma([]);
-    await new BenchService(prisma as never).log(SUB);
+    await new BenchService(prisma as never).log('usr_1');
 
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
-      where: { id: SUB },
+      where: { id: 'usr_1' },
       select: { id: true },
     });
-    expect(prisma.benchLogEntry.findMany.mock.calls[0][0].where).toEqual({ userId: 'usr_1' });
+    expect(prisma.benchLogEntry.findMany.mock.calls[0][0].where).toEqual({
+      userId: 'usr_1',
+    });
   });
 
   it('never hands the userId back out', async () => {

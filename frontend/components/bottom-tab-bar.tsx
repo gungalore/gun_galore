@@ -910,7 +910,7 @@ export function BottomTabBar() {
               // Release the sheet's history claim WITHOUT popping — after a
               // sign-out we can't be sure our throwaway entry is still on
               // top, and an unwanted history.back() would yank the user off
-              // the page Clerk just landed them on.
+              // the page they just landed on.
               closeSheetForNavigation();
             });
           }}
@@ -1600,7 +1600,7 @@ function MoreSheet({
                 unoptimized
               />
             ) : (
-              /* Initial-circle fallback when Clerk doesn't return an
+              /* Initial-circle fallback when the profile doesn't carry an
                  imageUrl (rare but possible for non-OAuth sign-ups). */
               <span
                 aria-hidden

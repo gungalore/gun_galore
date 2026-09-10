@@ -1,0 +1,191 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; background: #101312; color: #EEF2F0;
+      font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      font-feature-settings: 'tnum' 1; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    a { color: #EEF2F0; text-decoration: none; } a:hover { color: #FFFFFF; }
+    .mono { font-family: 'Geist Mono', ui-monospace, Consolas, monospace; }
+    .lbl { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #7F8885; font-weight: 500; }
+    .tag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 5px; font-size: 10.5px; font-weight: 500; white-space: nowrap; border: 0.5px solid #343C3A; color: #B3BBB8; background: #1D2221; }
+    .tag.bad  { color: #FF6B5E; border-color: rgba(255,107,94,0.34); background: rgba(255,107,94,0.14); }
+    .tag.warn { color: #F2B33D; border-color: rgba(242,179,61,0.34); background: rgba(242,179,61,0.14); }
+    .tag.ok   { color: #3ECF8E; border-color: rgba(62,207,142,0.34); background: rgba(62,207,142,0.14); }
+    .tag.info { color: #5AA7FF; border-color: rgba(90,167,255,0.34); background: rgba(90,167,255,0.14); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 14px; border-radius: 8px; border: 0.5px solid #343C3A; background: #1D2221; color: #EEF2F0; font-size: 13px; font-weight: 500; font-family: inherit; white-space: nowrap; }
+    .btn.primary { background: #EEF2F0; border-color: #EEF2F0; color: #101312; }
+    .btn[disabled] { color: #555E5B; border-color: #262D2B; background: transparent; }
+    /* The lens switch: one level ABOVE the status chips, because it changes
+       the data source, not the slice. Same rule as the desktop Ledger. */
+    .lens { display: inline-flex; gap: 4px; background: #171B1A; border: 0.5px solid #262D2B; border-radius: 999px; padding: 3px; }
+    .lens > div { height: 38px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 999px; font-size: 13px; font-weight: 500; color: #B3BBB8; }
+    .lens > div.on { background: #EEF2F0; color: #101312; font-weight: 600; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 13px; border-radius: 999px; background: #171B1A; border: 0.5px solid #262D2B; font-size: 12.5px; color: #B3BBB8; white-space: nowrap; }
+    .chip.on { background: #232928; border-color: #343C3A; color: #EEF2F0; font-weight: 500; }
+    /* An order is a CARD, never a table row. The desktop board's DeskTable is
+       minWidth 1100 — a third of that is this screen, so the columns become
+       three stacked lines and nothing scrolls sideways. */
+    .orow { background: #171B1A; border: 0.5px solid #262D2B; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 7px; }
+    .scroll { overflow-y: auto; scrollbar-width: none; }
+    .scroll::-webkit-scrollbar { display: none; }
+    .hs { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; padding: 0 14px; }
+    .hs::-webkit-scrollbar { display: none; }
+    .tabbar { display: flex; border-top: 0.5px solid #262D2B; background: #171B1A; }
+    .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 9px 0 10px; font-size: 10px; color: #7F8885; }
+    .tab.on { color: #EEF2F0; font-weight: 600; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #101312; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="padding: 14px 16px 12px; border-bottom: 0.5px solid #262D2B; display: flex; flex-direction: column; gap: 12px;">
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+      <div style="font-size: 17px; font-weight: 600; letter-spacing: -0.02em;">Ledger</div>
+      <div style="font-size: 11.5px; color: #7F8885;">1 204 orders</div>
+    </div>
+    <!-- Money out | money in. Two lenses, one board. -->
+    <div class="lens">
+      <div>Payout run</div>
+      <div class="on">Orders</div>
+    </div>
+  </div>
+
+  <!-- The status filter belongs to the Orders lens only, one level down. -->
+  <div class="hs" style="padding-top: 12px; padding-bottom: 12px;">
+    <div class="chip">All</div>
+    <div class="chip on">Paid</div>
+    <div class="chip">Awaiting payment</div>
+    <div class="chip">Partially fulfilled</div>
+    <div class="chip">Completed</div>
+  </div>
+
+  <div class="scroll" style="flex: 1; padding: 0 14px 12px; display: flex; flex-direction: column; gap: 8px;">
+
+    <div class="orow">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="mono" style="font-size: 13px; color: #EEF2F0;">GG-ORD-0114</span>
+        <span style="flex: 1;"></span>
+        <span class="tag ok">Paid</span>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 8px;">
+        <span style="font-size: 13px; color: #B3BBB8;">@boet</span>
+        <span style="color: #343C3A;">&middot;</span>
+        <span style="font-size: 12.5px; color: #7F8885;">3 lines</span>
+        <span style="flex: 1;"></span>
+        <span class="mono" style="font-size: 14px; font-weight: 600;">R 18 500.00</span>
+      </div>
+      <div style="font-size: 11.5px; color: #555E5B;">2 Sep 2026</div>
+    </div>
+
+    <div class="orow">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="mono" style="font-size: 13px; color: #EEF2F0;">GG-ORD-0113</span>
+        <span style="flex: 1;"></span>
+        <span class="tag ok">Paid</span>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 8px;">
+        <span style="font-size: 13px; color: #B3BBB8;">@skietrob</span>
+        <span style="color: #343C3A;">&middot;</span>
+        <span style="font-size: 12.5px; color: #7F8885;">1 line</span>
+        <span style="flex: 1;"></span>
+        <span class="mono" style="font-size: 14px; font-weight: 600;">R 2 340.00</span>
+      </div>
+      <div style="font-size: 11.5px; color: #555E5B;">2 Sep 2026</div>
+    </div>
+
+    <div class="orow">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="mono" style="font-size: 13px; color: #EEF2F0;">GG-ORD-0111</span>
+        <span style="flex: 1;"></span>
+        <span class="tag bad">Disputed</span>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 8px;">
+        <span style="font-size: 13px; color: #B3BBB8;">@turbosnail</span>
+        <span style="color: #343C3A;">&middot;</span>
+        <span style="font-size: 12.5px; color: #7F8885;">2 lines</span>
+        <span style="flex: 1;"></span>
+        <span class="mono" style="font-size: 14px; font-weight: 600;">R 45 000.00</span>
+      </div>
+      <div style="font-size: 11.5px; color: #555E5B;">1 Sep 2026</div>
+    </div>
+
+    <div class="orow">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="mono" style="font-size: 13px; color: #EEF2F0;">a1b2c3d4&hellip;</span>
+        <span style="flex: 1;"></span>
+        <span class="tag warn">Awaiting payment</span>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 8px;">
+        <span style="font-size: 13px; color: #B3BBB8;">@anon</span>
+        <span style="color: #343C3A;">&middot;</span>
+        <span style="font-size: 12.5px; color: #7F8885;">1 line</span>
+        <span style="flex: 1;"></span>
+        <span class="mono" style="font-size: 14px; font-weight: 600;">R 1 180.00</span>
+      </div>
+      <div style="font-size: 11.5px; color: #555E5B;">1 Sep 2026</div>
+    </div>
+
+    <div class="orow">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="mono" style="font-size: 13px; color: #EEF2F0;">GG-ORD-0108</span>
+        <span style="flex: 1;"></span>
+        <span class="tag">Refunded</span>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 8px;">
+        <span style="font-size: 13px; color: #B3BBB8;">@boet</span>
+        <span style="color: #343C3A;">&middot;</span>
+        <span style="font-size: 12.5px; color: #7F8885;">1 line</span>
+        <span style="flex: 1;"></span>
+        <span class="mono" style="font-size: 14px; font-weight: 600;">R 890.00</span>
+      </div>
+      <div style="font-size: 11.5px; color: #555E5B;">31 Aug 2026</div>
+    </div>
+
+  </div>
+
+  <!-- The pager states the window in words. It never prints a range it cannot
+       stand behind: past the last page it says so instead of counting
+       backwards. -->
+  <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 0.5px solid #262D2B;">
+    <span class="mono" style="font-size: 12px; color: #7F8885;">1&ndash;20 of 1 204</span>
+    <span style="flex: 1;"></span>
+    <button class="btn" disabled style="height: 40px;">Previous</button>
+    <button class="btn" style="height: 40px;">Next</button>
+  </div>
+
+  <div class="tabbar">
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"></rect><rect x="3" y="14" width="18" height="6" rx="2"></rect></svg>
+      <span>Desk</span>
+    </div>
+    <div class="tab on">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2"></rect><circle cx="12" cy="12" r="2.6"></circle></svg>
+      <span>Ledger</span>
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.4"></circle><path d="M3 19a6 6 0 0 1 12 0"></path><path d="M16 6.2a3.4 3.4 0 0 1 0 6.6"></path><path d="M17.5 19a5.6 5.6 0 0 0-1.6-4"></path></svg>
+      <span>People</span>
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h4l2.5-6 4 12 2.5-6h5"></path></svg>
+      <span>Pulse</span>
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"></path></svg>
+      <span>Site</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

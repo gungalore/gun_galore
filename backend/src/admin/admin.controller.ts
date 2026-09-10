@@ -395,6 +395,32 @@ export class AdminUsersController {
     return this.adminService.closeAccount(id, admin.sub, body?.reason ?? '');
   }
 
+  // ── POPIA ERASURE ────────────────────────────────────────────────
+  //
+  // ⚠️ THIS ROUTE EXISTS BECAUSE REMOVING CLERK TOOK ITS ONLY TRIGGER AWAY.
+  // The erasure itself is old code and unchanged — it purges the member's
+  // motivations, Licence Centre documents and KYC files from disk before the
+  // rows that point at them disappear. Its one caller was the identity
+  // provider's `user.deleted` webhook. With that gone, a POPIA erasure request
+  // had no way to be actioned at all except a hand-written DELETE, which is
+  // exactly the situation the erasure code was written to avoid.
+  //
+  // ⚠️ IT IS NOT THE CLOSE BUTTON, AND MUST NOT BE WIRED TO ONE. Closing an
+  // account is reversible and keeps the evidence — the operator's own
+  // instruction: "if a user committed a crime they can't just vanish by
+  // deleting and wiping evidence." This is the separate, deliberate act of
+  // answering a right-to-erasure request, and SUPERADMIN-only by virtue of
+  // being a mutating method under AdminJwtGuard.
+  @Post(':id/erase')
+  @HttpCode(200)
+  async erase(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { reason?: string },
+  ) {
+    return this.adminService.eraseAccount(id, admin.sub, body?.reason ?? '');
+  }
+
   // Clear seller reject-strikes + lift the offers suspension (after
   // reviewing a SELLER_REJECT_STRIKE alert). Also resolves those alerts.
   @Post(':id/clear-reject-strikes')

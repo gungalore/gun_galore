@@ -159,7 +159,7 @@ model BenchCipDimension {
 }
 
 model UserBench {
-  userId     String   @id            // User.id (Clerk-backed)
+  userId     String   @id            // User.id
   powderIds  String[]
   bullets    Json                    // [{ maker, weightGr, category, type }]
   cartridgeKeys String[]
@@ -211,7 +211,7 @@ Until this script has run, the spec card shows the drawing from the reference fi
 
 ## 4. API — `backend/src/bench/` (NestJS `BenchModule`)
 
-All under `/api/bench`. Guards: reads use `OptionalClerkGuard` (never rejects; stamps `request.clerkUserId`); bench and log writes use `ClerkGuard`. Follow `load-lab.controller.ts` for shape and `viewerFetch` on the client — **never cache a response that varies by viewer** (CLAUDE.md).
+All under `/api/bench`. Guards: reads use `OptionalAuthGuard` (never rejects; stamps `request.userId`); bench and log writes use `AuthGuard`. Follow `load-lab.controller.ts` for shape and `viewerFetch` on the client — **never cache a response that varies by viewer** (CLAUDE.md).
 
 | Method + path | Auth | Purpose | Response |
 |---|---|---|---|
@@ -242,7 +242,7 @@ The **components strip** (brief §5) is **out of v1**: which reloading component
 
 ### 5.1 Route and chrome
 
-- `app/bench/page.tsx` is a client page like `app/load-lab/page.tsx`: `<main className="mx-auto px-4" style={{ maxWidth: 'var(--page-max)' }}>`. Not in `middleware.ts`'s public list, so Clerk requires a session (the brief's guest bench is deferred; the public spec pages are phase 2, below).
+- `app/bench/page.tsx` is a client page like `app/load-lab/page.tsx`: `<main className="mx-auto px-4" style={{ maxWidth: 'var(--page-max)' }}>`. Not in `middleware.ts`'s public list, so a member session is required (the brief's guest bench is deferred; the public spec pages are phase 2, below).
 - Desktop: the site header stays; the tool bar under it is the page's own (`Main.dc.html`, "Tool bar" block). Height 64, `border-bottom: 0.5px solid var(--border-divider)`.
 - Installed app (standalone): the shell renders the push header from `PUSH_TITLES` (`The Bench`) and the tab bar; the page renders the tool strip from `Pwa.dc.html`. Use `lib/use-standalone.ts` to pick the layout, not a width query, so the phone web view keeps the desktop tool bar collapsed sensibly (`md:` breakpoint for rail vs sheet).
 
@@ -389,7 +389,7 @@ Sheet and list as in §5.2. `POST /bench/log` validates `chargeGr > 0`, `coalMm`
 
 ## 10. Phase 2 (not in this build, do not start)
 
-- Public, static, indexable `/reloading/cartridges/[slug]` pages reusing `SpecCard` with `generateStaticParams` over `BenchCartridge`. **Before shipping, confirm with the operator** that a public page titled "<cartridge> dimensions and load data" is acceptable under the Public vs Members rules in CLAUDE.md (Meta has restricted the site twice; reloading components are members-only). The page must go through `OptionalClerkGuard` and show no listings.
+- Public, static, indexable `/reloading/cartridges/[slug]` pages reusing `SpecCard` with `generateStaticParams` over `BenchCartridge`. **Before shipping, confirm with the operator** that a public page titled "<cartridge> dimensions and load data" is acceptable under the Public vs Members rules in CLAUDE.md (Meta has restricted the site twice; reloading components are members-only). The page must go through `OptionalAuthGuard` and show no listings.
 - Guest bench (session-only, sign-in prompt to keep it).
 - Overlay comparison (brief §12.3) — `CartridgeDrawing2D` is already a pure function of the dims, so this is a second call with an offset and a delta table.
 - Somchem burn-rate neighbour table (admin-editable) and the components strip.

@@ -34,9 +34,10 @@ The site is live. Card payments are gated off until the payment provider goes li
 | ORM | Prisma (with the `pg` driver adapter) | `^7.8.0` |
 | Database | PostgreSQL | 16 in production |
 | Search | Meilisearch (`meilisearch-js` client) | server 1.44, client `^0.58.0` |
-| Auth | Clerk (buyers + sellers) | `@clerk/nextjs ^7.3.5`, `@clerk/backend ^3.4.9` |
-| Auth (admin) | Custom JWT, entirely separate from Clerk | `@nestjs/jwt ^11.0.2` |
-| AI | Anthropic SDK — moderation, KYC vision, the "Ask Boet" assistant | `^0.96.0` |
+| Auth | Self-hosted sessions (buyers + sellers) — access JWT + rotating refresh token, both in httpOnly cookies | `@nestjs/jwt ^11.0.2`, `jose` on the Next edge |
+| Auth (admin) | A second custom JWT, entirely separate from the member one | `@nestjs/jwt ^11.0.2` |
+| Verification | Didit — seller KYC, plus the e-mail and phone codes at sign-up | hand-rolled adapter |
+| AI | Anthropic SDK — moderation, document vision, the "Ask Boet" assistant | `^0.96.0` |
 | Images | Cloudinary | `^2.10.0` |
 | Email / SMS / Push | Resend, SMSPortal, `web-push` (VAPID) | `resend ^6.12.3`, `web-push ^3.6.7` |
 | Payments | Peach Payments (Checkout V2 pay-in, Payouts pay-out) | hand-rolled adapter |
@@ -54,16 +55,24 @@ Cloudflare in front. Postgres `:5432` and Meilisearch `:7700` are on the same bo
 
 - **Node 20.9 or newer.** Next 16 will not start below that.
 - **PostgreSQL 14+** running locally, and an empty database you own.
-- **A Clerk development instance** (free). The frontend *cannot boot* without a Clerk
-  publishable key — `clerkMiddleware` runs on nearly every route. Create a dev app at
-  clerk.com and take the `pk_test_…` / `sk_test_…` pair.
+- **No auth account of any kind.** Auth is self-hosted: `backend/src/auth/` owns sign-up,
+  sign-in, sessions and password reset. Both processes read `JWT_MEMBER_SECRET`, and both
+  fall back to the same throwaway dev value, so a fresh clone signs in with no config. If
+  you *do* set it, **set the same value in `frontend/.env.local`** — the Next middleware
+  verifies the session cookie itself, and a mismatched pair bounces you to sign-in on every
+  protected page while the API works perfectly. (Never give it a `NEXT_PUBLIC_` prefix; it
+  is the signing secret.)
+- **A Didit sandbox key**, and this is the one third-party account you cannot skip.
+  Sign-up sends a 6-digit e-mail code through Didit and there is no local bypass, so
+  without `DIDIT_API_KEY` + `DIDIT_WORKFLOW_ID` you can create a user and never verify it.
+  Sandbox mode is free.
 - **Meilisearch — optional.** Without it, search and per-category attribute filters are
   disabled and browse falls back to a Prisma query (see
   `listings.service.ts → browse()`). Everything else works. Install it if you're touching
   search; skip it otherwise.
-- Everything else (Cloudinary, Anthropic, Peach, VerifyNow, Pudo, TCG, Resend, SMSPortal)
-  degrades gracefully when unconfigured. You do not need any of those accounts to get a
-  running site.
+- Everything else (Cloudinary, Anthropic, Peach, Pudo, TCG, Resend, SMSPortal) degrades
+  gracefully when unconfigured. You do not need any of those accounts to get a running
+  site.
 
 ### 1. Clone and install
 
@@ -91,22 +100,23 @@ Fill in the minimum set to boot:
 
 ```
 DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/gun_galore?schema=public
-CLERK_SECRET_KEY=sk_test_…
 FRONTEND_URL=http://localhost:3000
 PORT=3001
 NODE_ENV=development
+DIDIT_API_KEY=…
+DIDIT_WORKFLOW_ID=…
 ```
 
-`JWT_ADMIN_SECRET` can stay empty in development — `admin-jwt-secret.ts` falls back to a
-fixed throwaway so admin login works with zero config, and *throws* if that fallback is
-ever reached with `NODE_ENV=production`.
+`JWT_MEMBER_SECRET` and `JWT_ADMIN_SECRET` can both stay empty in development —
+`member-jwt-secret.ts` and `admin-jwt-secret.ts` each fall back to a fixed throwaway so
+sign-in and admin login work with zero config, and each *throws* if its fallback is ever
+reached with `NODE_ENV=production`. ⚠️ In production the two must be **different values**:
+set them the same and a member token verifies on an admin route.
 
 **`frontend/.env.local`**
 
 ```
 NEXT_PUBLIC_API_URL=http://localhost:3001/api
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_…
-CLERK_SECRET_KEY=sk_test_…
 ```
 
 > **`NEXT_PUBLIC_API_URL` must include the `/api` suffix.** The backend sets a global `api`
@@ -298,7 +308,9 @@ Every module is registered in `app.module.ts`; read that file first, it's the ho
 
 | Module | What it owns |
 | --- | --- |
-| `kyc/` | Seller identity verification — VerifyNow plus a cheaper Claude-vision flow. Triggered at first payment, hard-gates payout. |
+| `auth/` | Member sign-up, e-mail verification, sign-in, password reset, and the session pair (15-minute access JWT + rotating refresh token, sha256-only at rest). Also the five guards every other controller uses. `@Global`. |
+| `didit/` | The **one** adapter for Didit — sign-up e-mail and phone codes, and the hosted KYC session. No other service builds a client or parses a Didit response. |
+| `kyc/` | Seller identity verification: consent → details → hosted Didit session → verdict by webhook. Triggered at first payment, hard-gates payout. |
 | `moderation/` | Claude listing moderation, prompt-injection sanitising, and a deterministic regex pass that strips emails/phones/URLs out of descriptions. |
 | `ratings/`, `reports/`, `complaints/`, `support/` | Reviews, user reports, the formal complaints register, help centre. |
 | `admin/` | Admin JWT auth, dashboards, health checks, AI-spend monitoring, payouts-due review, analytics. |
@@ -308,7 +320,7 @@ Every module is registered in `app.module.ts`; read that file first, it's the ho
 | Module | What it owns |
 | --- | --- |
 | `tasks/` | The scheduler. ~40 `@Cron` jobs live across the codebase; this is where most of them are wired. Auction close, offer expiry, KYC chasers, payout collection, digests. |
-| `actions/` | One-tap action tokens. An SMS link like `/a/<token>` **is** the credential — no Clerk session — scoped to a single action (accept an offer, raise a bid, pay). |
+| `actions/` | One-tap action tokens. An SMS link like `/a/<token>` **is** the credential — no session at all — scoped to a single action (accept an offer, raise a bid, pay). |
 | `notifications/`, `push/`, `sms/` | In-app feed, Web Push (VAPID), SMSPortal. Email templates live in `src/modules/notifications/templates/emails/`. |
 | `ask-gg/` | "Ask Boet", the site-wide Claude assistant: knowledge base, page context, account tools, fair-use lanes. |
 | `load-lab/`, `reloading/`, `hunt-ballistics/` | Reloading manual library, powder burn charts, cartridge specs, ballistics reference. Domain content, not marketplace mechanics. |
@@ -330,10 +342,10 @@ touch the schema.
 
 | Path | What |
 | --- | --- |
-| `middleware.ts` | **Read this before adding any page.** Clerk auth, the public-route allowlist, the coming-soon gate, token-authed pages. A new public page that isn't in `isPublicRoute` will 307 signed-out visitors to sign-in — including Googlebot. |
+| `middleware.ts` | **Read this before adding any page.** The session-cookie check, the public-route allowlist, the coming-soon gate, token-authed pages. A new public page that isn't in `isPublicRoute` will 307 signed-out visitors to sign-in — including Googlebot. The pattern matching itself lives in `lib/route-matcher.ts`, with a spec. |
 | `app/` | App Router pages. `listings/`, `category/`, `checkout/`, `my/` (bids, offers, orders, sales, listings, earnings, swaps), `account/`, `admin/` (its own `(protected)` group), `(legal)/` (terms, privacy, PAIA, complaints, fees — statutory pages, treat as legal text), `a/[token]/` (SMS one-tap actions). |
 | `components/` | ~80 shared components. `listing-card`, `filter-bar`, `bid-stepper`, `locker-picker`, `dealer-picker`, `photo-dropzone`, `bottom-tab-bar`, plus `admin/` and `ask-gg/` subtrees. |
-| `lib/` | Client helpers. `api.ts` (the `apiFetch` wrapper), `safe-json.ts` (**use this** — a raw `res.json()` on an empty 200 throws, which caused a whole class of sign-up bugs), `cart-store.ts`, `use-push.ts`, `account-menu-data.tsx`, `support-contact.ts`. |
+| `lib/` | Client helpers. `auth.tsx` (the client session — `useAuth()`, `useUser()`, `<SignInButton>`) and `auth-server.ts` (the server half, reading the `ao_at` cookie), `route-matcher.ts` (the middleware's public-route matcher, with a spec), `api.ts` (the `apiFetch` wrapper), `safe-json.ts` (**use this** — a raw `res.json()` on an empty 200 throws, which caused a whole class of sign-up bugs), `cart-store.ts`, `use-push.ts`, `account-menu-data.tsx`, `support-contact.ts`. |
 | `app/sw.ts` | Serwist service worker source, compiled to `public/sw.js` at build time only. Not active in dev. |
 
 ---

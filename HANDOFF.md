@@ -6,7 +6,100 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-10**.
 
-## 2026-09-10 (latest) — THE CARTRIDGE PAGE, THE QUARRY, AND SIX RED MARKS
+## 2026-09-10 (latest) — CLERK IS OUT; AUTH IS OURS, VERIFICATION IS DIDIT
+
+**NOT DEPLOYED.** On `feat/self-hosted-auth`, four commits, off
+`feat/takealot-ux-parity`. Nothing has touched the box.
+
+**The rules are in CLAUDE.md**; where each piece of the old behaviour went is in
+`docs/history/CLERK-REMOVAL.md`. This is state and the pick-up list.
+
+### What is done
+
+Backend, frontend and peripherals are complete and green: backend `tsc` clean
+with 4,554 tests passing, frontend `tsc` clean with 1,680 passing, and
+`npm run build` exits 0. `User.clerkId` is gone — `User.id` is the only user
+identifier and `@CurrentUser()` returns it. Sessions are ours (httpOnly
+cookies, rotating refresh, bearer fallback for the app shells). Email and phone
+codes and seller KYC go through Didit. VerifyNow, AWS Rekognition and the
+Gemini identity read are deleted; Gemini keeps the Licence Centre reader and
+`readFirearm()`.
+
+### ⚠️ WHAT HAS NOT BEEN RUN
+
+**No part of this has touched a database or a live Didit call.** The migration
+`20260910200000_self_hosted_auth` is hand-written — the local dev database is
+behind on migrations and was not mine to migrate — and verified only by
+cross-checking the schema diff, the index names in the baseline, and
+`migration-order.spec.ts` (which caught one real error: a table named
+`SupportTicketMessage` that is actually `SupportTicketReply`).
+
+Nobody has yet signed up, signed in, reset a password, or completed a
+verification against the running system. That end-to-end pass is the next
+session's first job, against the Didit **sandbox** application
+(`a8cb5177-…`, workflow `f30edb44-…`), using `sandbox_scenario` to force
+outcomes without billing.
+
+⚠️ **The migration opens with `TRUNCATE "User" CASCADE`.** That is the
+operator's instruction and it takes every listing, transaction, offer, bid,
+motivation and bench with it. Admin accounts, the taxonomy, dealers, the
+reloading corpus and the Bench reference data survive. **Take a backup first**
+— `~/bin/backup.sh` — and know that the encrypted identity documents under
+`SECURE_UPLOAD_DIR` are NOT removed by it and want clearing by hand.
+
+### Before this can go live
+
+1. Set `JWT_MEMBER_SECRET` in **both** `.env` files — same value, and
+   different from `JWT_ADMIN_SECRET`. Both hard-throw at boot in production.
+2. Create the Didit **live** application, publish a KYC workflow with
+   **white-label OFF**, and set `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`,
+   `DIDIT_MODE=live`.
+3. Register the webhook destination at
+   `https://alloutdoor.co.za/api/webhooks/didit` and put its secret in
+   `DIDIT_WEBHOOK_SECRET`. **No webhook exists yet** — the account has none.
+4. **Allow `18.203.201.92` in Cloudflare's WAF.** Didit delivers from that
+   single IP; without the rule every verification outcome is dropped at the
+   edge and nothing in any application log will say so.
+5. Rebuild the frontend after removing the Clerk vars from
+   `.env.production` — `NEXT_PUBLIC_*` is inlined at build time, so the old
+   key stays in the served bundle until you do.
+
+### Left for the operator, not for code
+
+- **Rotate, do not just delete.** `frontend/.env.local` and
+  `frontend/.env.local.bak-20260825-214941` both hold a live `sk_live_` Clerk
+  secret in plaintext; the AWS access key was live on the box. Deleting the
+  lines revokes nothing — kill the Clerk key in its dashboard and the IAM user
+  in the AWS console.
+- **A decision, not a bug: there is no Home Affairs check any more.** VerifyNow
+  gave us the applicant's official name and date of birth, which is what let
+  the verdict cross-check what somebody typed against the state. Didit's free
+  tier has no equivalent, so names come off the document and the DOB is checked
+  against the ID number's own digits. The anchored high-value re-check is gone
+  with it. `zaf_africa_national_id` and `zaf_dha_photo` buy them back at
+  \$1.10 each. **Until then no user-facing copy may claim a Home Affairs
+  verification.**
+- **Google sign-in and 2FA are gone** and were not rebuilt — both lived in
+  Clerk's hosted surfaces. Settings now says plainly that 2FA is unavailable.
+- Didit is on the **free tier** (500/month each of ID verification, passive
+  liveness, face match, IP analysis; \$10 balance, currently 1 of each used).
+  Email codes cost \$0.03 and ZA SMS about \$0.105 — the operator accepted
+  both. `didit_org_get_balance` after a test run should show
+  `total_cost: 0` on the four free lines; anything else means white-label
+  crept onto the workflow.
+
+### Worth knowing
+
+The `gungalore.co.za` → `alloutdoor.co.za` rename was **blocked** by Clerk's
+FAPI domain (`infra/nginx/alloutdoor.conf:30-31`). That blocker is gone.
+
+`docs/ARCHITECTURE.md` had been claiming an `api.gungalore.co.za` vhost and
+that CORS mattered because the origins differed. It is same-origin — which is
+what makes the cookie session work at all — and the doc is corrected.
+
+---
+
+## 2026-09-10 — THE CARTRIDGE PAGE, THE QUARRY, AND SIX RED MARKS
 
 Deployed as **6a1482eb**. **PARKED HERE** at the operator's request — the work
 below is finished and shipped; the list at the bottom is where to pick it up.

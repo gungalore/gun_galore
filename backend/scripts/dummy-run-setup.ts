@@ -70,7 +70,7 @@ async function main() {
 
   // 2) Write the neutralised .env.dummyrun. Only the keys below are defined;
   //    everything else (ANTHROPIC/RESEND/SMSPORTAL/PUDO/STITCH/CLOUDINARY/
-  //    ZOHO/MEILI/VAPID/CLERK) stays undefined -> no-op clients.
+  //    ZOHO/MEILI/VAPID/DIDIT) stays undefined -> no-op clients.
   // Every sensitive key is set to EMPTY (not omitted). The harness preloads this
   // file first; the app also loads backend/.env at runtime, and dotenv/config is
   // no-override — so a key already present here (even empty) can NEVER be clobbered
@@ -95,8 +95,9 @@ async function main() {
     'VAPID_PRIVATE_KEY',
     'IMAP_USER',
     'IMAP_PASSWORD',
-    'CLERK_SECRET_KEY',
-    'CLERK_WEBHOOK_SECRET',
+    'DIDIT_API_KEY',
+    'DIDIT_WORKFLOW_ID',
+    'DIDIT_WEBHOOK_SECRET',
     'ZOHO_CLIENT_ID',
     'ZOHO_CLIENT_SECRET',
     'ZOHO_REFRESH_TOKEN',

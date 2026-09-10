@@ -8,8 +8,8 @@
 //   if (any < 50) -> REJECTED          // and >= 70 is required to VERIFY
 //
 // Claude answered `looks_genuine_sa_id` by LOOKING at the card — fonts,
-// layout, the coat of arms. Gemini reads the text (since 2026-09-08 — AWS
-// Textract is gone) and Rekognition does faces.
+// layout, the coat of arms. Since the Didit cut-over the document is read and
+// the faces matched on Didit's side; nothing here calls a model or AWS.
 // Neither can tell a real card from a good forgery, so after the cut-over
 // there is nobody left to answer that question.
 //
@@ -40,7 +40,7 @@
 // What still covers most of the ground:
 //   • The ID number must pass the Luhn check on digit 13 — a made-up
 //     number fails, and that check is where a fabricated identity usually
-//     dies (see textract-extract.ts).
+//     dies (see saIdLuhnValid in kyc-cross-check.ts).
 //   • The printed date of birth must agree with the date encoded in the
 //     ID number's own YYMMDD prefix — this catches the ordinary tamper,
 //     where one is altered and the other is not.
@@ -48,7 +48,7 @@
 //     and date of birth, and crossCheckIdentity compares the document to
 //     that record. A forged card carrying REAL, HA-confirmed data is a
 //     much smaller problem than a forged card carrying invented data.
-//   • Rekognition still has to match the face.
+//   • Didit still has to match the face.
 //
 // That is a genuine reduction in coverage against artwork forgery, stated
 // plainly rather than papered over.
@@ -113,7 +113,8 @@ export interface IntegrityInput {
    * with Textract gone (2026-09-08) there is no confidence signal, because a
    * vision model reports none and asking it to grade its own read would be a
    * guess wearing a number. It is completeness alone now — see
-   * legibilityScore() in aws-kyc-findings.ts, which says the same at length.
+   * legibilityScore(), which said the same at length before the AWS findings
+   * mapper was deleted with the rest of that rail.
    *
    * The consequence, stated plainly: a smudged document the model reads
    * confidently but WRONGLY now scores high, where Textract's low confidence

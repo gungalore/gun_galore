@@ -1,0 +1,175 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; background: #101312; color: #EEF2F0;
+      font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      font-feature-settings: 'tnum' 1; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    a { color: #EEF2F0; text-decoration: none; } a:hover { color: #FFFFFF; }
+    .mono { font-family: 'Geist Mono', ui-monospace, Consolas, monospace; }
+    .lbl { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: #7F8885; font-weight: 500; }
+    .tag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 5px; font-size: 10.5px; font-weight: 500; white-space: nowrap; border: 0.5px solid #343C3A; color: #B3BBB8; background: #1D2221; }
+    .tag.ok   { color: #3ECF8E; border-color: rgba(62,207,142,0.34); background: rgba(62,207,142,0.14); }
+    .tag.bad  { color: #FF6B5E; border-color: rgba(255,107,94,0.34); background: rgba(255,107,94,0.14); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 44px; padding: 0 14px; border-radius: 8px; border: 0.5px solid #343C3A; background: #1D2221; color: #EEF2F0; font-size: 13px; font-weight: 500; font-family: inherit; white-space: nowrap; }
+    .btn.primary { background: #EEF2F0; border-color: #EEF2F0; color: #101312; }
+    .sec { border-top: 0.5px solid #262D2B; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .kv { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+    .kv .k { color: #7F8885; }
+    .kv .v { margin-left: auto; color: #EEF2F0; }
+    .line { background: #171B1A; border: 0.5px solid #262D2B; border-radius: 10px; padding: 11px 13px; display: flex; flex-direction: column; gap: 6px; }
+    .line.on { border-color: #343C3A; background: #1D2221; }
+    .scroll { overflow-y: auto; scrollbar-width: none; }
+    .scroll::-webkit-scrollbar { display: none; }
+    /* ⚠️ 60+. The installed shell's tab bar sits at z 55, so anything that
+       blocks has to clear it or the bar paints over the confirm and steals
+       the tap that commits money. */
+    .dim { position: absolute; inset: 0; background: rgba(0,0,0,0.55); z-index: 60; }
+    .dialog { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 61; background: #171B1A; border: 0.5px solid #343C3A; border-radius: 14px; overflow: hidden; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #101312; display: flex; flex-direction: column; overflow: hidden; position: relative;">
+
+  <!-- A drawer becomes a full-screen push on a phone, with its own back
+       header. Close is a 44px target at the leading edge, where a thumb is. -->
+  <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 0.5px solid #262D2B;">
+    <div style="width: 44px; height: 44px; margin-left: -6px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #B3BBB8;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"></path></svg>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 1px; min-width: 0;">
+      <div class="lbl">Order</div>
+      <div class="mono" style="font-size: 15px; font-weight: 600;">GG-ORD-0114</div>
+    </div>
+    <div style="flex: 1;"></div>
+    <span class="tag ok">Paid</span>
+  </div>
+
+  <div class="scroll" style="flex: 1;">
+
+    <div class="sec" style="border-top: none;">
+      <div class="kv"><span class="k">Buyer</span><span class="v">@boet</span></div>
+      <div class="kv"><span class="k">Placed</span><span class="v">2 Sep 2026, 09:14</span></div>
+      <div class="kv"><span class="k">Items</span><span class="v mono">R 17 400.00</span></div>
+      <div class="kv"><span class="k">Shipping</span><span class="v mono">R 940.00</span></div>
+      <div class="kv"><span class="k">Handling</span><span class="v mono">R 45.00</span></div>
+      <div class="kv"><span class="k">Processing</span><span class="v mono">R 115.00</span></div>
+      <div style="height: 0.5px; background: #262D2B; margin: 2px 0;"></div>
+      <div class="kv"><span class="k" style="color: #B3BBB8;">Buyer paid</span><span class="v mono" style="font-size: 16px; font-weight: 600;">R 18 500.00</span></div>
+    </div>
+
+    <!-- 🚨 THE LINE PICKER IS THE SAFETY RAIL. Money is per-LINE, never
+         per-order: fully refunding a consolidated carrier line while its
+         siblings are still held is refused by the server, in an order the
+         operator cannot predict from this screen. So there is no
+         "refund the order" button anywhere — you pick a line first. -->
+    <div class="sec">
+      <div style="display: flex; align-items: baseline; gap: 8px;">
+        <span class="lbl">Lines</span>
+        <span style="font-size: 11.5px; color: #555E5B; margin-left: auto;">acting on line 1 of 3</span>
+      </div>
+
+      <div class="line on">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 13.5px; font-weight: 500;">Tikka T3x Lite .308</span>
+          <span style="flex: 1;"></span>
+          <span class="mono" style="font-size: 13px;">R 16 200.00</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 12px; color: #7F8885;">@skietrob</span>
+          <span style="flex: 1;"></span>
+          <span class="tag ok">Held</span>
+        </div>
+      </div>
+
+      <div class="line">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 13.5px; font-weight: 500;">Leupold VX-3HD 3.5-10x40</span>
+          <span style="flex: 1;"></span>
+          <span class="mono" style="font-size: 13px;">R 1 200.00</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 12px; color: #7F8885;">@turbosnail</span>
+          <span style="flex: 1;"></span>
+          <span class="tag">Carries the parcel</span>
+        </div>
+      </div>
+
+      <div class="line">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 13.5px; font-weight: 500;">Federal Premium .308 &times; 2</span>
+          <span style="flex: 1;"></span>
+          <span class="mono" style="font-size: 13px;">R 1 100.00</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 12px; color: #7F8885;">@turbosnail</span>
+          <span style="flex: 1;"></span>
+          <span class="tag ok">Held</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compose first, confirm second: the amount and the reason are typed
+         out here, in the sheet, never inside the confirm. A confirm that also
+         collects is one people learn to tap through. -->
+    <div class="sec" style="padding-bottom: 22px;">
+      <span class="lbl">Money levers &middot; line 1</span>
+      <div style="font-size: 12px; line-height: 1.5; color: #7F8885;">
+        Nothing here undoes. Each writes an audit row against you.
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; padding-top: 2px;">
+        <button class="btn primary">Release R 15 390.00 to @skietrob</button>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn" style="flex: 1;">Refund buyer&hellip;</button>
+          <button class="btn" style="flex: 1;">Hold payout&hellip;</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- The confirm. It restates the act in WORDS — who, how much, and what
+       follows — because an operator moving fast is exactly who a bare
+       "Are you sure?" fails. -->
+  <div class="dim"></div>
+  <div class="dialog">
+    <div style="padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 4px;">
+      <span class="lbl">Confirm</span>
+      <div style="font-size: 17px; font-weight: 600; letter-spacing: -0.015em;">Release R 15 390.00</div>
+    </div>
+    <div style="padding: 0 16px;">
+      <div style="display: flex; gap: 12px; padding: 9px 0; border-top: 0.5px solid #262D2B; font-size: 13px;">
+        <span style="color: #7F8885; width: 58px; flex: 0 0 auto;">To</span>
+        <span>@skietrob</span>
+      </div>
+      <div style="display: flex; gap: 12px; padding: 9px 0; border-top: 0.5px solid #262D2B; font-size: 13px;">
+        <span style="color: #7F8885; width: 58px; flex: 0 0 auto;">Amount</span>
+        <span class="mono">R 15 390.00</span>
+      </div>
+      <div style="display: flex; gap: 12px; padding: 9px 0; border-top: 0.5px solid #262D2B; font-size: 13px;">
+        <span style="color: #7F8885; width: 58px; flex: 0 0 auto;">Line</span>
+        <span>Tikka T3x Lite .308 &mdash; 1 of 3</span>
+      </div>
+      <div style="display: flex; gap: 12px; padding: 9px 0 12px; border-top: 0.5px solid #262D2B; font-size: 13px; line-height: 1.45;">
+        <span style="color: #7F8885; width: 58px; flex: 0 0 auto;">Then</span>
+        <span style="color: #B3BBB8;">The payout becomes due and the next sweep pays it. The other two lines are untouched.</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; padding: 4px 16px 16px;">
+      <button class="btn" style="flex: 1;">Cancel</button>
+      <button class="btn primary" style="flex: 1.4;">Release to the seller</button>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

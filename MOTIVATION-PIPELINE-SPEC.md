@@ -1078,7 +1078,7 @@ file: backend/src/motivations/motivation-pdf.service.ts  (pdfkit)
 
 ```yaml
 file: backend/src/motivations/saps271.service.ts, saps271-map.ts, saps271-coords.ts
-route: GET /api/motivations/:id/saps271   (Clerk-guarded, private no-store)
+route: GET /api/motivations/:id/saps271   (session-guarded, private no-store)
 ui: /licence-centre/[id]/pack  (Show the form / Download the form, on demand)
 
 R-260: FILLED BY DRAWING ON THE FLAT FORM, not by setting AcroForm fields. The
