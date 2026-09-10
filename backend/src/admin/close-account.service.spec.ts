@@ -251,10 +251,18 @@ describe('AdminService.closeAccount', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────
-// H11 — the username has to become clearable, but only where it is safe.
+// H11 — RESOLVED WITHOUT THE CARVE-OUT IT ASKED FOR.
+//
+// The finding wanted an admin able to CLEAR a closed account's username, so a
+// half-completed closure could be finished by hand. `username` is non-null now
+// (it is the only name other members ever see) and close() renames it — with
+// usernameLower — inside the same tx.user.update that stamps accountClosedAt.
+// So the handle is released by the closure write itself: there is no state in
+// which a closed row is still holding one. What remains here is the rule that
+// pairs the two columns on every rename.
 // ────────────────────────────────────────────────────────────────────
 
-describe('AdminService.updateUser — clearing a username', () => {
+describe('AdminService.updateUser — the username columns', () => {
   function makeUpdateService(user: Record<string, unknown>) {
     const prisma = {
       user: {
@@ -270,8 +278,8 @@ describe('AdminService.updateUser — clearing a username', () => {
       prisma as never,
       // SessionService — an admin close revokes every live session.
       { revokeAllForUser: jest.fn(async () => 0) } as never,
-    // UsersService — POPIA erasure.
-    { deleteById: jest.fn(async () => undefined) } as never,
+      // UsersService — POPIA erasure.
+      { deleteById: jest.fn(async () => undefined) } as never,
       {} as never,
       {} as never,
       {} as never,
@@ -288,6 +296,7 @@ describe('AdminService.updateUser — clearing a username', () => {
   const base = {
     id: 'U1',
     username: 'boet',
+    usernameLower: 'boet',
     firstName: 'A',
     lastName: 'B',
     phone: '0820000000',
@@ -297,9 +306,9 @@ describe('AdminService.updateUser — clearing a username', () => {
     subscriptionTier: 'FREE',
   };
 
-  // The documented invariant that used to be absolute: a live member's handle
-  // is rendered on their listings and their ratings, and nulling it turns them
-  // into an anonymous seller while they are still trading.
+  // The documented invariant: a live member's handle is rendered on their
+  // listings and their ratings, and clearing it turns them into an anonymous
+  // seller while they are still trading.
   it('refuses to clear a live member’s username', async () => {
     const { service, prisma } = makeUpdateService({
       ...base,
@@ -315,30 +324,66 @@ describe('AdminService.updateUser — clearing a username', () => {
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
-  // Closure releases the handle back into the signup namespace. If a closure
-  // half-completes, an admin has to be able to finish it by hand — the only
-  // other remedy was a manual database edit.
-  // ⚠️ RELEASES THE HANDLE BY RENAMING, NOT BY NULLING. The point of the
-  // feature is unchanged — the ORIGINAL username has to go back into the
-  // signup namespace so the member can return — but `username` is non-null
-  // now, so writing null is a constraint violation rather than a cleared
-  // field. usernameLower moves with it or the unique index keeps the original
-  // reserved, which is the exact thing this is meant to free.
-  it('releases a closed account’s username by renaming it', async () => {
+  // ⚠️ AND REFUSES ON A CLOSED ACCOUNT TOO — the case H11 wanted opened. The
+  // column is non-null, so the clear was never a cleared field; and the row
+  // reaching this state at all means close() has already renamed it, so there
+  // is nothing left to release. A write here would fail the constraint on the
+  // way to fixing a problem that no longer exists.
+  it('refuses to clear a closed account’s username, because closure already released it', async () => {
     const { service, prisma } = makeUpdateService({
       ...base,
+      username: 'closed-0123456789',
+      usernameLower: 'closed-0123456789',
       accountClosedAt: new Date('2026-08-22'),
     });
 
+    await expect(
+      service.updateUser('U1', 'ADMIN1', {
+        username: '',
+        reason: 'finishing a half-completed closure',
+      } as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  // ⚠️ THE REACHABLE BUG. usernameLower carries the unique index, sign-up's
+  // availability check and login's identifier match. A rename that wrote only
+  // the displayed column left the member signing in under their old handle,
+  // that handle still reserved against them, and the new one free to take.
+  it('carries usernameLower on a rename', async () => {
+    const { service, prisma } = makeUpdateService({
+      ...base,
+      accountClosedAt: null,
+    });
+
     await service.updateUser('U1', 'ADMIN1', {
-      username: '',
-      reason: 'finishing a half-completed closure',
+      username: 'NuweBoet',
+      reason: 'member asked for a different handle',
     } as never);
 
     const data = prisma.user.update.mock.calls[0][0].data;
-    expect(data.username).not.toBe(base.username);
-    expect(String(data.username)).toMatch(/^closed-/);
-    expect(data.usernameLower).toBe(String(data.username).toLowerCase());
+    expect(data.username).toBe('NuweBoet');
+    expect(data.usernameLower).toBe('nuweboet');
+  });
+
+  // The pairing must not fire on a PATCH that does not touch the username —
+  // a stray usernameLower on an unrelated edit is a write nobody audited.
+  it('leaves usernameLower alone when the username does not change', async () => {
+    const { service, prisma } = makeUpdateService({
+      ...base,
+      accountClosedAt: null,
+    });
+
+    await service.updateUser('U1', 'ADMIN1', {
+      username: 'boet',
+      phone: '0830000000',
+      reason: 'member changed their number',
+    } as never);
+
+    const data = prisma.user.update.mock.calls[0][0].data;
+    expect(data.phone).toBe('0830000000');
+    expect(data.username).toBeUndefined();
+    expect(data.usernameLower).toBeUndefined();
   });
 });
 

@@ -559,48 +559,54 @@ export class AdminService {
     // reads "username: old → new", never a blob. Empty string clears a
     // name/phone (→ null).
     //
-    // ⚠️ USERNAME IS CLEARABLE ONLY ON A CLOSED ACCOUNT, and that carve-out is
-    // deliberate. It used to be flatly non-clearable, documented as "public
-    // identity — listings/ratings render it", and that is still true of a live
-    // member: null it and their listings and ratings render as an anonymous
-    // seller while they are still trading. But closure RELEASES the handle
-    // back into the signup namespace, so if a closure half-completes — the DB
-    // write lands and the follow-up does not — an admin has to be able to
-    // finish it by hand. Without this the only remedy is a manual DB edit.
-    const clearableUsername = user.accountClosedAt !== null;
-    if (dto.username?.trim() === '' && !clearableUsername) {
+    // ⚠️ A USERNAME IS NOT CLEARABLE, AND CLOSURE IS WHY IT NO LONGER HAS TO
+    // BE. H11 of ACCOUNT-CLOSURE.md asked for a carve-out here — clearable on
+    // a CLOSED account — so that a closure which half-completed could be
+    // finished by hand instead of by a manual database edit. Two things
+    // retired it. The column is non-null now (it is the only name other
+    // members ever see), so the null this wrote was a constraint violation
+    // rather than a cleared field. And the release it was meant to finish can
+    // never be outstanding: close() moves username AND usernameLower onto
+    // `closed-<last 10 of id>` in the SAME tx.user.update that stamps
+    // accountClosedAt, so a row carrying that stamp has already handed its
+    // handle back, and a row without one was never closed. Nothing is lost —
+    // a handle is released by replacing it — and the original invariant stands
+    // either way: a live member's listings and ratings render their handle
+    // while they are still trading.
+    //
+    // The DTO's @MinLength(3) already refuses '' at the pipe. This says the
+    // same thing where the write happens, for callers that never pass through
+    // it (bulkBanUsers) and for the day somebody relaxes the DTO.
+    if (dto.username?.trim() === '') {
       throw new BadRequestException(
-        'A username can only be cleared on a closed account. Replace it instead, or close the account first.',
+        'A username cannot be cleared — it is the only name other members see. Replace it, or close the account, which hands the handle back on its own.',
       );
     }
     const profileFields = [
-      ['username', dto.username?.trim(), user.username, clearableUsername],
-      ['firstName', dto.firstName?.trim(), user.firstName, true],
-      ['lastName', dto.lastName?.trim(), user.lastName, true],
-      ['phone', dto.phone?.trim(), user.phone, true],
+      ['username', dto.username?.trim(), user.username],
+      ['firstName', dto.firstName?.trim(), user.firstName],
+      ['lastName', dto.lastName?.trim(), user.lastName],
+      ['phone', dto.phone?.trim(), user.phone],
     ] as const;
-    for (const [field, rawNext, current, clearable] of profileFields) {
+    for (const [field, rawNext, current] of profileFields) {
       if (rawNext === undefined) continue;
-      let next: string | null | undefined =
-        rawNext === '' ? (clearable ? null : undefined) : rawNext;
+      // '' only reaches here for a name or a phone — a username threw above.
+      const next: string | null = rawNext === '' ? null : rawNext;
+      if (next === current) continue;
+      data[field] = next;
 
-      // ⚠️ A USERNAME IS RELEASED BY RENAMING IT, NOT BY NULLING IT. The
-      // column is non-null now — it is the only name other members ever see —
-      // so the null this branch used to write is a runtime constraint
-      // violation, not a cleared field. What the admin actually wants here is
-      // what closure does: hand the ORIGINAL handle back to the signup
-      // namespace by moving this row onto one nobody can claim.
-      if (field === 'username' && next === null) {
-        next = `closed-${userId.slice(-10)}`;
-        data.usernameLower = next.toLowerCase();
-      } else if (field === 'username' && typeof next === 'string') {
-        // Any other username write has to carry usernameLower with it, or the
-        // unique index stops matching what is displayed.
+      // ⚠️ USERNAME AND USERNAMELOWER MOVE TOGETHER, ALWAYS — the invariant
+      // written out over assertUsernameFree (users.service.ts). The unique
+      // index and both lookups are on usernameLower: sign-up tests
+      // availability against it and login matches the identifier against it.
+      // A rename that writes only the displayed column leaves the member
+      // signing in under their OLD handle, that old handle still reserved
+      // against them, and the new one free for somebody else to take and be
+      // mistaken for them.
+      if (field === 'username' && typeof next === 'string') {
         data.usernameLower = next.toLowerCase();
       }
 
-      if (next === undefined || next === current) continue;
-      data[field] = next;
       actions.push({
         action: 'USER_PROFILE_EDIT',
         oldValue: `${field}: ${current ?? '—'}`,

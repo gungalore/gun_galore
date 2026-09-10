@@ -33,8 +33,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
-    "@aws-sdk/client-rekognition": "^3.1126.0",
-    "@aws-sdk/client-sts": "^3.1126.0",
     "@google/genai": "2.21.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
