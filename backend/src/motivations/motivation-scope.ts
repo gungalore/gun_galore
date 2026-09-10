@@ -350,6 +350,22 @@ const COMPARING = [
   'short of',
   'instead of',
   'rather than',
+  /**
+   * ⚠️ THE SHORTFALL VERBS, ADDED AFTER MO000075 WAS REFUSED FOR ONE.
+   * The list was all negated auxiliaries — cannot, does not, is not — and the
+   * writer had written "its terminal ballistics and trajectory PREVENT it from
+   * achieving the fine mechanical precision required". That is precisely the
+   * sentence the carve-out exists to permit; it simply said the same thing with
+   * a verb instead of a negation, and the whole document was binned for it.
+   */
+  'prevent',
+  'unable',
+  'lacks',
+  'lacking',
+  'unsuited',
+  'not suited',
+  'insufficient',
+  'inadequate',
 ] as const;
 
 /** Reloading, which is never an S13 fact at all. */
@@ -619,8 +635,22 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
        * firearm is not enough — and it has to name one, so a loose sentence
        * about cartridges in general is still refused.
        */
+      /**
+       * ⚠️ THE PARAGRAPH'S SUBJECT, NOT THE SENTENCE'S. This read `!!row`
+       * — the firearm named in THIS sentence — and nobody writes heading 6 that
+       * way. They name the Marlin, then say "It is chambered for a heavy-bore
+       * cartridge... its terminal ballistics prevent it from achieving...".
+       * MO000075 was refused for exactly that on 2026-09-10.
+       *
+       * `heldInParagraph` already exists and already solves this for the
+       * defence-vocabulary rule below — added for MO000074 the day before, for
+       * the identical reason. This rule simply never used it. The teeth are
+       * unchanged: a paragraph that never names a held firearm or its section
+       * still gets no capability vocabulary at all.
+       */
       const comparing =
-        !!row && COMPARING.some((w) => contains(s, w) || lc(s).includes(w));
+        heldInParagraph &&
+        COMPARING.some((w) => contains(s, w) || lc(s).includes(w));
       if (!comparing) {
         for (const w of COMPARISON_TERMS) {
           if (contains(s, w)) {

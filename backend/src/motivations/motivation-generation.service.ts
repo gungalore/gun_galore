@@ -1,3 +1,4 @@
+import { withoutRefusedCopy } from './motivation-scope';
 import {
   ConflictException,
   Injectable,
@@ -645,8 +646,22 @@ export class MotivationGenerationService {
       // different brief from attempt one.
       let researchIn = 0;
       let researchOut = 0;
+      /**
+       * ⚠️ SCRUBBED ON THE WAY OUT, NOT ONLY ON THE WAY IN. The shared
+       * table is cleaned when it is written, and that does nothing for a
+       * document holding its own frozen copy from before the rule existed —
+       * which is every document written so far. MO000075 still carried
+       * "platform" and "receiver" in `researchEncrypted` two fixes after the
+       * shared cache was cleaned, and the writer was still being handed them.
+       *
+       * ⚠️ SO THE GUARANTEE BELONGS AT THE POINT OF USE. Wherever the text
+       * came from — a fresh call, the shared row, or a column frozen weeks ago
+       * — the writer is never shown a sentence it would be refused for
+       * repeating. A cache is not a way round a rule.
+       */
       let research = row.researchEncrypted
-        ? (tryDecryptText(row.researchEncrypted) ?? undefined)
+        ? (withoutRefusedCopy(tryDecryptText(row.researchEncrypted) ?? '') ||
+          undefined)
         : undefined;
       if (!research) {
         const pack = await this.research

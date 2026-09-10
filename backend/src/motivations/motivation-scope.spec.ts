@@ -1,7 +1,11 @@
 import { MotivationStatus } from '@prisma/client';
 import { REGENERABLE } from './motivation-generation.service';
 import { MotivationLicenceType } from '@prisma/client';
-import { documentScope, southAfricanise } from './motivation-scope';
+import {
+  documentScope,
+  southAfricanise,
+  withoutRefusedCopy,
+} from './motivation-scope';
 import { arsenalRows } from './motivation-arsenal';
 
 const S13 = MotivationLicenceType.S13_SELF_DEFENCE;
@@ -662,3 +666,95 @@ describe('filler that can be deleted, and claims that cannot', () => {
     expect(southAfricanise(s)).toBe(s);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// HEADING 6 IS A PARAGRAPH ABOUT ONE FIREARM, NOT A ROW OF SENTENCES.
+//
+// MO000075, 2026-09-10, refused for: the document says "terminal ballistic"
+// outside any sentence comparing this firearm with one already held.
+// ────────────────────────────────────────────────────────────────────
+
+describe('⚠️ the capability carve-out reads the paragraph', () => {
+  const arsenal = [
+    {
+      make: 'MARLIN',
+      model: '1895',
+      calibre: '.45-70 Government',
+      serial: 'MR90189D',
+      section: 'section 16',
+    },
+  ] as never;
+
+  const scope = (body: string) =>
+    documentScope(body, {
+      licenceType: 'S16_DEDICATED_SPORT' as never,
+      arsenal,
+    });
+
+  it('⚠️ ACCEPTS A PRONOUN CARRYING THE PARAGRAPH SUBJECT', () => {
+    // Nobody writes heading 6 by repeating the make in every sentence. They
+    // name it, then say "It ...". The rule read only the sentence, so the
+    // second one looked like catalogue copy about nothing.
+    const body = [
+      '6. Firearms already licensed to me',
+      'The MARLIN .45-70 GOVERNMENT rifle is licensed under section 16. ' +
+        'It is chambered for a heavy-bore cartridge, but its terminal ' +
+        'ballistics and trajectory prevent it from achieving the precision ' +
+        'required for long-range sport shooting.',
+    ].join(String.fromCharCode(10) + String.fromCharCode(10));
+    expect(scope(body).filter((i) => i.includes('terminal ballistic'))).toEqual(
+      [],
+    );
+  });
+
+  it('⚠️ AND "prevent" COUNTS AS COMPARING, which it did not', () => {
+    // The list was all negated auxiliaries - cannot, does not, is not. A
+    // shortfall stated as a verb read as no comparison at all.
+    // One paragraph: the blank line is where the subject resets, and these
+    // two sentences are about the same firearm.
+    const body =
+      'The MARLIN .45-70 GOVERNMENT rifle is licensed under section 16. ' +
+      'Its terminal ballistics prevent it from reaching those distances.';
+    expect(scope(body).filter((i) => i.includes('terminal ballistic'))).toEqual(
+      [],
+    );
+  });
+
+  it('still refuses it in a paragraph that names no held firearm', () => {
+    // The teeth are unchanged: loose admiration of a cartridge is still a
+    // product page, however it is phrased.
+    const body = 'The cartridge cannot be beaten for terminal ballistics.';
+    expect(
+      scope(body).filter((i) => i.includes('terminal ballistic')).length,
+    ).toBe(1);
+  });
+});
+
+describe('⚠️ the research is held to the same standard as the document', () => {
+  it('drops a sentence the writer would be refused for repeating', () => {
+    // MO000075 was refused three times on "platform", and the sentence came
+    // almost word for word out of its own firearm research: a grounded search
+    // for a rifle MODEL returns the manufacturer's marketing.
+    const payload = [
+      'The firearm is built on the Howa 1500 platform, made in Japan.',
+      'It is widely used in South African precision rifle events.',
+    ].join(' ');
+    const out = withoutRefusedCopy(payload);
+    expect(out).not.toMatch(/platform/i);
+    expect(out).toMatch(/precision rifle events/);
+  });
+
+  it('⚠️ AND THE PARTS LIST, which the brief forbids and nothing enforced', () => {
+    // Operator, 2026-09-09: "we need whats on the license card, nothing else."
+    const payload =
+      '- **Action:** a turn-bolt action on a one-piece forged steel receiver.';
+    expect(withoutRefusedCopy(payload)).not.toMatch(/receiver/i);
+  });
+
+  it('keeps whole sentences, never mangles one', () => {
+    // A fact with a hole in it is a fact the writer may still repeat.
+    const payload = 'The barrel is cold hammer-forged. Recoil is mild.';
+    expect(withoutRefusedCopy(payload)).toBe('Recoil is mild.');
+  });
+});
+
