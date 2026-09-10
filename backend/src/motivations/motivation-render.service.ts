@@ -1097,6 +1097,12 @@ export class MotivationRenderService {
         /** The cartridge's standardised name, for the feature's headline. */
         name: string;
         hero?: { subtitle: string };
+        inset?: {
+          png: Buffer;
+          widthMm: number;
+          heightMm: number;
+          texts: DrawingText[];
+        };
       }
     | undefined
   > {
@@ -1135,15 +1141,46 @@ export class MotivationRenderService {
       const completed = completeDims(hit.dims);
       if (!completed) return undefined;
 
-      const drawing = cartridgeDrawing(
-        completed.dims,
-        { name: hit.name, pmaxBar: hit.dims.pmaxBar ?? hit.pmaxBar },
-        { derived: completed.derived, hero: !!heroLine },
-      );
-      const png = await sharp(Buffer.from(drawing.svg), { density: 300 })
-        .flatten({ background: '#ffffff' })
-        .png()
-        .toBuffer();
+      const label = { name: hit.name, pmaxBar: hit.dims.pmaxBar ?? hit.pmaxBar };
+      const raster = async (opts: { hero: boolean }) => {
+        const d = cartridgeDrawing(completed.dims, label, {
+          derived: completed.derived,
+          hero: opts.hero,
+        });
+        return {
+          png: await sharp(Buffer.from(d.svg), { density: 300 })
+            .flatten({ background: '#ffffff' })
+            .png()
+            .toBuffer(),
+          widthMm: d.widthMm,
+          heightMm: d.heightMm,
+          texts: d.texts,
+        };
+      };
+
+      const drawing = await raster({ hero: !!heroLine });
+
+      /**
+       * ⚠️ THE SAME ROUND, DRAWN TWICE, BECAUSE THE TWO PLACES WANT DIFFERENT
+       * DRAWINGS. A hero is a cover picture: two lengths, big, no engineering.
+       * The feature's inset is the DIMENSION SHEET the operator asked to have
+       * back on 2026-09-10 — "the dimension sheet should shrink to a third of
+       * the page with the history, description and facts written around it" —
+       * and it carries the full set of callouts at a third of the width.
+       *
+       * ⚠️ WHICH REVERSES THE 09-09 RULE THAT THE BODY GIVES UP ITS FIGURE
+       * WHEN THE COVER TAKES ONE. That rule was written to stop the SAME
+       * picture printing twice, and it was right about that. Two different
+       * renderings of one round, on the cover and inside, is what a magazine
+       * does with a photograph and a diagram — and the sketch that arrived the
+       * next day puts a drawing on the feature page explicitly.
+       *
+       * Only built when the cover took the hero; without one the body already
+       * receives the full drawing and a second raster would be waste.
+       */
+      const inset = heroLine ? await raster({ hero: false }) : undefined;
+
+      const png = drawing.png;
 
       return {
         png,
@@ -1164,6 +1201,7 @@ export class MotivationRenderService {
          * body its figure back must not have to remember to reinstate it.
          */
         ...(heroLine ? { hero: { subtitle: heroLine } } : {}),
+        ...(inset ? { inset } : {}),
       };
     } catch (err) {
       this.logger?.warn?.(

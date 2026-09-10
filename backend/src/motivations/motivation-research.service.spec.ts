@@ -93,6 +93,21 @@ describe('what gets researched', () => {
     expect(sport.cacheKey).not.toBe(hunt.cacheKey);
   });
 
+  it('⚠️ ASKS THE CARTRIDGE IN THE UNITS AND THE SPELLING OF THE DOCUMENT', () => {
+    /**
+     * This brief is not background — it is sliced out and PRINTED as the
+     * cartridge feature, beside a drawing dimensioned in millimetres. The
+     * first one rendered said "1,000 to 1,300 yards", "widely utilized" and
+     * "heavier calibers" in a letter to the Registrar of Firearms.
+     */
+    const ask = targetsFor(SPORT, ANSWERS).find(
+      (t) => t.target === 'calibre',
+    )!.ask;
+    expect(ask).toContain('METRIC ONLY');
+    expect(ask).toMatch(/never yards/i);
+    expect(ask).toContain('SOUTH AFRICAN ENGLISH');
+  });
+
   it('keys a discipline to its registry slug, not to what was typed', () => {
     const t = targetsFor(SPORT, {
       ...ANSWERS,

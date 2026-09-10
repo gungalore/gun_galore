@@ -702,6 +702,23 @@ export interface MotivationPdfInput {
       /** The display line under it — the make and the calibre. */
       subtitle: string;
     };
+    /**
+     * The same round drawn again for the feature's inset, when the cover took
+     * the hero.
+     *
+     * ⚠️ IT IS A SECOND DRAWING, AND THAT IS THE POINT — the note on `hero`
+     * above forbids the same PICTURE twice and it is still right. A hero is a
+     * cover picture: two lengths, big, no engineering. This is the dimension
+     * sheet, at a third of the page, which is what the operator's 2026-09-10
+     * sketch puts on the feature page. Absent when there is no hero, because
+     * the body then receives the full drawing itself.
+     */
+    inset?: {
+      png: Buffer;
+      widthMm: number;
+      heightMm: number;
+      texts: DrawingText[];
+    };
   };
   /**
    * The cartridge, written up as a feature rather than tabulated.
@@ -1033,7 +1050,17 @@ export class MotivationPdfService {
       width: number,
     ): number => {
       const scale = width / K.mm(cd.widthMm);
-      doc.image(cd.png, x0, y0, { width });
+      const height = K.mm(cd.heightMm) * scale;
+      /**
+       * ⚠️ BOTH, SO THE BOX DRAWN IS THE BOX MEASURED. Given a width alone
+       * pdfkit scales to the PNG's OWN pixel aspect, while everything that
+       * follows — the callouts, `rightTop`, the orphan guard — is placed off
+       * the declared millimetres. The two agree in production because one
+       * rasteriser produces both, and when they ever disagree the failure is
+       * silent: prose sets straight over the picture with nothing thrown and
+       * no assertion touching it.
+       */
+      doc.image(cd.png, x0, y0, { width, height });
 
       for (const t of cd.texts) {
         doc
@@ -1056,7 +1083,7 @@ export class MotivationPdfService {
           baseline: 'alphabetic',
         });
       }
-      return K.mm(cd.heightMm) * scale;
+      return height;
     };
 
     // ── What the cover owes below its image ───────────────────────────
@@ -1906,15 +1933,24 @@ export class MotivationPdfService {
      */
     let cartridgeDrawn = false;
 
+    /** Set once the feature has been set, so the next block starts a page. */
+    let featureBreakPending = false;
+
     /**
-     * The picture, unless the cover took it.
+     * The picture for the body: the drawing itself, or — when the cover took
+     * the hero — the inset re-drawn for the feature.
      *
-     * ⚠️ A HERO IS ALREADY DRAWN BEFORE THE BODY STARTS. What stays behind is
-     * the block's OTHER half — the figures — so the latch can no longer simply
-     * be set closed the way it was when the cover took the whole thing.
+     * ⚠️ A HERO IS ALREADY DRAWN BEFORE THE BODY STARTS, so what lands here is
+     * never the cover's own picture. It is the dimension sheet, which is a
+     * different drawing of the same round and is what the operator's
+     * 2026-09-10 sketch asks for on the feature page.
+     *
+     * ⚠️ AND IT CAN STILL BE ABSENT. A pack built before the inset existed, or
+     * one whose second raster failed, has a hero and no inset — the feature
+     * then sets as prose alone rather than losing the page.
      */
     const bodyPicture = input.cartridgeDrawing?.hero
-      ? undefined
+      ? input.cartridgeDrawing.inset
       : input.cartridgeDrawing;
 
     /**
@@ -1952,9 +1988,15 @@ export class MotivationPdfService {
      * overleaf.
      */
     const cartridgeHeight = (): number => {
+      /**
+       * ⚠️ AT THE WIDTH IT IS ACTUALLY DRAWN AT. The feature sets the picture
+       * into one column; measuring it at full content width reserved roughly
+       * twice the room it needs and pushed the heading to a fresh page for
+       * space that was never going to be used.
+       */
+      const drawnAt = article ? (contentWidth - K.mm(6)) / 2 : contentWidth;
       const picture = bodyPicture
-        ? K.mm(bodyPicture.heightMm) *
-          (contentWidth / K.mm(bodyPicture.widthMm))
+        ? K.mm(bodyPicture.heightMm) * (drawnAt / K.mm(bodyPicture.widthMm))
         : 0;
       return picture + (article ? mmGap(24) : 0);
     };
@@ -2098,6 +2140,8 @@ export class MotivationPdfService {
 
       if (article) {
         drawCartridgeFeature(article, bodyPicture);
+        // The spread owns its sheet on both sides — see the latch in the loop.
+        featureBreakPending = true;
         return;
       }
       /**
@@ -2137,6 +2181,23 @@ export class MotivationPdfService {
     let pendingCrime = false;
 
     for (const block of blocks) {
+      /**
+       * ⚠️ AND NOTHING FOLLOWS THE FEATURE ONTO ITS PAGE EITHER.
+       *
+       * Operator, 2026-09-10: "This should be a page on it's own." Claiming a
+       * fresh page for it only fixed the half they could see — the letter's
+       * own prose went on setting underneath the two columns, so the spread
+       * still shared a sheet, just with what came after instead of before.
+       *
+       * ⚠️ A LATCH RATHER THAN AN addPage AT THE END OF THE FEATURE, because
+       * the feature can be the last thing in the body and a page break with
+       * nothing after it is a blank sheet in a lodged pack. This spends the
+       * break on the next block there actually is.
+       */
+      if (featureBreakPending) {
+        featureBreakPending = false;
+        doc.addPage();
+      }
       if (isHeading(block)) {
         if (pendingCrime) {
           drawCrimeEvidence();
@@ -2183,7 +2244,25 @@ export class MotivationPdfService {
           : wantsBattery
             ? 140
             : 110;
-        if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - need) doc.addPage();
+        /**
+         * ⚠️ THE CARTRIDGE FEATURE TAKES A PAGE OF ITS OWN.
+         *
+         * Operator, 2026-09-10, looking at the first one: "see the declaration
+         * is also rendering above it. This should be a page on it's own."
+         *
+         * It is a two-column spread with its own headline, and it had been
+         * landing halfway down whatever page the declaration finished on —
+         * the formal close of the letter and a magazine feature sharing a
+         * sheet, with the columns squeezed into what was left.
+         *
+         * ⚠️ AND ONLY THE FEATURE. A drawing with no article is a figure
+         * belonging to the paragraph that introduces it (`drawCartridge`
+         * says so), and forcing a break for one would push the picture away
+         * from its own sentence.
+         */
+        if (wantsCartridge && article && doc.y > K.BODY_TOP + K.mm(1)) {
+          doc.addPage();
+        } else if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - need) doc.addPage();
         // ⚠️ CENTRED, BOLD, ALL CAPS — measured off Safari Outdoor, where
         // "CURRENT COMPETENCY STATUS" sits centred in Arial-Bold 11 with 49pt
         // above it. Ours were left-aligned sentence case with a trailing
@@ -2336,7 +2415,10 @@ export class MotivationPdfService {
     // so a draft with no manufacturer data AND no cartridge heading lost the
     // drawing entirely — the one case the fallback exists for.
     if (hasCartridgeBlock && input.cartridgeDrawing && !cartridgeDrawn) {
-      if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20)) doc.addPage();
+      // The feature takes a page of its own here too — see the body loop.
+      if (article && doc.y > K.BODY_TOP + K.mm(1)) doc.addPage();
+      else if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20))
+        doc.addPage();
       renderHeading(input.cartridgeDrawing.label);
       drawCartridge();
     }

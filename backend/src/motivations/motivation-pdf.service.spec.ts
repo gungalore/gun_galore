@@ -98,6 +98,25 @@ async function readPdfAsync(pdf: Buffer): Promise<{ text: string }> {
   return { text: out?.text ?? '' };
 }
 
+/**
+ * One string per page.
+ *
+ * ⚠️ WHICH IS THE ONLY WAY TO ASSERT THAT TWO THINGS ARE NOT ON THE SAME SHEET.
+ * The whole-document text proves what a pack CONTAINS and says nothing about
+ * where it sits, so a section that was supposed to take a page of its own can
+ * open halfway down another one and every existing assertion still passes.
+ *
+ * pdf-parse delimits pages with a "-- n of N --" line of its own; it is the
+ * extractor's marker rather than anything in the document.
+ */
+async function pageTexts(pdf: Buffer): Promise<string[]> {
+  const { text } = await readPdfAsync(pdf);
+  return text
+    .split(/^-- \d+ of \d+ --$/m)
+    .map((p) => flat(p))
+    .filter((p) => p.trim().length > 0);
+}
+
 // Collapse whitespace before asserting on phrases.
 const flat = (s: string) => s.replace(/\s+/g, ' ');
 
@@ -962,7 +981,7 @@ describe('the cartridge drawing', () => {
     hero: { subtitle: 'MARLIN · .45-70 GOVERNMENT' },
   };
 
-  it('⚠️ MOVES THE DRAWING TO THE COVER, it does not add a second one', async () => {
+  it('⚠️ MOVES THE DRAWING TO THE COVER, and a hero with no inset stays there', async () => {
     const { pdf } = await svc.render({
       ...makeInput(withCartridgeSection),
       cartridgeDrawing: hero,
@@ -972,9 +991,13 @@ describe('the cartridge drawing', () => {
     // The display line the operator asked for, in the document's own type.
     expect(t).toContain('MARLIN · .45-70 GOVERNMENT');
 
-    // ⚠️ ONCE, NOT TWICE. The cover taking the drawing has to mean the body
-    // gives it up: the same picture in both places is the fault the renderer
-    // calls a document that has lost its place, and it would read as one.
+    /**
+     * ⚠️ ONCE, BECAUSE THIS HERO CARRIES NO INSET — a pack built before the
+     * inset existed, or one whose second raster failed. The rule that the same
+     * PICTURE never prints twice still holds and always will; what changed on
+     * 2026-09-10 is that the feature page may carry a DIFFERENT drawing of the
+     * same round, and it arrives on its own field. See the inset tests below.
+     */
     const shown = t.split('overall 29.69 mm').length - 1;
     expect(shown).toBe(1);
   });
@@ -1023,6 +1046,62 @@ describe('the cartridge drawing', () => {
     expect(t).not.toContain('**');
     // Run-in headings are set as headings, not printed with their asterisks.
     expect(t.replace(/\s+/g, '')).toContain('ORIGIN');
+  });
+
+  /**
+   * ⚠️ THE DIMENSION SHEET, BACK ON THE FEATURE PAGE.
+   *
+   * Operator, 2026-09-10: "The cartridge dimension sheet is missing ... The
+   * dimension sheet should shrink to a third of the page with the history,
+   * description and facts written around it like a news article style."
+   *
+   * It was missing because the cover's hero suppressed it: a rule written the
+   * day before said the body gives up its figure when the cover takes one. The
+   * rule was right about the same PICTURE printing twice and is still enforced
+   * above. This is a SECOND DRAWING of the same round — the full callouts, at
+   * a third of the width — which is what the sketch asks for.
+   */
+  const insetHero = { ...hero, inset: drawing };
+
+  it('⚠️ PUTS THE DIMENSION SHEET IN THE FEATURE when the cover took the hero', async () => {
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: insetHero,
+      cartridgeArticle: article,
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+
+    // The cover still has its hero.
+    expect(t).toContain('MARLIN · .45-70 GOVERNMENT');
+    /**
+     * ⚠️ AND THE CAPTION PROVES IT IS THE INSET AND NOT THE HERO. The hero
+     * fixture filters caption-role texts out, exactly as `cartridgeDrawing`
+     * does when asked for one, so this line can only have come from the second
+     * drawing.
+     */
+    expect(t).toContain('9 mm Luger · drawn to scale');
+  });
+
+  it('⚠️ AND THE FEATURE TAKES A PAGE OF ITS OWN', async () => {
+    // Operator, 2026-09-10, on the first one rendered: "see the declaration is
+    // also rendering above it. This should be a page on it's own." It had been
+    // opening halfway down whatever page the previous section finished on,
+    // with the two columns squeezed into what was left.
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: insetHero,
+      cartridgeArticle: article,
+    } as never);
+    const pages = await pageTexts(pdf);
+    const feature = pages.findIndex((p) => p.includes('introduced in 1902'));
+    expect(feature).toBeGreaterThan(-1);
+    /**
+     * Nothing of the motivation's own prose shares the sheet with it. Both of
+     * these are on the page the feature used to open halfway down: the
+     * paragraph that raises the cartridge, and the section after it.
+     */
+    expect(pages[feature]).not.toContain('SABS-approved safe');
+    expect(pages[feature]).not.toContain('answers an attack');
   });
 
   it('⚠️ KEEPS A RUN-IN HEADING WITH ITS OWN PARAGRAPH', async () => {

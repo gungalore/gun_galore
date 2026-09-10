@@ -4414,6 +4414,15 @@ model Motivation {
   /// names the applicant's suburb. Written once and reused across gate cycles:
   /// the area and the firearm do not change between attempts.
   researchEncrypted     String? @db.Text
+  /// Which wording of the research asks produced the block above.
+  ///
+  /// ⚠️ WITHOUT THIS A FIX TO AN ASK CAN NEVER REACH A MOTIVATION THAT ALREADY
+  /// HAS RESEARCH. RESEARCH_ASK_VERSION is in the SHARED cache key, so a
+  /// reworded ask re-asks for everybody who has not been researched yet — but
+  /// this column is frozen at first write and read forever after. MO000075
+  /// printed "1,000 to 1,300 yards" on its cartridge page for exactly that
+  /// reason, a day after the ask gained METRIC ONLY.
+  researchAskVersion    String? @db.VarChar(40)
   documentVersion       Int     @default(0)
   // Versions of the attorney-reviewed PDF skeleton and disclaimer, stamped at
   // generation so documents produced under a reviewed version can be told

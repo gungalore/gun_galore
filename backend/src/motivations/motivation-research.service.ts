@@ -112,7 +112,7 @@ export const RESEARCH_TTL_DAYS = 180;
  * out of its own firearm research; rewording the ask without this would have
  * shipped, looked right, and still handed the writer the same marketing.
  */
-export const RESEARCH_ASK_VERSION = '2026-09-10';
+export const RESEARCH_ASK_VERSION = '2026-09-10b';
 
 export function cacheKeyFor(
   target: ResearchTarget,
@@ -179,6 +179,11 @@ export function targetsFor(
         // yards" under a drawing marked 71.76 mm.
         'METRIC ONLY: metres, millimetres, grams, joules, bar. Never yards,',
         'inches, grains, feet per second or foot-pounds.',
+        // ⚠️ AND SOUTH AFRICAN SPELLING, for the same reason as the units. The
+        // first render of the feature page said "widely utilized" and "heavier
+        // calibers" in a letter to the Registrar of Firearms.
+        'SOUTH AFRICAN ENGLISH: -ise and -isation, calibre, metre, practise',
+        'as the verb. Never American spelling.',
       ].join(' '),
     });
   }

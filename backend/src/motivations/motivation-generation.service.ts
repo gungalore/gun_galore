@@ -20,6 +20,7 @@ import { MotivationQuotaService } from './motivation-quota.service';
 import { applicationBlockers } from './motivation-eligibility';
 import {
   MotivationResearchService,
+  RESEARCH_ASK_VERSION,
   type ResearchPack,
 } from './motivation-research.service';
 import { MotivationModelService } from './motivation-model.service';
@@ -315,6 +316,7 @@ export class MotivationGenerationService {
         // Reused across gate cycles — the suburb and the firearm do not
         // change between attempts, so the searches are paid for once.
         researchEncrypted: true,
+        researchAskVersion: true,
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
@@ -660,10 +662,26 @@ export class MotivationGenerationService {
        * — the writer is never shown a sentence it would be refused for
        * repeating. A cache is not a way round a rule.
        */
-      let research = row.researchEncrypted
-        ? (withoutRefusedCopy(tryDecryptText(row.researchEncrypted) ?? '') ||
-          undefined)
-        : undefined;
+      /**
+       * ⚠️ AND A BLOCK GATHERED UNDER AN OLDER ASK IS NOT REUSED.
+       *
+       * RESEARCH_ASK_VERSION lives in the SHARED cache key, so rewording an
+       * ask re-asks for everybody who has not been researched yet. It did
+       * nothing for anybody who had: this column is written once and read
+       * forever after, and the render slices the cartridge feature straight
+       * out of it. MO000075 printed "1,000 to 1,300 yards" beside a drawing
+       * dimensioned in millimetres for a whole day after the ask gained
+       * METRIC ONLY, because its block was frozen the day before.
+       *
+       * A miss here costs one research pass, and the shared cache means it is
+       * paid once per distinct cartridge rather than once per applicant.
+       */
+      const researchIsCurrent = row.researchAskVersion === RESEARCH_ASK_VERSION;
+      let research =
+        row.researchEncrypted && researchIsCurrent
+          ? (withoutRefusedCopy(tryDecryptText(row.researchEncrypted) ?? '') ||
+            undefined)
+          : undefined;
       if (!research) {
         const pack = await this.research
           .researchFor(row.licenceType, answers, {
@@ -687,7 +705,10 @@ export class MotivationGenerationService {
           await this.prisma.motivation
             .update({
               where: { id: row.id },
-              data: { researchEncrypted: encryptText(text) },
+              data: {
+                researchEncrypted: encryptText(text),
+                researchAskVersion: RESEARCH_ASK_VERSION,
+              },
             })
             .catch(() => undefined);
         }
