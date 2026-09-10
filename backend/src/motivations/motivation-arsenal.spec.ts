@@ -122,6 +122,18 @@ describe('a held firearm whose purpose nobody stated', () => {
     expect(line).toMatch(/the document must not say either/i);
   });
 
+  it('⚠️ FORBIDS GLOSSING THE SECTION, which is how the writer got round it', () => {
+    // MO000075, 2026-09-10: "The CZ handgun is licensed under section 16, AS A
+    // DEDICATED HUNTER OR DEDICATED SPORTS SHOOTER". No invented use - just
+    // the Act's own words for what the section covers - and packConsistency
+    // read "hunt" straight out of it. Naming the section is what the writer
+    // is for; explaining it states which of the two purposes this licence was
+    // issued for, which is the one thing nobody has said.
+    const line = rowFor({}).line;
+    expect(line).toMatch(/BY NUMBER/);
+    expect(line).toMatch(/not follow it with what that section covers/i);
+  });
+
   it('still carries the section, which IS stated', () => {
     // Naming the section is what the writer is for; deriving a purpose from it
     // would be a fact about the Act, not about this licence.

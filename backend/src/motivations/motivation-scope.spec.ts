@@ -751,6 +751,20 @@ describe('⚠️ the research is held to the same standard as the document', () 
     expect(withoutRefusedCopy(payload)).not.toMatch(/receiver/i);
   });
 
+  it('⚠️ AND THE BALLISTICS FIGURES TOO, carve-out or not', () => {
+    // The carve-out permits these words only in a sentence about what a
+    // firearm ALREADY HELD cannot do. The research is about the firearm being
+    // applied FOR, so every figure it supplies is one the writer can only use
+    // in the one place it was not written for. MO000075 duly wrote "It
+    // generates approximately 6.5 to 8.8 foot-pounds of free recoil energy",
+    // straight out of its own cartridge research, and was refused.
+    const payload =
+      'It generates roughly 7 foot-pounds of free recoil. Recoil is mild.';
+    const out = withoutRefusedCopy(payload);
+    expect(out).not.toMatch(/foot-pound/i);
+    expect(out).toBe('Recoil is mild.');
+  });
+
   it('keeps whole sentences, never mangles one', () => {
     // A fact with a hole in it is a fact the writer may still repeat.
     const payload = 'The barrel is cold hammer-forged. Recoil is mild.';

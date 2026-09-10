@@ -110,6 +110,14 @@ function renderRow(r: Omit<ArsenalRow, 'line'>): string {
    * for." Which is the identical refusal MO000074 took on 2026-09-09, on a
    * document with no candidate uses at all.
    *
+   * ⚠️ AND IT NOW FORBIDS GLOSSING THE SECTION, because that is how the
+   * writer got round it. MO000075, 2026-09-10: "The CZ handgun is licensed
+   * under section 16, AS A DEDICATED HUNTER OR DEDICATED SPORTS SHOOTER" -
+   * no invented use, just the Act's own words for what that section covers,
+   * and packConsistency read "hunt" straight out of it. Naming the section
+   * is what the writer is for; explaining it states which of the two this
+   * licence was issued for, which is the one thing nobody has said.
+   *
    * ⚠️ THE TWO SAY DIFFERENT THINGS AND BOTH ARE TRUE. This one is about
    * THIS LICENCE: nobody has stated its purpose, so the document may not. The
    * candidates below are about the CLASS of firearm - what a handgun in this
@@ -120,9 +128,12 @@ function renderRow(r: Omit<ArsenalRow, 'line'>): string {
   else
     bits.push(
       'licensed_for="NOT STATED — nobody has said what THIS licence is for, ' +
-        'so the document must not say either. Name the firearm, its calibre ' +
-        'and its section, and stop. Any uses listed below describe what this ' +
-        'CLASS of firearm can do; they are not what this one is licensed for"',
+        'so the document must not say either. Give the section BY NUMBER ' +
+        'ONLY and stop. Do NOT follow it with what that section covers: ' +
+        'which of its two purposes this licence was issued for is exactly ' +
+        'what nobody has stated, and naming both is naming neither. Any ' +
+        'uses listed below describe what this CLASS of firearm can do; ' +
+        'they are not what this one is licensed for"',
     );
   put('expires', r.expires);
   /**

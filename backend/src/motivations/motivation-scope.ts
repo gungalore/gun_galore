@@ -326,10 +326,24 @@ export function sentencesWith(text: string, phrase: string): string[] {
 }
 
 export function withoutRefusedCopy(payload: string): string {
+  /**
+   * ⚠️ THE COMPARISON CARVE-OUT DOES NOT APPLY HERE, AND EXEMPTING IT COST
+   * A DEPLOY. This filtered COMPARISON_TERMS out on the reading that the
+   * research is what a comparison is argued FROM. But the carve-out permits
+   * those words only in a sentence saying what a firearm ALREADY HELD cannot
+   * do — and the research is about the firearm being applied FOR, so every
+   * figure it supplies is one the writer can only use in the one place it was
+   * not written for. MO000075 duly wrote "It generates approximately 6.5 to 8.8
+   * foot-pounds of free recoil energy", straight out of its own cartridge
+   * research, about the rifle it was applying for, and was refused.
+   *
+   * ⚠️ AND THE COMPARISON LOSES NOTHING. What that paragraph needs is
+   * "the .45-70 cannot achieve the flat trajectory required", which is
+   * qualitative and passes; the brief already says to argue from purpose,
+   * quarry, ranges and conditions where no figures were given.
+   */
   const banned = [
-    ...CATALOGUE_PHRASES.filter(
-      (w) => !COMPARISON_TERMS.includes(w as (typeof COMPARISON_TERMS)[number]),
-    ),
+    ...CATALOGUE_PHRASES,
     ...PRODUCT_PAGE_WORDS,
     ...SPEC_WORDS,
   ];
