@@ -6,7 +6,89 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-10**.
 
-## 2026-09-10 (latest) — MO000075 GENERATES, and the cartridge is a feature
+## 2026-09-10 (latest) — THE THIRD ATTEMPT, and the cartridge page
+
+Deployed as **ae27307e**. Rollback: `alloutdoor-20260910-122548.dump`.
+Before it, **595cd0f8** (rollback `alloutdoor-20260910-115127.dump`).
+
+### We had never once taken the third attempt
+
+`595cd0f8`. The loop said it would take three and every failure log for five
+days read `regenerating 2/3` and then stopped, because of this:
+
+```js
+if (mechanics.length && mechanics.length >= before) break;
+```
+
+That assumed determinism, and it was TRUE when it was written — the failures
+then were systematic: a brief quoting the sentence it forbade, research full of
+manufacturer marketing, a marker being suppressed. Every one is fixed at source.
+What is left is variance, and one sample says nothing about the next.
+
+It worked on the first run after the deploy, and both new mechanisms fired:
+
+```
+12:07:44  regenerating 2/3   (structureOk=true, sameness=0.00, mechanics=2)
+12:07:50  regenerating 3/3   (structureOk=true, sameness=0.00, mechanics=1)
+12:07:56  motivation.repair  in=320 out=104
+12:07:56  mended 1 sentence(s) rather than regenerating
+12:07:58  gate + verify passed — "Your document is ready — MO000075"
+```
+
+The mend is visible in the delivered pack: "the stable bolt-action
+**configuration**", where the writer had put "platform". One word, 320 tokens.
+
+⚠️ **THE DATE REFUSALS WERE THE GATE WORKING.** An earlier attempt wrote
+`2004-06-07` for an association joined `2024-06-07`, and `2030-06-30` for an
+expiry of `2027-06-30`. Two digit slips in a document somebody signs. The repair
+pass declines these on purpose — mending a CLAIM means choosing which fact was
+meant, and a model can pick a different supplied date, satisfy the check and
+still be wrong. That wall stays.
+
+### The cartridge feature
+
+`ae27307e`, from the operator's sketch and then a screenshot.
+
+- **The drawing was missing from the feature page** because a rule written on
+  09-09 said the body gives up its figure when the cover takes a hero. That rule
+  is right about the same PICTURE printing twice and is still enforced. The round
+  is now rasterised TWICE: a hero for the cover (two lengths, no engineering) and
+  an **inset** for the feature, full callouts, a third of the width. It rides on
+  `cartridgeDrawing.inset` and is only built when there is a hero.
+- **The spread takes a page of its own, on both sides.** Operator: "see the
+  declaration is also rendering above it." Claiming a fresh page fixed only the
+  visible half — the letter's prose went on setting underneath the columns. A
+  latch spends the break on the next block there actually is, so a feature that
+  ends the body leaves no blank sheet.
+- ⚠️ **`placeDrawing` now draws the box it measured.** Given a width alone
+  pdfkit scales to the PNG's own pixel aspect while every later placement —
+  callouts, `rightTop`, the orphan guard — is off the declared millimetres. They
+  agree in production because one rasteriser makes both; when they disagree the
+  failure is SILENT, prose straight over the picture.
+
+### Research is re-gathered when the ask changes
+
+`Motivation.researchAskVersion` (migration `20260910130000`). `RESEARCH_ASK_VERSION`
+was only ever in the SHARED cache key, so rewording an ask reached everybody who
+had not been researched yet and nobody who had. MO000075 printed
+**"1,000 to 1,300 yards"** and **"heavier calibers"** on a page dimensioned in
+millimetres a full day after the ask gained METRIC ONLY, because its block was
+frozen the day before. NULL reads as stale, so every existing row re-gathers once.
+The calibre ask now asks for South African spelling too.
+
+### Still owed to the operator
+
+Two questions from their PDF message, unanswered and blocking the rest of it:
+
+1. **The consent letter as an annexure** — does it MOVE into the annexure set with
+   its own letter and index entry, or stay where it is and just gain one?
+2. **The duplicate licence scan** — the consent page already carries front and
+   back. Which copy goes: that one, or the existing-licence annexure?
+
+Also open: the repair pass has now fired once in production; the quarry plates
+(`QuarryPlate`, generate-once-per-species, human-approved) are unbuilt.
+
+## 2026-09-10 — MO000075 GENERATES, and the cartridge is a feature
 
 Deployed as **931583c6**. Rollback: `alloutdoor-20260910-115127.dump`.
 
