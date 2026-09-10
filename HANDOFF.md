@@ -6,6 +6,84 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-10**.
 
+## 2026-09-10 (latest) — MO000075 GENERATES, and the cartridge is a feature
+
+Deployed as **931583c6**. Rollback: `alloutdoor-20260910-115127.dump`.
+
+### It generates
+
+After five rounds. Each refusal was a different genuine cause, and the last two
+were the ones worth keeping:
+
+`616cb0fe` **the repair pass.** The gate is all-or-nothing over ~900 words, and
+each attempt tripped a DIFFERENT word — platform, then terminal ballistic, then
+engage targets — on a draft that was structurally clean every time. That is
+variance, not a bug still to find. When every outstanding complaint is about a
+WORD, the offending sentences are rewritten and the rest is left alone.
+
+⚠️ **IT IS NARROW ON PURPOSE AND MOST OF ITS SPEC IS IT REFUSING.** A
+refused CLAIM — wrong section, missing annexure, unstated purpose — is the
+writer corrupting facts in a document the applicant signs, and rephrasing one
+would hide it. A mixed set repairs nothing. The full gate re-runs over the
+result, and the model must echo the original sentence verbatim or that sentence
+is left alone.
+
+`abd0d451` **the research kept the ballistics, and the writer glossed the
+section.** The scrub had exempted COMPARISON_TERMS, on the reading that research
+is what a comparison is argued from — but the carve-out permits those words only
+about a firearm ALREADY HELD, and the research is about the one applied FOR.
+And the writer got round the not-stated marker by writing "licensed under
+section 16, AS A DEDICATED HUNTER OR DEDICATED SPORTS SHOOTER": no invented use,
+just the Act's own words, and packConsistency read "hunt" out of it. The marker
+now says BY NUMBER ONLY.
+
+⚠️ **THERE ARE TWO RESEARCH CACHES.** The shared `MotivationResearch` table
+is what `RESEARCH_ASK_VERSION` invalidates; `Motivation.researchEncrypted` is a
+second, per-document copy, frozen so attempt two is graded against the same
+brief as attempt one, and NEVER refetched. A fix to the shared cache does
+nothing for a document that already has one. The scrub therefore runs at the
+point of USE.
+
+### The cartridge is a feature, not a table
+
+`e7dd11c1` then `931583c6`. Operator: "We don't need that bunch of dimensions,
+rather give the history and good facts about the cartridge. The dimension sheet
+should shrink to a third of the page with the history, description and facts
+written around it like a news article style" — then a sketch.
+
+One heading; the article runs full height down the LEFT column; the dimension
+sheet is inset at the top of the RIGHT column with text continuing beneath it.
+
+⚠️ **THE FIRST BUILD RAN IT FULL WIDTH** with the text below, which is what
+a feature does with a wide photograph and is not what was asked. A cartridge
+squeezed into a third of the COLUMN is a centimetre of brass nobody can read a
+dimension off; inset at the top of one column it takes a third of the PAGE.
+
+The prose is the research the writer was already given, sliced out of the stored
+block at render time — **no second model call, ever, in the download path**.
+Safe to print unchecked prose because it is about the CARTRIDGE and carries no
+claim about the applicant, and it has been through the same scrub.
+
+Columns fill by whichever is shorter, a subheading travels with its own
+paragraphs, and neither column runs off the page — pdfkit sets text past the
+bottom margin without complaint when given an explicit y, and the footer prints
+over it. Overflow goes full width overleaf.
+
+Rendering caught both of those, and "1,000 to 1,300 yards" under a drawing
+marked 71.76 mm. The calibre brief now asks for metric only.
+
+### Still open — asked, not answered
+
+Operator, 2026-09-10, on the generated pack:
+1. **The consent letter should be an annexure.** Unclear whether it MOVES into
+   the annexure set or stays put and simply gets a letter and an index entry.
+2. **The full licence scan is attached twice** — the consent page already
+   carries front and back. Which copy is redundant is not yet established: the
+   pack has both a consent page and an existing-licence annexure.
+
+Both change what a DFO receives, so both were put back to the operator rather
+than guessed at.
+
 ## 2026-09-10 (latest, fifth deploy) — two silent failures, one after the other
 
 Deployed as **459c0e68**. Rollback: `alloutdoor-20260910-104712.dump`.
