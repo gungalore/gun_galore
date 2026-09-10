@@ -1,4 +1,6 @@
 import {
+  breakBeforeParagraph,
+  MIN_PAGE_FILL,
   DEFAULT_SCHEME,
   FORMAT_FEATURES,
   MotivationPdfService,
@@ -1401,6 +1403,60 @@ describe('telling the Act’s words from the applicant’s', () => {
     expect(isQuotedSubsection('(4) The Registrar may issue …', false)).toBe(false);
     expect(
       isQuotedSubsection('(Refer to Annexure B: Proficiency Certificates)', false),
+    ).toBe(false);
+  });
+});
+
+describe('⚠️ WHERE A PAGE IS ALLOWED TO END', () => {
+  /**
+   * Two operator rules that pull against each other, both given on 2026-09-10:
+   *
+   *   "The paragraph overflowed into the next page, I don't like that."
+   *   "Also keep the pages full. Minimun of 70% then the nezt section can
+   *    start on a new page."
+   *
+   * The first alone strands a page at forty per cent whenever one paragraph
+   * happens to be long. The second alone splits paragraphs. The rule is the
+   * first, bounded by the second.
+   */
+  const TOP = 100;
+  const BOTTOM = 900; // an 800pt column, so 70% is 560pt used.
+
+  const decide = (y: number, height: number) =>
+    breakBeforeParagraph({ y, top: TOP, bottom: BOTTOM, height });
+
+  it('leaves a paragraph alone when it fits', () => {
+    expect(decide(700, 100)).toBe(false);
+    expect(decide(TOP, 800)).toBe(false);
+  });
+
+  it('⚠️ MOVES IT WHOLE ONCE THE PAGE HAS EARNED ITS BREAK', () => {
+    // 660 of 800 used is 82% — past the floor, so the page may end here.
+    expect(decide(760, 200)).toBe(true);
+  });
+
+  it('⚠️ SPLITS IT RATHER THAN STRAND A HALF-EMPTY PAGE', () => {
+    // 200 of 800 used is 25%. Moving a 700pt paragraph whole would end the
+    // page a quarter full, which is the document the second rule forbids.
+    expect(decide(300, 700)).toBe(false);
+  });
+
+  it('sits exactly on the floor', () => {
+    // 560 of 800 is exactly 70%, which counts as full enough.
+    expect(decide(TOP + 800 * MIN_PAGE_FILL, 500)).toBe(true);
+    // A hair under does not.
+    expect(decide(TOP + 800 * MIN_PAGE_FILL - 1, 500)).toBe(false);
+  });
+
+  it('⚠️ NEVER FOR A PARAGRAPH TALLER THAN A WHOLE PAGE', () => {
+    // There is no page it fits on, so a break would put a blank sheet in front
+    // of it and split it regardless.
+    expect(decide(800, 1200)).toBe(false);
+  });
+
+  it('does not divide by a column of no height', () => {
+    expect(
+      breakBeforeParagraph({ y: 10, top: 10, bottom: 10, height: 50 }),
     ).toBe(false);
   });
 });

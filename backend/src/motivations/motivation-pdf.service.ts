@@ -175,6 +175,61 @@ function runInOf(text: string): { head: string; rest: string } | null {
   return { head, rest: m[2].trim() };
 }
 
+/**
+ * How full a page must be before it is allowed to end early.
+ *
+ * Operator, 2026-09-10: "Also keep the pages full. Minimun of 70% then the
+ * nezt section can start on a new page."
+ */
+export const MIN_PAGE_FILL = 0.7;
+
+/**
+ * Should this paragraph start a new page rather than be split across one?
+ *
+ * TWO RULES THAT PULL AGAINST EACH OTHER, AND THE OPERATOR GAVE BOTH:
+ *
+ *   ⚠️ A PARAGRAPH IS NOT BROKEN ACROSS A PAGE. "The paragraph overflowed
+ *     into the next page, I don't like that." In a document read a paragraph
+ *     at a time, an argument split across a turn of the page is one the reader
+ *     has to hold in their head.
+ *
+ *   ⚠️ AND A PAGE IS NOT LEFT HALF EMPTY TO ACHIEVE IT. "Keep the pages
+ *     full. Minimum of 70%." Moving every long paragraph whole would strand a
+ *     page at forty per cent whenever one happened to be long, which is a
+ *     worse-looking document than the split it avoided.
+ *
+ * So: move it whole when it does not fit AND the page is already at least
+ * {@link MIN_PAGE_FILL} used. Below that the page is too empty to end, and the
+ * paragraph flows and splits as pdfkit would have done anyway.
+ *
+ * ⚠️ AND NEVER FOR A PARAGRAPH TALLER THAN A WHOLE PAGE. There is no page
+ * it fits on, so breaking would put a blank sheet in front of it and split it
+ * regardless.
+ *
+ * PURE, so the trade-off can be tested without rendering a document.
+ */
+export function breakBeforeParagraph(args: {
+  /** Where the paragraph would start. */
+  y: number;
+  /** The top of the text column. */
+  top: number;
+  /** The bottom of the text column. */
+  bottom: number;
+  /** How tall the paragraph is at this width. */
+  height: number;
+  minFill?: number;
+}): boolean {
+  const { y, top, bottom, height } = args;
+  const minFill = args.minFill ?? MIN_PAGE_FILL;
+  const column = bottom - top;
+  if (column <= 0) return false;
+  // It fits where it is.
+  if (y + height <= bottom) return false;
+  // Taller than any page: nothing to be gained.
+  if (height > column) return false;
+  return (y - top) / column >= minFill;
+}
+
 const MARGIN = K.PAD_X;
 const MARGIN_RIGHT = K.PAD_X;
 /**
@@ -2540,6 +2595,30 @@ export class MotivationPdfService {
         // that a reviewer can see at a glance which words are the Act's and
         // which are the applicant's, without the quote reading as a footnote.
         const statuteIndent = isStatute ? K.mm(6) : 0;
+
+        /**
+         * ⚠️ A PARAGRAPH IS NOT BROKEN ACROSS A PAGE — UNLESS KEEPING IT
+         * WHOLE WOULD LEAVE THE PAGE TOO EMPTY. See `breakBeforeParagraph`.
+         */
+        const measured = doc
+          .font(isRef ? B.bodyItalic : B.body)
+          .fontSize(isStatute ? BODY_SIZE * (10.5 / 11) : BODY_SIZE)
+          .heightOfString(block, {
+            width: contentWidth - K.SECTION_INDENT - statuteIndent,
+            align: 'left',
+            lineGap: BODY_LEADING,
+          });
+        if (
+          breakBeforeParagraph({
+            y: doc.y,
+            top: MARGIN_TOP,
+            bottom: K.BODY_BOTTOM,
+            height: measured,
+          })
+        ) {
+          doc.addPage();
+        }
+
         doc
           .font(isRef ? B.bodyItalic : B.body)
           .fontSize(isStatute ? BODY_SIZE * (10.5 / 11) : BODY_SIZE)
