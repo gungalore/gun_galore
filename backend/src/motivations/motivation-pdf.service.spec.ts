@@ -996,28 +996,47 @@ describe('the cartridge drawing', () => {
   // Operator, 2026-09-09, item 3 of five: "the CIP dimensions should be inside
   // the application where the firearm is described."
 
-  const dims = [
-    { label: 'Overall length', value: '29.69 mm' },
-    { label: 'Case length', value: '19.15 mm' },
-    { label: 'Bullet diameter', value: '9.03 mm' },
-    { label: 'Maximum average pressure', value: '2350 bar' },
-  ];
+  const article = {
+    title: '9 mm Luger',
+    paragraphs: [
+      '**Origin**',
+      'It was introduced in 1902 by Georg Luger for the Pistole Parabellum.',
+      '**Common uses in South Africa**',
+      'It is the most widely available centrefire pistol chambering here.',
+      'Ammunition is carried by most dealers, which matters for practice.',
+    ],
+  };
 
-  it('⚠️ PUTS THE FIGURES IN THE BODY when the cover took the picture', async () => {
+  it('⚠️ WRITES THE CARTRIDGE UP, rather than tabulating it', async () => {
+    // Operator, 2026-09-10: "We don't need that bunch of dimensions, rather
+    // give the history and good facts about the cartridge."
     const { pdf } = await svc.render({
       ...makeInput(withCartridgeSection),
       cartridgeDrawing: hero,
-      cartridgeDims: dims,
+      cartridgeArticle: article,
     } as never);
     const t = flat((await readPdfAsync(pdf)).text);
 
-    for (const row of dims) {
-      expect(t).toContain(row.label);
-      expect(t).toContain(row.value);
-    }
-    // ⚠️ AND THE PICTURE IS STILL ONLY ON THE COVER. The body gets the numbers
-    // instead of the drawing, not as well as it.
-    expect(t.split('overall 29.69 mm').length - 1).toBe(1);
+    expect(t).toContain('introduced in 1902');
+    expect(t).toContain('most widely available centrefire pistol');
+    // ⚠️ THE MARKDOWN THE RESEARCH COMES BACK IN DOES NOT REACH THE PAGE.
+    expect(t).not.toContain('**');
+    // Run-in headings are set as headings, not printed with their asterisks.
+    expect(t.replace(/\s+/g, '')).toContain('ORIGIN');
+  });
+
+  it('⚠️ KEEPS A RUN-IN HEADING WITH ITS OWN PARAGRAPH', async () => {
+    // Balanced one paragraph at a time, the two columns came out as two
+    // headings at the top and their sentences underneath the wrong one.
+    // Found by extracting a rendered page and reading it.
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: hero,
+      cartridgeArticle: article,
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text).replace(/\s+/g, '');
+    // The heading and the sentence it introduces are adjacent in the stream.
+    expect(t).toContain('ORIGINItwasintroducedin1902');
   });
 
   it('⚠️ AND GIVES THEM A HEADING when the writer never raised the subject', async () => {
@@ -1027,11 +1046,11 @@ describe('the cartridge drawing', () => {
     const { pdf } = await svc.render({
       ...makeInput('Introduction:\n\nI am applying under section 13.'),
       cartridgeDrawing: hero,
-      cartridgeDims: dims,
+      cartridgeArticle: article,
     } as never);
     const t = flat((await readPdfAsync(pdf)).text);
     expect(t.replace(/\s+/g, '')).toContain('THECARTRIDGE—9MMLUGER');
-    expect(t).toContain('Maximum average pressure');
+    expect(t).toContain('introduced in 1902');
   });
 
   it('⚠️ LEAVES THE PARTICULARS TABLE ON THE COVER, on every layout', async () => {

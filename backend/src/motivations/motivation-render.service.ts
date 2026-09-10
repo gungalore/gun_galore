@@ -1,3 +1,8 @@
+import {
+  BLOCK_LABELS,
+  sectionOf,
+} from './motivation-research.service';
+import { withoutRefusedCopy } from './motivation-scope';
 import { PDFDocument } from 'pdf-lib';
 import {
   BadRequestException,
@@ -50,7 +55,6 @@ import { readFile } from 'node:fs/promises';
 import sharp from 'sharp';
 import { findCartridge } from './motivation-cartridge';
 import {
-  cartridgeDimRows,
   cartridgeDrawing,
   completeDims,
   type DrawingText,
@@ -287,6 +291,41 @@ function firearmLine(answers: Record<string, string>): string | undefined {
   if (!base) return undefined;
   const serial = answers.firearm_serial?.trim();
   return serial ? `${base}, serial ${serial}` : base;
+}
+
+/**
+ * The cartridge feature, out of the research the writer was already given.
+ *
+ * ⚠️ NO SECOND MODEL CALL, AND THERE MUST NOT BE ONE. This runs in the
+ * DOWNLOAD path, where an outbound request sits inside our sixty-second nginx
+ * ceiling on a request the applicant is waiting on - the same rule that keeps
+ * the cover photograph out of here. The block is already on the row.
+ *
+ * ⚠️ AND IT IS ABOUT THE CARTRIDGE, NEVER THE APPLICANT. That is what makes
+ * it safe to print prose we did not have a person check: it carries no claim
+ * about who they are or what they have done. It has also been through the
+ * same scrub as everything the writer sees, so it cannot carry vocabulary the
+ * document itself would be refused for.
+ */
+function cartridgeArticle(
+  researchEncrypted: string | null,
+  title: string | undefined,
+): { title: string; paragraphs: string[] } | undefined {
+  if (!researchEncrypted || !title) return undefined;
+  const block = tryDecryptText(researchEncrypted);
+  if (!block) return undefined;
+  const section = sectionOf(withoutRefusedCopy(block), BLOCK_LABELS.calibre);
+  if (!section) return undefined;
+  const paragraphs = section
+    .split(String.fromCharCode(10))
+    .map((l) => l.trim())
+    .filter(Boolean);
+  /**
+   * ⚠️ A THIN BRIEF IS NOT WORTH A FEATURE. Two lines under a drawing reads
+   * as a page that ran out of things to say, which is worse for the
+   * application than the drawing standing alone.
+   */
+  return paragraphs.length >= 3 ? { title, paragraphs } : undefined;
 }
 
 /**
@@ -678,6 +717,7 @@ export class MotivationRenderService {
         completedAt: true,
         templateColourway: true,
         templateLayout: true,
+        researchEncrypted: true,
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
@@ -713,7 +753,18 @@ export class MotivationRenderService {
       templateVersion: TEMPLATE_VERSION,
       generatedAt: at,
       cartridgeDrawing: cartridge,
-      cartridgeDims: cartridge?.dims,
+      /**
+       * ⚠️ THE CARTRIDGE, WRITTEN UP RATHER THAN TABULATED. Operator,
+       * 2026-09-10: "We don't need that bunch of dimensions, rather give the
+       * history and good facts about the cartridge." The two lengths that
+       * matter are called out on the drawing itself, which is where a
+       * dimension belongs; a table of nine beside it was the same facts with
+       * the picture taken away.
+       */
+      cartridgeArticle: cartridgeArticle(
+        row.researchEncrypted,
+        cartridge?.name,
+      ),
     });
 
     return this.firstPageOf(pdf);
@@ -738,6 +789,7 @@ export class MotivationRenderService {
         templateFormat: true,
         templateColourway: true,
         templateLayout: true,
+        researchEncrypted: true,
         structurePlan: true,
         coverPhotoChoice: true,
         coverPhotoKey: true,
@@ -990,7 +1042,18 @@ export class MotivationRenderService {
        * Operator, 2026-09-09: "the CIP dimensions should be inside the
        * application where the firearm is described."
        */
-      cartridgeDims: cartridge?.dims,
+      /**
+       * ⚠️ THE CARTRIDGE, WRITTEN UP RATHER THAN TABULATED. Operator,
+       * 2026-09-10: "We don't need that bunch of dimensions, rather give the
+       * history and good facts about the cartridge." The two lengths that
+       * matter are called out on the drawing itself, which is where a
+       * dimension belongs; a table of nine beside it was the same facts with
+       * the picture taken away.
+       */
+      cartridgeArticle: cartridgeArticle(
+        row.researchEncrypted,
+        cartridge?.name,
+      ),
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
       // ⚠️ THE APPLICANT'S PAGE, NOT THE REGISTRAR'S. See MotivationPdfInput.
@@ -1031,8 +1094,9 @@ export class MotivationRenderService {
         heightMm: number;
         texts: DrawingText[];
         label: string;
+        /** The cartridge's standardised name, for the feature's headline. */
+        name: string;
         hero?: { subtitle: string };
-        dims?: { label: string; value: string }[];
       }
     | undefined
   > {
@@ -1093,17 +1157,13 @@ export class MotivationRenderService {
          * and printed straight into the table of contents.
          */
         label: `The cartridge \u2014 ${hit.name}`,
+        name: hit.name,
         /**
          * ⚠️ THE LABEL IS STILL BUILT ON A HERO PACK. It is the contents-page
          * entry and the fallback heading, and a later change that gives the
          * body its figure back must not have to remember to reinstate it.
          */
         ...(heroLine ? { hero: { subtitle: heroLine } } : {}),
-        dims: cartridgeDimRows(
-          completed.dims,
-          completed.derived,
-          hit.dims.pmaxBar ?? hit.pmaxBar,
-        ),
       };
     } catch (err) {
       this.logger?.warn?.(

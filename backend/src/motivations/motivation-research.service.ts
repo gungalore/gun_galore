@@ -172,6 +172,13 @@ export function targetsFor(
         'effective range — and what it is commonly used for in South Africa.',
         `Say what it is well matched to for ${useClass}, and what it is over-`,
         'or under-matched to. Figures with sources, never impressions.',
+        // ⚠️ METRIC, BECAUSE THE DOCUMENT IS. This brief is printed as the
+        // cartridge feature beside a drawing dimensioned in millimetres and a
+        // pressure in bar; a range quoted in yards on the same page reads as
+        // two documents. The first render of that page said "1,000 to 1,300
+        // yards" under a drawing marked 71.76 mm.
+        'METRIC ONLY: metres, millimetres, grams, joules, bar. Never yards,',
+        'inches, grains, feet per second or foot-pounds.',
       ].join(' '),
     });
   }
@@ -261,6 +268,46 @@ const SYSTEM = [
 ].join('\n');
 
 const TIMEOUT_MS = 90_000;
+
+/**
+ * The headings `toBlock` writes, named once.
+ *
+ * ⚠️ THE PACK READS THIS BLOCK BACK. The cartridge feature article in the
+ * document is written from the SAME research the writer was given, sliced out
+ * of `Motivation.researchEncrypted` at render time - there is no second call,
+ * and there must not be one: an outbound request in the download path sits
+ * inside our sixty-second nginx ceiling on a request the applicant is waiting
+ * on. So the label is a contract, not a caption.
+ */
+export const BLOCK_LABELS = {
+  firearm: 'THE FIREARM APPLIED FOR:',
+  calibre: 'THE CARTRIDGE APPLIED FOR:',
+} as const;
+
+/**
+ * One labelled section of a stored research block, without its citation line.
+ *
+ * ⚠️ THE SOURCES LINE IS FOR THE WRITER AND NEVER FOR THE PAGE. It exists so
+ * the writer knows what it may attribute; printing it would name somebody
+ * else's site in a lodged document, which is the boundary CLAUDE.md draws
+ * around the Bench data and the spliced C.I.P. sheet alike.
+ */
+export function sectionOf(block: string, label: string): string | null {
+  const at = block.indexOf(label);
+  if (at < 0) return null;
+  const rest = block.slice(at + label.length);
+  const nextLabel = Object.values(BLOCK_LABELS)
+    .map((l) => rest.indexOf(l))
+    .filter((i) => i > 0);
+  const upTo = nextLabel.length ? Math.min(...nextLabel) : rest.length;
+  const body = rest
+    .slice(0, upTo)
+    .split(String.fromCharCode(10))
+    .filter((l) => !l.trim().startsWith('[sources:'))
+    .join(String.fromCharCode(10))
+    .trim();
+  return body || null;
+}
 
 @Injectable()
 export class MotivationResearchService {
@@ -353,8 +400,8 @@ export class MotivationResearchService {
       parts.push(`${label}\n${entry.payload.trim()}\n[sources: ${cites}]`);
     };
 
-    add('THE FIREARM APPLIED FOR:', pack.firearm);
-    add('THE CARTRIDGE APPLIED FOR:', pack.calibre);
+    add(BLOCK_LABELS.firearm, pack.firearm);
+    add(BLOCK_LABELS.calibre, pack.calibre);
     add('THE DISCIPLINE:', pack.discipline);
     add('THE QUARRY AND ITS RANGES:', pack.game);
     for (const h of pack.held ?? []) {

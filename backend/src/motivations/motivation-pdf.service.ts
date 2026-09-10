@@ -116,6 +116,29 @@ const PAGE_HEIGHT = K.PAGE_H;
  * margins symmetrically and the left proves 72, so the page setup is 72/72.
  * Measure the ink, infer the box.
  */
+/**
+ * The research comes back as light markdown - bold run-in headings and
+ * hyphen bullets - because that is what a model writes when asked for a
+ * brief. These two turn it into something a document can set.
+ *
+ * ⚠️ NOT A MARKDOWN PARSER, AND IT MUST NOT GROW INTO ONE. It handles the
+ * two shapes the research actually uses. Anything else survives as plain
+ * text, which is the right failure: a stray asterisk on the page is a blemish,
+ * and a half-built parser dropping a clause is a fact quietly lost.
+ */
+function stripMarks(text: string): string {
+  return text
+    .replace(/\*\*/g, '')
+    .replace(/^\s*[-*]\s+/, '•  ')
+    .trim();
+}
+
+/** A paragraph that is only a bold run-in heading, e.g. **Origin**. */
+function subheadingOf(text: string): string | null {
+  const m = /^\s*\*\*(.+?)\*\*\s*:?\s*$/.exec(text);
+  return m ? m[1].trim() : null;
+}
+
 const MARGIN = K.PAD_X;
 const MARGIN_RIGHT = K.PAD_X;
 /**
@@ -681,20 +704,32 @@ export interface MotivationPdfInput {
     };
   };
   /**
-   * The cartridge's dimensions, printed beside the firearm they belong to.
+   * The cartridge, written up as a feature rather than tabulated.
    *
-   * Operator, 2026-09-09, item 3 of five: "the CIP dimensions should be inside
-   * the application where the firearm is described."
+   * Operator, 2026-09-10, on the nine-row table that was here: "We don't need
+   * that bunch of dimensions, rather give the history and good facts about the
+   * cartridge. The dimension sheet should shrink to a third of the page with
+   * the history, description and facts written around it like a news article
+   * style."
    *
-   * ⚠️ ONLY FIGURES THE SHEET ACTUALLY PRINTED. `completeDims` stands letters
-   * in so a shape can be CUT — a case with no shoulder is drawn with its
-   * shoulder at the mouth — and a stood-in letter has no business being
-   * printed as though it were published. The caller filters on `derived`, the
-   * same set the drawing's own callouts refuse.
+   * ⚠️ THE DIMENSIONS DID NOT GO, THEY WENT BACK ONTO THE DRAWING. Two
+   * lengths are called out on the picture itself, where a dimension belongs and
+   * where a reader can see what is being measured. A table of nine figures
+   * beside it was the same facts with the drawing taken away.
    *
-   * ⚠️ AND THE LABELS NAME NO SOURCE, for the reason the drawing does not.
+   * ⚠️ AND THE PROSE IS THE RESEARCH THE WRITER WAS ALREADY GIVEN, sliced
+   * out of the stored block at render time. Not a second model call - the
+   * download path makes none, by rule - and not the writer's own words either,
+   * because this is about the CARTRIDGE and nothing about the applicant. It
+   * has been through the same scrub as everything else the writer sees, so it
+   * cannot carry vocabulary the document itself would be refused for.
    */
-  cartridgeDims?: { label: string; value: string }[];
+  cartridgeArticle?: {
+    /** The cartridge's standardised name, as the headline. */
+    title: string;
+    /** Paragraphs, in order. A leading bold run is treated as a subheading. */
+    paragraphs: string[];
+  };
   /**
    * What the applicant physically carries to the DFO.
    *
@@ -1901,64 +1936,124 @@ export class MotivationPdfService {
      * name and printed straight into our table of contents. The operator's
      * words name WHICH figures, not what the page may call them.
      */
-    const bodyDims = input.cartridgeDims?.length ? input.cartridgeDims : undefined;
+    const article = input.cartridgeArticle?.paragraphs.length
+      ? input.cartridgeArticle
+      : undefined;
 
     /** Whether the body still owns anything to put under a cartridge heading. */
-    const hasCartridgeBlock = !!bodyPicture || !!bodyDims;
+    const hasCartridgeBlock = !!bodyPicture || !!article;
 
-    const DIM_ROW = K.px(12) * 1.6;
-
-    /** How much room the block needs, so a heading is never orphaned above it. */
+    /**
+     * How much room the block needs, so a heading is never orphaned above it.
+     *
+     * ⚠️ THE PICTURE AND THE FIRST LINES, NOT THE WHOLE ARTICLE. The prose
+     * flows and may run over the page as any prose does; what must not be
+     * orphaned is the heading sitting alone at the foot with its drawing
+     * overleaf.
+     */
     const cartridgeHeight = (): number => {
       const picture = bodyPicture
         ? K.mm(bodyPicture.heightMm) *
           (contentWidth / K.mm(bodyPicture.widthMm))
         : 0;
-      const dims = bodyDims ? K.mm(3) + bodyDims.length * DIM_ROW : 0;
-      return picture + dims;
+      return picture + (article ? mmGap(24) : 0);
     };
 
     /**
-     * The figures, two to a line.
+     * The cartridge, set as a feature.
      *
-     * ⚠️ TWO COLUMNS BECAUSE NINE ROWS DOWN A 182 mm PAGE IS A LIST, NOT A
-     * TABLE, and it would push most of a page's worth of prose out of the
-     * section it belongs to. Paired, the whole set is a five-line block a
-     * reviewer reads across in one look — which is what it is for.
+     * Operator, 2026-09-10: "The dimension sheet should shrink to a third of
+     * the page with the history, description and facts written around it like
+     * a news article style."
+     *
+     * ⚠️ THE DRAWING RUNS THE FULL COLUMN AND THE TEXT SETS IN TWO BELOW IT,
+     * which is what a feature does with a wide picture. Wrapping the text
+     * around it was the other reading and it is the wrong shape for the
+     * subject: a cartridge is long and thin, and squeezed into a third of the
+     * COLUMN it is a centimetre of brass nobody can read a dimension off. Full
+     * width, about a quarter of the page deep, and the article underneath it.
+     *
+     * ⚠️ AND THE COLUMNS ARE BALANCED BY MEASUREMENT, not by halving the
+     * paragraphs. `heightOfString` is asked what each one costs at the column
+     * width and they are dealt into whichever side is shorter, so a long
+     * opening paragraph cannot leave one column full and the other empty.
      */
-    const drawCartridgeDims = (rows: { label: string; value: string }[]) => {
-      const colW = contentWidth / 2;
-      const labelW = colW * 0.62;
-      doc.y += K.mm(3);
-      for (let i = 0; i < rows.length; i += 2) {
-        if (doc.y > K.BODY_BOTTOM - DIM_ROW) doc.addPage();
-        const y = doc.y;
-        for (const [col, row] of [rows[i], rows[i + 1]].entries()) {
-          if (!row) continue;
-          const x = MARGIN + col * colW;
-          doc
-            .font(B.body)
-            .fontSize(K.px(12))
-            .fillColor(C.sub)
-            .text(row.label, x, y, { width: labelW - K.mm(2), lineBreak: false });
-          doc
-            .font(B.bodySemi)
-            .fillColor(C.ink)
-            .text(row.value, x + labelW, y, {
-              width: colW - labelW - K.mm(3),
-              lineBreak: false,
-            });
-        }
-        doc.y = y + DIM_ROW;
-        doc
-          .moveTo(MARGIN, doc.y - K.mm(1.2))
-          .lineTo(MARGIN + contentWidth, doc.y - K.mm(1.2))
-          .lineWidth(0.4)
-          .strokeColor(C.hair)
-          .stroke();
+    const drawCartridgeArticle = (a: {
+      title: string;
+      paragraphs: string[];
+    }) => {
+      const GUTTER = K.mm(7);
+      const colW = (contentWidth - GUTTER) / 2;
+
+      doc.y += K.mm(2);
+      doc
+        .font(B.bodySemi)
+        .fontSize(K.px(13))
+        .fillColor(C.deep)
+        .text(a.title, MARGIN, doc.y, { width: contentWidth });
+      doc.y += K.mm(2);
+
+      doc.font(B.body).fontSize(K.px(12.5));
+      const gap = K.px(12.5) * 0.7;
+
+      /**
+       * ⚠️ A SUBHEADING TRAVELS WITH ITS OWN PARAGRAPHS. Dealt one at a
+       * time the balancer put ORIGIN at the top of one column and the sentence
+       * about 1902 at the top of the other, which reads as two headings and
+       * two orphaned facts. Caught by extracting the text of a rendered page
+       * and reading it, not by looking at the code.
+       */
+      const groups: string[][] = [];
+      for (const para of a.paragraphs) {
+        if (subheadingOf(para) || !groups.length) groups.push([para]);
+        else groups[groups.length - 1].push(para);
       }
+
+      const cost = groups.map((g) =>
+        g.reduce(
+          (n, t) => n + doc.heightOfString(stripMarks(t), { width: colW }) + gap,
+          0,
+        ),
+      );
+      const left: string[] = [];
+      const right: string[] = [];
+      let lh = 0;
+      let rh = 0;
+      groups.forEach((g, i) => {
+        if (lh <= rh) {
+          left.push(...g);
+          lh += cost[i];
+        } else {
+          right.push(...g);
+          rh += cost[i];
+        }
+      });
+
+      const top = doc.y;
+      const column = (items: string[], x: number) => {
+        let y = top;
+        for (const raw of items) {
+          const sub = subheadingOf(raw);
+          if (sub) {
+            doc.font(B.bodySemi).fontSize(K.px(11)).fillColor(C.sub);
+            doc.text(sub.toUpperCase(), x, y, {
+              width: colW,
+              characterSpacing: K.px(11) * 0.06,
+            });
+            y = doc.y + K.mm(1);
+            continue;
+          }
+          doc.font(B.body).fontSize(K.px(12.5)).fillColor(C.ink);
+          doc.text(stripMarks(raw), x, y, { width: colW, align: 'left' });
+          y = doc.y + gap;
+        }
+        return y;
+      };
+      const endL = column(left, MARGIN);
+      const endR = column(right, MARGIN + colW + GUTTER);
+
       doc.x = MARGIN;
-      doc.y += PARA_GAP;
+      doc.y = Math.max(endL, endR) + PARA_GAP;
     };
 
     const drawCartridge = () => {
@@ -1969,9 +2064,9 @@ export class MotivationPdfService {
         const y0 = doc.y;
         const drawH = placeDrawing(bodyPicture, MARGIN, y0, contentWidth);
         doc.x = MARGIN;
-        doc.y = y0 + drawH + PARA_GAP;
+        doc.y = y0 + drawH + K.mm(2);
       }
-      if (bodyDims) drawCartridgeDims(bodyDims);
+      if (article) drawCartridgeArticle(article);
     };
 
     doc.addPage();
