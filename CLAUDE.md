@@ -14,7 +14,7 @@ fix the rule here.
 repo and says which ones still describe the running system. Read it before
 concluding something is undocumented.
 
-Last full audit of this file against the running system: **2026-09-09**.
+Last full audit of this file against the running system: **2026-09-10**.
 
 ---
 
@@ -167,6 +167,11 @@ and it is manual.
 ⚠️ Backend tests need `npm test`, not `npx jest`: `package.json` supplies
 `node --experimental-vm-modules`, and without it a PDF spec fails 16 times in a
 way that reads exactly like a real regression.
+⚠️ **The frontend is VITEST, not jest, and a spec can be invisible.** The
+include is `['lib/**/*.spec.ts', 'components/**/*.spec.tsx']` — note the **x**.
+A spec written as `.spec.ts` under `components/` is never collected: it reports
+nothing, fails nothing, and passes this gate **by not existing**. All 38
+component specs are `.spec.tsx`; keep it that way.
 
 **STEP 3 — production build check.** `cd frontend && npm run build`.
 ⚠️ Run it in the **FOREGROUND** and read its exit code directly. Detaching and
@@ -213,6 +218,16 @@ signals node for a graceful shutdown), but know the consequence: a **failed buil
 is safe — deploy.sh dies before touching pm2 and the old version keeps serving —
 whereas a **failed health check after reload is an outage**, because the old
 process is already gone. Do not `pm2 restart` automatically; stop and report.
+
+⚠️ **A RELOAD KILLS AN IN-FLIGHT GENERATION, AND IT USED TO STRAND THE MEMBER
+FOREVER.** Because reload is a restart, deploying while somebody is generating
+a motivation kills the request mid-run. The row stays `GENERATING`, which is
+not in `REGENERABLE`, so every retry after that is answered "This document is
+already being prepared. Give it a moment." — on 2026-09-10 that had to be
+undone with a hand-written UPDATE against production. A `GENERATING` row
+untouched for `STALE_GENERATION_MS` (10 minutes) may now be re-claimed, so the
+member waits rather than needing an admin. **Ask before deploying if the
+operator might be mid-generation** — a pass is about two minutes.
 
 **STEP 6 — verify health.** `curl localhost:3001/api/health`, `curl localhost:3000`,
 and the public site — each twice. `pm2 list` must show **three** services online:
@@ -320,7 +335,8 @@ state — do not read its absence as the switch being broken).
 **Backend**: `DATABASE_URL`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`,
 `JWT_ADMIN_SECRET`, `ID_HASH_SECRET`, `HEALTH_PING_SECRET`, `VERIFYNOW_API_KEY`,
 `VERIFYNOW_BASE_URL`, `VERIFYNOW_MODE`, `GEMINI_API_KEY`, `LLM_PROVIDER`,
-`LLM_MODEL`, `ANTHROPIC_API_KEY` (rollback only), `CLOUDINARY_CLOUD_NAME`,
+`LLM_MODEL`, `LLM_IMAGE_MODEL`, `ANTHROPIC_API_KEY` (rollback only),
+`CLOUDINARY_CLOUD_NAME`,
 `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `MEILISEARCH_HOST`,
 `MEILISEARCH_API_KEY`, `SMSPORTAL_CLIENT_ID`, `SMSPORTAL_API_SECRET`,
 `RESEND_API_KEY`, `PUDO_API_KEY`, `BOBGO_API_KEY`, `BOBGO_BASE_URL`,
@@ -381,6 +397,21 @@ evaluation. `ODOO_*` and `TCG_*` are gone.
   guessed, because every one this codebase used is a dated snapshot.
   Spend is metered by us, not the provider: `LlmService` writes an `AiUsage` row
   per call (purpose, tokens, latency, cost) and `/admin/credits` reads that ledger.
+- **Pictures:** `LlmService.generateImage()`, same adapter, its own request and
+  response shape (nothing an image call needs is what a text call needs).
+  Model `gemini-3.1-flash-lite-image` — "Nano Banana Lite" is a nickname, the
+  id was read off `GET /v1beta/models` on our own key. `LLM_IMAGE_MODEL`
+  overrides it without a deploy. Anthropic has no image model: the adapter
+  raises `unsupported` (a distinct code from `not_configured`, because a
+  missing key and a provider that cannot draw are different problems).
+  ⚠️ **IMAGE OUTPUT IS TWENTY TIMES THE TEXT RATE AND ARRIVES IN THE SAME
+  COUNTER.** $30/1M against $1.50/1M, both inside one `candidatesTokenCount`,
+  so `mapUsage` carves the image half out via `candidatesTokensDetails` and
+  `costUsdMicros` prices it separately. Billed as prose, a 3.4-cent plate reads
+  as a tenth of a cent.
+  ⚠️ **AN EMPTY ANSWER IS A REFUSAL, NOT A SHAPE TO TRUST.** The safety filters
+  return a candidate with no picture in it; a caller that assumed otherwise
+  would store a zero-byte plate and print a blank box in a lodged document.
 
 **Prisma 7 notes (do not revert):** generator is `prisma-client-js` (not
 `prisma-client`, which emits ESM incompatible with Nest's CommonJS output);
@@ -919,6 +950,41 @@ safe storage, my record, section N applied, declaration and request.
   raises `motivation-sameness-high`, because a high score now means the PROSE is
   repeating rather than the shape.
 
+⚠️ **A DATE REACHES THE WRITER AS WORDS, NEVER AS ISO.** `renderFacts` runs
+every `kind: 'date'` answer through `spelledDate` — "2027-06-30" goes in as
+"30 June 2027". **A wrong digit inside an ISO date is still a well-formed
+date**, which is what makes it a wrong FACT in a signed document rather than a
+typo somebody spots: MO000075 was refused three times for `2030-06-30` against
+a supplied `2027-06-30` and `2004-06-07` against `2024-06-07`. Neither the
+three attempts nor the repair pass can help — the repair pass refuses a CLAIM
+on purpose, because mending one means choosing which fact was meant. Nothing
+downstream loses the digits: `packConsistency` reads document and answers
+through one `datesIn` that parses both forms, and the SAPS 271 prefill reads
+the answers rather than the document.
+
+⚠️ **A RESEARCH ASK REACHES A MOTIVATION THAT ALREADY HAS RESEARCH.**
+`RESEARCH_ASK_VERSION` lives in the SHARED cache key, so rewording an ask used
+to reach everybody who had not been researched yet and nobody who had —
+`Motivation.researchAskVersion` closes that, and a row behind the current
+version re-gathers on the next generation. Bump the version whenever an ask
+changes in a way that should change the answer.
+
+⚠️ **EVERY LICENSED FIREARM IN THE VAULT FILLS THE FORM AUTOMATICALLY**, before
+`missingRequired`, so one supplied only by the vault counts towards a complete
+application. It can never overwrite an answer: `credentialOffer` is given the
+current answers and skips every key they carry. Owned-firearm rows only — the
+same offer can fill competency and association boxes, and those have their own
+timing rules. This is a statutory matter, not a convenience: section 15(3) caps
+an occasional sports shooter at four firearms and section 13 caps a
+self-defence applicant at one.
+
+⚠️ **PAGE BREAKS OBEY TWO OPERATOR RULES THAT PULL AGAINST EACH OTHER.** "The
+paragraph overflowed into the next page, I don't like that" and "keep the pages
+full, minimum of 70%". `breakBeforeParagraph` holds both: a paragraph that does
+not fit moves whole only once the page is at least `MIN_PAGE_FILL` used, and
+never at all if it is taller than a whole page. Either rule alone makes the
+document worse — change one and read the other.
+
 ⚠️ **NO SERVICE NAME ANYWHERE IN A LODGED PACK** — book Part 1 rule 2. No
 "prepared by", no footer brand, no "we"; the applicant signs it as their own
 letter. This reverses the operator's 2026-08-24 instruction to put the logo and
@@ -932,6 +998,82 @@ on the take-with-you sheet, which is torn off before the counter.
 Operator, 2026-09-09: "only paperwork required by the dfo are attached as
 annexures." The cartridge drawing, the precinct figures and the press cuttings
 are part of the body's own flow, under the argument they are evidence for.
+
+⚠️ **TWO EXCEPTIONS THE OPERATOR MARKED ON A RENDERED PACK, 2026-09-10.**
+- **The previous owner's consent IS an annexure** ("Annexure" written across
+  it). It is a third party's signed statement about a firearm. It is lettered
+  through `GeneratedAnnexureId` and printed LAST, which is a placement decision
+  rather than an ordering one: every other annexure is an uploaded image laid
+  out two to a sheet by `planAnnexurePages`, and this is a page we render.
+  Last in both is the only arrangement where the index and the pages cannot
+  disagree.
+- **`SELLER_LICENCE` is NOT an annexure** ("Remove", twice). The consent page
+  already prints the front and the back of that same card above the signature.
+  The upload is not deleted, only unlettered.
+
+### The cartridge feature page
+
+A two-column spread on a page of its own, with **three fixed slots** — sizes
+are constants, not measurements of the content, so the page is the same
+document every cartridge and can be checked once:
+
+| slot | size |
+|---|---|
+| C.I.P. sheet | 88 × 119 mm, top of the right column |
+| quarry photograph | 182 × 78 mm (21:9) across the foot, plus a 6 mm caption |
+| text | about 183 mm of column |
+
+⚠️ **THE RESEARCH ASK IS SIZED TO THE SLOT.** 0.899 mm per word, measured with
+the real face at the real size (`MEASURE_SLOT=1` on a render prints the
+figures), so the slot holds ~204 words and the calibre ask asks for 190 in
+about 7 sections. Change the slot and the ask has to move with it.
+
+⚠️ **THE RESEARCH WRITES HEADINGS TWO WAYS AND BOTH MUST BE HANDLED** —
+`**Origin**` on its own line, and `Origin: …` run in. It switched to the second
+the day the ask gained a length instruction. Groups split on subheadings, so
+run-ins made ONE atomic group of the whole article and a column rendered blank.
+Nothing failed; one group is a valid layout, which is why no test caught it and
+the operator did.
+
+⚠️ **THE C.I.P. SHEET IS REPRODUCED BY OPERATOR DECISION.** The sheet carries
+"Reproduction forbidden as well as in the form of extracts without approval of
+C.I.P." That was put to them and they answered: "i want the CIP sheet in there,
+not negotiable … we are not selling the sheet itself, we are using it in our
+document as proof." Their call on their own company's exposure. `cipSheetFor`
+had spliced the whole page as a fallback since it shipped anyway, behind
+`FLAGS.cipSheetEnabled`, which the inset respects.
+⚠️ Rasterise the **raw** file, never the A4 re-embed: `sheetFor` wraps the page
+as a Form XObject and pdf.js threw out of `paintFormXObjectBegin` on every
+render for an afternoon. **Still unproven** — never reproduced outside the
+running service.
+
+### Quarry plates
+
+A photorealistic line-up of the game a cartridge suits, across the foot of the
+feature page. One per motivation (~3.4 US cents), drawn during **generation**
+beside the research and the cover photograph — never at render, because the
+pack renders on every download and the model takes 10–20 s against a 60 s nginx
+ceiling. Stored in `QuarryPlate`, bytes in the row so `pg_dump` covers them.
+
+- ⚠️ **GATED ON `firearm_use_kind`, NEVER ON THE SECTION.** Operator: "if its
+  hunting or hunting/sport shooting, yes. both on section 15 and 16." Section
+  16 splits hunter from sports person and section 15 covers either, so the
+  licence type answers this for neither. A sport-only pack gets no game:
+  pictures of quarry in a document that never mentions hunting argue a purpose
+  nobody applied for.
+- ⚠️ **A REAL ANIMAL, WITH NOTHING DRAWN ON IT.** Operator: "the animal should
+  be a real animal and not show the vital zone." The first attempt marked the
+  heart and lungs, which is an anatomical claim this platform cannot make in a
+  document somebody signs.
+- ⚠️ **NO PROTECTED SPECIES** — rhino is absent from the registry on purpose.
+- ⚠️ **THE CAPTION CLAIMS NOTHING ABOUT THE APPLICANT.** It names the animals.
+  A sentence saying they hunt these, or intend to, is a fact they are signing
+  for under section 120(9)(f).
+- Species are chosen deterministically from the research the page itself
+  prints — no second model call — matched as **whole words** ("eland" is inside
+  "Zeeland", "lion" inside "medallion") and only from the **well-matched** half
+  of the brief, because the sentence after it lists what the round must not be
+  used on.
 
 ### Document tiers — four, not three
 
