@@ -165,9 +165,9 @@ export class MotivationDocumentsService {
    * `motivation: { userId: user.id }`, which is the only thing standing
    * between one member's library and another's.
    */
-  async library(clerkId: string, id: string) {
+  async library(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { id: true, licenceType: true, status: true },
@@ -332,9 +332,9 @@ export class MotivationDocumentsService {
    * Idempotent: a kind already attached is skipped, so calling it twice
    * attaches nothing twice.
    */
-  async autolink(clerkId: string, id: string, placeConfirmed = false) {
+  async autolink(userId: string, id: string, placeConfirmed = false) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {
@@ -881,7 +881,7 @@ export class MotivationDocumentsService {
   }
 
   async addFromLibrary(
-    clerkId: string,
+    userId: string,
     id: string,
     source: 'credential' | 'upload',
     sourceId: string,
@@ -904,7 +904,7 @@ export class MotivationDocumentsService {
     placeConfirmed = false,
   ) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.openForAttach(user.id, id);
     return this.attachWithOtherSide(
       { userId: user.id, row },
@@ -1685,9 +1685,9 @@ export class MotivationDocumentsService {
    * shape `addFromLibrary` proposes it, so both routes go through the same
    * review before anything is written into a form the member signs.
    */
-  async readingFor(clerkId: string, id: string, uploadId: string) {
+  async readingFor(userId: string, id: string, uploadId: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { id: true },
@@ -1725,9 +1725,9 @@ export class MotivationDocumentsService {
     return { id: up.id, suggestions };
   }
 
-  async rereadUpload(clerkId: string, id: string, uploadId: string) {
+  async rereadUpload(userId: string, id: string, uploadId: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { id: true, licenceType: true, answersEncrypted: true },
@@ -1799,7 +1799,7 @@ export class MotivationDocumentsService {
    * does not exist; this order's failure leaves nothing behind at all.
    */
   async addUpload(
-    clerkId: string,
+    userId: string,
     id: string,
     /**
      * NULL MEANS "SORT IT FOR ME".
@@ -1820,7 +1820,7 @@ export class MotivationDocumentsService {
     opts: { skipExtraction?: boolean } = {},
   ) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -2177,12 +2177,12 @@ export class MotivationDocumentsService {
    * quietly contradicts what someone typed is the worst outcome here.
    */
   async applyExtraction(
-    clerkId: string,
+    userId: string,
     id: string,
     accepted: Record<string, unknown>,
   ) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {
@@ -2302,9 +2302,9 @@ export class MotivationDocumentsService {
   }
 
   /** The annexure list. Metadata only — never the bytes. */
-  async listUploads(clerkId: string, id: string) {
+  async listUploads(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {
@@ -2426,9 +2426,9 @@ export class MotivationDocumentsService {
    * fails its authentication tag here, and headers-then-throw would emit a 200
    * that dies halfway through the body.
    */
-  async readUpload(clerkId: string, id: string, uploadId: string) {
+  async readUpload(userId: string, id: string, uploadId: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     // Ownership is a WHERE CLAUSE, so "not yours" and "does not exist" are the
     // same answer and neither confirms the other exists.
@@ -2468,9 +2468,9 @@ export class MotivationDocumentsService {
   }
 
   /** Remove a document, bytes first. */
-  async removeUpload(clerkId: string, id: string, uploadId: string) {
+  async removeUpload(userId: string, id: string, uploadId: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const up = await this.prisma.motivationUpload.findFirst({
       where: { id: uploadId, motivation: { id, userId: user.id } },
@@ -2556,13 +2556,13 @@ export class MotivationDocumentsService {
    * uploading it again.
    */
   async changeUploadKind(
-    clerkId: string,
+    userId: string,
     id: string,
     uploadId: string,
     kind: MotivationUploadKind,
   ) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     // Ownership through the parent, in the WHERE clause — never a post-fetch
     // check.

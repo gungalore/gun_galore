@@ -81,9 +81,9 @@ export class KycIdAdoptionService {
     private readonly quota: LicenceCentreQuotaService,
   ) {}
 
-  private async load(clerkId: string) {
+  private async load(userId: string) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: {
         id: true,
         kycStatus: true,
@@ -193,11 +193,11 @@ export class KycIdAdoptionService {
    * optional offer into a visible error on the page somebody sees at the end
    * of being verified.
    */
-  async offer(clerkId: string): Promise<KycIdOffer> {
+  async offer(userId: string): Promise<KycIdOffer> {
     const on = await this.quota.isEnabled().catch(() => false);
     if (!on) return { available: false, alreadyThere: false };
 
-    const user = await this.load(clerkId);
+    const user = await this.load(userId);
     // ⚠️ NO LONGER GATED ON VERIFIED, AND THE REASON IS THE TIMING OF THE ASK.
     // Operator, 2026-08-23: "As soon as the KYC is done a window must pop up
     // asking for permission... Does not matter if the KYC has passed or not."
@@ -226,10 +226,10 @@ export class KycIdAdoptionService {
    * it is undeletable except by hand.
    */
   async adopt(
-    clerkId: string,
+    userId: string,
   ): Promise<{ added: boolean; credentialId?: string }> {
     await this.quota.assertEnabled();
-    const user = await this.load(clerkId);
+    const user = await this.load(userId);
 
     if (!this.hasSource(user)) {
       throw new BadRequestException(

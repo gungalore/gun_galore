@@ -8,7 +8,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SavedSearchesService } from './saved-searches.service';
 import { CreateSavedSearchDto } from './dto/create-saved-search.dto';
@@ -26,34 +26,34 @@ import { CreateSavedSearchDto } from './dto/create-saved-search.dto';
  * All routes auth-gated — anonymous users can't save searches.
  */
 @Controller('saved-searches')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class SavedSearchesController {
   constructor(private readonly service: SavedSearchesService) {}
 
   @Get()
-  list(@CurrentUser() clerkId: string) {
-    return this.service.list(clerkId);
+  list(@CurrentUser() userId: string) {
+    return this.service.list(userId);
   }
 
   @Post()
   create(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() dto: CreateSavedSearchDto,
   ) {
-    return this.service.create(clerkId, dto);
+    return this.service.create(userId, dto);
   }
 
   @Patch(':id')
   setEnabled(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() body: { notifyEnabled: boolean },
   ) {
-    return this.service.setEnabled(clerkId, id, !!body.notifyEnabled);
+    return this.service.setEnabled(userId, id, !!body.notifyEnabled);
   }
 
   @Delete(':id')
-  remove(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.service.remove(clerkId, id);
+  remove(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.service.remove(userId, id);
   }
 }

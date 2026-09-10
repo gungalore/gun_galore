@@ -73,7 +73,7 @@ export class ComplaintsService {
   // flips that order to DISPUTED so payout is blocked pending review.
   // ------------------------------------------------------------------
   async create(
-    clerkId: string,
+    userId: string,
     dto: {
       category: string;
       subject: string;
@@ -82,7 +82,7 @@ export class ComplaintsService {
     },
   ) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true, username: true },
     });
     if (!user) throw new NotFoundException('User not found');
@@ -240,12 +240,12 @@ export class ComplaintsService {
   // moderation (evidence legitimately contains contact info). Streams to
   // Cloudinary server-side (same primitive as listing images).
   async addPhoto(
-    clerkId: string,
+    userId: string,
     complaintId: string,
     file: { buffer: Buffer } | undefined,
   ) {
     if (!file?.buffer) throw new BadRequestException('No photo provided.');
-    const complaint = await this.owned(clerkId, complaintId);
+    const complaint = await this.owned(userId, complaintId);
     const count = await this.prisma.complaintPhoto.count({
       where: { complaintId: complaint.id },
     });
@@ -265,9 +265,9 @@ export class ComplaintsService {
 
   // The signed-in user's own complaints (newest first) with photos + a thin
   // linked-order summary.
-  async listMine(clerkId: string) {
+  async listMine(userId: string) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) throw new NotFoundException('User not found');
@@ -295,9 +295,9 @@ export class ComplaintsService {
     });
   }
 
-  private async owned(clerkId: string, complaintId: string) {
+  private async owned(userId: string, complaintId: string) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) throw new NotFoundException('User not found');

@@ -9,20 +9,20 @@
 // ────────────────────────────────────────────────────────────────────
 // THE THREE DOORS, AND WHY THEY ALREADY AGREE.
 //
-//   file picker  →  POST /licence-centre        (ClerkGuard)
-//   camera scan  →  POST /licence-centre        (ClerkGuard)
+//   file picker  →  POST /licence-centre        (AuthGuard)
+//   camera scan  →  POST /licence-centre        (AuthGuard)
 //   phone by QR  →  POST /licence-centre/scan   (ScanHandoffGuard)
 //
 // The web/PWA camera is not a third path at the network layer: DocumentScanner
 // is a pure capture component whose contract is `onDone: (files: File[])`, so
 // it hands back the same File objects a file picker produces and the caller
 // posts them to the same endpoint. Only the QR hand-off has its own controller,
-// and only because LicenceCentreController carries @UseGuards(ClerkGuard) at
+// and only because LicenceCentreController carries @UseGuards(AuthGuard) at
 // CLASS level — a method-level guard runs in ADDITION to it, never instead, so
 // a phone holding only a scan token would be 401'd before its token was ever
 // looked at.
 //
-// Both controllers then call the SAME LicenceCentreService.create(clerkId,
+// Both controllers then call the SAME LicenceCentreService.create(userId,
 // kind, title, file). It takes no argument saying which door was used and has
 // no way to behave differently, so the OCR, the classification, the encryption
 // and the stored row are identical by construction.

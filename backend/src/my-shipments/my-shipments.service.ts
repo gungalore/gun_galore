@@ -46,10 +46,10 @@ export class MyShipmentsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async myShipments(
-    clerkId: string,
+    userId: string,
   ): Promise<{ incoming: ShipmentView[]; outgoing: ShipmentView[] }> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) return { incoming: [], outgoing: [] };

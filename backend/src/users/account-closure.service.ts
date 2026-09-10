@@ -326,7 +326,7 @@ export class AccountClosureService {
   async close(
     userId: string,
     opts: {
-      closedBy: 'MEMBER' | 'ADMIN' | 'CLERK_WEBHOOK';
+      closedBy: 'MEMBER' | 'ADMIN';
       reason: string;
       closedByAdminId?: string;
       /**
@@ -339,7 +339,7 @@ export class AccountClosureService {
        */
       force?: boolean;
     },
-  ): Promise<{ clerkId: string; cancelledListingIds: string[] }> {
+  ): Promise<{ userId: string; cancelledListingIds: string[] }> {
     // ⚠️ ALREADY CLOSED IS A NO-OP, AND IT IS CHECKED BEFORE THE BLOCKERS.
     // The Clerk webhook can arrive twice and a member can double-submit; a
     // repeat must return quietly, not throw ALREADY_CLOSED at somebody whose
@@ -348,11 +348,11 @@ export class AccountClosureService {
     // could never be re-confirmed as closed.
     const already = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { clerkId: true, accountClosedAt: true },
+      select: { id: true, accountClosedAt: true },
     });
     if (!already) throw new NotFoundException('User not found');
     if (already.accountClosedAt) {
-      return { clerkId: already.clerkId, cancelledListingIds: [] };
+      return { userId: already.id, cancelledListingIds: [] };
     }
 
     // ⚠️ `force` WAIVES THE RESTRICTION, NEVER A BLOCKER. An admin closing a
@@ -376,7 +376,6 @@ export class AccountClosureService {
         where: { id: userId },
         select: {
           id: true,
-          clerkId: true,
           username: true,
           email: true,
           phone: true,
@@ -397,7 +396,7 @@ export class AccountClosureService {
       // ⚠️ IDEMPOTENT. The webhook can arrive twice, and a member can
       // double-submit. A second call is a no-op, not a second closure record.
       if (u.accountClosedAt) {
-        return { clerkId: u.clerkId, cancelledListingIds: [] };
+        return { userId: u.id, cancelledListingIds: [] };
       }
 
       // Everything still ACTIVE comes down. ⚠️ Auctions WITH BIDS are already
@@ -448,7 +447,13 @@ export class AccountClosureService {
           // ⚠️ WITHOUT THIS THEY CANNOT COME BACK. The signup form hard-blocks
           // on a taken username, and the OTP step refuses a phone already
           // linked to an account. Both were held forever by the old scrub.
-          username: null,
+          // ⚠️ RENAMED, NOT NULLED — username is non-null now because it is
+          // the only name other members ever see. A closed row still has to
+          // hand the NAME back, so it takes an unclaimable one of its own.
+          // usernameLower moves with it or the unique index keeps the
+          // original reserved, which is the exact bug this frees.
+          username: `closed-${userId.slice(-10)}`,
+          usernameLower: `closed-${userId.slice(-10)}`.toLowerCase(),
           // ⚠️ .invalid is reserved by RFC 6761 so it can never resolve. A
           // subdomain of a domain we own can be created by accident and start
           // accepting mail addressed to closed accounts.
@@ -470,7 +475,7 @@ export class AccountClosureService {
           notifyWhatsappEnabled: false,
           // ⚠️ NOT TOUCHED, EACH FOR ITS OWN REASON:
           //   isBanned / bannedAt  — closing is not misconduct.
-          //   clerkId              — tombstoned later, by the webhook.
+          //   userId              — tombstoned later, by the webhook.
           //   kycIdHash            — held; it is the relink key and the only
           //                          identity-anchored ban barrier we have.
           //   idNumberEncrypted    — Section C of the SAP 534 is built off it.
@@ -486,7 +491,7 @@ export class AccountClosureService {
       this.logger.log(
         `Account ${userId} closed by ${opts.closedBy} (${opts.reason}); ${cancelledListingIds.length} listing(s) cancelled`,
       );
-      return { clerkId: u.clerkId, cancelledListingIds };
+      return { userId: u.id, cancelledListingIds };
     });
   }
 

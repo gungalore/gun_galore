@@ -20,8 +20,8 @@ import type { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Throttle } from '@nestjs/throttler';
-import { ClerkGuard } from '../auth/clerk.guard';
-import { ClerkOrTokenGuard } from '../auth/clerk-or-token.guard';
+import { AuthGuard } from '../auth/auth.guard';
+import { AuthOrTokenGuard } from '../auth/auth-or-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
@@ -58,13 +58,13 @@ export class UsersController {
   // each contributes ~33% to the percent. Email isn't counted — it's
   // implicit (the seller can't reach this endpoint without it).
   @Get('me')
-  @UseGuards(ClerkOrTokenGuard) // accept Clerk OR ?t=<checkout-token>
+  @UseGuards(AuthOrTokenGuard) // accept Clerk OR ?t=<checkout-token>
   async me(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Req() req: Request & { viaActionToken?: boolean },
   ) {
     const meQuery = () => this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: {
         id: true,
         email: true,
@@ -128,14 +128,12 @@ export class UsersController {
         _count: { select: { listings: true } },
       },
     });
-    let user = await meQuery();
-    if (!user && !req.viaActionToken) {
-      // Valid Clerk session but no DB row (missed webhook / deleted row /
-      // instance switch): provision from the Clerk API so the app never
-      // renders an empty profile for a signed-in user, then re-read.
-      const provisioned = await this.users.lazyProvisionFromClerk(clerkId);
-      if (provisioned) user = await meQuery();
-    }
+    const user = await meQuery();
+    // ⚠️ NO LAZY PROVISION ANY MORE, AND NONE IS NEEDED. This used to re-read
+    // the member from the identity provider because the User row could lag a
+    // missed webhook. We create the row ourselves at sign-up, before any token
+    // exists, so a valid token with no row means a deleted account — and
+    // silently rebuilding one of those would be the bug, not the fix.
     if (!user) return null;
     // Compute completeness BEFORE the action-token bank strip below —
     // the banking section must reflect reality, not the redaction.
@@ -170,11 +168,11 @@ export class UsersController {
   // Returned shape mirrors the UrgentNotification type on the frontend
   // exactly so the component doesn't need a translation layer.
   @Get('me/urgent')
-  @UseGuards(ClerkGuard)
-  async urgent(@CurrentUser() clerkId: string) {
+  @UseGuards(AuthGuard)
+  async urgent(@CurrentUser() userId: string) {
     // Aggregation extracted to UsersService.getUrgentSummary (Ask GG
     // Everywhere W5) — shared with the getMyAccountOverview tool.
-    return this.users.getUrgentSummary(clerkId);
+    return this.users.getUrgentSummary(userId);
   }
 
   // ─────────────────── Account summary (Account board) ───────────────
@@ -186,9 +184,9 @@ export class UsersController {
   // figure the token-bearer strip in `me` above exists to withhold).
   // See UsersService.getAccountSummary for the query + the payout note.
   @Get('me/account-summary')
-  @UseGuards(ClerkGuard)
-  async accountSummary(@CurrentUser() clerkId: string) {
-    return this.users.getAccountSummary(clerkId);
+  @UseGuards(AuthGuard)
+  async accountSummary(@CurrentUser() userId: string) {
+    return this.users.getAccountSummary(userId);
   }
 
   // ─────────────────── Edit /users/me ────────────────────────────────
@@ -209,10 +207,10 @@ export class UsersController {
    * their listing must not close over the top of it.
    */
   @Get('me/closure-eligibility')
-  @UseGuards(ClerkGuard)
-  async closureEligibility(@CurrentUser() clerkId: string) {
+  @UseGuards(AuthGuard)
+  async closureEligibility(@CurrentUser() userId: string) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) throw new NotFoundException('User not found');
@@ -227,23 +225,23 @@ export class UsersController {
    * renders is not a control.
    */
   @Post('me/close')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async closeMe(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body('reason') reason: string,
     @Body('confirm') confirm: string,
   ) {
     if ((confirm ?? '').trim().toUpperCase() !== 'CLOSE') {
       throw new BadRequestException('Type CLOSE to confirm.');
     }
-    return this.users.closeMyAccount(clerkId, reason);
+    return this.users.closeMyAccount(userId, reason);
   }
 
   @Patch('me')
-  @UseGuards(ClerkOrTokenGuard) // accept Clerk OR ?t=<checkout-token>
+  @UseGuards(AuthOrTokenGuard) // accept Clerk OR ?t=<checkout-token>
   async updateMe(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() patch: ProfileUpdate,
   ) {
     // Whitelist defensively — only known keys hit Prisma. Anything else
@@ -268,7 +266,7 @@ export class UsersController {
         (safe as Record<string, unknown>)[key] = patch[key];
       }
     }
-    return this.users.updateProfile(clerkId, safe);
+    return this.users.updateProfile(userId, safe);
   }
 
   // ─────────────────── Address book (Phase 2) ────────────────────────
@@ -276,41 +274,41 @@ export class UsersController {
   // needs a real account; the SMS-token checkout flow still works via
   // the inline address override on the checkout form).
   @Get('me/addresses')
-  @UseGuards(ClerkGuard)
-  listAddresses(@CurrentUser() clerkId: string) {
-    return this.users.listAddresses(clerkId);
+  @UseGuards(AuthGuard)
+  listAddresses(@CurrentUser() userId: string) {
+    return this.users.listAddresses(userId);
   }
 
   @Post('me/addresses')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   createAddress(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: import('./users.service').AddressInput,
   ) {
-    return this.users.createAddress(clerkId, body);
+    return this.users.createAddress(userId, body);
   }
 
   @Patch('me/addresses/:id')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   updateAddress(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() body: Partial<import('./users.service').AddressInput>,
   ) {
-    return this.users.updateAddress(clerkId, id, body);
+    return this.users.updateAddress(userId, id, body);
   }
 
   @Delete('me/addresses/:id')
-  @UseGuards(ClerkGuard)
-  deleteAddress(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.users.deleteAddress(clerkId, id);
+  @UseGuards(AuthGuard)
+  deleteAddress(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.users.deleteAddress(userId, id);
   }
 
   // ─────────────────── Notification preferences (Phase 2) ────────────
   @Patch('me/notification-prefs')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   updateNotificationPrefs(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body()
     body: {
       emailEnabled?: boolean;
@@ -324,14 +322,14 @@ export class UsersController {
       fallbackChannel?: string;
     },
   ) {
-    return this.users.updateNotificationPrefs(clerkId, body);
+    return this.users.updateNotificationPrefs(userId, body);
   }
 
   // ─────────────────── Seller shipping defaults (Phase 6 P6.3) ────────
   @Patch('me/shipping-defaults')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   updateShippingDefaults(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body()
     body: {
       weightGrams?: number | null;
@@ -340,7 +338,7 @@ export class UsersController {
       heightCm?: number | null;
     },
   ) {
-    return this.users.updateShippingDefaults(clerkId, body);
+    return this.users.updateShippingDefaults(userId, body);
   }
 
   // Submitted by the post-first-publish ProfileCompletionModal. ALL
@@ -352,12 +350,12 @@ export class UsersController {
   // Peach BANV exists but is deployed inert, so bank details are verified
   // manually by an admin at payout time. See users.service.completeProfile.
   @Post('me/profile-complete')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   completeProfile(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: ProfileCompleteDto,
   ) {
-    return this.users.completeProfile(clerkId, body);
+    return this.users.completeProfile(userId, body);
   }
 
   // FLOW-F2 — banking-details-only update from the /profile/edit
@@ -368,12 +366,12 @@ export class UsersController {
   // pack: SA ID, address, username, phone). Clerk-only: banking is
   // sensitive, never reachable via a checkout action token.
   @Patch('me/bank-details')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   updateBankDetails(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: BankDetailsDto,
   ) {
-    return this.users.updateBankDetails(clerkId, body);
+    return this.users.updateBankDetails(userId, body);
   }
 
   // Buyer phone capture — NO OTP. Sellers go through the OTP flow
@@ -388,9 +386,9 @@ export class UsersController {
   // is what flips phoneVerified true, so seller features can keep
   // gating on that bit if they need real verification.
   @Post('me/buyer-phone')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   async saveBuyerPhone(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: { phone?: string },
   ) {
     const phone = (body?.phone ?? '').trim();
@@ -400,18 +398,18 @@ export class UsersController {
     if (!/^\+?\d{9,15}$/.test(phone)) {
       throw new BadRequestException('Phone number looks invalid');
     }
-    return this.users.saveBuyerPhone(clerkId, phone);
+    return this.users.saveBuyerPhone(userId, phone);
   }
 
   // ─────────────────── Sign-up consent (POPIA) ──────────────────────
   // Called by the sign-up flow right after auth completes (email + OAuth),
   // recording the Terms / Privacy / 18+ affirmation as a durable, timestamped
-  // consent record. ClerkGuard lazy-upserts the User row first, so this works
+  // consent record. AuthGuard lazy-upserts the User row first, so this works
   // even in the create-webhook race. Marketing is a separate explicit opt-in.
   @Post('me/consent')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   async recordConsent(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body()
     body: {
       terms?: boolean;
@@ -421,7 +419,7 @@ export class UsersController {
       policyVersion?: string;
     },
   ) {
-    const recorded = await this.users.recordSignupConsent(clerkId, {
+    const recorded = await this.users.recordSignupConsent(userId, {
       terms: body?.terms === true,
       privacy: body?.privacy === true,
       age: body?.age === true,
@@ -443,13 +441,13 @@ export class UsersController {
   // returning member clicking a later blast can never be re-attributed and
   // no campaign's numbers can be inflated by replaying this endpoint.
   @Post('me/campaign')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   async recordCampaign(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: { key?: string },
   ) {
     const recorded = await this.users.recordCampaignAttribution(
-      clerkId,
+      userId,
       body?.key,
     );
     return { recorded };
@@ -465,15 +463,15 @@ export class UsersController {
   // messages a minute. Matches the KYC module's limit next door.
   @Post('me/phone/request-otp')
   @Throttle({ default: { limit: 3, ttl: 600_000 } })
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   async requestPhoneOtp(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: { phone?: string },
   ) {
     if (!body?.phone) {
       throw new BadRequestException('Phone number is required');
     }
-    return this.users.requestPhoneChange(clerkId, body.phone);
+    return this.users.requestPhoneChange(userId, body.phone);
   }
 
   // ─────────────────── Phone change: verify OTP ──────────────────────
@@ -484,23 +482,23 @@ export class UsersController {
   // so the per-code attempt cap is the one that actually holds.
   @Post('me/phone/verify')
   @Throttle({ default: { limit: 10, ttl: 600_000 } })
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   async verifyPhoneOtp(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: { code?: string },
   ) {
     if (!body?.code) {
       throw new BadRequestException('Verification code is required');
     }
-    return this.users.verifyPhoneChange(clerkId, body.code);
+    return this.users.verifyPhoneChange(userId, body.code);
   }
 
   // ─────────────────── KYC document upload (existing) ────────────────
   @Post('kyc')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @UseInterceptors(FileInterceptor('document', { storage: memoryStorage() }))
   async submitKyc(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @UploadedFile(
       new ParseFilePipe({
         validators: [
@@ -511,14 +509,14 @@ export class UsersController {
     )
     file: Express.Multer.File,
   ) {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new BadRequestException('User not found');
     if (user.kycStatus === 'VERIFIED') throw new BadRequestException('KYC already verified');
 
     const { url } = await this.cloudinary.uploadImage(file.buffer, 'kyc-documents');
 
     await this.prisma.user.update({
-      where: { clerkId },
+      where: { id: userId },
       data: {
         kycStatus: 'PENDING',
         kycDocumentUrl: url,

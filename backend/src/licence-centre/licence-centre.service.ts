@@ -126,9 +126,9 @@ export class LicenceCentreService {
   ) {}
 
   /** @CurrentUser() gives the CLERK id; everything here keys on our own. */
-  private async requireUser(clerkId: string): Promise<{ id: string }> {
+  private async requireUser(userId: string): Promise<{ id: string }> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) throw new NotFoundException('User not found');
@@ -471,9 +471,9 @@ export class LicenceCentreService {
    * share one. Matching on the hash alone would tell each of them their
    * document is in a stranger's application, and name it.
    */
-  async usage(clerkId: string): Promise<Record<string, CredentialUsage[]>> {
+  async usage(userId: string): Promise<Record<string, CredentialUsage[]>> {
     await this.quota.assertEnabled();
-    const user = await this.requireUser(clerkId);
+    const user = await this.requireUser(userId);
 
     const creds = await this.prisma.credential.findMany({
       where: { userId: user.id },
@@ -554,9 +554,9 @@ export class LicenceCentreService {
     return out;
   }
 
-  async list(clerkId: string) {
+  async list(userId: string) {
     await this.quota.assertEnabled();
-    const user = await this.requireUser(clerkId);
+    const user = await this.requireUser(userId);
     const now = new Date();
 
     // ⚠️ BEFORE THE ROWS ARE READ, so this load shows the result.
@@ -926,7 +926,7 @@ export class LicenceCentreService {
   }
 
   async create(
-    clerkId: string,
+    userId: string,
     /**
      * NULL MEANS "SORT IT FOR ME" — the batch path. A member emptying a folder
      * into the vault cannot label files that do not exist yet, and the confirm
@@ -937,7 +937,7 @@ export class LicenceCentreService {
     file: { buffer: Buffer; mimetype: string },
   ) {
     await this.quota.assertEnabled();
-    const user = await this.requireUser(clerkId);
+    const user = await this.requireUser(userId);
 
     if (!file?.buffer?.length) {
       throw new BadRequestException('That file appears to be empty.');
@@ -1683,7 +1683,7 @@ export class LicenceCentreService {
    * checking themselves once we told them we were watching.
    */
   async confirmExpiry(
-    clerkId: string,
+    userId: string,
     id: string,
     // ⚠️ AN OBJECT, NOT SEVEN POSITIONAL ARGUMENTS. It reached six the day the
     // two date ticks arrived, and the very first wiring of them transposed
@@ -1722,7 +1722,7 @@ export class LicenceCentreService {
     const { expiresOn, issuedOn, neverExpires, issuedOnUnknown, kind, title } =
       args;
     await this.quota.assertEnabled();
-    const user = await this.requireUser(clerkId);
+    const user = await this.requireUser(userId);
 
     // ⚠️ OMITTED MEANS "WHATEVER IT ALREADY SAYS", NOT "FALSE". A caller
     // confirming an already-never-expires row — to fix its title, say — and
@@ -1969,9 +1969,9 @@ export class LicenceCentreService {
    * reflex. An empty name falls back to the plain kind rather than leaving a
    * blank row — there is no way to have no name at all.
    */
-  async rename(clerkId: string, id: string, title: string) {
+  async rename(userId: string, id: string, title: string) {
     await this.quota.assertEnabled();
-    const user = await this.requireUser(clerkId);
+    const user = await this.requireUser(userId);
     const clean = (title ?? '').trim().replace(/\s+/g, ' ').slice(0, MAX_TITLE);
     const row = await this.prisma.credential.findFirst({
       where: { id, userId: user.id },
@@ -1995,9 +1995,9 @@ export class LicenceCentreService {
   }
 
   /** Their call. We remind; we never insist. */
-  async mute(clerkId: string, id: string, muted: boolean) {
+  async mute(userId: string, id: string, muted: boolean) {
     await this.quota.assertEnabled();
-    const user = await this.requireUser(clerkId);
+    const user = await this.requireUser(userId);
     const claim = await this.prisma.credential.updateMany({
       where: { id, userId: user.id },
       data: { remindersMuted: muted },
@@ -2014,9 +2014,9 @@ export class LicenceCentreService {
     return { muted };
   }
 
-  async readFile(clerkId: string, id: string) {
+  async readFile(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.requireUser(clerkId);
+    const user = await this.requireUser(userId);
 
     // Ownership is a WHERE CLAUSE, never a post-fetch check.
     const row = await this.prisma.credential.findFirst({
@@ -2094,9 +2094,9 @@ export class LicenceCentreService {
       .catch(() => undefined);
   }
 
-  async remove(clerkId: string, id: string) {
+  async remove(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.requireUser(clerkId);
+    const user = await this.requireUser(userId);
 
     const row = await this.prisma.credential.findFirst({
       where: { id, userId: user.id },
@@ -2272,9 +2272,9 @@ export class LicenceCentreService {
    * putting words in an applicant's mouth on a document they sign as their own
    * is not a convenience.
    */
-  async startRenewal(clerkId: string, id: string) {
+  async startRenewal(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.requireUser(clerkId);
+    const user = await this.requireUser(userId);
 
     const row = await this.prisma.credential.findFirst({
       where: { id, userId: user.id },
@@ -2387,7 +2387,7 @@ export class LicenceCentreService {
     // licences can renew all three: the constraint is
     // @@unique([userId, licenceType, applicationRef]).
     const motivation = await this.motivations.create(
-      clerkId,
+      userId,
       'S24_RENEWAL',
       plan.applicationRef,
       seed,
@@ -2428,7 +2428,7 @@ export class LicenceCentreService {
         // insists on. FIREARM_LICENCE maps to exactly one upload kind,
         // CURRENT_LICENCE, so the row lands where it always did.
         await this.motivations.addFromLibrary(
-          clerkId,
+          userId,
           motivation.id,
           'credential',
           row.id,

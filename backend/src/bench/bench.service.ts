@@ -359,7 +359,7 @@ export class BenchService {
    */
   private async findUserId(clerkSub: string): Promise<string | null> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId: clerkSub },
+      where: { id: clerkSub },
       select: { id: true },
     });
     return user?.id ?? null;
@@ -375,7 +375,7 @@ export class BenchService {
 
   async getBench(clerkSub: string): Promise<BenchView> {
     // ⚠️ NO User ROW IS AN EMPTY SHELF, NOT A 404, AND ONLY ON THE READ.
-    // ClerkGuard lazily provisions the row, but it refuses to create one for a
+    // AuthGuard lazily provisions the row, but it refuses to create one for a
     // Clerk user with no email — so a signed-in caller can genuinely arrive
     // here with nothing. Every read on this module goes through here
     // (BenchController.benchFor is the one door), and a 404 on the results,
@@ -1515,7 +1515,7 @@ export class BenchService {
    * back the share, and a sequential one would let them walk the table.
    *
    * ⚠️ AND IT IS NOT A CAPABILITY. GET /bench/share/:token is behind the same
-   * ClerkGuard as everything else on this module: the link is a shortcut for a
+   * AuthGuard as everything else on this module: the link is a shortcut for a
    * member, not a way to publish the catalogue to somebody who cannot see the
    * page. Spec §10 defers the guest bench, and the auth wall is why this site
    * is not blocked.

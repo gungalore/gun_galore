@@ -23,21 +23,24 @@ function bidIncrement(amount: number): number {
 
 async function main() {
   const listingId = process.argv[2];
-  const bidderClerkId = process.argv[3];
+  const bidderId = process.argv[3];
   const maxAmount = parseInt(process.argv[4], 10);
 
-  if (!listingId || !bidderClerkId || !maxAmount) {
-    console.error('usage: tsx dev-place-bid.ts <listingId> <bidderClerkId> <maxAmountCents>');
+  if (!listingId || !bidderId || !maxAmount) {
+    console.error('usage: tsx dev-place-bid.ts <listingId> <bidderId> <maxAmountCents>');
     process.exit(1);
   }
 
   const bidder = await prisma.user.upsert({
-    where: { clerkId: bidderClerkId },
+    where: { id: bidderId },
     create: {
-      clerkId: bidderClerkId,
-      email: `${bidderClerkId}@test.dev`,
-      firstName: bidderClerkId.includes('A') ? 'Anna' : 'Bob',
-      lastName: bidderClerkId.includes('A') ? 'Adams' : 'Brown',
+      id: bidderId,
+      username: String(bidderId).slice(0, 28),
+      usernameLower: String(bidderId).slice(0, 28).toLowerCase(),
+      passwordHash: '!locked-no-password',
+      email: `${bidderId}@test.dev`,
+      firstName: bidderId.includes('A') ? 'Anna' : 'Bob',
+      lastName: bidderId.includes('A') ? 'Adams' : 'Brown',
     },
     update: {},
   });

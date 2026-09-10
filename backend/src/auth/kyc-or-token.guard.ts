@@ -5,58 +5,61 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { verifyClerkToken } from './clerk-verify';
 import { Request } from 'express';
-import { PrismaService } from '../prisma/prisma.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
+import { SessionService } from './session.service';
+import { extractAccessToken } from './extract-token';
 
 /**
- * Dual-auth guard for the KYC endpoints: accepts EITHER a Clerk session
- * bearer OR a All Outdoor KYC_VERIFY action token via ?t=<token>.
+ * Dual-auth guard for the KYC endpoints: accepts EITHER a member session OR
+ * an All Outdoor KYC_VERIFY action token via ?t=<token>.
  *
- * Mirrors ClerkOrTokenGuard but scoped to the KYC_VERIFY purpose so the
- * seller can complete identity verification straight from the SMS link
- * without signing in (the SMS opens in the default browser, which has no
- * PWA session). Kept as a SEPARATE guard rather than widening
- * ClerkOrTokenGuard so each guard stays bound to exactly one token
- * purpose — wrong-purpose tokens are rejected + counted, preserving the
- * brute-force lock semantics.
+ * Mirrors AuthOrTokenGuard but scoped to the KYC_VERIFY purpose so the seller
+ * can complete identity verification straight from the SMS link without
+ * signing in (the SMS opens in the default browser, which has no PWA
+ * session). Kept as a SEPARATE guard rather than widening AuthOrTokenGuard so
+ * each guard stays bound to exactly one token purpose — wrong-purpose tokens
+ * are rejected + counted, preserving the brute-force lock semantics.
  *
- * Security note: the token only removes the LOGIN wall. It does not
- * weaken the identity proof — verifyId() still cross-checks the SA ID
- * against Home Affairs and faceMatch() still matches a live selfie. The
- * token is single-purpose, user-bound, expiring, and delivered to the
- * seller's own phone.
+ * Security note: the token only removes the LOGIN wall. It does not weaken the
+ * identity proof — the member still has to satisfy Didit's document read,
+ * passive liveness and face match. The token is single-purpose, user-bound,
+ * expiring, and delivered to the seller's own phone.
  *
- * Sets `request.clerkUserId` (read by @CurrentUser()) from the token's
- * authorised user, so the KYC service methods work unchanged.
+ * Sets `request.userId` (read by `@CurrentUser()`) from the token's authorised
+ * user, so the KYC service methods work unchanged.
  */
 @Injectable()
 export class KycOrTokenGuard implements CanActivate {
   private readonly logger = new Logger(KycOrTokenGuard.name);
 
   constructor(
-    private readonly prisma: PrismaService,
     private readonly tokens: ActionTokensService,
+    private readonly sessions: SessionService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context
       .switchToHttp()
       .getRequest<
-        Request & { clerkUserId?: string; viaActionToken?: boolean }
+        Request & {
+          userId?: string;
+          sessionId?: string;
+          viaActionToken?: boolean;
+        }
       >();
 
-    // Clerk session first — cheapest path for a signed-in user.
-    const bearer = this.extractBearer(request);
-    if (bearer) {
+    // Session first — cheapest path for a signed-in user.
+    const token = extractAccessToken(request);
+    if (token) {
       try {
-        const payload = await verifyClerkToken(bearer);
-        request.clerkUserId = payload.sub!;
+        const payload = await this.sessions.verify(token);
+        request.userId = payload.sub;
+        request.sessionId = payload.sid;
         request.viaActionToken = false;
         return true;
       } catch {
-        // Stale/invalid bearer — fall through to the token check.
+        // Stale/invalid session — fall through to the token check.
       }
     }
 
@@ -72,30 +75,16 @@ export class KycOrTokenGuard implements CanActivate {
             'This link is not authorised for identity verification',
           );
         }
-        const user = await this.prisma.user.findUnique({
-          where: { id: resolved.authorisedUserId },
-          select: { clerkId: true },
-        });
-        if (!user) {
-          throw new UnauthorizedException();
-        }
-        request.clerkUserId = user.clerkId;
+        request.userId = resolved.authorisedUserId;
         request.viaActionToken = true;
         return true;
       } catch (err) {
-        this.logger.debug(
-          `KYC token check failed: ${(err as Error).message}`,
-        );
+        this.logger.debug(`KYC token check failed: ${(err as Error).message}`);
         throw new UnauthorizedException();
       }
     }
 
     throw new UnauthorizedException();
-  }
-
-  private extractBearer(request: Request): string | undefined {
-    const [type, token] = request.headers.authorization?.split(' ') ?? [];
-    return type === 'Bearer' ? token : undefined;
   }
 
   private extractTokenParam(request: Request): string | undefined {

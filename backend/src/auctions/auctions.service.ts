@@ -215,8 +215,8 @@ export class AuctionsService {
   // posting a fresh Bid row with maxAmount === visible bid, so the
   // next opposing bid finds zero headroom on the prevHighMax lookup.
   // The user can re-raise their max later by hitting Auto Bid again.
-  async cancelProxy(clerkId: string, listingId: string) {
-    const buyer = await this.prisma.user.findUnique({ where: { clerkId } });
+  async cancelProxy(userId: string, listingId: string) {
+    const buyer = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!buyer) throw new ForbiddenException('User not synced');
 
     return this.prisma.$transaction(async (tx) => {
@@ -283,8 +283,8 @@ export class AuctionsService {
   // Used to label the Auto Bid button on the listing detail page —
   // "Auto bid · ACTIVE · R500" when the user has a live proxy with
   // room to counter, plain "Auto bid" otherwise.
-  async getMyBidForListing(clerkId: string, listingId: string) {
-    const buyer = await this.prisma.user.findUnique({ where: { clerkId } });
+  async getMyBidForListing(userId: string, listingId: string) {
+    const buyer = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!buyer) return null;
 
     // Most recent bid by this user on this listing — its maxAmount is
@@ -335,8 +335,8 @@ export class AuctionsService {
 
   // --- Place a bid -------------------------------------------------------
 
-  async placeBid(clerkId: string, listingId: string, dto: PlaceBidDto) {
-    const buyer = await this.prisma.user.findUnique({ where: { clerkId } });
+  async placeBid(userId: string, listingId: string, dto: PlaceBidDto) {
+    const buyer = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!buyer) throw new ForbiddenException('User not synced');
     // ⚠️ Closed is checked BEFORE banned: a member who closed their own
     // account and came back to a stale tab must not be told they were
@@ -700,8 +700,8 @@ export class AuctionsService {
   // not just at read time, so a bid landing in the gap between our read and
   // this write fails the claim instead of being silently overwritten —
   // same principle as every other CAS in this file.
-  async buyNow(clerkId: string, listingId: string) {
-    const buyer = await this.prisma.user.findUnique({ where: { clerkId } });
+  async buyNow(userId: string, listingId: string) {
+    const buyer = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!buyer) throw new ForbiddenException('User not synced');
     // Same standing checks as placeBid — a Buy Now purchase carries the
     // identical pay-within-24h obligation a winning bid does.
@@ -831,8 +831,8 @@ export class AuctionsService {
 
   // --- Buyer's own bids -------------------------------------------------
 
-  async getMyBids(clerkId: string) {
-    const buyer = await this.prisma.user.findUnique({ where: { clerkId } });
+  async getMyBids(userId: string) {
+    const buyer = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!buyer) throw new ForbiddenException('User not synced');
 
     // One row per listing the buyer has bid on, with their latest max + listing state.
@@ -902,8 +902,8 @@ export class AuctionsService {
 
   // --- Watchlist --------------------------------------------------------
 
-  async watch(clerkId: string, listingId: string) {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  async watch(userId: string, listingId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new ForbiddenException('User not synced');
     await this.prisma.auctionWatch.upsert({
       where: { listingId_userId: { listingId, userId: user.id } },
@@ -913,8 +913,8 @@ export class AuctionsService {
     return { watching: true };
   }
 
-  async unwatch(clerkId: string, listingId: string) {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  async unwatch(userId: string, listingId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new ForbiddenException('User not synced');
     await this.prisma.auctionWatch.deleteMany({
       where: { listingId, userId: user.id },

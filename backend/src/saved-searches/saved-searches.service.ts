@@ -58,13 +58,22 @@ export class SavedSearchesService {
     private readonly push: PushService,
   ) {}
 
-  private async userIdFromClerk(clerkId: string): Promise<string> {
+  /**
+   * Assert the caller's User row still exists, so a request carrying a valid
+   * token for a deleted account gets a clean 404 rather than a foreign-key
+   * error further down.
+   *
+   * This used to translate a Clerk subject into a User.id. There is only one
+   * identifier now, so the translation is gone and the existence check is all
+   * that remains — which is why it returns nothing and callers no longer
+   * rebind the id.
+   */
+  private async assertUserExists(userId: string): Promise<void> {
     const u = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!u) throw new NotFoundException('User not found');
-    return u.id;
   }
 
   // Normalise a DTO into (a) the column values we store and (b) the
@@ -110,10 +119,10 @@ export class SavedSearchesService {
   }
 
   async create(
-    clerkId: string,
+    userId: string,
     dto: CreateSavedSearchDto,
   ): Promise<SavedSearchView> {
-    const userId = await this.userIdFromClerk(clerkId);
+    await this.assertUserExists(userId);
     const { columns, fingerprint, isEmpty } = this.normalize(dto);
     if (isEmpty) {
       throw new BadRequestException(
@@ -153,8 +162,8 @@ export class SavedSearchesService {
     return this.decorateOne(row);
   }
 
-  async list(clerkId: string): Promise<SavedSearchView[]> {
-    const userId = await this.userIdFromClerk(clerkId);
+  async list(userId: string): Promise<SavedSearchView[]> {
+    await this.assertUserExists(userId);
     const rows = await this.prisma.savedSearch.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -163,8 +172,8 @@ export class SavedSearchesService {
     return this.decorateMany(rows);
   }
 
-  async remove(clerkId: string, id: string): Promise<{ removed: boolean }> {
-    const userId = await this.userIdFromClerk(clerkId);
+  async remove(userId: string, id: string): Promise<{ removed: boolean }> {
+    await this.assertUserExists(userId);
     // Ownership-scoped delete: deleteMany with userId in the where so a user
     // can never delete another user's search by guessing an id.
     const res = await this.prisma.savedSearch.deleteMany({
@@ -174,11 +183,11 @@ export class SavedSearchesService {
   }
 
   async setEnabled(
-    clerkId: string,
+    userId: string,
     id: string,
     enabled: boolean,
   ): Promise<{ notifyEnabled: boolean }> {
-    const userId = await this.userIdFromClerk(clerkId);
+    await this.assertUserExists(userId);
     const res = await this.prisma.savedSearch.updateMany({
       where: { id, userId },
       data: { notifyEnabled: enabled },

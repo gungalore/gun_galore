@@ -62,13 +62,15 @@ function makeService(
       blockers: eligibility.blockers ?? [],
     }),
     close: jest.fn().mockResolvedValue({
-      clerkId: 'clerk_1',
+      userId: 'clerk_1',
       cancelledListingIds: ['L1', 'L2'],
     }),
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
   const service = new AdminService(
     prisma as never,
+    // SessionService — an admin close revokes every live session.
+    { revokeAllForUser: jest.fn(async () => 0) } as never,
     {} as never, // files
     {} as never, // notifications
     {} as never, // listings
@@ -80,22 +82,25 @@ function makeService(
     closures as never,
   );
   // The real client would try to reach Clerk over the network.
-  const deleteUser = jest.fn().mockResolvedValue(undefined);
-  (service as unknown as { clerk: unknown }).clerk = { users: { deleteUser } };
-  return { service, prisma, closures, audit, deleteUser };
+  // The session revoker the admin close calls after the commit. Reached
+  // through the instance because it is a constructor arg, not a field we set.
+  const revokeAllForUser = (
+    service as unknown as { sessions: { revokeAllForUser: jest.Mock } }
+  ).sessions.revokeAllForUser;
+  return { service, prisma, closures, audit, revokeAllForUser };
 }
 
 const openUser = {
   id: 'U1',
-  clerkId: 'clerk_1',
+  userId: 'clerk_1',
   username: 'boet',
   email: 'boet@example.co.za',
   accountClosedAt: null,
 };
 
 describe('AdminService.closeAccount', () => {
-  it('closes a clean account, deletes the Clerk user, and audits it', async () => {
-    const { service, closures, audit, deleteUser } = makeService(openUser, {
+  it('closes a clean account, revokes its sessions, and audits it', async () => {
+    const { service, closures, audit, revokeAllForUser } = makeService(openUser, {
       canClose: true,
       restricted: false,
     });
@@ -110,7 +115,12 @@ describe('AdminService.closeAccount', () => {
       // Nothing to force past — this account had no restriction.
       force: false,
     });
-    expect(deleteUser).toHaveBeenCalledWith('clerk_1');
+    // ⚠️ WHAT THIS ASSERTS CHANGED, NOT WHY IT MATTERS. It used to check that
+    // the identity provider's user was deleted, because a row closed in our
+    // database while the login still worked let somebody sign in to a dead
+    // account. We own the sessions now, so revoking them is the same
+    // guarantee — and it is still the thing that must not be quietly dropped.
+    expect(revokeAllForUser).toHaveBeenCalledWith('U1');
     // ⚠️ The handle is snapshotted into the audit row because by the time
     // anybody reads it the User row no longer has one.
     expect(audit.record).toHaveBeenCalledWith(
@@ -220,15 +230,16 @@ describe('AdminService.closeAccount', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  // ⚠️ A Clerk outage must not roll back a closure the member has already been
-  // told about. Closed-in-our-DB-with-a-live-login is strictly safer than the
-  // reverse: every write gate already refuses the row.
-  it('still reports success when the Clerk delete fails', async () => {
-    const { service, deleteUser, audit } = makeService(openUser, {
+  // ⚠️ A FAILED REVOCATION MUST NOT ROLL BACK A CLOSURE the member has already
+  // been told about. Closed-in-our-DB-with-a-live-token is strictly safer than
+  // the reverse: every write gate already refuses the row, and the access
+  // token expires within fifteen minutes anyway.
+  it('still reports success when revoking the sessions fails', async () => {
+    const { service, revokeAllForUser, audit } = makeService(openUser, {
       canClose: true,
       restricted: false,
     });
-    deleteUser.mockRejectedValue(new Error('clerk down'));
+    revokeAllForUser.mockRejectedValue(new Error('database down'));
 
     const res = await service.closeAccount('U1', 'ADMIN1', 'member asked support');
 
@@ -255,6 +266,8 @@ describe('AdminService.updateUser — clearing a username', () => {
     const audit = { record: jest.fn().mockResolvedValue(undefined) };
     const service = new AdminService(
       prisma as never,
+      // SessionService — an admin close revokes every live session.
+      { revokeAllForUser: jest.fn(async () => 0) } as never,
       {} as never,
       {} as never,
       {} as never,
@@ -336,6 +349,8 @@ describe('AdminService.bulkBanUsers', () => {
     };
     const service = new AdminService(
       prisma as never,
+      // SessionService — an admin close revokes every live session.
+      { revokeAllForUser: jest.fn(async () => 0) } as never,
       {} as never,
       {} as never,
       {} as never,

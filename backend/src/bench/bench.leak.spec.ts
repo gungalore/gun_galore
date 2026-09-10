@@ -1271,9 +1271,9 @@ describe('The Bench — the clerk-sub / User.id trap', () => {
     const svc = new BenchService(prisma as never);
     await svc.getBench('user_2abcCLERKsub');
 
-    // The sub goes to User.clerkId …
+    // The sub goes to User.userId …
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
-      where: { clerkId: 'user_2abcCLERKsub' },
+      where: { id: 'user_2abcCLERKsub' },
       select: { id: true },
     });
     // … and the cuid, never the sub, is what UserBench is keyed on.

@@ -17,8 +17,8 @@ import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express
 import { UseInterceptors } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
-import { ClerkGuard } from '../auth/clerk.guard';
-import { ClerkOrTokenGuard } from '../auth/clerk-or-token.guard';
+import { AuthGuard } from '../auth/auth.guard';
+import { AuthOrTokenGuard } from '../auth/auth-or-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { TransactionsService } from './transactions.service';
 import { TrackingService } from '../shipping/tracking.service';
@@ -73,9 +73,9 @@ export class TransactionsController {
   // task; for v1 the token just naturally expires at its 24h TTL.
   // ---------------------------------------------------------------
   @Post()
-  @UseGuards(ClerkOrTokenGuard)
+  @UseGuards(AuthOrTokenGuard)
   async create(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() dto: CreateTransactionDto,
     @Req() req: Request & { viaActionToken?: boolean; actionTokenTargetId?: string },
   ) {
@@ -89,7 +89,7 @@ export class TransactionsController {
     }
     const frontendUrl =
       process.env.FRONTEND_URL ?? `${req.protocol}://${req.get('host') ?? 'localhost:3000'}`;
-    return this.txService.create(clerkId, dto, frontendUrl);
+    return this.txService.create(userId, dto, frontendUrl);
   }
 
   // ---------------------------------------------------------------
@@ -122,21 +122,21 @@ export class TransactionsController {
   // Fetch all transactions (buyer or seller view)
   // ---------------------------------------------------------------
   @Get()
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   findAll(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Query('role') role: 'buyer' | 'seller' = 'buyer',
   ) {
-    return this.txService.findForUser(clerkId, role);
+    return this.txService.findForUser(userId, role);
   }
 
   // ---------------------------------------------------------------
   // Single transaction detail
   // ---------------------------------------------------------------
   @Get(':id')
-  @UseGuards(ClerkGuard)
-  findOne(@Param('id') id: string, @CurrentUser() clerkId: string) {
-    return this.txService.findById(id, clerkId);
+  @UseGuards(AuthGuard)
+  findOne(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.txService.findById(id, userId);
   }
 
   // ---------------------------------------------------------------
@@ -144,15 +144,15 @@ export class TransactionsController {
   // orders only — both enforced in ReceiptService.
   // ---------------------------------------------------------------
   @Get(':id/receipt')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   async receipt(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     const { pdf, filename } = await this.receipts.generateReceiptPdf(
       id,
-      clerkId,
+      userId,
     );
     res.set({
       'Content-Type': 'application/pdf',
@@ -170,33 +170,33 @@ export class TransactionsController {
   // have actually corrected whatever broke it (see rebookShipment) — a parcel
   // that did not fit will not fit the second time.
   @Post(':id/shipment/rebook')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   async rebookShipment(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
   ) {
-    return this.txService.rebookShipmentForSeller(id, clerkId);
+    return this.txService.rebookShipmentForSeller(id, userId);
   }
 
   // What the seller is told about a failed shipment: the reason in their own
   // language, whether they were charged, and whether they must re-measure.
   @Get(':id/shipment/failure')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   async shipmentFailure(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
   ) {
-    return this.txService.shipmentFailureForSeller(id, clerkId);
+    return this.txService.shipmentFailureForSeller(id, userId);
   }
 
   @Get(':id/waybill')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   async waybill(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const { pdf, filename } = await this.txService.getWaybillPdf(id, clerkId);
+    const { pdf, filename } = await this.txService.getWaybillPdf(id, userId);
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="${filename}"`,
@@ -212,13 +212,13 @@ export class TransactionsController {
   // is never a dead end (M21).
   // ---------------------------------------------------------------
   @Get(':id/saps534')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   async saps534(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const { pdf, filename } = await this.txService.getSaps534Pdf(id, clerkId);
+    const { pdf, filename } = await this.txService.getSaps534Pdf(id, userId);
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="${filename}"`,
@@ -231,9 +231,9 @@ export class TransactionsController {
   // Buyer confirms delivery → releases payment
   // ---------------------------------------------------------------
   @Post(':id/confirm-delivery')
-  @UseGuards(ClerkGuard)
-  confirmDelivery(@Param('id') id: string, @CurrentUser() clerkId: string) {
-    return this.txService.confirmDelivery(id, clerkId);
+  @UseGuards(AuthGuard)
+  confirmDelivery(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.txService.confirmDelivery(id, userId);
   }
 
   // ---------------------------------------------------------------
@@ -243,7 +243,7 @@ export class TransactionsController {
   // verification verdict.
   // ---------------------------------------------------------------
   @Post(':id/dealer-verification')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @UseInterceptors(
     FileFieldsInterceptor(
       [
@@ -259,7 +259,7 @@ export class TransactionsController {
   )
   uploadDealerVerification(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @UploadedFiles()
     files: {
       saps534?: Express.Multer.File[];
@@ -321,7 +321,7 @@ export class TransactionsController {
     }
     return this.dealerVerification.uploadAndScore(
       id,
-      clerkId,
+      userId,
       { saps534, stockRegister, firearmSerial },
       body?.dealerStockRegisterRef,
       { name, address, phone },
@@ -334,11 +334,11 @@ export class TransactionsController {
   // details: min 10 chars free-text describing the issue.
   // ---------------------------------------------------------------
   @Post(':id/dispute')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @HttpCode(200)
   raiseDispute(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: { reason?: string; details?: string },
   ) {
     const allowed = ['DAMAGED', 'WRONG_ITEM', 'NEVER_ARRIVED', 'OTHER'] as const;
@@ -346,29 +346,29 @@ export class TransactionsController {
     if (!allowed.includes(reason)) {
       throw new BadRequestException('Invalid dispute reason');
     }
-    return this.txService.raiseDispute(id, clerkId, reason, body.details ?? '');
+    return this.txService.raiseDispute(id, userId, reason, body.details ?? '');
   }
 
   // ---------------------------------------------------------------
   // Tracking timeline (buyer or seller view)
   // ---------------------------------------------------------------
   @Get(':id/tracking')
-  @UseGuards(ClerkGuard)
-  getTracking(@Param('id') id: string, @CurrentUser() clerkId: string) {
-    return this.tracking.getTimeline(id, clerkId);
+  @UseGuards(AuthGuard)
+  getTracking(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.tracking.getTimeline(id, userId);
   }
 
   // ---------------------------------------------------------------
   // Seller confirms dispatch
   // ---------------------------------------------------------------
   @Post(':id/dispatch')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   confirmDispatch(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: { pudoDropoffLockerId?: string; trackingReference?: string },
   ) {
-    return this.txService.confirmDispatch(id, clerkId, body);
+    return this.txService.confirmDispatch(id, userId, body);
   }
 
   // ---------------------------------------------------------------
@@ -378,10 +378,10 @@ export class TransactionsController {
   // /actions/:token/accept-transaction endpoint that the SMS one-tap
   // uses, just guarded by Clerk session instead of a token. Idempotent.
   @Post(':id/accept')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @HttpCode(200)
-  accept(@Param('id') id: string, @CurrentUser() clerkId: string) {
-    return this.txService.acceptTransaction(id, clerkId);
+  accept(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.txService.acceptTransaction(id, userId);
   }
 
   // ---------------------------------------------------------------
@@ -391,14 +391,14 @@ export class TransactionsController {
   // buyer. Allowed reason codes are validated client-side in the picker
   // and a free-text "other" reason gets passed through to the service.
   @Post(':id/reject')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @HttpCode(200)
   reject(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: { reason?: string },
   ) {
-    return this.txService.rejectTransaction(id, clerkId, body?.reason ?? '');
+    return this.txService.rejectTransaction(id, userId, body?.reason ?? '');
   }
 
   // ---------------------------------------------------------------
@@ -407,14 +407,14 @@ export class TransactionsController {
   // listing + notifies both parties. Self-service only for PUDO/TCG.
   // ---------------------------------------------------------------
   @Post(':id/cancel')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @HttpCode(200)
   cancel(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: { reason?: string },
   ) {
-    return this.txService.cancelByBuyer(id, clerkId, body?.reason ?? '');
+    return this.txService.cancelByBuyer(id, userId, body?.reason ?? '');
   }
 
   // ---------------------------------------------------------------
@@ -425,17 +425,17 @@ export class TransactionsController {
   // dispatch-gated in the service.
   // ---------------------------------------------------------------
   @Post(':id/pod-proof')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @HttpCode(200)
   @UseInterceptors(
     FileInterceptor('photo', { limits: { fileSize: 10 * 1024 * 1024 } }),
   )
   uploadPodProof(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @UploadedFile() photo: Express.Multer.File,
   ) {
-    return this.txService.uploadPodProof(id, clerkId, photo);
+    return this.txService.uploadPodProof(id, userId, photo);
   }
 }
 

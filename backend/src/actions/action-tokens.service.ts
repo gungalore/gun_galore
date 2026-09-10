@@ -102,7 +102,15 @@ export type ActionTokenPurpose =
   // Forty-eight hours rather than one: a seller is not standing next to the
   // buyer the way a witness has been phoned in advance, and a transfer is
   // arranged over days. The OTP is what keeps the longer window safe.
-  | 'SELLER_CONSENT';
+  | 'SELLER_CONSENT'
+  // PASSWORD_RESET — the link emailed to somebody who cannot sign in.
+  //
+  // ⚠️ THE ONLY PURPOSE WHOSE HOLDER IS NOT YET AUTHENTICATED AT ALL, which
+  // is why it rides this rail rather than a table of its own: the five-strike
+  // invalidAttempts lock, the single-use consume and the short TTL are
+  // exactly the properties a reset link needs, and they are already proven
+  // here. targetType = 'user'; the target IS the authorised user.
+  | 'PASSWORD_RESET';
 
 export type ActionTokenTargetType =
   | 'offer'

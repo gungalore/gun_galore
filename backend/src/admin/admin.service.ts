@@ -9,8 +9,8 @@ import {
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { AdminRole, Prisma } from '@prisma/client';
-import { createClerkClient } from '@clerk/backend';
 import { PrismaService } from '../prisma/prisma.service';
+import { SessionService } from '../auth/session.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
@@ -36,16 +36,11 @@ import { toCsv } from '../common/csv.util';
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
 
-  // closeAccount() has to delete the Clerk user, the same way the member's own
-  // close does — a row closed in our database while the login still works lets
-  // them sign in to a dead account. One instance per service is the existing
-  // pattern (see users.service.ts:131); the SDK is cheap to construct.
-  private readonly clerk = createClerkClient({
-    secretKey: process.env.CLERK_SECRET_KEY,
-  });
-
   constructor(
     private readonly prisma: PrismaService,
+    // Closing an account has to end every live session — the equivalent of
+    // the identity-provider delete this replaced.
+    private readonly sessions: SessionService,
     // ⚠️ Provided LOCALLY in AdminModule, like everywhere else that touches
     // the encrypted store — it is not @Global on purpose, so nothing starts
     // reading member files without a deliberate module change.
@@ -71,7 +66,7 @@ export class AdminService {
     // @Global (UsersModule). closeAccount() delegates the whole closure
     // transaction here rather than hand-rolling an admin-side copy — the
     // ordering in that service is load-bearing (the Clerk delete must run
-    // AFTER our DB write, and the clerkId tombstone AFTER the webhook lands),
+    // AFTER our DB write, and the userId tombstone AFTER the webhook lands),
     // and a second implementation would drift out of step with it.
     private readonly closures: AccountClosureService,
   ) {}
@@ -273,7 +268,7 @@ export class AdminService {
       this.prisma.listing.findMany({
         where,
         include: {
-          seller: { select: { id: true, clerkId: true, firstName: true, lastName: true, email: true, sellerTier: true } },
+          seller: { select: { id: true, firstName: true, lastName: true, email: true, sellerTier: true } },
           category: { select: { name: true, isFirearm: true } },
           images: { where: { isPrimary: true }, take: 1 },
         },
@@ -479,7 +474,6 @@ export class AdminService {
         where,
         select: {
           id: true,
-          clerkId: true,
           email: true,
           username: true,
           firstName: true,
@@ -670,7 +664,6 @@ export class AdminService {
       where: { id: userId },
       select: {
         id: true,
-        clerkId: true,
         username: true,
         email: true,
         accountClosedAt: true,
@@ -714,7 +707,7 @@ export class AdminService {
       );
     }
 
-    const { clerkId, cancelledListingIds } = await this.closures.close(
+    const { cancelledListingIds } = await this.closures.close(
       userId,
       {
         closedBy: 'ADMIN',
@@ -725,14 +718,15 @@ export class AdminService {
     );
 
     // ⚠️ AFTER THE COMMIT, AND FAIL-SOFT — the same order the member's own
-    // close uses (users.service.ts closeMyAccount). A Clerk outage must not
-    // roll back a closure, and closed-in-our-DB-with-a-live-login is strictly
-    // safer than the reverse: every write gate already refuses the row.
+    // close uses (users.service.ts closeMyAccount). Revoking sessions must not
+    // roll back a closure, and closed-in-our-DB-with-a-live-token is strictly
+    // safer than the reverse: every write gate already refuses the row, and
+    // the access token expires within fifteen minutes regardless.
     try {
-      await this.clerk.users.deleteUser(clerkId);
+      await this.sessions.revokeAllForUser(userId);
     } catch (err) {
       this.logger.error(
-        `Account ${userId} closed by admin ${adminId}, but the Clerk user could not be deleted — they can still sign in to a dead account: ${(err as Error).message}`,
+        `Account ${userId} closed by admin ${adminId}, but its sessions could not be revoked — they can still use a live token until it expires: ${(err as Error).message}`,
       );
     }
 
@@ -2790,7 +2784,7 @@ export class AdminService {
   // ---------------------------------------------------------------
   // Listing is open to any admin (so monitoring admins can see who
   // else has access). Create takes a Clerk-linked user's email; we
-  // look up our local User row + lift the clerkId so future SMS / email
+  // look up our local User row + lift the userId so future SMS / email
   // alerts pull contact info from there rather than a duplicate column.
   //
   // Returns a redacted shape (no password hashes) for the admin panel.
@@ -2803,7 +2797,6 @@ export class AdminService {
         role: true,
         firstName: true,
         lastName: true,
-        clerkId: true,
         isActive: true,
         lastLoginAt: true,
         createdAt: true,
@@ -2838,7 +2831,7 @@ export class AdminService {
     // public /sign-up first.
     const linkedUser = await this.prisma.user.findUnique({
       where: { email },
-      select: { clerkId: true, firstName: true, lastName: true },
+      select: { id: true, firstName: true, lastName: true },
     });
     if (!linkedUser) {
       throw new BadRequestException(
@@ -2870,7 +2863,7 @@ export class AdminService {
         role,
         firstName: linkedUser.firstName,
         lastName: linkedUser.lastName,
-        clerkId: linkedUser.clerkId,
+        userId: linkedUser.id,
       },
       select: {
         id: true,
@@ -2878,7 +2871,6 @@ export class AdminService {
         role: true,
         firstName: true,
         lastName: true,
-        clerkId: true,
         isActive: true,
         createdAt: true,
       },

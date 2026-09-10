@@ -45,7 +45,7 @@ function makeBench(stored: unknown[]) {
 
 /**
  * ⚠️ A CLERK SUBJECT, NOT A REQUEST. Every route on this controller is behind
- * ClerkGuard now — the guest bench is deferred (SPEC-BUILD §10) and the reads
+ * AuthGuard now — the guest bench is deferred (SPEC-BUILD §10) and the reads
  * were publishing the whole consolidated catalogue to anybody who could type a
  * URL — so the handlers take `@CurrentUser()` like the writes always did.
  */

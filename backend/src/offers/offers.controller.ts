@@ -8,13 +8,13 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { OffersService } from './offers.service';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { CounterOfferDto } from './dto/counter-offer.dto';
 
 @Controller('offers')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class OffersController {
   constructor(private readonly offersService: OffersService) {}
 
@@ -25,70 +25,70 @@ export class OffersController {
   // listing so this is double-defence.
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post()
-  submit(@CurrentUser() clerkId: string, @Body() dto: CreateOfferDto) {
-    return this.offersService.submit(clerkId, dto);
+  submit(@CurrentUser() userId: string, @Body() dto: CreateOfferDto) {
+    return this.offersService.submit(userId, dto);
   }
 
   // Buyer: view own offers
   @Get('mine')
-  getMyOffers(@CurrentUser() clerkId: string) {
-    return this.offersService.getMyOffers(clerkId);
+  getMyOffers(@CurrentUser() userId: string) {
+    return this.offersService.getMyOffers(userId);
   }
 
   // Seller: view offers received on their listings
   @Get('received')
-  getReceived(@CurrentUser() clerkId: string) {
-    return this.offersService.getReceivedOffers(clerkId);
+  getReceived(@CurrentUser() userId: string) {
+    return this.offersService.getReceivedOffers(userId);
   }
 
   // Either party: get single offer
   @Get(':id')
-  getOne(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.offersService.getById(clerkId, id);
+  getOne(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.offersService.getById(userId, id);
   }
 
   // Seller: accept original offer
   @Post(':id/accept')
-  accept(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.offersService.accept(clerkId, id);
+  accept(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.offersService.accept(userId, id);
   }
 
   // Seller: reject offer — structured reason required (ticklist); note
   // required when reason=OTHER. Reason drives the seller-standing policy.
   @Post(':id/reject')
   reject(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() body: { reason?: string; note?: string },
   ) {
-    return this.offersService.reject(clerkId, id, body?.reason, body?.note);
+    return this.offersService.reject(userId, id, body?.reason, body?.note);
   }
 
   // Seller: counter the offer
   @Post(':id/counter')
   counter(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() dto: CounterOfferDto,
   ) {
-    return this.offersService.counter(clerkId, id, dto);
+    return this.offersService.counter(userId, id, dto);
   }
 
   // Buyer: accept seller's counter
   @Post(':id/accept-counter')
-  acceptCounter(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.offersService.acceptCounter(clerkId, id);
+  acceptCounter(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.offersService.acceptCounter(userId, id);
   }
 
   // Buyer: reject seller's counter
   @Post(':id/reject-counter')
-  rejectCounter(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.offersService.rejectCounter(clerkId, id);
+  rejectCounter(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.offersService.rejectCounter(userId, id);
   }
 
   // Buyer: withdraw offer
   @Post(':id/withdraw')
-  withdraw(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.offersService.withdraw(clerkId, id);
+  withdraw(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.offersService.withdraw(userId, id);
   }
 }

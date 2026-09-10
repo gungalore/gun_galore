@@ -25,7 +25,7 @@ import { memoryStorage } from 'multer';
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationReasonService } from './motivation-reason.service';
@@ -80,7 +80,7 @@ const UPLOAD_MIME = /^(image\/(jpeg|png|webp)|application\/pdf)$/;
  * answers `{ enabled: false }` so the UI knows not to render an entry point.
  */
 @Controller('motivations')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class MotivationsController {
   constructor(
     private readonly quota: MotivationQuotaService,
@@ -164,17 +164,17 @@ export class MotivationsController {
   }
 
   @Get()
-  list(@CurrentUser() clerkId: string) {
-    return this.motivations.listMine(clerkId);
+  list(@CurrentUser() userId: string) {
+    return this.motivations.listMine(userId);
   }
 
   // Starting one is cheap but allocates a document number, so it is rate
   // limited well below the global 60/min.
   @Post()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  create(@CurrentUser() clerkId: string, @Body() dto: CreateMotivationDto) {
+  create(@CurrentUser() userId: string, @Body() dto: CreateMotivationDto) {
     return this.motivations.create(
-      clerkId,
+      userId,
       dto.licenceType,
       dto.applicationRef ?? '',
     );
@@ -192,8 +192,8 @@ export class MotivationsController {
    * hand-written mirror of isVisible() be retired.
    */
   @Get(':id/sheet')
-  sheet(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.sheets.sheetFor(clerkId, id);
+  sheet(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.sheets.sheetFor(userId, id);
   }
 
   /**
@@ -205,13 +205,13 @@ export class MotivationsController {
    * would reword the document each time.
    */
   @Get(':id/preview')
-  preview(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.sheets.previewOnly(clerkId, id);
+  preview(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.sheets.previewOnly(userId, id);
   }
 
   @Get(':id')
-  findOne(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.findOne(clerkId, id);
+  findOne(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.motivations.findOne(userId, id);
   }
 
   /**
@@ -220,11 +220,11 @@ export class MotivationsController {
    */
   @Patch(':id/answers')
   saveAnswers(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() dto: SaveAnswersDto,
   ) {
-    return this.motivations.saveAnswers(clerkId, id, dto.answers ?? {});
+    return this.motivations.saveAnswers(userId, id, dto.answers ?? {});
   }
 
   /**
@@ -255,13 +255,13 @@ export class MotivationsController {
    */
   @Get(':id/design-sample')
   async designSample(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Query('layout') layout: string | undefined,
     @Query('colourway') colourway: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const pdf = await this.motivations.designSample(clerkId, id, {
+    const pdf = await this.motivations.designSample(userId, id, {
       layout,
       colourway,
     });
@@ -275,11 +275,11 @@ export class MotivationsController {
 
   @Patch(':id/template')
   setTemplate(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() dto: SetTemplateDto,
   ) {
-    return this.motivations.setTemplate(clerkId, id, dto);
+    return this.motivations.setTemplate(userId, id, dto);
   }
 
   /**
@@ -291,11 +291,11 @@ export class MotivationsController {
    */
   @Patch(':id/label')
   rename(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() dto: RenameMotivationDto,
   ) {
-    return this.motivations.rename(clerkId, id, dto.label);
+    return this.motivations.rename(userId, id, dto.label);
   }
 
   /**
@@ -304,12 +304,12 @@ export class MotivationsController {
    */
   @Post(':id/declaration')
   acceptDeclaration(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() dto: AcceptDeclarationDto,
   ) {
     return this.motivations.acceptDeclaration(
-      clerkId,
+      userId,
       id,
       dto.testimonialConsent ?? false,
     );
@@ -337,7 +337,7 @@ export class MotivationsController {
   @Post(':id/generate')
   @HttpCode(202)
   @Throttle({ default: { limit: 10, ttl: 3_600_000 } })
-  generate(@CurrentUser() clerkId: string, @Param('id') id: string) {
+  generate(@CurrentUser() userId: string, @Param('id') id: string) {
     // ⚠️ 202, AND IT RETURNS BEFORE THE DOCUMENT EXISTS. Holding the request
     // open for the ~90 seconds a real generation takes does not work: nginx
     // gives an upstream 60 seconds and Cloudflare cuts the origin at 100
@@ -348,7 +348,7 @@ export class MotivationsController {
     // startGeneration does the whole preflight and the claim before it
     // returns — so a 202 means "running", never "we will find out later
     // whether this was even valid".
-    return this.motivations.startGeneration(clerkId, id);
+    return this.motivations.startGeneration(userId, id);
   }
 
   /**
@@ -358,8 +358,8 @@ export class MotivationsController {
    */
   @Get(':id/draft')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  draft(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.draftText(clerkId, id);
+  draft(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.motivations.draftText(userId, id);
   }
 
   /**
@@ -373,11 +373,11 @@ export class MotivationsController {
    */
   @Get(':id/pdf')
   async pdf(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const { pdf, filename } = await this.motivations.renderPdf(clerkId, id);
+    const { pdf, filename } = await this.motivations.renderPdf(userId, id);
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="${filename}"`,
@@ -400,8 +400,8 @@ export class MotivationsController {
 
   /** What we hold, what they chose, and where a stock photograph came from. */
   @Get(':id/cover-photo')
-  coverPhoto(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.coverPhoto(clerkId, id);
+  coverPhoto(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.motivations.coverPhoto(userId, id);
   }
 
   /**
@@ -415,11 +415,11 @@ export class MotivationsController {
    */
   @Get(':id/cover-photo/image')
   async coverPhotoImage(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const found = await this.motivations.coverPhotoBytes(clerkId, id);
+    const found = await this.motivations.coverPhotoBytes(userId, id);
     if (!found) throw new NotFoundException('No cover photograph');
     res.set({
       'Content-Type': found.mimeType,
@@ -432,11 +432,11 @@ export class MotivationsController {
   /** Keep the stock photograph, use their own, or print none. */
   @Post(':id/cover-photo/choice')
   setCoverChoice(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body('choice') choice: string,
   ) {
-    return this.motivations.setCoverPhotoChoice(clerkId, id, choice ?? '');
+    return this.motivations.setCoverPhotoChoice(userId, id, choice ?? '');
   }
 
   /**
@@ -458,7 +458,7 @@ export class MotivationsController {
     }),
   )
   uploadCoverPhoto(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @UploadedFile(
       new ParseFilePipe({
@@ -470,13 +470,13 @@ export class MotivationsController {
     )
     file: Express.Multer.File,
   ) {
-    return this.motivations.uploadCoverPhoto(clerkId, id, file);
+    return this.motivations.uploadCoverPhoto(userId, id, file);
   }
 
   /** Discard their own and fall back to whatever we found. */
   @Delete(':id/cover-photo')
-  removeCoverPhoto(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.removeCoverPhoto(clerkId, id);
+  removeCoverPhoto(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.motivations.removeCoverPhoto(userId, id);
   }
 
   /**
@@ -488,11 +488,11 @@ export class MotivationsController {
    */
   @Get(':id/saps271')
   async saps271(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const { pdf, filename } = await this.motivations.renderSaps271(clerkId, id);
+    const { pdf, filename } = await this.motivations.renderSaps271(userId, id);
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="${filename}"`,
@@ -508,8 +508,8 @@ export class MotivationsController {
    * must take to the station themselves.
    */
   @Get(':id/checklist')
-  checklist(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.checklist(clerkId, id);
+  checklist(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.motivations.checklist(userId, id);
   }
 
   /**
@@ -522,8 +522,8 @@ export class MotivationsController {
    * ':id/...' route here.
    */
   @Get(':id/pack')
-  pack(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.pack(clerkId, id);
+  pack(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.motivations.pack(userId, id);
   }
 
   /**
@@ -537,8 +537,8 @@ export class MotivationsController {
    * like every other ':id/...' route here.
    */
   @Get(':id/precinct')
-  precinct(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.generation.precinctFor(clerkId, id);
+  precinct(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.generation.precinctFor(userId, id);
   }
 
   /**
@@ -554,8 +554,8 @@ export class MotivationsController {
    * here.
    */
   @Get(':id/incidents')
-  incidents(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.generation.incidentsFor(clerkId, id);
+  incidents(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.generation.incidentsFor(userId, id);
   }
 
   /**
@@ -577,8 +577,8 @@ export class MotivationsController {
    * scoped like every other ':id/...' route here.
    */
   @Get(':id/areas')
-  areas(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.generation.areasFor(clerkId, id);
+  areas(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.generation.areasFor(userId, id);
   }
 
   /**
@@ -591,7 +591,7 @@ export class MotivationsController {
    */
   @Post(':id/areas')
   saveAreas(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() body: { areas?: { key?: string; reason?: string }[] },
   ) {
@@ -602,7 +602,7 @@ export class MotivationsController {
       }))
       .filter((a) => a.key)
       .map((a) => (a.reason ? a : { key: a.key }));
-    return this.generation.saveAreasFor(clerkId, id, ticked);
+    return this.generation.saveAreasFor(userId, id, ticked);
   }
 
   // ── the profile and the vault, applied WITHOUT a button ───────────
@@ -648,7 +648,7 @@ export class MotivationsController {
     }),
   )
   addUpload(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body('kind') kind: string,
     @UploadedFile(
@@ -666,7 +666,7 @@ export class MotivationsController {
     // service names the document from its contents.
     const wanted = (kind ?? '').trim();
     if (!wanted) {
-      return this.motivations.addUpload(clerkId, id, null, file);
+      return this.motivations.addUpload(userId, id, null, file);
     }
 
     // Validated HERE, by hand. The global ValidationPipe has no
@@ -700,7 +700,7 @@ export class MotivationsController {
       );
     }
     return this.motivations.addUpload(
-      clerkId,
+      userId,
       id,
       wanted as MotivationUploadKind,
       file,
@@ -717,11 +717,11 @@ export class MotivationsController {
    */
   @Post(':id/uploads/apply')
   applyExtraction(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() dto: SaveAnswersDto,
   ) {
-    return this.motivations.applyExtraction(clerkId, id, dto.answers ?? {});
+    return this.motivations.applyExtraction(userId, id, dto.answers ?? {});
   }
 
   /** The annexure list — metadata only, never bytes. */
@@ -733,7 +733,7 @@ export class MotivationsController {
    */
   @Patch(':id/uploads/:uploadId')
   refileUpload(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Param('uploadId') uploadId: string,
     @Body('kind') kind: string,
@@ -751,7 +751,7 @@ export class MotivationsController {
       );
     }
     return this.motivations.changeUploadKind(
-      clerkId,
+      userId,
       id,
       uploadId,
       kind as MotivationUploadKind,
@@ -767,8 +767,8 @@ export class MotivationsController {
    * uploads routes because that is what it is about.
    */
   @Get(':id/library')
-  library(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.library(clerkId, id);
+  library(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.motivations.library(userId, id);
   }
 
   /**
@@ -806,14 +806,14 @@ export class MotivationsController {
    */
   @Post(':id/reason')
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
-  reason(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.reasonService.writeFor(clerkId, id);
+  reason(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.reasonService.writeFor(userId, id);
   }
 
   @Post(':id/keep-in-centre')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   keepInCentre(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     /**
      * ⚠️ COERCED, NOT TRUSTED. A bare @Body() is not a DTO and the global
@@ -825,13 +825,13 @@ export class MotivationsController {
     const ids = Array.isArray(uploadIds)
       ? uploadIds.filter((x): x is string => typeof x === 'string').slice(0, 50)
       : [];
-    return this.motivations.keepInCentre(clerkId, id, ids);
+    return this.motivations.keepInCentre(userId, id, ids);
   }
 
   @Post(':id/autolink')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   autolink(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     /**
      * "These are the safe at the address on this application."
@@ -848,14 +848,14 @@ export class MotivationsController {
      */
     @Body('placeConfirmed') placeConfirmed?: unknown,
   ) {
-    return this.motivations.autolink(clerkId, id, placeConfirmed === true);
+    return this.motivations.autolink(userId, id, placeConfirmed === true);
   }
 
   /** Attach one of them, without asking for the file again. */
   @Post(':id/uploads/from-library')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   addFromLibrary(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body('source') source: string,
     @Body('sourceId') sourceId: string,
@@ -875,7 +875,7 @@ export class MotivationsController {
       throw new BadRequestException('Which document?');
     }
     return this.motivations.addFromLibrary(
-      clerkId,
+      userId,
       id,
       source,
       sourceId.trim(),
@@ -884,8 +884,8 @@ export class MotivationsController {
   }
 
   @Get(':id/uploads')
-  listUploads(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.listUploads(clerkId, id);
+  listUploads(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.motivations.listUploads(userId, id);
   }
 
   /**
@@ -899,13 +899,13 @@ export class MotivationsController {
    */
   @Get(':id/uploads/:uploadId')
   async readUpload(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Param('uploadId') uploadId: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     const { bytes, mimeType, filename } = await this.motivations.readUpload(
-      clerkId,
+      userId,
       id,
       uploadId,
     );
@@ -924,11 +924,11 @@ export class MotivationsController {
    */
   @Get(':id/uploads/:uploadId/reading')
   readingFor(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Param('uploadId') uploadId: string,
   ) {
-    return this.motivations.readingFor(clerkId, id, uploadId);
+    return this.motivations.readingFor(userId, id, uploadId);
   }
 
   /**
@@ -940,26 +940,26 @@ export class MotivationsController {
   @Post(':id/uploads/:uploadId/reread')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   rereadUpload(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Param('uploadId') uploadId: string,
   ) {
-    return this.motivations.rereadUpload(clerkId, id, uploadId);
+    return this.motivations.rereadUpload(userId, id, uploadId);
   }
 
   @Delete(':id/uploads/:uploadId')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   removeUpload(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Param('uploadId') uploadId: string,
   ) {
-    return this.motivations.removeUpload(clerkId, id, uploadId);
+    return this.motivations.removeUpload(userId, id, uploadId);
   }
 
   @Post(':id/abandon')
-  abandon(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.abandon(clerkId, id);
+  abandon(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.motivations.abandon(userId, id);
   }
 
   /**
@@ -968,7 +968,7 @@ export class MotivationsController {
    */
   @Delete(':id')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  erase(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.erase(clerkId, id);
+  erase(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.motivations.erase(userId, id);
   }
 }

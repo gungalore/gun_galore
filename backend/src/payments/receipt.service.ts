@@ -48,9 +48,9 @@ export class ReceiptService {
    */
   async generateReceiptPdf(
     transactionId: string,
-    clerkId: string,
+    userId: string,
   ): Promise<{ pdf: Uint8Array; filename: string }> {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
     const tx = await this.prisma.transaction.findUnique({

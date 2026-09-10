@@ -69,7 +69,7 @@ export class PushService implements OnModuleInit {
    * that re-subscribes (e.g. after clearing site data) replaces the
    * stale row instead of stacking duplicates. */
   async subscribe(
-    clerkId: string,
+    userId: string,
     input: {
       endpoint: string;
       p256dh: string;
@@ -79,7 +79,7 @@ export class PushService implements OnModuleInit {
     },
   ): Promise<{ subscribed: boolean }> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) return { subscribed: false };
@@ -112,11 +112,11 @@ export class PushService implements OnModuleInit {
    * push in the UI — also fires when the browser auto-unsubscribes
    * (we get a 410 in sendToUser and clean up there). */
   async unsubscribe(
-    clerkId: string,
+    userId: string,
     endpoint: string,
   ): Promise<{ removed: boolean }> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) return { removed: false };
@@ -130,9 +130,9 @@ export class PushService implements OnModuleInit {
 
   /** Has the current user opted in on at least one device? Drives
    * the UI's "Enabled" vs "Enable" pill. */
-  async hasAnySubscription(clerkId: string): Promise<boolean> {
+  async hasAnySubscription(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) return false;

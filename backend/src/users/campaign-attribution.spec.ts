@@ -40,10 +40,14 @@ describe('UsersService — campaign attribution (first-touch)', () => {
       { purgeKycFiles: jest.fn(async () => ({ removed: 0, failed: 0 })) } as never,
       // Closing an account without erasing the evidence.
       {
-        close: jest.fn(async () => ({ clerkId: 'c', cancelledListingIds: [] })),
+        close: jest.fn(async () => ({ userId: 'c', cancelledListingIds: [] })),
         canClose: jest.fn(async () => ({ canClose: true, restricted: false, blockers: [] })),
         assertReason: jest.fn((r: string) => r),
       } as never,
+      // DiditService — the phone OTP adapter.
+      { sendPhoneCode: jest.fn(), checkPhoneCode: jest.fn(async () => true) } as never,
+      // SessionService — closing an account revokes every live session.
+      { revokeAllForUser: jest.fn(async () => 0) } as never,
     );
     return { service, prisma };
   }
@@ -98,64 +102,17 @@ describe('UsersService — campaign attribution (first-touch)', () => {
     expect(data.campaignKey.length).toBe(40);
   });
 
-  // ── upsertFromClerk (the email-signup metadata path) ────────────────
-  it('seeds the key on the created row at provisioning', async () => {
-    const { service, prisma } = makeService({
-      upserted: { id: 'u1', campaignKey: 'j26' },
-    });
-    await service.upsertFromClerk({
-      clerkId: 'clerk1',
-      email: 'a@b.co',
-      campaignKey: 'j26',
-    });
-    const args = prisma.user.upsert.mock.calls[0][0] as {
-      create: Record<string, unknown>;
-      update: Record<string, unknown>;
-    };
-    expect(args.create.campaignKey).toBe('j26');
-    // The critical one: the UPDATE branch runs on EVERY Clerk sync for the
-    // life of the account. If campaignKey were in there, a member who later
-    // clicked a different blast would be silently re-attributed and every
-    // campaign's numbers would drift upward forever.
-    expect(args.update).not.toHaveProperty('campaignKey');
-  });
-
-  it('does not touch an existing attribution on a later sync', async () => {
-    const { service, prisma } = makeService({
-      upserted: { id: 'u1', campaignKey: 'may-blast' },
-    });
-    await service.upsertFromClerk({
-      clerkId: 'clerk1',
-      email: 'a@b.co',
-      campaignKey: 'j26',
-    });
-    expect(prisma.user.updateMany).not.toHaveBeenCalled();
-  });
-
-  it('back-fills via CAS when the row existed without a key', async () => {
-    const { service, prisma } = makeService({
-      upserted: { id: 'u1', campaignKey: null },
-    });
-    await service.upsertFromClerk({
-      clerkId: 'clerk1',
-      email: 'a@b.co',
-      campaignKey: 'j26',
-    });
-    expect(prisma.user.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'u1', campaignKey: null },
-        data: { campaignKey: 'j26' },
-      }),
-    );
-  });
-
-  it('provisions normally when there is no campaign at all', async () => {
-    const { service, prisma } = makeService();
-    await service.upsertFromClerk({ clerkId: 'clerk1', email: 'a@b.co' });
-    const args = prisma.user.upsert.mock.calls[0][0] as {
-      create: Record<string, unknown>;
-    };
-    expect(args.create.campaignKey).toBeUndefined();
-    expect(prisma.user.updateMany).not.toHaveBeenCalled();
-  });
+  // ── provisioning moved out of this service ──────────────────────────
+  //
+  // ⚠️ THE FOUR TESTS THAT STOOD HERE GUARDED A REAL RULE, and it still
+  // holds — they just no longer have a method to call. They covered
+  // upsertFromClerk, the identity-provider sync that created a member row:
+  // campaignKey went into the CREATE branch and deliberately NOT the UPDATE
+  // branch, because the update ran on every sync for the life of the account
+  // and putting the key there would silently re-attribute anyone who later
+  // clicked a different blast.
+  //
+  // Sign-up is ours now, so that rule lives in AuthService.register and is
+  // tested in auth.service.spec.ts. The CAS back-fill below is the half that
+  // stayed here.
 });

@@ -7,7 +7,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ListingQuestionsService } from './listing-questions.service';
 
@@ -30,13 +30,13 @@ export class ListingQuestionsController {
   // calls (moderation + dedup) so unbounded asks burn API cost fast.
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post(':id/questions')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   ask(
     @Param('id') listingId: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: { question: string },
   ) {
-    return this.qa.ask(listingId, clerkId, body?.question ?? '');
+    return this.qa.ask(listingId, userId, body?.question ?? '');
   }
 
   // Public — anyone signed-in or otherwise can flag an answer.
@@ -48,7 +48,7 @@ export class ListingQuestionsController {
 }
 
 // Seller-side controller — scoped under a separate route so the
-// public Q&A endpoints don't accidentally inherit ClerkGuard / class
+// public Q&A endpoints don't accidentally inherit AuthGuard / class
 // decorators on the public side.
 @Controller('me/questions')
 export class SellerQuestionsController {
@@ -56,30 +56,30 @@ export class SellerQuestionsController {
 
   // List all Qs on the seller's listings. Powers the dashboard card.
   @Get()
-  @UseGuards(ClerkGuard)
-  list(@CurrentUser() clerkId: string) {
-    return this.qa.listForSeller(clerkId);
+  @UseGuards(AuthGuard)
+  list(@CurrentUser() userId: string) {
+    return this.qa.listForSeller(userId);
   }
 
   // Seller answers a pending question. Body: { answer: string }.
   @Post(':questionId/answer')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   answer(
     @Param('questionId') questionId: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: { answer: string },
   ) {
-    return this.qa.answer(questionId, clerkId, body?.answer ?? '');
+    return this.qa.answer(questionId, userId, body?.answer ?? '');
   }
 
   // Seller flags an AI auto-answer as wrong. Invalidates the source
   // Q so the AI can't re-use it, resets this row to AWAITING_SELLER_ANSWER.
   @Post(':questionId/flag-auto-answer')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   flagAutoAnswer(
     @Param('questionId') questionId: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
   ) {
-    return this.qa.flagAutoAnswer(questionId, clerkId);
+    return this.qa.flagAutoAnswer(questionId, userId);
   }
 }

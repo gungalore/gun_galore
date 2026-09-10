@@ -674,7 +674,7 @@ export class MotivationSellerConsentService {
      * the Clerk subject into it, and the name was the whole reason nobody
      * spotted that the value was wrong all the way down to a foreign key.
      */
-    applicantClerkId: string;
+    applicantId: string;
     applicantName: string;
     name: string;
     phone: string;
@@ -711,14 +711,14 @@ export class MotivationSellerConsentService {
     baseUrl: string;
   }) {
     // ⚠️ RESOLVE THE CLERK SUBJECT TO OUR OWN USER ROW. `User.id` is a cuid
-    // and `User.clerkId` is `user_...`; they are different values, and
+    // and `User.userId` is `user_...`; they are different values, and
     // ActionToken.authorisedUserId is a REQUIRED foreign key to User.id. The
     // controller passed the Clerk subject straight through, so every invite
     // this flow ever attempted died on a foreign-key violation — a 500, before
     // any SMS. The witness flow does not have the bug because it resolves
     // through requireOwnMotivation first; this is the same resolution.
     const user = await this.prisma.user.findUnique({
-      where: { clerkId: args.applicantClerkId },
+      where: { id: args.applicantId },
       select: { id: true },
     });
     // ⚠️ AND CHECK THE MOTIVATION IS ACTUALLY THEIRS. Nothing here did. The
@@ -1582,7 +1582,7 @@ export class MotivationSellerConsentService {
    * path is never trusted on its own. "Not found" rather than "not yours".
    */
   async statusFor(
-    applicantClerkId: string,
+    applicantId: string,
     motivationId: string,
   ): Promise<{
     status: 'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED';
@@ -1606,7 +1606,7 @@ export class MotivationSellerConsentService {
     } | null;
   }> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId: applicantClerkId },
+      where: { id: applicantId },
       select: { id: true },
     });
     const owns = user
@@ -1744,9 +1744,9 @@ export class MotivationSellerConsentService {
    * the application as annexures; leaving them would put a stranger's licence
    * in a pack whose consent has been withdrawn.
    */
-  async deleteFor(applicantClerkId: string, motivationId: string): Promise<{ deleted: boolean }> {
+  async deleteFor(applicantId: string, motivationId: string): Promise<{ deleted: boolean }> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId: applicantClerkId },
+      where: { id: applicantId },
       select: { id: true },
     });
     const owns = user

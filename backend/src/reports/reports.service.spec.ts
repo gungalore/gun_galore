@@ -47,7 +47,7 @@ describe('ReportsService', () => {
 
   it('creates a SELLER_REPORTED alert keyed on the seller User.id', async () => {
     prisma.user.findUnique
-      .mockResolvedValueOnce({ id: 'S1' }) // seller lookup by clerkId
+      .mockResolvedValueOnce({ id: 'S1' }) // seller lookup by userId
       .mockResolvedValueOnce({ id: 'U_reporter' }); // reporter
     await service.reportSeller('clerk_seller', 'clerk_reporter', 'suspicious');
     const arg = prisma.adminAlert.create.mock.calls[0][0];

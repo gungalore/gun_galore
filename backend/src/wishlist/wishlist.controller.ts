@@ -7,7 +7,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { WishlistService } from './wishlist.service';
 
@@ -25,36 +25,36 @@ import { WishlistService } from './wishlist.service';
  * query.
  */
 @Controller('wishlist')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class WishlistController {
   constructor(private readonly wishlist: WishlistService) {}
 
   @Get()
-  list(@CurrentUser() clerkId: string) {
-    return this.wishlist.list(clerkId);
+  list(@CurrentUser() userId: string) {
+    return this.wishlist.list(userId);
   }
 
   // SkipThrottle: hydration call on every SSR'd page render → would
   // trip the 60/min default bucket on a single browsing session.
   @Get('ids')
   @SkipThrottle()
-  listIds(@CurrentUser() clerkId: string) {
-    return this.wishlist.listIds(clerkId);
+  listIds(@CurrentUser() userId: string) {
+    return this.wishlist.listIds(userId);
   }
 
   @Post(':listingId')
   add(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('listingId') listingId: string,
   ) {
-    return this.wishlist.add(clerkId, listingId);
+    return this.wishlist.add(userId, listingId);
   }
 
   @Delete(':listingId')
   remove(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('listingId') listingId: string,
   ) {
-    return this.wishlist.remove(clerkId, listingId);
+    return this.wishlist.remove(userId, listingId);
   }
 }

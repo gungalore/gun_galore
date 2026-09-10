@@ -892,7 +892,7 @@ function makeService(
     user: {
       findUnique: jest.fn().mockResolvedValue({
         id: 'u1',
-        clerkId: 'clerk_1',
+        userId: 'clerk_1',
         isBanned: false,
         sellingBannedAt: null,
       }),

@@ -114,7 +114,7 @@ function tasListing(overrides: Record<string, unknown> = {}) {
     title: 'Test item',
     autoAcceptThreshold: null,
     autoDeclineThreshold: null,
-    seller: { clerkId: 'seller-clerk', email: 's@x.co', notifyOffersEnabled: true },
+    seller: { id: 'seller-clerk', email: 's@x.co', notifyOffersEnabled: true },
     ...overrides,
   };
 }
@@ -457,9 +457,9 @@ describe('getById — threshold privacy', () => {
         passFeeToBuyer: true,
         isFirearm: false,
         shippingMethods: [],
-        seller: { clerkId: 'seller-clerk', username: 's', email: 's@x.co' },
+        seller: { id: 'seller-clerk', username: 's', email: 's@x.co' },
       },
-      buyer: { clerkId: 'buyer-clerk', username: 'b' },
+      buyer: { id: 'buyer-clerk', username: 'b' },
     });
     prisma.user.findUnique.mockResolvedValue({
       id: viewerIsSeller ? 'S1' : 'B1',

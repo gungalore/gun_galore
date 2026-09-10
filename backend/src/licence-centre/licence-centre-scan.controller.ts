@@ -30,7 +30,7 @@ import {
 // THE PHONE'S DOOR INTO THE LICENCE CENTRE.
 //
 // ⚠️ A SEPARATE CONTROLLER, not a method on the existing one, and that is not
-// tidiness. LicenceCentreController carries @UseGuards(ClerkGuard) at CLASS
+// tidiness. LicenceCentreController carries @UseGuards(AuthGuard) at CLASS
 // level; a method-level guard runs in ADDITION to it, never instead, so a
 // phone with only a scan token would be 401'd by the class guard before the
 // token was ever looked at.
@@ -57,7 +57,7 @@ export class LicenceCentreScanController {
     }),
   )
   create(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body('kind') kind: string,
     @Body('title') title: string,
     @UploadedFile(
@@ -83,10 +83,10 @@ export class LicenceCentreScanController {
     file: Express.Multer.File,
   ) {
     const wanted = (kind ?? '').trim();
-    if (!wanted) return this.svc.create(clerkId, null, title, file);
+    if (!wanted) return this.svc.create(userId, null, title, file);
     if (!Object.values(CredentialKind).includes(wanted as CredentialKind)) {
       throw new BadRequestException('Unknown document type.');
     }
-    return this.svc.create(clerkId, wanted as CredentialKind, title, file);
+    return this.svc.create(userId, wanted as CredentialKind, title, file);
   }
 }

@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { AuctionsService } from './auctions.service';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PlaceBidDto } from './dto/place-bid.dto';
 
@@ -26,56 +26,56 @@ export class AuctionsController {
   }
 
   // BUYER: place / raise a proxy bid
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @Post(':listingId/bids')
   placeBid(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('listingId') listingId: string,
     @Body() dto: PlaceBidDto,
   ) {
-    return this.auctions.placeBid(clerkId, listingId, dto);
+    return this.auctions.placeBid(userId, listingId, dto);
   }
 
   // BUYER: list of auctions you've bid on
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @Get('me/bids')
-  myBids(@CurrentUser() clerkId: string) {
-    return this.auctions.getMyBids(clerkId);
+  myBids(@CurrentUser() userId: string) {
+    return this.auctions.getMyBids(userId);
   }
 
   // BUYER: your proxy state for a single listing — drives the
   // "Auto bid · ACTIVE · R500" label on the listing detail page.
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @Get(':listingId/me')
   myBidForListing(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('listingId') listingId: string,
   ) {
-    return this.auctions.getMyBidForListing(clerkId, listingId);
+    return this.auctions.getMyBidForListing(userId, listingId);
   }
 
   // BUYER: cancel an active proxy on a listing. Keeps the user as
   // current high bidder at the visible amount, but stops auto-
   // countering future bids.
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @Post(':listingId/cancel-proxy')
   cancelProxy(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('listingId') listingId: string,
   ) {
-    return this.auctions.cancelProxy(clerkId, listingId);
+    return this.auctions.cancelProxy(userId, listingId);
   }
 
   // BUYER: watchlist
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @Post(':listingId/watch')
-  watch(@CurrentUser() clerkId: string, @Param('listingId') listingId: string) {
-    return this.auctions.watch(clerkId, listingId);
+  watch(@CurrentUser() userId: string, @Param('listingId') listingId: string) {
+    return this.auctions.watch(userId, listingId);
   }
 
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @Delete(':listingId/watch')
-  unwatch(@CurrentUser() clerkId: string, @Param('listingId') listingId: string) {
-    return this.auctions.unwatch(clerkId, listingId);
+  unwatch(@CurrentUser() userId: string, @Param('listingId') listingId: string) {
+    return this.auctions.unwatch(userId, listingId);
   }
 }

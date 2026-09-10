@@ -63,10 +63,14 @@ describe('UsersService — address book & notification prefs', () => {
       { purgeKycFiles: jest.fn(async () => ({ removed: 0, failed: 0 })) } as never,
       // Closing an account without erasing the evidence.
       {
-        close: jest.fn(async () => ({ clerkId: 'c', cancelledListingIds: [] })),
+        close: jest.fn(async () => ({ userId: 'c', cancelledListingIds: [] })),
         canClose: jest.fn(async () => ({ canClose: true, restricted: false, blockers: [] })),
         assertReason: jest.fn((r: string) => r),
       } as never,
+      // DiditService — the phone OTP adapter.
+      { sendPhoneCode: jest.fn(), checkPhoneCode: jest.fn(async () => true) } as never,
+      // SessionService — closing an account revokes every live session.
+      { revokeAllForUser: jest.fn(async () => 0) } as never,
     );
   });
 
@@ -78,7 +82,7 @@ describe('UsersService — address book & notification prefs', () => {
 
   it('clears the previous default when a new default is added', async () => {
     prisma.address.count.mockResolvedValue(2);
-    await service.createAddress('clerk1', { ...validAddr, isDefault: true } as never);
+    await service.createAddress('u1', { ...validAddr, isDefault: true } as never);
     expect(prisma.address.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { userId: 'u1', isDefault: true },
@@ -125,7 +129,7 @@ describe('UsersService — address book & notification prefs', () => {
     });
     await service.updateNotificationPrefs('clerk1', { smsEnabled: false });
     expect(prisma.user.updateMany).toHaveBeenCalledWith({
-      where: { clerkId: 'clerk1', notifyEmailEnabled: true },
+      where: { id: 'clerk1', notifyEmailEnabled: true },
       data: { notifySmsEnabled: false },
     });
   });
@@ -166,7 +170,7 @@ describe('UsersService — address book & notification prefs', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.user.updateMany).toHaveBeenCalledWith({
-      where: { clerkId: 'clerk1', notifySmsEnabled: true },
+      where: { id: 'clerk1', notifySmsEnabled: true },
       data: { notifyEmailEnabled: false, notifyWhatsappEnabled: true },
     });
   });
@@ -183,7 +187,7 @@ describe('UsersService — address book & notification prefs', () => {
     });
     await service.updateNotificationPrefs('clerk1', { whatsappEnabled: false });
     expect(prisma.user.updateMany).toHaveBeenCalledWith({
-      where: { clerkId: 'clerk1' },
+      where: { id: 'clerk1' },
       data: { notifyWhatsappEnabled: false },
     });
   });
@@ -198,7 +202,7 @@ describe('UsersService — address book & notification prefs', () => {
     });
     await service.updateNotificationPrefs('clerk1', { fallbackChannel: 'SMS' });
     expect(prisma.user.updateMany).toHaveBeenCalledWith({
-      where: { clerkId: 'clerk1' },
+      where: { id: 'clerk1' },
       data: { notifyFallbackChannel: 'SMS' },
     });
   });
@@ -233,7 +237,7 @@ describe('UsersService — address book & notification prefs', () => {
       fallbackChannel: 'NONE',
     });
     expect(prisma.user.updateMany).toHaveBeenCalledWith({
-      where: { clerkId: 'clerk1' },
+      where: { id: 'clerk1' },
       data: { notifyFallbackChannel: 'NONE' },
     });
   });
@@ -241,12 +245,12 @@ describe('UsersService — address book & notification prefs', () => {
 
 // ── account deletion ────────────────────────────────────────────────
 //
-// Both branches of deleteByClerkId used to leak a member's encrypted licence
+// Both branches of deleteById used to leak a member's encrypted licence
 // documents, in opposite directions: a hard delete cascaded the rows away and
 // left the files unreachable, and the PII-scrub fallback kept the User row so
 // the motivations survived an erasure request entirely.
 
-describe('UsersService.deleteByClerkId', () => {
+describe('UsersService.deleteById', () => {
   function build(
     opts: { firearmTxns?: number; payoutsDue?: number } = {},
   ) {
@@ -303,10 +307,14 @@ describe('UsersService.deleteByClerkId', () => {
       { purgeKycFiles: jest.fn(async () => ({ removed: 0, failed: 0 })) } as never,
       // Closing an account without erasing the evidence.
       {
-        close: jest.fn(async () => ({ clerkId: 'c', cancelledListingIds: [] })),
+        close: jest.fn(async () => ({ userId: 'c', cancelledListingIds: [] })),
         canClose: jest.fn(async () => ({ canClose: true, restricted: false, blockers: [] })),
         assertReason: jest.fn((r: string) => r),
       } as never,
+      // DiditService — the phone OTP adapter.
+      { sendPhoneCode: jest.fn(), checkPhoneCode: jest.fn(async () => true) } as never,
+      // SessionService — closing an account revokes every live session.
+      { revokeAllForUser: jest.fn(async () => 0) } as never,
     );
     return { svc, prisma, retention, licenceCentre, order, s: () => scrubbed };
   }
@@ -317,7 +325,7 @@ describe('UsersService.deleteByClerkId', () => {
     // and a vault document would outlive the erasure request that was supposed
     // to remove it. purgeForUser deletes the rows explicitly for this reason.
     const { svc, licenceCentre } = build();
-    await svc.deleteByClerkId('clerk_1');
+    await svc.deleteById('clerk_1');
     expect(licenceCentre.purgeForUser).toHaveBeenCalledTimes(1);
   });
 
@@ -326,7 +334,7 @@ describe('UsersService.deleteByClerkId', () => {
     // and the account is never dealt with at all.
     const { svc, licenceCentre, order } = build();
     licenceCentre.purgeForUser.mockRejectedValueOnce(new Error('disk gone'));
-    await expect(svc.deleteByClerkId('clerk_1')).resolves.not.toThrow();
+    await expect(svc.deleteById('clerk_1')).resolves.not.toThrow();
     expect(order).toContain('user.scrub');
   });
 
@@ -338,7 +346,7 @@ describe('UsersService.deleteByClerkId', () => {
     // all by cascade. Operator, 2026-08-22: "if a user commited a crime or
     // something they cant just vanish by deleting and wiping evidence."
     const { svc, prisma, order } = build();
-    await svc.deleteByClerkId('clerk_1');
+    await svc.deleteById('clerk_1');
     expect(prisma.user.deleteMany).not.toHaveBeenCalled();
     expect(order).not.toContain('user.delete');
   });
@@ -348,7 +356,7 @@ describe('UsersService.deleteByClerkId', () => {
     // departure as an enforcement action, including the ones an admin uses to
     // find people we have actually banned.
     const { svc, s } = build();
-    await svc.deleteByClerkId('clerk_1');
+    await svc.deleteById('clerk_1');
     expect(s()).not.toHaveProperty('isBanned');
   });
 
@@ -359,7 +367,7 @@ describe('UsersService.deleteByClerkId', () => {
     // them made a statutory firearm-transfer form unregenerable, with the
     // whole of Section C blank on re-download.
     const { svc, s } = build({ firearmTxns: 1 });
-    await svc.deleteByClerkId('clerk_1');
+    await svc.deleteById('clerk_1');
     for (const k of [
       'firstName',
       'lastName',
@@ -376,7 +384,7 @@ describe('UsersService.deleteByClerkId', () => {
 
   it('erases the identity when no firearm transfer is involved', async () => {
     const { svc, s } = build({ firearmTxns: 0 });
-    await svc.deleteByClerkId('clerk_1');
+    await svc.deleteById('clerk_1');
     expect(s()).toMatchObject({
       firstName: null,
       lastName: null,
@@ -395,13 +403,13 @@ describe('UsersService.deleteByClerkId', () => {
     // quartet while money is due makes it permanently unpayable, with no alert
     // and nobody left to re-collect the details from.
     const { svc, s } = build({ payoutsDue: 1 });
-    await svc.deleteByClerkId('clerk_1');
+    await svc.deleteById('clerk_1');
     expect(s()).not.toHaveProperty('bankAccountNumber');
   });
 
   it('clears the bank details when nothing is owed', async () => {
     const { svc, s } = build({ payoutsDue: 0 });
-    await svc.deleteByClerkId('clerk_1');
+    await svc.deleteById('clerk_1');
     expect(s()).toMatchObject({ bankAccountNumber: null, bankName: null });
   });
 
@@ -409,7 +417,7 @@ describe('UsersService.deleteByClerkId', () => {
     // Without this a cron could still address an erased member — at the
     // sentinel address.
     const { svc, s } = build();
-    await svc.deleteByClerkId('clerk_1');
+    await svc.deleteById('clerk_1');
     expect(s()).toMatchObject({
       notifyEmailEnabled: false,
       notifySmsEnabled: false,
@@ -423,7 +431,7 @@ describe('UsersService.deleteByClerkId', () => {
     // referencing them, invisible to the nightly sweep, which finds files
     // THROUGH rows.
     const { svc, retention, order } = build();
-    await svc.deleteByClerkId('clerk_1');
+    await svc.deleteById('clerk_1');
     expect(retention.purgeForUser).toHaveBeenCalledWith('u-1');
     expect(order).toEqual([
       'motivations.purge',
@@ -436,13 +444,13 @@ describe('UsersService.deleteByClerkId', () => {
     // Clerk retries forever on a non-2xx, and the account stays undeleted.
     const { svc, retention } = build();
     retention.purgeForUser.mockRejectedValueOnce(new Error('disk on fire'));
-    await expect(svc.deleteByClerkId('clerk_1')).resolves.toBeUndefined();
+    await expect(svc.deleteById('clerk_1')).resolves.toBeUndefined();
   });
 
   it('skips the purge for a clerk id we never had a row for', async () => {
     const { svc, prisma, retention } = build();
     prisma.user.findFirst.mockResolvedValueOnce(null);
-    await svc.deleteByClerkId('clerk_unknown');
+    await svc.deleteById('clerk_unknown');
     expect(retention.purgeForUser).not.toHaveBeenCalled();
   });
 });

@@ -240,7 +240,7 @@ export class AskGgKbService implements OnModuleInit {
 
   /** Snapshot for a single user — what their badge state is and
    *  whether they're eligible. Used by /admin/users/:id dossier
-   *  panel + the public /sellers/:clerkId render. */
+   *  panel + the public /sellers/:userId render. */
   async getExpertEligibility(userId: string): Promise<{
     userId: string;
     verifiedKbCount: number;

@@ -27,8 +27,8 @@ import { UpdateListingDto } from './dto/update-listing.dto';
 import { BrowseListingsDto } from './dto/browse-listings.dto';
 import { CrossSellDto } from './dto/cross-sell.dto';
 import { PreviewListingDto } from './dto/preview-listing.dto';
-import { ClerkGuard } from '../auth/clerk.guard';
-import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('listings')
@@ -46,11 +46,11 @@ export class ListingsController {
 
   @Get()
   @SkipThrottle()
-  // OptionalClerkGuard so search-insight events can attribute the searcher
+  // OptionalAuthGuard so search-insight events can attribute the searcher
   // when signed in; anonymous browse is unaffected (guard never rejects).
-  @UseGuards(OptionalClerkGuard)
-  browse(@Query() dto: BrowseListingsDto, @CurrentUser() clerkId?: string) {
-    return this.listingsService.browse(dto, clerkId);
+  @UseGuards(OptionalAuthGuard)
+  browse(@Query() dto: BrowseListingsDto, @CurrentUser() userId?: string) {
+    return this.listingsService.browse(dto, userId);
   }
 
   // Cross-sell ("you might also need…"). MUST stay above @Get(':id') so
@@ -58,9 +58,9 @@ export class ListingsController {
   // browse (SSR fans these out from one IP).
   @Get('cross-sell')
   @SkipThrottle()
-  @UseGuards(OptionalClerkGuard)
-  crossSell(@Query() dto: CrossSellDto, @CurrentUser() clerkId?: string) {
-    return this.listingsService.crossSell(dto, clerkId);
+  @UseGuards(OptionalAuthGuard)
+  crossSell(@Query() dto: CrossSellDto, @CurrentUser() userId?: string) {
+    return this.listingsService.crossSell(dto, userId);
   }
 
   // Brand/make facet values for the storefront filter. MUST stay above
@@ -68,9 +68,9 @@ export class ListingsController {
   // SkipThrottle like browse (SSR fans these out from one IP).
   @Get('brands')
   @SkipThrottle()
-  @UseGuards(OptionalClerkGuard)
-  brands(@CurrentUser() clerkId?: string) {
-    return this.listingsService.listBrands(60, clerkId);
+  @UseGuards(OptionalAuthGuard)
+  brands(@CurrentUser() userId?: string) {
+    return this.listingsService.listBrands(60, userId);
   }
 
   // ACTIVE listing ids + lastModified for the XML sitemap. MUST stay above
@@ -96,9 +96,9 @@ export class ListingsController {
   // these out from one IP) → SkipThrottle like browse.
   @Get('facets')
   @SkipThrottle()
-  @UseGuards(OptionalClerkGuard)
-  facets(@Query() dto: BrowseListingsDto, @CurrentUser() clerkId?: string) {
-    return this.listingsService.facets(dto, clerkId);
+  @UseGuards(OptionalAuthGuard)
+  facets(@Query() dto: BrowseListingsDto, @CurrentUser() userId?: string) {
+    return this.listingsService.facets(dto, userId);
   }
 
   // P5.6 — sold-price comps for a category ("similar items recently sold for
@@ -106,21 +106,21 @@ export class ListingsController {
   // a minimum sale count. MUST stay above @Get(':id'). Public read → SkipThrottle.
   @Get('sold-comps')
   @SkipThrottle()
-  @UseGuards(OptionalClerkGuard)
+  @UseGuards(OptionalAuthGuard)
   soldComps(
     @Query() dto: { categorySlug?: string; categoryId?: string },
-    @CurrentUser() clerkId?: string,
+    @CurrentUser() userId?: string,
   ) {
-    return this.listingsService.soldComps(dto, clerkId);
+    return this.listingsService.soldComps(dto, userId);
   }
 
   // P5.7 — folded, gated brand list for the /brands index + XML sitemap.
   // MUST stay above @Get(':id'). Public read → SkipThrottle.
   @Get('brand-index')
   @SkipThrottle()
-  @UseGuards(OptionalClerkGuard)
-  brandIndex(@CurrentUser() clerkId?: string) {
-    return this.listingsService.listBrandsWithCounts(undefined, clerkId);
+  @UseGuards(OptionalAuthGuard)
+  brandIndex(@CurrentUser() userId?: string) {
+    return this.listingsService.listBrandsWithCounts(undefined, userId);
   }
 
   // P5.7 — resolve a brand slug to its display label + count (or 404 when the
@@ -129,15 +129,15 @@ export class ListingsController {
   // segments so it can't shadow @Get(':id'), but kept here for clarity.
   @Get('brand/:slug')
   @SkipThrottle()
-  @UseGuards(OptionalClerkGuard)
+  @UseGuards(OptionalAuthGuard)
   async brandBySlug(
     @Param('slug') slug: string,
-    @CurrentUser() clerkId?: string,
+    @CurrentUser() userId?: string,
   ) {
     const b = await this.listingsService.resolveBrandSlug(
       slug,
       undefined,
-      clerkId,
+      userId,
     );
     if (!b) throw new NotFoundException('Brand not found');
     return { slug: b.slug, label: b.label, count: b.count };
@@ -151,12 +151,12 @@ export class ListingsController {
   // seller has rows. That bug shipped once; don't reintroduce it.
 
   @Get('mine')
-  @UseGuards(ClerkGuard)
-  mine(@CurrentUser() clerkId: string) {
-    return this.listingsService.findMine(clerkId);
+  @UseGuards(AuthGuard)
+  mine(@CurrentUser() userId: string) {
+    return this.listingsService.findMine(userId);
   }
 
-  // Public listing detail. OptionalClerkGuard makes this owner-aware without
+  // Public listing detail. OptionalAuthGuard makes this owner-aware without
   // rejecting anonymous callers: if the seller's Clerk token is present,
   // @CurrentUser() resolves their id and findById adds the owner-only fields
   // (hidden reserve, auto-accept threshold, moderation-banner data) and lifts
@@ -164,15 +164,15 @@ export class ListingsController {
   // public projection. See ListingsService.PUBLIC_LISTING_SELECT.
   @Get(':id')
   @SkipThrottle()
-  @UseGuards(OptionalClerkGuard)
-  findOne(@Param('id') id: string, @CurrentUser() clerkId?: string) {
-    return this.listingsService.findById(id, clerkId);
+  @UseGuards(OptionalAuthGuard)
+  findOne(@Param('id') id: string, @CurrentUser() userId?: string) {
+    return this.listingsService.findById(id, userId);
   }
 
   @Post()
-  @UseGuards(ClerkGuard)
-  create(@CurrentUser() clerkId: string, @Body() dto: CreateListingDto) {
-    return this.listingsService.create(clerkId, dto);
+  @UseGuards(AuthGuard)
+  create(@CurrentUser() userId: string, @Body() dto: CreateListingDto) {
+    return this.listingsService.create(userId, dto);
   }
 
   // POST /listings/firearm-docs — pre-upload the serial + licence proof
@@ -180,7 +180,7 @@ export class ListingsController {
   // form then passes into POST /listings, where Claude vision verifies
   // them. Two named files: serialPhoto + licencePhoto.
   @Post('firearm-docs')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @UseInterceptors(
     FileFieldsInterceptor(
@@ -192,7 +192,7 @@ export class ListingsController {
     ),
   )
   uploadFirearmDocs(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @UploadedFiles()
     files: {
       serialPhoto?: Express.Multer.File[];
@@ -200,7 +200,7 @@ export class ListingsController {
     },
   ) {
     return this.listingsService.uploadFirearmDocs(
-      clerkId,
+      userId,
       files?.serialPhoto?.[0],
       files?.licencePhoto?.[0],
     );
@@ -212,7 +212,7 @@ export class ListingsController {
   // rewritten text plus a flag for whether it changed. Auth-gated so
   // randoms can't burn through our model quota.
   @Post('enhance-description')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(200)
   enhanceDescription(
@@ -248,11 +248,11 @@ export class ListingsController {
   // can trigger one AI + web-search call on a thin-comps item. Returns an
   // INDICATIVE range only — never a valuation the platform stands behind.
   @Post('estimate-price')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(200)
   estimatePrice(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body()
     body: {
       categoryId?: string;
@@ -271,7 +271,7 @@ export class ListingsController {
       title: body.title,
       condition: body.condition,
       // Per-user daily web-anchor cap key (IP throttling is defeatable).
-      userId: clerkId,
+      userId: userId,
     });
   }
 
@@ -280,24 +280,24 @@ export class ListingsController {
   // button hits this; the response drives the preview screen (greyed-out
   // preview with prohibited content highlighted, or a clean confirm-publish).
   @Post('preview')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(200)
   preview(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() dto: PreviewListingDto,
   ) {
-    return this.listingsService.previewDraft(clerkId, dto);
+    return this.listingsService.previewDraft(userId, dto);
   }
 
   @Patch(':id')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   update(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() dto: UpdateListingDto,
   ) {
-    return this.listingsService.update(id, clerkId, dto);
+    return this.listingsService.update(id, userId, dto);
   }
 
   /**
@@ -314,10 +314,10 @@ export class ListingsController {
   }
 
   @Delete(':id')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @HttpCode(204)
-  cancel(@Param('id') id: string, @CurrentUser() clerkId: string) {
-    return this.listingsService.cancel(id, clerkId);
+  cancel(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.listingsService.cancel(id, userId);
   }
 
   /**
@@ -326,17 +326,17 @@ export class ListingsController {
    * renewal nudge; owner-only, ACTIVE non-auction listings only.
    */
   @Post(':id/renew')
-  @UseGuards(ClerkGuard)
-  renew(@Param('id') id: string, @CurrentUser() clerkId: string) {
-    return this.listingsService.renew(id, clerkId);
+  @UseGuards(AuthGuard)
+  renew(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.listingsService.renew(id, userId);
   }
 
   @Post(':id/images')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
   addImage(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @UploadedFile(
       new ParseFilePipe({
         validators: [
@@ -347,17 +347,17 @@ export class ListingsController {
     )
     file: Express.Multer.File,
   ) {
-    return this.listingsService.addImage(id, clerkId, file);
+    return this.listingsService.addImage(id, userId, file);
   }
 
   @Delete(':id/images/:imageId')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @HttpCode(204)
   removeImage(
     @Param('id') id: string,
     @Param('imageId') imageId: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
   ) {
-    return this.listingsService.removeImage(id, imageId, clerkId);
+    return this.listingsService.removeImage(id, imageId, userId);
   }
 }

@@ -198,9 +198,9 @@ export class MotivationSharedService {
    * lookup to fail in production before, so it is an explicit, readable error
    * rather than a null-deref further down.
    */
-  async requireUser(clerkId: string): Promise<{ id: string }> {
+  async requireUser(userId: string): Promise<{ id: string }> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) throw new NotFoundException('User not found');

@@ -76,8 +76,8 @@ export class OffersService {
   // ----------------------------------------------------------------
   // Submit an offer (buyers only, one per listing)
   // ----------------------------------------------------------------
-  async submit(buyerClerkId: string, dto: CreateOfferDto) {
-    const buyer = await this.prisma.user.findUnique({ where: { clerkId: buyerClerkId } });
+  async submit(buyerId: string, dto: CreateOfferDto) {
+    const buyer = await this.prisma.user.findUnique({ where: { id: buyerId } });
     if (!buyer) throw new ForbiddenException('User not found');
     // ⚠️ Closed is checked BEFORE banned: a member who closed their own
     // account and came back to a stale tab must not be told they were
@@ -182,14 +182,14 @@ export class OffersService {
     // Contact-detail filter on the optional buyer note — the seller
     // sees this note verbatim in their offer-received email, so it's a
     // prime channel for "WhatsApp me on 082..." fee-bypass attempts.
-    // We reject before any DB write or notification. clerkId is passed
+    // We reject before any DB write or notification. userId is passed
     // so the filter can persist the rejection against this user for
     // the T&S queue + repeat-offender tracking.
     if (dto.buyerNote) {
       const check = await this.contactFilter.check(
         dto.buyerNote,
         'offer-note',
-        buyerClerkId,
+        buyerId,
       );
       if (!check.allowed) {
         throw new BadRequestException(check.reason);
@@ -275,8 +275,8 @@ export class OffersService {
   // ----------------------------------------------------------------
   // Seller accepts the original offer
   // ----------------------------------------------------------------
-  async accept(sellerClerkId: string, offerId: string) {
-    const { offer, listing } = await this.loadOfferForSeller(sellerClerkId, offerId);
+  async accept(sellerId: string, offerId: string) {
+    const { offer, listing } = await this.loadOfferForSeller(sellerId, offerId);
     if (offer.status !== OfferStatus.PENDING) {
       throw new BadRequestException('Offer is not pending');
     }
@@ -341,12 +341,12 @@ export class OffersService {
   // Seller rejects the offer
   // ----------------------------------------------------------------
   async reject(
-    sellerClerkId: string,
+    sellerId: string,
     offerId: string,
     reasonRaw?: string,
     noteRaw?: string,
   ) {
-    const { offer, listing } = await this.loadOfferForSeller(sellerClerkId, offerId);
+    const { offer, listing } = await this.loadOfferForSeller(sellerId, offerId);
     if (offer.status !== OfferStatus.PENDING) {
       throw new BadRequestException('Offer is not pending');
     }
@@ -418,8 +418,8 @@ export class OffersService {
   // ----------------------------------------------------------------
   // Seller counters — one counter per offer lifetime
   // ----------------------------------------------------------------
-  async counter(sellerClerkId: string, offerId: string, dto: CounterOfferDto) {
-    const { offer } = await this.loadOfferForSeller(sellerClerkId, offerId);
+  async counter(sellerId: string, offerId: string, dto: CounterOfferDto) {
+    const { offer } = await this.loadOfferForSeller(sellerId, offerId);
     if (offer.status !== OfferStatus.PENDING) {
       throw new BadRequestException('Offer is not pending');
     }
@@ -441,7 +441,7 @@ export class OffersService {
       const check = await this.contactFilter.check(
         dto.sellerNote,
         'counter-note',
-        sellerClerkId,
+        sellerId,
       );
       if (!check.allowed) {
         throw new BadRequestException(check.reason);
@@ -476,8 +476,8 @@ export class OffersService {
   // ----------------------------------------------------------------
   // Buyer accepts the seller's counter
   // ----------------------------------------------------------------
-  async acceptCounter(buyerClerkId: string, offerId: string) {
-    const { offer } = await this.loadOfferForBuyer(buyerClerkId, offerId);
+  async acceptCounter(buyerId: string, offerId: string) {
+    const { offer } = await this.loadOfferForBuyer(buyerId, offerId);
     if (offer.status !== OfferStatus.COUNTERED) {
       throw new BadRequestException('No counter to accept');
     }
@@ -534,8 +534,8 @@ export class OffersService {
   // ----------------------------------------------------------------
   // Buyer rejects the counter — offer closes
   // ----------------------------------------------------------------
-  async rejectCounter(buyerClerkId: string, offerId: string) {
-    const { offer } = await this.loadOfferForBuyer(buyerClerkId, offerId);
+  async rejectCounter(buyerId: string, offerId: string) {
+    const { offer } = await this.loadOfferForBuyer(buyerId, offerId);
     if (offer.status !== OfferStatus.COUNTERED) {
       throw new BadRequestException('No counter to reject');
     }
@@ -560,8 +560,8 @@ export class OffersService {
   // ----------------------------------------------------------------
   // Buyer withdraws (only while PENDING)
   // ----------------------------------------------------------------
-  async withdraw(buyerClerkId: string, offerId: string) {
-    const { offer } = await this.loadOfferForBuyer(buyerClerkId, offerId);
+  async withdraw(buyerId: string, offerId: string) {
+    const { offer } = await this.loadOfferForBuyer(buyerId, offerId);
     if (offer.status !== OfferStatus.PENDING) {
       throw new BadRequestException('Cannot withdraw — offer is no longer pending');
     }
@@ -589,8 +589,8 @@ export class OffersService {
   // ----------------------------------------------------------------
   // Queries
   // ----------------------------------------------------------------
-  async getMyOffers(buyerClerkId: string) {
-    const buyer = await this.prisma.user.findUnique({ where: { clerkId: buyerClerkId } });
+  async getMyOffers(buyerId: string) {
+    const buyer = await this.prisma.user.findUnique({ where: { id: buyerId } });
     if (!buyer) return [];
     return this.prisma.offer.findMany({
       where: { buyerId: buyer.id },
@@ -601,7 +601,7 @@ export class OffersService {
             title: true,
             images: { where: { isPrimary: true }, take: 1 },
             // Public-facing — username only, no real name.
-            seller: { select: { username: true, clerkId: true } },
+            seller: { select: { username: true, id: true } },
           },
         },
       },
@@ -609,8 +609,8 @@ export class OffersService {
     });
   }
 
-  async getReceivedOffers(sellerClerkId: string) {
-    const seller = await this.prisma.user.findUnique({ where: { clerkId: sellerClerkId } });
+  async getReceivedOffers(sellerId: string) {
+    const seller = await this.prisma.user.findUnique({ where: { id: sellerId } });
     if (!seller) return [];
     return this.prisma.offer.findMany({
       where: { listing: { sellerId: seller.id } },
@@ -618,13 +618,13 @@ export class OffersService {
         listing: { select: { id: true, title: true } },
         // Seller side viewing the buyer who made an offer — username
         // only. Buyer identity stays private until checkout completes.
-        buyer: { select: { username: true, clerkId: true, totalSales: true } },
+        buyer: { select: { username: true, id: true, totalSales: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async getById(clerkId: string, offerId: string) {
+  async getById(userId: string, offerId: string) {
     const offer = await this.prisma.offer.findUnique({
       where: { id: offerId },
       include: {
@@ -651,19 +651,19 @@ export class OffersService {
             // Seller email retained — only seller themselves sees
             // their own email via this endpoint (gated by isSeller
             // check below). Username is the public handle.
-            seller: { select: { clerkId: true, username: true, email: true } },
+            seller: { select: { id: true, username: true, email: true } },
           },
         },
-        buyer: { select: { clerkId: true, username: true } },
+        buyer: { select: { id: true, username: true } },
       },
     });
     if (!offer) throw new NotFoundException('Offer not found');
 
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new ForbiddenException();
 
     const isBuyer = offer.buyerId === user.id;
-    const isSeller = offer.listing.seller.clerkId === clerkId;
+    const isSeller = offer.listing.seller.id === userId;
     if (!isBuyer && !isSeller) throw new ForbiddenException('Access denied');
 
     // The auto-accept threshold is the seller's PRIVATE negotiating
@@ -798,18 +798,18 @@ export class OffersService {
   // ----------------------------------------------------------------
   // Private helpers
   // ----------------------------------------------------------------
-  private async loadOfferForSeller(sellerClerkId: string, offerId: string) {
+  private async loadOfferForSeller(sellerId: string, offerId: string) {
     const offer = await this.prisma.offer.findUnique({
       where: { id: offerId },
       include: { listing: { include: { seller: true } } },
     });
     if (!offer) throw new NotFoundException('Offer not found');
-    if (offer.listing.seller.clerkId !== sellerClerkId) throw new ForbiddenException('Access denied');
+    if (offer.listing.seller.id !== sellerId) throw new ForbiddenException('Access denied');
     return { offer, listing: offer.listing };
   }
 
-  private async loadOfferForBuyer(buyerClerkId: string, offerId: string) {
-    const buyer = await this.prisma.user.findUnique({ where: { clerkId: buyerClerkId } });
+  private async loadOfferForBuyer(buyerId: string, offerId: string) {
+    const buyer = await this.prisma.user.findUnique({ where: { id: buyerId } });
     if (!buyer) throw new ForbiddenException();
     const offer = await this.prisma.offer.findUnique({
       where: { id: offerId },

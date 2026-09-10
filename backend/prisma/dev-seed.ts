@@ -11,10 +11,16 @@ const prisma = new PrismaClient({
 async function main() {
   console.log('Creating test seller…');
   const seller = await prisma.user.upsert({
-    where: { clerkId: 'user_devtour_seller_001' },
+    where: { id: 'user_devtour_seller_001' },
     update: {},
     create: {
-      clerkId: 'user_devtour_seller_001',
+      id: 'user_devtour_seller_001',
+      username: 'devtour-seller',
+      usernameLower: 'devtour-seller',
+      // ⚠️ NOT A HASH OF ANYTHING. bcrypt.compare returns false for a
+      // malformed hash, so this account can never be signed in to — which is
+      // the point: it is scaffolding, not a person.
+      passwordHash: '!locked-no-password',
       email: 'tour-seller@gungalore.dev',
       firstName: 'Nathan',
       lastName: 'Tour',

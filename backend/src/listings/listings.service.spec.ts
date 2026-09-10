@@ -111,7 +111,7 @@ describe('ListingsService — findById projection & owner-awareness', () => {
     // may see it. The members-only case has its own spec —
     // public-visibility.spec.ts — which asserts the 404.
     publicVisible: true,
-    seller: { clerkId: 'seller_1' },
+    seller: { id: 'seller_1' },
     ...over,
   });
 

@@ -29,8 +29,8 @@ export class MotivationWitnessesService {
   // is reached by a stranger holding a link. Every applicant-side entry point
   // has to prove the motivation belongs to the caller before it delegates.
 
-  private async requireOwnMotivation(clerkId: string, id: string) {
-    const user = await this.shared.requireUser(clerkId);
+  private async requireOwnMotivation(userId: string, id: string) {
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { id: true, answersEncrypted: true },
@@ -39,19 +39,19 @@ export class MotivationWitnessesService {
     return { user, row };
   }
 
-  async listWitnesses(clerkId: string, id: string) {
+  async listWitnesses(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const { row } = await this.requireOwnMotivation(clerkId, id);
+    const { row } = await this.requireOwnMotivation(userId, id);
     return { witnesses: await this.witnesses.list(row.id) };
   }
 
   async inviteWitness(
-    clerkId: string,
+    userId: string,
     id: string,
     args: { slot: number; name: string; phone: string },
   ) {
     await this.quota.assertEnabled();
-    const { user, row } = await this.requireOwnMotivation(clerkId, id);
+    const { user, row } = await this.requireOwnMotivation(userId, id);
     const answers = this.shared.readAnswers(row.answersEncrypted);
     return this.witnesses.invite({
       motivationId: row.id,
@@ -67,16 +67,16 @@ export class MotivationWitnessesService {
     });
   }
 
-  async removeWitness(clerkId: string, id: string, witnessId: string) {
+  async removeWitness(userId: string, id: string, witnessId: string) {
     await this.quota.assertEnabled();
-    const { row } = await this.requireOwnMotivation(clerkId, id);
+    const { row } = await this.requireOwnMotivation(userId, id);
     await this.witnesses.remove(row.id, witnessId);
     return { removed: true as const };
   }
 
-  async witnessSignature(clerkId: string, id: string, witnessId: string) {
+  async witnessSignature(userId: string, id: string, witnessId: string) {
     await this.quota.assertEnabled();
-    const { row } = await this.requireOwnMotivation(clerkId, id);
+    const { row } = await this.requireOwnMotivation(userId, id);
     const owned = await this.prisma.motivationWitness.findFirst({
       where: { id: witnessId, motivationId: row.id },
       select: { id: true },

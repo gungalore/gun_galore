@@ -13,7 +13,7 @@ import {
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Throttle } from '@nestjs/throttler';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ListingIdentifyService } from './listing-identify.service';
 
@@ -33,7 +33,7 @@ import { ListingIdentifyService } from './listing-identify.service';
  * 10/min per IP: each call is a real vision request costing real money.
  */
 @Controller('ask-gg')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class ListingIdentifyController {
   constructor(private readonly identify: ListingIdentifyService) {}
 
@@ -46,7 +46,7 @@ export class ListingIdentifyController {
     }),
   )
   async identifyListing(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @UploadedFiles(
       new ParseFilePipe({
         fileIsRequired: true,
@@ -66,7 +66,7 @@ export class ListingIdentifyController {
       base64: f.buffer.toString('base64'),
       mediaType: f.mimetype as 'image/jpeg' | 'image/png' | 'image/webp',
     }));
-    return this.identify.identifyForListing(clerkId, photos, {
+    return this.identify.identifyForListing(userId, photos, {
       categoryHint: categoryHint?.trim() || undefined,
     });
   }

@@ -636,7 +636,7 @@ export class AdminAnalyticsService {
 
   private async distinctActors(since: Date): Promise<number> {
     const r = await this.prisma.$queryRaw<{ c: bigint }[]>`
-      SELECT COUNT(DISTINCT COALESCE("userId", "clerkId", "deviceId")) AS c
+      SELECT COUNT(DISTINCT COALESCE("userId", "userId", "deviceId")) AS c
       FROM "UserEvent" WHERE "createdAt" >= ${since}`;
     return Number(r[0]?.c ?? 0);
   }
@@ -768,7 +768,7 @@ export class AdminAnalyticsService {
       { eventType: string; c: bigint; u: bigint }[]
     >(
       `SELECT "eventType", COUNT(*) AS c,
-              COUNT(DISTINCT COALESCE("userId","clerkId","deviceId")) AS u
+              COUNT(DISTINCT COALESCE("userId","userId","deviceId")) AS u
        FROM "UserEvent"
        WHERE "createdAt" >= $1 AND "createdAt" < $2
        GROUP BY 1`,

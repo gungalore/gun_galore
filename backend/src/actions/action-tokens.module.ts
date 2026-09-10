@@ -15,7 +15,7 @@ import { PaymentsModule } from '../payments/payments.module';
  * the same underlying services the authenticated /offers, /auctions
  * etc. endpoints use.
  *
- * @Global so that ClerkOrTokenGuard (lives in AuthModule, which is
+ * @Global so that AuthOrTokenGuard (lives in AuthModule, which is
  * itself @Global) can inject ActionTokensService from anywhere
  * without each consumer module having to re-import this one.
  *

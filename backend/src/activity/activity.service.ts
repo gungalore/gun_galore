@@ -8,7 +8,6 @@ import { PrismaService } from '../prisma/prisma.service';
 
 export interface ActorRef {
   userId?: string | null;
-  clerkId?: string | null;
   deviceId?: string | null;
 }
 
@@ -45,7 +44,6 @@ export interface RecordInput {
 
 interface BufferedEvent {
   userId: string | null;
-  clerkId: string | null;
   deviceId: string | null;
   sessionId: string | null;
   eventType: string;
@@ -101,16 +99,14 @@ export class ActivityService implements OnModuleInit, OnModuleDestroy {
   record(input: RecordInput): void {
     try {
       const a = input.actor ?? {};
-      const clerkId = a.clerkId ?? null;
       const userId = a.userId ?? null;
       // Exclude admin/operator traffic.
-      if (clerkId && this.adminClerkIds.has(clerkId)) return;
+      if (userId && this.adminClerkIds.has(userId)) return;
       if (userId && this.adminUserIds.has(userId)) return;
 
       if (this.buffer.length >= this.MAX_BUFFER) this.buffer.shift(); // drop oldest
       this.buffer.push({
         userId,
-        clerkId,
         deviceId: a.deviceId ?? null,
         sessionId: input.sessionId ?? null,
         eventType: input.eventType,
@@ -145,16 +141,16 @@ export class ActivityService implements OnModuleInit, OnModuleDestroy {
   private async refreshAdmins(): Promise<void> {
     try {
       const admins = await this.prisma.adminUser.findMany({
-        where: { isActive: true, clerkId: { not: null } },
-        select: { clerkId: true },
+        where: { isActive: true, userId: { not: null } },
+        select: { id: true },
       });
       const clerkIds = admins
-        .map((a) => a.clerkId)
+        .map((a) => a.id)
         .filter((c): c is string => !!c);
       this.adminClerkIds = new Set(clerkIds);
       if (clerkIds.length) {
         const users = await this.prisma.user.findMany({
-          where: { clerkId: { in: clerkIds } },
+          where: { id: { in: clerkIds } },
           select: { id: true },
         });
         this.adminUserIds = new Set(users.map((u) => u.id));

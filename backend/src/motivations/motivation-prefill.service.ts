@@ -776,9 +776,9 @@ export class MotivationPrefillService {
   }
 
   /** What we WOULD fill from the vault, and which document each value is from. */
-  async licenceCentreOffer(clerkId: string, id: string) {
+  async licenceCentreOffer(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { id: true, licenceType: true, answersEncrypted: true },
@@ -863,9 +863,9 @@ export class MotivationPrefillService {
   }
 
   /** They agree, and we copy. Same write path as every other answer. */
-  async useLicenceCentre(clerkId: string, id: string) {
+  async useLicenceCentre(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {
@@ -943,9 +943,9 @@ export class MotivationPrefillService {
     };
   }
 
-  async profilePrefillOffer(clerkId: string, id: string) {
+  async profilePrefillOffer(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {
@@ -984,9 +984,9 @@ export class MotivationPrefillService {
    * is not agreeing forever, and a timestamp on the row is what answers "who
    * allowed this, and when" later.
    */
-  async useProfile(clerkId: string, id: string) {
+  async useProfile(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {

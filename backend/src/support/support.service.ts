@@ -22,18 +22,27 @@ export class SupportService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  private async userId(clerkId: string): Promise<string> {
+  /**
+   * Assert the caller's User row still exists, so a request carrying a valid
+   * token for a deleted account gets a clean 404 rather than a foreign-key
+   * error further down.
+   *
+   * This used to translate a Clerk subject into a User.id. There is only one
+   * identifier now, so the translation is gone and the existence check is all
+   * that remains — which is why it returns nothing and callers no longer
+   * rebind the id.
+   */
+  private async assertUserExists(userId: string): Promise<void> {
     const u = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!u) throw new NotFoundException('User not found');
-    return u.id;
   }
 
   // ─── User side ───────────────────────────────────────────────────
   async createTicket(
-    clerkId: string,
+    userId: string,
     dto: { subject?: string; body?: string; category?: string; transactionId?: string },
   ) {
     const subject = (dto.subject ?? '').trim();
@@ -45,7 +54,7 @@ export class SupportService {
       throw new BadRequestException('Message must be 5–4000 characters');
     }
     const category = CATEGORIES.includes(dto.category ?? '') ? dto.category! : 'general';
-    const userId = await this.userId(clerkId);
+    await this.assertUserExists(userId);
 
     const ticket = await this.prisma.supportTicket.create({
       data: {
@@ -55,7 +64,7 @@ export class SupportService {
         transactionId: dto.transactionId ?? null,
         status: 'OPEN',
         replies: {
-          create: { body, fromAdmin: false, authorClerkId: clerkId },
+          create: { body, fromAdmin: false, authorId: userId },
         },
       },
       include: { replies: { orderBy: { createdAt: 'asc' } } },
@@ -75,8 +84,8 @@ export class SupportService {
     return ticket;
   }
 
-  async listMine(clerkId: string) {
-    const userId = await this.userId(clerkId);
+  async listMine(userId: string) {
+    await this.assertUserExists(userId);
     return this.prisma.supportTicket.findMany({
       where: { userId },
       orderBy: { updatedAt: 'desc' },
@@ -87,8 +96,8 @@ export class SupportService {
     });
   }
 
-  async getMine(clerkId: string, id: string) {
-    const userId = await this.userId(clerkId);
+  async getMine(userId: string, id: string) {
+    await this.assertUserExists(userId);
     const ticket = await this.prisma.supportTicket.findUnique({
       where: { id },
       include: { replies: { orderBy: { createdAt: 'asc' } } },
@@ -98,12 +107,12 @@ export class SupportService {
     return ticket;
   }
 
-  async replyAsUser(clerkId: string, id: string, body: string) {
+  async replyAsUser(userId: string, id: string, body: string) {
     const trimmed = (body ?? '').trim();
     if (trimmed.length < 1 || trimmed.length > 4000) {
       throw new BadRequestException('Reply must be 1–4000 characters');
     }
-    const userId = await this.userId(clerkId);
+    await this.assertUserExists(userId);
     const ticket = await this.prisma.supportTicket.findUnique({
       where: { id },
       select: { id: true, userId: true, status: true },
@@ -115,7 +124,7 @@ export class SupportService {
     }
 
     await this.prisma.supportTicketReply.create({
-      data: { ticketId: id, body: trimmed, fromAdmin: false, authorClerkId: clerkId },
+      data: { ticketId: id, body: trimmed, fromAdmin: false, authorId: userId },
     });
     // User responded → back to OPEN (needs our attention) + re-open the alert.
     await this.prisma.supportTicket.update({
@@ -128,11 +137,11 @@ export class SupportService {
         data: { resolved: false, resolvedAt: null },
       })
       .catch(() => undefined);
-    return this.getMine(clerkId, id);
+    return this.getMine(userId, id);
   }
 
-  async closeMine(clerkId: string, id: string) {
-    const userId = await this.userId(clerkId);
+  async closeMine(userId: string, id: string) {
+    await this.assertUserExists(userId);
     const ticket = await this.prisma.supportTicket.findUnique({
       where: { id },
       select: { userId: true },

@@ -137,7 +137,6 @@ export const PUBLIC_LISTING_SELECT = {
   seller: {
     select: {
       id: true,
-      clerkId: true,
       // Public-facing handle only. firstName/lastName are explicitly NOT
       // selected — listing detail must not leak the seller's real identity.
       username: true,
@@ -793,11 +792,11 @@ export class ListingsService {
   // against their URLs. The Sell form calls this, then passes the returned
   // URLs (+ the typed serial) into POST /listings.
   async uploadFirearmDocs(
-    clerkId: string,
+    userId: string,
     serial: Express.Multer.File | undefined,
     licence: Express.Multer.File | undefined,
   ): Promise<{ serialPhotoUrl: string; licencePhotoUrl: string }> {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new ForbiddenException('User not synced — try again in a moment');
     // ⚠️ Closed is checked BEFORE banned: a member who closed their own
     // account and came back to a stale tab must not be told they were
@@ -871,8 +870,8 @@ export class ListingsService {
   //   2nd REJECT with overlapping sin categories → hardBlocked=true.
   //   APPROVE / AUTO_FIX → canPublish=true (frontend shows the clean preview).
   //   HUMAN_REVIEW → canPublish=true but warn "will go to admin queue".
-  async previewDraft(clerkId: string, dto: PreviewListingDto): Promise<PreviewResult> {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  async previewDraft(userId: string, dto: PreviewListingDto): Promise<PreviewResult> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new ForbiddenException('User not synced — try again in a moment');
     assertAccountNotClosed(user);
     if (user.isBanned) throw new ForbiddenException('Account is suspended');
@@ -1131,8 +1130,8 @@ export class ListingsService {
     return { price: marked.listPrice, sellerAskCents: marked.sellerAsk };
   }
 
-  async create(clerkId: string, dto: CreateListingDto): Promise<Listing> {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  async create(userId: string, dto: CreateListingDto): Promise<Listing> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new ForbiddenException('User not synced — try again in a moment');
     assertAccountNotClosed(user);
     if (user.isBanned) throw new ForbiddenException('Account is suspended');
@@ -1669,30 +1668,30 @@ export class ListingsService {
    * `isDealListing: false` chokepoint.
    *
    * Anonymity is decided ONLY by the presence of a verified Clerk id supplied
-   * by OptionalClerkGuard — never by a header, a query param or a user-agent.
+   * by OptionalAuthGuard — never by a header, a query param or a user-agent.
    * Serving different content to a crawler than to a logged-out human is
    * cloaking; this returns the same thing to both.
    */
-  private publicOnly(clerkId?: string): { publicVisible?: true } {
-    return clerkId ? {} : { publicVisible: true };
+  private publicOnly(userId?: string): { publicVisible?: true } {
+    return userId ? {} : { publicVisible: true };
   }
 
-  async browse(dto: BrowseListingsDto, clerkId?: string) {
-    const { q, sellerClerkId, ids } = dto;
+  async browse(dto: BrowseListingsDto, userId?: string) {
+    const { q, sellerId, ids } = dto;
 
     // `ids=cuid1,cuid2,…` — multi-ID lookup for the recently-viewed
     // rail. Returns ACTIVE listings in the order the IDs were given
     // (preserves the recency stack the client maintains). All other
     // filters are ignored on this path because the client has
     // already chosen the exact listings it wants.
-    if (ids) return this.browseByIds(ids, clerkId);
+    if (ids) return this.browseByIds(ids, userId);
 
     // Seller-scoped browses always go via Prisma — the Meilisearch
-    // index stores sellerId (our internal cuid), not sellerClerkId, so
+    // index stores sellerId (our internal cuid), not sellerId, so
     // matching a Clerk ID against it would need a pre-resolve step.
-    // The seller-profile page never combines q with a sellerClerkId
+    // The seller-profile page never combines q with a sellerId
     // in practice, so this is the cleaner path.
-    if (sellerClerkId) return this.browseViaPrisma(dto, clerkId);
+    if (sellerId) return this.browseViaPrisma(dto, userId);
 
     // P5.7 — brand-scoped browses always go via Prisma. The brand fold
     // (slug → all stored make casings → `make IN (...)`) lives ONLY in
@@ -1701,7 +1700,7 @@ export class ListingsService {
     // silently drop the brand constraint and return every brand's q-matches.
     // Force Prisma so the brand filter is always honoured (q is ignored on
     // this path, which is the safe degradation — brand-scoped, not global).
-    if (dto.brandSlug) return this.browseViaPrisma(dto, clerkId);
+    if (dto.brandSlug) return this.browseViaPrisma(dto, userId);
 
     // P4.3a — per-category attribute filters (JSON-encoded in dto.attrs).
     // Parsed defensively; a malformed blob is silently ignored. Attribute
@@ -1712,9 +1711,9 @@ export class ListingsService {
     const hasAttrFilters = Object.keys(parsedAttrs).length > 0;
 
     if ((q || hasAttrFilters) && this.search.isConnected) {
-      return this.browseViaSearch(dto, parsedAttrs, clerkId);
+      return this.browseViaSearch(dto, parsedAttrs, userId);
     }
-    return this.browseViaPrisma(dto, clerkId);
+    return this.browseViaPrisma(dto, userId);
   }
 
   /**
@@ -1742,7 +1741,7 @@ export class ListingsService {
    * the storefront brand facet (GET /listings/brands). Capped so the dropdown
    * stays usable; blank/whitespace makes are dropped.
    */
-  async listBrands(limit = 60, clerkId?: string): Promise<string[]> {
+  async listBrands(limit = 60, userId?: string): Promise<string[]> {
     const rows = await this.prisma.listing.groupBy({
       by: ['make'],
       // Signed-out, brand folding must not surface firearm makes (Glock, CZ,
@@ -1751,7 +1750,7 @@ export class ListingsService {
         status: 'ACTIVE',
         isDealListing: false,
         make: { not: null },
-        ...this.publicOnly(clerkId),
+        ...this.publicOnly(userId),
       },
       _count: { make: true },
       orderBy: { _count: { make: 'desc' } },
@@ -1772,7 +1771,7 @@ export class ListingsService {
    */
   async listBrandsWithCounts(
     minCount = BRAND_MIN_LISTINGS,
-    clerkId?: string,
+    userId?: string,
   ): Promise<{ slug: string; label: string; count: number }[]> {
     const rows = await this.prisma.listing.groupBy({
       by: ['make'],
@@ -1780,7 +1779,7 @@ export class ListingsService {
         status: 'ACTIVE',
         isDealListing: false,
         make: { not: null },
-        ...this.publicOnly(clerkId),
+        ...this.publicOnly(userId),
       },
       _count: { make: true },
     });
@@ -1821,7 +1820,7 @@ export class ListingsService {
   async resolveBrandSlug(
     slug: string,
     minCount = BRAND_MIN_LISTINGS,
-    clerkId?: string,
+    userId?: string,
   ): Promise<{
     slug: string;
     label: string;
@@ -1836,7 +1835,7 @@ export class ListingsService {
         status: 'ACTIVE',
         isDealListing: false,
         make: { not: null },
-        ...this.publicOnly(clerkId),
+        ...this.publicOnly(userId),
       },
       _count: { make: true },
     });
@@ -1870,7 +1869,7 @@ export class ListingsService {
    */
   async soldComps(
     dto: { categorySlug?: string; categoryId?: string },
-    clerkId?: string,
+    userId?: string,
   ) {
     const categoryFilter = dto.categorySlug
       ? { OR: [{ slug: dto.categorySlug }, { parent: { slug: dto.categorySlug } }] }
@@ -1891,7 +1890,7 @@ export class ListingsService {
           category: categoryFilter,
           // ?categorySlug=firearms would otherwise hand realised firearm sale
           // prices to an anonymous caller.
-          ...this.publicOnly(clerkId),
+          ...this.publicOnly(userId),
         },
       },
       select: { listingPrice: true, quantity: true },
@@ -1973,7 +1972,7 @@ export class ListingsService {
       q?: string;
       excludeIds?: string;
     },
-    clerkId?: string,
+    userId?: string,
   ): Promise<{ suggestions: unknown[]; reason: string | null }> {
     const exclude = new Set(
       (dto.excludeIds ?? '')
@@ -2043,7 +2042,7 @@ export class ListingsService {
           vehicleModel ?? vehicleMake ?? make ?? calibre ?? (dto.q || undefined);
       }
       // Forward the caller's identity: crossSell delegates to browse, so the
-      // visibility gate applies for free — but only if clerkId rides along.
+      // visibility gate applies for free — but only if userId rides along.
       // Without it every cross-sell row would be publicly filtered even for
       // signed-in members.
       const res = await this.browse(
@@ -2053,7 +2052,7 @@ export class ListingsService {
           limit: 8,
           sort: 'newest',
         } as BrowseListingsDto,
-        clerkId,
+        userId,
       );
       const picks = (res.listings as { id: string }[]).filter(
         (l) => !exclude.has(l.id),
@@ -2152,7 +2151,7 @@ export class ListingsService {
   // displays more than ~20 anyway. SOLD / CANCELLED / EXPIRED
   // listings get filtered out so a stale ID in the client's
   // localStorage doesn't render a "gone" card on the rail.
-  private async browseByIds(rawIds: string, clerkId?: string) {
+  private async browseByIds(rawIds: string, userId?: string) {
     const ids = rawIds
       .split(',')
       .map((s) => s.trim())
@@ -2171,7 +2170,7 @@ export class ListingsService {
         // A members-only listing must not come back through the
         // recently-viewed rail either — the client holds the ids in
         // localStorage, which survives sign-out.
-        ...this.publicOnly(clerkId),
+        ...this.publicOnly(userId),
       },
       include: {
         images: { where: { isPrimary: true }, take: 1 },
@@ -2218,7 +2217,7 @@ export class ListingsService {
   private buildActiveListingFilter(
     dto: BrowseListingsDto,
     parsedAttrs: Record<string, unknown> = {},
-    clerkId?: string,
+    userId?: string,
   ): string[] {
     const {
       categoryId,
@@ -2239,7 +2238,7 @@ export class ListingsService {
     // `categoryName` are searchable attributes, so without this a plain
     // ?q=glock returns firearm rows to anyone. Requires 'publicVisible' in
     // STATIC_LISTING_FILTERABLE_ATTRIBUTES + on the indexed document.
-    if (!clerkId) filterParts.push('publicVisible = true');
+    if (!userId) filterParts.push('publicVisible = true');
     // Parent-category rollup (mirrors browseViaPrisma): a parent id/slug
     // must match its own leaf listings OR any child's, via the indexed
     // parentId/parentSlug. Wrapped in parens so the outer AND-join stays
@@ -2326,7 +2325,7 @@ export class ListingsService {
    */
   async facets(
     dto: BrowseListingsDto,
-    clerkId?: string,
+    userId?: string,
   ): Promise<{
     facets: Record<string, Record<string, number>>;
   }> {
@@ -2336,9 +2335,9 @@ export class ListingsService {
     }
 
     const parsedAttrs = this.parseAttrFilters(dto.attrs);
-    // Same clerkId as the browse, so a facet count can never advertise stock
+    // Same userId as the browse, so a facet count can never advertise stock
     // the signed-out grid refuses to show ("Glock (3)" over an empty result).
-    const filterParts = this.buildActiveListingFilter(dto, parsedAttrs, clerkId);
+    const filterParts = this.buildActiveListingFilter(dto, parsedAttrs, userId);
 
     // Static enum facets the FilterBar renders (make/condition/province/type).
     const facetFields = ['make', 'condition', 'province', 'listingType'];
@@ -2389,11 +2388,11 @@ export class ListingsService {
   private async browseViaSearch(
     dto: BrowseListingsDto,
     parsedAttrs: Record<string, unknown> = {},
-    clerkId?: string,
+    userId?: string,
   ) {
     const { q = '', page = 1, limit = 20, sort = 'newest' } = dto;
 
-    const filterParts = this.buildActiveListingFilter(dto, parsedAttrs, clerkId);
+    const filterParts = this.buildActiveListingFilter(dto, parsedAttrs, userId);
 
     const sortBy =
       sort === 'price_asc'
@@ -2418,11 +2417,11 @@ export class ListingsService {
     // changes), and only PAGE 1 (paging through results of the same query
     // is one search, not many). Query text + result count is the best "what
     // people want vs what we stock" signal; zero-result searches flag
-    // advertising/stock gaps. Attributed when signed in (OptionalClerkGuard).
+    // advertising/stock gaps. Attributed when signed in (OptionalAuthGuard).
     if (typeof q === 'string' && q.trim().length > 0 && page === 1) {
       this.activity.record({
         eventType: 'search',
-        actor: { clerkId },
+        actor: { userId },
         query: q.trim(),
         resultCount: result.estimatedTotalHits ?? 0,
       });
@@ -2478,7 +2477,7 @@ export class ListingsService {
     };
   }
 
-  private async browseViaPrisma(dto: BrowseListingsDto, clerkId?: string) {
+  private async browseViaPrisma(dto: BrowseListingsDto, userId?: string) {
     const {
       page = 1,
       limit = 20,
@@ -2491,7 +2490,7 @@ export class ListingsService {
       make,
       minPrice,
       maxPrice,
-      sellerClerkId,
+      sellerId,
       brandSlug,
     } = dto;
 
@@ -2504,7 +2503,7 @@ export class ListingsService {
       isDealListing: false,
       // …and publicVisible for signed-out callers: the same chokepoint, one
       // audience narrower. Regulated stock stays fully functional for members.
-      ...this.publicOnly(clerkId),
+      ...this.publicOnly(userId),
     };
     // P5.7 — brand landing page. Fold the slug back to its stored `make`
     // variants and filter to all of them. An unknown/too-thin slug resolves
@@ -2543,10 +2542,10 @@ export class ListingsService {
       if (maxPrice !== undefined) priceFilter.lte = maxPrice;
       where.price = priceFilter;
     }
-    // Seller filter — used by /sellers/[clerkId] to show only that
-    // seller's active listings. Resolved via the User row's clerkId
+    // Seller filter — used by /sellers/[userId] to show only that
+    // seller's active listings. Resolved via the User row's userId
     // (relation filter) so we don't need an extra round-trip.
-    if (sellerClerkId) where.seller = { clerkId: sellerClerkId };
+    if (sellerId) where.seller = { userId: sellerId };
 
     const orderBy =
       sort === 'price_asc'
@@ -2604,25 +2603,25 @@ export class ListingsService {
   // design — it powers the server-rendered PDP — so it MUST NOT hand out the
   // seller's private fields (see PUBLIC_LISTING_SELECT for the full block-list
   // and why). It IS, however, owner-aware: when the caller presents a valid
-  // Clerk token for the seller (via OptionalClerkGuard → clerkId), they also
+  // Clerk token for the seller (via OptionalAuthGuard → userId), they also
   // get their hidden reserve / auto-accept threshold (to pre-fill the edit
   // form) and the moderation-banner fields, and may see the listing at any
   // status. Anonymous / non-owner callers get the public projection and only
   // for publicly-visible statuses.
-  async findById(id: string, clerkId?: string) {
+  async findById(id: string, userId?: string) {
     const listing = await this.prisma.listing.findUnique({
       where: { id },
       select: PUBLIC_LISTING_SELECT,
     });
     if (!listing) throw new NotFoundException('Listing not found');
 
-    const isOwner = !!clerkId && listing.seller?.clerkId === clerkId;
+    const isOwner = !!userId && listing.seller?.id === userId;
 
     // Insights — a listing view (fire-and-forget; owner previews still record
     // but the operator's own views are filtered out by ActivityService).
     this.activity.record({
       eventType: 'listing_view',
-      actor: { clerkId },
+      actor: { userId },
       listingId: id,
     });
 
@@ -2650,15 +2649,15 @@ export class ListingsService {
     // 404 page carries the friendly "some listings are members-only" line
     // instead. Note this is keyed on having ANY verified session, not on
     // ownership — every signed-in member sees the full catalogue.
-    if (!clerkId && !listing.publicVisible) {
+    if (!userId && !listing.publicVisible) {
       throw new NotFoundException('Listing not found');
     }
 
     return listing;
   }
 
-  async update(id: string, clerkId: string, dto: UpdateListingDto) {
-    const listing = await this.assertOwner(id, clerkId);
+  async update(id: string, userId: string, dto: UpdateListingDto) {
+    const listing = await this.assertOwner(id, userId);
 
     if (
       listing.status === ListingStatus.SOLD ||
@@ -3180,8 +3179,8 @@ export class ListingsService {
     return updated;
   }
 
-  async cancel(id: string, clerkId: string) {
-    await this.assertOwner(id, clerkId);
+  async cancel(id: string, userId: string) {
+    await this.assertOwner(id, userId);
 
     const updated = await this.prisma.listing.update({
       where: { id },
@@ -3201,8 +3200,8 @@ export class ListingsService {
    * ACTIVE non-auction listings only — auctions have their own endTime
    * lifecycle and nothing else is at risk of the sweep.
    */
-  async renew(id: string, clerkId: string) {
-    const listing = await this.assertOwner(id, clerkId);
+  async renew(id: string, userId: string) {
+    const listing = await this.assertOwner(id, userId);
     if (listing.status !== ListingStatus.ACTIVE) {
       throw new BadRequestException('Only an active listing can be renewed');
     }
@@ -3219,8 +3218,8 @@ export class ListingsService {
     return { renewed: true, lastRenewedAt: updated.lastRenewedAt };
   }
 
-  async addImage(id: string, clerkId: string, file: Express.Multer.File) {
-    const listing = await this.assertOwner(id, clerkId);
+  async addImage(id: string, userId: string, file: Express.Multer.File) {
+    const listing = await this.assertOwner(id, userId);
     // Photos can't change after commitment — buyers commit on the
     // images they see at bid / offer time. Same lock as update().
     await this.assertEditable(listing);
@@ -3248,8 +3247,8 @@ export class ListingsService {
     });
   }
 
-  async removeImage(listingId: string, imageId: string, clerkId: string) {
-    const listing = await this.assertOwner(listingId, clerkId);
+  async removeImage(listingId: string, imageId: string, userId: string) {
+    const listing = await this.assertOwner(listingId, userId);
     // Same lock — removing a photo after commitment would let the
     // seller change which item buyers think they're bidding /
     // offering on.
@@ -3277,8 +3276,8 @@ export class ListingsService {
     }
   }
 
-  async findMine(clerkId: string) {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  async findMine(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return [];
 
     return this.prisma.listing.findMany({
@@ -3420,8 +3419,8 @@ export class ListingsService {
     return { canEdit: true, reason: null, code: null };
   }
 
-  private async assertOwner(listingId: string, clerkId: string) {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  private async assertOwner(listingId: string, userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new ForbiddenException('User not found');
 
     const listing = await this.prisma.listing.findUnique({

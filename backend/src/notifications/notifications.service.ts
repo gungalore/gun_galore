@@ -1349,7 +1349,7 @@ export class NotificationsService {
     sellerName: string;
   }) {
     try {
-      // AdminUser is a separate model from User — admins have a clerkId
+      // AdminUser is a separate model from User — admins have a userId
       // that we need to map back to a User row for the inbox to find
       // them. The persistByEmail wrapper already does this lookup.
       const admins = await this.prisma.adminUser.findMany({
@@ -4041,6 +4041,84 @@ export class NotificationsService {
 
   async sendBroadcastSms(to: string, message: string, reference: string) {
     return this.sendSms(to, message, reference);
+  }
+
+  // ---------------------------------------------------------------
+  // Authentication email — password reset and nothing else yet.
+  //
+  // ⚠️ DELIBERATELY NOT send(). Two reasons, and both are the kind of bug
+  // that only shows up as a support ticket:
+  //
+  //   1. send() is MUTED by notifyEmailEnabled. A member who turned marketing
+  //      email off would silently never receive their password-reset link, and
+  //      the only symptom is somebody insisting the email never arrived.
+  //   2. send() swallows failure into the outbox and returns void, so the
+  //      caller cannot tell. A reset link that will be delivered in ten
+  //      minutes is not a reset link; the member must be told now.
+  //
+  // It still parks a genuine send failure in the outbox — losing the mail
+  // helps nobody — but it THROWS as well, so the endpoint can say so.
+  // ---------------------------------------------------------------
+  async sendAuthEmail(to: string, subject: string, html: string) {
+    if (!this.resend) {
+      throw new Error('RESEND_API_KEY is not set — cannot send auth email');
+    }
+    try {
+      await this.resend.emails.send({ from: FROM, to, subject, html });
+      this.logger.debug(`Auth email sent → ${to} "${subject}"`);
+    } catch (err) {
+      this.logger.error(
+        `Auth email FAILED → ${to} "${subject}": ${(err as Error).message}`,
+      );
+      await this.prisma.emailOutbox
+        .create({
+          data: {
+            toAddress: to,
+            subject,
+            html,
+            attempts: 1,
+            nextAttemptAt: new Date(Date.now() + 60_000),
+            lastError: (err as Error).message.slice(0, 500),
+          },
+        })
+        .catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /** The password-reset link. One-time, short-lived, single CTA. */
+  async passwordReset(d: { email: string; name?: string | null; url: string }) {
+    const html = this.email({
+      headline: 'Reset your password',
+      body:
+        `Hi ${b(d.name || 'there')}, somebody asked to reset the password on ` +
+        `this account. If that was you, use the button below. The link works ` +
+        `once and expires in 60 minutes.`,
+      cta: { label: 'Choose a new password', url: d.url },
+      footnote:
+        'If you did not ask for this, you can ignore this email — your ' +
+        'password has not changed.',
+      preheader: 'Reset your All Outdoor password',
+    });
+    await this.sendAuthEmail(d.email, 'Reset your password', html);
+  }
+
+  /** Confirmation that a password actually changed. Not optional: this is
+   *  how somebody finds out their account was taken over. */
+  async passwordChanged(d: { email: string; name?: string | null }) {
+    const html = this.email({
+      status: { tone: 'success', label: 'Password changed' },
+      headline: 'Your password was changed',
+      body:
+        `Hi ${b(d.name || 'there')}, the password on your All Outdoor account ` +
+        `was just changed, and every other signed-in device was signed out.`,
+      footnote:
+        `If this was not you, contact ${SUPPORT_EMAIL} immediately.`,
+      preheader: 'Your All Outdoor password was changed',
+    });
+    await this.sendAuthEmail(d.email, 'Your password was changed', html).catch(
+      () => undefined,
+    );
   }
 
   // Seller: a buyer rated one of their sales. 1–2★ gets the phone buzz

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { CredentialKind, MotivationUploadKind } from '@prisma/client';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { NO_VISION_KINDS } from '../licence-centre/credential-kinds';
@@ -87,7 +87,7 @@ const NO_VISION_UPLOAD_KINDS = NO_VISION_KINDS.filter(
 // deciding it from here would be this file's second, disagreeing copy of it.
 
 @Controller('scan-handoff')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class ScanHandoffController {
   constructor(
     private readonly prisma: PrismaService,
@@ -97,14 +97,14 @@ export class ScanHandoffController {
   @Post()
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async mint(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body('dest') dest: string,
     @Body('motivationId') motivationId?: string,
     @Body('kind') kind?: string,
     @Body('title') title?: string,
   ) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       // kycStatus rides along for the 'kyc' check below. One extra column on a
       // query that has to happen anyway is cheaper than a second round trip.
       select: { id: true, kycStatus: true },
@@ -181,11 +181,11 @@ export class ScanHandoffController {
 
   @Get(':handoffId')
   async status(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('handoffId') handoffId: string,
   ) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) throw new NotFoundException('User not found');

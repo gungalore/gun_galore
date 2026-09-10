@@ -1,5 +1,5 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { MyShipmentsService } from './my-shipments.service';
 
@@ -7,12 +7,12 @@ import { MyShipmentsService } from './my-shipments.service';
 // (sold) shipments in one place, plus firearm hand-off details. Base path
 // distinct from the carrier-integration ShippingController ('shipping').
 @Controller('my-shipments')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class MyShipmentsController {
   constructor(private readonly service: MyShipmentsService) {}
 
   @Get('me')
-  me(@CurrentUser() clerkId: string) {
-    return this.service.myShipments(clerkId);
+  me(@CurrentUser() userId: string) {
+    return this.service.myShipments(userId);
   }
 }

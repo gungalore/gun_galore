@@ -32,9 +32,9 @@ export class ReportsService {
     return { reason: matched, comment: (reason ?? '').slice(0, 500) };
   }
 
-  private async reporterId(clerkId: string): Promise<string | null> {
+  private async reporterId(userId: string): Promise<string | null> {
     const u = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     return u?.id ?? null;
@@ -42,7 +42,7 @@ export class ReportsService {
 
   async reportListing(
     listingId: string,
-    reporterClerkId: string,
+    reporterId: string,
     reason?: string,
     note?: string,
   ) {
@@ -51,7 +51,7 @@ export class ReportsService {
       select: { id: true },
     });
     if (!listing) throw new NotFoundException('Listing not found');
-    const reporter = await this.reporterId(reporterClerkId);
+    const reporter = await this.reporterId(reporterId);
     const { reason: r } = this.clean(reason);
     await this.prisma.adminAlert.create({
       data: {
@@ -61,7 +61,6 @@ export class ReportsService {
           reason: r,
           note: (note ?? '').slice(0, 500) || undefined,
           reporterId: reporter,
-          reporterClerkId,
         }),
       },
     });
@@ -69,20 +68,20 @@ export class ReportsService {
   }
 
   async reportSeller(
-    sellerClerkId: string,
-    reporterClerkId: string,
+    sellerId: string,
+    reporterId: string,
     reason?: string,
     note?: string,
   ) {
-    if (sellerClerkId === reporterClerkId) {
+    if (sellerId === reporterId) {
       throw new BadRequestException('You cannot report yourself');
     }
     const seller = await this.prisma.user.findUnique({
-      where: { clerkId: sellerClerkId },
+      where: { id: sellerId },
       select: { id: true },
     });
     if (!seller) throw new NotFoundException('Seller not found');
-    const reporter = await this.reporterId(reporterClerkId);
+    const reporter = await this.reporterId(reporterId);
     const { reason: r } = this.clean(reason);
     await this.prisma.adminAlert.create({
       data: {
@@ -92,8 +91,7 @@ export class ReportsService {
           reason: r,
           note: (note ?? '').slice(0, 500) || undefined,
           reporterId: reporter,
-          reporterClerkId,
-          sellerClerkId,
+          sellerId,
         }),
       },
     });

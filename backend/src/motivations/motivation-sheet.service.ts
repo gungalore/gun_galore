@@ -522,8 +522,8 @@ export class MotivationSheetService {
     });
   }
 
-  async sheetFor(clerkId: string, id: string): Promise<SheetResponse> {
-    const user = await this.shared.requireUser(clerkId);
+  async sheetFor(userId: string, id: string): Promise<SheetResponse> {
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -789,8 +789,8 @@ export class MotivationSheetService {
   }
 
   /** The preview alone — the drawer refetches this on every saved answer. */
-  async previewOnly(clerkId: string, id: string): Promise<PreviewSection[]> {
-    const user = await this.shared.requireUser(clerkId);
+  async previewOnly(userId: string, id: string): Promise<PreviewSection[]> {
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { licenceType: true, answersEncrypted: true },

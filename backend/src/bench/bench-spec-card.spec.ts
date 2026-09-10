@@ -115,7 +115,7 @@ describe('The Bench — the shell-holder chips are capped and counted', () => {
 
 /**
  * 🚨 A SIGNED-IN CALLER WITH NO `User` ROW IS AN EMPTY SHELF, NOT A 404.
- * ClerkGuard lazily provisions the row but refuses to create one for a Clerk
+ * AuthGuard lazily provisions the row but refuses to create one for a Clerk
  * user with no email, so this really happens — and every read on the module
  * goes through getBench(), so a 404 would empty the results, the powder chips
  * AND the spec card at once for somebody whose only problem is that they have

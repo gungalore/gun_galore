@@ -7,25 +7,25 @@ import {
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { CategoriesService } from './categories.service';
-import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
-// Every route here is OptionalClerkGuard, not because the data is private —
+// Every route here is OptionalAuthGuard, not because the data is private —
 // the outdoor catalogue is public — but because the category tree is the
 // single richest firearm signal on the site. Signed out, these endpoints
 // return only publicVisible categories; signed in, the full tree.
 //
-// OptionalClerkGuard NEVER rejects, so anonymous browse is unaffected and a
+// OptionalAuthGuard NEVER rejects, so anonymous browse is unaffected and a
 // stale token degrades to anonymous rather than 401-ing a public page.
 @Controller('categories')
-@UseGuards(OptionalClerkGuard)
+@UseGuards(OptionalAuthGuard)
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @Get()
   @SkipThrottle()
-  findAll(@CurrentUser() clerkId?: string) {
-    return this.categoriesService.findAll(clerkId);
+  findAll(@CurrentUser() userId?: string) {
+    return this.categoriesService.findAll(userId);
   }
 
   // Rolled-up active-listing counts per ACTIVE category (parent count =
@@ -34,8 +34,8 @@ export class CategoriesController {
   // captured as a slug param.
   @Get('with-counts')
   @SkipThrottle()
-  withCounts(@CurrentUser() clerkId?: string) {
-    return this.categoriesService.withCounts(clerkId);
+  withCounts(@CurrentUser() userId?: string) {
+    return this.categoriesService.withCounts(userId);
   }
 
   // P4 — the EFFECTIVE attribute list for a category (its own + inherited
@@ -61,9 +61,9 @@ export class CategoriesController {
   @SkipThrottle()
   async findBySlug(
     @Param('slug') slug: string,
-    @CurrentUser() clerkId?: string,
+    @CurrentUser() userId?: string,
   ) {
-    const tree = await this.categoriesService.findBySlugTree(slug, clerkId);
+    const tree = await this.categoriesService.findBySlugTree(slug, userId);
     if (!tree) throw new NotFoundException(`Unknown category: ${slug}`);
     return tree;
   }

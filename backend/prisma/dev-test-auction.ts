@@ -26,19 +26,19 @@ async function main() {
   console.log('Setup…');
 
   const seller = await prisma.user.upsert({
-    where: { clerkId: 'user_devtour_seller_001' },
-    create: { clerkId: 'user_devtour_seller_001', email: 'tour-seller@gungalore.dev', kycStatus: 'VERIFIED' },
+    where: { id: 'user_devtour_seller_001' },
+    create: { id: 'user_devtour_seller_001', username: String('user_devtour_seller_001').slice(0, 28), usernameLower: String('user_devtour_seller_001').slice(0, 28).toLowerCase(), passwordHash: '!locked-no-password', email: 'tour-seller@gungalore.dev', kycStatus: 'VERIFIED' },
     update: {},
   });
 
   const buyerA = await prisma.user.upsert({
-    where: { clerkId: 'user_devtest_buyerA' },
-    create: { clerkId: 'user_devtest_buyerA', email: 'buyer-a@test.dev', firstName: 'Anna' },
+    where: { id: 'user_devtest_buyerA' },
+    create: { id: 'user_devtest_buyerA', username: String('user_devtest_buyerA').slice(0, 28), usernameLower: String('user_devtest_buyerA').slice(0, 28).toLowerCase(), passwordHash: '!locked-no-password', email: 'buyer-a@test.dev', firstName: 'Anna' },
     update: {},
   });
   const buyerB = await prisma.user.upsert({
-    where: { clerkId: 'user_devtest_buyerB' },
-    create: { clerkId: 'user_devtest_buyerB', email: 'buyer-b@test.dev', firstName: 'Bob' },
+    where: { id: 'user_devtest_buyerB' },
+    create: { id: 'user_devtest_buyerB', username: String('user_devtest_buyerB').slice(0, 28), usernameLower: String('user_devtest_buyerB').slice(0, 28).toLowerCase(), passwordHash: '!locked-no-password', email: 'buyer-b@test.dev', firstName: 'Bob' },
     update: {},
   });
 

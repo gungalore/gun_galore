@@ -19,13 +19,13 @@ const FIREARM_LISTING = {
   id: 'L1',
   status: 'ACTIVE',
   publicVisible: false,
-  seller: { clerkId: 'SELLER' },
+  seller: { userId: 'SELLER' },
 };
 const CAMPING_LISTING = {
   id: 'L2',
   status: 'ACTIVE',
   publicVisible: true,
-  seller: { clerkId: 'SELLER' },
+  seller: { userId: 'SELLER' },
 };
 
 function makeListings(over: Record<string, unknown> = {}) {

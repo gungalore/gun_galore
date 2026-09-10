@@ -17,7 +17,7 @@ import {
 // DocumentScanner's contract is `onDone: (files: File[])`, so it hands back the
 // same File objects a picker produces and the caller posts them to the same
 // endpoint. That leaves two controllers, and they exist separately only because
-// LicenceCentreController carries @UseGuards(ClerkGuard) at CLASS level, so a
+// LicenceCentreController carries @UseGuards(AuthGuard) at CLASS level, so a
 // phone holding only a scan token would be 401'd before its token was read.
 //
 // These tests read the controller SOURCE rather than instantiating Nest. What
@@ -65,7 +65,7 @@ describe('the desk and the phone accept exactly the same files', () => {
     // classification and the encrypted row all live behind this one call, and
     // it takes no argument saying which door was used.
     for (const src of [desk, phone]) {
-      expect(src).toMatch(/this\.svc\.create\(\s*clerkId,/);
+      expect(src).toMatch(/this\.svc\.create\(\s*userId,/);
     }
   });
 

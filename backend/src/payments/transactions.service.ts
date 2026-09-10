@@ -137,7 +137,7 @@ export class TransactionsService {
   }
 
   private async reserveAndCreateLine(
-    buyerClerkId: string,
+    buyerId: string,
     dto: CreateTransactionDto,
     // P6.2 — when a cart line is part of a consolidated per-seller shipment,
     // the caller pre-computes the split (carrier line = the ONE combined
@@ -153,7 +153,7 @@ export class TransactionsService {
       serviceLevelCode?: string | null;
     },
   ) {
-    const buyer = await this.prisma.user.findUnique({ where: { clerkId: buyerClerkId } });
+    const buyer = await this.prisma.user.findUnique({ where: { id: buyerId } });
     if (!buyer) throw new NotFoundException('Buyer not found');
     // ⚠️ Closed is checked BEFORE banned: a member who closed their own
     // account and came back to a stale tab must not be told they were
@@ -268,7 +268,7 @@ export class TransactionsService {
     // location and travel distance are not refund grounds. The tick in the UI
     // is convenience; this is the authoritative check, and it also covers the
     // SMS action-token buyers who reach POST /transactions through
-    // ClerkOrTokenGuard rather than the checkout form.
+    // AuthOrTokenGuard rather than the checkout form.
     if (dto.buyerTermsAccepted !== true) {
       throw new BadRequestException(
         'You must confirm you have seen where this item is and that we do not refund an order because of its location or the distance to it.',
@@ -622,20 +622,18 @@ export class TransactionsService {
             `triggerSellerVerification failed for ${listing.sellerId}: ${(err as Error).message}`,
           ),
         );
-    } else if (listing.price) {
-      // Seller is already VERIFIED — but a high-value sale on a seller who
-      // cleared the cheap STANDARD Claude tier triggers a silent anchored
-      // re-check (official Home Affairs photo vs the stored selfie). The
-      // method itself no-ops unless flag + threshold + tier all apply, and
-      // it never throws into the checkout path.
-      void this.kyc
-        .maybeUpgradeKycTier(listing.sellerId, listing.price)
-        .catch((err) =>
-          this.logger.warn(
-            `maybeUpgradeKycTier failed for ${listing.sellerId}: ${(err as Error).message}`,
-          ),
-        );
     }
+    // ⚠️ THE HIGH-VALUE RE-CHECK IS GONE WITH THE PROVIDER THAT MADE IT
+    // POSSIBLE. A sale above the anchored threshold used to pull the
+    // applicant's official Home Affairs photograph and re-match it against
+    // the stored selfie, silently upgrading STANDARD to ANCHORED — or
+    // parking the seller for review when it failed. Didit's free tier has no
+    // access to that photograph, so there is nothing to re-check against and
+    // a fake pass would be worse than no pass.
+    //
+    // Didit sells it as `zaf_dha_photo` ($1.10). Until the operator turns
+    // that on, EVERY verified seller is the equivalent of the old STANDARD
+    // tier, and no user-facing copy may imply a Home Affairs photo match.
 
     return {
       tx,
@@ -659,7 +657,7 @@ export class TransactionsService {
   // pre-8b create() — the only change is that the core is now a reusable
   // method that the multi-item order checkout also calls.
   async create(
-    buyerClerkId: string,
+    buyerId: string,
     dto: CreateTransactionDto,
     frontendUrl: string,
   ) {
@@ -679,7 +677,7 @@ export class TransactionsService {
       processingFee,
       buyerTotal,
       sellerPayout,
-    } = await this.reserveAndCreateLine(buyerClerkId, dto);
+    } = await this.reserveAndCreateLine(buyerId, dto);
 
     // The manual-EFT pay-in branch has been removed. checkout is gated by
     // assertPaymentsLive() above, so this path only runs once a card paygate
@@ -776,7 +774,7 @@ export class TransactionsService {
   // auctions / take-a-shot are rejected (the shared core enforces BUY_NOW +
   // the firearm attestation, which a cart never supplies).
   async createOrderCheckout(
-    buyerClerkId: string,
+    buyerId: string,
     dto: CreateOrderDto,
     _frontendUrl: string,
   ) {
@@ -986,7 +984,7 @@ export class TransactionsService {
         } as CreateTransactionDto;
 
         const core = await this.reserveAndCreateLine(
-          buyerClerkId,
+          buyerId,
           lineDto,
           shipOverride.get(line.listingId),
         );
@@ -1041,7 +1039,9 @@ export class TransactionsService {
       // marketplace split). The single-seller guard is intentionally gone.
       const sellerCount = new Set(created.map((c) => c.listing.sellerId)).size;
       const totals = computeOrderTotals(created.map((c) => c.breakdown));
-      const buyerId = created[0].tx.buyerId;
+      // (The buyer id is the method parameter — the transactions we just
+      // created all carry it, so re-reading it off the first one said the
+      // same thing twice back when the two were different types.)
 
       // The Order-building + reservation scaffold below is rail-agnostic and
       // kept for the future card paygate. The manual-EFT reference allocation +
@@ -1717,7 +1717,7 @@ export class TransactionsService {
   // Idempotent — already-accepted txs just return without re-stamping.
   // (Important because the SMS link can be tapped multiple times by
   // accident; we don't want to extend the deadline by re-clicking.)
-  async acceptTransaction(transactionId: string, sellerClerkId: string) {
+  async acceptTransaction(transactionId: string, sellerId: string) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: {
@@ -1735,7 +1735,7 @@ export class TransactionsService {
     if (!tx) throw new NotFoundException('Transaction not found');
 
     const seller = await this.prisma.user.findUnique({
-      where: { clerkId: sellerClerkId },
+      where: { id: sellerId },
     });
     if (!seller || tx.sellerId !== seller.id) {
       throw new ForbiddenException('Not authorised');
@@ -1875,7 +1875,7 @@ export class TransactionsService {
   // sellers to do this rather than ghost the transaction.
   async rejectTransaction(
     transactionId: string,
-    sellerClerkId: string,
+    sellerId: string,
     reason: string,
   ) {
     const trimmedReason = (reason ?? '').trim();
@@ -1908,7 +1908,7 @@ export class TransactionsService {
     if (!tx) throw new NotFoundException('Transaction not found');
 
     const seller = await this.prisma.user.findUnique({
-      where: { clerkId: sellerClerkId },
+      where: { id: sellerId },
     });
     if (!seller || tx.sellerId !== seller.id) {
       throw new ForbiddenException('Not authorised');
@@ -2096,7 +2096,7 @@ export class TransactionsService {
   // mind isn't the seller's fault.
   async cancelByBuyer(
     transactionId: string,
-    buyerClerkId: string,
+    buyerId: string,
     reason: string,
   ) {
     const trimmedReason = (reason ?? '').trim();
@@ -2131,7 +2131,7 @@ export class TransactionsService {
     if (!tx) throw new NotFoundException('Transaction not found');
 
     const buyer = await this.prisma.user.findUnique({
-      where: { clerkId: buyerClerkId },
+      where: { id: buyerId },
       select: { id: true },
     });
     if (!buyer || tx.buyerId !== buyer.id) {
@@ -2453,7 +2453,7 @@ export class TransactionsService {
   // and only once a shipment has actually been booked.
   async getWaybillPdf(
     transactionId: string,
-    sellerClerkId: string,
+    sellerId: string,
   ): Promise<{ pdf: Buffer; filename: string }> {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -2463,11 +2463,11 @@ export class TransactionsService {
         carrierShipmentId: true,
         shipmentBookedAt: true,
         trackingReference: true,
-        seller: { select: { clerkId: true } },
+        seller: { select: { id: true } },
       },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
-    if (tx.seller.clerkId !== sellerClerkId) {
+    if (tx.seller.id !== sellerId) {
       throw new ForbiddenException('Not authorised');
     }
     if (
@@ -2518,14 +2518,14 @@ export class TransactionsService {
    */
   async rebookShipmentForSeller(
     transactionId: string,
-    sellerClerkId: string,
+    sellerId: string,
   ): Promise<{ rebooked: boolean; reason?: string }> {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
-      select: { seller: { select: { clerkId: true } } },
+      select: { seller: { select: { id: true } } },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
-    if (tx.seller.clerkId !== sellerClerkId) {
+    if (tx.seller.id !== sellerId) {
       throw new ForbiddenException('Not authorised');
     }
     return this.shipping.rebookShipment(transactionId);
@@ -2540,7 +2540,7 @@ export class TransactionsService {
    */
   async shipmentFailureForSeller(
     transactionId: string,
-    sellerClerkId: string,
+    sellerId: string,
   ): Promise<{
     reason: string | null;
     label: string | null;
@@ -2558,11 +2558,11 @@ export class TransactionsService {
         shipmentFailureAt: true,
         failedShipmentChargeCents: true,
         shipmentRebookCount: true,
-        seller: { select: { clerkId: true } },
+        seller: { select: { id: true } },
       },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
-    if (tx.seller.clerkId !== sellerClerkId) {
+    if (tx.seller.id !== sellerId) {
       throw new ForbiddenException('Not authorised');
     }
     if (!tx.shipmentFailureAt) return null;
@@ -2588,13 +2588,13 @@ export class TransactionsService {
 
   async confirmDispatch(
     transactionId: string,
-    sellerClerkId: string,
+    sellerId: string,
     data: { pudoDropoffLockerId?: string; trackingReference?: string },
   ) {
     const tx = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
     if (!tx) throw new NotFoundException('Transaction not found');
 
-    const seller = await this.prisma.user.findUnique({ where: { clerkId: sellerClerkId } });
+    const seller = await this.prisma.user.findUnique({ where: { id: sellerId } });
     if (!seller || tx.sellerId !== seller.id) {
       throw new ForbiddenException('Not authorised');
     }
@@ -2670,7 +2670,7 @@ export class TransactionsService {
   // confirmDelivery attestation. Owner-checked + dispatch-gated.
   async uploadPodProof(
     transactionId: string,
-    clerkId: string,
+    userId: string,
     file?: Express.Multer.File,
   ) {
     if (!file?.buffer) throw new BadRequestException('No photo uploaded');
@@ -2680,7 +2680,7 @@ export class TransactionsService {
     });
     if (!tx) throw new NotFoundException('Transaction not found');
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user || (tx.buyerId !== user.id && tx.sellerId !== user.id)) {
@@ -2705,8 +2705,8 @@ export class TransactionsService {
   // ------------------------------------------------------------------
   // Fetch transactions for a user (buyer or seller view)
   // ------------------------------------------------------------------
-  async findForUser(clerkId: string, role: 'buyer' | 'seller') {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  async findForUser(userId: string, role: 'buyer' | 'seller') {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
     // refundOfId: null — synthetic refund-slice children are settlement
@@ -2756,8 +2756,8 @@ export class TransactionsService {
     return rows;
   }
 
-  async findById(transactionId: string, clerkId: string) {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  async findById(transactionId: string, userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
     const tx = await this.prisma.transaction.findUnique({
@@ -2902,7 +2902,7 @@ export class TransactionsService {
   // ------------------------------------------------------------------
   // Buyer confirms delivery → releases payment, increments totalSales
   // ------------------------------------------------------------------
-  async confirmDelivery(transactionId: string, buyerClerkId: string) {
+  async confirmDelivery(transactionId: string, buyerId: string) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: { buyer: true, listing: { select: { isFirearm: true } } },
@@ -2917,7 +2917,7 @@ export class TransactionsService {
         'This is a swap — it is completed through the swap, not per-item confirm-delivery.',
       );
     }
-    if (tx.buyer.clerkId !== buyerClerkId) throw new ForbiddenException('Only the buyer can confirm delivery');
+    if (tx.buyer.id !== buyerId) throw new ForbiddenException('Only the buyer can confirm delivery');
     if (tx.paymentStatus !== 'HELD') throw new BadRequestException('Payment is not in HELD state');
     if (tx.confirmedDeliveryAt) throw new BadRequestException('Delivery already confirmed');
 
@@ -3062,7 +3062,7 @@ export class TransactionsService {
   // (force-release to seller OR refund to buyer + reason).
   async raiseDispute(
     transactionId: string,
-    buyerClerkId: string,
+    buyerId: string,
     reason: 'DAMAGED' | 'WRONG_ITEM' | 'NEVER_ARRIVED' | 'OTHER',
     details: string,
   ) {
@@ -3082,7 +3082,7 @@ export class TransactionsService {
         'This is a swap — raise any issue from the swap, not the individual item.',
       );
     }
-    if (tx.buyer.clerkId !== buyerClerkId) {
+    if (tx.buyer.id !== buyerId) {
       throw new ForbiddenException('Only the buyer can raise a dispute');
     }
     // A dispute presupposes a paid order. paymentStatus defaults to HELD at
@@ -3860,7 +3860,7 @@ export class TransactionsService {
   // was deleted. Seller-only, firearm DEALER_TRANSFER only, paid only.
   async getSaps534Pdf(
     transactionId: string,
-    sellerClerkId: string,
+    sellerId: string,
   ): Promise<{ pdf: Buffer; filename: string }> {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -3870,7 +3870,7 @@ export class TransactionsService {
       },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
-    if (tx.seller.clerkId !== sellerClerkId) {
+    if (tx.seller.id !== sellerId) {
       throw new ForbiddenException('Not authorised');
     }
     if (

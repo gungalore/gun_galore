@@ -5,6 +5,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { DiditService } from '../didit/didit.service';
+import { DiditError } from '../didit/didit.types';
+import { SessionService } from '../auth/session.service';
 import { SmsService } from '../sms/sms.service';
 import {
   User,
@@ -14,7 +17,6 @@ import {
   Prisma,
 } from '@prisma/client';
 import { createHash, randomInt } from 'crypto';
-import { createClerkClient } from '@clerk/backend';
 import { encryptSaIdNumber, hashSaIdNumber, decryptSaIdNumber } from '../common/id-crypto';
 import { PeachService } from '../payments/peach.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -84,7 +86,9 @@ export interface BankDetailsDto {
 export interface ProfileUpdate {
   firstName?: string | null;
   lastName?: string | null;
-  username?: string | null;
+  /** ⚠️ Never null: username is non-null now, so clearing it is not a
+   *  state a member can put their profile into. */
+  username?: string;
   addrBuilding?: string | null;
   addrStreet?: string | null;
   addrAddress2?: string | null;
@@ -96,18 +100,16 @@ export interface ProfileUpdate {
   addrLng?: number | null;
 }
 
-// OTP code config. Short codes (4 digits) keep mobile-typing painless;
-// 10-minute window is long enough for SMS delivery hiccups but short
-// enough that a leaked code can't be reused tomorrow.
-const OTP_TTL_MS = 10 * 60 * 1000;
-const OTP_LENGTH = 4;
-
-function hashOtp(code: string): string {
-  return createHash('sha256').update(code).digest('hex');
-}
-
-/** Wrong guesses allowed against one phone OTP before it is burned. */
-const MAX_OTP_ATTEMPTS = 5;
+// Phone OTP is Didit's now — it generates the code, sends the SMS, holds the
+// pending verification for 5 minutes and counts the wrong guesses (3 per code,
+// 4 sends per number per hour). None of that state lives here any more, which
+// is why the phoneOtpHash / phoneOtpExpiresAt / phoneOtpAttempts columns are
+// gone: a code we do not issue is a code we must not store a hash of.
+//
+// ⚠️ Didit keys the pending verification on the NUMBER, not on our user. The
+// number is therefore written to the row at request time (phoneVerified false)
+// so the check has something to compare against, exactly as before.
+const PHONE_CODE_LENGTH = 6;
 
 // The accepted values for the fallback channel, spelled out rather than
 // derived, because updateNotificationPrefs has to check an untrusted string
@@ -124,13 +126,6 @@ const FALLBACK_CHANNELS: NotifyFallbackChannel[] = [
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
-
-  // Clerk client used to push DB changes back to the identity provider.
-  // Same secret as ClerkGuard — Clerk's Backend SDK is cheap to construct,
-  // we just keep one instance per service.
-  private readonly clerk = createClerkClient({
-    secretKey: process.env.CLERK_SECRET_KEY,
-  });
 
   constructor(
     private readonly prisma: PrismaService,
@@ -159,6 +154,12 @@ export class UsersService {
     // new edge; kept out of this file because the predicate set that
     // decides whether a closure may go ahead is a page on its own.
     private readonly closure: AccountClosureService,
+    // @Global DiditModule — the one adapter for the phone OTP.
+    private readonly didit: DiditService,
+    // Closing an account has to end every live session; the access token is
+    // not revocable, so revoking the refresh side is what actually locks a
+    // closed account out.
+    private readonly sessions: SessionService,
   ) {}
 
   // ── Peach bank-account verification (AVS) ─────────────────────────
@@ -221,352 +222,33 @@ export class UsersService {
     }
   }
 
-  // Pulls the user-friendly message out of a Clerk SDK error. Clerk
-  // returns structured errors with `errors[].longMessage` that's already
-  // worded for end-users (e.g. "That username is taken."). Fall back to
-  // the JS Error message if the shape doesn't match.
-  private extractClerkError(err: unknown): string {
-    if (err && typeof err === 'object' && 'errors' in err) {
-      const errs = (err as {
-        errors?: { longMessage?: string; message?: string }[];
-      }).errors;
-      if (Array.isArray(errs) && errs.length > 0) {
-        return (
-          errs[0].longMessage ??
-          errs[0].message ??
-          'Identity provider rejected the change'
-        );
-      }
-    }
-    if (err instanceof Error) return err.message;
-    return 'Identity provider rejected the change';
-  }
-
-  async findByClerkId(clerkId: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { clerkId } });
-  }
-
-  // ── Login insights (Clerk session webhook) ─────────────────────────
-  // Open a LoginEvent for a new Clerk session (idempotent on clerkSessionId
-  // against Svix retries) and stamp User.lastLoginAt. If the user row doesn't
-  // exist yet (session.created racing user.created on a first-ever login), we
-  // skip — the ClerkGuard lazy-sync creates the row on the next authed request
-  // and future logins record normally.
-  async recordLoginEvent(s: {
-    sessionId: string;
-    userId: string;
-    createdAt?: number;
-    lastActiveAt?: number;
-  }): Promise<void> {
-    if (!s.sessionId || !s.userId) return;
-    // Operator exclusion — an admin-linked Clerk id signing in is the
-    // operator, not a customer; keep the login pulse customer-only (same
-    // policy as ActivityService's admin filter on behavioural events).
-    const isAdmin = await this.prisma.adminUser.findFirst({
-      where: { clerkId: s.userId, isActive: true },
-      select: { id: true },
-    });
-    if (isAdmin) return;
-    const user = await this.prisma.user.findUnique({
-      where: { clerkId: s.userId },
-      select: { id: true },
-    });
-    if (!user) return;
-    const startedAt = s.createdAt ? new Date(s.createdAt) : new Date();
-    const lastActiveAt = s.lastActiveAt ? new Date(s.lastActiveAt) : null;
-    await this.prisma.loginEvent.upsert({
-      where: { clerkSessionId: s.sessionId },
-      create: {
-        clerkSessionId: s.sessionId,
-        userId: user.id,
-        startedAt,
-        lastActiveAt,
-      },
-      update: { lastActiveAt: lastActiveAt ?? undefined },
-    });
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: startedAt },
-    });
-  }
-
-  // Close an open LoginEvent (session ended / revoked) so its duration is
-  // known. Idempotent — a second end event finds no open row and no-ops.
-  async closeLoginEvent(sessionId: string, reason: string): Promise<void> {
-    if (!sessionId) return;
-    await this.prisma.loginEvent.updateMany({
-      where: { clerkSessionId: sessionId, endedAt: null },
-      data: { endedAt: new Date(), endReason: reason },
-    });
-  }
-
-  // Username-collision healer. Clerk owns the username namespace, but our
-  // User table can hold STALE rows from the retired dev Clerk instance whose
-  // usernames squat the namespace (prod Clerk happily re-issues them — this
-  // 403'd every money action for a new signup, 2026-07-23 "generalledger").
-  // If the incoming username is held by a row with a different clerkId:
-  //   - holder's Clerk account no longer exists (404) → stale squatter:
-  //     archive-rename it and let the new user take the name;
-  //   - holder still exists in Clerk, or Clerk can't be reached → we can't
-  //     safely free it: return null so the caller creates WITHOUT a username.
-  //     Provisioning must NEVER fail on a display name — the user can pick a
-  //     new one later; a missing row blocks offers/bids/checkout entirely.
-  private async resolveUsernameConflict(
+  /**
+   * Refuse a username somebody else already holds.
+   *
+   * ⚠️ CASE-INSENSITIVELY, via usernameLower. Username is the ONLY identity
+   * this platform shows other members, so "Gerhard" and "gerhard" being two
+   * accounts is not an untidiness — it is impersonation one rename away.
+   *
+   * This check used to be Clerk's. It is ours now, which also means every
+   * write to `username` must write `usernameLower` in the same statement or
+   * the unique index silently stops matching what is displayed.
+   */
+  private async assertUsernameFree(
     username: string,
-    incomingClerkId: string,
-  ): Promise<string | null> {
-    const holder = await this.prisma.user.findFirst({
-      where: { username, NOT: { clerkId: incomingClerkId } },
-      select: { id: true, clerkId: true },
-    });
-    if (!holder) return username;
-    try {
-      await this.clerk.users.getUser(holder.clerkId);
-      // Holder is a live Clerk account — genuine conflict (shouldn't happen;
-      // Clerk enforces uniqueness). Don't steal it.
-      this.logger.warn(
-        `Username "${username}" is held by live user ${holder.id} — provisioning ${incomingClerkId} without a username`,
-      );
-      return null;
-    } catch (err) {
-      const status = (err as { status?: number }).status;
-      if (status === 404) {
-        const archived = `${username}-archived-${holder.id.slice(-4)}`;
-        await this.prisma.user.update({
-          where: { id: holder.id },
-          data: { username: archived },
-        });
-        this.logger.log(
-          `Freed username "${username}" from stale row ${holder.id} (Clerk account ${holder.clerkId} gone; renamed to ${archived})`,
-        );
-        return username;
-      }
-      // Clerk unreachable — can't verify; don't block provisioning.
-      this.logger.warn(
-        `Could not verify username holder for "${username}" (${(err as Error).message}) — provisioning ${incomingClerkId} without a username`,
-      );
-      return null;
-    }
-  }
-
-  // Raise a deduped admin alert when the Clerk webhook signature fails to
-  // verify. A dead CLERK_WEBHOOK_SECRET means no user is ever provisioned via
-  // webhook (the lazy ClerkGuard upsert is the backstop, but a silent webhook
-  // failure still hides a real misconfig). Dedup on the single source so a
-  // flood of bad events yields one unresolved alert. Fire-and-forget.
-  async alertClerkWebhookSignatureFailure(): Promise<void> {
-    try {
-      const existing = await this.prisma.adminAlert.count({
-        where: {
-          type: 'WEBHOOK_SIGNATURE_INVALID',
-          referenceId: 'clerk',
-          resolved: false,
-        },
-      });
-      if (existing > 0) return;
-      await this.prisma.adminAlert.create({
-        data: {
-          type: 'WEBHOOK_SIGNATURE_INVALID',
-          referenceId: 'clerk',
-          urgent: true,
-          context:
-            'Incoming Clerk webhook FAILED signature verification and was dropped. ' +
-            'If this repeats, CLERK_WEBHOOK_SECRET is wrong or the raw-body pipeline broke — ' +
-            'new sign-ups are not being provisioned by webhook (the sign-in backstop still runs). ' +
-            'Check the webhook secret. Fires once until resolved.',
-        },
-      });
-      this.logger.error('Clerk webhook signature failure alert raised');
-    } catch (err) {
-      this.logger.warn(
-        `alertClerkWebhookSignatureFailure failed: ${(err as Error).message}`,
-      );
-    }
-  }
-
-  async upsertFromClerk(data: {
-    clerkId: string;
-    email: string;
-    username?: string;
-    firstName?: string;
-    lastName?: string;
-    phone?: string;
-    avatarUrl?: string;
-    /** MarketingCampaign.key this signup arrived on, from the signup form's
-     *  Clerk unsafeMetadata. FIRST-TOUCH: only ever written when the column
-     *  is still null, so a later session on a different campaign link can't
-     *  re-attribute an existing member and inflate a blast's numbers. */
-    campaignKey?: string;
-  }): Promise<User> {
-    // Lowercase usernames before persisting — matches the check endpoint.
-    let username = data.username
-      ? data.username.trim().toLowerCase()
-      : null;
-    if (username) {
-      username = await this.resolveUsernameConflict(username, data.clerkId);
-    }
-
-    // Auto-relink returning users after a Clerk instance switch (dev→prod).
-    // The production instance issues a BRAND-NEW clerkId, but the user's
-    // existing row still carries the old instance's clerkId — keyed by the
-    // SAME email. Without this, the upsert below would try to CREATE a new
-    // row and either orphan the account (GET /users/me returns empty → no
-    // profile, no completeness) or blow up on the email @unique guard. So:
-    // if there's no row for this clerkId but one exists for this email,
-    // move that row onto the new clerkId instead of creating a duplicate.
-    // Legal name / OTP-verified phone are left untouched (system of record).
-    if (data.email) {
-      const byClerk = await this.prisma.user.findUnique({
-        where: { clerkId: data.clerkId },
-        select: { id: true },
-      });
-      if (!byClerk) {
-        const byEmail = await this.prisma.user.findFirst({
-          where: { email: data.email, NOT: { clerkId: data.clerkId } },
-          select: { id: true },
-        });
-        if (byEmail) {
-          this.logger.log(
-            `Re-linked existing user ${byEmail.id} to new clerkId ${data.clerkId} (matched by email)`,
-          );
-          return this.prisma.user.update({
-            where: { id: byEmail.id },
-            data: {
-              clerkId: data.clerkId,
-              ...(username ? { username } : {}),
-              ...(data.avatarUrl ? { avatarUrl: data.avatarUrl } : {}),
-            },
-          });
-        }
-      }
-    }
-
-    const campaignKey = data.campaignKey?.trim().slice(0, 40) || undefined;
-
-    // ⚠️ NEVER WRITE OVER A CLOSED ACCOUNT.
-    //
-    // The closure releases the username, rewrites the email to an unroutable
-    // sentinel and clears the avatar — and this upsert writes all three
-    // unconditionally on the update branch. One late or reordered
-    // `user.updated` from Clerk, arriving after the close, would put the real
-    // handle and the real address straight back onto a row that is supposed to
-    // be gone from the public side. The clerkId is tombstoned by the webhook
-    // for the same reason, but the events can race, so this is checked here
-    // too rather than relied on.
-    const closed = await this.prisma.user.findFirst({
-      where: { clerkId: data.clerkId, accountClosedAt: { not: null } },
+    ownerId: string,
+  ): Promise<void> {
+    const taken = await this.prisma.user.findFirst({
+      where: {
+        usernameLower: username.trim().toLowerCase(),
+        NOT: { id: ownerId },
+      },
       select: { id: true },
     });
-    if (closed) {
-      this.logger.warn(
-        `Ignoring Clerk upsert for ${data.clerkId} — that account is closed`,
-      );
-      return this.prisma.user.findUniqueOrThrow({ where: { id: closed.id } });
-    }
-
-    const user = await this.prisma.user.upsert({
-      where: { clerkId: data.clerkId },
-      create: {
-        clerkId: data.clerkId,
-        email: data.email,
-        username,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        phone: data.phone,
-        avatarUrl: data.avatarUrl,
-        campaignKey,
-      },
-      update: {
-        email: data.email,
-        // Only update username if Clerk gave us one — never wipe an existing value.
-        ...(username ? { username } : {}),
-        // Avatar is Clerk-owned — sync when present.
-        ...(data.avatarUrl ? { avatarUrl: data.avatarUrl } : {}),
-        // firstName / lastName / phone are DELIBERATELY NOT synced from Clerk
-        // on update. Our KYC + profile flow is the system of record for the
-        // seller's legal name and the (OTP-verified) phone — a reordered or
-        // stale `user.updated` event must never overwrite a Home-Affairs-
-        // verified name or a verified number with whatever the user last
-        // typed into their Clerk profile. Initial values are still seeded on
-        // CREATE above; later changes go through PATCH /users/me (which writes
-        // both our DB and Clerk).
-      },
-    });
-
-    // First-touch attribution. Deliberately NOT in the upsert's `update`
-    // block: that runs on every Clerk sync, so a returning member who later
-    // clicks a different campaign SMS would be silently re-attributed and
-    // every blast's "sign-ups" figure would drift upward over time. The CAS
-    // (campaignKey: null) writes it exactly once, on the first sync that
-    // carries a key. Best-effort — attribution must never fail provisioning.
-    if (campaignKey && !user.campaignKey) {
-      await this.prisma.user
-        .updateMany({
-          where: { id: user.id, campaignKey: null },
-          data: { campaignKey },
-        })
-        .catch(() => undefined);
-    }
-    return user;
+    if (taken) throw new BadRequestException('That username is taken.');
   }
 
-  // Lazy-provision backstop: a request carries a VALID Clerk session but the
-  // clerkId has no DB row. This happens when the user.created webhook was
-  // missed/failed, the row was deleted (e.g. an operator account reset), or
-  // after a Clerk instance switch. Pull the identity from the Clerk API and
-  // run it through the SAME upsertFromClerk path the webhook uses (including
-  // the relink-by-email guard), so a signed-in user never sees an empty
-  // profile. Returns null (never throws) if the Clerk lookup fails —
-  // /users/me then degrades to its old empty response instead of a 500.
-  async lazyProvisionFromClerk(clerkId: string): Promise<User | null> {
-    try {
-      const cu = await this.clerk.users.getUser(clerkId);
-      const email =
-        cu.primaryEmailAddress?.emailAddress ??
-        cu.emailAddresses[0]?.emailAddress ??
-        '';
-      // Never create a row without an email — it's our unique relink key
-      // and every comms surface assumes it.
-      if (!email) return null;
-      const unsafe = (cu.unsafeMetadata ?? {}) as {
-        phone?: string;
-        campaignKey?: string;
-        consent?: {
-          terms?: boolean;
-          privacy?: boolean;
-          age?: boolean;
-          marketing?: boolean;
-          policyVersion?: string;
-        };
-      };
-      const user = await this.upsertFromClerk({
-        clerkId,
-        email,
-        username: cu.username ?? undefined,
-        firstName: cu.firstName ?? undefined,
-        lastName: cu.lastName ?? undefined,
-        phone: cu.phoneNumbers?.[0]?.phoneNumber ?? unsafe.phone,
-        avatarUrl: cu.imageUrl ?? undefined,
-        campaignKey: unsafe.campaignKey,
-      });
-      this.logger.log(
-        `Lazy-provisioned user row for ${clerkId} (valid session, no DB row)`,
-      );
-      // Same consent stamping as the webhook — set-once, safe to repeat.
-      if (unsafe.consent) {
-        await this.recordSignupConsent(clerkId, unsafe.consent);
-      }
-      return user;
-    } catch (err) {
-      // Flatten to one line — Prisma messages start with a newline, which
-      // made earlier sync-failure logs look empty and hid the real cause.
-      const msg = ((err as Error).message ?? String(err))
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 300);
-      this.logger.warn(`Lazy-provision from Clerk failed for ${clerkId}: ${msg}`);
-      return null;
-    }
+  async findById(userId: string): Promise<User | null> {
+    return this.prisma.user.findUnique({ where: { id: userId } });
   }
 
   // Record sign-up consent (POPIA accountability) for the current Clerk user.
@@ -583,13 +265,13 @@ export class UsersService {
    * decide whether to keep retrying (User row not provisioned yet) or stop.
    */
   async recordCampaignAttribution(
-    clerkId: string,
+    userId: string,
     key?: string,
   ): Promise<boolean> {
     const campaignKey = key?.trim().slice(0, 40);
     if (!campaignKey) return false;
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true, campaignKey: true },
     });
     // No row yet (create-race): report false so the client retries later.
@@ -604,7 +286,7 @@ export class UsersService {
   }
 
   async recordSignupConsent(
-    clerkId: string,
+    userId: string,
     dto: {
       terms?: boolean;
       privacy?: boolean;
@@ -614,7 +296,7 @@ export class UsersService {
     },
   ): Promise<boolean> {
     const existing = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: {
         id: true,
         termsAcceptedAt: true,
@@ -627,7 +309,7 @@ export class UsersService {
     if (!existing) return false;
     const now = new Date();
     await this.prisma.user.update({
-      where: { clerkId },
+      where: { id: userId },
       data: {
         ...(dto.terms && !existing.termsAcceptedAt ? { termsAcceptedAt: now } : {}),
         ...(dto.privacy && !existing.privacyConsentAt ? { privacyConsentAt: now } : {}),
@@ -656,7 +338,7 @@ export class UsersService {
    *      register with it. Deleting the Clerk user first would race exactly
    *      that.
    *   2. CLERK SECOND. The webhook fires, sees accountClosedAt, does nothing
-   *      but tombstone the clerkId.
+   *      but tombstone the userId.
    *
    * If step 2 fails the member is closed in our database and can still sign in
    * to a dead account — every write gate refuses them and the resurrection
@@ -664,11 +346,11 @@ export class UsersService {
    * That is a recoverable state; the reverse is not.
    */
   async closeMyAccount(
-    clerkId: string,
+    userId: string,
     reason: string,
   ): Promise<{ closed: true; cancelledListings: number }> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) throw new NotFoundException('User not found');
@@ -678,15 +360,17 @@ export class UsersService {
       reason: this.closure.assertReason(reason),
     });
 
-    // ⚠️ AFTER THE COMMIT, AND FAIL-SOFT. A Clerk outage must not roll back a
-    // closure the member has already been told about — and a row that is
-    // closed in our database with a live Clerk login is strictly safer than
-    // the reverse.
+    // ⚠️ REVOKE EVERY SESSION AFTER THE COMMIT. Closure used to end with a
+    // delete against the identity provider; now that we own the sessions, the
+    // equivalent — and the only thing standing between a closed account and
+    // somebody still using it — is killing the refresh tokens. Fail-soft: a
+    // closure the member has already been told about must not roll back, and
+    // the access token expires within fifteen minutes regardless.
     try {
-      await this.clerk.users.deleteUser(clerkId);
+      await this.sessions.revokeAllForUser(user.id);
     } catch (err) {
       this.logger.error(
-        `Account ${user.id} closed, but the Clerk user could not be deleted — they can still sign in to a dead account: ${(err as Error).message}`,
+        `Account ${user.id} closed, but its sessions could not be revoked — they can still use a live token until it expires: ${(err as Error).message}`,
       );
     }
 
@@ -704,7 +388,7 @@ export class UsersService {
     return { closed: true, cancelledListings: cancelledListingIds.length };
   }
 
-  async deleteByClerkId(clerkId: string): Promise<void> {
+  async deleteById(userId: string): Promise<void> {
     // H3 — Clerk user.deleted webhook handler. Hard delete fails for
     // any user with transactions/ratings/offers (FK RESTRICT in the
     // financial models), which would 500 the webhook and make Clerk
@@ -732,7 +416,7 @@ export class UsersService {
     // Never throws — this is a webhook, and an exception makes Clerk retry
     // forever while the account stays undeleted.
     const target = await this.prisma.user.findFirst({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true, accountClosedAt: true },
     });
     if (target) {
@@ -744,7 +428,7 @@ export class UsersService {
         const purged = await this.motivationRetention.purgeForUser(target.id);
         if (purged.motivations > 0) {
           this.logger.log(
-            `Erasure for clerk user ${clerkId}: removed ${purged.motivations} motivation(s) and ${purged.filesRemoved} encrypted document(s)` +
+            `Erasure for clerk user ${userId}: removed ${purged.motivations} motivation(s) and ${purged.filesRemoved} encrypted document(s)` +
               (purged.filesFailed > 0
                 ? `; ${purged.filesFailed} file(s) FAILED to delete and need removing by hand`
                 : ''),
@@ -752,7 +436,7 @@ export class UsersService {
         }
       } catch (err) {
         this.logger.error(
-          `Erasure for clerk user ${clerkId}: motivation purge threw, continuing with account deletion: ${(err as Error).message}`,
+          `Erasure for clerk user ${userId}: motivation purge threw, continuing with account deletion: ${(err as Error).message}`,
         );
       }
 
@@ -765,7 +449,7 @@ export class UsersService {
         const lc = await this.licenceCentreRetention.purgeForUser(target.id);
         if (lc.credentials > 0) {
           this.logger.log(
-            `Erasure for clerk user ${clerkId}: removed ${lc.credentials} Licence Centre document(s), ${lc.filesRemoved} file(s)` +
+            `Erasure for clerk user ${userId}: removed ${lc.credentials} Licence Centre document(s), ${lc.filesRemoved} file(s)` +
               (lc.filesFailed > 0
                 ? `; ${lc.filesFailed} file(s) FAILED to delete and need removing by hand`
                 : ''),
@@ -773,7 +457,7 @@ export class UsersService {
         }
       } catch (err) {
         this.logger.error(
-          `Erasure for clerk user ${clerkId}: licence-centre purge threw, continuing with account deletion: ${(err as Error).message}`,
+          `Erasure for clerk user ${userId}: licence-centre purge threw, continuing with account deletion: ${(err as Error).message}`,
         );
       }
 
@@ -783,7 +467,7 @@ export class UsersService {
         const k = await this.kyc.purgeKycFiles(target.id);
         if (k.removed > 0 || k.failed > 0) {
           this.logger.log(
-            `Erasure for clerk user ${clerkId}: removed ${k.removed} KYC file(s)` +
+            `Erasure for clerk user ${userId}: removed ${k.removed} KYC file(s)` +
               (k.failed > 0
                 ? `; ${k.failed} FAILED to delete and need removing by hand`
                 : ''),
@@ -791,7 +475,7 @@ export class UsersService {
         }
       } catch (err) {
         this.logger.error(
-          `Erasure for clerk user ${clerkId}: KYC file purge threw, continuing with account deletion: ${(err as Error).message}`,
+          `Erasure for clerk user ${userId}: KYC file purge threw, continuing with account deletion: ${(err as Error).message}`,
         );
       }
     }
@@ -804,16 +488,17 @@ export class UsersService {
     // (the SAP 534 identity) and log a second erasure that never happened.
     if (target?.accountClosedAt) {
       this.logger.log(
-        `Clerk user ${clerkId} deleted — account already closed at ${target.accountClosedAt.toISOString()}, nothing to do`,
+        `Clerk user ${userId} deleted — account already closed at ${target.accountClosedAt.toISOString()}, nothing to do`,
       );
-      // Tombstone the clerkId so /sellers/:clerkId 404s for free and a future
+      // Tombstone the userId so /sellers/:userId 404s for free and a future
       // sign-up cannot collide with it.
-      await this.prisma.user
-        .updateMany({
-          where: { clerkId },
-          data: { clerkId: `closed_${target.id}` },
-        })
-        .catch(() => undefined);
+      //
+      // ⚠️ THE TOMBSTONE IS GONE BECAUSE WHAT IT GUARDED IS GONE. It wrote
+      // `closed_<id>` over the identity-provider subject so a returning member
+      // could sign up again on the same provider account. We own the identity
+      // now, and AccountClosure already frees the username, email and phone —
+      // which is the whole of what "the claims go back into the namespace"
+      // ever meant. Nothing else here needs writing.
       return;
     }
 
@@ -874,7 +559,7 @@ export class UsersService {
       });
 
       await this.prisma.user.updateMany({
-        where: { clerkId },
+        where: { id: userId },
         data: {
           // ⚠️ @accounts.invalid, NOT @gungalore.local. RFC 6761 reserves
           // .invalid precisely so it can never resolve; a made-up subdomain of
@@ -902,7 +587,7 @@ export class UsersService {
           // number and leaving phoneVerified true left a row claiming a
           // verified phone it does not have.
           ...(firearmHold === 0
-            ? { phoneVerified: false, phoneOtpHash: null, phoneOtpExpiresAt: null }
+            ? { phoneVerified: false }
             : {}),
 
           // Erased in every case — none of it is needed by any statutory form.
@@ -913,7 +598,6 @@ export class UsersService {
           kycIdMimeType: null,
           kycSelfieUrl: null,
           kycSelfieStorageKey: null,
-          kycHaCheckJson: Prisma.DbNull,
           kycClaudeFindings: Prisma.DbNull,
 
           // ⚠️ SILENCE EVERY CHANNEL. The row survives now, so without this a
@@ -942,7 +626,7 @@ export class UsersService {
       });
 
       this.logger.log(
-        `Erasure for clerk user ${clerkId}: row preserved and scrubbed` +
+        `Erasure for clerk user ${userId}: row preserved and scrubbed` +
           (firearmHold > 0
             ? `; identity HELD — ${firearmHold} firearm transaction(s) need Section C of the SAP 534`
             : '') +
@@ -952,7 +636,7 @@ export class UsersService {
       );
     } catch (scrubErr) {
       this.logger.error(
-        `PII scrub of clerk user ${clerkId} failed: ${(scrubErr as Error).message}`,
+        `PII scrub of clerk user ${userId} failed: ${(scrubErr as Error).message}`,
       );
     }
   }
@@ -972,8 +656,8 @@ export class UsersService {
   // profileCompletedAt is the gate the payout flow checks. Throws a
   // user-readable BadRequestException for any failure so the modal
   // can show the message inline.
-  async completeProfile(clerkId: string, dto: ProfileCompleteDto): Promise<User> {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  async completeProfile(userId: string, dto: ProfileCompleteDto): Promise<User> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
     // ─── Hard-validate inputs before touching Peach or the DB ─────
@@ -1036,24 +720,20 @@ export class UsersService {
     // identity before the first payout. Do not upgrade any user-facing copy to
     // claim automated verification until BANV is actually switched on.
 
-    // ─── Push username to Clerk first so the two stores stay in sync ──
+    // ─── Username uniqueness is ours to enforce now ──────────────────
     if (username !== user.username) {
-      try {
-        await this.clerk.users.updateUser(clerkId, { username });
-      } catch (err) {
-        const message = this.extractClerkError(err);
-        throw new BadRequestException(message);
-      }
+      await this.assertUsernameFree(username, userId);
     }
 
     // ─── Save everything in one update ────────────────────────────
     const encryptedId = encryptSaIdNumber(idNumber);
     const updated = await this.prisma.user.update({
-      where: { clerkId },
+      where: { id: userId },
       data: {
         firstName,
         lastName,
         username,
+        usernameLower: username.trim().toLowerCase(),
         phone,
         addrBuilding: dto.addrBuilding ?? null,
         addrStreet: dto.addrStreet.trim(),
@@ -1079,7 +759,7 @@ export class UsersService {
     });
 
     this.logger.log(
-      `Profile completed for ${clerkId} (bank=${dto.bankName})`,
+      `Profile completed for ${userId} (bank=${dto.bankName})`,
     );
     // Saving new details is the "fix" action — clear any open bank-verify
     // task, then kick off a fresh Peach verification (no-op until
@@ -1097,9 +777,9 @@ export class UsersService {
   // bankVerifiedAt/bankAvsResult/bankVerificationId and re-runs Peach
   // bank-account verification (BANV); until BANV is configured, the
   // manual admin holder-name review remains the pre-payout gate.
-  async updateBankDetails(clerkId: string, dto: BankDetailsDto) {
+  async updateBankDetails(userId: string, dto: BankDetailsDto) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) throw new NotFoundException('User not found');
@@ -1126,7 +806,7 @@ export class UsersService {
     }
 
     const updated = await this.prisma.user.update({
-      where: { clerkId },
+      where: { id: userId },
       data: {
         bankName,
         bankAccountHolder,
@@ -1148,7 +828,7 @@ export class UsersService {
         bankVerifiedAt: true,
       },
     });
-    this.logger.log(`Bank details updated for ${clerkId} (bank=${bankName})`);
+    this.logger.log(`Bank details updated for ${userId} (bank=${bankName})`);
     // Saving new details is the "fix" action — clear any open bank-verify
     // task, then kick off a fresh Peach verification (no-op until
     // configured; silently skips buyers who have no SA ID on file yet).
@@ -1163,15 +843,15 @@ export class UsersService {
   // OTP flow flips that bit. If the seller later wants their phone
   // properly verified they can run the OTP request/verify flow and
   // overwrite this same column.
-  async saveBuyerPhone(clerkId: string, phone: string): Promise<User> {
+  async saveBuyerPhone(userId: string, phone: string): Promise<User> {
     return this.prisma.user.update({
-      where: { clerkId },
+      where: { id: userId },
       data: { phone },
     });
   }
 
-  async updateProfile(clerkId: string, patch: ProfileUpdate): Promise<User> {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  async updateProfile(userId: string, patch: ProfileUpdate): Promise<User> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
     // Normalise username (lowercase) + check uniqueness ourselves so we
@@ -1190,25 +870,15 @@ export class UsersService {
       }
     }
 
-    // If username actually changed (set, renamed, or cleared), push to
-    // Clerk first. Clerk has its own uniqueness scope (all Clerk users on
-    // this instance, not just ours) and stricter character/length rules,
-    // so it can reject what we accept. On rejection we abort the DB
-    // update so the two stores can't drift apart.
+    // If the username actually changed, check it is free before writing.
+    // ⚠️ It can no longer be CLEARED: username is non-null now, because it is
+    // the only name other members ever see and "Anonymous seller" as a
+    // permanent state is not a profile.
     if (username !== undefined && username !== user.username) {
-      try {
-        await this.clerk.users.updateUser(clerkId, {
-          // Clerk uses empty string to clear an optional username. null
-          // wouldn't match the SDK's typing.
-          username: username ?? '',
-        });
-      } catch (err) {
-        const message = this.extractClerkError(err);
-        this.logger.warn(
-          `Clerk rejected username change for ${clerkId}: ${message}`,
-        );
-        throw new BadRequestException(message);
+      if (!username) {
+        throw new BadRequestException('A username is required.');
       }
+      await this.assertUsernameFree(username, userId);
     }
 
     // Once KYC has verified the seller, their first/last name on file
@@ -1222,11 +892,14 @@ export class UsersService {
     }
 
     const updated = await this.prisma.user.update({
-      where: { clerkId },
+      where: { id: userId },
       data: {
         ...cleanedPatch,
-        // Only include username if the caller actually sent it.
-        ...(username !== undefined ? { username } : {}),
+        // Only include username if the caller actually sent it — and never
+        // without usernameLower, which is what the unique index is on.
+        ...(username
+          ? { username, usernameLower: username.trim().toLowerCase() }
+          : {}),
       },
     });
 
@@ -1296,13 +969,13 @@ export class UsersService {
   // SMSPortal. The OLD phone (if any) keeps working until they verify
   // the new one. If SMS sending fails the OTP isn't persisted.
   async requestPhoneChange(
-    clerkId: string,
+    userId: string,
     rawPhone: string,
   ): Promise<{ sent: boolean; stub?: boolean }> {
     if (!rawPhone || rawPhone.trim().length === 0) {
       throw new BadRequestException('Phone number is required');
     }
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
     // Hard-block duplicates: one SA mobile = one All Outdoor account.
@@ -1321,121 +994,139 @@ export class UsersService {
       );
     }
 
-    // Generate a zero-padded 4-digit code (`randomInt` is uniform — no
-    // modulo bias). The plain code goes out via SMS; we only persist
-    // its sha256 + the expiry.
-    const code = String(randomInt(0, 10000)).padStart(OTP_LENGTH, '0');
-    const otpHash = hashOtp(code);
-    const expiresAt = new Date(Date.now() + OTP_TTL_MS);
-
-    const sms = await this.sms.sendSms({
-      to: rawPhone,
-      message: `All Outdoor verification code: ${code}\n\nValid for 10 minutes. If you didn't request this, ignore this message.`,
-      reference: `phone-change-${user.id}`,
-    });
-
-    if (!sms.success) {
-      // Don't persist the OTP — the user never got it.
+    // ⚠️ E.164 OR NOTHING. Didit validates and normalises the number itself
+    // and 400s on anything it cannot parse, so a locally-typed "0821234567"
+    // has to become "+27821234567" before it leaves here.
+    const e164 = this.sms.toE164(trimmedPhone);
+    if (!e164) {
       throw new BadRequestException(
-        'Could not send verification SMS. Check the number and try again.',
+        'Enter a valid phone number, including the country code.',
       );
     }
 
-    // Store the new phone in plain text + the OTP hash. phoneVerified
-    // stays false until they submit the matching code.
+    // ⚠️ SEND FIRST, PERSIST SECOND — the order the old flow used and for the
+    // same reason: writing the number before the code is on its way leaves a
+    // member with an unverifiable number on their profile and no way to tell
+    // why. If Didit refuses, nothing changed.
+    try {
+      await this.didit.sendPhoneCode(e164);
+    } catch (err) {
+      if (err instanceof DiditError) {
+        if (err.code === 'rate_limited') {
+          throw new BadRequestException(
+            'Too many codes requested for that number. Try again in an hour.',
+          );
+        }
+        if (err.code === 'provider_unavailable') {
+          // A provider outage is NOT a bad number. Telling somebody their
+          // valid number is wrong makes them change a correct answer.
+          throw new BadRequestException(
+            'We could not send the code just now. Please try again shortly.',
+          );
+        }
+        throw new BadRequestException(
+          'Could not send a code to that number. Check it and try again.',
+        );
+      }
+      throw err;
+    }
+
+    // phoneVerified stays false until they submit the matching code.
     await this.prisma.user.update({
-      where: { clerkId },
-      data: {
-        phone: rawPhone.trim(),
-        phoneVerified: false,
-        phoneOtpHash: otpHash,
-        phoneOtpExpiresAt: expiresAt,
-        // A fresh code starts on a clean slate, or five bad guesses against
-        // the last one would burn the new one on its first miss.
-        phoneOtpAttempts: 0,
-      },
+      where: { id: userId },
+      data: { phone: e164, phoneVerified: false },
     });
 
-    return { sent: true, stub: sms.stub };
+    return { sent: true };
   }
 
   // Submit the 4-digit code. On success: phoneVerified=true, OTP wiped.
   // On failure: clear error so the seller knows whether to re-request.
   async verifyPhoneChange(
-    clerkId: string,
+    userId: string,
     code: string,
   ): Promise<{ verified: true }> {
-    if (!code || !/^\d{4}$/.test(code.trim())) {
-      throw new BadRequestException('Enter the 4-digit code');
+    const entered = code?.trim() ?? '';
+    // Reject a malformed code HERE. Didit answers 400 for one without
+    // consuming an attempt, but round-tripping to find that out spends a
+    // request from a 300/min budget shared with everything else.
+    if (!new RegExp(`^\\d{4,${PHONE_CODE_LENGTH + 2}}$`).test(entered)) {
+      throw new BadRequestException(
+        `Enter the ${PHONE_CODE_LENGTH}-digit code`,
+      );
     }
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, phone: true, phoneVerified: true },
+    });
     if (!user) throw new NotFoundException('User not found');
-    if (!user.phoneOtpHash || !user.phoneOtpExpiresAt) {
+    if (!user.phone) {
       throw new BadRequestException(
         'No verification code is pending — request a new one.',
       );
     }
-    if (user.phoneOtpExpiresAt < new Date()) {
-      // Expired — wipe so the next request starts clean.
-      await this.prisma.user.update({
-        where: { clerkId },
-        data: { phoneOtpHash: null, phoneOtpExpiresAt: null },
-      });
+
+    let ok: boolean;
+    try {
+      ok = await this.didit.checkPhoneCode(user.phone, entered);
+    } catch (err) {
+      if (err instanceof DiditError) {
+        if (err.code === 'rate_limited') {
+          throw new BadRequestException(
+            'Too many attempts. Request a new code in a little while.',
+          );
+        }
+        throw new BadRequestException(
+          'We could not check that code just now. Please try again shortly.',
+        );
+      }
+      throw err;
+    }
+
+    // A wrong code is a clean `false`, not an exception — Didit has already
+    // counted it against the three it allows for this code.
+    if (!ok) {
       throw new BadRequestException(
-        'The code has expired. Request a new one.',
+        "That code doesn't match — try again, or request a new one.",
       );
     }
-    if (hashOtp(code.trim()) !== user.phoneOtpHash) {
-      // COUNT THE MISS, and burn the code once there have been too many.
-      // Without this a 4-digit code can simply be walked: ten thousand
-      // possibilities, a ten-minute window, and an IP-keyed throttle an
-      // attacker sidesteps by changing IP.
-      const attempts = (user.phoneOtpAttempts ?? 0) + 1;
-      const spent = attempts >= MAX_OTP_ATTEMPTS;
-      await this.prisma.user.update({
-        where: { clerkId },
-        data: spent
-          ? { phoneOtpHash: null, phoneOtpExpiresAt: null, phoneOtpAttempts: 0 }
-          : { phoneOtpAttempts: attempts },
-      });
-      throw new BadRequestException(
-        spent
-          ? 'Too many incorrect codes. Request a new one.'
-          : "That code doesn't match — try again.",
-      );
-    }
+
     await this.prisma.user.update({
-      where: { clerkId },
-      data: {
-        phoneVerified: true,
-        phoneOtpHash: null,
-        phoneOtpExpiresAt: null,
-        phoneOtpAttempts: 0,
-      },
+      where: { id: userId },
+      data: { phoneVerified: true },
     });
     return { verified: true };
   }
 
   // ─────────────────── Address book (Phase 2) ────────────────────────
-  private async userIdFor(clerkId: string): Promise<string> {
+  /**
+   * Assert the caller's User row still exists, so a request carrying a valid
+   * token for a deleted account gets a clean 404 rather than a foreign-key
+   * error further down.
+   *
+   * This used to translate a Clerk subject into a User.id. There is only one
+   * identifier now, so the translation is gone and the existence check is all
+   * that remains — which is why it returns nothing and callers no longer
+   * rebind the id.
+   */
+  private async assertUserExists(userId: string): Promise<void> {
     const u = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!u) throw new NotFoundException('User not found');
-    return u.id;
   }
 
-  async listAddresses(clerkId: string) {
-    const userId = await this.userIdFor(clerkId);
+  async listAddresses(userId: string) {
+    await this.assertUserExists(userId);
     return this.prisma.address.findMany({
       where: { userId },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
-  async createAddress(clerkId: string, input: AddressInput) {
-    const userId = await this.userIdFor(clerkId);
+  async createAddress(userId: string, input: AddressInput) {
+    await this.assertUserExists(userId);
     this.assertAddress(input);
     const count = await this.prisma.address.count({ where: { userId } });
     // First saved address is the default; otherwise honour the flag.
@@ -1462,11 +1153,11 @@ export class UsersService {
   }
 
   async updateAddress(
-    clerkId: string,
+    userId: string,
     id: string,
     input: Partial<AddressInput>,
   ) {
-    const userId = await this.userIdFor(clerkId);
+    await this.assertUserExists(userId);
     const existing = await this.prisma.address.findFirst({
       where: { id, userId },
     });
@@ -1484,8 +1175,8 @@ export class UsersService {
     });
   }
 
-  async deleteAddress(clerkId: string, id: string) {
-    const userId = await this.userIdFor(clerkId);
+  async deleteAddress(userId: string, id: string) {
+    await this.assertUserExists(userId);
     const existing = await this.prisma.address.findFirst({
       where: { id, userId },
     });
@@ -1548,7 +1239,7 @@ export class UsersService {
   // per-device. Email, SMS and WhatsApp are settable here, plus the
   // fallback channel — WhatsApp now carries shipping updates only.
   async updateNotificationPrefs(
-    clerkId: string,
+    userId: string,
     prefs: {
       emailEnabled?: boolean;
       smsEnabled?: boolean;
@@ -1627,7 +1318,7 @@ export class UsersService {
         guard.notifyEmailEnabled = true;
 
       const { count } = await this.prisma.user.updateMany({
-        where: { clerkId, ...guard },
+        where: { id: userId, ...guard },
         data,
       });
       // count 0 is ambiguous — no such member, or the guard refused. Only the
@@ -1635,7 +1326,7 @@ export class UsersService {
       // only, so the happy path stays at two statements.
       if (count === 0) {
         const exists = await this.prisma.user.findUnique({
-          where: { clerkId },
+          where: { id: userId },
           select: { id: true },
         });
         if (!exists) throw new NotFoundException('User not found');
@@ -1644,7 +1335,7 @@ export class UsersService {
     }
 
     const row = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: {
         notifyEmailEnabled: true,
         notifySmsEnabled: true,
@@ -1659,7 +1350,7 @@ export class UsersService {
   // Seller default parcel size (Phase 6 P6.3). Each field is independently
   // settable; passing null clears it. Non-negative ints only.
   async updateShippingDefaults(
-    clerkId: string,
+    userId: string,
     dims: {
       weightGrams?: number | null;
       lengthCm?: number | null;
@@ -1674,7 +1365,7 @@ export class UsersService {
       return Number.isFinite(n) && n > 0 ? n : null;
     };
     return this.prisma.user.update({
-      where: { clerkId },
+      where: { id: userId },
       data: {
         defaultWeightGrams: clean(dims.weightGrams),
         defaultLengthCm: clean(dims.lengthCm),
@@ -1696,7 +1387,7 @@ export class UsersService {
   // one aggregation. Four "act NOW" surfaces: KYC gate, auction wins
   // awaiting payment, accepted offers awaiting payment, sales awaiting
   // dispatch. Shape mirrors the frontend UrgentNotification type.
-  async getUrgentSummary(clerkId: string): Promise<{
+  async getUrgentSummary(userId: string): Promise<{
     notifications: {
       id: string;
       label: string;
@@ -1705,7 +1396,7 @@ export class UsersService {
     }[];
   }> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: {
         id: true,
         kycStatus: true,
@@ -1854,7 +1545,7 @@ export class UsersService {
   // Returns zeros throughout for a user with no activity (or no DB row at
   // all — a lazy-provisioning race) so the frontend never has to branch on
   // undefined.
-  async getAccountSummary(clerkId: string): Promise<{
+  async getAccountSummary(userId: string): Promise<{
     listings: {
       active: number;
       draft: number;
@@ -1886,7 +1577,7 @@ export class UsersService {
     };
 
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) return zero; // no row yet — nothing to summarise

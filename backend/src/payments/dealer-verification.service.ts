@@ -159,7 +159,7 @@ export class DealerVerificationService {
   // -------------------------------------------------------------------
   async uploadAndScore(
     transactionId: string,
-    sellerClerkId: string,
+    sellerId: string,
     files: {
       saps534: Express.Multer.File;
       stockRegister: Express.Multer.File;
@@ -181,13 +181,13 @@ export class DealerVerificationService {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: {
-        seller: { select: { clerkId: true } },
+        seller: { select: { id: true } },
         listing: { select: { make: true, model: true, calibre: true, isFirearm: true } },
         swap: { select: { status: true } },
       },
     });
     if (!tx) throw new BadRequestException('Transaction not found');
-    if (tx.seller.clerkId !== sellerClerkId) {
+    if (tx.seller.id !== sellerId) {
       throw new BadRequestException('Only the seller can upload dealer-verification photos');
     }
     if (!tx.listing.isFirearm) {

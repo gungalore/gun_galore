@@ -45,7 +45,7 @@ export function aimFrom(body: Record<string, unknown> | undefined) {
   return { x, y, width, height };
 }
 
-// ⚠️ SEPARATE FROM THE LICENCE-CENTRE CONTROLLER ON PURPOSE. Its ClerkGuard
+// ⚠️ SEPARATE FROM THE LICENCE-CENTRE CONTROLLER ON PURPOSE. Its AuthGuard
 // is class-level, and a method guard runs IN ADDITION to it, never instead —
 // so a phone arriving with only a scan-handoff token would 401 before the
 // method guard ever saw the ?t=. This controller has one guard, and it is the

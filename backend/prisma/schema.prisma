@@ -224,52 +224,52 @@ enum NotifyFallbackChannel {
 // ---------------------------------------------------------------------------
 
 model User {
-  id                String     @id @default(cuid())
-  clerkId           String     @unique
-  email             String     @unique
+  id              String     @id @default(cuid())
+  email           String     @unique
+  /// Verified by Didit's email OTP at sign-up. Null = the address is
+  /// claimed but unproven; login refuses until it is set, and an
+  /// unverified row older than 24h is swept, so a squatter cannot park
+  /// on somebody else's address indefinitely.
+  emailVerifiedAt DateTime?
+  /// bcrypt, cost 12. The only credential a member has.
+  passwordHash    String
   // MarketingCampaign.key this user arrived on, captured at sign-up. The
   // campaigns page could previously only show banner impressions ("hits"),
   // so a paid SMS blast could not be judged on whether anyone actually
   // JOINED — the only question that matters when you pay per message.
   // Set once at provisioning and never overwritten (first-touch attribution).
-  campaignKey       String?
-  // Public-facing handle. Lowercased + unique. Optional until first set so we
-  // can backfill existing Clerk-only users without breaking them.
-  username          String?    @unique
-  phone             String?
-  // Phone-verification state. We send a 4-digit OTP via SMSPortal when the
-  // seller changes their phone; phoneVerified flips to true once they
-  // submit the matching code. phoneOtpHash stores a sha256 of the
-  // active code so the raw number never sits on disk.
-  phoneVerified     Boolean    @default(false)
-  phoneOtpHash      String?
-  phoneOtpExpiresAt DateTime?
-  /// Wrong guesses against the CURRENT code. A 4-digit code is 10,000
-  /// possibilities and the window is ten minutes, so without a cap the only
-  /// thing standing between an attacker and somebody's phone number is the
-  /// global 60/min IP bucket — which rotating IPs walk straight through.
-  /// Five misses burns the code; they must request a new one.
-  phoneOtpAttempts  Int        @default(0)
-  firstName         String?
-  lastName          String?
-  avatarUrl         String?
+  campaignKey     String?
+  // Public-facing handle — the ONLY identity shown to other members.
+  // Chosen at sign-up and required. usernameLower is what the unique index
+  // is really for: without it "Gerhard" and "gerhard" are two accounts, and
+  // impersonating a seller is one rename away.
+  username        String     @unique
+  usernameLower   String     @unique
+  phone           String?
+  // Phone-verification state. Didit sends and checks the OTP, so the code
+  // never touches this database — there is deliberately no hash, expiry or
+  // attempt counter here any more. phoneVerified flips once Didit confirms.
+  phoneVerified   Boolean    @default(false)
+  firstName       String?
+  lastName        String?
+  avatarUrl       String?
   // Personal / shipping address — distinct from per-listing pickup
   // address on `Listing`. Edited from /profile/edit.
-  addrBuilding      String?
-  addrStreet        String?
-  addrAddress2      String?
-  addrSuburb        String?
-  addrCity          String?
-  addrPostalCode    String?
-  addrProvince      Province?
-  addrLat           Float?
-  addrLng           Float?
-  sellerTier        SellerTier @default(NEW)
-  trustScore        Int        @default(0)
-  averageRating     Float?
-  kycStatus         KycStatus  @default(NONE)
-  kycVerifiedAt     DateTime?
-  kycDocumentUrl    String? // Cloudinary URL of uploaded ID document (LEGACY — old manual flow)
+  addrBuilding    String?
+  addrStreet      String?
+  addrAddress2    String?
+  addrSuburb      String?
+  addrCity        String?
+  addrPostalCode  String?
+  addrProvince    Province?
+  addrLat         Float?
+  addrLng         Float?
+  sellerTier      SellerTier @default(NEW)
+  trustScore      Int        @default(0)
+  averageRating   Float?
+  kycStatus       KycStatus  @default(NONE)
+  kycVerifiedAt   DateTime?
+  kycDocumentUrl  String? // Cloudinary URL of uploaded ID document (LEGACY — old manual flow)
 
   // ─────────────── VerifyNow KYC flow ───────────────
   // Triggered automatically when the first buyer kicks off a purchase
@@ -279,25 +279,24 @@ model User {
   //
   // kycRequiredAt = when the first sale forced verification. Once set,
   // the in-app banner stays visible until kycStatus === VERIFIED.
-  kycRequiredAt             DateTime?
+  kycRequiredAt      DateTime?
   // POPIA consent must be explicit before any Home Affairs lookup. Set
   // when the seller ticks the consent box on /kyc/verify.
-  kycConsentGivenAt         DateTime?
+  kycConsentGivenAt  DateTime?
   // Home Affairs SA ID lookup passed (firstName/lastName already
   // populated from that response). Selfie still pending.
-  kycIdVerifiedAt           DateTime?
+  kycIdVerifiedAt    DateTime?
   // Total face-match attempts. ≥3 fails → AdminAlert is raised and
   // the seller is told to contact support.
-  kycAttempts               Int       @default(0)
-  kycFaceMatchScore         Float?
-  kycFaceMatchStatus        String?
-  kycVerifyNowTransactionId String?
+  kycAttempts        Int       @default(0)
+  kycFaceMatchScore  Float?
+  kycFaceMatchStatus String?
   // SHA-256 hash of the SA ID number (salted with ID_HASH_SECRET).
   // Stored ONLY as a hash so the raw 13-digit ID never lands on disk
   // — POPIA-friendly + lets us detect "this ID is already in use" by
   // hash collision check before calling VerifyNow. Unique at the DB
   // level so a duplicate registration physically can't land.
-  kycIdHash                 String?   @unique
+  kycIdHash          String?   @unique
   // SA ID number stored AES-GCM encrypted at rest. Set when the
   // seller completes their profile (modal pops up after their first
   // listing publishes) or at the Claude-flow Details step. RETAINED
@@ -307,7 +306,7 @@ model User {
   // Claude verdict step decrypts it for the identity cross-check.
   // Encryption key derives from ID_HASH_SECRET via HKDF in
   // backend/src/common/id-crypto.ts.
-  idNumberEncrypted         String?
+  idNumberEncrypted  String?
 
   // ─────────────── Claude-vision KYC flow (kyc_claude_flow_enabled) ───────────────
   // Cheap path: seller uploads their ID document + takes a live selfie;
@@ -350,9 +349,6 @@ model User {
   // Full Claude findings JSON (+ merged crossCheck hard/soft fails) so the
   // admin dossier can re-render the reasoning without another vision call.
   kycClaudeFindings   Json?
-  // SA ID (Basic) result persisted at the Details step so the verdict step
-  // can cross-check names/DOB without burning a second VerifyNow credit.
-  kycHaCheckJson      Json?
   // Which pipeline verified/attempted this user: 'VERIFYNOW' | 'CLAUDE'.
   kycMethod           String?
   // 'STANDARD' (< anchored threshold) | 'ANCHORED' (official DHA photo was
@@ -519,7 +515,7 @@ model User {
   // ── ActionToken back-relation ────────────────────────────────────
   // SMS-link action tokens that authorise this user (e.g. tokens that
   // let them accept an offer / pay for a sale / raise a bid without
-  // needing a Clerk session). Cascade-deleted when the user is deleted.
+  // needing a signed-in session). Cascade-deleted when the user is deleted.
   actionTokensAuthorised ActionToken[] @relation("ActionTokensAuthorised")
 
   // ── Notification inbox back-relation ─────────────────────────────
@@ -578,6 +574,16 @@ model User {
   // ── Login / activity insights ────────────────────────────────────
   lastLoginAt    DateTime?
   loginEvents    LoginEvent[]
+
+  // ── Self-hosted auth ─────────────────────────────────────────────
+  /// Consecutive failed logins. The throttler alone is not enough: it is
+  /// in-memory and every `pm2 reload` resets it, so a deploy silently hands
+  /// an attacker a fresh budget. This counter survives.
+  failedLoginCount   Int                 @default(0)
+  /// Set when failedLoginCount trips the limit. Login refuses until it passes.
+  lockedUntil        DateTime?
+  sessions           Session[]
+  diditVerifications DiditVerification[]
 
   // ── Multi-item orders (Phase 8b) ─────────────────────────────────
   orders Order[] @relation("BuyerOrders")
@@ -2192,12 +2198,11 @@ model AdminUser {
   role         AdminRole @default(ADMIN)
   firstName    String?
   lastName     String?
-  // Optional link to the Clerk user record (mirrored into our User
-  // table). When set, outbound alerts (SMS + email) are pulled from
-  // User.phone / User.email so we never duplicate contact info between
-  // tables. Nullable so the seed superadmin (and any legacy admin
-  // created before Clerk-linkage) keeps working with email+password.
-  clerkId      String?   @unique
+  // Optional link to the member record. When set, outbound alerts (SMS +
+  // email) are pulled from User.phone / User.email so we never duplicate
+  // contact info between tables. Nullable so the seed superadmin keeps
+  // working with email+password alone.
+  userId       String?   @unique
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
@@ -2272,7 +2277,7 @@ model AdminAlert {
 //   - /admin/trust-safety queue (grouped by user, with sample text)
 //   - repeat-offender detection (≥N rejections in window → ban candidate)
 //
-// Stored even when we don't know the user (e.g. failed clerkId lookup)
+// Stored even when we don't know the user (e.g. failed user lookup)
 // — userId nullable, sampleText capped at 200 chars to avoid storing
 // the whole flagged note when a buyer pastes a long block.
 //
@@ -2317,7 +2322,7 @@ model Message {
   id              String      @id @default(cuid())
   transactionId   String
   transaction     Transaction @relation(fields: [transactionId], references: [id])
-  senderClerkId   String
+  senderId        String
   content         String
   originalContent String? // populated when content was auto-stripped by moderation
   wasModerated    Boolean     @default(false)
@@ -3602,15 +3607,15 @@ model SupportTicket {
 }
 
 model SupportTicketReply {
-  id            String        @id @default(cuid())
-  ticketId      String
-  ticket        SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  body          String
+  id        String        @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  body      String
   // true = written by an admin; false = written by the ticket's user.
-  fromAdmin     Boolean       @default(false)
-  // Who wrote it — clerkId for a user reply, AdminUser.id for an admin reply.
-  authorClerkId String?
-  adminId       String?
+  fromAdmin Boolean       @default(false)
+  // Who wrote it — User.id for a user reply, AdminUser.id for an admin reply.
+  authorId  String?
+  adminId   String?
 
   createdAt DateTime @default(now())
 
@@ -3955,13 +3960,12 @@ model Swap {
 // buffered ActivityService (never in a request transaction). Rolled up
 // nightly into DailyUserStats / HourlyPlatformStats and pruned after 12
 // months (privacy policy §9). userId is the resolved User.id when cheaply
-// known; clerkId/deviceId hold the raw identity for hot read paths where a
+// known; deviceId holds the raw identity for hot read paths where a
 // lookup would be wasteful (resolved in the rollup). No FK on userId so the
 // append path stays constraint-free and can store pre-resolution rows.
 model UserEvent {
   id          String   @id @default(cuid())
   userId      String?
-  clerkId     String?
   deviceId    String?
   sessionId   String?
   // listing_view | search | offer_placed | bid_placed | wishlist_add |
@@ -3978,22 +3982,71 @@ model UserEvent {
   @@index([createdAt])
   @@index([userId, createdAt])
   @@index([eventType, createdAt])
-  @@index([clerkId, createdAt])
 }
 
-// One row per Clerk login session. clerkSessionId is unique so a later
-// session.ended/removed webhook can find + close the row and compute
-// session length.
-model LoginEvent {
-  id             String    @id @default(cuid())
+// ─── Self-hosted auth ──────────────────────────────────────────────────────
+//
+// One row per signed-in device. The refresh token itself is NEVER stored —
+// only its sha256 — so a database leak cannot mint a session, and a stolen
+// refresh token can be recognised by its hash and killed.
+//
+// Refresh tokens ROTATE on every use. If a hash that has already been rotated
+// away comes back, that is a replay: the token was copied, and the honest
+// response is to revoke the whole row rather than guess which holder is real.
+model Session {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// sha256 of the current refresh token. Unique so a replay collides.
+  refreshHash String    @unique
+  userAgent   String?
+  ip          String?
+  createdAt   DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  expiresAt   DateTime
+  /// Set on sign-out, password change, or detected replay. A revoked row is
+  /// kept rather than deleted so "signed out from where" stays answerable.
+  revokedAt   DateTime?
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+// One Didit verification session. The KYC verdict arrives asynchronously by
+// webhook, so unlike the synchronous flow this replaced there has to be
+// somewhere for the provider's session id to live between creating it and
+// hearing back. `status` holds DIDIT's vocabulary verbatim — mapping it to
+// our KycStatus is the service's job, and storing the raw value is what lets
+// an unrecognised status be diagnosed instead of silently swallowed.
+model DiditVerification {
+  id             String   @id @default(cuid())
   userId         String
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clerkSessionId String    @unique
-  startedAt      DateTime
-  lastActiveAt   DateTime?
-  endedAt        DateTime?
-  endReason      String?
-  createdAt      DateTime  @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  diditSessionId String   @unique
+  workflowId     String
+  status         String   @db.VarChar(32)
+  /// The full decision payload, kept so the admin dossier can re-render the
+  /// reasoning without calling Didit again.
+  decision       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+// One row per member login session, mirroring Session for analytics.
+// sessionId is unique so sign-out / expiry can find + close the row and
+// compute session length.
+model LoginEvent {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId    String    @unique
+  startedAt    DateTime
+  lastActiveAt DateTime?
+  endedAt      DateTime?
+  endReason    String?
+  createdAt    DateTime  @default(now())
 
   @@index([userId, startedAt])
 }
@@ -4476,12 +4529,12 @@ model Motivation {
 
   /// The quarry photograph for this application's cartridge page, if it has
   /// one. Drawn during generation, read on every download. See QuarryPlate.
-  quarryPlate QuarryPlate?
-  documentVersion       Int     @default(0)
+  quarryPlate     QuarryPlate?
+  documentVersion Int          @default(0)
   // Versions of the attorney-reviewed PDF skeleton and disclaimer, stamped at
   // generation so documents produced under a reviewed version can be told
   // apart from ones produced after a template change.
-  templateVersion       String? @db.VarChar(40)
+  templateVersion String?      @db.VarChar(40)
 
   // ── Which template the applicant picked ────────────────────────────
   //
@@ -5067,7 +5120,7 @@ model AccountClosure {
   user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   closedAt        DateTime @default(now())
-  /// 'MEMBER' | 'ADMIN' | 'CLERK_WEBHOOK'
+  /// 'MEMBER' | 'ADMIN'
   closedBy        String   @db.VarChar(16)
   /// AdminUser.id where closedBy = 'ADMIN'. Null for a self-service close.
   closedByAdminId String?
@@ -5881,7 +5934,7 @@ model BenchCipDimension {
 /// is declared on both sides, with Prisma's default constraint names, so the
 /// schema and the migration agree and `migrate diff` proposes nothing.
 model UserBench {
-  /// User.id (Clerk-backed).
+  /// User.id.
   userId        String   @id
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   powderIds     String[]

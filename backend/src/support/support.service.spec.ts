@@ -31,7 +31,7 @@ function make(opts: { userId?: string; ticketUserId?: string; ticketStatus?: str
 describe('SupportService', () => {
   it('creates a ticket + raises an admin alert', async () => {
     const { service, prisma } = make();
-    await service.createTicket('clerk', { subject: 'Payment issue', body: 'It failed', category: 'payment' });
+    await service.createTicket('U1', { subject: 'Payment issue', body: 'It failed', category: 'payment' });
     expect(prisma.supportTicket.create).toHaveBeenCalled();
     const data = prisma.supportTicket.create.mock.calls[0][0].data;
     expect(data.category).toBe('payment');
@@ -44,19 +44,19 @@ describe('SupportService', () => {
   it('rejects a too-short subject', async () => {
     const { service } = make();
     await expect(
-      service.createTicket('clerk', { subject: 'hi', body: 'long enough body' }),
+      service.createTicket('U1', { subject: 'hi', body: 'long enough body' }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('defaults an unknown category to general', async () => {
     const { service, prisma } = make();
-    await service.createTicket('clerk', { subject: 'Subject here', body: 'body here', category: 'nonsense' });
+    await service.createTicket('U1', { subject: 'Subject here', body: 'body here', category: 'nonsense' });
     expect(prisma.supportTicket.create.mock.calls[0][0].data.category).toBe('general');
   });
 
   it('user reply re-opens the ticket', async () => {
     const { service, prisma } = make({ ticketStatus: 'AWAITING_USER' });
-    await service.replyAsUser('clerk', 'T1', 'still broken');
+    await service.replyAsUser('U1', 'T1', 'still broken');
     expect(prisma.supportTicketReply.create).toHaveBeenCalled();
     expect(prisma.supportTicket.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: 'OPEN' } }),
@@ -64,8 +64,11 @@ describe('SupportService', () => {
   });
 
   it('blocks a reply from a non-owner', async () => {
+    // ⚠️ The CALLER is U2 and the ticket belongs to U1. The caller id used to
+    // be a Clerk subject the service translated; it is User.id directly now,
+    // so this is the whole of the ownership check.
     const { service } = make({ userId: 'U2', ticketUserId: 'U1' });
-    await expect(service.replyAsUser('clerk', 'T1', 'hi')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.replyAsUser('U2', 'T1', 'hi')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('admin reply sets AWAITING_USER + notifies the user', async () => {

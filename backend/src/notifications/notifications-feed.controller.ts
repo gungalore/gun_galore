@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { NotificationCategory, Prisma } from '@prisma/client';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { moduleForNotification } from './notification-module';
 import { PrismaService } from '../prisma/prisma.service';
@@ -21,7 +21,7 @@ import { DismissNotificationsDto } from './dto/dismiss.dto';
 // across multiple tabs / devices so users can easily exceed the
 // default global throttle).
 @Controller('notifications/me')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 @Throttle({ default: { limit: 120, ttl: 60_000 } })
 export class NotificationsFeedController {
   constructor(private readonly prisma: PrismaService) {}
@@ -29,11 +29,11 @@ export class NotificationsFeedController {
   // GET /notifications/me/active-count
   // Cheap COUNT query per category. Polled by the bell badge in
   // bottom-tab-bar.tsx every 60s. Returns 0s for unsigned-in users
-  // (defensive — ClerkGuard already 401s those).
+  // (defensive — AuthGuard already 401s those).
   @Get('active-count')
-  async activeCount(@CurrentUser() clerkId: string) {
+  async activeCount(@CurrentUser() userId: string) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) return { buyer: 0, seller: 0, account: 0, total: 0 };
@@ -65,10 +65,10 @@ export class NotificationsFeedController {
   // menu hrefs (e.g. '/my/offers'); only modules with a non-zero count appear.
   @Get('module-counts')
   async moduleCounts(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
   ): Promise<Record<string, number>> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) return {};
@@ -91,11 +91,11 @@ export class NotificationsFeedController {
   // Paginated descending-by-createdAt feed for the inbox page.
   @Get()
   async list(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Query() q: NotificationsFeedQueryDto,
   ) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) return [];
@@ -124,11 +124,11 @@ export class NotificationsFeedController {
   // resolveByEntity). The where-clause does the safety filter.
   @Post('dismiss')
   async dismiss(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() dto: DismissNotificationsDto,
   ) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) return { dismissed: 0 };

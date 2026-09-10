@@ -1,6 +1,6 @@
 import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { NewsService } from './news.service';
 import type { NewsIncident } from './news.types';
 
@@ -14,14 +14,14 @@ const NoStore = () => Header('Cache-Control', 'private, no-store');
 /**
  * Local crime reporting — /api/news.
  *
- * 🚨 ClerkGuard, READS INCLUDED, and the same reasoning as crime-stats: the
+ * 🚨 AuthGuard, READS INCLUDED, and the same reasoning as crime-stats: the
  * clippings themselves are public journalism, but the QUESTION is not. "What
  * crime happened near this police station" asked anonymously is a free
  * geocoding proxy on our Google key and a free Google News proxy on top of
  * it, and this is a members-only feature of the motivation builder.
  */
 @Controller('news')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class NewsController {
   constructor(private readonly news: NewsService) {}
 

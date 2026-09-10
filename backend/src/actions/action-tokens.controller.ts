@@ -40,8 +40,8 @@ import { sellerBreakdown } from '../payments/fee-presentation';
  *
  * Each POST handler:
  *   1. Resolves token + validates purpose/targetType (via ActionTokensService.runAction)
- *   2. Looks up the authorisedUserId → clerkId (so we can call the
- *      existing ClerkGuard-style services without modifying them)
+ *   2. Looks up the authorisedUserId → userId (so we can call the
+ *      existing AuthGuard-style services without modifying them)
  *   3. Calls the underlying service method
  *   4. Marks the token consumed
  *
@@ -76,7 +76,7 @@ export class ActionTokensController {
   async resolve(@Param('token') token: string) {
     const resolved = await this.tokens.resolve(token);
 
-    // Fetch the user (need username for greeting + clerkId for downstream)
+    // Fetch the user (need username for greeting + userId for downstream)
     const user = await this.prisma.user.findUnique({
       where: { id: resolved.authorisedUserId },
       select: {
@@ -126,8 +126,8 @@ export class ActionTokensController {
       'TRANSACTION_ACCEPT',
       'transaction',
       async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.transactions.acceptTransaction(targetId, clerkId);
+        const userId = await this.requireUser(authorisedUserId);
+        return this.transactions.acceptTransaction(targetId, userId);
       },
       reqIp(req),
       reqUa(req),
@@ -189,8 +189,8 @@ export class ActionTokensController {
       'TRANSACTION_ACCEPT',
       'transaction',
       async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.transactions.rejectTransaction(targetId, clerkId, reason);
+        const userId = await this.requireUser(authorisedUserId);
+        return this.transactions.rejectTransaction(targetId, userId, reason);
       },
       reqIp(req),
       reqUa(req),
@@ -224,8 +224,8 @@ export class ActionTokensController {
       'DISPATCH',
       'transaction',
       async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.transactions.confirmDispatch(targetId, clerkId, {
+        const userId = await this.requireUser(authorisedUserId);
+        return this.transactions.confirmDispatch(targetId, userId, {
           trackingReference: tracking,
           pudoDropoffLockerId: locker,
         });
@@ -245,8 +245,8 @@ export class ActionTokensController {
       'OFFER_DECISION',
       'offer',
       async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.offers.accept(clerkId, targetId);
+        const userId = await this.requireUser(authorisedUserId);
+        return this.offers.accept(userId, targetId);
       },
       reqIp(req),
       reqUa(req),
@@ -265,8 +265,8 @@ export class ActionTokensController {
       'OFFER_DECISION',
       'offer',
       async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.offers.reject(clerkId, targetId, body?.reason, body?.note);
+        const userId = await this.requireUser(authorisedUserId);
+        return this.offers.reject(userId, targetId, body?.reason, body?.note);
       },
       reqIp(req),
       reqUa(req),
@@ -289,8 +289,8 @@ export class ActionTokensController {
       'OFFER_DECISION',
       'offer',
       async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.offers.counter(clerkId, targetId, {
+        const userId = await this.requireUser(authorisedUserId);
+        return this.offers.counter(userId, targetId, {
           counterAmount: Math.round(counterAmount),
           sellerNote: body?.note?.toString().slice(0, 500),
         });
@@ -308,8 +308,8 @@ export class ActionTokensController {
       'COUNTER_DECISION',
       'offer',
       async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.offers.acceptCounter(clerkId, targetId);
+        const userId = await this.requireUser(authorisedUserId);
+        return this.offers.acceptCounter(userId, targetId);
       },
       reqIp(req),
       reqUa(req),
@@ -324,8 +324,8 @@ export class ActionTokensController {
       'COUNTER_DECISION',
       'offer',
       async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.offers.rejectCounter(clerkId, targetId);
+        const userId = await this.requireUser(authorisedUserId);
+        return this.offers.rejectCounter(userId, targetId);
       },
       reqIp(req),
       reqUa(req),
@@ -351,8 +351,8 @@ export class ActionTokensController {
       'AUCTION_BID',
       'listing',
       async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.auctions.placeBid(clerkId, targetId, {
+        const userId = await this.requireUser(authorisedUserId);
+        return this.auctions.placeBid(userId, targetId, {
           maxAmount: Math.round(maxAmount),
           isOneShot,
         });
@@ -364,14 +364,21 @@ export class ActionTokensController {
 
   // ─── Internal helpers ────────────────────────────────────────────
 
-  /** Look up a User.id → clerkId. Throws if user not found. */
-  private async clerkIdFor(userId: string): Promise<string> {
+  /**
+   * Confirm the token's authorised user still exists and hand the id back.
+   *
+   * This used to translate a User.id into the Clerk subject the services
+   * wanted. They want User.id now, so all that is left is the existence check
+   * — worth keeping, because a token outliving its user should 404 rather
+   * than fail deeper in a payload builder.
+   */
+  private async requireUser(userId: string): Promise<string> {
     const u = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { clerkId: true },
+      select: { id: true },
     });
     if (!u) throw new NotFoundException('User not found');
-    return u.clerkId;
+    return u.id;
   }
 
   // ─── Payload builders for each purpose ───────────────────────────

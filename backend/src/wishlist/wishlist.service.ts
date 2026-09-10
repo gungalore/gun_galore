@@ -34,20 +34,29 @@ export class WishlistService {
   /** Resolve the platform user from the Clerk ID — every endpoint
    * needs this, so DRY it out. Throws if the user isn't provisioned
    * yet (very rare — would only hit during a Clerk webhook race). */
-  private async userIdFromClerk(clerkId: string): Promise<string> {
+  /**
+   * Assert the caller's User row still exists, so a request carrying a valid
+   * token for a deleted account gets a clean 404 rather than a foreign-key
+   * error further down.
+   *
+   * This used to translate a Clerk subject into a User.id. There is only one
+   * identifier now, so the translation is gone and the existence check is all
+   * that remains — which is why it returns nothing and callers no longer
+   * rebind the id.
+   */
+  private async assertUserExists(userId: string): Promise<void> {
     const u = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!u) throw new NotFoundException('User not found');
-    return u.id;
   }
 
   /** Add a listing to the user's wishlist. Returns { added: boolean }
    * so the client knows whether this was a new save (for analytics /
    * the optimistic-toggle correctness check). */
-  async add(clerkId: string, listingId: string): Promise<{ added: boolean }> {
-    const userId = await this.userIdFromClerk(clerkId);
+  async add(userId: string, listingId: string): Promise<{ added: boolean }> {
+    await this.assertUserExists(userId);
 
     // Don't let a user save their own listing. It's a wishlist —
     // the seller already owns it; saving it is meaningless and would
@@ -83,10 +92,10 @@ export class WishlistService {
 
   /** Remove a listing from the user's wishlist. Idempotent. */
   async remove(
-    clerkId: string,
+    userId: string,
     listingId: string,
   ): Promise<{ removed: boolean }> {
-    const userId = await this.userIdFromClerk(clerkId);
+    await this.assertUserExists(userId);
     const deleted = await this.prisma.watchedListing
       .delete({
         where: { userId_listingId: { userId, listingId } },
@@ -100,8 +109,8 @@ export class WishlistService {
    * a browse grid in one round-trip. Capped at 1000 ids to avoid
    * pathological response sizes — users with that many saves are an
    * extreme edge case we can handle if it ever comes up. */
-  async listIds(clerkId: string): Promise<string[]> {
-    const userId = await this.userIdFromClerk(clerkId);
+  async listIds(userId: string): Promise<string[]> {
+    await this.assertUserExists(userId);
     const rows = await this.prisma.watchedListing.findMany({
       where: { userId },
       select: { listingId: true },
@@ -116,8 +125,8 @@ export class WishlistService {
    * unchanged. Includes ALL statuses (incl. SOLD / REMOVED) so the
    * /wishlist page can render greyed-out tombstones for removed
    * listings instead of silently dropping them. */
-  async list(clerkId: string) {
-    const userId = await this.userIdFromClerk(clerkId);
+  async list(userId: string) {
+    await this.assertUserExists(userId);
     const rows = await this.prisma.watchedListing.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },

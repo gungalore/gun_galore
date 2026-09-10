@@ -26,7 +26,7 @@ export class RatingsService {
     private readonly audit: AdminAuditService,
   ) {}
 
-  async create(transactionId: string, buyerClerkId: string, dto: CreateRatingDto) {
+  async create(transactionId: string, buyerId: string, dto: CreateRatingDto) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: { buyer: true, seller: true, rating: true },
@@ -37,7 +37,7 @@ export class RatingsService {
     // path. Proper two-way swap ratings are a future feature.
     if (tx.swapId)
       throw new BadRequestException('Swap ratings are not supported yet.');
-    if (tx.buyer.clerkId !== buyerClerkId) throw new ForbiddenException('Only the buyer can rate');
+    if (tx.buyer.id !== buyerId) throw new ForbiddenException('Only the buyer can rate');
     if (tx.rating) throw new ConflictException('Transaction already has a rating');
     if (tx.paymentStatus !== 'RELEASED')
       throw new BadRequestException('Can only rate after payment has been released');
@@ -49,7 +49,7 @@ export class RatingsService {
       const check = await this.contactFilter.check(
         dto.comment,
         'rating-comment',
-        buyerClerkId,
+        buyerId,
       );
       if (!check.allowed) {
         throw new BadRequestException(check.reason);
@@ -91,7 +91,7 @@ export class RatingsService {
    */
   async update(
     transactionId: string,
-    buyerClerkId: string,
+    buyerId: string,
     dto: CreateRatingDto,
   ) {
     const tx = await this.prisma.transaction.findUnique({
@@ -99,7 +99,7 @@ export class RatingsService {
       include: { buyer: true, rating: true },
     });
     if (!tx?.rating) throw new NotFoundException('Rating not found');
-    if (tx.buyer.clerkId !== buyerClerkId)
+    if (tx.buyer.id !== buyerId)
       throw new ForbiddenException('Only the buyer can edit their rating');
     if (tx.rating.sellerRespondedAt)
       throw new BadRequestException(
@@ -115,7 +115,7 @@ export class RatingsService {
       const check = await this.contactFilter.check(
         dto.comment,
         'rating-comment',
-        buyerClerkId,
+        buyerId,
       );
       if (!check.allowed) throw new BadRequestException(check.reason);
     }
@@ -131,7 +131,7 @@ export class RatingsService {
    * Seller's single public reply to a review. Once, contact-filtered,
    * shown under the review on the public profile.
    */
-  async respond(ratingId: string, sellerClerkId: string, response: string) {
+  async respond(ratingId: string, sellerId: string, response: string) {
     const trimmed = (response ?? '').trim();
     if (trimmed.length < 3 || trimmed.length > 500)
       throw new BadRequestException('Reply must be 3–500 characters.');
@@ -140,14 +140,14 @@ export class RatingsService {
       include: { rated: true },
     });
     if (!rating) throw new NotFoundException('Rating not found');
-    if (rating.rated.clerkId !== sellerClerkId)
+    if (rating.rated.id !== sellerId)
       throw new ForbiddenException('Only the rated seller can reply');
     if (rating.sellerRespondedAt)
       throw new ConflictException('You have already replied to this review');
     const check = await this.contactFilter.check(
       trimmed,
       'rating-response',
-      sellerClerkId,
+      sellerId,
     );
     if (!check.allowed) throw new BadRequestException(check.reason);
     return this.prisma.rating.update({
@@ -208,16 +208,16 @@ export class RatingsService {
     return recent.length;
   }
 
-  async findForSeller(sellerClerkId: string, clerkId?: string) {
+  async findForSeller(sellerId: string, userId?: string) {
     const user = await this.prisma.user.findUnique({
-      // Closed accounts have no public review page. GET /ratings/seller/:clerkId
+      // Closed accounts have no public review page. GET /ratings/seller/:userId
       // is a public route in its own right, so it is NOT covered by the seller
-      // profile 404 (sellers-public.controller.ts) — /sellers/[clerkId] calls
+      // profile 404 (sellers-public.controller.ts) — /sellers/[userId] calls
       // both and notFound()s on either, but anyone holding the old link can
       // still hit this one directly. Each row here carries the reviewer's
       // handle and the LISTING TITLE, so serving it after closure republishes
       // exactly what the closure was meant to take down.
-      where: { clerkId: sellerClerkId, accountClosedAt: null },
+      where: { id: sellerId, accountClosedAt: null },
     });
     if (!user) throw new NotFoundException('User not found');
 
@@ -236,7 +236,7 @@ export class RatingsService {
         // a firearm model name on a public page is the thing we are fixing.
         // Rating.transaction is a REQUIRED relation, so every rating has one —
         // no null branch needed.
-        ...(clerkId
+        ...(userId
           ? {}
           : { transaction: { listing: { publicVisible: true } } }),
       },
@@ -250,8 +250,8 @@ export class RatingsService {
     });
   }
 
-  async getTrustDashboard(clerkId: string) {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  async getTrustDashboard(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
     // Read-only — the cached score is refreshed on rating create/edit/

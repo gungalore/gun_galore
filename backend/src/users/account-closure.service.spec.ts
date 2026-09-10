@@ -10,7 +10,7 @@ import { AccountClosureService } from './account-closure.service';
 
 const CLEAN = {
   id: 'u1',
-  clerkId: 'clerk_1',
+  userId: 'clerk_1',
   username: 'turbosnail',
   email: 'a@b.com',
   phone: '0743039999',
@@ -151,7 +151,13 @@ describe('the closure itself', () => {
     const { svc, updated } = build();
     await svc.close('u1', { closedBy: 'MEMBER', reason: 'NOT_USING' });
     const d = updated[0];
-    expect(d.username).toBeNull();
+    // ⚠️ RENAMED, NOT NULLED. username is non-null now — it is the only name
+    // other members ever see — so a closed row takes an unclaimable name of
+    // its own. The point of the test is unchanged: the ORIGINAL name has to
+    // go back into the namespace, or the member cannot come back.
+    expect(d.username).not.toBe('seller-gerhard');
+    expect(String(d.username)).toMatch(/^closed-/);
+    expect(String(d.usernameLower)).toBe(String(d.username).toLowerCase());
     expect(d.phone).toBeNull();
     expect(d.phoneVerified).toBe(false);
     // ⚠️ .invalid is reserved by RFC 6761 and can never resolve.
@@ -211,10 +217,10 @@ describe('the closure itself', () => {
   });
 
   it('is idempotent — a second call changes nothing', async () => {
-    // The Clerk webhook can arrive twice and a member can double-submit.
+    // A member can double-submit, and an admin can race them.
     const { svc, created } = build({ user: { accountClosedAt: new Date() } });
     const r = await svc.close('u1', {
-      closedBy: 'CLERK_WEBHOOK',
+      closedBy: 'MEMBER',
       reason: 'OTHER',
       force: true,
     });

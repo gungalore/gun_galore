@@ -13,18 +13,18 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ComplaintsService } from './complaints.service';
 
 @Controller('complaints')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class ComplaintsController {
   constructor(private readonly complaints: ComplaintsService) {}
 
   @Post()
   create(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body()
     body: {
       category: string;
@@ -33,12 +33,12 @@ export class ComplaintsController {
       transactionId?: string | null;
     },
   ) {
-    return this.complaints.create(clerkId, body);
+    return this.complaints.create(userId, body);
   }
 
   @Get('mine')
-  mine(@CurrentUser() clerkId: string) {
-    return this.complaints.listMine(clerkId);
+  mine(@CurrentUser() userId: string) {
+    return this.complaints.listMine(userId);
   }
 
   // Attach an evidence photo. Same size/type guard as listing images
@@ -46,7 +46,7 @@ export class ComplaintsController {
   @Post(':id/photos')
   @UseInterceptors(FileInterceptor('photo', { storage: memoryStorage() }))
   addPhoto(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @UploadedFile(
       new ParseFilePipe({
@@ -58,6 +58,6 @@ export class ComplaintsController {
     )
     file: { buffer: Buffer },
   ) {
-    return this.complaints.addPhoto(clerkId, id, file);
+    return this.complaints.addPhoto(userId, id, file);
   }
 }

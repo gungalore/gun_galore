@@ -89,9 +89,9 @@ export class VaultConsentService {
     private readonly settings: SettingsService,
   ) {}
 
-  private async requireUser(clerkId: string) {
+  private async requireUser(userId: string) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: SELECT,
     });
     if (!user) throw new NotFoundException('User not found');
@@ -123,8 +123,8 @@ export class VaultConsentService {
     return this.settings.get(FLAGS.motivationRetentionDays);
   }
 
-  async get(clerkId: string): Promise<VaultConsentView> {
-    return this.view(await this.retention(), await this.requireUser(clerkId));
+  async get(userId: string): Promise<VaultConsentView> {
+    return this.view(await this.retention(), await this.requireUser(userId));
   }
 
   /**
@@ -135,8 +135,8 @@ export class VaultConsentService {
    * return on every single visit — which is how a consent prompt turns into
    * something people click through without reading.
    */
-  async answer(clerkId: string, agreed: boolean): Promise<VaultConsentView> {
-    const user = await this.requireUser(clerkId);
+  async answer(userId: string, agreed: boolean): Promise<VaultConsentView> {
+    const user = await this.requireUser(userId);
     const now = new Date();
     const updated = await this.prisma.user.update({
       where: { id: user.id },
@@ -171,8 +171,8 @@ export class VaultConsentService {
    * is a different fact from "never agreed", and a nulled timestamp cannot
    * tell them apart.
    */
-  async withdraw(clerkId: string): Promise<VaultConsentView> {
-    const user = await this.requireUser(clerkId);
+  async withdraw(userId: string): Promise<VaultConsentView> {
+    const user = await this.requireUser(userId);
     const updated = await this.prisma.user.update({
       where: { id: user.id },
       data: { documentVaultConsentWithdrawnAt: new Date() },

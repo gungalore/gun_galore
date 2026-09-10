@@ -349,9 +349,9 @@ export class MotivationGenerationService {
    * Split out so the expensive half can run OFF the request. Nothing in here
    * calls a model or costs money, so it is safe to run on every attempt.
    */
-  private async prepareGeneration(clerkId: string, id: string) {
+  private async prepareGeneration(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -1627,8 +1627,8 @@ export class MotivationGenerationService {
    * anything server-side that is not answering an HTTP request. NOT the route:
    * see startGeneration and the timing note on runGeneration.
    */
-  async generate(clerkId: string, id: string) {
-    const prepared = await this.prepareGeneration(clerkId, id);
+  async generate(userId: string, id: string) {
+    const prepared = await this.prepareGeneration(userId, id);
     return this.runGeneration(prepared);
   }
 
@@ -1645,8 +1645,8 @@ export class MotivationGenerationService {
    * indistinguishable, so this uses the same `findFirst` + `userId` shape as
    * findOne(), never an if-statement after the fetch.
    */
-  async precinctFor(clerkId: string, id: string) {
-    const user = await this.shared.requireUser(clerkId);
+  async precinctFor(userId: string, id: string) {
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { licenceType: true, answersEncrypted: true },
@@ -1690,10 +1690,10 @@ export class MotivationGenerationService {
    * indistinguishable.
    */
   async incidentsFor(
-    clerkId: string,
+    userId: string,
     id: string,
   ): Promise<{ station: string | null; incidents: NewsIncident[] }> {
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { licenceType: true, answersEncrypted: true },
@@ -1763,7 +1763,7 @@ export class MotivationGenerationService {
    * numbers.
    */
   async areasFor(
-    clerkId: string,
+    userId: string,
     id: string,
   ): Promise<{
     station: string | null;
@@ -1788,7 +1788,7 @@ export class MotivationGenerationService {
       reason?: string;
     })[];
   }> {
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { licenceType: true, answersEncrypted: true },
@@ -2305,12 +2305,12 @@ export class MotivationGenerationService {
    * account for. See clippingIdsFor for why the cap is spent area by area.
    */
   async saveAreasFor(
-    clerkId: string,
+    userId: string,
     id: string,
     ticked: TravelledArea[],
   ): Promise<{ areas: number; clippings: number }> {
-    const { areas } = await this.areasFor(clerkId, id);
-    const user = await this.shared.requireUser(clerkId);
+    const { areas } = await this.areasFor(userId, id);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { id: true, licenceType: true, answersEncrypted: true },
@@ -2351,8 +2351,8 @@ export class MotivationGenerationService {
    * rethrows; there is no caller left to tell, and the applicant learns the
    * outcome from the row's status.
    */
-  async startGeneration(clerkId: string, id: string) {
-    const prepared = await this.prepareGeneration(clerkId, id);
+  async startGeneration(userId: string, id: string) {
+    const prepared = await this.prepareGeneration(userId, id);
     void this.runGeneration(prepared).catch((err) => {
       this.logger.error(
         `Motivation ${prepared.row.id}: background generation failed — ${

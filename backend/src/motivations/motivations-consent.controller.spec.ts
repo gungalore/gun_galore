@@ -52,7 +52,7 @@ describe('POST :id/seller-consent', () => {
     expect(invite).toHaveBeenCalledWith(
       expect.objectContaining({
         motivationId: 'mo-1',
-        applicantClerkId: 'clerk_1',
+        applicantId: 'clerk_1',
         applicantName: 'Johan Pretorius',
         name: 'Pieter Botha',
         phone: '0821234567',

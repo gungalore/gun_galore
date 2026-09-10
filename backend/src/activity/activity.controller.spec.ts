@@ -161,7 +161,7 @@ describe('the limits that stop it being a firehose', () => {
     const { controller, record } = build();
     controller.ingest('clerk_9', { events: [{ eventType: 'page_view' }] });
     controller.ingest(undefined, { events: [{ eventType: 'page_view' }] });
-    expect(record.mock.calls[0][0].actor.clerkId).toBe('clerk_9');
-    expect(record.mock.calls[1][0].actor.clerkId).toBeNull();
+    expect(record.mock.calls[0][0].actor.userId).toBe('clerk_9');
+    expect(record.mock.calls[1][0].actor.userId).toBeNull();
   });
 });

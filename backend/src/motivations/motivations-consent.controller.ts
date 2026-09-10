@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import {
   ConsentSectionF,
@@ -39,7 +39,7 @@ import { cardRowsFor } from './motivation-seller-consent.service';
 // ────────────────────────────────────────────────────────────────────
 
 @Controller('motivations')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class MotivationsConsentController {
   constructor(
     private readonly consent: MotivationSellerConsentService,
@@ -49,7 +49,7 @@ export class MotivationsConsentController {
   @Post(':id/seller-consent')
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
   async invite(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Req() req: Request,
     @Body()
@@ -93,7 +93,7 @@ export class MotivationsConsentController {
       'https://alloutdoor.co.za';
     return this.consent.invite({
       motivationId: id,
-      applicantClerkId: clerkId,
+      applicantId: userId,
       applicantName: (body.applicantName ?? '').trim() || 'A buyer',
       name: body.name ?? '',
       phone: body.phone ?? '',
@@ -130,13 +130,13 @@ export class MotivationsConsentController {
    */
   @Delete(':id/seller-consent')
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
-  deleteConsent(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.consent.deleteFor(clerkId, id);
+  deleteConsent(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.consent.deleteFor(userId, id);
   }
 
   @Get(':id/seller-consent')
-  async status(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.consent.statusFor(clerkId, id);
+  async status(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.consent.statusFor(userId, id);
   }
 }
 

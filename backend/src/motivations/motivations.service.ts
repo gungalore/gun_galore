@@ -119,9 +119,9 @@ export class MotivationsService {
   ) {}
 
   /** Own list. Metadata only — nothing is decrypted here. */
-  async listMine(clerkId: string) {
+  async listMine(userId: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const rows = await this.prisma.motivation.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
@@ -152,7 +152,7 @@ export class MotivationsService {
    * something a human can read.
    */
   async create(
-    clerkId: string,
+    userId: string,
     licenceType: MotivationLicenceType,
     applicationRef = '',
     /**
@@ -167,7 +167,7 @@ export class MotivationsService {
     seed: Record<string, string> = {},
   ) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     if (!Object.values(MotivationLicenceType).includes(licenceType)) {
       throw new BadRequestException('Please choose a licence type.');
@@ -497,9 +497,9 @@ export class MotivationsService {
    * fetch: a wrong id and someone else's id must be indistinguishable, and a
    * 404 leaks less than a 403.
    */
-  async findOne(clerkId: string, id: string) {
+  async findOne(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -622,12 +622,12 @@ export class MotivationsService {
    * money or state transitions are involved, which is why those use CAS.
    */
   async saveAnswers(
-    clerkId: string,
+    userId: string,
     id: string,
     patch: Record<string, unknown>,
   ) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -962,9 +962,9 @@ export class MotivationsService {
   }
 
   /** Walk away without deleting — keeps the audit trail, frees nothing. */
-  async abandon(clerkId: string, id: string) {
+  async abandon(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     // Stamped HERE as well as on completion. retentionPurgeAt used to be
     // written on exactly one branch — the transition to COMPLETED — so an
     // abandoned draft never got a date and its encrypted ID scans would have
@@ -998,9 +998,9 @@ export class MotivationsService {
    * deleting the rows first would orphan the bytes with nothing left pointing
    * at them — undeletable except by hand.
    */
-  async erase(clerkId: string, id: string) {
+  async erase(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -1031,13 +1031,13 @@ export class MotivationsService {
   }
 
   /** @see MotivationDocumentsService.library */
-  library(clerkId: string, id: string) {
-    return this.documents.library(clerkId, id);
+  library(userId: string, id: string) {
+    return this.documents.library(userId, id);
   }
 
   /** @see MotivationDocumentsService.autolink */
-  autolink(clerkId: string, id: string, placeConfirmed = false) {
-    return this.documents.autolink(clerkId, id, placeConfirmed);
+  autolink(userId: string, id: string, placeConfirmed = false) {
+    return this.documents.autolink(userId, id, placeConfirmed);
   }
 
   /**
@@ -1048,9 +1048,9 @@ export class MotivationsService {
    * an id from another member's application simply finds nothing. This resolves
    * the user and hands the ids over; it does not trust them.
    */
-  async keepInCentre(clerkId: string, id: string, uploadIds: string[]) {
+  async keepInCentre(userId: string, id: string, uploadIds: string[]) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     // The motivation must be theirs before we act on ids that name its pages.
     const owns = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -1067,14 +1067,14 @@ export class MotivationsService {
 
   /** @see MotivationDocumentsService.addFromLibrary */
   addFromLibrary(
-    clerkId: string,
+    userId: string,
     id: string,
     source: 'credential' | 'upload',
     sourceId: string,
     placeConfirmed = false,
   ) {
     return this.documents.addFromLibrary(
-      clerkId,
+      userId,
       id,
       source,
       sourceId,
@@ -1083,13 +1083,13 @@ export class MotivationsService {
   }
 
   /** @see MotivationDocumentsService.readingFor */
-  readingFor(clerkId: string, id: string, uploadId: string) {
-    return this.documents.readingFor(clerkId, id, uploadId);
+  readingFor(userId: string, id: string, uploadId: string) {
+    return this.documents.readingFor(userId, id, uploadId);
   }
 
   /** @see MotivationDocumentsService.rereadUpload */
-  rereadUpload(clerkId: string, id: string, uploadId: string) {
-    return this.documents.rereadUpload(clerkId, id, uploadId);
+  rereadUpload(userId: string, id: string, uploadId: string) {
+    return this.documents.rereadUpload(userId, id, uploadId);
   }
 
   // ⚠️ FOUR DELEGATORS STOOD HERE — licenceCentreOffer, useLicenceCentre,
@@ -1100,37 +1100,37 @@ export class MotivationsService {
 
   /** @see MotivationDocumentsService.addUpload */
   addUpload(
-    clerkId: string,
+    userId: string,
     id: string,
     kind: MotivationUploadKind | null,
     file: { buffer: Buffer; mimetype: string },
     opts: { skipExtraction?: boolean } = {},
   ) {
-    return this.documents.addUpload(clerkId, id, kind, file, opts);
+    return this.documents.addUpload(userId, id, kind, file, opts);
   }
 
   /** @see MotivationDocumentsService.applyExtraction */
   applyExtraction(
-    clerkId: string,
+    userId: string,
     id: string,
     accepted: Record<string, unknown>,
   ) {
-    return this.documents.applyExtraction(clerkId, id, accepted);
+    return this.documents.applyExtraction(userId, id, accepted);
   }
 
   /** @see MotivationDocumentsService.listUploads */
-  listUploads(clerkId: string, id: string) {
-    return this.documents.listUploads(clerkId, id);
+  listUploads(userId: string, id: string) {
+    return this.documents.listUploads(userId, id);
   }
 
   /** @see MotivationDocumentsService.readUpload */
-  readUpload(clerkId: string, id: string, uploadId: string) {
-    return this.documents.readUpload(clerkId, id, uploadId);
+  readUpload(userId: string, id: string, uploadId: string) {
+    return this.documents.readUpload(userId, id, uploadId);
   }
 
   /** @see MotivationDocumentsService.removeUpload */
-  removeUpload(clerkId: string, id: string, uploadId: string) {
-    return this.documents.removeUpload(clerkId, id, uploadId);
+  removeUpload(userId: string, id: string, uploadId: string) {
+    return this.documents.removeUpload(userId, id, uploadId);
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -1153,12 +1153,12 @@ export class MotivationsService {
    * are signing this and submitting it as their own.
    */
   async acceptDeclaration(
-    clerkId: string,
+    userId: string,
     id: string,
     testimonialConsent = false,
   ) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const res = await this.prisma.motivation.updateMany({
       where: { id, userId: user.id },
       data: {
@@ -1171,13 +1171,13 @@ export class MotivationsService {
   }
 
   /** @see MotivationGenerationService.generate */
-  generate(clerkId: string, id: string) {
-    return this.generation.generate(clerkId, id);
+  generate(userId: string, id: string) {
+    return this.generation.generate(userId, id);
   }
 
   /** @see MotivationGenerationService.startGeneration */
-  startGeneration(clerkId: string, id: string) {
-    return this.generation.startGeneration(clerkId, id);
+  startGeneration(userId: string, id: string) {
+    return this.generation.startGeneration(userId, id);
   }
 
   /** @see MotivationGenerationService.sweepStuckGenerations */
@@ -1194,9 +1194,9 @@ export class MotivationsService {
    * is the thing you READ, so that a document held back for more detail can
    * be argued with instead of only scored.
    */
-  async draftText(clerkId: string, id: string) {
+  async draftText(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {
@@ -1240,12 +1240,12 @@ export class MotivationsService {
    * document they already paid for.
    */
   async setTemplate(
-    clerkId: string,
+    userId: string,
     id: string,
     choice: { format?: string; colourway?: string; layout?: string },
   ) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -1298,9 +1298,9 @@ export class MotivationsService {
    * for a real name and is stored as null instead, matching what an
    * untouched motivation already looks like.
    */
-  async rename(clerkId: string, id: string, rawLabel: string | undefined) {
+  async rename(userId: string, id: string, rawLabel: string | undefined) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -1320,78 +1320,78 @@ export class MotivationsService {
   }
 
   /** @see MotivationRenderService.renderPdf */
-  renderPdf(clerkId: string, id: string) {
-    return this.render.renderPdf(clerkId, id);
+  renderPdf(userId: string, id: string) {
+    return this.render.renderPdf(userId, id);
   }
 
   /** @see MotivationRenderService.designSample */
   designSample(
-    clerkId: string,
+    userId: string,
     id: string,
     choice: { layout?: string; colourway?: string },
   ) {
-    return this.render.designSample(clerkId, id, choice);
+    return this.render.designSample(userId, id, choice);
   }
 
   /** @see MotivationWitnessesService.listWitnesses */
-  listWitnesses(clerkId: string, id: string) {
-    return this.witnesses.listWitnesses(clerkId, id);
+  listWitnesses(userId: string, id: string) {
+    return this.witnesses.listWitnesses(userId, id);
   }
 
   /** @see MotivationWitnessesService.inviteWitness */
   inviteWitness(
-    clerkId: string,
+    userId: string,
     id: string,
     args: { slot: number; name: string; phone: string },
   ) {
-    return this.witnesses.inviteWitness(clerkId, id, args);
+    return this.witnesses.inviteWitness(userId, id, args);
   }
 
   /** @see MotivationWitnessesService.removeWitness */
-  removeWitness(clerkId: string, id: string, witnessId: string) {
-    return this.witnesses.removeWitness(clerkId, id, witnessId);
+  removeWitness(userId: string, id: string, witnessId: string) {
+    return this.witnesses.removeWitness(userId, id, witnessId);
   }
 
   /** @see MotivationWitnessesService.witnessSignature */
-  witnessSignature(clerkId: string, id: string, witnessId: string) {
-    return this.witnesses.witnessSignature(clerkId, id, witnessId);
+  witnessSignature(userId: string, id: string, witnessId: string) {
+    return this.witnesses.witnessSignature(userId, id, witnessId);
   }
 
   /** @see MotivationRenderService.coverPhoto */
-  coverPhoto(clerkId: string, id: string) {
-    return this.render.coverPhoto(clerkId, id);
+  coverPhoto(userId: string, id: string) {
+    return this.render.coverPhoto(userId, id);
   }
 
   /** @see MotivationRenderService.coverPhotoBytes */
   coverPhotoBytes(
-    clerkId: string,
+    userId: string,
     id: string,
   ): Promise<{ bytes: Buffer; mimeType: string } | null> {
-    return this.render.coverPhotoBytes(clerkId, id);
+    return this.render.coverPhotoBytes(userId, id);
   }
 
   /** @see MotivationRenderService.setCoverPhotoChoice */
-  setCoverPhotoChoice(clerkId: string, id: string, choice: string) {
-    return this.render.setCoverPhotoChoice(clerkId, id, choice);
+  setCoverPhotoChoice(userId: string, id: string, choice: string) {
+    return this.render.setCoverPhotoChoice(userId, id, choice);
   }
 
   /** @see MotivationRenderService.uploadCoverPhoto */
   uploadCoverPhoto(
-    clerkId: string,
+    userId: string,
     id: string,
     file: { buffer: Buffer; mimetype: string },
   ) {
-    return this.render.uploadCoverPhoto(clerkId, id, file);
+    return this.render.uploadCoverPhoto(userId, id, file);
   }
 
   /** @see MotivationRenderService.removeCoverPhoto */
-  removeCoverPhoto(clerkId: string, id: string) {
-    return this.render.removeCoverPhoto(clerkId, id);
+  removeCoverPhoto(userId: string, id: string) {
+    return this.render.removeCoverPhoto(userId, id);
   }
 
   /** @see MotivationRenderService.renderSaps271 */
-  renderSaps271(clerkId: string, id: string) {
-    return this.render.renderSaps271(clerkId, id);
+  renderSaps271(userId: string, id: string) {
+    return this.render.renderSaps271(userId, id);
   }
 
   /**
@@ -1401,9 +1401,9 @@ export class MotivationsService {
    * screen — ticking off what they have gathered — and it stays current right
    * up to the moment they print. Only the annexure index goes into the paper.
    */
-  async checklist(clerkId: string, id: string) {
+  async checklist(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -1450,9 +1450,9 @@ export class MotivationsService {
    * returned by findOne, which is where they belong and where they are already
    * ownership-scoped.
    */
-  async pack(clerkId: string, id: string) {
+  async pack(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -1506,12 +1506,12 @@ export class MotivationsService {
 
   /** @see MotivationDocumentsService.changeUploadKind */
   changeUploadKind(
-    clerkId: string,
+    userId: string,
     id: string,
     uploadId: string,
     kind: MotivationUploadKind,
   ) {
-    return this.documents.changeUploadKind(clerkId, id, uploadId, kind);
+    return this.documents.changeUploadKind(userId, id, uploadId, kind);
   }
 
   // ────────────────────────────────────────────────────────────────────

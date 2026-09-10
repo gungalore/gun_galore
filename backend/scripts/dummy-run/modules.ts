@@ -70,21 +70,21 @@ async function drivePaidGoodsSale(
     eq(reRow.paidAt.getTime(), row.paidAt.getTime(), 'paidAt'),
   );
 
-  await T.acceptTransaction(txId, seller.clerkId);
+  await T.acceptTransaction(txId, seller.userId);
   row = await tx(ctx, txId);
   check(rep, `${label}: seller accepted (acceptedAt + dispatch deadline)`, () => {
     assert(row.acceptedAt, 'acceptedAt not set');
     assert(row.dispatchDeadlineAt, 'dispatchDeadlineAt not set');
   });
 
-  await T.confirmDispatch(txId, seller.clerkId, {});
+  await T.confirmDispatch(txId, seller.userId, {});
   row = await tx(ctx, txId);
   check(rep, `${label}: dispatched (dispatchedAt + shippingStatus COLLECTED)`, () => {
     assert(row.dispatchedAt, 'dispatchedAt not set');
     eq(row.shippingStatus, 'COLLECTED', 'shippingStatus');
   });
 
-  await T.confirmDelivery(txId, buyer.clerkId);
+  await T.confirmDelivery(txId, buyer.userId);
   row = await tx(ctx, txId);
   check(rep, `${label}: buyer confirmed delivery → RELEASED (exactly once)`, () => {
     eq(row.paymentStatus, 'RELEASED', 'paymentStatus');
@@ -96,7 +96,7 @@ async function drivePaidGoodsSale(
   const releasedAt = row.releasedAt.getTime();
   let doubleReleased = false;
   try {
-    await T.confirmDelivery(txId, buyer.clerkId);
+    await T.confirmDelivery(txId, buyer.userId);
   } catch {
     /* expected: already released */
   }
@@ -149,7 +149,7 @@ export async function moduleBuyNow(ctx: Ctx) {
     title: 'BUY_NOW courier item',
   });
   const createdA: any = await T.create(
-    buyer.clerkId,
+    buyer.userId,
     { listingId: listingA.id, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
     'http://localhost',
   );
@@ -184,7 +184,7 @@ export async function moduleBuyNow(ctx: Ctx) {
     extra: { collectionOnly: true, shippingMethods: ['COLLECTION'] },
   });
   const createdB: any = await T.create(
-    buyer.clerkId,
+    buyer.userId,
     { listingId: listingB.id, shippingMethod: 'COLLECTION' } as any,
     'http://localhost',
   );
@@ -206,7 +206,7 @@ export async function moduleBuyNow(ctx: Ctx) {
     extra: { shippingMethods: ['DEALER_TRANSFER', 'PRIVATE_ARRANGE'] },
   });
   const createdC: any = await T.create(
-    buyer.clerkId,
+    buyer.userId,
     {
       listingId: listingC.id,
       shippingMethod: 'PRIVATE_ARRANGE',
@@ -274,7 +274,7 @@ export async function moduleFirearm(ctx: Ctx) {
     extra: { shippingMethods: ['DEALER_TRANSFER'] },
   });
   const created: any = await T.create(
-    buyer.clerkId,
+    buyer.userId,
     { listingId: listing.id, shippingMethod: 'DEALER_TRANSFER', firearmAttestation18Plus: true } as any,
     'http://localhost',
   );
@@ -289,7 +289,7 @@ export async function moduleFirearm(ctx: Ctx) {
   // Buyer cannot confirm delivery before dealer verification is APPROVED.
   let blocked = false;
   try {
-    await T.confirmDelivery(created.transactionId, buyer.clerkId);
+    await T.confirmDelivery(created.transactionId, buyer.userId);
   } catch {
     blocked = true;
   }
@@ -332,9 +332,9 @@ export async function moduleAuctions(ctx: Ctx) {
     title: 'Auction with bids',
     extra: { startTime: past, endTime: future, durationDays: 3, reservePrice: null },
   });
-  await auctions.placeBid(bidderA.clerkId, winAuction.id, { maxAmount: 15_000, isOneShot: true } as any);
+  await auctions.placeBid(bidderA.userId, winAuction.id, { maxAmount: 15_000, isOneShot: true } as any);
   const afterA = await P(ctx).listing.findUnique({ where: { id: winAuction.id } });
-  await auctions.placeBid(bidderB.clerkId, winAuction.id, { maxAmount: 25_000, isOneShot: true } as any);
+  await auctions.placeBid(bidderB.userId, winAuction.id, { maxAmount: 25_000, isOneShot: true } as any);
   const afterB = await P(ctx).listing.findUnique({ where: { id: winAuction.id } });
   check(rep, 'AUCTION: two bids registered, high bidder + bidCount tracked', () => {
     eq(afterA.currentBidderId, bidderA.id, 'currentBidderId after A');
@@ -375,7 +375,7 @@ export async function moduleAuctions(ctx: Ctx) {
 
   // Winner checkout (auction-win branch) → full goods lifecycle → payout.
   const created: any = await T.create(
-    bidderB.clerkId,
+    bidderB.userId,
     { listingId: winAuction.id, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-002' } as any,
     'http://localhost',
   );
@@ -404,19 +404,19 @@ export async function moduleOffers(ctx: Ctx) {
     extra: { autoAcceptThreshold: null },
   });
 
-  const { offer } = (await offers.submit(buyer.clerkId, {
+  const { offer } = (await offers.submit(buyer.userId, {
     listingId: listing.id,
     offerAmount: 200_000,
   } as any)) as any;
   check(rep, 'OFFER: buyer offer submitted → PENDING', () => eq(offer.status, 'PENDING', 'status'));
 
   // A rival offer that must be auto-rejected once the winner pays.
-  const rivalOffer = (await offers.submit(rival.clerkId, {
+  const rivalOffer = (await offers.submit(rival.userId, {
     listingId: listing.id,
     offerAmount: 190_000,
   } as any)) as any;
 
-  const countered = (await offers.counter(seller.clerkId, offer.id, {
+  const countered = (await offers.counter(seller.userId, offer.id, {
     counterAmount: 230_000,
   } as any)) as any;
   check(rep, 'OFFER: seller countered → COUNTERED w/ counterAmount', () => {
@@ -424,12 +424,12 @@ export async function moduleOffers(ctx: Ctx) {
     eq(countered.counterAmount, 230_000, 'counterAmount');
   });
 
-  const accepted = (await offers.acceptCounter(buyer.clerkId, offer.id)) as any;
+  const accepted = (await offers.acceptCounter(buyer.userId, offer.id)) as any;
   check(rep, 'OFFER: buyer accepted counter → ACCEPTED', () => eq(accepted.status, 'ACCEPTED', 'status'));
 
   // Checkout the accepted offer (offerId branch): pays the counter amount.
   const created: any = await T.create(
-    buyer.clerkId,
+    buyer.userId,
     {
       listingId: listing.id,
       offerId: offer.id,
@@ -453,9 +453,9 @@ export async function moduleOffers(ctx: Ctx) {
   );
 
   // Finish the goods lifecycle from the accept step onward.
-  await T.acceptTransaction(created.transactionId, seller.clerkId);
-  await T.confirmDispatch(created.transactionId, seller.clerkId, {});
-  await T.confirmDelivery(created.transactionId, buyer.clerkId);
+  await T.acceptTransaction(created.transactionId, seller.userId);
+  await T.confirmDispatch(created.transactionId, seller.userId, {});
+  await T.confirmDelivery(created.transactionId, buyer.userId);
   const settled = await tx(ctx, created.transactionId);
   check(rep, 'OFFER: released after delivery + money conserved', () => {
     eq(settled.paymentStatus, 'RELEASED', 'paymentStatus');
@@ -489,7 +489,7 @@ export async function moduleOrders(ctx: Ctx) {
   });
 
   const order: any = await T.createOrderCheckout(
-    buyer.clerkId,
+    buyer.userId,
     {
       lines: [
         { listingId: l1.id, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-010' },
@@ -527,9 +527,9 @@ export async function moduleOrders(ctx: Ctx) {
   }
   for (const child of orderRow.transactions) {
     const s = sellerByChild[child.id];
-    await T.acceptTransaction(child.id, s.clerkId);
-    await T.confirmDispatch(child.id, s.clerkId, {});
-    await T.confirmDelivery(child.id, buyer.clerkId);
+    await T.acceptTransaction(child.id, s.userId);
+    await T.confirmDispatch(child.id, s.userId, {});
+    await T.confirmDelivery(child.id, buyer.userId);
   }
   const childrenReleased = await P(ctx).transaction.findMany({ where: { orderId: order.orderId } });
   check(rep, 'ORDER: all children RELEASED after delivery + conserved', () => {

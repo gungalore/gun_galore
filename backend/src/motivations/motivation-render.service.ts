@@ -724,12 +724,12 @@ export class MotivationRenderService {
   }
 
   async designSample(
-    clerkId: string,
+    userId: string,
     id: string,
     choice: { layout?: string; colourway?: string },
   ): Promise<Buffer> {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -794,9 +794,9 @@ export class MotivationRenderService {
     return this.firstPageOf(pdf);
   }
 
-  async renderPdf(clerkId: string, id: string) {
+  async renderPdf(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
@@ -1691,9 +1691,9 @@ export class MotivationRenderService {
    * "keep this or replace it?" is entitled to know the picture came off
    * Wikimedia Commons and shows the MODEL rather than their own firearm.
    */
-  async coverPhoto(clerkId: string, id: string) {
+  async coverPhoto(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {
@@ -1732,11 +1732,11 @@ export class MotivationRenderService {
 
   /** The bytes currently destined for the cover, for the on-screen preview. */
   async coverPhotoBytes(
-    clerkId: string,
+    userId: string,
     id: string,
   ): Promise<{ bytes: Buffer; mimeType: string } | null> {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {
@@ -1771,9 +1771,9 @@ export class MotivationRenderService {
   }
 
   /** Record the applicant's decision. */
-  async setCoverPhotoChoice(clerkId: string, id: string, choice: string) {
+  async setCoverPhotoChoice(userId: string, id: string, choice: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const wanted = asCoverChoice(choice);
     if (!wanted) throw new BadRequestException('Unknown cover choice.');
 
@@ -1798,12 +1798,12 @@ export class MotivationRenderService {
 
   /** Store the applicant's own cover photograph and select it. */
   async uploadCoverPhoto(
-    clerkId: string,
+    userId: string,
     id: string,
     file: { buffer: Buffer; mimetype: string },
   ) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { id: true, coverPhotoKey: true },
@@ -1843,9 +1843,9 @@ export class MotivationRenderService {
   }
 
   /** Discard their own photograph and fall back to whatever we found. */
-  async removeCoverPhoto(clerkId: string, id: string) {
+  async removeCoverPhoto(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: { id: true, coverPhotoKey: true },
@@ -1897,9 +1897,9 @@ export class MotivationRenderService {
    * exists it is already correct. Do not "simplify" leftBlank away on the
    * grounds that nothing reads it.
    */
-  async renderSaps271(clerkId: string, id: string) {
+  async renderSaps271(userId: string, id: string) {
     await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {

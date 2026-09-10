@@ -21,7 +21,7 @@ import { memoryStorage } from 'multer';
 import { CredentialKind } from '@prisma/client';
 import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { LicenceCentreService } from './licence-centre.service';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
@@ -45,7 +45,7 @@ import {
 
 
 @Controller('licence-centre')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class LicenceCentreController {
   constructor(
     private readonly svc: LicenceCentreService,
@@ -67,8 +67,8 @@ export class LicenceCentreController {
   // somebody sees at the moment they are told they passed.
 
   @Get('kyc-id')
-  kycIdOffer(@CurrentUser() clerkId: string) {
-    return this.kycId.offer(clerkId);
+  kycIdOffer(@CurrentUser() userId: string) {
+    return this.kycId.offer(userId);
   }
 
   /**
@@ -81,8 +81,8 @@ export class LicenceCentreController {
    * document kept and nothing else.
    */
   @Post('kyc-id')
-  adoptKycId(@CurrentUser() clerkId: string) {
-    return this.kycId.adopt(clerkId);
+  adoptKycId(@CurrentUser() userId: string) {
+    return this.kycId.adopt(userId);
   }
 
   // ── MAY WE KEEP YOUR DOCUMENTS? ────────────────────────────────────
@@ -96,8 +96,8 @@ export class LicenceCentreController {
   // route above is not gated for the same reason.
 
   @Get('consent')
-  consentState(@CurrentUser() clerkId: string) {
-    return this.consent.get(clerkId);
+  consentState(@CurrentUser() userId: string) {
+    return this.consent.get(userId);
   }
 
   /**
@@ -110,7 +110,7 @@ export class LicenceCentreController {
    */
   @Post('consent')
   answerConsent(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body('agreed') agreed: unknown,
   ) {
     // Validated by hand: a bare @Body() is not a DTO and the global
@@ -119,13 +119,13 @@ export class LicenceCentreController {
     if (typeof agreed !== 'boolean') {
       throw new BadRequestException('Answer must be yes or no.');
     }
-    return this.consent.answer(clerkId, agreed);
+    return this.consent.answer(userId, agreed);
   }
 
   /** Turn it off. ⚠️ Deletes nothing — see VaultConsentService.withdraw. */
   @Delete('consent')
-  withdrawConsent(@CurrentUser() clerkId: string) {
-    return this.consent.withdraw(clerkId);
+  withdrawConsent(@CurrentUser() userId: string) {
+    return this.consent.withdraw(userId);
   }
 
   /**
@@ -145,9 +145,9 @@ export class LicenceCentreController {
    */
   @Post('consent/backfill-step')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  async backfillStep(@CurrentUser() clerkId: string) {
-    const step = await this.adoption.backfillStep(clerkId);
-    return { ...step, remaining: await this.adoption.backfillRemaining(clerkId) };
+  async backfillStep(@CurrentUser() userId: string) {
+    const step = await this.adoption.backfillStep(userId);
+    return { ...step, remaining: await this.adoption.backfillRemaining(userId) };
   }
 
   /**
@@ -166,8 +166,8 @@ export class LicenceCentreController {
    * otherwise fire a request on every click through the file list.
    */
   @Get('usage')
-  usage(@CurrentUser() clerkId: string) {
-    return this.svc.usage(clerkId);
+  usage(@CurrentUser() userId: string) {
+    return this.svc.usage(userId);
   }
 
   @Get('status')
@@ -176,8 +176,8 @@ export class LicenceCentreController {
   }
 
   @Get()
-  list(@CurrentUser() clerkId: string) {
-    return this.svc.list(clerkId);
+  list(@CurrentUser() userId: string) {
+    return this.svc.list(userId);
   }
 
   @Post()
@@ -191,7 +191,7 @@ export class LicenceCentreController {
     }),
   )
   create(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body('kind') kind: string,
     @Body('title') title: string,
     @UploadedFile(
@@ -216,7 +216,7 @@ export class LicenceCentreController {
     // NO KIND MEANS "SORT IT FOR ME" — the batch path, where a member adds a
     // whole folder at once and names nothing up front.
     const wanted = (kind ?? '').trim();
-    if (!wanted) return this.svc.create(clerkId, null, title, file);
+    if (!wanted) return this.svc.create(userId, null, title, file);
 
     // Validated HERE, by hand. The global ValidationPipe has no
     // forbidNonWhitelisted and a bare @Body('kind') is not a DTO, so an
@@ -224,12 +224,12 @@ export class LicenceCentreController {
     if (!Object.values(CredentialKind).includes(wanted as CredentialKind)) {
       throw new BadRequestException('Unknown document type.');
     }
-    return this.svc.create(clerkId, wanted as CredentialKind, title, file);
+    return this.svc.create(userId, wanted as CredentialKind, title, file);
   }
 
   @Post(':id/confirm')
   confirm(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body('expiresOn') expiresOn: string,
     @Body('issuedOn') issuedOn?: string,
@@ -247,7 +247,7 @@ export class LicenceCentreController {
     if (wanted && !Object.values(CredentialKind).includes(wanted as CredentialKind)) {
       throw new BadRequestException('Unknown document type.');
     }
-    return this.svc.confirmExpiry(clerkId, id, {
+    return this.svc.confirmExpiry(userId, id, {
       expiresOn,
       issuedOn,
       kind: wanted ? (wanted as CredentialKind) : undefined,
@@ -261,20 +261,20 @@ export class LicenceCentreController {
   @Patch(':id/title')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   rename(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body('title') title: string,
   ) {
-    return this.svc.rename(clerkId, id, title ?? '');
+    return this.svc.rename(userId, id, title ?? '');
   }
 
   @Patch(':id/mute')
   mute(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body('muted') muted: boolean,
   ) {
-    return this.svc.mute(clerkId, id, muted === true);
+    return this.svc.mute(userId, id, muted === true);
   }
 
   /**
@@ -286,17 +286,17 @@ export class LicenceCentreController {
    */
   @Post(':id/renew')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  renew(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.svc.startRenewal(clerkId, id);
+  renew(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.svc.startRenewal(userId, id);
   }
 
   @Get(':id/file')
   async readFile(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const { bytes, mimeType, filename } = await this.svc.readFile(clerkId, id);
+    const { bytes, mimeType, filename } = await this.svc.readFile(userId, id);
     res.set({
       'Content-Type': mimeType,
       'Content-Disposition': `inline; filename="${filename}"`,
@@ -328,7 +328,7 @@ export class LicenceCentreController {
    */
   @Delete(':id')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  remove(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.svc.remove(clerkId, id);
+  remove(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.svc.remove(userId, id);
   }
 }

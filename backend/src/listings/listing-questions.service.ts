@@ -164,7 +164,7 @@ export class ListingQuestionsService {
   // ------------------------------------------------------------------
   async ask(
     listingId: string,
-    askerClerkId: string,
+    askerId: string,
     rawQuestion: string,
   ): Promise<{
     status: 'AUTO_ANSWERED' | 'AWAITING_SELLER_ANSWER' | 'REJECTED';
@@ -190,7 +190,7 @@ export class ListingQuestionsService {
     }
 
     const asker = await this.prisma.user.findUnique({
-      where: { clerkId: askerClerkId },
+      where: { id: askerId },
     });
     if (!asker) throw new NotFoundException('User not found');
     if (asker.id === listing.sellerId) {
@@ -308,9 +308,9 @@ export class ListingQuestionsService {
   // unanswered ones first. Powers the dashboard "Questions for you"
   // card.
   // ------------------------------------------------------------------
-  async listForSeller(sellerClerkId: string) {
+  async listForSeller(sellerId: string) {
     const seller = await this.prisma.user.findUnique({
-      where: { clerkId: sellerClerkId },
+      where: { id: sellerId },
     });
     if (!seller) throw new NotFoundException('User not found');
 
@@ -343,7 +343,7 @@ export class ListingQuestionsService {
   // ------------------------------------------------------------------
   async answer(
     questionId: string,
-    sellerClerkId: string,
+    sellerId: string,
     rawAnswer: string,
   ) {
     const answer = rawAnswer.trim();
@@ -356,7 +356,7 @@ export class ListingQuestionsService {
       include: { listing: { include: { seller: true } } },
     });
     if (!q) throw new NotFoundException('Question not found');
-    if (q.listing.seller.clerkId !== sellerClerkId) {
+    if (q.listing.seller.id !== sellerId) {
       throw new ForbiddenException('Not your listing');
     }
     if (q.status === 'REJECTED_BY_MODERATION') {
@@ -373,7 +373,7 @@ export class ListingQuestionsService {
     }
 
     const seller = await this.prisma.user.findUnique({
-      where: { clerkId: sellerClerkId },
+      where: { id: sellerId },
     });
 
     return this.prisma.listingQuestion.update({
@@ -395,13 +395,13 @@ export class ListingQuestionsService {
   // Q as invalidated (so it can't be used for future auto-answers)
   // AND hides the bad AI answer until the seller writes a fresh reply.
   // ------------------------------------------------------------------
-  async flagAutoAnswer(questionId: string, sellerClerkId: string) {
+  async flagAutoAnswer(questionId: string, sellerId: string) {
     const q = await this.prisma.listingQuestion.findUnique({
       where: { id: questionId },
       include: { listing: { include: { seller: true } } },
     });
     if (!q) throw new NotFoundException('Question not found');
-    if (q.listing.seller.clerkId !== sellerClerkId) {
+    if (q.listing.seller.id !== sellerId) {
       throw new ForbiddenException('Not your listing');
     }
     if (q.status !== 'AUTO_ANSWERED') {

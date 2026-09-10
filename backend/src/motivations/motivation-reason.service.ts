@@ -111,7 +111,7 @@ export class MotivationReasonService {
    * angles survive.
    */
   async writeFor(
-    clerkId: string,
+    userId: string,
     motivationId: string,
   ): Promise<{
     written: boolean;
@@ -120,7 +120,7 @@ export class MotivationReasonService {
     warnings?: string[];
     rejections?: string[];
   }> {
-    const user = await this.shared.requireUser(clerkId);
+    const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id: motivationId, userId: user.id },
       select: {

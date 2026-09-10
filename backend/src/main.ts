@@ -27,7 +27,9 @@ import { HttpAdapterHost, NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import cookieParser from 'cookie-parser';
 import { adminJwtSecret } from './admin/admin-jwt-secret';
+import { memberJwtSecret } from './auth/member-jwt-secret';
 import { RetryAfterFilter } from './common/filters/retry-after.filter';
 import {
   BLOB_CRYPTO_SECRET_ENV,
@@ -45,20 +47,23 @@ function assertProductionConfig() {
   const log = new Logger('Bootstrap');
   const isProd = process.env.NODE_ENV === 'production';
 
-  // HARD: admin JWT secret must be a strong, non-default value in prod.
-  // adminJwtSecret() throws on missing/empty/default when NODE_ENV=production.
+  // HARD: both session secrets must be strong, non-default values in prod.
+  // Each throws on missing/empty/default when NODE_ENV=production, so a
+  // misconfigured box fails at boot rather than on the first sign-in.
+  //
+  // ⚠️ TWO SECRETS, AND THEY MUST DIFFER. A member token signed with the
+  // admin key verifies on an admin route.
   adminJwtSecret();
+  memberJwtSecret();
 
   if (!isProd) return;
 
-  // WARN: KYC running against sandbox in production = identity checks pass
-  // on canned data. Operator flips VERIFYNOW_MODE=production at launch.
-  // (Hard-throw deferred to launch — see decision 2026-06-01.)
-  if ((process.env.VERIFYNOW_MODE ?? 'sandbox') !== 'production') {
-    log.error(
-      '⚠️  VERIFYNOW_MODE is not "production" — KYC identity checks are running against SANDBOX data. Set VERIFYNOW_MODE=production before going live.',
-    );
-  }
+  // ⚠️ THE SANDBOX-IN-PRODUCTION WARNING IS NOW A HARD THROW, and it lives
+  // in DiditService.onModuleInit rather than here. The old provider only
+  // LOGGED this, which meant a production box could boot with sandbox
+  // identity checks — every identity passing on canned data, with nobody
+  // finding out until it mattered. Do not re-add a warning here; a second,
+  // softer copy of the same gate is how the hard one gets deleted.
   // WARN: Peach credentials missing — checkout falls back to mock mode.
   if (
     !process.env.PEACH_CLIENT_ID ||
@@ -80,12 +85,12 @@ function assertProductionConfig() {
   // PEACH_CLIENT_ID/SECRET/MERCHANT_ID OAuth creds warned about above —
   // until those are set, run-payouts logs intent only and BANV is skipped
   // (the manual admin bank-ownership review remains the payout gate).
-  // WARN: Clerk webhook secret missing — user.created/updated/deleted sync
-  // events arrive UNVERIFIED and are dropped (the handler fails closed and
-  // does not process them), so new signups won't land in our DB.
-  if (!process.env.CLERK_WEBHOOK_SECRET) {
+  // WARN: Didit webhook secret missing — verification outcomes arrive
+  // UNVERIFIED and are dropped, so a seller who finishes on Didit's page
+  // stays PENDING forever with nothing in any log saying why.
+  if (!process.env.DIDIT_WEBHOOK_SECRET) {
     log.error(
-      '⚠️  CLERK_WEBHOOK_SECRET is not set — incoming Clerk webhooks cannot be verified and will be DROPPED (user sync breaks). Set the Svix signing secret from the Clerk dashboard.',
+      '⚠️  DIDIT_WEBHOOK_SECRET is not set — incoming Didit webhooks cannot be verified and will be DROPPED (seller verification never completes). Copy the destination secret from the Didit console.',
     );
   }
   // WARN (audit fix 2026-07-20; repointed at Gemini 2026-09-07): the model
@@ -160,6 +165,12 @@ async function bootstrap() {
   // caller doesn't hit a different ceiling.
   app.useBodyParser('json', { limit: '15mb' });
   app.useBodyParser('urlencoded', { limit: '15mb', extended: true });
+
+  // ⚠️ WITHOUT THIS, req.cookies DOES NOT EXIST and every cookie-carried
+  // session silently reads as signed-out. Express's res.cookie() needs no
+  // middleware, which is why the write half of the admin cookie worked for
+  // months while nothing ever read it back.
+  app.use(cookieParser());
 
   app.setGlobalPrefix('api');
 

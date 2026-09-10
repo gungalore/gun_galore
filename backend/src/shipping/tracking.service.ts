@@ -255,8 +255,8 @@ export class TrackingService {
   // against the same buyer-or-seller rule the rest of the transaction
   // endpoints use. Returns events oldest → newest.
   // ------------------------------------------------------------------
-  async getTimeline(transactionId: string, clerkId: string) {
-    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+  async getTimeline(transactionId: string, userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
     const tx = await this.prisma.transaction.findUnique({

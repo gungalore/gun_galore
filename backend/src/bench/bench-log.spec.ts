@@ -334,7 +334,7 @@ describe('The Bench — the log reads back in the order it was fired', () => {
     await new BenchService(prisma as never).log(SUB);
 
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
-      where: { clerkId: SUB },
+      where: { id: SUB },
       select: { id: true },
     });
     expect(prisma.benchLogEntry.findMany.mock.calls[0][0].where).toEqual({ userId: 'usr_1' });

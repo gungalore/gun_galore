@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { RatingsService } from './ratings.service';
-import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import {
   RatingsController,
   RatingsAdminController,
@@ -18,13 +18,13 @@ import { AdminAuditService } from '../admin/admin-audit.service';
 // Prisma/Notifications/Moderation come from their @Global() modules.
 @Module({
   imports: [JwtModule.register({})],
-  // OptionalClerkGuard must be provided here (public ratings controller uses
+  // OptionalAuthGuard must be provided here (public ratings controller uses
   // it) or Nest crash-loops at boot while tsc stays green.
   providers: [
     RatingsService,
     AdminJwtGuard,
     AdminAuditService,
-    OptionalClerkGuard,
+    OptionalAuthGuard,
   ],
   controllers: [
     RatingsController,

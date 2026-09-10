@@ -210,7 +210,7 @@ export class ListingIdentifyService {
    * Nothing is persisted but the spend rollup.
    */
   async identifyForListing(
-    clerkId: string,
+    userId: string,
     photos: Array<{
       base64: string;
       mediaType: 'image/jpeg' | 'image/png' | 'image/webp';
@@ -218,7 +218,7 @@ export class ListingIdentifyService {
     opts: { categoryHint?: string } = {},
   ): Promise<{ proposal: IdentifyProposal | null; costUsd: number | null }> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true, subscriptionTier: true },
     });
     if (!user) throw new NotFoundException('User not found');

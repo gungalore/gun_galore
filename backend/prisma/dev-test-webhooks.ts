@@ -55,9 +55,12 @@ async function main() {
   // ---- 3. Create test transaction with a real tracking number ------
   console.log('\n3. Setting up a real transaction…');
   const buyer = await prisma.user.upsert({
-    where: { clerkId: 'user_webhook_buyer' },
+    where: { id: 'user_webhook_buyer' },
     create: {
-      clerkId: 'user_webhook_buyer',
+      id: 'user_webhook_buyer',
+      username: String('user_webhook_buyer').slice(0, 28),
+      usernameLower: String('user_webhook_buyer').slice(0, 28).toLowerCase(),
+      passwordHash: '!locked-no-password',
       email: 'webhook-buyer@test.dev',
       firstName: 'Web',
       lastName: 'Hook',
@@ -66,7 +69,7 @@ async function main() {
     update: {},
   });
   const seller = await prisma.user.findUnique({
-    where: { clerkId: 'user_devtour_seller_001' },
+    where: { id: 'user_devtour_seller_001' },
   });
   if (!seller) throw new Error('seed first — seller missing');
 

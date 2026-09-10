@@ -185,7 +185,7 @@ export class ContactDetailFilterService {
    * @param origin Free-form tag for log lines — e.g. "offer-note",
    *               "counter-note", "rating-comment". Used only for
    *               operator triage; not exposed to the user.
-   * @param clerkId Optional Clerk ID of the user who submitted the
+   * @param userId Optional Clerk ID of the user who submitted the
    *               text. When provided, blocks are persisted into the
    *               ContactDetailRejection table for the T&S queue +
    *               command-center fee-bypass card. Callers from
@@ -194,7 +194,7 @@ export class ContactDetailFilterService {
   async check(
     text: string | null | undefined,
     origin: string,
-    clerkId?: string,
+    userId?: string,
   ): Promise<FilterResult> {
     if (!text || !text.trim()) return { allowed: true };
 
@@ -204,7 +204,7 @@ export class ContactDetailFilterService {
       this.logger.log(
         `Contact-detail filter blocked ${origin} via regex layer (${regexHit})`,
       );
-      void this.persistRejection(text, origin, regexHit, clerkId);
+      void this.persistRejection(text, origin, regexHit, userId);
       return {
         allowed: false,
         category: regexHit,
@@ -220,7 +220,7 @@ export class ContactDetailFilterService {
       this.logger.log(
         `Contact-detail filter blocked ${origin} via LLM layer (${llmHit})`,
       );
-      void this.persistRejection(text, origin, llmHit, clerkId);
+      void this.persistRejection(text, origin, llmHit, userId);
       return {
         allowed: false,
         category: llmHit,
@@ -239,13 +239,13 @@ export class ContactDetailFilterService {
     text: string,
     channel: string,
     category: string,
-    clerkId: string | undefined,
+    userId: string | undefined,
   ): Promise<void> {
     try {
       let userId: string | null = null;
-      if (clerkId) {
+      if (userId) {
         const user = await this.prisma.user.findUnique({
-          where: { clerkId },
+          where: { id: userId },
           select: { id: true },
         });
         userId = user?.id ?? null;

@@ -9,7 +9,7 @@ import {
   HttpCode,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PushService } from './push.service';
 import { SubscribeDto } from './dto/subscribe.dto';
@@ -44,23 +44,23 @@ export class PushController {
   }
 
   @Get('me')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @SkipThrottle()
   async me(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
   ): Promise<{ subscribed: boolean }> {
-    const subscribed = await this.push.hasAnySubscription(clerkId);
+    const subscribed = await this.push.hasAnySubscription(userId);
     return { subscribed };
   }
 
   @Post('subscribe')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   @HttpCode(200)
   async subscribe(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() dto: SubscribeDto,
   ) {
-    return this.push.subscribe(clerkId, {
+    return this.push.subscribe(userId, {
       endpoint: dto.endpoint,
       p256dh: dto.keys.p256dh,
       auth: dto.keys.auth,
@@ -70,11 +70,11 @@ export class PushController {
   }
 
   @Delete('subscribe')
-  @UseGuards(ClerkGuard)
+  @UseGuards(AuthGuard)
   async unsubscribe(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Query('endpoint') endpoint: string,
   ) {
-    return this.push.unsubscribe(clerkId, endpoint);
+    return this.push.unsubscribe(userId, endpoint);
   }
 }

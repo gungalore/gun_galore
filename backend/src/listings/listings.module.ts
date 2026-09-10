@@ -11,7 +11,7 @@ import {
 } from './listing-questions.controller';
 import { CategoriesModule } from '../categories/categories.module';
 import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module';
-import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 
 @Module({
   // CategoriesModule exports CategoriesService — used by ListingsService to
@@ -37,7 +37,7 @@ import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
     FirearmLicenceService,
     PriceEstimateService,
     // Optional-auth guard for the public-but-owner-aware GET /listings/:id.
-    OptionalClerkGuard,
+    OptionalAuthGuard,
   ],
   exports: [ListingsService, ListingQuestionsService, PriceEstimateService],
 })

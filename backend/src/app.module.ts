@@ -4,6 +4,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { LlmModule } from './common/llm/llm.module';
+import { DiditModule } from './didit/didit.module';
 import { CrimeStatsModule } from './crime-stats/crime-stats.module';
 import { NewsModule } from './news/news.module';
 import { PeachModule } from './payments/peach.module';
@@ -71,6 +72,8 @@ import { MyShipmentsModule } from './my-shipments/my-shipments.module';
     ]),
     PrismaModule,
     LlmModule,
+    // @Global — the one adapter for email OTP, phone OTP and KYC sessions.
+    DiditModule,
     CrimeStatsModule,
     NewsModule,
     PeachModule,

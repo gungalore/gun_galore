@@ -16,7 +16,7 @@ import { Reporter } from './harness';
 
 export interface Actor {
   id: string;
-  clerkId: string;
+  userId: string;
   email: string;
   username: string;
 }
@@ -94,7 +94,7 @@ export async function cleanup(prisma: PrismaService) {
   }
   // Finally the cast — scoped to dr_ clerkIds (belt & braces; nothing else
   // creates Users on this DB anyway).
-  await p.user.deleteMany({ where: { clerkId: { startsWith: CLERK_PREFIX } } });
+  await p.user.deleteMany({ where: { id: { startsWith: CLERK_PREFIX } } });
 }
 
 /**
@@ -132,12 +132,12 @@ async function upsertUser(
   key: string,
   opts: { topSeller?: boolean; subscriptionTier?: string } = {},
 ): Promise<Actor> {
-  const clerkId = `${CLERK_PREFIX}${key}`;
-  const email = `${clerkId}@dummyrun.local`;
+  const userId = `${CLERK_PREFIX}${key}`;
+  const email = `${userId}@dummyrun.local`;
   const username = `dr_${key}`;
   const now = new Date();
   const data: any = {
-    clerkId,
+    userId,
     email,
     username,
     firstName: key.charAt(0).toUpperCase() + key.slice(1),
@@ -155,11 +155,11 @@ async function upsertUser(
     ...BANK,
   };
   const user = await (prisma as any).user.upsert({
-    where: { clerkId },
+    where: { id: userId },
     create: data,
     update: data,
   });
-  return { id: user.id, clerkId, email, username };
+  return { id: user.id, userId, email, username };
 }
 
 export async function seedActors(prisma: PrismaService): Promise<Record<string, Actor>> {
@@ -227,7 +227,7 @@ export async function seedSupplier(prisma: PrismaService): Promise<Actor> {
   });
   return {
     id: supplier.id,
-    clerkId: DUMMY_SUPPLIER_ID,
+    userId: DUMMY_SUPPLIER_ID,
     email: supplier.email,
     username: supplier.name,
   };

@@ -62,8 +62,13 @@ export class SmsService {
   }
 
   /** Normalise a SA mobile number to E.164 ("+27..."). Returns null on
-   *  invalid input so callers can short-circuit early. */
-  private normalise(raw: string): string | null {
+   *  invalid input so callers can short-circuit early.
+   *
+   *  PUBLIC because Didit validates and normalises numbers itself and 400s on
+   *  anything it cannot parse — so the phone-verification path needs the same
+   *  normalisation this transport has always applied, and two copies of a
+   *  phone-format rule is how they drift. */
+  toE164(raw: string): string | null {
     let n = raw.replace(/[\s\-()]/g, '');
     if (n.startsWith('0')) n = '+27' + n.slice(1);
     else if (n.startsWith('27')) n = '+' + n;
@@ -122,7 +127,7 @@ export class SmsService {
   }
 
   async sendSms(params: SendSmsParams): Promise<SendSmsResult> {
-    const normalised = this.normalise(params.to);
+    const normalised = this.toE164(params.to);
 
     if (!normalised) {
       this.log.error(`Invalid phone number: ${params.to}`);

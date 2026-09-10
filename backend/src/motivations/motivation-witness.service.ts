@@ -29,7 +29,7 @@ import { LICENCE_TYPE_LABELS } from './motivation-fields';
 // also must send a verification code to the witness to verify their number."
 //
 // ⚠️ THE TOKEN DOES NOT IMPERSONATE ANYBODY, and that is the single most
-// important line in this file. The QR scan handoff sets request.clerkUserId to
+// important line in this file. The QR scan handoff sets request.userId to
 // the authorising member, so everything downstream runs as them — correct
 // there, because the phone is the SAME PERSON. Here the holder of the link is
 // a stranger. A token that authenticated them AS the applicant would hand

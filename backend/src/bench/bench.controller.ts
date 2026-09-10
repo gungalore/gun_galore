@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { BenchService, type GuestBench } from './bench.service';
 import { AddLogDto, PatchLogDto, PutBenchDto, ShareBenchDto } from './bench.dto';
@@ -33,8 +33,8 @@ const NoStore = () => Header('Cache-Control', 'private, no-store');
 /**
  * THE BENCH — /api/bench.
  *
- * 🚨 EVERY ROUTE TAKES ClerkGuard, READS INCLUDED. The reads were on
- * OptionalClerkGuard so a guest could try the finder from a bench passed in
+ * 🚨 EVERY ROUTE TAKES AuthGuard, READS INCLUDED. The reads were on
+ * OptionalAuthGuard so a guest could try the finder from a bench passed in
  * the query string — but the guest bench is deferred (SPEC-BUILD §10), the
  * `/bench` PAGE is behind Clerk, and nothing in the client has ever sent a
  * guest shelf. What that left was the whole consolidated catalogue readable by
@@ -57,7 +57,7 @@ const NoStore = () => Header('Cache-Control', 'private, no-store');
  * header, so two members on one machine share `/api/bench/loads` exactly.
  */
 @Controller('bench')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class BenchController {
   constructor(private readonly bench: BenchService) {}
 

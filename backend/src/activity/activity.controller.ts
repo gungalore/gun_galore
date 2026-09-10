@@ -5,7 +5,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ActivityService } from './activity.service';
 
@@ -22,7 +22,7 @@ interface ClientEvent {
 
 // Client beacon. The browser fires navigator.sendBeacon here for events that
 // have no server touch (page navigation, cart adds) + optional anonymous
-// view/search. OptionalClerkGuard stamps the signed-in user's clerkId when a
+// view/search. OptionalAuthGuard stamps the signed-in user's userId when a
 // token is present; anonymous callers are stitched by their first-party
 // deviceId. Only a small allowlist of CLIENT-origin types is accepted — money
 // events (offer/bid/checkout) are captured server-side and can't be spoofed
@@ -69,9 +69,9 @@ export class ActivityController {
   // and stops anyone flooding the UserEvent table.
   @Post()
   @HttpCode(204)
-  @UseGuards(OptionalClerkGuard)
+  @UseGuards(OptionalAuthGuard)
   ingest(
-    @CurrentUser() clerkId: string | undefined,
+    @CurrentUser() userId: string | undefined,
     @Body() body: { deviceId?: string; events?: ClientEvent[] },
   ): void {
     const deviceId =
@@ -95,7 +95,7 @@ export class ActivityController {
           | 'install_clicked'
           | 'install_dismissed'
           | 'install_completed',
-        actor: { clerkId: clerkId ?? null, deviceId },
+        actor: { userId: userId ?? null, deviceId },
         listingId: e.listingId ?? null,
         query: e.query ?? null,
         path: e.path ?? null,

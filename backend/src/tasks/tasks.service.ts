@@ -853,22 +853,12 @@ export class TasksService {
     }
   }
 
-  // Run every 5 minutes — refresh the cached VerifyNow credit balance
-  // so the admin panel always shows a recent number. /my_credits is a
-  // free call (doesn't burn a credit) so polling is cheap. Fails open:
-  // if VerifyNow is unreachable we log and leave the stale cache in
-  // place rather than nuke it.
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async refreshVerifyNowBalance() {
-    try {
-      await this.kycService.refreshCreditBalance();
-    } catch (err) {
-      this.logger.warn(
-        `VerifyNow balance refresh failed: ${(err as Error).message}`,
-      );
-    }
-    await this.recordCronRun('verifynow-balance');
-  }
+  // ⚠️ THE VERIFYNOW BALANCE CRON IS GONE, AND SO IS THE HEARTBEAT IT WROTE.
+  // It polled a prepaid credit balance every five minutes and alerted when it
+  // ran low. Didit bills against an account balance instead, and the checks
+  // this platform uses sit inside a free monthly tier, so there is no
+  // per-check credit to run out of mid-sale. If /admin/health still lists a
+  // 'verifynow-balance' cron, that row is the stale one — not a missed run.
 
   // Run every 10 minutes — poll Pudo's tracking endpoint for every
   // active PUDO shipment, append new carrier events to the per-
@@ -1412,7 +1402,7 @@ export class TasksService {
   ): Promise<void> {
     const admins = await this.prisma.adminUser.findMany({
       where: { isActive: true, role: 'SUPERADMIN' },
-      select: { id: true, clerkId: true, email: true, firstName: true },
+      select: { id: true, email: true, firstName: true },
     });
     if (admins.length === 0) {
       this.logger.warn(
@@ -1421,25 +1411,25 @@ export class TasksService {
       return;
     }
 
-    const clerkIds = admins.map((a) => a.clerkId).filter(Boolean) as string[];
+    const clerkIds = admins.map((a) => a.id).filter(Boolean) as string[];
     const linkedUsers = clerkIds.length
       ? await this.prisma.user.findMany({
-          where: { clerkId: { in: clerkIds } },
+          where: { id: { in: clerkIds } },
           select: {
-            clerkId: true,
+            id: true,
             email: true,
             phone: true,
             firstName: true,
           },
         })
       : [];
-    const userByClerkId = new Map(
-      linkedUsers.map((u) => [u.clerkId, u] as const),
+    const userById = new Map(
+      linkedUsers.map((u) => [u.id, u] as const),
     );
 
     for (const admin of admins) {
-      const linked = admin.clerkId
-        ? userByClerkId.get(admin.clerkId)
+      const linked = admin.id
+        ? userById.get(admin.id)
         : undefined;
       const email = linked?.email ?? admin.email;
       const phone = linked?.phone ?? null;
@@ -1490,15 +1480,15 @@ export class TasksService {
     const to = new Date();
     const from = new Date(to.getTime() - 2 * 24 * 60 * 60 * 1000);
     try {
-      // 0) Resolve hot-path events that only carried a raw clerkId to a
+      // 0) Resolve hot-path events that only carried a raw userId to a
       //    User.id, so they count in the per-user rollup. Deliberately NOT
       //    windowed: if the cron misses a night, older unresolved rows are
       //    still swept up (cheap — the predicate matches few rows).
       await this.prisma.$executeRaw`
         UPDATE "UserEvent" e SET "userId" = u.id
         FROM "User" u
-        WHERE e."userId" IS NULL AND e."clerkId" IS NOT NULL
-          AND u."clerkId" = e."clerkId"`;
+        WHERE e."userId" IS NULL AND e."userId" IS NOT NULL
+          AND u."userId" = e."userId"`;
 
       // 1) Per-user daily activity.
       await this.prisma.$executeRaw`
@@ -1532,7 +1522,7 @@ export class TasksService {
       await this.prisma.$executeRaw`
         INSERT INTO "HourlyPlatformStats" ("id","hour","eventType","count","uniqueUsers")
         SELECT gen_random_uuid()::text, date_trunc('hour', "createdAt"), "eventType",
-          COUNT(*), COUNT(DISTINCT COALESCE("userId","clerkId","deviceId"))
+          COUNT(*), COUNT(DISTINCT COALESCE("userId","userId","deviceId"))
         FROM "UserEvent"
         WHERE "createdAt" >= ${from} AND "createdAt" < ${to}
         GROUP BY 2, 3

@@ -24,7 +24,7 @@ import { RETIRED } from './motivation-documents';
 // THE PHONE'S DOOR INTO A MOTIVATION.
 //
 // ⚠️ SEPARATE FOR THE SAME REASON as the licence-centre one: the parent
-// controller's class-level ClerkGuard would reject a token-only caller before
+// controller's class-level AuthGuard would reject a token-only caller before
 // the token was read. See the note there.
 //
 // Ownership is NOT re-checked here and does not need to be — addUpload
@@ -51,7 +51,7 @@ export class MotivationsScanController {
     }),
   )
   addUpload(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body('kind') kind: string,
     @UploadedFile(
@@ -78,7 +78,7 @@ export class MotivationsScanController {
     // so the ban has to live in code or it is an intention rather than a
     // fact). A phone running a stale bundle is exactly the realistic sender.
     const wanted = (kind ?? '').trim();
-    if (!wanted) return this.motivations.addUpload(clerkId, id, null, file);
+    if (!wanted) return this.motivations.addUpload(userId, id, null, file);
     if (
       !Object.values(MotivationUploadKind).includes(
         wanted as MotivationUploadKind,
@@ -92,7 +92,7 @@ export class MotivationsScanController {
       );
     }
     return this.motivations.addUpload(
-      clerkId,
+      userId,
       id,
       wanted as MotivationUploadKind,
       file,

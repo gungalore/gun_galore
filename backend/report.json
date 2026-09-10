@@ -1,0 +1,111 @@
+{
+  "model": "docquadnet256-fp32-control",
+  "usable": 9,
+  "total": 15,
+  "separationHeld": true,
+  "confidenceRange": {
+    "min": 0.059,
+    "max": 0.946,
+    "median": 0.892,
+    "distribution": "4 known failures (0.059-0.427), 2 additional failures (0.608-0.650), 9 successes (0.835-0.946)"
+  },
+  "latency": {
+    "min": 34,
+    "max": 67,
+    "mean": 46.4
+  },
+  "modelSizeMB": 12.78,
+  "usable": 9,
+  "details": [
+    {
+      "image": "IMG_5090",
+      "confidence": 0.943,
+      "usable": true,
+      "ms": 58
+    },
+    {
+      "image": "IMG_5091",
+      "confidence": 0.935,
+      "usable": true,
+      "ms": 52
+    },
+    {
+      "image": "IMG_5092",
+      "confidence": 0.914,
+      "usable": true,
+      "ms": 46
+    },
+    {
+      "image": "IMG_5093",
+      "confidence": 0.946,
+      "usable": true,
+      "ms": 48
+    },
+    {
+      "image": "IMG_5094",
+      "confidence": 0.059,
+      "usable": false,
+      "ms": 34
+    },
+    {
+      "image": "IMG_5095",
+      "confidence": 0.411,
+      "usable": false,
+      "ms": 44
+    },
+    {
+      "image": "IMG_5096",
+      "confidence": 0.427,
+      "usable": false,
+      "ms": 39
+    },
+    {
+      "image": "IMG_5097",
+      "confidence": 0.121,
+      "usable": false,
+      "ms": 67
+    },
+    {
+      "image": "IMG_5098",
+      "confidence": 0.892,
+      "usable": true,
+      "ms": 48
+    },
+    {
+      "image": "IMG_5099",
+      "confidence": 0.932,
+      "usable": true,
+      "ms": 40
+    },
+    {
+      "image": "IMG_5100",
+      "confidence": 0.915,
+      "usable": true,
+      "ms": 41
+    },
+    {
+      "image": "IMG_5101",
+      "confidence": 0.926,
+      "usable": true,
+      "ms": 52
+    },
+    {
+      "image": "IMG_5102",
+      "confidence": 0.835,
+      "usable": true,
+      "ms": 44
+    },
+    {
+      "image": "IMG_5103",
+      "confidence": 0.608,
+      "usable": false,
+      "ms": 45
+    },
+    {
+      "image": "IMG_5104",
+      "confidence": 0.650,
+      "usable": false,
+      "ms": 38
+    }
+  ]
+}

@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { MotivationsService } from './motivations.service';
 import { MotivationWitnessService } from './motivation-witness.service';
@@ -49,7 +49,7 @@ import {
 // ────────────────────────────────────────────────────────────────────
 
 @Controller('motivations')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class MotivationsWitnessController {
   constructor(
     private readonly motivations: MotivationsService,
@@ -58,8 +58,8 @@ export class MotivationsWitnessController {
 
   /** Both slots and what is in them. */
   @Get(':id/witnesses')
-  list(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.listWitnesses(clerkId, id);
+  list(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.motivations.listWitnesses(userId, id);
   }
 
   /**
@@ -71,11 +71,11 @@ export class MotivationsWitnessController {
   @Post(':id/witnesses')
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
   invite(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() body: { slot?: number; name?: string; phone?: string },
   ) {
-    return this.motivations.inviteWitness(clerkId, id, {
+    return this.motivations.inviteWitness(userId, id, {
       slot: Number(body?.slot),
       name: String(body?.name ?? ''),
       phone: String(body?.phone ?? ''),
@@ -85,23 +85,23 @@ export class MotivationsWitnessController {
   /** Discard a witness — completed or not — and free the slot. */
   @Delete(':id/witnesses/:witnessId')
   remove(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Param('witnessId') witnessId: string,
   ) {
-    return this.motivations.removeWitness(clerkId, id, witnessId);
+    return this.motivations.removeWitness(userId, id, witnessId);
   }
 
   /** The signature, so the applicant can see what they are about to file. */
   @Get(':id/witnesses/:witnessId/signature')
   async signature(
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Param('id') id: string,
     @Param('witnessId') witnessId: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     const bytes = await this.motivations.witnessSignature(
-      clerkId,
+      userId,
       id,
       witnessId,
     );

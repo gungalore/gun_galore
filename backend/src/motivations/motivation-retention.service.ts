@@ -129,7 +129,7 @@ export class MotivationRetentionService {
    * which finds files through rows, and not deletable by anything short of
    * someone going in by hand.
    *
-   * The scrub branch of deleteByClerkId leaked differently and worse. It keeps
+   * The scrub branch of deleteById leaked differently and worse. It keeps
    * the User row when financial FKs block a hard delete — so the motivations
    * survived intact, and a POPIA erasure request left the applicant's ID
    * number, home address and security circumstances exactly where they were.

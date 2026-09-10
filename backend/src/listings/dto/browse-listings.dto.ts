@@ -76,7 +76,7 @@ export class BrowseListingsDto {
   // use; the service resolves it to the local User.id internally.
   @IsOptional()
   @IsString()
-  sellerClerkId?: string;
+  sellerId?: string;
 
   /** Comma-separated cuid list. When set, returns ONLY the matching
    * listings preserving the order of the input list. Powers the

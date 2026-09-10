@@ -52,9 +52,9 @@ export class SellerToolsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  private async sellerId(clerkId: string): Promise<string> {
+  private async sellerId(userId: string): Promise<string> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) throw new NotFoundException('User not found');
@@ -69,11 +69,11 @@ export class SellerToolsService {
   // the total. Timestamps are returned in UTC ISO — the frontend labels
   // the period; we don't TZ-convert here.
   async payoutStatement(
-    clerkId: string,
+    userId: string,
     fromISO?: string,
     toISO?: string,
   ) {
-    const sellerId = await this.sellerId(clerkId);
+    const sellerId = await this.sellerId(userId);
 
     const to = toISO ? new Date(toISO) : new Date();
     const from = fromISO
@@ -190,11 +190,11 @@ export class SellerToolsService {
 
   // CSV of the same statement — one row per order + a TOTAL line.
   async payoutStatementCsv(
-    clerkId: string,
+    userId: string,
     fromISO?: string,
     toISO?: string,
   ): Promise<string> {
-    const stmt = await this.payoutStatement(clerkId, fromISO, toISO);
+    const stmt = await this.payoutStatement(userId, fromISO, toISO);
     // ⚠️ "Your price" − Commission − Processing fee = "Net payout", for BOTH
     // fee models. "Buyer paid" is shown alongside because under the markup
     // model it is a bigger number than the seller's own price and its absence
@@ -259,8 +259,8 @@ export class SellerToolsService {
   // report what's real: released sales, revenue, AOV, and a sales/active
   // listing count. (Documented limitation, not an omission.)
   // ------------------------------------------------------------------
-  async analytics(clerkId: string, period: SellerPeriod) {
-    const sellerId = await this.sellerId(clerkId);
+  async analytics(userId: string, period: SellerPeriod) {
+    const sellerId = await this.sellerId(userId);
     const days = periodDays(period);
     const to = new Date();
     const from = days ? new Date(to.getTime() - days * 24 * 3600 * 1000) : new Date(0);

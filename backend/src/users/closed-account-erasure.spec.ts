@@ -6,7 +6,7 @@
 // belong to US and must go dark the moment `accountClosedAt` is set.
 //
 // The window these guard is real and not brief: closure sets accountClosedAt
-// inside the DB transaction, but the Clerk delete (step 3) and the clerkId
+// inside the DB transaction, but the Clerk delete (step 3) and the userId
 // tombstone the webhook writes (step 4) both land afterwards, outside it. Any
 // filter that relies on the tombstone alone serves a closed member's profile
 // for as long as that takes — and forever if the webhook never arrives.
@@ -18,7 +18,7 @@ import { isReservedUsername } from './username-policy';
 
 const LIVE_SELLER = {
   id: 'U1',
-  clerkId: 'clerk_live',
+  userId: 'clerk_live',
   username: 'karoo_kudu',
   avatarUrl: null,
   sellerTier: 'TRUSTED',
@@ -46,7 +46,7 @@ describe('SellersPublicController — closed accounts have no public profile', (
     await controller.getSellerProfile('clerk_live');
     expect(prisma.user.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { clerkId: 'clerk_live', accountClosedAt: null },
+        where: { id: 'clerk_live', accountClosedAt: null },
       }),
     );
   });
@@ -89,7 +89,7 @@ describe('RatingsService.findForSeller — reviews received follow the profile',
   }
 
   it('404s for a closed seller instead of republishing their reviews', async () => {
-    // GET /ratings/seller/:clerkId is its own public route. /sellers/[clerkId]
+    // GET /ratings/seller/:userId is its own public route. /sellers/[userId]
     // notFound()s on either call failing, but this endpoint is reachable on
     // its own — and every row it returns carries a reviewer handle and the
     // LISTING TITLE, which is the members-only detail the closure took down.
@@ -98,7 +98,7 @@ describe('RatingsService.findForSeller — reviews received follow the profile',
       NotFoundException,
     );
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
-      where: { clerkId: 'clerk_closed', accountClosedAt: null },
+      where: { id: 'clerk_closed', accountClosedAt: null },
     });
     expect(prisma.rating.findMany).not.toHaveBeenCalled();
   });

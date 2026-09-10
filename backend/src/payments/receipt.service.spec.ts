@@ -8,7 +8,7 @@ describe('ReceiptService — buyer purchase receipt', () => {
   };
   let service: ReceiptService;
 
-  const buyer = { id: 'buyer1', clerkId: 'clerk_buyer' };
+  const buyer = { id: 'buyer1', userId: 'clerk_buyer' };
   const baseTx = {
     id: 'tx1',
     buyerId: 'buyer1',
@@ -48,7 +48,7 @@ describe('ReceiptService — buyer purchase receipt', () => {
   it('rejects a non-buyer (e.g. the seller)', async () => {
     prisma.user.findUnique.mockResolvedValue({
       id: 'seller1',
-      clerkId: 'clerk_seller',
+      userId: 'clerk_seller',
     });
     await expect(
       service.generateReceiptPdf('tx1', 'clerk_seller'),

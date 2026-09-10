@@ -3,7 +3,7 @@ import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
- * Public seller profile endpoint — powers the /sellers/[clerkId]
+ * Public seller profile endpoint — powers the /sellers/[userId]
  * profile page header (Phase E1 badges + future expansion).
  *
  * Returns only the fields that are explicitly public:
@@ -28,25 +28,24 @@ export class SellersPublicController {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * GET /api/sellers/:clerkId
+   * GET /api/sellers/:userId
    *
    * Throttled tightly — same enumeration concern as username-check.
    * 30 req/min/IP gives room for the profile page's two-fetch
    * pattern (this + ratings + listings) without inviting scraping.
    */
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  @Get(':clerkId')
-  async getSellerProfile(@Param('clerkId') clerkId: string) {
+  @Get(':userId')
+  async getSellerProfile(@Param('userId') userId: string) {
     const user = await this.prisma.user.findUnique({
       where: {
-        clerkId,
-        // A closed account has no public profile. This is belt-and-braces on
-        // top of the `clerkId` tombstone the closure writes (closed_<userId>),
-        // and it is the half that holds when the tombstone has not landed:
+        id: userId,
+        // A closed account has no public profile. The closure scrubs the row,
+        // and this is the half that holds regardless of what the scrub did:
         // the Clerk delete and its webhook are steps 3 and 4 of the closure,
         // both outside the DB transaction, so between the member clicking
         // Close and the webhook arriving the row still carries its real
-        // clerkId. Without this line every /sellers/<clerkId> link the member
+        // userId. Without this line every /sellers/<userId> link the member
         // ever shared keeps serving their storefront header — sellerTier,
         // totalSales, averageRating and the idVerified tick — through that
         // window, and forever if the webhook is lost.
@@ -60,7 +59,6 @@ export class SellersPublicController {
       },
       select: {
         id: true,
-        clerkId: true,
         username: true,
         avatarUrl: true,
         sellerTier: true,

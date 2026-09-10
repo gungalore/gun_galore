@@ -13,13 +13,13 @@ export class CategoriesService {
    * names, slugs and all — to any anonymous request, which is what put 111
    * weapon-adjacent URLs in the sitemap.
    */
-  private publicOnly(clerkId?: string): { publicVisible?: true } {
-    return clerkId ? {} : { publicVisible: true };
+  private publicOnly(userId?: string): { publicVisible?: true } {
+    return userId ? {} : { publicVisible: true };
   }
 
-  async findAll(clerkId?: string): Promise<Category[]> {
+  async findAll(userId?: string): Promise<Category[]> {
     return this.prisma.category.findMany({
-      where: { isActive: true, ...this.publicOnly(clerkId) },
+      where: { isActive: true, ...this.publicOnly(userId) },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
   }
@@ -34,7 +34,7 @@ export class CategoriesService {
    * category list, then a single roll-up pass — no N+1. Powers homepage tiles
    * and facet counts.
    */
-  async withCounts(clerkId?: string): Promise<
+  async withCounts(userId?: string): Promise<
     Array<
       Pick<Category, 'id' | 'name' | 'slug' | 'parentId' | 'isActive' | 'sortOrder'> & {
         count: number;
@@ -43,7 +43,7 @@ export class CategoriesService {
   > {
     const [categories, grouped] = await Promise.all([
       this.prisma.category.findMany({
-        where: { isActive: true, ...this.publicOnly(clerkId) },
+        where: { isActive: true, ...this.publicOnly(userId) },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       }),
       this.prisma.listing.groupBy({
@@ -55,7 +55,7 @@ export class CategoriesService {
         where: {
           status: 'ACTIVE',
           isDealListing: false,
-          ...this.publicOnly(clerkId),
+          ...this.publicOnly(userId),
         },
         _count: { _all: true },
       }),
@@ -98,12 +98,12 @@ export class CategoriesService {
     return this.prisma.category.findUnique({ where: { id } });
   }
 
-  async findBySlug(slug: string, clerkId?: string): Promise<Category | null> {
+  async findBySlug(slug: string, userId?: string): Promise<Category | null> {
     const category = await this.prisma.category.findUnique({ where: { slug } });
     // Anonymous callers must not be able to confirm a members-only category
     // exists by probing its slug — same null a bad slug returns.
     if (!category) return null;
-    if (!clerkId && !category.publicVisible) return null;
+    if (!userId && !category.publicVisible) return null;
     return category;
   }
 
@@ -114,7 +114,7 @@ export class CategoriesService {
    */
   async findBySlugTree(
     slug: string,
-    clerkId?: string,
+    userId?: string,
   ): Promise<{
     category: Category;
     parent: Category | null;
@@ -125,7 +125,7 @@ export class CategoriesService {
     // /category/firearms is a live, unauthenticated, un-throttled endpoint
     // today that returns all ten firearm children. Null (→ 404) for anyone
     // without a session.
-    if (!clerkId && !category.publicVisible) return null;
+    if (!userId && !category.publicVisible) return null;
     const [parent, children] = await Promise.all([
       category.parentId
         ? this.prisma.category.findUnique({ where: { id: category.parentId } })
@@ -134,7 +134,7 @@ export class CategoriesService {
         where: {
           parentId: category.id,
           isActive: true,
-          ...this.publicOnly(clerkId),
+          ...this.publicOnly(userId),
         },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       }),
@@ -142,7 +142,7 @@ export class CategoriesService {
     // A members-only parent (e.g. Crossbows' parent Archery is public, but the
     // reverse case exists) must not leak through the breadcrumb either.
     const safeParent =
-      parent && (clerkId || parent.publicVisible) ? parent : null;
+      parent && (userId || parent.publicVisible) ? parent : null;
     return { category, parent: safeParent, children };
   }
 

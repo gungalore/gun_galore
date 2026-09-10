@@ -1,158 +1,90 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Post,
-  UploadedFile,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Body, Controller, Get, Header, Post, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { KycOrTokenGuard } from '../auth/kyc-or-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { KycService } from './kyc.service';
 import { ConsentDto } from './dto/consent.dto';
-import { VerifyIdDto } from './dto/verify-id.dto';
-import { FaceMatchDto } from './dto/face-match.dto';
 import { KycDetailsDto } from './dto/kyc-details.dto';
-import { KycSelfieDto } from './dto/kyc-selfie.dto';
 
-// ID-document upload constraints (Claude flow). PDF is allowed because
-// many sellers only have a scanned copy of their ID; magic-byte sniffing
-// in the service catches PDFs with lying extensions.
-//
-// ⚠️ EXPORTED SO THE PHONE'S DOOR CANNOT DRIFT FROM THE DESK'S. The QR
-// hand-off posts the same document to the same service through
-// kyc-scan.controller.ts; a second copy of these limits is a second thing to
-// remember to change, and the one that gets forgotten is always the one that
-// lets something in.
-export const ID_DOC_MIME_RE =
-  /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/;
-export const ID_DOC_MAX_BYTES = 10 * 1024 * 1024; // 10 MB — same as dealer uploads
+/** Identity data. A shared cache holding one of these is somebody's ID. */
+const NoStore = () => Header('Cache-Control', 'private, no-store');
 
-// All endpoints here are seller-self-service. They run under
-// KycOrTokenGuard, which accepts EITHER a Clerk session OR a KYC_VERIFY
-// action token via ?t=<token> — the latter lets a seller complete
-// verification straight from the SMS link without signing in. Either way
-// @CurrentUser() resolves to the seller's clerkId, so the handlers are
-// identical. There's no admin / cross-user surface here (admin KYC
-// override tooling lives under /admin/kyc).
+/**
+ * Seller self-service identity verification.
+ *
+ * Every endpoint runs under KycOrTokenGuard, which accepts EITHER a member
+ * session OR a KYC_VERIFY action token via `?t=<token>` — the latter lets a
+ * seller finish verification straight from the SMS link without signing in.
+ * Either way `@CurrentUser()` resolves to the seller's User.id, so the
+ * handlers are identical. There is no admin / cross-user surface here; admin
+ * override tooling lives under /admin/kyc.
+ *
+ * ⚠️ THE DOCUMENT AND SELFIE ROUTES ARE GONE, NOT MISLAID. Didit's hosted
+ * page captures both, runs passive liveness and matches the faces, and tells
+ * us by webhook. We never receive the images, which is also why there is no
+ * upload limit to keep in step with the phone's door any more — that door
+ * (kyc-scan.controller.ts) went with them.
+ */
 @Controller('kyc')
 @UseGuards(KycOrTokenGuard)
 export class KycController {
   constructor(private readonly kyc: KycService) {}
 
-  // POPIA consent. Empty body — the timestamp is what matters.
+  /** POPIA consent. Empty body — the timestamp is what matters. */
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('consent')
-  async consent(@CurrentUser() clerkId: string, @Body() _dto: ConsentDto) {
-    return this.kyc.recordConsent(clerkId);
+  @NoStore()
+  async consent(@CurrentUser() userId: string, @Body() _dto: ConsentDto) {
+    return this.kyc.recordConsent(userId);
   }
 
-  // Step 1: Home Affairs ID lookup. Returns the official names so the
-  // frontend can show the seller a "is this you?" confirmation before
-  // they move on to the selfie step.
-  @Post('verify-id')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async verifyId(@CurrentUser() clerkId: string, @Body() dto: VerifyIdDto) {
-    return this.kyc.verifyId(clerkId, dto.idNumber);
-  }
-
-  // Step 2: selfie face-match. The frontend captures from getUserMedia()
-  // and posts the base64 image plus the same idNumber from step 1 so the
-  // VerifyNow request body has both fields.
-  @Post('face-match')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async faceMatch(
-    @CurrentUser() clerkId: string,
-    @Body() dto: FaceMatchDto,
-  ) {
-    return this.kyc.submitFaceMatch(clerkId, dto.selfieBase64, dto.idNumber);
-  }
-
-  // Selfie-only KYC for sellers who already submitted their SA ID
-  // via the post-publish profile-completion modal. We read the
-  // encrypted ID off User, run Home Affairs + facematch in one shot,
-  // then purge the encrypted blob. The frontend only has to send the
-  // selfie — no ID re-typing.
-  @Post('selfie-only')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async selfieOnly(
-    @CurrentUser() clerkId: string,
-    @Body() body: { selfieBase64: string },
-  ) {
-    return this.kyc.completeKycWithSelfie(clerkId, body.selfieBase64);
-  }
-
-  // ── Claude-vision flow (kyc_claude_flow_enabled) ──────────────────
-  // The service throws when the flag is off, so these are inert until
-  // rollout and the legacy endpoints above remain the fallback.
-
-  // Step 2: SA ID number + date of birth. Luhn + SA ID Basic (1 credit).
-  @Post('details')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async details(@CurrentUser() clerkId: string, @Body() dto: KycDetailsDto) {
-    return this.kyc.submitDetails(clerkId, dto.idNumber, dto.dob);
-  }
-
-  // Step 3: the ID document itself (photo or PDF scan).
-  @Post('id-document')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @UseInterceptors(
-    FileInterceptor('document', { limits: { fileSize: ID_DOC_MAX_BYTES } }),
-  )
-  async idDocument(
-    @CurrentUser() clerkId: string,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
-    if (!file) throw new BadRequestException('No document uploaded.');
-    if (!ID_DOC_MIME_RE.test(file.mimetype)) {
-      throw new BadRequestException(
-        'Upload your ID as a photo (JPEG/PNG/WEBP/HEIC) or a PDF scan.',
-      );
-    }
-    return this.kyc.submitIdDocument(clerkId, file);
-  }
-
-  // Opens an AWS Face Liveness session. The browser runs the challenge
-  // against this id with Amplify's FaceLivenessDetector, then posts the
-  // id back with the selfie so the verdict can read the result.
-  //
-  // ⚠️ A SESSION RESULT IS READABLE ONCE, and only for a few minutes. The
-  // seller must go straight from this call into the challenge and then
-  // into POST /kyc/selfie — an id parked in a tab is worthless.
-  @Post('liveness-session')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async livenessSession(@CurrentUser() clerkId: string) {
-    return this.kyc.createLivenessSession(clerkId);
-  }
-
-  // Step 4: live selfie → the single AWS verdict.
-  @Post('selfie')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async selfie(@CurrentUser() clerkId: string, @Body() dto: KycSelfieDto) {
-    return this.kyc.submitSelfieClaudeVerdict(
-      clerkId,
-      dto.selfieBase64,
-      dto.livenessSessionId,
-    );
-  }
-
-  // "SMS me the link" — desktop-without-camera handoff to the phone.
-  // Tighter throttle than the steps; the service adds a per-user 3/hour
-  // mint cap on top (the throttler is IP-keyed).
-  @Post('handoff-sms')
+  /**
+   * ID number + date of birth.
+   *
+   * Tighter than the rest at 3 per 10 minutes: this is the step that decides
+   * which identity the account is claiming, and the dup-hash check makes it
+   * the one worth probing.
+   */
   @Throttle({ default: { limit: 3, ttl: 600_000 } })
-  async handoffSms(@CurrentUser() clerkId: string) {
-    return this.kyc.sendHandoffSms(clerkId);
+  @Post('details')
+  @NoStore()
+  async details(@CurrentUser() userId: string, @Body() dto: KycDetailsDto) {
+    return this.kyc.submitDetails(userId, dto.idNumber, dto.dob);
   }
 
-  // Poll endpoint for the frontend to refresh the status pill without a
-  // full /users/me round-trip. Extended with flow/steps/nextStep — the
-  // wizard's save-&-resume state.
+  /**
+   * Start (or resume) the hosted verification and return the URL to open.
+   *
+   * ⚠️ MOBILE ONLY, BY THE PROVIDER'S RULE. The free-tier workflow sets
+   * `is_desktop_allowed: false`, so a desktop member has to reach this
+   * through the QR or the SMS hand-off below. The response is the same either
+   * way — it is the browser that opens it that has to be a phone.
+   */
+  @Throttle({ default: { limit: 5, ttl: 600_000 } })
+  @Post('session')
+  @NoStore()
+  async session(@CurrentUser() userId: string) {
+    return this.kyc.startVerification(userId);
+  }
+
+  /** "SMS me the link" — the desktop hand-off. */
+  @Throttle({ default: { limit: 3, ttl: 600_000 } })
+  @Post('handoff-sms')
+  @NoStore()
+  async handoffSms(@CurrentUser() userId: string) {
+    return this.kyc.sendHandoffSms(userId);
+  }
+
+  /**
+   * Where the member's wizard sits while the verdict is in flight.
+   *
+   * The verdict arrives asynchronously now, so this is polled rather than
+   * being the tail of a long POST. It is also the cold-start reconciliation:
+   * if a webhook was dropped, this is what notices.
+   */
   @Get('status')
-  async status(@CurrentUser() clerkId: string) {
-    return this.kyc.getStatus(clerkId);
+  @NoStore()
+  async status(@CurrentUser() userId: string) {
+    return this.kyc.getStatus(userId);
   }
 }

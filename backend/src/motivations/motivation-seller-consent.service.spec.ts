@@ -25,7 +25,6 @@ afterAll(() => {
   else process.env.ID_HASH_SECRET = ORIGINAL_SECRET;
 });
 
-const CLERK_SUB = 'user_3II9nOHaGzfYs6BNm6R9a6aiHIE';
 const USER_ID = 'cmt50g5j30000wyvnjy31n6fj';
 
 function make(over: { user?: unknown; owns?: unknown; mint?: jest.Mock; sms?: jest.Mock } = {}) {
@@ -84,7 +83,7 @@ function make(over: { user?: unknown; owns?: unknown; mint?: jest.Mock; sms?: je
 
 const ARGS = {
   motivationId: 'mo-1',
-  applicantClerkId: CLERK_SUB,
+  applicantId: USER_ID,
   applicantName: 'Gerhard Fourie',
   name: 'Piet Seller',
   phone: '0743039999',
@@ -103,14 +102,19 @@ describe('who the token is minted for', () => {
     await svc.invite(ARGS as never);
     expect(mint).toHaveBeenCalledTimes(1);
     expect(mint.mock.calls[0][0].authorisedUserId).toBe(USER_ID);
-    expect(mint.mock.calls[0][0].authorisedUserId).not.toBe(CLERK_SUB);
+    // ⚠️ THE SECOND HALF OF THIS TEST IS GONE BECAUSE THE BUG IS GONE. It
+    // asserted the minted token was bound to User.id and NOT to the Clerk
+    // subject — two different strings, and minting against the wrong one
+    // authorised the wrong record. There is one identifier now, so there is
+    // no wrong one left to pick. What survives is the assertion above: the
+    // token is bound to the applicant, never to whoever is calling.
   });
 
-  it('resolves the Clerk subject by clerkId, not by id', async () => {
+  it('resolves the Clerk subject by userId, not by id', async () => {
     const { svc, prisma } = make();
     await svc.invite(ARGS as never);
     expect(prisma.user.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { clerkId: CLERK_SUB } }),
+      expect.objectContaining({ where: { id: USER_ID } }),
     );
   });
 });

@@ -6,9 +6,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { PrismaService } from '../prisma/prisma.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
-import { verifyClerkToken } from './clerk-verify';
+import { SessionService } from './session.service';
+import { extractAccessToken } from './extract-token';
 
 // ────────────────────────────────────────────────────────────────────
 // LETTING A PHONE UPLOAD ON A DESKTOP MEMBER'S BEHALF.
@@ -17,7 +17,7 @@ import { verifyClerkToken } from './clerk-verify';
 // asking somebody to log in on their phone before they can photograph a card
 // is the friction the handoff exists to remove. The token is the credential.
 //
-// ⚠️ IT SETS request.clerkUserId TO THE AUTHORISING MEMBER, which means every
+// ⚠️ IT SETS request.userId TO THE AUTHORISING MEMBER, which means every
 // service behind it runs exactly as if that member had called it themselves —
 // `@CurrentUser()` reads that field and nothing downstream can tell the
 // difference. That is deliberate (it is why no *ForUser service variants were
@@ -36,34 +36,36 @@ export class ScanHandoffGuard implements CanActivate {
 
   constructor(
     private readonly tokens: ActionTokensService,
-    private readonly prisma: PrismaService,
+    private readonly sessions: SessionService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request & {
-      clerkUserId?: string;
-      viaActionToken?: boolean;
-    }>();
+    const request = context.switchToHttp().getRequest<
+      Request & {
+        userId?: string;
+        sessionId?: string;
+        viaActionToken?: boolean;
+      }
+    >();
 
     // A signed-in caller is still welcome — the same phone page works for
-    // somebody who happens to be logged in, and the desktop uses these
-    // routes in tests.
+    // somebody who happens to be logged in, and the desktop uses these routes
+    // in tests.
     //
-    // ⚠️ THROUGH verifyClerkToken, NOT verifyToken. This guard was the only
-    // one in the codebase calling @clerk/backend directly, which skipped the
-    // authorized-parties (azp) check every other guard applies — including
-    // KycOrTokenGuard, which stands in front of the ID-document route this
-    // one now shadows. Two doors onto the same identity record must not
-    // disagree about which origins may mint a session for it.
-    const auth = request.headers.authorization;
-    if (auth?.startsWith('Bearer ')) {
+    // ⚠️ THROUGH the shared extractor, like every other guard. This guard was
+    // once the only one reaching for the header itself, which skipped a check
+    // the guards in front of the same identity record were applying. Two doors
+    // onto one record must not disagree about what counts as a session.
+    const token = extractAccessToken(request);
+    if (token) {
       try {
-        const payload = await verifyClerkToken(auth.slice(7));
-        request.clerkUserId = payload.sub!;
+        const payload = await this.sessions.verify(token);
+        request.userId = payload.sub;
+        request.sessionId = payload.sid;
         request.viaActionToken = false;
         return true;
       } catch {
-        // Stale bearer — fall through to the token.
+        // Stale session — fall through to the token.
       }
     }
 
@@ -82,16 +84,13 @@ export class ScanHandoffGuard implements CanActivate {
           'This link is not authorised for scanning documents',
         );
       }
-      const user = await this.prisma.user.findUnique({
-        where: { id: resolved.authorisedUserId },
-        select: { clerkId: true },
-      });
-      if (!user) throw new UnauthorizedException();
-      request.clerkUserId = user.clerkId;
+      request.userId = resolved.authorisedUserId;
       request.viaActionToken = true;
       return true;
     } catch (err) {
-      this.logger.debug(`Scan handoff token check failed: ${(err as Error).message}`);
+      this.logger.debug(
+        `Scan handoff token check failed: ${(err as Error).message}`,
+      );
       throw new UnauthorizedException();
     }
   }

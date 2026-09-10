@@ -15,18 +15,18 @@ export class OrdersService {
     private readonly activity: ActivityService,
   ) {}
 
-  checkout(clerkId: string, dto: CreateOrderDto, frontendUrl: string) {
+  checkout(userId: string, dto: CreateOrderDto, frontendUrl: string) {
     this.activity.record({
       eventType: 'checkout_started',
-      actor: { clerkId },
+      actor: { userId },
       metadata: { lines: Array.isArray(dto.lines) ? dto.lines.length : 1 },
     });
-    return this.transactions.createOrderCheckout(clerkId, dto, frontendUrl);
+    return this.transactions.createOrderCheckout(userId, dto, frontendUrl);
   }
 
-  async myOrders(clerkId: string) {
+  async myOrders(userId: string) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) return [];
@@ -53,9 +53,9 @@ export class OrdersService {
     });
   }
 
-  async getOrder(id: string, clerkId: string) {
+  async getOrder(id: string, userId: string) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true },
     });
     if (!user) throw new NotFoundException('Order not found');

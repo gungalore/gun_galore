@@ -1,6 +1,6 @@
 import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { CrimeStatsService } from './crime-stats.service';
 import type {
   CrimeStatsStation,
@@ -19,7 +19,7 @@ const NoStore = () => Header('Cache-Control', 'private, no-store');
 /**
  * SAPS crime statistics — /api/crime-stats.
  *
- * 🚨 EVERY ROUTE TAKES ClerkGuard, READS INCLUDED. CLAUDE.md's rule is that a
+ * 🚨 EVERY ROUTE TAKES AuthGuard, READS INCLUDED. CLAUDE.md's rule is that a
  * new PUBLIC read path is a deliberate decision that has to be taken; this one
  * has not been. The figures themselves are public record, but the QUESTION is
  * not: "which police station is nearest this address" asked by an anonymous
@@ -27,7 +27,7 @@ const NoStore = () => Header('Cache-Control', 'private, no-store');
  * precinct crime figures" is a members-only feature of the motivation builder.
  */
 @Controller('crime-stats')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class CrimeStatsController {
   constructor(private readonly crimeStats: CrimeStatsService) {}
 

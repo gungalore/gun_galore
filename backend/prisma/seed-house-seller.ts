@@ -12,7 +12,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 //   npm run seed:house
 //
 // Idempotent:
-//  - Upserts the house User on its stable clerkId `system_house_seller`
+//  - Upserts the house User on its stable userId `system_house_seller`
 //    (a synthetic id — this account has no real Clerk session and never
 //    signs in). Reruns leave an existing row's mutable fields alone.
 //  - Records the resolved User.id in Setting('house_seller_user_id') so
@@ -35,13 +35,18 @@ async function main() {
   const now = new Date();
 
   const house = await prisma.user.upsert({
-    where: { clerkId: HOUSE_CLERK_ID },
+    where: { id: HOUSE_CLERK_ID },
     // Don't clobber operator edits (e.g. a swapped username) on rerun.
     update: {},
     create: {
-      clerkId: HOUSE_CLERK_ID,
+      id: HOUSE_CLERK_ID,
       email: HOUSE_EMAIL,
       username: HOUSE_USERNAME,
+      usernameLower: HOUSE_USERNAME.toLowerCase(),
+      // ⚠️ NOT A HASH OF ANYTHING. bcrypt.compare returns false for a
+      // malformed hash, so this account can never be signed in to — which is
+      // the point: it is scaffolding, not a person.
+      passwordHash: '!locked-no-password',
       firstName: 'Gun Galore',
       sellerTier: 'DEALER',
       kycStatus: 'VERIFIED',

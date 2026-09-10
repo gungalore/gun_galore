@@ -532,9 +532,9 @@ export class VaultAdoptionService {
    * from their Centre afterwards is never re-copied by a later step. Without
    * that, "delete" would mean "delete until the next batch".
    */
-  async backfillStep(clerkId: string): Promise<BackfillStep> {
+  async backfillStep(userId: string): Promise<BackfillStep> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: {
         id: true,
         documentVaultBackfillCursor: true,
@@ -620,9 +620,9 @@ export class VaultAdoptionService {
   }
 
   /** How many older documents are still waiting to be copied. */
-  async backfillRemaining(clerkId: string): Promise<number> {
+  async backfillRemaining(userId: string): Promise<number> {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: { id: userId },
       select: { id: true, documentVaultBackfillCursor: true },
     });
     if (!user) return 0;

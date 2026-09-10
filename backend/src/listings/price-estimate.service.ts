@@ -115,7 +115,7 @@ export class PriceEstimateService {
     string,
     { retailZar: number | null; at: number }
   >();
-  // clerkUserId -> { day (YYYY-MM-DD), count } — per-user daily web-anchor budget.
+  // userId -> { day (YYYY-MM-DD), count } — per-user daily web-anchor budget.
   private readonly webAnchorUserBudget = new Map<
     string,
     { day: string; count: number }

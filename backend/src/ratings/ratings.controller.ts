@@ -7,26 +7,26 @@ import {
   Param,
   UseGuards,
 } from '@nestjs/common';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { CurrentAdmin } from '../admin/decorators/current-admin.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RatingsService } from './ratings.service';
-import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { CreateRatingDto } from './dto/create-rating.dto';
 
 @Controller('transactions/:transactionId/rating')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class RatingsController {
   constructor(private readonly ratingsService: RatingsService) {}
 
   @Post()
   create(
     @Param('transactionId') transactionId: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() dto: CreateRatingDto,
   ) {
-    return this.ratingsService.create(transactionId, clerkId, dto);
+    return this.ratingsService.create(transactionId, userId, dto);
   }
 
   // Buyer corrects their rating (30-day window, closes when the seller
@@ -34,10 +34,10 @@ export class RatingsController {
   @Patch()
   update(
     @Param('transactionId') transactionId: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() dto: CreateRatingDto,
   ) {
-    return this.ratingsService.update(transactionId, clerkId, dto);
+    return this.ratingsService.update(transactionId, userId, dto);
   }
 }
 
@@ -59,45 +59,45 @@ export class RatingsAdminController {
 
 // Auth-gated dashboard endpoint. NOTE: split from the public seller
 // ratings controller below because Nest applies class-level guards to
-// every method — having `forSeller` under the same `@UseGuards(ClerkGuard)`
-// class would 401 the public /sellers/:clerkId page that needs to load
+// every method — having `forSeller` under the same `@UseGuards(AuthGuard)`
+// class would 401 the public /sellers/:userId page that needs to load
 // without an auth token (server-fetched SSR for guests).
 @Controller('ratings')
-@UseGuards(ClerkGuard)
+@UseGuards(AuthGuard)
 export class RatingsDashboardController {
   constructor(private readonly ratingsService: RatingsService) {}
 
   // Seller's private trust dashboard
   @Get('dashboard')
-  dashboard(@CurrentUser() clerkId: string) {
-    return this.ratingsService.getTrustDashboard(clerkId);
+  dashboard(@CurrentUser() userId: string) {
+    return this.ratingsService.getTrustDashboard(userId);
   }
 
   // Seller's single public reply to a review on their profile.
   @Post(':id/response')
   respond(
     @Param('id') id: string,
-    @CurrentUser() clerkId: string,
+    @CurrentUser() userId: string,
     @Body() body: { response?: string },
   ) {
-    return this.ratingsService.respond(id, clerkId, body?.response ?? '');
+    return this.ratingsService.respond(id, userId, body?.response ?? '');
   }
 }
 
-// Public, but OptionalClerkGuard (never rejects): a review embeds the listing
+// Public, but OptionalAuthGuard (never rejects): a review embeds the listing
 // title, so signed-out callers get only reviews on publicly-visible listings.
-// Used by /sellers/[clerkId] (SSR) and the listing page.
+// Used by /sellers/[userId] (SSR) and the listing page.
 @Controller('ratings')
-@UseGuards(OptionalClerkGuard)
+@UseGuards(OptionalAuthGuard)
 export class RatingsPublicController {
   constructor(private readonly ratingsService: RatingsService) {}
 
-  // Seller's public ratings (used on listing pages + /sellers/[clerkId]).
-  @Get('seller/:clerkId')
+  // Seller's public ratings (used on listing pages + /sellers/[userId]).
+  @Get('seller/:userId')
   forSeller(
-    @Param('clerkId') sellerClerkId: string,
-    @CurrentUser() viewerClerkId?: string,
+    @Param('userId') sellerId: string,
+    @CurrentUser() viewerId?: string,
   ) {
-    return this.ratingsService.findForSeller(sellerClerkId, viewerClerkId);
+    return this.ratingsService.findForSeller(sellerId, viewerId);
   }
 }
