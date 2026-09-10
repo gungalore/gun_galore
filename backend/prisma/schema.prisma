@@ -4210,6 +4210,56 @@ enum MotivationUploadKind {
 /// (crime-stats) rather than a search — so no applicant datum reaches a search
 /// query at all any more. Keep it that way: a target keyed on anything
 /// personal would be both a privacy regression and an uncacheable row.
+/// The quarry photograph for one motivation.
+///
+/// Operator, 2026-09-10: "We are going to insert the quarry it can hunt on the
+/// same page", then "the animal should be a real animal and not show the vital
+/// zone", then "we can call that api for each motivation, it's stupid cheap."
+///
+/// ⚠️ ONE PER APPLICATION, NOT ONE PER SPECIES, AND THE OPERATOR IS RIGHT THAT
+/// IT IS CHEAP. Three and a half US cents. Sharing a plate between everyone who
+/// hunts plains game would save almost nothing and would put the SAME
+/// photograph in two applicants' packs, which is the sort of thing a reviewer
+/// notices about a templated document.
+///
+/// ⚠️ BUT IT IS STILL STORED, AND THE REASON IS LATENCY RATHER THAN MONEY. The
+/// pack is rendered on EVERY download, and a picture model takes ten to twenty
+/// seconds against the sixty-second nginx ceiling on a request the member is
+/// waiting on. So the call happens once, during generation, beside the research
+/// and the cover photograph — the other two pieces of fail-soft background work
+/// — and every download after that is a read.
+///
+/// ⚠️ BYTES IN THE ROW, NOT A FILE ON DISK. The C.I.P. sheets live in a data
+/// directory because there are 552 of them and they came from outside. This is
+/// ours, it is small, and a row is inside `pg_dump` automatically — a new
+/// directory would need a change to backup.sh that somebody would forget, and
+/// the failure mode is a pack rendering with a blank box, silently.
+model QuarryPlate {
+  /// One plate per motivation, and it dies with it.
+  motivationId String     @id
+  motivation   Motivation @relation(fields: [motivationId], references: [id], onDelete: Cascade)
+
+  /// Which species are in the frame, "+"-joined, in the order they stand.
+  /// Diagnostic: it says what was asked for when the picture looks wrong.
+  speciesKeys String @db.VarChar(200)
+
+  /// Which wording of the brief produced it.
+  ///
+  /// ⚠️ WITHOUT THIS A CHANGE TO THE PROMPT COULD NEVER REACH A STORED PLATE,
+  /// the same trap researchAskVersion was written to close.
+  promptVersion String @db.VarChar(40)
+
+  mimeType String @db.VarChar(40)
+  bytes    Bytes
+  width    Int
+  height   Int
+
+  /// Which model drew it, for the ledger's benefit and for a later audit.
+  model String @db.VarChar(80)
+
+  createdAt DateTime @default(now())
+}
+
 model MotivationResearch {
   id String @id @default(cuid())
 
@@ -4423,6 +4473,10 @@ model Motivation {
   /// printed "1,000 to 1,300 yards" on its cartridge page for exactly that
   /// reason, a day after the ask gained METRIC ONLY.
   researchAskVersion    String? @db.VarChar(40)
+
+  /// The quarry photograph for this application's cartridge page, if it has
+  /// one. Drawn during generation, read on every download. See QuarryPlate.
+  quarryPlate QuarryPlate?
   documentVersion       Int     @default(0)
   // Versions of the attorney-reviewed PDF skeleton and disclaimer, stamped at
   // generation so documents produced under a reviewed version can be told

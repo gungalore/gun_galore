@@ -19,10 +19,14 @@ import {
 import { MotivationQuotaService } from './motivation-quota.service';
 import { applicationBlockers } from './motivation-eligibility';
 import {
+  BLOCK_LABELS,
   MotivationResearchService,
   RESEARCH_ASK_VERSION,
+  sectionOf,
   type ResearchPack,
 } from './motivation-research.service';
+import { quarriesFor } from './motivation-quarry';
+import { QuarryPlateService } from './quarry-plate.service';
 import { MotivationModelService } from './motivation-model.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -270,6 +274,9 @@ export class MotivationGenerationService {
     // What a firearm of a given CLASS is used for, generated once per class
     // and shared by everyone who holds one. See firearm-uses.service.ts.
     private readonly firearmUses: FirearmUsesService,
+    // The quarry photograph for the cartridge page. Drawn here rather than at
+    // render time — see the call below.
+    private readonly quarryPlates: QuarryPlateService,
   ) {}
 
   /**
@@ -712,6 +719,29 @@ export class MotivationGenerationService {
             })
             .catch(() => undefined);
         }
+      }
+
+      // ── the quarry photograph ─────────────────────────────────────
+      //
+      // Drawn HERE for the same reasons as the cover photograph below it: it
+      // is background work, it is fail-soft, and it must not be in the
+      // download path. Operator, 2026-09-10: "we can call that api for each
+      // motivation, it's stupid cheap" — three and a half US cents, and the
+      // page it fills would otherwise render a third empty.
+      //
+      // ⚠️ GATED ON THE APPLICANT'S OWN ANSWER ABOUT GAME. A cartridge suits
+      // impala whether or not this applicant has ever hunted one; game in a
+      // SPORT application argues a purpose nobody applied for.
+      //
+      // ⚠️ AND THE SPECIES COME OUT OF THE RESEARCH THE DOCUMENT ITSELF
+      // PRINTS, so the picture and the page can never name different animals.
+      if (research && (answers.hunt_game_class ?? '').trim()) {
+        const calibreText = sectionOf(research, BLOCK_LABELS.calibre) ?? '';
+        const species = quarriesFor({
+          cartridgeText: calibreText,
+          gameClasses: answers.hunt_game_class,
+        });
+        await this.quarryPlates.makeFor(row.id, species).catch(() => undefined);
       }
 
       // ── the cover photograph ──────────────────────────────────────

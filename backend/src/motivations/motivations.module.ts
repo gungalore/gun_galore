@@ -27,6 +27,7 @@ import { MotivationExtractService } from './motivation-extract.service';
 import { DocumentReadCacheService } from './document-read-cache.service';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
 import { CipSheetService } from './cip-sheet.service';
+import { QuarryPlateService } from './quarry-plate.service';
 import { FirearmImageService } from './motivation-firearm-image';
 import { MotivationWitnessService } from './motivation-witness.service';
 import { MotivationSellerConsentService } from './motivation-seller-consent.service';
@@ -106,6 +107,7 @@ import { FirearmUsesService } from './firearm-uses.service';
     DocumentReadCacheService,
     GoogleVisionOcrService,
     CipSheetService,
+    QuarryPlateService,
     Saps271Service,
     FirearmImageService,
     MotivationWitnessService,

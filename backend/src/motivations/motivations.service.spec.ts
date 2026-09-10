@@ -363,6 +363,9 @@ function build(
     // the drafts these tests assert on. Returning nothing is also the state
     // every assertion in this file was written against.
     { forClass: async () => [] } as never,
+    // ⚠️ A STUB THAT DRAWS NOTHING. A real one would reach the picture model
+    // on every generation; these tests assert on documents, not photographs.
+    { makeFor: async () => undefined } as never,
   );
   const render = new MotivationRenderService(
     prisma as never,
@@ -379,6 +382,10 @@ function build(
     news as never,
       // The precinct tables that head the press-clippings annexure.
     { precinct: async () => null } as never,
+    // ⚠️ A STUB THAT DRAWS NOTHING. A real one would reach the picture model
+    // once per species; these tests assert on documents, not photographs, and
+    // returning undefined is the state every one of them was written against.
+    { plateFor: async () => undefined } as never,
 );
   const witnessFlow = new MotivationWitnessesService(
     prisma as never,

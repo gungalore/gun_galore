@@ -22,6 +22,8 @@ import { tryDecryptText } from '../common/blob-crypto';
 
 import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
+import { QuarryPlateService } from './quarry-plate.service';
+import { quarryCaption, quarryFromKey } from './motivation-quarry';
 import { asLayout } from './motivation-pdf-layouts';
 import { consentFormFor } from './motivation-consent-statement';
 import {
@@ -497,6 +499,7 @@ export class MotivationRenderService {
     private readonly shared: MotivationSharedService,
     private readonly news: NewsService,
     private readonly crimeStats: CrimeStatsService,
+    private readonly quarry: QuarryPlateService,
   ) {}
 
   /**
@@ -960,6 +963,15 @@ export class MotivationRenderService {
       heroSubtitle(answers),
     );
 
+    /**
+     * ⚠️ BUILT ONCE AND SHARED, because the quarry is chosen FROM it. The
+     * species on the photograph comes out of the same prose the page prints,
+     * so calling `cartridgeArticle` twice would let the picture and the words
+     * disagree the day one of them changes.
+     */
+    const article = cartridgeArticle(row.researchEncrypted, cartridge?.name);
+    const cartridgePhoto = await this.quarryPhotoFor(row.id, answers);
+
     return this.pdf.render({
       referenceNumber: row.referenceNumber,
       // The applicant's REAL name — the documented exception to the site-wide
@@ -1067,10 +1079,8 @@ export class MotivationRenderService {
        * dimension belongs; a table of nine beside it was the same facts with
        * the picture taken away.
        */
-      cartridgeArticle: cartridgeArticle(
-        row.researchEncrypted,
-        cartridge?.name,
-      ),
+      cartridgeArticle: article,
+      cartridgePhoto,
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
       // ⚠️ THE APPLICANT'S PAGE, NOT THE REGISTRAR'S. See MotivationPdfInput.
@@ -1354,6 +1364,43 @@ export class MotivationRenderService {
    * data directory absent, a page that will not rasterise — returns undefined
    * and the caller falls back to our own drawing.
    */
+  /**
+   * The quarry photograph for the cartridge page, or nothing.
+   *
+   * ⚠️ A READ. The picture was drawn during GENERATION, beside the research
+   * and the cover photograph; this path renders on every download and may not
+   * spend twenty seconds on a picture model against a sixty-second nginx
+   * ceiling. See quarry-plate.service.
+   */
+  private async quarryPhotoFor(
+    motivationId: string,
+    answers: Record<string, string>,
+  ): Promise<
+    { png: Buffer; widthMm: number; heightMm: number; caption: string } | undefined
+  > {
+    /**
+     * ⚠️ GATED ON THE APPLICANT HAVING SAID THEY HUNT, NOT ON THE CARTRIDGE.
+     * A 6,5 Creedmoor suits impala whether or not this applicant has ever
+     * hunted one, and MO000075 is a DEDICATED SPORT application. Game in it
+     * would argue a purpose nobody applied for — the same fault CLAUDE.md
+     * already names for putting range or farm words in a self-defence
+     * document, and section 16 splits hunter from sports person precisely
+     * because they are different licences.
+     */
+    if (!(answers.hunt_game_class ?? '').trim()) return undefined;
+
+    const plate = await this.quarry.storedFor(motivationId).catch(() => undefined);
+    if (!plate) return undefined;
+
+    return {
+      png: plate.bytes,
+      // Only the ratio matters — the page places it in a fixed slot.
+      widthMm: 210,
+      heightMm: (210 * plate.height) / plate.width,
+      caption: quarryCaption(quarryFromKey(plate.speciesKeys)),
+    };
+  }
+
   private async cipInset(calibre: string): Promise<
     | { png: Buffer; widthMm: number; heightMm: number; texts: DrawingText[] }
     | undefined

@@ -279,12 +279,16 @@ export interface LlmImageRequest {
   /** Overrides the configured image model. */
   model?: string;
   /**
-   * ⚠️ THERE IS NO ASPECT-RATIO KNOB HERE ON PURPOSE. Gemini has an
-   * `imageConfig` and this code has never sent one; the plates come back
-   * 1408×768 unasked, which is the landscape the page wants. Declaring a
-   * field nothing has proved would be a knob that 400s the first time
-   * somebody turns it.
+   * The frame shape, e.g. "21:9".
+   *
+   * ⚠️ PROVED BEFORE IT WAS DECLARED. Sent as `generationConfig.imageConfig
+   * .aspectRatio` and probed live on 2026-09-10: "21:9" came back 1584×672,
+   * which is 2.36:1. A knob nothing has exercised is a 400 waiting for the
+   * first caller, so this one was turned before it was written down.
+   *
+   * Omitted means the model's own default — 1408×768 on this one.
    */
+  aspectRatio?: string;
   /** Ledger and log label, like every other call. */
   purpose: string;
   timeoutMs?: number;

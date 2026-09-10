@@ -1104,6 +1104,87 @@ describe('the cartridge drawing', () => {
     expect(pages[feature]).not.toContain('answers an attack');
   });
 
+  /**
+   * ⚠️ THE THREE FIXED SLOTS.
+   *
+   * Operator, 2026-09-10: "then we can have permanent placeholder, one for the
+   * CIP image, one for the text to fit in and one for the quearry picture, so
+   * we know it renders perfect every time."
+   *
+   * jsdom-free but still only half the story: these prove the slots are
+   * RESERVED and that nothing lands in the wrong one. What they cannot prove is
+   * that the page looks right, which is checked by rasterising it.
+   */
+  const PHOTO = {
+    png: PNG,
+    widthMm: 210,
+    heightMm: 90,
+    caption: 'Impala and Warthog — game this cartridge is commonly used on.',
+  };
+
+  it('⚠️ KEEPS THE PHOTOGRAPH AND ITS CAPTION ON THE FEATURE PAGE', async () => {
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: { ...hero, inset: drawing },
+      cartridgeArticle: article,
+      cartridgePhoto: PHOTO,
+    } as never);
+    const pages = await pageTexts(pdf);
+    const feature = pages.findIndex((x) => x.includes('introduced in 1902'));
+    expect(feature).toBeGreaterThan(-1);
+    expect(pages[feature]).toContain('game this cartridge is commonly used on');
+  });
+
+  it('⚠️ DOES NOT LET THE COLUMNS RUN INTO THE PHOTOGRAPH', async () => {
+    /**
+     * The failure this catches is silent: pdfkit sets text at any y it is
+     * given, so a column that ignored the slot would print straight over the
+     * animals and nothing would throw. A long article must therefore SPILL to
+     * the next page rather than overrun.
+     */
+    const many = {
+      title: '9 mm Luger',
+      paragraphs: Array.from({ length: 14 }, (_, i) => [
+        `**Section ${i + 1}**`,
+        'It was introduced in 1902 by Georg Luger for the Pistole Parabellum, ' +
+          'and is the most widely available centrefire pistol chambering in ' +
+          'South Africa by a wide margin, carried by most dealers.',
+      ]).flat(),
+    };
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: { ...hero, inset: drawing },
+      cartridgeArticle: many,
+      cartridgePhoto: PHOTO,
+    } as never);
+    const pages = await pageTexts(pdf);
+    // The caption still prints — the slot was not eaten by the overflow.
+    const feature = pages.findIndex((x) =>
+      x.includes('game this cartridge is commonly used on'),
+    );
+    expect(feature).toBeGreaterThan(-1);
+    /**
+     * And the tail went SOMEWHERE rather than being lost or set over the
+     * animals: fourteen sections cannot fit beside a C.I.P. sheet above a
+     * photograph, so the last of them must appear on a later page.
+     */
+    const rest = pages.slice(feature + 1).join(' ').replace(/\s+/g, '');
+    expect(rest).toContain('SECTION14');
+  });
+
+  it('collapses the slot when there is no photograph', async () => {
+    // A sport application has no quarry at all. Reserving 84 mm for a picture
+    // it will never get would be a worse page than the one this replaces.
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: { ...hero, inset: drawing },
+      cartridgeArticle: article,
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t).not.toContain('game this cartridge is commonly used on');
+    expect(t).toContain('introduced in 1902');
+  });
+
   it('⚠️ KEEPS A RUN-IN HEADING WITH ITS OWN PARAGRAPH', async () => {
     // Balanced one paragraph at a time, the two columns came out as two
     // headings at the top and their sentences underneath the wrong one.

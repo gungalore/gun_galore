@@ -112,7 +112,7 @@ export const RESEARCH_TTL_DAYS = 180;
  * out of its own firearm research; rewording the ask without this would have
  * shipped, looked right, and still handed the writer the same marketing.
  */
-export const RESEARCH_ASK_VERSION = '2026-09-10b';
+export const RESEARCH_ASK_VERSION = '2026-09-10c';
 
 export function cacheKeyFor(
   target: ResearchTarget,
@@ -172,6 +172,41 @@ export function targetsFor(
         'effective range — and what it is commonly used for in South Africa.',
         `Say what it is well matched to for ${useClass}, and what it is over-`,
         'or under-matched to. Figures with sources, never impressions.',
+        /**
+         * ⚠️ THE LENGTH IS THE SIZE OF THE HOLE IT IS PRINTED IN.
+         *
+         * Operator, 2026-09-10: "then you can specify word count for the text
+         * because you know the text size and spacing and how much real estate
+         * there is and have a perfectly filled sheet everytime."
+         *
+         * Measured rather than guessed, with the real face at the real size in
+         * the real slot (MEASURE_SLOT in motivation-pdf.service):
+         *
+         *   column width                88.0 mm
+         *   left column, full height   152.8 mm
+         *   right column, under the
+         *     C.I.P. sheet              30.3 mm
+         *   capacity                   183.1 mm
+         *   cost per word                0.899 mm, subheadings amortised
+         *   —> the slot holds about 204 words
+         *
+         * 190 is asked for so the page lands around 94% full: a little white
+         * at the foot of a column is what white space in a feature is for, and
+         * overshooting spills the tail onto a second sheet nobody asked for.
+         *
+         * ⚠️ THE SECTION COUNT IS PINNED TOO, because a subheading costs a
+         * line and its spacing. The same 190 words in fourteen sections is
+         * taller than in seven and would overflow a slot the word count says
+         * is fine.
+         */
+        'LENGTH: about 190 words in total, in about 7 short sections. This is',
+        'printed in a fixed space on the page — materially longer overflows it',
+        'and materially shorter leaves it half empty.',
+        '',
+        '⚠️ NEVER PAD TO REACH THE COUNT. Where you cannot document one of the',
+        'points, write nothing for it and let the page be short. This text is',
+        'printed in a document the applicant signs and lodges; an invented',
+        'sentence there is worse than a gap.',
         // ⚠️ METRIC, BECAUSE THE DOCUMENT IS. This brief is printed as the
         // cartridge feature beside a drawing dimensioned in millimetres and a
         // pressure in bar; a range quoted in yards on the same page reads as

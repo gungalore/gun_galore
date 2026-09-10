@@ -741,6 +741,34 @@ export interface MotivationPdfInput {
    * has been through the same scrub as everything else the writer sees, so it
    * cannot carry vocabulary the document itself would be refused for.
    */
+  /**
+   * A photograph of the quarry the cartridge is used on, across the foot of
+   * the feature page.
+   *
+   * Operator, 2026-09-10, on the page rendering half empty: "how are we going
+   * to make sure the page is filled with every cartridge every time, it looks
+   * kind of bare" — and then "We are going to insert the quarry it can hunt on
+   * the same page."
+   *
+   * ⚠️ IT IS THE FILL, AND THAT IS WHY IT IS FULL WIDTH AT THE FOOT. Six
+   * research sections come to about one column of a two-column spread; the
+   * arithmetic in `drawCartridgeFeature` says no split of two columns closes a
+   * gap that size, so the page needed another element rather than narrower
+   * measures. A landscape photograph across the bottom takes the empty third
+   * and wants the width anyway.
+   *
+   * ⚠️ AND IT ONLY EVER APPEARS ON A HUNTING APPLICATION. The renderer does
+   * not check that " the caller does, on the applicant's own answer to what
+   * game they hunt — because a photograph of game in a SPORT application argues
+   * a purpose nobody applied for.
+   */
+  cartridgePhoto?: {
+    png: Buffer;
+    widthMm: number;
+    heightMm: number;
+    /** Names the animal. Never says the applicant has hunted one. */
+    caption: string;
+  };
   cartridgeArticle?: {
     /** The cartridge's standardised name, as the headline. */
     title: string;
@@ -2028,6 +2056,56 @@ export class MotivationPdfService {
       const rightX = MARGIN + colW + GUTTER;
       const top = doc.y + K.mm(1);
 
+      /**
+       * ⚠️ THREE FIXED SLOTS, AND THAT IS THE WHOLE DESIGN.
+       *
+       * Operator, 2026-09-10: "then we can have permanent placeholder, one for
+       * the CIP image, one for the text to fit in and one for the quearry
+       * picture, so we know it renders perfect every time."
+       *
+       * The sizes below are CONSTANTS, not measurements of the content. A page
+       * whose geometry depends on how much the research happened to return is
+       * a page that looks different for every cartridge and can only be
+       * checked one cartridge at a time. Fixed boxes mean the layout is the
+       * same document every time and only what is inside them changes — a
+       * short brief leaves white space at the foot of a column, which is what
+       * white space in a two-column feature is for.
+       *
+       * The arithmetic they are chosen from, on a 182 mm content width and the
+       * ~244 mm of column left under the heading:
+       *
+       *   photograph   182 x 78 mm   (21:9, the shape the model is asked for)
+       *   caption                6 mm
+       *   columns             ~154 mm each, so 308 mm of column in total
+       *   C.I.P. sheet   88 x 119 mm  (the right column's full width)
+       *   text                ~189 mm of column, against ~145 mm typical
+       *
+       * ⚠️ A SLOT WITH NOTHING IN IT COLLAPSES rather than printing a hole. A
+       * sport application has no quarry photograph at all, and reserving 84 mm
+       * for a picture it is never going to get would be a worse page than the
+       * one this replaces.
+       */
+      const photo = input.cartridgePhoto;
+      /** 21:9, matching PLATE_W/PLATE_H in quarry-plate.service. */
+      const PHOTO_ASPECT = 9 / 21;
+      const CAPTION_H = K.mm(6);
+      const PHOTO_GAP = K.mm(6);
+
+      const photoH = photo ? contentWidth * PHOTO_ASPECT : 0;
+      const photoW = contentWidth;
+      /**
+       * Where the columns stop. With no photograph they run to the foot of the
+       * page exactly as they did before this existed.
+       */
+      const floor = photo
+        ? K.BODY_BOTTOM - photoH - CAPTION_H - PHOTO_GAP
+        : K.BODY_BOTTOM;
+
+      /**
+       * ⚠️ THE C.I.P. SHEET IS PLACED FIRST, so the right column knows where
+       * it may start. pdfkit will happily set text straight over an image when
+       * it is given an explicit y — the footer already proved that once.
+       */
       let rightTop = top;
       if (picture) {
         const h = placeDrawing(picture, rightX, top, colW);
@@ -2082,32 +2160,100 @@ export class MotivationPdfService {
         );
       };
 
-      for (const group of groups) {
-        const cost = costOf(group);
+      /**
+       * ⚠️ SPLIT BY WHAT EACH COLUMN CAN HOLD, NOT BY WHICHEVER IS SHORTER
+       * AT THE TIME.
+       *
+       * The old rule was `ly <= ry`, which fills the left column until it
+       * passes the bottom of the C.I.P. sheet and only then starts the right.
+       * That worked when the columns ran the full page. It stopped working the
+       * moment the photograph took the bottom third: the columns are now about
+       * 153 mm and the sheet eats 119 mm of the right one, so the left column
+       * alone very nearly holds the whole article — everything went left, the
+       * right column stayed empty under the sheet, and the page rendered with a
+       * 35 mm band of white above the photograph.
+       *
+       * So the TAIL that fits under the sheet is measured off the end and sent
+       * right, and the head goes left. Both columns finish level on the line
+       * above the photograph, which is what a fixed slot is for.
+       */
+      const costs = groups.map((g) => costOf(g));
+      const rightCap = Math.max(0, floor - rightTop);
+      const textTotal = costs.reduce((n, c) => n + c, 0);
+      /**
+       * ⚠️ BALANCED, NOT MAXIMISED. Sending as much as will fit under the
+       * sheet leaves the two columns ending 40 mm apart, because the right one
+       * starts 120 mm lower. The share that makes them END LEVEL is the one
+       * that solves L + R = total and L — R = (rightTop — top), which is this:
+       */
+      const ideal = Math.min(
+        rightCap,
+        Math.max(0, (textTotal - (rightTop - top)) / 2),
+      );
+      let tailCount = 0;
+      let tailCost = 0;
+      for (let i = groups.length - 1; i >= 0; i--) {
+        const next = tailCost + costs[i];
+        if (next > rightCap) break;
+        // Stop when adding another group would overshoot the balance point by
+        // more than leaving it out undershoots.
+        if (tailCount && Math.abs(next - ideal) > Math.abs(tailCost - ideal)) {
+          break;
+        }
+        tailCost = next;
+        tailCount += 1;
+      }
+      const firstRight = groups.length - tailCount;
+
+      groups.forEach((group, i) => {
+        const cost = costs[i];
+        const toLeft = i < firstRight;
+        const y = toLeft ? ly : ry;
         /**
          * ⚠️ NEITHER COLUMN RUNS OFF THE PAGE. pdfkit will happily set text
          * past the bottom margin when it is given an explicit y, and the
-         * footer would print straight over it. What will not fit is held back
-         * and set full width overleaf rather than being lost.
+         * footer — or the photograph — would print straight over it. What will
+         * not fit is held back and set full width overleaf rather than lost.
          */
-        const toLeft = ly <= ry;
-        const y = toLeft ? ly : ry;
-        if (y + cost > K.BODY_BOTTOM) {
+        if (y + cost > floor) {
           const other = toLeft ? ry : ly;
-          if (other + cost > K.BODY_BOTTOM) {
+          if (other + cost > floor) {
             spill.push(group);
-            continue;
+            return;
           }
           if (toLeft) ry = put(group, rightX, ry);
           else ly = put(group, MARGIN, ly);
-          continue;
+          return;
         }
         if (toLeft) ly = put(group, MARGIN, ly);
         else ry = put(group, rightX, ry);
+      });
+
+      /**
+       * ⚠️ AT THE FOOT, NOT UNDER THE TEXT. Placed at `floor` rather than at
+       * wherever the columns happened to end, so a short article and a long
+       * one both close the page on the same line. That is the whole point of
+       * it: the bare page the operator was looking at ended two thirds of the
+       * way down.
+       */
+      if (photo && photoH > 0) {
+        const px = MARGIN + (contentWidth - photoW) / 2;
+        const py = K.BODY_BOTTOM - photoH - CAPTION_H;
+        doc.image(photo.png, px, py, { width: photoW, height: photoH });
+        doc
+          .font(B.bodyItalic)
+          .fontSize(K.px(9))
+          .fillColor(C.mut)
+          .text(photo.caption, px, py + photoH + K.mm(1.5), {
+            width: photoW,
+            align: 'center',
+            lineBreak: false,
+          });
       }
 
       doc.x = MARGIN;
-      doc.y = Math.max(ly, ry) + PARA_GAP;
+      doc.y =
+        photo && photoH > 0 ? K.BODY_BOTTOM : Math.max(ly, ry) + PARA_GAP;
 
       if (spill.length) {
         doc.addPage();

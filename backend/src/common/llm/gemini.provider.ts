@@ -279,7 +279,15 @@ export class GeminiProvider implements LlmProviderClient {
       this.sdk().models.generateContent({
         model,
         contents: [{ role: 'user', parts }],
-        config: { abortSignal: signal },
+        config: {
+          abortSignal: signal,
+          // ⚠️ ONLY WHEN ASKED. Sent as imageConfig.aspectRatio and probed
+          // live before it was written in; absent it takes the model's own
+          // default rather than a shape we assumed.
+          ...(req.aspectRatio
+            ? { imageConfig: { aspectRatio: req.aspectRatio } }
+            : {}),
+        },
       }),
     );
 
