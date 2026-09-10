@@ -2,6 +2,19 @@ import { MotivationLicenceType } from '@prisma/client';
 import { documentStatus, sourceProofWhy } from './motivation-documents';
 import { SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_UNDECIDED } from './motivation-fields';
 
+/**
+ * The read cache is not under test here: every lookup misses and every store
+ * is dropped, so these specs exercise the reader exactly as they did before it
+ * existed.
+ */
+const noReadCache = () =>
+  ({
+    key: () => 'test-key',
+    get: async () => null,
+    put: async () => undefined,
+  }) as never;
+
+
 // ────────────────────────────────────────────────────────────────────
 // "FROM A DEALER" DID NOTHING AT ALL.
 //
@@ -294,7 +307,7 @@ describe('reading the source document', () => {
   });
 
   it('fills the firearm from it, not the applicant’s identity', () => {
-    const svc = new MotivationExtractService();
+    const svc = new MotivationExtractService(undefined as never, noReadCache());
     const parse = (svc as unknown as {
       parse: (t: string, a: unknown[], k: string) => { key: string; value: string }[];
     }).parse.bind(svc);

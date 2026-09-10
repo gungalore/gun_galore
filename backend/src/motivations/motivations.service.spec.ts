@@ -329,6 +329,14 @@ function build(
     shared,
     // The decision ledger, silenced: these tests are about what the vault does, not what it writes down.
     { note: () => undefined } as never,
+    {
+      // The read cache is not under test here: every lookup misses.
+      key: () => 'k',
+      get: async () => null,
+      put: async () => undefined,
+      forget: async () => 0,
+      purgeExpired: async () => 0,
+    } as never,
   );
   const generation = new MotivationGenerationService(
     prisma as never,

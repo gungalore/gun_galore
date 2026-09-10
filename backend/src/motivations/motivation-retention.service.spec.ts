@@ -46,7 +46,8 @@ function build(opts: { pages?: Upload[][]; removeFails?: Set<string> } = {}) {
   const svc = new MotivationRetentionService(
     prisma as never,
     files as never,
-  );
+      { purgeExpired: async () => 0 } as never,
+    );
   return { svc, prisma, files, updated, removed, queries };
 }
 
@@ -257,7 +258,9 @@ describe('erasing an account', () => {
         removed.push(k);
       }),
     };
-    const svc = new MotivationRetentionService(prisma as never, files as never);
+    const svc = new MotivationRetentionService(prisma as never, files as never,
+      { purgeExpired: async () => 0 } as never,
+    );
     return { svc, removed, prisma };
   }
 
@@ -327,7 +330,9 @@ describe('erasing an account', () => {
         removed.push(k);
       }),
     };
-    const svc = new MotivationRetentionService(prisma as never, files as never);
+    const svc = new MotivationRetentionService(prisma as never, files as never,
+      { purgeExpired: async () => 0 } as never,
+    );
     const out = await svc.purgeForUser('u1');
     expect(out.filesFailed).toBe(1);
     expect(out.filesRemoved).toBe(3);

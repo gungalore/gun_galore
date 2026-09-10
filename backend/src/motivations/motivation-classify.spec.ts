@@ -3,6 +3,19 @@ import { MotivationExtractService } from './motivation-extract.service';
 import { RETIRED } from './motivation-documents';
 import type { LlmResponse } from '../common/llm/llm.types';
 
+/**
+ * The read cache is not under test here: every lookup misses and every store
+ * is dropped, so these specs exercise the reader exactly as they did before it
+ * existed.
+ */
+const noReadCache = () =>
+  ({
+    key: () => 'test-key',
+    get: async () => null,
+    put: async () => undefined,
+  }) as never;
+
+
 // Sorting a pack of documents automatically is only safe because of what the
 // classifier REFUSES to do. The required-documents list counts the TYPE of an
 // upload, not its contents — so a confident wrong answer here shows a
@@ -30,7 +43,7 @@ const fakeLlm = (reply: string | Error, configured = true) => ({
 });
 
 function svcWith(reply: string | Error): MotivationExtractService {
-  return new MotivationExtractService(fakeLlm(reply) as never);
+  return new MotivationExtractService(fakeLlm(reply) as never, noReadCache());
 }
 
 const png = { bytes: Buffer.from('x'), mimeType: 'image/png' };
@@ -88,7 +101,7 @@ describe('naming a document from its contents', () => {
 
   it('does nothing at all when the AI service is not configured', async () => {
     const llm = fakeLlm('{"kind":"OTHER","confidence":"low"}', false);
-    const svc = new MotivationExtractService(llm as never);
+    const svc = new MotivationExtractService(llm as never, noReadCache());
     await expect(svc.classify(png)).resolves.toBeNull();
     expect(llm.complete).not.toHaveBeenCalled();
   });
@@ -99,7 +112,7 @@ describe('naming a document from its contents', () => {
     // to null, which files the document as "something else": a silent
     // regression that looks exactly like a model which could not tell.
     const llm = fakeLlm('{"kind":"OTHER","confidence":"low"}');
-    const svc = new MotivationExtractService(llm as never);
+    const svc = new MotivationExtractService(llm as never, noReadCache());
     await svc.classify(png);
     const req = llm.complete.mock.calls[0][0];
     for (const p of ['temperature', 'top_p', 'top_k']) {
@@ -143,6 +156,7 @@ describe('reading the page once', () => {
     const vision = { text: jest.fn().mockResolvedValue(text) };
     const svc = new MotivationExtractService(
       fakeLlm('{"kind":"OTHER","confidence":"low"}') as never,
+      noReadCache(),
       vision as never,
     );
     return { svc, vision };
@@ -189,6 +203,7 @@ describe('reading the page once', () => {
     const vision = { text: jest.fn().mockRejectedValue(new Error('403')) };
     const svc = new MotivationExtractService(
       fakeLlm('{"kind":"OTHER","confidence":"low"}') as never,
+      noReadCache(),
       vision as never,
     );
     await expect(svc.ocr(Buffer.from('x'), 'image/png')).resolves.toBeNull();

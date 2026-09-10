@@ -1,3 +1,4 @@
+import { DocumentReadCacheService } from './document-read-cache.service';
 import {
   BadRequestException,
   GoneException,
@@ -142,6 +143,11 @@ export class MotivationDocumentsService {
      * that existed before, never a crash. No import cycle: the prefill service
      * knows nothing about this one.
      */
+    /**
+     * Before the optional prefill, because a required parameter cannot
+     * follow an optional one — not because the order means anything.
+     */
+    private readonly readCache: DocumentReadCacheService,
     private readonly prefill?: MotivationPrefillService,
   ) {}
 
@@ -2471,6 +2477,8 @@ export class MotivationDocumentsService {
       select: {
         id: true,
         storageKey: true,
+        // The bytes' fingerprint, so any cached reading of them goes too.
+        sha256: true,
         // Which vault row this copy came from, so the refusal below can outlive
         // the row we are about to delete.
         sourceCredentialId: true,
@@ -2498,6 +2506,19 @@ export class MotivationDocumentsService {
     }
 
     await this.prisma.motivationUpload.delete({ where: { id: up.id } });
+
+    /**
+     * ⚠️ AND ANYTHING WE READ OFF IT, or the delete is a lie. A cached
+     * reading holds the name, the ID number and the serials transcribed from
+     * this document; leaving it behind for the rest of its thirty days would
+     * mean a member who removed a licence card had not removed it.
+     *
+     * Content-addressed, so this drops every reading of these exact bytes
+     * whatever kind they were read as. Fail-soft: the row is already gone and
+     * the member has their answer, so a cache that will not purge is a log
+     * line and the nightly sweep's problem, never a failed delete.
+     */
+    if (up.sha256) void this.readCache.forget(up.sha256);
 
     // ⚠️ THE ROW IS GONE, SO THE REFUSAL HAS TO LIVE SOMEWHERE ELSE. C2. Until
     // auto-link could re-arm, "a delete stays deleted" was guaranteed by the

@@ -507,6 +507,14 @@ function build(
     { mayOfferAcross: jest.fn(async () => true), mayKeepFor: jest.fn(async () => true) } as never,
     shared,
     { note: () => undefined } as never,
+    {
+      // The read cache is not under test here: every lookup misses.
+      key: () => 'k',
+      get: async () => null,
+      put: async () => undefined,
+      forget: async () => 0,
+      purgeExpired: async () => 0,
+    } as never,
     prefill as never,
   );
   return { service, prisma, files, created, prefill, answers: () => saved };

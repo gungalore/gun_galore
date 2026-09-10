@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { DocumentReadCacheService } from './document-read-cache.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import { LlmService } from '../common/llm/llm.service';
@@ -291,6 +293,41 @@ export function remapOwnedSlot(keys: string[], slot: number): string[] {
   );
 }
 
+/**
+ * The owned-firearm row prefix, and the pattern that finds any of them.
+ *
+ * ⚠️ THE READ CACHE IS KEYED SLOT-FREE, so it needs to strip a row number and
+ * put one back. `remapOwnedSlot` only goes one way — row 1 outwards — because
+ * that is all the reader ever needed.
+ */
+const OWNED_ROW_1 = 'existing_firearm_1_';
+const SLOT_RE = /^existing_firearm_\d+_/;
+
+/** Which owned row this set of fields is for, or null if it is not one. */
+export function ownedSlotOf(fields: readonly { key: string }[]): number | null {
+  for (const f of fields) {
+    const m = /^existing_firearm_(\d+)_/.exec(f.key);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+/** The same reading, moved to another owned row. */
+export function remapFields<T extends { key: string }>(
+  fields: readonly T[],
+  slot: number,
+): T[] {
+  return fields.map((f) => ({
+    ...f,
+    key: f.key.replace(SLOT_RE, `existing_firearm_${slot}_`),
+  }));
+}
+
+/** What the read cache keys on. Content-addressed, so identical bytes hit. */
+function sha256(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
 export interface ExtractedField {
   key: string;
   value: string;
@@ -311,6 +348,7 @@ export class MotivationExtractService {
   // reads), and an optional parameter cannot precede a required one.
   constructor(
     private readonly llm: LlmService,
+    private readonly cache: DocumentReadCacheService,
     private readonly vision?: GoogleVisionOcrService,
   ) {}
 
@@ -394,6 +432,33 @@ export class MotivationExtractService {
     const asked = registry.filter((f) => wanted.includes(f.key));
     if (!asked.length) return [];
 
+    /**
+     * ⚠️ HAVE WE READ THESE EXACT BYTES BEFORE?
+     *
+     * Operator, 2026-09-10: "every thing we generate that can be reused we
+     * store in a database ... so it costs money and effort one time and never
+     * again." The `AiUsage` ledger showed the same ten licences and four
+     * proficiencies read SIX TIMES across three days, on the same stored
+     * files — every pick of a vault document into a pack pays again.
+     *
+     * ⚠️ THE LOOKUP IS SLOT-NORMALISED AND THE ANSWER IS REMAPPED BACK. A
+     * licence read into `existing_firearm_3_*` is the same reading of the same
+     * card as one read into row 1, so both the key and the stored payload use
+     * row 1. Keyed by slot instead, a ten-firearm applicant would pay for ten
+     * reads of documents we had already read — which is the case this exists
+     * for.
+     */
+    const canonical = asked.map((f) => f.key.replace(SLOT_RE, OWNED_ROW_1));
+    const cacheKey = this.cache.key({
+      fileSha256: sha256(args.bytes),
+      kind: args.kind,
+      licenceType: args.licenceType,
+      askedKeys: canonical,
+    });
+    const slot = ownedSlotOf(asked);
+    const hit = await this.cache.get(cacheKey);
+    if (hit) return slot === null ? hit : remapFields(hit, slot);
+
     const block = contentBlock(args.bytes, args.mimeType);
 
     // ⚠️ TWO ATTEMPTS, BECAUSE ONE IS NOT ENOUGH ON A MARGINAL DOCUMENT.
@@ -424,7 +489,22 @@ export class MotivationExtractService {
 
     for (let attempt = 0; attempt < 2; attempt++) {
       const found = await this.attemptRead(block, asked, args.kind, ocrText);
-      if (found.length) return found;
+      if (found.length) {
+        /**
+         * ⚠️ STORED AT ROW 1, WHATEVER ROW IT WAS READ INTO, so the next pack
+         * that wants this card in a different row still gets it free. Nothing
+         * is stored for an empty result — see the cache service: we cannot
+         * tell a blank document from a failed call here, and remembering the
+         * second as the first would make a marginal document permanently
+         * unreadable.
+         */
+        void this.cache.put({
+          cacheKey,
+          fileSha256: sha256(args.bytes),
+          fields: slot === null ? found : remapFields(found, 1),
+        });
+        return found;
+      }
     }
     return [];
   }

@@ -1,6 +1,19 @@
 import { ENDORSEMENT_LABELS } from '../common/sa-competency';
 import { MotivationExtractService } from './motivation-extract.service';
 
+/**
+ * The read cache is not under test here: every lookup misses and every store
+ * is dropped, so these specs exercise the reader exactly as they did before it
+ * existed.
+ */
+const noReadCache = () =>
+  ({
+    key: () => 'test-key',
+    get: async () => null,
+    put: async () => undefined,
+  }) as never;
+
+
 // ────────────────────────────────────────────────────────────────────
 // "WHAT YOUR COMPETENCY COVERS" NEVER FILLED ITSELF IN, AND THIS IS WHY.
 //
@@ -32,7 +45,7 @@ type Parse = (
 // so the LLM adapter is a stub that would throw if anything tried.
 const noLlm = () => ({ isConfigured: () => false }) as never;
 
-const svc = new MotivationExtractService(noLlm());
+const svc = new MotivationExtractService(noLlm(), noReadCache());
 // The parse step is private by design; reaching it keeps the test honest about
 // WHERE the defect was rather than mocking the model around it.
 const parse = (svc as unknown as { parse: Parse }).parse.bind(svc);
@@ -189,7 +202,7 @@ describe('the multi guard that dropped everything', () => {
 // ────────────────────────────────────────────────────────────────────
 describe('reading a document with no OCR text available', () => {
   it('still parses everything it did before', () => {
-    const bare = new MotivationExtractService(noLlm());
+    const bare = new MotivationExtractService(noLlm(), noReadCache());
     const parseBare = (bare as unknown as { parse: Parse }).parse.bind(bare);
     const out = parseBare(
       model('S/L-RIFLE/CARB/SHOTGUN'),

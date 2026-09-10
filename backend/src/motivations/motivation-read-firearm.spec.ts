@@ -3,6 +3,19 @@ import { MotivationExtractService } from './motivation-extract.service';
 import type { LlmResponse } from '../common/llm/llm.types';
 import { answerValue } from '../common/card-placeholder';
 
+/**
+ * The read cache is not under test here: every lookup misses and every store
+ * is dropped, so these specs exercise the reader exactly as they did before it
+ * existed.
+ */
+const noReadCache = () =>
+  ({
+    key: () => 'test-key',
+    get: async () => null,
+    put: async () => undefined,
+  }) as never;
+
+
 // ────────────────────────────────────────────────────────────────────
 // READING THE FIREARM OFF ANYTHING.
 //
@@ -39,7 +52,7 @@ function build(reply: unknown, throws?: Error, configured = true) {
     model: 'test-model-2.5',
     provider: 'gemini' as const,
   };
-  const svc = new MotivationExtractService(llm as never);
+  const svc = new MotivationExtractService(llm as never, noReadCache());
   (svc as unknown as { logger: unknown }).logger = {
     warn: jest.fn(),
     error: jest.fn(),

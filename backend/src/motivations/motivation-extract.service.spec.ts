@@ -2,6 +2,19 @@ import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import { MotivationExtractService } from './motivation-extract.service';
 import type { LlmResponse } from '../common/llm/llm.types';
 
+/**
+ * The read cache is not under test here: every lookup misses and every store
+ * is dropped, so these specs exercise the reader exactly as they did before it
+ * existed.
+ */
+const noReadCache = () =>
+  ({
+    key: () => 'test-key',
+    get: async () => null,
+    put: async () => undefined,
+  }) as never;
+
+
 // This reads someone's identity document and proposes what goes on a form they
 // sign. So the tests are about what it REFUSES to do: invent a field, trust a
 // digit it misread, or touch anything about their criminal record.
@@ -35,7 +48,7 @@ function build(reply: unknown, throws?: Error, configured = true) {
     model: MODEL,
     provider: 'gemini' as const,
   };
-  const svc = new MotivationExtractService(llm as never);
+  const svc = new MotivationExtractService(llm as never, noReadCache());
   (svc as unknown as { logger: unknown }).logger = {
     warn: jest.fn(),
     error: jest.fn(),
@@ -54,6 +67,116 @@ const run = (
     bytes: Buffer.from('not-really-an-image'),
     mimeType: 'image/jpeg',
   });
+
+describe('⚠️ READING THE SAME DOCUMENT TWICE', () => {
+  // Operator, 2026-09-10: "every thing we generate that can be reused we
+  // store in a database ... so it costs money and effort one time and never
+  // again." The AiUsage ledger showed the same ten licences and four
+  // proficiencies read SIX TIMES over three days against the same stored
+  // files, because every pick of a vault document into a pack re-reads the
+  // bytes. This is the test that the second read is free.
+
+  /** A cache that actually remembers, unlike the no-op the other tests use. */
+  function realish() {
+    const store = new Map<string, unknown>();
+    return {
+      store,
+      key: (a: { fileSha256: string; kind: string; licenceType: string; askedKeys: readonly string[] }) =>
+        [a.fileSha256, a.kind, a.licenceType, [...a.askedKeys].sort().join(',')].join('|'),
+      get: async (k: string) => (store.get(k) as never) ?? null,
+      put: async (a: { cacheKey: string; fields: unknown[] }) => {
+        if (a.fields.length) store.set(a.cacheKey, a.fields);
+      },
+    };
+  }
+
+  const reply = JSON.stringify({
+    fields: [
+      { key: 'full_name', value: 'Jan Pieter van der Merwe', confidence: 'high' },
+      { key: 'id_number', value: '8001015009087', confidence: 'high' },
+    ],
+  });
+
+  function withCache() {
+    const complete = jest.fn(async (): Promise<LlmResponse> => llmReply(reply));
+    const llm = {
+      complete,
+      stream: jest.fn(),
+      isConfigured: () => true,
+      model: MODEL,
+      provider: 'gemini' as const,
+    };
+    const cache = realish();
+    const svc = new MotivationExtractService(llm as never, cache as never);
+    (svc as unknown as { logger: unknown }).logger = {
+      warn: jest.fn(), error: jest.fn(), log: jest.fn(),
+    };
+    return { svc, complete, cache };
+  }
+
+  it('⚠️ COSTS ONE MODEL CALL, NOT TWO', async () => {
+    const { svc, complete } = withCache();
+    const first = await run(svc);
+    const second = await run(svc);
+
+    expect(first.length).toBeGreaterThan(0);
+    // The same answer, and only one call paid for.
+    expect(second).toEqual(first);
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('⚠️ AND DIFFERENT BYTES STILL COST A CALL', async () => {
+    // Content-addressed: a genuinely new photograph is genuinely new work.
+    // If this ever passes on one call, the key has stopped reading the bytes.
+    const { svc, complete } = withCache();
+    await svc.extract({
+      kind: MotivationUploadKind.IDENTITY_DOCUMENT,
+      licenceType: T,
+      bytes: Buffer.from('one photograph'),
+      mimeType: 'image/jpeg',
+    });
+    await svc.extract({
+      kind: MotivationUploadKind.IDENTITY_DOCUMENT,
+      licenceType: T,
+      bytes: Buffer.from('a different photograph'),
+      mimeType: 'image/jpeg',
+    });
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
+
+  it('⚠️ AND A FAILED READ IS NOT REMEMBERED AS AN EMPTY ONE', async () => {
+    // The extractor returns [] for a model outage and for a blank document
+    // alike. Caching the first as the second would make a marginal document
+    // permanently unreadable — so nothing is stored, and the next attempt
+    // pays and succeeds.
+    const store = new Map<string, unknown>();
+    let fail = true;
+    const complete = jest.fn(async (): Promise<LlmResponse> => {
+      if (fail) throw new Error('provider down');
+      return llmReply(reply);
+    });
+    const cache = {
+      key: () => 'same-key',
+      get: async () => (store.get('same-key') as never) ?? null,
+      put: async (a: { fields: unknown[] }) => {
+        if (a.fields.length) store.set('same-key', a.fields);
+      },
+    };
+    const svc = new MotivationExtractService(
+      { complete, stream: jest.fn(), isConfigured: () => true, model: MODEL, provider: 'gemini' as const } as never,
+      cache as never,
+    );
+    (svc as unknown as { logger: unknown }).logger = {
+      warn: jest.fn(), error: jest.fn(), log: jest.fn(),
+    };
+
+    await expect(run(svc)).resolves.toEqual([]);
+    expect(store.size).toBe(0);
+
+    fail = false;
+    await expect(run(svc)).resolves.not.toEqual([]);
+  });
+});
 
 describe('which documents are worth reading', () => {
   it('reads the ones that carry form data', () => {

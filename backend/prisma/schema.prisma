@@ -4240,6 +4240,62 @@ model MotivationResearch {
   @@index([target, expiresAt])
 }
 
+/// A DOCUMENT WE HAVE ALREADY PAID TO READ.
+///
+/// Operator, 2026-09-10: "every thing we generate that can be reused we store
+/// in a database as much of it that could be reusable so it costs money and
+/// effort one time and never again."
+///
+/// ⚠️ THE LEDGER SHOWED THE SAME BATCH READ SIX TIMES. `AiUsage` carried
+/// exactly ten `motivation.extract.current_licence` calls and four
+/// `proficiency_certificate` calls, repeated six times over three days on the
+/// same stored files - 60 calls that should have been 10. Every pick of a
+/// vault document into a pack re-reads the bytes from scratch.
+///
+/// ⚠️ AND RE-READING IS A DECISION, NOT AN OVERSIGHT, so this caches the
+/// reader's own output rather than replacing it. Carrying values across from
+/// the vault by name produced four bugs (see the note in
+/// motivation-documents.service.ts): the vault and the registry name the same
+/// values differently, and the extractor emits registry keys BY CONSTRUCTION
+/// and owns the owned-firearm slot logic. Nothing here reintroduces a mapping.
+/// It only declines to pay twice for a deterministic read of identical bytes.
+model DocumentReadCache {
+  id String @id @default(cuid())
+
+  /// sha256(fileSha256 | kind | licenceType | readerVersion | askedFields).
+  /// ⚠️ THE READER'S VERSION AND ITS FIELD LIST ARE IN THE KEY ON PURPOSE.
+  /// MotivationResearch keys on the subject and NOT on the question it asked,
+  /// so rewording that brief is inert until the TTL expires 180 days later.
+  /// A reader improvement here must invalidate what it improves on, the same
+  /// day it ships.
+  cacheKey String @unique @db.VarChar(200)
+
+  /// The bytes this was read off, so deleting a document can purge its reads.
+  fileSha256 String @db.VarChar(64)
+
+  /// The extracted fields, as [{key, value, label, from, trusted, note}].
+  /// ⚠️ ENCRYPTED, BECAUSE THIS IS A NAME, AN ID NUMBER AND SERIALS. It is
+  /// the same class of data as the document it was read off, and it is held to
+  /// the same standard - never in the clear, and never past its expiry.
+  payloadEncrypted String @db.Text
+
+  /// ⚠️ STORED SLOT-NORMALISED, ALWAYS ROW 1. A licence read into
+  /// existing_firearm_3_* is the same reading of the same card as one read
+  /// into row 1; remapOwnedSlot is a prefix rewrite and reverses cleanly, so
+  /// normalising here means one cached read serves every slot instead of one
+  /// per slot.
+  readAt DateTime @default(now())
+
+  /// ⚠️ A SHORT LIFE, BECAUSE THIS HOLDS IDENTITY DATA. The research cache
+  /// next door keeps rows for 180 days and holds nothing personal. This does,
+  /// so it expires in 30 and the retention sweep deletes it - a cache is not a
+  /// reason to keep somebody's ID number longer than the pack that needed it.
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@index([fileSha256])
+}
+
 /// ANSWERS THAT BELONG TO THE PERSON, NOT TO ONE APPLICATION.
 ///
 /// ⚠️ THE SECOND APPLICATION MUST NOT ASK WHAT THE FIRST ONE DID. Marital

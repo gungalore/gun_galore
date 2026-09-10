@@ -1,3 +1,4 @@
+import { DocumentReadCacheService } from './document-read-cache.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { MotivationStatus } from '@prisma/client';
@@ -80,6 +81,7 @@ export class MotivationRetentionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly files: SecureFileStorageService,
+    private readonly readCache: DocumentReadCacheService,
   ) {}
 
   /**
@@ -93,9 +95,17 @@ export class MotivationRetentionService {
     try {
       const due = await this.purgeDueUploads();
       const orphaned = await this.purgeOrphanedUploads();
-      if (due + orphaned > 0) {
+      /**
+       * ⚠️ THE READ CACHE EXPIRES HERE TOO, AND IT IS THE SAME OBLIGATION.
+       * A cached reading is a name, an ID number and serial numbers — the same
+       * class of data as the document it was read off — so it is held to the
+       * same standard rather than left to accumulate because it is only a
+       * cache. Thirty days, swept nightly with everything else.
+       */
+      const reads = await this.readCache.purgeExpired();
+      if (due + orphaned + reads > 0) {
         this.logger.log(
-          `Motivation retention: purged ${due} document(s) past their retention date and ${orphaned} from applications that were never completed`,
+          `Motivation retention: purged ${due} document(s) past their retention date, ${orphaned} from applications that were never completed and ${reads} expired document reading(s)`,
         );
       }
     } catch (err) {
