@@ -10,11 +10,11 @@ import DesignPicker from './design-picker';
 // Operator, 2026-09-10: "Can we give them mock ups of each template which costs
 // nothing ... Call it Design."
 //
-// ⚠️ TWO WAYS THIS GOES WRONG QUIETLY, AND BOTH ARE PINNED BELOW. It can cost
-// the box a document render for every member who loads the sheet and never
-// opens the card; and it can leak a whole PDF per swatch, because five blob
-// URLs are replaced on every colour change and nothing else revokes them.
-// Neither shows up on screen.
+// ⚠️ IT SHIPPED BROKEN ONCE AND NOTHING SAID SO. The samples were PDFs in
+// iframes: perfect on desktop Chrome, five empty boxes on the operator's phone,
+// because iOS renders no PDF in an iframe and fails silently. They are canvases
+// now. What is pinned below is the cost — a document render, and a third of a
+// megabyte of pdf.js, must not be spent on somebody who never opens the card.
 // ────────────────────────────────────────────────────────────────────
 
 const LAYOUTS = [
@@ -28,40 +28,33 @@ const COLOURS = [
 ];
 
 const templates = vi.fn();
-const designSampleBlobUrl = vi.fn();
+const designSampleBytes = vi.fn();
 const setTemplate = vi.fn();
 
 vi.mock('@/lib/motivations-api', () => ({
   motivationsApi: {
     templates: (...a: unknown[]) => templates(...a),
-    designSampleBlobUrl: (...a: unknown[]) => designSampleBlobUrl(...a),
+    designSampleBytes: (...a: unknown[]) => designSampleBytes(...a),
     setTemplate: (...a: unknown[]) => setTemplate(...a),
   },
 }));
 
-let created = 0;
-const revoked: string[] = [];
-Object.defineProperty(URL, 'createObjectURL', {
-  writable: true,
-  value: () => `blob:sample-${++created}`,
-});
-Object.defineProperty(URL, 'revokeObjectURL', {
-  writable: true,
-  value: (u: string) => revoked.push(u),
-});
-
+/**
+ * ⚠️ WHAT THESE CANNOT COVER, SAID OUT LOUD. jsdom has no canvas, so the
+ * pdf.js rasterisation these tests trigger always fails and is always swallowed
+ * — every assertion below is about the FETCHING and the SAVING, never about a
+ * picture appearing. The thing that broke on the operator's phone lives in the
+ * half no unit test on this stack can reach, so it is verified in a real
+ * browser at a real viewport and nowhere else. Do not read a green run here as
+ * "the thumbnails render".
+ */
 afterEach(() => {
   vi.clearAllMocks();
-  revoked.length = 0;
-  created = 0;
 });
 
 function setup() {
   templates.mockResolvedValue({ layouts: LAYOUTS, colours: COLOURS, formats: [] });
-  designSampleBlobUrl.mockImplementation(
-    async (_t: unknown, _id: string, c: { layout: string; colourway: string }) =>
-      `blob:${c.layout}-${c.colourway}`,
-  );
+  designSampleBytes.mockResolvedValue(new ArrayBuffer(8));
   setTemplate.mockResolvedValue({});
   return render(
     <DesignPicker
@@ -80,7 +73,7 @@ describe('the design card', () => {
     // Every member loading the sheet reaches this. Rendering five documents for
     // somebody who never looks at them is a bill and a busy box, both invisible.
     await waitFor(() => expect(templates).toHaveBeenCalled());
-    expect(designSampleBlobUrl).not.toHaveBeenCalled();
+    expect(designSampleBytes).not.toHaveBeenCalled();
   });
 
   it('says plainly that it changes nothing about the document', async () => {
@@ -96,30 +89,9 @@ describe('the design card', () => {
   it('draws one real sample per layout once opened', async () => {
     setup();
     await userEvent.click(await screen.findByText('Change'));
-    await waitFor(() => expect(designSampleBlobUrl).toHaveBeenCalledTimes(3));
-    const asked = designSampleBlobUrl.mock.calls.map((c) => c[2].layout).sort();
+    await waitFor(() => expect(designSampleBytes).toHaveBeenCalledTimes(3));
+    const asked = designSampleBytes.mock.calls.map((c) => c[2].layout).sort();
     expect(asked).toEqual(['banner', 'classic', 'plate']);
-  });
-
-  it('⚠️ REVOKES THE OLD BLOBS WHEN THE COLOUR CHANGES', async () => {
-    setup();
-    await userEvent.click(await screen.findByText('Change'));
-    await waitFor(() => expect(designSampleBlobUrl).toHaveBeenCalledTimes(3));
-
-    await userEvent.click(screen.getByLabelText('Petrol'));
-    await waitFor(() => expect(designSampleBlobUrl).toHaveBeenCalledTimes(6));
-
-    // Three PDFs held in memory per swatch, and thirteen swatches to drag
-    // along. Nothing on screen would ever show this going wrong.
-    await waitFor(() =>
-      expect(revoked).toEqual(
-        expect.arrayContaining([
-          'blob:banner-alloutdoor',
-          'blob:plate-alloutdoor',
-          'blob:classic-alloutdoor',
-        ]),
-      ),
-    );
   });
 
   it('saves the choice without blocking on it', async () => {
@@ -150,7 +122,7 @@ describe('the design card', () => {
 
   it('survives a sample that will not draw', async () => {
     templates.mockResolvedValue({ layouts: LAYOUTS, colours: COLOURS, formats: [] });
-    designSampleBlobUrl.mockRejectedValue(new Error('down'));
+    designSampleBytes.mockRejectedValue(new Error('down'));
     setTemplate.mockResolvedValue({});
     render(
       <DesignPicker

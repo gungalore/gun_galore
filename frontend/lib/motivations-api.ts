@@ -1711,23 +1711,25 @@ export const motivationsApi = {
   },
 
   /**
-   * One page: their own cover, in a layout and colourway they are trying on.
+   * One page: their own cover, in a layout and colourway they are trying on,
+   * as BYTES.
+   *
+   * ⚠️ NOT A BLOB URL, AND THAT IS THE FIX FOR A SHIPPED BUG. This
+   * returned one, and the picker put it in an <iframe>. Desktop Chrome drew it
+   * perfectly; on a phone all five cards were empty, because iOS renders no PDF
+   * in an iframe and says nothing about it. The caller rasterises page one with
+   * pdf.js instead, which needs the bytes.
    *
    * ⚠️ A REAL RENDER, NOT A DRAWING OF ONE. The server runs the actual
-   * document renderer and returns page one - no model call, so it is free. The
-   * picker this replaces drew its own approximation in the browser and told
-   * members Report was "sans-serif throughout" while their packs came out
-   * serif. Whatever this shows is what they will get.
-   *
-   * ⚠️ THE CALLER MUST revokeObjectURL. Five of these are alive at once on
-   * the design step and they are replaced on every colour change; leaked, they
-   * hold a whole PDF each until the tab closes.
+   * document renderer - no model call, so it is free. The picker this replaces
+   * drew its own approximation and told members Report was "sans-serif
+   * throughout" while their packs came out serif.
    */
-  designSampleBlobUrl: async (
+  designSampleBytes: async (
     t: TokenGetter,
     id: string,
     choice: { layout?: string; colourway?: string },
-  ): Promise<string> => {
+  ): Promise<ArrayBuffer> => {
     const token = await t();
     const q = new URLSearchParams();
     if (choice.layout) q.set('layout', choice.layout);
@@ -1739,7 +1741,7 @@ export const motivationsApi = {
     if (!r.ok) {
       throw new MotivationApiError('We could not draw that sample.', r.status);
     }
-    return URL.createObjectURL(await r.blob());
+    return r.arrayBuffer();
   },
 
   saps271BlobUrl: async (t: TokenGetter, id: string): Promise<string> => {

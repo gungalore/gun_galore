@@ -34,6 +34,19 @@ import {
 // anything. Same reasoning the sheet footer records for the declaration tick:
 // a separate screen for a cosmetic choice is a step we invented.
 //
+// ⚠️ THE THUMBNAILS ARE CANVASES, NOT PDF IFRAMES, AND THAT COST A SHIPPED
+// RELEASE. The first version put each sample in an <iframe src="blob:...pdf">.
+// On desktop Chrome it looked perfect. On the operator's phone all five cards
+// were empty boxes — iOS Safari and Chrome for iOS do not render a PDF in an
+// iframe, and they fail SILENTLY. The pack screen already carries a note
+// saying an embed can fail silently and to say so out loud; this reproduced
+// that fault five times on one card, on a mobile-first product.
+//
+// So the page is rasterised here with pdf.js and drawn to a canvas, which
+// works on every browser. ⚠️ AND pdf.js IS LOADED LAZILY, ON OPEN. It is a
+// third of a megabyte, and the whole point of this card is that it costs
+// nothing to somebody who never touches it.
+//
 // ⚠️ NOTHING HERE CHANGES THE DOCUMENT'S CONTENT. Every layout carries every
 // section — pinned by the renderer's own spec — so no choice on this card can
 // make an application stronger or weaker. The copy says so plainly rather than
@@ -69,21 +82,10 @@ export default function DesignPicker({
     (colourway as Colourway) ?? 'alloutdoor',
   );
   const [samples, setSamples] = useState<Record<string, string>>({});
+  const [drawing, setDrawing] = useState(false);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
 
-  /**
-   * ⚠️ EVERY BLOB URL IS REVOKED, AND A REF IS THE ONLY WAY. Five samples are
-   * alive at once and all five are replaced on every colour change; held in
-   * state alone, the cleanup would close over a stale map and leak a whole PDF
-   * per swatch until the tab was closed.
-   */
-  const live = useRef<string[]>([]);
-  const releaseAll = useCallback(() => {
-    for (const url of live.current) URL.revokeObjectURL(url);
-    live.current = [];
-  }, []);
-  useEffect(() => releaseAll, [releaseAll]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,34 +111,59 @@ export default function DesignPicker({
   useEffect(() => {
     if (!open || !layouts.length) return;
     let cancelled = false;
+    setDrawing(true);
     const timer = setTimeout(() => {
-      Promise.all(
-        layouts.map((l) =>
-          motivationsApi
-            .designSampleBlobUrl(token, motivationId, {
-              layout: l.key,
-              colourway: pickedColour,
-            })
-            .then((url) => [l.key, url] as const)
-            .catch(() => null),
-        ),
-      ).then((pairs) => {
-        const good = pairs.filter(Boolean) as (readonly [string, string])[];
-        if (cancelled) {
-          for (const [, url] of good) URL.revokeObjectURL(url);
-          return;
-        }
-        releaseAll();
-        live.current = good.map(([, url]) => url);
-        setSamples(Object.fromEntries(good));
-        if (!good.length) setFailed(true);
-      });
+      void (async () => {
+        /**
+         * ⚠️ THE WORKER IS OFF ON PURPOSE. Wiring pdf.js's worker through
+         * Next and past the service worker is a build problem for no gain here:
+         * one A4 page at thumbnail size rasterises in well under a frame, and a
+         * worker that fails to resolve renders nothing at all - which is the
+         * failure this whole change exists to stop repeating.
+         */
+        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+        (pdfjs.GlobalWorkerOptions as { workerSrc: string }).workerSrc = '';
+
+        const drawn: Record<string, string> = {};
+        await Promise.all(
+          layouts.map(async (l) => {
+            try {
+              const bytes = await motivationsApi.designSampleBytes(
+                token,
+                motivationId,
+                { layout: l.key, colourway: pickedColour },
+              );
+              const doc = await pdfjs.getDocument({
+                data: bytes,
+                disableWorker: true,
+              } as never).promise;
+              const page = await doc.getPage(1);
+              const base = page.getViewport({ scale: 1 });
+              const viewport = page.getViewport({ scale: 420 / base.width });
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.ceil(viewport.width);
+              canvas.height = Math.ceil(viewport.height);
+              const ctx = canvas.getContext('2d');
+              if (!ctx) return;
+              await page.render({ canvas, canvasContext: ctx, viewport } as never)
+                .promise;
+              drawn[l.key] = canvas.toDataURL('image/png');
+            } catch {
+              /* one card that will not draw must not take the other four */
+            }
+          }),
+        );
+        if (cancelled) return;
+        setSamples(drawn);
+        setDrawing(false);
+        if (!Object.keys(drawn).length) setFailed(true);
+      })();
     }, 250);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, layouts, pickedColour, token, motivationId, releaseAll]);
+  }, [open, layouts, pickedColour, token, motivationId]);
 
   /**
    * ⚠️ SAVED, BUT NEVER BLOCKING. A failed PATCH leaves the member looking at a
@@ -226,11 +253,11 @@ export default function DesignPicker({
                 */}
                 <span className="block aspect-[1/1.414] w-full bg-[var(--bg-inset)]">
                   {samples[l.key] ? (
-                    <iframe
-                      src={`${samples[l.key]}#toolbar=0&navpanes=0&view=Fit`}
-                      title={`${l.name} sample`}
-                      tabIndex={-1}
-                      className="pointer-events-none block h-full w-full border-0"
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={samples[l.key]}
+                      alt={`${l.name} sample cover`}
+                      className="block h-full w-full object-contain"
                     />
                   ) : null}
                 </span>
