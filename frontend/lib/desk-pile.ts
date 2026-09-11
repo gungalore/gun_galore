@@ -403,6 +403,8 @@ export function ledgerRedirect(search: string): string {
     view = 'sales';
   } else if (q.get('view') === 'books') {
     view = 'books';
+  } else if (q.get('view') === 'orders') {
+    view = 'orders';
   }
 
   const txn = q.get('txn');
@@ -413,15 +415,29 @@ export function ledgerRedirect(search: string): string {
   }
 
   const order = q.get('order');
-  if (q.get('view') !== 'orders' && !order) {
-    // 'run' and the empty case both land here — see the note above.
-    out.set('view', view ?? 'orders');
+  const status = q.get('status');
+  const page = q.get('page');
+
+  // ⚠️ ORDERS IS THE DEFAULT LENS, AND ITS PARAMS TRAVEL WITH IT. A URL that
+  // named sales or books — through `view` or through a Health `filter` — keeps
+  // that lens and leaves the orders params behind, because `status` and
+  // `page` mean nothing there and forwarding them would hand a future sales
+  // lens a filter nobody chose.
+  if (view && view !== 'orders') {
+    out.set('view', view);
     return withQuery(out);
   }
 
+  // 🚨 AND EVERYTHING ELSE IS CARRIED. This branch used to be guarded by
+  // `if (q.get('view') !== 'orders' && !order) { set view; return }`, so a URL
+  // with neither a view nor an order — `?status=PAID&page=3`, the shape the
+  // old page minted most — took the early return and arrived at an UNFILTERED
+  // PAGE ONE. Measured against the running server, not reasoned:
+  //   /admin/desk/ledger?status=PAID&page=3  ->  /admin/desk?view=orders
+  // The route handler's header calls that exact string out as "the failure
+  // nobody reports", because a filtered list and an unfiltered one look alike
+  // until somebody acts on a row that should never have been on screen.
   out.set('view', 'orders');
-  const status = q.get('status');
-  const page = q.get('page');
   if (status) out.set('status', status);
   if (page) out.set('page', page);
   if (order) out.set('order', order);

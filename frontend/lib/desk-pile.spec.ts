@@ -255,3 +255,38 @@ describe('ledgerRedirect', () => {
     expect(ledgerRedirect('?view=sales')).toBe('/admin/desk?view=sales');
   });
 });
+
+describe('ledgerRedirect carries the orders filter it was given', () => {
+  /**
+   * 🚨 THIS SHIPPED DROPPING TWO PARAMS, AND IT WAS FOUND BY CURLING THE
+   * RUNNING SERVER RATHER THAN BY READING. The branch that set the lens and
+   * returned early was guarded on `view !== 'orders' && !order`, so a URL with
+   * neither — which is the shape the old Ledger minted most — skipped the four
+   * lines that copy `status`, `page` and `order` across:
+   *
+   *     /admin/desk/ledger?status=PAID&page=3  ->  /admin/desk?view=orders
+   *
+   * An unfiltered page one that looks exactly like a filtered one. The route
+   * handler's own header names that string as "the failure nobody reports",
+   * and the redirect did it anyway.
+   */
+  it('keeps ?status and ?page when no view was named', () => {
+    expect(ledgerRedirect('?status=PAID&page=3')).toBe(
+      '/admin/desk?view=orders&status=PAID&page=3',
+    );
+  });
+
+  it('keeps them for a lowercase status too — it forwards, it does not judge', () => {
+    expect(ledgerRedirect('?status=paid&page=2')).toBe(
+      '/admin/desk?view=orders&status=paid&page=2',
+    );
+  });
+
+  it('still leaves orders params behind on a lens that has no use for them', () => {
+    // The other half of the rule. `status` means nothing on sales, and
+    // forwarding it would hand a future sales lens a filter nobody chose.
+    expect(ledgerRedirect('?filter=dispatch-overdue&status=HELD')).toBe(
+      '/admin/desk?filter=dispatch-overdue&view=sales',
+    );
+  });
+});
