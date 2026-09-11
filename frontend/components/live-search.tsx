@@ -153,6 +153,14 @@ export function LiveSearch({
     return `/?${params.toString()}`;
   }
   const [hits, setHits] = useState<SearchHit[] | null>(null);
+  /**
+   * Did the search request fail?
+   *
+   * ⚠️ An empty `hits` array said "No results for X" whether the catalogue
+   * genuinely had nothing or Meilisearch was down — and "no results" is the
+   * one answer that makes somebody stop searching and leave.
+   */
+  const [searchFailed, setSearchFailed] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -222,15 +230,20 @@ export function LiveSearch({
         // must not be quietly restricted to the public catalogue.
         const res = await viewerFetch(url, { signal: ctrl.signal });
         if (!res.ok) {
+          // A 5xx is not an empty catalogue either.
+          setSearchFailed(true);
           setHits([]);
           return;
         }
         const data = (await res.json()) as BrowseResponse;
+        setSearchFailed(false);
         setHits(data.listings ?? []);
         setOpen(true);
       } catch (err) {
-        // Aborted by a newer search — silent.
+        // Aborted by a newer search — silent, and NOT a failure: a newer
+        // request is already in flight and will set its own state.
         if ((err as Error).name === 'AbortError') return;
+        setSearchFailed(true);
         setHits([]);
       } finally {
         setBusy(false);
@@ -436,7 +449,11 @@ export function LiveSearch({
                 color: 'var(--text-tertiary)',
               }}
             >
-              {busy ? 'Searching…' : `No results for “${q}”`}
+              {busy
+                ? 'Searching…'
+                : searchFailed
+                  ? 'Search is unavailable just now — try again in a moment.'
+                  : `No results for “${q}”`}
             </div>
           ) : (
             <ul

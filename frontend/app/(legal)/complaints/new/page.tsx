@@ -64,6 +64,17 @@ export default function NewComplaintPage() {
   const [body, setBody] = useState('');
   const [photos, setPhotos] = useState<File[]>([]);
   const [orders, setOrders] = useState<OrderOption[]>([]);
+  /**
+   * Did the order list fail to load?
+   *
+   * ⚠️ NOT THE SAME AS HAVING NO ORDERS, and this form is on the money path:
+   * a buyer lodging one of the three payout-affecting complaint categories
+   * holds the seller's funds. Both fetches swallowed failure into `[]`, so an
+   * API blip told somebody "No orders found on your account yet" — from which
+   * the reasonable conclusion is that they cannot complain at all, about an
+   * order that is sitting there.
+   */
+  const [ordersFailed, setOrdersFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ ref: string; held: boolean } | null>(null);
@@ -97,11 +108,21 @@ export default function NewComplaintPage() {
     let cancelled = false;
     (async () => {
       try {
+        // ⚠️ Track the failures instead of erasing them. One side failing is
+        // still a partial list, and saying so beats silently showing half.
+        let failed = false;
         const [buys, sales] = await Promise.all([
-          authed('/transactions?role=buyer').catch(() => []),
-          authed('/transactions?role=seller').catch(() => []),
+          authed('/transactions?role=buyer').catch(() => {
+            failed = true;
+            return [];
+          }),
+          authed('/transactions?role=seller').catch(() => {
+            failed = true;
+            return [];
+          }),
         ]);
         if (cancelled) return;
+        setOrdersFailed(failed);
         const fmt = (rows: TxRow[], group: 'Purchases' | 'Sales'): OrderOption[] =>
           (rows ?? []).map((t) => ({
             id: t.id,
@@ -128,7 +149,9 @@ export default function NewComplaintPage() {
           setTransactionId((current) => current || preselectTx);
         }
       } catch {
-        /* picker is optional — silent */
+        // The picker is optional, but "we could not load it" is not the same
+        // as "you have none" — say which.
+        if (!cancelled) setOrdersFailed(true);
       }
     })();
     return () => {
@@ -329,10 +352,17 @@ export default function NewComplaintPage() {
             </optgroup>
           )}
         </select>
-        {orders.length === 0 && (
-          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: '4px 0 0' }}>
-            No orders found on your account yet.
+        {ordersFailed ? (
+          <p style={{ fontSize: 11, color: 'var(--red)', margin: '4px 0 0' }}>
+            We could not load your orders just now, so this list may be
+            incomplete. You can still lodge the complaint without picking one.
           </p>
+        ) : (
+          orders.length === 0 && (
+            <p style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: '4px 0 0' }}>
+              No orders found on your account yet.
+            </p>
+          )
         )}
       </div>
 

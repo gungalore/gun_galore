@@ -8,6 +8,7 @@ import { BrowseResponse, Category, SoldComps } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { Pagination } from '@/components/pagination';
 import { SoldCompsStrip } from '@/components/sold-comps';
+import { BrowseUnavailable } from '@/components/browse-unavailable';
 
 interface CategoryTree {
   category: Category;
@@ -80,12 +81,13 @@ export default async function CategoryPage({
     page: String(page),
     limit: String(PAGE_SIZE),
   });
-  const browse = await viewerFetch<BrowseResponse>(`/listings?${qs}`).catch(() => ({
-    listings: [],
-    total: 0,
-    page,
-    limit: PAGE_SIZE,
-  }));
+  const browse = await viewerFetch<BrowseResponse>(`/listings?${qs}`).catch(
+    // ⚠️ null, NOT an empty page. Swallowing the failure into
+    // `{ listings: [], total: 0 }` made a backend that did not answer render
+    // "No listings ... yet" — a claim about our inventory made at the one
+    // moment we did not know it. See <BrowseUnavailable/>.
+    () => null,
+  );
 
   // P5.6 — sold-price comps for this category (aggregate, POPIA-safe). Cached
   // briefly; renders nothing below the server's min-comps gate.
@@ -93,7 +95,7 @@ export default async function CategoryPage({
     `/listings/sold-comps?categorySlug=${encodeURIComponent(slug)}`,
   ).catch(() => null);
 
-  const totalPages = Math.max(1, Math.ceil(browse.total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil((browse?.total ?? 0) / PAGE_SIZE));
   const pageHref = (p: number) => `/category/${slug}?page=${p}`;
 
   return (
@@ -134,8 +136,11 @@ export default async function CategoryPage({
         {category.name}
       </h1>
       <p className="text-sm mt-1" style={{ color: 'var(--text-tertiary)' }}>
-        {browse.total.toLocaleString('en-ZA')} listing
-        {browse.total !== 1 ? 's' : ''}
+        {/* No count at all when the browse failed — "0 listings" is the same
+            false claim as the empty grid, just shorter. */}
+        {browse
+          ? `${browse.total.toLocaleString('en-ZA')} listing${browse.total !== 1 ? 's' : ''}`
+          : ' '}
       </p>
 
       {/* Subcategory drill-down */}
@@ -162,7 +167,9 @@ export default async function CategoryPage({
       <SoldCompsStrip comps={comps} scopeName={category.name} />
 
       {/* Listings */}
-      {browse.listings.length === 0 ? (
+      {!browse ? (
+        <BrowseUnavailable scopeName={category.name} />
+      ) : browse.listings.length === 0 ? (
         <div
           className="mt-8 rounded-[8px] p-8 text-center"
           style={{

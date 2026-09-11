@@ -42,6 +42,15 @@ function statusBadge(s: SellerQuestion['status']) {
 export function SellerQuestionsCard() {
   const { getToken, isSignedIn } = useAuth();
   const [items, setItems] = useState<SellerQuestion[] | null>(null);
+  /**
+   * Did the fetch fail?
+   *
+   * ⚠️ This card swallowed BOTH a non-OK response and a thrown error into
+   * `setItems([])`, so a 500 rendered "No questions on your listings yet" —
+   * a seller with unanswered buyer questions told they have none, which is
+   * exactly the message that stops them going to look.
+   */
+  const [failed, setFailed] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -55,11 +64,14 @@ export function SellerQuestionsCard() {
         cache: 'no-store',
       });
       if (!res.ok) {
+        setFailed(true);
         setItems([]);
         return;
       }
+      setFailed(false);
       setItems((await res.json()) as SellerQuestion[]);
     } catch {
+      setFailed(true);
       setItems([]);
     }
   }, [getToken, isSignedIn]);
@@ -147,6 +159,11 @@ export function SellerQuestionsCard() {
       {items === null ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
           Loading…
+        </p>
+      ) : failed ? (
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          We could not load your questions just now — this is not the same as
+          having none. Refresh to try again.
         </p>
       ) : items.length === 0 ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
