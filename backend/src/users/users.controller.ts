@@ -475,7 +475,7 @@ export class UsersController {
 
   // ─────────────────── Phone change: request OTP ─────────────────────
   // Body: { phone: "0820000000" | "+27820000000" }
-  // Sends a 4-digit code to the new number. Returns { sent: true } on
+  // Sends a 6-digit code to the new number. Returns { sent: true } on
   // success. stub:true in dev means the SMS was logged rather than
   // actually sent (no SMSPortal config) — the code is in SmsLog.
   // ⚠️ THROTTLED. Each call sends a REAL SMS at our cost, and the global

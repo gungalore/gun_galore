@@ -1039,7 +1039,7 @@ export class UsersService {
   }
 
   // ─────────────────── Phone change + OTP ──────────────────────────
-  // The seller submits a new phone number. We generate a 4-digit OTP,
+  // The seller submits a new phone number. We generate a 6-digit OTP,
   // hash + store it with a 10-minute TTL, and send the plain code via
   // SMSPortal. The OLD phone (if any) keeps working until they verify
   // the new one. If SMS sending fails the OTP isn't persisted.
@@ -1128,7 +1128,7 @@ export class UsersService {
     return { sent: true };
   }
 
-  // Submit the 4-digit code. On success: phoneVerified=true, OTP wiped.
+  // Submit the 6-digit code. On success: phoneVerified=true, OTP wiped.
   // On failure: clear error so the seller knows whether to re-request.
   async verifyPhoneChange(
     userId: string,

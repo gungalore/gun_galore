@@ -67,6 +67,34 @@ function phoneBlock(): string {
   return PAGE.slice(start, end);
 }
 
+/**
+ * The submit handler's OWN guard.
+ *
+ * ⚠️ THIS IS THE ONE THE FIRST VERSION OF THIS SPEC MISSED, AND IT COST A
+ * SECOND DEPLOY. `handleVerifyOtp` re-tests the code with its own
+ * `/^\d{4}$/` before it will call the API, and that guard lives far above the
+ * JSX — around line 449, where the window built from the visible form never
+ * reached. So the form was fixed, the label read "6-digit", the member typed
+ * six digits, and the screen still answered "Enter the 4-digit code." from a
+ * literal the spec could not see.
+ *
+ * The lesson is the windowing, not the number: a screen's contract with the
+ * server is enforced in the handler as well as the markup, and a spec anchored
+ * only on what is rendered checks half of it.
+ */
+function handlerGuard(): number {
+  const at = PAGE.indexOf('async function handleVerifyOtp');
+  expect(at, 'handleVerifyOtp was renamed — re-anchor this rather than deleting it').toBeGreaterThan(-1);
+  const window = PAGE.slice(at, at + 400);
+  const m = /\^\\d\{(\d+)\}\$/.exec(window);
+  expect(
+    m,
+    'handleVerifyOtp no longer length-checks the code before calling the API. ' +
+      'If that guard moved, move this assertion with it.',
+  ).not.toBeNull();
+  return Number(m![1]);
+}
+
 describe('the phone OTP screen agrees with the code the server sends', () => {
   const n = backendPhoneCodeLength();
   const block = phoneBlock();
@@ -99,6 +127,14 @@ describe('the phone OTP screen agrees with the code the server sends', () => {
       `Verify enables at ${gate?.[1]} digits against a ${n}-digit code. This is the ` +
         'half that turns a refusal into a wasted attempt: it submits a code that ' +
         'cannot match while looking ready.',
+    ).toBe(n);
+  });
+  it('the submit handler agrees too, not just the form', () => {
+    expect(
+      handlerGuard(),
+      'the handler refuses the code before the request is even made, with its ' +
+        'own message. A form that accepts six digits and a handler that demands ' +
+        'four is the bug wearing a correct label.',
     ).toBe(n);
   });
 });

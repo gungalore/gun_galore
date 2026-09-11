@@ -446,8 +446,8 @@ export default function EditProfilePage() {
 
   // ── Phone OTP: verify ────────────────────────────────────────────
   async function handleVerifyOtp() {
-    if (!/^\d{4}$/.test(otp.trim())) {
-      setPhoneStatus({ tone: 'error', msg: 'Enter the 4-digit code.' });
+    if (!/^\d{6}$/.test(otp.trim())) {
+      setPhoneStatus({ tone: 'error', msg: 'Enter the 6-digit code.' });
       return;
     }
     setPhoneBusy(true);
