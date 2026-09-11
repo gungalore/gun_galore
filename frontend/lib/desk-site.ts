@@ -450,27 +450,49 @@ export function fetchAdmins(): Promise<AdminAccount[]> {
 }
 
 /**
+ * 🚨 ALL THREE WRITES CARRY A REQUIRED `reason`, AND IT IS NOT A FORMALITY.
+ * Until 2026-09-11 these three — the writes that hand out the power every
+ * other admin write needs — wrote NO audit row at all. There was literally no
+ * record that anybody had ever created an administrator. They now write one,
+ * and AdminAuditService.record() throws before inserting when the reason is
+ * empty, so the DTOs make it required (3–500 characters) rather than let the
+ * whole privilege operation fail at the audit call.
+ *
+ * ⚠️ SENDING NO REASON IS A 400, NOT A DEGRADED SUCCESS. These clients sent
+ * none until this change while `desk-admins.spec.ts` mocked fetch and pinned
+ * the old shape — a green suite over a feature that could not work.
+ *
+ * ⚠️ THE FLOOR IS THE SERVER'S AND IS NOT RE-IMPLEMENTED HERE beyond the
+ * arming rule on the drawer's buttons: see ADMIN_REASON_MIN.
+ */
+export const ADMIN_REASON_MIN = 3;
+export const ADMIN_REASON_MAX = 500;
+
+/**
  * ⚠️ THE EMAIL MUST ALREADY BE A MEMBER. createAdmin looks the address up in
  * the User table and refuses when it finds nothing — an admin account is a
  * promotion of someone who has signed up, never an invitation to a stranger.
  * The server says so in words; this passes that through untouched.
  */
-export function createAdmin(email: string, role: AdminRoleValue) {
+export function createAdmin(email: string, role: AdminRoleValue, reason: string) {
   return deskFetch('/admin/admins', {
     method: 'POST',
-    body: JSON.stringify({ email, role }),
+    body: JSON.stringify({ email, role, reason }),
   });
 }
 
-export function setAdminRole(id: string, role: AdminRoleValue) {
+export function setAdminRole(id: string, role: AdminRoleValue, reason: string) {
   return deskFetch(`/admin/admins/${encodeURIComponent(id)}/role`, {
     method: 'PATCH',
-    body: JSON.stringify({ role }),
+    body: JSON.stringify({ role, reason }),
   });
 }
 
-export function deactivateAdmin(id: string) {
-  return deskFetch(`/admin/admins/${encodeURIComponent(id)}/deactivate`, { method: 'POST' });
+export function deactivateAdmin(id: string, reason: string) {
+  return deskFetch(`/admin/admins/${encodeURIComponent(id)}/deactivate`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
 }
 
 /**
@@ -494,8 +516,9 @@ export type AdminRoleValue = (typeof ASSIGNABLE_ROLES)[number];
  * AdminJwtGuard now enforces it for every route behind admin auth: safe
  * methods open to any active admin, every mutating method SUPERADMIN-only,
  * deny-by-default rather than an allow-list — and the role is read off the
- * AdminUser row on each request, not out of the 8-hour token, so a demotion
- * bites on the next request.
+ * AdminUser row on each request, not out of the access token, so a demotion
+ * bites on the next request. (That token is fifteen minutes now, not the
+ * eight hours this paragraph used to name.)
  *
  * ⚠️ IF THAT GUARD IS EVER WEAKENED, THIS SENTENCE BECOMES A LIE BEFORE
  * ANYTHING ELSE DOES. A picker promising read-only over an unenforced tier

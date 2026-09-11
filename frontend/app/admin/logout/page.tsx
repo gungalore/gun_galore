@@ -10,8 +10,13 @@
  * store — the credential the guard actually reads is the JWT in
  * `localStorage.gg_admin_token`, and a server route cannot touch
  * localStorage. So "log out" cleared the half nothing authenticates with and
- * left the half that does, for its full 8-hour life. lib/desk-auth.ts was
+ * left the half that does, for the rest of its life. lib/desk-auth.ts was
  * written to close exactly that hole, and this path was still open.
+ *
+ * ⚠️ AND CLEARING THE BROWSER IS NO LONGER THE WHOLE JOB EITHER. The access
+ * token is fifteen minutes, but it sits behind a THIRTY-DAY httpOnly refresh
+ * cookie that JavaScript cannot see or delete — so signOutOfDesk() now posts
+ * to /admin/auth/logout to have the server revoke the session row as well.
  *
  * It could not be fixed in place, only moved: the work has to happen in the
  * browser. Kept at the same path so an existing bookmark still does the right

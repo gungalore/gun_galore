@@ -6,7 +6,128 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-11**.
 
-## 2026-09-11 (latest) — THE DESK REBUILD: PHASES 0 AND 1 LANDED
+## 2026-09-11 (latest) — DESK REBUILD: PHASES 2, 3 AND 4, PLUS A HARDENING PASS
+
+**STILL NOT DEPLOYED. Nothing on this branch has touched the box.** Branch
+`feat/desk-rebuild`, now nine commits, off `feat/self-hosted-auth`. The
+operator's instruction stands: the whole build ships in one go.
+
+Four new commits on top of Phases 0 and 1:
+
+| | |
+|---|---|
+| `9cc0b8aa` | Phase 2 — the closed `dk-` class layer |
+| `bc16883c` | Phase 3 — admin sessions, TOTP, lockout, recovery codes, Tier-1 audit |
+| `9afa9803` | Phase 4 — Warden observability, and the `act()` KYC bypass deleted |
+| `d0eb7d43` | Hardening pass over all three, 39 files |
+
+### Verified at `d0eb7d43`
+
+backend **4,756** tests (three consecutive clean full runs), frontend **1,737**,
+warden **265**, `tsc` clean in all three trees, `npm run build` **exit 0**
+through all four gates. **Both migrations applied to the LOCAL database and
+checked**: `AdminSession` and its four indexes, the four `totp*` columns,
+`AdminSession.amr` — and both `tsvector GENERATED` columns still `ALWAYS`.
+
+### What each phase actually changed
+
+**Phase 2.** Nineteen `dk-` classes in `tokens.css`, and the NUMBER is
+load-bearing — the admission rule is in the file header and the cap is enforced
+by `desk-guard.cjs`, which runs in `npm run build`. It is checked in two
+places on purpose: `tokens.spec.tsx` holds the ledger and the argument, but
+vitest is in no build gate and there is no CI, so a cap living only in a spec
+binds whoever remembers to run the tests. `.dk-phone-only` / `.dk-desk-only`
+retire `useIsPhone` for every purely presentational branch, which is what fixes
+the desktop-first-paint relayout on every cold load.
+
+**Phase 3.** `AdminSession` with rotating refresh and a 30s grace window,
+15-minute access tokens, row-level lockout that survives the `pm2 reload` which
+clears the in-memory throttler, TOTP in ~40 lines of `node:crypto` (no new
+dependency) pinned against the RFC 4226 and 6238 vectors, ten single-use
+bcrypt-hashed recovery codes. The guard keeps its per-request `{role, isActive}`
+read and now refuses a token with no `sid`.
+
+**Phase 4.** `GET /audit` (200 persisted records had no route at all),
+`POST /sweep`, real pause/resume that still MEASURES while paused, and the
+`act()` bypass deleted — it wrote `kycStatus: 'VERIFIED'` straight onto the row
+with no `UNDER_REVIEW` guard, no reviewer stamp, no reason, no audit row, no
+seller notification, on a firearms marketplace.
+
+### The three that were live defects, not polish
+
+Found by a three-lens adversarial review, each reproduced before the fix and
+re-broken after it to prove the fix:
+
+1. **A two-request privilege escalation.** `enrolTotp` wrote the new secret
+   straight to `totpSecret` and nulled `totpConfirmedAt`, so one POST to a
+   route that is deliberately open to a read-only recovery session switched the
+   account's second factor OFF — and `login` reads
+   `enrolled = totpSecret && totpConfirmedAt`, so the next password-only
+   sign-in came back with full write. The ten paper codes went inert at the
+   same moment, because that branch is nested inside `if (enrolled)`. The new
+   secret now stages in `totpPendingSecret` until a code from it verifies.
+2. **A TOTP code was replayable for up to 90 seconds.** Nothing recorded that a
+   code had been spent. The matched step is now spent through a guarded write
+   whose affected-row count is the proof of single use.
+3. **An ordinary two-tab refresh signed the operator out and logged it as
+   theft.** The grace branch hands the loser back the token it presented, and
+   the controller wrote that into `gg_admin_rt` — ONE cookie shared by every
+   tab — clobbering the winner's fresh one. `IssuedAdminSession.rotated` now
+   says whether the refresh side moved, and `setCookies` leaves the cookie
+   alone when it did not.
+
+Also: the Desk scope guard had gone blind to every `@media` block (the selector
+extractor consumed the opening brace), so seven `.dk-` rules stopped being
+scope-checked — an unscoped `.dk-phone-only` is a global
+`display: none !important` loose on the storefront.
+
+⚠️ **TWO SPECS PASSED ON THE BUG THEY WERE WRITTEN FOR.** One read "the next
+`gap:` within 600 characters" and found the inner element's; the other compared
+three spellings that were all `null` at its fixed instant. Both now mint real
+values, and both were proved by reintroducing the original bug. Worth
+remembering as a review habit on this branch: a green spec is not evidence
+until you have watched it go red.
+
+⚠️ **THE RECURRING DEFECT ON THIS BRANCH IS THE CONFIDENTLY WRONG ⚠️.** Every
+pass shipped at least one — "every env() on the Desk is clamped", "the operator
+reads this total", "the sign-in path has never called it". In a tree where the
+comments are the specification, that is its own defect class. The rule applied
+throughout: make the code true, or state the narrow rule and NAME the residual
+gap. Do not hedge a claim until it says nothing.
+
+### Residual gaps, stated rather than implied
+
+- **The audit `dropped` count is honest on the wire and reaches no screen.**
+  Nothing under `frontend/` fetches `GET /admin/warden/audit` — the Site
+  board's audit drawer reads the `AdminAudit` table, a different trail. Whoever
+  builds that panel must render `dropped` SEPARATELY from `truncated`: one is
+  answered by asking for the next page, the other by ssh.
+- **Login's timing equalisation is better, not complete.** `BCRYPT_COST` went
+  10 → 12 and existing rows were not re-hashed, so a wrong password on an admin
+  still on a cost-10 hash returns in about a quarter of the time an unknown
+  email does. Closing it means re-hashing on next successful login.
+- **`ADMIN_TOTP_REQUIRED` defaults OFF**, deliberately — turning it on at
+  deploy locks the only operator out of the only admin surface with no route
+  left that could enrol them. Order is: deploy, enrol, scan, confirm, THEN set
+  the flag and `pm2 reload alloutdoor-backend --update-env`.
+
+### Deploy-day additions to the checklist in the plan
+
+1. **TWO migrations now**, both additive, applied and verified locally:
+   `20260911120000_admin_auth_hardening` and
+   `20260911150000_admin_totp_replay_and_session_amr`.
+   `prisma migrate deploy`, never `db push`.
+2. **Enrol TOTP on the real box BEFORE flipping `ADMIN_TOTP_REQUIRED`.** Save
+   the ten recovery codes off-device — they are returned exactly once and
+   cannot be re-read. Confirm `backend/scripts/admin-reset-totp.mjs` runs;
+   shell on the box is the only backstop and there is deliberately no email or
+   SMS reset (SIM-swap fraud is endemic here).
+3. `ADMIN_TOTP_REQUIRED` is in `backend/.env.example` but must be set on the
+   box.
+
+---
+
+## 2026-09-11 — THE DESK REBUILD: PHASES 0 AND 1 LANDED
 
 **NOT DEPLOYED, and nothing will be until the whole build ships in one go**
 (operator instruction). Branch `feat/desk-rebuild`, five commits, off

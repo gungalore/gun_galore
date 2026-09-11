@@ -21,9 +21,17 @@
  * storage, so the server render cannot know whether there is one. Painting the
  * boards first and redirecting afterwards would flash the admin's structure at
  * exactly the visitor it is meant to turn away.
+ *
+ * 🚨 AND "NO TOKEN" STOPPED MEANING "SIGNED OUT" THE DAY THE ACCESS TOKEN
+ * BECAME FIFTEEN MINUTES. getDeskToken() returns null for an EXPIRED token,
+ * which is the ordinary resting state of a tab left open over lunch — so this
+ * gate bounced the operator to sign in while a thirty-day refresh cookie sat
+ * untouched in the browser. Reloading a board after fifteen minutes cost a
+ * password. It asks the refresh route first now, and only a refusal is a
+ * sign-out.
  */
 import * as React from 'react';
-import { getDeskToken, DESK_SIGN_IN_PATH } from '@/lib/desk-auth';
+import { getDeskToken, refreshDeskSession, DESK_SIGN_IN_PATH } from '@/lib/desk-auth';
 
 type Checked = 'looking' | 'in' | 'out';
 
@@ -31,14 +39,43 @@ export function RequireDeskSession({ children }: { children: React.ReactNode }) 
   const [state, setState] = React.useState<Checked>('looking');
 
   React.useEffect(() => {
+    let live = true;
     if (getDeskToken()) {
       setState('in');
       return;
     }
-    setState('out');
-    // replace(), not href: a bounce should not put the closed door in the
-    // visitor's history for the Back button to walk into again.
-    window.location.replace(DESK_SIGN_IN_PATH);
+
+    // ⚠️ SHARED SINGLE-FLIGHT. This fires at the same moment as the boards'
+    // own reads, and refreshDeskSession() hands every caller the same promise
+    // rather than starting a second rotation of the same refresh token. See
+    // its header for exactly what that avoids — the server's thirty-second
+    // grace window covers the simultaneous case, and single-flight is what
+    // stops us depending on it.
+    void refreshDeskSession().then((outcome) => {
+      if (!live) return;
+      if (outcome.kind === 'renewed') {
+        setState('in');
+        return;
+      }
+      // `unreachable` lands here too, and deliberately: without a usable
+      // access token every board renders a screen of failures, so the sign-in
+      // page is the more honest place to be.
+      //
+      // ⚠️ THIS BOUNCE DOES END THE SESSION, and a comment here used to say it
+      // did not ("clearDeskToken is only called on a refusal, inside the
+      // refresh" — nothing in the refresh clears anything). The sign-in page
+      // clears on mount AND revokes server-side, so arriving here on a merely
+      // UNREACHABLE server costs a password. That is the deliberate trade: the
+      // alternative is a door that looks closed and is not.
+      setState('out');
+      // replace(), not href: a bounce should not put the closed door in the
+      // visitor's history for the Back button to walk into again.
+      window.location.replace(DESK_SIGN_IN_PATH);
+    });
+
+    return () => {
+      live = false;
+    };
   }, []);
 
   if (state === 'in') return <>{children}</>;

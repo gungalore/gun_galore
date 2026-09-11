@@ -17,12 +17,13 @@
 import * as React from 'react';
 import { BottomTabs, DeskMark, TopTabs } from './tabs';
 import { ServicesDrawer } from './services-drawer';
+import { AccountDrawer } from './account-drawer';
+import { RecoveryNotice } from './recovery-notice';
 import { Dot } from './numbers';
-import { IconExternal, IconSearch } from './icons';
+import { IconExternal, IconSearch, IconShield } from './icons';
 import { SearchPalette } from './dialogs';
 import { useDeskSearch } from './use-desk-search';
 import { useIsPhone } from './interactions';
-import { signOutOfDesk } from '@/lib/desk-auth';
 
 export interface DeskShellProps {
   /** Which of the five tabs is lit. */
@@ -90,6 +91,16 @@ export function DeskShell({
   const [services, setServices] = React.useState(false);
 
   /**
+   * 🚨 THE OPERATOR'S OWN ACCOUNT LIVES HERE FOR THE SAME REASON, AND FOR ONE
+   * MORE: AdminJwtGuard's refusal for a recovery-only session tells them to
+   * "enrol your authenticator again under Account", and there was no Account
+   * anywhere in the Desk. A board-level drawer would also be unreachable on a
+   * phone, where the header carries no avatar — and until this, the phone had
+   * no sign-out either.
+   */
+  const [account, setAccount] = React.useState(false);
+
+  /**
    * 🚨 SEARCH IS THE SHELL'S, FOR THE SAME REASON THE CONSOLES ARE. It used
    * to be a per-page `onSearch` prop, and the only page that passed one
    * passed `() => undefined` — a function, therefore truthy, therefore the
@@ -115,6 +126,7 @@ export function DeskShell({
             onSearch?.();
           }}
           onServices={() => setServices(true)}
+          onAccount={() => setAccount(true)}
         />
       ) : (
         <DesktopBar
@@ -125,8 +137,16 @@ export function DeskShell({
             onSearch?.();
           }}
           onServices={() => setServices(true)}
+          onAccount={() => setAccount(true)}
         />
       )}
+
+      {/* ⚠️ IN THE FLOW, NOT OVER IT. A read-only session is a state the
+          operator has to keep in mind for as long as it lasts, so the strip
+          pushes the board down rather than floating above it the way the
+          search failure toast does. It renders nothing at all when the session
+          is ordinary. */}
+      <RecoveryNotice onEnrol={() => setAccount(true)} />
 
       <SearchPalette
         open={search.isOpen}
@@ -205,6 +225,7 @@ export function DeskShell({
       {phone ? <BottomTabs active={active} /> : null}
 
       <ServicesDrawer open={services} onClose={() => setServices(false)} />
+      <AccountDrawer open={account} onClose={() => setAccount(false)} />
     </div>
   );
 }
@@ -214,11 +235,13 @@ function DesktopBar({
   site,
   onSearch,
   onServices,
+  onAccount,
 }: {
   active: string;
   site?: { tone: 'ok' | 'warn' | 'bad' | 'unknown'; word: string };
   onSearch?: () => void;
   onServices?: () => void;
+  onAccount?: () => void;
 }) {
   return (
     <header
@@ -319,14 +342,18 @@ function DesktopBar({
             anywhere in the Desk. So the admin surface had no way out of itself
             except closing the tab, which leaves the token live.
 
-            The artboard puts "Sign out of the Desk" at the foot of the More
-            screen; that screen is not built, so it lives on the avatar, which
-            is where people already reach for it. */}
+            ⚠️ IT NOW OPENS THE ACCOUNT DRAWER RATHER THAN SIGNING OUT ON THE
+            FIRST CLICK. Sign out is the first control inside it, so the exit
+            is still one press from here — and the avatar is also the only
+            place the authenticator can be set up, which AdminJwtGuard's own
+            refusal text calls "Account". A single click that ends the session
+            is also the wrong default now that a session is thirty days of
+            refresh rather than eight hours of token. */}
         <button
           type="button"
-          onClick={signOutOfDesk}
-          aria-label="Sign out of the Desk"
-          title="Sign out of the Desk"
+          onClick={onAccount}
+          aria-label="Your account"
+          title="Your account — second factor and sign out"
           style={{
             width: 30,
             height: 30,
@@ -357,12 +384,14 @@ function PhoneHeader({
   site,
   onSearch,
   onServices,
+  onAccount,
 }: {
   title: string;
   sub?: React.ReactNode;
   site?: { tone: 'ok' | 'warn' | 'bad' | 'unknown'; word: string };
   onSearch?: () => void;
   onServices?: () => void;
+  onAccount?: () => void;
 }) {
   return (
     <header
@@ -415,6 +444,16 @@ function PhoneHeader({
       {onServices ? (
         <RoundButton label="External consoles" onClick={onServices}>
           <IconExternal size={16} style={{ color: 'var(--dk-ink-2)' }} />
+        </RoundButton>
+      ) : null}
+      {/* 🚨 THE PHONE HAD NO SIGN-OUT AND NO ACCOUNT AT ALL. Sign-out lived on
+          the desktop avatar, which this header does not have — so an operator
+          working from the installed PWA could not end their own session, and
+          once the second factor became a thing they could not enrol one
+          either. Same drawer as the avatar opens. */}
+      {onAccount ? (
+        <RoundButton label="Your account" onClick={onAccount}>
+          <IconShield size={16} style={{ color: 'var(--dk-ink-2)' }} />
         </RoundButton>
       ) : null}
     </header>

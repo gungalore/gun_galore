@@ -26,14 +26,7 @@
  * after the drawer closes. See the guard on GET admin/users/:id/kyc-file/:which
  * — Bearer header only, which is also why this cannot be an <img src>.
  */
-import {
-  DESK_API_URL,
-  DESK_SIGN_IN_PATH,
-  DeskFetchError,
-  clearDeskToken,
-  deskFetch,
-  getDeskToken,
-} from './desk-auth';
+import { DeskFetchError, deskFetch, deskFetchRaw } from './desk-auth';
 
 export type MemberKycStatus = 'NONE' | 'PENDING' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED';
 
@@ -320,10 +313,16 @@ export function legacyKycUrl(user: MemberUser, which: KycDocumentKind): string |
 /**
  * Decrypt and load one document. THE ONLY DECRYPTION CALL IN THIS MODULE.
  *
- * ⚠️ NOT deskFetch, AND NOT BECAUSE THE RULE IS BEING DODGED. The route
- * streams bytes, and deskFetch parses every response as JSON — this is the
- * same request with the same Authorization header and the same 401 handling,
- * kept inside the data module so no component ever holds a fetch of its own.
+ * ⚠️ deskFetchRaw, NOT deskFetch: the route streams bytes and deskFetch
+ * parses every response as JSON.
+ *
+ * 🚨 IT USED TO HAND-ROLL THE FETCH, AND THAT WAS A THIRD 401 HANDLER. The
+ * copy here cleared the token and bounced to sign-in directly, so once
+ * deskFetch learned to refresh a fifteen-minute token silently, this one call
+ * still ejected the operator — revealing an identity document being the one
+ * place they would least expect to be thrown out. deskFetchRaw is the same
+ * request with the same header and the same no-store, and there is now
+ * exactly one place that decides what a 401 means.
  *
  * ⚠️ THE ROUTE TAKES A DOCUMENT KIND, NEVER A STORAGE KEY. `readKycFile` looks
  * the key up from the user row, so there is no path by which an admin reads
@@ -334,21 +333,7 @@ export async function revealKycDocument(
   which: KycDocumentKind,
 ): Promise<RevealedDocument> {
   const path = `/admin/users/${encodeURIComponent(userId)}/kyc-file/${which}`;
-  const token = getDeskToken();
-  const headers = new Headers();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-
-  const res = await fetch(`${DESK_API_URL}${path}`, { headers, cache: 'no-store' });
-
-  if (res.status === 401) {
-    clearDeskToken();
-    if (typeof window !== 'undefined') window.location.href = DESK_SIGN_IN_PATH;
-    throw new DeskFetchError('Signed out', 401, '', path);
-  }
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new DeskFetchError(`${res.status} ${res.statusText}`, res.status, body, path);
-  }
+  const res = await deskFetchRaw(path);
 
   const blob = await res.blob();
   const mimeType = res.headers.get('content-type') ?? blob.type ?? 'application/octet-stream';

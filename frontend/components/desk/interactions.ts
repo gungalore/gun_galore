@@ -33,8 +33,35 @@ export interface PileKeyHandlers {
    * ⚠️ EVERY SHORTCUT EXCEPT ESCAPE IS SUSPENDED WHILE AN OVERLAY IS OPEN.
    * Otherwise "A" typed into a rejection note fires the primary action on the
    * card behind the dialog — which, on a firearm transfer, releases money.
+   *
+   * ⚠️ THIS FLAG IS A HINT, NOT THE WHOLE ANSWER — see anOverlayIsOpen(). A
+   * board can only report the overlays IT owns, and not every overlay belongs
+   * to a board.
    */
   overlayOpen?: boolean;
+}
+
+/**
+ * Is ANY Desk overlay on screen, whoever opened it?
+ *
+ * 🚨 THE BOARD-LOCAL FLAG WAS NOT ENOUGH, AND THE GAP WAS THE DANGEROUS KIND.
+ * The pile passes `overlayOpen: stack.length > 0` — its own drawer stack — but
+ * DeskShell mounts drawers of its own (Account, Services) that the stack knows
+ * nothing about. Drawer focuses its panel's first focusable element on mount,
+ * which is the header's Close button, and isTyping() returns false for a
+ * BUTTON — so with the Account drawer open, a stray "a" fell straight through
+ * to the pile's primary action on the card behind it. On a firearm transfer
+ * that releases money, and the drawer this shipped alongside is the one that
+ * displays the ten recovery codes.
+ *
+ * Asking the DOM cannot go stale the way a prop can: a new shell-level overlay
+ * inherits the suspension by wearing the class every overlay already wears.
+ * use-desk-search.ts has always gated the palette this way; this is the same
+ * question asked in the same place.
+ */
+function anOverlayIsOpen(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.querySelector('.dk-drawer, .dk-dialog') !== null;
 }
 
 /** Fields where a keystroke is text, not a command. */
@@ -100,13 +127,13 @@ export function usePileKeys({
       // Ctrl/Cmd K opens search from anywhere except an overlay — the
       // browser's own find-in-page is Ctrl F, so this does not collide.
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
-        if (c.overlayOpen) return;
+        if (c.overlayOpen || anOverlayIsOpen()) return;
         e.preventDefault();
         c.onSearch();
         return;
       }
 
-      if (c.overlayOpen || isTyping(e.target)) return;
+      if (c.overlayOpen || anOverlayIsOpen() || isTyping(e.target)) return;
       // A modifier means the operator is talking to the browser, not the pile.
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 

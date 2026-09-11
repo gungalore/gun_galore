@@ -33,4 +33,6 @@ export * from './case-drawer';
 export * from './send-drawer';
 export * from './order-drawer';
 export * from './admins-drawer';
+export * from './account-drawer';
+export * from './recovery-notice';
 export * from './whatsapp-drawer';
