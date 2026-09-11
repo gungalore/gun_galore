@@ -187,6 +187,15 @@ export function orderContext(o: SearchOrderWire): string {
  * drawer directly on the line, which is the null-parent case OrderDrawer
  * already documents for a payout row. Passing a transaction id to `?order=`
  * would 404 against an order that does not exist.
+ *
+ * ⚠️ THE PARAM NAMES OUTLIVED THEIR PAGE. `?order=` and `?txn=` were the
+ * Ledger's, and /admin/desk/ledger is now a redirect that translates them onto
+ * Now (app/admin/desk/ledger/page.tsx, lib/desk-pile.ts). These two hrefs point
+ * at the destination directly rather than through that hop — a palette hit is
+ * the most-travelled link on the Desk and does not need a round trip to learn
+ * where it was already going. The redirect stays for everything nobody here
+ * controls: the Ledger tab, People's hand-written ?txn=, the cutover map and
+ * whatever is in the operator's history.
  */
 export function searchHref(
   kind: 'member' | 'listing' | 'order' | 'transaction',
@@ -198,8 +207,13 @@ export function searchHref(
     case 'listing':
       return `/admin/desk?listing=${encodeURIComponent(id)}`;
     case 'order':
-      return `/admin/desk/ledger?order=${encodeURIComponent(id)}`;
+      // ⚠️ `view=orders` TRAVELS WITH IT, the way the redirect adds it: closing
+      // the drawer has to leave the operator among orders like the one they
+      // opened, not on the pile with no list behind them.
+      return `/admin/desk?view=orders&order=${encodeURIComponent(id)}`;
     case 'transaction':
-      return `/admin/desk/ledger?txn=${encodeURIComponent(id)}`;
+      // ⚠️ AND NO view= HERE. A single sale is not a cart; switching the board
+      // to a list that does not contain what was opened is its own small lie.
+      return `/admin/desk?txn=${encodeURIComponent(id)}`;
   }
 }

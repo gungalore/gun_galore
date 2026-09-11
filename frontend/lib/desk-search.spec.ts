@@ -160,8 +160,15 @@ describe('🚨 where a result opens', () => {
     // line; a transaction has no cart parent and opens the drawer directly.
     // Passing a transaction id to `?order=` 404s against an order that does
     // not exist, and reads as "this sale is missing" rather than "wrong id".
-    expect(searchHref('order', 'ord_1')).toBe('/admin/desk/ledger?order=ord_1');
-    expect(searchHref('transaction', 'txn_1')).toBe('/admin/desk/ledger?txn=txn_1');
+    expect(searchHref('order', 'ord_1')).toBe('/admin/desk?view=orders&order=ord_1');
+    expect(searchHref('transaction', 'txn_1')).toBe('/admin/desk?txn=txn_1');
+  });
+
+  it('opens a transaction WITHOUT switching the board to the order list', () => {
+    // A single sale has no cart parent, so there is no list it belongs in;
+    // `view=orders` here would move the board to a list that does not contain
+    // the thing the operator just opened.
+    expect(searchHref('transaction', 'txn_1')).not.toContain('view=');
   });
 
   it('members go to People and listings to the Pile', () => {

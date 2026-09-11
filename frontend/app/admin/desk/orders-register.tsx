@@ -1,23 +1,28 @@
 'use client';
 
 /**
- * THE DESK — the Orders lens on the Ledger.
+ * THE DESK — the Orders lens on Now.
  *
- * The replacement for the legacy /admin/orders list. It lives on the Ledger
- * rather than on a sixth tab because an order and a payout are the same money
- * seen from two ends: the cart the buyer paid for, and the per-line payouts it
- * owes. One board, two lenses.
+ * The replacement for the legacy /admin/orders list. It was the Ledger's
+ * second lens until Now absorbed the Ledger; /admin/desk/ledger is a
+ * param-translating redirect and this is the board it lands on. The reasoning
+ * did not change, only the address: an order and a payout are the same money
+ * seen from two ends — the cart the buyer paid for, and the per-line payouts
+ * it owes — so neither earns a tab of its own.
  *
- * ⚠️ IT IS A LENS, NOT A CHIP IN THE RUN'S CHIP ROW, AND THAT DISTINCTION IS
- * THE WHOLE DESIGN. The run's four chips (Needs attention / Payable / Held
- * back / Blocked) are synchronous re-slices of one PayoutRun already sitting
- * in the browser. Orders is a network fetch with its own status filter, its
- * own pager and its own URL contract. Putting the two kinds side by side in
- * one row would mean the same control did two different things depending on
- * which one you pressed, and the only tell would be how long a skeleton
- * lasted. So the view switch sits ABOVE, in the title row, exactly the way
- * People's Dealers chip picks a lens and then reveals its own chip row under
- * it — a grammar this surface already has.
+ * ⚠️ IT IS A LENS, NOT A CHIP IN THE RUN DRAWER'S SECTIONS, AND THAT
+ * DISTINCTION IS THE WHOLE DESIGN. The payout run's sections are synchronous
+ * re-slices of one PayoutRun already sitting in the browser. Orders is a
+ * network fetch with its own status filter, its own pager and its own URL
+ * contract. Putting the two kinds side by side in one row would mean the same
+ * control did two different things depending on which one you pressed, and the
+ * only tell would be how long a skeleton lasted. So the lens chips sit above
+ * the board and the run's own slices stay inside its drawer.
+ *
+ * ⚠️ STILL PRESENTATIONAL. Segment, page, the fetched page and the resolve
+ * ticket all live on the Now board, because the URL contract (?status=, ?page=,
+ * ?order=) is written there and a second owner of that state is a second thing
+ * to keep in step with the address bar.
  *
  * 🚨 NO ORDER-LEVEL MONEY BUTTON, EVER. A full refund of a consolidated
  * carrier line whose siblings are still HELD throws (admin.service.ts ~2233):
@@ -61,7 +66,7 @@ import {
   type OrderSegment,
 } from '@/lib/desk-orders';
 
-export interface OrderBookProps {
+export interface OrdersRegisterProps {
   segment: OrderSegment;
   onSegment: (next: OrderSegment) => void;
   pageIndex: number;
@@ -77,7 +82,7 @@ export interface OrderBookProps {
   openError: { tag: string; body: string } | null;
 }
 
-export function OrderBook({
+export function OrdersRegister({
   segment,
   onSegment,
   pageIndex,
@@ -88,7 +93,7 @@ export function OrderBook({
   onOpenRow,
   resolvingId,
   openError,
-}: OrderBookProps) {
+}: OrdersRegisterProps) {
   const rows = page?.orders ?? [];
   const bounds = page ? orderPageWindow(page.total, pageIndex) : null;
   const phone = useIsPhone();

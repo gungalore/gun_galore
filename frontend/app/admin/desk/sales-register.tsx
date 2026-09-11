@@ -1,11 +1,13 @@
 'use client';
 
 /**
- * THE DESK — the sales book, the Ledger's third lens.
+ * THE DESK — the Sales lens on Now.
  *
- * 'run' is today's payout run, the one daily action. 'orders' is the cart
- * book, replacing /admin/orders. This is the SALE book — the Transaction as a
- * row, which is the unit a payout pays and a refund refunds.
+ * 'orders' is the cart book, replacing /admin/orders. This is the SALE
+ * register — the Transaction as a row, which is the unit a payout pays and a
+ * refund refunds. It was the Ledger's third lens until Now absorbed the
+ * Ledger; ?view=sales still means what it meant, which is what lets
+ * /admin/desk/ledger redirect here without rewriting anybody's bookmark.
  *
  * 🚨 THE MAP CALLED THIS UNBUILDABLE AND IT WAS ONE WHERE-CLAUSE. getTransactions
  * pinned paymentStatus on every call, defaulting to HELD with no way to ask for
@@ -29,7 +31,7 @@ import {
 } from '@/lib/desk-transactions';
 import { describeFailure } from '@/lib/desk-auth';
 
-export function SalesBook({
+export function SalesRegister({
   onOpen,
   filter,
   onClearFilter,
@@ -84,10 +86,20 @@ export function SalesBook({
         ))}
       </div>
 
-      {/* ⚠️ A DEEP-LINK FILTER MUST BE VISIBLE AND REMOVABLE. The command
-          centre and the health page link here with ?filter=, and a narrowed
-          list with nothing on screen to say so reads as "there are only four
-          held sales" — a wrong fact about the whole marketplace. */}
+      {/* ⚠️ A DEEP-LINK FILTER MUST BE VISIBLE AND REMOVABLE. A narrowed list
+          with nothing on screen to say so reads as "there are only four held
+          sales" — a wrong fact about the whole marketplace.
+
+          ⚠️ AND THE TWO PRODUCERS THIS USED TO NAME ARE BOTH GONE, which is
+          why the sentence is worth correcting rather than deleting. Grepping
+          the tree today: `accept-stalled` appears only in lib/desk-transactions.ts
+          and its spec — NOTHING emits that link. `dispatch-overdue` has one
+          live producer, backend/src/admin/admin-health.service.ts, and it
+          emits `/admin/transactions?status=HELD&filter=dispatch-overdue` — a
+          legacy path that no longer exists and that QUEUE_DESK_HREF
+          (lib/desk-site.ts) does not translate, so the Site board renders that
+          queue row as plain text with no link at all. The READER stays: a
+          pasted link still works, and the reader is not what is broken. */}
       {filter ? (
         <div
           style={{

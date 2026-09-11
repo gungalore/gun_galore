@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * THE DESK — Books, the Ledger's fourth lens.
+ * THE DESK — the Books lens on Now, formerly the Ledger's fourth.
  *
  * 🚨 BOTH ENDPOINTS EXISTED AND NEITHER HAD A CALLER. GET held-funds is the
  * client-money position — how much of the bank balance is somebody else's —
@@ -43,7 +43,7 @@ const ARM_LABEL = {
   stuck: 'will not clear itself',
 } as const;
 
-export function Books({ onOpenSale }: { onOpenSale: (transactionId: string) => void }) {
+export function BooksRegister({ onOpenSale }: { onOpenSale: (transactionId: string) => void }) {
   const [funds, setFunds] = React.useState<HeldFunds | null>(null);
   const [radar, setRadar] = React.useState<ZohoFailed | null>(null);
   const [failure, setFailure] = React.useState<string | null>(null);
