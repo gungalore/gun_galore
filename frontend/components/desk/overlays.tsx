@@ -43,8 +43,26 @@ export interface DrawerProps {
   children: React.ReactNode;
 }
 
-export function Drawer({
-  open,
+/**
+ * ⚠️ A TWO-LINE WRAPPER, AND THE TWO LINES ARE THE FIX.
+ *
+ * `open` used to be a PROP of the body, so the focus effect had to carry it in
+ * its dep list, guard on it, and early-return — and a dep list containing
+ * `onClose` re-ran that effect on every render. Every call site passes an
+ * inline arrow, so "every render" meant "every keystroke", and the effect's
+ * first act is to focus the panel's FIRST focusable element. Typing one
+ * character into the dealer form's Suburb field threw the cursor back to
+ * Dealer name. That is the form deciding where a firearm gets driven.
+ *
+ * Mounting and unmounting the body makes the lifecycle carry `open`, so the
+ * effects below need no deps at all and cannot re-run on a keystroke.
+ */
+export function Drawer(props: DrawerProps) {
+  if (!props.open) return null;
+  return <DrawerBody {...props} />;
+}
+
+function DrawerBody({
   onClose,
   typeLabel,
   reference,
@@ -63,11 +81,27 @@ export function Drawer({
   // so Escape lands the operator back on the card they were deciding.
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
 
+  // ⚠️ THE HANDLER GOES IN A REF, NOT A DEP. Every call site passes an inline
+  // `onClose`, so a dep list naming it changes identity on every render. The
+  // same pattern usePileKeys already uses (interactions.ts) — read the latest
+  // handler at call time, bind the listener once.
+  const closeRef = React.useRef(onClose);
+  closeRef.current = onClose;
+
+  // A — focus in on mount, focus back out on unmount. NO DEPS: it must run
+  // exactly twice in the drawer's life, and a keystroke is not either of them.
   React.useEffect(() => {
-    if (!open) return;
     returnFocusRef.current = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
     panel?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]')?.focus();
+    return () => {
+      returnFocusRef.current?.focus?.();
+    };
+  }, []);
+
+  // B — the key listener, bound once and reading closeRef at call time.
+  React.useEffect(() => {
+    const panel = panelRef.current;
 
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -83,7 +117,7 @@ export function Drawer({
         // ordering that matches what is on top of the screen.
         if (document.querySelector('.dk-dialog')) return;
         e.stopPropagation();
-        onClose();
+        closeRef.current();
         return;
       }
       if (e.key !== 'Tab' || !panel) return;
@@ -109,11 +143,8 @@ export function Drawer({
     document.addEventListener('keydown', onKey, true);
     return () => {
       document.removeEventListener('keydown', onKey, true);
-      returnFocusRef.current?.focus?.();
     };
-  }, [open, onClose]);
-
-  if (!open) return null;
+  }, []);
 
   return (
     <>
@@ -360,6 +391,21 @@ export function DialogFrame({
   // Whatever had focus when the dialog opened gets it back when it closes.
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
 
+  // ⚠️ THE HANDLER IN A REF, NOT A DEP — the bug that made this form unusable.
+  //
+  // This effect's dep list was `[onClose]`, and every call site passes an
+  // inline arrow (people/page.tsx's DealerFormDialog passes
+  // `() => { if (!busy) onClose(); }`). So its identity changed on every
+  // render, the form re-rendered on every keystroke, and the effect re-ran —
+  // cleanup restoring focus, then setup focusing the panel's FIRST focusable
+  // element. Typing one character into Suburb, City, Postal code, Phone or
+  // Email threw the cursor back to "Dealer name". On the form that decides
+  // which dealer a firearm is driven to.
+  const closeRef = React.useRef(onClose);
+  closeRef.current = onClose;
+
+  // A — focus in on mount, restore on unmount. NO DEPS: exactly twice in the
+  // dialog's life, and a keystroke is neither of them.
   React.useEffect(() => {
     // ⚠️ THIS DIALOG DECLARES aria-modal AND USED TO TRAP NOTHING. Drawer,
     // directly above, does the full job — initial focus, a Tab trap, focus
@@ -372,10 +418,18 @@ export function DialogFrame({
     returnFocusRef.current = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
     panel?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]')?.focus();
+    return () => {
+      returnFocusRef.current?.focus?.();
+    };
+  }, []);
+
+  // B — the key listener, bound once, reading closeRef at call time.
+  React.useEffect(() => {
+    const panel = panelRef.current;
 
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        onClose();
+        closeRef.current();
         return;
       }
       if (e.key !== 'Tab' || !panel) return;
@@ -399,9 +453,8 @@ export function DialogFrame({
     document.addEventListener('keydown', onKey, true);
     return () => {
       document.removeEventListener('keydown', onKey, true);
-      returnFocusRef.current?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <>
