@@ -20,6 +20,7 @@ import {
   FailedRegion,
   IconSearch,
   Input,
+  RegisterList,
   SkeletonPile,
   Tag,
 } from '@/components/desk';
@@ -153,76 +154,35 @@ export function ListingsRegister({ onOpen }: { onOpen: (listingId: string) => vo
               : `No listings are ${segmentLabel(segment).toLowerCase()}.`}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {rows.map((l, i) => (
-            <button
-              key={l.id}
-              type="button"
-              onClick={() => onOpen(l.id)}
-              aria-haspopup="dialog"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                width: '100%',
-                minHeight: 60,
-                padding: '10px 4px',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: i === rows.length - 1 ? undefined : '1px solid var(--dk-line)',
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              {l.images?.[0]?.url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={l.images[0].url}
-                  alt=""
-                  style={{
-                    width: 40,
-                    height: 40,
-                    flex: 'none',
-                    objectFit: 'cover',
-                    borderRadius: 4,
-                    border: '1px solid var(--dk-line-2)',
-                  }}
-                />
-              ) : (
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: 40,
-                    height: 40,
-                    flex: 'none',
-                    borderRadius: 4,
-                    background: 'var(--dk-inset)',
-                    border: '1px solid var(--dk-line-2)',
-                  }}
-                />
-              )}
-              <span style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ fontSize: 12.5, color: 'var(--dk-ink)' }}>{l.title}</span>
-                <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>
-                  {l.referenceNumber ?? l.id.slice(0, 8)}
-                  {l.seller?.username ? ` · ${l.seller.username}` : ''}
-                  {l.category?.name ? ` · ${l.category.name}` : ''}
-                </span>
-              </span>
-              {/* A firearm is the one attribute on this row that changes what
-                  an operator may do next, so it is tagged and nothing else is. */}
-              {l.category?.isFirearm ? <Tag kind="neutral">firearm</Tag> : null}
-              {'ageDays' in l ? (
-                <Tag kind="neutral">{`${(l as DeadStockRow).ageDays} days live`}</Tag>
-              ) : null}
-              <span className="dk-mono" style={{ fontSize: 12, color: 'var(--dk-ink-2)' }}>
-                {l.price === null ? '—' : formatRand(l.price)}
-              </span>
-              <Tag kind={STATUS_TONE[l.status] ?? 'neutral'}>{statusLabel(l.status)}</Tag>
-            </button>
-          ))}
-        </div>
+        <RegisterList
+          minHeight={60}
+          rows={rows.map((l) => ({
+            id: l.id,
+            hasThumb: true,
+            thumb: l.images?.[0]?.url ?? null,
+            title: l.title,
+            sub:
+              `${l.referenceNumber ?? l.id.slice(0, 8)}` +
+              `${l.seller?.username ? ` · ${l.seller.username}` : ''}` +
+              `${l.category?.name ? ` · ${l.category.name}` : ''}`,
+            amount: l.price === null ? '—' : formatRand(l.price),
+            tags: (
+              <>
+                {/* A firearm is the one attribute on this row that changes
+                    what an operator may do next, so it is tagged and nothing
+                    else is. */}
+                {l.category?.isFirearm ? <Tag kind="neutral">firearm</Tag> : null}
+                {'ageDays' in l ? (
+                  <Tag kind="neutral">{`${(l as DeadStockRow).ageDays} days live`}</Tag>
+                ) : null}
+                <Tag kind={STATUS_TONE[l.status] ?? 'neutral'}>
+                  {statusLabel(l.status)}
+                </Tag>
+              </>
+            ),
+          }))}
+          onOpen={onOpen}
+        />
       )}
 
       {rows && rows.length > 0 && segment !== 'DEAD' && total > LISTINGS_PAGE_SIZE ? (

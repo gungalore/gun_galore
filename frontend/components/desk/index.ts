@@ -17,6 +17,7 @@ export * from './numbers';
 export * from './overlays';
 export * from './states';
 export * from './table';
+export * from './register-list';
 export * from './tabs';
 export * from './forms';
 export * from './charts';

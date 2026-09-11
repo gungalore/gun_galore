@@ -186,3 +186,99 @@
   0%, 100% { opacity: 0.55; }
   50% { opacity: 0.85; }
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Register rows — components/desk/register-list.tsx
+ *
+ * ⚠️ THE BREAKPOINT IS HERE, NOT IN JAVASCRIPT. `useIsPhone` initialises to
+ * `false` and only corrects inside an effect, so a JS branch paints the
+ * desktop tree on the server AND on the first client render, then relayouts.
+ * A media query is correct in the first frame and costs nothing.
+ *
+ * Desk:  [ref/thumb] [title + sub ................] [tags] [amount]
+ * Phone: [ref/thumb] [title + sub ...]
+ *        [tags] [amount]                      ← wraps to its own line
+ * ──────────────────────────────────────────────────────────────────────── */
+
+[data-desk] .dk-reg-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 4px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+[data-desk] .dk-reg-row:hover {
+  background: var(--dk-surface);
+}
+
+/* The mono reference. A fixed track at the desk so the column lines up. */
+[data-desk] .dk-reg-lead {
+  flex: none;
+  width: 96px;
+  font-size: 11px;
+  color: var(--dk-ink-3);
+}
+
+[data-desk] .dk-reg-thumb {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  background: var(--dk-inset);
+  border: 1px solid var(--dk-line-2);
+}
+
+/* ⚠️ min-width: 0 IS LOAD-BEARING. Without it a flex child refuses to shrink
+   below its content, so a long listing title pushes the tags off the row
+   instead of ellipsing — which is the overflow this component exists to end. */
+[data-desk] .dk-reg-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+[data-desk] .dk-reg-main > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-desk] .dk-reg-trail {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 1023.98px) {
+  [data-desk] .dk-reg-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 8px;
+    padding: 12px 4px;
+  }
+
+  /* Auto width under the thumb: a 96px track for a reference on a 390px
+     screen is a quarter of the row spent on the least useful thing in it. */
+  [data-desk] .dk-reg-lead {
+    width: auto;
+  }
+
+  /* The trailing state takes its own line rather than competing for the
+     first. Tags carry `white-space: nowrap`, so on one line they are what
+     pushed the row past the viewport. */
+  [data-desk] .dk-reg-trail {
+    flex: 1 0 100%;
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+}

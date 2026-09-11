@@ -276,7 +276,11 @@ function check(file) {
     // a desktop-only row, not a tap target" — and says it where the next
     // reader is looking. Two things legitimately need it today: DeskTable's
     // row (desktop-only; the phone path is cards) and the undo toast's bar.
-    const allowed = /dk-allow-height/.test(lines[i - 1] ?? '');
+    // Look back a few lines, not one: the marker opens a comment block that
+    // says WHY, and the reason is usually longer than the marker.
+    const allowed = lines
+      .slice(Math.max(0, i - 4), i)
+      .some((l) => /dk-allow-height/.test(l));
 
     if (heightMatch && !isSquare && !allowed) {
       problems.push(

@@ -24,7 +24,7 @@
  */
 
 import * as React from 'react';
-import { Button, Chip, FailedRegion, SkeletonPile, Tag } from '@/components/desk';
+import { Button, Chip, FailedRegion, RegisterList, SkeletonPile, Tag } from '@/components/desk';
 import {
   CASE_STATES,
   stateTone,
@@ -151,49 +151,31 @@ export function CasesRegister({ onOpen, refreshKey = 0 }: CasesRegisterProps) {
             : `No ${kind === 'complaint' ? 'complaints' : 'tickets'} logged.`}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {rows.map((c, i) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => onOpen(c.kind, c.id)}
-              aria-haspopup="dialog"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                width: '100%',
-                minHeight: 56,
-                padding: '10px 4px',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: i === rows.length - 1 ? undefined : '1px solid var(--dk-line)',
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              <span
-                className="dk-mono"
-                style={{ fontSize: 11, color: 'var(--dk-ink-3)', width: 96, flex: 'none' }}
-              >
-                {c.reference}
-              </span>
-              <span style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ fontSize: 12.5, color: 'var(--dk-ink)' }}>{c.subject}</span>
-                <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>
-                  {c.raisedBy ?? 'no username'}
-                  {c.category ? ` · ${c.category}` : ''}
-                  {c.messageCount ? ` · ${c.messageCount} message${c.messageCount === 1 ? '' : 's'}` : ''}
-                </span>
-              </span>
-              {/* A frozen payout is the only thing on this row that costs
-                  money while it waits, so it outranks the state tag. */}
-              {c.payoutFrozen ? <Tag kind="bad">payout held</Tag> : null}
-              <Tag kind={stateTone(c.state)}>{c.state.replace(/_/g, ' ').toLowerCase()}</Tag>
-            </button>
-          ))}
-        </div>
+        <RegisterList
+          rows={rows.map((c) => ({
+            id: c.id,
+            lead: c.reference,
+            title: c.subject,
+            sub:
+              `${c.raisedBy ?? 'no username'}` +
+              `${c.category ? ` · ${c.category}` : ''}` +
+              `${c.messageCount ? ` · ${c.messageCount} message${c.messageCount === 1 ? '' : 's'}` : ''}`,
+            tags: (
+              <>
+                {/* A frozen payout is the only thing on this row that costs
+                    money while it waits, so it outranks the state tag. */}
+                {c.payoutFrozen ? <Tag kind="bad">payout held</Tag> : null}
+                <Tag kind={stateTone(c.state)}>
+                  {c.state.replace(/_/g, ' ').toLowerCase()}
+                </Tag>
+              </>
+            ),
+          }))}
+          onOpen={(id) => {
+            const row = rows.find((r) => r.id === id);
+            if (row) onOpen(row.kind, row.id);
+          }}
+        />
       )}
 
       {rows && rows.length > 0 && (page > 1 || hasMore) ? (

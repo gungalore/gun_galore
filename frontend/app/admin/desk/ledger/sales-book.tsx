@@ -14,7 +14,7 @@
  */
 
 import * as React from 'react';
-import { Button, Chip, FailedRegion, SkeletonPile, Tag } from '@/components/desk';
+import { Button, Chip, FailedRegion, RegisterList, SkeletonPile, Tag } from '@/components/desk';
 import { formatRandCents } from '@/lib/desk-ledger';
 import {
   SALES_PAGE_SIZE,
@@ -126,53 +126,21 @@ export function SalesBook({
             : `No sales are ${segment === 'ALL' ? 'recorded' : segment.toLowerCase()}.`}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {rows.map((r, i) => (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => onOpen(r.id)}
-              aria-haspopup="dialog"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                width: '100%',
-                minHeight: 56,
-                padding: '10px 4px',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: i === rows.length - 1 ? undefined : '1px solid var(--dk-line)',
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              <span
-                className="dk-mono"
-                style={{ fontSize: 11, color: 'var(--dk-ink-3)', width: 96, flex: 'none' }}
-              >
-                {r.listing?.referenceNumber ?? r.id.slice(0, 8)}
-              </span>
-              <span style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ fontSize: 12.5, color: 'var(--dk-ink)' }}>
-                  {r.listing?.title ?? 'listing since deleted'}
-                </span>
-                {/* 🚨 USERNAMES ONLY. The endpoint used to return both parties'
-                    real names and email addresses for a page that no longer
-                    exists; the select was corrected rather than filtered here,
-                    so there is nothing to leak even by accident. */}
-                <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>
-                  {`${r.buyer?.username ?? 'no username'} → ${r.seller?.username ?? 'no username'}`}
-                </span>
-              </span>
-              <span className="dk-mono" style={{ fontSize: 12, color: 'var(--dk-ink-2)' }}>
-                {r.buyerTotal === null ? '—' : formatRandCents(r.buyerTotal)}
-              </span>
-              <Tag kind={saleTone(r)}>{saleStateWords(r)}</Tag>
-            </button>
-          ))}
-        </div>
+        <RegisterList
+          rows={rows.map((r) => ({
+            id: r.id,
+            lead: r.listing?.referenceNumber ?? r.id.slice(0, 8),
+            title: r.listing?.title ?? 'listing since deleted',
+            // 🚨 USERNAMES ONLY. The endpoint used to return both parties'
+            //    real names and email addresses for a page that no longer
+            //    exists; the select was corrected rather than filtered here,
+            //    so there is nothing to leak even by accident.
+            sub: `${r.buyer?.username ?? 'no username'} → ${r.seller?.username ?? 'no username'}`,
+            amount: r.buyerTotal === null ? '—' : formatRandCents(r.buyerTotal),
+            tags: <Tag kind={saleTone(r)}>{saleStateWords(r)}</Tag>,
+          }))}
+          onOpen={onOpen}
+        />
       )}
 
       {rows && rows.length > 0 && total > SALES_PAGE_SIZE ? (
