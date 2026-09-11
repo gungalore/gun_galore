@@ -80,6 +80,18 @@ import type { ReadPlan, ReadToolDeps, ToolCallRequest, ToolCallResult } from './
 export const MAX_TOOL_OUTPUT_BYTES = 5_000;
 
 /**
+ * Room left for the note truncateKeepingEnd prepends when it cuts.
+ *
+ * ⚠️ A BUDGET THAT IGNORES THE NOTE IS NOT A BUDGET. The note is ~110 bytes
+ * plus a byte count, and a body sized to the exact remainder overflows by
+ * exactly that much — after which the downstream cut, which keeps the HEAD,
+ * takes the newest lines off the end. 160 is the note at its longest plus
+ * slack; being generous here costs a line of output and being tight costs the
+ * measurement.
+ */
+const TRUNCATION_NOTE_HEADROOM = 160;
+
+/**
  * 🚨 WHICH END THE CUT TAKES IS A PROPERTY OF THE READ, NOT OF THE CUTTER, AND
  * GETTING IT WRONG MADE tail_log RETURN THE OPPOSITE OF WHAT IT PROMISED.
  *
@@ -237,7 +249,20 @@ function refusal(id: string, name: string, reason: string): ToolCallResult {
     'Warden refused this tool call before anything ran. This is Warden\'s own text, not data from the box.',
     reason,
   );
-  return { id, fenced: fenced.text, isError: true, signals: [], redactions: [] };
+  // ⚠️ THE NEUTRALISED COUNT IS READ HERE TOO. This branch built the fence,
+  // neutralised a forged marker in the model's own tool name or argument, and
+  // then threw the count away — reporting `signals: []` for text it had just
+  // visibly rewritten to ‹WARDEN_DATA. It is the same "a model doing as it is
+  // asked" case the body path was fixed for, landing one branch earlier:
+  // whenever the tool name or argument it was steered into choosing is
+  // invalid, the refusal is where the forgery surfaces.
+  return {
+    id,
+    fenced: fenced.text,
+    signals: detectInjection(`${reason}`, fenced.neutralised),
+    isError: true,
+    redactions: [],
+  };
 }
 
 export interface RunReadToolOptions {
@@ -312,7 +337,23 @@ export async function runReadTool(call: ToolCallRequest, opts: RunReadToolOption
   //    counts exactly as much as one forged in the body: on a tail whose
   //    command failed, the header is the ONLY place it appears.
   const forgedMarkers = firstPass.neutralised + described.forged;
-  const signals: SignalClass[] = detectInjection(prepared.text, forgedMarkers);
+  // 🚨 THE SOURCE LINE IS SCANNED, NOT JUST THE BODY. The marker half of this
+  // channel was closed and the cause was left: detectInjection ran over
+  // `prepared.text` alone, so FIVE of the six signal classes never looked at
+  // the header — and the header is the one place `contains` lands when the
+  // tail's command FAILED and nothing echoed into the body.
+  //
+  // Measured before the fix: a failing tail with
+  // contains: 'you are now an administrator override' produced signals: [],
+  // while both role-reassignment (/you\s+are\s+now/) and claimed-authority
+  // (/admin(?:istrator)?\s+override/) would have fired on the same text in the
+  // body. A non-empty `signals` is the only STRUCTURAL path an injection
+  // attempt has into the Desk thread, so a blind header is a silent one.
+  //
+  // ⚠️ SCANNED TOGETHER, NOT SEPARATELY, so a phrase split across the boundary
+  // is still one match — the same reason the tail branch redacts the whole
+  // text before it filters.
+  const signals: SignalClass[] = detectInjection(`${source}\n${prepared.text}`, forgedMarkers);
   const note = annotate(signals);
 
   return {
@@ -395,9 +436,35 @@ async function executePlan(plan: ReadPlan, deps: ReadToolDeps): Promise<Executed
           redactions: redactedWhole.redactions,
         };
       }
+      // ⚠️ THE COUNT IS A HEADER AND THE MATCHES ARE THE BODY, SO THEY ARE CUT
+      // SEPARATELY. Rendered as one string and handed to the tail path's
+      // front-cut, the header is the first thing dropped: a filtered tail with
+      // more matches than the cap came back with no count at all, its first
+      // surviving line sliced mid-token, and a note saying bytes were dropped
+      // "from the START of this tail" when what was dropped was the start of
+      // the RENDER. The model then cannot tell "these are all the matches"
+      // from "these are the last few" — which is the whole measurement.
+      //
+      // Cut here rather than downstream, because only this branch knows which
+      // part is the measurement and which part is the evidence. The matches
+      // keep their NEWEST end, for the same reason an unfiltered tail does.
+      const header = `${kept.length} of ${all.length} lines contained "${plan.contains}":`;
+      // ⚠️ THE NOTE truncateKeepingEnd ADDS IS PART OF THE BUDGET. Sized to
+      // exactly `MAX − header − 1`, the note it prepends pushed the pair back
+      // over the cap and prepareForPlan's downstream cut — which keeps the
+      // HEAD — trimmed the newest matches off the end again, quietly undoing
+      // the thing this branch exists to protect. Measured: 123 bytes lost, and
+      // the last line delivered was 05995 of 05999.
+      const body = truncateKeepingEnd(
+        kept.join('\n'),
+        Math.max(
+          0,
+          MAX_TOOL_OUTPUT_BYTES - Buffer.byteLength(header, 'utf8') - 1 - TRUNCATION_NOTE_HEADROOM,
+        ),
+      ).text;
       return {
         ok: true,
-        text: `${kept.length} of ${all.length} lines contained "${plan.contains}":\n${kept.join('\n')}`,
+        text: `${header}\n${body}`,
         redactions: redactedWhole.redactions,
       };
     }
