@@ -6,7 +6,7 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-11**.
 
-## 2026-09-11 (latest) — DESK REBUILD: PHASES 2, 3 AND 4, PLUS A HARDENING PASS
+## 2026-09-11 (latest) — DESK REBUILD: PHASES 2, 3 AND 4, THE FRONTEND HALF, AND A HARDENING PASS
 
 **STILL NOT DEPLOYED. Nothing on this branch has touched the box.** Branch
 `feat/desk-rebuild`, now nine commits, off `feat/self-hosted-auth`. The
@@ -20,6 +20,7 @@ Four new commits on top of Phases 0 and 1:
 | `bc16883c` | Phase 3 — admin sessions, TOTP, lockout, recovery codes, Tier-1 audit |
 | `9afa9803` | Phase 4 — Warden observability, and the `act()` KYC bypass deleted |
 | `d0eb7d43` | Hardening pass over all three, 39 files |
+| `e2897f5c` | Phase 3, frontend half — the Desk wired to the new auth |
 
 ### Verified at `d0eb7d43`
 
@@ -110,6 +111,63 @@ gap. Do not hedge a claim until it says nothing.
   deploy locks the only operator out of the only admin surface with no route
   left that could enrol them. Order is: deploy, enrol, scan, confirm, THEN set
   the flag and `pm2 reload alloutdoor-backend --update-env`.
+
+### The frontend half of Phase 3 (`e2897f5c`)
+
+Phases 2–4 were backend-only by instruction, which left the Desk **broken
+against its own API**, not merely dated. All three would have surfaced on
+deploy day:
+
+- The three privilege routes now require a `reason` and the Desk sent none —
+  a 400 on the routes that decide who may approve a command on the box. And
+  `desk-admins.spec.ts` PINNED the old shape, so the suite was green while the
+  feature was dead.
+- The access token went 8h → 15 min with nothing refreshing it. `authedFetch`
+  now refreshes single-flight (a board fires several parallel reads; N
+  concurrent refreshes race the rotation) and retries once.
+- TOTP had no UI at all.
+
+⚠️ **AND A MISTYPED SIX-DIGIT CODE SIGNED THE OPERATOR OUT.** `authedFetch`
+read every 401 as a dead token, but the backend answers business refusals with
+401 too (wrong TOTP code, wrong password). On the recovery path that is the
+whole 2am failure: a recovery code spent to get in, a typo ejects them, a
+second code to get back. A refresh that SUCCEEDS means the session is alive, so
+a 401 after it is now surfaced with the server's sentence; and the routes that
+judge a typed secret opt out of the retry, because replaying sends the wrong
+code twice.
+
+⚠️ **SIGNING OUT DID NOT END THE SESSION.** The sign-in page cleared
+localStorage and left the 30-day httpOnly refresh cookie, and
+`RequireDeskSession` refreshes before giving up — so pressing Back after
+"signing out" redeemed the cookie and rendered the boards with no password.
+The front door now revokes server-side.
+
+⚠️ **SHELL-LEVEL DRAWERS DID NOT SUSPEND THE PILE'S SHORTCUTS.** The board
+passes its own drawer stack; DeskShell mounts drawers it knows nothing about.
+A stray "a" behind the Account drawer fired the primary action on the card
+underneath. The check now asks the DOM, as the search palette always has.
+
+### Verified in a browser — the flows, not just the tests
+
+Everything above was also driven end-to-end against the local stack at 375px,
+which is the one thing the test suite cannot do:
+
+- sign in → **two-step sign-in once enrolled** → Desk renders in Desk tokens;
+- enrolment: QR renders, secret grouped in fours, **a wrong code shows the
+  server's sentence and does NOT sign you out** (the critical fix, confirmed:
+  still on `/admin/desk`, token intact, drawer open);
+- the ten recovery codes resist **Escape, the backdrop, and Done while
+  unticked**;
+- signing in with a recovery code yields a session where `GET /admin/alerts`
+  answers **200** and `POST /admin/alerts/bulk-resolve` answers **403** — on a
+  SUPERADMIN, so the recoveryOnly check really does run before the role check;
+- both previously-17px tap targets measure **44px** at 375px;
+- `scripts/admin-reset-totp.mjs` ran and reported "recovery codes deleted: 9",
+  which independently proves single-use consumption — ten minted, one spent.
+
+⚠️ **The local admin's TOTP was enrolled and then RESET during that pass.** The
+local DB is back to password-only (no secret, no pending, no codes, no
+sessions, lockout clear). Production was never touched.
 
 ### Deploy-day additions to the checklist in the plan
 
