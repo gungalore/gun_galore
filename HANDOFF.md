@@ -6,7 +6,96 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-11**.
 
-## 2026-09-11 (latest) — DESK REBUILD: PHASES 5, 6, 7 AND 11
+## 2026-09-11 (latest) — DESK REBUILD: ALL TWELVE PHASES LANDED
+
+**STILL NOT DEPLOYED. Nothing on this branch has touched the box.** Branch
+`feat/desk-rebuild`, **nineteen commits** off `feat/self-hosted-auth`, nothing
+pushed.
+
+**Phases 0–9, 11 and 12 are done.** Phase 10 (Tailscale) is provisioning, not
+code — it belongs to deploy day and is in the checklist below.
+
+Verified at `a1b4dce5`: backend **4,759** tests, frontend **1,896** (136
+files), warden **391**, `tsc` clean in all three trees, `desk-guard` clean,
+`npm run build` **exit 0** through all four gates.
+
+### The last three phases
+
+**Phase 8 — four tabs.** Now / People / Health / Agent, each carrying a count
+from ONE poll mounted in the desk layout (the only node under `/admin/desk`
+that survives a tab press). Pulse and `lib/desk-pulse*` deleted.
+⚠️ `charts.tsx` is NOT deleted — the plan's premise that Pulse was its only
+consumer is wrong; `app/admin/desk-kit` renders five of its components.
+
+**Phase 9 — the front door.** A precached static stand-in at `/admin/offline`.
+⚠️ This REVERSES a deliberate decision in `app/sw.ts` ("admin pages never fall
+back — they must error visibly"), and is only defensible because the stand-in
+shows no figure at all.
+
+**Phase 12 — the tool loop.** Five closed read-only tools. ⚠️ **NOT WIRED INTO
+THE LIVE DIAGNOSE PATH, on purpose.** The one-shot path is byte-identical.
+Wiring it is a deliberate decision for whoever takes it up — do not assume the
+comments describe something an operator can see today.
+
+### The four defects worth carrying forward
+
+1. **A real secret leak in the tool loop.** `tail_log`'s `contains` filter
+   dropped lines BEFORE redaction, which defeats every net whose pattern spans
+   a newline — `/\bBearer\s+…/` matches across `\n`, so a wrapped
+   Authorization header is one match in the whole text and none in either line
+   alone. The token reached the prompt in clear AND reported
+   `redactions: []`, which the contract says means "nothing fired". **A false
+   all-clear is worse than silence.** Rule now pinned: a branch that DROPS part
+   of the box's output redacts the whole of it first — truncation is not
+   enough, a filter is a drop and so is a row cap.
+2. **The site dot drew a green "Healthy" it could not measure**, indefinitely,
+   through a total gates outage. Fixed per-arm and per-sweep. A stale COUNT on
+   a badge is fine; a stale green VERDICT is not.
+3. **One admin URL gated every visitor's service-worker install.** A precache
+   is all-or-nothing and `/admin/offline` was the only rendered route in it.
+4. **The ledger redirect dropped the two params it existed to preserve.**
+
+⚠️ **THE FAILURE MODE OF THIS WHOLE BRANCH, WRITTEN DOWN SO THE NEXT SESSION
+DOES NOT REPEAT IT:** every single pass closed its defects AND shipped a fresh
+⚠️ claim wider than the code — "every env() is clamped", "the operator reads
+this total", "a third sudo operation cannot ship undocumented", "every branch
+redacts before it drops anything". Each was disproved by the next reviewer
+within the hour. Two specs passed on the exact bug they were written for. A
+guard could not see the plan shape it guarded. A source scan failed on its own
+documentation because it counted the literal inside a comment.
+
+**So the three habits this branch earned, and they are cheap:** strip comments
+before any source scan; never trust a green spec you have not watched go red;
+and when you write a universal, try to break it first and write the narrow rule
+if you can.
+
+### Deploy day
+
+Two migrations, both additive and applied locally:
+`20260911120000_admin_auth_hardening` and
+`20260911150000_admin_totp_replay_and_session_amr`. `prisma migrate deploy`,
+never `db push`.
+
+1. **Enrol TOTP on the box BEFORE setting `ADMIN_TOTP_REQUIRED`.** Flipping it
+   first locks the only operator out of the only admin surface with no route
+   left that could enrol them. Save the ten recovery codes off-device — they
+   are shown once and cannot be re-read. Confirm
+   `backend/scripts/admin-reset-totp.mjs` runs; shell on the box is the only
+   backstop, and there is deliberately no email or SMS reset.
+2. **The second sudoers line** for `pruneJournal`, alongside the nginx one —
+   both are in `warden/README.md`'s "Permissions the box needs". `sudo -n`
+   fails closed, so a missing line is a refusal, not a hang.
+3. **A read-only Postgres role** for the agent's query path, if Phase 12 is
+   ever wired.
+4. **Tailscale** (Phase 10) on the box and the phone; confirm the ops listener
+   answers on the tailnet and NOT on the public interface.
+5. **An external uptime monitor** on the apex. "The box is gone" must be told
+   to you by something that is not the box.
+6. Then `npm run sweep` on the box and read every row.
+
+---
+
+## 2026-09-11 — DESK REBUILD: PHASES 5, 6, 7 AND 11
 
 **STILL NOT DEPLOYED. Nothing on this branch has touched the box.** Branch
 `feat/desk-rebuild`, now **fifteen commits** off `feat/self-hosted-auth`.
