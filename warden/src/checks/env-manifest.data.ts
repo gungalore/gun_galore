@@ -41,7 +41,7 @@ export const BACKEND_ENV_MANIFEST: readonly EnvVar[] = [
   { name: 'JWT_ADMIN_SECRET', tier: 'fails-closed', disables: 'the API hard-throws at boot in production' },
   { name: 'DATABASE_URL', tier: 'fails-closed', disables: 'nothing works — no database connection at all' },
   { name: 'JWT_MEMBER_SECRET', tier: 'fails-closed', disables: 'the API hard-throws at boot in production — and if it merely differed from the frontend copy, every signed-in member would be bounced to sign-in while the API accepted them' },
-  { name: 'DIDIT_API_KEY', tier: 'fails-closed', disables: 'no email code at sign-up and no seller verification — the API hard-throws at boot in production' },
+  { name: 'DIDIT_API_KEY', tier: 'fails-closed', disables: 'seller verification cannot run — the API hard-throws at boot in production. NOT the sign-up email code, which goes through Resend' },
   { name: 'DIDIT_WORKFLOW_ID', tier: 'fails-closed', disables: 'seller verification cannot start — the API hard-throws at boot in production' },
   { name: 'DIDIT_WEBHOOK_SECRET', tier: 'fails-closed', disables: 'verification outcomes are dropped unverified — a seller who finishes on Didit stays PENDING forever, silently' },
   { name: 'BOBGO_WEBHOOK_SECRET', tier: 'fails-closed', disables: 'Bob Go tracking callbacks are rejected — Bob Go is the live courier rail' },

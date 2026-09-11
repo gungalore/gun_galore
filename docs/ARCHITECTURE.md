@@ -778,7 +778,7 @@ a loud error for each missing integration secret.
 
 | Service | Used for | Key env | Behaviour when missing |
 |---|---|---|---|
-| **Didit** | Seller identity verification (hosted session), plus the e-mail and phone one-time codes at sign-up | `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`, `DIDIT_MODE`, `DIDIT_BASE_URL` | **In production, a missing key or a non-`live` mode HARD-THROWS at boot.** Elsewhere: codes and KYC sessions report "not configured". See §8.1. |
+| **Didit** | Seller identity verification (hosted session) **only** — ⚠️ the e-mail and phone one-time codes moved back in-house 2026-09-11 (Resend / SMSPortal) | `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`, `DIDIT_MODE`, `DIDIT_BASE_URL` | **In production, a missing key or a non-`live` mode HARD-THROWS at boot.** Elsewhere: codes and KYC sessions report "not configured". See §8.1. |
 | **Peach Payments** | The payment gateway: Checkout V2 pay-in, Payouts, bank-account verification (BANV) | `PEACH_CLIENT_ID`, `PEACH_CLIENT_SECRET`, `PEACH_MERCHANT_ID`, `PEACH_ENTITY_ID`, `PEACH_SECRET`, `PEACH_ENV` | Runs in **mock mode**. Webhooks are rejected (fail-closed) without `PEACH_SECRET`. |
 | **Cloudinary** | All user-uploaded images (listing photos, KYC documents, complaint photos) | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Uploads fail. |
 | **Meilisearch** | Listing / locker / cartridge search | `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY` | Search disabled, app still boots. |

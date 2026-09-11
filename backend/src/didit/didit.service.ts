@@ -72,25 +72,6 @@ export class DiditService implements OnModuleInit {
    * when SMSPortal is unconfigured — do the work, print the code, never
    * pretend the send happened silently.
    */
-  private get stubbed(): boolean {
-    return !this.apiKey && process.env.NODE_ENV !== 'production';
-  }
-
-  /** Codes minted by the stub, keyed by address. Never touched in production. */
-  private readonly stubCodes = new Map<string, string>();
-
-  private stubSend(kind: 'email' | 'phone', to: string): void {
-    const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
-    this.stubCodes.set(`${kind}:${to}`, code);
-    this.logger.warn(
-      `DIDIT NOT CONFIGURED — ${kind} code for ${to} is ${code} (development only)`,
-    );
-  }
-
-  private stubCheck(kind: 'email' | 'phone', to: string, code: string): boolean {
-    return this.stubCodes.get(`${kind}:${to}`) === code.trim();
-  }
-
   /**
    * THIS THROWS AND KILLS THE BOOT, DELIBERATELY.
    *
@@ -178,70 +159,21 @@ export class DiditService implements OnModuleInit {
     throw new DiditError('bad_request', detail, res.status);
   }
 
-  // ── Email OTP ────────────────────────────────────────────────────────
+  // ── OTPs are NOT here any more ───────────────────────────────────────
   //
-  // Send and check are keyed by (application, email) — there is no request id
-  // to carry between them. The pending code lives 5 minutes.
-
-  async sendEmailCode(email: string): Promise<void> {
-    if (this.stubbed) return this.stubSend('email', email);
-    const res = await this.call<DiditOtpResult>('/v3/email/send/', {
-      method: 'POST',
-      body: { email, options: { code_size: 6, locale: 'en' } },
-    });
-    // A 200 IS NOT SUCCESS. A syntactically valid address that fails DNS/MX
-    // validation comes back 200 with status "Undeliverable" — treating the
-    // HTTP code as the answer would leave the member staring at a code that
-    // was never sent.
-    if (res?.status === 'Undeliverable') {
-      throw new DiditError(
-        'undeliverable',
-        'That email address cannot receive mail.',
-      );
-    }
-  }
-
-  async checkEmailCode(email: string, code: string): Promise<boolean> {
-    if (this.stubbed) return this.stubCheck('email', email, code);
-    const res = await this.call<DiditOtpResult>('/v3/email/check/', {
-      method: 'POST',
-      body: { email, code },
-    });
-    return res?.status === 'Approved';
-  }
-
-  // ── Phone OTP ────────────────────────────────────────────────────────
-
-  async sendPhoneCode(phoneE164: string): Promise<void> {
-    if (this.stubbed) return this.stubSend('phone', phoneE164);
-    await this.call<DiditOtpResult>('/v3/phone/send/', {
-      method: 'POST',
-      body: {
-        phone_number: phoneE164,
-        // Operator's call: SMS, not WhatsApp. WhatsApp is roughly half the
-        // cost per message in ZA but cannot reach a handset without the app.
-        options: { code_size: 6, locale: 'en', preferred_channel: 'sms' },
-      },
-    });
-  }
-
-  /**
-   * Check a phone OTP.
-   *
-   * A wrong code is a 200 with status "Failed", not an error, and it burns one
-   * of Didit's three attempts. A malformed code is a 400 and burns none. That
-   * distinction is why this returns a boolean rather than throwing.
-   */
-  async checkPhoneCode(phoneE164: string, code: string): Promise<boolean> {
-    if (this.stubbed) return this.stubCheck('phone', phoneE164, code);
-    const res = await this.call<DiditOtpResult>('/v3/phone/check/', {
-      method: 'POST',
-      body: { phone_number: phoneE164, code },
-    });
-    return res?.status === 'Approved';
-  }
-
-  // ── KYC sessions ─────────────────────────────────────────────────────
+  // ⚠️ EMAIL AND PHONE VERIFICATION MOVED BACK IN-HOUSE, 2026-09-11, and the
+  // four methods that lived here (sendEmailCode / checkEmailCode /
+  // sendPhoneCode / checkPhoneCode) are deleted rather than left unused.
+  //
+  //   * Email is minted in AuthService and delivered by Resend — Didit charged
+  //     $0.03 a send and the mail arrived under Didit's own branding, which is
+  //     a stranger's name on the first email a member ever gets from us.
+  //   * Phone is minted in UsersService and delivered over SMSPortal — Didit
+  //     charged $0.1048 per ZA SMS against roughly $0.01-0.02, and refuses
+  //     phone verification outright until the organisation's first top-up.
+  //
+  // Do not add them back without moving the callers too: two implementations
+  // of one OTP is how a code gets checked against the wrong store.
 
   /**
    * Create a hosted verification session and return the URL to send the

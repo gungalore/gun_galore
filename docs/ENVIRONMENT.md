@@ -87,8 +87,9 @@ Names in here that will not mean anything until you know the domain:
 - **Peach Payments** — the SA payment gateway. Card pay-in, payouts to seller
   bank accounts, and **BANV** (bank-account name verification — proving the
   seller owns the account before we pay it).
-- **Didit** — the identity-verification provider behind KYC, and the sender of
-  the one-time codes that verify a new member's e-mail address and phone number.
+- **Didit** — the identity-verification provider behind seller KYC, and only
+  that. It briefly also sent the sign-up e-mail and phone codes; those moved
+  back in-house on 2026-09-11 and now go out over Resend and SMSPortal.
 - **SMSPortal** — the SA bulk-SMS provider. Load matters here: a lot of users
   transact from an SMS link on a phone with no data.
 - **Ask Boet** — the site-wide AI assistant. "Boet" is Afrikaans/SA slang for
@@ -258,9 +259,19 @@ different missing-value behaviour is a wart worth knowing about.
 
 ## Identity verification — Didit
 
-One provider, one adapter (`src/didit/`), three jobs: the e-mail code at
-sign-up, the phone code, and the hosted seller-KYC session whose verdict comes
-back by webhook. Base URL `https://verification.didit.me`.
+One provider, one adapter (`src/didit/`), **one job**: the hosted seller-KYC
+session whose verdict comes back by webhook. Base URL
+`https://verification.didit.me`.
+
+> ⚠️ **IT USED TO HAVE THREE JOBS.** The sign-up e-mail code and the phone
+> code went to Didit in the 2026-09-10 cut-over and came straight back on
+> 2026-09-11: $0.03 an e-mail and $0.1048 a ZA SMS on rails already paid for,
+> mail arriving under Didit's branding from Didit's domain, and phone
+> verification **refused outright until the organisation's first top-up**
+> (HTTP 403 - an account state, not a bad number). The e-mail code is now minted
+> in `auth.service.ts` and sent by Resend; the phone code is minted in
+> `users.service.ts` and sent over SMSPortal. The four adapter methods are
+> deleted, not merely unused.
 
 > ⚠️ **VerifyNow is gone**, and so is AWS Rekognition (KYC face-match and Face
 > Liveness) with it. `VERIFYNOW_API_KEY`, `_BASE_URL`, `_MODE`,
@@ -285,11 +296,19 @@ from the Didit console, sent as the `x-api-key` header.
 logs for 401s to diagnose a credential problem finds nothing.
 
 ⚠️ **Local dev does need one, and this is the one integration that is not
-optional any more.** Without a key, `POST /api/auth/register` writes the `User`
-row and then fails 400 on the code send — so nobody can finish signing up, and
-there is deliberately no dev bypass that mints a code locally. `DIDIT_MODE`
-defaults to `sandbox` outside production, which is free, but it still calls the
-real API with a real key.
+optional any more.**
+
+> ⚠️ **NO LONGER TRUE, 2026-09-11.** Sign-up goes through Resend now, and
+> with no `RESEND_API_KEY` the code is printed to the server log instead of
+> sent - so a fresh clone can register and verify with no third-party account
+> at all. That fallback is **disabled in production**: a prod box missing the
+> mail credential must fail the sign-up loudly, not log every new member's code
+> where anyone with log access can read it. A Didit key is still needed to
+> exercise **seller KYC**, which is deliberately NOT stubbed, because a canned
+> identity pass is worse than none.
+
+`DIDIT_MODE` defaults to `sandbox` outside production, which is free, but it
+still calls the real API with a real key.
 
 ### `DIDIT_WORKFLOW_ID`
 **Required in production — throws at boot when unset.** The published KYC
@@ -730,8 +749,20 @@ slash. Falls back to `https://gungalore.co.za` — so an unset staging build
 advertises production URLs to crawlers.
 
 ### `NEXT_PUBLIC_APP_URL`
-**Optional**, default `http://localhost:3000`. Only used to build the absolute
-redirect out of `/admin/logout`.
+**Required in every environment**, and the fallback is a trap. It is the base
+`middleware.ts` builds its sign-in bounce on — pinned to a configured URL
+rather than the inbound `Host` header precisely so a spoofed Host cannot turn
+that bounce into an open redirect — so it governs **every protected route**,
+not just the absolute redirect out of `/admin/logout` this entry used to
+describe.
+
+⚠️ **The fallback is `https://gungalore.co.za`, the RETIRED domain**, not
+`http://localhost:3000` as previously documented. Unset, every signed-out
+visit to a protected route lands on a host that answers 522/410. It **is** set
+in `frontend/.env.production` on the box (verified 2026-09-10); it is easy to
+leave out of a new environment, and locally its absence is the reason a fresh
+`frontend/.env.local` cannot complete a sign-in — the API answers 200 and the
+page bounces anyway.
 
 ---
 
@@ -826,6 +857,14 @@ to `https://gungalore.co.za` happens to be correct today; it will silently stop
 being correct the moment there is a staging environment or the
 `alloutdoor.co.za` domain move happens.
 
+⚠️ **Correction, 2026-09-10: `NEXT_PUBLIC_APP_URL` IS set on the live server**
+— checked directly in `frontend/.env.production`. The claim above is wrong for
+that one name, and wrong in the direction that matters: its fallback is the
+retired `gungalore.co.za`, and it now backs the member sign-in bounce on every
+protected route, so "production is running on the fallback" would have meant a
+live site redirecting signed-out visitors to a dead host. See its own entry
+above. The other three are unre-checked.
+
 ---
 
 # Minimum viable local `.env`
@@ -849,9 +888,12 @@ a throwaway for each, and the frontend carries the matching member fallback, so
 sessions work with no config at all.
 
 ⚠️ **`DIDIT_API_KEY` is the one third-party value local dev genuinely needs.**
-Sign-up sends a 6-digit e-mail code through Didit and there is no local bypass,
-so without a key you can create a `User` row and then never verify it. Sandbox
-mode is free. Everything else logs a "disabled" warning at boot and no-ops: you
+⚠️ **Not since 2026-09-11** - sign-up no longer touches Didit. With no
+`RESEND_API_KEY` the verification code is logged rather than sent, so a fresh
+clone can register and verify unaided (the fallback is off in production).
+`DIDIT_API_KEY` is still required to exercise **seller KYC**, which has no stub
+on purpose. Sandbox mode is free. Everything else logs a "disabled" warning at
+boot and no-ops: you
 will not have image upload (so you cannot create listings), search, email, SMS,
 push, shipping, payments or AI, but the server boots and the app renders.
 

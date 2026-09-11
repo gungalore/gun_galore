@@ -4086,6 +4086,41 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * The sign-up email verification code.
+   *
+   * ⚠️ NO CTA, ON PURPOSE. There is no link to click — the member types the
+   * code into the tab they are already on. A button here would open a second
+   * tab with no code in it, which is the commonest way a verification email
+   * gets someone stuck.
+   *
+   * ⚠️ AND NO NAME. This email is sent before the address is proved to belong
+   * to the person reading it, so it must not disclose whose account it is.
+   * Everything else we send is addressed; this one deliberately is not.
+   *
+   * Goes through sendAuthEmail rather than send(): a member who turned
+   * marketing email off must still be able to finish signing up, and a
+   * failure has to surface now rather than in the outbox ten minutes later.
+   */
+  async emailVerificationCode(d: {
+    email: string;
+    code: string;
+    minutes: number;
+  }) {
+    const html = this.email({
+      headline: 'Confirm your email address',
+      body:
+        `Enter this code to finish creating your All Outdoor account. It ` +
+        `expires in ${b(String(d.minutes))} minutes and can be used once.`,
+      rows: [{ label: 'Your code', value: d.code }],
+      footnote:
+        'If you did not try to create an account, ignore this email — ' +
+        'nothing has been set up and no further email will be sent.',
+      preheader: `Your All Outdoor code is ${d.code}`,
+    });
+    await this.sendAuthEmail(d.email, 'Confirm your email address', html);
+  }
+
   /** The password-reset link. One-time, short-lived, single CTA. */
   async passwordReset(d: { email: string; name?: string | null; url: string }) {
     const html = this.email({

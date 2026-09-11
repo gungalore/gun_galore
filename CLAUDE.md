@@ -376,8 +376,21 @@ evaluation. `ODOO_*` and `TCG_*` are gone.
   `JWT_MEMBER_SECRET` and `JWT_ADMIN_SECRET`, and ⚠️ **they must differ** — the
   same value on both and a member token verifies on an admin route. Both
   hard-throw at boot in production.
-- **SMS:** SMSPortal (notifications). **Email:** Resend (transactional).
-  **Identity, email codes and phone codes:** Didit.
+- **SMS:** SMSPortal — notifications, action SMSes **and the phone OTP**.
+  **Email:** Resend — every transactional email **and the sign-up code**.
+  **Didit does identity only**: the hosted seller-KYC session, nothing else.
+  ⚠️ **THE OTPs WENT TO DIDIT AND CAME BACK, 2026-09-11.** Both codes are
+  minted, sha256-hashed and checked in this codebase — `auth.service.ts` for
+  email, `users.service.ts` for phone. Didit billed $0.03 an email and
+  $0.1048 a ZA SMS against rails already paid for, sent the email under its
+  own branding from its own domain, and **refuses phone verification entirely
+  until the organisation's first top-up** (HTTP 403 — an account state, not a
+  bad number, which surfaced as members told to check a number that was fine).
+  The four adapter methods are deleted, not unused: do not re-add them without
+  moving the callers, because two implementations of one OTP is how a code
+  gets checked against the wrong store. What this gives up is Didit's phone
+  intelligence — VoIP, disposable number, recent-port (SIM-swap) and trust
+  index — which was never being bought and is a separate decision if wanted.
   ⚠️ **AWS IS GONE ENTIRELY.** Textract went in 2026-09-08; Rekognition
   face-match and Face Liveness went with the Didit cut-over, and with them
   `aws-kyc.service.ts`, `AWS_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY`/`_REGION`,
@@ -576,12 +589,43 @@ KoraPay were all evaluated and rejected. **There is no Stitch code in this repo.
   LOGGED an error, so a production box could — and did — run with sandbox KYC,
   passing every identity on canned data with nobody the wiser. Do not add a
   softer second copy of this check: that is how the hard one gets deleted.
-- ⚠️ **THE FREE TIER DEPENDS ON THE WORKFLOW STAYING NON-WHITE-LABEL.** Didit
+- ⚠️ **OWN BRANDING ON THE HOSTED PAGE COSTS $0.20 A VERIFICATION.** Didit
   gives 500/month each of ID verification, passive liveness, face match and IP
-  analysis. Setting `is_white_label_enabled: true` on the workflow adds
-  $0.20/session **and drops it out of the free tier entirely** — $0.56 instead
-  of $0.00 for the same verification. Check it in the console before pointing
-  `DIDIT_WORKFLOW_ID` at a new workflow.
+  analysis, so the workflow we run is **$0.00** within the free tier and $0.33
+  after it. `is_white_label_enabled: true` adds a flat $0.20/session.
+  ⚠️ It does **NOT** cost the free tier, whatever Didit's own MCP tool
+  description says — that was measured, not assumed: a white-labelled clone of
+  our exact feature set prices at `min_price: 0.20, max_price: 0.53`. Were the
+  free tier lost the minimum would be the full $0.53. So branding is
+  **$0.20 per verified seller**, not $0.53. Check the flag in the console
+  before pointing `DIDIT_WORKFLOW_ID` at a new workflow, and note it cannot be
+  switched on later: a published workflow is `is_editable: false`, so turning
+  branding on means a NEW workflow and a repointed env var.
+- ⚠️ **THE WORKFLOW CARRIES EXACTLY THE FOUR FREE FEATURES — OCR, LIVENESS,
+  FACE_MATCH, IP_ANALYSIS — AND EMAIL/PHONE VERIFICATION MUST STAY OUT OF IT.**
+  Operator decision, 2026-09-10. Both are already verified at SIGN-UP —
+  **by us**, not by Didit: `auth.service.ts` mints the email code and Resend
+  delivers it, `users.service.ts` mints the phone code and SMSPortal delivers
+  it. Adding either feature to the workflow would make a seller enter a second
+  email code and a second SMS code inside the hosted session, and bill us
+  $0.03 + $0.1048 for the privilege. There is no way to avoid that: the
+  features have **no "skip if already verified" option** — only
+  `duplicated_email_action` / `duplicated_phone_number_action`, which are
+  verdicts on the repeat, not a bypass. The cost of the decision is that we
+  forgo Didit's email-breach, disposable-address, VoIP, **recent-port
+  (SIM-swap)** and trust-index signals; revisit that deliberately, not by
+  adding a feature to the workflow because it looked missing.
+  ⚠️ **THE WORKFLOW TO USE IS `b792ee05-948a-410a-8fa4-ca3d89511259`**
+  ("All Outdoor Seller KYC", app `My Application`) — OCR + LIVENESS(PASSIVE) +
+  FACE_MATCH + IP_ANALYSIS, white-label off, `is_desktop_allowed: false`,
+  `min_price: 0`. It was created because **every workflow the API key reaches
+  was wrong**: `401fd309` — the one Didit's own console boilerplate tells you
+  to paste — has white-label ON *and* EMAIL_VERIFICATION in its graph, and is
+  `is_editable: false` so it cannot be corrected. `f30edb44` is correctly
+  shaped but lives in the **sandbox** app, which that key cannot reach.
+  ⚠️ **LIVENESS must be `PASSIVE`.** `ACTIVE_3D` and `FLASHING` cost $0.15 with
+  **no free tier**; passive liveness is one of the four free 500/month lines.
+  A workflow created without naming the method is a silent cost change.
 - ⚠️ **NO HOME AFFAIRS CHECK RUNS ANY MORE, AND NO COPY MAY CLAIM ONE.**
   VerifyNow returned the applicant's official name and date of birth, which is
   what let the verdict cross-check the typed details against the state rather

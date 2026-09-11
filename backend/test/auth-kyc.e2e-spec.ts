@@ -58,7 +58,7 @@ import { createHmac } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { DiditService } from '../src/didit/didit.service';
+import { AuthService } from '../src/auth/auth.service';
 
 const PASSWORD = 'a-long-enough-password-1';
 /** Luhn-valid SA test ID, DOB 1980-01-01. */
@@ -96,7 +96,7 @@ function freshIdNumber(): string {
 
 let app: INestApplication;
 let prisma: PrismaService;
-let didit: DiditService;
+let auth: AuthService;
 let http: ReturnType<typeof request>;
 
 /** Cookie jar — supertest does not keep one across agents. */
@@ -114,12 +114,17 @@ function cookieValue(jar: string[], name: string): string | undefined {
   return v.length ? v : undefined;
 }
 
-/** The code the dev stub minted, read off the adapter rather than the log. */
-function stubCode(kind: 'email' | 'phone', to: string): string {
-  const codes = (didit as unknown as { stubCodes: Map<string, string> })
-    .stubCodes;
-  const code = codes.get(`${kind}:${to}`);
-  if (!code) throw new Error(`no stub ${kind} code for ${to}`);
+/**
+ * The EMAIL code, which is ours again rather than the identity provider's.
+ *
+ * ⚠️ Read from AuthService, not from the Didit adapter — email verification
+ * moved back in-house on 2026-09-11 and is delivered by Resend. With no
+ * RESEND_API_KEY in the test env the service prints the code and records it
+ * here, which is the same fallback that lets a fresh clone sign up at all.
+ */
+function emailCode(to: string): string {
+  const code = auth.devEmailCode(to);
+  if (!code) throw new Error(`no dev email code for ${to}`);
   return code;
 }
 
@@ -140,7 +145,7 @@ async function registerAndVerify(user = freshUser()) {
     .expect(200);
   const res = await http
     .post('/api/auth/verify-email')
-    .send({ email: user.email, code: stubCode('email', user.email) })
+    .send({ email: user.email, code: emailCode(user.email) })
     .expect(200);
   return { user, jar: cookiesFrom(res), body: res.body };
 }
@@ -176,7 +181,7 @@ beforeAll(async () => {
   await app.init();
 
   prisma = app.get(PrismaService);
-  didit = app.get(DiditService);
+  auth = app.get(AuthService);
   http = request(app.getHttpServer());
 
   // A clean slate per run, so a re-run is not a different test.
@@ -236,7 +241,7 @@ describe('sign-up', () => {
 
     const res = await http
       .post('/api/auth/verify-email')
-      .send({ email: user.email, code: stubCode('email', user.email) })
+      .send({ email: user.email, code: emailCode(user.email) })
       .expect(200);
 
     const jar = cookiesFrom(res);

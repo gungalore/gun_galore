@@ -20,8 +20,9 @@ Backend, frontend and peripherals are complete and green: backend `tsc` clean
 with 4,554 tests passing, frontend `tsc` clean with 1,680 passing, and
 `npm run build` exits 0. `User.clerkId` is gone — `User.id` is the only user
 identifier and `@CurrentUser()` returns it. Sessions are ours (httpOnly
-cookies, rotating refresh, bearer fallback for the app shells). Email and phone
-codes and seller KYC go through Didit. VerifyNow, AWS Rekognition and the
+cookies, rotating refresh, bearer fallback for the app shells). **Seller KYC
+goes through Didit; the e-mail and phone codes do NOT** — they are minted and
+checked here, delivered by Resend and SMSPortal (see 2026-09-11 below). VerifyNow, AWS Rekognition and the
 Gemini identity read are deleted; Gemini keeps the Licence Centre reader and
 `readFirearm()`.
 

@@ -44,8 +44,6 @@ describe('UsersService — campaign attribution (first-touch)', () => {
         canClose: jest.fn(async () => ({ canClose: true, restricted: false, blockers: [] })),
         assertReason: jest.fn((r: string) => r),
       } as never,
-      // DiditService — the phone OTP adapter.
-      { sendPhoneCode: jest.fn(), checkPhoneCode: jest.fn(async () => true) } as never,
       // SessionService — closing an account revokes every live session.
       { revokeAllForUser: jest.fn(async () => 0) } as never,
       // CloudinaryService — profile photos.

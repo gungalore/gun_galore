@@ -36,7 +36,7 @@ The site is live. Card payments are gated off until the payment provider goes li
 | Search | Meilisearch (`meilisearch-js` client) | server 1.44, client `^0.58.0` |
 | Auth | Self-hosted sessions (buyers + sellers) — access JWT + rotating refresh token, both in httpOnly cookies | `@nestjs/jwt ^11.0.2`, `jose` on the Next edge |
 | Auth (admin) | A second custom JWT, entirely separate from the member one | `@nestjs/jwt ^11.0.2` |
-| Verification | Didit — seller KYC, plus the e-mail and phone codes at sign-up | hand-rolled adapter |
+| Verification | Didit — seller KYC only (the sign-up codes are ours: Resend + SMSPortal) | hand-rolled adapter |
 | AI | Anthropic SDK — moderation, document vision, the "Ask Boet" assistant | `^0.96.0` |
 | Images | Cloudinary | `^2.10.0` |
 | Email / SMS / Push | Resend, SMSPortal, `web-push` (VAPID) | `resend ^6.12.3`, `web-push ^3.6.7` |
@@ -62,10 +62,12 @@ Cloudflare in front. Postgres `:5432` and Meilisearch `:7700` are on the same bo
   verifies the session cookie itself, and a mismatched pair bounces you to sign-in on every
   protected page while the API works perfectly. (Never give it a `NEXT_PUBLIC_` prefix; it
   is the signing secret.)
-- **A Didit sandbox key**, and this is the one third-party account you cannot skip.
-  Sign-up sends a 6-digit e-mail code through Didit and there is no local bypass, so
-  without `DIDIT_API_KEY` + `DIDIT_WORKFLOW_ID` you can create a user and never verify it.
-  Sandbox mode is free.
+- **A Didit sandbox key** — needed only to exercise **seller KYC**, not to sign up.
+  ⚠️ This used to say Didit was unskippable because the sign-up code went through it.
+  It no longer does: with no `RESEND_API_KEY` the verification code is printed to the
+  server log instead of sent, so a fresh clone can complete a sign-up with no
+  third-party account at all. That fallback is disabled in production, where a missing
+  mail credential fails the sign-up loudly rather than logging every member's code.
 - **Meilisearch — optional.** Without it, search and per-category attribute filters are
   disabled and browse falls back to a Prisma query (see
   `listings.service.ts → browse()`). Everything else works. Install it if you're touching
@@ -309,7 +311,7 @@ Every module is registered in `app.module.ts`; read that file first, it's the ho
 | Module | What it owns |
 | --- | --- |
 | `auth/` | Member sign-up, e-mail verification, sign-in, password reset, and the session pair (15-minute access JWT + rotating refresh token, sha256-only at rest). Also the five guards every other controller uses. `@Global`. |
-| `didit/` | The **one** adapter for Didit — sign-up e-mail and phone codes, and the hosted KYC session. No other service builds a client or parses a Didit response. |
+| `didit/` | The **one** adapter for Didit — the hosted KYC session and its decision, and nothing else. The four OTP methods it once carried were deleted on 2026-09-11; do not re-add them without moving the callers. |
 | `kyc/` | Seller identity verification: consent → details → hosted Didit session → verdict by webhook. Triggered at first payment, hard-gates payout. |
 | `moderation/` | Claude listing moderation, prompt-injection sanitising, and a deterministic regex pass that strips emails/phones/URLs out of descriptions. |
 | `ratings/`, `reports/`, `complaints/`, `support/` | Reviews, user reports, the formal complaints register, help centre. |

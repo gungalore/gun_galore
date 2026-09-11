@@ -7,11 +7,10 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { createHash, randomInt, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
-import { DiditService } from '../didit/didit.service';
-import { DiditError } from '../didit/didit.types';
 import { SessionService, IssuedSession } from './session.service';
 import {
   ChangePasswordDto,
@@ -36,6 +35,30 @@ const LOCKOUT_MS = 15 * 60 * 1000;
 /** A password-reset link is short-lived on purpose. */
 const RESET_TTL_MS = 60 * 60 * 1000;
 
+/**
+ * The email verification code.
+ *
+ * ⚠️ MINTED AND CHECKED HERE, DELIVERED BY RESEND — not by the identity
+ * provider. It went to Didit in the cut-over and came back on 2026-09-11:
+ * Didit charged $0.03 a send and the mail arrived under Didit's own branding
+ * from Didit's domain, which is a stranger's name on the first email a new
+ * member ever gets from us. Resend already carries every other transactional
+ * email in the house style, so this one joins them.
+ *
+ * ⚠️ SIX DIGITS IS ONLY SAFE BECAUSE THE ATTEMPTS ARE BOUNDED. A million
+ * combinations falls to a script in seconds if it may guess freely, so
+ * EMAIL_OTP_MAX_ATTEMPTS is the control, not the code length. Raising the
+ * length is not a substitute for keeping the cap.
+ */
+const EMAIL_OTP_LENGTH = 6;
+const EMAIL_OTP_TTL_MS = 15 * 60 * 1000;
+const EMAIL_OTP_MAX_ATTEMPTS = 5;
+
+/** sha256 hex. Codes are stored hashed, never in the clear. */
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -43,10 +66,40 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sessions: SessionService,
-    private readonly didit: DiditService,
+    // NOTE: no DiditService. Auth no longer touches it — the email code is
+    // minted here and delivered by Resend. Didit's only remaining job on this
+    // platform is the KYC identity session.
     private readonly notifications: NotificationsService,
     private readonly tokens: ActionTokensService,
   ) {}
+
+  /**
+   * True when there is no mail credential and we are not in production, so a
+   * verification code is printed instead of sent.
+   *
+   * ⚠️ THE `NODE_ENV` HALF IS THE SAFETY. A production box missing
+   * RESEND_API_KEY must FAIL a sign-up loudly, not log the code and hand
+   * anyone with log access every new member's account.
+   */
+  private get emailStubbed(): boolean {
+    return (
+      !process.env.RESEND_API_KEY && process.env.NODE_ENV !== 'production'
+    );
+  }
+
+  /** Codes minted while mail is unconfigured. Never populated in production. */
+  private readonly devCodes = new Map<string, string>();
+
+  /**
+   * Read back a code minted by the dev fallback above.
+   *
+   * Exists for the end-to-end suite, which has no mailbox to read and must
+   * not depend on scraping a log line. Returns undefined whenever mail is
+   * genuinely configured, so it cannot become a back door.
+   */
+  devEmailCode(email: string): string | undefined {
+    return this.devCodes.get(email.trim().toLowerCase());
+  }
 
   private get appUrl() {
     return (
@@ -137,29 +190,72 @@ export class AuthService {
     return { email, next: 'verify-email' as const };
   }
 
-  /** Ask Didit for a fresh 6-digit code. Also the resend path. */
+  /**
+   * Mint a fresh code, store its hash, and send it. Also the resend path.
+   *
+   * ⚠️ SILENT ON AN UNKNOWN OR ALREADY-VERIFIED ADDRESS. The resend endpoint
+   * is unauthenticated and takes an arbitrary email, so answering differently
+   * for "no such account" turns it into a membership oracle — type an address,
+   * read the response, learn whether that person banks here. The caller gets
+   * the same 200 either way and the controller says "if that address needs a
+   * code, one is on its way".
+   *
+   * ⚠️ MINTING INVALIDATES THE PREVIOUS CODE, including its attempt count.
+   * Otherwise "resend" would be a free reset of the guess budget.
+   */
   async sendEmailCode(rawEmail: string): Promise<void> {
     const email = rawEmail.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, emailVerifiedAt: true, accountClosedAt: true },
+    });
+    if (!user || user.emailVerifiedAt || user.accountClosedAt) return;
+
+    // `randomInt` is uniform and CSPRNG-backed; Math.random is neither, and a
+    // predictable verification code is an account takeover.
+    const code = String(randomInt(0, 10 ** EMAIL_OTP_LENGTH)).padStart(
+      EMAIL_OTP_LENGTH,
+      '0',
+    );
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailOtpHash: sha256(code),
+        emailOtpExpiresAt: new Date(Date.now() + EMAIL_OTP_TTL_MS),
+        emailOtpAttempts: 0,
+      },
+    });
+
+    // ⚠️ WITHOUT THIS, NOBODY CAN SIGN UP ON A FRESH CLONE. The identity
+    // provider's adapter carried the same fallback for the same reason: with
+    // no mail credentials the first thing a new developer meets is a sign-up
+    // that cannot be completed. Print the code, never pretend it was sent,
+    // and refuse to do any of it in production.
+    if (this.emailStubbed) {
+      this.devCodes.set(email, code);
+      this.logger.warn(
+        `EMAIL NOT CONFIGURED — verification code for ${email} is ${code} (development only)`,
+      );
+      return;
+    }
+
     try {
-      await this.didit.sendEmailCode(email);
+      await this.notifications.emailVerificationCode({
+        email,
+        code,
+        minutes: Math.round(EMAIL_OTP_TTL_MS / 60_000),
+      });
     } catch (err) {
-      if (err instanceof DiditError) {
-        if (err.code === 'undeliverable') {
-          throw new BadRequestException(
-            'That email address cannot receive mail. Check it and try again.',
-          );
-        }
-        if (err.code === 'rate_limited') {
-          throw new BadRequestException(
-            'Too many codes requested. Wait a minute and try again.',
-          );
-        }
-        this.logger.error(`Didit email send failed: ${err.message}`);
-        throw new BadRequestException(
-          'We could not send the code right now. Please try again shortly.',
-        );
-      }
-      throw err;
+      // ⚠️ The hash stays on the row. A send that failed at Resend may still
+      // have been delivered, and clearing it would refuse a code the member
+      // is holding. sendAuthEmail has already parked it in the outbox.
+      this.logger.error(
+        `Verification email failed for ${email}: ${(err as Error).message}`,
+      );
+      throw new BadRequestException(
+        'We could not send the code right now. Please try again shortly.',
+      );
     }
   }
 
@@ -171,27 +267,69 @@ export class AuthService {
     const email = rawEmail.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({
       where: { email },
-      select: { id: true, emailVerifiedAt: true, accountClosedAt: true },
+      select: {
+        id: true,
+        emailVerifiedAt: true,
+        accountClosedAt: true,
+        emailOtpHash: true,
+        emailOtpExpiresAt: true,
+        emailOtpAttempts: true,
+      },
     });
     if (!user || user.accountClosedAt) throw new UnauthorizedException();
 
-    let ok: boolean;
-    try {
-      ok = await this.didit.checkEmailCode(email, code.trim());
-    } catch (err) {
-      if (err instanceof DiditError) {
+    if (!user.emailVerifiedAt) {
+      if (!user.emailOtpHash || !user.emailOtpExpiresAt) {
         throw new BadRequestException(
-          'That code could not be checked. Request a new one.',
+          'There is no code waiting for this address. Request a new one.',
         );
       }
-      throw err;
-    }
-    if (!ok) throw new BadRequestException('That code is not right.');
+      if (user.emailOtpExpiresAt.getTime() < Date.now()) {
+        // Clear it so a stale hash cannot be ground against indefinitely.
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { emailOtpHash: null, emailOtpExpiresAt: null },
+        });
+        throw new BadRequestException('That code has expired. Request a new one.');
+      }
+      // ⚠️ THE CAP IS CHECKED BEFORE THE COMPARISON, and the code is discarded
+      // when it trips. Counting after comparing leaves the attacker one free
+      // guess past the limit on every code.
+      if (user.emailOtpAttempts >= EMAIL_OTP_MAX_ATTEMPTS) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { emailOtpHash: null, emailOtpExpiresAt: null },
+        });
+        throw new BadRequestException(
+          'Too many incorrect codes. Request a new one.',
+        );
+      }
 
-    if (!user.emailVerifiedAt) {
+      // Constant-time: a wrong code must not be distinguishable by how long
+      // the comparison took, digit by digit.
+      const given = sha256(code.trim());
+      const match =
+        given.length === user.emailOtpHash.length &&
+        timingSafeEqual(Buffer.from(given), Buffer.from(user.emailOtpHash));
+
+      if (!match) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { emailOtpAttempts: { increment: 1 } },
+        });
+        throw new BadRequestException('That code is not right.');
+      }
+
       await this.prisma.user.update({
         where: { id: user.id },
-        data: { emailVerifiedAt: new Date() },
+        data: {
+          emailVerifiedAt: new Date(),
+          // The code is spent. Leaving it live would let the same six digits
+          // re-verify after a later email change.
+          emailOtpHash: null,
+          emailOtpExpiresAt: null,
+          emailOtpAttempts: 0,
+        },
       });
     }
 

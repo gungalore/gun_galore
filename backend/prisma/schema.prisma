@@ -231,6 +231,16 @@ model User {
   /// unverified row older than 24h is swept, so a squatter cannot park
   /// on somebody else's address indefinitely.
   emailVerifiedAt DateTime?
+  /// Email-verification OTP, held HERE rather than by the identity provider.
+  ///
+  /// ⚠️ NEVER THE CODE ITSELF — sha256 only, the same rule the phone OTP and
+  /// the refresh token follow. A verification code in the clear is a takeover
+  /// of an unverified account for anyone who can read a row.
+  emailOtpHash      String?
+  emailOtpExpiresAt DateTime?
+  /// Check attempts against the CURRENT code. Reset when a new one is minted.
+  /// Bounded so a 6-digit code cannot be walked; see EMAIL_OTP_MAX_ATTEMPTS.
+  emailOtpAttempts  Int      @default(0)
   /// bcrypt, cost 12. The only credential a member has.
   passwordHash    String
   // MarketingCampaign.key this user arrived on, captured at sign-up. The
@@ -246,10 +256,21 @@ model User {
   username        String     @unique
   usernameLower   String     @unique
   phone           String?
-  // Phone-verification state. Didit sends and checks the OTP, so the code
-  // never touches this database — there is deliberately no hash, expiry or
-  // attempt counter here any more. phoneVerified flips once Didit confirms.
+  // Phone-verification state. The OTP is minted, hashed and checked HERE, and
+  // delivered over SMSPortal — the rail that already carries every action SMS.
+  //
+  // ⚠️ THIS WENT TO DIDIT AND CAME BACK, 2026-09-11. Didit charged $0.1048 per
+  // ZA SMS against SMSPortal's ~$0.01-0.02, AND blocks phone verification
+  // outright until the organisation's first top-up (HTTP 403, "disabled until
+  // your organization's first top-up"). Two reasons, either sufficient. What
+  // is genuinely lost is Didit's phone intelligence — VoIP, disposable-number,
+  // recent-port (SIM-swap) and trust index — which we were not buying anyway.
   phoneVerified   Boolean    @default(false)
+  /// sha256 of the code, never the code. Same rule as the email OTP.
+  phoneOtpHash      String?
+  phoneOtpExpiresAt DateTime?
+  /// Check attempts against the CURRENT code; reset when a new one is minted.
+  phoneOtpAttempts  Int      @default(0)
   firstName       String?
   lastName        String?
   avatarUrl       String?

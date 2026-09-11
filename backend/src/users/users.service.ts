@@ -5,8 +5,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { DiditService } from '../didit/didit.service';
-import { DiditError } from '../didit/didit.types';
 import { SessionService } from '../auth/session.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { SmsService } from '../sms/sms.service';
@@ -17,7 +15,7 @@ import {
   NotifyFallbackChannel,
   Prisma,
 } from '@prisma/client';
-import { createHash, randomInt } from 'crypto';
+import { createHash, randomInt, timingSafeEqual } from 'crypto';
 import { encryptSaIdNumber, hashSaIdNumber, decryptSaIdNumber } from '../common/id-crypto';
 import { PeachService } from '../payments/peach.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -101,16 +99,36 @@ export interface ProfileUpdate {
   addrLng?: number | null;
 }
 
-// Phone OTP is Didit's now — it generates the code, sends the SMS, holds the
-// pending verification for 5 minutes and counts the wrong guesses (3 per code,
-// 4 sends per number per hour). None of that state lives here any more, which
-// is why the phoneOtpHash / phoneOtpExpiresAt / phoneOtpAttempts columns are
-// gone: a code we do not issue is a code we must not store a hash of.
-//
-// ⚠️ Didit keys the pending verification on the NUMBER, not on our user. The
-// number is therefore written to the row at request time (phoneVerified false)
-// so the check has something to compare against, exactly as before.
+/**
+ * The phone OTP — minted, hashed and checked HERE, delivered over SMSPortal.
+ *
+ * ⚠️ THIS WENT TO DIDIT AND CAME STRAIGHT BACK, 2026-09-11. Two independent
+ * reasons, either sufficient:
+ *
+ *   * Didit bills $0.1048 per ZA SMS against SMSPortal's ~$0.01-0.02, on the
+ *     rail that already carries every action SMS this platform sends.
+ *   * Didit REFUSES phone verification outright until the organisation's
+ *     first top-up — HTTP 403, "phone verification is disabled until your
+ *     organization's first top-up". It is an account state, not a bad number,
+ *     and it surfaced as members being told to check a number that was fine.
+ *
+ * What is genuinely given up is Didit's phone intelligence — VoIP, disposable
+ * number, recent-port (a SIM-swap signal) and trust index. We were not buying
+ * those anyway; if they are ever wanted, they are a separate decision and NOT
+ * a reason to move the OTP back.
+ *
+ * ⚠️ THE CAP IS THE SECURITY, NOT THE LENGTH. Six digits is a million
+ * combinations — trivial to walk if guesses are unbounded. Lengthening the
+ * code is not a substitute for keeping PHONE_OTP_MAX_ATTEMPTS.
+ */
 const PHONE_CODE_LENGTH = 6;
+const PHONE_OTP_TTL_MS = 10 * 60 * 1000;
+const PHONE_OTP_MAX_ATTEMPTS = 5;
+
+/** sha256 hex. The code is never stored in the clear. */
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
 
 /** Profile photo limits. Matches what the edit form tells the member. */
 const AVATAR_MIME_RE = /^image\/(jpeg|png|webp)$/;
@@ -159,8 +177,8 @@ export class UsersService {
     // new edge; kept out of this file because the predicate set that
     // decides whether a closure may go ahead is a page on its own.
     private readonly closure: AccountClosureService,
-    // @Global DiditModule — the one adapter for the phone OTP.
-    private readonly didit: DiditService,
+    // NOTE: no DiditService. The phone OTP is minted here and delivered by
+    // SmsService; Didit's only remaining job is the KYC identity session.
     // Closing an account has to end every live session; the access token is
     // not revocable, so revoking the refresh side is what actually locks a
     // closed account out.
@@ -1051,9 +1069,9 @@ export class UsersService {
       );
     }
 
-    // ⚠️ E.164 OR NOTHING. Didit validates and normalises the number itself
-    // and 400s on anything it cannot parse, so a locally-typed "0821234567"
-    // has to become "+27821234567" before it leaves here.
+    // ⚠️ E.164 OR NOTHING. A locally-typed "0821234567" has to become
+    // "+27821234567" before it goes anywhere — the carrier needs it, and the
+    // uniqueness check above only works if every stored number has one shape.
     const e164 = this.sms.toE164(trimmedPhone);
     if (!e164) {
       throw new BadRequestException(
@@ -1061,38 +1079,51 @@ export class UsersService {
       );
     }
 
-    // ⚠️ SEND FIRST, PERSIST SECOND — the order the old flow used and for the
-    // same reason: writing the number before the code is on its way leaves a
-    // member with an unverifiable number on their profile and no way to tell
-    // why. If Didit refuses, nothing changed.
-    try {
-      await this.didit.sendPhoneCode(e164);
-    } catch (err) {
-      if (err instanceof DiditError) {
-        if (err.code === 'rate_limited') {
-          throw new BadRequestException(
-            'Too many codes requested for that number. Try again in an hour.',
-          );
-        }
-        if (err.code === 'provider_unavailable') {
-          // A provider outage is NOT a bad number. Telling somebody their
-          // valid number is wrong makes them change a correct answer.
-          throw new BadRequestException(
-            'We could not send the code just now. Please try again shortly.',
-          );
-        }
-        throw new BadRequestException(
-          'Could not send a code to that number. Check it and try again.',
-        );
-      }
-      throw err;
-    }
+    const code = String(randomInt(0, 10 ** PHONE_CODE_LENGTH)).padStart(
+      PHONE_CODE_LENGTH,
+      '0',
+    );
 
-    // phoneVerified stays false until they submit the matching code.
+    // ⚠️ PERSIST FIRST, SEND SECOND — the opposite of the order this had while
+    // the provider held the code, and deliberately so. The hash has to be on
+    // the row before the SMS can arrive, or a member who reads a fast SMS and
+    // types the code beats the write and is told their correct code is wrong.
+    // The cost is a stored hash for a message that may fail to send, which is
+    // harmless: it expires, and the send failure below is reported.
     await this.prisma.user.update({
       where: { id: userId },
-      data: { phone: e164, phoneVerified: false },
+      data: {
+        phone: e164,
+        phoneVerified: false,
+        phoneOtpHash: sha256(code),
+        phoneOtpExpiresAt: new Date(Date.now() + PHONE_OTP_TTL_MS),
+        phoneOtpAttempts: 0,
+      },
     });
+
+    const minutes = Math.round(PHONE_OTP_TTL_MS / 60_000);
+    let result: { success: boolean };
+    try {
+      result = await this.sms.sendSms({
+        to: e164,
+        message: `${code} is your All Outdoor verification code. It expires in ${minutes} minutes.`,
+        // ⚠️ The `phone-change-` prefix is not decoration: SmsService derives
+        // "never auto-retry" from it. A code redelivered twenty minutes later
+        // by the retry cron is expired, confusing, and bills us twice.
+        reference: `phone-change-${userId}`,
+      });
+    } catch {
+      // A transport throw is not a bad number. Telling somebody their valid
+      // number is wrong makes them change a correct answer.
+      throw new BadRequestException(
+        'We could not send the code just now. Please try again shortly.',
+      );
+    }
+    if (!result.success) {
+      throw new BadRequestException(
+        'We could not send the code just now. Please try again shortly.',
+      );
+    }
 
     return { sent: true };
   }
@@ -1104,9 +1135,10 @@ export class UsersService {
     code: string,
   ): Promise<{ verified: true }> {
     const entered = code?.trim() ?? '';
-    // Reject a malformed code HERE. Didit answers 400 for one without
-    // consuming an attempt, but round-tripping to find that out spends a
-    // request from a 300/min budget shared with everything else.
+    // Reject a malformed code HERE, before any database work. A string that
+    // is not even the right shape cannot be the code, so it must not consume
+    // one of PHONE_OTP_MAX_ATTEMPTS — otherwise a member fat-fingering a
+    // letter burns a guess they never really made.
     if (!new RegExp(`^\\d{4,${PHONE_CODE_LENGTH + 2}}$`).test(entered)) {
       throw new BadRequestException(
         `Enter the ${PHONE_CODE_LENGTH}-digit code`,
@@ -1114,35 +1146,57 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, phone: true, phoneVerified: true },
+      select: {
+        id: true,
+        phone: true,
+        phoneVerified: true,
+        phoneOtpHash: true,
+        phoneOtpExpiresAt: true,
+        phoneOtpAttempts: true,
+      },
     });
     if (!user) throw new NotFoundException('User not found');
-    if (!user.phone) {
+    if (!user.phone || !user.phoneOtpHash || !user.phoneOtpExpiresAt) {
       throw new BadRequestException(
         'No verification code is pending — request a new one.',
       );
     }
 
-    let ok: boolean;
-    try {
-      ok = await this.didit.checkPhoneCode(user.phone, entered);
-    } catch (err) {
-      if (err instanceof DiditError) {
-        if (err.code === 'rate_limited') {
-          throw new BadRequestException(
-            'Too many attempts. Request a new code in a little while.',
-          );
-        }
-        throw new BadRequestException(
-          'We could not check that code just now. Please try again shortly.',
-        );
-      }
-      throw err;
+    if (user.phoneOtpExpiresAt.getTime() < Date.now()) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { phoneOtpHash: null, phoneOtpExpiresAt: null },
+      });
+      throw new BadRequestException(
+        'That code has expired — request a new one.',
+      );
     }
 
-    // A wrong code is a clean `false`, not an exception — Didit has already
-    // counted it against the three it allows for this code.
-    if (!ok) {
+    // ⚠️ CAP CHECKED BEFORE THE COMPARISON, and the code discarded when it
+    // trips. Counting afterwards hands the attacker one free guess past the
+    // limit on every code issued.
+    if (user.phoneOtpAttempts >= PHONE_OTP_MAX_ATTEMPTS) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { phoneOtpHash: null, phoneOtpExpiresAt: null },
+      });
+      throw new BadRequestException(
+        'Too many incorrect codes — request a new one.',
+      );
+    }
+
+    // Constant-time: how long the comparison took must not say how much of
+    // the code was right.
+    const given = sha256(entered);
+    const match =
+      given.length === user.phoneOtpHash.length &&
+      timingSafeEqual(Buffer.from(given), Buffer.from(user.phoneOtpHash));
+
+    if (!match) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { phoneOtpAttempts: { increment: 1 } },
+      });
       throw new BadRequestException(
         "That code doesn't match — try again, or request a new one.",
       );
@@ -1150,7 +1204,14 @@ export class UsersService {
 
     await this.prisma.user.update({
       where: { id: userId },
-      data: { phoneVerified: true },
+      data: {
+        phoneVerified: true,
+        // Spent. A live code after verification would re-verify a number the
+        // member has since changed.
+        phoneOtpHash: null,
+        phoneOtpExpiresAt: null,
+        phoneOtpAttempts: 0,
+      },
     });
     return { verified: true };
   }
