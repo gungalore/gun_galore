@@ -13,7 +13,15 @@ export { diagnose, type DiagnoseOptions } from './diagnose.js';
 export { createAnthropicCaller, describeModelConfig, safeErrorText, type ModelCaller, type ModelReply } from './client.js';
 export { parseDiagnosisReply, type ParseOutcome, type ValidatedItem } from './parse.js';
 export { buildSystemPrompt, buildUserPrompt, operationMenu, checkToFact } from './prompt.js';
-export { FENCE_RULE, buildFactsSection, fenceBlock, fenceScalar, sanitizeScalar, type Fact } from './fence.js';
+export {
+  FENCE_RULE,
+  buildFactsSection,
+  fenceBlock,
+  fenceBlockWithSignal,
+  fenceScalar,
+  sanitizeScalar,
+  type Fact,
+} from './fence.js';
 export type {
   DiagnosedCheck,
   DiagnosisInput,

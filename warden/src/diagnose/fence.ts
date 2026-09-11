@@ -90,17 +90,47 @@ const MAX_BLOCK_LEN = 6_000;
  * fact into the middle of a real one.
  */
 export function fenceBlock(id: string, source: string, raw: string): string {
+  return fenceBlockWithSignal(id, source, raw).text;
+}
+
+/**
+ * fenceBlock, plus the one signal it used to compute and throw away.
+ *
+ * 🚨 THE NEUTRALISATION COUNT WAS THE CHEAPEST HALF OF AN INJECTION DETECTOR
+ * AND NOTHING COULD SEE IT. `fenceBlock` has always replaced a forged
+ * `<<<WARDEN_DATA` marker with `‹WARDEN_DATA` — but it returned only a string,
+ * so no caller could tell whether that had fired. Text arriving with a forged
+ * fence marker in it is not ambiguous the way "ignore previous instructions"
+ * in a listing title is ambiguous: a marker is this daemon's own private
+ * framing, and something writing one into a log line or a database row is
+ * writing at Warden's prompt specifically. That is an operator's business, and
+ * until now nobody could be told.
+ *
+ * ⚠️ fenceBlock() DELEGATES TO THIS rather than the two sharing a copied body,
+ * so the one-shot diagnosis path's bytes cannot drift from the tool path's.
+ * prompt.test.ts pins the one-shot rendering; fence.test-side assertions in
+ * agent/ pin that the delegation is byte-identical.
+ */
+export function fenceBlockWithSignal(
+  id: string,
+  source: string,
+  raw: string,
+): { text: string; neutralised: number; truncated: boolean } {
   const safeId = id.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 80);
   const stripped = (raw ?? '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]+/g, ' ');
   // ‹ (U+2039) cannot appear in normal log/DB text and is visually obvious if
   // it ever does — neutralising to it rather than deleting means a forged
   // marker shows up as "‹WARDEN_DATA" in the fenced block, legible evidence of
   // the attempt rather than a silent removal.
-  const neutralised = stripped.replace(/<<<\s*(END_)?WARDEN_DATA\b/gi, '‹WARDEN_DATA');
+  let neutralisedCount = 0;
+  const neutralised = stripped.replace(/<<<\s*(END_)?WARDEN_DATA\b/gi, () => {
+    neutralisedCount += 1;
+    return '‹WARDEN_DATA';
+  });
   const truncated = neutralised.length > MAX_BLOCK_LEN;
   const body = neutralised.slice(0, MAX_BLOCK_LEN);
 
-  return [
+  const text = [
     FENCE_OPEN(safeId),
     `source: ${sanitizeScalar(source, 200)}`,
     '---',
@@ -110,6 +140,8 @@ export function fenceBlock(id: string, source: string, raw: string): string {
   ]
     .filter(Boolean)
     .join('\n');
+
+  return { text, neutralised: neutralisedCount, truncated };
 }
 
 /** Fence one short scalar fact (a hostname, a process name, a cert issuer CN)
