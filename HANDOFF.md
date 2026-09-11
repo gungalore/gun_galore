@@ -6,7 +6,77 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-11**.
 
-## 2026-09-11 (latest) — DEPLOYED. The Desk rebuild and self-hosted member auth are live.
+## 2026-09-11 (latest) — SECOND DEPLOY, TOTP ENFORCED, CLOUDFLARE OPEN
+
+### The phone code could never be entered (shipped fix, `f5cd0a26`)
+
+Frontend-only deploy, exit 0, both health checks, site 200. Backend untouched.
+
+`users.service.ts` mints a **six**-digit phone code; `/profile/edit` asked for
+**four** — label, `maxLength`, the `slice` in onChange and the Verify button's
+enable test. Because maxLength and the slice TRUNCATE, a member typing the six
+digits they were sent held the first four, `otp.length !== 4` went false, and
+**Verify enabled itself on the truncated value** — submitting a code that could
+not match and consuming an attempt. No phone number could be verified from
+that screen, ever, and nothing told the member why.
+
+⚠️ **The operator found this by using the product. Nothing in the suite could
+have.** vitest collects `lib/**/*.spec.ts` and `components/**/*.spec.tsx` —
+**nothing under app/** — and this screen is app/. The new
+`frontend/lib/phone-otp-length.spec.ts` reads BOTH sources and pins the page to
+the backend constant rather than to the literal 6, because the bug was two
+files disagreeing. Proved red by restoring `maxLength={4}`.
+**Worth a sweep: any other app/ screen carrying a magic number that belongs to
+the backend is unguarded the same way.**
+
+### TOTP is now required
+
+`gerhard.fourie@alloutdoor.co.za` enrolled and confirmed at 19:18. Verified in
+the database BEFORE flipping the flag — `totpSecret` live, `totpConfirmedAt`
+stamped, nothing left pending. Then `ADMIN_TOTP_REQUIRED=true` appended to
+`backend/.env` (backup at `.env.bak.totp`) and
+`pm2 reload alloutdoor-backend --update-env`. Healthy, 200 twice.
+
+⚠️ **`/proc/<pid>/environ` does NOT show the flag, and that is not a fault.**
+The app loads `.env` through dotenv at boot rather than inheriting from pm2 —
+`DIDIT_MODE` is absent from environ too, and the boot hard-throws without it.
+Do not "fix" a missing var by adding it to the pm2 ecosystem file on the
+strength of that check.
+
+🚨 **`admin@alloutdoor.co.za` is a second SUPERADMIN, seeded 2026-08-12, signed
+in ONCE that day and never since, no second factor.** Since the flag went on it
+can only hold a read-only session until it enrols, so it is not an open door —
+but it is a dormant full-admin credential nobody rotates, on the account tier
+that can approve a command against the box. **Deactivating it was offered and
+not yet answered.** `prisma/seed.ts` re-introduces a seed admin, which is one
+more reason never to run it against production.
+
+### Cloudflare — the Didit webhook is through
+
+A WAF **custom rule** (not an IP Access rule), scoped to
+`ip.src eq 18.203.201.92 and http.host eq "alloutdoor.co.za" and
+starts_with(http.request.uri.path, "/api/webhooks/didit")`, action Skip.
+
+⚠️ **This is only sufficient because Bot Fight Mode is OFF, and that is load
+bearing.** Bot Fight Mode runs outside the Ruleset Engine, so Skip and Allow
+have no effect on it — turning it on would silently re-break webhook delivery
+with **nothing in any application log**, since the request dies at the edge.
+If it is ever switched on, an **IP Access rule** must be added as well: that is
+the one mechanism Bot Fight Mode respects.
+
+### Still outstanding
+
+1. The `pruneJournal` sudoers line (`warden/README.md`).
+2. `npm run sweep` on the box; read every row.
+3. Delete `backend/.env.bak.didit` and `.env.bak.totp` once settled — they
+   hold live secrets, sit inside the app dir, and are **not** covered by the
+   uploads backup.
+4. Rotate the dead AWS keys rather than merely deleting them.
+5. Read-only Postgres role, Tailscale, an external uptime monitor on the apex.
+
+---
+
+## 2026-09-11 — DEPLOYED. The Desk rebuild and self-hosted member auth are live.
 
 `deploy.sh` exited **0** at 21:03 SAST, deploying **0dbca899** — 35 commits,
 the Desk rebuild plus self-hosted member auth. Both health checks passed on
