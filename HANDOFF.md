@@ -4,7 +4,69 @@ What the last session did, where everything stands, and what the next one should
 pick up. **Rules do not live here — they live in `CLAUDE.md`.** This file is
 state, and it is meant to be overwritten.
 
-Last updated: **2026-09-10**.
+Last updated: **2026-09-11**.
+
+## 2026-09-11 (latest) — THE DESK REBUILD: PHASES 0 AND 1 LANDED
+
+**NOT DEPLOYED, and nothing will be until the whole build ships in one go**
+(operator instruction). Branch `feat/desk-rebuild`, five commits, off
+`feat/self-hosted-auth` — which itself is 14 unpushed commits off
+`feat/takealot-ux-parity`. Neither branch has touched the box.
+
+The plan is at `~/.claude/plans/we-are-going-to-stateful-stallman.md`:
+four surfaces (Now / People / Health / Agent), an ops agent built on Warden
+that may run server operations with one approval each, TOTP 2FA with
+server-side admin sessions, and PWA shell-caching that never caches data.
+**Twelve phases; 0 and 1 are done, 2 through 12 are not started.**
+
+### Done
+
+**Phase 0 — the guard, and what hid in its blind spot.** `desk-guard.cjs` did
+not police `app/admin/login`, so the sign-in screen had accumulated seven
+storefront tokens and the shop's manifest and cream theme — the first screen
+of the dark installed PWA on every expired session. Login and logout are now
+guarded and the screen is rebuilt in Desk tokens. Two more things the blind
+spot hid: `/admin/logout` was a server route that could only clear the cookie
+and not the localStorage JWT that actually authenticates (deleted, replaced
+with a client page at the same path), and `/admin/desk-kit` had no session
+gate while `/admin(.*)` is public in middleware. New guard rule bans a
+control-sized `height:` literal; `Chip` was 30px, so the primary navigation
+control on every board was under the tap-target minimum on every phone.
+
+**Phase 1 — the comfort fixes, which are what "uncomfortable" meant.**
+- Typing one character into the dealer form's Suburb field threw the cursor
+  back to Dealer name. `DialogFrame`'s focus effect had `[onClose]` in its dep
+  list and every call site passes an inline arrow, so it re-ran per keystroke
+  and refocused the panel's first element. Both overlays are now two effects
+  with no deps and a handler ref; `Drawer` became a wrapper so the mount
+  carries `open`. `focus-trap.spec.tsx` types into the SECOND field.
+- `--dk-fs-field` (13px desk / 16px phone) stops mobile Safari zooming the
+  board on every tap. Not a viewport lock — that is an a11y regression Safari
+  ignores outside standalone anyway.
+- `RegisterList` replaces the row markup in sales-book, cases-register and
+  listings-register, none of which had a phone layout. The breakpoint is CSS
+  in tokens.css, not `useIsPhone`, so it is correct in the first frame.
+
+`npm run build` exits 0 through all four gates. 1,726 frontend tests.
+
+### Pick up at Phase 2
+
+Order and rationale are in the plan. Two things to know before starting:
+
+- **Phase 3 (auth) must land before Phase 11 (new safe-list operations).** The
+  agent's approve path turns an admin session into a production shell, and that
+  session is currently an 8-hour bearer in localStorage with no second factor.
+- **`useIsPhone` is still the desktop-first-paint problem everywhere except the
+  registers.** Phase 2's `dk-` class layer is what retires it; roughly 70% of
+  the `phone ?` call sites are padding, width or flex-direction and belong in
+  the media query.
+
+### Local dev note
+
+`admin@alloutdoor.co.za`'s password was set to `local-desk-password-1` **in the
+local database only**, to drive the Desk during verification. Production is
+untouched.
+
 
 ## 2026-09-10 (latest) — CLERK IS OUT; AUTH IS OURS, VERIFICATION IS DIDIT
 
