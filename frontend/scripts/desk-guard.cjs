@@ -352,7 +352,48 @@ function checkUnusedDeskImports(file) {
   }
 }
 
+/**
+ * THE CLASS LAYER IS CAPPED, AND THE CAP IS CHECKED HERE BECAUSE HERE IS WHAT
+ * RUNS.
+ *
+ * ⚠️ tokens.spec.tsx counts these classes too, and that spec is the better
+ * error message — it names the ledger and quotes the admission rule. But
+ * `npm run build` is desk-guard && desk-cutover && theme-sync && next build,
+ * and vitest is in NONE of it. There is no CI. So a spec is a gate only for
+ * somebody who remembers to run `npm test`, and the header of tokens.css told
+ * the reader the build would stop them — which it would not have. Either the
+ * claim goes or the check does; the check is worth more.
+ *
+ * This is deliberately the DUMBEST possible version: count, compare, point at
+ * the spec. It must never grow into a second opinion about which classes are
+ * allowed, or the ledger has two homes and they will disagree.
+ */
+const CLASS_CAP = 19;
+
+function checkClassCap() {
+  const rel = 'components/desk/tokens.css';
+  const file = path.join(ROOT, rel);
+  if (!fs.existsSync(file)) return;
+  // Comments are stripped first: the header names the classes it deliberately
+  // does NOT have, and counting prose would fail the file for explaining
+  // itself. tokens.spec.tsx strips the same way for the same reason.
+  const code = fs.readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const found = new Set();
+  for (const m of code.matchAll(/\.(dk-[a-z0-9-]+)/g)) found.add(m[1]);
+  if (found.size > CLASS_CAP) {
+    problems.push(
+      `${rel}  carries ${found.size} dk- classes; the cap is ${CLASS_CAP}\n` +
+        '    A class earns its place only when the same declaration BLOCK repeats in\n' +
+        '    three or more files — and the cap binds before that rule does, because\n' +
+        '    more blocks qualify than there are slots. Adding one means arguing which\n' +
+        '    of the existing ones leaves. The ledger and the argument live in\n' +
+        '    components/desk/tokens.spec.tsx; edit it there and this cap with it.',
+    );
+  }
+}
+
 for (const tree of GUARDED) walk(path.join(ROOT, tree));
+checkClassCap();
 
 if (problems.length > 0) {
   console.error(`\n  The Desk guard found ${problems.length} problem(s):\n`);

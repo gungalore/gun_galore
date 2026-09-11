@@ -91,6 +91,36 @@
    * accessibility regression that did not even work. */
   --dk-fs-field: 13px;
 
+  /* Two more type sizes, and only two, because these are the two the surface
+   * is actually built out of: 12.5 is every line of prose on a card, a drawer
+   * and a register row (54 hard-coded sites when this was written); 11.5 is
+   * every quiet second line under it (29 sites). They are tokens rather than
+   * numbers so a restyle is one edit here instead of a diff in nineteen files.
+   *
+   * ⚠️ THE OTHER FIFTEEN SIZES DO NOT GET ONE, ON PURPOSE. 8.5, 10, 10.5, 11,
+   * 12, 13, 14, 15, 16, 18, 20, 22, 24, 26 are still written at their call
+   * sites. A token per size is a font scale, and a font scale nobody designed
+   * is just the same numbers with longer names — it would let the next person
+   * believe the type is systematised when it is not. */
+  --dk-fs-body: 12.5px;
+  --dk-fs-meta: 11.5px;
+
+  /* The one spacing token. 10px is the Desk's resting gap — between the cards
+   * in the pile, between the rows of a rail card, between a label and the rule
+   * beside it. Everything else (2, 6, 8, 12, 14) stays a number at its call
+   * site for the same reason the type sizes do. */
+  --dk-gap: 10px;
+
+  /* ⚠️ THE BOARD'S OWN PADDING, AND IT IS A VARIABLE BECAUSE THE BREAKPOINT
+   * MUST NOT BE IN JAVASCRIPT. `useIsPhone` initialises to false and only
+   * corrects inside an effect, so `padding: phone ? A : B` paints B on the
+   * server AND on the first client frame and then relayouts — every cold load,
+   * every board. One value, two media scopes, correct in frame one.
+   *
+   * The phone figure clears the bottom tab bar (78px) plus its safe-area inset
+   * plus the gap; the desktop has no bar. See DeskShell. */
+  --dk-board-pad: 24px 32px 32px;
+
   background: var(--dk-ground);
   color: var(--dk-ink);
   font-family: var(--font-geist), system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -104,11 +134,205 @@
   [data-desk] {
     --dk-h-control: 44px;
     --dk-fs-field: 16px;
+    --dk-board-pad: 12px 14px calc(94px + env(safe-area-inset-bottom, 0px));
   }
 }
 
 [data-desk] .dk-mono {
   font-family: var(--font-geist-mono), ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * THE CLASS LAYER — nineteen classes, and the NUMBER is the load-bearing part.
+ *
+ * ⚠️ THE ADMISSION RULE: a class earns its place ONLY when the same
+ * declaration BLOCK is repeated in THREE OR MORE FILES. Not three uses of
+ * `font-size: 12.5` — three repetitions of the same set of declarations. If
+ * you are reaching for a class to avoid writing two properties at one call
+ * site, write the two properties.
+ *
+ * ⚠️ AND THE CAP BINDS BEFORE THE RULE DOES. More blocks qualify than there
+ * are slots — `.dk-t-title`, `.dk-spacer` (`flex: 1`, twenty-eight identical
+ * sites across eleven files), `.dk-list-row` and `.dk-hscroll` all clear the
+ * three-file bar and are all deliberately absent. The slots went to the blocks
+ * a RESTYLE touches: surfaces, control chrome, type, and the responsive
+ * geometry that cannot live in JavaScript. Layout plumbing that a restyle
+ * never changes stays inline. Adding a twentieth class means arguing which of
+ * the nineteen leaves, in front of `tokens.spec.tsx` — which holds the ledger
+ * and the admission rule — and in front of `scripts/desk-guard.cjs`, which
+ * counts them and FAILS THE BUILD when the number moves.
+ *
+ * ⚠️ THE COUNT IS CHECKED IN TWO PLACES ON PURPOSE, AND THE GUARD IS THE ONE
+ * THAT BINDS. `npm run build` is desk-guard && desk-cutover && theme-sync &&
+ * next build; vitest is in none of it and there is no CI. A cap that lived
+ * only in a spec would be enforced against whoever remembered to run the
+ * tests, which is not a gate — and this comment previously claimed the build
+ * stopped you when nothing did. The spec is still where the argument happens;
+ * the guard is what makes losing the argument expensive.
+ *
+ * ⚠️ WHY THIS FILE AND NOT A CSS MODULE. globals.css carries an unscoped
+ * `* { box-shadow: none !important }`, and tokens.css is PROVEN to load after
+ * it — that is the only reason `.dk-drawer` and `.dk-dialog` below can win
+ * their shadow back. A module's order under --webpack is not guaranteed the
+ * same way and the failure is SILENT: no shadow, no error, a drawer that
+ * reads flat against the page it is supposed to be floating over. This file
+ * is also the guard's ONLY hex exemption (desk-guard.cjs, HEX_EXEMPT is a set
+ * of one), and a second exempt path is the erosion that guard exists to stop.
+ *
+ * ⚠️ INLINE STYLES ARE NOT THE ENEMY AND MUST NOT ALL MOVE HERE. A per-
+ * instance value — `border-bottom: i === last ? undefined : …`, a computed
+ * transform, a strokeDashoffset, a one-off grid-template — belongs at its call
+ * site. A layer that absorbed those would need responsive and state variants,
+ * at which point it is Tailwind, written badly, inside a repo whose build
+ * guard exists to keep Tailwind's utilities off this surface.
+ *
+ * ⚠️ AND REMEMBER WHICH WINS. An inline style beats a class. An element that
+ * carries `.dk-card` AND an inline `background` takes the inline one — which
+ * is correct where the background is state (DeskCard's hover/selected pair)
+ * and is a silent bug everywhere else. If you are overriding more than one or
+ * two declarations of a class inline, you wanted a different class.
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Layout ─────────────────────────────────────────────────────────────
+ * The two shapes the whole surface is made of. Both default to --dk-gap;
+ * a call site that needs 6, 8 or 12 overrides `gap` inline and nothing else.
+ */
+[data-desk] .dk-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dk-gap);
+}
+
+[data-desk] .dk-row {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-gap);
+}
+
+/* ⚠️ min-width: 0 IS THE HALF EVERYONE FORGETS. A flex child refuses to shrink
+   below its content without it, so `overflow: hidden` never fires and the long
+   title pushes its neighbours off the row instead of ellipsing. All four
+   declarations or none.
+
+   The register row's two spans are folded in here rather than repeating the
+   block ninety lines further down — one definition, two selectors. */
+[data-desk] .dk-truncate,
+[data-desk] .dk-reg-main > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Chrome ─────────────────────────────────────────────────────────────
+ * The card: flat, hairlined, never lifted. Only the drawer and the dialogs
+ * lift on this surface — a page of shadowed cards on this ground turns to
+ * soup, which is also why the global box-shadow kill switch is left alone.
+ *
+ * Modifiers are deliberately absent: the rail's raised ground and a failed
+ * region's bad hairline are ONE declaration each, written inline over this
+ * class. Two modifier classes to save one declaration apiece is how a closed
+ * layer stops being closed.
+ */
+[data-desk] .dk-card {
+  background: var(--dk-surface);
+  border: 1px solid var(--dk-line);
+  border-radius: var(--dk-radius-card);
+}
+
+/* ⚠️ THIS CLASS EXISTS BECAUSE THERE WAS NOWHERE TO PUT "A CONTROL IS
+   --dk-h-control". `Chip` hard-coded 30px while `Button` and `Input` beside it
+   read the token, so the primary navigation control on every board sat under
+   the tap-target minimum on every phone — for months, with nothing failing.
+   desk-guard.cjs now rejects a literal in the 28–48 band, but a guard only
+   catches the writing of it; this catches the not-thinking-about-it.
+
+   Not applied to `Input`'s field frame, and that is not an oversight: a frame
+   is `display: flex` (inline-flex would shrink it off its column) and must not
+   carry `cursor: pointer` over a text field. It reads the same tokens inline. */
+[data-desk] .dk-control {
+  display: inline-flex;
+  align-items: center;
+  height: var(--dk-h-control);
+  padding: 0 12px;
+  border-radius: var(--dk-radius-control);
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* ── Type ───────────────────────────────────────────────────────────────
+ * ⚠️ THE LABEL IS SANS, NOT MONO, AND IT IS DEFINED EXACTLY ONCE HERE.
+ * All five artboards define .lbl identically and none of them is mono: mono is
+ * spent on DATA — references, counts, money, the things an operator reads as
+ * figures or copies out. A label is prose ABOUT a value, not another value.
+ *
+ * It used to be hand-rolled in three files (Band, DeskCard, numbers' exported
+ * <Label>) — six declarations, written out three times, already drifting: the
+ * compact ribbon's copy is 10.5px at 0.06em and stays inline, because it is a
+ * different label and pretending otherwise is how a "shared" class collects
+ * exceptions.
+ */
+[data-desk] .dk-t-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--dk-ink-3);
+  white-space: nowrap;
+}
+
+/* Prose on a card, in a drawer, under a headline. */
+[data-desk] .dk-t-body {
+  font-size: var(--dk-fs-body);
+  line-height: 1.45;
+  color: var(--dk-ink-2);
+}
+
+/* The quiet second line. ink-3 clears 4.5:1 and nothing more — it is a LABEL
+   colour, so this is the smallest and faintest text allowed to carry meaning.
+   Anything below it goes in ink-4, which does not clear AA and is furniture. */
+[data-desk] .dk-t-meta {
+  font-size: var(--dk-fs-meta);
+  color: var(--dk-ink-3);
+}
+
+/* ── The breakpoint, as two classes ─────────────────────────────────────
+ *
+ * ⚠️ THESE ARE THE FIX FOR THE DESKTOP-FIRST-PAINT BUG, AND THEY ARE WHY
+ * `useIsPhone` IS NOW A LAST RESORT. That hook is `useState(false)` corrected
+ * inside an effect: it reports DESKTOP on the server and on the first client
+ * render, always. So `phone ? A : B` painted the desktop value in frame one
+ * and relayouted — a phone opening an order drawer got a 480px right-hand
+ * sheet with a 30px close X for one frame before it snapped to a full-screen
+ * push with a 44px back chevron. Thirteen branches did this; the drawer and
+ * the dialog, the two largest overlays on the surface, held twelve of them.
+ *
+ * ⚠️ HIDE WITH !important, AND NEVER TRY TO "SHOW". An element that carries an
+ * inline `display: flex` would beat a plain `display: none` from a class —
+ * inline wins — so the hidden half would render anyway, on the breakpoint
+ * where it is wrong, with nothing in any log. And there is no matching `show`
+ * rule because there must not be one: outside its media query the class
+ * contributes nothing at all, so the element keeps whatever display it
+ * already had. A `display: revert` here would flatten a flex row to a block.
+ *
+ * ⚠️ THEY HIDE, THEY DO NOT UNMOUNT. Both halves are in the DOM at both
+ * breakpoints. Never use them to duplicate a subtree that FETCHES or holds
+ * state — that mounts it twice and doubles both. And never use them on a
+ * focusable element: `display: none` drops it out of the tab order, but a
+ * `querySelector('button, …')` that does not filter on visibility will still
+ * find and focus the hidden one. Icons and static text only.
+ */
+@media (min-width: 1024px) {
+  [data-desk] .dk-phone-only {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  [data-desk] .dk-desk-only {
+    display: none !important;
+  }
 }
 
 /*
@@ -128,6 +352,117 @@
 
 [data-desk] .dk-dialog {
   box-shadow: var(--dk-shadow-dialog) !important;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * The drawer's geometry, and the four values inside it that change with the
+ * breakpoint — overlays.tsx, DrawerBody.
+ *
+ * ⚠️ A DRAWER IS A FULL-SCREEN PUSH ON A PHONE, not a 480px sheet that happens
+ * to be capped at the screen width. The artboard (Order.dc.html) draws it edge
+ * to edge with its own back header, because at 390px a sheet with a border
+ * down one side is a sheet pretending there is something behind it.
+ *
+ * ⚠️ THE INNER THREE ARE CUSTOM PROPERTIES, NOT CLASSES, AND THAT IS THE RULE
+ * NOT AN EXCEPTION TO IT. A head's padding, a close button's size and a
+ * footer's padding are values, not shared blocks — they appear once each, in
+ * one file. The admission rule above would refuse them a class and it is
+ * right to; what they actually need is the BREAKPOINT out of JavaScript, and a
+ * variable does that without spending a slot. Inherited from .dk-drawer, so
+ * the call sites read them with a plain var().
+ *
+ * ⚠️ `--dk-drawer-close` IS 30/44 AND NOT `--dk-h-control` (34/44). The desk
+ * value is deliberately 4px smaller than a control: it is an X in a corner,
+ * not something the operator aims at. Folding it into the control token would
+ * be a visual change wearing a refactor's clothes.
+ *
+ * ⚠️ EVERY env() INSET IS CLAMPED. Chrome for iOS can report an inflated
+ * safe-area value, and an unclamped calc() there pushes the drawer's decision
+ * buttons — the last thing pressed on a money screen — a long way up the
+ * panel. The push covers the whole screen, notch and home indicator included,
+ * so it owes both insets itself: BottomTabs pays them at z 40 and this panel
+ * is z 61 and edge to edge, so the bar is no longer underneath doing it.
+ * ──────────────────────────────────────────────────────────────────────── */
+[data-desk] .dk-drawer {
+  left: auto;
+  width: 480px;
+  border-left: 1px solid var(--dk-line-2);
+
+  --dk-drawer-head-pad: 16px 20px 0;
+  --dk-drawer-close: 30px;
+  --dk-drawer-close-ml: 0px;
+  --dk-drawer-foot-pad: 14px 20px;
+}
+
+@media (max-width: 1023.98px) {
+  [data-desk] .dk-drawer {
+    left: 0;
+    width: 100%;
+    border-left: none;
+
+    --dk-drawer-head-pad: calc(10px + min(env(safe-area-inset-top, 0px), 60px)) 14px 0;
+    --dk-drawer-close: 44px;
+    /* Pulled back to the panel edge: a 44px target at the leading edge is
+       where a thumb is, and the artboard draws it flush rather than indented
+       by the header's own padding. */
+    --dk-drawer-close-ml: -6px;
+    --dk-drawer-foot-pad: 14px 14px calc(14px + min(env(safe-area-inset-bottom, 0px), 34px));
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * .dk-sheet — a centred card at the desk, a bottom sheet on a phone.
+ * overlays.tsx, DialogFrame.
+ *
+ * ⚠️ THE GEOMETRY CANNOT LIVE ON `.dk-dialog`, WHICH IS WHY THIS CLASS EXISTS
+ * RATHER THAN A SECOND RULE ON THAT ONE. `.dk-dialog` is worn by two different
+ * things: this, and the search palette in dialogs.tsx — which positions itself
+ * at top 96 and is ALSO the marker the drawer's Escape handler queries to
+ * decide who owns the key (`document.querySelector('.dk-dialog')`). Putting
+ * bottom/right/max-height/padding on `.dk-dialog` would reach the palette,
+ * whose inline top/left/width would override half of them and keep the other
+ * half — a palette stretched between top 96 and a bottom inset, with 18px of
+ * padding inside a frame that already pads its own header. Two jobs, two
+ * classes; DialogFrame wears both.
+ *
+ * ⚠️ THE CONFIRM BELONGS UNDER THE THUMB. The artboard pins it to
+ * left/right/bottom 12 and says why: this is where money is committed, and a
+ * one-handed reach cannot land accurately in the middle of a screen. It also
+ * sits above BottomTabs (z 40) so the bar can never paint over the tap.
+ *
+ * ⚠️ THE WIDTH COMES IN AS A CUSTOM PROPERTY BECAUSE INLINE BEATS A CLASS.
+ * DialogFrame takes `width` as a prop, and an inline `width: 460` would win
+ * over the phone rule's `width: auto` — leaving the sheet 460px wide inside a
+ * 390px screen with left AND right pinned. Passing it as `--dk-sheet-w` lets
+ * the media query have the last word.
+ * ──────────────────────────────────────────────────────────────────────── */
+[data-desk] .dk-sheet {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--dk-sheet-w, 460px);
+  max-width: calc(100vw - 32px);
+  padding: 20px 22px;
+  animation: dk-dialog-in 140ms ease-out;
+}
+
+@media (max-width: 1023.98px) {
+  [data-desk] .dk-sheet {
+    top: auto;
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + min(env(safe-area-inset-bottom, 0px), 34px));
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - 96px);
+    overflow-y: auto;
+    /* No centring transform here — the sheet is positioned by its edges, so
+       dk-sheet-in translates from the bottom rather than scaling from a
+       midpoint that does not exist on this breakpoint. */
+    transform: none;
+    padding: 18px 16px;
+    animation: dk-sheet-in 160ms ease-out;
+  }
 }
 
 /* One focus treatment for the whole surface. Visible on every ground because
@@ -150,9 +485,15 @@
 }
 
 /*
- * Motion. Five keyframes, and every one of them is neutralised by the
+ * Motion. SIX keyframes, and every one of them is neutralised by the
  * reduced-motion block above — the drawer still arrives, it just arrives
  * without travelling.
+ *
+ * ⚠️ THIS COMMENT SAID "FIVE" FOR AS LONG AS THERE WERE SIX. dk-sheet-in was
+ * added with the phone dialog and the count above it was not. Anyone auditing
+ * the block against its own header concludes one keyframe is dead and deletes
+ * it — and the one that looks spare is the bottom sheet's entry, so the phone
+ * confirm would appear instantly with no travel and nothing would fail.
  */
 @keyframes dk-spin {
   to { transform: rotate(360deg); }
@@ -245,12 +586,9 @@
   gap: 2px;
 }
 
-[data-desk] .dk-reg-main > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* The two spans inside it ellipse — see the .dk-truncate block above, which
+   names `.dk-reg-main > span` as a second selector rather than repeating the
+   same four declarations here. */
 
 [data-desk] .dk-reg-trail {
   flex: none;

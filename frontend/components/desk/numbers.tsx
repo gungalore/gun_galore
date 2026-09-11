@@ -80,19 +80,23 @@ export function Ribbon({ cells, compact = false }: RibbonProps) {
         {cells.map((c, i) => (
           <div
             key={i}
+            className="dk-card dk-stack"
             style={{
               minWidth: 104,
               flex: '0 0 auto',
-              display: 'flex',
-              flexDirection: 'column',
               gap: 2,
               padding: '8px 10px',
-              background: 'var(--dk-surface)',
-              border: '1px solid var(--dk-line)',
+              // The control radius, not the card's 12 — these are small strip
+              // cells, and a 12px corner on a 104px box eats the label.
               borderRadius: 'var(--dk-radius-control)',
             }}
           >
-            {/* .stat .k in the artboard — sans, like every other label. */}
+            {/* ⚠️ .stat .k in the artboard, and NOT `.dk-t-label`. It is
+                10.5px at 0.06em where the shared label is 11px at 0.07em —
+                two values apart, deliberately, because this cell is a strip
+                of glances rather than a field heading. Folding it into the
+                class would change the ribbon on every board; keeping it here
+                is what stops the shared class collecting exceptions. */}
             <span
               style={{
                 fontSize: 10.5,
@@ -105,7 +109,7 @@ export function Ribbon({ cells, compact = false }: RibbonProps) {
             >
               {c.label}
             </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className="dk-row" style={{ gap: 6 }}>
               {c.dot ? <Dot tone={c.dot} /> : null}
               {/* No ellipsis here, deliberately — the cell grows to its number
                   and the strip scrolls, rather than the number being clipped
@@ -137,12 +141,10 @@ export function Ribbon({ cells, compact = false }: RibbonProps) {
 
   return (
     <div
+      className="dk-card"
       style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))`,
-        background: 'var(--dk-surface)',
-        border: '1px solid var(--dk-line)',
-        borderRadius: 'var(--dk-radius-card)',
         // The cells are divided by their own left borders; clipping here is
         // what keeps the first and last from poking past the rounded corner.
         overflow: 'hidden',
@@ -151,29 +153,27 @@ export function Ribbon({ cells, compact = false }: RibbonProps) {
       {cells.map((c, i) => (
         <div
           key={i}
+          className="dk-stack"
           style={{
-            display: 'flex',
-            flexDirection: 'column',
             gap: 6,
             padding: '14px 18px',
             minWidth: 0,
+            // Per-instance, so it stays inline: the first cell has nothing to
+            // its left to divide it from.
             borderLeft: i === 0 ? undefined : '1px solid var(--dk-line)',
           }}
         >
           <Label>{c.label}</Label>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span className="dk-row" style={{ gap: 8, minWidth: 0 }}>
             {c.dot ? <Dot tone={c.dot} /> : null}
             <span
-              className="dk-mono"
+              className="dk-mono dk-truncate"
               style={{
                 fontSize: 22,
                 fontWeight: 500,
                 lineHeight: 1,
                 letterSpacing: '-0.01em',
                 color: 'var(--dk-ink)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
               }}
             >
               {c.value}
@@ -202,18 +202,7 @@ export interface KpiProps {
 
 export function Kpi({ label, value, delta, deltaDirection = 'up', deltaContext }: KpiProps) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6,
-        padding: '14px 16px',
-        background: 'var(--dk-surface)',
-        border: '1px solid var(--dk-line)',
-        borderRadius: 'var(--dk-radius-card)',
-        minWidth: 0,
-      }}
-    >
+    <div className="dk-card dk-stack" style={{ gap: 6, padding: '14px 16px', minWidth: 0 }}>
       <Label>{label}</Label>
       <span
         className="dk-mono"
@@ -229,7 +218,7 @@ export function Kpi({ label, value, delta, deltaDirection = 'up', deltaContext }
         {value}
       </span>
       {delta ? (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+        <span className="dk-row" style={{ gap: 6, minWidth: 0 }}>
           <Arrow direction={deltaDirection} />
           <span className="dk-mono" style={{ fontSize: 12, color: 'var(--dk-ink-2)' }}>
             {delta}
@@ -275,19 +264,18 @@ export function RailCard({
 }) {
   return (
     <div
+      className="dk-card dk-stack"
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
         padding: '14px 16px',
-        // Raised, not surface: the rail sits beside the pile rather than in
-        // it, and the one step of lightness is what says so without a rule.
+        // ⚠️ ONE DECLARATION OVER .dk-card, AND THERE IS NO `.dk-card--rail`
+        // MODIFIER FOR IT. Raised, not surface: the rail sits beside the pile
+        // rather than in it, and the one step of lightness is what says so
+        // without a rule. A modifier class to carry a single background is how
+        // a nineteen-class layer becomes a forty-class one.
         background: 'var(--dk-raised)',
-        border: '1px solid var(--dk-line)',
-        borderRadius: 'var(--dk-radius-card)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="dk-row">
         <Label>{label}</Label>
         <span style={{ flex: 1 }} />
         {action}
@@ -314,13 +302,17 @@ export function Kv({
 }) {
   return (
     <div
+      className="dk-row"
       style={{
-        display: 'flex',
-        alignItems: 'center',
         gap: 12,
         padding: '7px 0',
+        // ⚠️ STAYS INLINE, AND STAYS A PROP. `:not(:last-child)` would do this
+        // for free in CSS — but a Kv is not always the last child of its own
+        // parent (drawers put a footer, a button or a note after the run), so
+        // the last ROW and the last CHILD are different elements. The caller
+        // is the only one that knows which row ends the run.
         borderBottom: last ? undefined : '1px solid var(--dk-line)',
-        fontSize: 12.5,
+        fontSize: 'var(--dk-fs-body)',
       }}
     >
       <span style={{ color: 'var(--dk-ink-3)', minWidth: 0 }}>{k}</span>
@@ -356,18 +348,20 @@ export interface VitalProps {
 export function Vital({ label, value, tone = 'ok', fill, sub }: VitalProps) {
   return (
     <div
+      className="dk-card dk-stack"
       style={{
-        display: 'flex',
-        flexDirection: 'column',
         gap: 6,
         padding: '10px 12px',
-        background: 'var(--dk-surface)',
-        border: '1px solid var(--dk-line)',
+        // ⚠️ 10, NOT --dk-radius-card's 12, AND THE LITERAL IS KEPT ON PURPOSE.
+        // A vitals tile is smaller than a card and the artboard draws it
+        // tighter. Folding it into the class would be a visual change wearing
+        // a refactor's clothes — if the two should be one radius, that is an
+        // operator decision, made deliberately, not a tidy-up.
         borderRadius: 10,
         minWidth: 0,
       }}
     >
-      <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+      <span className="dk-row" style={{ gap: 7, minWidth: 0 }}>
         <Dot tone={tone} />
         <Label>{label}</Label>
       </span>
@@ -424,20 +418,15 @@ export function Meter({ value, tone = 'ok' }: { value: number; tone?: StateTone 
  * into one column of typewriter text.
  */
 export function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      style={{
-        fontSize: 11,
-        fontWeight: 500,
-        letterSpacing: '0.07em',
-        textTransform: 'uppercase',
-        color: 'var(--dk-ink-3)',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {children}
-    </span>
-  );
+  /**
+   * ⚠️ THE SIX DECLARATIONS MOVED TO `.dk-t-label` IN tokens.css, AND THAT IS
+   * NOT COSMETIC. They were written out three times — here, in primitives'
+   * Band, and in card.tsx's type label — because two of those three did not
+   * know this component existed. Three copies of one label is three chances
+   * for the artboards' .lbl and the Desk's to drift apart, and the drift is
+   * invisible until somebody puts two boards side by side.
+   */
+  return <span className="dk-t-label">{children}</span>;
 }
 
 function Sub({ children }: { children: React.ReactNode }) {

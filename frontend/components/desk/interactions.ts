@@ -241,7 +241,35 @@ export function useSwipe({
   return { dx, dragging, handlers };
 }
 
-/** Desktop or phone. One breakpoint, matching tokens.css. */
+/**
+ * Desktop or phone. One breakpoint, matching tokens.css.
+ *
+ * 🚨 A LAST RESORT. REACH FOR `.dk-phone-only` / `.dk-desk-only`, OR A CUSTOM
+ * PROPERTY WITH TWO MEDIA SCOPES, FIRST.
+ *
+ * This hook is `useState(false)` corrected inside an effect. It therefore
+ * reports DESKTOP on the server and on the FIRST CLIENT RENDER — always, on
+ * every cold load, on every board. So `phone ? A : B` does not choose between
+ * A and B; it paints B, then repaints A a frame later. Thirteen branches did
+ * that, and the drawer and the dialog held twelve of them: a phone opening an
+ * order drawer got a 480px right-hand sheet with a 30px close X for one frame
+ * before it snapped to a full-screen push with a 44px back chevron, and a
+ * phone confirming a payout got a centred card that scaled in from the middle
+ * of the screen before jumping to the bottom edge.
+ *
+ * A media query is correct in frame one and costs nothing. Use this ONLY for
+ * the things CSS genuinely cannot express, and say which in a comment:
+ *
+ *   · an accessible NAME that differs by breakpoint (`aria-label` — see
+ *     DrawerBody's close button, the last use of this hook in overlays.tsx);
+ *   · a subtree that changes PARENT, or that fetches or holds state — CSS
+ *     would have to render both copies and hide one, which doubles the
+ *     fetches (see the rail in shell.tsx);
+ *   · handlers bound only on one breakpoint, such as the swipe above.
+ *
+ * Anything that is purely a VALUE — a padding, a width, a size, an animation —
+ * belongs in tokens.css, not here.
+ */
 export function useIsPhone(): boolean {
   const [phone, setPhone] = React.useState(false);
   React.useEffect(() => {

@@ -115,14 +115,19 @@ export function DeskCard({
       // focus ring walks the pile, and A approves a card the operator is not
       // looking at.
       onFocus={onSelect}
+      // Flat and hairlined. Cards never lift — only the drawer and dialogs do
+      // — because a page of shadowed cards on this ground turns to soup.
+      className="dk-card dk-stack"
       style={{
-        display: 'flex',
-        flexDirection: 'column',
         gap: 8,
         padding: '14px 16px',
-        borderRadius: 'var(--dk-radius-card)',
-        // Flat and hairlined. Cards never lift — only the drawer and dialogs
-        // do — because a page of shadowed cards on this ground turns to soup.
+        // ⚠️ THESE TWO DELIBERATELY OVERRIDE .dk-card, AND THEY ARE THE ONLY
+        // TWO THAT MAY. An inline declaration beats a class, so a card's
+        // resting surface and hairline come from .dk-card and its hover and
+        // selected states come from here — the one place on this surface where
+        // background and border are STATE rather than chrome. Anything else
+        // setting background or border inline over .dk-card is a silent
+        // override nobody asked for; take a different class instead.
         background: hover && !sunk ? 'var(--dk-raised)' : 'var(--dk-surface)',
         border: `1px solid ${
           selected ? 'var(--dk-ink-2)' : hover && !sunk ? 'var(--dk-line-2)' : 'var(--dk-line)'
@@ -131,22 +136,13 @@ export function DeskCard({
         opacity: sunk ? 0.55 : 1,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 22 }}>
+      <div className="dk-row" style={{ gap: 8, minHeight: 22 }}>
         <Icon size={14} style={{ color: 'var(--dk-ink-3)' }} />
-        {/* Sans — the artboards' .lbl. Mono is reserved for the data
-            beside it: the reference, the counts, the money. */}
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 500,
-            letterSpacing: '0.07em',
-            textTransform: 'uppercase',
-            color: 'var(--dk-ink-3)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {typeLabel}
-        </span>
+        {/* Sans — the artboards' .lbl, and now the one definition of it in
+            tokens.css rather than the third hand-rolled copy of six
+            declarations. Mono is reserved for the data beside it: the
+            reference, the counts, the money. */}
+        <span className="dk-t-label">{typeLabel}</span>
         {reference ? (
           <span className="dk-mono" style={{ fontSize: 11, color: 'var(--dk-ink-4)' }}>
             {reference}
@@ -176,19 +172,23 @@ export function DeskCard({
         {headline}
       </div>
 
-      {meta ? (
-        <div style={{ fontSize: 12.5, lineHeight: 1.45, color: 'var(--dk-ink-2)' }}>{meta}</div>
-      ) : null}
+      {meta ? <div className="dk-t-body">{meta}</div> : null}
 
       {note ? (
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7 }}>
+        // alignItems: flex-start, not the class's centre — the glyph sits on
+        // the first LINE of a note that wraps to three, not halfway down it.
+        <div className="dk-row" style={{ alignItems: 'flex-start', gap: 7 }}>
           <IconInfo size={13} style={{ color: 'var(--dk-ink-3)', marginTop: 1 }} />
-          <span style={{ fontSize: 12.5, lineHeight: 1.45, color: 'var(--dk-ink-3)' }}>{note}</span>
+          {/* Body type, quieter ink: a note is the rule the operator must know
+              before pressing, not the facts that decide the card. */}
+          <span className="dk-t-body" style={{ color: 'var(--dk-ink-3)' }}>
+            {note}
+          </span>
         </div>
       ) : null}
 
       {actions.length > 0 || (canLater && !sunk) ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+        <div className="dk-row" style={{ gap: 8, marginTop: 4 }}>
           {actions.map((a, i) => (
             <Button
               key={i}

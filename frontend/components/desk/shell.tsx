@@ -163,9 +163,14 @@ export function DeskShell({
         style={{
           display: 'flex',
           gap: 32,
-          // The phone leaves room for the bottom tabs plus the safe area; the
-          // desktop does not have them.
-          padding: phone ? '12px 14px calc(94px + env(safe-area-inset-bottom, 0px))' : '24px 32px 32px',
+          // ⚠️ A VARIABLE, NOT `phone ? A : B`. The phone leaves room for the
+          // bottom tabs plus the safe area and the desktop has neither — but
+          // `useIsPhone` reports DESKTOP on the server and on the first client
+          // frame, so the branch that used to be here painted 24/32/32 on
+          // every cold phone load and then relayouted the whole board. The two
+          // values live in tokens.css under one media query and are correct in
+          // frame one. See --dk-board-pad.
+          padding: 'var(--dk-board-pad)',
           maxWidth: 1280,
           width: '100%',
           margin: '0 auto',
@@ -173,17 +178,25 @@ export function DeskShell({
           flex: 1,
         }}
       >
-        <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <main className="dk-stack" style={{ flex: 1, minWidth: 0 }}>
           {children}
           {/* The phone gets the rail's content underneath the pile rather than
-              beside it — same information, one column. */}
+              beside it — same information, one column.
+              ⚠️ STRUCTURAL, AND IT STAYS ON useIsPhone. This is not a hidden
+              copy: the rail changes PARENT between the breakpoints (inside
+              <main> here, a sibling <aside> below). Rendering both and hiding
+              one with .dk-phone-only would mount the rail's React subtree
+              twice — two copies of every fetch, every poll and every piece of
+              state it holds. */}
           {phone && rail ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>{rail}</div>
+            <div className="dk-stack" style={{ gap: 12, marginTop: 8 }}>
+              {rail}
+            </div>
           ) : null}
         </main>
 
         {!phone && rail ? (
-          <aside style={{ width: 340, flex: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <aside className="dk-stack" style={{ width: 340, flex: 'none', gap: 12 }}>
             {rail}
           </aside>
         ) : null}
@@ -209,26 +222,25 @@ function DesktopBar({
 }) {
   return (
     <header
+      className="dk-row"
       style={{
         height: 56,
         flex: 'none',
-        display: 'flex',
-        alignItems: 'center',
         gap: 20,
         padding: '0 24px',
         borderBottom: '1px solid var(--dk-line)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: 220 }}>
+      <div className="dk-row" style={{ width: 220 }}>
         <DeskMark />
         <span style={{ fontSize: 14, fontWeight: 500 }}>The Desk</span>
       </div>
 
-      <nav style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, justifyContent: 'center' }}>
+      <nav className="dk-row" style={{ gap: 4, flex: 1, justifyContent: 'center' }}>
         <TopTabs active={active} />
       </nav>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, width: 420, justifyContent: 'flex-end' }}>
+      <div className="dk-row" style={{ gap: 14, width: 420, justifyContent: 'flex-end' }}>
         {/* ⚠️ AN EXIT, NOT A SURFACE. It sits with search and the site dot on
             the right rather than among the five tabs: those are where the
             work is, and this leads out of the building. */}
@@ -237,21 +249,20 @@ function DesktopBar({
             type="button"
             onClick={onServices}
             aria-label="External consoles"
+            className="dk-control"
             style={{
-              display: 'flex',
-              alignItems: 'center',
               gap: 6,
-              height: 'var(--dk-h-control)',
+              // Two pixels tighter than the class's 12, because this control
+              // carries a glyph AND a word in a bar that is already 420px of
+              // right-hand furniture. The height, radius, family and pointer
+              // all come from .dk-control — which is what stops this button
+              // being the next one that quietly misses the phone's 44.
               padding: '0 10px',
               background: 'transparent',
               border: '1px solid var(--dk-line-2)',
-              borderRadius: 'var(--dk-radius-control)',
               color: 'var(--dk-ink-2)',
-              fontFamily: 'inherit',
-              fontSize: 12.5,
+              fontSize: 'var(--dk-fs-body)',
               fontWeight: 500,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
             }}
           >
             <IconExternal size={14} />
@@ -262,21 +273,15 @@ function DesktopBar({
           <button
             type="button"
             onClick={onSearch}
+            className="dk-control"
             style={{
-              display: 'flex',
-              alignItems: 'center',
               gap: 8,
               width: 290,
-              height: 'var(--dk-h-control)',
-              padding: '0 12px',
               background: 'var(--dk-surface)',
               border: '1px solid var(--dk-line)',
-              borderRadius: 'var(--dk-radius-control)',
               color: 'var(--dk-ink-3)',
-              fontFamily: 'inherit',
-              fontSize: 12.5,
+              fontSize: 'var(--dk-fs-body)',
               textAlign: 'left',
-              cursor: 'pointer',
             }}
           >
             <IconSearch size={14} />
@@ -287,7 +292,9 @@ function DesktopBar({
                 fontSize: 10.5,
                 padding: '1px 6px',
                 border: '1px solid var(--dk-line-2)',
-                borderRadius: 5,
+                // The tag radius, which is 5 — the literal that was here. Same
+                // pixel, but it now moves when the palette moves.
+                borderRadius: 'var(--dk-radius-tag)',
                 color: 'var(--dk-ink-4)',
               }}
             >
@@ -297,9 +304,11 @@ function DesktopBar({
         ) : null}
 
         {site ? (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span className="dk-row" style={{ gap: 7 }}>
             <Dot tone={site.tone} />
-            <span style={{ fontSize: 12.5, color: 'var(--dk-ink-2)' }}>{site.word}</span>
+            <span style={{ fontSize: 'var(--dk-fs-body)', color: 'var(--dk-ink-2)' }}>
+              {site.word}
+            </span>
           </span>
         ) : null}
 
@@ -357,6 +366,7 @@ function PhoneHeader({
 }) {
   return (
     <header
+      className="dk-row"
       style={{
         height: 56,
         // ⚠️ THE NOTCH EATS THIS HEADER IN THE INSTALLED APP. The manifest's
@@ -372,8 +382,6 @@ function PhoneHeader({
         // reason as the tab bar: Chrome for iOS can report an inflated inset.
         boxSizing: 'content-box',
         flex: 'none',
-        display: 'flex',
-        alignItems: 'center',
         gap: 12,
         padding: '0 16px',
         // ⚠️ AFTER the `padding` shorthand, never before it. In a style object
@@ -383,9 +391,9 @@ function PhoneHeader({
         borderBottom: '1px solid var(--dk-line)',
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
+      <div className="dk-stack" style={{ gap: 1, minWidth: 0, flex: 1 }}>
         <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</span>
-        {sub ? <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>{sub}</span> : null}
+        {sub ? <span className="dk-t-meta">{sub}</span> : null}
       </div>
       {/* Health as a header button, for a surface that measured it —
           see DeskShellProps.site. Only the Site board passes one.
@@ -468,9 +476,17 @@ export function ShortcutFooter({ search = false }: { search?: boolean }) {
     ['Esc', 'close drawer'],
   ];
   return (
+    // ⚠️ `.dk-desk-only` — THE COMPONENT NOW HIDES ITSELF, and the reason is
+    // that its caller cannot do it correctly. This footer teaches keystrokes
+    // and a phone has no keyboard, so app/admin/desk/page.tsx wraps it in
+    // `!phone ? … : null` — and `useIsPhone` reports DESKTOP on the server and
+    // on the first client render, so a cold phone load paints a legend of
+    // keyboard shortcuts and then yanks it away. Static text, nothing to
+    // fetch, nothing focusable: exactly what this class is for. The caller's
+    // branch is now redundant and should go the next time that file is open.
     <div
+      className="dk-row dk-desk-only"
       style={{
-        display: 'flex',
         justifyContent: 'center',
         gap: 18,
         flexWrap: 'wrap',
@@ -480,7 +496,7 @@ export function ShortcutFooter({ search = false }: { search?: boolean }) {
       }}
     >
       {keys.map(([k, what]) => (
-        <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+        <span key={k} className="dk-row" style={{ gap: 7 }}>
           <span
             className="dk-mono"
             style={{
@@ -488,13 +504,13 @@ export function ShortcutFooter({ search = false }: { search?: boolean }) {
               padding: '1px 6px',
               background: 'var(--dk-inset)',
               border: '1px solid var(--dk-line-2)',
-              borderRadius: 5,
+              borderRadius: 'var(--dk-radius-tag)',
               color: 'var(--dk-ink-2)',
             }}
           >
             {k}
           </span>
-          <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>{what}</span>
+          <span className="dk-t-meta">{what}</span>
         </span>
       ))}
     </div>

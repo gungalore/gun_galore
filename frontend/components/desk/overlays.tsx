@@ -156,39 +156,38 @@ function DrawerBody({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
+        // ⚠️ `left`, `width` AND `border-left` LIVE IN tokens.css NOW, ON
+        // `.dk-drawer`, AND THEY MUST NOT COME BACK HERE. A drawer is a
+        // full-screen push on a phone and a 480px sheet at the desk — and
+        // `useIsPhone` reports DESKTOP on the server and on the first client
+        // render, so writing that as `phone ? 0 : undefined` meant every phone
+        // opening a drawer got a 480px right-hand sheet for one frame before
+        // it snapped to full width. An inline value would also BEAT the media
+        // query, so putting either half back here silently disables the other.
         className="dk-drawer"
         style={{
           position: 'fixed',
           top: 0,
           right: 0,
           bottom: 0,
-          // ⚠️ A DRAWER IS A FULL-SCREEN PUSH ON A PHONE, not a 480px sheet
-          // that happens to be capped at the screen width. The artboard
-          // (docs/design/desk-pwa/Order.dc.html) draws it edge to edge with
-          // its own back header, because at 390px a sheet with a border down
-          // one side is a sheet pretending there is something behind it.
-          left: phone ? 0 : undefined,
-          width: phone ? '100%' : 480,
           maxWidth: '100vw',
           zIndex: 61,
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--dk-raised)',
-          borderLeft: phone ? undefined : '1px solid var(--dk-line-2)',
           animation: 'dk-drawer-in 180ms ease-out',
         }}
       >
         <div
           style={{
             flex: 'none',
-            padding: phone ? '10px 14px 0' : '16px 20px 0',
-            // The push covers the whole screen, notch included.
-            paddingTop: phone
-              ? 'calc(10px + min(env(safe-area-inset-top, 0px), 60px))'
-              : undefined,
+            // One value, two media scopes — and the phone half carries the
+            // notch inset, because the push covers the whole screen. See
+            // --dk-drawer-head-pad in tokens.css.
+            padding: 'var(--dk-drawer-head-pad)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="dk-row">
             {/* ⚠️ BACK, NOT CLOSE, AND 44px, ON A PHONE. The artboard's own
                 note: "Close is a 44px target at the leading edge, where a
                 thumb is." A 30px X in the corner is a desktop gesture that
@@ -198,11 +197,22 @@ function DrawerBody({
             <button
               type="button"
               onClick={onClose}
+              // ⚠️ THE ONE THING ON THIS BUTTON CSS CANNOT DO, AND THEREFORE
+              // THE ONLY REASON `useIsPhone` SURVIVES IN THIS FILE. An
+              // accessible NAME is not a style. The residual cost is that the
+              // first client frame says "Close" on a phone before hydration
+              // corrects it to "Back" — which costs nothing, because assistive
+              // technology reads the name when the control is reached, and
+              // nothing can reach it before hydration.
               aria-label={phone ? 'Back' : 'Close'}
               style={{
-                width: phone ? 44 : 30,
-                height: phone ? 44 : 30,
-                marginLeft: phone ? -6 : undefined,
+                // 44 under the thumb, 30 at the desk — see --dk-drawer-close.
+                // NOT --dk-h-control (34/44): this is an X in a corner, not a
+                // control the operator aims at, and the artboard draws it
+                // smaller on purpose.
+                width: 'var(--dk-drawer-close)',
+                height: 'var(--dk-drawer-close)',
+                marginLeft: 'var(--dk-drawer-close-ml)',
                 flex: 'none',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -214,7 +224,16 @@ function DrawerBody({
                 cursor: 'pointer',
               }}
             >
-              {phone ? <IconChevronLeft size={19} /> : <IconClose size={15} />}
+              {/* ⚠️ BACK ON A PHONE, CLOSE AT THE DESK — BOTH RENDERED, ONE
+                  HIDDEN. The artboard's own note: "Close is a 44px target at
+                  the leading edge, where a thumb is." A 30px X in the corner
+                  is a desktop gesture that merely also renders on a phone.
+                  Two glyphs rather than a `phone ?` because the JS branch drew
+                  the X first on every cold phone load; they are aria-hidden
+                  SVGs with nothing to fetch and nothing focusable, which is
+                  the only kind of thing .dk-phone-only may be used on. */}
+              <IconChevronLeft size={19} className="dk-phone-only" />
+              <IconClose size={15} className="dk-desk-only" />
             </button>
             {Icon ? <Icon size={14} style={{ color: 'var(--dk-ink-3)' }} /> : null}
             <Label>{typeLabel}</Label>
@@ -261,21 +280,18 @@ function DrawerBody({
             ) : null}
             {footer ? (
               <div
+                className="dk-row"
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
                   gap: 8,
-                  padding: phone ? '14px 14px' : '14px 20px',
                   // ⚠️ THE PUSH COVERS THE TAB BAR, SO IT OWES THE HOME
                   // INDICATOR ITSELF. BottomTabs pays that inset and sits at
                   // z 40; this panel is z 61 and edge to edge, so the bar is
-                  // no longer underneath doing it. Without this the decision
+                  // no longer underneath doing it. Without it the decision
                   // buttons — the last thing pressed on a money screen — sit
-                  // in the swipe-up strip. Clamped like every other inset
-                  // here, for Chrome-iOS's inflated value.
-                  paddingBottom: phone
-                    ? 'calc(14px + min(env(safe-area-inset-bottom, 0px), 34px))'
-                    : undefined,
+                  // in the swipe-up strip. The inset is inside
+                  // --dk-drawer-foot-pad's phone value, clamped there like
+                  // every other one, for Chrome-iOS's inflated figure.
+                  padding: 'var(--dk-drawer-foot-pad)',
                   marginTop: 12,
                   borderTop: '1px solid var(--dk-line-2)',
                 }}
@@ -386,7 +402,6 @@ export function DialogFrame({
   width?: number;
   assertive?: boolean;
 }) {
-  const phone = useIsPhone();
   const panelRef = React.useRef<HTMLDivElement>(null);
   // Whatever had focus when the dialog opened gets it back when it closes.
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
@@ -467,49 +482,51 @@ export function DialogFrame({
         role="alertdialog"
         aria-modal="true"
         aria-live={assertive ? 'assertive' : undefined}
-        className="dk-dialog"
-        style={{
-          position: 'fixed',
-          // ⚠️ A BOTTOM SHEET ON A PHONE, A CENTRED CARD ON A DESKTOP.
-          // The artboard pins it to left/right/bottom 12 and says why in
-          // its own note: the confirm is where money is committed, so it
-          // belongs under the thumb rather than in the middle of the
-          // screen where a one-handed reach cannot land accurately.
-          // It also sits above BottomTabs (z 40) so the bar can never
-          // paint over the tap that commits the money.
-          ...(phone
-            ? {
-                left: 12,
-                right: 12,
-                bottom: 'calc(12px + min(env(safe-area-inset-bottom, 0px), 34px))',
-                maxHeight: 'calc(100vh - 96px)',
-                overflowY: 'auto' as const,
-                animation: 'dk-sheet-in 160ms ease-out',
-              }
-            : {
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width,
-                maxWidth: 'calc(100vw - 32px)',
-                animation: 'dk-dialog-in 140ms ease-out',
-              }),
-          zIndex: 71,
-          background: 'var(--dk-raised)',
-          border: '1px solid var(--dk-line-2)',
-          borderRadius: 'var(--dk-radius-card)',
-          padding: phone ? '18px 16px' : '20px 22px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 14,
-        }}
+        /*
+         * ⚠️ TWO CLASSES, TWO JOBS, AND NEITHER CAN DO THE OTHER'S.
+         *
+         * `.dk-dialog` is the shadow and the MARKER: DrawerBody's Escape
+         * handler asks `document.querySelector('.dk-dialog')` to decide who
+         * owns the key, and the search palette in dialogs.tsx wears it too.
+         * `.dk-sheet` is this component's geometry alone — which is exactly
+         * why it is a second class rather than more rules on the first: the
+         * palette positions itself at top 96 and would have inherited a
+         * bottom inset, a max-height and 18px of padding inside a frame that
+         * already pads its own header.
+         *
+         * ⚠️ THE SIXTEEN LINES THAT USED TO BE HERE WERE THE BIGGEST
+         * FIRST-FRAME RELAYOUT ON THE SURFACE. A bottom sheet on a phone and a
+         * centred card at the desk, chosen by `useIsPhone` — which reports
+         * DESKTOP on the server and on the first client render — so a phone
+         * confirming a payout got a centred card that scaled in from the
+         * middle of the screen and then jumped to the bottom edge. It is now
+         * one media query in tokens.css, correct in frame one.
+         */
+        className="dk-dialog dk-sheet"
+        style={
+          {
+            position: 'fixed',
+            zIndex: 71,
+            background: 'var(--dk-raised)',
+            border: '1px solid var(--dk-line-2)',
+            borderRadius: 'var(--dk-radius-card)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 14,
+            // ⚠️ A CUSTOM PROPERTY, NOT `width`. An inline `width: 460` would
+            // BEAT `.dk-sheet`'s phone rule, leaving a 460px sheet pinned to
+            // both edges of a 390px screen. Handed in as a variable, the media
+            // query still gets the last word.
+            '--dk-sheet-w': `${width}px`,
+          } as React.CSSProperties
+        }
       >
         <Label>{label}</Label>
         <div style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.25, color: 'var(--dk-ink)' }}>
           {title}
         </div>
         {children}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+        <div className="dk-row" style={{ gap: 8, marginTop: 2 }}>
           <span style={{ flex: 1 }} />
           {footer}
         </div>

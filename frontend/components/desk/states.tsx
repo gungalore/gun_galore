@@ -43,26 +43,20 @@ function Bar({ w, h = 12 }: { w: number | string; h?: number }) {
  */
 export function SkeletonCard() {
   return (
-    <div
-      aria-hidden="true"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-        padding: '14px 16px',
-        background: 'var(--dk-surface)',
-        border: '1px solid var(--dk-line)',
-        borderRadius: 'var(--dk-radius-card)',
-      }}
-    >
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    // ⚠️ THE SAME TWO CLASSES DeskCard WEARS, AND THAT IS THE POINT OF A
+    // SKELETON. It has to keep the card's rhythm exactly — same surface, same
+    // hairline, same radius, same 14/16 padding, same gap — or the layout
+    // shifts the moment data lands, which is the one thing a skeleton exists
+    // to prevent. If the card's chrome changes, this follows for free.
+    <div aria-hidden="true" className="dk-card dk-stack" style={{ padding: '14px 16px' }}>
+      <span className="dk-row" style={{ gap: 8 }}>
         <Bar w={14} h={14} />
         <Bar w={96} h={10} />
         <Bar w={64} h={10} />
       </span>
       <Bar w="72%" h={15} />
       <Bar w="54%" h={12} />
-      <span style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+      <span className="dk-row" style={{ gap: 8, marginTop: 4 }}>
         <Bar w={92} h={34} />
         <Bar w={78} h={34} />
       </span>
@@ -72,11 +66,7 @@ export function SkeletonCard() {
 
 export function SkeletonPile({ count = 3 }: { count?: number }) {
   return (
-    <div
-      role="status"
-      aria-label="Loading the pile"
-      style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
-    >
+    <div role="status" aria-label="Loading the pile" className="dk-stack">
       {Array.from({ length: count }, (_, i) => (
         <SkeletonCard key={i} />
       ))}
@@ -107,17 +97,19 @@ export function FailedRegion({
   return (
     <div
       role="alert"
+      className="dk-card dk-stack"
       style={{
-        display: 'flex',
-        flexDirection: 'column',
         gap: 12,
         padding: '16px 18px',
-        background: 'var(--dk-surface)',
+        // One declaration over .dk-card, which is why there is no
+        // `.dk-card--bad` modifier: a modifier class to carry a single border
+        // colour is how a closed layer stops being closed. The wash is
+        // deliberately NOT applied — a red-filled slab reads as "the whole
+        // page is broken" when the failure is one region.
         border: '1px solid var(--dk-bad-line)',
-        borderRadius: 'var(--dk-radius-card)',
       }}
     >
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span className="dk-row" style={{ gap: 8 }}>
         <IconAlert size={14} style={{ color: 'var(--dk-bad)' }} />
         <span style={{ fontSize: 15, fontWeight: 500, color: 'var(--dk-ink)' }}>{title}</span>
       </span>
@@ -138,7 +130,7 @@ export function FailedRegion({
       >
         {detail}
       </pre>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <span className="dk-row">
         <Button variant="primary" icon={IconRefresh} onClick={onRetry}>
           Retry
         </Button>
@@ -168,14 +160,8 @@ export function AllClear({
 }) {
   return (
     <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 14,
-        padding: '64px 24px',
-        textAlign: 'center',
-      }}
+      className="dk-stack"
+      style={{ alignItems: 'center', gap: 14, padding: '64px 24px', textAlign: 'center' }}
     >
       <span
         style={{

@@ -61,6 +61,10 @@ export function RegisterList({
   minHeight?: number;
 }) {
   return (
+    // ⚠️ NOT `.dk-stack`. That class carries `gap: var(--dk-gap)`, and a
+    // register is rows separated by a hairline, flush against each other — ten
+    // pixels of air between them turns a ledger into a list of cards and puts
+    // the separator in the middle of nothing.
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {rows.map((r, i) => (
         <button
@@ -92,14 +96,12 @@ export function RegisterList({
           ) : null}
 
           <span className="dk-reg-main">
-            <span style={{ fontSize: 12.5, color: 'var(--dk-ink)' }}>
+            {/* Body size, full ink — the title is the row. Not `.dk-t-body`:
+                that is ink-2 prose ABOUT a thing, and this is the thing. */}
+            <span style={{ fontSize: 'var(--dk-fs-body)', color: 'var(--dk-ink)' }}>
               {r.title}
             </span>
-            {r.sub ? (
-              <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>
-                {r.sub}
-              </span>
-            ) : null}
+            {r.sub ? <span className="dk-t-meta">{r.sub}</span> : null}
           </span>
 
           <span className="dk-reg-trail">

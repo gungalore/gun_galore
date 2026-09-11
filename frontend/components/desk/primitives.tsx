@@ -54,20 +54,23 @@ export interface ButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonE
   block?: boolean;
 }
 
+/**
+ * What is left after `.dk-control` (tokens.css) takes the chrome: display,
+ * alignment, the control height, the 12px side padding, the radius, the
+ * inherited family, nowrap and the pointer. Only the button's OWN type and
+ * motion live here.
+ *
+ * ⚠️ DO NOT PUT `height` BACK. That is the whole reason the class exists —
+ * `Chip`, three definitions down, hard-coded 30px while this object read the
+ * token, and the primary navigation control on every board was therefore
+ * below the tap-target minimum on every phone with nothing failing.
+ */
 const BASE: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
   justifyContent: 'center',
   gap: 7,
-  height: 'var(--dk-h-control)',
-  padding: '0 12px',
-  borderRadius: 'var(--dk-radius-control)',
-  fontFamily: 'inherit',
   fontSize: 13,
   fontWeight: 500,
   lineHeight: 1,
-  whiteSpace: 'nowrap',
-  cursor: 'pointer',
   transition: 'background 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out',
 };
 
@@ -138,6 +141,7 @@ export function Button({
   block = false,
   disabled,
   style,
+  className,
   ...rest
 }: ButtonProps) {
   const [hover, setHover] = React.useState(false);
@@ -148,6 +152,12 @@ export function Button({
   return (
     <button
       type="button"
+      // ⚠️ `className` IS DESTRUCTURED AND MERGED, NOT SPREAD. ButtonProps
+      // extends ButtonHTMLAttributes, so a caller passing className through
+      // `...rest` would REPLACE this attribute rather than add to it — and the
+      // button would lose its height, its padding and its radius, silently, at
+      // whichever one call site did it.
+      className={className ? `dk-control ${className}` : 'dk-control'}
       disabled={disabled}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => {
@@ -267,7 +277,7 @@ export interface ChipProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonEle
   count?: number | string;
 }
 
-export function Chip({ active = false, children, count, style, ...rest }: ChipProps) {
+export function Chip({ active = false, children, count, style, className, ...rest }: ChipProps) {
   const [hover, setHover] = React.useState(false);
   return (
     <button
@@ -275,21 +285,23 @@ export function Chip({ active = false, children, count, style, ...rest }: ChipPr
       aria-pressed={active}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      // ⚠️ `.dk-control` IS WHERE THE HEIGHT COMES FROM NOW, AND THIS IS THE
+      // COMPONENT THE CLASS WAS WRITTEN FOR. Chip hard-coded 30px for months
+      // while Button and Input beside it read --dk-h-control and grew to 44 on
+      // a phone — so the five People segments, the seven order-book segments,
+      // the Pulse period rows and the nine Province chips in the dealer form
+      // were all under the tap-target minimum, on every board, and nothing
+      // failed. Merged rather than spread for the reason spelled out on Button.
+      className={className ? `dk-control ${className}` : 'dk-control'}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
         gap: 6,
-        // ⚠️ THE TOKEN, NOT A NUMBER. This was 30px, so the primary navigation
-        // control on every board sat under the tap-target minimum on every
-        // phone while Button and Input next to it correctly grew to 44.
-        height: 'var(--dk-h-control)',
-        padding: '0 12px',
+        // ⚠️ A PILL, WHERE .dk-control GIVES A CONTROL RADIUS — the one
+        // declaration this component overrides, and the only visual difference
+        // between a chip and a button. Tag's 5px rectangle is the third shape:
+        // press it / press it / read it.
         borderRadius: 'var(--dk-radius-pill)',
-        fontFamily: 'inherit',
         fontSize: 12.5,
         fontWeight: 500,
-        whiteSpace: 'nowrap',
-        cursor: 'pointer',
         transition: 'background 120ms ease-out, border-color 120ms ease-out',
         // The active chip is a raised dark chip — background lifts one step
         // off the surface, the border follows, the text stays plain ink.
@@ -410,21 +422,14 @@ export interface BandProps {
 export function Band({ label, count, children }: BandProps) {
   if (count <= 0) return null;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 2px 2px' }}>
-        {/* Sans, like every .lbl in the artboards — mono is for data. */}
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 500,
-            letterSpacing: '0.07em',
-            textTransform: 'uppercase',
-            color: 'var(--dk-ink-3)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {label}
-        </span>
+    <div className="dk-stack">
+      <div className="dk-row" style={{ padding: '10px 2px 2px' }}>
+        {/* Sans, like every .lbl in the artboards — mono is for data. The six
+            declarations that used to be written out here live in .dk-t-label
+            (tokens.css); they were hand-rolled in this file, in card.tsx and
+            in numbers.tsx, which is three copies of one label waiting to
+            drift apart. */}
+        <span className="dk-t-label">{label}</span>
         {/* ⚠️ RULE FIRST, THEN THE COUNT — the order the artboard draws
             (docs/design/desk-pwa/Main.dc.html) and the reason its annotation
             insists "a band header is a rule, not a chip row". The count used
