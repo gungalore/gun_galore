@@ -186,10 +186,13 @@ same).
 
 ## Permissions the box needs
 
-Three things Warden's service user does not have by default, each of which
-shows up as a specific, honest `unknown` (never a silent zero) until
-provisioned — see `src/checks/context.ts`'s and `src/exec/safe-list.ts`'s own
-headers for the detail:
+Three things Warden's service user does not have by default. None of them
+ever degrades into a plausible-looking success: the first two are
+MEASUREMENTS, and until provisioned each reports a specific, honest `unknown`
+(never a silent zero); the third is two EXEC privileges, and until provisioned
+each fails closed as a failed run carrying `sudo`'s own words. See
+`src/checks/context.ts`'s and `src/exec/safe-list.ts`'s own headers for the
+detail:
 
 1. **`adm` group membership** (or an equivalent), to read
    `/var/log/nginx/*.log` for the nginx error-rate and error-log checks.
@@ -197,23 +200,54 @@ headers for the detail:
    env-presence check, the cron-freshness check (it needs
    `HEALTH_PING_SECRET`), the payment-gate check, and all four channel
    checks.
-3. **One narrow `sudoers` line**, for the `reloadNginx` safe-list operation
-   only:
+3. **Two narrow `sudoers` lines** — one per safe-list operation that needs a
+   privilege the app user does not hold. They are the only two on the list
+   that do (see `src/exec/safe-list.ts`'s header, which names that as a
+   narrowed ground rule), and each matches its WHOLE argv, because each
+   operation's argument is fixed in code rather than chosen at run time:
+
    ```
    alloutdoor ALL=(root) NOPASSWD: /usr/sbin/nginx -s reload
+   alloutdoor ALL=(root) NOPASSWD: /usr/bin/journalctl --vacuum-size=200M
    ```
-   No wildcard, no other subcommand. Until this exists, `reloadNginx` fails
-   closed with "a password is required" on stderr (`sudo -n`) — by design,
-   never a hang.
+
+   No wildcard, no other subcommand, no other binary.
+
+   - The first is for **`reloadNginx`**: nginx's master runs as root and the
+     app user does not, so without it Warden cannot make nginx re-read a
+     config or re-open its log and cert files.
+   - The second is for **`pruneJournal`**, the only operation that can relieve
+     journald — the commonest way a stock Ubuntu box fills `/var`. Its rotated
+     `.journal` files may only be removed by `journalctl`; truncating one by
+     hand corrupts the set, so no other operation on the list can substitute
+     for it. ⚠️ **Provision it before you need it.** The one moment it is
+     wanted is a disk emergency, and that is the worst moment to discover a
+     line is missing.
+
+   ⚠️ **Both run through `sudo -n`, so a missing line fails CLOSED** — the
+   run exits non-zero with "a password is required" on stderr and lands in the
+   thread as a failed run carrying that text. It never hangs on a prompt
+   nobody can answer, and it never silently succeeds at nothing. That stderr
+   is the reassuring half: it says the failure is **provisioning**, not a bug
+   in the operation — add the line and approve the proposal again.
+
+   ⚠️ Neither line has a provisioning step under `infra/`, and do not read
+   that as "infra/ knows nothing about Warden" — `infra/deploy/deploy.sh` has a
+   whole Warden stage and `infra/backup/backup.sh` names it too, which is
+   exactly where somebody would reasonably expect the sudoers step to live.
+   It is not there. No sudoers, NOPASSWD or journalctl line exists anywhere
+   under `infra/`. This section is where both lines live; adding the operation
+   to the safe list did not add the line to the box.
 
 `nginx -T` itself normally needs root; without it, the TLS-origin and
 nginx-proxy-timeout checks fall back to reading `/etc/nginx/sites-enabled`
 directly and say in their evidence that they did.
 
 None of this is automatic. A missing permission is a provisioning decision
-for the operator, not something Warden's code can work around — and every
-one of them fails as a named `unknown`, never as a check that quietly
-reports "ok" because it couldn't actually look.
+for the operator, not something Warden's code can work around — and none of
+them can be mistaken for success: a check that couldn't look says `unknown`
+rather than "ok", and an operation that couldn't run exits non-zero rather
+than reporting a fix it never made.
 
 ## The security model, briefly
 

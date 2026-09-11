@@ -28,8 +28,13 @@
 //           there is no shell metacharacter (`;` `|` `` ` `` `$( )` `&&`) for
 //           a validated argument to smuggle through, whatever it contains.
 //           EVERY safe-list operation is one of these or a `node` plan.
-//   node  — a narrow fs-only routine (archive-then-truncate, prune) that never
-//           shells out at all.
+//   node  — a narrow routine written in this package rather than composed as a
+//           command: archive-then-truncate, prune, and the psql plans below.
+//           ⚠️ "fs-only, never shells out" is what this line USED to say and it
+//           was already untrue when it was written — clearNextCache's node plan
+//           calls runPlan() for `pm2 reload` after emptying the directory. The
+//           narrow rule that does hold: a node plan never builds a command from
+//           a string, so whatever it reaches for is an argv this file wrote.
 //   shell — the ONE sanctioned exception: a command an operator personally
 //           read in the Desk's money-grade confirm and approved, byte for
 //           byte. ⚠️ LOAD-BEARING: only executor.runApprovedProposal() may
@@ -67,7 +72,14 @@ const MAX_BUFFER_BYTES = 8 * 1024 * 1024;
  * this whole module avoids.
  */
 function quoteForDisplay(arg: string): string {
-  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(arg) ? arg : `'${arg.split("'").join(`'\''`)}'`;
+  // ⚠️ THE INNER ESCAPE HAD NEVER ONCE RUN. It was written as a template
+  // literal `'\''`, in which \' is just ' — so it produced ''' rather than the
+  // POSIX '\'' form, and no test caught it because until the psql plans landed
+  // NO safe-list argv contained a single quote. The nested literal below uses
+  // \\' , which is a backslash followed by a quote. Display only, as the note
+  // above says, so the bug cost nothing — but a reader checking a confirm
+  // dialog against a shell would have found it did not paste.
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(arg) ? arg : `'${arg.split("'").join(`'\\''`)}'`;
 }
 
 export function describePlan(plan: ExecPlan): string {
@@ -123,4 +135,116 @@ export async function runPlan(plan: ExecPlan): Promise<RunOutcome> {
       },
     );
   });
+}
+
+// ── psql ────────────────────────────────────────────────────────────────────
+//
+// ⚠️ A SECOND execFile CALL SITE, IN THE ONE FILE THAT IS ALLOWED ONE, AND A
+// KNOWN TWIN OF checks/context.ts's queryDb(). They are not shared, for two
+// reasons that are worth stating rather than rediscovering: exec/ sits BELOW
+// checks/ and may not import from it, and the two want different answers — the
+// check layer wants parsed rows as an Attempt, the exec layer wants a
+// RunOutcome with an exit code and stderr because every run has to become an
+// audit row. If you change the connection handling here, change it there too.
+//
+// ⚠️ THE PASSWORD GOES THROUGH THE CHILD'S ENVIRONMENT, NEVER ARGV. Putting the
+// connection string on the command line would print the password in `ps` for
+// anyone on the box, which is the exact thing infra/backup/backup.sh goes out
+// of its way to avoid. It is also why these are `node` plans and not `argv`
+// ones: ExecPlan has no env channel, deliberately, so nothing can smuggle an
+// environment into an ordinary argv plan.
+//
+// ⚠️ THE SQL IS NEVER COMPOSED FROM AN ARGUMENT. Every caller in safe-list.ts
+// passes a string built at module scope from constants this repo wrote. There
+// is no parameter channel here for the same reason CheckContext.queryDb has
+// none: no legitimate caller needs one, and a channel that exists is a channel
+// that gets used.
+
+/** psql's flags, in one place so the command an operator READS in the audit row
+ *  and the command that RUNS are built from the same array. -X ignores the
+ *  box's psqlrc, -A -t -q give a bare unaligned answer, ON_ERROR_STOP=1 makes a
+ *  failed statement a non-zero exit instead of a chatty success. */
+const PSQL_ARGV: readonly string[] = ['-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1', '-c'];
+
+/**
+ * Run one fixed statement against the app database as Warden's own DATABASE_URL
+ * user. Returns a RunOutcome like every other plan, including for the two ways
+ * this fails before psql is ever reached — an unset or unparseable DATABASE_URL
+ * comes back as exit code 1 with a reason, never as a throw and never as a
+ * silent success, because "nothing matched" and "we never connected" must not
+ * read the same in the thread.
+ */
+export async function runPsql(sql: string, timeoutMs: number): Promise<RunOutcome> {
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) {
+    return { exitCode: 1, stdout: '', stderr: 'DATABASE_URL is not set in Warden’s environment', timedOut: false };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { exitCode: 1, stdout: '', stderr: 'DATABASE_URL is set but is not a parseable URL', timedOut: false };
+  }
+
+  const childEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    PGHOST: decodeURIComponent(parsed.hostname),
+    PGPORT: parsed.port || '5432',
+    PGUSER: decodeURIComponent(parsed.username),
+    PGPASSWORD: decodeURIComponent(parsed.password),
+    PGDATABASE: decodeURIComponent(parsed.pathname.replace(/^\//, '')),
+    PGCLIENTENCODING: 'UTF8',
+    // Without this psql waits on the OS TCP timeout, which outlives the plan's
+    // own budget and turns "Postgres is unreachable" into "the run timed out".
+    PGCONNECT_TIMEOUT: '5',
+  };
+
+  return new Promise<RunOutcome>((resolve) => {
+    execFile(
+      'psql',
+      [...PSQL_ARGV, sql],
+      { env: childEnv, timeout: timeoutMs, maxBuffer: MAX_BUFFER_BYTES, killSignal: 'SIGTERM' },
+      (error, stdout, stderr) => {
+        const err = error as (NodeJS.ErrnoException & { killed?: boolean; signal?: string }) | null;
+        const timedOut = !!err && (err.killed === true || err.signal === 'SIGTERM') && typeof err.code !== 'number';
+        let errText = stderr?.toString() ?? '';
+        if (!errText && err) errText = timedOut ? `killed after ${timeoutMs}ms (timeout)` : err.message;
+        resolve({
+          // psql's own failure text ("connection refused", "password
+          // authentication failed for user X") is safe to surface: the password
+          // is not in it, because it never reached argv.
+          exitCode: err ? (typeof err.code === 'number' ? err.code : null) : 0,
+          stdout: stdout?.toString() ?? '',
+          stderr: errText,
+          timedOut,
+        });
+      },
+    );
+  });
+}
+
+/**
+ * Wrap one fixed statement as a plan.
+ *
+ * ⚠️ The describe string is derived by running describePlan() over the argv psql
+ * ACTUALLY receives, so the sentence in the audit row and the confirm dialog
+ * cannot drift from the statement that runs — the same property built() gives
+ * every argv operation. It is a `node` plan only because of the environment;
+ * everything else about it behaves like an argv one.
+ *
+ * ⚠️ THE COST, NAMED: a statement full of SQL string literals comes out
+ * peppered with POSIX '\'' escapes and is harder to read than the statement
+ * itself. That is deliberately not traded away for a prettier hand-built
+ * string. What the escaping buys is that the describe is a line an operator can
+ * paste into their own shell and get the identical statement — which is the
+ * whole point of showing them a command rather than a summary of one. (It needs
+ * the same PG* environment; the password is not in the string, by design.)
+ */
+export function psqlPlan(sql: string, timeoutMs: number): ExecPlan {
+  return {
+    kind: 'node',
+    describe: describePlan({ kind: 'argv', file: 'psql', argv: [...PSQL_ARGV, sql], timeoutMs }),
+    timeoutMs,
+    run: () => runPsql(sql, timeoutMs),
+  };
 }

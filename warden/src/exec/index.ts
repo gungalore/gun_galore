@@ -25,9 +25,11 @@ export {
   LOG_FILES,
   LOG_IDS,
   PM2_PROCESSES,
+  QUERY_AGES,
   type BuiltOperation,
   type LogId,
   type Pm2Process,
+  type QueryAge,
   type SafeListOperation,
   type ValidationResult,
 } from './safe-list.js';
