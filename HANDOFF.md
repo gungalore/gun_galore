@@ -6,7 +6,93 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-11**.
 
-## 2026-09-11 (latest) — DESK REBUILD: PHASES 2, 3 AND 4, THE FRONTEND HALF, AND A HARDENING PASS
+## 2026-09-11 (latest) — DESK REBUILD: PHASES 5, 6, 7 AND 11
+
+**STILL NOT DEPLOYED. Nothing on this branch has touched the box.** Branch
+`feat/desk-rebuild`, now **fifteen commits** off `feat/self-hosted-auth`.
+
+**Phases 0–7 and 11 are done. 8, 9 and 12 are not started; 10 is deploy-day
+provisioning rather than code.**
+
+| | |
+|---|---|
+| `b422b839` | Phase 7 — the Now board |
+| `f13ce413` | Phase 11 — six new safe-list operations |
+| `89b5ccdd` | Phases 5 + 6 — Agent and Health out of the Site board |
+| `e0ac23f1` | Fix: the ledger redirect dropped two params |
+
+Verified at `e0ac23f1`: backend **4,759** tests, frontend **1,838** (134
+files), warden **288**, `tsc` clean in all three trees, `desk-guard` clean,
+`npm run build` **exit 0**.
+
+### What is on screen now
+
+`/admin/desk/site` and `/admin/desk/ledger` are 307s; six tabs, not seven
+(seven bottom tabs measure 43.1px of tap width at 360px, under the 44
+minimum). Verified in a browser: Agent and Health both render, and the two
+redirects answer correctly.
+
+**Agent** wires the four Warden routes nothing had ever called — the audit
+trail especially, which means "what has this agent run on the box" is finally
+answerable without ssh. The approval queue is the first card; the old
+"Pause Warden" button posted a chat message and stopped nothing.
+
+**Health** is 11 files, most-likely-to-need-you first, each section keeping its
+own fetch and its own failure. That isolation is the feature, not tidiness.
+
+**Now** killed the Ribbon, moved the money line above the pile, and — the part
+that mattered — `drawerTargetFor()` no longer returns null for five card
+types. It used to tell the operator to *"use the legacy admin panel"*, a panel
+CLAUDE.md records as deleted and `desk-guard.cjs` fails the build for
+reintroducing.
+
+**Phase 11** took the safe list 6 → 12. `startProcess` is the one that
+matters: `restartProcess` uses `pm2 reload`, and reload on a STOPPED app
+errors rather than starting it — so *"the backend is down"*, the most likely
+emergency, was not covered at all.
+
+### Three defects worth remembering
+
+1. **The money-grade confirm claimed the safe list for commands the safe list
+   never saw.** It said "It runs inside Warden's own safe list" for EVERY
+   proposal. The daemon knows better — its stored proposal holds
+   `operation: {name,args}` and `reversible` — and dropped both before the
+   wire. The NAME now rides the wire (never the args) and the dialog speaks in
+   two voices.
+2. **The ledger redirect dropped `?status` and `?page`** — the two params it
+   was written to preserve — landing on an unfiltered page one that looks
+   exactly like a filtered one. Found by curling the running server, not by
+   reading. The route handler's own header named that exact string as "the
+   failure nobody reports".
+3. **A guard that could not see the shape it was guarding.** The new test
+   proving every sudo operation has a documented sudoers line only inspected
+   TOP-LEVEL argv plans — and a `node` plan can reach sudo from inside
+   `run()`, which `clearNextCache` already does. A thirteenth operation
+   flushing iptables that way passed 29/29.
+
+⚠️ **AND A SOURCE SCAN THAT CANNOT TELL CODE FROM PROSE FAILS ON ITS OWN
+DOCUMENTATION.** The header note explaining that counter quotes the literal it
+counts, so the file failed for describing its own rule. Strip comments first —
+the same lesson `tokens.spec.tsx` and the hatch inventory already carry.
+
+### What is left
+
+- **Phase 8 — four tabs.** Delete Pulse, `charts.tsx`, `lib/desk-pulse`;
+  rewrite `tabs.tsx`; add `DeskStatusProvider` so one poll serves the whole
+  app and the tabs can carry counts. Mostly deletion. The sixth tab is interim
+  and collapses here.
+- **Phase 9 — front door + PWA.** ⚠️ `app/sw.ts` DELIBERATELY carves `/admin`
+  out of the offline fallback today ("admin pages never fall back — they must
+  error visibly"). The plan reverses that with a precached
+  `/admin/desk/offline`. That is a considered decision being changed, not a
+  gap being filled — read the existing comment before touching it.
+- **Phase 12 — the read-only tool loop.** Five tools, fenced results, an
+  injection detector.
+- **Phase 10 — Tailscale.** Provisioning, not code. Deploy day.
+
+---
+
+## 2026-09-11 — DESK REBUILD: PHASES 2, 3 AND 4, THE FRONTEND HALF, AND A HARDENING PASS
 
 **STILL NOT DEPLOYED. Nothing on this branch has touched the box.** Branch
 `feat/desk-rebuild`, now nine commits, off `feat/self-hosted-auth`. The
