@@ -24,6 +24,7 @@ export * from './charts';
 export * from './dialogs';
 export * from './chat';
 export * from './shell';
+export * from './desk-status';
 export * from './interactions';
 export * from './use-undo';
 export * from './use-desk-search';

@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * THE DESK — the six surfaces, and the two ways of reaching them.
+ * THE DESK — the four surfaces, and the two ways of reaching them.
  *
  * Desktop is a pill row in the top bar; the phone is bottom tabs, icon over
- * label. Same six names, same order, same active idiom (ink fill) — the
+ * label. Same four names, same order, same active idiom (ink fill) — the
  * operator moves between a laptop and a phone during one shift and should
  * not have to relearn where anything is.
  *
@@ -16,15 +16,8 @@
  */
 import * as React from 'react';
 import Link from 'next/link';
-import {
-  IconBolt,
-  IconDesk,
-  IconLedger,
-  IconPeople,
-  IconPulse,
-  IconSite,
-  type IconProps,
-} from './icons';
+import { IconBolt, IconDesk, IconPeople, IconSite, type IconProps } from './icons';
+import { useDeskStatus } from './desk-status';
 
 export interface DeskTab {
   key: string;
@@ -34,52 +27,170 @@ export interface DeskTab {
 }
 
 /**
- * The six, in fixed order. Nothing is configurable about this list.
+ * The four, in fixed order. Nothing is configurable about this list.
  *
- * 🚨 IT WAS FIVE, AND TWO WRITTEN DECISIONS CITED THAT NUMBER AS THE REASON
- * THEY BECAME LENSES INSTEAD OF TABS — app/admin/desk/ledger/page.tsx ("Orders
- * is not a sixth tab") and the /admin/complaints entry in lib/desk-cutover.ts,
- * both quoting the sentence above. Adding one overrules them, so here is why
- * it is not the same request: Orders and the complaints register are other
- * VIEWS OF ONE BOARD'S DATA, fetched by that board's loader. Agent is a
- * different daemon, on its own poll, with its own failure — a hung Warden must
- * not be able to slow or blank the alerts inbox, and on one board it could.
+ * 🚨 IT WAS SIX, AND FOUR IS WHAT THE BARS CAN HONESTLY NAME. Two of the six
+ * pointed at destinations that no longer have a page of their own:
+ * /admin/desk/ledger and /admin/desk/site are both 307 route handlers, kept
+ * because bookmarks and minted hrefs carry them, and a pill whose only content
+ * is a trip somewhere else is a tab pretending to be a surface. Pulse went
+ * with them — the whole analytics board is deleted in this phase, and what
+ * that costs is written down in lib/desk-cutover.ts under /admin/analytics,
+ * /admin/analytics/insights, /admin/analytics/health and /admin/categories
+ * rather than left for somebody to discover.
  *
- * ⚠️ SITE BECAME HEALTH IN PLACE, IN THE SAME SLOT. Nothing the operator had
- * disappeared: /admin/desk/site redirects with its query string intact, the
- * Warden half is the new Agent tab, and the only thing genuinely removed from
- * the board is the four-flag settings panel (see lib/desk-cutover.ts under
- * /admin/settings). Keeping a sixth pill pointing at a redirect would have
- * been a tab whose only content is a trip somewhere else.
+ * ⚠️ THE LEDGER'S ROUTE HANDLER MUST STAY. It is the 307 that carries
+ * `?status=PAID&page=3` onto the pile, minted by lib/desk-search.ts, the
+ * People board and admin-health.service.ts. Losing the tab is a navigation
+ * decision; losing the redirect would land a live link on an unfiltered page
+ * one that looks like it worked.
  *
- * ⚠️ SIX IS MEASURED, AND SEVEN WOULD NOT HAVE BEEN SAFE. Rendered with the
- * real Geist face at the real sizes: bottom tabs are flex:1 with 4px margins,
- * giving 51.7px of tap width at 360px and 56.7px at 390px for six — above the
- * 44px minimum the Desk polices everywhere else. SEVEN gives 43.1px at 360px,
- * i.e. under it, on a small Android. desk-guard cannot see this, because the
- * width comes from flex rather than from a literal it can grep, so it is
- * written here.
+ * ⚠️ AGENT IS STILL NOT A LENS ON HEALTH, and this phase did not revisit that.
+ * The reasoning that made it its own tab holds exactly as it did: Warden is a
+ * different daemon, on its own poll, with its own failure, and a hung Warden
+ * must not be able to slow or blank the alerts inbox — which on one board it
+ * could. Four is reached by removing pills that lead to redirects, not by
+ * merging boards that fail independently.
  *
- * ⚠️ AND THE DESKTOP ROW COMPRESSES ITS NEIGHBOURS RATHER THAN OVERFLOWING.
- * At 1024px the six pills need 415px against the five's 330; the 220px mark
- * block and the 420px right-hand block both carry the default flex-shrink, so
- * they give up 41px and 79px respectively and the header does not scroll.
- * Measured at 1024, 1100 and 1280 on a fixture that reproduces the bar's
- * geometry — NOT on the running app, so the residual risk is that the right
- * block's real contents (Consoles, search, the site dot, the avatar) need more
- * than the 341px it is left with at exactly 1024. A seventh pill would take it
- * to 471 and that margin is gone.
+ * ⚠️ THE KEY IS 'desk' AND THE LABEL IS 'Now'. The key is a wire value: five
+ * pages pass it to DeskShell and `activeTabFor()` in lib/desk-pile.ts returns
+ * it, and that file is not this track's to edit. Renaming the key would light
+ * no tab at all on three of the pile's six lenses — silently, which is the
+ * exact failure lib/desk-tabs-routes.spec.ts exists for.
  */
 export const DESK_TABS: DeskTab[] = [
-  { key: 'desk', label: 'Desk', href: '/admin/desk', icon: IconDesk },
-  { key: 'ledger', label: 'Ledger', href: '/admin/desk/ledger', icon: IconLedger },
+  { key: 'desk', label: 'Now', href: '/admin/desk', icon: IconDesk },
   { key: 'people', label: 'People', href: '/admin/desk/people', icon: IconPeople },
-  { key: 'pulse', label: 'Pulse', href: '/admin/desk/pulse', icon: IconPulse },
+  { key: 'health', label: 'Health', href: '/admin/desk/health', icon: IconSite },
   // IconBolt is Warden's own glyph — it is what the chat card and the status
   // tag already use for the daemon, so the tab and the thing it leads to agree.
   { key: 'agent', label: 'Agent', href: '/admin/desk/agent', icon: IconBolt },
-  { key: 'health', label: 'Health', href: '/admin/desk/health', icon: IconSite },
 ];
+
+/**
+ * Keys that no longer have a pill of their own, and the pill that stands in.
+ *
+ * 🚨 WITHOUT THIS, THREE OF THE PILE'S SIX LENSES LIGHT NOTHING.
+ * `activeTabFor(view)` returns 'ledger' for the orders, sales and books
+ * lenses — correct while there was a Ledger pill, and after this phase it is a
+ * key no tab carries, so both bars would match nothing and the operator could
+ * not tell which board they were standing on. The Ledger's route 307s onto the
+ * pile, so the pile IS where a ledger lens lives; the alias says that in one
+ * place instead of editing a file this track does not own.
+ *
+ * ⚠️ ONLY 'ledger' HAS A LIVE PRODUCER, AND SAYING SO IS THE POINT OF THIS
+ * LINE. `activeTabFor()` emits it. NOTHING emits 'site' as an `active` today —
+ * /admin/desk/site is a URL, and the board it 307s to passes 'health' — so
+ * that entry is a spare, kept because backend/src/desk/desk.service.ts still
+ * mints /admin/desk/site hrefs on all three Warden cards and the next person
+ * to wire one up is likelier to reach for the route's own name than for
+ * 'health'. If it is still unused when somebody next reads this, delete it.
+ */
+const STANDS_IN_FOR: Record<string, string> = { ledger: 'desk', site: 'health' };
+
+function litKey(active: string): string {
+  return STANDS_IN_FOR[active] ?? active;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * The counts
+ * ──────────────────────────────────────────────────────────────────────── */
+
+interface TabReading {
+  /** The figure on the badge. */
+  count: number | null;
+  /** Whether the figure is a fault rather than a workload. */
+  bad: boolean;
+  /** What a screen reader hears instead of the bare label. */
+  words: string | null;
+}
+
+/**
+ * What each tab has to say, from the one shared poll.
+ *
+ * 🚨 THIS IS THE ONLY WAY AN OPERATOR STANDING ON HEALTH LEARNS THAT SOMETHING
+ * LANDED ON NOW. Before the counts the shell knew nothing and the answer to
+ * "is there anything waiting" was to press the tab and look. That is the whole
+ * purpose of the badges; they are not ornament on a navigation bar.
+ *
+ * ⚠️ A BADGE IS DRAWN ONLY ABOVE ZERO, AND NEVER FOR A COUNT NOBODY READ.
+ * lib/desk-status.ts keeps `number` and `null` apart all the way here for one
+ * reason: a zero means stand down and a null means the question was not
+ * answered. Both render silently — a chrome that printed "0" on four tabs
+ * every morning is a chrome nobody reads — so the narrow, honest rule is that
+ * the ABSENCE of a badge never asserts a zero. What distinguishes the two on
+ * screen is the header dot, which draws the `unknown` tone in words after a
+ * sweep that could not read the gates and draws nothing at all before the
+ * first sweep lands. The residual gap, stated rather than hedged: on a cold
+ * load whose first sweep fails outright, every tab is silent and that silence
+ * looks like an all-clear until the board itself reports its own failure.
+ */
+function readingFor(key: string, counts: ReturnType<typeof useDeskStatus>['counts']): TabReading {
+  if (key === 'desk') {
+    const n = counts.now;
+    const late = counts.overdue ?? 0;
+    return {
+      count: n,
+      // ⚠️ OVERDUE COLOURS THE PILE'S BADGE; IT NEVER GETS A BADGE OF ITS OWN.
+      // The artboard paints the overdue figure bad-red inside an otherwise dim
+      // header line, and the pill has room for one number. Two numbers on one
+      // tab is a sum nobody can read at a glance.
+      bad: late > 0,
+      words:
+        n === null
+          ? null
+          : `${n} ${n === 1 ? 'thing needs' : 'things need'} you` +
+            (late > 0 ? `, ${late} overdue` : ''),
+    };
+  }
+  if (key === 'health') {
+    const n = counts.redGates;
+    return {
+      count: n,
+      bad: (n ?? 0) > 0,
+      words: n === null ? null : `${n} red ${n === 1 ? 'gate' : 'gates'}`,
+    };
+  }
+  if (key === 'agent') {
+    const n = counts.proposals;
+    return {
+      count: n,
+      // A proposal waiting is work, not a fault. Colour on this surface means
+      // "something is wrong", and Warden asking permission is the system
+      // behaving exactly as designed.
+      bad: false,
+      words: n === null ? null : `${n} waiting on you`,
+    };
+  }
+  return { count: null, bad: false, words: null };
+}
+
+/**
+ * The number beside a tab's name.
+ *
+ * ⚠️ COLOUR, NOT A FILLED PILL. The Desk's palette rule is that colour is only
+ * ever state, and a badge with its own background is the only lifted box in
+ * the bar — it reads as a decoration on whichever board you happen to be
+ * standing on. Ink weight carries the count; --dk-bad carries the fault.
+ *
+ * ⚠️ AND NOTHING IS RED ON THE ACTIVE TAB. The active desktop pill is filled
+ * with --dk-ink and its text is --dk-ground, so --dk-bad on it is a light
+ * coral on a near-white ground — the one place in the bar where the state
+ * colour is least legible. It is also the one place it is least needed: the
+ * board you are standing on paints its own overdue figure red in the header
+ * sub-line. The badge matters when you are somewhere else.
+ */
+function TabCount({ n, color }: { n: number; color: string }) {
+  return (
+    <span
+      className="dk-mono"
+      aria-hidden="true"
+      style={{ fontSize: 10.5, fontWeight: 600, color, letterSpacing: '0.01em' }}
+    >
+      {n}
+    </span>
+  );
+}
 
 /** Shared arrow-key handling for both orientations. */
 function useTabRoving(count: number) {
@@ -99,23 +210,40 @@ function useTabRoving(count: number) {
 
 /* ────────────────────────────────────────────────────────────────────────
  * Desktop
+ *
+ * ⚠️ THE WIDTH MEASUREMENT THAT USED TO LIVE HERE DESCRIBED SIX PILLS AND NO
+ * COUNTS, AND BOTH HALVES HAVE MOVED. It recorded 415px of pills at 1024
+ * against the five's 330, rendered with the real Geist face on a fixture that
+ * reproduces the bar's geometry — with the 220px mark block and the 420px
+ * right-hand block shrinking to absorb it. Four pills carry strictly fewer and
+ * shorter labels than those six, so the row is narrower; what is NEW is up to
+ * four badges, each a 10.5px mono figure plus a 6px gap, which is tens of
+ * pixels back. The honest claim is the direction and the slack, not a figure:
+ * the row cannot exceed the six-pill 415 that already fitted, so nothing here
+ * can start the header scrolling. Re-measure on the same fixture before adding
+ * a fifth pill.
  * ──────────────────────────────────────────────────────────────────────── */
 
 export function TopTabs({ active }: { active: string }) {
   const { refs, onKeyDown } = useTabRoving(DESK_TABS.length);
+  const { counts } = useDeskStatus();
+  const lit = litKey(active);
   return (
     <div role="tablist" aria-label="Desk surfaces" style={{ display: 'flex', gap: 4 }}>
       {DESK_TABS.map((t, i) => {
-        const on = t.key === active;
+        const on = t.key === lit;
+        const reading = readingFor(t.key, counts);
+        const aria = reading.words ? `${t.label}, ${reading.words}` : undefined;
         return (
           <Link
             key={t.key}
             href={t.href}
             role="tab"
             aria-selected={on}
+            aria-label={aria}
             // Only the active tab is reachable by Tab; the arrows move within
-            // the group. That is the tablist contract, and it stops the five
-            // surfaces eating five stops on the way to the pile.
+            // the group. That is the tablist contract, and it stops the four
+            // surfaces eating four stops on the way to the pile.
             tabIndex={on ? 0 : -1}
             ref={(el) => {
               refs.current[i] = el;
@@ -124,6 +252,7 @@ export function TopTabs({ active }: { active: string }) {
             style={{
               display: 'inline-flex',
               alignItems: 'center',
+              gap: 6,
               height: 'var(--dk-h-control)',
               padding: '0 14px',
               borderRadius: 'var(--dk-radius-pill)',
@@ -137,6 +266,14 @@ export function TopTabs({ active }: { active: string }) {
             }}
           >
             {t.label}
+            {reading.count !== null && reading.count > 0 ? (
+              <TabCount
+                n={reading.count}
+                color={
+                  on ? 'var(--dk-ground)' : reading.bad ? 'var(--dk-bad)' : 'var(--dk-ink-3)'
+                }
+              />
+            ) : null}
           </Link>
         );
       })}
@@ -150,6 +287,8 @@ export function TopTabs({ active }: { active: string }) {
 
 export function BottomTabs({ active }: { active: string }) {
   const { refs, onKeyDown } = useTabRoving(DESK_TABS.length);
+  const { counts } = useDeskStatus();
+  const lit = litKey(active);
   return (
     <nav
       role="tablist"
@@ -165,6 +304,10 @@ export function BottomTabs({ active }: { active: string }) {
         // 78 tall including 20 of home-indicator room. The safe-area inset is
         // added on top rather than baked in, so it is right on a notched
         // phone and costs nothing on one without.
+        //
+        // ⚠️ FOUR TABS DO NOT CHANGE THIS HEIGHT, and three other places
+        // depend on it: components/desk/overlays.tsx (the undo toast's lift),
+        // app/admin/desk/orders-register.tsx, and --dk-board-pad in tokens.css.
         height: 78,
         paddingTop: 8,
         // ⚠️ CLAMPED, exactly as components/bottom-tab-bar.tsx is. Chrome for
@@ -181,14 +324,17 @@ export function BottomTabs({ active }: { active: string }) {
       }}
     >
       {DESK_TABS.map((t, i) => {
-        const on = t.key === active;
+        const on = t.key === lit;
         const Icon = t.icon;
+        const reading = readingFor(t.key, counts);
+        const aria = reading.words ? `${t.label}, ${reading.words}` : undefined;
         return (
           <Link
             key={t.key}
             href={t.href}
             role="tab"
             aria-selected={on}
+            aria-label={aria}
             tabIndex={on ? 0 : -1}
             ref={(el) => {
               refs.current[i] = el;
@@ -222,7 +368,31 @@ export function BottomTabs({ active }: { active: string }) {
             }}
           >
             <Icon size={22} />
-            <span style={{ fontSize: 10.5, fontWeight: on ? 600 : 500 }}>{t.label}</span>
+            {/* ⚠️ THE COUNT SITS BESIDE THE WORD, NOT OVER THE GLYPH. A dot
+                pinned to the icon's top-right is the phone idiom everywhere
+                else, and it is the one thing this bar cannot afford: it would
+                be the only floating mark in 78px of near-black chrome, and at
+                10.5px a two-digit figure on a 22px glyph is unreadable. Four
+                tabs leave roughly 82px of tap width at 360px (flex:1 across
+                the viewport less 8px of margin each), which is room for a
+                word and a number on one line. */}
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'baseline',
+                gap: 5,
+                fontSize: 10.5,
+                fontWeight: on ? 600 : 500,
+              }}
+            >
+              {t.label}
+              {reading.count !== null && reading.count > 0 ? (
+                <TabCount
+                  n={reading.count}
+                  color={on ? 'var(--dk-ink)' : reading.bad ? 'var(--dk-bad)' : 'var(--dk-ink-3)'}
+                />
+              ) : null}
+            </span>
           </Link>
         );
       })}

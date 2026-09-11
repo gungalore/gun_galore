@@ -5,7 +5,7 @@
  *
  * Desktop: a 56px top bar (mark · tabs · search, site dot, avatar) over a
  * 1280-wide content column with an optional 340 rail. Phone: a 56px header
- * with a title and two round buttons, and the five tabs pinned to the bottom.
+ * with a title and two round buttons, and the four tabs pinned to the bottom.
  *
  * ⚠️ NO TRANSFORM ON ANY ELEMENT IN THIS FILE. The drawer, both dialogs and
  * the search palette are `position: fixed`, and a transformed ancestor would
@@ -23,10 +23,20 @@ import { Dot } from './numbers';
 import { IconExternal, IconSearch, IconShield } from './icons';
 import { SearchPalette } from './dialogs';
 import { useDeskSearch } from './use-desk-search';
+import { useDeskStatus } from './desk-status';
 import { useIsPhone } from './interactions';
 
 export interface DeskShellProps {
-  /** Which of the five tabs is lit. */
+  /**
+   * Which of the four tabs is lit.
+   *
+   * ⚠️ A RETIRED KEY STILL LIGHTS SOMETHING. `activeTabFor()` in
+   * lib/desk-pile.ts returns 'ledger' for the orders, sales and books lenses
+   * and that pill is gone, so components/desk/tabs.tsx folds it onto the pile
+   * (STANDS_IN_FOR). Passing a key that is neither a tab nor an alias still
+   * lights nothing at all, silently — which is what lib/desk-tabs-routes.spec.ts
+   * is for.
+   */
   active: string;
   /** Phone header title — "The Desk", "Ledger". */
   title: string;
@@ -48,6 +58,36 @@ export interface DeskShellProps {
    * dot reading "Healthy" that no probe had ever produced. A status light
    * wired to nothing is worse than no light: it reads OK through an outage.
    * Omitted means the dot is not drawn at all.
+   *
+   * ⚠️ IT IS NOW AN OVERRIDE, NOT THE SOURCE. The shared poll
+   * (DeskStatusProvider) reads the same gates every 60 seconds from every
+   * board, so the dot is live everywhere rather than only on the board that
+   * happened to fetch them. A page may still pass its own — Health does,
+   * computed from the board read it already has on screen — and what it passes
+   * wins.
+   *
+   * 🚨 AND THE REASON IT WINS IS COHERENCE, NOT FRESHNESS. The old comment
+   * said "a board holding a fresher reading should not be overruled", and
+   * Health held a fresher reading for about as long as it took the poll to
+   * sweep again: it read its board ONCE, with no interval and no focus
+   * re-read, so the prop froze at mount while the thing it was overruling kept
+   * re-reading. A frozen value cannot be justified as the fresher one.
+   * Health now re-reads on the same 60s cadence and the same focus event
+   * (app/admin/desk/health/page.tsx), so neither is systematically fresher —
+   * they are two independent timers on one endpoint and either can be up to a
+   * poll ahead. The override earns its place because the dot in the header and
+   * the gates card six inches below it are read by the operator as one
+   * statement, and they must come from one read.
+   *
+   * ⚠️ A BOARD THAT CANNOT READ MUST PASS `undefined`, NOT A VERDICT. Health
+   * passes nothing while its own read is failing, so the shared sweep answers
+   * instead — a board shouting "Not read" over a poll that managed it is worse
+   * than either alone. This only works because the prop is `??`-ed, not
+   * ternaried on a board identity.
+   *
+   * ⚠️ AND THE NO-DEFAULT RULE SURVIVES THE PROVIDER. statusDot() returns
+   * undefined until a read has actually happened, and the `unknown` tone — not
+   * a green one — for a read that asked for the gates and did not get them.
    */
   site?: { tone: 'ok' | 'warn' | 'bad' | 'unknown'; word: string };
   /**
@@ -114,13 +154,29 @@ export function DeskShell({
    */
   const search = useDeskSearch();
 
+  /**
+   * 🚨 THE DOT COMES FROM THE SHARED POLL NOW, AND BEFORE IT THE LIGHT ONLY
+   * EXISTED WHILE SOMEBODY WAS STANDING UNDER IT. Health used to derive it
+   * from a ONE-SHOT read on mount, so the dot was absent on every other board
+   * and went stale where it did exist. A board's own reading still wins when
+   * it passes one — see DeskShellProps.site.
+   *
+   * ⚠️ NEITHER SIDE OF THIS `??` MAY BE A LITERAL TONE. `status.dot` is
+   * undefined until something has been read and carries the `unknown` tone for
+   * a read that failed, so `site ?? status.dot ?? somethingGreen` would put
+   * back exactly the light this whole arrangement exists to remove.
+   * lib/desk-tabs-routes.spec.ts pins the line below verbatim for that reason.
+   */
+  const status = useDeskStatus();
+  const dot = site ?? status.dot;
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {phone ? (
         <PhoneHeader
           title={title}
           sub={sub}
-          site={site}
+          site={dot}
           onSearch={() => {
             search.open();
             onSearch?.();
@@ -131,7 +187,7 @@ export function DeskShell({
       ) : (
         <DesktopBar
           active={active}
-          site={site}
+          site={dot}
           onSearch={() => {
             search.open();
             onSearch?.();
@@ -265,7 +321,7 @@ function DesktopBar({
 
       <div className="dk-row" style={{ gap: 14, width: 420, justifyContent: 'flex-end' }}>
         {/* ⚠️ AN EXIT, NOT A SURFACE. It sits with search and the site dot on
-            the right rather than among the five tabs: those are where the
+            the right rather than among the four tabs: those are where the
             work is, and this leads out of the building. */}
         {onServices ? (
           <button
@@ -424,13 +480,11 @@ function PhoneHeader({
         <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</span>
         {sub ? <span className="dk-t-meta">{sub}</span> : null}
       </div>
-      {/* Health as a header button, for a surface that measured it —
-          see DeskShellProps.site. Only the Site board passes one.
-          (This used to say "the phone ribbon is four cells, so health moves
-          into the header". The ribbon carries FIVE, Site among them, and it
-          scrolls rather than dropping any — so nothing is being rescued from
-          a squeeze here. The Desk board passes no `site` and shows the dot
-          only in its ribbon cell, which is what the artboard draws.) */}
+      {/* Health as a header button — see DeskShellProps.site.
+          ⚠️ IT IS ON EVERY BOARD NOW, because the shared poll reads the gates
+          rather than one page doing it. It used to appear only where a page
+          passed one, which meant the phone carried a health light on exactly
+          one of six surfaces. Nothing is drawn until a sweep has landed. */}
       {site ? (
         <RoundButton label={`Site: ${site.word}`}>
           <Dot tone={site.tone} />

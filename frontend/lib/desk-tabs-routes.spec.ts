@@ -28,6 +28,23 @@ function read(rel: string): string {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
+/**
+ * ⚠️ COMMENTS ARE STRIPPED BEFORE ANY SCAN FOR A LITERAL, AND THIS BRANCH HAS
+ * ALREADY PAID FOR FORGETTING IT — scripts/desk-cutover.cjs's own regex counts
+ * a literal that appears inside a comment. These files are 30-40% comment and
+ * this codebase writes the rule out longhand beside the code that obeys it, so
+ * shell.tsx QUOTES the banned default `{ tone: 'ok', word: 'Healthy' }` in the
+ * prose explaining why it is banned. A raw scan for that string finds the
+ * explanation and fails the file for documenting itself.
+ *
+ * ⚠️ A BLOCK COMMENT IS REPLACED BY ITS OWN NEWLINES, NOT BY NOTHING, so a
+ * reported line number still points at the right place.
+ */
+const strip = (src: string) =>
+  src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ''))
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
 const TABS_SRC = read('components/desk/tabs.tsx');
 
 interface ParsedTab {
@@ -70,9 +87,53 @@ function deskPages(): { file: string; active: string | null }[] {
 
 describe('the Desk tab list', () => {
   it('parses at all — a passing check over an empty list proves nothing', () => {
-    // Six at the time of writing. The floor only has to be high enough that a
-    // regex that stopped matching cannot masquerade as a clean run.
-    expect(deskTabs().length).toBeGreaterThanOrEqual(6);
+    /**
+     * Four since Phase 8 — Now, People, Health, Agent. The floor only has to
+     * be high enough that a regex that stopped matching cannot masquerade as a
+     * clean run, so it moves DOWN with the list rather than being deleted.
+     *
+     * ⚠️ THIS ASSERTION WENT RED ON THE FOUR-TAB COMMIT AND WAS LOWERED IN IT.
+     * It read `toBeGreaterThanOrEqual(6)`, and the parse over the new tabs.tsx
+     * returns 4: `expected 4 to be greater than or equal to 6`. That is the
+     * guard working, not the guard being in the way — the same run over a
+     * tabs.tsx whose object literals had changed shape would have returned 0
+     * and failed identically.
+     */
+    expect(deskTabs().length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('is exactly the four surfaces, in the order the bars draw them', () => {
+    /**
+     * ⚠️ THE ORDER IS PART OF THE CLAIM. Both bars map DESK_TABS in array
+     * order and the phone bar is muscle memory — an operator reaches for the
+     * second cell without reading it. A reorder is a real change and should
+     * have to be made here as well as there.
+     *
+     * ⚠️ AND THE KEYS ARE NOT THE LABELS. `desk` is labelled "Now": the key is
+     * a wire value that five pages and `activeTabFor()` in lib/desk-pile.ts
+     * pass, so renaming it would light no tab on three of the pile's lenses.
+     */
+    expect(deskTabs().map((t) => t.key)).toEqual(['desk', 'people', 'health', 'agent']);
+  });
+
+  it('every key a board or a helper can pass lights a tab', () => {
+    /**
+     * 🚨 activeTabFor() RETURNS 'ledger' AND THERE IS NO LEDGER PILL. It is in
+     * lib/desk-pile.ts, it answers 'ledger' for the orders, sales and books
+     * lenses, and that file is not this track's — so tabs.tsx folds the
+     * retired keys onto the surfaces that absorbed them (STANDS_IN_FOR).
+     * Without it, three of the pile's six lenses would render a bar with
+     * nothing lit: no error, no type failure, exactly the silent mismatch this
+     * whole file exists for.
+     */
+    const keys = new Set(deskTabs().map((t) => t.key));
+    const aliases = [...TABS_SRC.slice(
+      TABS_SRC.indexOf('const STANDS_IN_FOR'),
+      TABS_SRC.indexOf('function litKey'),
+    ).matchAll(/(\w+):\s*'([\w-]+)'/g)].map((m) => ({ from: m[1], to: m[2] }));
+
+    expect(aliases.map((a) => a.from)).toContain('ledger');
+    expect(aliases.filter((a) => !keys.has(a.to))).toEqual([]);
   });
 
   it('every tab leads somewhere that answers', () => {
@@ -127,8 +188,30 @@ describe('the Desk tab list', () => {
     // true: `site` used to default to `{ tone: 'ok', word: 'Healthy' }` and
     // every surface carried a green dot no probe had produced. The dot is
     // derived from the red-gate count, so exactly one board may pass one.
+    //
+    // ⚠️ SINCE PHASE 8 THE PROP IS AN OVERRIDE RATHER THAN THE SOURCE — the
+    // shared poll reads the same gates on every board — but the rule it
+    // enforces is unchanged and is why this test is rewritten rather than
+    // deleted: a second board passing a dot it computed from something else
+    // would be two lights disagreeing about one box.
     const passers = deskPages().filter((p) => /(\n|\s)site=\{/.test(read(p.file)));
     expect(passers.map((p) => p.file)).toEqual(['app/admin/desk/health/page.tsx']);
+  });
+
+  it('the shell takes the dot from the shared poll and defaults to nothing', () => {
+    /**
+     * 🚨 THE ONE THING THAT MUST NEVER COME BACK IS A FALLBACK. `site` used to
+     * default to `{ tone: 'ok', word: 'Healthy' }`, which is a green light
+     * wired to nothing — it reads OK straight through an outage. The provider
+     * makes that failure easier to reintroduce, not harder, because now there
+     * IS something to fall back to, so the rule is pinned in three parts: the
+     * shell reads the provider, a page's own value wins over it, and no
+     * literal tone is written in the shell at all.
+     */
+    const shell = strip(read('components/desk/shell.tsx'));
+    expect(shell).toMatch(/useDeskStatus\(\)/);
+    expect(shell).toMatch(/const dot = site \?\? status\.dot/);
+    expect(shell).not.toMatch(/word:\s*'Healthy'/);
   });
 });
 
@@ -146,21 +229,12 @@ describe('the Desk tab list', () => {
  */
 describe('the Warden routes are reachable from the Agent board', () => {
   /**
-   * ⚠️ COMMENTS ARE STRIPPED BEFORE SCANNING, AND THAT IS NOT TIDINESS — the
-   * same rule components/desk/safe-area-clamp.spec.tsx follows, for the same
-   * reason. These files are 30-40% comment and this codebase writes the rule
-   * out longhand beside the code that obeys it, so the Agent page NAMES the
-   * PAUSE_INSTRUCTION hack in prose while not containing it. Scanning raw text
-   * fails on the explanation of the rule.
-   *
-   * ⚠️ A BLOCK COMMENT IS REPLACED BY ITS OWN NEWLINES, NOT BY NOTHING, so a
-   * reported line number still points at the right place.
+   * ⚠️ COMMENTS ARE STRIPPED BEFORE SCANNING (see `strip` at the top of this
+   * file), AND THAT IS NOT TIDINESS — the same rule
+   * components/desk/safe-area-clamp.spec.tsx follows, for the same reason. The
+   * Agent page NAMES the PAUSE_INSTRUCTION hack in prose while not containing
+   * it, so scanning raw text fails on the explanation of the rule.
    */
-  const strip = (src: string) =>
-    src
-      .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ''))
-      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-
   const AGENT = ['page.tsx', 'queue.tsx', 'runs.tsx', 'thread.tsx']
     .map((f) => strip(read(`app/admin/desk/agent/${f}`)))
     .join('\n');
