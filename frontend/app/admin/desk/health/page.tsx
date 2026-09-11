@@ -36,10 +36,18 @@
  * /admin/settings entry records the loss; that entry is marked `partial`
  * because it now is.
  *
- * ⚠️ THE SHELL'S SITE DOT IS DERIVED HERE AND NOWHERE ELSE, because the gates
- * are here. Agent deliberately passes none — DeskShell's own comment records
- * what happened when every surface carried a hard-coded green "Healthy": a
- * status light wired to nothing reads OK straight through an outage.
+ * ⚠️ THIS IS THE ONLY BOARD THAT PASSES THE SHELL A SITE DOT, AND IT IS AN
+ * OVERRIDE OVER THE SHARED SWEEP RATHER THAN THE ONLY SOURCE — the sweep reads
+ * the same gates from every board (components/desk/desk-status.tsx). Agent and
+ * the rest deliberately pass none, and DeskShell's own comment records what
+ * happened when every surface carried a hard-coded green "Healthy": a status
+ * light wired to nothing reads OK straight through an outage.
+ *
+ * 🚨 AND AN OVERRIDE THAT DOES NOT REFRESH IS THAT SAME LIGHT WITH EXTRA
+ * STEPS. This page read its board once on mount and passed the result for as
+ * long as the operator stood here, beating a poll that was re-reading every
+ * minute. It now re-reads on the same cadence, and passes NOTHING while its
+ * own read is failing. See the load effect and `ownVerdict`.
  */
 import * as React from 'react';
 import {
@@ -73,6 +81,13 @@ import { ProbesAndQueues, ServicesAndJobs } from './services';
 import { ThisDevice } from './this-device';
 import { TrustSafety } from './trust-safety';
 import { ServerVitals } from './vitals';
+import { redGateCount, statusDot } from '../../../../lib/desk-status';
+
+/**
+ * How often this board re-reads itself. The shared status sweep
+ * (components/desk/desk-status.tsx) and the pile both use the same figure.
+ */
+const BOARD_RELOAD_MS = 60_000;
 
 export default function HealthPage() {
   const phone = useIsPhone();
@@ -88,18 +103,65 @@ export default function HealthPage() {
   const [sendPreset, setSendPreset] = React.useState<SendPreset>({ open: false });
   const [whatsappThread, setWhatsappThread] = React.useState<string | null>(null);
 
+  /**
+   * ⚠️ IN-FLIGHT GUARD, because this now runs on a timer. /admin/desk/site/board
+   * awaits `warden.checkBoard()` behind an 8-second read timeout (see
+   * ./board.ts), and a hung daemon is exactly the state an operator is on this
+   * board to diagnose — so without this a stuck read would stack a second one
+   * on top of it every minute.
+   *
+   * ⚠️ AND A STUCK READ THEN STOPS THE BOARD RE-READING AT ALL, because
+   * deskFetch has no timeout of its own: `inFlight` stays true, every later
+   * tick returns at the guard, and this board keeps passing the shell the last
+   * verdict it managed to compute. Stacking requests against a hung endpoint is
+   * the worse of the two, so the guard stays — but a deadline on deskFetch is
+   * what would actually fix it, and that is not in this file.
+   */
+  const inFlight = React.useRef(false);
+
   const load = React.useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     try {
       setBoard(await fetchHealthBoard());
       setLoadedAt(new Date().toISOString());
       setError(null);
     } catch (err) {
+      // ⚠️ THE BOARD IS NOT CLEARED. A failed RE-read leaves the last one on
+      // screen with its own timestamp under "This device", and the failure is
+      // reported above it rather than replacing it — see the FailedRegion
+      // below. What is withheld is the DOT, not the data.
       setError(describeFailure(err));
+    } finally {
+      inFlight.current = false;
     }
   }, []);
 
+  /**
+   * 🚨 IT USED TO READ ONCE AND NEVER AGAIN, AND THE SHELL'S SITE DOT TOOK ITS
+   * WORD FOR IT. DeskShell prefers a board's own `site` over the shared 60s
+   * poll, so a one-shot read on mount meant the dot on THIS board was frozen
+   * at mount time and beat a live reading for as long as the operator stood
+   * here — on the one surface whose whole job is to say what the box is doing
+   * right now. Same cadence and the same focus event as the shared sweep, for
+   * the same reason its comment gives: an operator who has been in their email
+   * for ten minutes should not act on a stale board.
+   *
+   * ⚠️ THE COST, STATED: while somebody is on Health, /admin/desk/site/board
+   * is read TWICE a minute — once here and once by the shared sweep. That is
+   * the same bargain the provider already makes with the pile feed on the Now
+   * board, and it buys the same thing: the board and the chrome fail
+   * independently.
+   */
   React.useEffect(() => {
     void load();
+    const id = setInterval(() => void load(), BOARD_RELOAD_MS);
+    const onFocus = () => void load();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [load]);
 
   /**
@@ -132,26 +194,53 @@ export default function HealthPage() {
     window.history.replaceState({}, '', window.location.pathname + search + window.location.hash);
   }, []);
 
-  const redGates = board?.gates.filter((g) => g.tone === 'bad').length ?? 0;
+  /**
+   * ⚠️ lib/desk-status.ts's redGateCount, NOT A SECOND COPY OF THE FILTER. The
+   * same predicate used to be written here and there, and that module's own
+   * comment named this file as the way to collapse them. They read one
+   * endpoint, so they could never disagree about the data — but the tab badge
+   * and the dot beside it are computed from that predicate, and two copies is
+   * how one of them acquires a `!== 'ok'` one day.
+   */
+  const redGates = board === null ? null : redGateCount(board);
+
+  /**
+   * 🚨 WHAT THIS BOARD IS ENTITLED TO SAY ABOUT THE BOX, AND WHEN IT MUST SAY
+   * NOTHING. `site` overrides the shared sweep (DeskShellProps.site), so a
+   * stale or failed read here does not merely mislead — it SUPPRESSES a live
+   * reading from the poll. So the rule is: pass a verdict only while the last
+   * read of this board SUCCEEDED, and pass `undefined` the moment it did not,
+   * which hands the dot back to the sweep. `undefined` in, `undefined` out:
+   * statusDot's three states are the same three states as everywhere else.
+   *
+   * The stale board stays on screen underneath (its cards are the last thing
+   * measured and are labelled with when); it is only the health VERDICT that
+   * is withheld, because a count that is an hour old is still a reading and a
+   * green light that is an hour old is a lie about now.
+   */
+  const ownVerdict = error !== null || redGates === null ? undefined : redGates;
 
   return (
     <DeskShell
       active="health"
       title="Health"
       sub={
-        board === null
-          ? error
+        error
+          ? board === null
             ? 'the board did not load'
-            : 'reading…'
-          : redGates
-            ? `${redGates} red ${redGates === 1 ? 'gate' : 'gates'}`
-            : 'no red gates'
+            : "couldn't re-read the board"
+          : redGates === null
+            ? 'reading…'
+            : redGates
+              ? `${redGates} red ${redGates === 1 ? 'gate' : 'gates'}`
+              : 'no red gates'
       }
-      // ⚠️ NO DOT UNTIL THE BOARD LANDS. `site` is optional and omitting it
-      // draws nothing; defaulting to green here would put a healthy light over
-      // a board that has not been read, which is the failure DeskShell's own
-      // comment records.
-      site={board === null ? undefined : { tone: redGates ? 'bad' : 'ok', word: redGates ? 'Attention' : 'Healthy' }}
+      // ⚠️ NO DOT UNTIL THIS BOARD HAS A READING OF ITS OWN THAT WORKED.
+      // `site` is optional and omitting it defers to the shared sweep;
+      // defaulting to green here would put a healthy light over a board that
+      // has not been read, which is the failure DeskShell's own comment
+      // records.
+      site={statusDot(ownVerdict)}
     >
       {phone ? null : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -181,18 +270,31 @@ export default function HealthPage() {
             the second copy is where they stop. The cost is honest and worth
             knowing: a reader who scrolls past this panel sees a gap where the
             vitals were, with the explanation above rather than in place. */}
+        {/* ⚠️ A FAILED RE-READ IS A DIFFERENT SCREEN FROM A FAILED FIRST READ,
+            AND THE BOARD NOW RE-READS EVERY MINUTE. On a cold failure there is
+            nothing to show and this panel stands alone. On a refresh failure
+            the four cards below still hold the last reading that landed — and
+            ThisDevice above prints when — so the panel reports the failure and
+            the cards stay put rather than a minute-old 500 blanking a board
+            the operator was reading. The one thing the stale read does NOT get
+            to do is colour the site dot; see `ownVerdict`. */}
         {error ? (
           <FailedRegion
-            title="Couldn't load the gates, vitals and channels"
+            title={
+              board
+                ? "Couldn't re-read the gates, vitals and channels"
+                : "Couldn't load the gates, vitals and channels"
+            }
             detail={error}
             onRetry={() => void load()}
-            scopeNote="only the four cards that read /admin/desk/site/board — the probes, alerts, credits and reports below read their own endpoints"
+            scopeNote={
+              board
+                ? 'the gates, vitals and channels below are the last read that landed — the time is under This device — and the probes, alerts, credits and reports read their own endpoints'
+                : 'only the four cards that read /admin/desk/site/board — the probes, alerts, credits and reports below read their own endpoints'
+            }
           />
-        ) : !board ? (
-          <SkeletonPile count={2} />
-        ) : (
-          <ConfigGates gates={board.gates} />
-        )}
+        ) : null}
+        {board ? <ConfigGates gates={board.gates} /> : error ? null : <SkeletonPile count={2} />}
 
         <ServicesAndJobs />
         <ProbesAndQueues />

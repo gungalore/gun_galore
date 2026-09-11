@@ -18,6 +18,16 @@
  * Deliberately NOT wrapped in <RequireDeskSession>: this is the one page under
  * /admin that a signed-out visitor is supposed to reach.
  *
+ * ⚠️ AND IT IS WHERE AN OFFLINE SESSION LANDS, which is why Phase 9 matters
+ * here. RequireDeskSession replaces() to this path when refreshDeskSession()
+ * comes back `unreachable` — and this route is network-only in the service
+ * worker, so with no signal that navigation failed and the operator got the
+ * browser's error page. `/admin/login` starts with /admin, so it is now
+ * covered by the Desk's own stand-in document (lib/desk-offline.ts): the
+ * bounce ends on a page in the right skin that says the box is unreachable,
+ * rather than on a dead end. Nothing in this file changed to make that true —
+ * it is recorded here because this file is where somebody will look.
+ *
  * ⚠️ NO TRANSFORM HERE OR ABOVE — same rule as the desk layout, for the same
  * reason (fixed-position descendants re-anchor to a transformed ancestor).
  */
