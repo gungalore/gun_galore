@@ -39,7 +39,12 @@ import {
   type CheckStatus,
   type Sweep,
   type SweepMemory,
+  type WardenAuditEntry,
+  type WardenAuditView,
   type WardenChatMessage,
+  type WardenCheckBoard,
+  type WardenCheckRow,
+  type WardenPause,
   type WardenProposal,
 } from '../checks/index.js';
 import { createRuntime, runApprovedProposal, type ExecRuntime, type WardenAuditRecord } from '../exec/index.js';
@@ -50,12 +55,13 @@ import {
   fixedMessage,
   note,
   operatorSaid,
+  projectAudit,
   projectProposal,
   ranMessage,
   standingList,
   startedMessage,
 } from './messages.js';
-import type { StoredProposal, WardenStore } from './store.js';
+import { WIRE_AUDIT_LIMIT, type StoredProposal, type WardenStore } from './store.js';
 
 /** A sweep whose faults are unchanged is re-diagnosed no more often than
  *  this — the checks keep running every tick, but a model call for the same
@@ -73,20 +79,47 @@ const DEFAULT_CHAT_BUDGET_MS = 18_000;
  *  named, never silently dropped. */
 const MAX_TRANSITION_MESSAGES = 8;
 
+/**
+ * How long POST /sweep waits for a forced sweep before answering anyway.
+ *
+ * ⚠️ SIZED AGAINST THE BACKEND'S WRITE TIMEOUT (25s) AND NGINX'S CUT (60s),
+ * NOT AGAINST HOW LONG A SWEEP TAKES. A full forced sweep runs every check,
+ * and the expensive ones are budgeted sixty seconds EACH at concurrency four
+ * — it can legitimately outlive both. Holding the connection until it
+ * finished would give the operator a 502 while the sweep carried on unseen,
+ * which is the one outcome the whole "no request waits for a measurement"
+ * rule exists to prevent. Answering early with `finished: false` is true and
+ * useful; the sweep lands on the board by itself.
+ */
+const DEFAULT_SWEEP_BUDGET_MS = 20_000;
+
 export type CoreFailure = { ok: false; status: 400 | 404 | 409 | 503; reason: string };
 export type CoreMessages = { ok: true; messages: WardenChatMessage[] };
 export type CoreResult = CoreMessages | CoreFailure;
 
-export interface GateRow {
-  id: string;
-  title: string;
-  status: CheckStatus;
-  verdict: string;
-  gateKey: string | null;
-  standing: boolean;
-  measuredAt: string;
-  fresh: boolean;
-}
+/**
+ * ⚠️ THIS SHAPE MOVED INTO THE MIRRORED BLOCK OF types.ts AND IS NOW
+ * `WardenCheckRow`. It used to be declared here, outside anything either
+ * side calls a mirror, while the backend held its own twin under a different
+ * name — so the two agreed by luck and adding a field to one was completely
+ * silent. The alias stays because state/index.ts exports it and callers
+ * import it by this name; the declaration must not come back.
+ */
+export type GateRow = WardenCheckRow;
+
+/**
+ * How long a pause may last, and what you get if you ask for nothing.
+ *
+ * ⚠️ THERE IS NO "PAUSE INDEFINITELY", AND THAT IS THE POINT. A pause is set
+ * during an incident or a deploy, by somebody who is mid-something else, and
+ * the one thing nobody ever does is come back and resume it. An open-ended
+ * pause is a Warden that has silently stopped proposing fixes for a month
+ * while the board still says it is watching. Twenty-four hours is long enough
+ * to cover any deploy or maintenance window on this box and short enough that
+ * a forgotten pause fixes itself.
+ */
+const MAX_PAUSE_MINUTES = 24 * 60;
+const DEFAULT_PAUSE_MINUTES = 60;
 
 export interface CoreOptions {
   store: WardenStore;
@@ -115,7 +148,20 @@ export class WardenCore {
   private readonly chatBudgetMs: number;
   private readonly onError: (where: string, error: string) => void;
 
-  private sweeping = false;
+  /**
+   * The sweep currently running, if one is.
+   *
+   * ⚠️ A PROMISE, NOT A BOOLEAN, BECAUSE POST /sweep HAS TO JOIN ONE. The
+   * boolean this replaced could only answer "is one running", which is all
+   * tick() needs — it refuses overlap and returns. An operator who has just
+   * fixed something and asked for a re-measure must not be told "no" because
+   * the 60-second loop happened to fire half a second earlier; they have to
+   * be able to wait for the answer. `forced` travels with it so the response
+   * can say whether the board they got back was a full re-measure or a
+   * cadence sweep they joined, which are different claims about how much of
+   * it is fresh.
+   */
+  private inFlight: { promise: Promise<Sweep | null>; forced: boolean } | null = null;
   private lastSweep: Sweep | null = null;
   private lastFaultSignature: string | null = null;
   private lastDiagnoseAt = 0;
@@ -139,10 +185,20 @@ export class WardenCore {
   // ── GET /chat ─────────────────────────────────────────────────────────
 
   /** Memory only. Never a sweep, never a model call — see property 1. */
-  chat(): { lastCheckAt: string | null; messages: WardenChatMessage[]; proposals: WardenProposal[] } {
+  chat(): {
+    lastCheckAt: string | null;
+    messages: WardenChatMessage[];
+    proposals: WardenProposal[];
+    paused: WardenPause | null;
+  } {
     const { lastCheckAt, messages, proposals, dropped } = this.store.snapshot();
     if (dropped > 0) this.onError('snapshot', `${dropped} stored record(s) failed our own wire rules and were not sent`);
-    return { lastCheckAt, messages, proposals };
+    // ⚠️ THE PAUSE RIDES ON THE THREAD, NOT ONLY ON THE BOARD. The Desk's
+    // chat panel is where an operator looks to see whether Warden is working;
+    // a paused Warden that simply says nothing is indistinguishable from a
+    // healthy one with nothing to report, which is this project's signature
+    // failure mode.
+    return { lastCheckAt, messages, proposals, paused: this.pausedNow() };
   }
 
   // ── GET /proposals/:id ────────────────────────────────────────────────
@@ -369,29 +425,147 @@ export class WardenCore {
   // ── the board, for a curl on the box ──────────────────────────────────
 
   /**
-   * ⚠️ NOT PROXIED. The Desk's own GET /admin/warden/gates is answered inside
-   * the Nest process from DeskSiteService and never calls this daemon —
-   * warden.service.ts's gates() makes no network call at all. This exists so
-   * an operator on the box can see the measured board without reading the
-   * thread, and so a smoke test after deploy has something to assert on.
+   * The measured board.
+   *
+   * 🚨 THE HEADER COMMENT THAT USED TO SIT HERE SAID THIS ROUTE WAS "NOT
+   * PROXIED" AND THAT "NOTHING IN THE APP DEPENDS ON IT". THAT IS FALSE AND
+   * HAS BEEN FOR SOME TIME. WardenService.checkBoard() calls GET /gates, and
+   * DeskController's GET /admin/desk/site/board renders the Site page's four
+   * vital tiles out of it. What is NOT proxied is the Desk's own
+   * /admin/warden/gates, which is a different fact entirely — CONFIG gates
+   * read inside the Nest process. Anyone who trusted the old comment while
+   * refactoring this route table would have taken the Site board down.
+   *
+   * ⚠️ `counts: null` BEFORE THE FIRST SWEEP IS NOT ZERO OF EVERYTHING. A
+   * daemon that restarted ninety seconds ago has measured nothing yet, and
+   * four zeroes render as a clean board on an unwatched box.
    */
-  gates(): { lastCheckAt: string | null; counts: Sweep['counts'] | null; rows: GateRow[] } {
+  gates(): WardenCheckBoard {
     const sweep = this.lastSweep;
-    if (!sweep) return { lastCheckAt: this.store.lastCheckAt, counts: null, rows: [] };
+    const paused = this.pausedNow();
+    if (!sweep) return { lastCheckAt: this.store.lastCheckAt, counts: null, rows: [], paused };
     return {
       lastCheckAt: this.store.lastCheckAt,
       counts: sweep.counts,
-      rows: sweep.results.map((r) => ({
-        id: r.id,
-        title: r.title,
-        status: r.status,
-        verdict: r.verdict,
-        gateKey: r.gateKey,
-        standing: r.standing,
-        measuredAt: r.measuredAt,
-        fresh: r.fresh,
-      })),
+      rows: sweep.results.map(toRow),
+      paused,
     };
+  }
+
+  // ── GET /audit ────────────────────────────────────────────────────────
+
+  /**
+   * Every execution this daemon has a record of, newest first.
+   *
+   * 🚨 THIS EXISTS BECAUSE THE AUDIT TRAIL WAS WRITE-ONLY. recordAudit() has
+   * persisted the operation, its resolved arguments, the exit code and the
+   * verbatim redacted transcript of every run since the daemon shipped — and
+   * WardenStore.auditFor() had only TEST callers. No HTTP route returned a
+   * record, no backend route proxied one, and nothing on the Desk read one.
+   * The operator's only view of a run was its `ran` chat message, which ages
+   * out of a 600-message on-disk window and a 200-message wire window; after
+   * that, "what has this agent run on the production box" was a question you
+   * answered by SSH-ing in and reading JSON.
+   *
+   * Phase 4's rule is that you must be able to READ everything it has done,
+   * FORCE it to look, and STOP it, before it is given any more reach. This is
+   * the read half.
+   */
+  audit(opts: { proposalId?: string; limit?: number } = {}): WardenAuditView {
+    const limit = clampInt(opts.limit, 1, WIRE_AUDIT_LIMIT, WIRE_AUDIT_LIMIT);
+    const { entries, truncated } = this.store.auditRecent({ proposalId: opts.proposalId, limit });
+    const wire: WardenAuditEntry[] = [];
+    let dropped = 0;
+    for (const e of entries) {
+      const projected = projectAudit(e);
+      if (projected) wire.push(projected);
+      else dropped += 1;
+    }
+    // Same reason snapshot() counts its drops: the far side normalises by
+    // dropping SILENTLY, and a run that happened and then failed to arrive is
+    // the one record whose disappearance matters most.
+    if (dropped > 0) this.onError('audit', `${dropped} audit record(s) failed our own wire rules and were not sent`);
+    return { entries: wire, truncated };
+  }
+
+  // ── POST /pause, POST /resume ─────────────────────────────────────────
+
+  /**
+   * Hold off on DIAGNOSIS and PROPOSALS until a stated instant.
+   *
+   * 🚨 THE SITE BOARD'S "PAUSE WARDEN" BUTTON DID NOT DO THIS. It posted one
+   * chat message reading "Pause. Stop acting on your safe list and stop
+   * raising proposals until I say otherwise." parseInstruction() matches
+   * exactly three literal forms — `remember:`, `forget: N` and the bare
+   * standing-list words — so that sentence fell through to `question`: it was
+   * handed to the model as prose for ONE turn and then forgotten. It was not
+   * stored as a standing instruction, the next sweep never saw it, and the
+   * word "pause" did not appear anywhere in this daemon's source. The page's
+   * own fine print ("to stop it outright, stop the daemon on the box") was
+   * the only accurate part of it.
+   *
+   * ⚠️ CHECKS KEEP RUNNING. What stops is the model call and the raising of
+   * proposals; the sweep loop, the board, the statuses and the transition
+   * messages all carry on. A paused Warden that stopped measuring would be
+   * reporting health it has not checked — the board would freeze at whatever
+   * it said the moment the operator hit pause, and nothing would say so.
+   */
+  async pause(opts: { minutes?: number; operatorId: string; reason?: string | null }): Promise<CoreResult> {
+    const minutes = clampInt(opts.minutes, 1, MAX_PAUSE_MINUTES, DEFAULT_PAUSE_MINUTES);
+    const now = this.now();
+    const at = now.toISOString();
+    const reason = typeof opts.reason === 'string' && opts.reason.trim() !== '' ? opts.reason.trim().slice(0, 500) : null;
+    const pause: WardenPause = {
+      until: new Date(now.getTime() + minutes * 60_000).toISOString(),
+      since: at,
+      operatorId: opts.operatorId,
+      reason,
+    };
+    await this.store.setPause(pause);
+
+    const messages = [
+      note(at, [
+        `Paused until ${pause.until}. I will keep measuring the box on the same cadence and I will keep telling you what turns — what I am holding is the diagnosis and any new proposal.${reason ? ` You said: "${reason}"` : ''}`,
+        'This expires by itself. I do not have an indefinite pause, because the one nobody ever comes back to resume is the one that reads as a quiet Warden for a month.',
+      ]),
+    ];
+    await this.store.appendMessages(messages);
+    return { ok: true, messages };
+  }
+
+  /** Back to work now, whatever the pause said. Resuming a Warden that is not
+   *  paused is not an error — it is the operator making sure. */
+  async resume(operatorId: string): Promise<CoreResult> {
+    const at = this.now().toISOString();
+    const was = this.pausedNow();
+    await this.store.clearPause();
+    const messages = [
+      note(at, [
+        was
+          ? `Resumed by ${operatorId}. I was holding diagnosis and proposals until ${was.until}; I am doing both again from the next sweep.`
+          : 'I was not paused, so there was nothing to resume. Diagnosis and proposals are running.',
+      ]),
+    ];
+    await this.store.appendMessages(messages);
+    return { ok: true, messages };
+  }
+
+  /**
+   * The pause as it stands RIGHT NOW — null once it has expired, whether or
+   * not anything has cleared the stored record yet.
+   *
+   * ⚠️ EXPIRY IS EVALUATED ON EVERY READ, NOT ON A TIMER. A timer that fired
+   * the resume would be a timer that does not survive a restart, and the
+   * first thing a paused daemon does after a deploy is restart. Reading the
+   * clock means a pause set before a `pm2 reload` still ends when it said it
+   * would.
+   */
+  pausedNow(): WardenPause | null {
+    const stored = this.store.pause;
+    if (!stored) return null;
+    const until = Date.parse(stored.until);
+    if (!Number.isFinite(until) || until <= this.now().getTime()) return null;
+    return stored;
   }
 
   // ── the sweep loop ────────────────────────────────────────────────────
@@ -403,10 +577,83 @@ export class WardenCore {
    * the wrong response.
    */
   async tick(): Promise<Sweep | null> {
-    if (this.sweeping) return null;
-    this.sweeping = true;
+    // ⚠️ REFUSED, NOT QUEUED, AND NOT JOINED. A sweep that ran long is already
+    // telling you the box is busy; stacking a second one on it is the wrong
+    // response, and joining would make the 60s timer silently become "however
+    // long the last sweep took". POST /sweep is the one caller that joins,
+    // because a human is waiting on the answer.
+    if (this.inFlight) return null;
+    return this.startSweep(false);
+  }
+
+  /**
+   * POST /sweep — measure everything NOW, cadence ignored.
+   *
+   * 🚨 UNTIL THIS EXISTED THERE WAS NO WAY TO MAKE WARDEN LOOK AGAIN. Every
+   * check declares its own cadence and the engine skips one that is not due;
+   * `force: true` had exactly one caller in the whole tree — checks/cli.ts,
+   * the on-box smoke test — and `only` had none. tick() passes no options, so
+   * the loop always honoured cadence. An operator who had just renewed the
+   * origin certificate waited up to six hours to see the board agree with
+   * them, and had no way to tell "not fixed" from "not looked at again".
+   *
+   * ⚠️ IT ANSWERS WITHIN A BUDGET, RATHER THAN HOLDING THE CONNECTION. A
+   * forced sweep runs every check including the expensive ones, which are
+   * budgeted sixty seconds EACH at a concurrency of four. That can outlive
+   * the backend's 25s write timeout and nginx's 60s cut, and a request that
+   * outlives nginx returns 502 to the operator while the work carries on
+   * unseen. So the sweep is started, raced against a budget, and if it is
+   * still running when the budget expires the answer says `finished: false`
+   * — the sweep continues and lands on the board by itself.
+   *
+   * ⚠️ A SECOND CALL JOINS THE FIRST, IT DOES NOT START ANOTHER. Two forced
+   * sweeps at once would double the box's load for no new information. When
+   * the sweep it joined was a CADENCE sweep rather than a forced one, the
+   * answer says so (`forced: false`) — some of those rows are carried
+   * forward, and reporting a cadence board as a full re-measure would be the
+   * same lie by a different route.
+   */
+  async sweepNow(opts: { budgetMs?: number } = {}): Promise<{
+    finished: boolean;
+    forced: boolean;
+    joined: boolean;
+    board: WardenCheckBoard;
+  }> {
+    const budgetMs = clampInt(opts.budgetMs, 1_000, 120_000, DEFAULT_SWEEP_BUDGET_MS);
+    const joined = this.inFlight !== null;
+    const forced = this.inFlight ? this.inFlight.forced : true;
+    const running = this.inFlight ? this.inFlight.promise : this.startSweep(true);
+
+    const raced = await Promise.race([
+      running.then(() => true as const),
+      // ⚠️ ref:false — a live timer per forced sweep would hold the process
+      // open on shutdown for no reason.
+      delay(budgetMs, undefined, { ref: false }).then(() => false as const),
+    ]);
+
+    return { finished: raced, forced, joined, board: this.gates() };
+  }
+
+  /**
+   * One sweep turn: measure, announce what turned, acknowledge what resolved,
+   * and — unless paused — diagnose.
+   *
+   * ⚠️ THE ONLY PLACE `inFlight` IS SET AND CLEARED. tick() refuses on it and
+   * sweepNow() joins it, so a second setter anywhere would break both at once
+   * and neither in a way a test would see.
+   */
+  private startSweep(forced: boolean): Promise<Sweep | null> {
+    const promise = this.sweepTurn(forced).finally(() => {
+      this.inFlight = null;
+    });
+    this.inFlight = { promise, forced };
+    return promise;
+  }
+
+  private async sweepTurn(forced: boolean): Promise<Sweep | null> {
     try {
-      const sweep = await runSweep(this.checks, this.ctx, this.memory);
+      await this.noticePauseExpiry();
+      const sweep = await runSweep(this.checks, this.ctx, this.memory, forced ? { force: true } : {});
       this.lastSweep = sweep;
       await this.store.setLastCheckAt(sweep.finishedAt);
 
@@ -416,6 +663,11 @@ export class WardenCore {
 
       await this.acknowledgeResolved(sweep);
 
+      // ⚠️ MEASUREMENT ABOVE, JUDGEMENT BELOW, AND THE PAUSE CUTS EXACTLY
+      // HERE. Everything above this line runs while paused: the board stays
+      // current, statuses are still written, and a check that turned is still
+      // announced. What a pause buys the operator is no model call and no new
+      // buttons, not a blind box.
       if (this.shouldDiagnose(sweep)) {
         this.lastDiagnoseAt = this.now().getTime();
         this.lastFaultSignature = faultSignature(sweep);
@@ -426,9 +678,21 @@ export class WardenCore {
     } catch (err) {
       this.onError('sweep', errorText(err));
       return null;
-    } finally {
-      this.sweeping = false;
     }
+  }
+
+  /** A pause that has run out is cleared and SAID OUT LOUD. Letting the record
+   *  rot silently would leave the thread's last word on the subject being
+   *  "paused", days after it stopped being true. */
+  private async noticePauseExpiry(): Promise<void> {
+    const stored = this.store.pause;
+    if (!stored || this.pausedNow()) return;
+    await this.store.clearPause();
+    await this.store.appendMessages([
+      note(this.now().toISOString(), [
+        `The pause that was set at ${stored.since} ran out at ${stored.until}. I am diagnosing and raising proposals again.`,
+      ]),
+    ]);
   }
 
   /** Announce only what CHANGED. A fault that has been red for a week is on
@@ -450,7 +714,15 @@ export class WardenCore {
     const messages = turned
       .slice(0, MAX_TRANSITION_MESSAGES)
       .map(({ result, previous }) =>
-        result.status === 'ok' ? fixedMessage(result, previous, at) : findingMessage(result, previous, at),
+        result.status === 'ok'
+          ? // ⚠️ 'unknown', ALWAYS, FROM THIS CALL SITE. All this method has is
+            // two sweeps and a status that changed; it cannot know who fixed
+            // it, and on this box the answer has always been "a human" —
+            // runSafeListOperation(), the only unattended path, has no caller
+            // outside its own tests. Passing 'warden' here would put the Desk's
+            // "fixed alone" tag on an operator's 2am repair. See fixedMessage.
+            fixedMessage(result, previous, at, 'unknown')
+          : findingMessage(result, previous, at),
       );
 
     const overflow = turned.slice(MAX_TRANSITION_MESSAGES);
@@ -487,6 +759,11 @@ export class WardenCore {
   }
 
   private shouldDiagnose(sweep: Sweep): boolean {
+    // ⚠️ THE PAUSE'S FIRST HALF. No model call at all while paused — not a
+    // cheaper one, not a quieter one. The other half is in ingest(), because
+    // POST /chat still reaches diagnose() when the operator asks a direct
+    // question and that turn can draft proposals.
+    if (this.pausedNow()) return false;
     const signature = faultSignature(sweep);
     // Healthy AND able to think: nothing to say. (With no caller we still go
     // through diagnose(), which raises the missing-credential red gate — a
@@ -513,12 +790,41 @@ export class WardenCore {
    * a finding the board already shows.
    */
   private async ingest(result: DiagnosisResult): Promise<WardenChatMessage[]> {
+    const paused = this.pausedNow();
     const suppressed = new Set<string>();
-    for (const drafted of result.proposals) {
-      const stored = await this.store.raise(drafted);
-      if (!stored) suppressed.add(drafted.id);
+
+    // ⚠️ THE PAUSE'S SECOND HALF, AND IT IS NOT REDUNDANT WITH
+    // shouldDiagnose(). A sweep will not diagnose while paused — but POST
+    // /chat goes straight to diagnose() when the operator asks a question,
+    // and that answer can draft proposals. Without this branch, "stop raising
+    // proposals" would hold until the first time the operator typed
+    // something, which is precisely when they are most likely to be talking
+    // to Warden about the thing they paused it for.
+    //
+    // Nothing is stored and nothing is silently lost: the drafts are dropped,
+    // the announcements that named them go with them (that filter already
+    // exists for the dedupe case below), and one note says what was held and
+    // how many.
+    if (paused) {
+      for (const drafted of result.proposals) suppressed.add(drafted.id);
+    } else {
+      for (const drafted of result.proposals) {
+        // A proposal the store deduplicated — an open one already names that
+        // fault — takes its announcement with it, or the thread repeats a
+        // finding the board already shows.
+        const stored = await this.store.raise(drafted);
+        if (!stored) suppressed.add(drafted.id);
+      }
     }
+
     const messages = result.messages.filter((m) => !(m.proposalId && suppressed.has(m.proposalId)));
+    if (paused && result.proposals.length > 0) {
+      messages.push(
+        note(this.now().toISOString(), [
+          `I am paused until ${paused.until}, so I have not raised ${result.proposals.length} fix${result.proposals.length === 1 ? '' : 'es'} I would otherwise have put on the board. Resume me and they come back on the next sweep.`,
+        ]),
+      );
+    }
     await this.store.appendMessages(messages);
     return messages;
   }
@@ -544,6 +850,35 @@ export class WardenCore {
 /** The identity of the CURRENT fault set. A change means "think again now";
  *  the same set means "you already thought about this". Unknowns count: a row
  *  that stopped being measurable is a change worth a fresh look. */
+/** A sweep result as one board row. One place, so GET /gates and POST /sweep
+ *  can never describe the same measurement differently. */
+function toRow(r: CheckResult): WardenCheckRow {
+  return {
+    id: r.id,
+    title: r.title,
+    status: r.status,
+    verdict: r.verdict,
+    gateKey: r.gateKey,
+    standing: r.standing,
+    measuredAt: r.measuredAt,
+    fresh: r.fresh,
+  };
+}
+
+/**
+ * ⚠️ A BAD NUMBER FALLS BACK TO THE DEFAULT, IT DOES NOT BECOME ZERO. These
+ * clamp a pause length and two budgets, all of which arrive off the wire.
+ * `Number(undefined)` is NaN and `Math.min(NaN, …)` is NaN, so a naive clamp
+ * turns "the client sent no minutes" into a pause that has already expired
+ * and a sweep budget that times out instantly — both of which look like the
+ * feature working and doing nothing.
+ */
+function clampInt(raw: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
 function faultSignature(sweep: Sweep): string {
   return sweep.results
     .filter((r) => r.status !== 'ok')

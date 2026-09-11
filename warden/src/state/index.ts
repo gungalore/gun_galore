@@ -10,6 +10,7 @@ export {
   faultKeyFor,
   WIRE_MESSAGE_LIMIT,
   WIRE_PROPOSAL_LIMIT,
+  WIRE_AUDIT_LIMIT,
   type StoredProposal,
   type StandingInstruction,
   type StoreOptions,
@@ -26,4 +27,5 @@ export {
   operatorSaid,
   note,
   newMessageId,
+  projectAudit,
 } from './messages.js';

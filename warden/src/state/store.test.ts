@@ -12,6 +12,7 @@ import path from 'node:path';
 import { WardenStore, WIRE_MESSAGE_LIMIT, WIRE_PROPOSAL_LIMIT, faultKeyFor } from './store.js';
 import { note } from './messages.js';
 import type { DraftedProposal } from '../diagnose/index.js';
+import type { WardenAuditRecord } from '../exec/index.js';
 
 const AT = '2026-09-03T08:00:00.000Z';
 
@@ -215,3 +216,86 @@ test('standing instructions can be removed by the number the operator was shown 
   assert.equal(await store.removeStanding(9), null);
   assert.equal(await store.removeStanding(0), null);
 });
+
+// ── the pause, across a restart ─────────────────────────────────────────
+
+test('a pause SURVIVES A RESTART — held in memory it would be lifted by the next deploy, which is when it was set', async () => {
+  const file = await tmpFile('state.json');
+  const a = new WardenStore({ filePath: file, now: () => new Date(AT) });
+  await a.load();
+  await a.setPause({ until: '2026-09-03T09:00:00.000Z', since: AT, operatorId: 'admin_1', reason: 'mid-deploy' });
+
+  // 🚨 THE FAILURE THIS STOPS. `pm2 reload` is a restart here (all three
+  // processes run fork mode, instances 1), so a pause held only in memory
+  // would be silently lifted by the next deploy — and a deploy is exactly
+  // when an operator pauses Warden. It would come back up diagnosing and
+  // raising proposals with nothing anywhere saying the pause had ended.
+  const b = new WardenStore({ filePath: file, now: () => new Date(AT) });
+  assert.deepEqual(await b.load(), { ok: true });
+  assert.equal(b.pause?.until, '2026-09-03T09:00:00.000Z');
+  assert.equal(b.pause?.operatorId, 'admin_1');
+  assert.equal(b.pause?.reason, 'mid-deploy');
+
+  await b.clearPause();
+  const c = new WardenStore({ filePath: file, now: () => new Date(AT) });
+  await c.load();
+  assert.equal(c.pause, null);
+});
+
+test('a state file written before pause existed loads as NOT PAUSED, and so does a garbage one', async () => {
+  const file = await tmpFile('state.json');
+  // What an older daemon wrote: the key simply is not there.
+  await fs.writeFile(file, JSON.stringify({ version: 1, messages: [], proposals: [] }), 'utf8');
+  const older = new WardenStore({ filePath: file, now: () => new Date(AT) });
+  await older.load();
+  assert.equal(older.pause, null);
+
+  // ⚠️ AND AN UNPARSEABLE `until` IS NOT A PAUSE. The two wrong answers are
+  // not symmetrical: a garbage pause treated as live is a daemon that has
+  // silently stopped proposing fixes with no end date and "Invalid Date" on
+  // the board, while a garbage pause dropped is a daemon that goes back to
+  // work and can be paused again in one request.
+  await fs.writeFile(file, JSON.stringify({ version: 1, pause: { until: 'soon', since: 'ages ago' } }), 'utf8');
+  const broken = new WardenStore({ filePath: file, now: () => new Date(AT) });
+  await broken.load();
+  assert.equal(broken.pause, null);
+});
+
+// ── the audit trail, read ───────────────────────────────────────────────
+
+test('auditRecent is newest-first and caps, so a page can never be mistaken for the whole history', async () => {
+  const store = memoryStore();
+  for (let i = 0; i < 5; i += 1) await store.recordAudit(auditRecord(`aud_${i}`, i, i < 3 ? 'prop_a' : 'prop_b'));
+
+  const all = store.auditRecent({ limit: 10 });
+  assert.deepEqual(all.entries.map((a) => a.id), ['aud_4', 'aud_3', 'aud_2', 'aud_1', 'aud_0']);
+  assert.equal(all.truncated, false);
+
+  const page = store.auditRecent({ limit: 2 });
+  assert.deepEqual(page.entries.map((a) => a.id), ['aud_4', 'aud_3']);
+  assert.equal(page.truncated, true);
+
+  const one = store.auditRecent({ proposalId: 'prop_b', limit: 10 });
+  assert.deepEqual(one.entries.map((a) => a.id), ['aud_4', 'aud_3']);
+});
+
+function auditRecord(id: string, minute: number, proposalId: string): WardenAuditRecord {
+  const at = new Date(Date.parse(AT) + minute * 60_000).toISOString();
+  return {
+    id,
+    at,
+    finishedAt: at,
+    durationMs: 1,
+    trigger: 'operator_approved',
+    operatorId: 'admin_1',
+    proposalId,
+    operation: { kind: 'approved_command', name: null, args: null },
+    command: `echo ${id}`,
+    exitCode: 0,
+    timedOut: false,
+    stdout: { text: '', truncated: false, originalBytes: 0 },
+    stderr: { text: '', truncated: false, originalBytes: 0 },
+    redactions: [],
+    recheck: null,
+  };
+}

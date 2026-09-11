@@ -9,21 +9,27 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminAuditService } from '../admin/admin-audit.service';
 import { DeskSiteService } from './desk-site.service';
-import type { ApproveProposalDto, DeclineProposalDto, SendWardenChatDto } from './warden.dto';
+import type { PauseWardenDto, ApproveProposalDto, DeclineProposalDto, SendWardenChatDto } from './warden.dto';
 import {
   WARDEN_MESSAGE_KINDS,
+  type WardenAuditEntry,
+  type WardenAuditView,
   type WardenChat,
   type WardenChatMessage,
   type WardenGate,
   type WardenGatesView,
   type WardenMessageKind,
+  type WardenPause,
   type WardenPre,
   type WardenProposal,
   type WardenProposalKind,
   type WardenProposalStatus,
   type WardenSettingRow,
   type WardenCheckBoard,
+  type WardenCheckRow,
   type WardenSettingsView,
+  type WardenSweepResult,
+  type WardenTruncatedText,
 } from './warden.types';
 
 /**
@@ -66,6 +72,26 @@ const MAX_PROPOSALS = 50;
 const MAX_BODY_PARAGRAPHS = 12;
 const MAX_TEXT = 4_000;
 const MAX_PRE_LINES = 40;
+
+/**
+ * ⚠️ THE AUDIT CAPS ARE NOT THE CHAT CAPS. A record carries the verbatim
+ * stdout and stderr of a command that ran on the box; the daemon already
+ * clamps each to 4 KB for the wire, and this is the second, independent
+ * ceiling on the same bytes. It exists because this side does not trust the
+ * daemon's clamp to still be there tomorrow — the two numbers are kept in
+ * step by hand across a package boundary with no import path between them.
+ */
+const MAX_AUDIT_ENTRIES = 50;
+const MAX_AUDIT_OUTPUT = 8_000;
+
+/** One board row per registered check. The daemon has ~25; this is a ceiling
+ *  on a hostile answer, not a limit anyone should reach. */
+const MAX_CHECK_ROWS = 200;
+
+const AUDIT_TRIGGERS = ['unattended', 'operator_approved'] as const;
+const AUDIT_OPERATION_KINDS = ['safe_list', 'approved_command'] as const;
+const RECHECK_RESULTS = ['ok', 'still-bad', 'unknown'] as const;
+const CHECK_STATUSES = ['ok', 'warn', 'bad', 'unknown'] as const;
 
 /**
  * A proposal id goes into a URL path. Warden mints cuids, but this is the
@@ -190,7 +216,7 @@ export class WardenService {
   async chat(): Promise<WardenChat> {
     const cfg = this.config();
     if (!cfg) {
-      return { present: false, note: NOT_DEPLOYED_NOTE, lastCheckAt: null, messages: [], proposals: [] };
+      return { present: false, note: NOT_DEPLOYED_NOTE, lastCheckAt: null, messages: [], proposals: [], paused: null };
     }
 
     try {
@@ -207,6 +233,12 @@ export class WardenService {
         lastCheckAt: null,
         messages: [],
         proposals: [],
+        // ⚠️ NOT "not paused". Nothing here knows whether the daemon is
+        // paused — it did not answer. `present: false` is the fact the card
+        // renders; a `paused: null` beside it is only ever read as "no pause
+        // banner", which is correct precisely because the card is already
+        // saying the daemon is unreachable.
+        paused: null,
       };
     }
   }
@@ -388,16 +420,209 @@ export class WardenService {
     const cfg = this.config();
     if (!cfg) return null;
     try {
-      const board = await this.call<WardenCheckBoard>(cfg, '/gates', {
+      const raw = await this.call<unknown>(cfg, '/gates', {
         method: 'GET',
-        timeoutMs: 8_000,
+        timeoutMs: READ_TIMEOUT_MS,
       });
-      return Array.isArray(board?.rows) ? board : null;
+      return this.normaliseCheckBoard(raw);
     } catch {
       // Already logged by call(). The caller's job is to say "not measured",
       // which is the same sentence it would say for an absent daemon.
       return null;
     }
+  }
+
+  // ── the audit trail ─────────────────────────────────────────────────────
+
+  /**
+   * Every execution the daemon has a record of, newest first.
+   *
+   * 🚨 BEFORE THIS ROUTE, NOTHING READ THE AUDIT TRAIL. The daemon wrote a
+   * record for every run — operation, resolved arguments, exit code, redacted
+   * verbatim transcript — and served it to nobody. The operator's one view of
+   * a run was its `ran` chat message, which ages out of a 600-record on-disk
+   * window and the 200-message wire window above; after that, "what did this
+   * agent run on the production box" was answerable only by SSH.
+   *
+   * A READ, SO IT NEVER THROWS, for the same reason chat() does not: the Desk
+   * renders a page around it and a 503 over a panel would take the page down.
+   * Absent and unreachable both come back `present: false` with the reason.
+   */
+  async auditTrail(opts: { proposalId?: string } = {}): Promise<WardenAuditView> {
+    const cfg = this.config();
+    if (!cfg) {
+      return {
+        present: false,
+        note: NOT_DEPLOYED_NOTE,
+        entries: [],
+        truncated: false,
+        dropped: 0,
+      };
+    }
+
+    // ⚠️ VALIDATED BEFORE IT REACHES A QUERY STRING. It is compared against
+    // stored proposal ids on the far side; an id outside the charset matches
+    // nothing that could ever have been stored, so a bad one is refused here
+    // rather than forwarded. Same rule as :id on the approve path.
+    if (opts.proposalId !== undefined && !PROPOSAL_ID_RE.test(opts.proposalId)) {
+      throw new BadRequestException('Not a proposal id.');
+    }
+
+    const path = opts.proposalId
+      ? `/audit?proposalId=${encodeURIComponent(opts.proposalId)}&limit=${MAX_AUDIT_ENTRIES}`
+      : `/audit?limit=${MAX_AUDIT_ENTRIES}`;
+
+    try {
+      const raw = await this.call<unknown>(cfg, path, { method: 'GET', timeoutMs: READ_TIMEOUT_MS });
+      const entries: WardenAuditEntry[] = [];
+      let dropped = 0;
+      const list = this.pick(raw, 'entries');
+      if (Array.isArray(list)) {
+        for (const item of list.slice(0, MAX_AUDIT_ENTRIES)) {
+          const e = this.normaliseAuditEntry(item);
+          if (e) entries.push(e);
+          // ⚠️ COUNTED, NOT JUST SKIPPED. See WardenAuditView.dropped: a
+          // record this proxy cannot render is a run the operator cannot see,
+          // and saying nothing about it turns an incomplete history into an
+          // alibi. The daemon does the same on its own side of this wire —
+          // core.ts audit() counts its drops and raises onError rather than
+          // posting a shorter list.
+          else dropped += 1;
+        }
+      }
+      if (dropped > 0) {
+        this.logger.warn(
+          `Warden audit: ${dropped} record(s) failed our wire rules and are not shown. ` +
+            'Likely a daemon/backend version skew — warden deploys as a separate, non-fatal stage.',
+        );
+      }
+      return {
+        present: true,
+        entries,
+        truncated: this.pick(raw, 'truncated') === true,
+        dropped,
+      };
+    } catch (err) {
+      this.logger.warn(`Warden audit unavailable: ${String(err)}`);
+      return {
+        present: false,
+        note: 'Warden is configured but did not answer. Nothing here is a claim that it has run nothing.',
+        entries: [],
+        truncated: false,
+        dropped: 0,
+      };
+    }
+  }
+
+  // ── forcing a look, and stopping one ────────────────────────────────────
+
+  /**
+   * Re-measure the box now, cadence ignored.
+   *
+   * 🚨 UNTIL THIS EXISTED THERE WAS NO WAY TO MAKE WARDEN LOOK AGAIN. Every
+   * check carries its own cadence and the daemon's loop always honours it —
+   * `force: true` had exactly one caller in the whole tree and it was an
+   * on-box CLI. An operator who had just renewed the origin certificate
+   * waited up to six hours for the board to agree with them, with no way to
+   * tell "not fixed" from "not looked at again".
+   *
+   * ⚠️ A WRITE, SO IT THROWS WHEN THERE IS NO DAEMON. A sweep that quietly
+   * returned an empty board would leave the operator believing the box had
+   * just been measured.
+   *
+   * ⚠️ `finished: false` COMES BACK AS A 200. The daemon answers early rather
+   * than holding a connection past nginx's cut; the sweep is running. Do not
+   * "fix" that into an error — the error would be the false statement.
+   */
+  async sweep(adminId: string): Promise<WardenSweepResult> {
+    const cfg = this.requireWarden();
+    const raw = await this.call<unknown>(cfg, '/sweep', {
+      method: 'POST',
+      body: { operatorId: adminId },
+      timeoutMs: WRITE_TIMEOUT_MS,
+    });
+    const board = this.normaliseCheckBoard(this.pick(raw, 'board'));
+    return {
+      finished: this.pick(raw, 'finished') === true,
+      forced: this.pick(raw, 'forced') !== false,
+      joined: this.pick(raw, 'joined') === true,
+      // A board the daemon could not describe is an EMPTY board with a
+      // complete zero-tally, never a partial one — normaliseCheckBoard fills
+      // counts from the rows, so zero rows honestly tallies to zero of each.
+      board: board ?? { lastCheckAt: null, counts: { ok: 0, warn: 0, bad: 0, unknown: 0 }, rows: [], paused: null },
+    };
+  }
+
+  /**
+   * Stop Warden diagnosing and raising proposals, for a while.
+   *
+   * 🚨 THE SITE BOARD'S "PAUSE WARDEN" BUTTON DID NOT DO THIS. It posted one
+   * chat message — "Pause. Stop acting on your safe list and stop raising
+   * proposals until I say otherwise." — which the daemon classified as a
+   * QUESTION: its instruction parser matches exactly `remember:`, `forget: N`
+   * and the bare standing-list words, so the sentence was handed to the model
+   * for one turn and then forgotten. It was never stored, the next sweep
+   * never saw it, and the word "pause" did not appear anywhere in the
+   * daemon's source. The page's own comment claimed it "posts a standing
+   * instruction", which was wrong in the daemon's vocabulary.
+   *
+   * ⚠️ WHAT PAUSES IS JUDGEMENT, NOT MEASUREMENT. The daemon keeps sweeping
+   * on the same cadence and keeps announcing what turns; the model call and
+   * any new proposal are what stop. Copy that says Warden is "stopped" or
+   * "off" would be wrong, and a stale board read as a live one is exactly the
+   * failure this whole module exists to prevent.
+   *
+   * ⚠️ IT EXPIRES. The daemon caps a pause at 24 hours and refuses an
+   * open-ended one, because the pause nobody comes back to resume is a
+   * watchdog silently switched off for a month.
+   */
+  async pause(adminId: string, dto: PauseWardenDto): Promise<{ ok: true; paused: WardenPause | null; messages: WardenChatMessage[] }> {
+    const cfg = this.requireWarden();
+    const reason = (dto.reason ?? '').trim();
+    const raw = await this.call<unknown>(cfg, '/pause', {
+      method: 'POST',
+      body: { operatorId: adminId, minutes: dto.minutes, reason: reason || undefined },
+      timeoutMs: WRITE_TIMEOUT_MS,
+    });
+
+    const paused = this.normalisePause(this.pick(raw, 'paused'));
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'WARDEN_PAUSE',
+      resourceType: 'Warden',
+      resourceId: 'daemon',
+      oldValue: { paused: null },
+      newValue: { paused },
+      // ⚠️ AUDITED LIKE AN APPROVE. Suspending the thing that watches the box
+      // is an operational decision somebody has to be able to point at later;
+      // AdminAuditService.record() throws on an empty reason, so one is
+      // synthesised when the operator typed none.
+      reason: reason || `Paused Warden for ${dto.minutes ?? 'the default'} minutes`,
+    });
+
+    return { ok: true as const, paused, messages: this.normaliseMessages(this.pick(raw, 'messages')) };
+  }
+
+  /** Back to work now. Resuming a Warden that is not paused is not an error —
+   *  it is the operator making sure, which is the right instinct. */
+  async resume(adminId: string): Promise<{ ok: true; paused: null; messages: WardenChatMessage[] }> {
+    const cfg = this.requireWarden();
+    const raw = await this.call<unknown>(cfg, '/resume', {
+      method: 'POST',
+      body: { operatorId: adminId },
+      timeoutMs: WRITE_TIMEOUT_MS,
+    });
+
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'WARDEN_RESUME',
+      resourceType: 'Warden',
+      resourceId: 'daemon',
+      newValue: { paused: null },
+      reason: 'Resumed Warden',
+    });
+
+    return { ok: true as const, paused: null, messages: this.normaliseMessages(this.pick(raw, 'messages')) };
   }
 
   async gates(): Promise<WardenGatesView> {
@@ -520,6 +745,184 @@ export class WardenService {
       lastCheckAt: this.iso(this.pick(raw, 'lastCheckAt')),
       messages: this.normaliseMessages(this.pick(raw, 'messages')),
       proposals: this.normaliseProposals(this.pick(raw, 'proposals')),
+      paused: this.normalisePause(this.pick(raw, 'paused')),
+    };
+  }
+
+  /**
+   * ⚠️ A PAUSE WITH NO PARSEABLE `until` IS NOT A PAUSE. The two wrong
+   * answers are not symmetrical: a garbage pause rendered as live shows the
+   * operator "paused until Invalid Date" on a Warden that is working
+   * normally, while a garbage pause dropped shows a working Warden as
+   * working. Dropping is the survivable mistake.
+   *
+   * ⚠️ AN ALREADY-EXPIRED PAUSE IS ALSO DROPPED HERE. The daemon evaluates
+   * expiry on every read and should never send one — but a clock skew of a
+   * few seconds between the two processes must not put a stale "paused"
+   * banner on the board.
+   */
+  private normalisePause(raw: unknown): WardenPause | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Record<string, unknown>;
+    const until = this.iso(r.until);
+    if (!until) return null;
+    if (Date.parse(until) <= Date.now()) return null;
+    return {
+      until,
+      since: this.iso(r.since) ?? until,
+      operatorId: typeof r.operatorId === 'string' ? this.text(r.operatorId, 64) : null,
+      reason: typeof r.reason === 'string' && r.reason.trim() ? this.text(r.reason, 500) : null,
+    };
+  }
+
+  /**
+   * 🚨 THIS READ USED TO BE THE ONE THE DAEMON WAS TRUSTED ON. checkBoard()
+   * did `this.call<WardenCheckBoard>(…)` and returned the object after a
+   * single `Array.isArray(board?.rows)` test — so daemon-authored, partly
+   * model-written `verdict` strings reached the admin browser unclamped and
+   * unvalidated, and a `counts: null` from a freshly-restarted daemon sailed
+   * through behind a NON-NULL declaration into DeskSiteService.board(), which
+   * reads `warden.counts.bad` off it. Every other daemon read in this file
+   * was normalised; this one was not, and it had no test coverage at all.
+   *
+   * ⚠️ counts IS TALLIED FROM THE ROWS WHEN THE DAEMON SENDS NONE, not
+   * defaulted to zeroes independently of them. Zero rows honestly tallies to
+   * zero of each; a row the daemon has never run carries status 'unknown' and
+   * counts as one. What must never happen is four zeroes beside a board full
+   * of bad rows.
+   */
+  private normaliseCheckBoard(raw: unknown): WardenCheckBoard | null {
+    const rawRows = this.pick(raw, 'rows');
+    if (!Array.isArray(rawRows)) return null;
+
+    const rows: WardenCheckRow[] = [];
+    for (const item of rawRows.slice(0, MAX_CHECK_ROWS)) {
+      const row = this.normaliseCheckRow(item);
+      if (row) rows.push(row);
+    }
+
+    const counts = { ok: 0, warn: 0, bad: 0, unknown: 0 };
+    for (const r of rows) counts[r.status] += 1;
+
+    return {
+      lastCheckAt: this.iso(this.pick(raw, 'lastCheckAt')),
+      counts,
+      rows,
+      paused: this.normalisePause(this.pick(raw, 'paused')),
+    };
+  }
+
+  /** ⚠️ A ROW WITH NO RECOGNISED STATUS IS DROPPED, NOT DEFAULTED TO 'ok' OR
+   *  TO 'unknown'. The Site tiles colour on it and DeskSiteService reads the
+   *  verdict as the tile's value; a mis-spelled status coerced either way is
+   *  a measurement this process has invented. */
+  private normaliseCheckRow(raw: unknown): WardenCheckRow | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Record<string, unknown>;
+    const id = this.text(r.id, 64);
+    if (!id) return null;
+    const status = CHECK_STATUSES.find((s) => s === r.status);
+    if (!status) return null;
+    const measuredAt = this.iso(r.measuredAt);
+    if (!measuredAt) return null;
+    return {
+      id,
+      title: this.text(r.title, 300) || id,
+      status,
+      // Clamped hard: this sentence is partly model-written on the daemon's
+      // side and lands in an admin browser.
+      verdict: this.text(r.verdict, 1_000),
+      gateKey: this.text(r.gateKey, 100) || null,
+      standing: r.standing === true,
+      measuredAt,
+      fresh: r.fresh === true,
+    };
+  }
+
+  /**
+   * One audit record. Dropped rather than repaired where the daemon sent
+   * something this API cannot name — same rule as a chat message, and for a
+   * stronger reason: a record IS the account of what ran on the box, and a
+   * half-understood one read as authoritative is worse than a gap somebody
+   * has to go and explain.
+   */
+  private normaliseAuditEntry(raw: unknown): WardenAuditEntry | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Record<string, unknown>;
+
+    const id = this.text(r.id, 64);
+    const at = this.iso(r.at);
+    if (!id || !at) return null;
+
+    const trigger = AUDIT_TRIGGERS.find((t) => t === r.trigger);
+    if (!trigger) return null;
+    const operationKind = AUDIT_OPERATION_KINDS.find((k) => k === r.operationKind);
+    if (!operationKind) return null;
+
+    const command = this.text(r.command, 8_000);
+    if (!command) return null;
+
+    const proposalId = this.text(r.proposalId, 64);
+    const recheckResult = RECHECK_RESULTS.find(
+      (v) => v === (r.recheck as Record<string, unknown> | undefined)?.result,
+    );
+    const recheckAt = this.iso((r.recheck as Record<string, unknown> | undefined)?.at);
+
+    return {
+      id,
+      proposalId: proposalId && PROPOSAL_ID_RE.test(proposalId) ? proposalId : '',
+      at,
+      // ⚠️ FALLS BACK TO `at`, NOT TO `now`. A record with an unreadable
+      // finish time still finished at some point in the past; stamping it
+      // with the current clock would make an old run look like it is
+      // happening while the operator watches.
+      finishedAt: this.iso(r.finishedAt) ?? at,
+      durationMs: typeof r.durationMs === 'number' && Number.isFinite(r.durationMs) ? r.durationMs : 0,
+      trigger,
+      operatorId: typeof r.operatorId === 'string' ? this.text(r.operatorId, 64) : null,
+      operationKind,
+      operationName: typeof r.operationName === 'string' ? this.text(r.operationName, 64) : null,
+      command,
+      exitCode: typeof r.exitCode === 'number' ? r.exitCode : null,
+      timedOut: r.timedOut === true,
+      stdout: this.normaliseTruncated(r.stdout),
+      stderr: this.normaliseTruncated(r.stderr),
+      // ⚠️ ALWAYS AN ARRAY. Empty means nothing was redacted; absent would
+      // leave a reader unable to tell that from redaction never having run.
+      redactions: Array.isArray(r.redactions) ? r.redactions.map((x) => this.text(x, 100)).filter(Boolean) : [],
+      // ⚠️ AN UNRECOGNISED RESULT COLLAPSES TO null ("nobody looked"), never
+      // to 'unknown' ("looked and could not tell"). Claiming a re-check that
+      // did not happen is the worse of the two.
+      recheck:
+        recheckResult && recheckAt
+          ? {
+              at: recheckAt,
+              result: recheckResult,
+              note: this.text((r.recheck as Record<string, unknown>).note, MAX_TEXT),
+            }
+          : null,
+    };
+  }
+
+  /**
+   * ⚠️ `originalBytes` IS NEVER RECOMPUTED FROM THE TEXT IN HAND. It is the
+   * size of the command's output BEFORE the daemon truncated it, and the
+   * whole point of the field is telling a reader how much they are NOT
+   * looking at. Measuring the clamped copy would report an 8 KB excerpt of a
+   * 4 MB log as the complete output.
+   */
+  private normaliseTruncated(raw: unknown): WardenTruncatedText {
+    if (!raw || typeof raw !== 'object') return { text: '', truncated: false, originalBytes: 0 };
+    const r = raw as Record<string, unknown>;
+    const full = typeof r.text === 'string' ? r.text : '';
+    const text = full.slice(0, MAX_AUDIT_OUTPUT);
+    return {
+      truncated: r.truncated === true || text.length < full.length,
+      text,
+      originalBytes:
+        typeof r.originalBytes === 'number' && Number.isFinite(r.originalBytes) && r.originalBytes >= 0
+          ? r.originalBytes
+          : Buffer.byteLength(full, 'utf8'),
     };
   }
 

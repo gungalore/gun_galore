@@ -45,9 +45,13 @@ function makePrisma(
         .mockResolvedValue({ _sum: { buyerTotal: null, sellerPayout: null }, _count: 0 }),
       count: jest.fn().mockResolvedValue(0),
     },
-    listing: { findMany: noRows },
+    // ⚠️ THE TWO `update` MOCKS ARE HERE TO PROVE THEY ARE NEVER CALLED.
+    // act() used to flip a listing ACTIVE and a user VERIFIED through exactly
+    // these two, straight past every control their real endpoints carry. See
+    // the act() bypass suite at the foot of this file.
+    listing: { findMany: noRows, update: jest.fn().mockResolvedValue({}) },
     listingQuestion: { findMany: noRows },
-    user: { findMany: noRows, count: jest.fn().mockResolvedValue(0) },
+    user: { findMany: noRows, count: jest.fn().mockResolvedValue(0), update: jest.fn().mockResolvedValue({}) },
     adminAlert: { findMany: noRows },
     complaint: { findMany: jest.fn().mockResolvedValue(o.complaints ?? []) },
     supportTicket: { findMany: jest.fn().mockResolvedValue(o.tickets ?? []) },
@@ -786,5 +790,65 @@ describe('a daemon proposal cannot impersonate a red gate', () => {
   it('still refuses a genuine red gate', () => {
     const desk = deskWithWarden(makePrisma(), makeWarden([]));
     expect(() => desk.later('warden:gate.VERIFYNOW_MODE')).toThrow(/red gate cannot be sunk/i);
+  });
+});
+
+
+describe('act() cannot approve a listing or verify a seller — the two card-face bypasses', () => {
+  /**
+   * 🚨 THESE TWO CASES USED TO BE ONE-LINE PRISMA WRITES THAT SKIPPED EVERY
+   * CONTROL THEIR REAL ENDPOINT CARRIES. Verbatim, as they were:
+   *
+   *   case 'listing_review:approve':
+   *     await this.prisma.listing.update({ where: { id }, data: { status: 'ACTIVE' } });
+   *   case 'seller_verification:approve':
+   *     await this.prisma.user.update({ where: { id }, data: { kycStatus: 'VERIFIED' } });
+   *
+   * The card FACE was scoped correctly — the pile only deals a seller card for
+   * kycStatus UNDER_REVIEW — but a card face is not a boundary. act() takes
+   * any string from any client holding an admin JWT and re-checked nothing, so
+   * `POST /admin/desk/seller_verification:<any user id>/act {action:"approve"}`
+   * flipped ANY user to VERIFIED: no UNDER_REVIEW guard (so a REJECTED user
+   * could be verified and two admins on two tabs both "succeeded"), no
+   * kycVerifiedAt / kycReviewedById / kycReviewedAt / kycReviewNote, no
+   * mandatory reason, no resolution of that user's open KYC_REVIEW alerts, no
+   * SMS and no email to the seller — and NO AdminAudit ROW. A seller became
+   * VERIFIED on a firearms marketplace with nothing recording who did it.
+   *
+   * The listing case was quieter and still bad: no PENDING_REVIEW guard, no
+   * review stamps, no expiresAt / listedAt / lastRenewedAt, no seller
+   * notification, and no listings.reindexById() — so a card-approved listing
+   * was ACTIVE in Postgres and ABSENT from Meilisearch. Live, and invisible in
+   * every search-driven view on the site.
+   */
+
+  it('refuses seller_verification:approve and writes NOTHING', async () => {
+    const prisma = makePrisma();
+    const desk = new DeskService(prisma as never);
+
+    await expect(desk.act('seller_verification:user_1', 'approve')).rejects.toThrow(/kyc-review/i);
+
+    // The point is not the error — it is that no write happened. A refusal
+    // that still flipped the row would be the same hole with a worse UI.
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses listing_review:approve and writes NOTHING', async () => {
+    const prisma = makePrisma();
+    const desk = new DeskService(prisma as never);
+
+    await expect(desk.act('listing_review:listing_1', 'approve')).rejects.toThrow(/review/i);
+    expect(prisma.listing.update).not.toHaveBeenCalled();
+  });
+
+  it('still dispatches the actions that are genuinely undoable card-face work', async () => {
+    const prisma = makePrisma();
+    const desk = new DeskService(prisma as never);
+
+    // ⚠️ THE REFUSALS ABOVE MUST NOT HAVE TAKEN THE DISPATCHER WITH THEM.
+    // Acknowledge writes a Setting row and nothing else; it is exactly the
+    // kind of reversible, consequence-free action act() exists for.
+    await expect(desk.act('warden:outbox-stalled', 'acknowledge')).resolves.toEqual({ ok: true });
+    expect(prisma.setting.upsert).toHaveBeenCalled();
   });
 });

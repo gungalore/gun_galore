@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 /**
  * WARDEN — request bodies.
@@ -53,6 +53,40 @@ export class ApproveProposalDto {
 
 export class DeclineProposalDto {
   /** Why it was refused. Warden reads declines back as standing guidance. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class PauseWardenDto {
+  /**
+   * How long to hold off, in minutes.
+   *
+   * ⚠️ THERE IS NO "PAUSE INDEFINITELY", AND THE MAXIMUM IS THE POINT. A
+   * pause is set during an incident or a deploy by somebody mid-something
+   * else, and the one thing nobody ever does is come back and resume it. An
+   * open-ended pause is a watchdog silently switched off for a month while
+   * the Site board still reads as though it is watching. The daemon clamps
+   * this to 24 hours on its own side as well; both ends refuse, because a
+   * client is not a boundary.
+   *
+   * Optional — absent means the daemon's default hour. A client sending
+   * `0` or a negative number has a bug and gets a 400 rather than a pause
+   * that expired before the response was written.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  minutes?: number;
+
+  /**
+   * Why. Optional for the operator, mandatory for the audit row —
+   * AdminAuditService.record() throws on an empty reason, so WardenService
+   * synthesises one when this is absent. Warden echoes it back into the
+   * thread so the next person reading knows why it went quiet.
+   */
   @IsOptional()
   @IsString()
   @MaxLength(500)

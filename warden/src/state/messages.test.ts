@@ -15,6 +15,7 @@ import {
   fixedMessage,
   note,
   operatorSaid,
+  projectAudit,
   projectMessage,
   projectProposal,
   ranMessage,
@@ -188,7 +189,8 @@ test('every message this daemon builds survives its own wire projection', () => 
 
   const built = [
     findingMessage(result, 'ok', AT),
-    fixedMessage({ ...result, status: 'ok', verdict: '/ is 61% full.' }, 'bad', AT),
+    fixedMessage({ ...result, status: 'ok', verdict: '/ is 61% full.' }, 'bad', AT, 'unknown'),
+    fixedMessage({ ...result, status: 'ok', verdict: '/ is 61% full.' }, 'bad', AT, 'warden'),
     ranMessage(auditRecord(), AT),
     startedMessage(proposal(), AT),
     declinedMessage(proposal(), 'Leave the overnight retries alone.', AT),
@@ -257,4 +259,100 @@ test('the footnote distinguishes "not re-checked yet" from a re-check that ran',
     ranMessage(auditRecord({ recheck: { at: AT, result: 'unknown', note: 'could not read it' } }), AT).footnote!,
     /re-checked, could not tell/,
   );
+});
+
+// ── "fixed alone" ───────────────────────────────────────────────────────
+
+test('a bad→ok transition is a NOTE that says Warden did not do it, never the "fixed alone" tag', () => {
+  const result: CheckResult = {
+    id: 'nginx-5xx',
+    title: 'nginx 5xx',
+    cost: 'cheap',
+    status: 'ok',
+    verdict: 'No 5xx in the last hour.',
+    evidence: [],
+    reason: null,
+    standing: false,
+    gateKey: null,
+    measuredAt: AT,
+    durationMs: 3,
+    fresh: true,
+  };
+
+  // 🚨 THE WHOLE POINT. The Desk renders kind 'fixed' as "fixed alone" —
+  // meaning Warden repaired it unattended. Every message this function has
+  // ever emitted came from comparing two sweeps, which cannot know who fixed
+  // anything, and on this box the answer has always been "a human":
+  // runSafeListOperation() has no caller outside its own tests. An operator
+  // who repaired nginx by hand at 02:00 was told the agent had done it.
+  const byNobodyKnown = fixedMessage(result, 'bad', AT, 'unknown');
+  assert.equal(byNobodyKnown.kind, 'note');
+  assert.match(byNobodyKnown.body.join(' '), /I did not do that/i);
+
+  // The tag survives for the one case that would earn it. Nothing reaches it
+  // today; that is the honest state of the unattended path, not a gap.
+  const byWarden = fixedMessage(result, 'bad', AT, 'warden');
+  assert.equal(byWarden.kind, 'fixed');
+  assert.match(byWarden.body.join(' '), /after something I ran/i);
+});
+
+// ── the audit trail on the wire ─────────────────────────────────────────
+
+test('an audit record survives projection with its transcript, its redaction names and its recheck intact', () => {
+  const wire = projectAudit(
+    auditRecord({ redactions: ['WARDEN_TOKEN'], recheck: { at: AT, result: 'ok', note: 'clear' } }),
+  );
+  assert.ok(wire);
+  assert.equal(wire.command, 'pm2 reload alloutdoor-backend --update-env');
+  assert.equal(wire.operationKind, 'safe_list');
+  assert.equal(wire.operationName, 'restartProcess');
+  assert.equal(wire.stdout.text, 'done');
+  assert.deepEqual(wire.redactions, ['WARDEN_TOKEN']);
+  assert.deepEqual(wire.recheck, { at: AT, result: 'ok', note: 'clear' });
+  // ⚠️ The resolved args are NOT on the wire — `command` is built from them
+  // by the same describe() the executor runs, so they are already in it.
+  assert.equal('operation' in wire, false);
+});
+
+test('the second clamp never lies about how much output there was', () => {
+  // 20 KB of stdout, as exec/audit.ts would have stored it after redacting
+  // and truncating a much larger log.
+  const stored = 'x'.repeat(20_000);
+  const wire = projectAudit(auditRecord({ stdout: { text: stored, truncated: true, originalBytes: 4_000_000 } }));
+  assert.ok(wire);
+  assert.ok(wire.stdout.text.length < stored.length, 'the wire copy is clamped again');
+  assert.equal(wire.stdout.truncated, true);
+  // 🚨 THE HONESTY RULE. originalBytes is the size of the REAL output, not of
+  // the stored copy and not of the wire copy. Recomputing it here would
+  // report a 4 KB excerpt of a 4 MB log as the whole thing, and a reader
+  // would have no way to know they were missing anything.
+  assert.equal(wire.stdout.originalBytes, 4_000_000);
+});
+
+test('a recheck result the daemon cannot name collapses to null ("nobody looked"), never to "unknown"', () => {
+  const wire = projectAudit(
+    auditRecord({ recheck: { at: AT, result: 'probably-fine' as never, note: 'x' } }),
+  );
+  assert.ok(wire);
+  // "looked and could not tell" is a claim; "nobody has looked yet" is the
+  // truth when the result is unreadable. Collapsing to 'unknown' would be the
+  // daemon asserting a re-check that never happened.
+  assert.equal(wire.recheck, null);
+});
+
+test('an audit record with an unusable proposal id still renders — the RUN is the record, the link is not', () => {
+  const wire = projectAudit(auditRecord({ proposalId: 'not a valid id!' }));
+  assert.ok(wire, 'a run that happened must not vanish because its link is unfollowable');
+  assert.equal(wire.proposalId, '');
+});
+
+test('an audit record with no id or an unparseable start time is dropped rather than half-rendered', () => {
+  assert.equal(projectAudit(auditRecord({ id: '' })), null);
+  assert.equal(projectAudit(auditRecord({ at: 'the other day' })), null);
+});
+
+test('missing output is empty and says so — never read as "the command printed nothing"', () => {
+  const wire = projectAudit(auditRecord({ stdout: undefined as never }));
+  assert.ok(wire);
+  assert.deepEqual(wire.stdout, { text: '', truncated: false, originalBytes: 0 });
 });

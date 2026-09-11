@@ -136,15 +136,20 @@ test('auth is checked BEFORE the body is read — an unauthenticated caller cann
 
 // ── the wire shape ──────────────────────────────────────────────────────
 
-test('GET /chat answers the three keys the backend reads, and lastCheckAt is null rather than a synthesized now', async () => {
+test('GET /chat answers the four keys the backend reads, and lastCheckAt is null rather than a synthesized now', async () => {
   const s = await serve();
   try {
     const res = await fetch(`${s.url}/chat`, { headers: auth() });
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('content-type'), 'application/json; charset=utf-8');
     const body = (await res.json()) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(body).sort(), ['lastCheckAt', 'messages', 'proposals']);
+    // ⚠️ `paused` JOINED THIS LIST IN PHASE 4 AND IS PART OF THE CONTRACT. A
+    // paused Warden says nothing new, which is exactly what a healthy one
+    // with nothing to report also does; without this key on the thread the
+    // chat panel cannot tell the operator which of the two they are reading.
+    assert.deepEqual(Object.keys(body).sort(), ['lastCheckAt', 'messages', 'paused', 'proposals']);
     assert.equal(body.lastCheckAt, null);
+    assert.equal(body.paused, null);
   } finally {
     await s.close();
   }
@@ -387,6 +392,179 @@ test('GET /gates is served for a curl on the box, and says so honestly before th
     const body = (await res.json()) as { counts: unknown; rows: unknown[]; lastCheckAt: unknown };
     assert.equal(body.counts, null, 'no sweep has finished — that is not zero of everything');
     assert.deepEqual(body.rows, []);
+  } finally {
+    await s.close();
+  }
+});
+
+// ── Phase 4 routes ──────────────────────────────────────────────────────
+
+test('the three new routes refuse without a token, exactly like every other one', async () => {
+  const s = await serve();
+  try {
+    // 🚨 THE AUDIT TRAIL IS THE MOST SENSITIVE THING THIS DAEMON SERVES. It
+    // carries the verbatim (redacted) output of commands run on a production
+    // box. A route that answered without the token would be handing that to
+    // anything that can reach the port.
+    for (const [method, path] of [
+      ['GET', '/audit'],
+      ['POST', '/sweep'],
+      ['POST', '/pause'],
+      ['POST', '/resume'],
+    ] as Array<[string, string]>) {
+      const res = await fetch(`${s.url}${path}`, {
+        method,
+        headers: { accept: 'application/json' },
+        ...(method === 'POST' ? { body: '{}' } : {}),
+      });
+      assert.equal(res.status, 401, `${method} ${path} answered without a token`);
+    }
+  } finally {
+    await s.close();
+  }
+});
+
+test('GET /audit answers the two keys the backend reads, and an empty trail is not an error', async () => {
+  const s = await serve();
+  try {
+    const res = await fetch(`${s.url}/audit`, { headers: auth() });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { entries: unknown[]; truncated: unknown };
+    assert.deepEqual(body.entries, []);
+    assert.equal(body.truncated, false);
+  } finally {
+    await s.close();
+  }
+});
+
+test('a proposalId filter outside the id charset is 400 — it is validated like a path segment, not trusted as "only a query string"', async () => {
+  const s = await serve();
+  try {
+    const bad = await fetch(`${s.url}/audit?proposalId=${encodeURIComponent('../chat')}`, { headers: auth() });
+    assert.equal(bad.status, 400);
+    const good = await fetch(`${s.url}/audit?proposalId=prop_40`, { headers: auth() });
+    assert.equal(good.status, 200);
+  } finally {
+    await s.close();
+  }
+});
+
+test('an unreadable ?limit= falls back to the default — Number("") is 0, and a limit of zero is an audit trail that looks empty', async () => {
+  const s = await serve();
+  try {
+    await s.store.recordAudit({
+      id: 'aud_1',
+      at: AT.toISOString(),
+      finishedAt: AT.toISOString(),
+      durationMs: 1,
+      trigger: 'operator_approved',
+      operatorId: 'admin_1',
+      proposalId: 'prop_1',
+      operation: { kind: 'approved_command', name: null, args: null },
+      command: 'echo hello',
+      exitCode: 0,
+      timedOut: false,
+      stdout: { text: 'hello', truncated: false, originalBytes: 5 },
+      stderr: { text: '', truncated: false, originalBytes: 0 },
+      redactions: [],
+      recheck: null,
+    });
+
+    const res = await fetch(`${s.url}/audit?limit=`, { headers: auth() });
+    const body = (await res.json()) as { entries: unknown[] };
+    assert.equal(body.entries.length, 1, 'the run is still there — a blank limit must not read as "nothing has run"');
+  } finally {
+    await s.close();
+  }
+});
+
+test('POST /sweep needs an operatorId — an operational record that cannot name who forced a sweep is not a record', async () => {
+  const s = await serve();
+  try {
+    const missing = await fetch(`${s.url}/sweep`, { method: 'POST', headers: auth(), body: '{}' });
+    assert.equal(missing.status, 400);
+
+    const ok = await fetch(`${s.url}/sweep`, {
+      method: 'POST',
+      headers: auth({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ operatorId: 'admin_1' }),
+    });
+    assert.equal(ok.status, 200);
+    const body = (await ok.json()) as { finished: unknown; forced: unknown; board: { rows: unknown[] } };
+    // ⚠️ 200 WITH finished:true AND AN EMPTY BOARD. This core has no checks
+    // registered; zero rows is the honest answer, not a failure.
+    assert.equal(body.finished, true);
+    assert.equal(body.forced, true);
+    assert.deepEqual(body.board.rows, []);
+  } finally {
+    await s.close();
+  }
+});
+
+test('POST /pause takes hold, shows up on /chat and /gates, and POST /resume lifts it', async () => {
+  const s = await serve();
+  try {
+    const paused = await fetch(`${s.url}/pause`, {
+      method: 'POST',
+      headers: auth({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ operatorId: 'admin_1', minutes: 30, reason: 'deploying' }),
+    });
+    assert.equal(paused.status, 200);
+    const body = (await paused.json()) as { paused: { until: string; reason: string } | null };
+    assert.ok(body.paused, 'the response carries the pause AS THE DAEMON HOLDS IT — a client that computed its own expiry from the minutes it asked for would draw one the daemon does not have');
+    assert.equal(body.paused!.reason, 'deploying');
+
+    const chat = (await (await fetch(`${s.url}/chat`, { headers: auth() })).json()) as { paused: unknown };
+    const gates = (await (await fetch(`${s.url}/gates`, { headers: auth() })).json()) as { paused: unknown };
+    assert.ok(chat.paused, 'the thread says so');
+    assert.ok(gates.paused, 'and so does the board');
+
+    const resumed = await fetch(`${s.url}/resume`, {
+      method: 'POST',
+      headers: auth({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ operatorId: 'admin_1' }),
+    });
+    assert.equal(resumed.status, 200);
+    const after = (await (await fetch(`${s.url}/chat`, { headers: auth() })).json()) as { paused: unknown };
+    assert.equal(after.paused, null);
+  } finally {
+    await s.close();
+  }
+});
+
+test('POST /pause with minutes: 0 is a 400, not a pause that expired before the response was written', async () => {
+  const s = await serve();
+  try {
+    for (const minutes of [0, -5, 'soon']) {
+      const res = await fetch(`${s.url}/pause`, {
+        method: 'POST',
+        headers: auth({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ operatorId: 'admin_1', minutes }),
+      });
+      assert.equal(res.status, 400, `minutes: ${JSON.stringify(minutes)} should be refused`);
+    }
+
+    // An ABSENT minutes is a different case: that is a client asking for the
+    // default, not a client with a bug.
+    const dflt = await fetch(`${s.url}/pause`, {
+      method: 'POST',
+      headers: auth({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ operatorId: 'admin_1' }),
+    });
+    assert.equal(dflt.status, 200);
+  } finally {
+    await s.close();
+  }
+});
+
+test('a wrong method on a Phase 4 route is 405, and GET /gates still carries the paused key', async () => {
+  const s = await serve();
+  try {
+    assert.equal((await fetch(`${s.url}/audit`, { method: 'POST', headers: auth(), body: '{}' })).status, 405);
+    assert.equal((await fetch(`${s.url}/sweep`, { headers: auth() })).status, 405);
+
+    const body = (await (await fetch(`${s.url}/gates`, { headers: auth() })).json()) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(body).sort(), ['counts', 'lastCheckAt', 'paused', 'rows']);
   } finally {
     await s.close();
   }

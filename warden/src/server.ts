@@ -1,20 +1,33 @@
 // warden/src/server.ts
 //
 // THE DAEMON'S FRONT DOOR. Transport, auth, and routing — no logic. Every
-// route is one call into WardenCore, and the five that matter are exactly the
-// five the Nest backend proxies:
+// route is one call into WardenCore, and every one of them is proxied by the
+// Nest backend:
 //
 //   GET  /chat                     ≤ 8s  on the caller's side
 //   POST /chat                     ≤ 25s
+//   GET  /gates                    ≤ 8s   (the Site board's four vital tiles)
+//   GET  /audit                    ≤ 8s   (what this daemon has actually run)
 //   GET  /proposals/:id            ≤ 8s   (the backend's own pre-approve read)
 //   POST /proposals/:id/approve    ≤ 25s
 //   POST /proposals/:id/decline    ≤ 25s
+//   POST /sweep                    ≤ 25s  (answers early rather than hanging)
+//   POST /pause                    ≤ 25s
+//   POST /resume                   ≤ 25s
 //
-// ⚠️ GET /gates IS NOT ONE OF THEM. The Desk's own /admin/warden/gates is
-// answered inside the Nest process from DeskSiteService and never calls out —
-// warden.service.ts's gates() makes no network call at all. The route below
-// exists for a curl on the box and a post-deploy smoke test; nothing in the
-// app depends on it.
+// 🚨 THE COMMENT THAT USED TO BE HERE SAID "GET /gates IS NOT ONE OF THEM"
+// AND THAT "NOTHING IN THE APP DEPENDS ON IT". IT WAS STALE AND DANGEROUS.
+// WardenService.checkBoard() calls GET /gates and DeskController's
+// GET /admin/desk/site/board renders the Site page's vital tiles from it;
+// anyone trusting that line while rearranging this route table would have
+// taken the Site board down. What is NOT proxied to this daemon is the Desk's
+// own /admin/warden/gates — a completely different fact (CONFIG gates read
+// inside the Nest process), one word apart in the UI.
+//
+// ⚠️ POST /sweep AND POST /pause ARE WRITES WITH NO BODY-SHAPED PAYLOAD, so
+// the only thing they need off the caller is who is asking. operatorId is
+// still REQUIRED on both: an audit trail that cannot name who stopped the
+// watchdog is not an audit trail.
 //
 // ⚠️ NOTHING HERE IS PUBLIC. It binds to loopback by default and every route,
 // without exception, requires the bearer token. There is no unauthenticated
@@ -51,6 +64,10 @@ export interface ServerOptions {
 interface Ctx {
   method: string;
   pathname: string;
+  /** ⚠️ PARSED HERE AND PASSED DOWN, because safePath() strips the query
+   *  string before anything logs it — a route that re-derived it from req.url
+   *  would be reading a URL the log deliberately never shows. */
+  query: URLSearchParams;
   body: unknown;
 }
 
@@ -109,7 +126,12 @@ async function handle(
     body = read.value;
   }
 
-  const ctx: Ctx = { method, pathname: url.pathname.replace(/\/+$/, '') || '/', body };
+  const ctx: Ctx = {
+    method,
+    pathname: url.pathname.replace(/\/+$/, '') || '/',
+    query: url.searchParams,
+    body,
+  };
 
   const answered = await Promise.race([
     route(ctx, core).then((r) => ({ timedOut: false as const, r })),
@@ -141,10 +163,73 @@ async function route(ctx: Ctx, core: WardenCore): Promise<Answer> {
     return methodNotAllowed(ctx);
   }
 
-  // Not proxied — see the header. Local visibility only.
+  // ⚠️ PROXIED, AND THE SITE BOARD DEPENDS ON IT — see the header.
   if (ctx.pathname === '/gates') {
     if (ctx.method !== 'GET') return methodNotAllowed(ctx);
     return { status: 200, payload: core.gates() };
+  }
+
+  /**
+   * The audit trail. `?proposalId=` narrows to one run's records.
+   *
+   * ⚠️ THE FILTER IS CHARSET-CHECKED LIKE A PATH SEGMENT, NOT TRUSTED
+   * BECAUSE IT IS "ONLY A QUERY STRING". It is compared against stored
+   * proposal ids, and an id outside WARDEN_ID_RE matches nothing that could
+   * ever have been stored — so it is dropped rather than passed through,
+   * exactly as :id is on the proposal routes.
+   */
+  if (ctx.pathname === '/audit') {
+    if (ctx.method !== 'GET') return methodNotAllowed(ctx);
+    const raw = ctx.query.get('proposalId');
+    if (raw !== null && !WARDEN_ID_RE.test(raw)) {
+      return { status: 400, payload: { error: 'proposalId is not a proposal id' } };
+    }
+    const limitRaw = ctx.query.get('limit');
+    return {
+      status: 200,
+      payload: core.audit({
+        proposalId: raw ?? undefined,
+        // An unparseable limit is left undefined for the core to default,
+        // never coerced to 0 — Number('') is 0, and a limit of zero is an
+        // empty audit trail that looks exactly like a daemon that has never
+        // run anything.
+        limit: limitRaw !== null && Number.isFinite(Number(limitRaw)) ? Number(limitRaw) : undefined,
+      }),
+    };
+  }
+
+  /**
+   * Measure everything now, cadence ignored.
+   *
+   * ⚠️ 200 WITH `finished: false` IS A SUCCESS, NOT A TIMEOUT. The sweep was
+   * started and is still running; the core answered early so this request
+   * cannot outlive nginx. A 503 here would tell the operator nothing
+   * happened, when in fact the box is being measured as they read it.
+   */
+  if (ctx.pathname === '/sweep') {
+    if (ctx.method !== 'POST') return methodNotAllowed(ctx);
+    const parsed = readOperatorBody(ctx.body);
+    if (!parsed.ok) return { status: 400, payload: { error: parsed.error } };
+    return { status: 200, payload: await core.sweepNow() };
+  }
+
+  if (ctx.pathname === '/pause') {
+    if (ctx.method !== 'POST') return methodNotAllowed(ctx);
+    const parsed = readPauseBody(ctx.body);
+    if (!parsed.ok) return { status: 400, payload: { error: parsed.error } };
+    const result = await core.pause({ minutes: parsed.minutes, operatorId: parsed.operatorId, reason: parsed.reason });
+    // The pause AS IT NOW STANDS goes back with the messages, so the caller
+    // renders the real expiry rather than re-deriving one from the minutes it
+    // asked for — the core clamps that, and a client that computed its own
+    // would draw an expiry the daemon does not hold.
+    return fromCore(result, { paused: core.pausedNow() });
+  }
+
+  if (ctx.pathname === '/resume') {
+    if (ctx.method !== 'POST') return methodNotAllowed(ctx);
+    const parsed = readOperatorBody(ctx.body);
+    if (!parsed.ok) return { status: 400, payload: { error: parsed.error } };
+    return fromCore(await core.resume(parsed.operatorId), { paused: null });
   }
 
   const proposal = /^\/proposals\/([^/]+)(?:\/(approve|decline))?$/.exec(ctx.pathname);
@@ -189,8 +274,8 @@ function methodNotAllowed(ctx: Ctx): Answer {
 /** The core's refusals already carry the status the backend needs — 404 and
  *  409 are the two it maps to their own exceptions, and everything else it
  *  turns into a generic 503 with the body discarded from the operator's view. */
-function fromCore(result: { ok: true; messages: unknown } | CoreFailure): Answer {
-  if (result.ok) return { status: 200, payload: { messages: result.messages } };
+function fromCore(result: { ok: true; messages: unknown } | CoreFailure, extra: Record<string, unknown> = {}): Answer {
+  if (result.ok) return { status: 200, payload: { messages: result.messages, ...extra } };
   return { status: result.status, payload: { error: result.reason } };
 }
 
@@ -276,6 +361,50 @@ function readApproveBody(
   if (!operatorId) return { ok: false, error: 'operatorId is required' };
   if (expectedCommand === null || expectedCommand === '') return { ok: false, error: 'expectedCommand is required' };
   return { ok: true, operatorId: operatorId.slice(0, 200), expectedCommand };
+}
+
+/**
+ * The one thing a sweep or a resume needs off the caller: who is asking.
+ *
+ * ⚠️ REQUIRED, NOT OPTIONAL, ON BOTH. Forcing a sweep and resuming a paused
+ * watchdog both change what the daemon does on a production box, and an
+ * operational record that says "somebody resumed Warden" is not a record. The
+ * backend fills it from the admin JWT's `sub`, so there is no caller for whom
+ * this is a burden.
+ */
+function readOperatorBody(body: unknown): { ok: true; operatorId: string } | { ok: false; error: string } {
+  if (!isRecord(body)) return { ok: false, error: 'expected a JSON object' };
+  const operatorId = str(body.operatorId)?.trim();
+  if (!operatorId) return { ok: false, error: 'operatorId is required' };
+  return { ok: true, operatorId: operatorId.slice(0, 200) };
+}
+
+/**
+ * ⚠️ AN ABSENT `minutes` IS A DEFAULT, A PRESENT-BUT-UNUSABLE ONE IS A 400.
+ * The two are different mistakes: a client that sent nothing gets the core's
+ * default hour, while a client that sent `"soon"` or `0` or `-5` has a bug
+ * and must hear about it. Silently rounding either of the last two up to a
+ * minimum would be a pause the operator did not ask for on a daemon they
+ * believe they have stopped; silently treating them as zero would be a pause
+ * that has expired before the response is written, which looks exactly like
+ * the button not working.
+ */
+function readPauseBody(
+  body: unknown,
+): { ok: true; operatorId: string; minutes?: number; reason: string | null } | { ok: false; error: string } {
+  const who = readOperatorBody(body);
+  if (!who.ok) return who;
+  const record = body as Record<string, unknown>;
+
+  let minutes: number | undefined;
+  if (record.minutes !== undefined && record.minutes !== null) {
+    const n = Number(record.minutes);
+    if (!Number.isFinite(n) || n < 1) return { ok: false, error: 'minutes must be a positive number' };
+    minutes = n;
+  }
+
+  const reason = str(record.reason)?.trim();
+  return { ok: true, operatorId: who.operatorId, minutes, reason: reason ? reason.slice(0, 500) : null };
 }
 
 function readDeclineBody(

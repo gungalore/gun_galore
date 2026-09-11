@@ -59,8 +59,14 @@ function harness(opts: {
   /** When true, runPlan hangs until release() is called. */
   hold?: boolean;
   runOutcome?: Partial<RunOutcome>;
+  /** A movable clock. Pause expiry is evaluated on every read rather than on
+   *  a timer — a timer would not survive the `pm2 reload` that a paused
+   *  daemon is most likely to be sitting through — so the only way to test it
+   *  is to move the clock under it. */
+  now?: () => Date;
 } = {}): Harness {
-  const store = new WardenStore({ filePath: null, now: () => AT });
+  const now = opts.now ?? (() => AT);
+  const store = new WardenStore({ filePath: null, now });
   const plans: ExecPlan[] = [];
   const errors: string[] = [];
   const seenInputs: DiagnosisInput[] = [];
@@ -85,11 +91,11 @@ function harness(opts: {
     memory: createSweepMemory(),
     caller,
     checks: opts.checks ?? [],
-    now: () => AT,
+    now,
     chatBudgetMs: 50,
     onError: (where, error) => errors.push(`${where}: ${error}`),
     exec: createRuntime({
-      now: () => AT,
+      now,
       newId: () => 'aud_test',
       async runPlan(plan) {
         plans.push(plan);
@@ -378,11 +384,20 @@ async function statuses(seq: CheckStatus[]): Promise<{ kinds: string[][]; h: Har
   return { kinds, h };
 }
 
-test('a check turning bad is announced ONCE; staying bad is not re-announced; coming back is a "fixed"', async () => {
-  const { kinds } = await statuses(['bad', 'bad', 'ok']);
+test('a check turning bad is announced ONCE; staying bad is not re-announced; coming back is a NOTE, not "fixed alone"', async () => {
+  const { kinds, h } = await statuses(['bad', 'bad', 'ok']);
   assert.deepEqual(kinds[0], ['finding']);
   assert.deepEqual(kinds[1], [], 'a fault that has been red all week must not be repeated every minute');
-  assert.deepEqual(kinds[2], ['fixed']);
+  // 🚨 THIS ASSERTED 'fixed' AND THE MESSAGE WAS A LIE EVERY TIME IT FIRED.
+  // The Desk renders kind 'fixed' as "fixed alone" — Warden repaired it,
+  // unattended. All this code path has is two sweeps and a status that
+  // changed; it cannot know who fixed it, and on this box it has never once
+  // been Warden, because runSafeListOperation() has no caller outside its own
+  // tests. An operator who fixed nginx by hand at 02:00 was told the agent
+  // had done it. The recovery is still announced — it is just honest about
+  // whose it was.
+  assert.deepEqual(kinds[2], ['note']);
+  assert.match(h.store.snapshot().messages.at(-1)!.body.join(' '), /I did not do that/i);
 });
 
 test('a check that becomes UNKNOWN is a finding, never a "fixed" — stopped being measurable is not recovered', async () => {
@@ -481,4 +496,304 @@ test('a sweep that throws is logged and the daemon stays up', async () => {
   assert.ok(sweep);
   assert.equal(sweep.results[0]!.status, 'unknown');
   assert.match(sweep.results[0]!.verdict, /kaboom/);
+});
+
+// ── Phase 4: pause, and what a pause must NOT stop ──────────────────────
+//
+// The Site board has had a "Pause Warden" button since it shipped. It posted
+// one chat message — "Pause. Stop acting on your safe list and stop raising
+// proposals until I say otherwise." — which parseInstruction() classified as
+// a QUESTION, because it matches only `remember:`, `forget: N` and the bare
+// standing-list words. It was handed to the model for one turn and then
+// forgotten; the word "pause" did not appear anywhere in this daemon. These
+// tests are what makes that button true, and what stops a future pause from
+// going too far the other way.
+
+/** A plain outcome at a given status, for a check whose only job is to turn. */
+function outcome(status: CheckStatus): CheckOutcome {
+  return status === 'unknown'
+    ? { status: 'unknown', reason: 'the log is not readable' }
+    : { status, verdict: `now ${status}`, evidence: [] };
+}
+
+/** A caller that always drafts one proposal, so "did it raise anything" has a
+ *  definite answer. */
+const PROPOSES: ModelCaller = async () => ({
+  ok: true,
+  model: 'test',
+  text: JSON.stringify({
+    items: [
+      {
+        kind: 'proposal',
+        headline: 'The backend is wedged',
+        diagnosis: 'It has not answered a health ping in four minutes.',
+        // The shape parse.ts actually accepts: a safe-list NAME plus args it
+        // re-validates itself. The model never supplies the command text.
+        fix: { type: 'safe_list', operation: 'restartProcess', args: { process: 'alloutdoor-backend' } },
+        checkIds: ['subject'],
+      },
+    ],
+  }),
+});
+
+test('a paused Warden KEEPS MEASURING and keeps announcing what turned — only the model and the proposals stop', async () => {
+  let status: CheckStatus = 'ok';
+  const h = harness({ caller: PROPOSES, checks: [check('subject', () => outcome(status))] });
+
+  await h.core.pause({ minutes: 30, operatorId: 'admin_1' });
+  status = 'bad';
+  const sweep = await h.core.tick();
+
+  // 🚨 THE HALF THAT MUST NOT PAUSE. A Warden that stopped measuring while
+  // paused would report health it has not checked: the board would freeze at
+  // whatever it said when the operator hit the button, and nothing anywhere
+  // would say so. That is a worse failure than the one pausing solves.
+  assert.equal(sweep?.results[0]?.status, 'bad', 'the check still ran');
+  assert.equal(h.core.gates().rows[0]?.status, 'bad', 'and the board still says so');
+  assert.ok(
+    h.store.snapshot().messages.some((m) => m.kind === 'finding'),
+    'a check that turned is still announced — the operator asked for quiet, not for a blindfold',
+  );
+
+  // The half that DOES pause.
+  assert.equal(h.store.openProposals().length, 0, 'nothing new was raised');
+  assert.equal(h.seenInputs.length, 0, 'and the model was never called');
+});
+
+test('the pause rides on BOTH the thread and the board, so neither can look healthy while proposals are suspended', async () => {
+  const h = harness({ caller: QUIET });
+  await h.core.pause({ minutes: 30, operatorId: 'admin_1', reason: 'mid-deploy' });
+
+  assert.ok(h.core.chat().paused, 'GET /chat carries it');
+  assert.ok(h.core.gates().paused, 'GET /gates carries it');
+  assert.equal(h.core.chat().paused?.reason, 'mid-deploy');
+});
+
+test('a pause ALWAYS expires, and 24 hours is the ceiling — the one nobody resumes is the one that matters', async () => {
+  const h = harness({ caller: QUIET });
+  // An operator (or a client with a bug) asking for a week gets a day.
+  await h.core.pause({ minutes: 60 * 24 * 7, operatorId: 'admin_1' });
+  assert.equal(Date.parse(h.core.pausedNow()!.until) - AT.getTime(), 24 * 60 * 60_000);
+});
+
+test('an absent or unusable `minutes` falls back to the default — never to zero, which is a pause that has already ended', async () => {
+  const h = harness({ caller: QUIET });
+  await h.core.pause({ operatorId: 'admin_1' });
+  assert.ok(Date.parse(h.core.pausedNow()!.until) > AT.getTime(), 'a default pause is a real pause');
+
+  await h.core.pause({ minutes: Number.NaN, operatorId: 'admin_1' });
+  assert.ok(
+    Date.parse(h.core.pausedNow()!.until) > AT.getTime(),
+    'Number(undefined) is NaN and Math.min(NaN, x) is NaN — a naive clamp turns "no minutes given" into a pause that expired before the response was written, which looks exactly like the button not working',
+  );
+});
+
+test('a pause that has run out is over WITHOUT a resume, and the thread is told so rather than left saying "paused"', async () => {
+  let clock = new Date(AT);
+  const h = harness({ caller: QUIET, checks: [check('subject', () => outcome('ok'))], now: () => clock });
+
+  await h.core.pause({ minutes: 10, operatorId: 'admin_1' });
+  assert.ok(h.core.pausedNow());
+
+  // ⚠️ NO TIMER FIRES THIS. Expiry is read off the clock on every read, so a
+  // pause set before a `pm2 reload` — which is when a paused daemon is most
+  // likely to restart — still ends exactly when it said it would.
+  clock = new Date(AT.getTime() + 11 * 60_000);
+  assert.equal(h.core.pausedNow(), null, 'it is over');
+
+  await h.core.tick();
+  assert.match(h.store.snapshot().messages.at(-1)!.body[0]!, /ran out/i);
+  assert.equal(h.store.pause, null, 'and the record is cleared, not left to rot');
+});
+
+test('a paused Warden asked a DIRECT QUESTION still answers, and still raises nothing', async () => {
+  const h = harness({ caller: PROPOSES, checks: [check('subject', () => outcome('bad'))] });
+  await h.core.pause({ minutes: 30, operatorId: 'admin_1' });
+
+  await h.core.say('what is wrong with the backend?', 'admin_1');
+  // The harness's chat budget is 50ms, so the turn lands in the thread after
+  // say() has already answered — see property 1 in core.ts.
+  await delay(120);
+
+  // 🚨 THE SECOND HALF OF THE PAUSE, AND IT IS NOT REDUNDANT WITH THE FIRST.
+  // A sweep will not diagnose while paused — but POST /chat goes straight to
+  // diagnose(), and that answer can draft proposals. Without the gate in
+  // ingest(), "stop raising proposals" would hold exactly until the operator
+  // typed something, which is when they are most likely to be talking to
+  // Warden about the thing they paused it for.
+  assert.equal(h.store.openProposals().length, 0);
+  assert.ok(
+    h.store.snapshot().messages.some((m) => /I am paused until/.test(m.body.join(' '))),
+    'and it says what it held rather than dropping it silently',
+  );
+});
+
+test('resume puts it back to work, and resuming a Warden that is not paused is not an error', async () => {
+  const h = harness({ caller: QUIET });
+  await h.core.pause({ minutes: 30, operatorId: 'admin_1' });
+  const resumed = await h.core.resume('admin_1');
+  assert.equal(resumed.ok, true);
+  assert.equal(h.core.pausedNow(), null);
+
+  // The operator making sure is the right instinct and must not be punished.
+  const again = await h.core.resume('admin_1');
+  assert.equal(again.ok, true);
+  assert.match((again as { messages: { body: string[] }[] }).messages[0]!.body[0]!, /was not paused/i);
+});
+
+// ── Phase 4: forcing a look ─────────────────────────────────────────────
+
+test('sweepNow IGNORES CADENCE — that is the whole reason it exists', async () => {
+  let runs = 0;
+  const slow: CheckModule = {
+    id: 'slow',
+    title: 'a six-hourly check',
+    cost: 'cheap',
+    // tls-origin's real cadence. An operator who had just renewed the
+    // certificate used to wait this long for the board to agree with them,
+    // with no way to tell "not fixed" from "not looked at again".
+    cadenceMs: 6 * 3_600_000,
+    async run() {
+      runs += 1;
+      return { status: 'ok', verdict: 'fine', evidence: [] };
+    },
+  };
+
+  const h = harness({ caller: QUIET, checks: [slow] });
+  await h.core.tick();
+  assert.equal(runs, 1);
+
+  await h.core.tick();
+  assert.equal(runs, 1, 'cadence held, as it should on the timer');
+
+  const forced = await h.core.sweepNow();
+  assert.equal(runs, 2, 'and an explicit ask re-measured it anyway');
+  assert.equal(forced.finished, true);
+  assert.equal(forced.forced, true);
+  assert.equal(forced.joined, false);
+  assert.equal(forced.board.rows[0]?.fresh, true);
+});
+
+test('a second sweep JOINS the one in flight rather than doubling the load, and says which one it got', async () => {
+  let release = (): void => undefined;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  let runs = 0;
+  const held: CheckModule = {
+    id: 'held',
+    title: 'held',
+    cost: 'cheap',
+    cadenceMs: 0,
+    async run() {
+      runs += 1;
+      await gate;
+      return { status: 'ok', verdict: 'fine', evidence: [] };
+    },
+  };
+
+  const h = harness({ caller: QUIET, checks: [held] });
+  // A cadence sweep is already running when the operator asks.
+  const ticking = h.core.tick();
+  await delay(5);
+
+  const joined = h.core.sweepNow({ budgetMs: 5_000 });
+  release();
+  const [, answer] = await Promise.all([ticking, joined]);
+
+  assert.equal(runs, 1, 'one sweep, not two — two at once double the box load for no new information');
+  assert.equal(answer.joined, true);
+  // ⚠️ AND IT SAYS SO. The sweep it joined was a CADENCE sweep, so some rows
+  // may be carried forward; reporting that board as a full re-measure would
+  // be the same lie the cadence problem itself is.
+  assert.equal(answer.forced, false);
+});
+
+test('a sweep that outlives its budget answers finished:false rather than holding the connection past nginx', async () => {
+  let release = (): void => undefined;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const slow: CheckModule = {
+    id: 'slow',
+    title: 'slow',
+    cost: 'cheap',
+    cadenceMs: 0,
+    async run() {
+      await gate;
+      return { status: 'ok', verdict: 'fine', evidence: [] };
+    },
+  };
+
+  const h = harness({ caller: QUIET, checks: [slow] });
+  const answer = await h.core.sweepNow({ budgetMs: 1_000 });
+
+  // 🚨 NOT A FAILURE. The sweep is running; the core answered early so the
+  // request cannot outlive nginx's 60s cut, which would hand the operator a
+  // 502 while the box was being measured behind it. A full forced sweep runs
+  // every check, and the expensive ones are budgeted sixty seconds EACH.
+  assert.equal(answer.finished, false);
+  release();
+  await h.core.drain(1_000);
+});
+
+// ── Phase 4: the audit trail, served ────────────────────────────────────
+
+test('an approved run is READABLE AFTERWARDS — before this, the record was written and served to nobody', async () => {
+  const h = harness({ caller: QUIET, runOutcome: { stdout: 'reloaded alloutdoor-backend' } });
+  const p = (await h.store.raise(drafted()))!;
+  await h.core.approve(p.id, 'admin_1', RESTART_COMMAND);
+  await delay(40);
+
+  const view = h.core.audit();
+  assert.equal(view.entries.length, 1);
+  const entry = view.entries[0]!;
+  assert.equal(entry.trigger, 'operator_approved');
+  assert.equal(entry.operatorId, 'admin_1');
+  assert.equal(entry.command, RESTART_COMMAND);
+  assert.equal(entry.stdout.text, 'reloaded alloutdoor-backend');
+  assert.equal(entry.proposalId, p.id);
+
+  // Narrowed to one run, which is the query an operator asking "what did it
+  // do to my box" actually has.
+  assert.equal(h.core.audit({ proposalId: p.id }).entries.length, 1);
+  assert.equal(h.core.audit({ proposalId: 'prop_that_never_was' }).entries.length, 0);
+});
+
+test('the audit trail is NEWEST FIRST and says when it did not carry everything', async () => {
+  const h = harness({ caller: QUIET });
+  for (let i = 0; i < 3; i += 1) {
+    await h.store.recordAudit({
+      id: `aud_${i}`,
+      at: new Date(AT.getTime() + i * 60_000).toISOString(),
+      finishedAt: new Date(AT.getTime() + i * 60_000).toISOString(),
+      durationMs: 1,
+      trigger: 'operator_approved',
+      operatorId: 'admin_1',
+      proposalId: 'prop_x',
+      operation: { kind: 'approved_command', name: null, args: null },
+      command: `echo ${i}`,
+      exitCode: 0,
+      timedOut: false,
+      stdout: { text: '', truncated: false, originalBytes: 0 },
+      stderr: { text: '', truncated: false, originalBytes: 0 },
+      redactions: [],
+      recheck: null,
+    });
+  }
+
+  // The thread reads oldest-first because it is a conversation; the audit
+  // trail reads newest-first because the question is always "what did it just
+  // do".
+  assert.deepEqual(
+    h.core.audit().entries.map((e) => e.id),
+    ['aud_2', 'aud_1', 'aud_0'],
+  );
+
+  const page = h.core.audit({ limit: 2 });
+  assert.deepEqual(
+    page.entries.map((e) => e.id),
+    ['aud_2', 'aud_1'],
+  );
+  assert.equal(page.truncated, true, 'a page that dropped older records must say so, or it reads as the whole history');
 });

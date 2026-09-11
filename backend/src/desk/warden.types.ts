@@ -97,6 +97,37 @@ export interface WardenChat {
   lastCheckAt: string | null;
   messages: WardenChatMessage[];
   proposals: WardenProposal[];
+  /**
+   * ⚠️ ON THE THREAD, NOT ONLY ON THE BOARD, AND FOR THE SAME REASON
+   * `present` IS. A paused Warden says nothing new, which is exactly what a
+   * healthy one with nothing to report also does. Without this field the
+   * chat panel cannot tell the operator which of the two they are looking at.
+   * Null means not paused.
+   */
+  paused: WardenPause | null;
+}
+
+/**
+ * Warden is holding off on DIAGNOSIS and PROPOSALS until `until`.
+ *
+ * ⚠️ HAND-MIRRORED from warden/src/types.ts. Change one, change the other.
+ *
+ * ⚠️ MEASUREMENT IS NOT PAUSED. The daemon keeps sweeping on the same cadence
+ * and keeps announcing what turns; what stops is the model call and any new
+ * proposal. Copy that says Warden is "stopped" or "off" would be wrong, and
+ * the operator would read a stale board as a live one.
+ *
+ * ⚠️ IT ALWAYS EXPIRES — the daemon caps it at 24 hours and refuses an
+ * open-ended pause. A pause nobody comes back to resume is a watchdog
+ * silently switched off for a month.
+ */
+export interface WardenPause {
+  /** ISO-8601. Past this instant the pause is over, resume or no resume. */
+  until: string;
+  /** ISO-8601, when it was set. */
+  since: string;
+  operatorId: string | null;
+  reason: string | null;
 }
 
 /**
@@ -172,8 +203,133 @@ export interface WardenCheckRow {
   fresh: boolean;
 }
 
+/**
+ * The daemon's measured board, AFTER normalisation.
+ *
+ * 🚨 `counts` IS NON-NULL HERE AND NULLABLE ON THE DAEMON'S SIDE, AND THAT
+ * DIFFERENCE WAS A LIVE CRASH. WardenCore.gates() returns `counts: null`
+ * until the first sweep completes — a daemon restarted ninety seconds ago has
+ * measured nothing, and four zeroes would render as a clean board on an
+ * unwatched box. checkBoard() used to cast the response straight to this type
+ * after a single `Array.isArray(board?.rows)` check, which `rows: []` passes,
+ * so the null sailed through behind a non-null declaration and
+ * DeskSiteService.board() read `warden.counts.bad` off it. That is a
+ * TypeError on the Site page every time the daemon is restarted.
+ *
+ * It is non-null here because normaliseCheckBoard() now FILLS it — every key
+ * present, tallied from the rows when the daemon sent none. That is not an
+ * invented zero: the rows are the measurement, and a row that has never been
+ * run carries status 'unknown', which is what it counts as.
+ */
 export interface WardenCheckBoard {
   lastCheckAt: string | null;
   counts: { ok: number; warn: number; bad: number; unknown: number };
   rows: WardenCheckRow[];
+  /** Present so a board full of green tiles cannot hide that proposals are
+   *  suspended. Null means not paused. */
+  paused: WardenPause | null;
+}
+
+/**
+ * ONE EXECUTION, as the operator may read it.
+ *
+ * ⚠️ HAND-MIRRORED from warden/src/types.ts (`WardenAuditEntry`).
+ *
+ * 🚨 THIS IS THE ONLY WAY A RUN IS READABLE AFTER THE FACT. The daemon has
+ * always written these records — operation, resolved args, exit code, and the
+ * redacted verbatim transcript — and until Phase 4 served them to nobody:
+ * WardenStore.auditFor() had only test callers, no daemon route returned one,
+ * and the operator's single view of a run was its `ran` chat message, which
+ * ages out of a 600-record on-disk window and the 200-record wire window
+ * below. "What has this agent run on the production box" was a question you
+ * answered by SSH-ing in.
+ *
+ * ⚠️ REDACTION HAPPENS IN THE DAEMON, BEFORE PERSISTENCE, AND BEFORE
+ * TRUNCATION — so a secret cannot sit across a cut boundary. `redactions`
+ * names what fired, never a value. Nothing on this side may undo that;
+ * normalisation here only narrows further.
+ */
+export interface WardenAuditEntry {
+  id: string;
+  /** May be empty for a record whose proposal id did not survive validation.
+   *  Empty means "no link to follow", never "no proposal". */
+  proposalId: string;
+  at: string;
+  finishedAt: string;
+  durationMs: number;
+  /** `unattended` — the daemon's own safe list, no human. `operator_approved`
+   *  — through the compare-and-swap on the exact command someone read. */
+  trigger: 'unattended' | 'operator_approved';
+  operatorId: string | null;
+  operationKind: 'safe_list' | 'approved_command';
+  operationName: string | null;
+  /** The EXACT command that ran. */
+  command: string;
+  exitCode: number | null;
+  timedOut: boolean;
+  stdout: WardenTruncatedText;
+  stderr: WardenTruncatedText;
+  /** NAMES of what was redacted, never values. Empty when nothing fired,
+   *  never absent — a reader must not have to wonder whether redaction ran. */
+  redactions: string[];
+  /** ⚠️ null means NOBODY LOOKED YET. That is a different claim from
+   *  `{ result: 'unknown' }`, which means looked and could not tell. */
+  recheck: { at: string; result: 'ok' | 'still-bad' | 'unknown'; note: string } | null;
+}
+
+export interface WardenTruncatedText {
+  text: string;
+  truncated: boolean;
+  /** Size BEFORE any truncation — the real output size, not the size of what
+   *  survived. A reader can see how much was withheld. */
+  originalBytes: number;
+}
+
+export interface WardenAuditView {
+  present: boolean;
+  note?: string;
+  entries: WardenAuditEntry[];
+  /** True when older records exist that this page did not carry. */
+  truncated: boolean;
+  /**
+   * How many records the daemon sent that this proxy REFUSED to show,
+   * because they failed the wire rules above.
+   *
+   * 🚨 THIS EXISTS BECAUSE A SILENT DROP IS A FALSE ALIBI. The normaliser
+   * skips anything it cannot name — an unknown trigger, an unknown
+   * operationKind, an empty command — and without a counter those runs simply
+   * were not in the list, while `truncated` (which only ever carries the
+   * daemon's own paging flag) went on saying false. An INCOMPLETE record of
+   * what executed on the production box then looked exactly like a complete
+   * one. On a firearms marketplace that is the difference between "the agent
+   * ran nothing else" and "I cannot see what else the agent ran".
+   *
+   * ⚠️ NOT the same thing as `truncated`, and must never be folded into it.
+   * Truncated means "there is more, ask for the next page"; dropped means
+   * "there is more and I cannot render it, so go and read the daemon's own
+   * store". The fixes are different — one is a click, the other is ssh.
+   *
+   * The trigger is field-vocabulary skew across the hand-mirror: deploy.sh
+   * ships warden as a separate, explicitly NON-FATAL third stage, so a daemon
+   * that deployed beside a backend that did not is a real window, not a
+   * hypothetical one.
+   */
+  dropped: number;
+}
+
+/** What POST /admin/warden/sweep answers. */
+export interface WardenSweepResult {
+  /**
+   * ⚠️ FALSE IS NOT A FAILURE. The sweep was started and is still running;
+   * the daemon answered early rather than letting the request outlive nginx's
+   * 60s cut, which would give the operator a 502 while the box was being
+   * measured behind it. The board lands by itself and GET /gates will show it.
+   */
+  finished: boolean;
+  /** False when this call joined a cadence sweep already in flight rather
+   *  than starting a forced one — some of those rows are carried forward, and
+   *  calling that a full re-measure would be the same lie by another route. */
+  forced: boolean;
+  joined: boolean;
+  board: WardenCheckBoard;
 }

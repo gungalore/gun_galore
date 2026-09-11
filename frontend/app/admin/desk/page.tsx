@@ -39,6 +39,7 @@ import {
   IconLock,
   Kv,
   ListingDrawer,
+  MemberDrawer,
   OrderDrawer,
   RailCard,
   Ribbon,
@@ -90,6 +91,7 @@ const TAG_ICON = {
 type DrawerTarget =
   | { sort: 'listing'; listingId: string; title: string; reference?: string; cardId: string }
   | { sort: 'case'; caseKind: CaseKind; caseId: string }
+  | { sort: 'member'; userId: string; cardId: string }
   | { sort: 'order'; transactionId: string };
 
 /**
@@ -135,6 +137,25 @@ function drawerTargetFor(card: DeskCardData): DrawerTarget | null {
         // leaves a taken-down listing sitting on the pile.
         cardId: card.id,
       };
+    /**
+     * 🚨 THIS CARD HAD NO DOOR, AND THE HOLE WAS OPENED BY CLOSING A WORSE ONE.
+     * act() used to answer seller_verification:approve by writing
+     * `kycStatus: 'VERIFIED'` straight onto the row — no UNDER_REVIEW guard, so
+     * two tabs could both decide; no reviewer stamp; no reason; no audit row on
+     * a firearms marketplace; the open KYC_REVIEW alerts left standing and the
+     * seller never told. That refusal is correct and stays. But the card face
+     * still offers "Approve selling…", and with no entry here it landed on the
+     * null branch below, which tells the operator to "use the legacy admin
+     * panel" — a panel CLAUDE.md records as deleted and desk-guard.cjs fails
+     * the build for reintroducing. A removed bypass has to leave a route
+     * behind, or the security fix reads to its only user as a broken button.
+     *
+     * MemberDrawer is that route: it already holds the KYC dossier, the
+     * approve and reject reason lists, and it posts to
+     * POST /admin/users/:id/kyc-review — the endpoint act() now names.
+     */
+    case 'seller_verification':
+      return { sort: 'member', userId: id, cardId: card.id };
     case 'complaint':
       return { sort: 'case', caseKind: 'complaint', caseId: id };
     case 'support':
@@ -584,6 +605,24 @@ export default function DeskPage() {
            * two Drawers share one Escape and one Tab trap.
            */
           onOpenOrder={(transactionId) => openDrawer({ sort: 'order', transactionId })}
+        />
+      ) : null}
+
+      {top?.sort === 'member' ? (
+        <MemberDrawer
+          open
+          userId={top.userId}
+          onClose={closeTop}
+          // ⚠️ RE-READ, DO NOT DROP THE CARD. onChanged fires for every write
+          // this drawer makes — a note, a strike, a tier change — and only one
+          // of them (the verification decision) retires the card. Dropping it
+          // here would clear a seller off the pile because somebody edited
+          // their phone number, and the decision they were queued for would
+          // never be made. The server rebuilds the band, so a real decision
+          // removes the card on the next read and nothing else does.
+          onChanged={() => {
+            void load();
+          }}
         />
       ) : null}
 

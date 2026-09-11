@@ -107,6 +107,19 @@ export async function main(): Promise<void> {
       : 'diagnosis DISABLED — ANTHROPIC_API_KEY is not set. The checks still run; nothing turns them into findings, and Warden raises a red gate saying so.',
   );
 
+  // ⚠️ A DAEMON THAT BOOTS PAUSED MUST SAY SO IN THE BANNER. The pause is
+  // persisted precisely so a `pm2 reload` — which is a restart here, and which
+  // is the most likely reason it was paused in the first place — cannot
+  // silently lift it. The other side of that is this: without a line in the
+  // log, the operator greps pm2 output for "why has Warden gone quiet" and
+  // finds a perfectly normal boot.
+  const restoredPause = core.pausedNow();
+  log(
+    restoredPause
+      ? `PAUSED until ${restoredPause.until} (set by ${restoredPause.operatorId ?? 'an operator'}). Checks still run and the board stays current; diagnosis and new proposals are held until then.`
+      : 'not paused — diagnosing and raising proposals normally',
+  );
+
   // The first sweep runs now rather than one interval from now: a daemon that
   // just restarted has an empty board, and an empty board is indistinguishable
   // from a healthy one.

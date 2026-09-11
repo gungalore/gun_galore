@@ -321,3 +321,143 @@ export interface WardenProposal {
  *  all — an id outside it makes a proposal unreachable for approve or
  *  decline. Anything generating ids must stay inside this. */
 export const WARDEN_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+// ── the OBSERVABILITY half of the wire, mirrored ────────────────────────
+//
+// ⚠️ EVERY SHAPE BELOW IS HAND-MIRRORED IN backend/src/desk/warden.types.ts,
+// exactly like the block above it, and for the same reason: warden/ has no
+// import path into backend/src. Change one, change the other in the same
+// commit. backend/src/desk/warden.spec.ts reads THIS FILE off disk and
+// asserts the two kind lists and the id charset still agree, because the
+// previous divergence — the backend holding PROPOSAL_ID_RE as a private
+// const while this file held WARDEN_ID_RE — was invisible to both sides and
+// would have made ids silently unreachable for approve and decline.
+
+/**
+ * One row of the measured board — what GET /gates and POST /sweep return.
+ *
+ * ⚠️ THIS USED TO LIVE IN state/core.ts AS `GateRow`, OUTSIDE THE MIRRORED
+ * BLOCK, PINNED BY NO TEST ON EITHER SIDE. Its backend twin is
+ * WardenCheckRow and the two agreed only by luck; adding a field to one was
+ * completely silent. It is here so the mirror test can see it.
+ *
+ * ⚠️ NOT the backend's `WardenGate`. That one is a CONFIG gate — what an env
+ * var is set to. This is a MEASUREMENT — what was found when somebody
+ * looked. They are one word apart in the UI and are different facts.
+ */
+export interface WardenCheckRow {
+  id: string;
+  title: string;
+  status: CheckStatus;
+  /** For an `unknown`, this is the REASON it could not be measured. Never a
+   *  hedge, never a zero. */
+  verdict: string;
+  gateKey: string | null;
+  standing: boolean;
+  measuredAt: string;
+  fresh: boolean;
+}
+
+export interface WardenCheckBoard {
+  lastCheckAt: string | null;
+  /**
+   * ⚠️ NULL UNTIL THE FIRST SWEEP FINISHES, AND THAT IS NOT ZERO OF
+   * EVERYTHING. A freshly-restarted daemon has measured nothing; a counts
+   * object of four zeroes would render as a clean board on an unwatched box.
+   * The backend's own copy was declared NON-nullable while this side already
+   * returned null, and DeskSiteService.board() reads `warden.counts.bad`
+   * straight off it — so the two disagreeing was a TypeError on the Site
+   * page every time the daemon was restarted. The backend now fills a
+   * complete counts object during normalisation rather than trusting this.
+   */
+  counts: Record<CheckStatus, number> | null;
+  rows: WardenCheckRow[];
+  /** Present so a board cannot look healthy while proposals are suspended. */
+  paused: WardenPause | null;
+}
+
+/**
+ * Warden is holding off on DIAGNOSIS and PROPOSALS until `until`.
+ *
+ * ⚠️ MEASUREMENT IS NOT PAUSED AND MUST NEVER BE. A Warden that stops
+ * measuring while paused is a Warden reporting health it has not checked —
+ * the board would freeze at whatever it said when the operator hit pause and
+ * nothing would say so. What a pause buys is silence from the model and no
+ * new buttons, not a blind box.
+ *
+ * ⚠️ IT ALWAYS EXPIRES. A pause with no end is a daemon somebody turned off
+ * in an incident and nobody turned back on, which reads for weeks as "Warden
+ * has nothing to say".
+ */
+export interface WardenPause {
+  /** ISO-8601. Past this instant the pause is over, with or without a resume. */
+  until: string;
+  /** ISO-8601, when it was set. */
+  since: string;
+  /** The admin who set it. Null for a pause restored from an older state file. */
+  operatorId: string | null;
+  reason: string | null;
+}
+
+/** Command output as it reaches the wire: redacted at capture, truncated at
+ *  capture, then clamped again for the wire. */
+export interface WardenTruncatedText {
+  text: string;
+  truncated: boolean;
+  /** The size of the output BEFORE any truncation, so a reader can see how
+   *  much was withheld rather than wondering whether this is all of it. */
+  originalBytes: number;
+}
+
+/**
+ * One execution, as the operator may read it.
+ *
+ * 🚨 THIS IS THE ONLY WAY AN EXECUTION IS READABLE AFTER THE FACT. Before
+ * this shape existed the audit trail was written to warden-state/state.json
+ * and served by NOTHING — `WardenStore.auditFor()` had only test callers, and
+ * the operator's single view of a run was the `ran` chat message, which ages
+ * out of a 600-record on-disk window and a 200-record wire window. On a
+ * firearms marketplace, "what did the agent run on the box last month" was
+ * answerable only by SSH-ing in and reading a JSON file.
+ *
+ * ⚠️ `operation.args` IS DELIBERATELY ABSENT. `command` is built from those
+ * args by the same describe() the executor runs, so the args are already
+ * visible in it — and every field on the wire is a field two files have to
+ * keep in step by hand.
+ */
+export interface WardenAuditEntry {
+  id: string;
+  proposalId: string;
+  /** When the command started. */
+  at: string;
+  /** When it finished, was killed on timeout, or errored. */
+  finishedAt: string;
+  durationMs: number;
+  /** `unattended` — the safe list, no human. `operator_approved` — through
+   *  the compare-and-swap on the exact command an operator read. */
+  trigger: 'unattended' | 'operator_approved';
+  operatorId: string | null;
+  operationKind: 'safe_list' | 'approved_command';
+  /** Safe-list operation name; null for an approved command, which has no
+   *  named operation — only a string a human read. */
+  operationName: string | null;
+  /** The EXACT command that ran. */
+  command: string;
+  exitCode: number | null;
+  timedOut: boolean;
+  stdout: WardenTruncatedText;
+  stderr: WardenTruncatedText;
+  /** NAMES of what was redacted — an env var key, or a pattern class — never
+   *  a value. Empty when nothing fired, never absent: a reader must not have
+   *  to wonder whether redaction ran at all. */
+  redactions: string[];
+  /** ⚠️ null means NOBODY HAS LOOKED YET, which is a different claim from
+   *  `{result:'unknown'}` — "looked and could not tell". */
+  recheck: { at: string; result: 'ok' | 'still-bad' | 'unknown'; note: string } | null;
+}
+
+export interface WardenAuditView {
+  entries: WardenAuditEntry[];
+  /** True when older records exist that this page did not carry. */
+  truncated: boolean;
+}

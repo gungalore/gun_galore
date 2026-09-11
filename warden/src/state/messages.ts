@@ -32,10 +32,12 @@ import {
   type CheckResult,
   type CheckStatus,
   type WardenChatMessage,
+  type WardenAuditEntry,
   type WardenMessageKind,
   type WardenProposal,
+  type WardenTruncatedText,
 } from '../types.js';
-import type { WardenAuditRecord } from '../exec/index.js';
+import { truncateOutput, type TruncatedText, type WardenAuditRecord } from '../exec/index.js';
 import type { StoredProposal } from './store.js';
 
 // ── the backend's caps, mirrored ────────────────────────────────────────
@@ -210,12 +212,56 @@ export function findingMessage(result: CheckResult, previous: CheckStatus | null
   });
 }
 
-export function fixedMessage(result: CheckResult, previous: CheckStatus | null, at: string): WardenChatMessage {
+/**
+ * A check came back to ok.
+ *
+ * 🚨 THE KIND IS A CLAIM ABOUT WHO DID IT, AND IT WAS WRONG FOR EVERY
+ * MESSAGE THIS FUNCTION HAS EVER EMITTED. The Desk renders kind 'fixed' with
+ * the tag "fixed alone" — meaning Warden fixed it, unattended. This function
+ * is called from ONE place, WardenCore.transitionMessages(), which compares
+ * two sweeps: it knows a row went bad→ok and it cannot possibly know why.
+ * In practice the answer was always "a human" — runSafeListOperation(), the
+ * only unattended path, has no caller in this daemon outside its own tests,
+ * so "fixed alone" has never once been literally true on this box. An
+ * operator who repaired nginx by hand at 02:00 was told the agent had done
+ * it.
+ *
+ * So `by` is now required and the kind follows it:
+ *   · 'warden'  → kind 'fixed'. Reserved for a recovery Warden can actually
+ *                 attribute to its own run. Nothing reaches it today; that
+ *                 is the honest state, not a gap to paper over.
+ *   · 'unknown' → kind 'note', and the prose says outright that Warden did
+ *                 not do it.
+ *
+ * ⚠️ DO NOT "TIDY UP" THE NOW-UNREACHABLE 'fixed' BRANCH BY DELETING THE
+ * KIND. WARDEN_MESSAGE_KINDS is a THREE-way hand mirror — this file,
+ * backend/src/desk/warden.types.ts and frontend/components/desk/chat.tsx's
+ * KIND_TAG. Dropping a kind from one side does not raise an error anywhere;
+ * it drops messages on the wire, silently, in whichever direction the lists
+ * disagree.
+ */
+export function fixedMessage(
+  result: CheckResult,
+  previous: CheckStatus | null,
+  at: string,
+  by: 'warden' | 'unknown',
+): WardenChatMessage {
   const from = previous ? `was ${previous}, ` : '';
+  if (by === 'warden') {
+    return build({
+      at,
+      kind: 'fixed',
+      body: [`${result.title} is back to ok after something I ran — ${from}now: ${result.verdict}`],
+      footnote: `${result.id} · measured ${result.measuredAt}`,
+    });
+  }
   return build({
     at,
-    kind: 'fixed',
-    body: [`${result.title} is back to ok — ${from}now: ${result.verdict}`],
+    kind: 'note',
+    body: [
+      `${result.title} is back to ok — ${from}now: ${result.verdict}`,
+      'I did not do that. I only see that the reading changed between two sweeps; something outside me cleared it.',
+    ],
     footnote: `${result.id} · measured ${result.measuredAt}`,
   });
 }
@@ -307,3 +353,88 @@ export function standingList(instructions: readonly { text: string; source: stri
     },
   });
 }
+
+// ── the audit trail, projected for the wire ─────────────────────────────
+
+/**
+ * ⚠️ THE SECOND CLAMP, AND IT IS NOT THE SAME CLAMP exec/audit.ts APPLIED.
+ * A record holds up to MAX_OUTPUT_BYTES (20 KB) of stdout and the same of
+ * stderr. Fifty of those is a 2 MB body against a backend read budget of
+ * eight seconds, over a hop nginx cuts at sixty. So the wire gets less.
+ *
+ * 🚨 THE HONESTY RULE FOR THE SECOND CUT: `originalBytes` stays the size of
+ * the output BEFORE ANY truncation — the number exec/audit.ts measured off
+ * the real command — and `truncated` is the OR of both cuts. Recomputing
+ * originalBytes here would report the 20 KB stored copy as the whole of a
+ * 4 MB log, which is the plausible-zero move: a reader would think they were
+ * looking at everything.
+ */
+const WIRE_OUTPUT_BYTES = 4_000;
+
+function projectOutput(t: TruncatedText | undefined): WardenTruncatedText {
+  // A record written by an older daemon, or one hand-edited on the box, may
+  // not carry this at all. An absent output is empty and says so; it is
+  // never invented and never read as "the command printed nothing".
+  if (!t || typeof t.text !== 'string') return { text: '', truncated: false, originalBytes: 0 };
+  const cut = truncateOutput(t.text, WIRE_OUTPUT_BYTES);
+  return {
+    text: cut.text,
+    truncated: Boolean(t.truncated) || cut.truncated,
+    originalBytes: Number.isFinite(t.originalBytes) ? t.originalBytes : cut.originalBytes,
+  };
+}
+
+/**
+ * One stored audit record as the operator may read it.
+ *
+ * Returns null where the backend would drop it, for the same reason
+ * projectMessage does: the far side normalises by DROPPING, silently. A run
+ * that happened and then failed to arrive is the one record whose absence
+ * matters most, so it is dropped HERE, where the daemon can count it.
+ *
+ * ⚠️ NOTHING HERE RE-REDACTS, AND NOTHING HERE MAY UNDO REDACTION.
+ * exec/audit.ts redacted at capture, BEFORE truncating, so a secret cannot
+ * sit across a cut boundary. `redactions` names what fired. This function
+ * only narrows.
+ */
+export function projectAudit(r: WardenAuditRecord): WardenAuditEntry | null {
+  const id = text(r?.id, MAX_ID);
+  if (!id) return null;
+  if (!isParseableDate(r?.at)) return null;
+  // The proposal id is a link target on the far side. An id outside the URL
+  // charset is a link that cannot be followed — but unlike a chat message,
+  // the RUN is the record and it must still be readable, so the field is
+  // blanked rather than the whole entry dropped.
+  const proposalId = typeof r.proposalId === 'string' && WARDEN_ID_RE.test(r.proposalId) ? r.proposalId : '';
+
+  return {
+    id,
+    proposalId,
+    at: r.at,
+    finishedAt: isParseableDate(r.finishedAt) ? r.finishedAt : r.at,
+    durationMs: Number.isFinite(r.durationMs) ? r.durationMs : 0,
+    trigger: r.trigger === 'unattended' ? 'unattended' : 'operator_approved',
+    operatorId: typeof r.operatorId === 'string' ? text(r.operatorId, MAX_ID) : null,
+    operationKind: r.operation?.kind === 'safe_list' ? 'safe_list' : 'approved_command',
+    operationName: typeof r.operation?.name === 'string' ? text(r.operation.name, MAX_ID) : null,
+    command: text(r.command, MAX_COMMAND),
+    exitCode: typeof r.exitCode === 'number' ? r.exitCode : null,
+    timedOut: Boolean(r.timedOut),
+    stdout: projectOutput(r.stdout),
+    stderr: projectOutput(r.stderr),
+    // ⚠️ ALWAYS AN ARRAY, EMPTY WHEN NOTHING FIRED. Same discipline as the
+    // record itself: the absence of a redaction must be a stated absence, or
+    // a reader cannot tell "nothing was secret" from "redaction never ran".
+    redactions: Array.isArray(r.redactions) ? r.redactions.map((x) => text(x, 100)).filter(Boolean) : [],
+    recheck:
+      r.recheck && isParseableDate(r.recheck.at) && RECHECK_RESULTS.has(r.recheck.result)
+        ? { at: r.recheck.at, result: r.recheck.result, note: text(r.recheck.note, MAX_TEXT) }
+        : null,
+  };
+}
+
+/** ⚠️ `null` recheck means NOBODY LOOKED. It is not in this set on purpose —
+ *  an unrecognised result collapses to null ("not re-checked") rather than to
+ *  'unknown' ("re-checked, could not tell"), because claiming a re-check that
+ *  did not happen is the worse of the two lies. */
+const RECHECK_RESULTS: ReadonlySet<string> = new Set(['ok', 'still-bad', 'unknown']);

@@ -532,14 +532,19 @@ export class DeskService {
         meta: `@${l.seller?.username ?? '?'} · ${this.rand(l.price ?? 0)}`,
         // No SLA exists for this queue, so the tag is position, not time.
         tags: [{ kind: 'neutral', label: i === 0 ? `oldest of ${listings.length}` : `${i + 1} of ${listings.length}` }],
+        /**
+         * ⚠️ 'drawer', NOT 'undo', AND IT MATCHES WHAT act() WILL ACCEPT.
+         * An 'undo' action posts straight to POST /admin/desk/:id/act, and
+         * act() now refuses listing_review:approve — approving a listing has
+         * to stamp the review trail and re-index it into Meilisearch, and a
+         * card-face write did neither, leaving the listing ACTIVE in Postgres
+         * and absent from every search-driven view. Both decisions now open
+         * the same drawer, which is where the real endpoint lives. Leaving
+         * the button as 'undo' would have shipped a primary action whose only
+         * outcome is a 404 toast.
+         */
         actions: [
-          {
-            key: 'approve',
-            label: 'Approve',
-            kind: 'undo',
-            variant: 'primary',
-            doneMessage: `Approved ${l.referenceNumber ?? l.title}`,
-          },
+          { key: 'approve', label: 'Approve…', kind: 'drawer', variant: 'primary' },
           { key: 'reject', label: 'Reject…', kind: 'drawer', variant: 'secondary' },
         ],
         canLater: true,
@@ -559,14 +564,25 @@ export class DeskService {
         tags: stalled
           ? [{ kind: 'warn', label: this.ageLabel(hours), icon: 'clock' } as FeedTag]
           : [],
+        /**
+         * ⚠️ 'drawer', NOT 'undo'. See the listing card above, and then the
+         * refusal in act(). Verifying a seller on a firearms marketplace has
+         * to write an audit row naming who decided and why, guard the
+         * UNDER_REVIEW transition so two tabs cannot both succeed, clear the
+         * open KYC_REVIEW alerts and tell the seller. A one-click card-face
+         * write did none of it. POST /admin/users/:id/kyc-review does.
+         *
+         * ⚠️ AND THE DRAWER IS THE MEMBER ONE, NOT A LISTING DRAWER — this is
+         * the one place the two cards differ, so do not read "see the listing
+         * card above" as meaning they share a surface. drawerTargetFor() in
+         * frontend/app/admin/desk/page.tsx maps this card type to
+         * { sort: 'member' }; MemberDrawer is what holds the KYC dossier and
+         * the reason lists. Removing that mapping does not disable the button,
+         * it routes it to the "nothing to open yet" branch, which tells the
+         * operator to use a panel that was deleted.
+         */
         actions: [
-          {
-            key: 'approve',
-            label: 'Approve selling',
-            kind: 'undo',
-            variant: 'primary',
-            doneMessage: `Approved @${u.username ?? 'member'} to sell`,
-          },
+          { key: 'approve', label: 'Approve selling…', kind: 'drawer', variant: 'primary' },
           { key: 'reject', label: 'Reject…', kind: 'drawer', variant: 'secondary' },
         ],
         overdueSince: stalled && u.kycRequiredAt ? u.kycRequiredAt.toISOString() : undefined,
@@ -1103,12 +1119,59 @@ export class DeskService {
     this.log.log(`desk act: ${type} ${action} ${id}`);
 
     switch (`${type}:${action}`) {
+      /**
+       * 🚨 BOTH APPROVE CASES ARE REFUSED HERE, AND EACH USED TO BE A ONE-LINE
+       * PRISMA WRITE THAT SKIPPED EVERY CONTROL ITS REAL ENDPOINT CARRIES.
+       * What was here, verbatim:
+       *
+       *   case 'listing_review:approve':
+       *     await this.prisma.listing.update({ where: { id }, data: { status: 'ACTIVE' } });
+       *   case 'seller_verification:approve':
+       *     await this.prisma.user.update({ where: { id }, data: { kycStatus: 'VERIFIED' } });
+       *
+       * `seller_verification:approve` was the worse of the two. Against
+       * AdminService.reviewKyc() it skipped: the guarded `updateMany({ where:
+       * { id, kycStatus: 'UNDER_REVIEW' } })` transition, so two admins on two
+       * tabs both "succeeded" and a REJECTED or already-VERIFIED user could be
+       * flipped straight to VERIFIED; the mandatory ≥5-character reason;
+       * kycVerifiedAt, kycReviewedById, kycReviewedAt and kycReviewNote; the
+       * resolution of that user's open KYC_REVIEW AdminAlert rows, which
+       * therefore stayed open forever and inflated the alert count; and the
+       * seller's SMS and email, so they were verified and never told. It wrote
+       * NO AdminAudit row at all — a seller became VERIFIED on a firearms
+       * marketplace with nothing anywhere recording who did it or why. The
+       * card FACE was scoped correctly (the pile only deals these for
+       * kycStatus UNDER_REVIEW), but a card face is not a boundary: act()
+       * takes any string from any client holding an admin JWT, and it
+       * re-checked nothing.
+       *
+       * `listing_review:approve` skipped the PENDING_REVIEW guard, the
+       * adminReviewed* stamps, expiresAt / listedAt / lastRenewedAt — so the
+       * saved-search matcher never alerted on it (no listedAt) and the 75/90
+       * day ageing cron measured it from a seeded createdAt — the seller
+       * notification, and most damagingly `listings.reindexById()`. A
+       * card-approved listing was ACTIVE in Postgres and ABSENT from
+       * Meilisearch: live, and invisible in every search-driven view on the
+       * site.
+       *
+       * ⚠️ THE FIX IS A REFUSAL, NOT A RE-IMPLEMENTATION. Calling
+       * AdminService from here is not a one-line swap — reviewKyc() demands a
+       * ≥5-character reason and the card face has no reason field, and wiring
+       * the Meilisearch re-index in means DeskModule importing ListingsModule,
+       * which drags a module-graph change through a guard whose dependencies
+       * every mounting module must resolve itself (get that wrong and the API
+       * crash-loops at boot while tsc and every unit test stay green). The
+       * honest move is the one act() already makes for money cards: send the
+       * caller to the endpoint that has the controls.
+       */
       case 'listing_review:approve':
-        await this.prisma.listing.update({ where: { id }, data: { status: 'ACTIVE' } });
-        return { ok: true };
+        throw new NotFoundException(
+          'A listing is approved at POST /admin/listings/:id/review, not from the card face — that path guards the PENDING_REVIEW transition, stamps the review trail and re-indexes the listing into search. Approving it here would leave it live and invisible.',
+        );
       case 'seller_verification:approve':
-        await this.prisma.user.update({ where: { id }, data: { kycStatus: 'VERIFIED' } });
-        return { ok: true };
+        throw new NotFoundException(
+          'A seller is verified at POST /admin/users/:id/kyc-review, not from the card face — that path guards the UNDER_REVIEW transition, requires a reason, writes the audit row, clears the KYC_REVIEW alerts and tells the seller. None of that can happen here.',
+        );
       case 'warden:acknowledge':
         // ⚠️ NOT A FIX AND NOT A RESOLUTION — a "seen it, not today". The
         // outbox is still stalled after this write; the finding is simply
