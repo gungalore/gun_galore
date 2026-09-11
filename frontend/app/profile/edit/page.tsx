@@ -1244,7 +1244,7 @@ export default function EditProfilePage() {
                 className="text-sm mb-1"
                 style={{ color: 'var(--text-primary)', fontWeight: 500 }}
               >
-                Enter the 4-digit code we sent to
+                Enter the 6-digit code we sent to
               </p>
               <p
                 className="text-sm mb-5"
@@ -1255,14 +1255,15 @@ export default function EditProfilePage() {
               <input
                 type="text"
                 inputMode="numeric"
-                maxLength={4}
+                maxLength={6}
                 value={otp}
                 onChange={(e) =>
-                  setOtp(e.target.value.replace(/\D/g, '').slice(0, 4))
+                  setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))
                 }
                 autoFocus
                 style={{
-                  width: 180,
+                  width: 260,
+                  maxWidth: '100%',
                   margin: '0 auto',
                   display: 'block',
                   background: 'var(--bg-card)',
@@ -1280,7 +1281,7 @@ export default function EditProfilePage() {
               <div className="flex items-center justify-center gap-3 mt-5">
                 <PrimaryButton
                   onClick={handleVerifyOtp}
-                  disabled={phoneBusy || otp.length !== 4}
+                  disabled={phoneBusy || otp.length !== 6}
                 >
                   {phoneBusy ? 'Verifying…' : 'Verify'}
                 </PrimaryButton>
