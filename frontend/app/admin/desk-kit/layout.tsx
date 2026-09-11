@@ -21,6 +21,7 @@
 import * as React from 'react';
 import { fontDesk, fontDeskMono } from '../../fonts';
 import '../../../components/desk/tokens.css';
+import { RequireDeskSession } from '../../../components/desk/require-desk-session';
 
 export default function DeskLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -29,7 +30,14 @@ export default function DeskLayout({ children }: { children: React.ReactNode }) 
       className={`${fontDesk.variable} ${fontDeskMono.variable}`}
       style={{ minHeight: '100vh' }}
     >
-      {children}
+      {/* ⚠️ GATED, AND IT WAS NOT. `/admin(.*)` is public in middleware.ts
+          because the admin runs its own JWT, so nothing upstream turns a
+          signed-out visitor away — and this layout was the desk layout minus
+          this line. The gallery renders every component in every state, so an
+          ungated copy published the Desk's entire visual vocabulary and
+          confirmed the surface exists, to anyone who guessed the path.
+          scripts/desk-guard.cjs now asserts this import stays. */}
+      <RequireDeskSession>{children}</RequireDeskSession>
     </div>
   );
 }

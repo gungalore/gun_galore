@@ -54,7 +54,30 @@ function deskLibs() {
   }
 }
 
-const GUARDED = ['components/desk', 'app/admin/desk', 'app/admin/desk-kit', ...deskLibs()];
+/**
+ * ⚠️ `app/admin/login` AND `app/admin/logout` ARE ON THIS LIST BECAUSE THEIR
+ * ABSENCE IS WHY THE SIGN-IN SCREEN SHIPPED IN THE WRONG THEME.
+ *
+ * The list used to name only the trees somebody thought of as "the Desk", and
+ * the sign-in page is not one of them — so it accumulated SEVEN storefront
+ * tokens (`--bg`, `--bg-card`, `--bg-inset`, `--border`, `--text-primary`,
+ * `--text-secondary`, `--red`), exactly the set rule 3 below exists to ban,
+ * and the guard printed "clean" every time. The result is a cream card with a
+ * brand-red button as the front door of a near-black control room — and, since
+ * the installed PWA's start_url redirects here on every expired session, it is
+ * the FIRST screen of the dark app most mornings.
+ *
+ * The lesson generalises: a guard's blind spot is not where the bugs are, it
+ * is where the bugs GO. Anything rendered under /admin belongs here.
+ */
+const GUARDED = [
+  'components/desk',
+  'app/admin/desk',
+  'app/admin/desk-kit',
+  'app/admin/login',
+  'app/admin/logout',
+  ...deskLibs(),
+];
 
 /**
  * Imports the Desk may not make.
@@ -124,6 +147,25 @@ const STOREFRONT_TOKEN = /var\(\s*--(bg|bg-card|bg-deep|bg-inset|text-primary|te
 
 /** Tailwind utilities the global box-shadow kill switch renders inert. */
 const DEAD_UTILITY = /\b(shadow-(sm|md|lg|xl|2xl|inner)|ring-\d|ring-offset-\d)\b/;
+
+/**
+ * A control-sized `height:` written as a number instead of the token.
+ *
+ * ⚠️ THIS RULE EXISTS BECAUSE `Chip` WAS 30px ON A PHONE. tokens.css sets
+ * `--dk-h-control` to 34px at the desk and **44px under 1024px** — "34 at the
+ * desk, 44 under the thumb" — and `Button` and `Input` both read it. `Chip`
+ * hard-coded 30 and therefore opted out of the phone half silently. Chips are
+ * the primary navigation control on every board: the five People segments, the
+ * seven order-book segments, the Pulse period rows, the nine Province chips
+ * inside the dealer form. All of them under the tap-target minimum, and
+ * nothing failed.
+ *
+ * 28–48 is deliberately narrow: it is the band a control height lands in. A
+ * 12px dot or a 78px tab bar is not this mistake and must not be flagged as
+ * one — a rule that cries wolf gets deleted.
+ */
+const HARDCODED_CONTROL_HEIGHT =
+  /\bheight:\s*(?:'|")?(2[89]|3\d|4[0-8])(?:px)?(?:'|")?\s*[,;}]/;
 
 const problems = [];
 
@@ -214,6 +256,37 @@ function check(file) {
     if (DEAD_UTILITY.test(code)) {
       problems.push(
         `${at}  shadow-*/ring-* does nothing here (globals.css kills box-shadow); use outline\n    ${trimmed}`,
+      );
+    }
+
+    // ⚠️ A SQUARE IS NOT A CONTROL. `width: 28, height: 28` on an aria-hidden
+    // span is an avatar, a dot or an icon well — it has no tap target to get
+    // wrong, and flagging it would force `var(--dk-h-control)` onto a
+    // decoration that must stay square at both breakpoints. Look back one
+    // line for a matching width and let those through. A rule that cries wolf
+    // is a rule somebody deletes.
+    const heightMatch = code.match(HARDCODED_CONTROL_HEIGHT);
+    const isSquare =
+      heightMatch &&
+      new RegExp(`\\bwidth:\\s*['"]?${heightMatch[1]}(?:px)?['"]?\\s*[,;}]`).test(
+        lines[i - 1] ?? '',
+      );
+    // The escape hatch, and it is deliberately one you have to WRITE. A
+    // `dk-allow-height` marker on the line above says "this is a container or
+    // a desktop-only row, not a tap target" — and says it where the next
+    // reader is looking. Two things legitimately need it today: DeskTable's
+    // row (desktop-only; the phone path is cards) and the undo toast's bar.
+    const allowed = /dk-allow-height/.test(lines[i - 1] ?? '');
+
+    if (heightMatch && !isSquare && !allowed) {
+      problems.push(
+        `${at}  hard-coded control height — use var(--dk-h-control)\n    ${trimmed}\n` +
+          '    tokens.css sets 34px at the desk and 44px under the thumb. A literal in\n' +
+          '    this range opts out of the second half silently: Chip shipped at 30px and\n' +
+          '    was below the tap-target minimum on every board, on every phone, for\n' +
+          '    months — and it is the PRIMARY navigation control.\n' +
+          '    If this is genuinely a container or a desktop-only row rather than a tap\n' +
+          '    target, put a `dk-allow-height` comment on the line above saying why.',
       );
     }
   });

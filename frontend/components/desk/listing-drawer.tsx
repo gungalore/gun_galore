@@ -204,7 +204,7 @@ export function ListingDrawer({
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
-              height: 28,
+              height: 'var(--dk-h-control)',
               padding: '0 8px',
               borderRadius: 'var(--dk-radius-control)',
               color: 'var(--dk-ink-2)',

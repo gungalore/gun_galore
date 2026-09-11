@@ -77,6 +77,9 @@ export function DeskTable<T>({
                 gridTemplateColumns: template,
                 gap: 12,
                 alignItems: 'center',
+                // dk-allow-height: a table ROW, not a control. DeskTable carries a
+                // 1100px minWidth and the phone path renders cards instead, so this
+                // never has to be a thumb target.
                 height: 38,
                 padding: '0 16px',
                 background: 'var(--dk-ground)',

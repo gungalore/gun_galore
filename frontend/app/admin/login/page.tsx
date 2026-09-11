@@ -1,125 +1,197 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
-import { setDeskToken } from '@/lib/desk-auth';
+/**
+ * Sign in to the Desk.
+ *
+ * ⚠️ IT WAS THE WRONG PRODUCT. See app/admin/login/layout.tsx for the full
+ * account; in short, this page sat outside every Desk convention and rendered
+ * a cream storefront card as the front door of a near-black control room — and
+ * as the first screen of the installed PWA on every expired session.
+ */
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import * as React from 'react';
+import { useRouter } from 'next/navigation';
+import { Button, Input } from '../../../components/desk';
+import {
+  DESK_API_URL,
+  clearLingeringSession,
+  setDeskToken,
+} from '../../../lib/desk-auth';
+
+/**
+ * ⚠️ ONE SOURCE FOR THE API BASE, AND IT IS NOT DEFINED HERE.
+ *
+ * This file used to declare its own:
+ *   `process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? …`
+ * which is the exact duplicated-constant bug lib/desk-auth.ts documents as
+ * fixed. It agreed with the real one only because INTERNAL_API_URL is unset —
+ * the day it is set, the sign-in POST goes to one host and every subsequent
+ * fetch to another, and the symptom reads as "login works, nothing loads".
+ * (It was also dead in a client bundle: Next replaces a non-NEXT_PUBLIC_ var
+ * with `undefined` there, so it could never have held a value anyway.)
+ */
+const LOGIN_PATH = '/admin/auth/login';
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [error, setError] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
 
-  async function handleSubmit(e: FormEvent) {
+  /**
+   * ⚠️ CLEAR ANY LINGERING SESSION ON MOUNT, which is what lib/desk-auth.ts's
+   * header has always claimed this screen does. It did not: the function was
+   * exported with zero callers, so an expired-but-present token survived a
+   * visit to the sign-in page and the next deskFetch bounced straight back
+   * here. Arriving at the front door means the previous session is over.
+   */
+  React.useEffect(() => {
+    clearLingeringSession();
+  }, []);
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setError('');
-    setLoading(true);
+    if (busy) return;
+    setBusy(true);
+    setError(null);
     try {
-      // credentials: 'include' so the browser stores the httpOnly
-      // Set-Cookie the backend now sends. Without this, fetch's default
-      // (same-origin) usually works for our same-origin API, but include
-      // is explicit + safe for any future cross-origin variant.
-      const res = await fetch(`${API_URL}/admin/auth/login`, {
+      const res = await fetch(`${DESK_API_URL}${LOGIN_PATH}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        // The backend also sets an httpOnly gg_admin_sess cookie. The header
+        // is the credential the guard actually reads; the cookie exists for
+        // server components. Keep both in step — see signOutOfDesk().
         credentials: 'include',
+        body: JSON.stringify({ email: email.trim(), password }),
       });
-      if (!res.ok) {
-        setError('Invalid credentials');
+
+      if (res.status === 429) {
+        setError('Too many attempts. Wait a minute and try again.');
         return;
       }
-      const { token } = await res.json();
-      // Primary storage: localStorage (bypasses all cookie-blocking
-      // browser configs we've hit). Each admin page reads from here
-      // via lib/admin-auth.adminFetch().
+      if (!res.ok) {
+        // Deliberately one message for a wrong password and an unknown
+        // address. The admin roster is not a thing to let anyone enumerate.
+        setError('That email and password do not match.');
+        return;
+      }
+
+      const { token } = (await res.json()) as { token?: string };
+      if (!token) {
+        setError('Signed in, but no session came back. Try again.');
+        return;
+      }
       setDeskToken(token);
-      // Secondary: also try to set the JS cookie. Works in most
-      // environments and lets server-component admin pages (legacy)
-      // still gate via cookies(). Privacy-extension envs ignore this
-      // silently — the localStorage path covers them.
-      const secure = location.protocol === 'https:' ? '; Secure' : '';
-      try {
-        document.cookie = `gg_admin_sess=${token}; path=/; max-age=${8 * 3600}; SameSite=Lax${secure}`;
-      } catch {}
-      router.push('/admin');
+
+      // replace(), and straight to the board: push('/admin') left the closed
+      // door in history and then bounced through a redirect to get here.
+      router.replace('/admin/desk');
     } catch {
-      setError('Network error');
+      setError('We could not reach the server. Check your connection.');
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center px-4"
-      style={{ background: 'var(--bg)' }}
+    <main
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        background: 'var(--dk-ground)',
+      }}
     >
-      <div
-        className="w-full max-w-[360px] rounded-[10px] p-7"
-        style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+      <form
+        onSubmit={submit}
+        style={{
+          width: '100%',
+          maxWidth: 360,
+          background: 'var(--dk-surface)',
+          border: '1px solid var(--dk-line)',
+          borderRadius: 'var(--dk-radius-card)',
+          padding: 24,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+        }}
       >
-        <p className="text-xs font-semibold uppercase tracking-widest mb-6" style={{ color: 'var(--red)' }}>
-          All Outdoor Admin
-        </p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            {/* htmlFor/id, so the caption is the input's accessible name and
-                clicking it focuses the field. Without it a screen reader
-                announced two unlabelled boxes on the admin sign-in form. */}
-            <label htmlFor="admin-email" className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-              Email
-            </label>
-            <input
-              id="admin-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2 rounded-[6px] text-sm outline-none"
-              style={{
-                background: 'var(--bg-inset)',
-                border: '0.5px solid var(--border)',
-                color: 'var(--text-primary)',
-              }}
-            />
-          </div>
-          <div>
-            <label htmlFor="admin-password" className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-              Password
-            </label>
-            <input
-              id="admin-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2 rounded-[6px] text-sm outline-none"
-              style={{
-                background: 'var(--bg-inset)',
-                border: '0.5px solid var(--border)',
-                color: 'var(--text-primary)',
-              }}
-            />
-          </div>
-          {error && (
-            <p className="text-xs" style={{ color: 'var(--red)' }}>
-              {error}
-            </p>
-          )}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2 rounded-[6px] text-sm font-medium"
-            style={{ background: 'var(--red)', color: '#fff', opacity: loading ? 0.6 : 1 }}
+        <div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 11,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color: 'var(--dk-ink-3)',
+            }}
           >
-            {loading ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
-      </div>
-    </div>
+            All Outdoor
+          </p>
+          <h1
+            style={{
+              margin: '4px 0 0',
+              fontSize: 18,
+              fontWeight: 500,
+              color: 'var(--dk-ink)',
+            }}
+          >
+            Desk
+          </h1>
+        </div>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontSize: 11.5, color: 'var(--dk-ink-2)' }}>Email</span>
+          <Input
+            type="email"
+            name="email"
+            autoComplete="username"
+            required
+            autoFocus
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </label>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontSize: 11.5, color: 'var(--dk-ink-2)' }}>
+            Password
+          </span>
+          <Input
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
+
+        {/* One form-level message, and deliberately no per-field error state.
+            Input prints its own copy beneath each box, so passing it to both
+            would say the same thing three times — and a red border on BOTH
+            fields claims we know which one is wrong, when refusing to say is
+            the whole point of the single message.
+
+            role="alert" so a screen reader announces the refusal; the old
+            markup was a bare <p> that told a sighted user the form had failed
+            and told everyone else nothing. */}
+        {error ? (
+          <p
+            role="alert"
+            style={{ margin: 0, fontSize: 12, color: 'var(--dk-bad)' }}
+          >
+            {error}
+          </p>
+        ) : null}
+
+        <Button type="submit" variant="primary" block loading={busy}>
+          {busy ? 'Signing in…' : 'Sign in'}
+        </Button>
+      </form>
+    </main>
   );
 }

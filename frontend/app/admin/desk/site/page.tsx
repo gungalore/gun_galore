@@ -396,7 +396,9 @@ export default function SitePage() {
                 key={k}
                 active={lens === k}
                 onClick={() => setLens(k)}
-                style={{ flex: 1, height: 36, borderRadius: 'var(--dk-radius-control)', justifyContent: 'center' }}
+                // Height deliberately not overridden — Chip reads
+                // --dk-h-control now, which is the whole point of the token.
+                style={{ flex: 1, borderRadius: 'var(--dk-radius-control)', justifyContent: 'center' }}
               >
                 {k === 'chat' ? 'Chat' : 'Board'}
               </Chip>

@@ -658,6 +658,8 @@ export function UndoToast({ message, seconds, total = 10, onUndo }: UndoToastPro
         display: 'flex',
         alignItems: 'center',
         gap: 12,
+        // dk-allow-height: the toast BAR, a container. The button inside it
+        // reads the control token; the bar sizes to hold it.
         height: 48,
         padding: '0 8px 0 16px',
         background: 'var(--dk-ink)',
@@ -677,7 +679,7 @@ export function UndoToast({ message, seconds, total = 10, onUndo }: UndoToastPro
           display: 'inline-flex',
           alignItems: 'center',
           gap: 7,
-          height: 34,
+          height: 'var(--dk-h-control)',
           padding: '0 10px',
           borderRadius: 'var(--dk-radius-control)',
           background: 'transparent',

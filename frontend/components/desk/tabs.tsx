@@ -84,7 +84,7 @@ export function TopTabs({ active }: { active: string }) {
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              height: 32,
+              height: 'var(--dk-h-control)',
               padding: '0 14px',
               borderRadius: 'var(--dk-radius-pill)',
               fontSize: 13,

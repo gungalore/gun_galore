@@ -279,7 +279,10 @@ export function Chip({ active = false, children, count, style, ...rest }: ChipPr
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        height: 30,
+        // ⚠️ THE TOKEN, NOT A NUMBER. This was 30px, so the primary navigation
+        // control on every board sat under the tap-target minimum on every
+        // phone while Button and Input next to it correctly grew to 44.
+        height: 'var(--dk-h-control)',
         padding: '0 12px',
         borderRadius: 'var(--dk-radius-pill)',
         fontFamily: 'inherit',
