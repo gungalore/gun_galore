@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from '../../../lib/auth';
+import { authErrorMessage } from '@/lib/auth-error';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -70,7 +71,17 @@ export function SignInForm() {
           setUnverified(data.email ?? identifier);
           return;
         }
-        setError(data.message ?? 'Email, username or password is not right.');
+        // ⚠️ The fallback is deliberately the same for a wrong password and
+        // an unknown account — see above. authErrorMessage only overrides it
+        // for a rate limit or a server fault, neither of which says anything
+        // about whether the account exists.
+        setError(
+          authErrorMessage(
+            res,
+            data,
+            'Email, username or password is not right.',
+          ),
+        );
         return;
       }
 

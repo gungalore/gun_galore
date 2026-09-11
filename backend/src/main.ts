@@ -274,6 +274,21 @@ async function bootstrap() {
       callback(null, false);
     },
     credentials: true,
+    /**
+     * ⚠️ WITHOUT THIS, `Retry-After` IS INVISIBLE TO CROSS-ORIGIN CALLERS and
+     * `res.headers.get('Retry-After')` returns null with no error. CORS only
+     * exposes a handful of simple response headers by default; everything
+     * else has to be named here.
+     *
+     * The web app is same-origin in production (nginx proxies /api/), so it
+     * could always read it — but the CAPACITOR SHELLS are cross-origin, and
+     * so is any developer running the frontend locally against this API.
+     * `authErrorMessage()` in the frontend uses the value to tell a
+     * rate-limited member how long to wait; without the header it can only
+     * say "in a few minutes", on the two surfaces where it is hardest to
+     * debug why.
+     */
+    exposedHeaders: ['Retry-After'],
   });
 
   // ⚠️ SAID EVERY BOOT, AT WARN, SO IT CANNOT BE FORGOTTEN. A temporary hole

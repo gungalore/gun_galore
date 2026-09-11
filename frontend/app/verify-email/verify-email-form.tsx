@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from '../../lib/auth';
+import { authErrorMessage } from '@/lib/auth-error';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -62,7 +63,7 @@ export function VerifyEmailForm() {
         message?: string;
       };
       if (!res.ok) {
-        setError(data.message ?? 'That code is not right.');
+        setError(authErrorMessage(res, data, 'That code is not right.'));
         return;
       }
       if (data.accessToken && data.expiresAt) {
@@ -90,7 +91,9 @@ export function VerifyEmailForm() {
       });
       const data = (await res.json().catch(() => ({}))) as { message?: string };
       setNote(res.ok ? 'A new code is on its way.' : null);
-      if (!res.ok) setError(data.message ?? 'Could not send a new code.');
+      if (!res.ok) {
+        setError(authErrorMessage(res, data, 'Could not send a new code.'));
+      }
     } catch {
       setError('We could not reach the server.');
     }

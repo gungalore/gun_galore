@@ -1,3 +1,4 @@
+import { applyDecorators } from '@nestjs/common';
 import {
   IsBoolean,
   IsEmail,
@@ -11,15 +12,83 @@ import {
 /**
  * Password floor.
  *
- * Twelve, not the fifteen the old hosted form demanded. Fifteen was the
- * identity provider's own instance setting, not a decision anyone here made,
- * and a floor that high pushes people onto a sticky note or a reused
- * password. NIST's guidance
- * is length over composition rules, so there is deliberately no "must contain
- * a symbol" regex to go with it.
+ * **Six — an operator decision, 2026-09-10.** It has been fifteen (the old
+ * hosted identity provider's own instance setting, never a decision anyone
+ * here made) and then twelve; six is the number the operator asked for and
+ * is the number to keep unless they say otherwise.
+ *
+ * ⚠️ SIX IS BELOW EVERY PUBLISHED FLOOR, so the compensating controls are
+ * now the only thing standing between a guessed password and a seller's
+ * identity documents and bank details. They are load-bearing, not optional:
+ * `MAX_FAILED_LOGINS` / `lockedUntil` on the row (which survives the
+ * `pm2 reload` that resets the in-memory throttler), the 10/60s login
+ * throttle, and bcrypt at cost 12. Weakening any of those is a much larger
+ * change than it looks, now that the floor no longer helps.
+ *
+ * ⚠️ **No user-facing copy may describe this as a strong-password control**,
+ * and the POPIA s19 "appropriate technical measures" wording must not lean on
+ * it. Nothing claims that today — keep it that way.
+ *
+ * ⚠️ **COMPOSITION RULES ARE ON, AND THAT IS A REVERSAL.** This file used to
+ * say NIST prefers length over composition and therefore carried no "must
+ * contain a symbol" regex. The operator asked for six-with-a-number-and-a-
+ * symbol on 2026-09-10, so the rules below are theirs and the old note is
+ * gone rather than left contradicting the code. Do not cite NIST for either
+ * half now: its argument was a longer floor with no composition rules, which
+ * is neither of the two things this is.
  */
-export const PASSWORD_MIN = 12;
+export const PASSWORD_MIN = 6;
 export const PASSWORD_MAX = 200;
+
+/**
+ * ⚠️ THESE TWO REGEXES ARE DUPLICATED IN `frontend/lib/password-rule.ts` AND
+ * MUST STAY CHARACTER-FOR-CHARACTER IDENTICAL. The backend cannot import from
+ * the frontend, and the frontend validates as you type — so any drift means a
+ * password the form accepts and the API answers 400 to, on the last click of
+ * a sign-up. Change one, change the other, and run that file's spec.
+ */
+export const PASSWORD_DIGIT_RE = /[0-9]/;
+/**
+ * "Special" = anything that is not a letter, a digit, or WHITESPACE.
+ *
+ * ⚠️ The `\s` is the point of the character class, not decoration. Whitespace
+ * is still allowed *in* a password — a passphrase with spaces is fine — it
+ * just cannot be the character that SATISFIES the rule. Without the `\s`, a
+ * stray trailing space silently qualifies, and the member sets a password
+ * they will never reproduce and cannot tell apart from a forgotten one.
+ */
+export const PASSWORD_SPECIAL_RE = /[^A-Za-z0-9\s]/;
+
+/**
+ * The whole password rule, in one decorator.
+ *
+ * ⚠️ APPLY THIS TO EVERY FIELD THAT SETS A PASSWORD — register, reset,
+ * change — and to NONE that merely accepts one for comparison. Three copies
+ * of five decorators is how a rule ends up enforced on two screens out of
+ * three, and the one it is missing from is the one an attacker uses.
+ *
+ * ⚠️ **NOT ON `LoginDto`, EVER.** Sign-in must fail on the hash comparison,
+ * never on validation. A member whose existing password predates a rule
+ * change would otherwise be told their own correct password is malformed and
+ * locked out of the account by a policy edit — and tightening the rule again
+ * later is exactly when that would happen.
+ */
+function IsMemberPassword() {
+  return applyDecorators(
+    IsString(),
+    MinLength(PASSWORD_MIN, {
+      message: `Password must be at least ${PASSWORD_MIN} characters`,
+    }),
+    MaxLength(PASSWORD_MAX),
+    Matches(PASSWORD_DIGIT_RE, {
+      message: 'Password must include at least one number',
+    }),
+    Matches(PASSWORD_SPECIAL_RE, {
+      message:
+        'Password must include at least one special character, such as ! ? # or @',
+    }),
+  );
+}
 
 /** Letters, digits, underscore, hyphen. No dots — they read as a domain. */
 const USERNAME_RE = /^[A-Za-z0-9_-]+$/;
@@ -38,11 +107,7 @@ export class RegisterDto {
   @MaxLength(255)
   email: string;
 
-  @IsString()
-  @MinLength(PASSWORD_MIN, {
-    message: `Password must be at least ${PASSWORD_MIN} characters`,
-  })
-  @MaxLength(PASSWORD_MAX)
+  @IsMemberPassword()
   password: string;
 
   @IsOptional()
@@ -84,22 +149,15 @@ export class ForgotPasswordDto {
 export class ResetPasswordDto {
   @IsString() @MaxLength(64) token: string;
 
-  @IsString()
-  @MinLength(PASSWORD_MIN, {
-    message: `Password must be at least ${PASSWORD_MIN} characters`,
-  })
-  @MaxLength(PASSWORD_MAX)
+  @IsMemberPassword()
   password: string;
 }
 
 export class ChangePasswordDto {
+  // Not IsMemberPassword: this one is COMPARED, not set. See that helper.
   @IsString() @MaxLength(PASSWORD_MAX) currentPassword: string;
 
-  @IsString()
-  @MinLength(PASSWORD_MIN, {
-    message: `Password must be at least ${PASSWORD_MIN} characters`,
-  })
-  @MaxLength(PASSWORD_MAX)
+  @IsMemberPassword()
   newPassword: string;
 }
 

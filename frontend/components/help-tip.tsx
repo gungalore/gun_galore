@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 // On-demand explainer that pops a short paragraph when the user
 // hovers or taps a small ⓘ icon. Use this for jargon labels and
@@ -39,7 +39,42 @@ export function HelpTip({
   const [open, setOpen] = useState(false);
   const [locked, setLocked] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Horizontal correction, in px, keeping the popover on screen. See below.
+  const [nudge, setNudge] = useState(0);
+
+  /**
+   * ⚠️ CENTRING ON THE ICON RUNS OFF A PHONE, and it does it silently — the
+   * popover is simply clipped at the viewport edge with the first character
+   * or two of every line gone. The `maxWidth: min(90vw, …)` below caps the
+   * WIDTH but not the OFFSET, so a 260px popover centred on an icon 112px
+   * from the left starts at -18px and nothing about the layout complains.
+   *
+   * So measure once on open and shift it back inside. This converges: the
+   * correction is applied to the transform, the next pass measures the moved
+   * element and computes zero. Only `top`/`bottom` need it — `left`/`right`
+   * anchor to the icon's edge rather than centring on it.
+   */
+  useLayoutEffect(() => {
+    if (!open || (side !== 'top' && side !== 'bottom')) {
+      if (nudge !== 0) setNudge(0);
+      return;
+    }
+    const el = popRef.current;
+    if (!el) return;
+    const margin = 8;
+    const r = el.getBoundingClientRect();
+    let delta = 0;
+    if (r.left < margin) delta = margin - r.left;
+    else if (r.right > window.innerWidth - margin) {
+      delta = window.innerWidth - margin - r.right;
+    }
+    // Never push the popover so far that it leaves the other edge.
+    if (delta !== 0 && r.width <= window.innerWidth - margin * 2) {
+      setNudge((n) => n + delta);
+    }
+  }, [open, side, nudge]);
 
   // Outside-click dismiss + ESC dismiss.
   useEffect(() => {
@@ -102,16 +137,19 @@ export function HelpTip({
   // best for icons that sit on the right of a label, since the
   // popover drops into open space below.
   const posStyle: React.CSSProperties = (() => {
+    // `nudge` rides along in the same transform as the centring, so the two
+    // cannot fight — a second transform property would just overwrite it.
+    const centred = `translateX(calc(-50% + ${nudge}px))`;
     switch (side) {
       case 'top':
-        return { bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)' };
+        return { bottom: 'calc(100% + 6px)', left: '50%', transform: centred };
       case 'left':
         return { right: 'calc(100% + 6px)', top: '50%', transform: 'translateY(-50%)' };
       case 'right':
         return { left: 'calc(100% + 6px)', top: '50%', transform: 'translateY(-50%)' };
       case 'bottom':
       default:
-        return { top: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)' };
+        return { top: 'calc(100% + 6px)', left: '50%', transform: centred };
     }
   })();
 
@@ -162,6 +200,7 @@ export function HelpTip({
 
       {open && (
         <div
+          ref={popRef}
           role="tooltip"
           style={{
             position: 'absolute',

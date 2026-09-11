@@ -7,6 +7,14 @@ import { useSession } from '../../../lib/auth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { readCampaignAttrib, clearCampaignAttrib } from '@/lib/campaign-attrib';
 import { StepRail, type StepRailStep } from '@/components/step-rail';
+import { HelpTip } from '@/components/help-tip';
+import { PasswordRulesTip } from '@/components/password-rules';
+import {
+  PASSWORD_MIN,
+  PASSWORD_HINT,
+  passwordProblem,
+} from '@/lib/password-rule';
+import { authErrorMessage } from '@/lib/auth-error';
 
 // ⚠️ NEXT_PUBLIC_ ONLY. This file is 'use client'; Next inlines nothing else,
 // so an INTERNAL_API_URL here is always undefined in the browser.
@@ -16,6 +24,14 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 // Privacy Policy a user accepted (POPIA accountability). Bump when the
 // policies materially change.
 const POLICY_VERSION = '2026-07-17';
+// ⚠️ THE PASSWORD RULE IS NOT DEFINED HERE ANY MORE — it is in
+// lib/password-rule.ts, alongside the reset form's copy and a spec that
+// checks both against the backend DTO. It has been 15 (the old hosted
+// provider's own instance setting) and 12, and each move left one screen
+// behind: a floor stated too high has the browser's own minLength refuse a
+// password the API accepts, and stated too low has the member fill in a whole
+// form and get bounced on the last click. That is why no screen holds a
+// literal.
 // ⚠️ THE PENDING-CONSENT CHANNEL IS GONE WITH THE OAUTH PATH IT SERVED.
 // Consent used to be parked in sessionStorage during a Google redirect and
 // flushed by an app-wide <ConsentSync/> once a session existed, because there
@@ -85,12 +101,20 @@ function Field({
   children,
   hint,
   htmlFor,
+  tip,
 }: {
   label: string;
   required?: boolean;
   children: React.ReactNode;
   hint?: string;
   htmlFor?: string;
+  /**
+   * Optional ⓘ beside the label, opening the house <HelpTip/>. Use it for a
+   * rule that needs more than the one-line `hint` — never for the rule
+   * itself, which must stay visible. A requirement only reachable by hover
+   * is a requirement a phone cannot read.
+   */
+  tip?: React.ReactNode;
 }) {
   return (
     <div>
@@ -104,6 +128,16 @@ function Field({
           <span style={{ color: 'var(--red)', marginLeft: 4 }} aria-hidden>
             *
           </span>
+        )}
+        {/* ⚠️ side="top", not the default "bottom". On a form field the input
+            is ALWAYS directly under its label, so a popover that drops down
+            covers the box the member opened it to help them fill in — and on
+            this form it also lands on the Terms link. Above covers a field
+            they have already dealt with. */}
+        {tip && (
+          <HelpTip title={label} side="top">
+            {tip}
+          </HelpTip>
         )}
       </label>
       {children}
@@ -135,6 +169,7 @@ export default function SignUpForm() {
     email: useId(),
     phone: useId(),
     password: useId(),
+    passwordIssue: useId(),
     usernameStatus: useId(),
   };
 
@@ -148,6 +183,9 @@ export default function SignUpForm() {
     password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
+  // Derived, not state: a second copy of "is the password acceptable" is a
+  // second copy that can be stale by one keystroke.
+  const passwordIssue = passwordProblem(form.password);
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [agreedAge, setAgreedAge] = useState(false);
   const [marketing, setMarketing] = useState(false);
@@ -260,14 +298,10 @@ export default function SignUpForm() {
             : {}),
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as {
-        message?: string | string[];
-      };
+      const data = (await res.json().catch(() => ({}))) as unknown;
       if (!res.ok) {
         setFormError(
-          Array.isArray(data.message)
-            ? data.message[0]
-            : (data.message ?? 'Something went wrong. Please try again.'),
+          authErrorMessage(res, data, 'Something went wrong. Please try again.'),
         );
         return;
       }
@@ -304,8 +338,11 @@ export default function SignUpForm() {
       };
       if (!res.ok) {
         setVerifyError(
-          data.message ??
+          authErrorMessage(
+            res,
+            data,
             "We couldn't finish verifying your account. Request a new code, or contact support if this keeps happening.",
+          ),
         );
         return;
       }
@@ -338,9 +375,11 @@ export default function SignUpForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: form.email.trim() }),
       });
-      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      const data = (await res.json().catch(() => ({}))) as unknown;
       if (!res.ok) {
-        setVerifyError(data.message ?? 'Could not send a new code.');
+        setVerifyError(
+          authErrorMessage(res, data, 'Could not send a new code.'),
+        );
         return;
       }
       setVerifyNotice(`A new code is on its way to ${form.email}.`);
@@ -596,19 +635,25 @@ export default function SignUpForm() {
             </div>
           </Field>
 
-          {/* Password. The hint must match the Clerk instance's minimum
-              (Configure > User & authentication > Password: 15 characters,
-              with compromised-password rejection on). Clerk enforces it
-              server-side, so understating it here just means the user writes
-              a password, submits the whole form, and gets bounced. */}
-          <Field label="Password" required htmlFor={ids.password} hint="At least 15 characters.">
+          {/* Password. The rule lives in lib/password-rule.ts — the hint, the
+              tooltip and the live check below all read it, so none of them
+              can state a rule the API does not enforce. */}
+          <Field
+            label="Password"
+            required
+            htmlFor={ids.password}
+            hint={PASSWORD_HINT}
+            tip={<PasswordRulesTip password={form.password} />}
+          >
             <div style={{ position: 'relative' }}>
               <input
                 id={ids.password}
                 type={showPassword ? 'text' : 'password'}
                 required
                 aria-required
-                minLength={15}
+                minLength={PASSWORD_MIN}
+                aria-describedby={passwordIssue ? ids.passwordIssue : undefined}
+                aria-invalid={passwordIssue ? true : undefined}
                 value={form.password}
                 onChange={(e) => set('password', e.target.value)}
                 style={{ ...inputStyle, paddingRight: 56 }}
@@ -635,6 +680,17 @@ export default function SignUpForm() {
                 {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
+            {/* Live, and only once they have typed something — see
+                passwordProblem(), which stays quiet on an empty field. */}
+            {passwordIssue && (
+              <p
+                id={ids.passwordIssue}
+                className="text-xs mt-1"
+                style={{ color: 'var(--red)' }}
+              >
+                {passwordIssue}
+              </p>
+            )}
           </Field>
 
           {/* Consent — Terms/Privacy and the 18+ affirmation are SEPARATE,
@@ -695,10 +751,17 @@ export default function SignUpForm() {
 
           {(() => {
             // Username availability is ADVISORY: block only on a confirmed
-            // 'taken'. 'idle' / 'checking' / 'error' still allow submit — Clerk
-            // enforces uniqueness server-side and returns a real error.
+            // 'taken'. 'idle' / 'checking' / 'error' still allow submit — the
+            // API enforces uniqueness and returns a real error.
+            //
+            // The PASSWORD rule is not advisory: the API refuses it outright,
+            // so blocking here turns a bounced submit into a message beside
+            // the field the member is already looking at.
             const canSubmit =
-              consentOk && usernameStatus.kind !== 'taken' && !submitting;
+              consentOk &&
+              usernameStatus.kind !== 'taken' &&
+              !passwordProblem(form.password) &&
+              !submitting;
             return (
               <button
                 type="submit"
@@ -900,8 +963,9 @@ function VerifyStep({
   );
 }
 
-// Clerk surfaces errors as `ClerkAPIError` arrays. Surface the first one
-// in plain English; fall back to a generic message.
+// For a THROWN error — a dropped connection, a DNS failure — not for an HTTP
+// response the server actually sent. Those go through authErrorMessage(),
+// which knows about rate limits and framework strings.
 function prettyAuthError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return 'Something went wrong. Please try again.';

@@ -3,11 +3,16 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { HelpTip } from '@/components/help-tip';
+import { authErrorMessage } from '@/lib/auth-error';
+import { PasswordRulesTip } from '@/components/password-rules';
+import {
+  PASSWORD_MIN,
+  PASSWORD_HINT,
+  passwordProblem,
+} from '@/lib/password-rule';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-/** Must match PASSWORD_MIN in backend/src/auth/dto/auth.dto.ts. */
-const PASSWORD_MIN = 12;
 
 const field: React.CSSProperties = {
   width: '100%',
@@ -34,12 +39,15 @@ export function ResetForm() {
     setToken(params.get('token') ?? '');
   }, [params]);
 
-  const tooShort = password.length > 0 && password.length < PASSWORD_MIN;
+  // The same rule the sign-up form and the API use — see lib/password-rule.ts.
+  // It was a bare length check here, which quietly stopped being the whole
+  // rule the day the number and the special character were added.
+  const passwordIssue = passwordProblem(password);
   const mismatch = confirm.length > 0 && confirm !== password;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy || tooShort || mismatch) return;
+    if (busy || passwordIssue || mismatch) return;
     setBusy(true);
     setError(null);
     try {
@@ -52,7 +60,11 @@ export function ResetForm() {
       const data = (await res.json().catch(() => ({}))) as { message?: string };
       if (!res.ok) {
         setError(
-          data.message ?? 'That reset link is no longer valid. Request a new one.',
+          authErrorMessage(
+            res,
+            data,
+            'That reset link is no longer valid. Request a new one.',
+          ),
         );
         return;
       }
@@ -109,19 +121,29 @@ export function ResetForm() {
       </p>
 
       <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-        New password
+        <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+          New password
+          {/* Above, not below — the input sits directly under this label. */}
+          <HelpTip title="New password" side="top">
+            <PasswordRulesTip password={password} />
+          </HelpTip>
+        </span>
         <input
           type="password"
           autoComplete="new-password"
           required
           minLength={PASSWORD_MIN}
+          aria-invalid={passwordIssue ? true : undefined}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           style={{ ...field, marginTop: 4 }}
         />
       </label>
+      {/* The rule stays visible; the tooltip is the long form, not the only
+          form. A requirement reachable only by hover is one a phone meets by
+          trial and error. */}
       <p className="text-xs -mt-1" style={{ color: 'var(--text-faint)' }}>
-        At least {PASSWORD_MIN} characters. Longer beats complicated.
+        {PASSWORD_HINT}
       </p>
 
       <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -136,24 +158,21 @@ export function ResetForm() {
         />
       </label>
 
-      {(tooShort || mismatch || error) && (
+      {(passwordIssue || mismatch || error) && (
         <p className="text-xs" style={{ color: 'var(--red)' }} role="alert">
-          {error ??
-            (tooShort
-              ? `Use at least ${PASSWORD_MIN} characters.`
-              : 'Those two do not match.')}
+          {error ?? passwordIssue ?? 'Those two do not match.'}
         </p>
       )}
 
       <button
         type="submit"
-        disabled={busy || tooShort || mismatch || !password}
+        disabled={busy || !!passwordIssue || mismatch || !password}
         className="w-full py-2.5 rounded-[6px] text-sm"
         style={{
           background: 'var(--red)',
           color: '#fff',
           border: 'none',
-          opacity: busy || tooShort || mismatch || !password ? 0.6 : 1,
+          opacity: busy || passwordIssue || mismatch || !password ? 0.6 : 1,
         }}
       >
         {busy ? 'Saving…' : 'Change password'}
