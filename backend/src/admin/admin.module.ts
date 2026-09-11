@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AdminAuthService } from './admin-auth.service';
+import { AdminSessionService } from './admin-session.service';
 import { AdminService } from './admin.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { AdminAuditService } from './admin-audit.service';
@@ -64,6 +65,13 @@ import { UsersModule } from '../users/users.module';
   ],
   providers: [
     AdminAuthService,
+    // ⚠️ Provided HERE and nowhere else. AdminJwtGuard is mounted from
+    // fourteen modules and deliberately does NOT inject this service — it
+    // reads `prisma.adminSession` directly — because a new constructor
+    // dependency on that guard crash-loops the backend at boot in every
+    // module that has not also been given the provider, while tsc and every
+    // unit test stay green. Only AdminAuthService needs the minting side.
+    AdminSessionService,
     AdminService,
     // The KYC dossier reads the identity document and selfie out of the
     // encrypted store — they came off a public CDN and an authenticated read

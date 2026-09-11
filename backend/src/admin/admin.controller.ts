@@ -11,10 +11,12 @@ import {
   Query,
   UseGuards,
   HttpCode,
+  Header,
+  Req,
   Res,
   BadRequestException,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { toCsv } from '../common/csv.util';
 import { DealerVerificationService } from '../payments/dealer-verification.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
@@ -25,14 +27,24 @@ import { isShipmentFailureReason } from '../common/shipment-failure-policy';
 import { SuperadminGuard } from './guards/superadmin.guard';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
 import { ReadShapedRoute } from './decorators/read-shaped-route.decorator';
+import { OwnAccountRoute } from './decorators/own-account-route.decorator';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminService } from './admin.service';
 import { ListingsService } from '../listings/listings.service';
-import { AdminLoginDto } from './dto/admin-login.dto';
+import {
+  AdminChangePasswordDto,
+  AdminConfirmTotpDto,
+  AdminEnrolTotpDto,
+  AdminLoginDto,
+  AdminRefreshDto,
+} from './dto/admin-login.dto';
 import { ListingReviewDto } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateAdminDto } from './dto/create-admin.dto';
-import { UpdateAdminRoleDto } from './dto/update-admin-role.dto';
+import {
+  DeactivateAdminDto,
+  UpdateAdminRoleDto,
+} from './dto/update-admin-role.dto';
 import { AdminAuditService } from './admin-audit.service';
 import {
   AdminAnalyticsService,
@@ -70,53 +82,295 @@ import {
 // ---------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------
+
+/**
+ * Every response on this controller varies by viewer and most of them carry a
+ * token. A shared cache holding one is somebody else's admin session — and
+ * this is the session that will be able to approve a command on the box.
+ *
+ * ⚠️ NOT ONE OF THESE ROUTES CARRIED A Cache-Control HEADER BEFORE 2026-09-11,
+ * including the one whose body is a signed credential.
+ */
+const NoStoreAdmin = () => Header('Cache-Control', 'private, no-store');
+
+/**
+ * ⚠️ `secure` FOLLOWS THE SCHEME; IT MUST NOT GO BACK TO A HARDCODED `true`.
+ * It was hardcoded on both cookie calls here, which the member controller
+ * pointedly avoids and explains why: a Secure cookie is silently DROPPED by
+ * the browser over plain http, so on a local backend the login "succeeds",
+ * sets nothing, and the next request is anonymous — a broken sign-in with
+ * nothing in any log to say so. Production is https end to end (nginx sends
+ * X-Forwarded-Proto https), so this stays true where it matters.
+ */
+const adminCookieIsSecure = () => process.env.NODE_ENV === 'production';
+
+/**
+ * The access-token cookie the login route has always set.
+ *
+ * ⚠️ IT IS STILL WRITE-ONLY, AND THAT IS NOT AN OVERSIGHT. AdminJwtGuard
+ * reads `Authorization: Bearer` and nothing else, so this cookie authenticates
+ * no request today; the Desk's real credential is the token in the body.
+ * It is kept set because `frontend/app/(legal)/cookies/page.tsx` discloses it
+ * to users — removing it is a legal-copy change, not a code change — and
+ * because the frontend track may move the Desk onto cookie transport.
+ *
+ * ⚠️ DO NOT MAKE THE GUARD READ IT WITHOUT ALSO ADDING CSRF PROTECTION. The
+ * moment a cookie authenticates a request, every state-changing admin route
+ * becomes reachable by a cross-site form post. `SameSite=lax` blocks the
+ * simple version of that; it is not a CSRF strategy on its own.
+ */
+const ADMIN_ACCESS_COOKIE = 'gg_admin_sess';
+
+/**
+ * The refresh cookie.
+ *
+ * ⚠️ PATH-SCOPED TO THE AUTH ROUTES on purpose, exactly like the member
+ * `ao_rt`. The refresh token is the long-lived half of the pair; the fewer
+ * requests carry it, the fewer places it can leak. Widening this path to '/'
+ * attaches it to all ~148 admin requests.
+ */
+const ADMIN_REFRESH_COOKIE = 'gg_admin_rt';
+
 @Controller('admin/auth')
 export class AdminAuthController {
   constructor(private readonly authService: AdminAuthService) {}
 
-  // Hard-cap brute force at 10 attempts/min/IP. A real attacker would
-  // distribute across IPs but this stops the casual one + keeps the
-  // backend's bcrypt work bounded.
+  private meta(req: Request) {
+    return { userAgent: req.headers['user-agent'], ip: req.ip };
+  }
+
+  private baseCookie() {
+    return {
+      httpOnly: true,
+      secure: adminCookieIsSecure(),
+      sameSite: 'lax' as const,
+    };
+  }
+
+  private setCookies(
+    res: Response,
+    issued: { accessToken: string; refreshToken: string; accessExpiresAt: Date; refreshExpiresAt: Date },
+  ) {
+    res.cookie(ADMIN_ACCESS_COOKIE, issued.accessToken, {
+      ...this.baseCookie(),
+      path: '/',
+      // ⚠️ Follows the ACCESS token's fifteen-minute life, not the old
+      // hardcoded eight hours. A cookie outliving the token it holds is a
+      // browser confidently sending a credential the server already refuses.
+      expires: issued.accessExpiresAt,
+    });
+    res.cookie(ADMIN_REFRESH_COOKIE, issued.refreshToken, {
+      ...this.baseCookie(),
+      path: '/api/admin/auth',
+      expires: issued.refreshExpiresAt,
+    });
+  }
+
+  private clearCookies(res: Response) {
+    // Matching attrs and paths, or some browsers do not recognise the clear
+    // and the stale cookie survives the sign-out that was meant to kill it.
+    res.clearCookie(ADMIN_ACCESS_COOKIE, { ...this.baseCookie(), path: '/' });
+    res.clearCookie(ADMIN_REFRESH_COOKIE, {
+      ...this.baseCookie(),
+      path: '/api/admin/auth',
+    });
+  }
+
+  private readRefreshCookie(req: Request): string | undefined {
+    return (req as Request & { cookies?: Record<string, string> }).cookies?.[
+      ADMIN_REFRESH_COOKIE
+    ];
+  }
+
+  // Hard-cap brute force at 10 attempts/min/IP.
+  //
+  // ⚠️ THIS IS NOT THE REAL BRAKE AND MUST NOT BE TREATED AS ONE. The
+  // throttler's store is in memory, so every `pm2 reload` — every deploy —
+  // clears it and hands an attacker a fresh budget. The durable counter is
+  // AdminUser.failedLoginCount; see AdminAuthService.recordFailedLogin.
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
   @HttpCode(200)
+  @NoStoreAdmin()
   async login(
     @Body() dto: AdminLoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.login(dto);
-    // Set the JWT as an HTTP-only Secure cookie so the browser handles
-    // it server-side (more reliable than document.cookie which was
-    // failing to persist across navigations for some users). passthrough
-    // keeps Nest's normal JSON response — we just piggyback Set-Cookie.
-    res.cookie('gg_admin_sess', result.token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 8 * 60 * 60 * 1000, // 8 hours, matches JWT expiry
+    const result = await this.authService.login(dto, this.meta(req));
+    this.setCookies(res, {
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      accessExpiresAt: new Date(result.expiresAt),
+      // ⚠️ FROM THE SERVICE, NOT RE-DERIVED HERE. A second hardcoded "30
+      // days" in this file is how a cookie ends up outliving the token inside
+      // it — a browser confidently sending a credential the server already
+      // refuses, which reads to the operator as a random sign-out.
+      refreshExpiresAt: new Date(result.refreshExpiresAt),
     });
     return result;
   }
 
+  /**
+   * Rotate the refresh token into a fresh pair.
+   *
+   * ⚠️ NO AdminJwtGuard, DELIBERATELY. Refresh is what you call once the
+   * fifteen-minute access token is already dead — guarding it with the token
+   * it exists to replace is a sign-in loop. The refresh token IS the
+   * credential here, and AdminSessionService.rotate() is what checks it.
+   */
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Post('refresh')
+  @HttpCode(200)
+  @NoStoreAdmin()
+  async refresh(
+    @Body() dto: AdminRefreshDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = this.readRefreshCookie(req) ?? dto.refreshToken;
+    if (!token) {
+      this.clearCookies(res);
+      return { ok: false };
+    }
+    try {
+      const issued = await this.authService.refresh(token, this.meta(req));
+      this.setCookies(res, issued);
+      return {
+        token: issued.accessToken,
+        accessToken: issued.accessToken,
+        refreshToken: issued.refreshToken,
+        expiresAt: issued.accessExpiresAt.toISOString(),
+        recoveryOnly: issued.recoveryOnly,
+      };
+    } catch (err) {
+      // ⚠️ CLEAR BEFORE RETHROWING. A refused refresh means the session is
+      // gone; leaving the cookies in place loops the client — a cookie is
+      // present, so it renders, so the API 401s, so it refreshes, forever.
+      this.clearCookies(res);
+      throw err;
+    }
+  }
+
+  /**
+   * ⚠️ THIS NOW REVOKES SOMETHING. The old logout cleared `gg_admin_sess` —
+   * a cookie AdminJwtGuard never read — and returned `{ok:true}`. Nothing was
+   * revoked, because there was no session row to revoke, so the bearer token
+   * the Desk held in localStorage stayed valid for the rest of its eight
+   * hours. Sign-out was cosmetic.
+   *
+   * Still unguarded: you must be able to sign out with a dead access token,
+   * and the refresh token presented is itself the proof of what to revoke.
+   */
   @Post('logout')
   @HttpCode(200)
-  logout(@Res({ passthrough: true }) res: Response) {
-    // Clear the cookie so the browser stops sending it. Matching attrs
-    // are required for some browsers to recognise the clear.
-    res.clearCookie('gg_admin_sess', {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-    });
-    return { ok: true };
+  @NoStoreAdmin()
+  async logout(
+    @Body() dto: AdminRefreshDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = this.readRefreshCookie(req) ?? dto?.refreshToken;
+    this.clearCookies(res);
+    return this.authService.logout(token);
   }
 
   @Get('me')
   @UseGuards(AdminJwtGuard)
+  @NoStoreAdmin()
   me(@CurrentAdmin() admin: { sub: string; email: string; role: string }) {
     return this.authService.me(admin);
+  }
+
+  /**
+   * The open sessions on this admin's own account.
+   *
+   * GET, so no hatch needed — a read-only admin may see their own devices.
+   */
+  @Get('sessions')
+  @UseGuards(AdminJwtGuard)
+  @NoStoreAdmin()
+  sessions(@CurrentAdmin() admin: { sub: string }) {
+    return this.authService.listSessions(admin.sub);
+  }
+
+  // ── Own-account writes ────────────────────────────────────────────────
+  //
+  // ⚠️ THE FOUR ROUTES BELOW CARRY @OwnAccountRoute() AND ARE PINNED BY
+  // own-account-routes.spec.ts. Each writes only the caller's own credential,
+  // addressed by @CurrentAdmin().sub and by no id from the path, query or
+  // body. A route added here that takes a target admin id is a privilege
+  // escalation; add it to the AdminAdminsController instead, where it is
+  // SUPERADMIN-gated and audited.
+
+  /**
+   * ⚠️ THE ONLY WAY AN ADMIN PASSWORD CAN BE SET THROUGH THE API AT ALL.
+   * `createAdmin` writes a random throwaway hash nobody has ever seen, so
+   * before this route a freshly created admin literally could not sign in —
+   * the only working provisioning path was `scripts/create-admin.mjs` on the
+   * box. It still is; this is how the printed password stops being the
+   * password.
+   */
+  @Throttle({ default: { limit: 5, ttl: 600_000 } })
+  @Post('password')
+  @UseGuards(AdminJwtGuard)
+  @OwnAccountRoute()
+  @HttpCode(200)
+  @NoStoreAdmin()
+  changePassword(
+    @Body() dto: AdminChangePasswordDto,
+    @CurrentAdmin() admin: { sub: string; sid?: string },
+  ) {
+    return this.authService.changePassword(admin.sub, dto, admin.sid);
+  }
+
+  /**
+   * Step one of enrolment. The response carries the TOTP secret — the only
+   * time it ever leaves the server — so it is no-store and nothing logs it.
+   *
+   * ⚠️ IT TAKES A BODY, AND THE BODY MATTERS: replacing a confirmed
+   * authenticator requires the account's current password. The own-account
+   * hatch opens this route to a read-only recovery session on purpose, so the
+   * password is what stops a stolen access token swapping the second factor.
+   */
+  @Throttle({ default: { limit: 10, ttl: 600_000 } })
+  @Post('totp/enrol')
+  @UseGuards(AdminJwtGuard)
+  @OwnAccountRoute()
+  @HttpCode(200)
+  @NoStoreAdmin()
+  enrolTotp(
+    @CurrentAdmin() admin: { sub: string },
+    @Body() dto: AdminEnrolTotpDto,
+  ) {
+    return this.authService.enrolTotp(admin.sub, dto);
+  }
+
+  /**
+   * Step two: prove the secret reached a phone. Returns the ten recovery
+   * codes, once. Nothing can re-read them.
+   */
+  @Throttle({ default: { limit: 10, ttl: 600_000 } })
+  @Post('totp/confirm')
+  @UseGuards(AdminJwtGuard)
+  @OwnAccountRoute()
+  @HttpCode(200)
+  @NoStoreAdmin()
+  confirmTotp(
+    @Body() dto: AdminConfirmTotpDto,
+    @CurrentAdmin() admin: { sub: string; sid?: string },
+  ) {
+    return this.authService.confirmTotp(admin.sub, dto, admin.sid);
+  }
+
+  /** "Sign out everywhere else" — the caller's own sessions only. */
+  @Post('sessions/revoke-others')
+  @UseGuards(AdminJwtGuard)
+  @OwnAccountRoute()
+  @HttpCode(200)
+  @NoStoreAdmin()
+  revokeOtherSessions(@CurrentAdmin() admin: { sub: string; sid?: string }) {
+    return this.authService.revokeOtherSessions(admin.sub, admin.sid);
   }
 }
 
@@ -729,11 +983,26 @@ export class AdminAdminsController {
     return this.adminService.listAdmins();
   }
 
+  // ⚠️ ALL THREE WRITES BELOW NOW REQUIRE A `reason` AND WRITE AN AUDIT ROW.
+  // They decide who may approve a command that runs on the production box,
+  // and until 2026-09-11 not one of them called audit.record() — twelve other
+  // writes in admin.service.ts did, but the three that hand out the power
+  // those twelve need did not. There was no record that anyone had ever
+  // created an admin.
+  //
+  // ⚠️ THE `reason` IS A BREAKING CHANGE FOR A CALLER THAT SENDS NONE:
+  // class-validator 400s the request. Backend and Desk must land together.
+
   @Post()
   @UseGuards(SuperadminGuard)
   @HttpCode(201)
   create(@Body() dto: CreateAdminDto, @CurrentAdmin() admin: { sub: string }) {
-    return this.adminService.createAdmin(dto.email, dto.role, admin.sub);
+    return this.adminService.createAdmin(
+      dto.email,
+      dto.role,
+      admin.sub,
+      dto.reason,
+    );
   }
 
   @Patch(':id/role')
@@ -743,14 +1012,25 @@ export class AdminAdminsController {
     @Body() dto: UpdateAdminRoleDto,
     @CurrentAdmin() admin: { sub: string },
   ) {
-    return this.adminService.updateAdminRole(id, dto.role, admin.sub);
+    return this.adminService.updateAdminRole(
+      id,
+      dto.role,
+      admin.sub,
+      dto.reason,
+    );
   }
 
+  // ⚠️ THIS TOOK NO @Body() AT ALL before 2026-09-11 — there was no DTO, so
+  // there was nowhere for a reason to go, which is why it logged nothing.
   @Post(':id/deactivate')
   @UseGuards(SuperadminGuard)
   @HttpCode(200)
-  deactivate(@Param('id') id: string, @CurrentAdmin() admin: { sub: string }) {
-    return this.adminService.deactivateAdmin(id, admin.sub);
+  deactivate(
+    @Param('id') id: string,
+    @Body() dto: DeactivateAdminDto,
+    @CurrentAdmin() admin: { sub: string },
+  ) {
+    return this.adminService.deactivateAdmin(id, admin.sub, dto.reason);
   }
 }
 

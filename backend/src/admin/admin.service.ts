@@ -2870,10 +2870,25 @@ export class AdminService {
     });
   }
 
+  /**
+   * ⚠️ THE THREE METHODS BELOW GRANT, CHANGE AND REMOVE ADMIN ACCESS, AND
+   * UNTIL 2026-09-11 NONE OF THEM WROTE AN AUDIT ROW. Twelve other writes in
+   * this file call `audit.record()`; these three — the ones that hand out the
+   * power the other twelve need — called it from nowhere, so there was no
+   * record anywhere that anybody had ever been made an administrator. That
+   * matters now in a way it did not before: an admin session is about to
+   * become the thing that approves a command running on the production box.
+   *
+   * `reason` is REQUIRED and reaches here from the DTO.
+   * AdminAuditService.record() throws BadRequestException on an empty one
+   * BEFORE the insert, so a missing reason fails the whole operation rather
+   * than logging an anonymous one.
+   */
   async createAdmin(
     targetEmail: string,
     role: AdminRole,
     creatorAdminId: string,
+    reason: string,
   ) {
     // Verify the creator is a SUPERADMIN (defence-in-depth — the
     // SuperadminGuard already gates the controller, but we don't want
@@ -2890,11 +2905,10 @@ export class AdminService {
     const email = targetEmail.trim().toLowerCase();
     if (!email) throw new BadRequestException('Email is required');
 
-    // Look up the member-linked User. We refuse to create an admin for
-    // an email that isn't already a identity-provider user — that's the contract the
-    // user wanted: admins go through the identity provider too, so phone/email come from
-    // there. If they need to be promoted, they have to sign up at the
-    // public /sign-up first.
+    // Look up the member-linked User. We refuse to create an admin for an
+    // email that is not already a member — so phone and email come from one
+    // place rather than a duplicate column. If they need to be promoted, they
+    // sign up at the public /sign-up first.
     const linkedUser = await this.prisma.user.findUnique({
       where: { email },
       select: { id: true, firstName: true, lastName: true },
@@ -2914,12 +2928,26 @@ export class AdminService {
       throw new BadRequestException('That email is already an admin');
     }
 
-    // A random throwaway password — login goes through the identity provider in
-    // practice (future change), but the schema requires a hash, so we
-    // fill it with something the admin can't guess + reset later.
+    // A random throwaway password nobody has ever seen.
+    //
+    // ⚠️ THIS ROW CANNOT LOG IN UNTIL SOMEBODY SETS A PASSWORD ON THE BOX.
+    // The comment here used to say "login goes through the identity provider"
+    // — that stopped being true when Clerk was removed on 2026-09-10, and the
+    // consequence went unnoticed: creating an admin through the Desk produced
+    // an account with a hash of 24 random bytes and no route anywhere that
+    // could change it. The provisioning path is
+    // `node scripts/create-admin.mjs <email> --reset` on the box, which
+    // prints a password once; the new admin then rotates it themselves at
+    // POST /admin/auth/password. Shell access is the strongest authentication
+    // in this system, which is the right place for "who gets in at all".
+    //
+    // ⚠️ COST 12, NOT 10. It was 10 here and 12 on the member side, whose
+    // comment claimed it "matches the admin side". It did not. The value is
+    // moot for a hash nobody will ever present, but a second cost floating
+    // around is how the real ones drift.
     const placeholderHash = await bcrypt.hash(
       randomBytes(24).toString('hex'),
-      10,
+      12,
     );
 
     const created = await this.prisma.adminUser.create({
@@ -2941,6 +2969,20 @@ export class AdminService {
         createdAt: true,
       },
     });
+
+    // ⚠️ AFTER the write, not before: an audit row for a create that then
+    // threw would be a record of something that never happened, and this
+    // table is read to answer "who granted that access".
+    await this.audit.record({
+      adminUserId: creatorAdminId,
+      action: 'ADMIN_CREATE',
+      resourceType: 'AdminUser',
+      resourceId: created.id,
+      oldValue: null,
+      newValue: { email: created.email, role: created.role },
+      reason,
+    });
+
     return created;
   }
 
@@ -2948,6 +2990,7 @@ export class AdminService {
     targetAdminId: string,
     role: AdminRole,
     actorAdminId: string,
+    reason: string,
   ) {
     if (targetAdminId === actorAdminId) {
       throw new BadRequestException(
@@ -2961,7 +3004,17 @@ export class AdminService {
     if (!actor || actor.role !== 'SUPERADMIN') {
       throw new ForbiddenException('Only a Full admin can change roles');
     }
-    return this.prisma.adminUser.update({
+
+    // Read the OLD role before the update. Without it the audit row says what
+    // the role became and not what it was, and "was this a promotion or a
+    // demotion" is the only question anybody asks of this row.
+    const before = await this.prisma.adminUser.findUnique({
+      where: { id: targetAdminId },
+      select: { role: true, email: true },
+    });
+    if (!before) throw new NotFoundException('No such admin.');
+
+    const updated = await this.prisma.adminUser.update({
       where: { id: targetAdminId },
       data: { role },
       select: {
@@ -2973,9 +3026,25 @@ export class AdminService {
         isActive: true,
       },
     });
+
+    await this.audit.record({
+      adminUserId: actorAdminId,
+      action: 'ADMIN_ROLE_CHANGE',
+      resourceType: 'AdminUser',
+      resourceId: targetAdminId,
+      oldValue: { role: before.role },
+      newValue: { role: updated.role, email: updated.email },
+      reason,
+    });
+
+    return updated;
   }
 
-  async deactivateAdmin(targetAdminId: string, actorAdminId: string) {
+  async deactivateAdmin(
+    targetAdminId: string,
+    actorAdminId: string,
+    reason: string,
+  ) {
     if (targetAdminId === actorAdminId) {
       throw new BadRequestException('You cannot deactivate yourself.');
     }
@@ -2986,7 +3055,14 @@ export class AdminService {
     if (!actor || actor.role !== 'SUPERADMIN') {
       throw new ForbiddenException('Only a Full admin can deactivate admins');
     }
-    return this.prisma.adminUser.update({
+
+    const before = await this.prisma.adminUser.findUnique({
+      where: { id: targetAdminId },
+      select: { role: true, isActive: true },
+    });
+    if (!before) throw new NotFoundException('No such admin.');
+
+    const updated = await this.prisma.adminUser.update({
       where: { id: targetAdminId },
       data: { isActive: false },
       select: {
@@ -2996,5 +3072,33 @@ export class AdminService {
         isActive: true,
       },
     });
+
+    // ⚠️ END THEIR SESSIONS TOO, DON'T JUST FLIP THE FLAG. AdminJwtGuard does
+    // re-read `isActive` on every request, so the flag alone already refuses
+    // them — but leaving live AdminSession rows behind means their refresh
+    // token stays valid, and the moment anybody reactivates the account the
+    // old device is signed in again without ever proving anything. Switching
+    // an admin off is the emergency control for a compromised operator; it
+    // should leave nothing behind that can be resumed.
+    const sessionsEnded = await this.prisma.adminSession.updateMany({
+      where: { adminUserId: targetAdminId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    await this.audit.record({
+      adminUserId: actorAdminId,
+      action: 'ADMIN_DEACTIVATE',
+      resourceType: 'AdminUser',
+      resourceId: targetAdminId,
+      oldValue: { role: before.role, isActive: before.isActive },
+      newValue: {
+        role: updated.role,
+        isActive: updated.isActive,
+        sessionsEnded: sessionsEnded.count,
+      },
+      reason,
+    });
+
+    return { ...updated, sessionsEnded: sessionsEnded.count };
   }
 }

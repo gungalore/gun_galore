@@ -2229,12 +2229,139 @@ model AdminUser {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  /// Base32 TOTP secret. Set at enrol, TRUSTED only once totpConfirmedAt is
+  /// stamped — see the two-step comment on AdminAuthService.confirmTotp.
+  ///
+  /// ⚠️ THIS IS A CREDENTIAL, NOT A SETTING. It must never appear in
+  /// listAdmins(), in /admin/auth/me, in an audit row, or in a log line: the
+  /// secret alone mints every future code. Only the enrol response returns
+  /// it, exactly once.
+  totpSecret       String?
+  /// The secret of an enrolment IN PROGRESS, promoted to totpSecret only once
+  /// a code minted from it verifies.
+  ///
+  /// ⚠️ THIS COLUMN EXISTS BECAUSE STAGING AND TRUSTING IN ONE PLACE WAS A
+  /// PRIVILEGE ESCALATION. Enrolment used to write straight to totpSecret and
+  /// null totpConfirmedAt, so a single POST to /admin/auth/totp/enrol — which
+  /// @OwnAccountRoute() deliberately opens to a read-only recovery session —
+  /// switched the account's second factor OFF. login() reads
+  /// `enrolled = totpSecret && totpConfirmedAt`, so the next password-only
+  /// sign-in came back as a FULL WRITE session, and the ten paper codes went
+  /// inert because the recovery branch is nested inside `if (enrolled)`. Two
+  /// requests, no second device, and the read-only restriction this whole
+  /// table exists to enforce was gone. Staging here means an abandoned or
+  /// hostile enrolment changes NOTHING an attacker can use: the working factor
+  /// stands until a code from the new one proves a phone holds it.
+  totpPendingSecret String?
+  /// Set the first time a code from totpSecret verified. Until it is set the
+  /// secret is a half-finished enrolment and login must ignore it — otherwise
+  /// an interrupted enrol (scanned the QR, closed the tab) locks the operator
+  /// out with a secret no phone holds.
+  totpConfirmedAt  DateTime?
+  /// Failed sign-ins since the last success.
+  ///
+  /// ⚠️ THE THROTTLER IS NOT ENOUGH ON ITS OWN and this column is why. The
+  /// global rate limiter's store is in-memory, so every `pm2 reload` — i.e.
+  /// every deploy — hands an attacker a fresh budget. A counter on the row
+  /// survives the restart that clears the throttler.
+  failedLoginCount Int       @default(0)
+  /// Set once failedLoginCount trips the threshold. Checked BEFORE bcrypt, so
+  /// a locked account costs an attacker a lookup rather than a hash.
+  lockedUntil      DateTime?
+
   // Back-relation for AdminAuditEvent.adminUser (every audit row is
   // attributed to the admin who triggered it).
   auditEvents              AdminAuditEvent[]
+  sessions                 AdminSession[]
+  recoveryCodes            AdminRecoveryCode[]
   // Back-relation for ReloadingManual.uploadedByAdmin — admin who
   // ingested a reloading manual via the inbox-scan flow.
   reloadingManualsUploaded ReloadingManual[] @relation("ReloadingUploader")
+}
+
+// One row per signed-in Desk device. Mirrors the member `Session` model on
+// purpose — same rotation, same sha256-only storage, same grace window — so
+// there is one session design in this codebase rather than two that drift.
+//
+// ⚠️ THIS TABLE IS WHAT MAKES ADMIN SIGN-OUT MEAN ANYTHING. Before it, the
+// admin JWT WAS the session: `POST /admin/auth/logout` cleared a cookie the
+// guard never read (AdminJwtGuard.extract() reads `Authorization: Bearer`
+// only), so a stolen token stayed valid for the remainder of its eight hours
+// with no lever anywhere that could stop it. The access token is now fifteen
+// minutes and every one of them is minted against a row that can be revoked.
+model AdminSession {
+  id          String    @id @default(cuid())
+  adminUserId String
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  /// sha256 of the current refresh token. Unique so a replay collides.
+  ///
+  /// ⚠️ The token itself is NEVER stored. A dump of this table cannot mint a
+  /// session; it can only recognise one.
+  refreshHash          String    @unique
+  /// The hash this session rotated AWAY from, honoured for a few seconds.
+  ///
+  /// ⚠️ WITHOUT THIS, TWO DESK TABS SIGN THE OPERATOR OUT. Both wake with the
+  /// same refresh token, both refresh; one rotates, the other presents a hash
+  /// that now matches nothing and is treated as a replay — which revokes the
+  /// session the winning tab is holding. Same bug, same fix, as Session.
+  prevRefreshHash      String?
+  prevRefreshExpiresAt DateTime?
+  /// ⚠️ TRUE MEANS THIS SESSION WAS OPENED WITH A RECOVERY CODE AND MAY NOT
+  /// WRITE, whatever the admin's role says. A recovery code is a bearer
+  /// secret on a piece of paper; it proves the holder had the paper, not that
+  /// they still hold the phone. Read-only until they re-enrol TOTP.
+  ///
+  /// It lives on the ROW and not only in the token's `amr` claim for the same
+  /// reason the role does: the row is re-read on every request, so clearing
+  /// it takes effect immediately and a token minted earlier cannot outrun it.
+  recoveryOnly         Boolean   @default(false)
+  userAgent            String?
+  ip                   String?
+  createdAt            DateTime  @default(now())
+  lastSeenAt           DateTime  @default(now())
+  expiresAt            DateTime
+  /// Set on sign-out, password change, TOTP reset, deactivation or detected
+  /// replay. Kept rather than deleted so "which devices were signed in when
+  /// that command was approved" stays answerable after the fact.
+  revokedAt            DateTime?
+
+  @@index([adminUserId, revokedAt])
+  @@index([expiresAt])
+}
+
+// The ten single-use codes an admin can fall back on when the phone holding
+// their TOTP secret is lost, stolen or wiped.
+//
+// ⚠️ A CHILD TABLE, NOT `String[]` ON AdminUser, AND THE REASON IS THE RACE.
+// Consuming a code has to be provably single-use. As rows, that is one guarded
+// `DELETE ... WHERE id = ?` whose affected-row count is the proof: two requests
+// presenting the same code, one wins and one is told no. As an array column it
+// is a read-modify-write — both requests read ten hashes, both remove one, the
+// second write restores the code the first just spent, and a "single-use" code
+// is usable twice. Postgres will not catch that for us.
+//
+// ⚠️ NO EMAIL RESET AND NO SMS RECOVERY EXISTS, DELIBERATELY. SIM-swap fraud
+// is endemic in South Africa — a recovery channel that ends at a phone number
+// is a recovery channel an attacker can buy from a network shop assistant, and
+// this account approves commands that run on the production box. The two
+// backstops are these ten codes and a shell on the box
+// (scripts/admin-reset-totp.mjs). Do not add a third that is easier.
+model AdminRecoveryCode {
+  id          String    @id @default(cuid())
+  adminUserId String
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  /// bcrypt, cost 12 — the same cost as a member password (BCRYPT_COST in
+  /// auth.service.ts), because a recovery code IS a password that skips the
+  /// second factor. The old cost-10 hashing in createAdmin was the odd one
+  /// out, not the standard.
+  ///
+  /// ⚠️ Consuming a code DELETES the row. A `consumedAt` column would leave
+  /// the hash of a spent code sitting in the table for an offline attacker to
+  /// grind at leisure, for no benefit — the audit row records the use.
+  codeHash    String
+  createdAt   DateTime  @default(now())
+
+  @@index([adminUserId])
 }
 
 // Cross-resource audit trail for every destructive admin action.
