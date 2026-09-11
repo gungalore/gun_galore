@@ -355,7 +355,7 @@ export function Input({ icon: Icon, error, trailing, style, ...rest }: InputProp
             outline: 'none',
             color: 'var(--dk-ink)',
             fontFamily: 'inherit',
-            fontSize: 13,
+            fontSize: 'var(--dk-fs-field)',
             ...style,
           }}
           {...rest}

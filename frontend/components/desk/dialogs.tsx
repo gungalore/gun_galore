@@ -222,7 +222,7 @@ export function SearchPalette({
               outline: 'none',
               color: 'var(--dk-ink)',
               fontFamily: 'inherit',
-              fontSize: 15,
+              fontSize: 'var(--dk-fs-field)',
             }}
           />
           <Key>Esc</Key>

@@ -76,6 +76,21 @@
    * rather than branched in every component. */
   --dk-h-control: 34px;
 
+  /* ⚠️ 16px ON A PHONE OR MOBILE SAFARI ZOOMS THE PAGE ON EVERY FOCUS.
+   *
+   * Safari auto-zooms any field whose font-size is under 16px, and every Desk
+   * input was 13 — so tapping a search box, a reason field or any box in the
+   * dealer form jerked the whole board in, and left it there. It only LOOKED
+   * fine in testing because the installed app locks the viewport
+   * (maximum-scale=1 under display-mode: standalone); in a browser tab, which
+   * is where the operator actually opens it from a link, it zooms every time.
+   *
+   * Fixed with the font size rather than by locking the viewport everywhere:
+   * `maximum-scale=1` takes pinch-zoom away from anyone who needs it, and
+   * Safari ignores it outside standalone anyway, so it would have been an
+   * accessibility regression that did not even work. */
+  --dk-fs-field: 13px;
+
   background: var(--dk-ground);
   color: var(--dk-ink);
   font-family: var(--font-geist), system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -88,6 +103,7 @@
 @media (max-width: 1023.98px) {
   [data-desk] {
     --dk-h-control: 44px;
+    --dk-fs-field: 16px;
   }
 }
 

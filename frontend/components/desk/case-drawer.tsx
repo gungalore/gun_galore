@@ -670,7 +670,7 @@ function Composer({
           borderRadius: 'var(--dk-radius-control)',
           color: 'var(--dk-ink)',
           fontFamily: 'inherit',
-          fontSize: 13,
+          fontSize: 'var(--dk-fs-field)',
           lineHeight: 1.55,
           resize: 'vertical',
         }}

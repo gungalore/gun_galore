@@ -22,16 +22,6 @@ import { DialogFrame, Drawer } from './overlays';
  * entire life of the bug.
  */
 
-function TwoFields({ onClose }: { onClose: () => void }) {
-  return (
-    <>
-      <input data-testid="first" placeholder="Dealer name" />
-      <input data-testid="second" placeholder="Suburb" />
-      <button onClick={onClose}>Cancel</button>
-    </>
-  );
-}
-
 /** A parent that re-renders on every keystroke, as the real dialogs do. */
 function Harness({
   kind,
@@ -56,7 +46,12 @@ function Harness({
     </>
   );
   return kind === 'dialog' ? (
-    <DialogFrame onClose={close} title="Dealer">
+    <DialogFrame
+      onClose={close}
+      label="DEALER"
+      title="Dealer"
+      footer={<button onClick={close}>Save</button>}
+    >
       {body}
     </DialogFrame>
   ) : (
