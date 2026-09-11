@@ -6,7 +6,82 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-11**.
 
-## 2026-09-11 (latest) — DESK REBUILD: ALL TWELVE PHASES LANDED
+## 2026-09-11 (latest) — READY TO DEPLOY, BUT THE BOX IS NOT
+
+`feat/takealot-ux-parity` is fast-forwarded to `cd18d459` — the Desk rebuild
+and the self-hosted member auth, **34 commits**. Verified on the deploy branch:
+backend **4,759** tests, frontend **1,896**, warden **394**, `tsc` clean in all
+three trees, both production builds exit 0, and both artefacts present
+(`backend/dist/src/main.js`, `frontend/.next/BUILD_ID`).
+
+🚨 **DO NOT RUN deploy.sh YET. THE BOX WOULD CRASH-LOOP AT BOOT.** Its `.env`
+is still the pre-Clerk world, and this deploy contains two guards that HARD
+THROW in production. `pm2 reload` runs `instances: 1`, so it is a restart: the
+old process is already gone when the new one refuses to start. That is an
+outage, not a failed deploy.
+
+### The three blockers, in order
+
+**1. `JWT_MEMBER_SECRET` is missing — from BOTH env files.**
+`backend/src/auth/member-jwt-secret.ts` throws "Refusing to start with a
+missing/empty/default member secret" when `NODE_ENV=production`. The frontend
+needs the SAME value: `middleware.ts` and the server components verify the
+session cookie with it.
+- add to `backend/.env` and `frontend/.env.production`
+- ⚠️ the two files must carry the SAME value, and it MUST differ from
+  `JWT_ADMIN_SECRET` — identical, and a member token verifies on an admin route
+- ⚠️ NOT `NEXT_PUBLIC_`. That prefix inlines the signing secret into the
+  browser bundle.
+
+**2. The `DIDIT_*` set is missing.** `DiditService.onModuleInit()` throws
+unless `DIDIT_MODE === 'live'` in production — deliberately, because its
+predecessor defaulted to sandbox and a production box once ran passing every
+identity on canned data.
+- `DIDIT_MODE=live`, `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`,
+  `DIDIT_WEBHOOK_SECRET` (and `DIDIT_BASE_URL` if not defaulted)
+- the workflow to use is `b792ee05-948a-410a-8fa4-ca3d89511259` — see the KYC
+  section of CLAUDE.md for why every other one the key reaches is wrong
+- 🚨 **the current Didit API key was pasted into a chat and must be ROTATED
+  before it goes on the box.**
+- ⚠️ Cloudflare's WAF must allow **18.203.201.92** or every webhook is dropped
+  at the edge with nothing in any application log.
+
+**3. The box's working tree is dirty** — `M backend/package-lock.json`.
+`deploy.sh` runs `git pull --ff-only` and will stop with "pull failed — check
+for local edits on the box". Clear it on the box first.
+
+### What this deploy actually does
+
+- **Full deploy, not `--frontend-only`** — `backend/` and `prisma/` both change.
+- **Four migrations run**, and the box is 2 commits behind the deploy branch:
+  `20260910200000_self_hosted_auth`, `20260911030000_local_email_phone_otp`,
+  `20260911120000_admin_auth_hardening`,
+  `20260911150000_admin_totp_replay_and_session_amr`.
+  ⚠️ The first **drops `User.clerkId`** and is not reversible. `deploy.sh`
+  takes a pre-deploy `pg_dump` and prints the name — that is the rollback
+  point, and it is worth reading the name out loud before continuing.
+- Clerk, VerifyNow and AWS keys on the box become dead afterwards. They are
+  inert, not harmful — but AWS should be **rotated, not merely deleted**.
+
+### After a green deploy, in this order
+
+1. **Enrol TOTP on the box, THEN set `ADMIN_TOTP_REQUIRED=true`** and
+   `pm2 reload alloutdoor-backend --update-env`. Doing it the other way round
+   locks the only operator out of the only admin surface with no route left
+   that could enrol them. Save the ten recovery codes off-device — they are
+   shown once and cannot be re-read.
+2. Add the **second sudoers line** for `pruneJournal`, next to the nginx one.
+   Both are written out in `warden/README.md`. `sudo -n` fails closed, so a
+   missing line is a refusal, not a hang.
+3. `pm2 list` must show **three** services, and the health checks run twice.
+4. Then `npm run sweep` on the box and read every row.
+
+⚠️ **Ask before deploying if a motivation might be mid-generation** — a reload
+kills it, and the row used to strand the member. A pass is about two minutes.
+
+---
+
+## 2026-09-11 — DESK REBUILD: ALL TWELVE PHASES LANDED
 
 **STILL NOT DEPLOYED. Nothing on this branch has touched the box.** Branch
 `feat/desk-rebuild`, **nineteen commits** off `feat/self-hosted-auth`, nothing
