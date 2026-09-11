@@ -113,7 +113,21 @@ export default function LicenceCentrePage() {
   const { getToken } = useAuth();
   const token = useCallback(() => getToken(), [getToken]);
 
-  const [enabled, setEnabled] = useState<boolean | null>(null);
+  /**
+   * Whether the Centre is open, and — crucially — WHY it is not.
+   *
+   * ⚠️ THIS WAS A BOOLEAN AND THE TWO FAILURES WERE INDISTINGUISHABLE. The
+   * status call's `catch` set it to `false`, the same value the flag being
+   * off produces, so an unreachable API rendered "We are still putting this
+   * together" — telling a member a shipped feature was never built, and
+   * offering them nothing to do about it. It cost a session to tell the two
+   * apart from the outside, with the code open.
+   *
+   * `closed` is the operator's decision and is final until they change it.
+   * `unreachable` is a fault, and the only one of the two worth a retry.
+   */
+  type Gate = 'loading' | 'open' | 'closed' | 'unreachable';
+  const [gate, setGate] = useState<Gate>('loading');
   /**
    * How many documents this member may keep.
    *
@@ -350,26 +364,38 @@ export default function LicenceCentrePage() {
       .catch(() => undefined);
   }, [token]);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
+  /**
+   * Read the gate. Extracted from the effect so the retry button can call it
+   * — a page that says "try again" and has no way to is worse than one that
+   * says nothing.
+   */
+  const readGate = useCallback(
+    async (alive: () => boolean = () => true) => {
       try {
         const s = await licenceCentreApi.status(token);
-        if (!alive) return;
-        setEnabled(s.enabled);
+        if (!alive()) return;
+        setGate(s.enabled ? 'open' : 'closed');
         setMaxCredentials(s.maxCredentials);
         // With the flag off every other endpoint 404s, so do not call them.
         if (s.enabled) await refresh();
       } catch {
-        if (alive) setEnabled(false);
+        // ⚠️ NOT `closed`. We did not learn the flag is off — we learned
+        // nothing. Saying "not built yet" here is a guess presented as fact.
+        if (alive()) setGate('unreachable');
       }
-    })();
+    },
+    [token, refresh],
+  );
+
+  useEffect(() => {
+    let alive = true;
+    void readGate(() => alive);
     return () => {
       alive = false;
     };
-  }, [token, refresh]);
+  }, [readGate]);
 
-  if (enabled === false) {
+  if (gate === 'closed') {
     return (
       <main className="mx-auto max-w-[var(--content-max)] px-4 py-10">
         <Breadcrumbs trail={LICENCE_CENTRE_TRAIL} className="mb-6" />
@@ -377,6 +403,34 @@ export default function LicenceCentrePage() {
         <p className="mt-3 text-[var(--text-secondary)]">
           We are still putting this together. It will appear here when it opens.
         </p>
+      </main>
+    );
+  }
+
+  // ⚠️ A DIFFERENT SCREEN, AND IT MUST STAY DIFFERENT. The member's documents
+  // are not missing and the Centre is not unbuilt — we could not reach the
+  // server. Saying anything else sends somebody away from a vault that is
+  // sitting there intact, and they have no reason to come back.
+  if (gate === 'unreachable') {
+    return (
+      <main className="mx-auto max-w-[var(--content-max)] px-4 py-10">
+        <Breadcrumbs trail={LICENCE_CENTRE_TRAIL} className="mb-6" />
+        <h1 className="text-2xl font-semibold">Document Centre</h1>
+        <p className="mt-3 text-[var(--text-secondary)]">
+          We could not load your documents just now. Nothing has been lost —
+          this is a problem reaching our server, not with your vault.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setGate('loading');
+            void readGate();
+          }}
+          className="mt-4 rounded-[6px] px-4 py-2 text-sm"
+          style={{ background: 'var(--red)', color: '#fff', border: 'none' }}
+        >
+          Try again
+        </button>
       </main>
     );
   }
