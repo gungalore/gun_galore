@@ -78,7 +78,12 @@ export function ConnectionStatusBanner() {
       aria-live="polite"
       style={{
         position: 'fixed',
-        top: 'env(safe-area-inset-top, 0)',
+        // ⚠️ CLAMPED TO 60px — the notch / dynamic island maximum, and the
+        // same cap the Desk's own top insets use. This banner is mounted in
+        // the root layout with no path check, so it renders over the Desk
+        // board too; an over-reported inset pushes it down into the content it
+        // is supposed to be announcing itself above.
+        top: 'min(env(safe-area-inset-top, 0px), 60px)',
         left: 0,
         right: 0,
         zIndex: 80, // above PublicNav (z-50) + tab bar (z-55/56)

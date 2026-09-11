@@ -2265,9 +2265,34 @@ model AdminUser {
   /// every deploy — hands an attacker a fresh budget. A counter on the row
   /// survives the restart that clears the throttler.
   failedLoginCount Int       @default(0)
-  /// Set once failedLoginCount trips the threshold. Checked BEFORE bcrypt, so
-  /// a locked account costs an attacker a lookup rather than a hash.
+  /// Set once failedLoginCount trips the threshold.
+  ///
+  /// ⚠️ THE LOCK IS CHECKED BEFORE THE REAL HASH COMPARE, BUT THE REFUSAL
+  /// STILL PAYS FOR ONE. This line used to end "so a locked account costs an
+  /// attacker a lookup rather than a hash" — which was true, and was the leak:
+  /// a branch that refuses without hashing answers in under a millisecond next
+  /// to a ~300 ms cost-12 compare, so a stopwatch told you which accounts
+  /// exist and which you had already locked. login() now runs a compare
+  /// against a decoy hash on that path. The lock still never touches the
+  /// stored hash, and still does not extend itself — see recordFailedLogin.
   lockedUntil      DateTime?
+  /// The TOTP step counter (unix seconds / 30) of the last code this account
+  /// successfully spent.
+  ///
+  /// ⚠️ THIS IS WHAT MAKES A CODE SINGLE-USE. verifyTotpCode accepts the
+  /// previous, current and next step — ninety seconds — so without a record of
+  /// what was spent, a code shoulder-surfed, screen-shared or caught by a
+  /// real-time phishing proxy opens a SECOND thirty-day session beside the
+  /// operator's own. RFC 6238 §5.2 says the verifier must refuse a code it has
+  /// already accepted; login refuses any matched step <= this value, which
+  /// also refuses the older code still sitting inside the window.
+  ///
+  /// NULL means no code has ever been spent here. The write is a guarded
+  /// updateMany whose affected-row count is the proof of single use — exactly
+  /// the pattern AdminRecoveryCode uses — because two requests carrying the
+  /// same code both pass the stateless compare and only the UPDATE can
+  /// separate them.
+  totpLastUsedStep Int?
 
   // Back-relation for AdminAuditEvent.adminUser (every audit row is
   // attributed to the admin who triggered it).
@@ -2315,6 +2340,20 @@ model AdminSession {
   /// reason the role does: the row is re-read on every request, so clearing
   /// it takes effect immediately and a token minted earlier cannot outrun it.
   recoveryOnly         Boolean   @default(false)
+  /// How the caller actually authenticated when this session was opened:
+  /// ['pwd','otp'], ['pwd','recovery'] or ['pwd'].
+  ///
+  /// ⚠️ IT LIVES HERE BECAUSE ROTATION USED TO INVENT IT. rotate() derived the
+  /// refreshed token's `amr` from recoveryOnly alone, so a session opened with
+  /// a password and no second factor at all came back from its first refresh
+  /// claiming ['pwd','otp'] — the authentication system lying to itself in the
+  /// one field whose job is to record how somebody got in, and the field a
+  /// future step-up check would read. Recording it on the row is the only way
+  /// a refresh can carry the real value forward.
+  ///
+  /// Empty means "written before this column existed"; rotate() falls back to
+  /// the old derivation for those and they age out with the session.
+  amr                  String[]  @default([])
   userAgent            String?
   ip                   String?
   createdAt            DateTime  @default(now())

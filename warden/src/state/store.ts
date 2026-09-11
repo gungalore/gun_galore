@@ -203,9 +203,11 @@ export class WardenStore {
         // ⚠️ RE-VALIDATED, NOT SPREAD THROUGH. A state file written before
         // pause existed has no key at all, and a hand-edited one could carry
         // anything. An `until` that will not parse must read as "not paused"
-        // rather than as a pause that never expires — isPaused() compares
-        // Date.parse(until) > now, and NaN > now is false, but a caller
-        // rendering `until` would print "Invalid Date" on the board.
+        // rather than as a pause that never expires — WardenCore.pausedNow()
+        // (core.ts, and there is no isPaused() anywhere in this tree) returns
+        // null when Date.parse(until) is not finite or has already passed, so
+        // the daemon itself is safe either way; what is NOT safe is a caller
+        // rendering `until`, which would print "Invalid Date" on the board.
         pause: readPause(parsed.pause),
       };
       return { ok: true };

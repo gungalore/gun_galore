@@ -270,7 +270,16 @@ export function SwUpdateBanner() {
         // route — it is mounted in the root layout with no path check — so on
         // the Desk the hard-coded 72 put it 6px INSIDE the bottom tab bar.
         // The lift is a variable now, and globals.css raises it for the Desk.
-        bottom: 'calc(var(--sw-banner-lift, 72px) + env(safe-area-inset-bottom))',
+        // ⚠️ CLAMPED TO 34px, LIKE EVERYTHING ELSE THAT SITS OVER THE DESK'S
+        // BOTTOM BAR. Chrome for iOS over-reports safe-area-inset-bottom, and
+        // this banner's whole job is to sit a known distance ABOVE the bar —
+        // 88px on the Desk, retuned by --sw-banner-lift in globals.css. An
+        // inflated inset lifts it off the bar it is measured against and it
+        // floats mid-screen over the board. 34px is the real home-indicator
+        // maximum and the same cap tabs.tsx uses, so the two cannot disagree
+        // about where the bottom of the screen is.
+        bottom:
+          'calc(var(--sw-banner-lift, 72px) + min(env(safe-area-inset-bottom, 0px), 34px))',
         left: 12,
         right: 12,
         // ⚠️ 58, NOT 70. The house rule (globals.css) is that modals and

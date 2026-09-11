@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { BRAND_NAME } from '../common/brand';
 
 /**
  * RFC 6238 TOTP (and the RFC 4226 HOTP underneath it) in node:crypto.
@@ -140,50 +141,95 @@ export function totp(
 }
 
 /**
- * Check a code a human just typed against a stored base32 secret.
+ * Check a code a human just typed, and say WHICH step it matched.
+ *
+ * ⚠️ THE STEP IS THE POINT, AND THE BOOLEAN WRAPPER BELOW IS THE CONVENIENCE.
+ * A caller that only learns "yes" cannot tell one presentation of a code from
+ * a second one thirty seconds later, because the window accepts three steps —
+ * so the code stays good for up to ninety seconds and a second factor caught
+ * on a screen-share, a shoulder or a real-time phishing proxy mints an
+ * independent session beside the operator's own. RFC 6238 §5.2 requires the
+ * verifier to refuse a code it has already accepted, and refusing it needs a
+ * number to compare against: AdminUser.totpLastUsedStep, written by
+ * AdminAuthService. Returning the step is what makes that possible here
+ * rather than re-deriving the counter at the call site, where the drift loop
+ * would have to be written a second time and could disagree.
  *
  * ⚠️ CONSTANT-TIME COMPARE. A plain `===` on a six-digit string leaks, over
  * enough attempts, how many leading digits were right — which turns a
  * 1-in-a-million guess into six 1-in-10 guesses. The lockout counter makes
  * that attack slow; it does not make it wrong to compare properly.
  *
- * Returns false rather than throwing on a malformed secret or code: the
+ * Returns null rather than throwing on a malformed secret or code: the
  * caller's job is "let them in or don't", and a thrown 500 on a typed code
  * would tell an attacker they had found an interesting input.
  */
-export function verifyTotpCode(
+export function verifyTotpStep(
   base32Secret: string,
   code: string,
   opts: { now?: number; window?: number } = {},
-): boolean {
+): number | null {
   const now = opts.now ?? Date.now();
   const window = opts.window ?? TOTP_WINDOW;
 
   const typed = (code ?? '').replace(/\s/g, '');
-  if (!/^\d{6}$/.test(typed)) return false;
+  if (!/^\d{6}$/.test(typed)) return null;
 
   let secret: Buffer;
   try {
     secret = base32Decode(base32Secret);
   } catch {
-    return false;
+    return null;
   }
-  if (secret.length === 0) return false;
+  if (secret.length === 0) return null;
 
   const counter = Math.floor(now / 1000 / TOTP_STEP_SECONDS);
-  let ok = false;
+  let matched: number | null = null;
   for (let drift = -window; drift <= window; drift++) {
-    const expected = hotp(secret, counter + drift);
+    const step = counter + drift;
+    // ⚠️ A NEGATIVE STEP THROWS OUT OF writeBigUInt64BE, and this function's
+    // contract is that a typed code is answered "no" — a thrown 500 tells an
+    // attacker they have found an interesting input. Only reachable in the
+    // first thirty seconds of 1970 or from a caller passing its own `now`
+    // (the specs do), but the guard is one line and the alternative is a
+    // crash in the sign-in path.
+    if (step < 0) continue;
+    const expected = hotp(secret, step);
     // Do not short-circuit the loop: returning early on the first match makes
     // the response time say WHICH step matched, which is a (small) clock
     // oracle. The loop is three HMACs; running all of them costs nothing.
     if (
       timingSafeEqual(Buffer.from(expected, 'utf8'), Buffer.from(typed, 'utf8'))
     ) {
-      ok = true;
+      // ⚠️ THE HIGHEST MATCHING STEP WINS, which is why this assigns rather
+      // than breaks. Two steps cannot both match in practice (that is a
+      // 1-in-10^6 collision), but if they did, recording the lower one would
+      // leave the higher code spendable afterwards — the replay this exists
+      // to stop.
+      matched = matched === null ? step : Math.max(matched, step);
     }
   }
-  return ok;
+  return matched;
+}
+
+/**
+ * Did this code verify at all?
+ *
+ * ⚠️ DO NOT USE THIS ON THE SIGN-IN PATH. It throws the step away, and the
+ * step is the only thing that can tell a first presentation from a replay —
+ * see verifyTotpStep. It is here for callers that have no row to record
+ * against, which today is the specs and nothing else — grep says zero
+ * production callers. It kept a second name in that list until 2026-09-11,
+ * pointing at a claim in AdminLoginDto's docblock that had already been
+ * corrected, so the one function whose whole comment is about not being
+ * reached for was advertising a caller that did not exist.
+ */
+export function verifyTotpCode(
+  base32Secret: string,
+  code: string,
+  opts: { now?: number; window?: number } = {},
+): boolean {
+  return verifyTotpStep(base32Secret, code, opts) !== null;
 }
 
 /**
@@ -201,7 +247,17 @@ export function otpauthUri(opts: {
   account: string;
   issuer?: string;
 }): string {
-  const issuer = opts.issuer ?? 'All Outdoor Desk';
+  // ⚠️ THE BRAND COMES FROM brand.ts, NOT FROM A LITERAL HERE. CLAUDE.md's
+  // rule ("Never hard-code the name") bites harder on this string than on a
+  // message body: an authenticator entry is written into the operator's phone
+  // once, at enrolment, and nothing we deploy can ever rewrite it. A stale
+  // name in an SMS is embarrassing for one message; a stale name here is
+  // "GunGalore Desk" sitting in the app the operator opens to reach the only
+  // account that can approve a command on the production box — the same
+  // failure as create-admin.mjs printing a gungalore.co.za sign-in URL long
+  // after the rebrand, where anybody following the output could not get in
+  // and nothing said why.
+  const issuer = opts.issuer ?? `${BRAND_NAME} Desk`;
   const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(opts.account)}`;
   const params = new URLSearchParams({
     secret: opts.secret,

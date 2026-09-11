@@ -42,7 +42,13 @@ export async function GET(req: NextRequest) {
   // browser to http://localhost:3000/ when running behind nginx +
   // Cloudflare. req.url reflects the socket Next.js is listening on
   // (localhost:3000), not the public hostname.
-  const host = req.headers.get('host') || 'gungalore.co.za';
+  // ⚠️ THE FALLBACK IS THE LIVE DOMAIN. It read 'gungalore.co.za' — a
+  // company that is wound down and a zone whose hosts no longer answer
+  // (Cloudflare returns 522), so on the one request that arrives without a
+  // Host header this redirected the visitor to a dead site instead of the
+  // shop. See CLAUDE.md: the rebrand is done, and the name must not appear
+  // anywhere user-facing.
+  const host = req.headers.get('host') || 'alloutdoor.co.za';
   const proto = req.headers.get('x-forwarded-proto') || 'https';
   const target = `${proto}://${host}/`;
 

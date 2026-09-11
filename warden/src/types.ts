@@ -460,4 +460,35 @@ export interface WardenAuditView {
   entries: WardenAuditEntry[];
   /** True when older records exist that this page did not carry. */
   truncated: boolean;
+  /**
+   * How many stored records projectAudit() REFUSED to put on the wire,
+   * because it could not name their `trigger` or their `operation.kind`.
+   *
+   * 🚨 WITHOUT THIS FIELD THE REFUSAL WAS INVISIBLE TO EVERYONE WHO MATTERS.
+   * The drop itself is right — a record whose attribution we cannot read must
+   * never be coerced into "a human approved this command on the production
+   * box" — and core.ts audit() did tally the nulls and raise onError. But
+   * onError goes to the DAEMON'S pm2 stdout and nowhere else, so every reader
+   * of this wire got a shorter list and `truncated: false`, and an incomplete
+   * account of what executed on the box looked exactly like a complete one.
+   * The gap was "said out loud" only to somebody already SSH-ed in reading
+   * `pm2 logs warden`.
+   *
+   * ⚠️ NOT `truncated`, and it must never be folded into it. Truncated means
+   * "there is more, ask for the next page"; dropped means "there is more and
+   * I would not render it, so go and read state.json". One is a click, the
+   * other is ssh.
+   *
+   * ⚠️ THE BACKEND ADDS ITS OWN COUNT TO THIS ONE. warden.service.ts
+   * auditTrail() drops records too, on its own rules, and reports the SUM. Do
+   * not assume a `dropped` read off that API is this number alone.
+   *
+   * ⚠️ AND NO SCREEN RENDERS IT YET. Nothing under frontend/ calls
+   * GET /admin/warden/audit at all, so the honest total currently reaches an
+   * HTTP response and a log line and stops. Whoever builds that panel must
+   * print `dropped` SEPARATELY from `truncated` — folding them into one
+   * "incomplete" badge loses the only thing that tells the operator whether
+   * the fix is another page or an ssh session.
+   */
+  dropped: number;
 }

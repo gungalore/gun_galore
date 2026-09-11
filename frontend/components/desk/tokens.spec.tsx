@@ -12,8 +12,12 @@ import { readFileSync } from 'node:fs';
  * and Input beside it read `--dk-h-control` — because there was nowhere to put
  * "a control is --dk-h-control". A layer fixes that. A layer that grows fixes
  * nothing: it becomes a private Tailwind with no responsive variants, no state
- * variants and no documentation, inside a repo whose build guard exists to
- * keep Tailwind's utilities off this surface.
+ * variants and no documentation — and nothing mechanical would notice.
+ * `scripts/desk-guard.cjs` does NOT keep Tailwind off this surface, whatever
+ * an earlier draft of this comment said: it bans `shadow-*` and `ring-*`
+ * only, and only because the global box-shadow kill switch already makes
+ * those two do nothing. Ordinary utilities are allowed here. The cap is the
+ * defence; believing the guard is one is how the cap gets argued away.
  *
  * So the cap is the mechanism and the list below is the ledger. Adding a class
  * fails this spec until somebody edits it, which is the conversation.
@@ -94,6 +98,51 @@ const EXPECTED = [
   'dk-sheet',
 ].sort();
 
+/**
+ * Every selector prelude in the file, comments stripped, at-rules dropped.
+ *
+ * ⚠️ A SELECTOR IS EVERYTHING SINCE THE LAST BRACE — NOT THE TEXT ON THE `{`
+ * LINE. Splitting on braces is what lets a grouped selector spread over two
+ * lines be seen whole; a `^…$`-anchored line regex sees only the last line of
+ * the group and waves the rest through. See the spec below for the exact case.
+ *
+ * At-rules are dropped by the leading `@`, which also drops the `@media`
+ * preludes while leaving the rules nested INSIDE them to be checked — the
+ * responsive `.dk-phone-only` / `.dk-desk-only` rules live nowhere else.
+ *
+ * 🚨 THE BRACE IS A LOOKAHEAD, AND IT HAS TO BE. Written `([^{}]*)\{` the
+ * brace is CONSUMED, so after matching an `@media (…)` prelude the scan
+ * resumes INSIDE the block with no delimiter left to re-enter on — and every
+ * rule nested in an at-rule stops being checked. That is not a smaller net,
+ * it is a hole in exactly the place this file says it is strongest: seven
+ * `.dk-` rules live inside `@media` blocks, `.dk-phone-only` and
+ * `.dk-desk-only` among them, and an unscoped `.dk-phone-only` is a global
+ * `display: none !important` loose on the storefront. It shipped that way
+ * once, green, with this very docblock naming those two classes as proof the
+ * handling was safe. `(?=\{)` leaves the brace in the stream to serve as the
+ * next match's delimiter.
+ */
+function selectorsIn(css: string): string[] {
+  const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const out: string[] = [];
+  for (const m of code.matchAll(/(?:^|[{}])([^{}]*)(?=\{)/g)) {
+    const selector = m[1].trim();
+    if (!selector || selector.startsWith('@')) continue;
+    out.push(selector);
+  }
+  return out;
+}
+
+/** Throws (as a failed expectation) on the first Desk selector missing its scope. */
+function assertScoped(css: string): void {
+  for (const selector of selectorsIn(css)) {
+    if (!selector.includes('.dk-')) continue;
+    for (const part of selector.split(',')) {
+      expect(part.trim(), `unscoped Desk selector: ${part.trim()}`).toMatch(/^\[data-desk\]/);
+    }
+  }
+}
+
 describe('the Desk class layer', () => {
   it('stays under the cap', () => {
     const classes = classesIn(CSS);
@@ -167,13 +216,33 @@ describe('the Desk class layer', () => {
      * them apart. A `.dk-card` without the scope would paint a #171B1A panel
      * into the shop the first time a class name collided.
      */
-    const code = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
-    for (const m of code.matchAll(/^\s*([^@{}\n][^{}\n]*)\{/gm)) {
-      const selector = m[1].trim();
-      if (!selector.includes('.dk-')) continue;
-      for (const part of selector.split(',')) {
-        expect(part.trim(), `unscoped Desk selector: ${part.trim()}`).toMatch(/^\[data-desk\]/);
-      }
-    }
+    assertScoped(CSS);
+  });
+
+  it('sees the first line of a grouped multi-line selector', () => {
+    /**
+     * ⚠️ THIS IS THE HOLE THE TEST ABOVE SHIPPED WITH, PINNED SO IT CANNOT BE
+     * REOPENED BY "SIMPLIFYING" selectorsIn BACK TO A LINE REGEX. The old
+     * extractor was `/^\s*([^@{}\n][^{}\n]*)\{/gm`: `[^{}\n]*` cannot cross a
+     * newline, so a match had to BEGIN and END on the line carrying the `{`.
+     * tokens.css folds `.dk-truncate` and `.dk-reg-main > span` onto one block
+     * across two lines, and only the second line was ever examined — an
+     * unscoped `.dk-truncate,` on the first would have leaked the Desk's
+     * ellipsis rule to the shop with this file green. The real CSS is scoped
+     * correctly today; the guard was simply not looking.
+     */
+    const leak = '.dk-truncate,\n[data-desk] .dk-reg-main > span {\n  min-width: 0;\n}\n';
+    expect(() => assertScoped(leak)).toThrow(/unscoped Desk selector: \.dk-truncate/);
+
+    // Both lines scoped: the same shape must still pass, or the fix above is
+    // just a broken guard in the other direction.
+    const fine = '[data-desk] .dk-truncate,\n[data-desk] .dk-reg-main > span {\n  min-width: 0;\n}\n';
+    expect(() => assertScoped(fine)).not.toThrow();
+
+    // And the file's real grouped rule is the one that proves the extractor
+    // reaches it at all — both parts, not just the one wearing the brace.
+    expect(selectorsIn(CSS)).toContainEqual(
+      expect.stringContaining('.dk-truncate,'),
+    );
   });
 });

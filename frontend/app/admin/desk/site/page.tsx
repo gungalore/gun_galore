@@ -940,14 +940,24 @@ function WardenChatCard({
             ⚠️ z-index 50 — above the Desk's own bottom tabs (40) so a long
             thread cannot scroll out from under it, below the 55 the installed
             shell's tab bar takes, and well below the 60 every blocking overlay
-            clears, so a drawer or a confirm always covers it. */}
+            clears, so a drawer or a confirm always covers it.
+
+            ⚠️ THE INSET IS CLAMPED TO 34px, the same cap tokens.css and
+            BottomTabs use. Chrome for iOS over-reports
+            safe-area-inset-bottom — far larger than the ~34pt home indicator
+            it describes — and this composer is positioned off the bottom
+            edge, so unclamped it rides up into the thread and covers the last
+            messages the operator is replying to, with a band of dead ground
+            beneath it. The spacer above is a flat 62 and does NOT track the
+            inset, so an inflated value also stops the two agreeing about how
+            much of the thread the composer hides. */}
         <div style={{ height: 62 }} />
         <div
           style={{
             position: 'fixed',
             left: 0,
             right: 0,
-            bottom: 'calc(78px + env(safe-area-inset-bottom, 0px))',
+            bottom: 'calc(78px + min(env(safe-area-inset-bottom, 0px), 34px))',
             zIndex: 50,
             padding: '10px 14px',
             background: 'var(--dk-ground)',

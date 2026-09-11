@@ -118,7 +118,43 @@
    * every board. One value, two media scopes, correct in frame one.
    *
    * The phone figure clears the bottom tab bar (78px) plus its safe-area inset
-   * plus the gap; the desktop has no bar. See DeskShell. */
+   * plus the gap; the desktop has no bar. See DeskShell.
+   *
+   * ⚠️ AND THE INSET IS CLAMPED TO 34px. See the drawer block below for the
+   * bug: Chrome for iOS reports a safe-area-inset-bottom far larger than the
+   * ~34pt home indicator it describes, and this value is the one that decides
+   * whether the LAST CARD IN THE PILE can be scrolled clear of the tab bar.
+   * Uncapped it does not hide anything — it opens a band of dead ground under
+   * the board instead, which reads as "the pile ends here" on the one screen
+   * where running out of cards is meaningful. BottomTabs (tabs.tsx) clamps the
+   * same inset to the same 34px; the two have to agree or the padding and the
+   * bar disagree about where the screen ends.
+   *
+   * ⚠️ EVERY env() THAT RENDERS ON THE DESK IS CLAMPED, AND THE TWO CAPS ARE
+   * DIFFERENT NUMBERS: safe-area-inset-bottom to 34px, safe-area-inset-top to
+   * 60px. That is a rule about the surface, not about this token.
+   *
+   * "Renders on the Desk" is wider than components/desk and app/admin, and the
+   * difference has already bitten: sw-update-banner.tsx and
+   * connection-status-banner.tsx are mounted in the ROOT layout with no path
+   * check, so they draw over the board too — globals.css even retunes
+   * --sw-banner-lift to 88px under [data-desk] specifically to position the
+   * update banner against this bar — and both carried a bare env() while a
+   * comment here said none did. safe-area-clamp.spec.tsx therefore scans the
+   * two Desk trees PLUS an explicit list of that global chrome, and fails on a
+   * bare env() or on a clamp to any figure other than the cap for its side.
+   *
+   * ⚠️ IT IS NOT A RULE ABOUT THE WHOLE FRONTEND, AND MUST NOT BE WIDENED INTO
+   * ONE. The storefront shell, the install prompt and the scanner all use
+   * these insets with their own numbers, and lib/scan-v3 is a VENDORED COPY
+   * that CLAUDE.md forbids editing here — the next upstream sync silently
+   * reverts it. A spec that swept all of components/ would fail on files
+   * nobody in this repo is allowed to fix, and would be deleted rather than
+   * satisfied.
+   *
+   * None of this was true until 2026-09-11: four call sites were bare and the
+   * three clamped ones stayed put, so the same screen carried two answers
+   * about where the bottom was. */
   --dk-board-pad: 24px 32px 32px;
 
   background: var(--dk-ground);
@@ -134,7 +170,7 @@
   [data-desk] {
     --dk-h-control: 44px;
     --dk-fs-field: 16px;
-    --dk-board-pad: 12px 14px calc(94px + env(safe-area-inset-bottom, 0px));
+    --dk-board-pad: 12px 14px calc(94px + min(env(safe-area-inset-bottom, 0px), 34px));
   }
 }
 
@@ -170,21 +206,32 @@
  * stopped you when nothing did. The spec is still where the argument happens;
  * the guard is what makes losing the argument expensive.
  *
- * ⚠️ WHY THIS FILE AND NOT A CSS MODULE. globals.css carries an unscoped
- * `* { box-shadow: none !important }`, and tokens.css is PROVEN to load after
- * it — that is the only reason `.dk-drawer` and `.dk-dialog` below can win
- * their shadow back. A module's order under --webpack is not guaranteed the
- * same way and the failure is SILENT: no shadow, no error, a drawer that
- * reads flat against the page it is supposed to be floating over. This file
- * is also the guard's ONLY hex exemption (desk-guard.cjs, HEX_EXEMPT is a set
- * of one), and a second exempt path is the erosion that guard exists to stop.
+ * ⚠️ WHY THIS FILE AND NOT A CSS MODULE. Because it is the guard's ONLY hex
+ * exemption (desk-guard.cjs, `HEX_EXEMPT` is a set of one), and a second
+ * exempt path is the erosion that guard exists to stop. A module would need
+ * one, because the palette has to be written as hex somewhere.
+ *
+ * ⚠️ AND NOT BECAUSE OF LOAD ORDER — that reason was written here and it was
+ * WRONG, so do not restore it. globals.css carries an unscoped
+ * `* { box-shadow: none !important }` and `.dk-drawer` / `.dk-dialog` below
+ * win their shadow back, but not by loading afterwards: both declarations are
+ * author-`!important`, and important declarations from the same origin are
+ * ranked by SPECIFICITY first — `[data-desk] .dk-drawer` is (0,2,0) against
+ * `*` at (0,0,0) — so document order is never consulted. The shadow would win
+ * from a module, from an inline `<style>`, from anywhere. Acting on the old
+ * reason costs you real time: someone chasing a missing shadow will go
+ * hunting through the webpack chunk order and find nothing wrong with it.
  *
  * ⚠️ INLINE STYLES ARE NOT THE ENEMY AND MUST NOT ALL MOVE HERE. A per-
  * instance value — `border-bottom: i === last ? undefined : …`, a computed
  * transform, a strokeDashoffset, a one-off grid-template — belongs at its call
  * site. A layer that absorbed those would need responsive and state variants,
- * at which point it is Tailwind, written badly, inside a repo whose build
- * guard exists to keep Tailwind's utilities off this surface.
+ * at which point it is Tailwind, written badly — and NOTHING MECHANICAL WOULD
+ * STOP IT. desk-guard.cjs bans exactly two utility families, `shadow-*` and
+ * `ring-*`, and only because the global box-shadow kill switch makes them do
+ * nothing; ordinary Tailwind utilities are allowed on the Desk and always
+ * were. The class CAP is the whole of the defence. Read the guard as a
+ * Tailwind ban and you will assume a gate is watching this file that is not.
  *
  * ⚠️ AND REMEMBER WHICH WINS. An inline style beats a class. An element that
  * carries `.dk-card` AND an inline `background` takes the inline one — which
@@ -339,8 +386,16 @@
  * ⚠️ THE GLOBAL BOX-SHADOW KILL SWITCH STAYS. globals.css carries
  * `* { box-shadow: none !important }` (line ~356) to stop the storefront
  * growing shadows nobody designed. It applies here too, so the only two
- * places on the Desk that are ALLOWED to lift have to win with !important —
- * and these rules have to be loaded after globals.css to do it.
+ * places on the Desk that are ALLOWED to lift have to win with !important.
+ *
+ * ⚠️ AND THEY WIN ON SPECIFICITY, NOT ON ORDER — keep the selector, not just
+ * the !important. Between two author-!important declarations the cascade
+ * compares specificity before document order, and `[data-desk] .dk-drawer` is
+ * (0,2,0) against `*` at (0,0,0). Drop the `[data-desk]` prefix in a tidy-up
+ * and this becomes `.dk-drawer` at (0,1,0) — still a win, so the shadow keeps
+ * working and the SCOPE is what you quietly lost, which tokens.spec.tsx is
+ * there to catch. Write these as a bare `*`-beating hack and the shadow dies
+ * with no error at all.
  *
  * The corollary bites elsewhere: Tailwind's shadow-* and ring-* utilities
  * compile to box-shadow and therefore do nothing at all in this subtree. That

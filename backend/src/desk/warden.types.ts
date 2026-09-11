@@ -224,6 +224,16 @@ export interface WardenCheckRow {
 export interface WardenCheckBoard {
   lastCheckAt: string | null;
   counts: { ok: number; warn: number; bad: number; unknown: number };
+  /**
+   * ⚠️ ROWS THE DAEMON SENT THAT THIS API COULD NOT NAME — not a daemon
+   * field, and not part of `counts`. The counts are re-tallied from the rows
+   * that survived normalisation, so without this number a row with an
+   * unnameable status would disappear from both and the board would quietly
+   * UNDER-report: a red gate that stopped being counted looks exactly like a
+   * red gate that cleared. `counts.unknown` is a different claim — the daemon
+   * measuring nothing yet — and must not absorb these.
+   */
+  dropped: number;
   rows: WardenCheckRow[];
   /** Present so a board full of green tiles cannot hide that proposals are
    *  suspended. Null means not paused. */
@@ -292,8 +302,20 @@ export interface WardenAuditView {
   /** True when older records exist that this page did not carry. */
   truncated: boolean;
   /**
-   * How many records the daemon sent that this proxy REFUSED to show,
-   * because they failed the wire rules above.
+   * How many runs the operator cannot see on this page — records this proxy
+   * REFUSED to show because they failed the wire rules above, PLUS the
+   * records the daemon refused to send in the first place.
+   *
+   * ⚠️ IT IS A SUM ACROSS BOTH SIDES OF THE WIRE, AND IT HAS TO BE. The
+   * daemon's own projectAudit() drops a record whose trigger or operation
+   * kind it cannot name — the same rule, for the same reason — and for a
+   * while it counted those only into its pm2 stdout. A record dropped over
+   * there never reached this list at all, so the number this response carried
+   * was
+   * the half of the gap that happened to be ours. `WardenAuditView.dropped`
+   * on warden/src/types.ts carries the daemon's half; auditTrail() adds them.
+   * A daemon too old to send the field contributes 0, which under-states the
+   * gap rather than inventing one.
    *
    * 🚨 THIS EXISTS BECAUSE A SILENT DROP IS A FALSE ALIBI. The normaliser
    * skips anything it cannot name — an unknown trigger, an unknown

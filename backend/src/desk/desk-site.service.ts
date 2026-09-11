@@ -325,7 +325,27 @@ export class DeskSiteService {
       warden: warden
         ? {
             present: true,
-            note: `Warden last checked ${warden.lastCheckAt ?? 'an unknown time'} — ${warden.counts.bad} bad, ${warden.counts.warn} warn, ${warden.counts.unknown} not measured.`,
+            // ⚠️ `dropped` IS APPENDED TO THIS NOTE WHEN THERE IS ANY. The
+            // counts are tallied from the rows this API could parse, so a row
+            // it could not is missing from all four numbers; a headline
+            // showing only the four would under-report a bad gate as a clean
+            // board. Nothing is appended when it is zero — a permanent
+            // "0 unreadable" is noise that teaches the operator to stop
+            // reading the line.
+            //
+            // ⚠️ AND NOTHING RENDERS THIS NOTE TODAY. The Site page reads the
+            // gates' notes, the rows' notes and the chat note; it does not
+            // read this board's `warden` key at all. So the sentence is
+            // correct and unread — which is worth knowing before someone
+            // "fixes" a bug by editing wording nobody sees. What an operator
+            // can actually observe from an unparseable row is a vitals tile
+            // going em-dash. Whoever wires this key up gets the count for
+            // free; until then, treat the log line as the real channel.
+            note:
+              `Warden last checked ${warden.lastCheckAt ?? 'an unknown time'} — ${warden.counts.bad} bad, ${warden.counts.warn} warn, ${warden.counts.unknown} not measured.` +
+              (warden.dropped > 0
+                ? ` ${warden.dropped} row${warden.dropped === 1 ? '' : 's'} could not be read and ${warden.dropped === 1 ? 'is' : 'are'} in none of those numbers.`
+                : ''),
           }
         : {
             present: false,

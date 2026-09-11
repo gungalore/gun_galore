@@ -149,7 +149,13 @@ export class AdminAuthController {
 
   private setCookies(
     res: Response,
-    issued: { accessToken: string; refreshToken: string; accessExpiresAt: Date; refreshExpiresAt: Date },
+    issued: {
+      accessToken: string;
+      refreshToken: string;
+      accessExpiresAt: Date;
+      refreshExpiresAt: Date;
+      rotated?: boolean;
+    },
   ) {
     res.cookie(ADMIN_ACCESS_COOKIE, issued.accessToken, {
       ...this.baseCookie(),
@@ -159,11 +165,32 @@ export class AdminAuthController {
       // browser confidently sending a credential the server already refuses.
       expires: issued.accessExpiresAt,
     });
-    res.cookie(ADMIN_REFRESH_COOKIE, issued.refreshToken, {
-      ...this.baseCookie(),
-      path: '/api/admin/auth',
-      expires: issued.refreshExpiresAt,
-    });
+
+    // 🚨 THE REFRESH COOKIE IS ONLY WRITTEN WHEN THE REFRESH SIDE ACTUALLY
+    // MOVED. `rotated: false` comes back from exactly one place — the
+    // grace-window branch in AdminSessionService.rotate() — and there
+    // `refreshToken` is the token the caller PRESENTED, which the winning
+    // request has already rotated away.
+    //
+    // `gg_admin_rt` is ONE cookie shared by every tab in the browser. Writing
+    // the dead token back overwrote the winner's fresh one, so the next
+    // refresh from any tab matched neither the live hash nor the (by then
+    // lapsed) grace window, fell through to the post-grace replay branch, and
+    // revoked the session. An ordinary two-tab refresh — or one retried
+    // request — therefore signed the operator out of the Desk and recorded it
+    // as a stolen credential. The grace window exists to make that race
+    // harmless; this is the half that was missing.
+    //
+    // `rotated === undefined` means a caller that predates the flag, which is
+    // only the login and enrol paths — they always rotate, so defaulting to
+    // writing is correct.
+    if (issued.rotated !== false) {
+      res.cookie(ADMIN_REFRESH_COOKIE, issued.refreshToken, {
+        ...this.baseCookie(),
+        path: '/api/admin/auth',
+        expires: issued.refreshExpiresAt,
+      });
+    }
   }
 
   private clearCookies(res: Response) {

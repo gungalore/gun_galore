@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { BadRequestException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { WardenService, maskSaPhone } from './warden.service';
 import { WARDEN_MESSAGE_KINDS } from './warden.types';
-import type { ConfigGate } from './desk-site.service';
+import { DeskSiteService, type ConfigGate } from './desk-site.service';
 
 /**
  * WARDEN — the endpoints the Site surface leans on.
@@ -570,6 +570,154 @@ describe('the wire contract is mirrored by hand, so a test has to hold it', () =
     ).rejects.toThrow(BadRequestException);
   });
 
+  /**
+   * 🚨 THE FOUR PHASE-4 LISTS WERE HAND-MIRRORED AND PINNED BY NOTHING, in
+   * the same commit as the tests above whose whole purpose is pinning hand
+   * mirrors. AUDIT_TRIGGERS, AUDIT_OPERATION_KINDS, RECHECK_RESULTS and
+   * CHECK_STATUSES are private `as const` arrays inside warden.service.ts and
+   * every one of them is a DROP rule: normaliseAuditEntry() refuses a record
+   * whose trigger it cannot name, normaliseCheckRow() refuses a row whose
+   * status it cannot name. A value added or renamed on the daemon's side and
+   * not here does not fail to compile, does not fail a test and logs nothing
+   * on either side — it makes runs and board rows silently disappear from the
+   * operator's view of a production box. CHECK_STATUSES is an exported
+   * runtime const over there; the other three are declared inside the
+   * WardenAuditEntry interface, so they are read out of the same file the
+   * same way.
+   */
+  describe('the four Phase-4 literal lists are the same literals on both sides', () => {
+    /**
+     * The union members of one field in the daemon's WardenAuditEntry.
+     *
+     * ⚠️ THE COMMENTS COME OUT FIRST. That file documents each of these
+     * fields by quoting the very literals being extracted — `{result:
+     * 'unknown'}` sits in the doc block directly above `result:` — so a
+     * regex run over the raw text reads the PROSE and reports a union of one.
+     * A pin that matches a comment is a pin that passes while the declaration
+     * it was meant to hold drifts underneath it.
+     */
+    function daemonUnion(field: string): string[] {
+      const src = daemonSource().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+      const block = /export interface WardenAuditEntry\s*\{([\s\S]*?)\n\}/.exec(src);
+      expect(block).not.toBeNull();
+      const line = new RegExp(`${field}\\s*:([^;]+);`).exec(block![1]);
+      expect(line).not.toBeNull();
+      return [...line![1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    }
+
+    it('trigger: the two values, and this side accepts every one the daemon can send', async () => {
+      // ⚠️ A THIRD TRIGGER ADDED OVER THERE MEANS EVERY RECORD CARRYING IT IS
+      // DROPPED HERE — the run happened on the box and the audit page does
+      // not show it. The daemon counts its own drops; this side logs and
+      // reports `dropped`, but neither can invent the record back.
+      const triggers = daemonUnion('trigger');
+      expect(triggers).toEqual(['unattended', 'operator_approved']);
+
+      // And the pin that actually bites: every literal READ OFF THE DAEMON'S
+      // SOURCE survives this side's whitelist. A literal expectation alone
+      // would let the two lists drift in step with each other and apart from
+      // the code that filters on them.
+      configure();
+      const { service } = makeService();
+      stubDaemon({
+        '/audit?limit=50': {
+          body: {
+            entries: triggers.map((t, i) => ({ ...AUDIT_ENTRY, id: `aud_${i}`, trigger: t })),
+            truncated: false,
+          },
+        },
+      });
+      const view = await service.auditTrail();
+      expect(view.entries).toHaveLength(triggers.length);
+      expect(view.dropped).toBe(0);
+    });
+
+    it('operationKind: the two values, and this side accepts every one of them too', async () => {
+      const kinds = daemonUnion('operationKind');
+      expect(kinds).toEqual(['safe_list', 'approved_command']);
+
+      configure();
+      const { service } = makeService();
+      stubDaemon({
+        '/audit?limit=50': {
+          body: {
+            entries: kinds.map((k, i) => ({ ...AUDIT_ENTRY, id: `aud_${i}`, operationKind: k })),
+            truncated: false,
+          },
+        },
+      });
+      expect((await service.auditTrail()).dropped).toBe(0);
+    });
+
+    it('the recheck results are the same three, `null` is still not one of them, and each survives', async () => {
+      // ⚠️ null MEANS NOBODY LOOKED. It is deliberately outside this list on
+      // both sides: an unrecognised result collapses to null ("not
+      // re-checked"), never to 'unknown' ("looked and could not tell"), so a
+      // result this side does not know silently becomes "the fix was never
+      // re-checked" on a run that WAS re-checked.
+      // `result`, not `recheck` — the recheck field is an inline object and
+      // its first `;` closes `at: string`, not the field.
+      const results = daemonUnion('result');
+      expect(results).toEqual(['ok', 'still-bad', 'unknown']);
+
+      configure();
+      const { service } = makeService();
+      stubDaemon({
+        '/audit?limit=50': {
+          body: {
+            entries: results.map((r, i) => ({
+              ...AUDIT_ENTRY,
+              id: `aud_${i}`,
+              recheck: { at: AUDIT_ENTRY.recheck.at, result: r, note: '' },
+            })),
+            truncated: false,
+          },
+        },
+      });
+      const view = await service.auditTrail();
+      expect(view.entries.map((e) => e.recheck?.result)).toEqual(results);
+    });
+
+    it('the four check statuses are the same four, in the same order, and none of them is dropped here', async () => {
+      const src = daemonSource();
+      const match = /CHECK_STATUSES[^=]*=\s*\[([^\]]*)\]/.exec(src);
+      expect(match).not.toBeNull();
+      const daemonStatuses = [...match![1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+
+      // Order as well as membership: this side tallies `counts` by keying an
+      // object on the status, and the Site tiles colour on it.
+      expect(daemonStatuses).toEqual(['ok', 'warn', 'bad', 'unknown']);
+
+      configure();
+      const { service } = makeService();
+      stubDaemon({
+        '/gates': {
+          body: {
+            lastCheckAt: '2026-09-03T07:00:00.000Z',
+            counts: null,
+            rows: daemonStatuses.map((s, i) => ({
+              id: `row-${i}`,
+              title: s,
+              status: s,
+              verdict: s,
+              gateKey: null,
+              standing: false,
+              measuredAt: '2026-09-03T07:00:00.000Z',
+              fresh: true,
+            })),
+          },
+        },
+      });
+
+      const board = await service.checkBoard();
+      // A status the daemon can emit and this side cannot name is a board row
+      // that vanishes from the operator's view of the box entirely.
+      expect(board!.rows).toHaveLength(daemonStatuses.length);
+      expect(board!.dropped).toBe(0);
+      expect(board!.counts).toEqual({ ok: 1, warn: 1, bad: 1, unknown: 1 });
+    });
+  });
+
   it('the shapes Phase 4 added are declared on the daemon side too', () => {
     const src = daemonSource();
     // A route added here against a daemon that does not serve it is a 404 the
@@ -577,6 +725,26 @@ describe('the wire contract is mirrored by hand, so a test has to hold it', () =
     for (const name of ['WardenPause', 'WardenAuditEntry', 'WardenCheckBoard']) {
       expect(src).toContain(`interface ${name}`);
     }
+  });
+
+  /**
+   * 🚨 `dropped` IS A FIELD WHOSE ABSENCE CANNOT FAIL. auditTrail() reads the
+   * daemon's count through count(), which turns anything unusable — an absent
+   * key included — into 0, and ADDS it to its own tally. That is the right
+   * default (an old daemon must never invent a gap), but it means a daemon
+   * that stops sending the field produces no error, no log line and no type
+   * complaint on either side: the page just under-states how many runs the
+   * operator cannot see, which is the exact failure the field was added to
+   * close. Nothing but this test notices.
+   */
+  it('the daemon declares `dropped` on its own WardenAuditView, because our count is a SUM of both sides', () => {
+    const src = daemonSource().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const block = /export interface WardenAuditView\s*\{([\s\S]*?)\n\}/.exec(src);
+    expect(block).not.toBeNull();
+    // Comments stripped first, for the reason daemonUnion() strips them: that
+    // file documents the field by naming it, so a raw-text match would pass
+    // off the prose above the declaration as the declaration.
+    expect(block![1]).toMatch(/dropped\s*:\s*number\s*;/);
   });
 });
 
@@ -690,6 +858,63 @@ describe('the audit trail', () => {
     expect(view.truncated).toBe(false);
   });
 
+  it('ADDS the drops the daemon made to the drops made here, so the route reports one honest total', async () => {
+    configure();
+    const { service } = makeService();
+    stubDaemon({
+      '/audit?limit=50': {
+        body: {
+          entries: [{ ...AUDIT_ENTRY, id: 'aud_bad_trigger', trigger: 'somehow' }, AUDIT_ENTRY],
+          truncated: false,
+          // 🚨 THE DAEMON REFUSES RECORDS TOO, ON THE SAME RULE. Its
+          // projectAudit() drops a record whose trigger or operation kind it
+          // cannot name, and it used to count those into pm2 stdout and
+          // nowhere else — so a record dropped over there never reached this
+          // list, and the number printed on the audit page was whichever half
+          // of the gap happened to be ours. Two runs unreadable here and two
+          // unreadable there is four runs the operator cannot see.
+          dropped: 2,
+        },
+      },
+    });
+
+    const view = await service.auditTrail();
+    expect(view.entries.map((e) => e.id)).toEqual(['aud_1']);
+    expect(view.dropped).toBe(3);
+    // ⚠️ STILL NOT FOLDED INTO `truncated`. Truncated is answered by asking
+    // for the next page; dropped is answered by ssh-ing in and reading the
+    // daemon's own store. Summing the two sides' refusals does not blur that.
+    expect(view.truncated).toBe(false);
+  });
+
+  it('a daemon too old to send `dropped` under-states the gap rather than inventing one', async () => {
+    configure();
+    const { service } = makeService();
+    stubDaemon({
+      // No `dropped` key at all — warden deploys as a separate, explicitly
+      // NON-FATAL third stage, so a daemon one version behind the backend is
+      // a real window rather than a hypothetical one.
+      '/audit?limit=50': { body: { entries: [AUDIT_ENTRY], truncated: false } },
+    });
+
+    // ⚠️ 0, NOT A GUESS AND NOT A NaN. count() refuses anything that is not a
+    // finite positive number, because this value is ADDED to our own tally:
+    // a garbage field that leaked through would report runs as unviewable
+    // that were never dropped by anyone, and an invented gap sends an
+    // operator SSH-ing after a record that does not exist.
+    expect((await service.auditTrail()).dropped).toBe(0);
+
+    stubDaemon({
+      '/audit?limit=50': { body: { entries: [AUDIT_ENTRY], truncated: false, dropped: 'lots' } },
+    });
+    expect((await service.auditTrail()).dropped).toBe(0);
+
+    stubDaemon({
+      '/audit?limit=50': { body: { entries: [AUDIT_ENTRY], truncated: false, dropped: -4 } },
+    });
+    expect((await service.auditTrail()).dropped).toBe(0);
+  });
+
   it('never recomputes originalBytes from the text it was handed', async () => {
     configure();
     const { service } = makeService();
@@ -791,6 +1016,57 @@ describe('the daemon check board', () => {
     // process has invented.
     expect(board!.rows.map((r) => r.id)).toEqual(['host-disk']);
     expect(board!.counts).toEqual({ ok: 1, warn: 0, bad: 0, unknown: 0 });
+
+    // 🚨 AND IT IS COUNTED, BECAUSE counts IS RE-TALLIED FROM THE SURVIVORS.
+    // Dropping the row from `rows` AND from `counts` with nothing said made
+    // the board UNDER-report: a row whose status could not be read — which
+    // may be the bad one — simply stopped existing, and a red gate that
+    // quietly stops being counted looks exactly like one that cleared. It is
+    // NOT folded into counts.unknown: that bucket means the daemon has not
+    // measured it yet, which is a claim about the box, not about this parser.
+    expect(board!.dropped).toBe(1);
+  });
+
+  it('says how many rows it could not read on the Site headline, and says nothing when there are none', async () => {
+    // The board's own queries are beside the point here — this is about the
+    // one sentence the operator reads above the tiles.
+    const sitePrisma = {
+      transaction: { aggregate: jest.fn().mockResolvedValue({ _sum: { sellerPayout: 0 }, _count: 0 }) },
+      setting: { findUnique: jest.fn().mockResolvedValue(null) },
+      smsLog: { count: jest.fn().mockResolvedValue(0) },
+      emailOutbox: { count: jest.fn().mockResolvedValue(0) },
+    };
+    const site = new DeskSiteService(sitePrisma as never);
+    const row = {
+      id: 'host-disk',
+      title: 'Disk',
+      status: 'bad' as const,
+      verdict: '/ is 94% full.',
+      gateKey: null,
+      standing: false,
+      measuredAt: '2026-09-03T07:00:00.000Z',
+      fresh: true,
+    };
+
+    const noisy = await site.board({
+      lastCheckAt: '2026-09-03T07:00:00.000Z',
+      counts: { ok: 0, warn: 0, bad: 1, unknown: 0 },
+      dropped: 2,
+      rows: [row],
+      paused: null,
+    });
+    expect(noisy.warden.note).toMatch(/2 rows could not be read/);
+
+    const clean = await site.board({
+      lastCheckAt: '2026-09-03T07:00:00.000Z',
+      counts: { ok: 0, warn: 0, bad: 1, unknown: 0 },
+      dropped: 0,
+      rows: [row],
+      paused: null,
+    });
+    // A permanent "0 unreadable" is noise, and noise is how an operator
+    // learns to stop reading the line that matters.
+    expect(clean.warden.note).not.toMatch(/could not be read/);
   });
 
   it('clamps the daemon-authored verdict, which is partly model-written and lands in an admin browser', async () => {
@@ -867,6 +1143,60 @@ describe('an on-demand sweep', () => {
     expect(result.joined).toBe(true);
     expect(result.forced).toBe(false);
   });
+
+  it('an ABSENT `forced` reads as not-forced, never as a full re-measure', async () => {
+    configure();
+    const { service } = makeService();
+    stubDaemon({
+      '/sweep': {
+        // A daemon a version behind, or one whose answer lost the field.
+        body: { finished: true, joined: true, board: { lastCheckAt: null, counts: null, rows: [], paused: null } },
+      },
+    });
+
+    const result = await service.sweep('admin_1');
+
+    // 🚨 THE DEFAULT USED TO BE `!== false`, i.e. TRUE. A board with rows
+    // carried forward from a cadence sweep was then reported to the operator
+    // as "everything was just re-measured" — the precise claim `forced`
+    // exists to refuse, and the one that sends somebody away believing a
+    // stale row is current. Every other default in this service falls to the
+    // weaker statement; this one now does too.
+    expect(result.forced).toBe(false);
+  });
+
+  it('WRITES AN AUDIT ROW NAMING WHO FORCED IT — the one Phase 4 action that used to leave no trace', async () => {
+    configure();
+    const { service, audit } = makeService();
+    stubDaemon({
+      '/sweep': {
+        body: { finished: true, forced: true, joined: false, board: { lastCheckAt: null, counts: null, rows: [], paused: null } },
+      },
+    });
+
+    await service.sweep('admin_9');
+
+    // 🚨 THE DAEMON DEMANDED AN operatorId ON THIS ROUTE AND THREW IT AWAY,
+    // AND THIS SIDE WROTE NOTHING — so a forced re-measure of the live box
+    // (every check, the expensive ones budgeted 60s EACH at concurrency four)
+    // was recorded nowhere at all, while pausing and resuming both were.
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'WARDEN_SWEEP',
+        adminUserId: 'admin_9',
+        reason: expect.stringMatching(/\S/),
+      }),
+    );
+  });
+
+  it('does not audit a sweep the daemon refused — the row says what happened, not what was asked for', async () => {
+    configure();
+    const { service, audit } = makeService();
+    stubDaemon({ '/sweep': { status: 503, body: { error: 'nope' } } });
+
+    await expect(service.sweep('admin_1')).rejects.toThrow(ServiceUnavailableException);
+    expect(audit.record).not.toHaveBeenCalled();
+  });
 });
 
 describe('pause and resume', () => {
@@ -899,7 +1229,10 @@ describe('pause and resume', () => {
 
     const result = await service.pause('admin_1', { minutes: 30, reason: 'deploying' });
 
-    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    // ⚠️ FOUND BY PATH, NOT BY INDEX. pause() reads the board first so the
+    // audit row can record the pause it is REPLACING; call 0 is that read.
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/pause'))!;
+    const body = JSON.parse((call[1] as RequestInit).body as string);
     expect(body).toEqual({ operatorId: 'admin_1', minutes: 30, reason: 'deploying' });
     expect(result.paused).not.toBeNull();
     expect(result.paused!.reason).toBe('deploying');
@@ -908,6 +1241,59 @@ describe('pause and resume', () => {
     // an operational decision somebody has to be able to point at later.
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'WARDEN_PAUSE', adminUserId: 'admin_1', reason: 'deploying' }),
+    );
+  });
+
+  it('RECORDS THE PAUSE IT REPLACED, rather than asserting there was none', async () => {
+    configure();
+    const { service, audit } = makeService();
+    const running = {
+      until: new Date(Date.now() + 600_000).toISOString(),
+      since: new Date(Date.now() - 600_000).toISOString(),
+      operatorId: 'admin_2',
+      reason: 'first deploy attempt',
+    };
+    stubDaemon({
+      '/gates': { body: { lastCheckAt: null, counts: null, rows: [], paused: running } },
+      '/pause': {
+        body: {
+          messages: [],
+          paused: { ...running, until: new Date(Date.now() + 3_600_000).toISOString(), operatorId: 'admin_1' },
+        },
+      },
+    });
+
+    await service.pause('admin_1', { minutes: 60, reason: 'still deploying' });
+
+    // 🚨 THIS FIELD WAS A LITERAL `{ paused: null }` — "Warden was not paused
+    // before this" — written without reading anything. It is false every time
+    // an operator EXTENDS a pause, which is the common case: the deploy ran
+    // past the thirty minutes they first asked for. A fabricated prior state
+    // in the one row that records who suspended the watchdog is worse than no
+    // field at all.
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'WARDEN_PAUSE',
+        oldValue: { paused: expect.objectContaining({ operatorId: 'admin_2' }) },
+      }),
+    );
+  });
+
+  it('says the prior state is UNKNOWN when the pre-read failed, and pauses anyway', async () => {
+    configure();
+    const { service, audit } = makeService();
+    // No /gates stub: the pre-read fails the way an unwell daemon fails.
+    stubDaemon({ '/pause': { body: { messages: [], paused: null } } });
+
+    const result = await service.pause('admin_1', { minutes: 30 });
+
+    // ⚠️ THE READ IS BEST-EFFORT AND THE WRITE IS NOT. A daemon that will not
+    // answer a read must not stop an operator suspending it — but the row
+    // must not then claim a prior state nobody looked at. "unknown" and
+    // "was not paused" are different claims and the row says which.
+    expect(result.ok).toBe(true);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'WARDEN_PAUSE', oldValue: expect.objectContaining({ paused: 'unknown' }) }),
     );
   });
 

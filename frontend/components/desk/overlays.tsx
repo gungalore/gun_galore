@@ -721,7 +721,16 @@ export function UndoToast({ message, seconds, total = 10, onUndo }: UndoToastPro
         // decision covered the controls for leaving the screen.
         // Desktop is unaffected: with no bar rendered the extra lift is a
         // slightly higher toast, which is where it sat on the artboards.
-        bottom: 'calc(78px + env(safe-area-inset-bottom, 0px) + 12px)',
+        //
+        // ⚠️ THE INSET IS CLAMPED TO 34px, the same cap tokens.css and
+        // BottomTabs use. Chrome for iOS over-reports
+        // safe-area-inset-bottom — far larger than the ~34pt home indicator
+        // it describes — and this toast lifts off the bar with it, so
+        // unclamped it climbs a long way up the board and floats in the
+        // middle of the screen, detached from the bar it is meant to clear.
+        // The cap has to be the SAME 34 as tabs.tsx or the toast and the bar
+        // disagree about where the bottom of the screen is.
+        bottom: 'calc(78px + min(env(safe-area-inset-bottom, 0px), 34px) + 12px)',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 80,

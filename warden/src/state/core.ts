@@ -98,14 +98,17 @@ export type CoreMessages = { ok: true; messages: WardenChatMessage[] };
 export type CoreResult = CoreMessages | CoreFailure;
 
 /**
- * ⚠️ THIS SHAPE MOVED INTO THE MIRRORED BLOCK OF types.ts AND IS NOW
- * `WardenCheckRow`. It used to be declared here, outside anything either
- * side calls a mirror, while the backend held its own twin under a different
- * name — so the two agreed by luck and adding a field to one was completely
- * silent. The alias stays because state/index.ts exports it and callers
- * import it by this name; the declaration must not come back.
+ * ⚠️ THE BOARD-ROW SHAPE IS `WardenCheckRow`, IN types.ts, AND THERE IS NO
+ * LOCAL ALIAS FOR IT ANY MORE. It used to be declared here as `GateRow`,
+ * outside anything either side calls a mirror, while the backend held its
+ * own twin under a different name — so the two agreed by luck and adding a
+ * field to one was completely silent. The alias that replaced the
+ * declaration was kept on the stated grounds that "callers import it by this
+ * name"; a repo-wide grep found no such caller, inside warden/ or out (the
+ * daemon has no import path into the backend at all), so it was a dead name
+ * keeping a dead premise alive. Import WardenCheckRow. Do not bring either
+ * the alias or the declaration back.
  */
-export type GateRow = WardenCheckRow;
 
 /**
  * How long a pause may last, and what you get if you ask for nothing.
@@ -484,8 +487,23 @@ export class WardenCore {
     // Same reason snapshot() counts its drops: the far side normalises by
     // dropping SILENTLY, and a run that happened and then failed to arrive is
     // the one record whose disappearance matters most.
+    //
+    // 🚨 THE COUNT GOES ON THE WIRE, NOT ONLY INTO onError. onError reaches
+    // this daemon's pm2 stdout and nothing else, so while that was its only
+    // destination a caller saw a shorter list beside `truncated: false` with
+    // no way to tell an incomplete account of what ran on the box from a
+    // complete one. The backend ADDS its own drop count to this one and
+    // reports the sum.
+    //
+    // ⚠️ THAT SUM IS ON THE API, NOT YET IN FRONT OF ANYBODY. Nothing under
+    // frontend/ fetches GET /admin/warden/audit — the Site board's audit
+    // drawer reads the AdminAudit table, which is a different trail — so today
+    // the number is visible to someone curling the route with an admin token
+    // and to the Nest warn line, and that is all. Do not upgrade this comment
+    // to "the operator reads it" until a surface renders it; that overclaim is
+    // the same shape as the silent drop this field exists to fix.
     if (dropped > 0) this.onError('audit', `${dropped} audit record(s) failed our own wire rules and were not sent`);
-    return { entries: wire, truncated };
+    return { entries: wire, truncated, dropped };
   }
 
   // ── POST /pause, POST /resume ─────────────────────────────────────────
@@ -612,17 +630,62 @@ export class WardenCore {
    * answer says so (`forced: false`) — some of those rows are carried
    * forward, and reporting a cadence board as a full re-measure would be the
    * same lie by a different route.
+   *
+   * 🚨 `operatorId` IS REQUIRED AND IT IS WRITTEN DOWN. server.ts has always
+   * demanded one on this route — "an audit trail that cannot name who
+   * stopped the watchdog is not an audit trail" — and then dropped it on the
+   * floor: sweepNow() had no parameter for it, appended no note, and the
+   * backend wrote no AdminAudit row either, so forcing a full re-measure of
+   * the production box (every check, the expensive ones budgeted sixty
+   * seconds EACH at concurrency four) was the one Phase 4 action that left no
+   * trace anywhere. It is a required parameter rather than an optional one so
+   * a future caller cannot quietly go back to not having it.
    */
-  async sweepNow(opts: { budgetMs?: number } = {}): Promise<{
+  async sweepNow(opts: { operatorId: string; budgetMs?: number }): Promise<{
     finished: boolean;
     forced: boolean;
     joined: boolean;
     board: WardenCheckBoard;
   }> {
     const budgetMs = clampInt(opts.budgetMs, 1_000, 120_000, DEFAULT_SWEEP_BUDGET_MS);
-    const joined = this.inFlight !== null;
-    const forced = this.inFlight ? this.inFlight.forced : true;
-    const running = this.inFlight ? this.inFlight.promise : this.startSweep(true);
+
+    // 🚨 DECIDE AND ACT IN ONE SYNCHRONOUS BLOCK — NOTHING MAY AWAIT IN HERE.
+    // `inFlight` is cleared by a `.finally()` on the running sweep, so it can
+    // change at any await point, and this method used to read it, await the
+    // note, and then read it AGAIN to decide what to join. Both directions of
+    // that race are real and both end in the thread saying one thing while the
+    // box does another:
+    //
+    //   - the sweep finishes during the note, so the join finds nothing and
+    //     startSweep() runs a SECOND full re-measure of the production box —
+    //     every check, the expensive ones budgeted sixty seconds EACH at
+    //     concurrency four — while the note the operator is reading says it
+    //     joined the first and did not start a second;
+    //   - or a cadence tick starts one during the note, so this joins a
+    //     CADENCE sweep, whose board carries rows forward, and still answers
+    //     `forced: true` — which is the exact "reporting a cadence board as a
+    //     full re-measure" lie the forced/joined pair exists to prevent.
+    //
+    // One read, one decision, one start, no await between them.
+    const existing = this.inFlight;
+    const joined = existing !== null;
+    const forced = existing ? existing.forced : true;
+    const running = existing ? existing.promise : this.startSweep(true);
+
+    // ⚠️ NOTED BEFORE THE RACE, NOT AFTER IT. The answer comes back on a
+    // budget while the sweep carries on, so a note written after the await
+    // would be missing from the thread for exactly as long as the sweep the
+    // operator is watching for — and absent altogether if the process is
+    // reloaded mid-sweep, which is the moment somebody is most likely to have
+    // forced one. Safe to await here now: the decision above is already taken
+    // and cannot be revised by anything that happens during this write.
+    await this.store.appendMessages([
+      note(this.now().toISOString(), [
+        joined
+          ? `${opts.operatorId} asked for a full re-measure while a ${forced ? 'forced' : 'cadence'} sweep was already running, so this one joined that sweep instead of starting a second.`
+          : `${opts.operatorId} forced a full re-measure of the box. Every check runs, cadence ignored.`,
+      ]),
+    ]);
 
     const raced = await Promise.race([
       running.then(() => true as const),
@@ -759,11 +822,30 @@ export class WardenCore {
   }
 
   private shouldDiagnose(sweep: Sweep): boolean {
-    // ⚠️ THE PAUSE'S FIRST HALF. No model call at all while paused — not a
+    // ⚠️ THE PAUSE'S FIRST HALF. No MODEL CALL at all while paused — not a
     // cheaper one, not a quieter one. The other half is in ingest(), because
     // POST /chat still reaches diagnose() when the operator asks a direct
     // question and that turn can draft proposals.
-    if (this.pausedNow()) return false;
+    //
+    // ⚠️ AND IT IS "NO MODEL CALL", NOT "NO diagnose()". With no caller
+    // configured diagnose() makes no call at all: it returns the
+    // ANTHROPIC_API_KEY red gate and nothing else, and a pause that swallowed
+    // THAT would leave a daemon that cannot think at all looking, for up to
+    // twenty-four hours, exactly like one that thought and found nothing —
+    // which is the single failure this whole daemon exists to refuse. A red
+    // gate is also not what a pause is for: it carries no command and no
+    // button, so there is nothing an operator mid-deploy could be bothered
+    // by. See the kind carve-out in ingest(), which is the same rule applied
+    // to the drafts themselves.
+    //
+    // What this deliberately does NOT do: call the model while paused to see
+    // whether it would draft a red gate. A paused sweep with a caller still
+    // makes no call at all, so a MODEL-drafted red gate waits for the resume
+    // or for the operator's next direct question (ingest() raises it on that
+    // path). That is the trade: the one red gate that needs no model — no
+    // credential, the daemon cannot think — is the one a pause must never
+    // hide, and it is free to raise.
+    if (this.pausedNow() && this.caller) return false;
     const signature = faultSignature(sweep);
     // Healthy AND able to think: nothing to say. (With no caller we still go
     // through diagnose(), which raises the missing-credential red gate — a
@@ -805,23 +887,39 @@ export class WardenCore {
     // the announcements that named them go with them (that filter already
     // exists for the dedupe case below), and one note says what was held and
     // how many.
-    if (paused) {
-      for (const drafted of result.proposals) suppressed.add(drafted.id);
-    } else {
-      for (const drafted of result.proposals) {
-        // A proposal the store deduplicated — an open one already names that
-        // fault — takes its announcement with it, or the thread repeats a
-        // finding the board already shows.
-        const stored = await this.store.raise(drafted);
-        if (!stored) suppressed.add(drafted.id);
+    //
+    // 🚨 A RED GATE IS NOT HELD BY A PAUSE, AND THAT IS NOT AN EXCEPTION TO
+    // THE RULE — IT IS THE RULE READ PROPERLY. A pause suspends FIXES: things
+    // with a command behind them and a button an operator would have to
+    // decide about mid-deploy. A red gate has neither. It cannot be approved,
+    // declined or acknowledged anywhere in this system (core.ts approve() and
+    // decline(), desk.service.ts act()) — it clears only when the gate itself
+    // flips — so holding one back suppresses a FACT about the running
+    // configuration of a firearms marketplace and buys the operator nothing
+    // in return. Held for the twenty-four hours a pause can last, "Warden
+    // cannot diagnose anything: ANTHROPIC_API_KEY is not set" would read as a
+    // quiet board.
+    let heldByPause = 0;
+    for (const drafted of result.proposals) {
+      if (paused && drafted.kind !== 'red_gate') {
+        suppressed.add(drafted.id);
+        heldByPause += 1;
+        continue;
       }
+      // A proposal the store deduplicated — an open one already names that
+      // fault — takes its announcement with it, or the thread repeats a
+      // finding the board already shows. Red gates are deduplicated by the
+      // same path, on a stable id, so a paused daemon re-raising the same
+      // gate every sweep says it once.
+      const stored = await this.store.raise(drafted);
+      if (!stored) suppressed.add(drafted.id);
     }
 
     const messages = result.messages.filter((m) => !(m.proposalId && suppressed.has(m.proposalId)));
-    if (paused && result.proposals.length > 0) {
+    if (paused && heldByPause > 0) {
       messages.push(
         note(this.now().toISOString(), [
-          `I am paused until ${paused.until}, so I have not raised ${result.proposals.length} fix${result.proposals.length === 1 ? '' : 'es'} I would otherwise have put on the board. Resume me and they come back on the next sweep.`,
+          `I am paused until ${paused.until}, so I have not raised ${heldByPause} fix${heldByPause === 1 ? '' : 'es'} I would otherwise have put on the board. Resume me and they come back on the next sweep.`,
         ]),
       );
     }
@@ -847,9 +945,6 @@ export class WardenCore {
 
 // ── helpers ─────────────────────────────────────────────────────────────
 
-/** The identity of the CURRENT fault set. A change means "think again now";
- *  the same set means "you already thought about this". Unknowns count: a row
- *  that stopped being measurable is a change worth a fresh look. */
 /** A sweep result as one board row. One place, so GET /gates and POST /sweep
  *  can never describe the same measurement differently. */
 function toRow(r: CheckResult): WardenCheckRow {
@@ -879,6 +974,9 @@ function clampInt(raw: unknown, min: number, max: number, fallback: number): num
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
+/** The identity of the CURRENT fault set. A change means "think again now";
+ *  the same set means "you already thought about this". Unknowns count: a row
+ *  that stopped being measurable is a change worth a fresh look. */
 function faultSignature(sweep: Sweep): string {
   return sweep.results
     .filter((r) => r.status !== 'ok')

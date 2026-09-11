@@ -15,7 +15,7 @@ import {
 } from './dto/admin-login.dto';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminSessionService, IssuedAdminSession } from './admin-session.service';
-import { generateTotpSecret, otpauthUri, verifyTotpCode } from './totp';
+import { generateTotpSecret, otpauthUri, verifyTotpStep } from './totp';
 
 /**
  * bcrypt cost for everything this file hashes.
@@ -98,6 +98,30 @@ export class AdminAuthService {
    * identically, so the response cannot be used to enumerate who has admin
    * access or to discover that an attack has already tripped a lock.
    *
+   * ⚠️ "IDENTICALLY" INCLUDES THE RESPONSE TIME, and it did not until
+   * 2026-09-11. One shared message is only half the control: a branch that
+   * refuses without doing the hash answers in under a millisecond next to a
+   * ~300 ms cost-12 compare, which is the same disclosure by a stopwatch
+   * instead of a string.
+   *
+   * login() has THREE refusing branches, not two, and they do not all pay the
+   * same way. Unknown-or-deactivated email and locked-account both compare
+   * against TIMING_DECOY, which is a cost-12 hash. Wrong password compares
+   * against the account's REAL stored hash — which costs the same only while
+   * that hash is also cost 12. Adding a fourth early return without a compare
+   * re-opens the whole thing.
+   *
+   * ⚠️ AND THE RESIDUAL GAP IS REAL, NOT THEORETICAL: BCRYPT_COST was raised
+   * from 10 to 12 on 2026-09-11 and existing rows were NOT re-hashed — they
+   * stay at cost 10 until their owner changes their password (see the
+   * BCRYPT_COST block at the top of this file). Against an admin still on a
+   * cost-10 hash, a wrong password returns in roughly a quarter of the time an
+   * unknown email does, so that one account remains distinguishable by
+   * stopwatch until somebody changes its password. Closing it properly means
+   * re-hashing on next successful login, which is a separate change and is not
+   * done here. Do not delete this paragraph because the numbers look close
+   * enough; it is the reason the control is "better", not "complete".
+   *
    * The two EXCEPTIONS are deliberate and carry a `code` the Desk branches
    * on: TOTP_REQUIRED (the password was right, now give a code) and
    * TOTP_ENROLMENT_REQUIRED. TOTP_REQUIRED does disclose that the password
@@ -146,11 +170,28 @@ export class AdminAuthService {
       throw this.refuse();
     }
 
-    // ⚠️ CHECKED BEFORE bcrypt. A locked account then costs an attacker one
-    // indexed lookup instead of a 300 ms hash, so a flood against a locked
-    // account cannot also be used to starve the box of CPU. It also does NOT
-    // extend the lock — see recordFailedLogin for why that matters.
+    // A live lock. Three things happen here and each one is deliberate.
+    //
+    // 1. The REAL hash is never touched, so a locked account cannot be used
+    //    as an oracle against the stored password at all.
+    // 2. The lock is NOT extended — see recordFailedLogin for why an
+    //    extending lock is a denial of service against the one account that
+    //    can reach the Desk.
+    // 3. ⚠️ THE DECOY COMPARE RUNS ANYWAY, AND SKIPPING IT WAS A MEASURED
+    //    ACCOUNT-ENUMERATION LEAK. This branch used to return without any
+    //    bcrypt work on the stated ground that a locked account should cost
+    //    an attacker a lookup rather than a hash. Measured in-process, that
+    //    made a locked known admin answer in 0.7 ms against 570 ms for an
+    //    unknown address — so eight bad passwords against a candidate email
+    //    followed by a ninth request that comes back instantly says, without
+    //    ambiguity, "this is a real active AdminUser and the lock has
+    //    tripped". Both halves are exactly what refuse() claims are
+    //    impossible. The CPU argument does not survive the comparison either:
+    //    an unknown email ALREADY burns a full cost-12 compare on every
+    //    request, so equalising here adds no capability an attacker did not
+    //    have by typing a nonsense address.
     if (admin.lockedUntil && admin.lockedUntil > new Date()) {
+      await bcrypt.compare(dto.password, TIMING_DECOY);
       throw this.refuse();
     }
 
@@ -187,7 +228,17 @@ export class AdminAuthService {
             'Signed in with a single-use recovery code; this session is read-only until TOTP is re-enrolled.',
         });
       } else if (dto.totpCode) {
-        if (!verifyTotpCode(admin.totpSecret as string, dto.totpCode)) {
+        // ⚠️ TWO CHECKS, AND THE SECOND ONE IS WHAT MAKES THE CODE SINGLE
+        // USE. verifyTotpStep is stateless and accepts a ±1 step window, so
+        // on its own a code stays good for up to ninety seconds and can be
+        // presented as many times as somebody can type it — a code caught on
+        // a screen-share, over a shoulder or through a real-time phishing
+        // proxy mints a second, independent thirty-day session beside the
+        // operator's own, and nothing anywhere records that it happened.
+        // RFC 6238 §5.2 says the verifier must refuse a code it has already
+        // accepted. spendTotpStep is that refusal.
+        const step = verifyTotpStep(admin.totpSecret as string, dto.totpCode);
+        if (step === null || !(await this.spendTotpStep(admin.id, step))) {
           await this.recordFailedLogin(admin);
           throw this.refuse();
         }
@@ -300,6 +351,44 @@ export class AdminAuthService {
       remainingRecoveryCodes,
       totpRequired: totpRequired(),
     };
+  }
+
+  // ── The second factor is single-use ───────────────────────────────────
+
+  /**
+   * Burn a TOTP step so the same code cannot be presented twice.
+   *
+   * ⚠️ SINGLE USE IS ENFORCED BY THE UPDATE'S ROW COUNT, NOT BY A READ. Two
+   * requests carrying the same stolen code both pass verifyTotpStep — it is a
+   * pure HMAC compare with no state — and both would read the same
+   * `totpLastUsedStep`. What separates them is the guarded `updateMany`:
+   * exactly one matches the `lt` predicate and gets count 1, the other gets 0
+   * and is refused. This is the same shape, for the same reason, as
+   * consumeRecoveryCode's guarded delete; a read-then-write here would let
+   * the loser of the race sign in anyway.
+   *
+   * ⚠️ `lt`, NOT `not`. The accepted window is three steps wide, so refusing
+   * only the exact step just spent would still leave the PREVIOUS step's code
+   * — which the attacker also saw on the same screen — good for another
+   * minute. The counter only ever moves forward.
+   *
+   * The cost the operator pays is real and correct: after signing in, the
+   * code currently on their phone will not work a second time and they wait
+   * for the next one. Do not soften this to an equality check when that turns
+   * up as a support question.
+   */
+  private async spendTotpStep(
+    adminUserId: string,
+    step: number,
+  ): Promise<boolean> {
+    const spent = await this.prisma.adminUser.updateMany({
+      where: {
+        id: adminUserId,
+        OR: [{ totpLastUsedStep: null }, { totpLastUsedStep: { lt: step } }],
+      },
+      data: { totpLastUsedStep: step },
+    });
+    return spent.count === 1;
   }
 
   // ── Lockout ───────────────────────────────────────────────────────────
@@ -477,7 +566,8 @@ export class AdminAuthService {
         'Start an enrolment first — there is no secret on this account to confirm.',
       );
     }
-    if (!verifyTotpCode(admin.totpPendingSecret, dto.totpCode)) {
+    const confirmedStep = verifyTotpStep(admin.totpPendingSecret, dto.totpCode);
+    if (confirmedStep === null) {
       throw new UnauthorizedException(
         'That code did not match. Check your phone’s clock is set automatically, then try the next code.',
       );
@@ -498,6 +588,14 @@ export class AdminAuthService {
           totpSecret: admin.totpPendingSecret,
           totpConfirmedAt: new Date(),
           totpPendingSecret: null,
+          // ⚠️ THE CONFIRMING CODE IS SPENT IN THE SAME STATEMENT THAT
+          // PROMOTES THE SECRET. The pending secret becomes the live one
+          // here, so without this the code the operator just typed into the
+          // confirm box stays valid at /admin/auth/login for the rest of its
+          // ninety seconds — and that box is exactly where a shoulder-surfer
+          // is watching, because it is the one moment the operator reads a
+          // code aloud off a new phone.
+          totpLastUsedStep: confirmedStep,
         },
       }),
       // Replacing the set: any codes from a previous enrolment answer to a

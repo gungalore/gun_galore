@@ -1142,8 +1142,39 @@ export class DeskService {
        * marketplace with nothing anywhere recording who did it or why. The
        * card FACE was scoped correctly (the pile only deals these for
        * kycStatus UNDER_REVIEW), but a card face is not a boundary: act()
-       * takes any string from any client holding an admin JWT, and it
-       * re-checked nothing.
+       * takes any string any SUPERADMIN sends it, and it re-checked nothing.
+       *
+       * ⚠️ SUPERADMIN, NOT "ANY ADMIN" — the guard, precisely, INCLUDING ITS
+       * TWO ESCAPE HATCHES. AdminJwtGuard opens GET/HEAD/OPTIONS to any
+       * active admin. On every other verb it refuses anything but SUPERADMIN
+       * — EXCEPT on a handler or controller carrying one of two deliberate
+       * marks, both defined in admin/decorators/ and both applied in
+       * admin.controller.ts and nowhere else: the read-shaped mark (a
+       * mutating verb whose handler only reads — a POST that exists because
+       * the query is too big for a URL) and the own-account mark (a write
+       * whose only subject is the caller's own credential, so a monitoring
+       * admin can change the password they were handed and a recovery-only
+       * session can re-enrol the factor that lifts its own restriction).
+       * Either mark returns true before the role is ever consulted.
+       *
+       * The Desk's own controller carries neither, so POST :id/act really was
+       * SUPERADMIN-only and a MONITORING_ADMIN or a legacy ADMIN never
+       * reached this. Say it exactly: the bypass was "the one tier that may
+       * write, writing without any of the checks that tier's real endpoints
+       * carry", which is bad enough and is what a reader has to model
+       * correctly when they next reason about the trust boundary. A reader
+       * told the guard has NO hatches models it wrongly the moment they touch
+       * admin.controller.ts.
+       *
+       * ⚠️ AND THAT IS WHY BOTH ARE NAMED IN PROSE ABOVE RATHER THAN SPELLED
+       * AS DECORATORS. admin/guards/own-account-routes.spec.ts and
+       * read-shaped-routes.spec.ts each walk every non-spec .ts under
+       * backend/src looking for their own decorator's literal text, exempt
+       * exactly two files (the decorator itself and admin-jwt.guard.ts), and
+       * assert the only other hit is admin.controller.ts. That is a hatch
+       * INVENTORY, not a lint rule: writing the decorator's name with its
+       * parenthesis here — even inside this comment — fails the suite and
+       * reports a hatch nobody added.
        *
        * `listing_review:approve` skipped the PENDING_REVIEW guard, the
        * adminReviewed* stamps, expiresAt / listedAt / lastRenewedAt — so the

@@ -1,7 +1,7 @@
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AdminAuthService } from './admin-auth.service';
-import { totp, base32Decode } from './totp';
+import { totp, base32Decode, TOTP_STEP_SECONDS } from './totp';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { AdminAuditService } from './admin-audit.service';
 import type { AdminSessionService } from './admin-session.service';
@@ -37,6 +37,7 @@ type AdminRow = {
   totpConfirmedAt: Date | null;
   failedLoginCount: number;
   lockedUntil: Date | null;
+  totpLastUsedStep: number | null;
 };
 
 function makeAdmin(over: Partial<AdminRow> = {}): AdminRow {
@@ -53,6 +54,7 @@ function makeAdmin(over: Partial<AdminRow> = {}): AdminRow {
     totpConfirmedAt: null,
     failedLoginCount: 0,
     lockedUntil: null,
+    totpLastUsedStep: null,
     ...over,
   };
 }
@@ -69,6 +71,36 @@ function makeService(
         if (admin) Object.assign(admin, data);
         return admin;
       }),
+      // ⚠️ THIS STUB HONOURS THE GUARD PREDICATE, and it has to. The whole
+      // point of spendTotpStep is that the WHERE clause — not a read — is
+      // what makes a code single-use, so a stub that updated
+      // unconditionally would report count 1 for a replay and every replay
+      // test below would pass against a broken implementation.
+      updateMany: jest.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: {
+            id: string;
+            OR?: Array<{ totpLastUsedStep: null | { lt: number } }>;
+          };
+          data: Partial<AdminRow>;
+        }) => {
+          if (!admin || admin.id !== where.id) return { count: 0 };
+          if (where.OR) {
+            const last = admin.totpLastUsedStep;
+            const matches = where.OR.some((clause) =>
+              clause.totpLastUsedStep === null
+                ? last === null
+                : last !== null && last < clause.totpLastUsedStep.lt,
+            );
+            if (!matches) return { count: 0 };
+          }
+          Object.assign(admin, data);
+          return { count: 1 };
+        },
+      ),
     },
     adminRecoveryCode: {
       findMany: jest.fn(async () => codes.map((c) => ({ ...c }))),
@@ -185,19 +217,41 @@ describe('lockout', () => {
     expect(ms).toBeLessThanOrEqual(15 * 60_000 + 1000);
   });
 
-  it('refuses a locked account WITHOUT running bcrypt, even with the right password', async () => {
+  it('refuses a locked account without extending the lock, and burns bcrypt time doing it', async () => {
+    // ⚠️ THE TIMING HALF OF THIS TEST IS A MEASURED LEAK BEING CLOSED. This
+    // branch used to return without any bcrypt work at all — 0.7 ms for a
+    // locked known admin against 570 ms for an unknown address, measured
+    // in-process. Eight bad passwords against a candidate email followed by a
+    // ninth request that answers instantly says, with no ambiguity, "this is
+    // a real active AdminUser and the lock has tripped" — both of the things
+    // refuse() claims the response cannot be used to discover. The CPU
+    // argument for skipping the hash does not survive the comparison either:
+    // an unknown email ALREADY pays a full cost-12 compare on every request,
+    // so equalising here hands an attacker nothing they could not have by
+    // typing a nonsense address.
+    //
+    // ⚠️ THE ELAPSED-TIME ASSERTION IS ALSO WHICH HASH WAS COMPARED, which is
+    // why 20 ms is a meaningful threshold in a suite that hashes at cost 4.
+    // TIMING_DECOY is cost 12 (~200-400 ms); the admin's stored hash here is
+    // cost 4 (~1 ms). A run that comes back under 20 ms either skipped bcrypt
+    // or compared against the REAL hash — and a locked account must never be
+    // usable as an oracle against the stored password.
     const admin = makeAdmin({
       failedLoginCount: 8,
       lockedUntil: new Date(Date.now() + 60_000),
     });
     const { service, sessions } = makeService(admin);
 
+    const started = Date.now();
     await expect(service.login(GOOD)).rejects.toThrow(UnauthorizedException);
+    const elapsed = Date.now() - started;
+
     expect(sessions.create).not.toHaveBeenCalled();
-    // ⚠️ The lock is NOT extended by an attempt against it. Extending it
-    // would let an attacker hold the operator out forever with one request
-    // every fourteen minutes.
+    // The lock is NOT extended by an attempt against it. Extending it would
+    // let an attacker hold the operator out forever with one request every
+    // fourteen minutes.
     expect(admin.failedLoginCount).toBe(8);
+    expect(elapsed).toBeGreaterThan(20);
   });
 
   it('RESETS THE COUNT WHEN AN EXPIRED LOCK IS HIT AGAIN — the one deliberate difference from the member path', async () => {
@@ -281,6 +335,77 @@ describe('TOTP at login', () => {
       expect.anything(),
       expect.objectContaining({ amr: ['pwd', 'otp'], recoveryOnly: false }),
     );
+  });
+
+  it('REFUSES THE SAME CODE A SECOND TIME — RFC 6238 §5.2', async () => {
+    // ⚠️ WITHOUT THIS THE SECOND FACTOR IS "SOMETHING YOU SAW RECENTLY". The
+    // verifier is stateless and accepts a ±1 step window, so before
+    // totpLastUsedStep existed a code stayed usable for up to ninety seconds
+    // and could be presented as often as somebody could type it: a code
+    // caught on a screen-share, over a shoulder or through a real-time
+    // phishing proxy minted a SECOND, independent thirty-day session beside
+    // the operator's own, with nothing anywhere recording that it happened.
+    const admin = enrolled();
+    const { service } = makeService(admin);
+    const code = totp(base32Decode(secret));
+
+    const first = await service.login({ ...GOOD, totpCode: code });
+    expect(first.token).toBe('access');
+
+    await expect(
+      service.login({ ...GOOD, totpCode: code }),
+    ).rejects.toThrow('Email, password or code is not right.');
+  });
+
+  it('records the spent step on the row, so a pm2 reload does not forget it', async () => {
+    const admin = enrolled();
+    const { service } = makeService(admin);
+    const now = Date.now();
+    await service.login({ ...GOOD, totpCode: totp(base32Decode(secret), now) });
+    expect(admin.totpLastUsedStep).toBe(
+      Math.floor(now / 1000 / TOTP_STEP_SECONDS),
+    );
+  });
+
+  it('also burns the PREVIOUS step, which the same shoulder-surfer saw', async () => {
+    // ⚠️ `lt`, NOT `not`, IN spendTotpStep. Refusing only the exact code just
+    // spent leaves the previous step's code — displayed on the same phone, on
+    // the same screen-share, seconds earlier — good for another minute.
+    const admin = enrolled();
+    const { service } = makeService(admin);
+    const now = Date.now();
+    await service.login({ ...GOOD, totpCode: totp(base32Decode(secret), now) });
+
+    const older = totp(base32Decode(secret), now - TOTP_STEP_SECONDS * 1000);
+    await expect(
+      service.login({ ...GOOD, totpCode: older }),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('lets the NEXT code straight in — the counter only blocks backwards', async () => {
+    // The operator waits for the next code and signs in again. If this ever
+    // fails, the replay guard has become a lockout.
+    const admin = enrolled();
+    const { service } = makeService(admin);
+    const now = Date.now();
+    await service.login({ ...GOOD, totpCode: totp(base32Decode(secret), now) });
+
+    const next = totp(base32Decode(secret), now + TOTP_STEP_SECONDS * 1000);
+    const out = await service.login({ ...GOOD, totpCode: next });
+    expect(out.token).toBe('access');
+  });
+
+  it('counts a replay as a failed login', async () => {
+    // A presented-and-already-spent code is a rejected credential, not a
+    // half-filled form: it walks the lockout counter like a wrong one.
+    const admin = enrolled();
+    const { service } = makeService(admin);
+    const code = totp(base32Decode(secret));
+    await service.login({ ...GOOD, totpCode: code });
+    expect(admin.failedLoginCount).toBe(0);
+
+    await service.login({ ...GOOD, totpCode: code }).catch(() => undefined);
+    expect(admin.failedLoginCount).toBe(1);
   });
 
   it('counts a WRONG code as a failed login', async () => {
@@ -606,6 +731,28 @@ describe('TOTP enrolment', () => {
     // is not one: the cost is the point. Do not "fix" it by lowering
     // BCRYPT_COST — a recovery code is a password that skips the second
     // factor and gets the password work factor.
+  }, 30_000);
+
+  it('SPENDS THE CONFIRMING CODE, so it cannot be replayed at the login form', async () => {
+    // ⚠️ THE CONFIRM BOX IS WHERE A SHOULDER-SURFER IS STANDING. It is the
+    // one moment the operator reads a code off a brand-new phone, and the
+    // secret they are proving becomes the LIVE secret in the same statement —
+    // so without recording the step here, that code stayed good at
+    // /admin/auth/login for the rest of its ninety seconds.
+    const secret = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+    const admin = makeAdmin({ totpPendingSecret: secret });
+    const { service } = makeService(admin);
+    const now = Date.now();
+    const code = totp(base32Decode(secret), now);
+
+    await service.confirmTotp('A1', { totpCode: code }, 'S-current');
+    expect(admin.totpLastUsedStep).toBe(
+      Math.floor(now / 1000 / TOTP_STEP_SECONDS),
+    );
+
+    await expect(service.login({ ...GOOD, totpCode: code })).rejects.toThrow(
+      'Email, password or code is not right.',
+    );
   }, 30_000);
 });
 

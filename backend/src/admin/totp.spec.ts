@@ -6,8 +6,10 @@ import {
   otpauthUri,
   totp,
   verifyTotpCode,
+  verifyTotpStep,
   TOTP_STEP_SECONDS,
 } from './totp';
+import { BRAND_NAME } from '../common/brand';
 
 /**
  * This file is the reason the hand-rolled TOTP is allowed to exist.
@@ -147,6 +149,59 @@ describe('verifyTotpCode', () => {
   });
 });
 
+describe('verifyTotpStep — the number that makes a code single-use', () => {
+  const secret = base32Encode(RFC_SECRET);
+  const now = 1_111_111_111_000;
+  const stepOf = (atMs: number) => Math.floor(atMs / 1000 / TOTP_STEP_SECONDS);
+
+  it('names the step it matched, not just "yes"', () => {
+    // ⚠️ THE CALLER CANNOT ENFORCE RFC 6238 §5.2 WITHOUT THIS NUMBER. A
+    // boolean says a code is valid; it cannot say whether this is the first
+    // time it has been presented, and the accepted window is three steps —
+    // up to ninety seconds — wide. AdminUser.totpLastUsedStep is compared
+    // against exactly this return value.
+    expect(verifyTotpStep(secret, totp(RFC_SECRET, now), { now })).toBe(
+      stepOf(now),
+    );
+  });
+
+  it('names the PREVIOUS and NEXT step when the drift allowance is used', () => {
+    const backAt = now - TOTP_STEP_SECONDS * 1000;
+    const forwardAt = now + TOTP_STEP_SECONDS * 1000;
+    expect(verifyTotpStep(secret, totp(RFC_SECRET, backAt), { now })).toBe(
+      stepOf(backAt),
+    );
+    expect(verifyTotpStep(secret, totp(RFC_SECRET, forwardAt), { now })).toBe(
+      stepOf(forwardAt),
+    );
+    // ⚠️ AND THE THREE ARE DISTINCT NUMBERS, which is the whole point:
+    // spending the current step must also burn the previous one, because a
+    // shoulder-surfer saw both codes on the same screen. `lt` in
+    // AdminAuthService.spendTotpStep is what does that, and it needs three
+    // different numbers to do it with.
+    expect(stepOf(backAt)).toBe(stepOf(now) - 1);
+    expect(stepOf(forwardAt)).toBe(stepOf(now) + 1);
+  });
+
+  it('returns null, never a step, on anything it refuses', () => {
+    // A step of 0 is a real value (1 January 1970), so "falsy" is not the
+    // same answer as "refused" — hence null rather than a sentinel number.
+    expect(verifyTotpStep(secret, '000000', { now: 0 })).toBeNull();
+    expect(verifyTotpStep(secret, 'abcdef', { now })).toBeNull();
+    expect(verifyTotpStep('not base32 !!', '123456', { now })).toBeNull();
+  });
+
+  it('verifyTotpCode is exactly "did verifyTotpStep return a step"', () => {
+    // Two implementations of one drift loop is how a code gets accepted by
+    // one caller and refused by another.
+    const code = totp(RFC_SECRET, now);
+    expect(verifyTotpCode(secret, code, { now })).toBe(
+      verifyTotpStep(secret, code, { now }) !== null,
+    );
+    expect(verifyTotpCode(secret, '000000', { now: 0 })).toBe(false);
+  });
+});
+
 describe('generateTotpSecret', () => {
   it('is 160 bits of base32 and decodes to 20 bytes', () => {
     const secret = generateTotpSecret();
@@ -179,6 +234,19 @@ describe('otpauthUri', () => {
     expect(decodeURIComponent(uri.split('/totp/')[1].split(':')[0])).toBe(
       issuerParam,
     );
+  });
+
+  it('defaults the issuer from brand.ts, not from a literal', () => {
+    // ⚠️ AN AUTHENTICATOR ENTRY IS WRITTEN ONCE AND WE CAN NEVER REWRITE IT.
+    // CLAUDE.md: brand strings live in brand.ts, never hard-coded. A stale
+    // name in an SMS is one embarrassing message; a stale name here sits
+    // permanently in the app the operator opens to reach the only account
+    // that can approve a command on the production box — the same failure as
+    // create-admin.mjs printing a gungalore.co.za sign-in URL long after the
+    // rebrand, where anybody following the output could not sign in and
+    // nothing said why.
+    const uri = otpauthUri({ secret: 'AAAA', account: 'ops@alloutdoor.co.za' });
+    expect(new URL(uri).searchParams.get('issuer')).toBe(`${BRAND_NAME} Desk`);
   });
 
   it('escapes an account that contains a colon', () => {

@@ -351,6 +351,34 @@ test('an audit record with no id or an unparseable start time is dropped rather 
   assert.equal(projectAudit(auditRecord({ at: 'the other day' })), null);
 });
 
+test('an unreadable trigger or operation kind DROPS the record — it is never coerced to "a human approved this"', () => {
+  // 🚨 THE ONE THAT MATTERS. Both fields used to fall through a ternary to
+  // the STRONGER claim: an unreadable trigger became 'operator_approved' and
+  // an unreadable operation.kind became 'approved_command'. A record that
+  // could not be read was therefore written into the operator's audit page as
+  // a run a human read the exact command of and signed off on. Nothing
+  // validates these on the way in — store.ts load() casts the stored audit
+  // array straight through — so a hand-edited state.json, or one written by a
+  // daemon that spelled the field differently, manufactured the approval.
+  assert.equal(projectAudit(auditRecord({ trigger: 'somehow' as never })), null);
+  assert.equal(
+    projectAudit(auditRecord({ operation: { kind: 'whatever' as never, name: null, args: null } })),
+    null,
+  );
+  // ⚠️ AND IT DEFEATED THE BACKEND'S OWN RULE. warden.service.ts
+  // normaliseAuditEntry() drops a record whose trigger it cannot name — a
+  // rule that could never fire, because this side had already turned the
+  // garbage into a valid literal before it reached the wire.
+
+  // Both real values still survive, so this is testing the refusal and not
+  // merely that something is refused.
+  assert.equal(projectAudit(auditRecord({ trigger: 'unattended' }))?.trigger, 'unattended');
+  assert.equal(
+    projectAudit(auditRecord({ operation: { kind: 'approved_command', name: null, args: null } }))?.operationKind,
+    'approved_command',
+  );
+});
+
 test('missing output is empty and says so — never read as "the command printed nothing"', () => {
   const wire = projectAudit(auditRecord({ stdout: undefined as never }));
   assert.ok(wire);

@@ -490,9 +490,23 @@ export class WardenService {
           else dropped += 1;
         }
       }
-      if (dropped > 0) {
+      // ⚠️ THE DAEMON DROPS RECORDS TOO, AND ITS COUNT IS ADDED TO OURS.
+      // warden/src/state/messages.ts projectAudit() refuses a record whose
+      // trigger or operation kind it cannot name, and core.ts audit() tallies
+      // those refusals — but that tally used to reach only the daemon's pm2
+      // stdout, so a record dropped THERE never reached this list and nothing
+      // on the Desk said so. Summing is right rather than reporting two
+      // numbers: the operator's question is "how many runs can I not see",
+      // and which side of the wire refused them changes nothing about the
+      // answer or the fix (go and read the daemon's own store).
+      // A daemon too old to send the field contributes 0 — that is a version
+      // skew, not a claim that it dropped nothing, and it is the same skew
+      // this method's own drops would be logging.
+      const daemonDropped = this.count(this.pick(raw, 'dropped'));
+      const total = dropped + daemonDropped;
+      if (total > 0) {
         this.logger.warn(
-          `Warden audit: ${dropped} record(s) failed our wire rules and are not shown. ` +
+          `Warden audit: ${total} record(s) are not shown (${dropped} refused here, ${daemonDropped} refused by the daemon). ` +
             'Likely a daemon/backend version skew — warden deploys as a separate, non-fatal stage.',
         );
       }
@@ -500,7 +514,7 @@ export class WardenService {
         present: true,
         entries,
         truncated: this.pick(raw, 'truncated') === true,
-        dropped,
+        dropped: total,
       };
     } catch (err) {
       this.logger.warn(`Warden audit unavailable: ${String(err)}`);
@@ -542,15 +556,50 @@ export class WardenService {
       timeoutMs: WRITE_TIMEOUT_MS,
     });
     const board = this.normaliseCheckBoard(this.pick(raw, 'board'));
-    return {
+    const result: WardenSweepResult = {
       finished: this.pick(raw, 'finished') === true,
-      forced: this.pick(raw, 'forced') !== false,
+      // ⚠️ AN ABSENT `forced` IS `false`, NOT `true`. This read `!== false`,
+      // so a daemon that omitted the field — an older one, or one whose
+      // answer lost it — had its carried-forward board reported to the
+      // operator as a full re-measure. That is the exact claim the field
+      // exists to refuse (see WardenSweepResult.forced): every other default
+      // in this file falls to the weaker statement, and "some of these rows
+      // are older than you think" is the weaker statement here.
+      forced: this.pick(raw, 'forced') === true,
       joined: this.pick(raw, 'joined') === true,
       // A board the daemon could not describe is an EMPTY board with a
       // complete zero-tally, never a partial one — normaliseCheckBoard fills
       // counts from the rows, so zero rows honestly tallies to zero of each.
-      board: board ?? { lastCheckAt: null, counts: { ok: 0, warn: 0, bad: 0, unknown: 0 }, rows: [], paused: null },
+      board:
+        board ?? { lastCheckAt: null, counts: { ok: 0, warn: 0, bad: 0, unknown: 0 }, dropped: 0, rows: [], paused: null },
     };
+
+    // ⚠️ AUDITED LIKE A PAUSE, AND FOR THE SAME REASON. A forced sweep runs
+    // every check on the live box, the expensive ones budgeted sixty seconds
+    // EACH at a concurrency of four — a repeatable load event somebody can
+    // trigger from a button. The daemon has always REQUIRED an operatorId on
+    // this route ("an audit trail that cannot name who stopped the watchdog
+    // is not an audit trail") and then discarded it, and this side wrote no
+    // row at all, so forcing one was the only Phase 4 action that left no
+    // trace anywhere. Recorded AFTER the hop, like approve(), so the row says
+    // what actually happened rather than what was asked for.
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'WARDEN_SWEEP',
+      resourceType: 'Warden',
+      resourceId: 'daemon',
+      newValue: {
+        finished: result.finished,
+        forced: result.forced,
+        joined: result.joined,
+        rows: result.board.rows.length,
+      },
+      reason: result.joined
+        ? 'Asked for a full re-measure; joined the sweep already running'
+        : 'Forced a full re-measure of the box, cadence ignored',
+    });
+
+    return result;
   }
 
   /**
@@ -579,6 +628,36 @@ export class WardenService {
   async pause(adminId: string, dto: PauseWardenDto): Promise<{ ok: true; paused: WardenPause | null; messages: WardenChatMessage[] }> {
     const cfg = this.requireWarden();
     const reason = (dto.reason ?? '').trim();
+
+    // ⚠️ THE PRIOR PAUSE IS READ, NOT ASSUMED. This row used to record a
+    // literal `oldValue: { paused: null }` — "Warden was not paused before
+    // this" — which is false every time an operator EXTENDS or replaces a
+    // running pause, and extending is the common case: the deploy took longer
+    // than the thirty minutes they first asked for. In the one row that
+    // records who suspended the watchdog, an unread prior state asserted as
+    // fact is worse than no field at all.
+    //
+    // ⚠️ IT IS NOT FREE, AND THE SCENARIO WHERE IT COSTS MOST IS THE ONE
+    // THIS SENTENCE USED TO CALL FREE. checkBoard() never throws — it returns
+    // null and the row then records the prior state AS unknown rather than as
+    // "not paused", which are different claims and the row says which. But it
+    // is awaited BEFORE the pause is issued, on a READ_TIMEOUT_MS (8s)
+    // AbortSignal, and a daemon that "does not answer" because it is HUNG
+    // burns the whole 8 seconds before POST /pause leaves this process. The
+    // operator is usually hitting pause because something is wrong, so the
+    // hung case is not the rare one. Worst case is 8s + WRITE_TIMEOUT_MS
+    // (25s) = 33s, inside nginx's 60s cut — so it is slow, never a 502.
+    //
+    // Still the right trade: the row that records who suspended the watchdog
+    // is read after the fact, in an argument about what the box was doing,
+    // and a fabricated `oldValue` there is permanent. Eight seconds of
+    // latency is recoverable; an audit row asserting "Warden was not paused
+    // before this" over an operator EXTENDING a running pause is not.
+    // ⚠️ If this ever has to get faster, shorten the pre-read's own timeout —
+    // do NOT move it after the pause, which would read a board that the pause
+    // itself has already changed.
+    const before = await this.checkBoard();
+
     const raw = await this.call<unknown>(cfg, '/pause', {
       method: 'POST',
       body: { operatorId: adminId, minutes: dto.minutes, reason: reason || undefined },
@@ -591,7 +670,7 @@ export class WardenService {
       action: 'WARDEN_PAUSE',
       resourceType: 'Warden',
       resourceId: 'daemon',
-      oldValue: { paused: null },
+      oldValue: before ? { paused: before.paused } : { paused: 'unknown', note: 'the daemon did not answer the pre-pause read' },
       newValue: { paused },
       // ⚠️ AUDITED LIKE AN APPROVE. Suspending the thing that watches the box
       // is an operational decision somebody has to be able to point at later;
@@ -732,6 +811,18 @@ export class WardenService {
     return typeof v === 'string' ? v.slice(0, max) : '';
   }
 
+  /**
+   * A non-negative whole number the daemon sent, or 0.
+   *
+   * ⚠️ 0 HERE MEANS "NO USABLE NUMBER ARRIVED", NOT "NOTHING WAS DROPPED",
+   * and the only caller adds it to a count of its own — so an absent or
+   * garbage field can only ever UNDER-state a gap, never invent one. A
+   * daemon too old to send `dropped` is exactly that case.
+   */
+  private count(v: unknown): number {
+    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+  }
+
   /** ISO or nothing. A bad timestamp becomes null; it never becomes `now`. */
   private iso(v: unknown): string | null {
     if (typeof v !== 'string') return null;
@@ -790,15 +881,36 @@ export class WardenService {
    * zero of each; a row the daemon has never run carries status 'unknown' and
    * counts as one. What must never happen is four zeroes beside a board full
    * of bad rows.
+   *
+   * ⚠️ AND A ROW THIS SIDE CANNOT READ IS COUNTED AS A ROW THIS SIDE CANNOT
+   * READ. Re-tallying from the surviving rows fixed a real TypeError (a
+   * `counts: null` from a restarted daemon), but it also meant a row with an
+   * unnameable status vanished from `rows` AND from `counts` with nothing
+   * logged and nothing on the board — a red gate that silently stopped being
+   * counted, which is the one direction this module must never fail in. It
+   * is NOT bucketed into `counts.unknown`: that bucket is the daemon's own
+   * "measured nothing yet", and a row we failed to parse is our problem, not
+   * a measurement. `dropped` is separate: it is appended to the site board's
+   * warden note and logged here for the box. ⚠️ No Desk surface reads that
+   * note yet (see desk-site.service.ts), so the log line is the channel that
+   * actually reaches a human today.
    */
   private normaliseCheckBoard(raw: unknown): WardenCheckBoard | null {
     const rawRows = this.pick(raw, 'rows');
     if (!Array.isArray(rawRows)) return null;
 
     const rows: WardenCheckRow[] = [];
+    let dropped = 0;
     for (const item of rawRows.slice(0, MAX_CHECK_ROWS)) {
       const row = this.normaliseCheckRow(item);
       if (row) rows.push(row);
+      else dropped += 1;
+    }
+    if (dropped > 0) {
+      this.logger.warn(
+        `Warden board: ${dropped} check row(s) failed our wire rules and are not tallied. ` +
+          'Likely a daemon/backend version skew — warden deploys as a separate, non-fatal stage.',
+      );
     }
 
     const counts = { ok: 0, warn: 0, bad: 0, unknown: 0 };
@@ -807,6 +919,7 @@ export class WardenService {
     return {
       lastCheckAt: this.iso(this.pick(raw, 'lastCheckAt')),
       counts,
+      dropped,
       rows,
       paused: this.normalisePause(this.pick(raw, 'paused')),
     };

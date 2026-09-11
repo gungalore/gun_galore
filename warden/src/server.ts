@@ -27,7 +27,12 @@
 // ⚠️ POST /sweep AND POST /pause ARE WRITES WITH NO BODY-SHAPED PAYLOAD, so
 // the only thing they need off the caller is who is asking. operatorId is
 // still REQUIRED on both: an audit trail that cannot name who stopped the
-// watchdog is not an audit trail.
+// watchdog is not an audit trail. ⚠️ AND IT IS RECORDED, NOT ONLY DEMANDED —
+// /sweep validated it and then threw it away for as long as the route
+// existed, which made a required field into a formality. /pause stores it on
+// the pause itself (WardenPause.operatorId, which the board and the thread
+// both carry); /sweep passes it to sweepNow(), which writes a note naming who
+// forced the re-measure. The backend writes an AdminAudit row for both.
 //
 // ⚠️ NOTHING HERE IS PUBLIC. It binds to loopback by default and every route,
 // without exception, requires the bearer token. There is no unauthenticated
@@ -210,7 +215,11 @@ async function route(ctx: Ctx, core: WardenCore): Promise<Answer> {
     if (ctx.method !== 'POST') return methodNotAllowed(ctx);
     const parsed = readOperatorBody(ctx.body);
     if (!parsed.ok) return { status: 400, payload: { error: parsed.error } };
-    return { status: 200, payload: await core.sweepNow() };
+    // ⚠️ THE ID IS PASSED ON, NOT JUST VALIDATED. It used to be parsed here
+    // and dropped — the header's rule about naming who acted, enforced at the
+    // door and then abandoned one line later. sweepNow() writes it into the
+    // thread; the backend writes the AdminAudit row.
+    return { status: 200, payload: await core.sweepNow({ operatorId: parsed.operatorId }) };
   }
 
   if (ctx.pathname === '/pause') {

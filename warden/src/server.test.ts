@@ -424,14 +424,20 @@ test('the three new routes refuse without a token, exactly like every other one'
   }
 });
 
-test('GET /audit answers the two keys the backend reads, and an empty trail is not an error', async () => {
+test('GET /audit answers the three keys the backend reads, and an empty trail is not an error', async () => {
   const s = await serve();
   try {
     const res = await fetch(`${s.url}/audit`, { headers: auth() });
     assert.equal(res.status, 200);
-    const body = (await res.json()) as { entries: unknown[]; truncated: unknown };
+    const body = (await res.json()) as { entries: unknown[]; truncated: unknown; dropped: unknown };
     assert.deepEqual(body.entries, []);
     assert.equal(body.truncated, false);
+    // ⚠️ `dropped` IS ON THE WIRE, AND ITS ABSENCE IS INDISTINGUISHABLE FROM
+    // ZERO ON THE FAR SIDE. warden.service.ts reads it with a helper that
+    // turns anything unusable into 0 and ADDS it to its own count, so a
+    // daemon that stops sending it does not fail anywhere — it quietly
+    // under-states how many runs the operator cannot see. Pin it here.
+    assert.equal(body.dropped, 0);
   } finally {
     await s.close();
   }
@@ -496,6 +502,17 @@ test('POST /sweep needs an operatorId — an operational record that cannot name
     assert.equal(body.finished, true);
     assert.equal(body.forced, true);
     assert.deepEqual(body.board.rows, []);
+
+    // 🚨 AND THE ID IT DEMANDED IS ACTUALLY WRITTEN DOWN. This route parsed
+    // operatorId, refused without it — and then dropped it: sweepNow() had no
+    // parameter for it, so the required field was a formality and a forced
+    // full re-measure of the box was the one Phase 4 action recorded nowhere.
+    // This assertion is the difference between the rule in the file header
+    // and a test that only proves a 400.
+    assert.ok(
+      s.store.snapshot().messages.some((m) => /admin_1 forced a full re-measure/.test(m.body.join(' '))),
+      'the thread names who forced the sweep',
+    );
   } finally {
     await s.close();
   }

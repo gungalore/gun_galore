@@ -806,7 +806,7 @@ describe('act() cannot approve a listing or verify a seller — the two card-fac
    *
    * The card FACE was scoped correctly — the pile only deals a seller card for
    * kycStatus UNDER_REVIEW — but a card face is not a boundary. act() takes
-   * any string from any client holding an admin JWT and re-checked nothing, so
+   * any string any SUPERADMIN sends it and re-checked nothing, so
    * `POST /admin/desk/seller_verification:<any user id>/act {action:"approve"}`
    * flipped ANY user to VERIFIED: no UNDER_REVIEW guard (so a REJECTED user
    * could be verified and two admins on two tabs both "succeeded"), no

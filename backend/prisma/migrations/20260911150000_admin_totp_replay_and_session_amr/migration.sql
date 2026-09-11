@@ -1,0 +1,61 @@
+-- Two holes left open by 20260911120000_admin_auth_hardening, both of which
+-- make the second factor claim more than it delivers.
+--
+-- ⚠️ ADDITIVE ONLY, like the migration it follows. Two columns, no drop, no
+-- rewrite, no back-fill. 20260911120000 has already been applied everywhere
+-- it is going to be applied, so this is a NEW file rather than an edit to
+-- that one — editing an applied migration makes `prisma migrate deploy`
+-- refuse the whole directory on a checksum mismatch, on the box, mid-deploy.
+
+-- ─── AdminUser.totpLastUsedStep — the code is single-use now ────────────────
+--
+-- ⚠️ WITHOUT THIS COLUMN A TOTP CODE WAS REUSABLE FOR NINETY SECONDS. The
+-- verifier is stateless: it accepts the previous, current and next 30-second
+-- step (TOTP_WINDOW = 1, the operator's clock-drift allowance), and nothing
+-- recorded that a code had already been spent. RFC 6238 §5.2 is explicit that
+-- a verifier MUST reject a previously used OTP, and the reason is exactly the
+-- attack this surface faces: a code read off a shoulder, a screen-share or a
+-- real-time phishing proxy stays good long enough to open a SECOND, fully
+-- independent thirty-day session beside the operator's own. A second factor
+-- that can be replayed is "something you saw recently", not something you
+-- have.
+--
+-- It holds the TOTP step counter (unix seconds / 30) of the last code this
+-- account successfully spent. Login refuses any code whose matched step is
+-- <= this value, so both a replay of the same code and a replay of the older
+-- code still inside the window are refused.
+--
+-- NULL means "no code has ever been spent on this account" — an admin who has
+-- not enrolled, or has enrolled and not yet signed in with the phone. NULL is
+-- not 0: a real step number is ~58 million and climbing, so 0 as a sentinel
+-- would work, but it would also read as a legitimate 1970 sign-in in the one
+-- column anybody would consult when asking "was this code used twice".
+--
+-- ⚠️ THE CONSEQUENCE THE OPERATOR WILL SEE, AND IT IS CORRECT: after a
+-- successful sign-in the code on their phone will not work a second time.
+-- They wait for the next one. A retry that "should" have worked and does not
+-- is the intended shape of this control, so do not soften it to == when a
+-- support call arrives.
+ALTER TABLE "AdminUser" ADD COLUMN "totpLastUsedStep" INTEGER;
+
+-- ─── AdminSession.amr — stop the refresh inventing a second factor ──────────
+--
+-- ⚠️ THE ROTATION USED TO FABRICATE THIS CLAIM. `rotate()` derived the token's
+-- `amr` from `recoveryOnly` alone — `recoveryOnly ? ['pwd','recovery'] :
+-- ['pwd','otp']` — so a session opened with a password and NO second factor
+-- (ADMIN_TOTP_REQUIRED off, or the admin not enrolled) came back from its
+-- first refresh asserting it had presented a one-time code. The authentication
+-- system was lying to itself about how the caller authenticated, in the one
+-- field whose entire purpose is to record that, and `amr` is precisely what a
+-- future "this action needs a fresh OTP" check would read.
+--
+-- Stored on the ROW rather than carried over from the presented token for the
+-- same reason `recoveryOnly` and the role are: the row is the thing the guard
+-- re-reads, and a claim copied token-to-token can never be corrected.
+--
+-- Default '{}' rather than NOT NULL with a value, because a session row
+-- written before this migration genuinely does not know. rotate() treats an
+-- empty array as "unknown" and falls back to the old derivation, which is no
+-- worse than the behaviour it replaces and dies with the last pre-migration
+-- session within thirty days.
+ALTER TABLE "AdminSession" ADD COLUMN "amr" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

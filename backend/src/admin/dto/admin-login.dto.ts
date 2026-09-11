@@ -19,9 +19,24 @@ export class AdminLoginDto {
    * conversation into a 400 the login page cannot interpret.
    *
    * Kept loose on length (spaces, an 8-digit code from a mis-configured app)
-   * because verifyTotpCode() does the real shape check and answers "no"
-   * rather than throwing — a 500 on a typed code tells an attacker they found
-   * an interesting input.
+   * because verifyTotpStep() in ../totp does the real shape check — it strips
+   * whitespace, demands exactly six digits, and answers with `null` on a
+   * malformed code or secret rather than throwing, because a 500 on a typed
+   * code tells an attacker they found an interesting input.
+   *
+   * ⚠️ verifyTotpStep(), NOT ITS WRAPPER verifyTotpCode(). The wrapper is one
+   * line — `verifyTotpStep(...) !== null` — and the boolean it throws away the
+   * step to produce is the only thing that can tell a first presentation of a
+   * code from a replay of it. The accepted window is three steps wide, so a
+   * code caught on a screen-share, over a shoulder or through a real-time
+   * phishing proxy verifies for up to ninety seconds and can be presented as
+   * often as somebody can type it; a boolean answer says yes every time and
+   * mints a second, independent thirty-day session beside the operator's own.
+   * AdminAuthService.login therefore takes the step and spends it against
+   * AdminUser.totpLastUsedStep (spendTotpStep's guarded updateMany), which is
+   * what RFC 6238 §5.2 requires and what makes the code single-use. The
+   * wrapper is for callers with no row to record against — the specs. It must
+   * never appear on the sign-in path.
    */
   @IsOptional()
   @IsString()

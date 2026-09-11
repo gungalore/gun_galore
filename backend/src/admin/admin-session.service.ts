@@ -67,6 +67,22 @@ export interface IssuedAdminSession {
   accessExpiresAt: Date;
   refreshExpiresAt: Date;
   recoveryOnly: boolean;
+  /**
+   * Did the REFRESH side actually move? False only on the grace-window path,
+   * where `refreshToken` is the same (already rotated away) token the caller
+   * presented.
+   *
+   * 🚨 THE CALLER MUST NOT WRITE THAT TOKEN BACK INTO THE COOKIE, AND THIS
+   * FLAG IS THE ONLY THING SAYING SO. `gg_admin_rt` is one cookie shared by
+   * every tab in the browser, so the losing tab of an ordinary two-tab
+   * refresh would overwrite the winner's FRESH token with the dead one it
+   * presented. The next refresh from any tab then matches neither the current
+   * hash nor the live grace window, lands on the post-grace replay branch,
+   * and REVOKES THE SESSION — so a plain double refresh signed the operator
+   * out and looked exactly like a stolen token. The grace window exists to
+   * tolerate that race; clobbering the cookie is what made it fatal instead.
+   */
+  rotated: boolean;
 }
 
 /**
@@ -78,6 +94,17 @@ export interface IssuedAdminSession {
  * the session row on every request — and a shared base class would either
  * grow flags for all three or quietly give the member side admin semantics.
  * Two files that can be diffed beat one file with a mode switch.
+ *
+ * ⚠️ THERE IS DELIBERATELY NO `verify()` HERE, and re-adding one is how the
+ * revocation check gets skipped. The member SessionService has one because a
+ * member access token is verified by signature alone; the whole point of this
+ * surface is that AdminJwtGuard ALSO re-reads the AdminUser and AdminSession
+ * rows on every request, so a revoked session stops working on the next call
+ * rather than whenever the token happens to expire. A signature-only verify()
+ * sitting on this service is an inviting second door that skips both reads —
+ * one existed until 2026-09-11, called by nothing, carrying a doc comment
+ * that explained no route called it. Mint and rotate here; authenticate in
+ * the guard.
  */
 @Injectable()
 export class AdminSessionService {
@@ -87,23 +114,6 @@ export class AdminSessionService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
   ) {}
-
-  /**
-   * Verify an access token's signature and shape. Throws on anything else.
-   *
-   * ⚠️ NO DATABASE READ HERE, and no route calls this instead of the guard.
-   * The revocation check lives in AdminJwtGuard, which is already doing one
-   * indexed lookup per request for {role, isActive} — it reads the session
-   * row in the same place. Putting a second lookup here would double the
-   * query count on every admin request for no additional property.
-   */
-  async verify(token: string): Promise<AdminTokenPayload> {
-    const payload = await this.jwt.verifyAsync<AdminTokenPayload>(token, {
-      secret: adminJwtSecret(),
-    });
-    if (!payload?.sub) throw new UnauthorizedException();
-    return payload;
-  }
 
   private hash(token: string): string {
     return createHash('sha256').update(token).digest('hex');
@@ -148,6 +158,11 @@ export class AdminSessionService {
         adminUserId: admin.id,
         refreshHash: this.hash(refreshToken),
         recoveryOnly,
+        // ⚠️ RECORDED, NOT RE-DERIVED LATER. rotate() used to rebuild this
+        // claim from `recoveryOnly` alone, which asserted ['pwd','otp'] for
+        // every non-recovery session — including one opened with a password
+        // and no second factor at all. See carriedAmr().
+        amr: opts.amr,
         userAgent: opts.userAgent?.slice(0, 500),
         ip: opts.ip,
         expiresAt: refreshExpiresAt,
@@ -164,6 +179,7 @@ export class AdminSessionService {
         amr: opts.amr,
       }),
       refreshToken,
+      rotated: true,
       sessionId: session.id,
       accessExpiresAt: new Date(Date.now() + ADMIN_ACCESS_TTL_SECONDS * 1000),
       refreshExpiresAt,
@@ -179,6 +195,12 @@ export class AdminSessionService {
    * means two parties hold it and one of them stole it. We cannot tell which
    * is the operator, so the honest response is to revoke the whole session
    * rather than guess. They sign in again; the thief gets nothing.
+   *
+   * ⚠️ WITH ONE HONEST LIMIT: we can only revoke a session we can still NAME.
+   * The row remembers exactly one previous hash, so a token from two or more
+   * rotations back matches nothing and is merely refused. See the block in
+   * the `!session` branch — that limit is why the lookup there drops the
+   * expiry predicate instead of reusing the grace query.
    */
   async rotate(
     refreshToken: string,
@@ -194,6 +216,7 @@ export class AdminSessionService {
         revokedAt: true,
         expiresAt: true,
         recoveryOnly: true,
+        amr: true,
       },
     });
 
@@ -207,7 +230,12 @@ export class AdminSessionService {
           prevRefreshExpiresAt: { gt: new Date() },
           revokedAt: null,
         },
-        select: { id: true, adminUserId: true, recoveryOnly: true },
+        select: {
+          id: true,
+          adminUserId: true,
+          recoveryOnly: true,
+          amr: true,
+        },
       });
       if (recent) {
         // ⚠️ DO NOT ROTATE AGAIN. Handing this caller a third token would
@@ -221,9 +249,15 @@ export class AdminSessionService {
             adminUserId: recent.adminUserId,
             email: admin.email,
             role: admin.role,
-            amr: recent.recoveryOnly ? ['pwd', 'recovery'] : ['pwd', 'otp'],
+            amr: this.carriedAmr(recent),
           }),
+          // Echoed back so a non-browser caller holding its own copy is not
+          // handed an empty string — but see `rotated` below: this is the
+          // token that was ALREADY rotated away, and writing it into the
+          // shared cookie is what used to revoke the session one refresh
+          // later.
           refreshToken,
+          rotated: false,
           sessionId: recent.id,
           accessExpiresAt: new Date(
             Date.now() + ADMIN_ACCESS_TTL_SECONDS * 1000,
@@ -231,6 +265,38 @@ export class AdminSessionService {
           refreshExpiresAt: new Date(Date.now() + ADMIN_REFRESH_TTL_MS),
           recoveryOnly: recent.recoveryOnly,
         };
+      }
+      // ⚠️ STILL NO LIVE HASH — SO IS THIS A FORGERY, OR A REPLAY OF A
+      // TOKEN WE ROTATED AWAY FROM AN HOUR AGO? Those are different events
+      // and only one of them means somebody else is holding the operator's
+      // credential. `prevRefreshHash` is never cleared, so a token we rotated
+      // away from is still nameable long after the thirty-second grace
+      // lapsed — look it up WITHOUT the expiry predicate. A hit is a replay:
+      // two parties held that token, one of them stole it, and we cannot tell
+      // which one is presenting it now. The honest answer is to close the
+      // session; the operator signs in again and the thief gets nothing.
+      //
+      // ⚠️ THIS IS WHAT THE DOC COMMENT ABOVE PROMISED AND THE CODE DID NOT
+      // DO. Until 2026-09-11 a token rotated away more than thirty seconds
+      // ago simply threw here and revoked nothing, so the one case the rule
+      // exists for — a stolen refresh token presented after the real client
+      // had already rotated — left the thief's session live and inconvenienced
+      // only the honest caller. The revoke further down fires on a different
+      // case entirely: the CURRENT hash of an already-closed session.
+      //
+      // A token older than ONE rotation matches neither column and there is
+      // then nothing to revoke — we cannot close a session we cannot name.
+      // That is a real limit of storing a single previous hash, not an
+      // oversight, and it is why this is stated rather than implied.
+      const rotatedAway = await this.prisma.adminSession.findFirst({
+        where: { prevRefreshHash: presented },
+        select: { id: true, revokedAt: true },
+      });
+      if (rotatedAway && !rotatedAway.revokedAt) {
+        await this.revokeSession(
+          rotatedAway.id,
+          'replay of a refresh token this session had already rotated away',
+        );
       }
       throw new UnauthorizedException();
     }
@@ -272,15 +338,45 @@ export class AdminSessionService {
         // ⚠️ THE RECOVERY RESTRICTION SURVIVES ROTATION. Refreshing is not a
         // second authentication; if a recovery-only session could rotate into
         // a full one, the read-only rule would last fifteen minutes and then
-        // quietly evaporate.
-        amr: session.recoveryOnly ? ['pwd', 'recovery'] : ['pwd', 'otp'],
+        // quietly evaporate. `recoveryOnly` is carried on the row and read
+        // above; `amr` is carried the same way — see carriedAmr().
+        amr: this.carriedAmr(session),
       }),
       refreshToken: next,
+      rotated: true,
       sessionId: session.id,
       accessExpiresAt: new Date(Date.now() + ADMIN_ACCESS_TTL_SECONDS * 1000),
       refreshExpiresAt,
       recoveryOnly: session.recoveryOnly,
     };
+  }
+
+  /**
+   * The `amr` a refreshed token carries: the one recorded when the session was
+   * opened.
+   *
+   * ⚠️ A REFRESH IS NOT AN AUTHENTICATION, SO IT MAY NOT IMPROVE THE CLAIM.
+   * This used to be `recoveryOnly ? ['pwd','recovery'] : ['pwd','otp']`,
+   * computed from the only relevant column that existed — so every refreshed
+   * session asserted it had presented a one-time code, including one opened
+   * with a password alone because ADMIN_TOTP_REQUIRED was off or the admin had
+   * never enrolled. Nothing authorises on `amr` today (the guard reads
+   * `recoveryOnly` off the row), so it was not exploitable; it was the
+   * authentication system telling itself a lie in the one field named for how
+   * somebody authenticated — which is exactly the field a later "this action
+   * needs a fresh second factor" check would reach for.
+   *
+   * The fallback covers session rows written before AdminSession.amr existed,
+   * where the truth genuinely was not recorded. It is the old behaviour, no
+   * worse than what it replaces, and it dies with the last pre-migration
+   * session inside thirty days.
+   */
+  private carriedAmr(session: {
+    amr?: string[] | null;
+    recoveryOnly: boolean;
+  }): string[] {
+    if (session.amr && session.amr.length > 0) return session.amr;
+    return session.recoveryOnly ? ['pwd', 'recovery'] : ['pwd', 'otp'];
   }
 
   /**

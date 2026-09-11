@@ -396,11 +396,47 @@ function projectOutput(t: TruncatedText | undefined): WardenTruncatedText {
  * exec/audit.ts redacted at capture, BEFORE truncating, so a secret cannot
  * sit across a cut boundary. `redactions` names what fired. This function
  * only narrows.
+ *
+ * 🚨 THE ATTRIBUTION FIELDS ARE NEVER COERCED — THE RECORD IS DROPPED. Both
+ * of them used to fall through a ternary to the STRONGER claim: an
+ * unreadable `trigger` became 'operator_approved' and an unreadable
+ * `operation.kind` became 'approved_command', i.e. "a human read this exact
+ * command and approved it running on the production box". Nothing validates
+ * these on the way in — store.ts load() casts the stored array through as
+ * `Array.isArray(parsed.audit) ? parsed.audit : []` — so a hand-edited
+ * state.json, or a record written by a daemon that spelled the field
+ * differently, would have printed an UNATTENDED run in the operator's audit
+ * page as one they signed off. That also disarmed the backend's own rule:
+ * warden.service.ts normaliseAuditEntry() drops a record whose trigger it
+ * cannot name, and it can never fire against a value this side already
+ * turned into a valid literal.
+ *
+ * A missing record is a gap somebody has to go and explain. A coerced one is
+ * a manufactured alibi nobody will ever question. Same choice, for the same
+ * reason, as RECHECK_RESULTS below.
+ *
+ * ⚠️ AND THE GAP IS COUNTED ON THE WIRE, WHICH IT WAS NOT WHEN THIS DROP
+ * SHIPPED. core.ts audit() tallies these nulls and raises onError — but
+ * onError writes to the daemon's pm2 stdout, and `WardenAuditView` carried
+ * `entries` and `truncated` and nothing else. So the Desk received a shorter
+ * list beside `truncated: false` and said nothing, and the only reader who
+ * could see the refusal was one already SSH-ed in running `pm2 logs warden`.
+ * The tally now rides on `WardenAuditView.dropped`, and the backend adds its
+ * own refusals to it and reports one total. (That total is on the API only —
+ * no Desk surface fetches the audit route yet.) If you add another
+ * reason to return null here, it must land in that count too — a drop this
+ * function makes silently is the plausible-zero the whole file exists to
+ * refuse.
  */
 export function projectAudit(r: WardenAuditRecord): WardenAuditEntry | null {
   const id = text(r?.id, MAX_ID);
   if (!id) return null;
   if (!isParseableDate(r?.at)) return null;
+  const trigger = r?.trigger === 'unattended' || r?.trigger === 'operator_approved' ? r.trigger : null;
+  if (!trigger) return null;
+  const operationKind =
+    r.operation?.kind === 'safe_list' || r.operation?.kind === 'approved_command' ? r.operation.kind : null;
+  if (!operationKind) return null;
   // The proposal id is a link target on the far side. An id outside the URL
   // charset is a link that cannot be followed — but unlike a chat message,
   // the RUN is the record and it must still be readable, so the field is
@@ -413,9 +449,9 @@ export function projectAudit(r: WardenAuditRecord): WardenAuditEntry | null {
     at: r.at,
     finishedAt: isParseableDate(r.finishedAt) ? r.finishedAt : r.at,
     durationMs: Number.isFinite(r.durationMs) ? r.durationMs : 0,
-    trigger: r.trigger === 'unattended' ? 'unattended' : 'operator_approved',
+    trigger,
     operatorId: typeof r.operatorId === 'string' ? text(r.operatorId, MAX_ID) : null,
-    operationKind: r.operation?.kind === 'safe_list' ? 'safe_list' : 'approved_command',
+    operationKind,
     operationName: typeof r.operation?.name === 'string' ? text(r.operation.name, MAX_ID) : null,
     command: text(r.command, MAX_COMMAND),
     exitCode: typeof r.exitCode === 'number' ? r.exitCode : null,

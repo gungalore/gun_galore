@@ -628,6 +628,38 @@ test('a paused Warden asked a DIRECT QUESTION still answers, and still raises no
   );
 });
 
+test('a pause does NOT hold back a RED GATE — it holds back fixes, and a red gate is not one', async () => {
+  // No caller at all: diagnose() makes no model call in this state, it
+  // returns the "ANTHROPIC_API_KEY is not set" red gate, which is exactly the
+  // fact a paused board must not be allowed to hide.
+  const h = harness({ caller: null, checks: [check('subject', () => outcome('ok'))] });
+  await h.core.pause({ minutes: 60 * 12, operatorId: 'admin_1' });
+
+  await h.core.tick();
+
+  // 🚨 A PAUSE SUSPENDS FIXES, NOT FACTS. Everything a pause exists to stop —
+  // a model call, a button an operator has to decide about mid-deploy — is
+  // absent from a red gate: it carries no command and cannot be approved,
+  // declined or acknowledged anywhere in this system. Suppressing one for the
+  // twenty-four hours a pause can last meant "Warden cannot diagnose anything"
+  // read as a quiet board, on the daemon whose entire purpose is refusing a
+  // plausible silence.
+  const gates = h.store.openProposals().filter((p) => p.kind === 'red_gate');
+  assert.equal(gates.length, 1, 'the red gate is raised even though Warden is paused');
+  assert.match(gates[0]!.headline, /ANTHROPIC_API_KEY/);
+
+  // And the pause still does its job on the thing it is for.
+  const h2 = harness({ caller: PROPOSES, checks: [check('subject', () => outcome('bad'))] });
+  await h2.core.pause({ minutes: 30, operatorId: 'admin_1' });
+  await h2.core.say('what is wrong with the backend?', 'admin_1');
+  await delay(120);
+  assert.equal(
+    h2.store.openProposals().filter((p) => p.kind === 'proposal').length,
+    0,
+    'a repairable proposal is still held, and still said out loud',
+  );
+});
+
 test('resume puts it back to work, and resuming a Warden that is not paused is not an error', async () => {
   const h = harness({ caller: QUIET });
   await h.core.pause({ minutes: 30, operatorId: 'admin_1' });
@@ -666,7 +698,7 @@ test('sweepNow IGNORES CADENCE — that is the whole reason it exists', async ()
   await h.core.tick();
   assert.equal(runs, 1, 'cadence held, as it should on the timer');
 
-  const forced = await h.core.sweepNow();
+  const forced = await h.core.sweepNow({ operatorId: 'admin_1' });
   assert.equal(runs, 2, 'and an explicit ask re-measured it anyway');
   assert.equal(forced.finished, true);
   assert.equal(forced.forced, true);
@@ -697,7 +729,7 @@ test('a second sweep JOINS the one in flight rather than doubling the load, and 
   const ticking = h.core.tick();
   await delay(5);
 
-  const joined = h.core.sweepNow({ budgetMs: 5_000 });
+  const joined = h.core.sweepNow({ operatorId: 'admin_1', budgetMs: 5_000 });
   release();
   const [, answer] = await Promise.all([ticking, joined]);
 
@@ -707,6 +739,24 @@ test('a second sweep JOINS the one in flight rather than doubling the load, and 
   // may be carried forward; reporting that board as a full re-measure would
   // be the same lie the cadence problem itself is.
   assert.equal(answer.forced, false);
+});
+
+test('a forced sweep WRITES DOWN WHO FORCED IT — the route demanded an operatorId and then threw it away', async () => {
+  const h = harness({ caller: QUIET, checks: [check('subject', () => outcome('ok'))] });
+
+  await h.core.sweepNow({ operatorId: 'admin_7' });
+
+  // 🚨 THE ONE PHASE 4 ACTION THAT LEFT NO TRACE. server.ts has required an
+  // operatorId on POST /sweep since the route shipped, on the stated grounds
+  // that "an audit trail that cannot name who stopped the watchdog is not an
+  // audit trail" — and sweepNow() had no parameter to receive it, appended no
+  // note, and the backend wrote no audit row either. A forced sweep runs every
+  // check on the live box, the expensive ones budgeted sixty seconds EACH at
+  // concurrency four: a repeatable load event, triggered from a button,
+  // recorded nowhere.
+  assert.ok(
+    h.store.snapshot().messages.some((m) => /admin_7 forced a full re-measure/.test(m.body.join(' '))),
+  );
 });
 
 test('a sweep that outlives its budget answers finished:false rather than holding the connection past nginx', async () => {
@@ -726,7 +776,7 @@ test('a sweep that outlives its budget answers finished:false rather than holdin
   };
 
   const h = harness({ caller: QUIET, checks: [slow] });
-  const answer = await h.core.sweepNow({ budgetMs: 1_000 });
+  const answer = await h.core.sweepNow({ operatorId: 'admin_1', budgetMs: 1_000 });
 
   // 🚨 NOT A FAILURE. The sweep is running; the core answered early so the
   // request cannot outlive nginx's 60s cut, which would hand the operator a
@@ -796,4 +846,65 @@ test('the audit trail is NEWEST FIRST and says when it did not carry everything'
     ['aud_2', 'aud_1'],
   );
   assert.equal(page.truncated, true, 'a page that dropped older records must say so, or it reads as the whole history');
+});
+
+test('a record whose trigger cannot be read is DROPPED AND COUNTED — never sent as "a human approved this"', async () => {
+  const h = harness({ caller: QUIET });
+  await h.store.recordAudit({
+    id: 'aud_garbled',
+    at: AT.toISOString(),
+    finishedAt: AT.toISOString(),
+    durationMs: 1,
+    // What a hand-edited state.json, or a daemon a version out of step,
+    // leaves behind. store.ts load() casts the stored audit array through
+    // unvalidated, so this is reachable on a real box.
+    trigger: 'somehow' as never,
+    operatorId: null,
+    proposalId: 'prop_x',
+    operation: { kind: 'approved_command', name: null, args: null },
+    command: 'echo hello',
+    exitCode: 0,
+    timedOut: false,
+    stdout: { text: '', truncated: false, originalBytes: 0 },
+    stderr: { text: '', truncated: false, originalBytes: 0 },
+    redactions: [],
+    recheck: null,
+  });
+
+  const view = h.core.audit();
+
+  // 🚨 THE RECORD DOES NOT GO OUT WEARING AN APPROVAL NOBODY GAVE. projectAudit
+  // used to coerce an unreadable trigger to 'operator_approved' and an
+  // unreadable operation kind to 'approved_command', which turned a record it
+  // could not parse into the claim that a human read that exact command and
+  // authorised it running on the production box.
+  assert.equal(view.entries.length, 0);
+
+  // ⚠️ AND THE GAP IS NAMED. A dropped record is a missing alibi, which is
+  // survivable only because somebody is told; a coerced one is a manufactured
+  // alibi nobody will ever question. This is the half that makes dropping the
+  // right answer.
+  assert.ok(
+    h.errors.some((e) => /^audit: 1 audit record/.test(e)),
+    'the daemon counts its own drops and raises them, rather than posting a shorter list',
+  );
+
+  // 🚨 AND NAMED WHERE THE OPERATOR CAN SEE IT, NOT ONLY IN pm2 stdout. The
+  // onError above reaches this daemon's own log and nothing else; for as long
+  // as that was the only channel, the Desk got a shorter list beside
+  // `truncated: false` and had no way to tell an incomplete account of what
+  // ran on the box from a complete one. `dropped` is what closes that, and
+  // the backend adds its own refusals to this number.
+  assert.equal(view.dropped, 1);
+  assert.equal(view.truncated, false, 'dropped is not truncated — one is a page, the other is an ssh');
+});
+
+test('a clean trail says dropped: 0 out loud rather than omitting the field', async () => {
+  const h = harness({ caller: QUIET });
+  const view = h.core.audit();
+  // ⚠️ A STATED ZERO, same discipline as `redactions: []`. An absent field
+  // and "nothing was withheld" are different claims, and the backend reads
+  // this one to build the total it shows: an absent field there can only
+  // under-state the gap, so it must be present whenever it is truthfully 0.
+  assert.equal(view.dropped, 0);
 });

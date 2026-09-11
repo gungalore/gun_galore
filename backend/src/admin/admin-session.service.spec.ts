@@ -29,6 +29,7 @@ type Row = {
   prevRefreshHash: string | null;
   prevRefreshExpiresAt: Date | null;
   recoveryOnly: boolean;
+  amr: string[];
   userAgent: string | null;
   ip: string | null;
   createdAt: Date;
@@ -69,6 +70,7 @@ function makeStore(admin = { email: 'ops@alloutdoor.co.za', role: 'SUPERADMIN', 
           prevRefreshHash: null,
           prevRefreshExpiresAt: null,
           recoveryOnly: data.recoveryOnly ?? false,
+          amr: data.amr ?? [],
           userAgent: data.userAgent ?? null,
           ip: data.ip ?? null,
           createdAt: new Date(),
@@ -145,6 +147,17 @@ describe('AdminSessionService.create', () => {
     expect(payload.sub).toBe('A1');
   });
 
+  it('RECORDS amr ON THE ROW, not only in the token', async () => {
+    // ⚠️ THE ROW IS WHAT A REFRESH CAN READ BACK. Without this column
+    // rotate() had nothing to carry forward and rebuilt the claim from
+    // `recoveryOnly` alone — see the rotation test below for what that
+    // asserted about a session that never saw a second factor.
+    const store = makeStore();
+    const { service } = makeService(store);
+    await service.create(ADMIN, { amr: ['pwd'] });
+    expect(store.rows[0].amr).toEqual(['pwd']);
+  });
+
   it('gives the access token a fifteen-minute life, not eight hours', async () => {
     const store = makeStore();
     const { service, jwt } = makeService(store);
@@ -191,9 +204,46 @@ describe('AdminSessionService.rotate', () => {
     // And it is a working session: fresh access token, same session id.
     expect(lateTab.sessionId).toBe(first.sessionId);
     expect(JSON.parse(lateTab.accessToken).sid).toBe(first.sessionId);
+
+    // 🚨 AND IT SAYS THE REFRESH SIDE DID NOT MOVE. This flag is the only
+    // thing stopping the controller writing that dead token back into
+    // `gg_admin_rt` — ONE cookie shared by every tab in the browser. It did,
+    // and the consequence was not cosmetic: the winner's fresh token was
+    // overwritten by the token the loser presented, so the NEXT refresh from
+    // any tab matched neither the live hash nor the (by then lapsed) grace
+    // window, fell through to the post-grace replay branch, and revoked the
+    // session. An ordinary two-tab refresh signed the operator out of the
+    // Desk and logged it as a stolen credential.
+    expect(lateTab.rotated).toBe(false);
   });
 
-  it('treats the old token as a REPLAY once the grace window has passed', async () => {
+  it('says the refresh side DID move on an ordinary rotation', async () => {
+    // The other half of the pair. If this ever went false the controller
+    // would stop writing the new refresh cookie at all, and the operator
+    // would be signed out thirty days later with nothing in any log — or
+    // sooner, the first time the old token aged past the grace window.
+    const store = makeStore();
+    const { service } = makeService(store);
+    const first = await service.create(ADMIN, { amr: ['pwd', 'otp'] });
+    expect(first.rotated).toBe(true);
+
+    const second = await service.rotate(first.refreshToken);
+    expect(second.rotated).toBe(true);
+    expect(second.refreshToken).not.toBe(first.refreshToken);
+  });
+
+  it('treats the old token as a REPLAY once the grace window has passed, AND REVOKES THE SESSION', async () => {
+    // ⚠️ THE REVOKE IS THE POINT, AND IT WAS MISSING. The doc comment on
+    // rotate() has always said a token that has already been rotated away
+    // means two parties hold it and one of them stole it, so "the honest
+    // response is to revoke the whole session rather than guess". The code
+    // did not do that: past the thirty-second grace the lookup's
+    // `prevRefreshExpiresAt > now` predicate matched nothing and the method
+    // ended at a bare throw. So the ONE case the rule exists for — a stolen
+    // refresh token presented after the real client had already rotated —
+    // left the thief's session live and merely inconvenienced the operator.
+    // `prevRefreshHash` is never cleared, so the session is still nameable;
+    // the second lookup drops the expiry predicate and closes it.
     const store = makeStore();
     const { service } = makeService(store);
     const first = await service.create(ADMIN, { amr: ['pwd', 'otp'] });
@@ -206,6 +256,24 @@ describe('AdminSessionService.rotate', () => {
     await expect(service.rotate(first.refreshToken)).rejects.toThrow(
       UnauthorizedException,
     );
+    expect(store.rows[0].revokedAt).not.toBeNull();
+  });
+
+  it('does NOT revoke anything when the token matches no session at all', async () => {
+    // ⚠️ A FORGERY AND A REPLAY ARE DIFFERENT EVENTS. A random string, or a
+    // token older than one rotation, names no session — and a rule that
+    // revoked "something" on an unmatched token would hand any stranger who
+    // can POST to /admin/auth/refresh a way to sign the operator out.
+    const store = makeStore();
+    const { service } = makeService(store);
+    const live = await service.create(ADMIN, { amr: ['pwd', 'otp'] });
+
+    await expect(service.rotate('not-a-real-token')).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(store.rows[0].revokedAt).toBeNull();
+    // And the live session still rotates.
+    await expect(service.rotate(live.refreshToken)).resolves.toBeDefined();
   });
 
   it('revokes the whole session when a rotated-away token is presented against it', async () => {
@@ -304,6 +372,48 @@ describe('AdminSessionService.rotate', () => {
 
     const second = await service.rotate(first.refreshToken);
     expect(JSON.parse(second.accessToken).role).toBe('MONITORING_ADMIN');
+  });
+
+  it('CARRIES THE REAL amr ACROSS A ROTATION RATHER THAN INVENTING ONE', async () => {
+    // ⚠️ A REFRESH IS NOT AN AUTHENTICATION, SO IT MAY NOT IMPROVE THE CLAIM.
+    // rotate() used to derive amr from `recoveryOnly` alone, so this session —
+    // opened with a password and NO second factor, which is what an
+    // un-enrolled admin gets while ADMIN_TOTP_REQUIRED is off — came back from
+    // its first refresh asserting ['pwd','otp']. The authentication system
+    // told itself a lie in the one field named for how somebody authenticated,
+    // and that field is exactly what a later "this needs a fresh OTP" check
+    // would read.
+    const store = makeStore();
+    const { service } = makeService(store);
+    const first = await service.create(ADMIN, { amr: ['pwd'] });
+
+    const second = await service.rotate(first.refreshToken);
+
+    expect(JSON.parse(second.accessToken).amr).toEqual(['pwd']);
+  });
+
+  it('carries the real amr through a GRACE-window refresh too', async () => {
+    const store = makeStore();
+    const { service } = makeService(store);
+    const first = await service.create(ADMIN, { amr: ['pwd'] });
+    await service.rotate(first.refreshToken);
+
+    const lateTab = await service.rotate(first.refreshToken);
+    expect(JSON.parse(lateTab.accessToken).amr).toEqual(['pwd']);
+  });
+
+  it('falls back to the old derivation for a row written before the column existed', async () => {
+    // Session rows from before AdminSession.amr genuinely do not know. The
+    // fallback is the behaviour it replaces — no worse — and it dies with the
+    // last pre-migration session inside thirty days. If this test is deleted
+    // as dead, check the oldest live session first.
+    const store = makeStore();
+    const { service } = makeService(store);
+    const first = await service.create(ADMIN, { amr: ['pwd'] });
+    store.rows[0].amr = [];
+
+    const second = await service.rotate(first.refreshToken);
+    expect(JSON.parse(second.accessToken).amr).toEqual(['pwd', 'otp']);
   });
 
   it('sets the grace window to ADMIN_REFRESH_GRACE_MS and no longer', async () => {

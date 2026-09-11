@@ -1,7 +1,81 @@
 // Cookie Policy — covers the actual cookies the platform uses today.
-// Only essential + functional categories are in use; we list
-// analytics + marketing categories as "currently none" so the
-// document can stay current if we add them later.
+// Essential, functional and a FIRST-PARTY analytics item (`gg_did`) are in
+// use; marketing is the only category that is genuinely "none at this time".
+// That category is still written out in full, rather than dropped, so adding
+// one later is an edit to a section that already exists instead of a section
+// somebody has to remember to write.
+//
+// ⚠️ THIS TABLE IS A POPIA DISCLOSURE, NOT DOCUMENTATION, so a cookie that is
+// set and not listed — or listed with a retention the code does not honour —
+// is a false statement to users rather than a stale comment. A cookie LISTED
+// AND SET BY NOTHING is the same false statement pointing the other way, and
+// it is the drift this file keeps producing. Three times over by 2026-09-11,
+// and no drift left a trace anywhere:
+//   * `__session` / `__client_uat` were Clerk's, and Clerk was removed on
+//     2026-09-10. The platform stopped setting them and kept disclosing them.
+//   * `gg_admin_sess` was listed as "up to 8 hours" from the era when the
+//     admin JWT WAS the session. The admin auth hardening cut it to the
+//     access token's fifteen minutes and added a second, thirty-day
+//     `gg_admin_rt` that nothing here mentioned.
+//   * `theme` and `NEXT_LOCALE` were listed and are set by NOTHING — not by
+//     us, not by Next. Removed 2026-09-11. There is no light/dark preference
+//     to remember (the dark theme is retired, and `viewport.themeColor` in
+//     app/layout.tsx is #FFFFFF under BOTH `prefers-color-scheme` arms), and
+//     there is no i18n at all: no `i18n` block in next.config.mjs, no
+//     next-intl, no language picker, and App Router Next sets NEXT_LOCALE on
+//     its own for nobody. `NEXT_LOCALE` was additionally attributed to
+//     "Next.js" in the Set-by column while section 4 flatly said there are no
+//     third-party cookies — a reader could not tell which half to believe,
+//     and the answer was neither: the row should not have existed.
+//
+// The values are not guesses and must not become guesses. Every item named in
+// 2.1, 2.2 and 2.3 is anchored to the code that writes it, and so is every
+// retention in them BAR ONE — see the second warning below. Read them out of
+// the code:
+//   ao_at / ao_rt             backend/src/auth/auth.controller.ts (res.cookie),
+//                             names in backend/src/auth/extract-token.ts,
+//                             ACCESS_TTL_SECONDS (15m) + REFRESH_TTL_MS (30d)
+//                             in backend/src/auth/session.service.ts
+//   gg_admin_sess/gg_admin_rt backend/src/admin/admin.controller.ts (res.cookie
+//                             and both names), ADMIN_ACCESS_TTL_SECONDS (15m) +
+//                             ADMIN_REFRESH_TTL_MS (30d) in
+//                             backend/src/admin/admin-session.service.ts
+//   gg_did                    DEVICE_KEY in frontend/lib/activity-beacon.ts
+//   gg-*-draft                draftKey in frontend/app/listings/new/page.tsx and
+//                             components/profile-completion-modal.tsx
+//   gg-preview                frontend/app/preview/route.ts (NextResponse
+//                             .cookies.set), read at frontend/middleware.ts
+//                             as COMING_SOON_COOKIE
+//
+// ⚠️ FIVE PLACES SET A COOKIE, NOT FOUR, AND THE FIFTH IS NOT A res.cookie()
+// CALL. This header said "those four res.cookie() calls are the only places
+// anything in this repo sets a cookie" — which is what you get by grepping for
+// `res.cookie(` and stopping. app/preview/route.ts sets `gg-preview` through
+// NextResponse.cookies.set: first-party, httpOnly, thirty days, in a real
+// visitor's browser. It is the coming-soon bypass, and the route gates on the
+// SECRET rather than on COMING_SOON_GATE, so it still sets the cookie when the
+// gate is off. A disclosure that omits a cookie we set is the same false
+// statement to users as one that lists a cookie we do not.
+//
+// Sweep with all five spellings, not one: res.cookie(, cookies.set(,
+// Set-Cookie, setHeader('Set-, document.cookie =.
+//
+// (frontend/lib/desk-auth.ts also writes document.cookie, but only to expire
+// `gg_admin_sess` at max-age=0 — a clear, never a set.) Change a TTL in any of
+// them and this table is part of the same change.
+//
+// ⚠️ TWO CLAIMS ON THIS PAGE THE REPO CANNOT SETTLE. The anchors above do not
+// cover them, and nothing here has verified them:
+//   * 2.3's "the activity events themselves are deleted after 12 months".
+//     Nothing deletes them. `UserEvent` has no purge cron and there is no
+//     deleteMany anywhere under backend/src/activity. Either write the purge
+//     or take the sentence back to the operator — do not quietly soften it,
+//     because a stated retention period is the thing a data subject relies on.
+//   * Section 4's "no third-party service embedded in this Platform sets a
+//     cookie in your browser". True of everything in this repo. Cloudflare
+//     sits in front of the origin and its bot management sets `__cf_bm` when
+//     it is switched on, which is a dashboard setting no file here can read.
+//     Check the zone before re-asserting it.
 
 import { SUPPORT_EMAIL } from '@/lib/brand';
 import { LegalDocHeader } from '../legal-frame';
@@ -15,7 +89,14 @@ export const metadata = {
 export default function CookiesPage() {
   return (
     <>
-      <LegalDocHeader title="Cookie Policy" lastUpdated="Effective 24 June 2026" />
+      {/*
+        ⚠️ BUMP THIS WHENEVER THE TABLES BELOW CHANGE. Section 5 promises the
+        reader that "we will update this page and the last updated date at the
+        top" — a corrected disclosure carrying its old date says the old
+        wording was accurate on this date, which is the opposite of what
+        happened.
+      */}
+      <LegalDocHeader title="Cookie Policy" lastUpdated="Effective 11 September 2026" />
 
       <h2>1. What cookies are</h2>
       <p>
@@ -49,11 +130,11 @@ export default function CookiesPage() {
         </thead>
         <tbody>
           {[
-            ['__session', 'Clerk', 'Your authenticated session — keeps you signed in across pages', 'Session (deleted when you sign out)'],
-            ['__client_uat', 'Clerk', 'Helps Clerk detect when your session was last active', 'Up to 30 days'],
-            ['gg_admin_sess', 'All Outdoor', 'Admin-only — JWT for the admin panel session', 'Up to 8 hours'],
-            ['theme', 'All Outdoor', 'Remembers your light/dark theme preference', 'Up to 1 year'],
-            ['NEXT_LOCALE', 'Next.js', 'Remembers the language variant you selected', 'Up to 1 year'],
+            ['ao_at', 'All Outdoor', 'Your signed-in session — keeps you signed in across pages', 'Up to 15 minutes (renewed while you browse)'],
+            ['ao_rt', 'All Outdoor', 'Renews the session above so you are not signed out every 15 minutes', 'Up to 30 days'],
+            ['gg_admin_sess', 'All Outdoor', 'Admin-only — the signed-in token for the admin panel', 'Up to 15 minutes'],
+            ['gg_admin_rt', 'All Outdoor', 'Admin-only — renews the admin panel session', 'Up to 30 days'],
+            ['gg-preview', 'All Outdoor', 'Set only if you opened the site through a preview link we sent you — lets you past the coming-soon screen', 'Up to 30 days'],
           ].map(([cookie, by, purpose, retention], i) => (
             <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
               <td style={{ padding: '6px 8px 6px 0', fontFamily: 'monospace' }}>{cookie}</td>
@@ -171,14 +252,15 @@ export default function CookiesPage() {
 
       <h2>4. Third-party cookies</h2>
       <p>
-        Some of the cookies above are set by trusted third-party
-        operators (Clerk for authentication, Next.js for locale).
-        Each of these operators has its own privacy and cookie
-        policy:
+        <strong>There are none.</strong> Every cookie listed above is
+        first-party — set by All Outdoor on alloutdoor.co.za — and no
+        third-party service embedded in this Platform sets a cookie in
+        your browser. Sign-in is handled by our own servers; we do not
+        use a hosted identity provider, an analytics tag or an
+        advertising pixel. If that ever changes we will name the
+        operator here, link its policy, and ask for your renewed
+        consent first.
       </p>
-      <ul>
-        <li>Clerk: <a href="https://clerk.com/legal/privacy" target="_blank" rel="noopener" style={{ color: 'var(--red)' }}>clerk.com/legal/privacy</a></li>
-      </ul>
 
       <h2>5. Changes to this policy</h2>
       <p>

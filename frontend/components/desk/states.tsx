@@ -44,11 +44,43 @@ function Bar({ w, h = 12 }: { w: number | string; h?: number }) {
 export function SkeletonCard() {
   return (
     // ⚠️ THE SAME TWO CLASSES DeskCard WEARS, AND THAT IS THE POINT OF A
-    // SKELETON. It has to keep the card's rhythm exactly — same surface, same
-    // hairline, same radius, same 14/16 padding, same gap — or the layout
-    // shifts the moment data lands, which is the one thing a skeleton exists
-    // to prevent. If the card's chrome changes, this follows for free.
-    <div aria-hidden="true" className="dk-card dk-stack" style={{ padding: '14px 16px' }}>
+    // SKELETON: the surface, the hairline, the radius and the 14/16 padding
+    // all follow .dk-card for free, so the placeholder reads as the thing it
+    // is standing in for rather than as a grey box.
+    //
+    // ⚠️ THE GAP DOES NOT FOLLOW FOR FREE — IT IS A HAND MIRROR OF card.tsx.
+    // DeskCard overrides `.dk-stack`'s `gap: var(--dk-gap)` (10px) with an
+    // inline `gap: 8`, and an inline style beats a class. This element carried
+    // no gap and took the 10px token, so it opened 6px more across its three
+    // gaps than the card it stands in for.
+    //
+    // ⚠️ AND THAT DOES NOT MEAN THE PILE STOPS MOVING WHEN DATA LANDS. It
+    // cannot, and a comment here used to claim it did. DeskCard renders
+    // between TWO and FIVE children — the row and the headline are
+    // unconditional, meta, note and the actions row are each conditional —
+    // while this always draws four bars of 14/15/12/34 against child heights
+    // of 22, 20.25 (15px x 1.35), 18.125 (--dk-fs-body x 1.45) and
+    // --dk-h-control. Measured at 1280px the skeleton is ~133px against ~126px
+    // for a three-child card and ~152px for a four-child one, so it is taller
+    // than some cards and shorter than others and no single set of bar heights
+    // fixes that. What the mirror buys is narrower and real: the gap stops
+    // being a SECOND, independent source of that movement, drifting on its own
+    // every time somebody edits one file and not the other.
+    //
+    // ⚠️ --dk-h-control IS 44px ON A PHONE (tokens.css) AND THIS BAR IS A HARD
+    // 34, so the bottom bar is a second hand mirror that nothing pins. It is
+    // left as it is deliberately — the skeleton is an approximation and the
+    // spec only pins what can be exactly true — but do not read the gap pin as
+    // covering it.
+    //
+    // Both gap numbers are literals in two files. states.spec.tsx pins them
+    // equal, because the silent failure is editing one of them — or editing
+    // --dk-gap and assuming it reaches both, which it now reaches neither.
+    <div
+      aria-hidden="true"
+      className="dk-card dk-stack"
+      style={{ gap: 8, padding: '14px 16px' }}
+    >
       <span className="dk-row" style={{ gap: 8 }}>
         <Bar w={14} h={14} />
         <Bar w={96} h={10} />
