@@ -6,7 +6,70 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-11**.
 
-## 2026-09-11 (latest) — READY TO DEPLOY, BUT THE BOX IS NOT
+## 2026-09-11 (latest) — DEPLOYED. The Desk rebuild and self-hosted member auth are live.
+
+`deploy.sh` exited **0** at 21:03 SAST, deploying **0dbca899** — 35 commits,
+the Desk rebuild plus self-hosted member auth. Both health checks passed on
+each app, the public site answered 200 twice, and `pm2 list` shows three
+services online: `alloutdoor-backend`, `alloutdoor-frontend`, `warden`.
+
+**Rollback point: `alloutdoor-20260911-210151.dump`** (the pre-deploy backup
+deploy.sh took). Worth keeping the name to hand — the first migration below
+**drops `User.clerkId` and is not reversible**, so a restore is the only way
+back past it.
+
+Four migrations applied: `20260910200000_self_hosted_auth`,
+`20260911030000_local_email_phone_otp`, `20260911120000_admin_auth_hardening`,
+`20260911150000_admin_totp_replay_and_session_amr`.
+
+### What unblocked it
+
+The box had been refusing this deploy on missing env, and both guards are
+deliberate hard throws in production, so it would have been a crash-loop after
+a `pm2 reload` that had already killed the old process — an outage, not a
+failed deploy. Both are now set on the box:
+
+- **`JWT_MEMBER_SECRET`** — generated ON the box (never through a chat),
+  written to `backend/.env` and `frontend/.env.production`. Verified: same
+  value in both (compared by hash), 62 chars, **differs from
+  `JWT_ADMIN_SECRET`**, and no `NEXT_PUBLIC_` copy anywhere.
+- **`DIDIT_MODE=live`** plus `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET` and
+  `DIDIT_WORKFLOW_ID=b792ee05-948a-410a-8fa4-ca3d89511259`, pasted by the
+  operator at a prompt on the box. The API key was **rotated first** — the
+  previous one had been pasted into a chat and is burned.
+  ⚠️ A backup of the pre-edit file sits at `backend/.env.bak.didit`. It
+  contains the live secrets; delete it once you are confident, and note that
+  it is inside the app dir, so it is **not** covered by the uploads backup.
+
+Boot confirms both: Nest started clean, `DiditWebhookController` and the two
+TOTP routes mapped, and the only ERROR lines are the known Peach "runs in MOCK
+mode" pair, which is payments being deliberately inert.
+
+⚠️ The dead `VERIFYNOW_*` keys are still in `backend/.env` (lines 32-34), as
+are the Clerk and AWS ones. Inert, but **AWS should be rotated, not merely
+deleted.**
+
+### Still outstanding, in this order
+
+1. **Enrol TOTP, THEN set `ADMIN_TOTP_REQUIRED=true`** and
+   `pm2 reload alloutdoor-backend --update-env`. The other order locks the
+   only operator out of the only admin surface with no route left that could
+   enrol them. Save the ten recovery codes off-device — shown once, never
+   re-readable.
+2. **Allow Didit's webhook IP `18.203.201.92` in Cloudflare's WAF.** Until
+   then every verdict is dropped at the edge with **nothing in any application
+   log** — sellers sit at pending and no error explains it anywhere.
+3. **Second sudoers line for `pruneJournal`**, next to the nginx one; both are
+   written out in `warden/README.md`. `sudo -n` fails closed, so a missing
+   line is a refusal, not a hang.
+4. `npm run sweep` on the box and read **every** row, so a local permission
+   gap can be told from a real one.
+5. Read-only Postgres role for the agent query path; Tailscale; an **external**
+   uptime monitor on the apex.
+
+---
+
+## 2026-09-11 — READY TO DEPLOY, BUT THE BOX IS NOT
 
 `feat/takealot-ux-parity` is fast-forwarded to `cd18d459` — the Desk rebuild
 and the self-hosted member auth, **34 commits**. Verified on the deploy branch:
