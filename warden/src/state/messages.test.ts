@@ -165,8 +165,83 @@ test('the wire projection carries no daemon-internal fields', () => {
   assert.ok(out);
   assert.deepEqual(
     Object.keys(out).sort(),
-    ['command', 'diagnosis', 'gateKey', 'headline', 'id', 'kind', 'raisedAt', 'status'],
+    [
+      'command',
+      'diagnosis',
+      'gateKey',
+      'headline',
+      'id',
+      'kind',
+      'operationName',
+      'raisedAt',
+      'reversible',
+      'status',
+    ],
   );
+});
+
+// ── the two fields the confirm dialog has to have ───────────────────────
+//
+// 🚨 THESE WERE DROPPED HERE AND THE DESK LIED BECAUSE OF IT. The confirm
+// told the operator, for EVERY proposal, that it "runs inside Warden's own
+// safe list". That is true only where `operation` is non-null. The frontend
+// could not tell the difference because projectProposal() stripped both
+// `operation` and `reversible` before the wire, so a model-drafted free-form
+// command was described to the operator as enum-bounded.
+
+test('a safe-list-backed proposal puts the operation NAME on the wire — and never the args', () => {
+  const out = projectProposal(proposal());
+  assert.equal(out?.operationName, 'restartProcess');
+  // The args are an executor input. Approve re-resolves and re-validates them
+  // from THIS store; a copy in a browser is a copy somebody could post back.
+  assert.equal(JSON.stringify(out).includes('alloutdoor-backend'), true, 'the command itself still names the process');
+  assert.equal('args' in (out as unknown as Record<string, unknown>), false);
+  assert.equal('operation' in (out as unknown as Record<string, unknown>), false);
+});
+
+test('a free-form command reaches the wire as operationName null — the LOUDER confirm, not the friendlier one', () => {
+  // This is the `approved_command` path: the model wrote the string, nothing
+  // named it, nothing validated its shape. null is what makes the dialog say
+  // so instead of vouching for a safe list that never saw it.
+  const out = projectProposal(proposal({ operation: null, command: 'pm2 flush' }));
+  assert.equal(out?.operationName, null);
+});
+
+test('an operation whose name is not a string is NOT a safe-list operation', () => {
+  // A hand-edited state.json, or a record from a daemon that spelled the
+  // field differently. Reading it as safe-list-backed would put the false
+  // reassurance back by the back door.
+  for (const operation of [
+    { args: {} } as unknown as StoredProposal['operation'],
+    { name: '', args: {} } as StoredProposal['operation'],
+    { name: 42, args: {} } as unknown as StoredProposal['operation'],
+  ]) {
+    assert.equal(projectProposal(proposal({ operation }))?.operationName, null);
+  }
+});
+
+test('reversible needs an explicit true — anything else is NOT reversible', () => {
+  // Same rule parse.ts applies to the model's own claim. Five safe-list
+  // operations are irreversible and cancelLongQuery/terminateIdleInTransaction
+  // differ by one Postgres function name inside a 354-character statement, so
+  // an unknown reversibility must land on the louder confirm.
+  for (const claim of [false, undefined, null, 'true', 1]) {
+    assert.equal(
+      projectProposal(proposal({ reversible: claim as unknown as boolean }))?.reversible,
+      false,
+      `reversible should be false for ${JSON.stringify(claim)}`,
+    );
+  }
+  assert.equal(projectProposal(proposal({ reversible: true }))?.reversible, true);
+});
+
+test('a red gate carries neither an operation name nor a reversible claim', () => {
+  // It has nothing to run, so there is no authority to describe. The queue
+  // card renders no buttons for one; what must never happen is a red gate
+  // arriving with a safe-list name that reads as approvable.
+  const out = projectProposal(proposal({ kind: 'red_gate', command: null, operation: null, reversible: false }));
+  assert.equal(out?.operationName, null);
+  assert.equal(out?.reversible, false);
 });
 
 // ── the builders, round-tripped ─────────────────────────────────────────

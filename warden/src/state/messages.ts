@@ -114,9 +114,25 @@ export function projectMessage(raw: WardenChatMessage): WardenChatMessage | null
 
 /**
  * The wire projection of a stored proposal. Strips the daemon-internal fields
- * (`operation`, `checkIds`, `faultKey`, the resolution trail) — the backend
- * ignores unknown keys, but a shape that leaks internals invites something
- * downstream to start depending on them.
+ * (`operation.args`, `checkIds`, `faultKey`, the resolution trail) — the
+ * backend ignores unknown keys, but a shape that leaks internals invites
+ * something downstream to start depending on them.
+ *
+ * 🚨 IT USED TO STRIP `operation` AND `reversible` WHOLE, AND THAT MADE THE
+ * DESK'S MONEY-GRADE CONFIRM STATE SOMETHING IT COULD NOT KNOW. The dialog
+ * told the operator, on every single proposal, that it "runs inside Warden's
+ * own safe list". That is true only where `operation` is non-null. For a
+ * model-drafted free-form command — the `approved_command` path, which this
+ * same surface renders in its own run log — it is false, and false in the
+ * direction that matters: the operator is told the thing is enum-bounded when
+ * the only bound on it is that a human read the string. The frontend could
+ * not tell the two apart because the fact stopped here.
+ *
+ * ⚠️ THE OPERATION NAME GOES, THE ARGS DO NOT. `operation.args` is an input
+ * to the executor; approve re-resolves it from THIS store and re-validates it
+ * against the safe list, so a copy on the wire is a copy nobody reads and a
+ * shape somebody could start posting back. The name is the half an operator
+ * can check against the menu.
  */
 export function projectProposal(p: StoredProposal): WardenProposal | null {
   // ⚠️ NOT TRUNCATED. WARDEN_ID_RE already caps at 64; cutting a longer id down
@@ -143,6 +159,14 @@ export function projectProposal(p: StoredProposal): WardenProposal | null {
     // carried a command would be an approvable red gate and this daemon must
     // never rely on the far side to catch that.
     command: p.kind === 'red_gate' ? null : command || null,
+    // ⚠️ NAME ONLY, AND A NON-STRING NAME IS NO NAME. `operation` non-null is
+    // what makes a proposal safe-list-backed; a record whose `operation` was
+    // hand-edited into a shape without a string name is NOT one, and reading
+    // it as one is the false reassurance this field exists to remove.
+    operationName: typeof p.operation?.name === 'string' && p.operation.name ? text(p.operation.name, MAX_ID) : null,
+    // ⚠️ EXPLICIT true OR IT IS NOT REVERSIBLE. Same rule parse.ts applies to
+    // the model's own claim: unknown reversibility gets the louder confirm.
+    reversible: p.reversible === true,
     gateKey: gateKey || null,
     raisedAt: p.raisedAt,
   };

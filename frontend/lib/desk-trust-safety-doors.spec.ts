@@ -33,7 +33,23 @@ import type {
 // undefined), and the source half catches the door being dropped.
 // ────────────────────────────────────────────────────────────────────
 
-const PAGE = readFileSync(join(process.cwd(), 'app/admin/desk/site/page.tsx'), 'utf8');
+/**
+ * ⚠️ THIS USED TO READ app/admin/desk/site/page.tsx. Trust and safety moved
+ * with the rest of the Site board when it split into Agent and Health, and the
+ * Site route is now a redirect — so the old path still EXISTS and is 45 lines
+ * long, which is the case a "file not found" check would not have caught. The
+ * component marker below is what fails, and it fails at collection time with
+ * "TrustSafety component not found", which is the right noise.
+ *
+ * ⚠️ AND RE-POINTING IT AT THE WRONG FILE WOULD NOT BE SILENT, WHICH IS THE
+ * ONLY REASON A PATH IN A SPEC IS TOLERABLE. The assertions below want five
+ * distinct doors, two mounted drawers and two specific footer sentences; no
+ * other file in this tree satisfies them by accident.
+ */
+const PAGE = readFileSync(
+  join(process.cwd(), 'app/admin/desk/health/trust-safety.tsx'),
+  'utf8',
+);
 
 /**
  * The Trust and Safety component only — not the other ~20 cards on Site.
@@ -46,7 +62,7 @@ const PAGE = readFileSync(join(process.cwd(), 'app/admin/desk/site/page.tsx'), '
  * exact, and it fails loudly rather than silently returning too much.
  */
 function trustSafetySource(): string {
-  const start = PAGE.indexOf('function TrustSafety()');
+  const start = PAGE.indexOf('export function TrustSafety()');
   expect(start, 'TrustSafety component not found — was it renamed?').toBeGreaterThan(-1);
   const open = PAGE.indexOf('{', start);
   let depth = 0;

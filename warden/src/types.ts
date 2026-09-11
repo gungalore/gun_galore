@@ -313,6 +313,45 @@ export interface WardenProposal {
    *  gate that carried a command would be an approvable red gate, so never
    *  rely on that. */
   command: string | null;
+  /**
+   * The safe-list operation NAME behind `command`, or null when the model
+   * drafted the command free-hand (StoredProposal.operation === null — the
+   * `approved_command` path).
+   *
+   * 🚨 THIS IS THE DIFFERENCE THE CONFIRM DIALOG WAS GETTING WRONG. The Desk
+   * told the operator, on EVERY proposal, that it "runs inside Warden's own
+   * safe list". For a free-form command that is false in the one direction
+   * that matters: it says the thing being approved is enum-bounded when
+   * nothing bounds it but the string a human read. The frontend could not
+   * tell, because this fact was dropped at projectProposal() and never
+   * reached the wire.
+   *
+   * ⚠️ THE NAME ONLY — NEVER `operation.args`. The name is what an operator
+   * can check against the menu in diagnose/prompt.ts. The args are an input
+   * to the executor, which re-resolves and re-validates them at approve time
+   * from the STORE, not from anything a browser sent; putting them on the
+   * wire adds a copy of an executor input to a surface that must never hold
+   * one.
+   *
+   * ⚠️ AN ABSENT FIELD READS AS null, i.e. AS FREE-FORM — the LOUDER confirm.
+   * A daemon too old to send it makes every proposal read as unbounded, which
+   * over-warns; the reverse default would quietly stamp "safe list" on a
+   * command nothing validated.
+   */
+  operationName: string | null;
+  /**
+   * Whether the safe list (or, for a free-form command, the model's own
+   * explicit claim — see diagnose/parse.ts) says this can be put back.
+   *
+   * ⚠️ ANYTHING BUT AN EXPLICIT true IS false, ALL THE WAY DOWN THE WIRE.
+   * Phase 11 took the irreversible operation count from 2 to 5, and the sharp
+   * pair is `cancelLongQuery` against `terminateIdleInTransaction`: they
+   * differ by `pg_cancel_backend` vs `pg_terminate_backend` inside a
+   * 354-character statement, one of which leaves the session alive and one of
+   * which takes it and everything it held. Nobody should have to spot that by
+   * eye at 2am, so the flag rides beside the command rather than inside it.
+   */
+  reversible: boolean;
   gateKey: string | null;
   raisedAt: string;
 }

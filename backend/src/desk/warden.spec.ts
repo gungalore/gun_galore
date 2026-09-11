@@ -42,6 +42,8 @@ const PROPOSAL = {
   headline: 'Proposed fix: raise the health-probe timeout 3s → 8s',
   diagnosis: 'The pm2 reload overlapped the 3-second probe.',
   command: 'warden apply proposal 40',
+  operationName: 'restartProcess',
+  reversible: true,
   gateKey: null,
   raisedAt: '2026-09-03T07:05:00.000Z',
 };
@@ -133,6 +135,11 @@ describe('warden is not deployed', () => {
     expect(chat.note).toMatch(/not deployed/i);
     expect(chat.messages).toEqual([]);
     expect(chat.proposals).toEqual([]);
+    // 🚨 WHICH ABSENCE, NOT JUST THAT IT IS ONE. Nothing is configured, so no
+    // daemon exists, so nothing can be waiting on the operator — this is the one
+    // absence where the approval queue's "nothing is waiting on you" is a true
+    // sentence. The other one is not, and both used to be the same `present: false`.
+    expect(chat.absence).toBe('not_deployed');
     // Fails closed WITHOUT a network call — there is nothing to call.
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -169,6 +176,14 @@ describe('warden is not deployed', () => {
     // would take the board down over a chat panel.
     expect(chat.present).toBe(false);
     expect(chat.note).toMatch(/did not answer/i);
+    // 🚨 A DIFFERENT ABSENCE FROM 'not_deployed', AND THE DIFFERENCE DECIDES
+    // WHAT THE APPROVAL QUEUE MAY SAY. A daemon IS configured and did not
+    // answer, so `proposals: []` means NOTHING WAS READ — not that nothing is
+    // pending. The queue used to answer both silences with "Nothing is waiting
+    // on you, because nothing is watching the box", which under this one is a
+    // claim about a list this process never saw.
+    expect(chat.absence).toBe('unreachable');
+    expect(chat.proposals).toEqual([]);
   });
 });
 
@@ -194,8 +209,87 @@ describe('the thread', () => {
     expect(chat.messages[0].kind).toBe('proposal');
     expect(chat.messages[0].pre?.tone).toBe('inset');
     expect(chat.proposals[0].command).toBe('warden apply proposal 40');
+    // Present, so neither absence applies. Null here is the only place null
+    // means "the daemon answered".
+    expect(chat.absence).toBeNull();
+    // The two facts the command string does not carry, carried beside it.
+    expect(chat.proposals[0].operationName).toBe('restartProcess');
+    expect(chat.proposals[0].reversible).toBe(true);
     // The token rides in a header, never the URL.
     expect(String(fetchMock.mock.calls[0][0])).toBe(`${BASE}/chat`);
+  });
+
+  /**
+   * 🚨 THE MONEY-GRADE CONFIRM SAID "It runs inside Warden's own safe list"
+   * ABOUT EVERY PROPOSAL, AND ON THE `approved_command` PATH THAT IS FALSE.
+   * The daemon knows which proposals it backed with a validated safe-list pick
+   * (StoredProposal.operation) and which carry a command the model wrote
+   * free-hand; both facts were dropped before the wire, so the Desk could not
+   * tell an enum-bounded operation from an arbitrary string and told the
+   * operator the reassuring one either way.
+   *
+   * ⚠️ EVERY DEFAULT BELOW FALLS TO THE LOUDER READING, this file's standing
+   * convention for a field a daemon might not send (see `forced` on a sweep).
+   * A null operationName means "not a safe-list operation"; a false reversible
+   * means "this cannot be put back". An old daemon over-warns; it never
+   * vouches.
+   */
+  it('carries the safe-list operation NAME, and an absent one reads as free-form rather than as safe-list', async () => {
+    configure();
+    const { service } = makeService();
+    stubDaemon({
+      '/chat': {
+        body: {
+          proposals: [
+            { ...PROPOSAL, id: 'p_named' },
+            // The `approved_command` path: the model wrote the string itself.
+            { ...PROPOSAL, id: 'p_freeform', operationName: null },
+            // A daemon that predates the field. Degrades to free-form.
+            { ...PROPOSAL, id: 'p_old', operationName: undefined },
+            // Junk is not a name.
+            { ...PROPOSAL, id: 'p_junk', operationName: 42 },
+            { ...PROPOSAL, id: 'p_empty', operationName: '' },
+          ],
+        },
+      },
+    });
+
+    const byId = Object.fromEntries((await service.chat()).proposals.map((p) => [p.id, p]));
+    expect(byId.p_named.operationName).toBe('restartProcess');
+    expect(byId.p_freeform.operationName).toBeNull();
+    expect(byId.p_old.operationName).toBeNull();
+    expect(byId.p_junk.operationName).toBeNull();
+    expect(byId.p_empty.operationName).toBeNull();
+  });
+
+  it('reversible needs an explicit true — an absent or unreadable claim is NOT reversible', async () => {
+    // ⚠️ Phase 11 took the daemon's irreversible operation count from 2 to 5,
+    // and the sharp pair is `cancelLongQuery` against
+    // `terminateIdleInTransaction`: pg_cancel_backend vs pg_terminate_backend
+    // inside a 354-character statement, one of which leaves the session alive
+    // and one of which does not. A wrong "reversible" costs an operator a
+    // session and everything it held.
+    configure();
+    const { service } = makeService();
+    stubDaemon({
+      '/chat': {
+        body: {
+          proposals: [
+            { ...PROPOSAL, id: 'p_true', reversible: true },
+            { ...PROPOSAL, id: 'p_false', reversible: false },
+            { ...PROPOSAL, id: 'p_absent', reversible: undefined },
+            { ...PROPOSAL, id: 'p_string', reversible: 'true' },
+            { ...PROPOSAL, id: 'p_one', reversible: 1 },
+          ],
+        },
+      },
+    });
+
+    const byId = Object.fromEntries((await service.chat()).proposals.map((p) => [p.id, p]));
+    expect(byId.p_true.reversible).toBe(true);
+    for (const id of ['p_false', 'p_absent', 'p_string', 'p_one']) {
+      expect(byId[id].reversible).toBe(false);
+    }
   });
 
   it('DROPS a message whose kind the chat component cannot render', async () => {
@@ -716,6 +810,30 @@ describe('the wire contract is mirrored by hand, so a test has to hold it', () =
       expect(board!.dropped).toBe(0);
       expect(board!.counts).toEqual({ ok: 1, warn: 1, bad: 1, unknown: 1 });
     });
+  });
+
+  /**
+   * 🚨 A FIELD ADDED ON ONE SIDE OF THIS HAND MIRROR VANISHES SILENTLY. The
+   * backend normalises by naming what it will keep, so a field the daemon
+   * starts sending and this side does not read is dropped with no error on
+   * either side — and these two decide what a money-grade confirm CLAIMS.
+   * Losing `operationName` puts the surface straight back to telling every
+   * operator that a model-drafted command "runs inside Warden's own safe list".
+   */
+  it('the proposal carries operationName and reversible on BOTH sides of the mirror', () => {
+    const src = daemonSource().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const block = /export interface WardenProposal\s*\{([\s\S]*?)\n\}/.exec(src);
+    expect(block).not.toBeNull();
+    // Comments stripped first, for the reason daemonUnion() strips them: both
+    // files document these fields by naming them, so a raw-text match would
+    // pass off the prose above a declaration as the declaration.
+    expect(block![1]).toMatch(/operationName\s*:\s*string \| null\s*;/);
+    expect(block![1]).toMatch(/reversible\s*:\s*boolean\s*;/);
+
+    // ⚠️ AND THE ARGS STAY OFF. The name is what an operator can check against
+    // the daemon's menu; the args are an executor input, re-resolved from the
+    // daemon's own store at approve time, and have no business in a browser.
+    expect(block![1]).not.toMatch(/\bargs\s*:/);
   });
 
   it('the shapes Phase 4 added are declared on the daemon side too', () => {

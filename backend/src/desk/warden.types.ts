@@ -79,6 +79,43 @@ export interface WardenProposal {
    * gate, which has nothing to run.
    */
   command: string | null;
+  /**
+   * The daemon's SAFE-LIST OPERATION NAME behind `command`, or null when the
+   * model drafted the command free-hand — the `approved_command` path the run
+   * log on the Agent surface already renders by that name.
+   *
+   * 🚨 THE CONFIRM DIALOG STATED THE SAFE LIST FOR EVERY PROPOSAL, INCLUDING
+   * THE ONES IT DID NOT COVER. "It runs inside Warden's own safe list — this
+   * browser and this API never hold the shell" is two claims welded together:
+   * the second is always true, the first only when this field is non-null.
+   * The daemon knew which was which (StoredProposal.operation) and
+   * projectProposal() dropped it before the wire, so the Desk could not tell
+   * an enum-bounded operation from a string the model wrote.
+   *
+   * ⚠️ NO ARGS, HERE OR ANYWHERE. Approve is a compare-and-swap on the
+   * command STRING; the daemon re-resolves and re-validates the arguments
+   * from its own store at approve time. The name is what an operator can
+   * check against the menu — the args would only be an executor input sitting
+   * in a browser.
+   *
+   * ⚠️ ABSENT DEGRADES TO null, WHICH IS THE LOUDER READING. A daemon too old
+   * to send this makes every proposal read as free-form and un-bounded, which
+   * over-warns. The friendlier default would print "safe list" over a command
+   * nothing on either side validated, which is the failure this closes.
+   */
+  operationName: string | null;
+  /**
+   * Whether what this runs can be put back. Rendered on the confirm, never
+   * inferred from the command text.
+   *
+   * ⚠️ ANYTHING BUT AN EXPLICIT true IS false. Phase 11 took the daemon's
+   * irreversible operation count from 2 to 5, and the sharp pair is
+   * `cancelLongQuery` against `terminateIdleInTransaction` — one
+   * `pg_cancel_backend` vs `pg_terminate_backend` inside a 354-character
+   * statement, one of which leaves the session alive and one of which does
+   * not. An operator at 2am must not have to find that by reading SQL.
+   */
+  reversible: boolean;
   /** For a red gate: which config gate it mirrors, so the two agree. */
   gateKey: string | null;
   raisedAt: string;
@@ -92,6 +129,27 @@ export interface WardenChat {
    * opposite things.
    */
   present: boolean;
+  /**
+   * WHICH absence this is, when `present` is false. Null when it is present.
+   *
+   * 🚨 `present: false` COVERS TWO OPPOSITE EPISTEMIC STATES AND THE DESK WAS
+   * READING BOTH AS ONE. `not_deployed` — no WARDEN_BASE_URL/WARDEN_TOKEN, so
+   * no daemon exists, so nothing can be waiting on the operator and saying so
+   * is true. `unreachable` — a daemon IS configured and did not answer, so
+   * NOTHING WAS READ: whether a proposal is waiting is unknown, and the
+   * approval queue's "Nothing is waiting on you, because nothing is watching
+   * the box" is then a claim about a list this process never saw. That is the
+   * same class of statement as an audit trail dropping records silently.
+   *
+   * `note` already differed between the two cases, but it is prose written
+   * for a human to read; a surface that has to decide what to SAY needs a
+   * discriminator it can branch on, not a sentence it has to match.
+   *
+   * ⚠️ THE UNKNOWN READING IS THE SAFE DEFAULT. A client too old to read this
+   * field, or one that cannot tell, must fall back to "this is not a reading
+   * of the daemon" rather than to "all clear".
+   */
+  absence: 'not_deployed' | 'unreachable' | null;
   note?: string;
   /** When Warden last completed a sweep. Null while unknown — never `now`. */
   lastCheckAt: string | null;

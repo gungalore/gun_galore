@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * THE DESK — the five surfaces, and the two ways of reaching them.
+ * THE DESK — the six surfaces, and the two ways of reaching them.
  *
  * Desktop is a pill row in the top bar; the phone is bottom tabs, icon over
- * label. Same five names, same order, same active idiom (ink fill) — the
+ * label. Same six names, same order, same active idiom (ink fill) — the
  * operator moves between a laptop and a phone during one shift and should
  * not have to relearn where anything is.
  *
@@ -17,6 +17,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import {
+  IconBolt,
   IconDesk,
   IconLedger,
   IconPeople,
@@ -32,13 +33,52 @@ export interface DeskTab {
   icon: React.ComponentType<IconProps>;
 }
 
-/** The five, in fixed order. Nothing is configurable about this list. */
+/**
+ * The six, in fixed order. Nothing is configurable about this list.
+ *
+ * 🚨 IT WAS FIVE, AND TWO WRITTEN DECISIONS CITED THAT NUMBER AS THE REASON
+ * THEY BECAME LENSES INSTEAD OF TABS — app/admin/desk/ledger/page.tsx ("Orders
+ * is not a sixth tab") and the /admin/complaints entry in lib/desk-cutover.ts,
+ * both quoting the sentence above. Adding one overrules them, so here is why
+ * it is not the same request: Orders and the complaints register are other
+ * VIEWS OF ONE BOARD'S DATA, fetched by that board's loader. Agent is a
+ * different daemon, on its own poll, with its own failure — a hung Warden must
+ * not be able to slow or blank the alerts inbox, and on one board it could.
+ *
+ * ⚠️ SITE BECAME HEALTH IN PLACE, IN THE SAME SLOT. Nothing the operator had
+ * disappeared: /admin/desk/site redirects with its query string intact, the
+ * Warden half is the new Agent tab, and the only thing genuinely removed from
+ * the board is the four-flag settings panel (see lib/desk-cutover.ts under
+ * /admin/settings). Keeping a sixth pill pointing at a redirect would have
+ * been a tab whose only content is a trip somewhere else.
+ *
+ * ⚠️ SIX IS MEASURED, AND SEVEN WOULD NOT HAVE BEEN SAFE. Rendered with the
+ * real Geist face at the real sizes: bottom tabs are flex:1 with 4px margins,
+ * giving 51.7px of tap width at 360px and 56.7px at 390px for six — above the
+ * 44px minimum the Desk polices everywhere else. SEVEN gives 43.1px at 360px,
+ * i.e. under it, on a small Android. desk-guard cannot see this, because the
+ * width comes from flex rather than from a literal it can grep, so it is
+ * written here.
+ *
+ * ⚠️ AND THE DESKTOP ROW COMPRESSES ITS NEIGHBOURS RATHER THAN OVERFLOWING.
+ * At 1024px the six pills need 415px against the five's 330; the 220px mark
+ * block and the 420px right-hand block both carry the default flex-shrink, so
+ * they give up 41px and 79px respectively and the header does not scroll.
+ * Measured at 1024, 1100 and 1280 on a fixture that reproduces the bar's
+ * geometry — NOT on the running app, so the residual risk is that the right
+ * block's real contents (Consoles, search, the site dot, the avatar) need more
+ * than the 341px it is left with at exactly 1024. A seventh pill would take it
+ * to 471 and that margin is gone.
+ */
 export const DESK_TABS: DeskTab[] = [
   { key: 'desk', label: 'Desk', href: '/admin/desk', icon: IconDesk },
   { key: 'ledger', label: 'Ledger', href: '/admin/desk/ledger', icon: IconLedger },
   { key: 'people', label: 'People', href: '/admin/desk/people', icon: IconPeople },
   { key: 'pulse', label: 'Pulse', href: '/admin/desk/pulse', icon: IconPulse },
-  { key: 'site', label: 'Site', href: '/admin/desk/site', icon: IconSite },
+  // IconBolt is Warden's own glyph — it is what the chat card and the status
+  // tag already use for the daemon, so the tab and the thing it leads to agree.
+  { key: 'agent', label: 'Agent', href: '/admin/desk/agent', icon: IconBolt },
+  { key: 'health', label: 'Health', href: '/admin/desk/health', icon: IconSite },
 ];
 
 /** Shared arrow-key handling for both orientations. */

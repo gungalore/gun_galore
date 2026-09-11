@@ -216,7 +216,18 @@ export class WardenService {
   async chat(): Promise<WardenChat> {
     const cfg = this.config();
     if (!cfg) {
-      return { present: false, note: NOT_DEPLOYED_NOTE, lastCheckAt: null, messages: [], proposals: [], paused: null };
+      // ⚠️ `not_deployed`, NOT merely `present: false`. Nothing is
+      // configured, so no daemon exists and nothing can be waiting — the one
+      // absence where "nothing is waiting on you" is a true sentence.
+      return {
+        present: false,
+        absence: 'not_deployed',
+        note: NOT_DEPLOYED_NOTE,
+        lastCheckAt: null,
+        messages: [],
+        proposals: [],
+        paused: null,
+      };
     }
 
     try {
@@ -229,6 +240,12 @@ export class WardenService {
       this.logger.warn(`Warden chat unavailable: ${String(err)}`);
       return {
         present: false,
+        // ⚠️ `unreachable`, WHICH IS NOT THE SAME ABSENCE AS ABOVE. A daemon
+        // is configured; it did not answer; NOTHING WAS READ. The proposals
+        // array below is empty because this process failed to fetch one, not
+        // because the queue is empty — a surface that renders it as "nothing
+        // is waiting on you" is reporting a list it never saw.
+        absence: 'unreachable',
         note: 'Warden is configured but did not answer. The board is showing what this process can see on its own.',
         lastCheckAt: null,
         messages: [],
@@ -833,6 +850,9 @@ export class WardenService {
   private normaliseChat(raw: unknown): WardenChat {
     return {
       present: true,
+      // The daemon answered, so neither absence applies. Null here is the
+      // only place null means "it is present".
+      absence: null,
       lastCheckAt: this.iso(this.pick(raw, 'lastCheckAt')),
       messages: this.normaliseMessages(this.pick(raw, 'messages')),
       proposals: this.normaliseProposals(this.pick(raw, 'proposals')),
@@ -1146,6 +1166,22 @@ export class WardenService {
       diagnosis: this.text(r.diagnosis),
       // A red gate never carries a command, whatever the daemon sent.
       command: kind === 'red_gate' ? null : command || null,
+      // ⚠️ ABSENT, EMPTY OR NON-STRING ALL BECOME null, AND null IS THE
+      // STRONGER WARNING, NOT THE WEAKER ONE. null means "not a safe-list
+      // operation", which makes the confirm say that nothing bounds this
+      // command's shape. A daemon too old to send the field therefore
+      // over-warns on every proposal; the opposite default would print "runs
+      // inside Warden's own safe list" over a command that does not, which is
+      // exactly the false claim this field was added to stop. Same posture as
+      // `forced` on a sweep: every default here falls to the weaker statement
+      // about our own authority.
+      operationName: this.text(r.operationName, 64) || null,
+      // ⚠️ EXPLICIT true OR NOT REVERSIBLE. The daemon applies the same rule
+      // to the model's own claim (diagnose/parse.ts), and an unknown
+      // reversibility must land on the louder confirm: "this cannot be put
+      // back" wrongly costs an operator a moment's thought, while
+      // "reversible" wrongly costs them a terminated session.
+      reversible: r.reversible === true,
       gateKey: gateKey || null,
       raisedAt,
     };

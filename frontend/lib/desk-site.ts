@@ -756,32 +756,281 @@ export interface WardenProposal {
   diagnosis: string;
   /** EXACTLY what "Approve the fix…" runs. Null on a red gate, which has nothing to run. */
   command: string | null;
+  /**
+   * The daemon's safe-list operation NAME behind `command`, or null when the
+   * model drafted the command free-hand.
+   *
+   * 🚨 THE CONFIRM DIALOG USED TO ASSERT THE SAFE LIST FOR EVERY PROPOSAL,
+   * because this fact was dropped in the daemon's own wire projection and
+   * never arrived. "It runs inside Warden's own safe list" is true of an
+   * operation with a name; of a free-form command it is false in the one
+   * direction that matters — it tells the operator the thing they are
+   * approving is enum-bounded when nothing bounds it but their own reading of
+   * the string.
+   *
+   * ⚠️ NEVER THE ARGS. The name is checkable against the daemon's menu; the
+   * args are an executor input and have no business in a browser.
+   *
+   * ⚠️ ABSENT READS AS null — free-form, the LOUDER confirm. An older API, or
+   * an older daemon behind it, over-warns. The opposite default would stamp
+   * "safe list" on a command nothing validated.
+   */
+  operationName: string | null;
+  /**
+   * Whether what this runs can be put back. ⚠️ ANYTHING BUT AN EXPLICIT true
+   * IS false, on every hop. Five of the daemon's safe-list operations are
+   * irreversible, and the sharp pair — `cancelLongQuery` against
+   * `terminateIdleInTransaction` — differs by one Postgres function name
+   * inside a 354-character statement. That is not a difference to leave an
+   * operator to spot in a <Pre> at 2am.
+   */
+  reversible: boolean;
   gateKey: string | null;
   raisedAt: string;
 }
 
+/**
+ * What the confirm may honestly claim about the authority being granted.
+ *
+ * ⚠️ PURE, AND LIVING HERE RATHER THAN IN THE DIALOG, so it is covered by a
+ * spec that actually runs. Vitest's include list is spec files under lib/ and
+ * .spec.tsx files under components/ — and NOTHING under app/. A spec written
+ * beside the dialog would report nothing, fail nothing, and pass the build
+ * gate by not existing.
+ */
+export type ProposalAuthorityKind = 'safe_list' | 'free_form' | 'nothing_to_run';
+
+export interface ProposalAuthority {
+  kind: ProposalAuthorityKind;
+  /** Short label for a tag — the identity, not the argument. */
+  label: string;
+  /** The sentence the operator reads above the buttons. */
+  sentence: string;
+}
+
+/**
+ * 🚨 TWO VOICES, AND THE DEFAULT IS THE LOUD ONE. A proposal is safe-list
+ * backed only when the daemon named the operation. Anything else that still
+ * carries a command — a model-drafted `approved_command`, or a proposal from
+ * a daemon too old to send the name — is described as unbounded, because the
+ * cost of over-warning is a moment's thought and the cost of under-warning is
+ * an operator approving an arbitrary string on a production box believing an
+ * enum stood behind it.
+ */
+export function proposalAuthority(
+  p: Pick<WardenProposal, 'kind' | 'command' | 'operationName'>,
+): ProposalAuthority {
+  if (p.kind === 'red_gate' || !p.command) {
+    return {
+      kind: 'nothing_to_run',
+      label: 'nothing to run',
+      sentence:
+        'There is no command here, so there is nothing to approve and no authority to grant.',
+    };
+  }
+  if (p.operationName) {
+    return {
+      kind: 'safe_list',
+      label: p.operationName,
+      sentence:
+        `This is Warden’s safe-list operation ${p.operationName}. It runs from an argv array with no shell, ` +
+        'and the daemon re-resolves and re-validates the operation and its arguments against that list when you ' +
+        'approve — not from anything this browser sends. This browser and this API never hold the shell.',
+    };
+  }
+  return {
+    kind: 'free_form',
+    label: 'not on the safe list',
+    sentence:
+      'This is NOT a safe-list operation. Warden drafted the command itself, and nothing constrains its shape ' +
+      'beyond the string above being read — no named operation, no argument validation, no menu it has to appear ' +
+      'on. Approving it is the broadest authority this surface can grant. The daemon still runs it, not this ' +
+      'browser and not this API, and there is no undo.',
+  };
+}
+
+/** ⚠️ SAID IN WORDS, NOT LEFT TO A COLOUR. `false` is the default everywhere
+ *  on this wire, so this sentence is also what an unknown reversibility gets. */
+export function reversibilityLine(reversible: boolean): string {
+  return reversible
+    ? 'Reversible: the daemon records this as something that can be put back.'
+    : 'NOT reversible: nothing here puts this back. Whatever it ends — a session, a log, a cache — is ended.';
+}
+
+/**
+ * Warden is holding off on DIAGNOSIS and PROPOSALS until `until`.
+ *
+ * ⚠️ MEASUREMENT IS NOT PAUSED, AND NO COPY MAY SAY IT IS. The daemon keeps
+ * sweeping on the same cadence and keeps announcing what turns; what stops is
+ * the model call and any new proposal. backend/src/desk/warden.controller.ts
+ * says it at the route: a UI rendering this as "Warden stopped" lets an
+ * operator read a still-updating board as frozen, or a frozen one as live.
+ *
+ * ⚠️ IT ALWAYS EXPIRES. The daemon caps a pause at 24 hours and refuses an
+ * open-ended one, because the one thing nobody ever does is come back and
+ * resume — an open-ended pause is a watchdog switched off for a month while
+ * the board still reads as though it is watching.
+ */
+export interface WardenPause {
+  /** ISO-8601. Past this instant the pause is over, resume or no resume. */
+  until: string;
+  since: string;
+  operatorId: string | null;
+  reason: string | null;
+}
+
 export interface WardenChat {
   present: boolean;
+  /**
+   * WHICH absence this is. Null while `present` is true.
+   *
+   * 🚨 `present: false` IS TWO DIFFERENT FACTS AND THE APPROVAL QUEUE WAS
+   * ANSWERING BOTH WITH ONE SENTENCE. `not_deployed` means no daemon is
+   * configured, so nothing can be waiting and "nothing is waiting on you" is
+   * true. `unreachable` means a daemon IS configured and did not answer — so
+   * the proposals array is empty because nothing was READ, and a queue that
+   * reports it as "nothing is waiting" is describing a list it never saw.
+   *
+   * ⚠️ UNKNOWN FALLS TO `unreachable`, NEVER TO `not_deployed`. An API too
+   * old to send the field, or a fetch that threw in this browser, has read
+   * nothing — the honest answer is "this is not a reading of the daemon", and
+   * the friendlier one would be an all-clear nobody measured.
+   */
+  absence: 'not_deployed' | 'unreachable' | null;
   note?: string;
   /** Null while unknown. NEVER `now` — a guessed check time reads as a check. */
   lastCheckAt: string | null;
   messages: WardenChatMessage[];
   proposals: WardenProposal[];
+  /**
+   * 🚨 THIS FIELD WAS ON THE WIRE AND THIS TYPE THREW IT AWAY. The backend has
+   * declared `paused: WardenPause | null` on the chat response since the pause
+   * route shipped (warden.types.ts), and the Site page's own comment asserted
+   * the opposite — "nothing on this side can confirm that it did" — while
+   * fetchWardenChat() simply did not copy the key across. So the board could
+   * not tell a paused Warden from a healthy quiet one, which is the same
+   * failure `present` exists to prevent, one state further in.
+   *
+   * Null means NOT PAUSED only when `present` is true. On an absent or
+   * unreachable daemon it means nobody knows, and the card is already saying
+   * the daemon did not answer.
+   */
+  paused: WardenPause | null;
 }
 
-/** What the card shows when the fetch itself failed: absent, with the reason. */
-export function wardenAbsent(note: string): WardenChat {
-  return { present: false, note, lastCheckAt: null, messages: [], proposals: [] };
+/**
+ * What the card shows when the fetch itself failed: absent, with the reason.
+ *
+ * ⚠️ `unreachable` BY DEFAULT, AND THAT IS THE POINT OF THE DEFAULT. This is
+ * called from a catch block — the request threw, so this browser read nothing
+ * and cannot know whether a proposal is waiting. Calling that "not deployed"
+ * would turn a failed read into an all-clear.
+ */
+/**
+ * What to CALL an absent Warden, in three words or so.
+ *
+ * 🚨 ONE HELPER BECAUSE SIX PLACES ON ONE SCREEN DISAGREED. `absence` was
+ * threaded into the approval queue and nowhere else, so the queue correctly
+ * said "whether anything is waiting is unknown" while the status tag DIRECTLY
+ * ABOVE IT — and the page subtitle, and both button labels — still branched on
+ * `present` alone and said "Warden not deployed". The operator read two
+ * answers to the same question an inch apart, and the confident one was wrong:
+ * a daemon that did not answer is still out there, possibly with a proposal
+ * waiting, and telling somebody it is "not deployed" is how they stop looking.
+ *
+ * ⚠️ THE TWO ABSENCES HAVE DIFFERENT FIXES, which is the whole reason to keep
+ * them apart. "Not deployed" is answered by setting WARDEN_BASE_URL and
+ * WARDEN_TOKEN; "cannot reach" is answered by going and looking at the box —
+ * and on a box where Warden is what died, that is the one case where the
+ * silence itself is the finding.
+ *
+ * Kept next to proposalAuthority() rather than beside the components for the
+ * same reason: vitest collects `lib/**\/*.spec.ts` and `components/**\/*.spec.tsx`
+ * and NOTHING under `app/`, so a rule that lives in app/ is a rule no gate can
+ * check.
+ */
+export function wardenAbsenceWord(
+  present: boolean,
+  absence: 'not_deployed' | 'unreachable' | null,
+): string {
+  if (present) return '';
+  // ⚠️ null falls to UNREACHABLE, never to not-deployed. Same rule as
+  // wardenChatFrom's default and for the same reason: "not deployed" is the
+  // confident claim, and a field we could not read is not grounds for one.
+  return absence === 'not_deployed' ? 'Warden not deployed' : 'Can’t reach Warden';
+}
+
+export function wardenAbsent(
+  note: string,
+  absence: 'not_deployed' | 'unreachable' = 'unreachable',
+): WardenChat {
+  return { present: false, absence, note, lastCheckAt: null, messages: [], proposals: [], paused: null };
 }
 
 export async function fetchWardenChat(): Promise<WardenChat> {
-  const raw = await deskFetch<Partial<WardenChat> | null>('/admin/warden/chat');
+  return wardenChatFrom(await deskFetch<Partial<WardenChat> | null>('/admin/warden/chat'));
+}
+
+/**
+ * The body, read into the shape this surface reasons about.
+ *
+ * ⚠️ SPLIT OUT OF fetchWardenChat AND EXPORTED SO A SPEC CAN REACH IT. Every
+ * default below is a decision about what the Desk is allowed to CLAIM when the
+ * server did not say — which absence this is, whether a command is safe-list
+ * backed, whether it can be put back — and a decision that only runs behind a
+ * network call is a decision no collected spec covers.
+ */
+export function wardenChatFrom(raw: Partial<WardenChat> | null | undefined): WardenChat {
+  const present = raw?.present === true;
   return {
-    present: raw?.present === true,
+    present,
+    // ⚠️ ONLY AN EXPLICIT 'not_deployed' IS ONE. Everything else that is not
+    // present — an older API with no such field, a body of the wrong shape —
+    // is treated as a read that did not happen.
+    absence: present ? null : raw?.absence === 'not_deployed' ? 'not_deployed' : 'unreachable',
     note: typeof raw?.note === 'string' ? raw.note : undefined,
     lastCheckAt: raw?.lastCheckAt ?? null,
     messages: Array.isArray(raw?.messages) ? raw.messages : [],
-    proposals: Array.isArray(raw?.proposals) ? raw.proposals : [],
+    // ⚠️ THE TWO AUTHORITY FIELDS ARE COERCED HERE, NOT READ RAW. A proposal
+    // from an API that predates them arrives with both undefined, and the
+    // dialog branches on them: `operationName` must land on null (free-form,
+    // the louder confirm) and `reversible` on false (not reversible), which
+    // is what these two defaults do. Everything else about the proposal is
+    // passed through as the server normalised it.
+    proposals: Array.isArray(raw?.proposals) ? raw.proposals.map(withAuthorityDefaults) : [],
+    // Same posture as `present`: believed only when the server sent the whole
+    // shape. A half-read pause would draw a "paused until —" banner, and an
+    // em dash where a time belongs is how a reader decides the banner is
+    // broken and stops reading the ones that are not.
+    paused: normalisePause(raw?.paused),
+  };
+}
+
+/**
+ * ⚠️ THE SAFE READING OF EACH NEW FIELD, APPLIED ON ARRIVAL. Not a validator:
+ * the server already dropped what it could not name. This only makes sure the
+ * two fields the confirm dialog reasons about are the types it reasons about,
+ * because `undefined` flowing into `p.operationName ? … : …` happens to give
+ * the right answer today and would stop doing so the moment someone rewrote
+ * the branch as `!== null`.
+ */
+function withAuthorityDefaults(p: WardenProposal): WardenProposal {
+  return {
+    ...p,
+    operationName: typeof p.operationName === 'string' && p.operationName ? p.operationName : null,
+    reversible: p.reversible === true,
+  };
+}
+
+function normalisePause(raw: unknown): WardenPause | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const p = raw as Partial<WardenPause>;
+  if (typeof p.until !== 'string' || typeof p.since !== 'string') return null;
+  return {
+    until: p.until,
+    since: p.since,
+    operatorId: typeof p.operatorId === 'string' ? p.operatorId : null,
+    reason: typeof p.reason === 'string' && p.reason.trim() ? p.reason : null,
   };
 }
 
@@ -827,6 +1076,170 @@ export async function declineWardenProposal(
     { method: 'POST', body: JSON.stringify({ reason: reason || undefined }) },
   );
   return Array.isArray(res?.messages) ? res.messages : [];
+}
+
+/* ── The four Warden routes that shipped with no caller ──────────────
+ *
+ * 🚨 THE API SERVES TEN WARDEN ROUTES AND THE FRONTEND REACHED FOUR. Chat,
+ * send, approve and decline had callers; `GET /admin/warden/audit`,
+ * `POST /admin/warden/sweep`, `POST /admin/warden/pause` and
+ * `POST /admin/warden/resume` had none anywhere under frontend/ — built,
+ * audited, documented at length in warden.controller.ts, and unreachable from
+ * a browser. That is this repo's signature defect, and it landed in the one
+ * place where it costs most: the Site board's "Pause Warden" button posted a
+ * CHAT MESSAGE the daemon classifies as a question, so the control that is
+ * supposed to stop an agent proposing changes to a production box stopped
+ * nothing. Its own confirm text admitted it.
+ * ──────────────────────────────────────────────────────────────────── */
+
+/**
+ * Hold off on diagnosis and proposals for `minutes`.
+ *
+ * ⚠️ THE DTO REFUSES 0 AND ANYTHING OVER 1440, and the daemon clamps to 24
+ * hours on its own side as well — a client is not a boundary. Sending no
+ * duration takes the daemon's default hour, which is why `minutes` is
+ * optional here rather than defaulted to a number this file invented.
+ */
+export async function pauseWarden(
+  minutes: number | undefined,
+  reason: string,
+): Promise<{ paused: WardenPause | null }> {
+  const res = await deskFetch<{ paused?: unknown }>('/admin/warden/pause', {
+    method: 'POST',
+    body: JSON.stringify({ minutes, reason: reason.trim() || undefined }),
+  });
+  return { paused: normalisePause(res?.paused) };
+}
+
+/** Back to work now. Resuming a Warden that is not paused is not an error. */
+export async function resumeWarden(): Promise<void> {
+  await deskFetch('/admin/warden/resume', { method: 'POST' });
+}
+
+/**
+ * Measure the box NOW, cadence ignored.
+ *
+ * ⚠️ `finished: false` IS A SUCCESS, NOT A FAILURE. A forced sweep runs every
+ * check with the expensive ones budgeted sixty seconds each; the daemon
+ * answers early rather than letting the request outlive nginx's 60s cut,
+ * which would hand the operator a 502 while the box was being measured behind
+ * it. The board lands by itself on the next read.
+ *
+ * ⚠️ `forced: false` MEANS THIS CALL JOINED A CADENCE SWEEP ALREADY RUNNING,
+ * so some of the rows behind it are carried forward. Reporting that as a full
+ * re-measure is the lie the backend's own `forced` field exists to refuse.
+ */
+export interface WardenSweepResult {
+  finished: boolean;
+  forced: boolean;
+  joined: boolean;
+  rows: number;
+  bad: number;
+  warn: number;
+  unknown: number;
+  /** Rows the API could not name. See WardenAudit.dropped — same rule. */
+  droppedRows: number;
+  lastCheckAt: string | null;
+}
+
+export async function sweepWarden(): Promise<WardenSweepResult> {
+  const res = await deskFetch<{
+    finished?: boolean;
+    forced?: boolean;
+    joined?: boolean;
+    board?: {
+      rows?: unknown[];
+      counts?: { ok?: number; warn?: number; bad?: number; unknown?: number };
+      dropped?: number;
+      lastCheckAt?: string | null;
+    };
+  }>('/admin/warden/sweep', { method: 'POST' });
+  const board = res?.board;
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  return {
+    // Every default falls to the WEAKER statement, the same way the backend's
+    // normaliser does: an absent `forced` is not a forced sweep.
+    finished: res?.finished === true,
+    forced: res?.forced === true,
+    joined: res?.joined === true,
+    rows: Array.isArray(board?.rows) ? board.rows.length : 0,
+    bad: n(board?.counts?.bad),
+    warn: n(board?.counts?.warn),
+    unknown: n(board?.counts?.unknown),
+    droppedRows: n(board?.dropped),
+    lastCheckAt: typeof board?.lastCheckAt === 'string' ? board.lastCheckAt : null,
+  };
+}
+
+/** One block of a run's output, with how much of it was withheld. */
+export interface WardenTruncatedText {
+  text: string;
+  truncated: boolean;
+  /** Size BEFORE truncation — the real output size, not what survived. */
+  originalBytes: number;
+}
+
+/**
+ * ONE EXECUTION on the production box, as the operator may read it.
+ *
+ * 🚨 UNTIL THIS ROUTE WAS WIRED THERE WAS NO WAY TO READ A RUN AFTER THE
+ * FACT. The daemon has written these records — operation, resolved arguments,
+ * exit code, redacted verbatim transcript — since it shipped. The only view
+ * of a run was its `ran` chat message, which ages out of a 600-record on-disk
+ * window and a 200-message wire window; past that, "what has this agent done
+ * to the box" was answerable by SSH and nothing else.
+ */
+export interface WardenAuditEntry {
+  id: string;
+  /** May be empty: "no link to follow", never "no proposal". */
+  proposalId: string;
+  at: string;
+  finishedAt: string;
+  durationMs: number;
+  trigger: 'unattended' | 'operator_approved';
+  operatorId: string | null;
+  operationKind: 'safe_list' | 'approved_command';
+  operationName: string | null;
+  command: string;
+  exitCode: number | null;
+  timedOut: boolean;
+  stdout: WardenTruncatedText;
+  stderr: WardenTruncatedText;
+  /** NAMES of what was redacted, never values. Empty, never absent. */
+  redactions: string[];
+  /** ⚠️ null means NOBODY LOOKED YET — a different claim from
+   *  `{ result: 'unknown' }`, which means looked and could not tell. */
+  recheck: { at: string; result: 'ok' | 'still-bad' | 'unknown'; note: string } | null;
+}
+
+export interface WardenAudit {
+  present: boolean;
+  note?: string;
+  entries: WardenAuditEntry[];
+  /** More records exist that this page did not carry. Answered by paging. */
+  truncated: boolean;
+  /**
+   * ⚠️ NOT `truncated`, AND IT MUST NEVER BE FOLDED INTO IT. Truncated means
+   * "there is more, ask for the next page". Dropped means "there is more and
+   * neither side of the wire could render it, so go and read the daemon's own
+   * store". One is a click and the other is ssh, so a badge that adds them
+   * together throws away the only half that says which.
+   *
+   * A silent drop is a false alibi: an incomplete record of what executed on
+   * a production box looks exactly like a complete one.
+   */
+  dropped: number;
+}
+
+export async function fetchWardenAudit(): Promise<WardenAudit> {
+  const raw = await deskFetch<Partial<WardenAudit> | null>('/admin/warden/audit');
+  return {
+    present: raw?.present === true,
+    note: typeof raw?.note === 'string' ? raw.note : undefined,
+    entries: Array.isArray(raw?.entries) ? raw.entries : [],
+    truncated: raw?.truncated === true,
+    dropped: typeof raw?.dropped === 'number' && Number.isFinite(raw.dropped) ? raw.dropped : 0,
+  };
 }
 
 /**
