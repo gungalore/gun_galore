@@ -126,7 +126,13 @@ function patchConsoleErrorOnce() {
       text.includes('ApiTargetBlockedMapError') ||
       text.includes('InvalidKeyMapError') ||
       text.includes('RefererNotAllowedMapError') ||
-      text.includes('BillingNotEnabledMapError')
+      text.includes('BillingNotEnabledMapError') ||
+      // Places API isn't enabled/activated for the project — the script
+      // itself loads fine (Maps JS + Geocoding can be enabled independently),
+      // so "use my current location" keeps working via the Geocoder while
+      // typed autocomplete silently returns zero predictions. Without this,
+      // the widget looked broken with no error shown anywhere.
+      text.includes('ApiNotActivatedMapError')
     ) {
       if (!mapsAuthFailed) {
         original.call(

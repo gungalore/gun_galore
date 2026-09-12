@@ -16,6 +16,7 @@ import { SwUpdateBanner } from '@/components/sw-update-banner';
 import { PageViewTracker } from '@/components/page-view-tracker';
 import { PushFirstLaunchPrompt } from '@/components/push-first-launch-prompt';
 import { ProfileSetupPrompt } from '@/components/profile-setup-prompt';
+import { ProfileCompleteNudge } from '@/components/profile-complete-nudge';
 import { WishlistProvider } from '@/lib/use-wishlist';
 import { WelcomeBanner } from '@/components/welcome-banner';
 import './globals.css';
@@ -368,6 +369,11 @@ export default function RootLayout({
               to /profile/edit. Fully dismissible (unlike the create-
               listing hard-wall modal). */}
           <ProfileSetupPrompt />
+          {/* Persistent bottom-left reminder bubble — unlike ProfileSetupPrompt
+              this has no signup-age limit and reappears every browser session
+              (sessionStorage dismiss, not localStorage) for as long as the
+              profile stays under 100%. Self-gates the same way. */}
+          <ProfileCompleteNudge />
           {/* SMS-arrival welcome banner — self-gates: renders only when the
               URL carries an active campaign key (?c=KEY), once per session. */}
           <WelcomeBanner />
