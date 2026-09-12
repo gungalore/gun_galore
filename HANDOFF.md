@@ -4,9 +4,50 @@ What the last session did, where everything stands, and what the next one should
 pick up. **Rules do not live here — they live in `CLAUDE.md`.** This file is
 state, and it is meant to be overwritten.
 
-Last updated: **2026-09-11**.
+Last updated: **2026-09-12**.
 
-## 2026-09-11 (latest) — SECOND DEPLOY, TOTP ENFORCED, CLOUDFLARE OPEN
+## 2026-09-12 — THIRD DEPLOY: address-autocomplete fallback, profile nudge
+
+Frontend-only deploy (`793e37cc`), exit 0, both health checks, site 200 twice.
+Backend and warden untouched (10h uptime, unaffected). Pre-deploy backup:
+`alloutdoor-20260912-082810.dump`.
+
+**What shipped:**
+- `address-autocomplete.tsx` — the operator reported typed address autofill
+  doing nothing on `/profile/edit` while "use my current location" kept
+  working. Diagnosis: two different Google APIs on one key — Places
+  (autocomplete) vs Geocoding (current-location). When Places API isn't
+  enabled/authorised for the project, the console prints
+  `ApiNotActivatedMapError`, which wasn't in `patchConsoleErrorOnce`'s match
+  list, so the widget never fell back to "fill in manually" — it just looked
+  silently broken. Added the missing match.
+  ⚠️ **This is a diagnostic/UX fix, not a confirmed root-cause fix.** The
+  actual cause is almost certainly a Google Cloud Console setting (Places API
+  not checked in the browser key's API restrictions) that only the operator
+  can verify/flip — no Console access from here. If autofill is still silent
+  after this deploy, that setting is where to look next.
+- `profile-complete-nudge.tsx` (new) — a persistent bottom-left reminder
+  bubble ("Profile X% complete → Get fully verified here", `/profile/edit`),
+  mounted in `layout.tsx` alongside `ProfileSetupPrompt`. Unlike that one-time
+  welcome dialog (14-day signup window, once-per-session-ever), this has no
+  age limit and reappears every new browser session for as long as the
+  profile is incomplete — sessionStorage dismiss, not localStorage. Verified
+  live in local dev (fresh signup → appears → dismiss → survives reload
+  hidden → reappears in a new tab).
+
+### Still outstanding (unchanged from the last entry)
+
+1. The `pruneJournal` sudoers line (`warden/README.md`).
+2. `npm run sweep` on the box; read every row.
+3. Delete `backend/.env.bak.didit` and `.env.bak.totp` once settled.
+4. Rotate the dead AWS keys rather than merely deleting them.
+5. Read-only Postgres role, Tailscale, an external uptime monitor on the apex.
+6. Confirm Places API is enabled/authorised on the Google Maps browser key
+   (Cloud Console → Credentials → API restrictions) — see above.
+
+---
+
+## 2026-09-11 — SECOND DEPLOY, TOTP ENFORCED, CLOUDFLARE OPEN
 
 ### The phone code could never be entered (shipped fix, `f5cd0a26`)
 
