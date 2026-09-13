@@ -7,8 +7,10 @@ import * as path from 'path';
  * This project's signature failure: a type lands in DeskCardType, a drawer is
  * built for it, the client routes it — and nothing ever pushes one onto the
  * pile. Nothing errors. tsc is happy. Both files read as finished. It has now
- * happened three times (complaint, support, and whatsapp_reply), and each time
- * it was found by a human reading the wrong file at the right moment.
+ * happened three times (complaint, support, and whatsapp_reply — the third now
+ * closed, once the inbound store, the registry and the send path existed to
+ * back it), and each time it was found by a human reading the wrong file at
+ * the right moment.
  *
  * So the catalogue is no longer allowed to outrun the wire silently. A type is
  * either emitted by desk.service.ts, or it is listed below with the reason —
@@ -23,12 +25,7 @@ const TYPES = path.join(__dirname, 'desk.types.ts');
  * DECISION, NOT A FIX — it says "we know this card cannot appear". Removing a
  * name without adding an emitter turns the test red, which is the point.
  */
-const NOT_YET_EMITTED: Record<string, string> = {
-  whatsapp_reply:
-    'No inbound-message store, no 24h-window model, no template registry and no send path exist ' +
-    'on the backend. The drawer (components/desk/whatsapp-drawer.tsx) is built and unreachable. ' +
-    'Needs a Prisma model plus the WABA env vars before it can be emitted.',
-};
+const NOT_YET_EMITTED: Record<string, string> = {};
 
 function declaredTypes(): string[] {
   const src = fs.readFileSync(TYPES, 'utf8');

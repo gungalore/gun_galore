@@ -125,6 +125,11 @@ export class UsersController {
         // Seller completeness sections (identity + verification) — the
         // listings count decides buyer-shape vs seller-shape.
         kycIdVerifiedAt: true,
+        // The channel-preferences sheet reads this to decide whether to
+        // show at all — null means "never shown", stamped by either a
+        // submit or a dismiss. Server-side on purpose; see
+        // UsersService.markChannelPrefsPrompted.
+        channelPrefsPromptedAt: true,
         _count: { select: { listings: true } },
       },
     });
@@ -154,7 +159,13 @@ export class UsersController {
     }
     const { _count, ...rest } = user;
     void _count;
-    return { ...rest, profileCompleteness };
+    // Whether the WhatsApp switch on the channel-prefs sheet / profile page
+    // should render live or "coming soon" — read from the same
+    // `whatsapp_enabled` flag the send-side seam checks, so the frontend
+    // never offers a channel that cannot actually be turned on. Read here
+    // rather than baked into the Prisma select since it isn't a column.
+    const whatsappChannelEnabled = await this.users.isWhatsappChannelEnabled();
+    return { ...rest, profileCompleteness, whatsappChannelEnabled };
   }
 
   // ─────────────────── Urgent notifications strip ───────────────────
@@ -343,6 +354,39 @@ export class UsersController {
     },
   ) {
     return this.users.updateNotificationPrefs(userId, body);
+  }
+
+  // ─────────────────── Channel-preferences sheet (post-sign-up) ──────
+  // Submit path: the sheet's three switches, source-tagged 'signup_sheet'
+  // for the Meta-audit trail, plus the "shown once" stamp — one call, so
+  // the frontend can't submit without also marking the sheet seen.
+  @Post('me/channel-prefs')
+  @UseGuards(AuthGuard)
+  async submitChannelPrefs(
+    @CurrentUser() userId: string,
+    @Body()
+    body: {
+      emailEnabled?: boolean;
+      smsEnabled?: boolean;
+      whatsappEnabled?: boolean;
+    },
+  ) {
+    const result = await this.users.updateNotificationPrefs(
+      userId,
+      body,
+      'signup_sheet',
+    );
+    await this.users.markChannelPrefsPrompted(userId);
+    return result;
+  }
+
+  // Dismiss path: no prefs change, still stamps the sheet as seen — "show
+  // once and don't nag" means declining to answer also counts as answered.
+  @Post('me/channel-prefs/dismiss')
+  @UseGuards(AuthGuard)
+  async dismissChannelPrefs(@CurrentUser() userId: string) {
+    await this.users.markChannelPrefsPrompted(userId);
+    return { ok: true };
   }
 
   // ─────────────────── Seller shipping defaults (Phase 6 P6.3) ────────

@@ -210,6 +210,10 @@ export interface Me {
   // Per-channel notification mute (Phase 2). Default true.
   notifyEmailEnabled?: boolean;
   notifySmsEnabled?: boolean;
+  // Default true on the row, but nothing sends until the operator's
+  // `whatsapp_enabled` flag is on (see whatsappChannelEnabled below) — the
+  // sheet is what actually decides.
+  notifyWhatsappEnabled?: boolean;
   // Silences the Take a Shot offer notification ONLY (Default true). The
   // offer itself is still written and still appears in the seller's lists.
   notifyOffersEnabled?: boolean;
@@ -232,6 +236,14 @@ export interface Me {
   bankAccountNumber: string | null;
   bankBranchCode: string | null;
   bankAccountType: string | null;
+  // Stamped once the post-sign-up channel-preferences sheet has been shown
+  // (by a submit OR a dismiss). Null = never shown; the sheet reads this,
+  // never localStorage, since it is half of the Meta-audit consent record.
+  channelPrefsPromptedAt?: string | null;
+  // Whether the WhatsApp switch should render live or "coming soon" — the
+  // server's `whatsapp_enabled` operator flag, so the frontend never offers
+  // a channel that cannot actually be turned on yet.
+  whatsappChannelEnabled?: boolean;
 }
 
 export interface Listing {

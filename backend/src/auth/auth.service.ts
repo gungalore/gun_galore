@@ -274,6 +274,9 @@ export class AuthService {
         emailOtpHash: true,
         emailOtpExpiresAt: true,
         emailOtpAttempts: true,
+        // Only needed for the WhatsApp welcome nudge below — not read
+        // anywhere else in this method.
+        phone: true,
       },
     });
     if (!user || user.accountClosedAt) throw new UnauthorizedException();
@@ -332,6 +335,16 @@ export class AuthService {
         },
       });
     }
+
+    // ⚠️ THE WELCOME NUDGE IS NOT SENT FROM HERE, AND THAT IS DELIBERATE.
+    // It looks like it belongs here — this is the one transition that happens
+    // exactly once per account. But WhatsApp requires a VERIFIED phone, and
+    // at this instant nobody has one: `register()` stores whatever number was
+    // typed with `phoneVerified: false`, and the only thing that ever flips it
+    // is the OTP flow on /profile/edit. Fired here it would no-op on every
+    // account forever, silently, with nothing failing. It fires from
+    // `verifyPhoneChange` in users.service.ts instead — the first moment a
+    // verified number exists, which is the first moment it can work at all.
 
     const issued = await this.sessions.create(user.id, meta);
     await this.recordLogin(user.id, issued.sessionId);

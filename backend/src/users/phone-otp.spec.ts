@@ -35,9 +35,10 @@ function build(row: Record<string, unknown> | null, smsOver = {}) {
     sendSms: jest.fn().mockResolvedValue({ success: true }),
     ...smsOver,
   };
+  const notifications = { welcomeWhatsapp: jest.fn().mockResolvedValue(undefined) };
   const svc = Object.create(UsersService.prototype) as UsersService;
-  Object.assign(svc, { prisma, sms });
-  return { svc, prisma, sms, updates };
+  Object.assign(svc, { prisma, sms, notifications });
+  return { svc, prisma, sms, updates, notifications };
 }
 
 function pending(over: Record<string, unknown> = {}) {
@@ -195,5 +196,30 @@ describe('checking a phone code', () => {
     );
     expect(updates).toHaveLength(0);
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  // ⚠️ THE WHATSAPP WELCOME LIVES HERE, NOT AT SIGN-UP, AND THIS PINS IT.
+  // WhatsApp will not send to an unverified number, and nothing verifies one
+  // until this method runs — so fired from auth.service.ts's verifyEmail (the
+  // obvious once-per-account home) it would no-op on every account forever,
+  // silently, with no test failing. If someone moves it back, this fails.
+  it('fires the WhatsApp welcome once the number is verified', async () => {
+    const { svc, notifications } = build(pending());
+    await svc.verifyPhoneChange('u1', CODE);
+    expect(notifications.welcomeWhatsapp).toHaveBeenCalledWith({
+      userId: 'u1',
+      phone: '+27821234567',
+    });
+  });
+
+  it('still verifies the number when the welcome throws', async () => {
+    // A welcome must never cost the member the thing they came here to do.
+    const { svc, notifications } = build(pending());
+    notifications.welcomeWhatsapp.mockImplementation(() => {
+      throw new Error('whatsapp down');
+    });
+    await expect(svc.verifyPhoneChange('u1', CODE)).resolves.toEqual({
+      verified: true,
+    });
   });
 });

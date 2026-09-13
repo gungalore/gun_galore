@@ -172,6 +172,53 @@ export class DeskService {
     return `${Math.floor(hours / 24)}d waiting`;
   }
 
+  /**
+   * "6h 40m" · "48m" · "under a minute". Never a bare "0m".
+   *
+   * ⚠️ SAME SHAPE AS frontend/lib/desk-whatsapp.ts's formatWindowLeft,
+   * duplicated rather than shared — there is no package between the two
+   * apps (see that file's own header). Keep the two in step by eye.
+   */
+  private formatWindowLeft(ms: number): string {
+    if (ms <= 0) return 'none';
+    const minutes = Math.floor(ms / 60000);
+    if (minutes < 1) return 'under a minute';
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    if (h <= 0) return `${m}m`;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
+
+  /**
+   * The pile's own two-stage warning on a closing WhatsApp window — bad
+   * under 2h, warn under 6h, neutral otherwise.
+   *
+   * ⚠️ NOT THE SAME THRESHOLD AS THE DRAWER'S. The composer
+   * (frontend/lib/desk-whatsapp.ts WINDOW_URGENT_MS) only ever shows one
+   * stage of urgency because it is open on ONE thread and the operator is
+   * already looking at it; the pile is a scan across dozens, and a card that
+   * only turns red at the last two hours would bury the one closing in four
+   * behind a page of neutral tags nobody re-sorts by eye.
+   */
+  private whatsappWindowTag(msLeft: number): FeedTag {
+    const label = `${this.formatWindowLeft(msLeft)} left`;
+    if (msLeft <= 2 * 3_600_000) return { kind: 'bad', label, icon: 'clock' };
+    if (msLeft <= 6 * 3_600_000) return { kind: 'warn', label, icon: 'clock' };
+    return { kind: 'neutral', label, icon: 'clock' };
+  }
+
+  /**
+   * WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID both present — the same check
+   * WhatsappService.isConfigured() makes (backend/src/whatsapp/whatsapp.service.ts).
+   * Duplicated on purpose rather than injected: a "Reply" card whose only
+   * possible outcome is a STUB row is a card the operator would act on for
+   * nothing to leave, so the pile stays silent about a thread until there is
+   * an actual provider behind it — not just the kill switch flipped on.
+   */
+  private whatsappConfigured(): boolean {
+    return Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
+  }
+
   async feed(): Promise<DeskFeed> {
     const now = Date.now();
     this.pruneSunk(now);
@@ -195,6 +242,8 @@ export class DeskService {
       outboxStalled,
       smsDeadLetters,
       wardenAcks,
+      whatsappEnabledFlag,
+      whatsappThreads,
     ] = await Promise.all([
         this.prisma.transaction.findMany({
           where: { dealerVerificationStatus: 'PENDING_ADMIN_REVIEW' },
@@ -351,11 +400,13 @@ export class DeskService {
         queryFreshnessGraveyard(this.prisma, { minAgeDays: 60, limit: 5 }),
         /* ── Warden ─────────────────────────────────────────────────
          *
-         * 🚨 'warden' AND 'whatsapp_reply' SAT IN DeskCardType FOR WEEKS
+         * 🚨 'warden' AND 'whatsapp_reply' BOTH SAT IN DeskCardType FOR WEEKS
          * WITH NOTHING PUTTING EITHER ON THE WIRE — the same failure the
          * complaint and support cards above were written to close. The
          * catalogue drew the faces, the union carried the types, and no
-         * operator could ever reach one.
+         * operator could ever reach one. `whatsapp_reply` is now emitted —
+         * see the loop after the dead-inventory cards below — once the
+         * provider, the registry and the inbound store existed to back it.
          *
          * The three things Warden can honestly say today, from state this
          * process can actually measure. Everything else the Warden chat
@@ -391,6 +442,32 @@ export class DeskService {
          * rows meaning "seen today" would be the wrong trade.
          */
         this.prisma.setting.findMany({ where: { key: { startsWith: 'warden:ack:' } } }),
+        /* ── WhatsApp reply ────────────────────────────────────────────
+         *
+         * ⚠️ THE SAME "whatsapp_enabled" SETTING desk-site.service.ts's
+         * channels() ALREADY READS. Duplicated rather than shared because
+         * that service returns a rendered tile, not a raw boolean — a
+         * second read of the one row it is, not a second source of truth.
+         */
+        this.prisma.setting
+          .findUnique({ where: { key: 'whatsapp_enabled' } })
+          .then((s: { value: string } | null) => s?.value === 'true')
+          .catch(() => false),
+        // ⚠️ ONLY THE ROW SHAPE THIS CARD NEEDS. Phone and the buyer's raw
+        // words never leave this query for the wire — see the loop below,
+        // which shows a username and a snippet, never the MSISDN.
+        this.prisma.whatsappThread.findMany({
+          where: { handledAt: null, windowClosesAt: { gt: new Date(now) } },
+          select: {
+            id: true,
+            userId: true,
+            transactionId: true,
+            windowClosesAt: true,
+            messages: { orderBy: { receivedAt: 'desc' }, take: 1, select: { body: true } },
+          },
+          orderBy: { windowClosesAt: 'asc' },
+          take: 25,
+        }),
       ]);
 
     /*
@@ -891,6 +968,85 @@ export class DeskService {
         actions: [{ key: 'open', label: 'Open the listing', kind: 'drawer', variant: 'primary' }],
         canLater: true,
       });
+    }
+
+    /* ── WhatsApp reply ────────────────────────────────────────────
+     *
+     * ⚠️ GATED ON BOTH THE KILL SWITCH AND A REAL PROVIDER. Neither alone is
+     * enough: whatsapp_enabled true with WHATSAPP_* unset would deal a card
+     * whose only possible send is a STUB row, and the reverse (credentials
+     * present, switch off) is exactly the "not live yet" state the switch
+     * exists to hold. Both closed is silence, which is correct — see
+     * `desk-cases.spec.ts`'s "never deals while whatsapp_enabled is off or
+     * WHATSAPP_* is unset".
+     *
+     * Query itself excludes handledAt and an expired window
+     * (`windowClosesAt > now`), so a thread the operator already answered or
+     * that timed out on this rail simply is not in `whatsappThreads` — that
+     * IS "resolves as unanswered": nothing recomputes a verdict, the card
+     * just stops being on the pile.
+     */
+    if (whatsappEnabledFlag && this.whatsappConfigured() && whatsappThreads.length > 0) {
+      const userIds = [...new Set(whatsappThreads.map((t) => t.userId).filter((x): x is string => !!x))];
+      const txIds = [
+        ...new Set(whatsappThreads.map((t) => t.transactionId).filter((x): x is string => !!x)),
+      ];
+      const [waUsers, waTxs] = await Promise.all([
+        userIds.length
+          ? this.prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, username: true } })
+          : Promise.resolve([] as { id: string; username: string | null }[]),
+        txIds.length
+          ? this.prisma.transaction.findMany({
+              where: { id: { in: txIds } },
+              select: { id: true, orderReference: true },
+            })
+          : Promise.resolve([] as { id: string; orderReference: string | null }[]),
+      ]);
+      const usernameOf = new Map(waUsers.map((u) => [u.id, u.username]));
+      const refOf = new Map(waTxs.map((t) => [t.id, this.txRef(t)]));
+
+      for (const t of whatsappThreads) {
+        const msLeft = t.windowClosesAt.getTime() - now;
+        const latest = t.messages[0] ?? null;
+        // ⚠️ THE BUYER'S WORDS, TRUNCATED, NOT THE ORDER'S ITEM. This is an
+        // admin-only surface reading what the buyer actually typed — the
+        // "never name the item" rule binds the OUTGOING template body (see
+        // whatsapp-templates.ts), not what the operator reads here.
+        const snippet = latest?.body
+          ? `“${latest.body.slice(0, 90)}${latest.body.length > 90 ? '…' : ''}”`
+          : 'New WhatsApp message';
+        const who = t.userId ? usernameOf.get(t.userId) : undefined;
+        const ref = t.transactionId ? refOf.get(t.transactionId) : undefined;
+        cards.push({
+          id: `whatsapp_reply:${t.id}`,
+          type: 'whatsapp_reply',
+          typeLabel: 'WhatsApp reply',
+          band: 'housekeeping',
+          reference: ref,
+          headline: snippet,
+          meta: who ? `@${who}` : 'Sender not linked to a member',
+          tags: [this.whatsappWindowTag(msLeft)],
+          /**
+           * ⚠️ 'link', NOT 'drawer'. WhatsappDrawer is mounted on
+           * /admin/desk/health, reading its thread id off `?whatsapp=`
+           * (lib/desk-site.ts's parseWhatsappThreadId) — the main pile
+           * page's drawerTargetFor() carries no case for this card type, so
+           * a 'drawer' action here would open nothing. That file's own
+           * header explains why the health page is where this drawer lives
+           * today.
+           */
+          actions: [
+            {
+              key: 'reply',
+              label: 'Reply',
+              kind: 'link',
+              variant: 'primary',
+              href: `/admin/desk/health?whatsapp=${encodeURIComponent(t.id)}`,
+            },
+          ],
+          canLater: true,
+        });
+      }
     }
 
     /* ── Sort, band and sink ──────────────────────────────────────── */

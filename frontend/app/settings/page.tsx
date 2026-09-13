@@ -78,6 +78,11 @@ export default function SettingsPage() {
   // flag decides whether anything actually goes out — and it carries shipping
   // updates only, which is why savePrefs never lets it satisfy the floor.
   const [whatsappOn, setWhatsappOn] = useState(true);
+  // Server-computed from the `whatsapp_enabled` operator flag (CLAUDE.md —
+  // the same switch the send-side seam checks). While false the WhatsApp row
+  // renders disabled with a "coming soon" note; no frontend deploy needed
+  // when the flag flips.
+  const [whatsappChannelEnabled, setWhatsappChannelEnabled] = useState(false);
   // Silences the Take a Shot offer ALERT only (default true) — the offer
   // itself is still written and still shows up in the seller's Offers list
   // either way. Not a delivery channel like the three above, so — same as
@@ -132,6 +137,7 @@ export default function SettingsPage() {
       setEmailOn(me?.notifyEmailEnabled !== false);
       setSmsOn(me?.notifySmsEnabled !== false);
       setWhatsappOn(me?.notifyWhatsappEnabled !== false);
+      setWhatsappChannelEnabled(me?.whatsappChannelEnabled === true);
       setOffersOn(me?.notifyOffersEnabled !== false);
       // Anything we don't recognise falls back to EMAIL, the column's own
       // default. A <select> whose value matches none of its options renders
@@ -432,13 +438,16 @@ export default function SettingsPage() {
                   WhatsApp
                 </p>
                 <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  Shipping updates only.
+                  {whatsappChannelEnabled
+                    ? 'Shipping updates only.'
+                    : 'Coming soon — shipping updates only.'}
                 </p>
               </div>
               <Toggle
                 on={whatsappOn}
                 onClick={() => savePrefs({ whatsappEnabled: !whatsappOn })}
                 label="WhatsApp notifications"
+                disabled={!whatsappChannelEnabled}
               />
             </div>
             <div
