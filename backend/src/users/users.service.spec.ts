@@ -19,6 +19,9 @@ describe('UsersService — address book & notification prefs', () => {
       updateMany: jest.Mock;
       delete: jest.Mock;
     };
+    notificationConsent: {
+      createMany: jest.Mock;
+    };
     $transaction: jest.Mock;
   };
   let service: UsersService;
@@ -46,6 +49,9 @@ describe('UsersService — address book & notification prefs', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         delete: jest.fn().mockResolvedValue({}),
       },
+      notificationConsent: {
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       $transaction: jest.fn(async (cb) => cb(prisma)),
     };
     service = new UsersService(
@@ -71,6 +77,9 @@ describe('UsersService — address book & notification prefs', () => {
       { revokeAllForUser: jest.fn(async () => 0) } as never,
       // CloudinaryService — profile photos.
       { uploadImage: jest.fn(async () => ({ url: 'https://cdn/x.jpg', publicId: 'x' })) } as never,
+      // SettingsService — only read for the `whatsapp_enabled` flag exposed
+      // on /users/me as `whatsappChannelEnabled`.
+      { get: jest.fn(async () => false) } as never,
     );
   });
 
@@ -241,6 +250,80 @@ describe('UsersService — address book & notification prefs', () => {
       data: { notifyFallbackChannel: 'NONE' },
     });
   });
+
+  // ── NotificationConsent (the Meta-audit trail) ────────────────────
+  //
+  // Append-only: one row per channel this call actually SET, tagged with the
+  // caller's source. fallbackChannel writes no row — it's a retry channel,
+  // not a subscription.
+  describe('NotificationConsent rows', () => {
+    beforeEach(() => {
+      prisma.user.updateMany.mockResolvedValue({ count: 1 });
+      prisma.user.findUnique.mockResolvedValue({
+        notifyEmailEnabled: true,
+        notifySmsEnabled: true,
+        notifyWhatsappEnabled: false,
+        notifyFallbackChannel: 'EMAIL',
+      });
+    });
+
+    it('writes one row per channel actually set, defaulting to profile_settings', async () => {
+      await service.updateNotificationPrefs('clerk1', {
+        emailEnabled: true,
+        whatsappEnabled: false,
+      });
+      expect(prisma.notificationConsent.createMany).toHaveBeenCalledWith({
+        data: [
+          { userId: 'clerk1', channel: 'EMAIL', enabled: true, source: 'profile_settings' },
+          { userId: 'clerk1', channel: 'WHATSAPP', enabled: false, source: 'profile_settings' },
+        ],
+      });
+    });
+
+    it('tags rows with the caller-supplied source', async () => {
+      await service.updateNotificationPrefs(
+        'clerk1',
+        { smsEnabled: true },
+        'signup_sheet',
+      );
+      expect(prisma.notificationConsent.createMany).toHaveBeenCalledWith({
+        data: [{ userId: 'clerk1', channel: 'SMS', enabled: true, source: 'signup_sheet' }],
+      });
+    });
+
+    it('writes no row for fallbackChannel — it is a retry channel, not a subscription', async () => {
+      await service.updateNotificationPrefs('clerk1', { fallbackChannel: 'SMS' });
+      expect(prisma.notificationConsent.createMany).not.toHaveBeenCalled();
+    });
+
+    it('writes no consent row when the floor rejects the patch', async () => {
+      await expect(
+        service.updateNotificationPrefs('clerk1', {
+          emailEnabled: false,
+          smsEnabled: false,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.notificationConsent.createMany).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── channelPrefsPromptedAt (post-sign-up sheet, "shown once") ─────
+  describe('markChannelPrefsPrompted', () => {
+    it('stamps the field only if it is still null', async () => {
+      await service.markChannelPrefsPrompted('u1');
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'u1', channelPrefsPromptedAt: null },
+        data: { channelPrefsPromptedAt: expect.any(Date) },
+      });
+    });
+  });
+
+  describe('isWhatsappChannelEnabled', () => {
+    it('reads the whatsapp_enabled operator flag', async () => {
+      const on = await service.isWhatsappChannelEnabled();
+      expect(on).toBe(false);
+    });
+  });
 });
 
 // ── account deletion ────────────────────────────────────────────────
@@ -315,6 +398,9 @@ describe('UsersService.deleteById', () => {
       { revokeAllForUser: jest.fn(async () => 0) } as never,
       // CloudinaryService — profile photos.
       { uploadImage: jest.fn(async () => ({ url: 'https://cdn/x.jpg', publicId: 'x' })) } as never,
+      // SettingsService — only read for the `whatsapp_enabled` flag exposed
+      // on /users/me as `whatsappChannelEnabled`.
+      { get: jest.fn(async () => false) } as never,
     );
     return { svc, prisma, retention, licenceCentre, order, s: () => scrubbed };
   }

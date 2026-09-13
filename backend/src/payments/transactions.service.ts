@@ -51,6 +51,7 @@ import { PAYMENT_MODE, PAYMENTS_LIVE, assertPaymentsLive } from './payment-mode'
 import { REFUND_TERMS_VERSION } from './refund-terms-version';
 import { vicinityLabel } from '../common/province-labels';
 import { assertAccountNotClosed } from '../common/account-standing';
+import { orderRef } from '../common/order-reference';
 import {
   applySellerRejectPenalty,
   consequencesForSaleReject,
@@ -3693,6 +3694,7 @@ export class TransactionsService {
         listingTitle: tx.listing.title,
         listingId: tx.listingId,
         transactionId: txId,
+        orderReference: tx.orderReference,
         buyerEmail: tx.buyer.email,
         buyerName: [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') || 'Buyer',
         buyerPhone: tx.buyer.phone,
@@ -3753,8 +3755,7 @@ export class TransactionsService {
             sellerPhone: tx.seller.phone,
             listingTitle: tx.listing.title,
             transactionId: txId,
-            orderReference:
-              tx.orderReference ?? txId.slice(-8).toUpperCase(),
+            orderReference: orderRef({ id: txId, orderReference: tx.orderReference }),
             form: this.assembleSaps534Data(tx),
           });
         } catch (err) {
@@ -3883,7 +3884,7 @@ export class TransactionsService {
       );
     }
     const pdf = await this.saps534.build(this.assembleSaps534Data(tx));
-    const ref = tx.orderReference ?? transactionId.slice(-8).toUpperCase();
+    const ref = orderRef({ id: transactionId, orderReference: tx.orderReference });
     return { pdf, filename: `SAP534-${ref}.pdf` };
   }
 

@@ -23,6 +23,7 @@ import { MotivationRetentionService } from '../motivations/motivation-retention.
 import { LicenceCentreRetentionService } from '../licence-centre/licence-centre-retention.service';
 import { KycService } from '../kyc/kyc.service';
 import { AccountClosureService } from './account-closure.service';
+import { FLAGS, SettingsService } from '../settings/settings.service';
 
 // Address-book create/update payload (Phase 2).
 export interface AddressInput {
@@ -186,6 +187,10 @@ export class UsersService {
     // @Global CloudinaryModule — profile photos are public by design and go
     // to the CDN. Identity documents deliberately do not; see setAvatar.
     private readonly cloudinary: CloudinaryService,
+    // @Global SettingsModule — only read here for `whatsappChannelEnabled` on
+    // /users/me, so the channel-prefs sheet can grey the WhatsApp switch out
+    // without a frontend deploy when the flag flips.
+    private readonly settings: SettingsService,
   ) {}
 
   // ── Peach bank-account verification (AVS) ─────────────────────────
@@ -1213,6 +1218,24 @@ export class UsersService {
         phoneOtpAttempts: 0,
       },
     });
+
+    // ⚠️ THE WHATSAPP WELCOME FIRES HERE, NOT AT SIGN-UP. This is the first
+    // instant a VERIFIED number exists on the account, and WhatsApp will not
+    // send without one — so the obvious home for a welcome (auth.service.ts's
+    // verifyEmail, the once-per-account transition) is a place where it would
+    // no-op forever with nothing failing. See the note left there.
+    //
+    // Fire-and-forget: a welcome must never cost the member the phone
+    // verification they actually came here to do. It no-ops on its own for
+    // anyone who has not opted into WhatsApp or while the kill switch is off.
+    // Wrapped in Promise.resolve().then() rather than a bare `void x.catch()`:
+    // a SYNCHRONOUS throw (a missing collaborator, a bad argument) escapes
+    // `.catch()` entirely and would surface to the member as a failed phone
+    // verification — the one thing this must never cost them.
+    void Promise.resolve()
+      .then(() => this.notifications.welcomeWhatsapp({ userId, phone: user.phone }))
+      .catch(() => undefined);
+
     return { verified: true };
   }
 
@@ -1364,6 +1387,11 @@ export class UsersService {
       whatsappEnabled?: boolean;
       fallbackChannel?: string;
     },
+    // Where this write came from, for the append-only NotificationConsent
+    // audit trail Meta requires evidence of opt-in against. Defaults to the
+    // settings-page origin; the signup sheet passes 'signup_sheet' via its
+    // own controller route so the two can never be confused.
+    source: 'signup_sheet' | 'profile_settings' | 'admin' = 'profile_settings',
   ) {
     const data: {
       notifyEmailEnabled?: boolean;
@@ -1450,6 +1478,42 @@ export class UsersService {
         if (!exists) throw new NotFoundException('User not found');
         throw new BadRequestException(FLOOR);
       }
+
+      // ⚠️ APPEND-ONLY, ONE ROW PER CHANNEL THIS CALL ACTUALLY SET. This is
+      // the Meta-audit consent trail (CLAUDE.md, the channel-preferences
+      // sheet) — never update a row in place, the trail across time is the
+      // whole point. `fallbackChannel` writes no consent row: it is a retry
+      // channel, not a subscription, so there is nothing to attest to.
+      const consentRows: {
+        userId: string;
+        channel: 'EMAIL' | 'SMS' | 'WHATSAPP';
+        enabled: boolean;
+        source: string;
+      }[] = [];
+      if (typeof prefs.emailEnabled === 'boolean')
+        consentRows.push({
+          userId,
+          channel: 'EMAIL',
+          enabled: prefs.emailEnabled,
+          source,
+        });
+      if (typeof prefs.smsEnabled === 'boolean')
+        consentRows.push({
+          userId,
+          channel: 'SMS',
+          enabled: prefs.smsEnabled,
+          source,
+        });
+      if (typeof prefs.whatsappEnabled === 'boolean')
+        consentRows.push({
+          userId,
+          channel: 'WHATSAPP',
+          enabled: prefs.whatsappEnabled,
+          source,
+        });
+      if (consentRows.length > 0) {
+        await this.prisma.notificationConsent.createMany({ data: consentRows });
+      }
     }
 
     const row = await this.prisma.user.findUnique({
@@ -1463,6 +1527,33 @@ export class UsersService {
     });
     if (!row) throw new NotFoundException('User not found');
     return row;
+  }
+
+  // ─────────────────── Channel-preferences sheet (post-sign-up) ────────
+  // Stamps `channelPrefsPromptedAt` the first time the sheet is shown — by a
+  // submit OR a dismiss, either counts, which is why the caller for both
+  // paths is this one idempotent method. Server-side, not localStorage: it
+  // is half of the Meta-audit consent record (the other half is the
+  // NotificationConsent row itself), and "shown once" has to survive a
+  // reinstall or a second device.
+  //
+  // ⚠️ Idempotent — never overwrites an existing stamp. The sheet only shows
+  // while this is null, so in the ordinary case this only ever runs once,
+  // but a slow client retrying a submit (or two tabs open on the same
+  // account) must not push the timestamp forward each time.
+  async markChannelPrefsPrompted(userId: string): Promise<void> {
+    await this.prisma.user.updateMany({
+      where: { id: userId, channelPrefsPromptedAt: null },
+      data: { channelPrefsPromptedAt: new Date() },
+    });
+  }
+
+  // Read-only helper for /users/me: whether the WhatsApp switch on the
+  // channel-prefs sheet and on /profile should render live or "coming soon".
+  // Mirrors the same `whatsapp_enabled` flag the send-side seam checks, so
+  // the sheet never offers a channel that cannot actually be turned on.
+  async isWhatsappChannelEnabled(): Promise<boolean> {
+    return this.settings.get(FLAGS.whatsappEnabled);
   }
 
   // Seller default parcel size (Phase 6 P6.3). Each field is independently

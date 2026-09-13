@@ -442,6 +442,65 @@ data. Missing SMS is not a cosmetic degradation.
 
 Local: leave blank. Sends no-op and log.
 
+## WhatsApp — Meta Cloud API
+
+The fourth notification rail, built in `backend/src/whatsapp/`. **Inert until
+the `whatsapp_enabled` Setting (default `false`) is flipped on** — see
+`FLAGS.whatsappEnabled` in `settings.service.ts` — and separately gated per
+event by `sendSms`'s `whatsapp` opt (`notifications.service.ts`), so setting
+these vars alone sends nothing.
+
+### `WHATSAPP_TOKEN`
+**Required in production**, alongside `WHATSAPP_PHONE_NUMBER_ID`. The System
+User's permanent access token, scoped to exactly
+`whatsapp_business_messaging` + `whatsapp_business_management` — not a full
+Business token, not a temporary one. Missing either var → `isConfigured()` is
+false and every send writes a `STUB` `WhatsappMessageLog` row (the rendered
+body goes to the server log) instead of calling Meta. That is the SAME
+degradation shape as an unset `SMSPORTAL_*` pair — nothing crashes, sends
+just stop leaving the building.
+
+Local: leave blank. Sends stub + log.
+
+### `WHATSAPP_PHONE_NUMBER_ID`
+**Required in production.** The Cloud API phone number id (not the phone
+number itself) — the path segment in
+`https://graph.facebook.com/v21.0/<PHONE_NUMBER_ID>/messages`.
+
+### `WHATSAPP_WABA_ID`
+**Required in production** for the Desk's template-management surface and
+for registering webhook subscriptions; not read by the send path itself.
+
+### `WHATSAPP_APP_SECRET`
+**Required in production.** Signs Meta's webhook deliveries
+(`X-Hub-Signature-256`, HMAC-SHA256 over the raw body — see
+`whatsapp-signature.ts`). Missing or wrong → **every inbound webhook is
+REJECTED (fail-closed)**: `receiveWebhook` always returns 200 (Meta's
+convention, matched by Peach and Didit's webhooks in this codebase — a bad
+signature is never a 401), so grepping application logs for 401s to diagnose
+this finds nothing. Look for the `WEBHOOK_SIGNATURE_INVALID` AdminAlert
+(`referenceId: 'whatsapp'`) instead. The practical effect: inbound member
+replies and delivery-status updates silently stop arriving, while outbound
+sends are unaffected (they don't touch this secret).
+
+### `WHATSAPP_VERIFY_TOKEN`
+**Required in production.** An operator-invented random string, set the same
+in Meta's WhatsApp product settings and here. Meta's one-time subscription
+handshake (`GET /api/whatsapp/webhook`) only echoes back `hub.challenge` when
+`hub.verify_token` matches this **and** this var is non-empty — an unset
+token never echoes, even if a caller sends an empty string as the token, so
+there is no way to complete Meta's handshake against a box that hasn't been
+configured.
+
+⚠️ **Cloudflare's WAF must allow Meta's webhook deliveries** — the same
+lesson `DIDIT_WEBHOOK_SECRET` above already teaches. Meta does not publish a
+single static source IP the way Didit does, so allow by the callback path
+(`/api/whatsapp/webhook`) plus the signature check rather than by address.
+
+Local: leave all five blank. `isConfigured()` is false, sends stub, and the
+webhook signature check fails closed (nothing to verify against locally
+anyway, since Meta can't reach `localhost`).
+
 ## Email — Resend
 
 ### `RESEND_API_KEY`

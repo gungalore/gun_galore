@@ -48,6 +48,9 @@ describe('UsersService — campaign attribution (first-touch)', () => {
       { revokeAllForUser: jest.fn(async () => 0) } as never,
       // CloudinaryService — profile photos.
       { uploadImage: jest.fn(async () => ({ url: 'https://cdn/x.jpg', publicId: 'x' })) } as never,
+      // SettingsService — only read for the `whatsapp_enabled` flag exposed
+      // on /users/me as `whatsappChannelEnabled`.
+      { get: jest.fn(async () => false) } as never,
     );
     return { service, prisma };
   }

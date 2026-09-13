@@ -15,6 +15,7 @@ import {
   passwordProblem,
 } from '@/lib/password-rule';
 import { authErrorMessage } from '@/lib/auth-error';
+import { ChannelPrefsSheet } from '@/components/channel-prefs-sheet';
 
 // ⚠️ NEXT_PUBLIC_ ONLY. This file is 'use client'; Next inlines nothing else,
 // so an INTERNAL_API_URL here is always undefined in the browser.
@@ -62,7 +63,7 @@ function safeRelativePath(raw: string | null | undefined): string | null {
 // OAuth-only: stash the consent (tagged with a timestamp) in per-tab
 // sessionStorage so <ConsentSync/> can record it after the redirect completes.
 
-type Step = 'form' | 'verify';
+type Step = 'form' | 'verify' | 'channel-prefs';
 
 // This two-screen flow (details → verify) is hand-rolled by us — Clerk only
 // supplies the imperative signUp.create / attemptEmailAddressVerification
@@ -351,13 +352,24 @@ export default function SignUpForm() {
       if (data.accessToken && data.expiresAt) {
         await adopt(data.accessToken, data.expiresAt);
       }
-      router.push(redirectTarget);
-      router.refresh();
+      // The channel-preferences sheet decides for itself (via /users/me)
+      // whether it has anything to show; either way it calls
+      // finishSignUp() exactly once, which is what actually navigates.
+      setStep('channel-prefs');
     } catch (err) {
       setVerifyError(prettyAuthError(err));
     } finally {
       setVerifying(false);
     }
+  }
+
+  // Called by the channel-prefs sheet once — after a submit, a dismiss, or
+  // the sheet finding it has nothing to show (already prompted). This is
+  // the ONLY path to the post-sign-up redirect now, so the sheet can never
+  // leave a freshly verified member stranded on this screen.
+  function finishSignUp() {
+    router.push(redirectTarget);
+    router.refresh();
   }
 
   async function handleResend() {
@@ -413,6 +425,10 @@ export default function SignUpForm() {
         Loading…
       </div>
     );
+  }
+
+  if (step === 'channel-prefs') {
+    return <ChannelPrefsSheet onDone={finishSignUp} />;
   }
 
   if (step === 'verify') {

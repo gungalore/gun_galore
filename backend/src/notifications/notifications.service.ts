@@ -7,6 +7,9 @@ import { PushService } from '../push/push.service';
 import { Saps534Service, Saps534Data } from '../payments/saps534.service';
 import { buyerBreakdown, sellerBreakdown } from '../payments/fee-presentation';
 import { EMAIL_FROM, SUPPORT_EMAIL } from '../common/brand';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { SettingsService, FLAGS } from '../settings/settings.service';
+import { orderRef } from '../common/order-reference';
 
 // Compile-time list of the entity types we can link a Notification
 // row to. Used by resolveByEntity() callers so typos don't sit silently
@@ -331,6 +334,10 @@ export interface SaleDetails {
   listingTitle: string;
   listingId: string;
   transactionId: string;
+  /** The real allocated order reference, when one exists — see
+   *  common/order-reference.ts. Optional/absent callers fall back to
+   *  the transactionId tail, exactly as orderRef() does. */
+  orderReference?: string | null;
   buyerEmail: string;
   buyerName: string;
   buyerPhone?: string | null;
@@ -399,6 +406,8 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     private readonly push: PushService,
     private readonly saps534: Saps534Service,
+    private readonly whatsapp: WhatsappService,
+    private readonly settings: SettingsService,
   ) {
     const key = process.env.RESEND_API_KEY;
     this.resend = key ? new Resend(key) : null;
@@ -634,6 +643,15 @@ export class NotificationsService {
         ? `All Outdoor: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. Collection item — seller contact is on your order page; tap Confirm collection when you have it.`
         : `All Outdoor: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. We'll SMS again when it's dispatched.`,
       `order-confirmed-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'order_confirmed_buyer',
+          vars: {
+            ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
+            txId: d.transactionId,
+          },
+        },
+      },
     );
   }
 
@@ -738,6 +756,15 @@ export class NotificationsService {
         ? `All Outdoor: your sale of ${truncate(d.listingTitle, 24)} is OVERDUE for a response. Act now: ${url}`
         : `All Outdoor: ~${d.hoursLeft}h left to accept your sale of ${truncate(d.listingTitle, 24)}. One tap: ${url}`,
       `accept-reminder-${d.transactionId}${overdue ? '-overdue' : ''}`,
+      {
+        whatsapp: {
+          templateKey: 'sale_accept_reminder_seller',
+          vars: {
+            ref: orderRef({ id: d.transactionId }),
+            txId: d.transactionId,
+          },
+        },
+      },
     );
   }
 
@@ -1069,6 +1096,15 @@ export class NotificationsService {
       d.sellerPhone,
       smsBody,
       `new-sale-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'new_sale_seller',
+          vars: {
+            ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
+            txId: d.transactionId,
+          },
+        },
+      },
     );
   }
 
@@ -1454,6 +1490,12 @@ export class NotificationsService {
       d.buyerPhone,
       `All Outdoor: Your ${truncate(d.listingTitle, 25)} is booked into stock at ${truncate(d.dealerName, 30)} (${d.dealerPhone}). Contact the seller to arrange your transfer.`,
       `stocked-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'firearm_ready_at_dealer_buyer',
+          vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+        },
+      },
     );
   }
 
@@ -1547,6 +1589,12 @@ export class NotificationsService {
       d.buyerPhone,
       `All Outdoor: ${truncate(d.listingTitle, 30)} dispatched.${d.trackingReference ? ' Ref: ' + d.trackingReference + '.' : ''} Track: ${txUrl}`,
       `dispatched-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'shipment_dispatched_buyer',
+          vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+        },
+      },
     );
   }
 
@@ -1595,6 +1643,12 @@ export class NotificationsService {
       d.sellerPhone,
       `All Outdoor: Payout of R${(d.sellerPayout / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} is on the way. Allow 2-3 business days.`,
       `payout-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'payment_released_seller',
+          vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+        },
+      },
     );
   }
 
@@ -1709,13 +1763,35 @@ export class NotificationsService {
       : isPudo
         ? `Drop at any Pudo locker${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`
         : 'The courier will collect.';
+    // ⚠️ THE PIN, NOT THE SLOT, PICKS THE TEMPLATE. `shipment_booked_seller_locker`
+    // promises a drop-off PIN in its body; sending it without one renders a
+    // blank {{3}} on a live, unrecallable message. `dropoffPin` is exactly the
+    // signal the rows/copy above already branch on, so reuse it rather than
+    // re-deriving from `isPudo`/`isBobGo` a second way that could disagree.
+    const ref = orderRef({ id: d.transactionId });
     await this.sendSms(
       d.sellerPhone,
       `All Outdoor: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
       `booked-${d.transactionId}`,
-      // Waybill + Pudo PIN are delivery-essential — without them the
-      // parcel physically can't be handed over. Bypasses the SMS mute.
-      { critical: true },
+      {
+        // Waybill + Pudo PIN are delivery-essential — without them the
+        // parcel physically can't be handed over. Bypasses the SMS mute.
+        critical: true,
+        whatsapp: d.dropoffPin
+          ? {
+              templateKey: 'shipment_booked_seller_locker',
+              vars: {
+                ref,
+                waybill: d.trackingReference,
+                pin: d.dropoffPin,
+                txId: d.transactionId,
+              },
+            }
+          : {
+              templateKey: 'shipment_booked_seller_door',
+              vars: { ref, waybill: d.trackingReference, txId: d.transactionId },
+            },
+      },
     );
   }
 
@@ -1792,6 +1868,12 @@ export class NotificationsService {
       d.sellerPhone,
       `All Outdoor: ${truncate(d.listingTitle, 38)} was delivered to the buyer. Payout follows once confirmed.`,
       `seller-delivered-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'parcel_delivered_seller',
+          vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+        },
+      },
     );
   }
 
@@ -1910,6 +1992,12 @@ export class NotificationsService {
           ? `All Outdoor: R${(d.buyerTotal / 100).toFixed(0)} refund approved for ${truncate(d.listingTitle, 30)}. Add your bank details on your profile so we can pay it: ${this.appUrl}/profile/edit`
           : `All Outdoor: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow ${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}.`,
         `refund-${d.transactionId}`,
+        {
+          whatsapp: {
+            templateKey: 'refund_issued_buyer',
+            vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+          },
+        },
       );
     }
   }
@@ -3107,6 +3195,12 @@ export class NotificationsService {
       buyerPhone,
       `All Outdoor: ${truncate(listingTitle, 34)} is out for delivery today.`,
       `buyer-out-for-delivery-${transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'shipment_out_for_delivery_buyer',
+          vars: { ref: orderRef({ id: transactionId }), txId: transactionId },
+        },
+      },
     );
   }
 
@@ -3146,6 +3240,12 @@ export class NotificationsService {
       buyerPhone,
       `All Outdoor: ${truncate(listingTitle, 30)} was delivered. Confirm receipt so the seller can be paid: ${url}`,
       `buyer-delivered-${transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'shipment_delivered_buyer',
+          vars: { ref: orderRef({ id: transactionId }), txId: transactionId },
+        },
+      },
     );
   }
 
@@ -3311,6 +3411,12 @@ export class NotificationsService {
       d.sellerPhone,
       `All Outdoor: ${truncate(d.listingTitle, 30)} still not dispatched (${d.hoursElapsed}h). Auto-refund in ${d.autoRefundDays}d. Ship now: ${txUrl}`,
       `dispatch-nudge-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'dispatch_nudge_seller',
+          vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+        },
+      },
     );
   }
 
@@ -3611,6 +3717,12 @@ export class NotificationsService {
       d.buyerPhone,
       `All Outdoor: ${truncate(d.listingTitle, 28)} was delivered. Tap Confirm receipt to release payment (or raise an issue if there's a problem): ${txUrl}`,
       `confirm-receipt-nudge-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'confirm_receipt_nudge_buyer',
+          vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+        },
+      },
     );
   }
 
@@ -4576,11 +4688,23 @@ export class NotificationsService {
        *  chatter — a muted seller still needs the PIN to hand over the
        *  parcel. Use sparingly; everything else respects the mute. */
       critical?: boolean;
+      /**
+       * Present = try WhatsApp FIRST with this registered template, and send
+       * the SMS above only if WhatsApp is ineligible or fails. WhatsApp
+       * REPLACES SMS for the event, it doesn't ride alongside it — omit this
+       * entirely on any call site that must stay SMS-only (OTPs, phone-change
+       * codes). `vars` may NEVER carry the listing title — see the hard rule
+       * in whatsapp-templates.ts.
+       */
+      whatsapp?: { templateKey: string; vars: Record<string, string> };
     },
   ) {
     if (!to || to.trim().length === 0) return;
     if (!opts?.critical && (await this.smsMuted(to))) {
       this.logger.debug(`SMS muted by preference → ${to} (${reference})`);
+      return;
+    }
+    if (opts?.whatsapp && (await this.tryWhatsapp(to, opts.whatsapp, reference))) {
       return;
     }
     try {
@@ -4590,6 +4714,85 @@ export class NotificationsService {
         `SMS failed → ${to} (${reference}): ${(err as Error).message}`,
       );
     }
+  }
+
+  // ─────────────────── WhatsApp fan-out (the seam) ───────────────────
+  //
+  // Attempts a WhatsApp send in place of the SMS above. FAILS CLOSED at
+  // every step — the opposite of `smsMuted`, deliberately: `smsMuted`
+  // failing open means "still send" is the safe default for a preference
+  // read that broke, but here the safe default is "fell back to SMS",
+  // because SMS is the channel every member already has and WhatsApp is
+  // the one gated behind Meta approval + explicit member consent. Any
+  // miss below returns false and `sendSms` sends the SMS exactly as it
+  // does today.
+  //
+  // ⚠️ `critical` does NOT reach this method's checks — see `sendSms`
+  // above. An internal SMS mute and a Meta-facing WhatsApp consent record
+  // are different things: a member who declined WhatsApp on the channel
+  // sheet gets a critical message (courier PIN, waybill) by SMS instead,
+  // never by WhatsApp regardless of how urgent the message is. That is
+  // NOT an oversight — flipping it would send a message on a channel the
+  // member explicitly opted out of.
+  private async tryWhatsapp(
+    to: string,
+    wa: { templateKey: string; vars: Record<string, string> },
+    reference: string,
+  ): Promise<boolean> {
+    try {
+      // 1. The kill switch. OFF = nothing goes out over WhatsApp no matter
+      // what any member has set on their own notifyWhatsappEnabled.
+      const enabled = await this.settings.get(FLAGS.whatsappEnabled);
+      if (!enabled) return false;
+
+      // 2. Resolve the member from the phone number we were about to SMS,
+      // and require BOTH a verified phone AND their own opt-in. Neither
+      // check is optional: an unverified phone means we don't know this
+      // number really belongs to them, and notifyWhatsappEnabled is the
+      // Meta-facing consent record — no consent, no WhatsApp, full stop.
+      const user = await this.prisma.user.findFirst({
+        where: { phone: to.trim() },
+        select: { phoneVerified: true, notifyWhatsappEnabled: true },
+      });
+      if (!user || !user.phoneVerified || !user.notifyWhatsappEnabled) {
+        return false;
+      }
+
+      // 3. Attempt the send. WhatsappService.sendTemplate never throws by
+      // contract, but this is wrapped anyway — a WhatsApp failure must
+      // never cost the member the notification entirely.
+      const result = await this.whatsapp.sendTemplate({
+        to,
+        templateKey: wa.templateKey,
+        vars: wa.vars,
+        reference,
+      });
+      return result.success;
+    } catch (err) {
+      this.logger.warn(
+        `tryWhatsapp failed → falling back to SMS (${reference}): ${(err as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Welcome nudge — fires once, on email verification, over WhatsApp
+  // ONLY. There is no SMS equivalent to fall back to (this notification
+  // never existed on SMS), so this deliberately does NOT go through
+  // `sendSms` — it calls `tryWhatsapp` directly and no-ops on any miss,
+  // reusing the exact same gates (flag / verified phone / opt-in) rather
+  // than writing a second copy of them. Fire-and-forget from the caller
+  // (auth.service.ts, inside verifyEmail) — a notification failure must
+  // never block a login.
+  // ---------------------------------------------------------------
+  async welcomeWhatsapp(d: { userId: string; phone: string | null }): Promise<void> {
+    if (!d.phone) return;
+    await this.tryWhatsapp(
+      d.phone,
+      { templateKey: 'welcome_complete_profile', vars: {} },
+      `welcome-${d.userId}`,
+    );
   }
 
   // ─────────────────── Notification preference gate ──────────────────

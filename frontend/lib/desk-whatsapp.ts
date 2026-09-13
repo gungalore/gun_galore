@@ -17,9 +17,10 @@
  *
  * 🚨 AND NO FREE TEXT, EVEN INSIDE THE 24-HOUR WINDOW. The window makes a
  * free-form reply *permissible* to Meta; it does not make it available here.
- * There is exactly one composer in the Desk and it talks to Warden. Nothing
- * in this module carries an operator-typed string to the provider, so a
- * later edit that wants one has to add a field, not just fill one in.
+ * This drawer has no composer at all — sendWhatsappTemplate posts a
+ * registry key and nothing else, straight to /admin/desk/whatsapp/:id/reply.
+ * Nothing in this module carries an operator-typed string to the provider,
+ * so a later edit that wants one has to add a field, not just fill one in.
  *
  * ⚠️ FAIL CLOSED IS THE DEFAULT ON EVERY GATE BELOW. Channel flag missing,
  * window timestamp unparseable, template preview absent, registry empty — all

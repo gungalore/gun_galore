@@ -573,6 +573,12 @@ model User {
   // wakes up on a delivery failure. EMAIL by default — it costs us
   // nothing to send and is the likeliest of the three to arrive.
   notifyFallbackChannel NotifyFallbackChannel @default(EMAIL)
+  // Stamped the first time the post-sign-up channel-preferences sheet is
+  // shown — by a submit OR a dismiss, either counts. This has to live on the
+  // server, not localStorage: it is half of the Meta-audit consent record
+  // (the other half is the NotificationConsent row itself), and "shown once,
+  // don't nag" has to survive a reinstall or a second device.
+  channelPrefsPromptedAt DateTime?
 
   // ── Seller default parcel size (Phase 6 P6.3) ────────────────────
   // Pre-fills the parcel dimensions on the sell form so a seller who
@@ -6507,4 +6513,103 @@ model NewsPlace {
   lng Float?
 
   lookedUpAt DateTime @default(now())
+}
+
+// ─── WhatsApp — a fourth notification channel (Meta Cloud API) ─────────────
+//
+// `notifyWhatsappEnabled` (on User, above) and `whatsapp_enabled` (a Setting)
+// have existed since 2026-08-22 with no provider behind them. These four
+// models are that provider's storage: an outbound audit log mirroring
+// SmsLog, an inbound customer-service-window tracker, the inbound messages
+// themselves, and an append-only consent trail for a Meta audit.
+//
+// ⚠️ A WhatsApp message may never name the listed item — only the order
+// reference (`orderRef()`, backend/src/common/). That rule lives in the
+// template registry (backend/src/whatsapp/whatsapp-templates.ts), not here,
+// but it is why `vars` below is worth keeping: it is the record of exactly
+// what left, for the day Meta or an operator asks.
+
+/// Outbound WhatsApp send log — every attempt (real, stubbed, or failed)
+/// writes a row here, the same shape SmsLog has used in production for a
+/// long time. `vars` is the exact payload sent to the template — an audit
+/// trail proving no call site smuggled a title or a description past the
+/// registry.
+model WhatsappMessageLog {
+  id          String    @id @default(cuid())
+  to          String // E.164-normalised destination ("+27...")
+  templateKey String // registry key, e.g. "order_confirmed_buyer"
+  vars        Json // exactly what was substituted into the template
+  reference   String?
+  status      String // 'SENT' | 'FAILED' | 'STUB'
+  messageId   String? // Meta's wamid — delivery-status webhooks match on this
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  // Retry bookkeeping, same shape as SmsLog's. A 131047 (outside the 24h
+  // window) or 132001 (no such template) is non-retryable; a 5xx is.
+  attempts    Int       @default(1)
+  retryable   Boolean   @default(true)
+  nextRetryAt DateTime?
+
+  @@index([reference])
+  @@index([messageId])
+  // Retry cron hot path: FAILED + retryable + due.
+  @@index([status, nextRetryAt])
+}
+
+/// Meta's 24-hour customer-service window, tracked per phone number. An
+/// inbound message opens or extends the window; only inside it may the Desk
+/// send free-form text (still refused by the drawer — see
+/// frontend/lib/desk-whatsapp.ts) rather than a registered template.
+/// `transactionId` is set when the inbound message can be matched to an
+/// order, so the Desk drawer can show that order's context — no FK, because
+/// a thread must survive a transaction row disappearing under it.
+model WhatsappThread {
+  id             String                   @id @default(cuid())
+  phone          String // E.164, raw — masked only at the API boundary
+  userId         String?
+  transactionId  String?
+  windowOpenedAt DateTime
+  windowClosesAt DateTime
+  // Set when an admin has actioned or explicitly dismissed the thread.
+  // Nothing is ever sent when this is stamped.
+  handledAt      DateTime?
+  createdAt      DateTime                 @default(now())
+  messages       WhatsappInboundMessage[]
+
+  @@index([phone])
+  @@index([windowClosesAt])
+  @@index([transactionId])
+}
+
+/// One row per inbound WhatsApp message. Kept separate from WhatsappThread
+/// so a busy thread's history doesn't have to live inline on the row the
+/// webhook updates on every delivery-status callback.
+model WhatsappInboundMessage {
+  id            String         @id @default(cuid())
+  threadId      String
+  thread        WhatsappThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  body          String
+  metaMessageId String?
+  receivedAt    DateTime       @default(now())
+
+  @@index([threadId])
+}
+
+/// The Meta-audit consent trail: append-only, never updated in place, one row
+/// per switch flip. `NotificationConsent` rows are the paper trail behind
+/// `User.notifyWhatsappEnabled` / `notifySmsEnabled` / `notifyEmailEnabled` —
+/// those columns are the live state, this is the history of how it got that
+/// way. No FK on userId, the same reasoning UserEvent gives above: an audit
+/// row should outlive account deletion rather than cascade away with it, and
+/// the append path stays constraint-free.
+model NotificationConsent {
+  id        String   @id @default(cuid())
+  userId    String
+  channel   String // WHATSAPP | SMS | EMAIL
+  enabled   Boolean
+  source    String // signup_sheet | profile_settings | admin
+  createdAt DateTime @default(now())
+
+  @@index([userId, channel])
 }

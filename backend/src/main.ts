@@ -138,6 +138,26 @@ function assertProductionConfig() {
       `⚠️  ${BLOB_CRYPTO_SECRET_ENV} is not set — encrypted SA ID numbers and stored identity documents will FAIL, and KYC ID hashes will be written under a fallback salt that never matches once it is set. Nothing recovers data written in this state.`,
     );
   }
+  // WARN, not throw: WhatsApp is the fourth notification rail and is
+  // ADDITIVE — a missing credential must degrade to SMS (its fallback),
+  // never refuse to boot. Also gated by the whatsapp_enabled Setting
+  // (default false), so this is launch-readiness noise until that flag and
+  // Meta's template approvals are both in place.
+  if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_NUMBER_ID) {
+    log.warn(
+      '⚠️  WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID not both set — WhatsApp sends run in STUB mode (logged, not delivered). Falls back to SMS at the notification fan-out; not a boot blocker.',
+    );
+  }
+  if (!process.env.WHATSAPP_APP_SECRET) {
+    log.warn(
+      '⚠️  WHATSAPP_APP_SECRET is not set — incoming WhatsApp webhooks (inbound replies, delivery statuses) will be REJECTED (fail-closed). Set it before relying on WhatsApp webhooks.',
+    );
+  }
+  if (!process.env.WHATSAPP_VERIFY_TOKEN) {
+    log.warn(
+      '⚠️  WHATSAPP_VERIFY_TOKEN is not set — Meta\'s webhook subscription handshake (GET /api/whatsapp/webhook) will always 403.',
+    );
+  }
 }
 
 async function bootstrap() {

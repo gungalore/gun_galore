@@ -66,6 +66,14 @@ const isPublicRoute = createRouteMatcher([
   // exactly why it did or did not start. Public because the phone that needs
   // it is the signed-out one on the handoff page, and it touches no data.
   '/scan/selftest',
+  // The WhatsApp deep-link redirect table (`/t/<code>`). ⚠️ IT MUST BE
+  // PUBLIC, but for a narrower reason than the routes around it: this route
+  // never renders anything of its own, it only 307s to the real destination,
+  // and that destination keeps its own auth wall. A signed-out tap on a
+  // WhatsApp button still lands on sign-in — carrying the real path as the
+  // redirect target — so it reaches the right screen once they log in
+  // instead of dead-ending on the short link itself.
+  '/t/(.*)',
   // A CHARACTER WITNESS completing a statement. ⚠️ IT MUST BE PUBLIC, and for
   // a stronger reason than the handoff above: this person is not our member
   // and never will be. They received an SMS from somebody applying for a

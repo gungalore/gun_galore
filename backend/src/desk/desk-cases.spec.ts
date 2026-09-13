@@ -34,6 +34,10 @@ function makePrisma(
     smsDeadLetters?: number;
     /** `warden:ack:*` Setting rows, i.e. findings already seen today. */
     wardenAcks?: { key: string; value: string }[];
+    /** Open WhatsApp threads — handledAt null, window still open. */
+    whatsappThreads?: unknown[];
+    /** The `whatsapp_enabled` Setting row's value, as a string ('true'/'false'). Absent = unset (reads as off). */
+    whatsappEnabledValue?: string;
   } = {},
 ) {
   const noRows = jest.fn().mockResolvedValue([]);
@@ -62,11 +66,28 @@ function makePrisma(
     setting: {
       findMany: jest.fn().mockResolvedValue(o.wardenAcks ?? []),
       upsert: jest.fn().mockResolvedValue({}),
+      // Every Setting read this file's tests care about is `warden:ack:*`
+      // via findMany above — findUnique backs the ONE other key DeskService
+      // reads directly: `whatsapp_enabled`. Absent (undefined) resolves null,
+      // which the service reads as off — the same fail-closed default
+      // production has before an operator ever flips the switch.
+      findUnique: jest
+        .fn()
+        .mockResolvedValue(o.whatsappEnabledValue === undefined ? null : { value: o.whatsappEnabledValue }),
     },
     // The dead-inventory card goes through queryFreshnessGraveyard, which is
     // raw SQL shared with /admin/freshness-graveyard so the two cannot rank
     // the same listings differently.
     $queryRawUnsafe: jest.fn().mockResolvedValue(o.stale ?? []),
+    // WhatsApp reply cards — open threads only; see DeskService.feed()'s own
+    // `where` clause for what "open" means (handledAt null, window not yet
+    // closed). The mock does not apply that where clause itself, so a test
+    // proving the closed-window case is excluded asserts against the query
+    // args rather than filtering here — same pattern the SMS dead-letter and
+    // outbox-stall cutoff assertions already use in this file.
+    whatsappThread: {
+      findMany: jest.fn().mockResolvedValue(o.whatsappThreads ?? []),
+    },
   };
 }
 
@@ -691,30 +712,105 @@ describe('Warden proposals on the pile', () => {
 /* ────────────────────────────────────────────────────────────────────────
  * WhatsApp reply
  *
- * 🚨 STILL UNREACHABLE, AND THIS IS THE MARKER THAT SAYS SO OUT LOUD.
- * 'whatsapp_reply' is in DeskCardType and has an icon wired, and nothing can
- * emit it: the schema has no inbound-WhatsApp table, there is no WABA, no
- * provider and no template registry. The 24-hour window the card's entire
- * clock is built on is opened by an inbound message this system cannot
- * receive.
- *
- * A card built on a fabricated source would be worse than no card — it is
- * exactly the failure this file exists to catch, wearing the fix as a
- * disguise. So the gap is recorded as pending rather than papered over, and
- * prints on every run until the store and the credentials exist.
- *
- * To close it: an inbound-message model (wa number, body, receivedAt,
- * transactionId, answeredAt) written by the provider webhook; WHATSAPP_* env
- * read fail-closed the way PEACH_* already is; and the whatsapp_enabled
- * Setting kill switch DeskSiteService.channels() already reads. None of those
- * files are this one's to write.
+ * 🚨 THE GAP THIS BLOCK USED TO RECORD IS CLOSED. The four `it.todo` entries
+ * that stood here named exactly what was missing: an inbound-message store,
+ * a WABA, a template registry and a send path. All four now exist —
+ * `WhatsappThread` / `WhatsappInboundMessage` (prisma/schema.prisma),
+ * `backend/src/whatsapp/` (service, registry, webhook) and the
+ * `whatsapp_enabled` Setting DeskSiteService.channels() already read. This
+ * block pins the four behaviours the todos named, for real.
  * ──────────────────────────────────────────────────────────────────────── */
 
 describe('WhatsApp reply on the pile', () => {
-  it.todo('emits a card once an inbound WhatsApp store and a WABA exist');
-  it.todo('clocks the remaining 24h window, warn under 6h and bad under 2h');
-  it.todo('never deals while whatsapp_enabled is off or WHATSAPP_* is unset');
-  it.todo('resolves the card as unanswered when the window closes');
+  function waThread(over: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: 'wat_1',
+      userId: 'u_1',
+      transactionId: null,
+      windowClosesAt: new Date(Date.now() + 20 * 3_600_000),
+      messages: [{ body: 'Where is my order?' }],
+      ...over,
+    };
+  }
+
+  function setConfigured(on: boolean) {
+    if (on) {
+      process.env.WHATSAPP_TOKEN = 'test-token';
+      process.env.WHATSAPP_PHONE_NUMBER_ID = '123456789';
+    } else {
+      delete process.env.WHATSAPP_TOKEN;
+      delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    }
+  }
+
+  afterEach(() => {
+    delete process.env.WHATSAPP_TOKEN;
+    delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+  });
+
+  it('emits a card once an inbound WhatsApp store and a WABA exist', async () => {
+    setConfigured(true);
+    const prisma = makePrisma({
+      whatsappThreads: [waThread()],
+      whatsappEnabledValue: 'true',
+    });
+    const feed = await new DeskService(prisma as never).feed();
+    expect(feed.cards.some((c) => c.type === 'whatsapp_reply')).toBe(true);
+  });
+
+  it('clocks the remaining 24h window, warn under 6h and bad under 2h', async () => {
+    setConfigured(true);
+    const prisma = makePrisma({
+      whatsappThreads: [
+        waThread({ id: 'wat_bad', windowClosesAt: new Date(Date.now() + 90 * 60_000) }),
+        waThread({ id: 'wat_warn', windowClosesAt: new Date(Date.now() + 4 * 3_600_000) }),
+        waThread({ id: 'wat_ok', windowClosesAt: new Date(Date.now() + 20 * 3_600_000) }),
+      ],
+      whatsappEnabledValue: 'true',
+    });
+    const feed = await new DeskService(prisma as never).feed();
+    const byId = (id: string) => feed.cards.find((c) => c.id === `whatsapp_reply:${id}`);
+
+    expect(byId('wat_bad')?.tags[0]?.kind).toBe('bad');
+    expect(byId('wat_warn')?.tags[0]?.kind).toBe('warn');
+    expect(byId('wat_ok')?.tags[0]?.kind).toBe('neutral');
+  });
+
+  it('never deals while whatsapp_enabled is off, even with a real WABA configured', async () => {
+    setConfigured(true);
+    const prisma = makePrisma({
+      whatsappThreads: [waThread()],
+      whatsappEnabledValue: 'false',
+    });
+    const feed = await new DeskService(prisma as never).feed();
+    expect(feed.cards.some((c) => c.type === 'whatsapp_reply')).toBe(false);
+  });
+
+  it('never deals while WHATSAPP_* is unset, even with the flag on', async () => {
+    setConfigured(false);
+    const prisma = makePrisma({
+      whatsappThreads: [waThread()],
+      whatsappEnabledValue: 'true',
+    });
+    const feed = await new DeskService(prisma as never).feed();
+    expect(feed.cards.some((c) => c.type === 'whatsapp_reply')).toBe(false);
+  });
+
+  it('resolves the card as unanswered when the window closes — the query itself excludes it', async () => {
+    // ⚠️ THE MOCK DOES NOT FILTER ON `where`, PRODUCTION POSTGRES DOES. So
+    // this asserts the service actually ASKS for `handledAt: null` and a
+    // still-open window, the same pattern the SMS dead-letter and outbox
+    // cutoff assertions already use above — a closed-window thread is never
+    // handed back by the real query, which is what "resolves as unanswered"
+    // means: nothing recomputes a verdict, the card simply is not there.
+    setConfigured(true);
+    const prisma = makePrisma({ whatsappThreads: [], whatsappEnabledValue: 'true' });
+    await new DeskService(prisma as never).feed();
+
+    const where = prisma.whatsappThread.findMany.mock.calls[0][0].where;
+    expect(where.handledAt).toBeNull();
+    expect(where.windowClosesAt.gt).toBeInstanceOf(Date);
+  });
 });
 
 /* ────────────────────────────────────────────────────────────────────────

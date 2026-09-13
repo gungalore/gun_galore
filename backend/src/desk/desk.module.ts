@@ -9,6 +9,9 @@ import { WardenController } from './warden.controller';
 import { WardenService } from './warden.service';
 import { AdminAuditService } from '../admin/admin-audit.service';
 import { ManualPaymentsModule } from '../manual-payments/manual-payments.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { DeskWhatsappController } from './desk-whatsapp.controller';
+import { DeskWhatsappService } from './desk-whatsapp.service';
 
 /**
  * THE DESK — the operator's worklist.
@@ -30,10 +33,15 @@ import { ManualPaymentsModule } from '../manual-payments/manual-payments.module'
  * source of truth — same as RatingsModule, AskGgModule and ReloadingModule
  * already do. (AskGgModule is now just the admin KB + guide editors and the
  * Sell page's photo identifier; the chat behind it was retired 2026-09-07.)
+ *
+ * WhatsappModule is imported for DeskWhatsappService's WhatsappService
+ * dependency (the reply drawer's send path) — WhatsappModule already exports
+ * it, so this is the same "resolve it locally" discipline as
+ * ManualPaymentsModule above, not a new pattern.
  */
 @Module({
-  imports: [JwtModule.register({}), ManualPaymentsModule],
-  controllers: [DeskController, WardenController],
+  imports: [JwtModule.register({}), ManualPaymentsModule, WhatsappModule],
+  controllers: [DeskController, WardenController, DeskWhatsappController],
   providers: [
     DeskService,
     DeskPayoutsService,
@@ -43,6 +51,7 @@ import { ManualPaymentsModule } from '../manual-payments/manual-payments.module'
     WardenService,
     AdminAuditService,
     AdminJwtGuard,
+    DeskWhatsappService,
   ],
 })
 export class DeskModule {}

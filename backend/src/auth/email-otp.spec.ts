@@ -36,6 +36,11 @@ function make(row: Row, notifications: Record<string, unknown> = {}) {
   const prisma = prismaWith(row);
   const notif = {
     emailVerificationCode: jest.fn().mockResolvedValue(undefined),
+    // Fire-and-forget WhatsApp welcome nudge, called from verifyEmail.
+    // Resolved, not rejected — a real notifications.service always
+    // resolves (it fails closed internally), and this file isn't testing
+    // that path.
+    welcomeWhatsapp: jest.fn().mockResolvedValue(undefined),
     ...notifications,
   };
   const sessions = {
