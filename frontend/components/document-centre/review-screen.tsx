@@ -116,13 +116,15 @@ export default function ReviewScreen({
   const single = items.length === 1 && rejected.length === 0;
 
   const [done, setDone] = useState<string[]>([]);
+  /** Deleted straight from this screen — dropped rather than filed. */
+  const [deleted, setDeleted] = useState<string[]>([]);
   const [open, setOpen] = useState<string | null>(single ? items[0].id : null);
   const [sheetFor, setSheetFor] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const busy = working || uploading;
-  const left = items.filter((d) => !done.includes(d.id));
+  const left = items.filter((d) => !done.includes(d.id) && !deleted.includes(d.id));
 
   // ⚠️ SORTED BY WHAT NEEDS A HUMAN, NOT BY UPLOAD ORDER. The whole complaint
   // about the queue this replaces is that the two documents worth looking at
@@ -164,6 +166,40 @@ export default function ReviewScreen({
     setOpen(null);
     setSheetFor(null);
     await onChanged().catch(() => undefined);
+  }
+
+  /**
+   * Delete one of the just-scanned or just-uploaded documents, straight from
+   * the review — a wrongly-captured page, a duplicate, or one nobody meant to
+   * send should not have to be found again in the full vault to be undone.
+   *
+   * ⚠️ SAME CONFIRM AND THE SAME CALL AS THE MAIN VAULT'S delete
+   * (credential-card.tsx). Two copies of "are you sure" with different wording
+   * would read as two different levels of permanent, and this removes the
+   * document from our server for good, exactly like the other one does.
+   */
+  async function removeRow(d: ReviewItem) {
+    const ok = window.confirm(
+      `Delete “${d.title}”?\n\nThis removes the document from our server for good. It cannot be undone.`,
+    );
+    if (!ok) return;
+    setWorking(true);
+    setErr(null);
+    try {
+      await licenceCentreApi.remove(token, d.id);
+      setDeleted((prev) => [...prev, d.id]);
+      setOpen(null);
+      setSheetFor(null);
+      await onChanged().catch(() => undefined);
+    } catch (ex) {
+      setErr(
+        ex instanceof LicenceApiError && ex.status === 429
+          ? ex.message
+          : 'We could not delete that just now.',
+      );
+    } finally {
+      setWorking(false);
+    }
   }
 
   /**
@@ -299,12 +335,22 @@ export default function ReviewScreen({
         {finished ? (
           <div className="pt-10 text-center">
             <h2 className="text-[22px] font-semibold tracking-[-0.01em]">
-              {done.length === 1
-                ? 'That one is filed'
-                : `All ${done.length} filed`}
+              {/* ⚠️ A BATCH THAT ENDED IN DELETIONS IS NOT "0 filed". Every
+                  document here either got confirmed or was deleted — `left`
+                  excludes both — so `done.length === 0` only reads as nothing
+                  happened when it was reached by deleting the lot. */}
+              {done.length === 0 && deleted.length > 0
+                ? deleted.length === 1
+                  ? 'That one is deleted'
+                  : `All ${deleted.length} deleted`
+                : done.length === 1
+                  ? 'That one is filed'
+                  : `All ${done.length} filed`}
             </h2>
             <p className="mt-2 text-[13px] text-[var(--text-secondary)]">
-              We will remind you before anything here runs out.
+              {done.length === 0 && deleted.length > 0
+                ? 'Nothing was kept.'
+                : 'We will remind you before anything here runs out.'}
             </p>
             <button
               type="button"
@@ -436,6 +482,7 @@ export default function ReviewScreen({
                     onType={() =>
                       settleableInBulk(d) ? setSheetFor(d.id) : setOpen(d.id)
                     }
+                    onDelete={() => void removeRow(d)}
                   />
                 ))}
                 {rejected.map((r) => (
@@ -476,6 +523,7 @@ export default function ReviewScreen({
                     onType={() =>
                       settleableInBulk(d) ? setSheetFor(d.id) : setOpen(d.id)
                     }
+                    onDelete={() => void removeRow(d)}
                   />
                 ))}
               </div>
@@ -591,6 +639,7 @@ function ReviewRow({
   busy,
   onOpen,
   onType,
+  onDelete,
 }: {
   token: () => Promise<string | null>;
   item: ReviewItem;
@@ -601,6 +650,8 @@ function ReviewRow({
   busy: boolean;
   onOpen: () => void;
   onType: () => void;
+  /** This one should not have been sent — drop it, no need to open it first. */
+  onDelete: () => void;
 }) {
   const kindLabel = KIND_LABELS[item.kind] ?? item.kind;
   /**
@@ -703,6 +754,22 @@ function ReviewRow({
             Not sure
           </span>
         )}
+        {/* ⚠️ THE SAME GESTURE AS THE MAIN VAULT'S DELETE, ONE TAP CLOSER.
+            A member reviewing a batch of six who spots the one that is a
+            duplicate, or the page that came out sideways, used to have to
+            file it anyway, leave the review, find it again in the full list
+            and delete it from there. It is the same confirm and the same
+            call — see removeRow — so it reads as one "delete a document"
+            gesture wherever it is offered, not two. */}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onDelete}
+          aria-label={`Delete ${item.title}`}
+          className="text-[10.5px] font-semibold text-[var(--red)] underline underline-offset-2 disabled:opacity-50"
+        >
+          Delete
+        </button>
       </div>
     </div>
   );
