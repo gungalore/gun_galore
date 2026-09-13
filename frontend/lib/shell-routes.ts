@@ -67,12 +67,16 @@ const PUSH_TITLES: Array<[string, string]> = [
   ['/listings/new', 'Sell an item'],
   ['/checkout', 'Checkout'],
   ['/cart', 'Cart'],
-  ['/documents', 'Document Centre'],
+  // Title renamed 2026-09-13 to match account-menu-data.tsx's 'Paper Work
+  // Vault' label; the path and the entry's scope are unchanged.
+  ['/documents', 'Paper Work Vault'],
   // The list only — see PUSH_TITLE_INDEX_ONLY below. A specific motivation
   // shows its own name (its label if the member set one, otherwise its
   // section), not this fixed title.
   ['/motivations', 'Motivation Centre'],
-  ['/bench', 'The Bench'],
+  // Title renamed 2026-09-13 to match account-menu-data.tsx's 'Reloading
+  // Tool' label; the path is unchanged.
+  ['/bench', 'Reloading Tool'],
   // ⚠️ THE DOCUMENT CENTRE'S OWN TITLE, AND IT COVERS THE INDEX ONLY. See
   // PUSH_TITLE_INDEX_ONLY: `/licence-centre` is the Document Centre's second
   // door, while `/licence-centre/[id]` is a MOTIVATION — a different thing
@@ -80,7 +84,10 @@ const PUSH_TITLES: Array<[string, string]> = [
   // entry this prefix would swallow the whole subtree and every application
   // would be headed "Licence Centre".
   ['/licence-centre', 'Licence Centre'],
-  ['/licence-centre/applications', 'Applications'],
+  // Renamed with the nav label 2026-09-13: the Armory tile and the account
+  // menu both call this "Motivations", and a header that still said
+  // "Applications" would be a different name for the screen you just tapped.
+  ['/licence-centre/applications', 'Motivations'],
   ['/notifications', 'Notifications'],
   ['/my/offers', 'Offers'],
   ['/my/bids', 'Bids'],

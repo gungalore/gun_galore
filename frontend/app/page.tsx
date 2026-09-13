@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { BRAND_NAME } from '@/lib/brand';
 import { viewerFetch } from '@/lib/api-viewer';
+import { serverAuth } from '@/lib/auth-server';
 import { BrowseResponse, Category } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { FilterBar } from '@/components/filter-bar';
@@ -97,6 +98,12 @@ export default async function HomePage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
+  // The "Shop by mode" row now varies by viewer (Armory renders only for
+  // signed-in members), so this page reads the session cookie and can no
+  // longer be treated as fully static. That's correct here — never cache a
+  // response that varies by viewer; see viewerFetch below for the same rule
+  // applied to the data fetches.
+  const { userId } = await serverAuth();
   // Pick the header copy that matches the current view:
   //   * listingType param → that surface's copy (Marketplace / Auctions / Take a Shot)
   //   * sort param without listingType → ALL_LISTINGS_SURFACE
@@ -280,7 +287,11 @@ export default async function HomePage({
           nothing shopping-shaped in between, which is most of why it read as a
           help page with products underneath. */}
       {showHero && (
-        <ShopModeTiles buyNowCount={buyNowCount} auctionCount={auctionCount} />
+        <ShopModeTiles
+          buyNowCount={buyNowCount}
+          auctionCount={auctionCount}
+          signedIn={Boolean(userId)}
+        />
       )}
 
       {/* ─── Bare landing page: no filter, no pagination ───

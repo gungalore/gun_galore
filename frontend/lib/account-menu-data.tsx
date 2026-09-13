@@ -221,11 +221,17 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     // paperwork — true, but a group of one reads as an oversight, and the
     // design pack's Account board puts all three together under LICENCE
     // SERVICES. Three items, one group.
-    title: 'Licences',
+    //
+    // ⚠️ RENAMED 2026-09-13: group title 'Licences' -> 'Armory', and its three
+    // labels to 'Motivations' / 'Paper Work Vault' / 'Reloading Tool'. Hrefs
+    // and icons are unchanged — this is copy only. The group is now also what
+    // renders as the Armory tile on the landing page, via findAccountItem
+    // below.
+    title: 'Armory',
     items: [
-      { href: '/documents', label: 'Document Centre', Icon: ShieldDocIcon },
-      { href: '/licence-centre/applications', label: 'Licence applications', Icon: DocIcon },
-      { href: '/bench', label: 'The Bench', Icon: CartridgeIcon },
+      { href: '/documents', label: 'Paper Work Vault', Icon: ShieldDocIcon },
+      { href: '/licence-centre/applications', label: 'Motivations', Icon: DocIcon },
+      { href: '/bench', label: 'Reloading Tool', Icon: CartridgeIcon },
     ],
   },
   {
@@ -257,3 +263,16 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     ],
   },
 ];
+
+// The single lookup by href, used by both the /account hub and the landing
+// page's Armory panel. Moved here (from app/account/page.tsx) 2026-09-13 so
+// a second surface reading ACCOUNT_GROUPS never has to grow its own
+// hardcoded label/icon/href list — the exact drift ACCOUNT_GROUPS exists to
+// prevent.
+export function findAccountItem(href: string): AccountMenuItem | null {
+  for (const group of ACCOUNT_GROUPS) {
+    const item = group.items.find((i) => i.href === href);
+    if (item) return item;
+  }
+  return null;
+}

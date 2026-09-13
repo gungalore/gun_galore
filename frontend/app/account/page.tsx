@@ -5,7 +5,7 @@ import { PushToggleRow } from '@/components/push-opt-in-banner';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../lib/auth-server';
 import { Me, SellerTier } from '@/lib/types';
-import { ACCOUNT_GROUPS, type AccountMenuItem } from '@/lib/account-menu-data';
+import { ACCOUNT_GROUPS } from '@/lib/account-menu-data';
 
 /** Shape of GET /users/me/account-summary. Mirrors the service's return type. */
 type AccountSummary = {
@@ -73,15 +73,15 @@ import { AccountWishlistCount } from './wishlist-count';
 // mobile drawer and PWA More-sheet keep their flat lists; the header cards in
 // each now point here.
 //
-// ⚠️ THREE TIERS BELOW THE IDENTITY CARD, not one flat grid (design-review
-// fix, the single most-commented item: the Motivation Centre — a regulated,
-// high-value service — used to sit beside "How selling works" with identical
-// row weight). Tier 2 is a Motivation Centre hero; tier 3 flanks it with
-// Document Centre + Load Lab; tier 4 is every remaining ACCOUNT_GROUPS
-// destination as plain icon-tile rows, same as before. All three still read
-// off ACCOUNT_GROUPS — the promoted items are looked up by href, not
-// hardcoded, so this page can't drift from the nav dropdown / drawer / PWA
-// sheet that also render that array.
+// ⚠️ RENAMED / FLATTENED 2026-09-13. This page used to give the Motivation
+// Centre a hero tier and flank it with Document Centre + Load Lab cards,
+// because those were the highest-value destinations here. As of this date
+// Motivations, the Document Centre and The Bench have been PROMOTED to their
+// own "Armory" tile on the landing page — so this hub deliberately no longer
+// gives them special treatment. They are now three ordinary rows inside the
+// grouped card list below, same as every other destination, reading off the
+// "Armory" group in ACCOUNT_GROUPS like everything else. There is exactly one
+// tier of destination cards now, not three.
 //
 // Read-only: all GETs, no mutations, no checkout/money involvement.
 
@@ -137,34 +137,8 @@ function UrgentPill({ n }: { n: number }) {
   );
 }
 
-// Small square icon wells used by the tier-2 hero and tier-3 flanking cards
-// to give those two tiers more visual weight than the plain icon-in-a-row
-// treatment tier 4 keeps. `gold` is the hero-only tone (see MotivationHero);
-// `neutral` is what the two flanking ServiceCards use.
-function IconChip({ Icon, tone }: { Icon: AccountMenuItem['Icon']; tone: 'gold' | 'neutral' }) {
-  const gold = tone === 'gold';
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: gold ? 44 : 36,
-        height: gold ? 44 : 36,
-        borderRadius: 'var(--r-md)',
-        flexShrink: 0,
-        background: gold ? '#fff' : 'var(--bg-inset)',
-        border: `1px solid ${gold ? 'var(--gold-line)' : 'var(--border)'}`,
-        color: gold ? 'var(--gold)' : 'var(--text-tertiary)',
-      }}
-    >
-      <Icon />
-    </span>
-  );
-}
-
-// Trailing row chevron — lifted out of the tier-4 loop so tier 3's
-// ServiceCard can share it instead of a second copy of the same path.
+// Trailing row chevron, shared by every destination row in the grouped card
+// list below.
 function RowChevron() {
   return (
     <svg
@@ -183,133 +157,6 @@ function RowChevron() {
     </svg>
   );
 }
-
-// TIER 2 — the hero. Cream fill (--gold-wash, same token the rest of the
-// licence-centre / motivations pages already tint their gold advisory boxes
-// with) + a --gold border (opaque, stronger than those small boxes'
-// --gold-line — this is a hero surface, not a minor aside). The red button
-// is the one primary CTA on this page, using the site's established
-// red-fill/white-text button fill (cart, checkout, listing controls).
-function MotivationHero({ item }: { item: AccountMenuItem }) {
-  return (
-    <div
-      className="rounded-[10px] p-6"
-      style={{ background: 'var(--gold-wash)', border: '1px solid var(--gold)' }}
-    >
-      <div className="flex items-start gap-4 flex-wrap">
-        <IconChip Icon={item.Icon} tone="gold" />
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <p
-            className="text-xs uppercase"
-            style={{
-              color: 'var(--gold-strong)',
-              letterSpacing: '0.08em',
-              fontWeight: 700,
-              margin: '2px 0 6px',
-            }}
-          >
-            Licence services
-          </p>
-          <h2 className="text-xl" style={{ margin: '0 0 6px', color: 'var(--text-primary)' }}>
-            {item.label}
-          </h2>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)', margin: 0, maxWidth: 480 }}>
-            We ask about your circumstances, then prepare a formal motivation
-            you sign and hand in with your application, plus a checklist of
-            everything to take to the police station.
-          </p>
-          {/* A live status line — "2 in progress" / "1 needs your signature"
-              — belongs here once /motivations exposes a summary count. It
-              cannot reuse the module-counts badge the tier-4 rows below get:
-              that endpoint only ever emits '/licence-centre' as the key for
-              this vault's notifications (notification-module.ts), never
-              '/motivations' — a real gap, not something fixed by this
-              change. No live count exists for this item today, so none is
-              shown. */}
-        </div>
-      </div>
-      <Link
-        href={item.href}
-        className="inline-flex items-center rounded-[8px] mt-5"
-        style={{
-          background: 'var(--red)',
-          color: '#fff',
-          fontSize: 14,
-          fontWeight: 600,
-          padding: '10px 20px',
-          textDecoration: 'none',
-        }}
-      >
-        Start a motivation
-      </Link>
-    </div>
-  );
-}
-
-// TIER 3 — Document Centre + Load Lab flank the hero. More weight than the
-// plain label rows tier 4 keeps (icon chip, one-line blurb, still a link to
-// the whole card) but without the hero's cream/gold treatment, so the
-// hierarchy reads hero > flanking > ordinary at a glance.
-function ServiceCard({ item, blurb }: { item: AccountMenuItem; blurb: string }) {
-  return (
-    <Link
-      href={item.href}
-      className="rounded-[10px] flex items-start gap-3"
-      style={{
-        background: 'var(--bg-card)',
-        border: '0.5px solid var(--border)',
-        padding: 16,
-        textDecoration: 'none',
-      }}
-    >
-      <IconChip Icon={item.Icon} tone="neutral" />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <span className="block text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-          {item.label}
-        </span>
-        <span className="block text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-          {blurb}
-        </span>
-      </div>
-      <span style={{ marginTop: 2 }}>
-        <RowChevron />
-      </span>
-    </Link>
-  );
-}
-
-// Pull one item out of ACCOUNT_GROUPS by href, regardless of which group
-// currently holds it. Keeps the three promoted items (below) reading off
-// the single source of truth instead of a second hardcoded copy of their
-// label/icon/href — the exact drift ACCOUNT_GROUPS exists to prevent.
-function findAccountItem(href: string): AccountMenuItem | null {
-  for (const group of ACCOUNT_GROUPS) {
-    const item = group.items.find((i) => i.href === href);
-    if (item) return item;
-  }
-  return null;
-}
-
-// Module-level: ACCOUNT_GROUPS is static, so this only needs computing once
-// (not per-request inside the page component).
-const MOTIVATION_ITEM = findAccountItem('/licence-centre/applications');
-const DOCUMENT_ITEM = findAccountItem('/documents');
-const BENCH_ITEM = findAccountItem('/bench');
-const PROMOTED_HREFS = new Set([
-  '/licence-centre/applications',
-  '/documents',
-  '/bench',
-]);
-
-// TIER 4 — every remaining ACCOUNT_GROUPS destination, grouped exactly as
-// that data defines (Buying / Shipping / Selling / Account / Help). The
-// three items above are filtered out here so they don't render twice; the
-// Licences group disappears on its own once all three of its items are gone
-// — there's nothing left to draw a "Licences" card around.
-const TILE_GROUPS = ACCOUNT_GROUPS.map((group) => ({
-  ...group,
-  items: group.items.filter((item) => !PROMOTED_HREFS.has(item.href)),
-})).filter((group) => group.items.length > 0);
 
 function fmtDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -472,43 +319,15 @@ export default async function AccountPage() {
           <AccountSignOut />
         </div>
 
-        {/* Grouped account cards — three tiers, see the file-top comment. */}
+        {/* Grouped account cards — every ACCOUNT_GROUPS destination, one
+            flat tier. Motivations, the Paper Work Vault and the Reloading
+            Tool (the "Armory" group) used to get a hero + flanking-card
+            treatment here; as of 2026-09-13 they were promoted to their own
+            Armory tile on the landing page, so this hub no longer singles
+            them out — they render as ordinary rows below like everything
+            else. */}
         <PageReveal>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* TIER 2 — hero */}
-            {MOTIVATION_ITEM && <MotivationHero item={MOTIVATION_ITEM} />}
-
-            {/* TIER 3 — flanking cards. Falls back gracefully (renders
-                whichever exists, or nothing) if ACCOUNT_GROUPS ever drops
-                one of these hrefs — this page must not 500 over a menu-data
-                edit made elsewhere. */}
-            {(DOCUMENT_ITEM || BENCH_ITEM) && (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                  gap: 16,
-                }}
-              >
-                {DOCUMENT_ITEM && (
-                  <ServiceCard
-                    item={DOCUMENT_ITEM}
-                    blurb="Your licences, certificates and ID — kept safe, with renewals tracked."
-                  />
-                )}
-                {BENCH_ITEM && (
-                  <ServiceCard
-                    item={BENCH_ITEM}
-                    blurb="What you can load from what is on your shelf."
-                  />
-                )}
-              </div>
-            )}
-
-            {/* TIER 4 — everything else, unchanged from before this pass
-                except reading TILE_GROUPS (the promoted items filtered
-                out) instead of ACCOUNT_GROUPS directly, and the red
-                UrgentPill in place of the old neutral one. */}
             <div
               style={{
                 display: 'grid',
@@ -516,7 +335,7 @@ export default async function AccountPage() {
                 gap: 16,
               }}
             >
-              {TILE_GROUPS.map((group) => (
+              {ACCOUNT_GROUPS.map((group) => (
                 <div
                   key={group.title}
                   className="gg-tile rounded-[10px] overflow-hidden"
