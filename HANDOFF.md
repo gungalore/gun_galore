@@ -4,7 +4,58 @@ What the last session did, where everything stands, and what the next one should
 pick up. **Rules do not live here — they live in `CLAUDE.md`.** This file is
 state, and it is meant to be overwritten.
 
-Last updated: **2026-09-12**.
+Last updated: **2026-09-13**.
+
+## 2026-09-13 — FOURTH DEPLOY: profile-nudge dismiss fix; stray category deactivated
+
+Frontend-only deploy (`e7cba87f`), exit 0, both health checks, site 200 twice.
+Backend and warden untouched (36h uptime). Pre-deploy backup:
+`alloutdoor-20260913-105850.dump`.
+
+**What shipped:** `profile-complete-nudge.tsx` — `goComplete()` (the "Get
+fully verified here" button) called the same `markDismissedThisSession()`
+that closing with ✕ does, so a member who clicked through without finishing
+their profile never saw the reminder again for the rest of the browser
+session — read by the operator as "it's gone," not as a nag correctly
+standing down. Only ✕ should suppress it; `/profile/edit` already hides it
+via `EXCLUDED_PREFIXES` while they're there. Found by the operator hitting it
+live on their own (now-VERIFIED, 75%-complete) production account.
+
+⚠️ **Test-gate note:** `motivations/motivation-pdf.service.spec.ts`'s
+`"⚠️ LEAVES THE PARTICULARS TABLE ON THE COVER, on every layout"` test timed
+out (>5000ms) on the first `npm test` run of this session, unrelated to
+anything in this diff. Isolated re-run passed in 2.9s; a second full-suite
+run passed clean (4,759/4,759). Treated as a flaky timeout under load, not a
+regression — worth a second look if it recurs, since the timeout budget is
+tight for a PDF-rendering test.
+
+**Also this session (no deploy needed — pure data, not code):** the
+"Hunting Packages & Experiences" category was still `isActive: true` in
+production (never deactivated when the feature's code was removed
+2026-08-26 — only the seed *source* was updated, and `prisma/seed.ts` is
+unsafe to run against prod, so the live row never got the memo). Flipped
+`isActive` and `isExperience` to `false` directly via a scoped SQL update
+(row `cmspt3aie000i2jvnhipoybqi`, 0 listings under it, fully reversible).
+Confirmed gone from `/api/categories/with-counts` for both anonymous and
+member callers. The operator was shown what a real build-out would require
+(deposit-only payment model + legal opinion per `docs/HUNTING-PILOT-PREP.md`,
+an unenforced 5-part legal attestation gate, an unused outfitter-vetting
+pipeline) and chose not to build any of it right now.
+
+### Still outstanding (unchanged from the last entry)
+
+1. The `pruneJournal` sudoers line (`warden/README.md`).
+2. `npm run sweep` on the box; read every row.
+3. Delete `backend/.env.bak.didit` and `.env.bak.totp` once settled.
+4. Rotate the dead AWS keys rather than merely deleting them.
+5. Read-only Postgres role, Tailscale, an external uptime monitor on the apex.
+6. Confirm Places API is enabled/authorised on the Google Maps browser key
+   (Cloud Console → Credentials → API restrictions).
+7. Watch `motivation-pdf.service.spec.ts`'s cover-table test for recurring
+   timeouts under full-suite load (see above) — bump its timeout if it keeps
+   happening rather than re-diagnosing from scratch each time.
+
+---
 
 ## 2026-09-12 — THIRD DEPLOY: address-autocomplete fallback, profile nudge
 
