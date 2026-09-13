@@ -122,7 +122,11 @@ export function ProfileCompleteNudge() {
   }
 
   function goComplete() {
-    markDismissedThisSession(userId as string);
+    // ⚠️ NO session-dismiss here, unlike close(). Clicking through hides this
+    // on /profile/edit via EXCLUDED_PREFIXES already; if they navigate away
+    // without actually finishing, the reminder should come back rather than
+    // silently staying suppressed for the rest of the session because they
+    // once clicked its own button.
     router.push('/profile/edit');
   }
 
