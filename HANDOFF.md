@@ -6,6 +6,80 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-13**.
 
+## 2026-09-13 — FIFTH DEPLOY: Armory, a third landing tile for the three member tools
+
+Frontend-only deploy (`43af3c6e`), exit 0, both health checks, site 200 twice.
+Backend and warden untouched (38h uptime). Pre-deploy backup:
+`alloutdoor-20260913-131302.dump`.
+
+**What shipped.** Motivations, the Document Centre and The Bench had no entry
+point on the landing page at all — only the account menu, plus a promoted
+hero and two flanking cards on `/account`. They now sit as **Armory**, a
+third tile beside Buy Now and Auctions, which expands in place to reveal the
+three as sub-tiles. Renamed with it: **Motivations / Paper Work Vault /
+Reloading Tool**.
+
+The renames are in `ACCOUNT_GROUPS` (`lib/account-menu-data.tsx`), the single
+source of truth, so the nav dropdown, mobile drawer, PWA More sheet and
+`/account` all moved together. `findAccountItem` moved there too and is now
+exported — the Armory panel reads label, icon and href off that one list
+rather than growing a second hardcoded copy. `lib/shell-routes.ts` push
+titles follow (`Paper Work Vault`, `Reloading Tool`, `Motivations`); the
+in-page `<h1>`s were deliberately left alone.
+
+`/account` lost its three-tier structure with this: the gold Motivation hero,
+both `ServiceCard`s, `TILE_GROUPS`, `PROMOTED_HREFS` and a stale "Load Lab"
+comment are gone, and the page is now one flat tier of grouped cards.
+
+**Things worth knowing if you touch this again:**
+
+- ⚠️ **The tile is gated on `serverAuth()` in `app/page.tsx`, and that is not
+  cosmetic.** These are members-only surfaces; advertising them to an
+  anonymous visitor is the auth-wall leak the public/members split exists to
+  prevent. Signed-out gets the unchanged two-up row with **no third column at
+  any width**. Verified against production HTML after deploy: zero occurrences
+  of Armory / Paper Work Vault / Reloading Tool / Motivations signed out.
+- The row went **flex → grid** (`grid-cols-2 sm:grid-cols-3`). Three tiles
+  across a 390px phone is ~118px each, and the tile's internal layout has
+  already produced one bug at ~180px, so Armory takes `col-span-2` on mobile
+  and joins the row at `sm`.
+- The tile interior is now a shared `TileBody`. All six tiles render the same
+  markup — that is what keeps "all looking the same" true without four copies
+  to maintain.
+- ⚠️ **The disclosure draws its chevron at EVERY width**, unlike the link
+  tiles which keep `hidden sm:block`. Armory does not navigate, so the caret
+  is the only thing on a phone saying it expands; hiding it left the primary
+  audience with what looked like a dead link.
+- Every blurb is short because the blurb span is `truncate`. They were
+  measured (`scrollWidth > clientWidth`) at 375px and 1280px, not guessed —
+  the first Armory line ellipsised even full-width and was cut down.
+
+**Verification:** tsc clean both sides; backend 4,759 passed; frontend 1,901
+passed; `npm run build` exit 0 foreground. Browser-checked signed-out and
+signed-in at 375px and 1280px — panel opens, `aria-expanded` flips, the three
+hrefs are right, six tiles measure 396px each at 1280px, no horizontal
+overflow at either width.
+
+⚠️ **`/account` was NOT browser-verified.** Rendering it needs a real backend
+session and the check was done with a locally-minted dev JWT, which `/account`
+correctly refuses. That page's change rests on the diff, tsc and the build —
+worth an eyeball next time someone is signed in on production.
+
+### Still outstanding (unchanged from the last entry)
+
+1. The `pruneJournal` sudoers line (`warden/README.md`).
+2. `npm run sweep` on the box; read every row.
+3. Delete `backend/.env.bak.didit` and `.env.bak.totp` once settled.
+4. Rotate the dead AWS keys rather than merely deleting them.
+5. Read-only Postgres role, Tailscale, an external uptime monitor on the apex.
+6. Confirm Places API is enabled/authorised on the Google Maps browser key
+   (Cloud Console → Credentials → API restrictions).
+7. Watch `motivation-pdf.service.spec.ts`'s cover-table test for recurring
+   timeouts under full-suite load — bump its timeout if it keeps happening
+   rather than re-diagnosing from scratch each time.
+
+---
+
 ## 2026-09-13 — FOURTH DEPLOY: profile-nudge dismiss fix; stray category deactivated
 
 Frontend-only deploy (`e7cba87f`), exit 0, both health checks, site 200 twice.
