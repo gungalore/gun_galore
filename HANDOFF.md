@@ -6,6 +6,75 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-13**.
 
+## 2026-09-13 — SEVENTH DEPLOY: WhatsApp as a third notification channel
+
+Full deploy (`e885a500`), exit 0, both health checks, site 200 twice, three
+pm2 services online. Branch `feat/whatsapp-channel` merged into
+`feat/takealot-ux-parity`.
+
+**It ships INERT.** `whatsapp_enabled` is still **false**, so every send
+writes a `STUB` row and nothing reaches a member. The five `WHATSAPP_*`
+credentials ARE now set on the box (permanent System User token, not the
+24-hour one).
+
+**What shipped.** A Meta Cloud API provider behind the WhatsApp scaffolding
+that had existed since August with nothing driving it. `backend/src/whatsapp/`
+mirrors `SmsService` (stub mode, retry with backoff, `WHATSAPP_OUTAGE`
+alert). Buyer and seller order updates, shipping updates, and a welcome
+nudge, each with a URL button opening the PWA on the screen needing
+attention. 16 templates in a server-side registry. The three
+`/admin/desk/whatsapp` endpoints the Desk drawer had been calling into
+nothing for weeks, plus the `whatsapp_reply` card. A post-sign-up
+channel-preferences sheet writing an append-only `NotificationConsent` trail.
+
+**The seam.** `sendSms` gained one optional `whatsapp` option and one branch:
+WhatsApp replaces the SMS when the member is reachable on it, and falls back
+to SMS on any miss. `tryWhatsapp` fails closed at every step. `critical`
+still bypasses the SMS mute but deliberately does NOT bypass
+`notifyWhatsappEnabled` — an internal mute and a Meta-facing consent record
+are different things.
+
+⚠️ **A WhatsApp message may never name the listed item — only the order
+reference.** Enforced structurally, not by discipline: the registry is the
+only place variables are declared, `sendTemplate` refuses a missing or blank
+one before anything leaves, and a spec fails if any var is ever named
+title/item/name.
+
+⚠️ **The welcome fires from `verifyPhoneChange`, NOT from `verifyEmail`.**
+The obvious home is the once-per-account email verification, and it is wrong:
+nobody has a verified phone at that instant, so it would no-op on every
+account forever with nothing failing. `phone-otp.spec.ts` pins the placement.
+
+**Verified on the box:** migration applied (4 tables), webhook GET handshake
+echoes the challenge with the right verify token and 403s with a wrong one,
+and both are reachable through Cloudflare — a POST with no signature returns
+**200** with the handler skipped, per the same convention Peach and Didit use.
+
+**What the next session must know — this is NOT finished.** Three external
+gates remain, all operator-side in Meta:
+1. **Templates are not submitted yet.** Bodies and button config are in the
+   plan; start with `order_confirmed_buyer` and `shipment_dispatched_buyer`.
+2. **The app is UNPUBLISHED.** Until it is published, no production webhooks
+   are delivered and outbound sends only reach numbers added as test
+   recipients in App Dashboard > WhatsApp > API Setup.
+3. **The webhook is not registered in Meta yet** — the endpoint is live and
+   proven, but the callback URL still has to be saved at App > WhatsApp >
+   Configuration (`https://alloutdoor.co.za/api/whatsapp/webhook`).
+
+Only flip `whatsapp_enabled` once the first templates are approved, and
+expand one approved template at a time.
+
+**Still open, an operator decision:** `shippingFailed` reaches buyers by
+**email only** — it has no SMS call today, so the seam had nothing to hook.
+The `shipment_failed_buyer` template exists and is unused. Wiring it means
+WhatsApp with no SMS fallback.
+
+**Meta guidance corrected mid-session:** do NOT volunteer the regulated
+categories during Business Verification. Answer what is asked, truthfully,
+and nothing more. The auth wall is content-neutral architecture, not
+cloaking — and it only stays defensible while it never branches on
+user-agent.
+
 ## 2026-09-13 — SIXTH DEPLOY: Delete option on the bulk document review screen
 
 Frontend-only deploy (`593f3889`), exit 0, both health checks, site 200 twice.
