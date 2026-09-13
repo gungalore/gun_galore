@@ -6,6 +6,47 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-13**.
 
+## 2026-09-13 — SIXTH DEPLOY: Delete option on the bulk document review screen
+
+Frontend-only deploy (`593f3889`), exit 0, both health checks, site 200 twice.
+Backend and warden untouched (~39h uptime). Pre-deploy backup:
+`alloutdoor-20260913-141201.dump`.
+
+**What shipped.** `components/document-centre/review-screen.tsx` — each row
+in the "check what we made of your documents" screen (reached after
+uploading or scanning several documents at once into the Document Centre) now
+offers **Delete**, next to "Not sure". Before this, dropping a
+wrongly-captured page or a duplicate meant filing it anyway and finding it
+again in the main vault to remove it. Same confirm wording and the same
+`licenceCentreApi.remove()` call as the main vault's own Delete
+(`credential-card.tsx`), so it reads as one gesture wherever it is offered.
+A batch that ends in deletions rather than confirmations now says "All N
+deleted / Nothing was kept" instead of the misleading "All 0 filed".
+
+**Verification:** tsc clean both sides; backend 4,759 passed, frontend 1,901
+passed (both 0 failed); `npm run build` exit 0 foreground. Browser-verified
+end to end against the local backend and Postgres — not just the diff: signed
+in as a local test member (`lictest1@example.com`, a minted JWT against the
+local `JWT_MEMBER_SECRET`), uploaded two files at once, confirmed the
+confirm-dialog wording and that cancelling it fires no API call, then
+confirmed and watched the DELETE reach the real backend (200) and the rows
+actually leave the database.
+
+### Still outstanding (unchanged from the last entry)
+
+1. The `pruneJournal` sudoers line (`warden/README.md`).
+2. `npm run sweep` on the box; read every row.
+3. Delete `backend/.env.bak.didit` and `.env.bak.totp` once settled.
+4. Rotate the dead AWS keys rather than merely deleting them.
+5. Read-only Postgres role, Tailscale, an external uptime monitor on the apex.
+6. Confirm Places API is enabled/authorised on the Google Maps browser key
+   (Cloud Console → Credentials → API restrictions).
+7. Watch `motivation-pdf.service.spec.ts`'s cover-table test for recurring
+   timeouts under full-suite load — bump its timeout if it keeps happening
+   rather than re-diagnosing from scratch each time.
+
+---
+
 ## 2026-09-13 — FIFTH DEPLOY: Armory, a third landing tile for the three member tools
 
 Frontend-only deploy (`43af3c6e`), exit 0, both health checks, site 200 twice.
