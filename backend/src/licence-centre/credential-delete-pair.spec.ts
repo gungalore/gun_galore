@@ -54,7 +54,13 @@ function build(row: Record<string, unknown>, other?: Record<string, unknown>) {
     { resolveByEntity: jest.fn(async () => undefined) } as never,
     { assertEnabled: jest.fn(async () => undefined) } as never,
     { classify: jest.fn(), read: jest.fn() } as never,
-    { rearmAutolinkFor: jest.fn(async () => 0) } as never,
+    {
+      rearmAutolinkFor: jest.fn(async () => 0),
+      removeCredentialFromEditableDrafts: jest.fn(async () => ({
+        uploads: 0,
+        answers: 0,
+      })),
+    } as never,
     { note: () => undefined } as never,
   );
   return { svc, prisma, files, deleted };

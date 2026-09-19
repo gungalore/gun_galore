@@ -49,7 +49,7 @@ function makeService(overrides: {
     {} as never, // listings — unused
     {} as never, // audit — unused
     zohoBooks as never,
-    {} as never, // peach — manual rail, never called
+    {} as never, // ozow — manual rail, never called
     {} as never, // transactions — unused
     {} as never, // sms — unused by release
     {} as never, // account closures — unused by release

@@ -8,12 +8,12 @@ import { ServiceUnavailableException } from '@nestjs/common';
 // transactions.service re-exports these for backward compatibility, so
 // every existing importer keeps working unchanged.
 
-// Payment mode. The seam that drives fee maths (flat EFT-style fee vs card
-// rate) and the refund-owed arms (a card gateway — Peach — reverses on the
-// card; otherwise GG owes the money out of its account). The pay-in rail is
-// Peach Checkout V2; 'paygate' selects the card-rate fee + card-reversal
-// refund arm. Defaults to 'manual' so the fee/refund maths keep their
-// pre-paygate shape until the operator flips PAYMENT_MODE=paygate.
+// Payment mode. The seam that drives fee maths (flat EFT-style fee vs gateway
+// rate) and the refund-owed arms (a card gateway — Ozow — reverses on the
+// original payment; otherwise GG owes the money out of its account). The
+// pay-in rail is Ozow One API; 'paygate' selects the gateway-rate fee +
+// gateway-reversal refund arm. Defaults to 'manual' so the fee/refund maths
+// keep their pre-paygate shape until the operator flips PAYMENT_MODE=paygate.
 export const PAYMENT_MODE: 'manual' | 'paygate' =
   process.env.PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
 

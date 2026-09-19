@@ -19,7 +19,7 @@ export class ManualPaymentsController {
   }
 
   // Operator-triggered seller payout run — disburses due payouts to seller
-  // banks via Peach Payouts (exactly-once via paidOutAt; the payout webhook
+  // banks via Ozow Payouts (exactly-once via paidOutAt; the payout webhook
   // reconciles). Gated on PAYMENTS_LIVE inside the service. Real money —
   // operator action, not an automatic cron.
   @Post('run-payouts')

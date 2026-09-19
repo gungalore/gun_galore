@@ -857,9 +857,27 @@ export class MotivationGenerationService {
       // ⚠️ AND THE SPECIES COME OUT OF THE RESEARCH THE DOCUMENT ITSELF
       // PRINTS, so the picture and the page can never name different animals.
       if (research && huntsAtAll(answers.firearm_use_kind)) {
-        const calibreText = sectionOf(research, BLOCK_LABELS.calibre) ?? '';
+        /**
+         * ⚠️ BOTH BLOCKS, NOT THE CALIBRE ONE ALONE. The cartridge brief is
+         * often generic — "medium and large plains game within shorter bushveld
+         * distances" — while the FIREARM brief is where the actual species are
+         * named. Reading only the calibre block found nothing on a .45-70 and
+         * the plate was silently never drawn, which is exactly the failure the
+         * empty-answer note in `quarriesFor` says it cannot detect.
+         *
+         * ⚠️ THE HELD-CARTRIDGE BLOCKS ARE DELIBERATELY EXCLUDED. "A CARTRIDGE
+         * THE APPLICANT ALREADY HOLDS" describes other firearms; a species
+         * matched from there would picture an animal this application is not
+         * about. Only the applied-for firearm's own two blocks are read.
+         */
+        const quarryText = [
+          sectionOf(research, BLOCK_LABELS.firearm),
+          sectionOf(research, BLOCK_LABELS.calibre),
+        ]
+          .filter(Boolean)
+          .join('\n\n');
         const species = quarriesFor({
-          cartridgeText: calibreText,
+          cartridgeText: quarryText,
           gameClasses: answers.hunt_game_class,
         });
         await this.quarryPlates.makeFor(row.id, species).catch(() => undefined);
@@ -1442,6 +1460,15 @@ export class MotivationGenerationService {
               ...(verification ? { verification } : {}),
             } as unknown as object,
             status: MotivationStatus.COMPLETED,
+            /**
+             * ⚠️ CLEARED, NOT LEFT TO GO STALE. A document that failed once and
+             * passed on a later regeneration used to keep the old `failureReason`
+             * beside a COMPLETED status — "why it failed" next to "it did not" —
+             * and any surface reading that column showed a failure that no
+             * longer existed.
+             */
+            failureReason: null,
+            failedAt: null,
             // (the text itself comes from `common` now — see the note there)
             documentVersion: { increment: 1 },
             templateVersion: TEMPLATE_VERSION,

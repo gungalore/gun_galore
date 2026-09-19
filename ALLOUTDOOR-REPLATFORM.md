@@ -40,7 +40,7 @@ What is genuinely hard is everything the clean slate does *not* help with:
 
 | The hard part | Why |
 |---|---|
-| Peach + Nedbank TPPP | Restarts from zero under the new entity. Weeks to months. Gates trading entirely. |
+| Ozow + Nedbank TPPP | Restarts from zero under the new entity. Weeks to months. Gates trading entirely. |
 | Bob Go courier integration | Pudo and The Courier Guy are both dropped. This is a real build, not a config change. 38–52 developer-days. See section 4. |
 | Legal documents | New AML/RMCP policies, new TPPP application, new Information Officer. Human work, attorney turnaround. |
 | Email sending reputation | A zero-history domain on a zero-history account. Multi-day warm-up floor, cannot be compressed. |
@@ -204,10 +204,10 @@ authorising the account.
 > Gun Galore and not to All Outdoor.** This has caused a wasted application once already.
 > Get the correct document from CIPC for reg 2026/639713/07 before submitting anything.
 
-**2. Nedbank TPPP + Peach Payments merchant onboarding** · lead time: 4–12 weeks
+**2. Nedbank TPPP + Ozow merchant onboarding** · lead time: 4–12 weeks
 
 This gates trading. Nothing sells until money can move. The relationship model stays as
-planned: **Nedbank as acquirer, Peach Payments as the gateway.** Neither can be transferred
+planned: **Nedbank as acquirer, Ozow as the gateway.** Neither can be transferred
 from the old company.
 
 *The operator needs:* the bank account above; the AML and RMCP policy documents rewritten
@@ -1224,7 +1224,7 @@ npx web-push generate-vapid-keys   # VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY, as a 
 | `JWT_ADMIN_SECRET` | strong random | Missing or default → backend throws at boot, pm2 crash-loops, site is 502 |
 | `ID_HASH_SECRET` | fresh random | Back it up in the password manager the moment it exists |
 | `DATABASE_URL` | `postgresql://alloutdoor:PASS@localhost:5432/alloutdoor_prod?schema=public` | Strip `?schema=public` when passing to `pg_dump`, never in the app |
-| `PAYMENT_MODE` / `PAYMENTS_LIVE` / `PEACH_ENV` | `paygate` / `false` / `sandbox` | The site must land inert. Do not combine a first deploy with a payments go-live |
+| `PAYMENT_MODE` / `PAYMENTS_LIVE` / `OZOW_ENV` | `paygate` / `false` / `staging` | The site must land inert. Do not combine a first deploy with a payments go-live |
 | `DIDIT_MODE` | exactly `live` | Anything else **throws at boot** — the process will not start. The provider this replaced only warned, and a box ran sandbox identity checks in production |
 | `DIDIT_WEBHOOK_SECRET` | the destination secret from the Didit console | Fails closed — every verification outcome is dropped unverified and sellers stay PENDING forever |
 | `ZOHO_BOOKS_ENABLED` | `false` initially | Flip after the box is proven |
@@ -1264,7 +1264,7 @@ failure means the database role cannot `ALTER TABLE` — go back to Phase 1 Step
 
 Confirm the warnings you expect are **absent**: no `DIDIT_WEBHOOK_SECRET is not set`, no
 model-key warning for whichever `LLM_PROVIDER` is selected. Confirm the warnings you expect
-are **present**: Peach credentials missing is correct at this stage. Note that the two
+are **present**: Ozow credentials missing is correct at this stage. Note that the two
 things that *would* have been warnings — a weak `JWT_MEMBER_SECRET` and a sandbox
 `DIDIT_MODE` — are throws now, so if the process is up at all, both are right.
 
@@ -1684,7 +1684,7 @@ them. Rewrite for ALLOUTDOOR (PTY) LTD, date them from the new company's actual 
 **get them reviewed before they are submitted this time.**
 
 **2. The TPPP application.**
-Nedbank as acquirer, Peach as gateway. Never use the word "escrow" in any document — the
+Nedbank as acquirer, Ozow as gateway. Never use the word "escrow" in any document — the
 platform holds funds; it does not operate a trust account. ⚠️ **Do not write "PEP screening
 via VerifyNow" into this application again** — VerifyNow is gone, and Didit's AML/PEP
 screening is a workflow feature nobody has switched on. Either turn it on before the
@@ -1839,9 +1839,9 @@ orders of magnitude. One module, no bare `* 100`, a sanity throw above R100k, an
 reconciliation of the very first live order against the Bob Go invoice before a second one
 is allowed through.
 
-**3. Peach and Nedbank restart from zero and gate everything.** The technical build finishes
+**3. Ozow and Nedbank restart from zero and gate everything.** The technical build finishes
 weeks before the site can take a rand. Money is the critical path, not code: bank account,
-then TPPP, then Peach — and both the payment rail and the courier rail will be going live
+then TPPP, then Ozow — and both the payment rail and the courier rail will be going live
 for the first time simultaneously, on a system with no staging environment and no production
 baseline to regress against. Start the bank application on day one and plan the launch date
 backwards from it, not forwards from the code.

@@ -118,22 +118,34 @@ export default function PackPage() {
 
   const download = useCallback(async () => {
     setDownloading(true);
+    setError(null);
     try {
-      const url = await motivationsApi.pdfBlobUrl(getToken, id);
+      const isReusing = Boolean(pdfUrl);
+      const url = pdfUrl ?? (await motivationsApi.pdfBlobUrl(getToken, id));
       // ⚠️ A BLOB URL, NOT A DIRECT LINK. The PDF is behind a bearer token, so
       // an <a href> to the API would 401 — the client fetches it with the
       // token and hands the browser bytes it already holds.
+      //
+      // ⚠️ MUST BE ATTACHED TO THE DOM AND REVOKED ASYNCHRONOUSLY.
+      // Modern browsers (Chrome 80+, Firefox) ignore programmatic .click() on
+      // detached anchors for security reasons, and revoking the object URL
+      // synchronously on the next line cancels the download before the browser's
+      // download manager can read the blob.
       const a = document.createElement('a');
       a.href = url;
       a.download = `${sheet?.application.referenceNumber ?? 'motivation'}.pdf`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      if (!isReusing) {
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setDownloading(false);
     }
-  }, [getToken, id, sheet]);
+  }, [getToken, id, pdfUrl, sheet]);
 
   /**
    * ⚠️ THE 271 REFUSES BY NAME, AND THE MESSAGE IS THE POINT. A section 24
@@ -163,18 +175,23 @@ export default function PackPage() {
     setFormBusy(true);
     setFormErr(null);
     try {
-      const url = await motivationsApi.saps271BlobUrl(getToken, id);
+      const isReusing = Boolean(formUrl);
+      const url = formUrl ?? (await motivationsApi.saps271BlobUrl(getToken, id));
       const a = document.createElement('a');
       a.href = url;
       a.download = `${sheet?.application.referenceNumber ?? 'application'}-saps271.pdf`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      if (!isReusing) {
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      }
     } catch (err) {
       setFormErr((err as Error).message);
     } finally {
       setFormBusy(false);
     }
-  }, [getToken, id, sheet]);
+  }, [formUrl, getToken, id, sheet]);
 
   // The form's blob goes the same way the motivation's does.
   useEffect(
@@ -231,6 +248,11 @@ export default function PackPage() {
           {downloading ? 'Preparing…' : 'Download PDF'}
         </button>
       </div>
+      {error && (
+        <p className="mt-2 text-[12.5px] text-[var(--red)] print:hidden">
+          {error}
+        </p>
+      )}
 
       <section className="mt-6">
         {!written ? (

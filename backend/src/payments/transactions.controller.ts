@@ -59,7 +59,7 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
-  // Create transaction + Peach checkout (buyer)
+  // Create transaction + Ozow checkout (buyer)
   //
   // Accepts EITHER a member session OR a CHECKOUT action token via
   // ?t=<token>. When called via token, we double-check the token's
@@ -93,13 +93,13 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
-  // Verify Peach payment result (called from /checkout/complete)
+  // Verify Ozow payment result (called from /checkout/complete)
   // ---------------------------------------------------------------
   // INTENTIONALLY UNAUTHENTICATED — the return-from-gateway flow has no
   // the identity provider session (SMS-token buyers were never signed in) and no token
   // (the CHECKOUT token wasn't passed back). Security relies on:
   //   1. The endpoint re-fetches authoritative payment status from
-  //      Peach using the STORED payment id on the transaction — an
+  //      Ozow using the STORED payment id on the transaction — an
   //      attacker controlling only the URL's txId cannot fabricate a
   //      "paid" state.
   //   2. markPaid binds the exact amount.
@@ -387,7 +387,7 @@ export class TransactionsController {
   // ---------------------------------------------------------------
   // Seller rejects the sale (TOK-7 Phase 2)
   // ---------------------------------------------------------------
-  // Reason required. Fires Peach refund + reactivates listing + notifies
+  // Reason required. Fires Ozow refund + reactivates listing + notifies
   // buyer. Allowed reason codes are validated client-side in the picker
   // and a free-text "other" reason gets passed through to the service.
   @Post(':id/reject')
@@ -440,7 +440,7 @@ export class TransactionsController {
 }
 
 // ---------------------------------------------------------------
-// Peach webhook — separate controller so path is /api/payments/...
+// Ozow webhooks — separate controller so path is /api/payments/...
 // ---------------------------------------------------------------
 @Controller('payments')
 export class PaymentsWebhookController {
@@ -448,168 +448,87 @@ export class PaymentsWebhookController {
 
   constructor(private readonly txService: TransactionsService) {}
 
-  private publicUrl(path: string): string {
-    const base =
-      process.env.PUBLIC_API_URL ??
-      (process.env.FRONTEND_URL
-        ? `${process.env.FRONTEND_URL.replace(/\/$/, '')}/api`
-        : 'http://localhost:3001/api');
-    return `${base}${path}`;
-  }
-
-  // Peach signs webhooks either via headers (x-webhook-signature over
-  // `${ts}.${id}.${url}.${rawBody}`) or a `signature` FIELD in the body
-  // (classic result/webhook). NestFactory is created with { rawBody: true }
-  // (main.ts) so req.rawBody is the exact bytes Peach signed — re-serialising
-  // would reorder keys and never match. Checkout webhooks arrive
-  // form-urlencoded. The controller ALWAYS returns 200 (CLAUDE.md rule); a
-  // bad-signature drop is logged. Verification fails closed in prod.
-  @Post('webhook/peach')
+  // One API signs each webhook with Svix headers (svix-id, svix-timestamp,
+  // svix-signature) over `${id}.${timestamp}.${rawBody}`. NestFactory is
+  // created with { rawBody: true } (main.ts) so req.rawBody is the exact
+  // bytes signed — re-serialising would reorder keys and never match. The
+  // controller ALWAYS returns 200; a bad-signature drop is logged + alerted.
+  // Verification fails closed in production.
+  @Post('webhook/ozow')
   @HttpCode(200)
-  async peachWebhook(
+  async ozowWebhook(
     @Req() req: Request,
     @Body() body: Record<string, unknown>,
   ) {
-    this.logger.log('Peach webhook received');
+    this.logger.log('Ozow webhook received');
     const headers = {
-      id: req.headers['x-webhook-id'] as string | undefined,
-      timestamp: req.headers['x-webhook-timestamp'] as string | undefined,
-      signature: req.headers['x-webhook-signature'] as string | undefined,
+      id: req.headers['svix-id'] as string | undefined,
+      timestamp: req.headers['svix-timestamp'] as string | undefined,
+      signature: req.headers['svix-signature'] as string | undefined,
     };
     const rawBody =
       (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
       JSON.stringify(body);
-    const valid = this.txService.verifyPeachWebhook(
-      rawBody,
-      body,
-      headers,
-      this.publicUrl('/payments/webhook/peach'),
-    );
+    const valid = this.txService.verifyOzowWebhook(rawBody, headers);
     if (!valid) {
-      this.logger.warn('Peach webhook signature invalid — dropping');
-      void this.txService.alertWebhookSignatureFailure('peach-payment');
+      this.logger.warn('Ozow webhook signature invalid — dropping');
+      void this.txService.alertWebhookSignatureFailure('ozow-payment');
       return { received: true };
     }
     try {
-      await this.txService.handlePeachWebhook(body);
+      await this.txService.handleOzowWebhook(body);
     } catch (err) {
       this.logger.error(
-        `Peach webhook handler failed: ${(err as Error).message}`,
+        `Ozow webhook handler failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
     }
     return { received: true };
   }
 
-  // Peach dispute/chargeback notification (separate product/route). Same
-  // signing; routes to the money-safe dispute handler (never auto-refunds).
-  @Post('webhook/peach-dispute')
+  // Ozow payout VERIFICATION webhook. Ozow authenticates with the AccessToken
+  // header and signs the payload with a SHA-512 hashCheck. We verify both,
+  // confirm the payout was initiated by us, and return the AES decryption key
+  // Ozow needs to decrypt the destination account number it is about to pay.
+  @Post('webhook/ozow-payout-verify')
   @HttpCode(200)
-  async peachDisputeWebhook(
-    @Req() req: Request,
-    @Body() body: Record<string, unknown>,
-  ) {
-    this.logger.log('Peach dispute webhook received');
-    const headers = {
-      id: req.headers['x-webhook-id'] as string | undefined,
-      timestamp: req.headers['x-webhook-timestamp'] as string | undefined,
-      signature: req.headers['x-webhook-signature'] as string | undefined,
-    };
-    const rawBody =
-      (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
-      JSON.stringify(body);
-    const valid = this.txService.verifyPeachWebhook(
-      rawBody,
-      body,
-      headers,
-      this.publicUrl('/payments/webhook/peach-dispute'),
-    );
-    if (!valid) {
-      this.logger.warn('Peach dispute webhook signature invalid — dropping');
-      void this.txService.alertWebhookSignatureFailure('peach-dispute');
-      return { received: true };
+  async ozowPayoutVerify(@Req() req: Request, @Body() body: Record<string, unknown>) {
+    this.logger.log('Ozow payout verification webhook received');
+    const accessToken = req.headers['accesstoken'] as string | undefined;
+    if (!this.txService.ozowPayoutAccessTokenValid(accessToken)) {
+      this.logger.warn('Ozow payout verification: invalid access token');
+      return { received: true, isVerified: false, reason: 'Unauthorized webhook call' };
     }
     try {
-      await this.txService.handlePeachDispute(body);
+      return await this.txService.handleOzowPayoutVerify(body);
     } catch (err) {
       this.logger.error(
-        `Peach dispute webhook handler failed: ${(err as Error).message}`,
+        `Ozow payout verification handler failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
+      return {
+        payoutId: String(body.payoutId ?? ''),
+        isVerified: false,
+        accountNumberDecryptionKey: '',
+        reason: 'Server error',
+      };
     }
-    return { received: true };
   }
 
-  // Peach bank-account verification (BANV) result webhook.
-  @Post('webhook/peach-banv')
+  // Ozow payout NOTIFICATION webhook (final payout status). SHA-512 hash
+  // checked before any ledger change; always 200.
+  @Post('webhook/ozow-payout')
   @HttpCode(200)
-  async peachBanvWebhook(
+  async ozowPayoutNotification(
     @Req() req: Request,
     @Body() body: Record<string, unknown>,
   ) {
-    this.logger.log('Peach BANV webhook received');
-    const headers = {
-      id: req.headers['x-webhook-id'] as string | undefined,
-      timestamp: req.headers['x-webhook-timestamp'] as string | undefined,
-      signature: req.headers['x-webhook-signature'] as string | undefined,
-    };
-    const rawBody =
-      (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
-      JSON.stringify(body);
-    const valid = this.txService.verifyPeachWebhook(
-      rawBody,
-      body,
-      headers,
-      this.publicUrl('/payments/webhook/peach-banv'),
-    );
-    if (!valid) {
-      this.logger.warn('Peach BANV webhook signature invalid — dropping');
-      void this.txService.alertWebhookSignatureFailure('peach-banv');
-      return { received: true };
-    }
+    this.logger.log('Ozow payout notification webhook received');
     try {
-      await this.txService.handlePeachBanvWebhook(body);
+      await this.txService.handleOzowPayoutNotification(body);
     } catch (err) {
       this.logger.error(
-        `Peach BANV webhook handler failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    }
-    return { received: true };
-  }
-
-  // Peach payout status webhook (Processing / Successful / Failed).
-  @Post('webhook/peach-payout')
-  @HttpCode(200)
-  async peachPayoutWebhook(
-    @Req() req: Request,
-    @Body() body: Record<string, unknown>,
-  ) {
-    this.logger.log('Peach payout webhook received');
-    const headers = {
-      id: req.headers['x-webhook-id'] as string | undefined,
-      timestamp: req.headers['x-webhook-timestamp'] as string | undefined,
-      signature: req.headers['x-webhook-signature'] as string | undefined,
-    };
-    const rawBody =
-      (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
-      JSON.stringify(body);
-    const valid = this.txService.verifyPeachWebhook(
-      rawBody,
-      body,
-      headers,
-      this.publicUrl('/payments/webhook/peach-payout'),
-    );
-    if (!valid) {
-      this.logger.warn('Peach payout webhook signature invalid — dropping');
-      void this.txService.alertWebhookSignatureFailure('peach-payout');
-      return { received: true };
-    }
-    try {
-      await this.txService.handlePeachPayoutWebhook(body);
-    } catch (err) {
-      this.logger.error(
-        `Peach payout webhook handler failed: ${(err as Error).message}`,
+        `Ozow payout notification handler failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
     }

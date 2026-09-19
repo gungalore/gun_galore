@@ -79,7 +79,7 @@ function makeService(listing: Record<string, unknown>) {
     prisma as never,
     new FeeCalculator() as never, // real fee calc
     {} as never, // notifications
-    {} as never, // peach
+    {} as never, // ozow
     kyc as never,
     shipping as never,
     {} as never, // tracking

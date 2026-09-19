@@ -650,14 +650,6 @@ export class AdminUsersController {
     return this.adminService.updateUser(id, admin.sub, dto);
   }
 
-  // Re-run Peach bank-account verification for this user (dossier action —
-  // e.g. after a BANK_VERIFY_FAILED/MISMATCH alert once details are fixed).
-  @Post(':id/verify-bank')
-  @HttpCode(200)
-  verifyBank(@Param('id') id: string, @CurrentAdmin() admin: { sub: string }) {
-    return this.adminService.rerunBankVerification(id, admin.sub);
-  }
-
   // Close a member's account on their behalf — DISTINCT FROM BAN, and not a
   // delete. Ban keeps the profile and the listings up; this takes them off the
   // public side and releases the handle, while every transaction, rating and
@@ -803,7 +795,7 @@ export class AdminTransactionsController {
     res.send(csv);
   }
 
-  // Dossier — parties, listing, payment + shipping timeline, raw Peach result
+  // Dossier — parties, listing, payment + shipping timeline, raw gateway result
   // codes, dealer (if firearm), rating, complaints and the admin audit trail.
   // One round-trip so the admin can resolve a dispute from one screen.
   //

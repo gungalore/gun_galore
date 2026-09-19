@@ -34,9 +34,10 @@ describe('the disbursement call', () => {
 
 describe('🚨 what the operator is told afterwards', () => {
   it('says ACCEPTED, never "paid"', () => {
-    // Peach accepts a batch and settles it asynchronously; the payout webhook
-    // reconciles. "12 sellers paid" is a claim the platform cannot yet make,
-    // and it is exactly the sentence an operator would repeat to a seller.
+    // Ozow accepts each payout and settles it asynchronously; the payout
+    // notification webhook reconciles. "12 sellers paid" is a claim the
+    // platform cannot yet make, and it is exactly the sentence an operator
+    // would repeat to a seller.
     const text = describePayoutRun(result());
     expect(text).toContain('accepted');
     expect(text).not.toMatch(/\bpaid\b/i);

@@ -54,7 +54,7 @@ export type OrderStatusKey =
  * "PaymentMethod" type in this codebase; a Transaction's shippingMethod,
  * paymentStatus and gateway fields are all different vocabularies. Reusing a
  * type from desk-order.ts here would be wrong values, not just a wrong name.
- * GATEWAY is reserved for the paygate and is unused until Peach goes live.
+ * GATEWAY is reserved for the paygate and is unused until Ozow goes live.
  */
 export type OrderPaymentMethod = 'MANUAL_EFT' | 'GATEWAY';
 

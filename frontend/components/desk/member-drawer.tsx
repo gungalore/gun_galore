@@ -41,7 +41,6 @@ import {
   IconExternal,
   IconInfo,
   IconLock,
-  IconRefresh,
   IconShield,
   IconUser,
 } from './icons';
@@ -76,7 +75,6 @@ import {
   memberDateTime,
   readFindings,
   releaseKycDocument,
-  rerunBankVerification,
   reviewMemberKyc,
   revealKycDocument,
   scoreKind,
@@ -100,7 +98,7 @@ export interface MemberDrawerProps {
   onChanged?: () => void;
 }
 
-type PendingAction = 'approve' | 'reject' | 'ban' | 'unban' | 'bank' | 'strikes' | 'close' | null;
+type PendingAction = 'approve' | 'reject' | 'ban' | 'unban' | 'strikes' | 'close' | null;
 
 interface ActionResult {
   ok: boolean;
@@ -263,10 +261,10 @@ export function MemberDrawer({ open, userId, onClose, onChanged }: MemberDrawerP
    */
   async function run(tag: string, done: string, fn: () => Promise<unknown>) {
     // ⚠️ ONE PRESS, ONE CALL. `loading` on a Button dims it, it does not
-    // disable it — so without this guard a double-click on "Re-run the check"
-    // spends a second real, billed Peach BANV call and decrypts the member's
-    // SA ID again. The buttons are disabled while busy as well; this is the
-    // half that cannot be styled away.
+    // disable it — so without this guard a double-click on a decision spends a
+    // second call and (for the identity reveal) decrypts the member's SA ID
+    // again. The buttons are disabled while busy as well; this is the half
+    // that cannot be styled away.
     if (busy || !userId) return;
     const forUser = userId;
     setBusy(true);
@@ -517,11 +515,7 @@ export function MemberDrawer({ open, userId, onClose, onChanged }: MemberDrawerP
               ) : null}
             </Section>
 
-            <PayoutSection
-              dossier={dossier}
-              identityShown={identityShown}
-              onRerun={() => setAction('bank')}
-            />
+            <PayoutSection dossier={dossier} identityShown={identityShown} />
 
             <StrikesSection dossier={dossier} onClearStrikes={() => setAction('strikes')} />
 
@@ -650,30 +644,6 @@ export function MemberDrawer({ open, userId, onClose, onChanged }: MemberDrawerP
                 'UNBANNED',
                 `${handle} can buy, list and sell again.`,
                 () => setMemberBan(user.id, false, reason),
-              )}
-          />
-
-          <PlainConfirm
-            open={action === 'bank'}
-            label="Bank check · confirm"
-            title={`Re-run the bank check on ${handle}`}
-            lines={[
-              ['Member', handle],
-              ['Account', bankStanding(user).accountMasked ?? 'none on file'],
-              // ⚠️ The consequence an operator gets wrong: this CLEARS the
-              // current stamp before Peach answers, so a payable seller stops
-              // being payable until the webhook lands.
-              ['Right away', 'Their current bank stamp is cleared'],
-              ['Then', 'Peach is asked again — a real, billed call'],
-            ]}
-            confirmLabel="Re-run the check"
-            tone="primary"
-            busy={busy}
-            onCancel={() => setAction(null)}
-            onConfirm={() => void run(
-                'BANK CHECK REQUESTED',
-                'Peach has been asked. Until it answers, this seller reads as unverified for payout.',
-                () => rerunBankVerification(user.id),
               )}
           />
 
@@ -983,23 +953,14 @@ function FindingsBlock({ user }: { user: MemberDossier['user'] }) {
 function PayoutSection({
   dossier,
   identityShown,
-  onRerun,
 }: {
   dossier: MemberDossier;
   identityShown: boolean;
-  onRerun: () => void;
 }) {
   const bank = bankStanding(dossier.user);
 
   return (
-    <Section
-      label="Payout standing"
-      action={
-        <Button variant="outline" icon={IconRefresh} onClick={onRerun}>
-          Re-run bank check…
-        </Button>
-      }
-    >
+    <Section label="Payout standing">
       {!bank.hasDetails ? (
         <Callout tone="warn" icon={IconBanknote}>
           No banking details on file. This seller cannot be paid until they finish their seller
@@ -1017,17 +978,10 @@ function PayoutSection({
             mono={false}
           />
           <Kv k="Account" v={bank.accountMasked ?? '—'} />
-          {/* ⚠️ NOT "AVS verified". Bank-ownership review is manual until
-              Peach BANV is live, and this is the one screen where claiming an
-              automated check would decide whether money leaves. */}
-          <Kv k="Bank details reviewed (manual)" v={memberDateTime(bank.reviewedAt)} />
-          <Kv k="Last Peach check" v={bank.avs.label} tone={toneOf(bank.avs.kind)} last />
-          {bank.awaitingPeach ? (
-            <Callout tone="info" icon={IconInfo}>
-              A check has been asked for and Peach has not answered yet. Until it does, this seller
-              reads as unverified for payout.
-            </Callout>
-          ) : null}
+          {/* ⚠️ NOT "AVS verified". Bank-ownership review is manual — the
+              payout rail has no automated bank check, so an admin compares the
+              holder against the KYC identity before money leaves. */}
+          <Kv k="Bank details reviewed (manual)" v={memberDateTime(bank.reviewedAt)} last />
         </>
       )}
     </Section>
@@ -1247,10 +1201,10 @@ function PlainConfirm({
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
-          {/* ⚠️ DISABLED WHILE IT RUNS. `loading` only dims a Button, and the
-              action behind this one is "Re-run the check": a second press is a
-              second real, billed Peach BANV call and a second decryption of
-              the member's SA ID. */}
+          {/* ⚠️ DISABLED WHILE IT RUNS. `loading` only dims a Button, and a
+              second press of a confirm is a second real call — a second write,
+              a second notification, or a second decryption of the member's
+              SA ID on the identity reveal. */}
           <Button variant={tone} disabled={busy} loading={busy} onClick={onConfirm}>
             {confirmLabel}
           </Button>

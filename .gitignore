@@ -199,6 +199,11 @@ design-photos/
 # (~/app/manual-inbox/ + ~/app/manuals/), never in git.
 Manuals/
 
+# C.I.P. cartridge datasheets, pulled from the production box for local dev.
+# Same class as the manuals above: the index (cip-index.json) is in the repo,
+# the 552 copyright-sensitive pages are not. Point CIP_SHEETS_DIR at them.
+backend/data/cip/
+
 # Stray preview artifacts
 postal-entry-preview.pdf
 
@@ -220,6 +225,15 @@ postal-entry-preview.pdf
 # Regressions derived from them are rebuilt as SYNTHETIC scenes in lib/scan.
 scan-fixtures/
 frontend/.scan-diag-cache/
+
+# Scanner-calibration overlay SVGs. Each embeds a base64 raster of a REAL
+# licence photograph (name, ID number, serials) plus the detected quad — the
+# same class as scan-fixtures/ above. Must never enter version control; kept
+# on the local box only.
+overlays/
+
+# Agent/Claude scratch output (design comparison images, etc.) — local only.
+Claude outputs/
 
 # ── Warden's runtime directories ────────────────────────────────────
 #

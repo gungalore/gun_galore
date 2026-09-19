@@ -88,7 +88,6 @@ export interface MemberUser {
   bankAccountHolder: string | null;
   bankAccountNumber: string | null;
   bankVerifiedAt: string | null;
-  bankAvsResult: string | null;
 
   isBanned: boolean;
   bannedAt: string | null;
@@ -234,27 +233,6 @@ export function setMemberBan(
   return deskFetch(`/admin/users/${encodeURIComponent(userId)}`, {
     method: 'PATCH',
     body: JSON.stringify({ isBanned: banned, reason }),
-  });
-}
-
-/**
- * Re-run the Peach bank-ownership check.
- *
- * ⚠️ IT CLEARS THE CURRENT STAMP. The service sets `bankVerifiedAt: null` and
- * writes `REQUESTED:…` before Peach has answered, so a seller who was payable
- * a moment ago is not payable until the webhook lands. The confirm has to say
- * so — an operator pressing this to "double-check" would otherwise block a
- * payout they were trying to unblock.
- *
- * It also spends a real third-party call, and refuses outright when BANV is
- * not configured. The drawer prints that refusal verbatim rather than trying
- * to predict it from the frontend, which cannot see the backend's config.
- */
-export function rerunBankVerification(
-  userId: string,
-): Promise<{ requested: boolean; bankVerificationId?: string; status?: string }> {
-  return deskFetch(`/admin/users/${encodeURIComponent(userId)}/verify-bank`, {
-    method: 'POST',
   });
 }
 
@@ -473,41 +451,24 @@ export interface BankStanding {
   accountHolder: string | null;
   /** Already masked. The raw number does not leave this module. */
   accountMasked: string | null;
-  /** The manual review stamp — NOT an automated pass. See the label. */
+  /** The manual review stamp. Payout bank ownership is reviewed by an admin. */
   reviewedAt: string | null;
-  avs: Standing;
-  /** Peach BANV has been asked and has not answered yet. */
-  awaitingPeach: boolean;
 }
 
 /**
- * ⚠️ bankVerifiedAt IS A MANUAL REVIEW STAMP UNTIL PEACH BANV IS LIVE, and the
- * drawer labels it that way. Calling it "AVS verified" would claim an
- * automated bank-ownership check that is not running yet, on the one screen
- * where an operator decides whether money can leave.
+ * ⚠️ bankVerifiedAt IS A MANUAL REVIEW STAMP, not an automated pass — the
+ * payout rail has no automated bank-ownership check, so an admin reviews the
+ * account holder against the KYC-verified identity before a payout. The drawer
+ * labels it that way on the one screen where an operator decides whether money
+ * can leave.
  */
 export function bankStanding(user: MemberUser): BankStanding {
-  const raw = user.bankAvsResult ?? '';
-  const prefix = raw.split(':')[0];
-  const avs: Standing =
-    prefix === 'PASS'
-      ? { label: 'Passed', kind: 'ok' }
-      : prefix === 'MISMATCH'
-        ? { label: 'Mismatch', kind: 'bad' }
-        : prefix === 'FAILED'
-          ? { label: 'Failed', kind: 'bad' }
-          : prefix === 'REQUESTED'
-            ? { label: 'Requested — waiting on Peach', kind: 'info' }
-            : { label: 'Never run', kind: 'neutral' };
-
   return {
     hasDetails: Boolean(user.bankAccountNumber),
     bankName: user.bankName,
     accountHolder: user.bankAccountHolder,
     accountMasked: maskAccountNumber(user.bankAccountNumber),
     reviewedAt: user.bankVerifiedAt,
-    avs,
-    awaitingPeach: prefix === 'REQUESTED',
   };
 }
 

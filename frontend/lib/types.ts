@@ -468,7 +468,7 @@ export interface Transaction {
   buyerTotal: number;
   sellerPayout: number;
   paymentStatus: PaymentStatus;
-  peachCheckoutId: string | null;
+  gatewayCheckoutId: string | null;
   paidAt: string | null;
   releasedAt: string | null;
   shippingMethod: ShippingMethod | null;

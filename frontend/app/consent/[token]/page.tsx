@@ -182,14 +182,31 @@ export default function SellerConsentPage() {
           if (j.holderIdNumber) {
             setIdNumber((cur) => (cur.trim() ? cur : j.holderIdNumber!));
           }
+          // ⚠️ THE CARD'S "GJP FOURIE" FILLS ITEMS 4 AND 5 OF PART F. The
+          // leading token is the initials and the rest is the surname — the
+          // card prints them in exactly that order, which is the split the
+          // SAPS 271 asks for, so nothing has to be guessed from a full name.
+          // Empty boxes only: anything the seller has typed wins.
+          if (j.holderNameOnCard) {
+            const parts = j.holderNameOnCard.trim().split(/\s+/);
+            if (parts.length >= 2) {
+              const initials = parts[0];
+              const surname = parts.slice(1).join(' ');
+              setSectionF((cur) => ({
+                ...cur,
+                initials: cur.initials?.trim() ? cur.initials : initials,
+                surname: cur.surname?.trim() ? cur.surname : surname,
+              }));
+            }
+          }
           // The firearm read off the card. Set once (read runs once per
           // session), so a retake never wipes corrections the seller made.
           if (j.fields && Object.keys(j.fields).length) {
             setCardFields((cur) => (Object.keys(cur).length ? cur : j.fields!));
           }
-          // ⚠️ NAME IS DELIBERATELY NOT PREFILLED FROM THE CARD — it carries
-          // initials only (GJP FOURIE), and the full-names field needs the
-          // whole name. Prefilling initials would look filled but be wrong.
+          // ⚠️ THE FULL-NAMES BOX STAYS UNFILLED, DELIBERATELY. The card carries
+          // initials only, and "Your full names" needs the whole name — an
+          // initials-prefilled box would look answered but be wrong.
         } catch {
           /* fail-soft: they type it */
         } finally {

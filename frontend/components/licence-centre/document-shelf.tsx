@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import type { SheetDocument } from './contract';
+import { useState } from "react";
+import type { SheetDocument } from "./contract";
 
 // ────────────────────────────────────────────────────────────────────
 // THE DOCUMENT SHELF — everything attached, across the top, once.
@@ -66,19 +66,19 @@ function UploadIcon() {
  * Operator, 2026-09-08: "Just a small indicator inside each file box", with a
  * legend beneath.
  */
-function OriginMark({ origin }: { origin: 'vault' | 'member' }) {
-  const vault = origin === 'vault';
+function OriginMark({ origin }: { origin: "vault" | "member" }) {
+  const vault = origin === "vault";
   return (
     <span
-      aria-label={vault ? 'Added by the Licence Centre' : 'You added this'}
-      title={vault ? 'Added by the Licence Centre' : 'You added this'}
+      aria-label={vault ? "Added by the Licence Centre" : "You added this"}
+      title={vault ? "Added by the Licence Centre" : "You added this"}
       className={`absolute bottom-[5px] right-[5px] flex h-[15px] w-[15px] items-center justify-center rounded-[3px] border text-[9px] font-medium leading-none ${
         vault
-          ? 'border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-secondary)]'
-          : 'border-[var(--red-line)] bg-[var(--red-wash)] text-[var(--red)]'
+          ? "border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-secondary)]"
+          : "border-[var(--red-line)] bg-[var(--red-wash)] text-[var(--red)]"
       }`}
     >
-      {vault ? 'LC' : 'U'}
+      {vault ? "LC" : "U"}
     </span>
   );
 }
@@ -98,7 +98,7 @@ function FileIcon() {
 }
 
 /** What the picker will take. Matches the server's accepted upload types. */
-const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
+const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
 
 export interface DocumentShelfProps {
   documents: SheetDocument[];
@@ -127,6 +127,8 @@ export interface DocumentShelfProps {
    * an invitation to make a duplicate, so it carries no tick.
    */
   onKeep?: (uploadIds: string[]) => void | Promise<void>;
+  /** Remove this document from the motivation application. */
+  onRemove?: (uploadId: string) => void | Promise<void>;
   /** True while a save is in flight — the button says so and cannot re-fire. */
   keeping?: boolean;
   /**
@@ -148,10 +150,11 @@ export default function DocumentShelf({
   onUpload,
   onScan,
   onKeep,
+  onRemove,
   keeping = false,
 }: DocumentShelfProps) {
   const empty = documents.length === 0;
-  const mine = documents.filter((d) => d.origin === 'member');
+  const mine = documents.filter((d) => d.origin === "member");
   const [picked, setPicked] = useState<Set<string>>(new Set());
 
   // A document that has just been saved and re-read comes back as `vault`, so
@@ -186,7 +189,7 @@ export default function DocumentShelf({
           const files = Array.from(e.target.files ?? []);
           // Reset first: picking the same file twice in a row fires no change
           // event otherwise, and the second attempt looks like a dead button.
-          e.target.value = '';
+          e.target.value = "";
           if (files.length) onUpload(files);
         }}
       />
@@ -206,7 +209,7 @@ export default function DocumentShelf({
     // next to the Add your ID, licences and certificates in the same style of
     // box."
     const box =
-      'flex w-full cursor-pointer items-center gap-[14px] rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] px-4 py-[18px] text-left text-[var(--red)]';
+      "flex w-full cursor-pointer items-center gap-[14px] rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] px-4 py-[18px] text-left text-[var(--red)]";
     return (
       <div className="grid gap-2 border-b border-[var(--border-divider)] px-4 pb-[14px] pt-3 sm:grid-cols-2">
         <button type="button" onClick={onScan} className={box}>
@@ -250,85 +253,102 @@ export default function DocumentShelf({
       <p className="m-0 mb-2 text-[11px] font-medium uppercase tracking-[0.11em] text-[var(--text-tertiary)]">
         Your documents
       </p>
-      <div className="flex gap-[10px] overflow-x-auto pb-2 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {documents.map((d) => (
-          <div key={d.id} className="w-[72px] flex-shrink-0">
-            <div className="relative flex h-[92px] w-[72px] items-center justify-center overflow-hidden rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-tertiary)]">
-              <FileIcon />
-              {d.letter ? (
-                <span className="absolute bottom-[5px] left-[5px] rounded-[4px] bg-[var(--text-primary)] px-[5px] py-[3px] font-mono text-[10.5px] font-medium leading-none text-white">
-                  {d.letter}
-                </span>
-              ) : null}
-              {/*
+      <div className="flex items-start gap-[10px] pr-4">
+        <div className="flex min-w-0 flex-1 gap-[10px] overflow-x-auto pb-2">
+          {documents.map((d) => (
+            <div key={d.id} className="w-[72px] flex-shrink-0">
+              <div className="relative flex h-[92px] w-[72px] items-center justify-center overflow-hidden rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-tertiary)]">
+                <FileIcon />
+                {d.letter ? (
+                  <span className="absolute bottom-[5px] left-[5px] rounded-[4px] bg-[var(--text-primary)] px-[5px] py-[3px] font-mono text-[10.5px] font-medium leading-none text-white">
+                    {d.letter}
+                  </span>
+                ) : null}
+                {/*
                 ⚠️ GOLD, NEVER RED. A document we could not read is still
                 attached and still goes in the pack — it is a "look at this",
                 not a failure. Colouring it as one teaches members to
                 re-upload things that were fine.
               */}
-              <span
-                aria-label={d.state === 'read' ? 'Read' : 'Check this'}
-                className={`absolute right-[5px] top-[5px] h-2 w-2 rounded-full border-[1.5px] border-white ${
-                  d.state === 'read'
-                    ? 'bg-[var(--success)]'
-                    : 'bg-[var(--gold-strong)]'
-                }`}
-              />
-              <OriginMark origin={d.origin} />
-              {/*
+                <span
+                  aria-label={d.state === "read" ? "Read" : "Check this"}
+                  className={`absolute right-[5px] top-[5px] h-2 w-2 rounded-full border-[1.5px] border-white ${
+                    d.state === "read"
+                      ? "bg-[var(--success)]"
+                      : "bg-[var(--gold-strong)]"
+                  }`}
+                />
+                <OriginMark origin={d.origin} />
+                {onRemove ? (
+                  <button
+                    type="button"
+                    onClick={() => void onRemove(d.id)}
+                    aria-label={`Remove ${d.label}`}
+                    title={`Remove ${d.label}`}
+                    className="absolute left-[4px] top-[4px] flex h-[18px] w-[18px] items-center justify-center rounded-[3px] border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:border-[var(--red-line)] hover:bg-[var(--red-wash)] hover:text-[var(--red)]"
+                  >
+                    ×
+                  </button>
+                ) : null}
+                {/*
                 ⚠️ THE TICK IS ONLY ON WHAT THE MEMBER ADDED. A page that came
                 from the Centre is already there; offering to save it again
                 would make a duplicate.
               */}
-              {onKeep && d.origin === 'member' ? (
-                <label className="absolute left-[4px] top-[4px] flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] border border-[var(--border)] bg-[var(--bg-card)]">
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={picked.has(d.id)}
-                    onChange={() => toggle(d.id)}
-                    aria-label={`Save ${d.label} to my Licence Centre`}
-                  />
-                  <span
-                    aria-hidden="true"
-                    className={`h-[10px] w-[10px] rounded-[2px] ${
-                      picked.has(d.id) ? 'bg-[var(--red)]' : 'bg-transparent'
-                    }`}
-                  />
-                </label>
-              ) : null}
+                {onKeep && d.origin === "member" ? (
+                  <label className="absolute bottom-[4px] left-[4px] flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] border border-[var(--border)] bg-[var(--bg-card)]">
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={picked.has(d.id)}
+                      onChange={() => toggle(d.id)}
+                      aria-label={`Save ${d.label} to my Licence Centre`}
+                    />
+                    <span
+                      aria-hidden="true"
+                      className={`h-[10px] w-[10px] rounded-[2px] ${
+                        picked.has(d.id) ? "bg-[var(--red)]" : "bg-transparent"
+                      }`}
+                    />
+                  </label>
+                ) : null}
+              </div>
+              <div className="mt-[5px] line-clamp-2 text-[11px] leading-[1.25] text-[var(--text-secondary)]">
+                {d.label}
+              </div>
             </div>
-            <div className="mt-[5px] line-clamp-2 text-[11px] leading-[1.25] text-[var(--text-secondary)]">
-              {d.label}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
 
         {/*
-          ⚠️ TWO TILES, AND THE SCANNER IS THE FIRST OF THEM. Most of what
-          belongs on this shelf is a card or a certificate the member is
-          holding, and the fastest route to it is the camera in their pocket.
-          Behind a single "+" it was invisible.
+          ⚠️ THE SCAN AND UPLOAD TILES ARE PINNED OUTSIDE THE SCROLL. They used
+          to be the last two items IN it, so with more than a few documents they
+          sat off the right edge — and the scrollbar is hidden, so a mouse could
+          not bring them back. Operator, 2026-09-15: "some are hidden as well as
+          the scan and upload button." The documents scroll; the two doors do
+          not, and the scanner is still the first of them.
         */}
-        <div className="w-[72px] flex-shrink-0">
-          <button
-            type="button"
-            onClick={onScan}
-            aria-label="Scan a document with your phone"
-            className="flex h-[92px] w-[72px] flex-col items-center justify-center gap-1 rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] text-[11.5px] font-medium text-[var(--red)]"
-          >
-            <QrIcon />
-            Scan
-          </button>
-        </div>
-        <div className="w-[72px] flex-shrink-0">
-          {picker(
-            'flex h-[92px] w-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] text-[11.5px] font-medium text-[var(--red)]',
-            <>
-              <UploadIcon />
-              Upload
-            </>,
-          )}
+        <div className="flex flex-shrink-0 items-start gap-[10px] pb-2">
+          <div className="w-[72px] flex-shrink-0">
+            <button
+              type="button"
+              onClick={onScan}
+              aria-label="Scan a document with your phone"
+              className="flex h-[92px] w-[72px] flex-col items-center justify-center gap-1 rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] text-[11.5px] font-medium text-[var(--red)]"
+            >
+              <QrIcon />
+              Scan
+            </button>
+          </div>
+          <div className="w-[72px] flex-shrink-0">
+            {picker(
+              "flex h-[92px] w-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] text-[11.5px] font-medium text-[var(--red)]",
+              <>
+                <UploadIcon />
+                Upload
+              </>,
+            )}
+          </div>
         </div>
       </div>
 
@@ -346,7 +366,7 @@ export default function DocumentShelf({
             }
             className="min-h-[36px] rounded-[var(--r-sm)] border border-[var(--border)] px-3 text-[12.5px] font-medium text-[var(--text-secondary)]"
           >
-            {allPicked ? 'Clear all' : 'Select all'}
+            {allPicked ? "Clear all" : "Select all"}
           </button>
           <button
             type="button"
@@ -355,8 +375,11 @@ export default function DocumentShelf({
             className="min-h-[36px] rounded-[var(--r-sm)] border border-[var(--red-line)] bg-[var(--red-wash)] px-3 text-[12.5px] font-medium text-[var(--red)] disabled:opacity-45"
           >
             {keeping
-              ? 'Saving…'
-              : `Save ${chosen.length || ''} to my Licence Centre`.replace('  ', ' ')}
+              ? "Saving…"
+              : `Save ${chosen.length || ""} to my Licence Centre`.replace(
+                  "  ",
+                  " ",
+                )}
           </button>
         </div>
       ) : null}
@@ -368,7 +391,7 @@ export default function DocumentShelf({
         It renders only when there is something to explain.
       */}
       <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 pr-4 text-[11px] text-[var(--text-tertiary)]">
-        {documents.some((d) => d.origin === 'vault') ? (
+        {documents.some((d) => d.origin === "vault") ? (
           <span className="inline-flex items-center gap-[6px]">
             <span className="flex h-[15px] w-[15px] items-center justify-center rounded-[3px] border border-[var(--border)] bg-[var(--bg-card)] text-[9px] font-medium leading-none text-[var(--text-secondary)]">
               LC
@@ -376,7 +399,7 @@ export default function DocumentShelf({
             Added by the Licence Centre
           </span>
         ) : null}
-        {documents.some((d) => d.origin === 'member') ? (
+        {documents.some((d) => d.origin === "member") ? (
           <span className="inline-flex items-center gap-[6px]">
             <span className="flex h-[15px] w-[15px] items-center justify-center rounded-[3px] border border-[var(--red-line)] bg-[var(--red-wash)] text-[9px] font-medium leading-none text-[var(--red)]">
               U

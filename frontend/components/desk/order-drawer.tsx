@@ -319,7 +319,7 @@ function Body({
 }) {
   const money = orderMoney(tx);
   const parcel = parcelPosition(tx);
-  const code = readResultCode(tx.peachResultCode);
+  const code = readResultCode(tx.gatewayResultCode);
   const shipping = shippingTimeline(tx);
   const thumb = tx.listing.images[0]?.url ?? null;
 

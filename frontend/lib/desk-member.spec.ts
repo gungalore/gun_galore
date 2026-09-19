@@ -68,7 +68,6 @@ const USER: MemberUser = {
   bankAccountHolder: 'G Fourie',
   bankAccountNumber: '62012345678',
   bankVerifiedAt: null,
-  bankAvsResult: null,
   isBanned: false,
   bannedAt: null,
   accountClosedAt: null,
@@ -167,12 +166,11 @@ describe('bank details are masked before they leave the module', () => {
     expect(JSON.stringify(bank)).not.toContain('62012345678');
   });
 
-  it('reads the Peach outcome from the stored prefix', () => {
-    expect(bankStanding({ ...USER, bankAvsResult: 'PASS:000' }).avs.kind).toBe('ok');
-    expect(bankStanding({ ...USER, bankAvsResult: 'MISMATCH:100:NAME' }).avs.kind).toBe('bad');
-    expect(bankStanding({ ...USER, bankAvsResult: 'FAILED:900' }).avs.kind).toBe('bad');
-    expect(bankStanding({ ...USER, bankAvsResult: 'REQUESTED:PENDING' }).awaitingPeach).toBe(true);
-    expect(bankStanding({ ...USER, bankAvsResult: null }).avs.label).toBe('Never run');
+  it('reports the manual review stamp, never an automated pass', () => {
+    expect(bankStanding({ ...USER, bankVerifiedAt: '2026-08-20T08:00:00.000Z' }).reviewedAt).toBe(
+      '2026-08-20T08:00:00.000Z',
+    );
+    expect(bankStanding({ ...USER, bankVerifiedAt: null }).reviewedAt).toBeNull();
   });
 });
 

@@ -12,6 +12,7 @@ import {
 import { WATERMARK_TEXT } from './motivation-pdf-chrome';
 import { buildAnnexures } from './motivation-checklist';
 import { MotivationUploadKind } from '@prisma/client';
+import sharp from 'sharp';
 
 // ────────────────────────────────────────────────────────────────────
 // READING THE PDF BACK.
@@ -220,7 +221,9 @@ describe('MotivationPdfService', () => {
       { length: 40 },
       (_, i) =>
         `Paragraph ${i + 1}: ` +
-        'I have hunted this property for several seasons and know the terrain well. '.repeat(6),
+        'I have hunted this property for several seasons and know the terrain well. '.repeat(
+          6,
+        ),
     ).join('\n\n');
     const { pdf } = await svc.render(makeInput(long));
     const { text } = await readPdfAsync(pdf);
@@ -269,7 +272,9 @@ describe('MotivationPdfService', () => {
     // it as "... P A G E 2 O F 3"), which is the right tool for a thing whose
     // whole purpose is to be looked at.
     const pageCount = Number(
-      pdf.toString('latin1').match(/\/Type\s*\/Pages[\s\S]{0,200}?\/Count\s+(\d+)/)?.[1] ?? 0,
+      pdf
+        .toString('latin1')
+        .match(/\/Type\s*\/Pages[\s\S]{0,200}?\/Count\s+(\d+)/)?.[1] ?? 0,
     );
     expect(pageCount).toBeGreaterThan(2);
   });
@@ -454,6 +459,172 @@ describe('the annexure index', () => {
     const { pdf } = await svc.render(makeInput());
     expect(flat((await readPdfAsync(pdf)).text)).not.toContain('ANNEXURES');
   });
+
+  it('points the contents at the FIRST sheet of a multi-copy annexure', async () => {
+    // ⚠️ EVERY COPY USED TO RE-ASSIGN ITS LETTER'S CONTENTS ENTRY, so the last
+    // one won: a three-page proficiency certificate sent the reader to its
+    // third page. Three identity copies is the same shape with a stable label.
+    const png = await sharp({
+      create: { width: 4, height: 3, channels: 3, background: '#ffffff' },
+    })
+      .png()
+      .toBuffer();
+    const kinds = [MotivationUploadKind.IDENTITY_DOCUMENT];
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      annexures: buildAnnexures(kinds),
+      annexureImages: [1, 2, 3].map((index) => ({
+        letter: 'A',
+        label: 'Copy of the applicant’s identity document',
+        index,
+        total: 3,
+        bytes: png,
+        width: 4,
+        height: 3,
+        certification: 'required' as const,
+      })),
+    });
+
+    const pages = await pageTexts(pdf);
+    const contents = pages.find((p) => p.includes('CONTENTS')) ?? '';
+    const cited = /Annexure A\s*-\s*Copy[^)]*\)\s*(\d+)/.exec(contents);
+    expect(cited).not.toBeNull();
+
+    // The page the first copy's caption actually lands on.
+    const firstSheet = pages.findIndex((p) =>
+      /Annexure A\s*\u2014\s*Copy/.test(p),
+    );
+    expect(firstSheet + 1).toBe(Number(cited![1]));
+  });
+
+  it('prints the safe sheet in letter order, not after the last annexure', async () => {
+    // ⚠️ THE SAFE IS THE ONE ANNEXURE PACKED 2x2, SO IT GOES THROUGH A
+    // DIFFERENT PLANNER — and the first version of that ran every OTHER copy
+    // through planAnnexurePages and then bolted the safe sheet onto the end.
+    // Letter B printed after letter C: the index said B between A and C, and
+    // the pages said otherwise. The letters here are chosen so the OLD
+    // behaviour fails: identity (A), safe (B), current licence (C).
+    const png = await sharp({
+      create: {
+        width: 4,
+        height: 3,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .png()
+      .toBuffer();
+    const copy = (
+      letter: string,
+      label: string,
+      index: number,
+      total: number,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      letter,
+      label,
+      index,
+      total,
+      bytes: png,
+      width: 4,
+      height: 3,
+      ...extra,
+    });
+    const kinds = [
+      MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
+      MotivationUploadKind.CURRENT_LICENCE,
+    ];
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      annexures: buildAnnexures(kinds),
+      annexureImages: [
+        copy('A', 'Copy of the applicant’s identity document', 1, 1, {
+          certification: 'required',
+        }),
+        copy('B', 'Photographs of the safe', 1, 3, { safe: true }),
+        copy('B', 'Photographs of the safe', 2, 3, { safe: true }),
+        copy('B', 'Photographs of the safe', 3, 3, { safe: true }),
+        copy('C', 'Existing firearm licence(s)', 1, 1),
+      ],
+    });
+
+    const pages = await pageTexts(pdf);
+    // ⚠️ THE CAPTION, NOT JUST THE LETTER. The index and the contents list
+    // every letter on one page, so "includes('Annexure B')" matches the index
+    // before it ever reaches the copy. The caption is the only place a letter
+    // is joined to its label by an em dash.
+    const at = (letter: string) =>
+      pages.findIndex((p) =>
+        new RegExp(`Annexure ${letter}\\s*\\u2014`).test(p),
+      );
+    const a = at('A');
+    const b = at('B');
+    const c = at('C');
+    expect(a).toBeGreaterThanOrEqual(0);
+    expect(b).toBeGreaterThan(a);
+    expect(c).toBeGreaterThan(b);
+
+    // All three shots on ONE 2x2 sheet, captioned 1..3 of 3.
+    const safePage = pages[b];
+    expect(safePage).toContain('(1 of 3)');
+    expect(safePage).toContain('(2 of 3)');
+    expect(safePage).toContain('(3 of 3)');
+  });
+
+  it('says "1 item", not "1 items", on the contents', async () => {
+    // The count is printed on the page a reviewer reads first, and every
+    // single-document annexure read "(1 items; expected)".
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      annexures: buildAnnexures([MotivationUploadKind.IDENTITY_DOCUMENT]),
+    });
+    const contents =
+      (await pageTexts(pdf)).find((p) => p.includes('CONTENTS')) ?? '';
+    expect(contents).toContain('(1 item;');
+    expect(contents).not.toContain('(1 items;');
+  });
+
+  it('points the contents at the generated consent page, not the index', async () => {
+    // ⚠️ THE ONE ANNEXURE THAT IS NOT AN UPLOADED IMAGE. It never passes
+    // through the loop that assigns every other letter's page, so its contents
+    // entry sat on the ANNEXURE INDEX's page while the consent itself printed
+    // at the back.
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      annexures: buildAnnexures(
+        [MotivationUploadKind.IDENTITY_DOCUMENT],
+        ['SELLER_CONSENT'],
+      ),
+      sellerConsent: {
+        title: 'Consent of the current owner',
+        eyebrow: 'LODGED WITH THE APPLICATION',
+        subtitle: 'Signed by the licensed holder of the firearm',
+        index: 1,
+        version: 'test',
+        blocks: [
+          {
+            kind: 'text' as const,
+            text: 'I give my consent to the applicant.',
+          },
+        ],
+      },
+    });
+
+    const pages = await pageTexts(pdf);
+    const contents = pages.find((p) => p.includes('CONTENTS')) ?? '';
+    const cited =
+      /Annexure B\s*-\s*The previous owner.s consent[^)]*\)\s*(\d+)/.exec(
+        contents,
+      );
+    expect(cited).not.toBeNull();
+
+    const actual = pages.findIndex((p) =>
+      /Annexure B\s*\u2014\s*The previous owner/.test(p),
+    );
+    expect(actual).toBeGreaterThanOrEqual(0);
+    expect(actual + 1).toBe(Number(cited![1]));
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -528,7 +699,7 @@ describe('template choice', () => {
     // and it must open as the full document rather than as a stub.
     for (const stored of ['concise', 'standard', 'comprehensive', 'nonsense']) {
       const { pdf } = await svc.render(
-        withTables({ format: stored, colourway: 'sand' }) as never,
+        withTables({ format: stored, colourway: 'sand' }),
       );
       const t = squash((await readPdfAsync(pdf)).text);
       // Each block is proven by content only it carries — see the reader note
@@ -552,7 +723,7 @@ describe('template choice', () => {
     // The values are the part that matters anyway: a spec sheet with a
     // heading and no calibre is not a spec sheet.
     const { pdf } = await svc.render(
-      withTables({ format: 'comprehensive', colourway: 'sage' }) as never,
+      withTables({ format: 'comprehensive', colourway: 'sage' }),
     );
     const t = squash((await readPdfAsync(pdf)).text);
     expect(t).toContain(squash('6.5 Creedmoor'));
@@ -568,7 +739,7 @@ describe('template choice', () => {
     // nothing to list would read to a DFO as an omission rather than a nil
     // return.
     const { pdf } = await svc.render(
-      withTables({ format: 'standard', ownedFirearms: [] }) as never,
+      withTables({ format: 'standard', ownedFirearms: [] }),
     );
     const t = squash((await readPdfAsync(pdf)).text);
     // The section's own line, which is serif — the band title is Archivo and
@@ -578,9 +749,7 @@ describe('template choice', () => {
   });
 
   it('puts the identification block on the cover', async () => {
-    const { pdf } = await svc.render(
-      withTables({ format: 'comprehensive' }) as never,
-    );
+    const { pdf } = await svc.render(withTables({ format: 'comprehensive' }));
     const t = squash((await readPdfAsync(pdf)).text);
     expect(t).toContain(squash('8203155041083'));
     expect(t).toContain(squash('MOTIVATION'));
@@ -594,7 +763,7 @@ describe('template choice', () => {
         format: 'comprehensive',
         annexures: buildAnnexures([MotivationUploadKind.IDENTITY_DOCUMENT]),
         takeWithYou: [{ label: 'Two passport photographs' }],
-      }) as never,
+      }),
     );
     const t = squash((await readPdfAsync(pdf)).text);
     expect(t).toContain(squash('Annexures'));
@@ -630,7 +799,7 @@ describe('the certification column on the annexure index', () => {
         MotivationUploadKind.COMPETENCY_CERTIFICATE,
         MotivationUploadKind.SAFE_PHOTOGRAPHS,
       ]),
-    } as never);
+    });
     const t = squash((await readPdfAsync(pdf)).text);
 
     // The verb moved into the column heading — "CERTIFICATION" over a column
@@ -688,7 +857,12 @@ describe('the press clippings annexure', () => {
   async function tinyJpeg(): Promise<Buffer> {
     const sharp = (await import('sharp')).default;
     return sharp({
-      create: { width: 40, height: 30, channels: 3, background: { r: 180, g: 40, b: 40 } },
+      create: {
+        width: 40,
+        height: 30,
+        channels: 3,
+        background: { r: 180, g: 40, b: 40 },
+      },
     })
       .jpeg()
       .toBuffer();
@@ -728,7 +902,8 @@ describe('the press clippings annexure', () => {
           sourceName: 'Lowvelder',
           publishedOn: '2026-06-02',
           headline: NELSPRUIT_HEADLINE,
-          standfirst: 'Two people were treated for injuries after an armed robbery.',
+          standfirst:
+            'Two people were treated for injuries after an armed robbery.',
           url: 'https://lowvelder.co.za/armed-robbery',
           articleBody: FORBIDDEN_ARTICLE_BODY,
         },
@@ -771,7 +946,7 @@ describe('the press clippings annexure', () => {
           url: 'https://middelburgobserver.co.za/house-robbery',
         },
       ],
-    } as never);
+    });
 
     expect(pdf.length).toBeGreaterThan(1000);
     const t = flat((await readPdfAsync(pdf)).text);
@@ -833,12 +1008,12 @@ describe('the C.I.P. cartridge sheet', () => {
     const base = await svc.render({
       ...makeInput(),
       firearmSpec: [{ label: 'Make', value: 'NORDISKE PRECISION' }],
-    } as never);
+    });
     const withSheet = await svc.render({
       ...makeInput(),
       firearmSpec: [{ label: 'Make', value: 'NORDISKE PRECISION' }],
       cipSheet: { bytes: await onePage(), label: 'The cartridge' },
-    } as never);
+    });
 
     const grew = (await pageCount(withSheet.pdf)) - (await pageCount(base.pdf));
     expect(grew).toBeGreaterThanOrEqual(1);
@@ -849,11 +1024,11 @@ describe('the C.I.P. cartridge sheet', () => {
     const a = await svc.render({
       ...makeInput(),
       firearmSpec: [{ label: 'Make', value: 'CZ' }],
-    } as never);
+    });
     const b = await svc.render({
       ...makeInput(),
       firearmSpec: [{ label: 'Make', value: 'CZ' }],
-    } as never);
+    });
     expect(await pageCount(a.pdf)).toBe(await pageCount(b.pdf));
   });
 
@@ -864,7 +1039,7 @@ describe('the C.I.P. cartridge sheet', () => {
       ...makeInput(),
       firearmSpec: [{ label: 'Make', value: 'MAUSER' }],
       cipSheet: { bytes: Buffer.from('not a pdf'), label: 'The cartridge' },
-    } as never);
+    });
     expect(out.pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
     expect(await pageCount(out.pdf)).toBeGreaterThan(1);
   });
@@ -907,9 +1082,30 @@ describe('the cartridge drawing', () => {
     heightMm: 85,
     label: 'The cartridge — 9 mm Luger',
     texts: [
-      { x: 20, y: 12, text: 'Ø9.96', size: 2.7, anchor: 'middle', role: 'callout' },
-      { x: 80, y: 70, text: 'overall 29.69 mm', size: 2.7, anchor: 'middle', role: 'callout' },
-      { x: 13, y: 82, text: '9 mm Luger · drawn to scale', size: 3.1, anchor: 'start', role: 'caption' },
+      {
+        x: 20,
+        y: 12,
+        text: 'Ø9.96',
+        size: 2.7,
+        anchor: 'middle',
+        role: 'callout',
+      },
+      {
+        x: 80,
+        y: 70,
+        text: 'overall 29.69 mm',
+        size: 2.7,
+        anchor: 'middle',
+        role: 'callout',
+      },
+      {
+        x: 13,
+        y: 82,
+        text: '9 mm Luger · drawn to scale',
+        size: 3.1,
+        anchor: 'start',
+        role: 'caption',
+      },
     ],
   };
 
@@ -1178,7 +1374,10 @@ describe('the cartridge drawing', () => {
      * animals: fourteen sections cannot fit beside a C.I.P. sheet above a
      * photograph, so the last of them must appear on a later page.
      */
-    const rest = pages.slice(feature + 1).join(' ').replace(/\s+/g, '');
+    const rest = pages
+      .slice(feature + 1)
+      .join(' ')
+      .replace(/\s+/g, '');
     expect(rest).toContain('SECTION14');
   });
 
@@ -1353,8 +1552,8 @@ describe('the cartridge drawing', () => {
   }
 
   it('costs a pack with no drawing nothing at all', async () => {
-    const a = await svc.render(makeInput(withCartridgeSection) as never);
-    const b = await svc.render(makeInput(withCartridgeSection) as never);
+    const a = await svc.render(makeInput(withCartridgeSection));
+    const b = await svc.render(makeInput(withCartridgeSection));
     expect(await pageCount(a.pdf)).toBe(await pageCount(b.pdf));
   });
 });
@@ -1400,9 +1599,14 @@ describe('telling the Act’s words from the applicant’s', () => {
     // Heading 11 is the only section that may quote the Act. A paragraph
     // elsewhere that opens with a bracket — an aside, an annexure
     // cross-reference — stays ordinary body copy.
-    expect(isQuotedSubsection('(4) The Registrar may issue …', false)).toBe(false);
+    expect(isQuotedSubsection('(4) The Registrar may issue …', false)).toBe(
+      false,
+    );
     expect(
-      isQuotedSubsection('(Refer to Annexure B: Proficiency Certificates)', false),
+      isQuotedSubsection(
+        '(Refer to Annexure B: Proficiency Certificates)',
+        false,
+      ),
     ).toBe(false);
   });
 });

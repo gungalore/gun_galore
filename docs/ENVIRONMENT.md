@@ -48,7 +48,7 @@ it is actually "the integration is protecting you". The fail-closed set:
 | `DIDIT_API_KEY` / `DIDIT_WORKFLOW_ID` | The whole process, at boot, in production. Hard throw. |
 | `DIDIT_WEBHOOK_SECRET`| Inbound verification outcomes are dropped unverified → a seller who finished on Didit's page stays `PENDING` forever |
 | `TCG_WEBHOOK_SECRET`  | Inbound Courier Guy tracking events rejected in production         |
-| `PEACH_SECRET`        | Inbound Peach webhooks rejected → orders never confirm as paid     |
+| `OZOW_WEBHOOK_SECRET` | Inbound Ozow webhooks rejected → orders never confirm as paid     |
 | `HEALTH_PING_SECRET`  | `/api/health/crons` returns 503 rather than 200                    |
 
 `ANTHROPIC_API_KEY` is a special case: it fails *safe* rather than closed.
@@ -84,9 +84,10 @@ Names in here that will not mean anything until you know the domain:
   instead of a street address. Common here because inter-town home delivery is
   unreliable.
 - **The Courier Guy (TCG)** — the door-to-door courier.
-- **Peach Payments** — the SA payment gateway. Card pay-in, payouts to seller
-  bank accounts, and **BANV** (bank-account name verification — proving the
-  seller owns the account before we pay it).
+- **Ozow** — the SA payment gateway. Pay by Bank (instant EFT) pay-in through
+  One API, refunds, and payouts to seller bank accounts through the Payouts API.
+  There is no automated bank-account name verification product; the destination
+  account is validated during the payout itself.
 - **Didit** — the identity-verification provider behind seller KYC, and only
   that. It briefly also sent the sign-up e-mail and phone codes; those moved
   back in-house on 2026-09-11 and now go out over Resend and SMSPortal.
@@ -120,7 +121,7 @@ prefix, so the real base URL is `http://localhost:3001/api`.
 slash.
 
 Three consumers: the CORS allow-list in `main.ts`, the absolute links baked
-into outbound email and SMS, and the fallback base for Peach's callback URL.
+into outbound email and SMS, and the fallback base for Ozow's return URL.
 Wrong value → CORS blocks the browser *and* every notification link points at
 the wrong host. Defaults vary by call site (`http://localhost:3000` in most,
 `https://gungalore.co.za` in the KYC service), which is exactly the kind of
@@ -129,9 +130,9 @@ inconsistency you should not rely on — set it.
 Local: `http://localhost:3000`.
 
 ### `PUBLIC_API_URL`
-**Optional.** Public origin of the API itself, used as the Peach
-`notificationUrl` and as the base string for webhook signature verification.
-Unset → derived as `FRONTEND_URL + '/api'`. Only matters once Peach is live.
+**Optional.** Public origin of the API itself, used as the base for Ozow's
+payout `notifyUrl`. Unset → derived as `FRONTEND_URL + '/api'`. Only matters
+once Ozow is live.
 
 > `BACKEND_URL` appears in the live server's `.env` but nothing reads it. It
 > was superseded by `PUBLIC_API_URL`.
@@ -328,7 +329,7 @@ the verdict actually arrives — not from the request that created the session.
 Unset or wrong → outcomes cannot be verified and are dropped, so a seller who
 finished on Didit's page stays `PENDING` forever and can never be paid out.
 A bad signature returns **200** with the handler skipped, never a 401 — the same
-house rule as the Peach webhooks, so there is nothing to grep for.
+house rule as the Ozow webhooks, so there is nothing to grep for.
 
 ⚠️ **Not an env var, but it belongs here:** Didit delivers from the single
 static IP **`18.203.201.92`** (`User-Agent: DiditWebhook/2.0`). Cloudflare's WAF
@@ -476,7 +477,7 @@ for registering webhook subscriptions; not read by the send path itself.
 (`X-Hub-Signature-256`, HMAC-SHA256 over the raw body — see
 `whatsapp-signature.ts`). Missing or wrong → **every inbound webhook is
 REJECTED (fail-closed)**: `receiveWebhook` always returns 200 (Meta's
-convention, matched by Peach and Didit's webhooks in this codebase — a bad
+convention, matched by Ozow and Didit's webhooks in this codebase — a bad
 signature is never a 401), so grepping application logs for 401s to diagnose
 this finds nothing. Look for the `WEBHOOK_SIGNATURE_INVALID` AdminAlert
 (`referenceId: 'whatsapp'`) instead. The practical effect: inbound member
@@ -578,54 +579,58 @@ unset is allowed through so local testing works without the secret wired.
 The endpoint always returns HTTP 200 even when rejecting — a house rule, so a
 carrier's retry queue does not back up against us.
 
-## Payments — Peach
+## Payments — Ozow
 
-Peach is the only payment provider: Checkout V2 for pay-in, Payouts for seller
-disbursement, BANV for bank-account ownership verification. **Leave the
-credentials blank and checkout runs in mock mode — the entire app is usable and
-no money moves.** That is the current production state.
+Ozow is the only payment provider: One API for pay-in (Pay by Bank / instant
+EFT) and refunds, Payouts API for seller disbursement. There is no automated
+bank-account verification product. **Leave the credentials blank and checkout
+runs in mock mode — the entire app is usable and no money moves.** That is the
+current production state.
 
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `PEACH_ENV` | Optional | Literal `live` selects the production hosts; anything else selects the sandbox hosts. |
-| `PEACH_CLIENT_ID` | For live payments | OAuth client-credentials, Dashboard → Checkout → Settings. Shared by checkout, payouts and BANV. |
-| `PEACH_CLIENT_SECRET` | For live payments | |
-| `PEACH_MERCHANT_ID` | For live payments | Rides in the payouts URL path. |
-| `PEACH_ENTITY_ID` | For live payments | The checkout channel/entity id. |
-| `PEACH_SECRET` | **FAILS CLOSED** | See below. |
+| `OZOW_ENV` | Optional | Literal `live` selects the production hosts; anything else selects the staging hosts. |
+| `OZOW_CLIENT_ID` | For live payments | OAuth client-credentials, One API Clients section of the Ozow Dashboard. |
+| `OZOW_CLIENT_SECRET` | For live payments | |
+| `OZOW_SITE_CODE` | For live payments | The site code from the Site section of the Dashboard. |
+| `OZOW_WEBHOOK_SECRET` | **FAILS CLOSED** | The Svix signing secret (`whsec_…`). See below. |
+| `OZOW_PAYOUT_API_KEY` | For live payouts | A separate Payout API key, issued only after Ozow payout onboarding. |
+| `OZOW_PAYOUT_SITE_CODE` | For live payouts | Falls back to `OZOW_SITE_CODE`. |
+| `OZOW_PAYOUT_ACCESS_TOKEN` | For live payouts | Static 24-char token Ozow sends in the `AccessToken` header on the payout verification webhook. |
+| `OZOW_PAYOUT_ENCRYPTION_KEY` | For live payouts | 32-char key for AES-256-CBC encryption of destination account numbers. |
+| `OZOW_PAYOUT_IS_RTC` | Optional | `true` → real-time clearing (production); `false` for staging tests. |
 
-### `PEACH_SECRET`
-The "secret token" that signs checkout creates and refunds, and verifies
-inbound webhook signatures. Set the same value in the Peach Dashboard under
-Webhook security.
+### `OZOW_WEBHOOK_SECRET`
+The Svix signing secret for One API webhooks. One API signs each delivery with
+HMAC-SHA256 over `${svix-id}.${svix-timestamp}.${rawBody}`, keyed by the Base64
+bytes after `whsec_`, and sends the digest in `svix-signature`.
 
-Fails closed: unset in production → inbound Peach webhooks are **rejected**, so
-a forged webhook can never mark an order paid. The flip side is that a missing
+Fails closed: unset in production → inbound Ozow webhooks are **rejected**, so a
+forged webhook can never mark an order paid. The flip side is that a missing
 secret also stops *real* payments from ever confirming. If payments are taken
 but nothing settles, check this first.
 
-Webhook URLs to register in the Peach Dashboard:
+Webhook URLs to register with Ozow:
 
 ```
-/api/payments/webhook/peach          checkout lifecycle
-/api/payments/webhook/peach-payout   payout status
-/api/payments/webhook/peach-banv     bank verification result
-/api/payments/webhook/peach-dispute  chargebacks
+/api/payments/webhook/ozow               transaction.complete (Svix-signed)
+/api/payments/webhook/ozow-payout        payout notification (SHA-512 hashCheck)
+/api/payments/webhook/ozow-payout-verify payout verification handshake
 ```
 
 ### `PAYMENT_MODE` and `PAYMENTS_LIVE`
 The two rail selectors, both **off by default because the site is not trading
 yet**. `src/payments/payment-mode.ts` is the seam.
 
-- `PAYMENT_MODE=paygate` → card-rate fee maths and the card-reversal refund
-  arm. Anything else → `manual`, the pre-paygate fee shape. This changes
+- `PAYMENT_MODE=paygate` → gateway-rate fee maths and the gateway-reversal
+  refund arm. Anything else → `manual`, the pre-paygate fee shape. This changes
   *money arithmetic*, not just a label.
 - `PAYMENTS_LIVE=true` → opens checkout and enables payout disbursement. While
   false, every checkout entry point returns 503 "card payments launching soon".
   The accounting engine underneath is unchanged and rail-agnostic; only the
   entry gate moves.
 
-Going live is therefore: fill the Peach credentials, `PEACH_ENV=live`,
+Going live is therefore: fill the Ozow credentials, `OZOW_ENV=live`,
 `PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true`. All four, or the behaviour is
 inconsistent.
 
@@ -872,10 +877,10 @@ person comparing server to repo knows they are dead rather than missing.
 | --- | --- |
 | `BACKEND_URL` | Superseded by `PUBLIC_API_URL` |
 | `GOOGLE_MAPS_API_KEY` | Maps are frontend-only (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) |
-| `STITCH_CLIENT_ID`, `STITCH_CLIENT_SECRET` | Stitch was replaced by Peach. Only `scripts/stitch-redirect-setup.cjs`, a one-off setup script, still references them |
+| `STITCH_CLIENT_ID`, `STITCH_CLIENT_SECRET` | Stitch was replaced by Peach, then Ozow. Only `scripts/stitch-redirect-setup.cjs`, a one-off setup script, still references them |
 | `FNB_ACCOUNT_SUFFIX` | The FNB payout-batch rail was stripped in July 2026 |
 | `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD` | No IMAP client exists in the codebase |
-| `PEACH_ACCESS_TOKEN`, `PEACH_BASE_URL` | Not the Peach auth model that was built; the code uses `PEACH_CLIENT_ID`/`PEACH_CLIENT_SECRET` + `PEACH_ENV` to select hosts |
+| `PEACH_ACCESS_TOKEN`, `PEACH_BASE_URL`, `PEACH_CLIENT_ID`, `PEACH_CLIENT_SECRET`, `PEACH_MERCHANT_ID`, `PEACH_ENTITY_ID`, `PEACH_SECRET`, `PEACH_ENV` | Peach was replaced by Ozow in September 2026; no code reads any `PEACH_*` variable |
 | `ODOO_URL`, `ODOO_DB`, `ODOO_API_KEY` | Odoo was replaced by Zoho Books. These were in the old `.env.example` too and have been removed from it |
 
 **Operator action:** when you delete these from the server, *rotate*
@@ -888,19 +893,17 @@ These are now in `backend/.env.example`. Several are also absent from the live
 server, meaning the feature is running on its coded default:
 
 `ANTHROPIC_ADMIN_API_KEY`, all ten remaining
-`ANTHROPIC_MODEL_*`, `HB_RANGE_OPUS_THRESHOLD`, `PEACH_ENV`,
-`PEACH_CLIENT_ID`, `PEACH_CLIENT_SECRET`, `PEACH_MERCHANT_ID`, `PEACH_SECRET`,
+`ANTHROPIC_MODEL_*`, `HB_RANGE_OPUS_THRESHOLD`, `OZOW_ENV`,
+`OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`, `OZOW_WEBHOOK_SECRET`,
 `PAYMENTS_LIVE`, `PUBLIC_API_URL`, `PUDO_API_SECRET`, `TCG_BASE_URL`,
 `SMSPORTAL_API_KEY`, `SMSPORTAL_BASE_URL`,
 `LOW_CREDIT_THRESHOLD`, `SUPPORT_EMAIL`, `EMAIL_LOGO_URL`, `OCR_CHUNK_PAGES`,
 `HEALTH_PING_SECRET`.
 
-Worth flagging: the live server has `PEACH_ACCESS_TOKEN` and `PEACH_BASE_URL`
-but **not** `PEACH_CLIENT_ID`, `PEACH_CLIENT_SECRET`, `PEACH_MERCHANT_ID` or
-`PEACH_SECRET`. That is consistent with Peach being deployed inert — checkout
-is in mock mode and no money moves — but it means the variables currently set
-for Peach on production are the wrong ones. When the operator wires the real
-credentials, they need the five names in this document, not the two on the
+Worth flagging: no Ozow credential is set on the live server yet, so checkout
+is in mock mode and no money moves. The variables currently set for the old
+Peach rail are the wrong ones. When the operator wires the real credentials,
+they need the `OZOW_*` names in this document, not the `PEACH_*` ones on the
 server.
 
 ## Frontend

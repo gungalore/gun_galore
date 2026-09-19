@@ -17,10 +17,16 @@ import { NotificationsService } from './notifications.service';
 // go to a locker: they would make a wasted trip and miss the courier.
 
 function makeService() {
-  const sent: { sms: string[]; emails: string[]; inbox: string[] } = {
+  const sent: {
+    sms: string[];
+    emails: string[];
+    inbox: string[];
+    whatsapp: (string | null)[];
+  } = {
     sms: [],
     emails: [],
     inbox: [],
+    whatsapp: [],
   };
   const svc = Object.create(NotificationsService.prototype) as NotificationsService;
   Object.assign(svc as unknown as Record<string, unknown>, {
@@ -31,9 +37,17 @@ function makeService() {
     send: jest.fn(async (_to: string, _subj: string, html: string) => {
       sent.emails.push(html);
     }),
-    sendSms: jest.fn(async (_to: unknown, body: string) => {
-      sent.sms.push(body);
-    }),
+    sendSms: jest.fn(
+      async (
+        _to: unknown,
+        body: string,
+        _ref?: unknown,
+        opts?: { whatsapp?: { templateKey?: string } },
+      ) => {
+        sent.sms.push(body);
+        sent.whatsapp.push(opts?.whatsapp?.templateKey ?? null);
+      },
+    ),
     email: (a: { body: string; rows?: { label: string; value: string }[] }) =>
       a.body + '||ROWS||' + JSON.stringify(a.rows ?? []),
   });
@@ -94,6 +108,21 @@ describe('shipmentBooked copy', () => {
       await svc.shipmentBooked({ ...BASE, carrier: 'PUDO', provider: 'BOBGO' });
       expect([...sent.sms, ...sent.emails].join(' ')).not.toMatch(/PIN/);
     });
+
+    it('never picks the locker WhatsApp template, even when a PIN was issued', async () => {
+      // The WhatsApp rail has to make the SAME decision the copy above does.
+      // Gating it on `dropoffPin` alone sent a Bob Go seller to a locker
+      // screen that has nothing to do with the courier coming to their door —
+      // the exact wasted trip this file exists to prevent.
+      const { svc, sent } = makeService();
+      await svc.shipmentBooked({
+        ...BASE,
+        carrier: 'PUDO',
+        provider: 'BOBGO',
+        dropoffPin: '4821',
+      });
+      expect(sent.whatsapp[0]).toBe('shipment_booked_seller_door');
+    });
   });
 
   describe('on the legacy rail, unchanged', () => {
@@ -125,6 +154,16 @@ describe('shipmentBooked copy', () => {
       const { svc, sent } = makeService();
       await svc.shipmentBooked({ ...BASE, carrier: 'PUDO', provider: null });
       expect(sent.sms[0]).toMatch(/Drop at any Pudo locker/);
+    });
+
+    it('still picks the locker WhatsApp template on the legacy Pudo rail', async () => {
+      const { svc, sent } = makeService();
+      await svc.shipmentBooked({
+        ...BASE,
+        carrier: 'PUDO',
+        dropoffPin: '270089',
+      });
+      expect(sent.whatsapp[0]).toBe('shipment_booked_seller_locker');
     });
   });
 });

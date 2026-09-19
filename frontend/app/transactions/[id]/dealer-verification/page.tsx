@@ -21,6 +21,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '../../../../lib/auth';
 import { DownloadSaps534Button } from '../download-saps534-button';
 import { processImage } from '@/lib/process-image';
+import ScanButton from '@/components/scan/scan-button';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -412,6 +413,14 @@ export default function DealerVerificationPage() {
             state={files[slot.key]}
             onPick={(f) => pickFile(slot.key, f)}
             onRemove={() => removeFile(slot.key)}
+            onScan={
+              slot.key === 'saps534'
+                ? (captured) => {
+                    const first = captured[0];
+                    if (first) pickFile(slot.key, first);
+                  }
+                : undefined
+            }
           />
         ))}
 
@@ -605,11 +614,13 @@ function Slot({
   state,
   onPick,
   onRemove,
+  onScan,
 }: {
   config: SlotConfig;
   state: FileState | null;
   onPick: (f: File) => void;
   onRemove: () => void;
+  onScan?: (files: File[]) => void | Promise<void>;
 }) {
   return (
     <div
@@ -695,25 +706,38 @@ function Slot({
         </p>
       ) : (
         <>
-          <label
-            className="inline-block px-3 py-2 rounded-[6px] text-sm cursor-pointer"
-            style={{
-              background: 'var(--bg-inset)',
-              color: 'var(--text-primary)',
-              border: '0.5px solid var(--border)',
-            }}
-          >
-            Upload from gallery
-            <input
-              type="file"
-              accept={config.key === 'saps534' ? 'image/*,application/pdf' : 'image/*'}
-              hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) onPick(f);
+          <div className="flex flex-wrap gap-2">
+            {onScan && (
+              <ScanButton
+                shape="a4"
+                title="Scan the SAP 534"
+                subtitle="Keep the whole form in frame and make every field readable."
+                skipChoose
+                onFiles={onScan}
+                fallback={null}
+                label="Scan with camera"
+              />
+            )}
+            <label
+              className="inline-block px-3 py-2 rounded-[6px] text-sm cursor-pointer"
+              style={{
+                background: 'var(--bg-inset)',
+                color: 'var(--text-primary)',
+                border: '0.5px solid var(--border)',
               }}
-            />
-          </label>
+            >
+              Upload from gallery
+              <input
+                type="file"
+                accept={config.key === 'saps534' ? 'image/*,application/pdf' : 'image/*'}
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) onPick(f);
+                }}
+              />
+            </label>
+          </div>
           {state?.error && (
             <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>
               {state.error}

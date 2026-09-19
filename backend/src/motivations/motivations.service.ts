@@ -118,6 +118,11 @@ export class MotivationsService {
     private readonly vaultAdoption: VaultAdoptionService,
   ) {}
 
+  /** Remove vault-sourced material from drafts without rewriting completed packs. */
+  async removeCredentialFromEditableDrafts(userId: string, credentialId: string) {
+    return this.documents.removeCredentialFromEditableDrafts(userId, credentialId);
+  }
+
   /** Own list. Metadata only — nothing is decrypted here. */
   async listMine(userId: string) {
     await this.quota.assertEnabled();

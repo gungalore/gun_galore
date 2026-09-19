@@ -66,7 +66,7 @@ function makeService(over: {
     prisma as never,
     {} as never, // fees
     notifications as never,
-    {} as never, // peach
+    {} as never, // ozow
     {} as never, // kyc
     {} as never, // shipping
     {} as never, // tracking
@@ -118,7 +118,7 @@ describe('confirming a whole basket', () => {
   });
 
   it('⚠️ sends ONE email when two handlers race for the last line', async () => {
-    // Peach's result page and its webhook both drive markPaid, and a
+    // ozow's result page and its webhook both drive markPaid, and a
     // multi-seller cart pays several lines concurrently. Both callers can see
     // "all lines paid"; only the one that wins the CAS may notify. Without
     // this the buyer is emailed twice for one order.

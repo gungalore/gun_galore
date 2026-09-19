@@ -92,7 +92,7 @@ export function formatRandCents(cents: number): string {
  * first, on a surface about money.
  *
  * ⚠️ EXACTLY-ONCE IS THE SERVER'S, VIA paidOutAt — not this call's. Pressing
- * twice does not pay twice, but it does start a second Peach batch, so the
+ * twice does not pay twice, but it does start a second payout run, so the
  * button is disabled while the first is in flight.
  */
 export interface PayoutRunResult {
@@ -110,10 +110,10 @@ export function runDuePayouts(): Promise<PayoutRunResult> {
 /**
  * What the operator is told afterwards.
  *
- * ⚠️ ACCEPTED IS NOT PAID. Peach accepts a batch and settles it asynchronously;
- * the payout webhook reconciles. Reporting "12 sellers paid" at this point
- * would be a claim the platform cannot yet make — and the one an operator
- * would repeat to a seller.
+ * ⚠️ ACCEPTED IS NOT PAID. Ozow accepts each payout and settles it
+ * asynchronously; the payout webhook reconciles. Reporting "12 sellers paid"
+ * at this point would be a claim the platform cannot yet make — and the one an
+ * operator would repeat to a seller.
  */
 export function describePayoutRun(r: PayoutRunResult): string {
   if (r.attempted === 0) return 'Nothing was due — no payout was sent.';

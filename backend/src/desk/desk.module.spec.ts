@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service';
-import { PeachModule } from '../payments/peach.module';
+import { OzowModule } from '../payments/ozow.module';
 import { DeskModule } from './desk.module';
 import { DeskService } from './desk.service';
 import { DeskWhatsappService } from './desk-whatsapp.service';
@@ -19,14 +19,14 @@ import { DeskWhatsappService } from './desk-whatsapp.service';
 describe('DeskModule', () => {
   it('boots with its controllers, guards and the WhatsApp reply service resolved', async () => {
     const mod = await Test.createTestingModule({
-      // ⚠️ PeachModule ONLY BECAUSE THIS TEST MODULE GRAPH IS ISOLATED. It is
-      // @Global in the real app (peach.module.ts), which is what lets
-      // ManualPaymentsService inject PeachService without ManualPaymentsModule
+      // ⚠️ OzowModule ONLY BECAUSE THIS TEST MODULE GRAPH IS ISOLATED. It is
+      // @Global in the real app (ozow.module.ts), which is what lets
+      // ManualPaymentsService inject OzowService without ManualPaymentsModule
       // importing it — but a @Global module still has to be imported by
       // SOMETHING to be instantiated, and nothing else in this narrower graph
-      // does. Not a DeskModule wiring gap; PeachService is dependency-free,
+      // does. Not a DeskModule wiring gap; OzowService is dependency-free,
       // so importing it here costs nothing real.
-      imports: [DeskModule, PeachModule],
+      imports: [DeskModule, OzowModule],
     })
       .overrideProvider(PrismaService)
       .useValue({})

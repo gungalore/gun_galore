@@ -1492,7 +1492,7 @@ export class NotificationsService {
       `stocked-${d.transactionId}`,
       {
         whatsapp: {
-          templateKey: 'firearm_ready_at_dealer_buyer',
+          templateKey: 'dealer_collection_ready_buyer',
           vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
         },
       },
@@ -1763,11 +1763,15 @@ export class NotificationsService {
       : isPudo
         ? `Drop at any Pudo locker${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`
         : 'The courier will collect.';
-    // ⚠️ THE PIN, NOT THE SLOT, PICKS THE TEMPLATE. `shipment_booked_seller_locker`
-    // promises a drop-off PIN in its body; sending it without one renders a
-    // blank {{3}} on a live, unrecallable message. `dropoffPin` is exactly the
-    // signal the rows/copy above already branch on, so reuse it rather than
-    // re-deriving from `isPudo`/`isBobGo` a second way that could disagree.
+    // ⚠️ A PIN ALONE DOES NOT MEAN A LOCKER. `shipment_booked_seller_locker`
+    // tells the seller to take the parcel to a locker screen — true only on the
+    // legacy Pudo rail. Bob Go collects from the seller's ADDRESS even when it
+    // issues a PIN (see `shipment-booked-copy.spec.ts`), so gating on
+    // `dropoffPin` alone would send locker instructions to a seller who has to
+    // stay home for the courier. That is the same mismatch the SMS and email
+    // above already avoid by branching on `isPudo`; the WhatsApp rail must make
+    // the SAME decision or the two disagree. `dropoffPin` is still checked, but
+    // only to guarantee `{{3}}` is never rendered blank.
     const ref = orderRef({ id: d.transactionId });
     await this.sendSms(
       d.sellerPhone,
@@ -1777,20 +1781,25 @@ export class NotificationsService {
         // Waybill + Pudo PIN are delivery-essential — without them the
         // parcel physically can't be handed over. Bypasses the SMS mute.
         critical: true,
-        whatsapp: d.dropoffPin
-          ? {
-              templateKey: 'shipment_booked_seller_locker',
-              vars: {
-                ref,
-                waybill: d.trackingReference,
-                pin: d.dropoffPin,
-                txId: d.transactionId,
+        whatsapp:
+          isPudo && d.dropoffPin
+            ? {
+                templateKey: 'shipment_booked_seller_locker',
+                vars: {
+                  ref,
+                  waybill: d.trackingReference,
+                  pin: d.dropoffPin,
+                  txId: d.transactionId,
+                },
+              }
+            : {
+                templateKey: 'shipment_booked_seller_door',
+                vars: {
+                  ref,
+                  waybill: d.trackingReference,
+                  txId: d.transactionId,
+                },
               },
-            }
-          : {
-              templateKey: 'shipment_booked_seller_door',
-              vars: { ref, waybill: d.trackingReference, txId: d.transactionId },
-            },
       },
     );
   }

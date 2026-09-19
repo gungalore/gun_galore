@@ -64,27 +64,25 @@ function assertProductionConfig() {
   // identity checks — every identity passing on canned data, with nobody
   // finding out until it mattered. Do not re-add a warning here; a second,
   // softer copy of the same gate is how the hard one gets deleted.
-  // WARN: Peach credentials missing — checkout falls back to mock mode.
+  // WARN: Ozow credentials missing — checkout falls back to mock mode.
   if (
-    !process.env.PEACH_CLIENT_ID ||
-    !process.env.PEACH_CLIENT_SECRET ||
-    !process.env.PEACH_ENTITY_ID ||
-    !process.env.PEACH_SECRET
+    !process.env.OZOW_CLIENT_ID ||
+    !process.env.OZOW_CLIENT_SECRET ||
+    !process.env.OZOW_SITE_CODE
   ) {
     log.error(
-      '⚠️  PEACH_CLIENT_ID / PEACH_CLIENT_SECRET / PEACH_MERCHANT_ID / PEACH_ENTITY_ID / PEACH_SECRET not all set — Peach checkout runs in MOCK mode (no real payments). Set them (+ PEACH_ENV=live and PAYMENT_MODE=paygate, PAYMENTS_LIVE=true) before taking payments.',
+      '⚠️  OZOW_CLIENT_ID / OZOW_CLIENT_SECRET / OZOW_SITE_CODE not all set — Ozow checkout runs in MOCK mode (no real payments). Set them (+ OZOW_ENV=live and PAYMENT_MODE=paygate, PAYMENTS_LIVE=true) before taking payments.',
     );
   }
-  // WARN: Peach webhook signing secret missing — webhook verification fails closed.
-  if (!process.env.PEACH_SECRET) {
+  // WARN: Ozow webhook signing secret missing — webhook verification fails closed.
+  if (!process.env.OZOW_WEBHOOK_SECRET) {
     log.error(
-      '⚠️  PEACH_SECRET is not set — incoming Peach webhooks will be REJECTED (fail-closed). Set the webhook signing secret from the Peach Dashboard before relying on webhooks.',
+      '⚠️  OZOW_WEBHOOK_SECRET is not set — incoming Ozow webhooks will be REJECTED (fail-closed). Set the Svix signing secret from the Ozow Dashboard before relying on webhooks.',
     );
   }
-  // NOTE: Peach Payouts + bank-account verification (BANV) ride the same
-  // PEACH_CLIENT_ID/SECRET/MERCHANT_ID OAuth creds warned about above —
-  // until those are set, run-payouts logs intent only and BANV is skipped
-  // (the manual admin bank-ownership review remains the payout gate).
+  // NOTE: Ozow Payouts needs OZOW_PAYOUT_API_KEY / OZOW_PAYOUT_SITE_CODE /
+  // OZOW_PAYOUT_ENCRYPTION_KEY — until those are set, run-payouts logs intent
+  // only (the manual admin bank-details review remains the payout gate).
   // WARN: Didit webhook secret missing — verification outcomes arrive
   // UNVERIFIED and are dropped, so a seller who finishes on Didit's page
   // stays PENDING forever with nothing in any log saying why.

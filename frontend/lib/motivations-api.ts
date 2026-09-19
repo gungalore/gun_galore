@@ -1179,6 +1179,12 @@ export const motivationsApi = {
       reason: 'ok' | 'no-consent' | 'not-editable' | 'already-done';
       /** Something was held back pending the place tick. Ask, then re-call. */
       needsPlaceConfirm: boolean;
+      /**
+       * Answer keys the offer filled from the member's documents, even though
+       * no document was attached this run. The sheet has to reload when this is
+       * non-empty — see the effect that calls this.
+       */
+      filled?: string[];
     }>(
       t,
       `/${id}/autolink`,

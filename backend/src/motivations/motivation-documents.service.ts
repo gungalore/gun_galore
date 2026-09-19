@@ -1,4 +1,5 @@
 import { DocumentReadCacheService } from './document-read-cache.service';
+import { DocumentPageRasterService } from './document-page-raster.service';
 import {
   BadRequestException,
   GoneException,
@@ -29,7 +30,7 @@ import { decideAutolink, endorsementMoved } from './motivation-autolink';
 import {
   primaryUploadKind,
   asksPlace,
-  uploadKindsFor,
+  effectiveUploadKinds,
   S16_AUTO_ATTACH,
   validLongEnough,
   toIsoDay,
@@ -148,8 +149,33 @@ export class MotivationDocumentsService {
      * follow an optional one — not because the order means anything.
      */
     private readonly readCache: DocumentReadCacheService,
+    private readonly pageRaster: DocumentPageRasterService,
     private readonly prefill?: MotivationPrefillService,
   ) {}
+
+  /**
+   * Re-run the offer after a document lands, and write what it can now fill.
+   *
+   * ⚠️ SILENT, EMPTY BOXES ONLY, AND IT NEVER OVERWRITES A MEMBER VALUE — the
+   * rules live in MotivationPrefillService.reapplyOffer. Called on every door a
+   * document can arrive through, because create() is not the only one and the
+   * manual "fill from Document Centre" endpoints were deleted with the wizard.
+   * Swallowed on failure: a document that arrived is the member's, and the
+   * offer filling a few boxes is a convenience on top of it.
+   */
+  private async reapplyOffer(userId: string, id: string): Promise<string[]> {
+    if (!this.prefill || typeof this.prefill.reapplyOffer !== 'function') {
+      return [];
+    }
+    try {
+      return (await this.prefill.reapplyOffer(userId, id)).changed;
+    } catch (err) {
+      this.logger.warn(
+        `Re-offer after a document change failed for ${id}: ${(err as Error).message}`,
+      );
+      return [];
+    }
+  }
 
   // ── the document library ──────────────────────────────────────────
 
@@ -289,10 +315,7 @@ export class MotivationDocumentsService {
             // motivation's upload has no date on the row, so it is offered in
             // the library like anything else and simply not suggested.
             (i.source === 'credential'
-              ? validLongEnough(
-                  expiryByCredential.get(i.sourceId) ?? null,
-                  now,
-                )
+              ? validLongEnough(expiryByCredential.get(i.sourceId) ?? null, now)
               : false),
         );
 
@@ -354,6 +377,14 @@ export class MotivationDocumentsService {
       return { attached: [], skipped: [], reason: 'not-editable' as const };
     }
 
+    // ⚠️ BEFORE THE ALREADY-DONE GUARD, NOT AFTER IT. autolink runs once per
+    // application, so an upload to the Document Centre AFTER creation would
+    // never re-offer if this sat below the guard — and "at any time" is the
+    // requirement. It only fills empty boxes, so re-running costs nothing.
+    // `filled` rides back on every return so the sheet reloads when the offer
+    // wrote something even though no document was attached.
+    const filled = await this.reapplyOffer(user.id, id);
+
     // ⚠️ ONCE PER APPLICATION, NOT ONCE PER PAGE LOAD, AND THIS GUARD IS THE
     // WHOLE DIFFERENCE BETWEEN A FEATURE AND A FIGHT. decideAutolink skips a
     // kind that is ALREADY ATTACHED — so the moment the member deleted a
@@ -385,13 +416,30 @@ export class MotivationDocumentsService {
      */
     const placeRerun = !!row.autolinkedAt && placeConfirmed;
     if (row.autolinkedAt && !placeRerun) {
-      return { attached: [], skipped: [], reason: 'already-done' as const };
+      return {
+        attached: [],
+        skipped: [],
+        reason: 'already-done' as const,
+        filled,
+      };
     }
 
-    if (!(await this.vaultConsent.mayKeepFor(user.id))) {
-      // Not an error: they have simply not agreed, or have withdrawn. The
-      // library still offers everything for them to attach by hand.
-      return { attached: [], skipped: [], reason: 'no-consent' as const };
+    // ⚠️ MAY OFFER ACROSS, NOT MAY KEEP (2026-09-14). Keeping is about copying
+    // documents INTO the Centre and rightly needs a yes; attaching vault
+    // documents to an application is cross-application reuse, which the product
+    // has always done and which only stops on an explicit decline/withdrawal.
+    // Gating it on the keep-consent meant nobody who had not walked the Centre
+    // consent window ever got a standard document auto-attached — the exact
+    // "it has to auto import them" the operator is now calling out.
+    if (!(await this.vaultConsent.mayOfferAcross(user.id))) {
+      // Not an error: they have declined cross-application reuse or withdrawn.
+      // The library still offers everything for them to attach by hand.
+      return {
+        attached: [],
+        skipped: [],
+        reason: 'no-consent' as const,
+        filled,
+      };
     }
 
     // ⚠️ CREDENTIALS ONLY, NOT UPLOADS FROM OTHER APPLICATIONS. The freshness
@@ -407,28 +455,16 @@ export class MotivationDocumentsService {
           userId: user.id,
           storageKey: { not: null },
           purgedAt: null,
-          // ⚠️ SETTLED DATES, NOT CONFIRMED ONES, AND THE OLD PREDICATE MADE
-          // THIS FEATURE DO NOTHING FOR AN ORDINARY MEMBER. C2. It read
-          // `confirmedAt: { not: null }` on the grounds that "an unconfirmed
-          // expiry is our reading of a document, not the member's answer, and
-          // the whole freshness rule rests on it" — which was true when a tick
-          // was the only way a date became trustworthy.
-          //
-          // Since 2026-08-25 the Document Centre fills in and ARMS dates
-          // itself: `dateSource` set, `confirmedAt` still null, the reminder
-          // sweep already acting on the value. That is the NORMAL state — the
-          // operator's own vault holds five firearm licences and ZERO confirmed
-          // rows — so this query returned an empty list for everybody and the
-          // whole run reported "nothing to attach".
-          //
-          // Same predicate as the reminder sweep and as credentialsFor's
-          // dateSettled: a date somebody stands behind, whether that somebody is
-          // the member or our own arming. Two independent conditions, so they
-          // go in an AND — Prisma takes one OR per object and would silently
-          // keep only the last.
-          AND: [
-            { OR: [{ confirmedAt: { not: null } }, { dateSource: { not: null } }] },
-          ],
+          // ⚠️ THE SETTLED-DATE FILTER IS GONE (2026-09-14). It excluded every
+          // document the member had not confirmed — ID, address and safe
+          // photographs carry no date at all, so "settled" never applied to
+          // them, and an unconfirmed licence was dropped outright. Operator:
+          // "the current licenses, the ID, the proof of address ... can be auto
+          // pulled when the motivation is open." The freshness rule is not lost:
+          // decideAutolink still applies AUTOLINK_MIN_DAYS against expiresOn,
+          // and a take-all kind (a licence, a safe photograph) is exempt from
+          // the expiry cut anyway. The member still sees every value with its
+          // source and can remove or correct it.
         },
         select: {
           id: true,
@@ -561,6 +597,13 @@ export class MotivationDocumentsService {
           declared && declared in MotivationUploadKind
             ? (declared as MotivationUploadKind)
             : primaryUploadKind(c.kind);
+        const covers = this.readCovers(c.detailsEncrypted, c.extractionOk);
+        const paired = c.otherSideId
+          ? credentials.find((other) => other.id === c.otherSideId)
+          : undefined;
+        const pairedCovers = paired
+          ? this.readCovers(paired.detailsEncrypted, paired.extractionOk)
+          : '';
         return kind
           ? {
               sourceId: c.id,
@@ -568,7 +611,9 @@ export class MotivationDocumentsService {
               kind,
               expiresOn: c.expiresOn ? toIsoDay(c.expiresOn) : null,
               title: c.title,
-              covers: this.readCovers(c.detailsEncrypted, c.extractionOk),
+              covers: [covers, pairedCovers].filter(Boolean).join(' '),
+              otherSideId: c.otherSideId,
+              documentSide: this.readSide(c.detailsEncrypted),
             }
           : null;
       })
@@ -666,10 +711,13 @@ export class MotivationDocumentsService {
             { userId: user.id, row: openRow },
             c.source,
             c.sourceId,
-            // A safe photograph only ever reaches here on an explicit yes —
-            // decideAutolink refuses it otherwise — and attachOne's own
-            // asksPlace check is the boundary, so the answer travels with it.
-            placeConfirmed,
+            // ⚠️ TRUE NOW, NOT THE FUNCTION'S `placeConfirmed` PARAM (2026-09-14).
+            // Safe photographs moved onto the standard auto-attach list, so the
+            // open-time run attaches them without a tick; the explicit
+            // placeConfirmed re-run below is retained only as a harmless second
+            // pass. attachOne's asksPlace check still guards the directly
+            // callable picker route.
+            true,
             // ⚠️ AND THE REFUSALS APPLY TO THE OTHER PAGE TOO. A member who
             // deleted the certificate must not have it handed back by the
             // statement of results riding in beside it — "why can't I delete
@@ -713,7 +761,10 @@ export class MotivationDocumentsService {
       }
     };
     await Promise.all(
-      Array.from({ length: Math.min(AUTOLINK_CONCURRENCY, queue.length) }, worker),
+      Array.from(
+        { length: Math.min(AUTOLINK_CONCURRENCY, queue.length) },
+        worker,
+      ),
     );
 
     // ⚠️ STAMPED ONLY WHEN THERE WAS SOMETHING TO DECIDE. C2.
@@ -759,7 +810,8 @@ export class MotivationDocumentsService {
         code: sk.why,
         userId: user.id,
         motivationId: row.id,
-        credentialId: sk.candidate.source === 'credential' ? sk.candidate.sourceId : null,
+        credentialId:
+          sk.candidate.source === 'credential' ? sk.candidate.sourceId : null,
         detail: { kind: sk.candidate.kind, needed: needed ?? null },
       });
     }
@@ -792,6 +844,7 @@ export class MotivationDocumentsService {
       ],
       needsPlaceConfirm: decision.needsPlaceConfirm,
       reason: 'ok' as const,
+      filled,
     };
   }
 
@@ -830,7 +883,9 @@ export class MotivationDocumentsService {
         data: { autolinkedAt: null },
       });
       if (count > 0) {
-        this.logger.log(`Auto-link re-armed on ${count} draft(s) for ${userId}`);
+        this.logger.log(
+          `Auto-link re-armed on ${count} draft(s) for ${userId}`,
+        );
       }
       return count;
     } catch (err) {
@@ -906,12 +961,18 @@ export class MotivationDocumentsService {
     await this.quota.assertEnabled();
     const user = await this.shared.requireUser(userId);
     const row = await this.openForAttach(user.id, id);
-    return this.attachWithOtherSide(
+    const result = await this.attachWithOtherSide(
       { userId: user.id, row },
       source,
       sourceId,
       placeConfirmed,
     );
+    // ⚠️ PICKING FROM THE LIBRARY FILLS TOO. The picker is where the member
+    // chooses a document the offer already knew about, and its readings used to
+    // be returned as `suggestions` the sheet discarded. This writes them into
+    // the empty boxes, at any time, on an application that already exists.
+    await this.reapplyOffer(user.id, row.id);
+    return result;
   }
 
   /**
@@ -995,8 +1056,11 @@ export class MotivationDocumentsService {
       ? await this.otherSideOf(ctx.userId, anchor, opts)
       : null;
 
-    const alsoAttached: { id: string; kind: MotivationUploadKind; label: string }[] =
-      [];
+    const alsoAttached: {
+      id: string;
+      kind: MotivationUploadKind;
+      label: string;
+    }[] = [];
     /**
      * The page that did NOT come across, in words a member could read.
      *
@@ -1007,11 +1071,18 @@ export class MotivationDocumentsService {
      * the member reads; the picker does not render this field yet — one line
      * of copy, in a component this file does not own.
      */
-    let alsoFailed: { reason: 'unavailable' | 'error'; message: string } | null =
-      null;
+    let alsoFailed: {
+      reason: 'unavailable' | 'error';
+      message: string;
+    } | null = null;
 
     if (!anchor || !other) {
-      const single = await this.attachOne(ctx, source, sourceId, placeConfirmed);
+      const single = await this.attachOne(
+        ctx,
+        source,
+        sourceId,
+        placeConfirmed,
+      );
       return { ...single, alsoAttached, alsoFailed };
     }
 
@@ -1273,11 +1344,21 @@ export class MotivationDocumentsService {
           purgedAt: true,
           detailsEncrypted: true,
           extractionOk: true,
+          expiresOn: true,
         },
       });
       if (!c) throw new NotFoundException('Document not found');
       sourceCredentialId = sourceId;
-      const mapped = uploadKindsFor(c.kind);
+      // ⚠️ THE GOOD-STANDING ROLE IS DATE-GATED (2026-09-14). A dedicated
+      // certificate only answers the letter-of-good-standing row while its
+      // date window is still valid — see effectiveUploadKinds.
+      const mapped = effectiveUploadKinds(
+        {
+          kind: c.kind,
+          expiresOn: c.expiresOn ? toIsoDay(c.expiresOn) : null,
+        },
+        new Date(),
+      );
       if (!mapped.length) {
         throw new BadRequestException(
           'That document does not answer anything on this application.',
@@ -1824,7 +1905,12 @@ export class MotivationDocumentsService {
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
-      select: { id: true, status: true, licenceType: true, answersEncrypted: true },
+      select: {
+        id: true,
+        status: true,
+        licenceType: true,
+        answersEncrypted: true,
+      },
     });
     if (!row) throw new NotFoundException('Motivation not found');
     if (!EDITABLE.includes(row.status)) {
@@ -1903,11 +1989,46 @@ export class MotivationDocumentsService {
       );
     }
 
+    /**
+     * The extra checklist rows this page also answers.
+     *
+     * ⚠️ A DOCUMENT UPLOADED STRAIGHT TO AN APPLICATION FILLS EVERY ROLE ITS
+     * DOCUMENT CENTRE ROW WOULD (2026-09-14). A dedicated certificate is also
+     * the letter of good standing while its date window is valid — but only
+     * the vault route set that, so a member who photographed the SAME
+     * certificate directly was told the good-standing row was empty with the
+     * paper already in the pack.
+     *
+     * ⚠️ MATCHED BY CONTENT, NOT BY INTENT. A direct upload carries no
+     * sourceCredentialId, and its own read is the MOTIVATION registry — which
+     * does not ask an ASSOCIATION_CARD for its expiry at all. The identical
+     * bytes in the vault DO carry that reading, so the row is found by sha256
+     * and its roles applied. No vault match means no extra role; the document
+     * is still stored and still fills its own row.
+     */
+    let coversKinds: MotivationUploadKind[] = [];
+    if (resolved === MotivationUploadKind.ASSOCIATION_CARD) {
+      const vaultRow = await this.prisma.credential.findFirst({
+        where: { userId: user.id, sha256: stored.sha256, purgedAt: null },
+        select: { kind: true, expiresOn: true },
+      });
+      if (vaultRow) {
+        coversKinds = effectiveUploadKinds(
+          {
+            kind: vaultRow.kind,
+            expiresOn: vaultRow.expiresOn ? toIsoDay(vaultRow.expiresOn) : null,
+          },
+          new Date(),
+        ).filter((k) => k !== resolved);
+      }
+    }
+
     try {
       const created = await this.prisma.motivationUpload.create({
         data: {
           motivationId: row.id,
           kind: resolved,
+          coversKinds,
           storageKey: stored.storageKey,
           mimeType: file.mimetype,
           byteSize: stored.byteSize,
@@ -1933,7 +2054,10 @@ export class MotivationDocumentsService {
       // returned for confirmation: a misread digit in an ID number would
       // otherwise become a false statement on a form they sign.
       let suggestions: ExtractedField[] = [];
-      if (!opts.skipExtraction && MotivationExtractService.canExtract(resolved)) {
+      if (
+        !opts.skipExtraction &&
+        MotivationExtractService.canExtract(resolved)
+      ) {
         try {
           suggestions = await this.extract.extract({
             kind: resolved,
@@ -2133,6 +2257,12 @@ export class MotivationDocumentsService {
       // on the shelf and POSTs :id/keep-in-centre; VaultAdoptionService
       // .keepChosen is the only route in now, and it reports `needsConsent`
       // rather than failing quietly.
+
+      // ⚠️ THE DOCUMENT IS READ; NOW LET THE OFFER SEE IT. A membership card
+      // photographed here is a MotivationUpload, not a vault row, so the offer
+      // that fills "Your case" never saw it — the association block stayed
+      // empty for a member holding the very document that fills it.
+      await this.reapplyOffer(user.id, row.id);
 
       // The wizard shows what each document was filed as, and `autoFiled` is
       // what tells it which rows to put a correction control on.
@@ -2375,8 +2505,7 @@ export class MotivationDocumentsService {
        * extracts nothing by design; flagging it would be crying wolf at every
        * pack.
        */
-      suspect:
-        MotivationExtractService.canExtract(u.kind) && !u.extractionOk,
+      suspect: MotivationExtractService.canExtract(u.kind) && !u.extractionOk,
       ...this.shared.expiryFor(u, now),
     }));
 
@@ -2518,7 +2647,13 @@ export class MotivationDocumentsService {
      * the member has their answer, so a cache that will not purge is a log
      * line and the nightly sweep's problem, never a failed delete.
      */
-    if (up.sha256) void this.readCache.forget(up.sha256);
+    if (up.sha256) {
+      void this.readCache.forget(up.sha256);
+      // ⚠️ AND THE PAGE IMAGES, FOR THE SAME REASON AND MORE SO. A rasterised
+      // page is a faithful picture of the document itself, not a transcription
+      // of a few fields — leaving one behind would leave the document behind.
+      void this.pageRaster.forget(up.sha256);
+    }
 
     // ⚠️ THE ROW IS GONE, SO THE REFUSAL HAS TO LIVE SOMEWHERE ELSE. C2. Until
     // auto-link could re-arm, "a delete stays deleted" was guaranteed by the
@@ -2544,6 +2679,94 @@ export class MotivationDocumentsService {
     }
 
     return { removed: true };
+  }
+
+  /**
+   * Remove copies and answers that came from a vault credential, but only from
+   * drafts the member can still edit. Completed packs are historical evidence.
+   */
+  async removeCredentialFromEditableDrafts(
+    userId: string,
+    credentialId: string,
+  ): Promise<{ uploads: number; answers: number }> {
+    const uploads = await this.prisma.motivationUpload.findMany({
+      where: {
+        sourceCredentialId: credentialId,
+        motivation: { userId, status: { in: EDITABLE } },
+      },
+      select: {
+        id: true,
+        storageKey: true,
+        sha256: true,
+        motivation: {
+          select: {
+            id: true,
+            answersEncrypted: true,
+            answerProvenance: true,
+          },
+        },
+      },
+    });
+
+    const motivationRows = new Map<
+      string,
+      { answersEncrypted: string | null; answerProvenance: unknown }
+    >();
+    let removedUploads = 0;
+
+    for (const upload of uploads) {
+      if (upload.storageKey) {
+        try {
+          await this.files.remove(upload.storageKey);
+        } catch (err) {
+          this.logger.warn(
+            `Credential ${credentialId}: editable motivation copy ${upload.id} could not be removed — ${(err as Error).message}`,
+          );
+          continue;
+        }
+      }
+
+      await this.prisma.motivationUpload.delete({ where: { id: upload.id } });
+      if (upload.sha256) {
+        void this.readCache.forget(upload.sha256);
+        void this.pageRaster.forget(upload.sha256);
+      }
+      motivationRows.set(upload.motivation.id, upload.motivation);
+      removedUploads++;
+    }
+
+    let removedAnswers = 0;
+    for (const [motivationId, row] of motivationRows) {
+      const answers = row.answersEncrypted
+        ? (decryptJson<Record<string, string>>(row.answersEncrypted) ?? {})
+        : {};
+      const provenance = parseProvenance(row.answerProvenance);
+      const removedKeys = Object.keys(provenance).filter(
+        (key) =>
+          provenance[key]?.source === 'VAULT' &&
+          provenance[key]?.sourceId === credentialId,
+      );
+      if (!removedKeys.length) continue;
+
+      for (const key of removedKeys) {
+        delete answers[key];
+        delete provenance[key];
+      }
+      await this.prisma.motivation.update({
+        where: { id: motivationId },
+        data: {
+          answersEncrypted: Object.keys(answers).length
+            ? encryptJson(answers)
+            : null,
+          answerProvenance: Object.keys(provenance).length
+            ? (provenance as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+        },
+      });
+      removedAnswers += removedKeys.length;
+    }
+
+    return { uploads: removedUploads, answers: removedAnswers };
   }
 
   /**

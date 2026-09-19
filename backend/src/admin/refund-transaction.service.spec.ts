@@ -63,7 +63,7 @@ function makeService(overrides: {
     createCommissionCreditNote: jest.fn().mockResolvedValue(undefined),
     createCommissionInvoice: jest.fn().mockResolvedValue(undefined),
   };
-  const peach = { refundPayment };
+  const ozow = { refundPayment };
 
   const transactions = { cancelBookedShipment: jest.fn().mockResolvedValue(undefined) };
   const service = new AdminService(
@@ -78,7 +78,7 @@ function makeService(overrides: {
     {} as never, // listings — unused by refund
     audit as never,
     zohoBooks as never,
-    peach as never,
+    ozow as never,
     transactions as never, // P5.2 — cancels booked shipment on full refund
     {} as never, // sms — unused by refund
     {} as never, // account closures — unused by refund
@@ -95,7 +95,7 @@ const baseTx = {
   paymentStatus: 'HELD',
   buyerTotal: 100_000, // R1 000
   refundedAmount: 0,
-  peachPaymentId: 'pay_123',
+  gatewayPaymentId: 'pay_123',
   quantity: 1,
   listing: { title: 'Scope', trackInventory: false, listingType: 'BUY_NOW' },
   buyer: {

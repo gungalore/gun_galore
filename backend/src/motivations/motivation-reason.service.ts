@@ -13,6 +13,12 @@ import {
 } from './owned-firearm-sections';
 import { MotivationResearchService } from './motivation-research.service';
 import {
+  activitiesBlock,
+  activitiesFor,
+  arguesFromExercises,
+  statusFor,
+} from './association-activities';
+import {
   OWNED_ROWS,
   ownedFirearmSerial,
   ownedRowTaken,
@@ -70,21 +76,21 @@ interface ReasonInput {
   previous_motivations: Record<string, string>[];
   /**
    * What the endorsing association actually runs, and the equipment rule for
-   * each exercise.
+   * each exercise — from `association-activities.ts`.
    *
-   * ⚠️ ALSO ALWAYS EMPTY TODAY, AND ITS EMPTINESS IS ENFORCED. Brief §5.5a
-   * builds `association-activities.ts` — per SAPS accreditation number, every
-   * exercise with its printed rule ("7m 2x5 shot: only 9mmP pistols and larger",
-   * "5m Snubby and Pocket Pistol: barrel not longer than 100mm"). That rule is
-   * the whole strength of the `exercise_eligibility` angle, because it is a gap
-   * a reviewer can check against an annexure in the same pack.
+   * ⚠️ EMPTY FOR EVERY ASSOCIATION WE HOLD NOTHING FOR, AND THAT IS THE COMMON
+   * CASE. The library is seeded with NHSA handgun postal exercises and nothing
+   * else; SAHGCA and the rifle and shotgun sets are not in it yet. An empty
+   * list withholds the `exercise_eligibility` angle entirely, and the paragraph
+   * rests on the two things the firearms themselves prove — type and section.
    *
-   * ⚠️ UNTIL IT EXISTS THE MODEL MAY NOT ASSERT ONE. The first generation under
-   * the new rules wrote that the applicant's CZ "is restricted to pocket pistol
-   * events and cannot meet the chambering and capacity requirements" — which is
-   * plausible, is probably true, and is supported by nothing in the pack. An
-   * unprovable claim on a signed document is the failure this whole file is
-   * about. `validateReason` refuses one while this list is empty.
+   * ⚠️ AND THAT WITHHOLDING IS THE POINT. The first generation under the new
+   * rules wrote that the applicant's CZ "is restricted to pocket pistol events
+   * and cannot meet the chambering and capacity requirements" — plausible,
+   * probably true, and supported by nothing in the pack. An unprovable rule on
+   * a signed document is the failure this whole file is about, so
+   * `validateReason` refuses one whenever this list is empty and permits it,
+   * quoting the supplied rule, only when it is not.
    */
   association_activities: Record<string, string>[];
   constraints: Record<string, unknown>;
@@ -171,6 +177,13 @@ export class MotivationReasonService {
     const terms = [
       ...input.cards_tapped,
       ...input.associations.flatMap((a) => Object.values(a)),
+      /**
+       * ⚠️ THE EXERCISE RULES ARE SUPPLIED MATERIAL, SO THEY GO IN. Without
+       * them `validateReason` reads the distance inside a rule we just handed
+       * the model — "7 m 2x5 shot" — as a distance nothing supports, and
+       * refuses the paragraph for quoting its own input. See activityTerms.
+       */
+      ...input.association_activities.flatMap((a) => Object.values(a)),
       ...Object.values(input.activity).flatMap((v) =>
         Array.isArray(v) ? v.map(String) : [String(v)],
       ),
@@ -247,8 +260,9 @@ export class MotivationReasonService {
         knownFirearms: known,
         knownTerms: terms,
         roleless,
-        // Empty until brief §5.5a builds association-activities.ts, and the
-        // validator refuses an asserted exercise rule while it is.
+        // ⚠️ TRUE ONLY WHEN WE ACTUALLY SUPPLIED A RULE. The library is empty
+        // for every association but NHSA handgun, and an empty list is what
+        // keeps the validator refusing an asserted exercise rule.
         hasActivityRules: input.association_activities.length > 0,
         knownSections,
         appliedSection: appliedSectionNumber(row.licenceType),
@@ -552,7 +566,25 @@ export class MotivationReasonService {
       cards_tapped: cards ? cards.split(',').map((s) => s.trim()) : [],
       research,
       previous_motivations: [],
-      association_activities: [],
+      /**
+       * ⚠️ THE ASSOCIATION'S OWN EXERCISES AND THEIR PRINTED RULES. Empty for
+       * every association we hold nothing for, which is every one of them but
+       * NHSA handgun today — and empty is what keeps the `exercise_eligibility`
+       * angle withheld and the paragraph resting on type and section, exactly
+       * as it did before. See association-activities.ts.
+       *
+       * ⚠️ AND ONLY WHERE THE TYPE ARGUES FROM EXERCISES. A self-defence or
+       * renewal application has no exercise angle, so handing it the list would
+       * invite a sentence the validator then refuses the paragraph for.
+       */
+      association_activities: arguesFromExercises(licenceType)
+        ? activitiesBlock(
+            activitiesFor({
+              association: assocName,
+              status: statusFor(licenceType),
+            }),
+          )
+        : [],
       constraints: {},
     };
   }

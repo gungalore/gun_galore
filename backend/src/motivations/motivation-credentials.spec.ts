@@ -4,7 +4,9 @@ import {
   CredentialSource,
   credentialChoices,
   credentialOffer,
+  dedicatedAlsoGoodStanding,
   dedicatedDisciplineOf,
+  effectiveUploadKinds,
   isDateKey,
   primaryUploadKind,
   toIsoDay,
@@ -1213,17 +1215,11 @@ describe('when they joined, and when they became dedicated', () => {
     },
   };
 
-  it('⚠️ puts the vault joined_on in the JOIN box, not in dedicated_since', () => {
+  it('fills dedicated_since from the vault joined_on for the first association', () => {
     const o = offerWith(T, [card], {});
     expect(o.values.association_joined).toBe('2015-02-01');
-    expect(o.values.dedicated_since).toBeUndefined();
-  });
-
-  it('leaves dedicated_since for the member - no vault document carries it', () => {
-    // It is REQUIRED, so it is still asked. Filling it with a join date was
-    // worse than asking: the member signs it and the writer argues from it.
-    const o = offerWith(T, [card], {});
-    expect(o.items.some((i) => i.key === 'dedicated_since')).toBe(false);
+    expect(o.values.dedicated_since).toBe('2015-02-01');
+    expect(o.items.some((i) => i.key === 'dedicated_since')).toBe(true);
   });
 
   it('slots two and three keep their own join boxes', () => {
@@ -1287,6 +1283,62 @@ describe('CREDENTIAL_TO_UPLOAD is exhaustive over the enum', () => {
   it('returns nothing for a kind it has never heard of', () => {
     expect(uploadKindsFor('NOT_A_KIND')).toEqual([]);
     expect(primaryUploadKind('NOT_A_KIND')).toBeUndefined();
+  });
+});
+
+describe('the dedicated certificate good-standing date rule', () => {
+  const today = new Date('2026-09-14T12:00:00Z');
+  const doc = (over: Record<string, unknown>) => ({
+    kind: 'DEDICATED_DISCIPLINE' as const,
+    issuedOn: null as string | null,
+    expiresOn: null as string | null,
+    ...over,
+  });
+
+  it('needs an expiry still in the future — an issue date is not required', () => {
+    expect(
+      dedicatedAlsoGoodStanding({ expiresOn: '2027-03-31' }, today),
+    ).toBe(true);
+    // ⚠️ THE OPERATOR'S OWN CERTIFICATE HAS NO ISSUE DATE. Requiring one
+    // rejected `{ expiresOn: '2027-06-29', issuedOn: null }` — the very paper
+    // the rule was written for.
+    expect(
+      dedicatedAlsoGoodStanding(
+        { expiresOn: '2027-06-29' },
+        today,
+      ),
+    ).toBe(true);
+    // Same-day is not "in the future past the date it is scanned".
+    expect(
+      dedicatedAlsoGoodStanding({ expiresOn: '2026-09-14' }, today),
+    ).toBe(false);
+    expect(
+      dedicatedAlsoGoodStanding({ expiresOn: '2025-12-31' }, today),
+    ).toBe(false);
+    expect(dedicatedAlsoGoodStanding({ expiresOn: null }, today)).toBe(false);
+  });
+
+  it('gates GOOD_STANDING_LETTER off a DEDICATED_DISCIPLINE document', () => {
+    expect(
+      effectiveUploadKinds(doc({ expiresOn: '2027-03-31' }), today),
+    ).toEqual(['ASSOCIATION_CARD', 'GOOD_STANDING_LETTER']);
+
+    expect(effectiveUploadKinds(doc({ expiresOn: null }), today)).toEqual([
+      'ASSOCIATION_CARD',
+    ]);
+
+    expect(
+      effectiveUploadKinds(doc({ expiresOn: '2025-12-31' }), today),
+    ).toEqual(['ASSOCIATION_CARD']);
+  });
+
+  it('leaves every other kind unconditional', () => {
+    expect(
+      effectiveUploadKinds(
+        { kind: 'FIREARM_LICENCE', expiresOn: null },
+        today,
+      ),
+    ).toEqual(['CURRENT_LICENCE']);
   });
 });
 

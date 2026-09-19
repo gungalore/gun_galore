@@ -68,7 +68,7 @@ Two things about that diagram are easy to get wrong:
    **There is no `api.` vhost.** The conf says so in as many words at lines
    43–46, because older notes claimed one. Same-origin is not an accident: it
    is what lets the session cookies in §2.1 reach the API at all. Third-party
-   webhooks (Pudo, Bob Go, Peach, Didit) post to that same `/api/*` path.
+   webhooks (Pudo, Bob Go, Ozow, Didit) post to that same `/api/*` path.
 
    > `NEXT_PUBLIC_API_URL` **must include the `/api` suffix.** Every fallback
    > in the codebase is `http://localhost:3001/api`, and callers pass bare
@@ -654,9 +654,9 @@ never exceeding the listing price. Commission always comes out of the seller's
 payout. The **buyer** pays the payment-processing fee, and the platform keeps
 it — it is never shown to the seller anywhere. Top Seller tier gets 0.5% off.
 
-All money is stored as **integer ZAR cents**. (Peach's pay-in API takes decimal
-ZAR while its payout API takes integer cents; the adapter handles the
-conversion. Do not let decimals leak into the database.)
+All money is stored as **integer ZAR cents**. (Ozow's One API pay-in takes
+decimal ZAR while the Payouts API hash takes integer cents; the adapter handles
+the conversion. Do not let decimals leak into the database.)
 
 ### Never write "escrow"
 
@@ -779,7 +779,7 @@ a loud error for each missing integration secret.
 | Service | Used for | Key env | Behaviour when missing |
 |---|---|---|---|
 | **Didit** | Seller identity verification (hosted session) **only** — ⚠️ the e-mail and phone one-time codes moved back in-house 2026-09-11 (Resend / SMSPortal) | `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`, `DIDIT_MODE`, `DIDIT_BASE_URL` | **In production, a missing key or a non-`live` mode HARD-THROWS at boot.** Elsewhere: codes and KYC sessions report "not configured". See §8.1. |
-| **Peach Payments** | The payment gateway: Checkout V2 pay-in, Payouts, bank-account verification (BANV) | `PEACH_CLIENT_ID`, `PEACH_CLIENT_SECRET`, `PEACH_MERCHANT_ID`, `PEACH_ENTITY_ID`, `PEACH_SECRET`, `PEACH_ENV` | Runs in **mock mode**. Webhooks are rejected (fail-closed) without `PEACH_SECRET`. |
+| **Ozow** | The payment gateway: One API pay-in (Pay by Bank / instant EFT) + refunds, Payouts API seller disbursement. No automated bank-verification product. | `OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`, `OZOW_WEBHOOK_SECRET`, `OZOW_ENV` (+ the `OZOW_PAYOUT_*` set) | Runs in **mock mode**. Webhooks are rejected (fail-closed) without `OZOW_WEBHOOK_SECRET`. |
 | **Cloudinary** | All user-uploaded images (listing photos, KYC documents, complaint photos) | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Uploads fail. |
 | **Meilisearch** | Listing / locker / cartridge search | `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY` | Search disabled, app still boots. |
 | **Anthropic (Claude)** | Listing moderation, Q&A moderation, firearm-licence and dealer-document verification, swap proof-of-possession, Ask Boet, listing-quality scoring, weekly insights digest | `ANTHROPIC_API_KEY`, plus per-task `ANTHROPIC_MODEL_*` overrides | **Everything AI degrades to manual-review or blocked.** |
@@ -824,7 +824,7 @@ gets deleted.
 by the member) → `POST /kyc/session` → the member finishes on Didit's hosted
 page → **the verdict arrives by webhook**, at `POST /api/webhooks/didit`. That
 route is public and HMAC-SHA256 verified; a bad signature returns **200** with
-the handler skipped, never a 401 — the same convention the Peach webhooks use.
+the handler skipped, never a 401 — the same convention the Ozow webhooks use.
 Outcomes land in the `DiditVerification` model.
 
 ⚠️ **Didit delivers from the single static IP `18.203.201.92`** (`User-Agent:
@@ -1017,21 +1017,23 @@ In this order:
 Known places where existing documentation contradicts the code. Trust the code.
 
 - **`CLAUDE.md` says the payment provider is "Stitch Express only … do NOT
-  reintroduce Peach".** That is out of date. The code integrates **Peach** —
-  `PeachModule` in `app.module.ts`, `peach.service.ts`, `peach-signature.ts`,
-  `Transaction.peachCheckoutId` / `peachPaymentId` / `peachPayoutId` /
-  `peachMerchantRef`, `PEACH_*` env vars, and the Peach warnings in `main.ts`.
-  A few stale comments still name Stitch (`transactions.service.ts` line ~65
-  says "the gateway is now Stitch"). Peach is the current rail, still inert.
+  reintroduce Peach".** Both are out of date. The code integrates **Ozow** —
+  `OzowModule` in `app.module.ts`, `ozow.service.ts`, `ozow-signature.ts`,
+  `Transaction.gatewayCheckoutId` / `gatewayPaymentId` / `gatewayPayoutId` /
+  `gatewayMerchantRef`, `OZOW_*` env vars, and the Ozow warnings in `main.ts`.
+  A few stale comments still name Stitch or Peach (`transactions.service.ts`
+  line ~65 says "the gateway is now Stitch"). Ozow is the current rail, still
+  inert.
 - **`CLAUDE.md`'s environment-variable list is incomplete** and includes
   variables that no longer exist (`ODOO_*`, `STITCH_*`). The reliable list is
   what the code reads: grep `process.env.` under `backend/src/`, cross-checked
   against `backend/.env.example`.
-- **`CLAUDE.md` says "no automated AVS"** because Peach's bank-verification
-  product was dropped with Peach. Peach BANV has since been rebuilt and
-  deployed inert (`handlePeachBanvWebhook`, `bankVerifiedAt`). Manual admin
-  review is still the live gate, so the *user-facing* claim in the legal pages
-  remains correct — do not upgrade that copy until BANV is actually live.
+- **`CLAUDE.md` says "no automated AVS".** That is correct again: Ozow has no
+  automated bank-verification product, so the destination account is validated
+  by the payout itself (an invalid account fails with payout subStatus 405).
+  Manual admin review of the seller's bank details is the live gate, so the
+  *user-facing* claim in the legal pages remains correct — do not claim an
+  automated check.
 - **`CLAUDE.md` lists `MessagesModule`-era buyer/seller chat.** Removed. The
   only sanctioned pre-sale dialogue is Claude-moderated Q&A on the listing
   (`ListingQuestionsService`). The Prisma `Message` model is retained dormant

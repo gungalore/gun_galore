@@ -16,8 +16,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { createHash, randomInt, timingSafeEqual } from 'crypto';
-import { encryptSaIdNumber, hashSaIdNumber, decryptSaIdNumber } from '../common/id-crypto';
-import { PeachService } from '../payments/peach.service';
+import { encryptSaIdNumber, hashSaIdNumber } from '../common/id-crypto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { MotivationRetentionService } from '../motivations/motivation-retention.service';
 import { LicenceCentreRetentionService } from '../licence-centre/licence-centre-retention.service';
@@ -154,8 +153,6 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sms: SmsService,
-    // @Global PeachModule — bank-account verification (BANV) requests.
-    private readonly peach: PeachService,
     // @Global NotificationsModule — clears the "fix your banking details"
     // inbox task the moment the user re-saves details.
     private readonly notifications: NotificationsService,
@@ -193,64 +190,13 @@ export class UsersService {
     private readonly settings: SettingsService,
   ) {}
 
-  // ── Peach bank-account verification (AVS) ─────────────────────────
-  // Fired (fire-and-forget) after EVERY bank-details save. Sends the
-  // account + the seller's SA ID to Peach BANV; the result webhook
-  // (/payments/webhook/peach-banv) stamps bankVerifiedAt on a pass or
-  // raises a BANK_VERIFY_MISMATCH alert on a fail. No-op when Peach
-  // payouts aren't configured — the manual admin review remains the
-  // gate until then. The ID number is decrypted in memory only and
-  // NEVER logged.
-  async requestBankVerification(userId: string): Promise<void> {
-    if (!this.peach.isBanvEnabled()) return;
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        bankAccountNumber: true,
-        bankBranchCode: true,
-        bankAccountType: true,
-        idNumberEncrypted: true,
-        firstName: true,
-        lastName: true,
-      },
-    });
-    if (
-      !user ||
-      !user.bankAccountNumber ||
-      !user.bankBranchCode ||
-      !user.idNumberEncrypted
-    ) {
-      // No ID on file yet (buyer refund details before profile completion)
-      // — verification runs once the seller profile adds the ID.
-      return;
-    }
-    try {
-      const idNumber = decryptSaIdNumber(user.idNumberEncrypted);
-      const res = await this.peach.verifyBankAccount({
-        accountNumber: user.bankAccountNumber,
-        branchCode: user.bankBranchCode,
-        accountType: user.bankAccountType ?? 'unknown',
-        idNumber,
-        initials: user.firstName ? user.firstName.trim().charAt(0) : undefined,
-        lastName: user.lastName ?? undefined,
-      });
-      if (!res) return;
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          bankVerificationId: res.bankVerificationId,
-          bankAvsResult: `REQUESTED:${res.resultCode ?? res.status}`,
-        },
-      });
-      this.logger.log(
-        `BANV requested for user ${user.id} (verification ${res.bankVerificationId})`,
-      );
-    } catch (err) {
-      this.logger.warn(
-        `BANV request failed for user ${userId}: ${(err as Error).message}`,
-      );
-    }
+  // ── Bank-account verification ──────────────────────────────────────
+  // Ozow has no automated AVS/BANV product — the destination account is
+  // validated during the payout itself (an invalid account fails the payout
+  // with subStatus 405). This hook is therefore a documented no-op; the
+  // manual admin review of the seller's bank details remains the payout gate.
+  async requestBankVerification(_userId: string): Promise<void> {
+    return;
   }
 
   /**
@@ -731,8 +677,8 @@ export class UsersService {
   // seller gets a single error and our DB stays consistent. Address /
   // name fields are NOT pushed because the identity provider doesn't own them (KYC does).
   // Submitted by the post-first-publish profile modal. One shot —
-  // all fields required, Peach AVS validates the bank quartet, SA ID
-  // is encrypted at rest (purged after the KYC selfie passes), and
+  // all fields required, the bank quartet is captured, the SA ID is
+  // encrypted at rest (purged after the KYC selfie passes), and
   // profileCompletedAt is the gate the payout flow checks. Throws a
   // user-readable BadRequestException for any failure so the modal
   // can show the message inline.
@@ -740,7 +686,7 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    // ─── Hard-validate inputs before touching Peach or the DB ─────
+    // ─── Hard-validate inputs before touching the DB ─────
     const firstName = dto.firstName.trim();
     const lastName = dto.lastName.trim();
     const username = dto.username.trim().toLowerCase();
@@ -774,7 +720,7 @@ export class UsersService {
       throw new BadRequestException('Branch code looks invalid');
     }
 
-    // ─── Uniqueness checks (don't reach Peach if we'd reject anyway) ──
+    // ─── Uniqueness checks (don't reach the DB if we'd reject anyway) ──
     if (username !== user.username) {
       const clash = await this.prisma.user.findUnique({ where: { username } });
       if (clash && clash.id !== user.id) {
@@ -793,12 +739,11 @@ export class UsersService {
       }
     }
 
-    // No automated bank-account verification runs here. Peach BANV is built
-    // and deployed but INERT (it gates payouts via bankVerifiedAt once the
-    // PEACH_* credentials are live), so today bank details are captured as
-    // entered and an ADMIN reviews the account holder against the KYC-verified
-    // identity before the first payout. Do not upgrade any user-facing copy to
-    // claim automated verification until BANV is actually switched on.
+    // No automated bank-account verification runs here. Ozow has no BANV
+    // product, so bank details are captured as entered and an ADMIN reviews
+    // the account holder against the KYC-verified identity before the first
+    // payout (or the payout itself fails with an invalid-account sub-status).
+    // Do not upgrade any user-facing copy to claim automated verification.
 
     // ─── Username uniqueness is ours to enforce now ──────────────────
     if (username !== user.username) {
@@ -842,8 +787,7 @@ export class UsersService {
       `Profile completed for ${userId} (bank=${dto.bankName})`,
     );
     // Saving new details is the "fix" action — clear any open bank-verify
-    // task, then kick off a fresh Peach verification (no-op until
-    // configured; re-notifies if it fails again).
+    // task (requestBankVerification is a no-op under Ozow, which has no BANV).
     void this.notifications.resolveByEntity('bank', updated.id);
     void this.requestBankVerification(updated.id);
     return updated;
@@ -851,12 +795,11 @@ export class UsersService {
 
   // FLOW-F2 — set/replace ONLY the banking quartet (+ account type)
   // from /profile/edit. Seller payouts (and any owed refunds) are paid
-  // to this account via Peach Payouts; refund notifications link buyers
+  // to this account via Ozow Payouts; refund notifications link buyers
   // here when they have no bank details on file. Same validation rules
   // as completeProfile's banking section. Changing details resets
-  // bankVerifiedAt/bankAvsResult/bankVerificationId and re-runs Peach
-  // bank-account verification (BANV); until BANV is configured, the
-  // manual admin holder-name review remains the pre-payout gate.
+  // bankVerifiedAt/bankAvsResult/bankVerificationId; the manual admin
+  // holder-name review remains the pre-payout gate.
   async updateBankDetails(userId: string, dto: BankDetailsDto) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -910,8 +853,7 @@ export class UsersService {
     });
     this.logger.log(`Bank details updated for ${userId} (bank=${bankName})`);
     // Saving new details is the "fix" action — clear any open bank-verify
-    // task, then kick off a fresh Peach verification (no-op until
-    // configured; silently skips buyers who have no SA ID on file yet).
+    // task (requestBankVerification is a no-op under Ozow, which has no BANV).
     void this.notifications.resolveByEntity('bank', user.id);
     void this.requestBankVerification(user.id);
     return updated;

@@ -462,7 +462,7 @@ export class AccountClosureService {
           phoneVerified: false,
           avatarUrl: null,
           bankVerificationId: null,
-          peachCustomerId: null,
+          gatewayCustomerId: null,
           bankAccountHolder: null,
           bankAccountNumber: null,
           bankBranchCode: null,

@@ -651,11 +651,11 @@ model User {
   // manually for testing / comp accounts (recorded in
   // AdminAuditEvent like any tier change).
   subscriptionTier      SubscriptionTier @default(FREE)
-  // Peach card-vault ID. Created lazily on first paid subscription;
+  // Gateway card-vault ID. Created lazily on first paid subscription;
   // reused for every subsequent recurring charge. Mirrors the
   // zohoContactId pattern. NULL until the subscription billing
   // rail goes live (operator-side blocker — separate work).
-  peachCustomerId       String?          @unique
+  gatewayCustomerId     String?          @unique
   // Verified-expert badge (Pro tier). Awarded by admin after the
   // user has 5+ verified KB submissions. Visible site-wide next to
   // their username on listings + KB entries + Q&A answers.
@@ -1636,22 +1636,21 @@ model Transaction {
   cancelledReason    String?
 
   // Payment
-  paymentStatus    PaymentStatus @default(HELD)
-  peachCheckoutId  String?
-  // Peach requires an 8-16 char merchantTransactionId; our cuid is 25, so
-  // we mint a short unique ref at checkout create and match webhooks by it
-  // as a fallback to peachCheckoutId.
-  peachMerchantRef String?       @unique
-  // Peach Payouts payoutId (client-minted UUIDv4, stored BEFORE the API
-  // call so the payout-status webhook can always be matched back).
-  peachPayoutId    String?       @unique
-  // @unique: a gateway payment id can settle exactly ONE transaction.
-  // Defence-in-depth against replaying one Peach success against multiple
-  // orders — the second markPaid hits a unique violation. NULLs are
-  // exempt (Postgres) so unpaid rows are fine. Replaces the old
-  // non-unique @@index([peachPaymentId]).
-  peachPaymentId   String?       @unique
-  peachResultCode  String?
+  paymentStatus     PaymentStatus @default(HELD)
+  gatewayCheckoutId String?
+  // The gateway's own merchant reference, minted at checkout create and
+  // matched against webhook deliveries as a fallback to gatewayCheckoutId.
+  gatewayMerchantRef String?       @unique
+  // Gateway payoutId (Ozow's UUIDv4), stored BEFORE the payout API call so
+  // the verification + notification webhooks can always be matched back.
+  gatewayPayoutId    String?       @unique
+  // @unique: a gateway payment id (Ozow transactionId) can settle exactly ONE
+  // transaction. Defence-in-depth against replaying one gateway success
+  // against multiple orders — the second markPaid hits a unique violation.
+  // NULLs are exempt (Postgres) so unpaid rows are fine. Replaces the old
+  // non-unique @@index([gatewayPaymentId]).
+  gatewayPaymentId   String?       @unique
+  gatewayResultCode  String?
   paidAt           DateTime?
   releasedAt       DateTime?
 
@@ -3005,9 +3004,9 @@ model FeaturedSlotBid {
 
   status FeaturedBidStatus @default(ACTIVE)
 
-  // Set when the bid wins + Peach is charged (= COMMITTED). Lets admin
-  // refund cleanly via the Peach payment ID.
-  peachPaymentId String?
+  // Set when the bid wins + the gateway is charged (= COMMITTED). Lets admin
+  // refund cleanly via the gateway payment ID.
+  gatewayPaymentId String?
   paidAt         DateTime?
 
   // If the winner doesn't bind a listing within the 15-min bind window
@@ -3338,10 +3337,10 @@ model Subscription {
   // P1.1 — prepaid manual-EFT rail: idempotency stamp for the
   // "renews in 3 days" reminder (cleared when a new period activates).
   renewalReminderAt  DateTime?
-  // Peach vault ID for recurring charges. NULL for comp accounts +
-  // pre-Peach-tokenisation grants. Mirrored from User.peachCustomerId
+  // Gateway vault ID for recurring charges. NULL for comp accounts +
+  // pre-tokenisation grants. Mirrored from User.gatewayCustomerId
   // at signup so the cron doesn't need to JOIN.
-  peachCustomerId    String?
+  gatewayCustomerId  String?
   // Zoho Books customer ID for invoice / receipt linkage. Lazy-
   // created on first successful charge. Same pattern as
   // User.zohoContactId for marketplace transactions.
@@ -3408,9 +3407,9 @@ model SubscriptionCharge {
   subscriptionId String
   subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   amountCents    Int
-  status         String // 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'REFUNDED'
-  peachPaymentId String?
-  zohoReceiptId  String?
+  status           String // 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'REFUNDED'
+  gatewayPaymentId String?
+  zohoReceiptId    String?
   errorMessage   String?
   attemptCount   Int          @default(1)
   chargedAt      DateTime     @default(now())
@@ -4597,6 +4596,56 @@ model DocumentReadCache {
   /// reason to keep somebody's ID number longer than the pack that needed it.
   expiresAt DateTime
 
+  @@index([expiresAt])
+  @@index([fileSha256])
+}
+
+/// A PAGE OF AN UPLOADED PDF, RASTERISED ONCE AND REUSED.
+///
+/// ⚠️ SO THE ANNEXURE PIPELINE ONLY SPEAKS ONE DOCUMENT TYPE. pdfkit draws a
+/// JPEG or a PNG anywhere in the flow; it cannot place a PDF page except at a
+/// page boundary, so PDF annexures used to be spliced in by pdf-lib afterwards
+/// — every one of them at the same spot near the back, never in their letter's
+/// position, and with the contents numbering to match. Rasterising the page
+/// removes the second document type from the annexures entirely: a PDF annexure
+/// becomes the same kind of picture as a photographed one, and goes through the
+/// same planner.
+///
+/// ⚠️ KEYED ON THE SOURCE BYTES, NOT ON THE UPLOAD ROW. The same municipal bill
+/// attached to two applications, or a vault document adopted twice, is one
+/// rasterisation rather than two. `sha256` is the PLAINTEXT hash the upload
+/// already carries, so a cache hit needs no decryption to look up.
+model DocumentPageImage {
+  id String @id @default(cuid())
+
+  /// sha256 of the PLAINTEXT source bytes. Purged when that document is deleted.
+  fileSha256 String @db.VarChar(64)
+
+  /// 1-based page number in the source document.
+  page Int
+
+  /// ⚠️ IN THE KEY, LIKE DocumentReadCache's READER_VERSION. A change to the
+  /// rasteriser, the scale or the encoder must invalidate what it replaces the
+  /// day it ships, not whenever a TTL happens to lapse.
+  rendererVersion String @db.VarChar(40)
+
+  /// Opaque key into SecureFileStorageService. Never a path, never a URL.
+  storageKey String
+
+  mimeType String @db.VarChar(40)
+  width    Int
+  height   Int
+  byteSize Int
+
+  renderedAt DateTime @default(now())
+
+  /// ⚠️ A SHORT LIFE, BECAUSE THIS IS THE DOCUMENT ITSELF. It is a faithful
+  /// image of somebody's licence or bank statement, so it is held to the same
+  /// standard as the bytes it came from — encrypted at rest, purged with the
+  /// source, and never kept past its expiry.
+  expiresAt DateTime
+
+  @@unique([fileSha256, page, rendererVersion])
   @@index([expiresAt])
   @@index([fileSha256])
 }

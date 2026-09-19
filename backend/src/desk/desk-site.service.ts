@@ -17,8 +17,8 @@ import type { WardenCheckBoard } from './warden.types';
  * reaches it has left the server for good.
  *
  * The distinction that keeps this honest: `PAYMENT_MODE=paygate` is a MODE and
- * may be shown. `PEACH_ENTITY_ID=8ac7a4c8...` is a VALUE and may only ever be
- * reported as `configured: true`.
+ * may be shown. `OZOW_CLIENT_ID=...` is a VALUE and may only ever be reported
+ * as `configured: true`.
  */
 
 export type GateTone = 'ok' | 'warn' | 'bad' | 'info';
@@ -93,12 +93,12 @@ export class DeskSiteService {
             : 'checkout is closed',
       },
       {
-        key: 'PEACH_*',
+        key: 'OZOW_*',
         label: 'Gateway credentials',
-        // ⚠️ PRESENCE ONLY. Never the entity id, never the token, never a
+        // ⚠️ PRESENCE ONLY. Never the client id, never the secret, never a
         // masked tail — a masked secret is still a secret with a hint on it.
-        value: this.isConfigured('PEACH_ENTITY_ID') ? 'configured' : 'not configured',
-        tone: this.isConfigured('PEACH_ENTITY_ID') ? 'ok' : 'info',
+        value: this.isConfigured('OZOW_CLIENT_ID') ? 'configured' : 'not configured',
+        tone: this.isConfigured('OZOW_CLIENT_ID') ? 'ok' : 'info',
       },
       {
         key: 'VERIFYNOW_MODE',

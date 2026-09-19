@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { PeachService } from './peach.service';
+import { OzowService } from './ozow.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { ShippingService } from '../shipping/shipping.service';
@@ -45,7 +45,7 @@ export class DispatchSlaService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly peach: PeachService,
+    private readonly ozow: OzowService,
     private readonly notifications: NotificationsService,
     private readonly tracking: TrackingService,
     // FLOW-F1 — the auto-refund must also cancel the carrier shipment GG
@@ -127,7 +127,7 @@ export class DispatchSlaService {
 
   // ------------------------------------------------------------------
   // 7d auto-refund — courier orders that are still HELD and never
-  // dispatched. We Peach-refund, mark the transaction REFUNDED,
+  // dispatched. We Ozow-refund, mark the transaction REFUNDED,
   // re-activate the listing, strike the seller, and notify both
   // parties. The seller's third strike is an AdminAlert for manual
   // suspension review (not auto-banned — that's the operator's call).
@@ -172,13 +172,13 @@ export class DispatchSlaService {
           continue;
         }
 
-        const r = tx.peachPaymentId
-          ? await this.peach.refundPayment(tx.peachPaymentId, tx.buyerTotal)
+        const r = tx.gatewayPaymentId
+          ? await this.ozow.refundPayment(tx.gatewayPaymentId, tx.buyerTotal)
           : { success: true, resultCode: 'NO_PAYMENT_ID' };
 
         if (!r.success) {
           this.logger.warn(
-            `Auto-refund cron: Peach refund failed for ${tx.id} (${r.resultCode}) — rolling back to HELD for admin review`,
+            `Auto-refund cron: Ozow refund failed for ${tx.id} (${r.resultCode}) — rolling back to HELD for admin review`,
           );
           // Roll the claim back so the row returns to HELD for a retry.
           await this.prisma.transaction
@@ -194,7 +194,7 @@ export class DispatchSlaService {
               type: 'DISPATCH_SLA_REFUND_FAILED',
               referenceId: tx.id,
               urgent: true,
-              context: `Peach refund failed: ${r.resultCode} ${r.message ?? ''}`,
+              context: `Ozow refund failed: ${r.resultCode} ${r.message ?? ''}`,
             },
           });
           continue;

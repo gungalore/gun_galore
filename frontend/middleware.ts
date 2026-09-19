@@ -58,6 +58,10 @@ async function hasSession(request: NextRequest): Promise<boolean> {
 }
 
 const isPublicRoute = createRouteMatcher([
+  // Backend API requests are authenticated by Nest's own guards. Keeping them
+  // out of the frontend member-session redirect is required for tunneled local
+  // SMS links and same-origin API proxying.
+  ...(process.env.LOCAL_API_PROXY === 'true' ? ['/api/(.*)'] : []),
   // The phone's half of the desktop QR handoff. ⚠️ IT MUST BE PUBLIC: the
   // whole point is that the phone is NOT signed in, and the ?t= token is what
   // authorises it. See app/scan/handoff/page.tsx.

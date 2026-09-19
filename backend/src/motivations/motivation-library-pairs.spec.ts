@@ -515,6 +515,12 @@ function build(
       forget: async () => 0,
       purgeExpired: async () => 0,
     } as never,
+    // The page rasteriser, silenced: nothing here is a PDF.
+    {
+      pagesFor: async () => [],
+      forget: async () => 0,
+      purgeExpired: async () => 0,
+    } as never,
     prefill as never,
   );
   return { service, prisma, files, created, prefill, answers: () => saved };

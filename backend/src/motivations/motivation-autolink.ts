@@ -86,6 +86,16 @@ export const AUTOLINK_KINDS: readonly MotivationUploadKind[] = [
    * a card. There is no choice to make: they all go on.
    */
   MotivationUploadKind.CURRENT_LICENCE,
+  /**
+   * ⚠️ SAFE PHOTOGRAPHS JOIN THE AUTO-ATTACH LIST (2026-09-14). They were held
+   * back behind the "these are the safe at THIS address" tick, on the reasoning
+   * that a member who moved house would ship the wrong premises. Operator,
+   * 2026-09-14: "safe photographs can be auto pulled when the motivation is
+   * open as this is standard documents required." A safe photograph is
+   * required paperwork on every new application, so it is now pulled with the
+   * rest of the person-documents when the application opens.
+   */
+  MotivationUploadKind.SAFE_PHOTOGRAPHS,
 ];
 
 /**
@@ -154,11 +164,6 @@ export const NEVER_AUTOLINK: Partial<Record<MotivationUploadKind, string>> = {
     'must be current and specific to this application (routing spec §5.1: DIRECT)',
   PREVIOUS_MOTIVATION: 'is a past document, not evidence for this one',
   OTHER: 'is whatever the member decided it was; we cannot know where it goes',
-  // ⚠️ M6 — THE ONE ENTRY THAT IS A QUESTION RATHER THAN A REFUSAL. Pass
-  // placeConfirmed and it is attachable; the skip reason says so, so the member
-  // is told what to do instead of being told there is nothing they can do.
-  SAFE_PHOTOGRAPHS:
-    'needs the member to confirm it is the safe at THIS application’s address — see asksPlace; somebody who has moved would otherwise ship a pack showing the wrong premises',
 };
 
 /** How much validity a document needs before it is attached unasked. */
@@ -182,6 +187,9 @@ export interface AutolinkCandidate {
    * considered. The endorsements were readable the whole time; nothing asked.
    */
   covers?: string;
+  /** The paired page of a two-sided proficiency document, when known. */
+  otherSideId?: string | null;
+  documentSide?: 'front' | 'back' | null;
 }
 
 export type SkipReason =
@@ -265,7 +273,11 @@ function proficiencyRoles(covers: string, needed: Endorsement | null) {
   return {
     readable,
     law: sor.hasMandatoryKnowledge,
-    firearm: readable && (needed ? sor.endorsements.includes(needed) : sor.endorsements.length > 0),
+    firearm:
+      readable &&
+      (needed
+        ? sor.endorsements.includes(needed)
+        : sor.endorsements.length > 0),
   };
 }
 
@@ -290,7 +302,34 @@ function pickProficiencyPair(
   needed: Endorsement | null,
   alreadyCovers: readonly string[],
 ): { attach: AutolinkCandidate[]; ambiguous: AutolinkCandidate[] } | null {
-  const roles = new Map(fresh.map((c) => [c, proficiencyRoles(c.covers ?? '', needed)]));
+  // A certificate and its statement of results are one document. Fold a pair
+  // before applying the ambiguity rule; otherwise the two pages look like two
+  // competing rifle certificates and both are refused.
+  const folded: AutolinkCandidate[] = [];
+  const consumed = new Set<AutolinkCandidate>();
+  for (const candidate of fresh) {
+    if (consumed.has(candidate)) continue;
+    const other = fresh.find(
+      (c) => c !== candidate && c.sourceId === candidate.otherSideId,
+    );
+    if (other) {
+      const lead = candidate.documentSide === 'back' ? candidate : other;
+      folded.push({
+        ...lead,
+        // A provider may print the unit standards on either page. Treat the
+        // two pages as one readable document for role selection.
+        covers: [candidate.covers, other.covers].filter(Boolean).join(' '),
+      });
+      consumed.add(candidate);
+      consumed.add(other);
+    } else {
+      folded.push(candidate);
+      consumed.add(candidate);
+    }
+  }
+  const roles = new Map(
+    folded.map((c) => [c, proficiencyRoles(c.covers ?? '', needed)]),
+  );
   if (![...roles.values()].some((r) => r.readable)) return null;
 
   const held = alreadyCovers.map((t) => proficiencyRoles(t, needed));
@@ -302,8 +341,12 @@ function pickProficiencyPair(
 
   // The firearm's own standard first: a certificate carrying both settles it.
   if (!haveFirearm) {
-    const both = fresh.filter((c) => roles.get(c)!.firearm && roles.get(c)!.law);
-    const only = fresh.filter((c) => roles.get(c)!.firearm && !roles.get(c)!.law);
+    const both = folded.filter(
+      (c) => roles.get(c)!.firearm && roles.get(c)!.law,
+    );
+    const only = folded.filter(
+      (c) => roles.get(c)!.firearm && !roles.get(c)!.law,
+    );
     const pool = both.length ? both : only;
     if (pool.length === 1) {
       attach.push(pool[0]);
@@ -315,9 +358,10 @@ function pickProficiencyPair(
   }
   // Then the Act, from whichever certificate carries it.
   if (!haveLaw) {
-    const law = fresh.filter((c) => roles.get(c)!.law && !attach.includes(c));
+    const law = folded.filter((c) => roles.get(c)!.law && !attach.includes(c));
     if (law.length === 1) attach.push(law[0]);
-    else if (law.length > 1) ambiguous.push(...law.filter((c) => !ambiguous.includes(c)));
+    else if (law.length > 1)
+      ambiguous.push(...law.filter((c) => !ambiguous.includes(c)));
   }
   return { attach, ambiguous };
 }
@@ -364,8 +408,12 @@ export function decideAutolink(
    * default is unchanged: without the tick they stay a suggestion, exactly as
    * the note above AUTOLINK_KINDS describes.
    */
+  // ⚠️ SAFE PHOTOGRAPHS ARE IN AUTOLINK_KINDS NOW (2026-09-14), so the
+  // separate placeConfirmed admission is gone — the operator moved the safe
+  // onto the standard auto-attach list. `placeConfirmed` still rides through
+  // to attachOne so the direct-call boundary stays honest, but it no longer
+  // decides whether the safe is offered here.
   const allowed = new Set<MotivationUploadKind>(AUTOLINK_KINDS);
-  if (opts.placeConfirmed) allowed.add(MotivationUploadKind.SAFE_PHOTOGRAPHS);
 
   // Group by kind FIRST: the several-candidates rule is about the kind, not
   // about any one document, and can only be seen from the whole set.
@@ -390,7 +438,8 @@ export function decideAutolink(
      */
     const takeAll = TAKE_ALL_KINDS.has(kind);
     if (haveSet.has(kind) && !halfHeld && !takeAll) {
-      for (const c of group) skipped.push({ candidate: c, why: 'already-attached' });
+      for (const c of group)
+        skipped.push({ candidate: c, why: 'already-attached' });
       continue;
     }
     if (!allowed.has(kind)) {
@@ -441,24 +490,36 @@ export function decideAutolink(
       return left === null || left >= AUTOLINK_MIN_DAYS;
     });
     for (const c of covered) {
-      if (!fresh.includes(c)) skipped.push({ candidate: c, why: 'expiring-too-soon' });
+      if (!fresh.includes(c))
+        skipped.push({ candidate: c, why: 'expiring-too-soon' });
     }
     if (!fresh.length) continue;
 
     if (kind === MotivationUploadKind.PROFICIENCY_CERTIFICATE) {
-      const pair = pickProficiencyPair(fresh, opts.needed ?? null, opts.attachedProficiencyCovers ?? []);
+      const pair = pickProficiencyPair(
+        fresh,
+        opts.needed ?? null,
+        opts.attachedProficiencyCovers ?? [],
+      );
       if (pair) {
         attach.push(...pair.attach);
-        for (const c of pair.ambiguous) skipped.push({ candidate: c, why: 'several-candidates' });
+        for (const c of pair.ambiguous)
+          skipped.push({ candidate: c, why: 'several-candidates' });
         for (const c of fresh) {
           if (!pair.attach.includes(c) && !pair.ambiguous.includes(c)) {
-            skipped.push({ candidate: c, why: haveSet.has(kind) ? 'already-attached' : 'several-candidates' });
+            skipped.push({
+              candidate: c,
+              why: haveSet.has(kind)
+                ? 'already-attached'
+                : 'several-candidates',
+            });
           }
         }
         continue;
       }
       if (haveSet.has(kind)) {
-        for (const c of fresh) skipped.push({ candidate: c, why: 'already-attached' });
+        for (const c of fresh)
+          skipped.push({ candidate: c, why: 'already-attached' });
         continue;
       }
     }
@@ -475,7 +536,8 @@ export function decideAutolink(
     // the member, not a coin toss — and the wrong one in front of a DFO is
     // exactly the failure that makes automation untrustworthy.
     if (fresh.length > 1) {
-      for (const c of fresh) skipped.push({ candidate: c, why: 'several-candidates' });
+      for (const c of fresh)
+        skipped.push({ candidate: c, why: 'several-candidates' });
       continue;
     }
     attach.push(fresh[0]);
@@ -576,7 +638,8 @@ function agreeOnCategory(
   }
   const earned = new Set<Endorsement>();
   for (const raw of proficiencyCovers) {
-    for (const e of readStatementOfResults(raw ?? '').endorsements) earned.add(e);
+    for (const e of readStatementOfResults(raw ?? '').endorsements)
+      earned.add(e);
   }
   if (!held.size || !earned.size) return true;
   for (const e of earned) if (held.has(e)) return true;

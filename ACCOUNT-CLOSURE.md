@@ -142,7 +142,7 @@ And on `User`:
 | `email` | `schema.prisma:217` `@unique` | **RELEASED — rewritten** to `closed+<userId>@accounts.invalid` | `AccountClosure.closedEmail` | Blocks re-signup on the same address. **Not `@gungalore.local`** — see §7-H8. |
 | `phone` | app-code only, `users.service.ts:1131-1140` | **RELEASED — `null`**, plus `phoneVerified: false`, `phoneOtpHash: null`, `phoneOtpExpiresAt: null` | `AccountClosure.closedPhone` | Re-signup dies at the OTP step with *"That phone number is already linked to another All Outdoor account."* Note `phoneVerified` must be reset too — today's scrub nulls `phone` at `:728` and leaves `phoneVerified` true (`schema.prisma:232`). |
 | `bankVerificationId` | `schema.prisma:431` `@unique` | **RELEASED — `null`** | not retained | Latent `P2002` with no friendly handler. |
-| `peachCustomerId` | `schema.prisma:588` `@unique` | **RELEASED — `null`** | not retained | Latent. Dormant today (nothing in `src/` writes it). |
+| `gatewayCustomerId` | `schema.prisma` `@unique` | **RELEASED — `null`** | not retained | Latent. Dormant today (nothing in `src/` writes it). |
 | ~~`clerkId`~~ | — | **RESOLVED BY REMOVAL. The column is gone and so is the tombstone.** | — | This row used to carry the trickiest ordering constraint in the whole plan: hold the identity-provider subject through steps 1–3, then overwrite it with `closed_<userId>` in step 4, because tombstoning it any earlier made the webhook's own lookup miss and turned the handler into a silent no-op. `User.id` is the only user identifier now, it is a primary key, and it is never rewritten. **Nothing replaced the tombstone because nothing needed to** — it existed solely to stop the provider re-creating a closed account, and the username, email and phone releases below are the whole of what "the claims go back into the namespace" ever meant. |
 | `kycIdHash` | `schema.prisma:288` `@unique` | **HELD — and the block becomes a relink.** See below. | copy in `AccountClosure.kycIdHashArchived` | This is the whole ban-evasion question. |
 | `idNumberEncrypted` | not unique | **HELD** | stays on `User` | SAP 534 Section C. |
@@ -236,7 +236,7 @@ Nothing surprising happens, **because none of it is allowed to be open.** §6 re
 3. `update User`:
    - `accountClosedAt: now`
    - `username` **and** `usernameLower` → `closed-<last 10 of userId>` (a rename, not a null — see §2), `email: closed+<userId>@accounts.invalid`, `phone: null`, `phoneVerified: false`, `phoneOtpHash: null`, `phoneOtpExpiresAt: null`, `avatarUrl: null`
-   - `bankVerificationId: null`, `peachCustomerId: null`
+   - `bankVerificationId: null`, `gatewayCustomerId: null`
    - bank quartet (`bankName`, `bankAccountHolder`, `bankAccountNumber`, `bankBranchCode`, `bankAccountType`, `schema.prisma:417-421`) → `null`. **Safe only because §6 already proved no payout or refund is owed** — which is exactly the carve-out `privacy/page.tsx:290` already promises and the code has never honoured.
    - all three notify flags → `false`
    - **NOT touched:** `isBanned`, `bannedAt`, `kycIdHash`, `idNumberEncrypted`, `kycStatus`.

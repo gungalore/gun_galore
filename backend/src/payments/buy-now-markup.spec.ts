@@ -3,7 +3,7 @@ import { FeeCalculator, MIN_COMMISSION_CENTS } from './fee.calculator';
 // BUY NOW markup — operator decision 2026-08-15.
 //
 // The seller names what they want to receive and gets exactly that. Our
-// commission and the Peach fee are built INTO the listed price instead of
+// commission and the Ozow fee are built INTO the listed price instead of
 // deducted from the seller, so the number on the card is the number the buyer
 // pays. Same percentages as before, applied in the opposite direction.
 
@@ -12,16 +12,16 @@ const R = (rands: number) => Math.round(rands * 100);
 
 describe('listPriceFromSellerAsk', () => {
   it('builds the worked example exactly', () => {
-    // ask R450 → +9% = R490.50 → +Peach on THAT = R511.97
+    // ask R450 → +9% = R490.50 → +Ozow on THAT = R498.96
     const m = calc.listPriceFromSellerAsk(R(450), false);
     expect(m.sellerAsk).toBe(R(450));
     expect(m.commissionZar).toBe(R(40.5));
-    expect(m.processingFee).toBe(R(21.47));
-    expect(m.listPrice).toBe(R(511.97));
+    expect(m.processingFee).toBe(R(8.46));
+    expect(m.listPrice).toBe(R(498.96));
   });
 
-  it('charges Peach on the COMMISSION-INCLUSIVE subtotal, not the bare ask', () => {
-    // That is what the operator specified: "if we charge 9% we add 4.03% to
+  it('charges Ozow on the COMMISSION-INCLUSIVE subtotal, not the bare ask', () => {
+    // That is what the operator specified: "if we charge 9% we add 1.73% to
     // that total". Charging it on the ask alone would under-recover further.
     const m = calc.listPriceFromSellerAsk(R(450), false);
     const onAskOnly = calc.calculateProcessingFee(R(450));
@@ -54,13 +54,13 @@ describe('listPriceFromSellerAsk', () => {
     const m = calc.listPriceFromSellerAsk(R(50), false);
     expect(m.commissionZar).toBe(MIN_COMMISSION_CENTS);
     expect(MIN_COMMISSION_CENTS).toBe(R(10));
-    expect(m.listPrice).toBe(R(64.14));
+    expect(m.listPrice).toBe(R(61.15));
   });
 
   it('leaves prices above the floor completely unchanged', () => {
     // The floor only ever bites on low-ticket items; a R450 ask is banded well
     // clear of it and must not move because the floor did.
-    expect(calc.listPriceFromSellerAsk(R(450), false).listPrice).toBe(R(511.97));
+    expect(calc.listPriceFromSellerAsk(R(450), false).listPrice).toBe(R(498.96));
   });
 
   it('passes the Top Seller discount on to the BUYER as a lower price', () => {
@@ -86,11 +86,11 @@ describe('listPriceFromSellerAsk', () => {
 describe('breakdownBuyNow', () => {
   it('adds nothing at checkout but shipping and the handling margin', () => {
     const b = calc.breakdownBuyNow(R(450), false, R(79), 'paygate', R(15));
-    expect(b.listingPrice).toBe(R(511.97));
-    expect(b.buyerTotal).toBe(R(511.97) + R(79) + R(15));
+    expect(b.listingPrice).toBe(R(498.96));
+    expect(b.buyerTotal).toBe(R(498.96) + R(79) + R(15));
     // Crucially: NO processing fee added on top — it is already inside the
     // listed price. Adding it here would double-charge the buyer.
-    expect(b.buyerTotal).not.toBe(R(511.97) + R(79) + R(15) + b.processingFee);
+    expect(b.buyerTotal).not.toBe(R(498.96) + R(79) + R(15) + b.processingFee);
   });
 
   it('the buyer pays the listed price for the goods, full stop', () => {
@@ -99,7 +99,7 @@ describe('breakdownBuyNow', () => {
     expect(b.buyerTotal).toBe(m.listPrice);
   });
 
-  it('our margin is the commission; Peach takes the rest of the markup', () => {
+  it('our margin is the commission; Ozow takes the rest of the markup', () => {
     const b = calc.breakdownBuyNow(R(450), false);
     const markup = b.listingPrice - b.sellerPayout;
     expect(markup).toBe(b.commissionZar + b.processingFee);
@@ -112,14 +112,14 @@ describe('breakdownBuyNow', () => {
     }
   });
 
-  it('recovers less than Peach eventually charges — the known residual', () => {
-    // Peach bills its percentage on the FINAL amount, not the subtotal we
+  it('recovers less than Ozow eventually charges — the known residual', () => {
+    // Ozow bills its percentage on the FINAL amount, not the subtotal we
     // marked up. This pins the size of that leak so it cannot drift unnoticed.
     const b = calc.breakdownBuyNow(R(450), false);
     const actuallyCharged = calc.calculateProcessingFee(b.listingPrice);
     const shortfall = actuallyCharged - b.processingFee;
     expect(shortfall).toBeGreaterThan(0);
-    expect(shortfall).toBeLessThan(R(1)); // ~R0.86 on a R450 ask
+    expect(shortfall).toBeLessThan(R(1)); // ~R0.15 on a R450 ask
   });
 });
 
@@ -152,13 +152,13 @@ describe('multi-buy matches the price on the card', () => {
 });
 
 describe('the "was" price must sit above the price buyers actually see', () => {
-  // The seller types R450 but the listing shows R511.97. Validating a
-  // compare-at price against the raw ask would accept R500 — rendering a
+  // The seller types R450 but the listing shows R498.96. Validating a
+  // compare-at price against the raw ask would accept R470 — rendering a
   // strikethrough BELOW the live price, which is both nonsense on the card and
   // a misleading discount claim under CPA s41.
   it('a was-price between the ask and the listed price is not a discount', () => {
     const listed = calc.listPriceFromSellerAsk(R(450), false).listPrice;
-    const wouldPassAgainstAsk = R(500);
+    const wouldPassAgainstAsk = R(470);
     expect(wouldPassAgainstAsk).toBeGreaterThan(R(450)); // passes the naive check
     expect(wouldPassAgainstAsk).toBeLessThan(listed); // but is below the real price
   });

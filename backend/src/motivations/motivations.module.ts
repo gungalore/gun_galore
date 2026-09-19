@@ -25,6 +25,7 @@ import { MotivationPdfService } from './motivation-pdf.service';
 import { MotivationRetentionService } from './motivation-retention.service';
 import { MotivationExtractService } from './motivation-extract.service';
 import { DocumentReadCacheService } from './document-read-cache.service';
+import { DocumentPageRasterService } from './document-page-raster.service';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
 import { CipSheetService } from './cip-sheet.service';
 import { QuarryPlateService } from './quarry-plate.service';
@@ -105,6 +106,7 @@ import { FirearmUsesService } from './firearm-uses.service';
     MotivationRetentionService,
     MotivationExtractService,
     DocumentReadCacheService,
+    DocumentPageRasterService,
     GoogleVisionOcrService,
     CipSheetService,
     QuarryPlateService,

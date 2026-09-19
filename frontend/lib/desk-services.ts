@@ -54,11 +54,11 @@ export const SERVICE_GROUP_ORDER: ServiceGroup[] = [
 export const DESK_SERVICES: DeskService[] = [
   /* ── Money ────────────────────────────────────────────────────────── */
   {
-    name: 'Peach Payments',
-    url: 'https://support.peachpayments.com/support/home',
+    name: 'Ozow',
+    url: 'https://hub.ozow.com',
     group: 'Money',
-    purpose: 'The card and EFT rail. Support portal.',
-    caution: 'Bookmark is the SUPPORT site, not the merchant dashboard.',
+    purpose: 'The pay-in and payout rail. Developer hub + support.',
+    caution: 'Bookmark is the docs hub, not the merchant dashboard.',
   },
   {
     name: 'Bob Go',

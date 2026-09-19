@@ -10,6 +10,7 @@ import ReviewScreen, {
   nextRejectKey,
 } from '@/components/document-centre/review-screen';
 import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
+import { VaultConsentBody, type ConsentState } from '@/components/vault-consent';
 /*
   ⚠️ THE FOUR DECISIONS THAT CAN LOSE A DOCUMENT LIVE IN lib/, NOT HERE.
   They decide whether a member has to look at a document and whether its type
@@ -145,6 +146,20 @@ export default function LicenceCentrePage() {
   const [rows, setRows] = useState<CredentialRow[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Whether we may keep documents from applications, and whether the member has
+   * been asked.
+   *
+   * ⚠️ THIS IS WHERE THE MOTIVATION'S REFUSAL SENDS THEM, AND THERE WAS NOTHING
+   * HERE. Ticking documents on an application and pressing "Save N to my
+   * Licence Centre" returns `needsConsent` and the toast says "First tell us we
+   * may keep documents — Account, then Document Centre." The component that
+   * asks (components/vault-consent.tsx) was imported by nothing, so the member
+   * arrived to find no control to answer. The notice is rendered below.
+   */
+  const [consent, setConsent] = useState<ConsentState | null>(null);
+  const [consentBusy, setConsentBusy] = useState(false);
 
   // ── SECTIONS, ROWS, DETAIL ─────────────────────────────────────
   //
@@ -362,7 +377,31 @@ export default function LicenceCentrePage() {
       .usage(token)
       .then(setUsage)
       .catch(() => undefined);
+    // ⚠️ AND THE CONSENT STATE, WHICH IS THE ONE THING THIS PAGE CAN NOW
+    // CHANGE. Answering the notice below is the only route to it, and this is
+    // the refresh every other write already runs.
+    licenceCentreApi
+      .consent(token)
+      .then((c) => setConsent(c.state))
+      .catch(() => undefined);
   }, [token]);
+
+  /** Answer the "may we keep your documents?" notice and re-read the state. */
+  const answerVaultConsent = useCallback(
+    async (agreed: boolean) => {
+      setConsentBusy(true);
+      try {
+        const c = await licenceCentreApi.answerConsent(token, agreed);
+        setConsent(c.state);
+      } catch {
+        // Fail-soft, like every other write here: the notice stays and they
+        // can answer again.
+      } finally {
+        setConsentBusy(false);
+      }
+    },
+    [token],
+  );
 
   /**
    * Read the gate. Extracted from the effect so the retry button can call it
@@ -474,6 +513,24 @@ export default function LicenceCentrePage() {
         simply keep it. It is all encrypted on our own server and nobody at All
         Outdoor can read it.
       </p>
+
+      {/*
+        ⚠️ THE CONSENT CONTROL LIVES HERE, AND UNTIL NOW IT LIVED NOWHERE. The
+        motivation's "Save to my Licence Centre" refuses without this and sends
+        the member to "Account, then Document Centre" — and the component that
+        asks (components/vault-consent.tsx) was imported by nothing, so they
+        arrived to find nothing to answer. It renders only while the answer is
+        not a plain yes, so a member who has agreed never sees it again.
+      */}
+      {consent !== null && consent !== 'given' ? (
+        <div className="mt-6 rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
+          <VaultConsentBody
+            retentionDays={null}
+            onAnswer={answerVaultConsent}
+            busy={consentBusy}
+          />
+        </div>
+      ) : null}
 
       {(needDate.length > 0 || needFiling.length > 0) && (
         <div className="mt-4 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm">

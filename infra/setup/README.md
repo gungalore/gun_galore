@@ -343,7 +343,7 @@ optional in the way they look. `backend/src/main.ts` has a boot gate that
 in production, and the process will not start. `DiditService` throws the same
 way on `DIDIT_MODE` being anything but `live` — the provider it replaced only
 *logged* that, which is how a box ran sandbox identity checks in production and
-approved canned data. Everything else only shouts: missing Peach credentials,
+approved canned data. Everything else only shouts: missing Ozow credentials,
 a missing `DIDIT_WEBHOOK_SECRET`, and the model key for whichever `LLM_PROVIDER`
 is selected. A backend that boots but shouts is a backend running with a feature
 degraded to a manual-review or blocked path.

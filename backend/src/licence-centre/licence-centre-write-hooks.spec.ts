@@ -113,7 +113,13 @@ function build(row: Row | null) {
   svc.requireUser = async () => ({ id: 'user-1' });
   svc.readDetails = () => ({});
   const rearm = jest.fn(async () => 1);
-  svc.motivations = { rearmAutolinkFor: rearm };
+  svc.motivations = {
+    rearmAutolinkFor: rearm,
+    removeCredentialFromEditableDrafts: jest.fn(async () => ({
+      uploads: 0,
+      answers: 0,
+    })),
+  };
   return {
     svc,
     prisma,
@@ -458,7 +464,13 @@ function buildUpload(reading: {
   svc.requireUser = async () => ({ id: 'user-1' });
   svc.readDetails = () => ({});
   const rearm = jest.fn(async () => 1);
-  svc.motivations = { rearmAutolinkFor: rearm };
+  svc.motivations = {
+    rearmAutolinkFor: rearm,
+    removeCredentialFromEditableDrafts: jest.fn(async () => ({
+      uploads: 0,
+      answers: 0,
+    })),
+  };
   return { svc, persisted, rearm };
 }
 

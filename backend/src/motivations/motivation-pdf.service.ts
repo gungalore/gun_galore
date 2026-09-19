@@ -5,6 +5,7 @@ import {
   STAMP_H,
   captionFor,
   planAnnexurePages,
+  planSafePhotoPages,
   imageSize,
 } from './motivation-annexure-layout';
 import {
@@ -391,26 +392,192 @@ export const SCHEMES: Record<Scheme, SchemeColours> = {
   // with #0f0f0f would drink a cartridge, band on any office laser and
   // photocopy as a black rectangle. Matching a dark-mode site on paper means
   // carrying its INK and its TYPE across, never its background.
-  alloutdoor:  { deep: '#1f1f1f', deep2: '#0f0f0f', ink: '#141414', sub: '#3f3f3f', mut: '#7d7d7d', band: '#f0f0f0', hair: '#e0e0e0', wash: '#f7f7f7', accent: '#C8102E', bannerFrom: '#f4f2ec', bannerTo: '#e7e3d9' },
-  eucalyptus:  { deep: '#587068', deep2: '#40524c', ink: '#29342f', sub: '#475650', mut: '#869590', band: '#dfe9e5', hair: '#dbe4e0', wash: '#f2f7f5', accent: '#278665', bannerFrom: '#a0b6ae', bannerTo: '#95aaa2' },
-  slate:       { deep: '#565e6e', deep2: '#3f4654', ink: '#2a2f38', sub: '#4c5460', mut: '#8a8f99', band: '#e3e2ec', hair: '#e2e0da', wash: '#f6f5f2', accent: '#29528e', bannerFrom: '#a0a8b6', bannerTo: '#959eaa' },
-  stone:       { deep: '#6b645c', deep2: '#4e4841', ink: '#33302b', sub: '#57524b', mut: '#948e85', band: '#e9e4dc', hair: '#e4dfd7', wash: '#f7f5f1', accent: '#8e6429', bannerFrom: '#b6aca0', bannerTo: '#aaa195' },
-  sage:        { deep: '#5f6b5e', deep2: '#454f45', ink: '#2c332c', sub: '#4d574d', mut: '#8a938a', band: '#e2e8df', hair: '#dfe3da', wash: '#f4f6f2', accent: '#318627', bannerFrom: '#a2b6a0', bannerTo: '#97aa95' },
-  fogblue:     { deep: '#58687a', deep2: '#3f4c5b', ink: '#29323c', sub: '#485664', mut: '#8795a3', band: '#e0e7ed', hair: '#dde3e8', wash: '#f3f6f8', accent: '#296d8e', bannerFrom: '#a0aeb6', bannerTo: '#95a3aa' },
-  clay:        { deep: '#7a615a', deep2: '#594641', ink: '#362c29', sub: '#5c4f4a', mut: '#998a81', band: '#ece2dd', hair: '#e6ddd6', wash: '#f8f4f1', accent: '#914827', bannerFrom: '#b6a6a0', bannerTo: '#aa9c95' },
-  olive:       { deep: '#6a6a52', deep2: '#4d4d3b', ink: '#30302a', sub: '#55554a', mut: '#90907f', band: '#e7e7d9', hair: '#e2e2d5', wash: '#f6f6ef', accent: '#758627', bannerFrom: '#b2b6a0', bannerTo: '#a6aa95' },
-  graphite:    { deep: '#4a4a4e', deep2: '#333336', ink: '#26262a', sub: '#46464b', mut: '#8b8b90', band: '#e4e4e7', hair: '#e0e0e2', wash: '#f4f4f5', accent: '#5c5c70', bannerFrom: '#a0a0b6', bannerTo: '#9595aa' },
-  mauve:       { deep: '#6e5f6a', deep2: '#50454d', ink: '#322c31', sub: '#544a51', mut: '#93878f', band: '#e9e1e7', hair: '#e3dce1', wash: '#f7f3f6', accent: '#813772', bannerFrom: '#b6a0b2', bannerTo: '#aa95a6' },
-  indigo:      { deep: '#5b4c76', deep2: '#45375d', ink: '#2f2c35', sub: '#4d4658', mut: '#8c8599', band: '#e4e1ea', hair: '#dfdce5', wash: '#f4f3f7', accent: '#4e298e', bannerFrom: '#a8a0b6', bannerTo: '#9c95aa' },
-  petrol:      { deep: '#4c7673', deep2: '#375d5b', ink: '#2c3535', sub: '#465857', mut: '#859998', band: '#e1eae9', hair: '#dce5e4', wash: '#f3f7f7', accent: '#278680', bannerFrom: '#a0b6b4', bannerTo: '#95aaa8' },
-  burgundy:    { deep: '#764c54', deep2: '#5d373e', ink: '#352c2e', sub: '#58464a', mut: '#998589', band: '#eae1e3', hair: '#e5dcde', wash: '#f7f3f3', accent: '#8b2337', bannerFrom: '#b6a0a4', bannerTo: '#aa959a' },
+  alloutdoor: {
+    deep: '#1f1f1f',
+    deep2: '#0f0f0f',
+    ink: '#141414',
+    sub: '#3f3f3f',
+    mut: '#7d7d7d',
+    band: '#f0f0f0',
+    hair: '#e0e0e0',
+    wash: '#f7f7f7',
+    accent: '#C8102E',
+    bannerFrom: '#f4f2ec',
+    bannerTo: '#e7e3d9',
+  },
+  eucalyptus: {
+    deep: '#587068',
+    deep2: '#40524c',
+    ink: '#29342f',
+    sub: '#475650',
+    mut: '#869590',
+    band: '#dfe9e5',
+    hair: '#dbe4e0',
+    wash: '#f2f7f5',
+    accent: '#278665',
+    bannerFrom: '#a0b6ae',
+    bannerTo: '#95aaa2',
+  },
+  slate: {
+    deep: '#565e6e',
+    deep2: '#3f4654',
+    ink: '#2a2f38',
+    sub: '#4c5460',
+    mut: '#8a8f99',
+    band: '#e3e2ec',
+    hair: '#e2e0da',
+    wash: '#f6f5f2',
+    accent: '#29528e',
+    bannerFrom: '#a0a8b6',
+    bannerTo: '#959eaa',
+  },
+  stone: {
+    deep: '#6b645c',
+    deep2: '#4e4841',
+    ink: '#33302b',
+    sub: '#57524b',
+    mut: '#948e85',
+    band: '#e9e4dc',
+    hair: '#e4dfd7',
+    wash: '#f7f5f1',
+    accent: '#8e6429',
+    bannerFrom: '#b6aca0',
+    bannerTo: '#aaa195',
+  },
+  sage: {
+    deep: '#5f6b5e',
+    deep2: '#454f45',
+    ink: '#2c332c',
+    sub: '#4d574d',
+    mut: '#8a938a',
+    band: '#e2e8df',
+    hair: '#dfe3da',
+    wash: '#f4f6f2',
+    accent: '#318627',
+    bannerFrom: '#a2b6a0',
+    bannerTo: '#97aa95',
+  },
+  fogblue: {
+    deep: '#58687a',
+    deep2: '#3f4c5b',
+    ink: '#29323c',
+    sub: '#485664',
+    mut: '#8795a3',
+    band: '#e0e7ed',
+    hair: '#dde3e8',
+    wash: '#f3f6f8',
+    accent: '#296d8e',
+    bannerFrom: '#a0aeb6',
+    bannerTo: '#95a3aa',
+  },
+  clay: {
+    deep: '#7a615a',
+    deep2: '#594641',
+    ink: '#362c29',
+    sub: '#5c4f4a',
+    mut: '#998a81',
+    band: '#ece2dd',
+    hair: '#e6ddd6',
+    wash: '#f8f4f1',
+    accent: '#914827',
+    bannerFrom: '#b6a6a0',
+    bannerTo: '#aa9c95',
+  },
+  olive: {
+    deep: '#6a6a52',
+    deep2: '#4d4d3b',
+    ink: '#30302a',
+    sub: '#55554a',
+    mut: '#90907f',
+    band: '#e7e7d9',
+    hair: '#e2e2d5',
+    wash: '#f6f6ef',
+    accent: '#758627',
+    bannerFrom: '#b2b6a0',
+    bannerTo: '#a6aa95',
+  },
+  graphite: {
+    deep: '#4a4a4e',
+    deep2: '#333336',
+    ink: '#26262a',
+    sub: '#46464b',
+    mut: '#8b8b90',
+    band: '#e4e4e7',
+    hair: '#e0e0e2',
+    wash: '#f4f4f5',
+    accent: '#5c5c70',
+    bannerFrom: '#a0a0b6',
+    bannerTo: '#9595aa',
+  },
+  mauve: {
+    deep: '#6e5f6a',
+    deep2: '#50454d',
+    ink: '#322c31',
+    sub: '#544a51',
+    mut: '#93878f',
+    band: '#e9e1e7',
+    hair: '#e3dce1',
+    wash: '#f7f3f6',
+    accent: '#813772',
+    bannerFrom: '#b6a0b2',
+    bannerTo: '#aa95a6',
+  },
+  indigo: {
+    deep: '#5b4c76',
+    deep2: '#45375d',
+    ink: '#2f2c35',
+    sub: '#4d4658',
+    mut: '#8c8599',
+    band: '#e4e1ea',
+    hair: '#dfdce5',
+    wash: '#f4f3f7',
+    accent: '#4e298e',
+    bannerFrom: '#a8a0b6',
+    bannerTo: '#9c95aa',
+  },
+  petrol: {
+    deep: '#4c7673',
+    deep2: '#375d5b',
+    ink: '#2c3535',
+    sub: '#465857',
+    mut: '#859998',
+    band: '#e1eae9',
+    hair: '#dce5e4',
+    wash: '#f3f7f7',
+    accent: '#278680',
+    bannerFrom: '#a0b6b4',
+    bannerTo: '#95aaa8',
+  },
+  burgundy: {
+    deep: '#764c54',
+    deep2: '#5d373e',
+    ink: '#352c2e',
+    sub: '#58464a',
+    mut: '#998589',
+    band: '#eae1e3',
+    hair: '#e5dcde',
+    wash: '#f7f3f3',
+    accent: '#8b2337',
+    bannerFrom: '#b6a0a4',
+    bannerTo: '#aa959a',
+  },
 };
 
 /** Eucalyptus first \u2014 the handoff's default, and the picker opens on it. */
 export const SCHEME_KEYS: Scheme[] = [
   'alloutdoor',
-  'eucalyptus', 'sage', 'petrol', 'fogblue', 'slate', 'indigo',
-  'mauve', 'burgundy', 'clay', 'stone', 'olive', 'graphite',
+  'eucalyptus',
+  'sage',
+  'petrol',
+  'fogblue',
+  'slate',
+  'indigo',
+  'mauve',
+  'burgundy',
+  'clay',
+  'stone',
+  'olive',
+  'graphite',
 ];
 
 /**
@@ -967,9 +1134,7 @@ export function isQuotedSubsection(
   block: string,
   inStatutorySection: boolean,
 ): boolean {
-  return (
-    inStatutorySection && /^\((?:\d{1,2}|[a-z])\)\s/.test(block.trim())
-  );
+  return inStatutorySection && /^\((?:\d{1,2}|[a-z])\)\s/.test(block.trim());
 }
 
 /**
@@ -1002,11 +1167,32 @@ export interface AnnexureImagePage {
   height: number;
   /** Whether this copy carries a certification block. See CERTIFICATION. */
   certification?: CertificationLevel;
+  /**
+   * True for a photograph of the safe — the one annexure laid out as a 2x2
+   * sheet rather than one-per-width.
+   *
+   * ⚠️ SET FROM THE UPLOAD KIND, NEVER FROM `label`. The label is display copy
+   * ("Photographs of the safe") and the retired safe kinds share the same
+   * annexure letter under a different enum; matching the string would silently
+   * put an old SAFE_PHOTO_AJAR back into the one-per-width flow and shift every
+   * letter after it.
+   */
+  safe?: boolean;
 }
 
 const CLIPPING_MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
 /**
@@ -1265,34 +1451,15 @@ export class MotivationPdfService {
      */
     const dossierHead = (top: number, draw: boolean): number => {
       let y = top;
-      const step = K.px(13.5) * 1.5;
 
-      const line = (
-        text: string,
-        font: string,
-        colour: string,
-        wrap: boolean,
-      ): number => {
-        doc.font(font).fontSize(K.px(13.5));
-        const opts = wrap
-          ? { width: contentWidth }
-          : { width: contentWidth, lineBreak: false };
-        const h = doc.heightOfString(text, opts);
-        if (draw) doc.fillColor(colour).text(text, MARGIN, y, opts);
-        return h;
-      };
-
-      y += line('To:', B.body, C.sub, false) + step;
-      y += line('The Registrar of Firearms', B.bodySemi, C.ink, false) + step;
-      y += line(
-        'through the Designated Firearms Officer, South African Police Service',
-        B.body,
-        C.sub,
-        true,
-      );
-
-      y += K.mm(7);
-
+      /**
+       * ⚠️ NO ADDRESSING BLOCK. "To: The Registrar of Firearms, through the
+       * Designated Firearms Officer, South African Police Service" used to head
+       * this grid on every cover. Operator, 2026-09-15: remove it from all the
+       * templates. The cover already names the section it is made under in the
+       * masthead, and the motivation itself is addressed in its own opening —
+       * the cover does not need to repeat the chain of command.
+       */
       // The band label, as the handoff heads the dossier grid.
       const label = 'APPLICANT AND FIREARM';
       const size = K.px(11);
@@ -1616,10 +1783,37 @@ export class MotivationPdfService {
     // after — bufferPages lets us switch back to it. Rendering the document
     // twice to learn its own pagination would double every Claude-written
     // word's cost in wall clock for a page of dot leaders.
-    let tocPageIndex: number | null = null;
+    const tocPageIndexes: number[] = [];
     if (feat.contents) {
       doc.addPage();
-      tocPageIndex = doc.bufferedPageRange().count - 1;
+      tocPageIndexes.push(doc.bufferedPageRange().count - 1);
+      /**
+       * ⚠️ RESERVE THE CONTINUATION SHEETS, BUT COUNT LINES, NOT PARAGRAPHS.
+       * pdfkit appends pages created during the late contents pass, which would
+       * put a continuation after the annexures — so the sheets have to be
+       * claimed before the body. The first version of this counted every
+       * BODY BLOCK as an entry, and a pack with nine headings and thirty
+       * paragraphs reserved a second contents page it never filled: MO000001
+       * printed a blank sheet at page 4. The contents lists HEADINGS, so that
+       * is what is counted here.
+       */
+      const bodyBlocks = input.body
+        .split(/\n\s*\n/)
+        .map((b) => b.trim())
+        .filter(Boolean);
+      const estimatedEntries =
+        bodyBlocks.filter(isHeading).length +
+        // One line for ANNEXURES plus one per lettered annexure.
+        (input.annexures?.length ? 1 + input.annexures.length : 0) +
+        (input.characterStatements?.length ?? 0) +
+        (input.priorNotice ? 1 : 0) +
+        // The cartridge feature's own heading, when it takes one.
+        (input.cartridgeDrawing ? 1 : 0);
+      const contentsPages = Math.max(1, Math.ceil(estimatedEntries / 24));
+      for (let page = 1; page < contentsPages; page++) {
+        doc.addPage();
+        tocPageIndexes.push(doc.bufferedPageRange().count - 1);
+      }
     }
 
     /**
@@ -1707,7 +1901,6 @@ export class MotivationPdfService {
     /** Which of the book's twelve numbers the body actually printed. */
     const printedNumbers = new Set<string>();
     const renderHeading = (heading: string) => {
-
       // Keep a heading with at least a couple of lines of its section: if we
       // are near the foot of the page, start the next one now rather than
       // orphan it above the footer strip.
@@ -1722,7 +1915,8 @@ export class MotivationPdfService {
       // the heading uppercased with the colon stripped — "the heading exactly as
       // it is printed" — and this looked it up with the raw line off the
       // document, which matched nothing and silently drew no marks at all.
-      const mark = input.sectionMarks?.[heading.replace(/:\s*$/, '').toUpperCase()];
+      const mark =
+        input.sectionMarks?.[heading.replace(/:\s*$/, '').toUpperCase()];
       doc.y = K.sectionHeader(
         chrome,
         num,
@@ -2113,7 +2307,9 @@ export class MotivationPdfService {
        * twice the room it needs and pushed the heading to a fresh page for
        * space that was never going to be used.
        */
-      const drawnAt = article ? (contentWidth - K.mm(6)) / 2 : contentWidth;
+      const drawnAt = article
+        ? (contentWidth - K.SECTION_INDENT - K.mm(6)) / 2
+        : contentWidth - K.SECTION_INDENT;
       const picture = bodyPicture
         ? K.mm(bodyPicture.heightMm) * (drawnAt / K.mm(bodyPicture.widthMm))
         : 0;
@@ -2140,11 +2336,28 @@ export class MotivationPdfService {
      */
     const drawCartridgeFeature = (
       a: { title: string; paragraphs: string[] },
-      picture?: { png: Buffer; widthMm: number; heightMm: number; texts: DrawingText[] },
+      picture?: {
+        png: Buffer;
+        widthMm: number;
+        heightMm: number;
+        texts: DrawingText[];
+      },
     ) => {
+      /**
+       * ⚠️ THE FEATURE IS INDENTED WITH THE BODY, NOT FLUSH TO THE MARGIN.
+       * Operator, 2026-09-15: "the cartridge, all the paragraphs does not line
+       * up on the left side of the paper." Body paragraphs start at
+       * MARGIN + SECTION_INDENT — the 7 mm under the section rule — and the
+       * columns were starting at MARGIN, so the whole spread jutted 7 mm to the
+       * left of every other paragraph. Both columns and the photograph now
+       * share the body's left edge.
+       */
+      const indent = K.SECTION_INDENT;
+      const usable = contentWidth - indent;
+      const leftX = MARGIN + indent;
       const GUTTER = K.mm(6);
-      const colW = (contentWidth - GUTTER) / 2;
-      const rightX = MARGIN + colW + GUTTER;
+      const colW = (usable - GUTTER) / 2;
+      const rightX = leftX + colW + GUTTER;
       const top = doc.y + K.mm(1);
 
       /**
@@ -2182,8 +2395,8 @@ export class MotivationPdfService {
       const CAPTION_H = K.mm(6);
       const PHOTO_GAP = K.mm(6);
 
-      const photoH = photo ? contentWidth * PHOTO_ASPECT : 0;
-      const photoW = contentWidth;
+      const photoH = photo ? usable * PHOTO_ASPECT : 0;
+      const photoW = usable;
       /**
        * Where the columns stop. With no photograph they run to the foot of the
        * page exactly as they did before this existed.
@@ -2224,8 +2437,7 @@ export class MotivationPdfService {
       let rightTop = top;
       if (picture) {
         const h = placeDrawing(picture, rightX, top, colW);
-        rightTop =
-          top + Math.ceil((h + K.mm(3)) / lineH - 1e-6) * lineH;
+        rightTop = top + Math.ceil((h + K.mm(3)) / lineH - 1e-6) * lineH;
       }
 
       /**
@@ -2369,10 +2581,10 @@ export class MotivationPdfService {
             return;
           }
           if (toLeft) ry = put(group, rightX, ry);
-          else ly = put(group, MARGIN, ly);
+          else ly = put(group, leftX, ly);
           return;
         }
-        if (toLeft) ly = put(group, MARGIN, ly);
+        if (toLeft) ly = put(group, leftX, ly);
         else ry = put(group, rightX, ry);
       });
 
@@ -2384,7 +2596,7 @@ export class MotivationPdfService {
        * way down.
        */
       if (photo && photoH > 0) {
-        const px = MARGIN + (contentWidth - photoW) / 2;
+        const px = leftX + (usable - photoW) / 2;
         const py = K.BODY_BOTTOM - photoH - CAPTION_H;
         doc.image(photo.png, px, py, { width: photoW, height: photoH });
         doc
@@ -2399,8 +2611,7 @@ export class MotivationPdfService {
       }
 
       doc.x = MARGIN;
-      doc.y =
-        photo && photoH > 0 ? K.BODY_BOTTOM : Math.max(ly, ry) + PARA_GAP;
+      doc.y = photo && photoH > 0 ? K.BODY_BOTTOM : Math.max(ly, ry) + PARA_GAP;
 
       if (spill.length) {
         doc.addPage();
@@ -2411,15 +2622,15 @@ export class MotivationPdfService {
             const sub = subheadingOf(raw);
             if (sub) {
               doc.font(B.bodySemi).fontSize(K.px(10.5)).fillColor(C.sub);
-              doc.text(sub.toUpperCase(), MARGIN, doc.y, {
-                width: contentWidth,
+              doc.text(sub.toUpperCase(), leftX, doc.y, {
+                width: usable,
                 characterSpacing: K.px(10.5) * 0.06,
               });
               doc.y += K.mm(0.8);
               continue;
             }
             doc.font(B.body).fontSize(K.px(12)).fillColor(C.ink);
-            doc.text(stripMarks(raw), MARGIN, doc.y, { width: contentWidth });
+            doc.text(stripMarks(raw), leftX, doc.y, { width: usable });
             doc.y += gap;
           }
         }
@@ -2473,6 +2684,59 @@ export class MotivationPdfService {
     let inStatutorySection = false;
     let pendingCrime = false;
 
+    /**
+     * The body's closing sections that have no heading of their own in the
+     * plan: the crime evidence, the cartridge feature, the owned-firearms
+     * table. Drawn as a unit, because where they go depends on whether the
+     * document ends in a declaration.
+     *
+     * ⚠️ DRAWN BEFORE THE DECLARATION, NOT AFTER. Operator, 2026-09-16: the
+     * declaration is the page the applicant signs, and it must be the last
+     * thing before the signature — the cartridge feature, the precinct figures
+     * and the battery table are argument, and an argument after a signature
+     * page reads as an afterthought. Where the writer raised none of these
+     * subjects (or a plan carries no declaration at all), this is also the
+     * declaration-less path, drawn once at the end as it always was.
+     */
+    const drawDeferredBody = () => {
+      /**
+       * ⚠️ THE EVIDENCE IS NEVER DROPPED IN SILENCE. Where the writer opened
+       * an exposure section this already printed at the foot of it; this is
+       * the draft that never raised the subject. It gets a heading of its own
+       * rather than disappearing.
+       */
+      if (hasCrimeEvidence() && !crimeDrawn) {
+        if (doc.y > K.BODY_BOTTOM - mmGap(40)) doc.addPage();
+        renderHeading('Reported crime where I live and travel');
+        drawCrimeEvidence();
+      }
+
+      /**
+       * ⚠️ ONLY IF THE WRITER NEVER GAVE IT A HOME. `drawCartridge` puts the
+       * picture directly under the writer's own cartridge heading; this is the
+       * fallback for a draft that never raised the subject.
+       */
+      if (hasCartridgeBlock && input.cartridgeDrawing && !cartridgeDrawn) {
+        // The feature takes a page of its own here too — see the body loop.
+        if (article && doc.y > K.BODY_TOP + K.mm(1)) doc.addPage();
+        else if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20))
+          doc.addPage();
+        renderHeading(input.cartridgeDrawing.label);
+        drawCartridge();
+      }
+
+      /**
+       * ⚠️ THE TABLE IS EVIDENCE, NOT DECORATION, AND AN EMPTY ONE STILL
+       * PRINTS. Only as a fallback — the writer's own heading 6 takes
+       * precedence, so this never lists it twice.
+       */
+      if (feat.ownedTable && !batteryDrawn && !printedNumbers.has('6')) {
+        if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 140) doc.addPage();
+        renderHeading('6. Firearms already licensed to me');
+        drawBattery();
+      }
+    };
+
     for (const block of blocks) {
       /**
        * ⚠️ AND NOTHING FOLLOWS THE FEATURE ONTO ITS PAGE EITHER.
@@ -2503,9 +2767,7 @@ export class MotivationPdfService {
          * an interruption.
          */
         const wantsCartridge =
-          hasCartridgeBlock &&
-          !cartridgeDrawn &&
-          /\bCARTRIDGE\b/i.test(block);
+          hasCartridgeBlock && !cartridgeDrawn && /\bCARTRIDGE\b/i.test(block);
         /**
          * ⚠️ MATCHED ON THE PLAN'S OWN HEADING, NOT ON WORDS. `comparison` has
          * four alternates per licence type and the plan picks one by seed;
@@ -2553,7 +2815,28 @@ export class MotivationPdfService {
          * says so), and forcing a break for one would push the picture away
          * from its own sentence.
          */
-        if (wantsCartridge && article && doc.y > K.BODY_TOP + K.mm(1)) {
+        /**
+         * ⚠️ THE DECLARATION OPENS ITS OWN PAGE. Operator, 2026-09-15: the
+         * heading was landing at the foot of the page carrying the statutory
+         * section, with its paragraphs overleaf. This is the page the applicant
+         * signs, and it must not open underneath somebody else's argument and
+         * break across a sheet.
+         */
+        const isDeclaration = /^declaration and request$/i.test(
+          splitHeading(block).title.trim(),
+        );
+        if (isDeclaration) {
+          /**
+           * ⚠️ THE DECLARATION IS THE CLOSE, SO THE CLOSING SECTIONS COME
+           * FIRST. The cartridge feature, the precinct evidence and the battery
+           * table are argument; the page the applicant signs must be the last
+           * thing before the signature, not the thing they fell underneath.
+           */
+          drawDeferredBody();
+          // The feature's own page break is satisfied by the declaration's.
+          featureBreakPending = false;
+          if (doc.y > K.BODY_TOP + K.mm(1)) doc.addPage();
+        } else if (wantsCartridge && article && doc.y > K.BODY_TOP + K.mm(1)) {
           doc.addPage();
         } else if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - need) doc.addPage();
         // ⚠️ CENTRED, BOLD, ALL CAPS — measured off Safari Outdoor, where
@@ -2707,61 +2990,12 @@ export class MotivationPdfService {
     }
 
     /**
-     * ⚠️ THE EVIDENCE IS NEVER DROPPED IN SILENCE. Where the writer opened an
-     * exposure section this already printed at the foot of it; this is the
-     * draft that never raised the subject, or a licence type whose plan has no
-     * such section. It gets a heading of its own rather than disappearing —
-     * losing the precinct figures a member ticked areas to obtain is the one
-     * outcome worse than an extra heading.
+     * ⚠️ THE DECLARATION-LESS PATH. When the writer produced a declaration
+     * heading, these closed the body just before it; when there is none — an
+     * older document, a plan without heading 12 — they close it here. The
+     * guards make the second call a no-op either way.
      */
-    if (hasCrimeEvidence() && !crimeDrawn) {
-      if (doc.y > K.BODY_BOTTOM - mmGap(40)) doc.addPage();
-      renderHeading('Reported crime where I live and travel');
-      drawCrimeEvidence();
-    }
-
-    // ⚠️ ONLY IF THE WRITER NEVER GAVE IT A HOME. `drawCartridge` puts the
-    // picture directly under the writer's own cartridge heading, which is
-    // where it belongs — half a page of drawing above half a page of the
-    // argument it illustrates. This is the fallback for a draft that never
-    // raised the subject: the section still appears, on its own, rather than
-    // the figures being dropped in silence.
-    //
-    // ⚠️ AND IT SITS OUTSIDE THE SPECIFICATION BLOCK, which is where it was
-    // written first. That block only runs for a pack carrying `firearmSpec`,
-    // so a draft with no manufacturer data AND no cartridge heading lost the
-    // drawing entirely — the one case the fallback exists for.
-    if (hasCartridgeBlock && input.cartridgeDrawing && !cartridgeDrawn) {
-      // The feature takes a page of its own here too — see the body loop.
-      if (article && doc.y > K.BODY_TOP + K.mm(1)) doc.addPage();
-      else if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20))
-        doc.addPage();
-      renderHeading(input.cartridgeDrawing.label);
-      drawCartridge();
-    }
-
-    // ── Firearms already licensed (standard and comprehensive) ────────
-    //
-    // ⚠️ THIS TABLE IS EVIDENCE, NOT DECORATION. Section 13 caps a
-    // self-defence applicant at one firearm and section 15(3) caps an
-    // occasional sport shooter at four, so what a person already holds is a
-    // statutory precondition the DFO checks — and a reviewer should be able
-    // to check it at a glance instead of mining it out of a paragraph.
-    //
-    // AN EMPTY TABLE STILL PRINTS. "No firearm is currently licensed to the
-    // applicant" is a material fact on a first application; leaving the
-    // section out because there is nothing to list would read as an omission.
-    // ⚠️ AND NOT WHEN THE BODY ALREADY PRINTED HEADING 6. The table is
-    // hung under the writer's own heading where there is one; this fallback
-    // is for a document that has none, and firing it anyway would list
-    // "6. Firearms already licensed to me" twice in the contents.
-    if (feat.ownedTable && !batteryDrawn && !printedNumbers.has('6')) {
-      if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 140) doc.addPage();
-      // Numbered as heading 6, the same as the plan's own — this only
-      // fires when the writer produced no such heading to hang it under.
-      renderHeading('6. Firearms already licensed to me');
-      drawBattery();
-    }
+    drawDeferredBody();
 
     // ── Signature block ───────────────────────────────────────────────
     // The applicant signs this as their own motivation — that is what the
@@ -2866,7 +3100,13 @@ export class MotivationPdfService {
       // a rule, and the body in the serif with the hanging hairline.
       // It carries no annexure letter, so the small-caps line above the title
       // says what the page IS instead of which tab it sits behind.
-      K.label(chrome, 'LODGED WITH THE APPLICATION', MARGIN, doc.y, contentWidth);
+      K.label(
+        chrome,
+        'LODGED WITH THE APPLICATION',
+        MARGIN,
+        doc.y,
+        contentWidth,
+      );
       doc.y += K.px(8.5) * 1.2 + K.mm(3);
       doc
         .font(F.sans)
@@ -3038,12 +3278,29 @@ export class MotivationPdfService {
      * on 'SELLER_CONSENT' in ANNEXURE_ORDER for why last.
      */
 
+    /**
+     * ⚠️ "1 item", NOT "1 items". The count is printed on the contents page —
+     * the page a reviewer reads first — and a single-document annexure read
+     * "Annexure B - SAPS competency certificate (1 items; expected)".
+     */
+    const annexureContentsHeading = (a: AnnexureEntry) =>
+      `Annexure ${a.letter} - ${a.label} (${a.count} ${
+        a.count === 1 ? 'item' : 'items'
+      }; ${a.certification})`;
+
     // ── Annexure index ────────────────────────────────────────────────
     if (input.annexures?.length) {
       doc.addPage();
       doc.x = MARGIN;
       doc.y = K.BODY_TOP;
-      toc.push({ heading: 'ANNEXURES', page: doc.bufferedPageRange().count });
+      const annexureIndexPage = doc.bufferedPageRange().count;
+      toc.push({ heading: 'ANNEXURES', page: annexureIndexPage });
+      for (const annexure of input.annexures) {
+        toc.push({
+          heading: annexureContentsHeading(annexure),
+          page: annexureIndexPage,
+        });
+      }
 
       K.label(chrome, 'WHAT IS ATTACHED', MARGIN, doc.y, contentWidth);
       doc.y += K.px(8.5) * 1.2 + K.mm(3);
@@ -3086,25 +3343,46 @@ export class MotivationPdfService {
       const letterW = K.mm(30);
       const labelW = contentWidth - letterW - certW - K.mm(6);
 
-      // Column captions, so the certification marks are not read as a claim
-      // that six documents are legally required to be certified.
-      K.label(chrome, 'Tab', MARGIN, doc.y, letterW);
-      K.label(chrome, 'Document', MARGIN + letterW, doc.y, labelW);
-      K.label(
-        chrome,
-        'Certification',
-        MARGIN + contentWidth - certW,
-        doc.y,
-        certW,
-      );
-      doc.y += K.px(8.5) * 1.2 + K.mm(2);
-      doc
-        .moveTo(MARGIN, doc.y)
-        .lineTo(MARGIN + contentWidth, doc.y)
-        .lineWidth(0.8)
-        .strokeColor(C.ink)
-        .stroke();
-      doc.y += K.mm(3.5);
+      /**
+       * Column captions, so the certification marks are not read as a claim
+       * that six documents are legally required to be certified.
+       *
+       * ⚠️ RE-DRAWN ON A CONTINUATION SHEET, NOT ONLY ONCE. A pack with enough
+       * annexures to overflow the index used to break the table onto a bare
+       * page with no captions, so the second sheet read as an unlabelled list
+       * of letters and pills. The heading and the three captions repeat, which
+       * is what makes the continuation legible as the same table.
+       */
+      const drawTableHead = (continued: boolean) => {
+        if (continued) {
+          K.label(
+            chrome,
+            'WHAT IS ATTACHED (CONTINUED)',
+            MARGIN,
+            doc.y,
+            contentWidth,
+          );
+          doc.y += K.px(8.5) * 1.2 + K.mm(2);
+        }
+        K.label(chrome, 'Tab', MARGIN, doc.y, letterW);
+        K.label(chrome, 'Document', MARGIN + letterW, doc.y, labelW);
+        K.label(
+          chrome,
+          'Certification',
+          MARGIN + contentWidth - certW,
+          doc.y,
+          certW,
+        );
+        doc.y += K.px(8.5) * 1.2 + K.mm(2);
+        doc
+          .moveTo(MARGIN, doc.y)
+          .lineTo(MARGIN + contentWidth, doc.y)
+          .lineWidth(0.8)
+          .strokeColor(C.ink)
+          .stroke();
+        doc.y += K.mm(3.5);
+      };
+      drawTableHead(false);
 
       for (const a of input.annexures) {
         const label = a.count > 1 ? `${a.label} (${a.count} items)` : a.label;
@@ -3115,6 +3393,7 @@ export class MotivationPdfService {
         if (doc.y + need > K.BODY_BOTTOM) {
           doc.addPage();
           doc.y = K.BODY_TOP;
+          drawTableHead(true);
         }
 
         const y = doc.y;
@@ -3130,7 +3409,10 @@ export class MotivationPdfService {
           .font(B.body)
           .fontSize(K.px(13))
           .fillColor(C.ink)
-          .text(label, MARGIN + letterW, y, { width: labelW, lineGap: K.px(2) });
+          .text(label, MARGIN + letterW, y, {
+            width: labelW,
+            lineGap: K.px(2),
+          });
         const rowBottom = Math.max(doc.y, y + K.px(13) * 1.3);
 
         if (a.certification !== 'none') {
@@ -3145,7 +3427,10 @@ export class MotivationPdfService {
           doc
             .roundedRect(cx, y, certW, h, h / 2)
             .lineWidth(0.8)
-            .fillAndStroke(required ? C.band : C.wash, required ? C.deep : C.hair);
+            .fillAndStroke(
+              required ? C.band : C.wash,
+              required ? C.deep : C.hair,
+            );
           doc
             .font(required ? F.sansBold : F.sans)
             .fontSize(K.px(8))
@@ -3234,36 +3519,107 @@ export class MotivationPdfService {
     // never scaled down to squeeze one more in. See
     // motivation-annexure-layout.ts.
     if (input.annexureImages?.length) {
-      const pages = planAnnexurePages(
-        input.annexureImages.map((a2) => ({
-          letter: a2.letter,
-          label: a2.label,
-          index: a2.index,
-          total: a2.total,
-          width: a2.width,
-          height: a2.height,
-          stamp: (a2.certification ?? 'none') !== 'none',
-        })),
-        {
-          x: MARGIN,
-          // ⚠️ BODY_TOP AND BODY_BOTTOM, NOT MARGIN. MARGIN is mm(14); the
-          // running banner is mm(16) tall and the footer strip mm(10). Laid
-          // out from MARGIN, every annexure caption was drawn UNDER the banner
-          // and painted over by it — "Annexure B — SAPS competency
-          // certificate" sliced in half on eight pages of a real 26-page pack,
-          // on precisely the line that tells the reader which annexure they
-          // are looking at. The banner is stamped last, in the bufferPages
-          // pass, so nothing here could see the collision coming.
-          y: K.BODY_TOP,
-          width: contentWidth,
-          height: K.BODY_BOTTOM - K.BODY_TOP,
-        },
+      /**
+       * ⚠️ THE SAFE SHEET IS PLANNED IN LETTER ORDER, NOT APPENDED. Safe
+       * photographs are the one annexure packed 2x2 instead of one-per-width,
+       * so they go through a different planner — but they still have to print
+       * where their LETTER says. An earlier version ran every other annexure
+       * through planAnnexurePages and then bolted the safe sheet onto the end,
+       * which moved letter E (the safe) to the back of the pack, on a page
+       * after the last annexure. Here the images are walked in letter order:
+       * runs of ordinary copies go through planAnnexurePages, and the safe's
+       * run goes through planSafePhotoPages, so the sheet lands between D and
+       * F where the index says it is.
+       */
+      const box = {
+        x: MARGIN,
+        // ⚠️ BODY_TOP AND BODY_BOTTOM, NOT MARGIN. MARGIN is mm(14); the
+        // running banner is mm(16) tall and the footer strip mm(10). Laid out
+        // from MARGIN, every annexure caption was drawn UNDER the banner and
+        // painted over by it — "Annexure B — SAPS competency certificate"
+        // sliced in half on eight pages of a real 26-page pack, on precisely
+        // the line that tells the reader which annexure they are looking at.
+        // The banner is stamped last, in the bufferPages pass, so nothing here
+        // could see the collision coming.
+        y: K.BODY_TOP,
+        width: contentWidth,
+        height: K.BODY_BOTTOM - K.BODY_TOP,
+      };
+      const plannedImages = input.annexureImages.map((a2) => ({
+        bytes: a2.bytes,
+        letter: a2.letter,
+        label: a2.label,
+        index: a2.index,
+        total: a2.total,
+        width: a2.width,
+        height: a2.height,
+        safe: a2.safe ?? false,
+        // ⚠️ PHOTOGRAPHS OF THE SAFE ARE ORIGINALS, NOT COPIES. Nothing
+        // certifies a photograph of your own safe against an original
+        // photograph, so the stamp strip is not reserved for them even though
+        // the certification table could be read as asking for one. Keyed off
+        // the upload kind (`safe`), never the display label.
+        stamp: a2.safe ? false : (a2.certification ?? 'none') !== 'none',
+      }));
+      const pages: ReturnType<typeof planAnnexurePages> = [];
+      let ordinary: typeof plannedImages = [];
+      let safes: typeof plannedImages = [];
+      const flushOrdinary = () => {
+        if (ordinary.length) pages.push(...planAnnexurePages(ordinary, box));
+        ordinary = [];
+      };
+      const flushSafes = () => {
+        if (safes.length) pages.push(...planSafePhotoPages(safes, box));
+        safes = [];
+      };
+      for (const image of plannedImages) {
+        if (image.safe) {
+          flushOrdinary();
+          safes.push(image);
+        } else {
+          flushSafes();
+          ordinary.push(image);
+        }
+      }
+      flushOrdinary();
+      flushSafes();
+      const sourceByBytes = new Map(
+        input.annexureImages.map((a) => [a.bytes, a]),
       );
-      let n = 0;
+      /**
+       * ⚠️ THE FIRST PAGE OF AN ANNEXURE, NOT THE LAST. Every copy re-assigned
+       * its letter's contents entry, so the last one won: a three-page
+       * proficiency certificate sent the reader to page 16 when it starts on
+       * 14, and a four-copy licence annexure to 19 when it starts on 18. The
+       * contents points at the sheet the annexure opens on; the letter is
+       * assigned once.
+       */
+      const placedLetters = new Set<string>();
       for (const page of pages) {
         doc.addPage();
         for (const place of page) {
-          const src = input.annexureImages[n++];
+          if (placedLetters.has(place.letter)) continue;
+          placedLetters.add(place.letter);
+          const tocEntry = toc.find((entry) =>
+            entry.heading.startsWith(`Annexure ${place.letter} `),
+          );
+          if (tocEntry) {
+            tocEntry.page = doc.bufferedPageRange().count;
+          } else {
+            const annexure = input.annexures?.find(
+              (a) => a.letter === place.letter,
+            );
+            if (annexure) {
+              toc.push({
+                heading: annexureContentsHeading(annexure),
+                page: doc.bufferedPageRange().count,
+              });
+            }
+          }
+        }
+        for (const place of page) {
+          const src = sourceByBytes.get(place.bytes!);
+          if (!src) continue;
           doc
             .font(FONT_BOLD)
             .fontSize(9.5)
@@ -3426,6 +3782,19 @@ export class MotivationPdfService {
       const entry = input.annexures?.find((a) => a.kind === 'SELLER_CONSENT');
       const startedOn = renderStatementForm(chrome, input.sellerConsent);
       if (entry) {
+        /**
+         * ⚠️ AND THE CONTENTS LEARNS WHERE IT LANDED. This is the one annexure
+         * that is not an uploaded image, so it never passes through the loop
+         * that assigns every other letter's page — and its contents entry sat
+         * on the ANNEXURE INDEX's page (11) while the consent itself printed on
+         * 22. Stored in the same pre-merge coordinate space as the others; the
+         * contents pass shifts it by `shiftFor` like everything else.
+         */
+        const tocEntry = toc.find((t) =>
+          t.heading.startsWith(`Annexure ${entry.letter} `),
+        );
+        if (tocEntry) tocEntry.page = startedOn;
+
         /**
          * The caption goes on AFTER the form, at the page it actually started
          * on: `renderStatementForm` owns its own page and would otherwise
@@ -3650,10 +4019,10 @@ export class MotivationPdfService {
       }
     }
 
-
     // ── Contents, written now that the pages are known ────────────────
-    if (tocPageIndex !== null && toc.length) {
-      doc.switchToPage(tocPageIndex);
+    if (tocPageIndexes.length && toc.length) {
+      let contentsPage = 0;
+      doc.switchToPage(tocPageIndexes[contentsPage]);
       // ⚠️ BODY_TOP, NOT MARGIN. MARGIN is mm(14) and the running banner is
       // mm(16) tall, so the CONTENTS heading was drawn six points UNDER the
       // banner and had its ascenders shaved off — on page two of every pack.
@@ -3683,6 +4052,23 @@ export class MotivationPdfService {
 
       const numColW = K.mm(12);
       for (const entry of toc) {
+        if (
+          doc.y > K.BODY_BOTTOM - K.mm(12) &&
+          contentsPage + 1 < tocPageIndexes.length
+        ) {
+          contentsPage++;
+          doc.switchToPage(tocPageIndexes[contentsPage]);
+          doc.y = K.BODY_TOP;
+          doc.x = MARGIN;
+          K.label(
+            chrome,
+            'IN THIS PACK (CONTINUED)',
+            MARGIN,
+            doc.y,
+            contentWidth,
+          );
+          doc.y += K.px(8.5) * 1.2 + K.mm(6);
+        }
         const y = doc.y;
         // ⚠️ THE NUMBER THE PAGE ENDS UP WITH. Same rule as the footers: this
         // is written before the merged pages exist, so an entry pointing at a
@@ -3987,17 +4373,18 @@ export class MotivationPdfService {
      * appended — so a pack with a drawing gained an unreferenced facsimile
      * page at the end, after the signature.
      */
-    const cipLoaded = input.cipSheet && !input.cartridgeDrawing
-      ? await loadPdfAnnexures([
-          {
-            letter: '',
-            label: input.cipSheet.label,
-            index: 1,
-            total: 1,
-            bytes: input.cipSheet.bytes,
-          },
-        ])
-      : null;
+    const cipLoaded =
+      input.cipSheet && !input.cartridgeDrawing
+        ? await loadPdfAnnexures([
+            {
+              letter: '',
+              label: input.cipSheet.label,
+              index: 1,
+              total: 1,
+              bytes: input.cipSheet.bytes,
+            },
+          ])
+        : null;
     const pdfBlocks = [
       {
         items: merged.loaded,

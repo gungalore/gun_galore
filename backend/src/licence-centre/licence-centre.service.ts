@@ -2164,6 +2164,16 @@ export class LicenceCentreService {
         ),
       );
 
+    // Editable drafts must not retain vault-sourced copies or answers after
+    // the member deletes the source credential. Completed packs stay intact.
+    await this.motivations
+      .removeCredentialFromEditableDrafts(user.id, row.id)
+      .catch((err) =>
+        this.logger.warn(
+          `Credential ${id}: could not remove editable motivation copies: ${(err as Error).message}`,
+        ),
+      );
+
     await this.prisma.credential.delete({ where: { id: row.id } });
     await this.notifications
       .resolveByEntity('credential', id, { userId: user.id })

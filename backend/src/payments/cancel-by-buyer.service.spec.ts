@@ -40,17 +40,17 @@ function makeService(opts: {
     orderCancelledByBuyer: jest.fn().mockResolvedValue(undefined),
   };
   const tracking = { recordInternal: jest.fn().mockResolvedValue(undefined) };
-  const peach = { refundPayment };
+  const ozow = { refundPayment };
   // P5.2: cancelByBuyer now cancels any booked shipment.
   const shipping = { cancelForTransaction: jest.fn().mockResolvedValue(undefined) };
 
-  // Positional constructor args: prisma, fees, notifications, peach, kyc,
+  // Positional constructor args: prisma, fees, notifications, ozow, kyc,
   // shipping, tracking, tokens, referenceNumbers, fraudRisk, cloudinary.
   const service = new TransactionsService(
     prisma as never,
     {} as never,
     notifications as never,
-    peach as never,
+    ozow as never,
     {} as never,
     shipping as never,
     tracking as never,
@@ -77,7 +77,7 @@ const baseTx = {
   cancelledByBuyerAt: null,
   paymentStatus: 'HELD',
   shippingMethod: 'PUDO',
-  peachPaymentId: 'pay_1',
+  gatewayPaymentId: 'pay_1',
   listing: { id: 'L1', title: 'Scope' },
   buyer: { id: 'B', email: 'b@x.co', firstName: 'Bo', phone: null },
   seller: { email: 's@x.co', firstName: 'Sy', phone: null },

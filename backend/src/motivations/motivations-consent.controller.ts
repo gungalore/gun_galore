@@ -87,9 +87,12 @@ export class MotivationsConsentController {
       throw new BadRequestException('The firearm details are missing.');
     }
     // The link has to be absolute — it is going into an SMS.
+    // Prefer the configured public URL when set (e.g. a local tunnel), so a
+    // link sent from a localhost browser tab still goes somewhere the phone
+    // can reach. The Origin header remains the fallback for production.
     const origin =
-      (req.headers['origin'] as string) ||
       process.env.PUBLIC_WEB_URL ||
+      (req.headers['origin'] as string) ||
       'https://alloutdoor.co.za';
     return this.consent.invite({
       motivationId: id,

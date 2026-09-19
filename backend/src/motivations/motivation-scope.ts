@@ -302,7 +302,23 @@ const SPEC_WORDS = [
  */
 export function phraseIn(issue: string): string | null {
   const m = /^the document says "([^"]+)"/.exec(issue);
-  return m ? m[1] : null;
+  if (m) return m[1];
+
+  /**
+   * ⚠️ THE SECTION-DISCIPLINE VOCABULARY IS A WORD TOO, AND LEAVING IT OUT
+   * COST A PACK. "defensive" on a hunting application is the same kind of slip
+   * as "platform" — one ordinary word the writer reached for — but the
+   * complaint reads "a hunting or sport application says ...", which the
+   * matcher above never saw. `repairTargets` therefore returned null, the
+   * targeted rewrite never ran, and a structurally clean document went FAILED
+   * on a single word. Both scope messages are vocabulary and nothing else, so
+   * both are parseable here.
+   */
+  const scope =
+    /^(?:a hunting or sport application|a self-defence application) says "([^"]+)"/.exec(
+      issue,
+    );
+  return scope ? scope[1] : null;
 }
 
 /**

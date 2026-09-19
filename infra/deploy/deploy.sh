@@ -47,10 +47,19 @@ set -uo pipefail
 HOST=alloutdoor
 APP=/home/alloutdoor/app
 BRANCH=feat/takealot-ux-parity
-MODE=${1:-both}
 
 say() { printf '\n=== %s ===\n' "$*"; }
 die() { printf '\nSTOPPED: %s\n' "$*" >&2; exit 1; }
+
+MODE=both
+SKIP_BACKUP=no
+for arg in "$@"; do
+  case "$arg" in
+    --backend-only|--frontend-only) MODE="$arg" ;;
+    --skip-backup) SKIP_BACKUP=yes ;;
+    *) die "unknown argument: $arg" ;;
+  esac
+done
 
 # ── 0. local ────────────────────────────────────────────────────────
 say "local checks"
@@ -67,6 +76,41 @@ REMOTE_BRANCH=$(ssh "$HOST" "cd $APP && git rev-parse --abbrev-ref HEAD")
 [ "$REMOTE_BRANCH" = "$BRANCH" ] || die "box is on '$REMOTE_BRANCH', expected '$BRANCH'"
 echo "box branch: $REMOTE_BRANCH"
 
+# ── 2. BACK UP BEFORE ANYTHING ON THE BOX CHANGES ───────────────────
+#
+# This runs before the lockfile reset and before the pull, because those are
+# the first things that modify the box. "Back up before changing anything"
+# is only true if nothing has changed yet.
+#
+# ⚠️ A FAILED BACKUP IS FATAL. It used to be `|| echo "WARNING"`, which meant a
+# broken backup.sh printed one line and the deploy carried on into
+# `prisma migrate deploy` — a migration against production with no rollback
+# point. The warning scrolled past in the build output and nobody saw it.
+# Use --skip-backup to override deliberately; there is no accidental path.
+#
+# ⚠️ AND "IT EXITED 0" IS NOT A BACKUP. This checks the dump is NEW (touched
+# during this run) and NON-EMPTY, because listing the latest dump happily
+# prints yesterday's when today's never got written — the same class of
+# mistake as trusting a build that exits 0 without an artefact.
+say "pre-deploy backup"
+if [ "$SKIP_BACKUP" = "yes" ]; then
+  echo "  SKIPPED by --skip-backup — no rollback point for this deploy"
+else
+  STAMP_BEFORE=$(ssh "$HOST" "date +%s")
+  ssh "$HOST" "~/bin/backup.sh"     || die "backup FAILED — nothing on the box has been touched. See /var/backups/alloutdoor/backup.log"
+
+  DUMP=$(ssh "$HOST" "ls -t /var/backups/alloutdoor/db/*.dump 2>/dev/null | head -1")
+  [ -n "$DUMP" ] || die "backup exited 0 but produced no dump — refusing to deploy"
+
+  DUMP_AGE=$(ssh "$HOST" "stat -c %Y '$DUMP'")
+  DUMP_SIZE=$(ssh "$HOST" "stat -c %s '$DUMP'")
+  [ "$DUMP_AGE" -ge "$STAMP_BEFORE" ]     || die "latest dump $(basename "$DUMP") predates this run — backup.sh wrote nothing new"
+  [ "$DUMP_SIZE" -gt 0 ] || die "dump $(basename "$DUMP") is empty — refusing to deploy"
+
+  echo "  rollback point: $(basename "$DUMP") (${DUMP_SIZE} bytes)"
+fi
+
+# ── 2b. the pull, now that a rollback point exists ──────────────────
 # npm install rewrites package-lock.json on the box, which eventually blocks a
 # fast-forward pull. Those edits are never wanted — the lockfile in the repo is
 # the intended one — so they are discarded rather than left to fail a deploy at
@@ -84,12 +128,6 @@ ssh "$HOST" "cd $APP && git pull --ff-only -q origin $BRANCH" || die "pull faile
 REMOTE=$(ssh "$HOST" "cd $APP && git rev-parse HEAD")
 [ "$REMOTE" = "$LOCAL" ] || die "box HEAD ${REMOTE:0:8} != local ${LOCAL:0:8}"
 echo "box HEAD matches local: ${REMOTE:0:8}"
-
-# ── 2. back up before touching the database ─────────────────────────
-say "pre-deploy backup"
-ssh "$HOST" "~/bin/backup.sh" \
-  || echo "  WARNING: backup reported a problem — see /var/backups/alloutdoor/backup.log"
-ssh "$HOST" "ls -t /var/backups/alloutdoor/db/*.dump | head -1 | xargs -n1 basename | sed 's/^/  latest dump: /'"
 
 # ── 3. backend ──────────────────────────────────────────────────────
 if [ "$MODE" != "--frontend-only" ]; then

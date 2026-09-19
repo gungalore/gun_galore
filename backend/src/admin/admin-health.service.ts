@@ -105,11 +105,11 @@ export class AdminHealthService {
       }
     > = [
       {
-        name: 'Peach Payments',
+        name: 'Ozow Payments',
         url:
-          process.env.PEACH_ENV === 'live'
-            ? 'https://secure.peachpayments.com'
-            : 'https://testsecure.peachpayments.com',
+          process.env.OZOW_ENV === 'live'
+            ? 'https://one.ozow.com'
+            : 'https://stagingone.ozow.com',
         category: 'payment',
         method: 'HEAD',
       },

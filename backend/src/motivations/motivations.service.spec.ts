@@ -224,6 +224,12 @@ function build(
     // The arg is declared so mock.calls is typed as a one-element tuple; a
     // zero-arg mock makes calls[0][0] a type error even though it is there.
     extract: jest.fn(async (_a: any): Promise<any[]> => opts.extracted ?? []),
+    // Additive, for the direct-upload tests: a PDF or an unavailable Vision key
+    // reads as null, which is the ordinary local case.
+    ocr: jest.fn(async (_b?: any, _m?: any): Promise<string | null> => null),
+    // Additive: only reached when the member names no kind, which none of the
+    // upload tests below do.
+    classify: jest.fn(async (_a?: any): Promise<any> => null),
   };
   const settings = {
     get: jest.fn(async (flag: { key: string; default: unknown }) =>
@@ -337,6 +343,12 @@ function build(
       forget: async () => 0,
       purgeExpired: async () => 0,
     } as never,
+    // The page rasteriser, silenced the same way: nothing here is a PDF.
+    {
+      pagesFor: async () => [],
+      forget: async () => 0,
+      purgeExpired: async () => 0,
+    } as never,
   );
   const generation = new MotivationGenerationService(
     prisma as never,
@@ -390,6 +402,9 @@ function build(
     // once per species; these tests assert on documents, not photographs, and
     // returning undefined is the state every one of them was written against.
     { plateFor: async () => undefined } as never,
+    // ⚠️ NOTHING IS RASTERISED HERE. Only a PDF annexure reaches this, and no
+    // test in this file carries one.
+    { pagesFor: async () => [] } as never,
 );
   const witnessFlow = new MotivationWitnessesService(
     prisma as never,
@@ -1792,6 +1807,74 @@ describe('a document picked from the Document Centre', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────
+// A DEDICATED CERTIFICATE UPLOADED STRAIGHT TO AN APPLICATION.
+//
+// Operator, 2026-09-14: a dedicated certificate is also the section 16 letter
+// of good standing while its validity is unexpired. The vault-attach path
+// applies that when it files a credential — but a member who photographed the
+// SAME certificate directly was still told the good-standing row was empty with
+// the paper already in the pack. A direct upload carries no sourceCredentialId
+// and its own read is the motivation registry, which never asks an
+// ASSOCIATION_CARD for an expiry, so the vault row is found by content.
+// ────────────────────────────────────────────────────────────────────
+describe('a dedicated certificate uploaded straight to an application', () => {
+  function uploadCase(
+    vaultRow: Record<string, unknown> | null,
+    opts: Parameters<typeof build>[0] = {},
+  ) {
+    const b = build(opts);
+    b.prisma.motivation.findFirst = jest.fn(async (): Promise<any> => ({
+      id: 'mo-1',
+      status: 'DRAFT',
+      licenceType: 'S16_DEDICATED_SPORT',
+      answersEncrypted: null,
+    }));
+    b.prisma.credential.findFirst = jest.fn(async (): Promise<any> => vaultRow);
+    return b;
+  }
+
+  const upload = (svc: any) =>
+    svc.addUpload('user-1', 'mo-1', 'ASSOCIATION_CARD', {
+      buffer: Buffer.from([0xff, 0xd8, 0xff]),
+      mimetype: 'image/jpeg',
+    });
+
+  it('ALSO fills the letter of good standing, matched by content', async () => {
+    const { svc, prisma } = uploadCase({
+      kind: 'DEDICATED_DISCIPLINE',
+      expiresOn: new Date('2099-01-01T00:00:00Z'),
+    });
+
+    await upload(svc);
+
+    const row = prisma.motivationUpload.create.mock.calls[0][0].data;
+    expect(row.kind).toBe('ASSOCIATION_CARD');
+    expect(row.coversKinds).toEqual(['GOOD_STANDING_LETTER']);
+  });
+
+  it('adds NOTHING when the vault copy has lapsed', async () => {
+    const { svc, prisma } = uploadCase({
+      kind: 'DEDICATED_DISCIPLINE',
+      expiresOn: new Date('2020-01-01T00:00:00Z'),
+    });
+
+    await upload(svc);
+
+    const row = prisma.motivationUpload.create.mock.calls[0][0].data;
+    expect(row.coversKinds).toEqual([]);
+  });
+
+  it('adds NOTHING when the same bytes are not in the vault', async () => {
+    const { svc, prisma } = uploadCase(null);
+
+    await upload(svc);
+
+    const row = prisma.motivationUpload.create.mock.calls[0][0].data;
+    expect(row.coversKinds).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
 // PROVENANCE — WHERE EACH PREFILLED ANSWER CAME FROM.
 //
 // The pure rules are covered in common/answer-provenance.spec.ts. What is
@@ -2645,20 +2728,20 @@ describe('auto-linking the Document Centre', () => {
     ...over,
   });
 
-  it('C2 — asks for SETTLED dates, not confirmed ones', async () => {
-    // ⚠️ THE OLD PREDICATE MADE THIS FEATURE DO NOTHING FOR AN ORDINARY MEMBER.
-    // It required confirmedAt, and the Document Centre has dated and ARMED its
-    // own rows since 2026-08-25 — dateSource set, confirmedAt null. The
-    // operator's vault holds five firearm licences and zero confirmed rows, so
-    // the query came back empty for everybody.
+  it('takes unconfirmed documents too — the settled-date filter is gone', async () => {
+    // ⚠️ 2026-09-14: the confirmed/dateSource predicate is gone entirely.
+    // Operator: "the current licenses, the ID, the proof of address ... can be
+    // auto pulled when the motivation is open." An ID or an address
+    // confirmation carries no date at all, so "settled" never applied to it,
+    // and an unconfirmed licence was dropped outright. Candidates now come
+    // from every stored, unpurged credential, and decideAutolink still applies
+    // the 90-day freshness rule where a date exists.
     const { svc, prisma } = autolinkCase({}, [cred()]);
     await svc.autolink('c1', 'mo-1');
     const where = prisma.credential.findMany.mock.calls[0][0].where;
-    const settled = where.AND[0].OR;
-    expect(settled).toEqual([
-      { confirmedAt: { not: null } },
-      { dateSource: { not: null } },
-    ]);
+    expect(where.AND).toBeUndefined();
+    expect(where.purgedAt).toBeNull();
+    expect(where.storageKey).toEqual({ not: null });
   });
 
   it('C2 — ⚠️ DOES NOT BURN THE RUN WHEN THERE WAS NOTHING TO DECIDE', async () => {
@@ -2725,13 +2808,17 @@ describe('auto-linking the Document Centre', () => {
     await expect(svc.rearmAutolinkFor('user-1')).resolves.toBe(0);
   });
 
-  it('M6 — holds the safe photographs back and SAYS SO', async () => {
+  it('attaches the safe photographs unasked now', async () => {
+    // ⚠️ 2026-09-14: the safe moved onto the standard auto-attach list, so the
+    // open-time run no longer holds it back and no longer asks for a place
+    // confirmation. Operator: "safe photographs can be auto pulled when the
+    // motivation is open."
     const { svc } = autolinkCase({}, [
       cred({ id: 'safe-1', kind: 'SAFE_PHOTOGRAPHS', title: 'My safe' }),
     ]);
     const out = await svc.autolink('c1', 'mo-1');
-    expect(out.attached).toEqual([]);
-    expect(out.needsPlaceConfirm).toBe(true);
+    expect(out.needsPlaceConfirm).toBe(false);
+    expect(out.skipped).toEqual([]);
   });
 
   it('⚠️ M6 — THE TICK WORKS ON THE SECOND RUN, WHICH IT NEVER DID', async () => {

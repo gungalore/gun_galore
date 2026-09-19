@@ -1,10 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PAYMENT_MODE } from '../payments/transactions.service';
 import { PAYMENTS_LIVE } from '../payments/payment-mode';
-import { PeachService, PeachPayoutBeneficiary } from '../payments/peach.service';
-import { normaliseBankName } from '../payments/peach-banks';
+import { OzowService, OzowPayoutBeneficiary } from '../payments/ozow.service';
+import { normaliseOzowBank, bankByBranchCode } from '../payments/ozow-banks';
 
 // Manual-EFT reconciliation (the inContact inbox scan + FNB statement CSV
 // upload + unmatched queue + FNB payout-batch builder) has been REMOVED with
@@ -57,17 +56,18 @@ export class ManualPaymentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    // PeachService is @Global (PeachModule) — no PaymentsModule import needed.
-    private readonly peach: PeachService,
+    // OzowService is @Global (OzowModule) — no PaymentsModule import needed.
+    private readonly ozow: OzowService,
   ) {}
 
-  // ── Seller payout disbursement via Peach Payouts ────────────────────
-  // Operator-triggered (admin endpoint). Gathers the due seller payouts,
-  // disburses the payable ones to each seller's bank in ONE batch call, and
-  // stamps paidOutAt on the rows Peach ACCEPTS (exactly-once — a re-run skips
-  // already-stamped rows). The payout webhook later confirms Successful or, on
-  // Failed, clears paidOutAt so the row re-queues. Buyer refunds are NOT here:
-  // a card gateway reverses those on the original card via refundPayment.
+  // ── Seller payout disbursement via Ozow Payouts ─────────────────────
+  // Operator-triggered (admin endpoint). Gathers the due seller payouts and
+  // disburses each payable one to the seller's bank (one requestpayout per
+  // seller), stamping paidOutAt on rows Ozow ACCEPTS (exactly-once — a re-run
+  // skips already-stamped rows). The payout notification webhook later
+  // confirms PayoutComplete or, on failure, clears paidOutAt so the row
+  // re-queues. Buyer refunds are NOT here: the gateway reverses those on the
+  // original payment via refundPayment.
   async runDuePayouts(): Promise<{
     attempted: number;
     accepted: number;
@@ -98,13 +98,22 @@ export class ManualPaymentsService {
     const childrenSum = (c?: { buyerTotal: number }[] | null) =>
       (c ?? []).reduce((s, x) => s + x.buyerTotal, 0);
 
-    // Peach payouts: bankName is a strict ENUM and the floor is R10 (1000c).
-    // Rows that can't be mapped/paid are skipped WITH a reason, never guessed.
-    const beneficiaries: (PeachPayoutBeneficiary & { txId: string })[] = [];
+    // Ozow payouts: one requestpayout per seller. Rows whose bank can't be
+    // mapped are skipped WITH a reason, never guessed.
+    const notifyUrl = this.publicApiBase() + '/payments/webhook/ozow-payout';
+    const beneficiaries: OzowPayoutBeneficiary[] = [];
     for (const p of payable) {
       const amountCents = netPayoutCents(p);
-      const bank = normaliseBankName(p.seller.bankName);
-      if (!bank) {
+      if (amountCents <= 0) {
+        collected.skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: 'Net payout is zero after refunds/shipment charges — nothing to disburse',
+        });
+        continue;
+      }
+      const bank = normaliseOzowBank(p.seller.bankName) ?? bankByBranchCode(p.seller.bankBranchCode);
+      if (!bank || !p.seller.bankAccountNumber || !p.seller.bankBranchCode) {
         collected.skipped.push({
           kind: 'PAYOUT',
           ref: p.orderReference ?? p.id,
@@ -112,28 +121,18 @@ export class ManualPaymentsService {
         });
         continue;
       }
-      if (amountCents < 1000) {
-        collected.skipped.push({
-          kind: 'PAYOUT',
-          ref: p.orderReference ?? p.id,
-          reason: `Amount R${(amountCents / 100).toFixed(2)} is below Peach's R10 payout minimum — held until combined with a later payout`,
-        });
-        continue;
-      }
       beneficiaries.push({
         txId: p.id,
-        payoutId: randomUUID(),
-        bankName: bank,
-        accountHolder: p.seller.bankAccountHolder ?? '',
-        bankAccountNumber: p.seller.bankAccountNumber ?? '',
-        branchCode: p.seller.bankBranchCode ?? '',
-        amountCents,
-        // Beneficiary statement text (1-20 alphanumeric+space).
-        reference: (p.orderReference ?? `GG ${p.id.slice(-8)}`)
-          .replace(/[^a-zA-Z0-9 ]/g, ' ')
+        merchantReference: `AO${p.id.replace(/[^a-zA-Z0-9]/g, '').slice(-18)}`,
+        customerBankReference: (p.orderReference ?? `AO ${p.id.slice(-8)}`)
+          .replace(/[^a-zA-Z0-9 -]/g, ' ')
           .trim()
           .slice(0, 20),
-        proofEmail: p.seller.email,
+        accountHolder: p.seller.bankAccountHolder ?? '',
+        bankAccountNumber: p.seller.bankAccountNumber,
+        branchCode: p.seller.bankBranchCode,
+        amountCents,
+        notifyUrl,
       });
     }
     if (beneficiaries.length === 0) {
@@ -146,56 +145,50 @@ export class ManualPaymentsService {
       };
     }
 
-    // Store each payoutId BEFORE calling Peach so the status webhook can
-    // always be matched back — even if our process dies mid-call.
-    for (const b of beneficiaries) {
-      await this.prisma.transaction.update({
-        where: { id: b.txId },
-        data: { peachPayoutId: b.payoutId },
-      });
-    }
-
-    const res = await this.peach.createPayout(beneficiaries);
-    const acceptedIds = new Set(
-      res.results
-        .filter((r) => ['pending', 'processing', 'successful'].includes(r.status))
-        .map((r) => r.payoutId),
-    );
-
-    // Stamp paidOutAt on accepted rows (exactly-once). CAS on paidOutAt=null
-    // so a concurrent run can't double-stamp.
+    // One requestpayout per seller. Store the Ozow payoutId as soon as it is
+    // returned so the verification + notification webhooks always match back.
     let accepted = 0;
     let totalCents = 0;
+    const failures: string[] = [];
     for (const b of beneficiaries) {
-      if (!acceptedIds.has(b.payoutId)) continue;
-      const stamp = await this.prisma.transaction.updateMany({
-        where: { id: b.txId, paidOutAt: null },
-        data: { paidOutAt: new Date() },
-      });
-      if (stamp.count > 0) {
-        accepted += 1;
-        totalCents += b.amountCents;
+      const res = await this.ozow.createPayout(b);
+      if (res.accepted && res.payoutId) {
+        await this.prisma.transaction.update({
+          where: { id: b.txId },
+          data: { gatewayPayoutId: res.payoutId },
+        });
+        // Stamp paidOutAt (exactly-once) — CAS on paidOutAt=null so a
+        // concurrent run can't double-stamp.
+        const stamp = await this.prisma.transaction.updateMany({
+          where: { id: b.txId, paidOutAt: null },
+          data: { paidOutAt: new Date() },
+        });
+        if (stamp.count > 0) {
+          accepted += 1;
+          totalCents += b.amountCents;
+        }
+      } else {
+        failures.push(
+          `${b.txId.slice(0, 8)}: ${res.errorMessage ?? 'rejected'}`,
+        );
       }
     }
+
     const failed = beneficiaries.length - accepted;
     if (failed > 0) {
-      const failDetail = res.results
-        .filter((r) => !acceptedIds.has(r.payoutId))
-        .map((r) => `${r.payoutId.slice(0, 8)}: ${r.error ?? r.code ?? r.status}`)
-        .join('; ');
       await this.prisma.adminAlert
         .create({
           data: {
-            type: 'PEACH_PAYOUT_PARTIAL',
-            referenceId: res.requestId ?? 'peach-payout',
+            type: 'OZOW_PAYOUT_PARTIAL',
+            referenceId: `payout-${new Date().toISOString().slice(0, 10)}`,
             urgent: true,
-            context: `Peach payout batch: ${accepted}/${beneficiaries.length} accepted, ${failed} not accepted. ${failDetail} ${res.message ?? ''}`.trim(),
+            context: `Ozow payout run: ${accepted}/${beneficiaries.length} accepted, ${failed} not accepted. ${failures.join('; ')}`,
           },
         })
         .catch(() => undefined);
     }
     this.logger.log(
-      `Peach payout run: ${accepted}/${beneficiaries.length} accepted, R${Math.round(totalCents / 100)} disbursed (request ${res.requestId ?? '—'})`,
+      `Ozow payout run: ${accepted}/${beneficiaries.length} accepted, R${Math.round(totalCents / 100)} disbursed`,
     );
     return {
       attempted: beneficiaries.length,
@@ -204,6 +197,14 @@ export class ManualPaymentsService {
       totalCents,
       skipped: collected.skipped,
     };
+  }
+
+  // Public /api origin for the payout notifyUrl (PUBLIC_API_URL, else
+  // FRONTEND_URL + '/api', else localhost).
+  private publicApiBase(): string {
+    if (process.env.PUBLIC_API_URL) return process.env.PUBLIC_API_URL;
+    const fe = process.env.FRONTEND_URL;
+    return fe ? `${fe.replace(/\/$/, '')}/api` : 'http://localhost:3001/api';
   }
 
   // ── P1.3 — Books failed-sync aggregate (read-only) ──────────────────
@@ -492,7 +493,7 @@ export class ManualPaymentsService {
             // KYC VERIFIED). collectDue skips sellers failing it.
             kycStatus: true,
             profileCompletedAt: true,
-            // Peach BANV — enforced by collectDue only when BANV is live.
+            // bankVerifiedAt no longer gates payouts (Ozow has no BANV).
             bankVerifiedAt: true,
           },
         },
@@ -608,17 +609,9 @@ export class ManualPaymentsService {
         });
         continue;
       }
-      // Peach bank-account verification (AVS) gate — enforced only once
-      // BANV can actually run; before that the manual admin holder-name
-      // review remains the gate (pre-Peach process).
-      if (this.peach.isBanvEnabled() && !p.seller.bankVerifiedAt) {
-        skipped.push({
-          kind: 'PAYOUT',
-          ref: p.orderReference ?? p.id,
-          reason: `Seller ${p.seller.username ?? '(no username)'}: bank account not yet verified (AVS) — verification runs automatically after bank details are saved; see admin alerts if it flagged a mismatch`,
-        });
-        continue;
-      }
+      // Ozow has no automated AVS/BANV product — the manual admin
+      // holder-name review remains the gate (as in the pre-gateway process).
+      // bankVerifiedAt is no longer consulted.
       payoutIds.push(p.id);
       payoutTotalCents += payoutAmount;
     }

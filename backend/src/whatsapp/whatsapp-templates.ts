@@ -190,11 +190,12 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     requiredVars: ['ref'],
     linkVars: ['txId'],
     linkCode: (v) => `t${v.txId}`,
-    render: (v) => `A refund has been issued for order ${v.ref}.`,
+    render: (v) =>
+      `A refund has been issued for order ${v.ref}. Please allow a few days for it to clear.`,
   },
-  firearm_ready_at_dealer_buyer: {
-    key: 'firearm_ready_at_dealer_buyer',
-    metaName: 'firearm_ready_at_dealer_buyer',
+  dealer_collection_ready_buyer: {
+    key: 'dealer_collection_ready_buyer',
+    metaName: 'dealer_collection_ready_buyer',
     lang: 'en',
     requiredVars: ['ref'],
     linkVars: ['txId'],

@@ -670,8 +670,8 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // numbers the buyer is charged are re-computed server-side on Pay so
   // this is presentation-only and safe to trust as a "shown to user"
   // value.
-  const PEACH_RATE = 0.035;
-  const PEACH_FIXED_CENTS = 150;
+  const OZOW_EFT_RATE = 0.015;
+  const OZOW_MIN_FEE_CENTS = 100;
   const VAT_MULTIPLIER = 1.15;
   // FLOW-F4 (M23) — the live rail is manual EFT, which charges a FLAT 1.5% of
   // (item + shipping), no fixed component, no VAT multiplier (fee.calculator
@@ -723,10 +723,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       ? 0
       : PAYMENT_MODE === 'manual'
         ? Math.round(base * MANUAL_RATE)
-        : Math.round(
-            base * PEACH_RATE * VAT_MULTIPLIER +
-              PEACH_FIXED_CENTS * VAT_MULTIPLIER,
-          );
+        : Math.round(Math.max(base * OZOW_EFT_RATE, OZOW_MIN_FEE_CENTS) * VAT_MULTIPLIER);
     return {
       listing: item,
       shipping,
@@ -1806,7 +1803,7 @@ function DealerTransferConsent({
 // `accepted` stays false and the parent's isReady() returns false.
 //
 // Why this level of friction: PRIVATE_ARRANGE waives payment protection
-// — the seller is paid the moment Peach confirms the card. We need an
+// — the seller is paid the moment Ozow confirms the payment. We need an
 // unmistakable opt-in so a buyer can't later claim they didn't know
 // what they were giving up. The screen also doubles as documentation
 // for support if a dispute lands.

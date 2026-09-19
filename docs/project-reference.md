@@ -347,15 +347,18 @@ state — do not read its absence as the switch being broken).
 `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
 `VAPID_SUBJECT`, `WARDEN_TOKEN`, `WARDEN_BASE_URL`,
 `RELOADING_MANUALS_INBOX_DIR`, `RELOADING_MANUALS_STORAGE_DIR`, the
-`ZOHO_BOOKS_*` set, `COMING_SOON_GATE`, `ALLOW_LOCAL_ORIGINS`, and for Peach:
-**`PEACH_CLIENT_ID`, `PEACH_CLIENT_SECRET`, `PEACH_MERCHANT_ID`,
-`PEACH_ENTITY_ID`, `PEACH_SECRET`, `PEACH_ENV`**.
+`ZOHO_BOOKS_*` set, `COMING_SOON_GATE`, `ALLOW_LOCAL_ORIGINS`, and for Ozow:
+**`OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`,
+`OZOW_WEBHOOK_SECRET`, `OZOW_ENV`** (plus the payout set
+`OZOW_PAYOUT_API_KEY` / `OZOW_PAYOUT_SITE_CODE` / `OZOW_PAYOUT_ACCESS_TOKEN` /
+`OZOW_PAYOUT_ENCRYPTION_KEY`).
 
-⚠️ **The Peach names matter.** `PEACH_ACCESS_TOKEN` and `PEACH_BASE_URL` are read
-by nothing — hosts are hardcoded per environment. An operator setting the wrong
-names at go-live gets a silent mock, because missing credentials do not stop the
-boot. None of the six are set on production today, which is a second, independent
-reason the rail is inert.
+⚠️ **The Ozow names matter.** No `PEACH_*` variable (and no
+`OZOW_ACCESS_TOKEN`/`OZOW_BASE_URL`) is read by anything — hosts are hardcoded
+per environment. An operator setting the wrong names at go-live gets a silent
+mock, because missing credentials do not stop the boot. None of the `OZOW_*`
+names are set on production today, which is a second, independent reason the
+rail is inert.
 
 ⚠️ **`ALLOW_LOCAL_ORIGINS`** lets the production API accept credentialed requests
 from localhost and LAN origins, so a developer can run the frontend locally
@@ -403,7 +406,7 @@ evaluation. `ODOO_*` and `TCG_*` are gone.
   identity read moved, because Didit reads the document as part of its own
   session. Reads still use `json: { schema }` so the provider enforces shape.
 - **Shipping:** Pudo (lockers) + **Bob Go** (door). See Shipping.
-- **Payments:** Peach — built, **inert**. See Money.
+- **Payments:** Ozow — built, **inert**. See Money.
 - **Accounting:** Zoho Books (live). Odoo was the earlier plan and is archived —
   do not build against it.
 - **AI:** Gemini 3.5 Flash-Lite through the Google Gen AI API.
@@ -461,15 +464,16 @@ the Licence Centre / Document Centre, the Motivations builder, The Bench, crime
 stats, news clippings, complaints, the reloading corpus, Warden.
 
 **Built but INERT, behind a switch:**
-- **Payments (Peach).** `PAYMENT_MODE` and `PAYMENTS_LIVE` are both unset, so
+- **Payments (Ozow).** `PAYMENT_MODE` and `PAYMENTS_LIVE` are both unset, so
   every checkout returns **503**. Going live = credentials + both flags.
 - **Bob Go door delivery.** `bobgo_enabled` defaults **false**, and with it off
   there is no door rail at all — a door quote is refused outright. Its live value
   is a DB row and cannot be read from the repo; check the box before touching
   delivery.
-- **Peach BANV** (bank verification). `isBanvEnabled()` gates it; until it is on,
-  an admin reviews the bank-holder name against the KYC identity by hand before
-  the first payout. **Do not claim automated AVS in user-facing copy.**
+- **No automated bank verification.** Ozow has no BANV product, so an admin
+  reviews the bank-holder name against the KYC identity by hand before the first
+  payout (an invalid account then fails the payout itself). **Do not claim
+  automated AVS in user-facing copy.**
 
 **Gone — do not rebuild against it, do not go looking for it:**
 - **Featured Slots** (paid ad placement) — removed 2026-08-26. Six `FeaturedSlot*`
@@ -545,33 +549,43 @@ remittance, `shippingHandlingCents` = ours) because they are different obligatio
 at payout. The gateway fee is charged on the item plus the **carrier** rate, never
 on our own delivery margin.
 
-### Payments (Peach) — deployed, inert
+### Payments (Ozow) — deployed, inert
 
-Checkout V2 (pay-in) + Payouts + BANV. Stitch, PayFast, Ozow, iKhokha, Yoco and
-KoraPay were all evaluated and rejected. **There is no Stitch code in this repo.**
+One API (pay-in + refunds) + Payouts API (seller disbursement). Peach was the
+prior rail and was replaced by Ozow in 2026-09. **There is no Stitch code in
+this repo.**
 
-- **Pay-in:** `createCheckout()` → hosted page → `/checkout/complete?id=…` →
-  `getPaymentStatus()` verifies AND matches the bound transaction and amount →
-  flip `PaymentStatus`. DECIMAL ZAR on pay-in, integer cents on payouts — do not
-  mix them. 3DS/OTP happens on Peach's page; the buyer is always present.
-- **Webhooks:** four routes on `transactions.controller.ts`
-  (`/webhook/peach`, `-dispute`, `-banv`, `-payout`), HMAC verified.
-  ⚠️ **A bad signature returns 200 `{received: true}`** with the handler skipped
-  and `alertWebhookSignatureFailure()` raised — **not** a 401. No DB writes occur.
-  Anyone grepping logs for 401s to diagnose a signature mismatch will find nothing.
-- **Idempotency:** `peachMerchantRef`, `peachPayoutId` and `peachPaymentId` are
-  `@unique` to block replay. ⚠️ `peachCheckoutId` is **not** unique — it is the
-  primary webhook match, with `peachMerchantRef` as the fallback.
+- **Pay-in:** `ozow.createPayment()` (`POST https://one.ozow.com/v1/payments`)
+  → hosted page → `/checkout/complete?id=…` → `verifyResult()` re-fetches
+  authoritative status (`GET /payments/{id}/transactions`) and matches the
+  bound transaction + amount → flip `PaymentStatus`. DECIMAL ZAR on pay-in,
+  integer cents everywhere else — do not mix them. Pay by Bank happens on
+  Ozow's page; the buyer is always present.
+- **Webhooks:** three routes on `transactions.controller.ts`
+  (`/webhook/ozow` Svix-signed, `-payout-verify` and `-payout` SHA-512
+  hash-checked). ⚠️ **A bad signature returns 200 `{received: true}`** with the
+  handler skipped and `alertWebhookSignatureFailure()` raised — **not** a 401.
+  No DB writes occur. Anyone grepping logs for 401s to diagnose a signature
+  mismatch will find nothing.
+- **Idempotency:** `gatewayMerchantRef`, `gatewayPayoutId` and
+  `gatewayPaymentId` are `@unique` to block replay. ⚠️ `gatewayCheckoutId` is
+  **not** unique — the pay-in webhook matches on `gatewayMerchantRef` (a `full`
+  subscription carries it; a `thin` one cannot be matched).
 - **Pay-out:** ⚠️ **nothing pays a seller automatically.** Dealer-verification
   APPROVED (firearms) or buyer Confirm-Delivery (non-firearms) make a payout DUE
   (they stamp `releasedAt`); an admin then runs the batch —
-  `ManualPaymentsService.runDuePayouts()` → `peach.createPayout()`, gated on
-  `PAYMENTS_LIVE`, stamping `paidOutAt` only on rows Peach accepts and re-queueing
-  on a Failed webhook.
-- **Refunds:** `peach.refundPayment(...)` is called BEFORE flipping the row to
+  `ManualPaymentsService.runDuePayouts()` → `ozow.createPayout()` (one
+  `requestpayout` per seller, AES-256-CBC account encryption + SHA-512
+  hashCheck), gated on `PAYMENTS_LIVE`, stamping `paidOutAt` only on rows Ozow
+  accepts and re-queueing on a failed payout notification.
+- **Refunds:** `ozow.refundPayment(...)` is called BEFORE flipping the row to
   `REFUNDED`. Money moves first, ledger second — never the other way around.
 - **`PaymentStatus`:** `HELD`, `PENDING_ADMIN_VERIFICATION`, `RELEASED`,
   `DISPUTED`, `REFUNDED`.
+- **No BANV.** Ozow has no automated bank-account verification product; the
+  destination account is validated by the payout itself (an invalid account
+  fails with payout subStatus 405). The manual admin review of the seller's
+  bank details remains the pre-payout gate.
 
 ### KYC — seller-only
 
@@ -638,7 +652,7 @@ KoraPay were all evaluated and rejected. **There is no Stitch code in this repo.
   operator turns them on, the anchored high-value re-check is gone too.
 - ⚠️ **THE VERDICT ARRIVES BY WEBHOOK, NOT FROM THE REQUEST.** `POST
   /api/webhooks/didit` is public and HMAC-verified; a bad signature returns
-  **200** with the handler skipped, never a 401 — the same convention the Peach
+  **200** with the handler skipped, never a 401 — the same convention the Ozow
   webhooks use, so grepping logs for 401s finds nothing. Didit delivers from
   the single static IP **18.203.201.92** (`User-Agent: DiditWebhook/2.0`), so
   **Cloudflare's WAF must allow it** or every delivery is dropped at the edge
@@ -1401,7 +1415,11 @@ production does not track main and a push there ships nothing.
 where the last one left off. Do not create another; check the branch you need out
 here instead, including `feat/takealot-ux-parity` when you deploy.
 
-⚠️ `feat/scanner-tracking` exists **only locally** and has never been pushed.
+**Feature branches are deleted once merged.** As of 2026-09-14 the only local
+branches are the deploy branch, `foundation` and the stale `main`; everything
+else was merged into the deploy branch and removed. A branch still sitting
+here weeks after its work shipped is dead weight, not a safety net — the
+commits stay reachable from the deploy branch either way.
 
 ---
 

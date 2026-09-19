@@ -1,7 +1,4 @@
-import {
-  BLOCK_LABELS,
-  sectionOf,
-} from './motivation-research.service';
+import { BLOCK_LABELS, sectionOf } from './motivation-research.service';
 import { withoutRefusedCopy } from './motivation-scope';
 import { PDFDocument } from 'pdf-lib';
 import {
@@ -18,16 +15,12 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
-import { tryDecryptText } from '../common/blob-crypto';
+import { decryptJson, tryDecryptText } from '../common/blob-crypto';
 
 import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
 import { QuarryPlateService } from './quarry-plate.service';
-import {
-  huntsAtAll,
-  quarryCaption,
-  quarryFromKey,
-} from './motivation-quarry';
+import { huntsAtAll, quarryCaption, quarryFromKey } from './motivation-quarry';
 import { asLayout } from './motivation-pdf-layouts';
 import { consentFormFor } from './motivation-consent-statement';
 import {
@@ -44,29 +37,13 @@ import { TRAVELLED_AREAS_KEY } from './motivation-fields';
 import type { NewsIncident } from '../news/news.types';
 import { imageSize, isEmbeddable } from './motivation-annexure-layout';
 import { SettingsService, FLAGS } from '../settings/settings.service';
-
-/**
- * How hard the C.I.P. sheet is rasterised for the feature's inset.
- *
- * ⚠️ 4 IS CHOSEN, NOT DEFAULTED. It puts an A4 page at about 2 450 px wide;
- * set into an 82 mm column that is roughly 1 000 dpi, and the trimmed PNG runs
- * around 470 KB against packs that are already eleven megabytes. Lower and the
- * sheet's small type breaks up under a reader zooming in on it, which is the
- * whole reason it is on the page.
- */
-const CIP_INSET_SCALE = 4;
-
-/** The half of `pdf-to-img` this uses: PDF bytes in, one PNG per page out. */
-type CipRasteriser = (
-  input: Buffer,
-  opts: { scale: number },
-) => Promise<AsyncIterable<Buffer>>;
 import { type SectionId } from './motivation-structure';
 import {
   buildAnnexures,
   buildChecklist,
   UPLOAD_KIND_LABELS,
   annexureByKind,
+  isSafeAnnexureKind,
   type AnnexureEntry,
 } from './motivation-checklist';
 import { MotivationSellerConsentService } from './motivation-seller-consent.service';
@@ -74,7 +51,11 @@ import { buildPriorNoticeRequest } from './motivation-prior-notice';
 import { applicationWarnings } from './motivation-warnings';
 import { buildCompletedStatement } from './motivation-character-statement';
 import { WITNESS_FORM_VERSION } from './motivation-witness-form';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { CIP_INSET_SCALE, rasterisePdfToDir } from './pdf-raster';
+import { DocumentPageRasterService } from './document-page-raster.service';
 import sharp from 'sharp';
 import { findCartridge } from './motivation-cartridge';
 import {
@@ -504,6 +485,7 @@ export class MotivationRenderService {
     private readonly news: NewsService,
     private readonly crimeStats: CrimeStatsService,
     private readonly quarry: QuarryPlateService,
+    private readonly pageRaster: DocumentPageRasterService,
   ) {}
 
   /**
@@ -545,12 +527,26 @@ export class MotivationRenderService {
       storageKey: string | null;
       mimeType: string | null;
       purgedAt: Date | null;
+      /** Plaintext hash — the key a PDF's cached page images are filed under. */
+      sha256?: string;
+      sourceCredentialId?: string | null;
+      sourceCredential?: {
+        otherSideId: string | null;
+        detailsEncrypted: string | null;
+      } | null;
     }[],
     annexures: AnnexureEntry[],
   ): Promise<{
     images: AnnexureImagePage[];
     notPrinted: { letter: string; label: string; why: string }[];
-    /** Annexures that arrived as PDFs — merged into the pack, not skipped. */
+    /**
+     * ⚠️ ALWAYS EMPTY NOW, AND KEPT ONLY AS A SEAM. PDF annexures used to be
+     * handed to pdf-lib to splice into the finished pack; they are rasterised
+     * to page images instead, so every annexure is one document type and the
+     * planner, the captions and the letter order apply to all of them. The
+     * merge machinery is still here for the C.I.P. datasheet, which is body
+     * content rather than an annexure — see motivation-pdf-merge.ts.
+     */
     pdfs: {
       letter: string;
       label: string;
@@ -565,12 +561,9 @@ export class MotivationRenderService {
     // letter finds nothing and prints "Annexure ?" with the raw enum name as
     // its caption. That shipped.
     const byKind = annexureByKind(annexures);
-    // How many copies share each letter, so a caption can say "1 of 2".
-    const totals = new Map<string, number>();
-    for (const u of uploads) {
-      totals.set(u.kind, (totals.get(u.kind) ?? 0) + 1);
-    }
-    const seen = new Map<string, number>();
+    // How many printed pages share each kind, so a caption can say "1 of 2".
+    const seen = new Map<MotivationUploadKind, number>();
+    let safePrinted = 0;
 
     const images: AnnexureImagePage[] = [];
     const notPrinted: { letter: string; label: string; why: string }[] = [];
@@ -582,22 +575,124 @@ export class MotivationRenderService {
       bytes: Buffer;
     }[] = [];
 
-    for (const u of uploads) {
+    const proficiencyGroup = (u: (typeof uploads)[number]) =>
+      [u.sourceCredentialId ?? u.id, u.sourceCredential?.otherSideId]
+        .filter((id): id is string => !!id)
+        .sort()[0];
+    const groupRole = new Map<string, number>();
+    for (const upload of uploads) {
+      if (upload.kind !== MotivationUploadKind.PROFICIENCY_CERTIFICATE)
+        continue;
+      let text = '';
+      try {
+        text = upload.sourceCredential?.detailsEncrypted
+          ? JSON.stringify(
+              decryptJson<Record<string, unknown>>(
+                upload.sourceCredential.detailsEncrypted,
+              ),
+            ).toLowerCase()
+          : '';
+      } catch {
+        // Unknown credential text remains in stable upload order.
+      }
+      const group = proficiencyGroup(upload);
+      if (/(1196\d{2}|11965\d)/.test(text)) groupRole.set(group, 0);
+      else if (!groupRole.has(group)) groupRole.set(group, 1);
+    }
+
+    /**
+     * ⚠️ LETTER ORDER FIRST, THEN THE PROFICIENCY'S OWN ORDER. The copies must
+     * print in the sequence the index letters them — a DFO reads the list and
+     * turns to the pages in that order, and a pack whose pages run C, A, B, D
+     * is a pack they have to hunt through. The proficiency needs a SECOND sort
+     * inside its single letter (certificate, its statement of results
+     * immediately behind it, then the Act standard), which is what the rest of
+     * this comparator does. An earlier version hoisted every proficiency upload
+     * to the front of the whole pack instead, which printed the rifle pages
+     * before the applicant's identity document.
+     */
+    const letterRank = new Map(
+      annexures.map((entry, index) => [entry.letter, index]),
+    );
+    const rankOf = (u: (typeof uploads)[number]) => {
+      const letter = byKind.get(u.kind)?.letter;
+      if (letter === undefined) return Number.MAX_SAFE_INTEGER;
+      return letterRank.get(letter) ?? Number.MAX_SAFE_INTEGER;
+    };
+
+    const orderedUploads = [...uploads].sort((a, b) => {
+      const rankDiff = rankOf(a) - rankOf(b);
+      if (rankDiff) return rankDiff;
+      const proficiency = (u: typeof a) =>
+        u.kind === MotivationUploadKind.PROFICIENCY_CERTIFICATE;
+      if (!proficiency(a) || !proficiency(b)) return 0;
+      const aGroup = proficiencyGroup(a);
+      const bGroup = proficiencyGroup(b);
+      const roleDiff =
+        (groupRole.get(aGroup) ?? 1) - (groupRole.get(bGroup) ?? 1);
+      if (roleDiff) return roleDiff;
+      if (aGroup !== bGroup) return aGroup.localeCompare(bGroup);
+      const side = (u: typeof a) => {
+        try {
+          const details = u.sourceCredential?.detailsEncrypted
+            ? decryptJson<Record<string, unknown>>(
+                u.sourceCredential.detailsEncrypted,
+              )
+            : undefined;
+          return details?.document_side === 'front'
+            ? 0
+            : details?.document_side === 'back'
+              ? 1
+              : 2;
+        } catch {
+          return 2;
+        }
+      };
+      return side(a) - side(b);
+    });
+
+    /**
+     * ⚠️ TWO PASSES, BECAUSE ONE UPLOAD IS NO LONGER ONE PAGE. A photographed
+     * licence is a single picture; the same document uploaded as a PDF is one
+     * image per page. The "(2 of 4)" caption counts PRINTED PAGES under the
+     * letter, so the total cannot be known until every upload has been resolved
+     * — a first pass turns each upload into its pages, a second numbers them.
+     */
+    interface Resolved {
+      kind: MotivationUploadKind;
+      letter: string;
+      label: string;
+      safe: boolean;
+      certification: AnnexureEntry['certification'];
+      pages: { bytes: Buffer; width: number; height: number }[];
+    }
+    const resolved: Resolved[] = [];
+
+    for (const u of orderedUploads) {
+      // The consent form already contains both sides of the current owner's
+      // licence. Keep the vault row, but never duplicate it as an annexure.
+      if (u.kind === MotivationUploadKind.SELLER_LICENCE) continue;
       const entry = byKind.get(u.kind);
       const letter = entry?.letter ?? '?';
       const label = entry?.label ?? UPLOAD_KIND_LABELS[u.kind] ?? u.kind;
-      const index = (seen.get(u.kind) ?? 0) + 1;
-      seen.set(u.kind, index);
-      const total = totals.get(u.kind) ?? 1;
+      if (isSafeAnnexureKind(u.kind) && safePrinted >= 4) {
+        notPrinted.push({
+          letter,
+          label,
+          why: 'maximum of four safe photographs printed',
+        });
+        continue;
+      }
 
       if (!u.storageKey || u.purgedAt) {
         notPrinted.push({ letter, label, why: 'no longer stored' });
         continue;
       }
-      // ⚠️ A PDF IS NO LONGER A REASON TO LEAVE A DOCUMENT OUT. pdfkit cannot
-      // embed one, but pdf-lib can copy its pages into the finished pack —
-      // see motivation-pdf-merge.ts. Read the bytes first, because both paths
-      // need them.
+      // ⚠️ A PDF IS NO LONGER A REASON TO LEAVE A DOCUMENT OUT, AND NO LONGER
+      // A SECOND DOCUMENT TYPE EITHER. pdfkit cannot place a PDF page, so these
+      // are rasterised to images and go through the same planner as a
+      // photograph — see document-page-raster.service.ts. Read the bytes first,
+      // because every path needs them.
       const isPdf = (u.mimeType ?? '') === 'application/pdf';
       if (!isPdf && !isEmbeddable(u.mimeType ?? '')) {
         notPrinted.push({ letter, label, why: 'not a JPG, PNG or PDF' });
@@ -610,26 +705,71 @@ export class MotivationRenderService {
         notPrinted.push({ letter, label, why: 'we could not read it back' });
         continue;
       }
+
+      let pages: { bytes: Buffer; width: number; height: number }[];
       if (isPdf) {
-        pdfs.push({ letter, label, index, total, bytes });
-        continue;
+        const rastered = await this.pageRaster.pagesFor({
+          bytes,
+          sha256: u.sha256 ?? '',
+        });
+        if (!rastered.length) {
+          // ⚠️ NOT "NOT A PDF" — WE COULD NOT RENDER IT. The rasteriser fails
+          // closed (a corrupt file, a crash in the helper, a cache miss it
+          // could not fill), and the applicant is told to bring that one
+          // themselves rather than the pack losing it silently.
+          notPrinted.push({ letter, label, why: 'we could not reprint it' });
+          continue;
+        }
+        pages = rastered.map((p) => ({
+          bytes: p.bytes,
+          width: p.width,
+          height: p.height,
+        }));
+      } else {
+        const size = imageSize(bytes);
+        if (!size) {
+          // Measuring is not optional: the alternative is guessing an aspect
+          // ratio and printing somebody's licence stretched.
+          notPrinted.push({ letter, label, why: 'we could not measure it' });
+          continue;
+        }
+        pages = [{ bytes, ...size }];
       }
-      const size = imageSize(bytes);
-      if (!size) {
-        // Measuring is not optional: the alternative is guessing an aspect
-        // ratio and printing somebody's licence stretched.
-        notPrinted.push({ letter, label, why: 'we could not measure it' });
-        continue;
-      }
-      images.push({
+
+      resolved.push({
+        kind: u.kind,
         letter,
         label,
-        index,
-        total,
-        bytes,
+        safe: isSafeAnnexureKind(u.kind),
         certification: entry?.certification ?? 'none',
-        ...size,
+        pages,
       });
+      if (isSafeAnnexureKind(u.kind)) safePrinted++;
+    }
+
+    // The caption's "(n of m)": m is every PRINTED page under the letter, n is
+    // this page's place in that run.
+    const pageTotals = new Map<MotivationUploadKind, number>();
+    for (const r of resolved) {
+      pageTotals.set(r.kind, (pageTotals.get(r.kind) ?? 0) + r.pages.length);
+    }
+    for (const r of resolved) {
+      const total = pageTotals.get(r.kind) ?? r.pages.length;
+      for (const page of r.pages) {
+        const index = (seen.get(r.kind) ?? 0) + 1;
+        seen.set(r.kind, index);
+        images.push({
+          letter: r.letter,
+          label: r.label,
+          index,
+          total,
+          bytes: page.bytes,
+          width: page.width,
+          height: page.height,
+          certification: r.certification,
+          safe: r.safe,
+        });
+      }
     }
 
     return { images, notPrinted, pdfs };
@@ -831,6 +971,13 @@ export class MotivationRenderService {
             storageKey: true,
             mimeType: true,
             purgedAt: true,
+            // The plaintext hash: a PDF's cached page images are filed under
+            // it, so one rasterisation serves every copy of the same document.
+            sha256: true,
+            sourceCredentialId: true,
+            sourceCredential: {
+              select: { otherSideId: true, detailsEncrypted: true },
+            },
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -1181,7 +1328,10 @@ export class MotivationRenderService {
       const completed = completeDims(hit.dims);
       if (!completed) return undefined;
 
-      const label = { name: hit.name, pmaxBar: hit.dims.pmaxBar ?? hit.pmaxBar };
+      const label = {
+        name: hit.name,
+        pmaxBar: hit.dims.pmaxBar ?? hit.pmaxBar,
+      };
       const raster = async (opts: { hero: boolean }) => {
         const d = cartridgeDrawing(completed.dims, label, {
           derived: completed.derived,
@@ -1296,7 +1446,8 @@ export class MotivationRenderService {
   > {
     const home = (answers.police_station ?? '').trim();
     if (!home) return undefined;
-    const province = (answers.police_station_province ?? '').trim() || undefined;
+    const province =
+      (answers.police_station_province ?? '').trim() || undefined;
 
     /**
      * ⚠️ THE AREAS THEY TICKED, NOT A RADIUS WE DREW. `travelled_areas` is an
@@ -1389,7 +1540,8 @@ export class MotivationRenderService {
     motivationId: string,
     answers: Record<string, string>,
   ): Promise<
-    { png: Buffer; widthMm: number; heightMm: number; caption: string } | undefined
+    | { png: Buffer; widthMm: number; heightMm: number; caption: string }
+    | undefined
   > {
     /**
      * ⚠️ GATED ON THE STATED USE, NOT ON THE SECTION AND NOT ON THE
@@ -1399,7 +1551,9 @@ export class MotivationRenderService {
      */
     if (!huntsAtAll(answers.firearm_use_kind)) return undefined;
 
-    const plate = await this.quarry.storedFor(motivationId).catch(() => undefined);
+    const plate = await this.quarry
+      .storedFor(motivationId)
+      .catch(() => undefined);
     if (!plate) return undefined;
 
     return {
@@ -1411,7 +1565,9 @@ export class MotivationRenderService {
     };
   }
 
-  private async cipInset(calibre: string): Promise<
+  private async cipInset(
+    calibre: string,
+  ): Promise<
     | { png: Buffer; widthMm: number; heightMm: number; texts: DrawingText[] }
     | undefined
   > {
@@ -1419,37 +1575,31 @@ export class MotivationRenderService {
     if (!name) return undefined;
     const on = await this.settings.get(FLAGS.cipSheetEnabled).catch(() => true);
     if (!on) return undefined;
+    /**
+     * ⚠️ THE RAW FILE, NOT THE A4-FITTED COPY. `sheetFor` re-embeds the page
+     * as a Form XObject so it can be scaled onto A4; pdf.js cannot rasterise
+     * that and threw out of `paintFormXObjectBegin` on every render since the
+     * inset shipped. The trim below removes the margins the A4 fitting was for.
+     */
+    const sheet = await this.cip.rawSheetFor(name).catch(() => null);
+    if (!sheet) return undefined;
+
+    /**
+     * ⚠️ RASTERISED IN A HELPER PROCESS, BECAUSE IT CAN KILL THE SERVER. See
+     * pdf-raster.child.ts: inside a booted Nest process this render has crashed
+     * node with an access violation, which no try/catch can see. A crash here
+     * now costs one inset — the caller falls back to our own dimension drawing
+     * — and never the request process.
+     */
+    let dir: string | undefined;
     try {
-      /**
-       * ⚠️ THE RAW FILE, NOT THE A4-FITTED COPY. `sheetFor` re-embeds the page
-       * as a Form XObject so it can be scaled onto A4; pdf.js cannot rasterise
-       * that here and threw out of `paintFormXObjectBegin` on every render
-       * since the inset shipped. The trim below removes the margins the A4
-       * fitting was for.
-       */
-      const sheet = await this.cip.rawSheetFor(name);
-      if (!sheet) return undefined;
+      dir = await mkdtemp(path.join(os.tmpdir(), 'cip-inset-'));
+      const inPath = path.join(dir, 'sheet.pdf');
+      await writeFile(inPath, sheet.bytes);
+      await rasterisePdfToDir(inPath, dir, CIP_INSET_SCALE);
 
-      // ⚠️ ESM-ONLY, AND THE BACKEND COMPILES TO CommonJS. TypeScript lowers
-      // this to require(), which Node 22.12+ resolves for an ES module — the
-      // same mechanism the PDF spec's reader relies on. Verified on the box
-      // before it was written in; it is not an assumption.
-      const mod = (await import('pdf-to-img')) as unknown as {
-        pdf?: CipRasteriser;
-        default?: { pdf?: CipRasteriser };
-      };
-      const toImages = mod.pdf ?? mod.default?.pdf;
-      if (!toImages) return undefined;
-
-      const pages = await toImages(sheet.bytes, { scale: CIP_INSET_SCALE });
-      let first: Buffer | undefined;
-      for await (const page of pages) {
-        first = page;
-        break;
-      }
-      if (!first) return undefined;
-
-      const png = await sharp(first).trim().png().toBuffer();
+      const raw = await readFile(path.join(dir, 'page-1.png'));
+      const png = await sharp(raw).trim().png().toBuffer();
       const { width, height } = await sharp(png).metadata();
       if (!width || !height) return undefined;
 
@@ -1472,7 +1622,8 @@ export class MotivationRenderService {
        * error with no indication of which library raised it. The same call
        * succeeded from a script on the same box, in the same directory, with
        * the same bytes, five at a time. Without a frame there is nothing to
-       * work from.
+       * work from. A helper that SEGFAULTS reports the same way now — as a
+       * non-zero exit with no message — which is why the reason is logged.
        */
       const e = err as Error;
       this.logger?.warn?.(
@@ -1483,6 +1634,9 @@ export class MotivationRenderService {
           .join(' <- ')}`,
       );
       return undefined;
+    } finally {
+      if (dir)
+        await rm(dir, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 
@@ -1556,10 +1710,9 @@ export class MotivationRenderService {
     let answers: Record<string, string> = {};
     let firearm: Record<string, unknown> = {};
     try {
-      answers = JSON.parse(tryDecryptText(row.answersEncrypted) ?? '{}') as Record<
-        string,
-        string
-      >;
+      answers = JSON.parse(
+        tryDecryptText(row.answersEncrypted) ?? '{}',
+      ) as Record<string, string>;
       firearm = JSON.parse(
         tryDecryptText(row.firearmSnapshotEncrypted) ?? '{}',
       ) as Record<string, unknown>;

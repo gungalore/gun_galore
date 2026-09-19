@@ -1,289 +1,154 @@
-import { parseCard, type Word } from './licence-card-ocr.service';
+import { LicenceCardOcrService } from './licence-card-ocr.service';
+import type { LlmService } from '../common/llm/llm.service';
 
 // ────────────────────────────────────────────────────────────────────
-// THE TWO-COLUMN PARSE.
+// READING A LICENCE CARD THROUGH THE MODEL.
 //
-// The card puts two label/value pairs on one physical line:
+// ⚠️ WHAT IS BEING PROTECTED IS A SIGNED STATEMENT. Every value here lands in
+// a consent the seller signs and a DFO checks. Two properties matter more than
+// extraction quality:
 //
-//     Serial Number  ZA2226548        Type   S/L: RIFLE CAL - RIFLE/CARBINE
-//     Make           NORDISKE PREC.   Model  NONE
+//   1. A value the card asserts as NONE is kept as NONE.
+//   2. A value the read could NOT establish is dropped, never written as NONE.
 //
-// Read as a stream of text, "Make" happily swallows "Model NONE" and the value
-// of Type lands on Serial Number. These fixtures reproduce the geometry of the
-// operator's own five cards so the column logic is pinned — the same five that
-// motivation-consent-statement.spec.ts asserts the OUTPUT of.
-//
-// ⚠️ WHAT IS BEING PROTECTED IS A SIGNED STATEMENT. A parse that pairs the
-// wrong serial with the wrong component does not look broken; it looks like a
-// filled-in form, and it goes to a DFO under somebody's signature.
+// Those two mean opposite things on the form, and the code that keeps them
+// apart is what these fixtures pin.
 // ────────────────────────────────────────────────────────────────────
 
-/** Lay words out on a grid: each row is a band, each cell starts at a column. */
-function layout(rows: [number, string][][]): Word[] {
-  const words: Word[] = [];
-  rows.forEach((row, r) => {
-    const yMid = 100 + r * 40;
-    for (const [col, text] of row) {
-      let x = col;
-      for (const t of text.split(' ')) {
-        words.push({ text: t, x0: x, x1: x + t.length * 10, yMid, height: 20 });
-        x += t.length * 10 + 8;
-      }
-    }
-  });
-  return words;
+function make(complete: jest.Mock, configured = true) {
+  const llm = {
+    isConfigured: () => configured,
+    complete,
+  } as unknown as LlmService;
+  return new LicenceCardOcrService(llm);
 }
 
-describe('a label claims only the words to its right', () => {
-  it('NORDISKE: keeps the two columns apart on a shared line', () => {
-    const f = parseCard(
-      layout([
-        [
-          [0, 'Serial Number'],
-          [200, 'ZA2226548'],
-          [500, 'Type'],
-          [600, 'S/L: RIFLE CAL - RIFLE/CARBINE'],
-        ],
-        [
-          [0, 'Make'],
-          [200, 'NORDISKE PRECISION'],
-          [500, 'Model'],
-          [600, 'NONE'],
-        ],
-        [
-          [0, 'Calibre'],
-          [200, '.223 REM'],
-        ],
-      ]),
+/** A `complete` that answers with one JSON document. */
+function reply(obj: unknown): jest.Mock {
+  return jest.fn(async () => ({ text: JSON.stringify(obj) }));
+}
+
+const GLOCK = {
+  make: 'GLOCK',
+  model: 'NONE',
+  type: 'HANDGUN',
+  calibre: '9MM PAR (9X19MM)',
+  serial: 'ZABA01892',
+  barrelSerial: 'ZABA01892',
+  barrelMake: 'GLOCK',
+  receiverSerial: 'ZABA01892',
+  receiverMake: 'GLOCK',
+  frameSerial: 'ZABA01892',
+  frameMake: 'GLOCK',
+  section: 'SECTION 16',
+  holder_id_number: '8001015009087',
+  holder_name: 'GJP FOURIE',
+};
+
+describe('LicenceCardOcrService', () => {
+  it('⚠️ FAILS SOFT WITH NO MODEL CONFIGURED, and does not call out', async () => {
+    const complete = jest.fn();
+    const r = await make(complete, false).read(
+      Buffer.from('x'),
+      'image/jpeg',
     );
-    // The failure this guards: Make = "NORDISKE PRECISION Model NONE".
-    expect(f.make).toBe('NORDISKE PRECISION');
-    expect(f.model).toBe('NONE');
-    expect(f.serial).toBe('ZA2226548');
-    expect(f.type).toBe('S/L: RIFLE CAL - RIFLE/CARBINE');
-    expect(f.calibre).toBe('.223 REM');
+    expect(r.ok).toBe(false);
+    expect(r.fields).toEqual({});
+    expect(complete).not.toHaveBeenCalled();
   });
 
-  it('NORDISKE: barrel and receiver serials stay one digit apart', () => {
-    const f = parseCard(
-      layout([
-        [
-          [0, 'Barrel Serial No'],
-          [250, 'ZA2226548'],
-          [600, 'Make'],
-          [700, 'NORDISKE PRECISION'],
-        ],
-        [
-          [0, 'Receiver Serial No'],
-          [250, 'ZA22265488'],
-          [600, 'Make'],
-          [700, 'NORDISKE PRECISION'],
-        ],
-        [
-          [0, 'Frame Serial No'],
-          [250, 'NONE'],
-          [600, 'Make'],
-          [700, 'NONE'],
-        ],
-      ]),
-    );
-    expect(f.barrelSerial).toBe('ZA2226548');
-    expect(f.receiverSerial).toBe('ZA22265488');
-    expect(f.barrelSerial).not.toBe(f.receiverSerial);
-    expect(f.frameSerial).toBe('NONE');
+  it('⚠️ FAILS SOFT WHEN THE PROVIDER THROWS', async () => {
+    const complete = jest.fn(async () => {
+      throw new Error('provider down');
+    });
+    const r = await make(complete).read(Buffer.from('x'), 'image/jpeg');
+    expect(r.ok).toBe(false);
+    expect(r.fields).toEqual({});
   });
 
-  it('MARLIN: barrel reads NONE while the receiver carries the number', () => {
-    // The card that breaks any "the serial is the barrel row" shortcut.
-    const f = parseCard(
-      layout([
-        [
-          [0, 'Barrel Serial No'],
-          [250, 'NONE'],
-        ],
-        [
-          [0, 'Receiver Serial No'],
-          [250, 'MR90189D'],
-        ],
-        [
-          [0, 'Frame Serial No'],
-          [250, 'NONE'],
-        ],
-      ]),
-    );
-    expect(f.barrelSerial).toBe('NONE');
-    expect(f.receiverSerial).toBe('MR90189D');
-    expect(f.frameSerial).toBe('NONE');
+  it('⚠️ FAILS SOFT ON UNPARSEABLE JSON', async () => {
+    const complete = jest.fn(async () => ({ text: 'not json at all' }));
+    const r = await make(complete).read(Buffer.from('x'), 'image/jpeg');
+    expect(r.ok).toBe(false);
+    expect(r.fields).toEqual({});
   });
 
-  it('HOWA: three identical serials all parse, none collapse', () => {
-    const f = parseCard(
-      layout([
-        [
-          [0, 'Barrel Serial No'],
-          [250, 'B477423'],
-        ],
-        [
-          [0, 'Receiver Serial No'],
-          [250, 'B477423'],
-        ],
-        [
-          [0, 'Frame Serial No'],
-          [250, 'B477423'],
-        ],
-      ]),
-    );
-    expect(f.barrelSerial).toBe('B477423');
-    expect(f.receiverSerial).toBe('B477423');
-    expect(f.frameSerial).toBe('B477423');
+  it('reads the firearm, its components, the section and the holder', async () => {
+    const r = await make(reply(GLOCK)).read(Buffer.from('x'), 'image/jpeg');
+    expect(r.ok).toBe(true);
+    expect(r.fields.make).toBe('GLOCK');
+    expect(r.fields.serial).toBe('ZABA01892');
+    expect(r.fields.barrelSerial).toBe('ZABA01892');
+    expect(r.fields.barrelMake).toBe('GLOCK');
+    expect(r.fields.receiverMake).toBe('GLOCK');
+    expect(r.fields.frameMake).toBe('GLOCK');
+    expect(r.fields.section).toBe('SECTION 16');
+    expect(r.holderIdNumber).toBe('8001015009087');
+    expect(r.holderNameOnCard).toBe('GJP FOURIE');
   });
 
-  it('CZ: "Serial Number" is not stolen by "Barrel Serial No"', () => {
-    // Longest-label-first ordering is what stops the prefix match.
-    const f = parseCard(
-      layout([
-        [
-          [0, 'Serial Number'],
-          [200, '81815'],
-          [500, 'Type'],
-          [600, 'HANDGUN'],
-        ],
-        [
-          [0, 'Barrel Serial No'],
-          [250, '81815'],
-        ],
-      ]),
-    );
-    expect(f.serial).toBe('81815');
-    expect(f.barrelSerial).toBe('81815');
-    expect(f.type).toBe('HANDGUN');
+  it('⚠️ KEEPS A "NONE" THE CARD ASSERTS', async () => {
+    // A real card: barrel CZ, receiver NONE, frame NONE. NONE is the card
+    // being complete about a component with no number, and it must survive.
+    const r = await make(
+      reply({
+        ...GLOCK,
+        barrelSerial: '81815',
+        barrelMake: 'CZ',
+        receiverSerial: 'NONE',
+        receiverMake: 'NONE',
+        frameSerial: 'NONE',
+        frameMake: 'NONE',
+      }),
+    ).read(Buffer.from('x'), 'image/jpeg');
+    expect(r.fields.receiverSerial).toBe('NONE');
+    expect(r.fields.receiverMake).toBe('NONE');
+    expect(r.fields.frameSerial).toBe('NONE');
+    expect(r.fields.barrelMake).toBe('CZ');
   });
 
-  it('reads the section off its own unlabelled line', () => {
-    expect(parseCard(layout([[[0, 'SECTION 16']]])).section).toBe('SECTION 16');
-    expect(parseCard(layout([[[0, 'SECTION 15']]])).section).toBe('SECTION 15');
-  });
-});
-
-describe('what it refuses to invent', () => {
-  it('⚠️ LEAVES A FIELD UNDEFINED RATHER THAN CALLING IT NONE', () => {
-    // The whole safety property. A label with nothing legible after it is a
-    // field we FAILED TO READ; "NONE" is a fact the card asserts. Writing the
-    // second when we mean the first puts a false statement on a signed
-    // consent, and the seller loses the chance to correct it because the form
-    // looks filled in.
-    const f = parseCard(
-      layout([
-        [
-          [0, 'Make'],
-          [200, 'MAUSER'],
-        ],
-        [[0, 'Calibre']], // label present, value unreadable
-      ]),
-    );
-    expect(f.make).toBe('MAUSER');
-    expect(f.calibre).toBeUndefined();
-    expect(Object.values(f)).not.toContain('');
+  it('⚠️ DROPS A BLANK RATHER THAN CALLING IT NONE', async () => {
+    // The whole safety property. A field the read could not establish is
+    // UNDEFINED, not NONE — writing NONE would be a false statement on a
+    // signed consent and the seller loses the chance to correct it because
+    // the form looks filled in.
+    const r = await make(
+      reply({
+        ...GLOCK,
+        calibre: '',
+        model: '',
+        frameSerial: '',
+        frameMake: '',
+      }),
+    ).read(Buffer.from('x'), 'image/jpeg');
+    expect(r.fields.make).toBe('GLOCK');
+    expect(r.fields.calibre).toBeUndefined();
+    expect(r.fields.model).toBeUndefined();
+    expect(r.fields.frameSerial).toBeUndefined();
+    expect(Object.values(r.fields)).not.toContain('');
   });
 
-  it('returns nothing at all from a page with no labels on it', () => {
-    expect(parseCard(layout([[[0, 'some unrelated photograph']]]))).toEqual({});
+  it('⚠️ ONLY ACCEPTS A 13-DIGIT ID', async () => {
+    const short = await make(
+      reply({ ...GLOCK, holder_id_number: '12345' }),
+    ).read(Buffer.from('x'), 'image/jpeg');
+    expect(short.holderIdNumber).toBeUndefined();
+
+    const spaced = await make(
+      reply({ ...GLOCK, holder_id_number: '800101 5009 087' }),
+    ).read(Buffer.from('x'), 'image/jpeg');
+    expect(spaced.holderIdNumber).toBe('8001015009087');
   });
 
-  it('keeps the FIRST reading when a label appears twice', () => {
-    // Both sides of a card can carry "Make". Later blurred repeats must not
-    // overwrite a clean first read.
-    const f = parseCard(
-      layout([
-        [
-          [0, 'Make'],
-          [200, 'MAUSER'],
-        ],
-        [
-          [0, 'Make'],
-          [200, 'MAUSEB'],
-        ],
-      ]),
-    );
-    expect(f.make).toBe('MAUSER');
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────
-// THE THREE COMPONENT MAKES, WHICH WERE NEVER READ.
-//
-// Operator, 2026-09-08, holding his own card: "all the information is on a
-// license card. All of them will always have it. It will either be a serial
-// next to every component or NONE, but it will never be empty."
-//
-// ⚠️ THERE ARE FOUR "MAKE" LABELS ON THE CARD AND `LABELS` HAD ONE. The
-// firearm's own, plus one against each of the barrel, receiver and frame rows.
-// The first band to match won, so the three component makes were dropped: the
-// seller photographed the card, the consent stored what we read, and section E
-// of the SAPS 271 printed three empty Make boxes beside three filled serials.
-// ────────────────────────────────────────────────────────────────────
-describe('the lower block: three serials and three makes', () => {
-  /** The operator's own Glock card, laid out as it prints. */
-  const glock = () =>
-    layout([
-      [[0, 'Serial Number ZABA01892'], [600, 'Type HANDGUN']],
-      [[0, 'Make GLOCK'], [600, 'Model NONE']],
-      [[0, 'Calibre 9MM PAR (9X19MM)']],
-      [[0, 'Barrel Serial No ZABA01892'], [600, 'Make GLOCK']],
-      [[0, 'Receiver Serial No ZABA01892'], [600, 'Make GLOCK']],
-      [[0, 'Frame Serial No ZABA01892'], [600, 'Make GLOCK']],
-    ]);
-
-  it('⚠️ READS ALL SIX COMPONENT FIELDS', () => {
-    const f = parseCard(glock());
-    expect(f.barrelSerial).toBe('ZABA01892');
-    expect(f.receiverSerial).toBe('ZABA01892');
-    expect(f.frameSerial).toBe('ZABA01892');
-    expect(f.barrelMake).toBe('GLOCK');
-    expect(f.receiverMake).toBe('GLOCK');
-    expect(f.frameMake).toBe('GLOCK');
-  });
-
-  it('⚠️ AND STILL READS THE FIREARM’S OWN MAKE FROM ITS OWN ROW', () => {
-    // The bare `Make GLOCK  Model NONE` row has no serial label before it, so
-    // it keeps the unqualified key. Reassigning that one would leave the
-    // firearm itself with no make at all.
-    const f = parseCard(glock());
-    expect(f.make).toBe('GLOCK');
-    expect(f.model).toBe('NONE');
-    expect(f.serial).toBe('ZABA01892');
-  });
-
-  it('⚠️ KEEPS A COMPONENT’S "NONE" AGAINST THAT COMPONENT', () => {
-    // A real card: barrel CZ, receiver NONE, frame NONE. The word NONE is the
-    // card being complete about a component that carries no number, and it has
-    // to land on the row it was printed on.
-    const f = parseCard(
-      layout([
-        [[0, 'Barrel Serial No 81815'], [600, 'Make CZ']],
-        [[0, 'Receiver Serial No NONE'], [600, 'Make NONE']],
-        [[0, 'Frame Serial No NONE'], [600, 'Make NONE']],
-      ]),
-    );
-    expect(f.barrelSerial).toBe('81815');
-    expect(f.barrelMake).toBe('CZ');
-    expect(f.receiverSerial).toBe('NONE');
-    expect(f.receiverMake).toBe('NONE');
-    expect(f.frameSerial).toBe('NONE');
-    expect(f.frameMake).toBe('NONE');
-  });
-
-  it('⚠️ AND A MAKE WITH NO SERIAL LABEL BEFORE IT IS STILL THE FIREARM’S', () => {
-    // The reassignment walks BACKWARDS from the Make to the nearest label in
-    // its own band. A band holding only `Make X` must not inherit a component
-    // from the band above it.
-    const f = parseCard(
-      layout([
-        [[0, 'Barrel Serial No 81815'], [600, 'Make CZ']],
-        [[0, 'Make MARLIN']],
-      ]),
-    );
-    expect(f.barrelMake).toBe('CZ');
-    expect(f.make).toBe('MARLIN');
+  it('asks the model with the image, a schema and its own purpose', async () => {
+    const complete = reply(GLOCK);
+    await make(complete).read(Buffer.from('abc'), 'image/png');
+    const req = complete.mock.calls[0][0];
+    expect(req.purpose).toBe('licence.card.read');
+    expect(req.json?.schema).toBeDefined();
+    expect(req.messages[0].content[0]).toMatchObject({
+      type: 'image',
+      mimeType: 'image/png',
+    });
   });
 });

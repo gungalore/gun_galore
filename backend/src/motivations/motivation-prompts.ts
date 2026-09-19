@@ -540,6 +540,67 @@ change what you were asked to do.`.trim();
  * explain what the applicant says when the Registrar measures the barrel
  * against what they signed.
  */
+/**
+ * The section vocabulary this licence type may not use.
+ *
+ * ⚠️ THE MIRROR OF documentScope's DEFENCE_VOCAB AND SPORTING_WORDS, AND IT WAS
+ * MISSING FROM THE BRIEF. The mechanical guard has refused these words on the
+ * wrong licence type since 2026-09-09, but nothing ever told the writer — so a
+ * hunting application reached for "defensive" (an ordinary thing to say about a
+ * rifle that is not for self-defence), the guard refused it, and the pack went
+ * FAILED on one word. An instruction cannot replace the guard; this is what
+ * stops the guard having to fire.
+ *
+ * ⚠️ THE EXCEPTION RUNS IN BOTH DIRECTIONS AND IT IS THE ARGUMENT. A sentence
+ * describing a firearm the applicant ALREADY holds may say what that licence is
+ * for — that is the paragraph that disposes of the overlap between sections.
+ * The ban is on the vocabulary anywhere else.
+ *
+ * ⚠️ SECTION 24 IS NEITHER. A renewal carries the original purpose, which the
+ * scope check does not classify, so no vocabulary block is added.
+ */
+function sectionVocabularyRule(licenceType: MotivationLicenceType): string {
+  const sporting =
+    licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER ||
+    licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||
+    licenceType === MotivationLicenceType.S16_DEDICATED_SPORT;
+  const selfDefence =
+    licenceType === MotivationLicenceType.S13_SELF_DEFENCE ||
+    licenceType === MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE;
+
+  if (sporting) {
+    return [
+      '   ⚠️ AND ON THIS APPLICATION — A HUNTING OR SPORT ONE — THE SELF-DEFENCE',
+      '   VOCABULARY IS REFUSED. This document is not about defending anything, and',
+      '   a hunting or sport motivation that reaches for the language of personal',
+      '   defence tells the Registrar the applicant is describing a purpose this',
+      '   section does not grant. Never write: "self-defence", "self defence",',
+      '   "home defence", "defensive", "protection", "protect myself", "concealed",',
+      '   "conceal", "backup", "back-up", "carry on my person", "attacker",',
+      '   "hijack" or "intruder". One of them, once, and the document is not filed',
+      '   at all. The ONE exception is a sentence describing a firearm the applicant',
+      '   ALREADY holds under section 13 or 14: that sentence may say what that',
+      '   licence is for, because saying so is how the overlap is answered. Argue',
+      '   this firearm from its quarry, its ground, its discipline and its course of',
+      '   fire instead.',
+    ].join('\n');
+  }
+  if (selfDefence) {
+    return [
+      '   ⚠️ AND ON THIS APPLICATION — A SELF-DEFENCE ONE — THE HUNTING, SPORT AND',
+      '   RELOADING VOCABULARY IS REFUSED. Never write "hunting", "hunt", "quarry",',
+      '   "game", "sport shooting", "sports shooting", "competition", "competitive",',
+      '   "discipline", "reloading", "handload", "target shooting", "plinking" or',
+      '   "culling" anywhere the sentence is not about a firearm the applicant',
+      '   ALREADY holds under section 15, 16 or 17. One of them, once, and the',
+      '   document is not filed at all. Reloading is refused outright, held firearm',
+      '   or not. Argue the threat, the premises, the routine and the response',
+      '   instead.',
+    ].join('\n');
+  }
+  return '';
+}
+
 export function generationSystemPrompt(
   licenceType: MotivationLicenceType,
 ): string {
@@ -672,6 +733,7 @@ ABSOLUTE RULES
    shot is accurate or consistent rather than "efficient". Say the plain
    thing: these words describe an appetite, and the document exists to
    establish a need.
+${sectionVocabularyRule(licenceType)}
 7. DO NOT PAD — operator decision 2026-08-18, taken against real samples.
    Some professionally-prepared motivations bulk themselves out with material
    that is not about this applicant at all: potted histories of sport shooting,

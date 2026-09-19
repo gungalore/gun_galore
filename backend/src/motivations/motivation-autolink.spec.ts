@@ -19,8 +19,7 @@ import {
 
 const TODAY = new Date('2026-08-24T00:00:00Z');
 const iso = (d: Date) => d.toISOString().slice(0, 10);
-const inDays = (n: number) =>
-  iso(new Date(TODAY.getTime() + n * 86_400_000));
+const inDays = (n: number) => iso(new Date(TODAY.getTime() + n * 86_400_000));
 
 const cand = (
   kind: MotivationUploadKind,
@@ -62,24 +61,22 @@ describe('what it attaches', () => {
     );
   });
 
-  it('⚠️ NEVER attaches safe photographs unasked — it asks instead', () => {
-    // They look like a person-document, and addFromLibrary already demands an
-    // explicit "these are the safe at the address on THIS application" for
-    // them: somebody who has moved house and reuses last year's shots ships a
-    // pack showing the wrong premises. Only they can answer that.
-    //
-    // M6 — the refusal is now a QUESTION, and the reason says so. It used to
-    // come back as 'not-a-person-document', which is both untrue and a dead
-    // end: it told the member there was nothing they could do about it.
+  it('attaches safe photographs unasked now', () => {
+    // ⚠️ 2026-09-14: the safe moved onto the standard auto-attach list.
+    // Operator: "safe photographs can be auto pulled when the motivation is
+    // open as this is standard documents required." The place-confirm question
+    // is retired, so a single safe photograph attaches like any other
+    // person-document.
     const out = decideAutolink(
       [cand(MotivationUploadKind.SAFE_PHOTOGRAPHS)],
       [MotivationUploadKind.SAFE_PHOTOGRAPHS],
       [],
       TODAY,
     );
-    expect(out.attach).toEqual([]);
-    expect(out.skipped[0].why).toBe('needs-place-confirm');
-    expect(out.needsPlaceConfirm).toBe(true);
+    expect(out.attach.map((a) => a.kind)).toEqual([
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
+    ]);
+    expect(out.needsPlaceConfirm).toBe(false);
   });
 
   it('M6 — attaches the safe photographs once the member confirms the place', () => {
@@ -134,9 +131,10 @@ describe('what it attaches', () => {
     expect(out.skipped).toEqual([]);
   });
 
-  it('⚠️ STILL HOLDS ALL THREE BACK WITHOUT THE TICK', () => {
-    // Taking them all is about ambiguity, not about consent. The place
-    // question is asked before any of this and is unchanged.
+  it('⚠️ TAKES ALL THREE WITHOUT A TICK NOW', () => {
+    // Taking them all is about ambiguity, not about consent — and the place
+    // question no longer exists, so three photographs of one safe attach
+    // together on open.
     const photos = [1, 2, 3].map((i) =>
       cand(MotivationUploadKind.SAFE_PHOTOGRAPHS, { sourceId: `safe-${i}` }),
     );
@@ -146,13 +144,12 @@ describe('what it attaches', () => {
       [],
       TODAY,
     );
-    expect(out.attach).toEqual([]);
-    expect(out.needsPlaceConfirm).toBe(true);
-    expect(out.skipped.map((sk) => sk.why)).toEqual([
-      'needs-place-confirm',
-      'needs-place-confirm',
-      'needs-place-confirm',
+    expect(out.attach.map((a) => a.sourceId).sort()).toEqual([
+      'safe-1',
+      'safe-2',
+      'safe-3',
     ]);
+    expect(out.needsPlaceConfirm).toBe(false);
   });
 
   it('adds the missing photographs when one is already on the application', () => {
@@ -252,7 +249,11 @@ describe('what it attaches', () => {
     expect(unread.attach).toHaveLength(1);
 
     const noFirearmYet = decideAutolink(
-      [cand(MotivationUploadKind.COMPETENCY_CERTIFICATE, { covers: 'HANDGUN' })],
+      [
+        cand(MotivationUploadKind.COMPETENCY_CERTIFICATE, {
+          covers: 'HANDGUN',
+        }),
+      ],
       [MotivationUploadKind.COMPETENCY_CERTIFICATE],
       [],
       TODAY,
@@ -369,9 +370,7 @@ describe('the freshness rule', () => {
     // one the DFO rejects long before a decision, and attaching it silently
     // hands somebody a pack that looks complete and is already stale.
     const out = decideAutolink(
-      [
-        cand(MotivationUploadKind.ASSOCIATION_CARD, { expiresOn: inDays(30) }),
-      ],
+      [cand(MotivationUploadKind.ASSOCIATION_CARD, { expiresOn: inDays(30) })],
       [MotivationUploadKind.ASSOCIATION_CARD],
       [],
       TODAY,
@@ -404,7 +403,11 @@ describe('the freshness rule', () => {
 
   it('treats an unparseable date as no date rather than throwing', () => {
     const out = decideAutolink(
-      [cand(MotivationUploadKind.IDENTITY_DOCUMENT, { expiresOn: 'not-a-date' })],
+      [
+        cand(MotivationUploadKind.IDENTITY_DOCUMENT, {
+          expiresOn: 'not-a-date',
+        }),
+      ],
       [MotivationUploadKind.IDENTITY_DOCUMENT],
       [],
       TODAY,
@@ -476,7 +479,8 @@ describe('the two lists stay honest', () => {
 describe('the proficiency pair', () => {
   const P = MotivationUploadKind.PROFICIENCY_CERTIFICATE;
   const want = [P];
-  const ids = (d: ReturnType<typeof decideAutolink>) => d.attach.map((c) => c.sourceId).sort();
+  const ids = (d: ReturnType<typeof decideAutolink>) =>
+    d.attach.map((c) => c.sourceId).sort();
 
   it('attaches the firearm statement AND the Act statement when they are separate', () => {
     const d = decideAutolink(
@@ -491,18 +495,47 @@ describe('the proficiency pair', () => {
       { needed: 'handgun' },
     );
     expect(ids(d)).toEqual(['handgun', 'law']);
-    expect(d.skipped.map((s) => [s.candidate.sourceId, s.why])).toEqual([['shotgun', 'endorsement-mismatch']]);
+    expect(d.skipped.map((s) => [s.candidate.sourceId, s.why])).toEqual([
+      ['shotgun', 'endorsement-mismatch'],
+    ]);
   });
 
   it('attaches one certificate when it carries both', () => {
     const d = decideAutolink(
-      [cand(P, { sourceId: 'both', covers: '117705, 119649' }), cand(P, { sourceId: 'law', covers: '117705' })],
+      [
+        cand(P, { sourceId: 'both', covers: '117705, 119649' }),
+        cand(P, { sourceId: 'law', covers: '117705' }),
+      ],
       want,
       [],
       TODAY,
       { needed: 'handgun' },
     );
     expect(ids(d)).toEqual(['both']);
+  });
+
+  it('folds a linked certificate and statement into one firearm candidate', () => {
+    const d = decideAutolink(
+      [
+        cand(P, {
+          sourceId: 'certificate',
+          otherSideId: 'statement',
+          documentSide: 'front',
+          covers: '119649',
+        }),
+        cand(P, {
+          sourceId: 'statement',
+          otherSideId: 'certificate',
+          documentSide: 'back',
+          covers: '117705',
+        }),
+      ],
+      want,
+      [],
+      TODAY,
+      { needed: 'handgun' },
+    );
+    expect(ids(d)).toEqual(['statement']);
   });
 
   it('adds the Act statement beside a firearm statement the member attached by hand', () => {
@@ -541,12 +574,36 @@ describe('the proficiency pair', () => {
       { needed: 'handgun' },
     );
     expect(ids(d)).toEqual(['handgun']);
-    expect(d.skipped.filter((s) => s.why === 'several-candidates').map((s) => s.candidate.sourceId).sort()).toEqual(['law1', 'law2']);
+    expect(
+      d.skipped
+        .filter((s) => s.why === 'several-candidates')
+        .map((s) => s.candidate.sourceId)
+        .sort(),
+    ).toEqual(['law1', 'law2']);
   });
 
   it('falls back to one-or-nothing when no statement is readable', () => {
-    expect(ids(decideAutolink([cand(P, { sourceId: 'x', covers: '' })], want, [], TODAY, { needed: 'handgun' }))).toEqual(['x']);
-    const two = decideAutolink([cand(P, { sourceId: 'x', covers: '' }), cand(P, { sourceId: 'y', covers: '' })], want, [], TODAY, {});
+    expect(
+      ids(
+        decideAutolink(
+          [cand(P, { sourceId: 'x', covers: '' })],
+          want,
+          [],
+          TODAY,
+          { needed: 'handgun' },
+        ),
+      ),
+    ).toEqual(['x']);
+    const two = decideAutolink(
+      [
+        cand(P, { sourceId: 'x', covers: '' }),
+        cand(P, { sourceId: 'y', covers: '' }),
+      ],
+      want,
+      [],
+      TODAY,
+      {},
+    );
     expect(two.attach).toEqual([]);
   });
 });
@@ -648,7 +705,6 @@ describe('the competency/proficiency pair', () => {
   });
 });
 
-
 // ────────────────────────────────────────────────────────────────────
 // THE ONE CONDITION THAT RE-OPENS THE AUTOLINK.
 //
@@ -663,7 +719,10 @@ describe('the competency/proficiency pair', () => {
 // proficiency from the dropdown lists." He had to.
 // ────────────────────────────────────────────────────────────────────
 describe('endorsementMoved', () => {
-  const handgun = { firearm_type: 'Handgun', firearm_action: 'Semi-automatic (self-loading)' };
+  const handgun = {
+    firearm_type: 'Handgun',
+    firearm_action: 'Semi-automatic (self-loading)',
+  };
 
   it('⚠️ IS TRUE WHEN THE FIREARM ARRIVES ON AN EMPTY APPLICATION', () => {
     expect(endorsementMoved({}, handgun)).toBe(true);

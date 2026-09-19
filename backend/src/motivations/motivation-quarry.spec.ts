@@ -55,6 +55,20 @@ describe('what goes in the frame', () => {
     }
   });
 
+  it('⚠️ NEVER TAKES ONE FROM THE "POORLY SUITED" HALF OF A FIREARM BRIEF', () => {
+    // The firearm brief lists the quarry it is FOR, then a "Poorly suited
+    // applications" section naming the animals it must NOT be used on. Feeding
+    // the whole block in (as generation now does) must not picture those.
+    const text =
+      'Quarry and hunting disciplines: bushpig, warthog, impala and kudu. ' +
+      'Poorly suited applications: steenbok and duiker are too small for this.';
+    const picked = keys(text);
+    expect(picked).toEqual(
+      expect.arrayContaining(['bushpig', 'warthog', 'impala', 'kudu']),
+    );
+    expect(picked).not.toEqual(expect.arrayContaining(['duiker', 'steenbok']));
+  });
+
   it('⚠️ FILTERS THE LINE-UP BY WHAT THE APPLICANT SAID THEY HUNT', () => {
     // Nothing in the well-matched half is medium plains game, so nothing at all.
     expect(keys(CREEDMOOR, 'plains_medium')).toEqual([]);

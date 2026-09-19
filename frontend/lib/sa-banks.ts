@@ -1,10 +1,10 @@
 // SA banks the payout rail supports. Friendly display names; the backend
-// maps them onto the Peach Payouts bankName enum (normaliseBankName in
-// backend/src/payments/peach-banks.ts — KEEP THE TWO IN SYNC: a name the
-// mapper can't resolve means the seller's payout is skipped with a
-// "re-pick your bank" reason). universalCode pre-fills the branch-code
-// field on pick (Peach recommends universal branch codes); users can
-// still override it. '' = no known universal code, the user types theirs.
+// maps them onto the Ozow Payouts universal branch codes
+// (normaliseOzowBank in backend/src/payments/ozow-banks.ts — KEEP THE TWO IN
+// SYNC: a name the mapper can't resolve means the seller's payout is skipped
+// with a "re-pick your bank" reason). universalCode pre-fills the branch-code
+// field on pick (Ozow's universal branch codes); users can still override it.
+// '' = no known universal code, the user types theirs.
 export const SA_BANKS: { name: string; universalCode: string }[] = [
   { name: 'ABSA', universalCode: '632005' },
   { name: 'Capitec', universalCode: '470010' },

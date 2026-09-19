@@ -130,13 +130,13 @@ subscription. Every cell undercuts the R450–R1,000 the fly-by-night writers ch
 never compete on price alone. A test asserts every cell stays under R450.
 
 ⚠️ **FREE is a real outcome, not a R0 charge.** The caller skips the payment step entirely —
-a 0.00 authorisation would be rejected by Peach and would show a member a failed payment for
+a 0.00 authorisation would be rejected by Ozow and would show a member a failed payment for
 something they are entitled to.
 
 ⚠️ `firearmBoughtOnSite` must be established from a REAL ORDER, never from anything the
 applicant types. It is worth R100–R199, so it is exactly the claim someone would make.
 
-- Payments are OFF until Peach — the table goes live with the paygate; before that the
+- Payments are OFF until Ozow — the table goes live with the paygate; before that the
   capped free beta runs. No manual EFT (retired). The price a member is quoted during the
   beta comes from this module, so it is the price they will actually pay.
 
@@ -528,7 +528,7 @@ storage (SAP 534 pattern).
 1. Phase 1 build → **capped free beta live** (no payments needed). ✅ 2026-08-19
 2. M-A + M-B (operator corrections above), then Licence Centre LC0–LC2 — the vault
    becomes the second pillar, ahead of the checker.
-3. Peach go-live → R199/R99 switches on (same flag discipline as everything else); LC3
+3. Ozow go-live → R199/R99 switches on (same flag discipline as everything else); LC3
    monetisation rides the same moment.
 4. Checker build after the Centre (milestones attach to the renewals it generates;
    letters templates to attorney alongside the writer templates).

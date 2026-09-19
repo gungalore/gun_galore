@@ -40,7 +40,7 @@ The site is live. Card payments are gated off until the payment provider goes li
 | AI | Anthropic SDK — moderation, document vision, the "Ask Boet" assistant | `^0.96.0` |
 | Images | Cloudinary | `^2.10.0` |
 | Email / SMS / Push | Resend, SMSPortal, `web-push` (VAPID) | `resend ^6.12.3`, `web-push ^3.6.7` |
-| Payments | Peach Payments (Checkout V2 pay-in, Payouts pay-out) | hand-rolled adapter |
+| Payments | Ozow (One API pay-in + refunds, Payouts API pay-out) | hand-rolled adapter |
 | Language | TypeScript | `^5.7.3` (backend), `^5` (frontend) |
 | Runtime | Node.js | 20.9+ required by Next 16; developed on 24 |
 
@@ -72,7 +72,7 @@ Cloudflare in front. Postgres `:5432` and Meilisearch `:7700` are on the same bo
   disabled and browse falls back to a Prisma query (see
   `listings.service.ts → browse()`). Everything else works. Install it if you're touching
   search; skip it otherwise.
-- Everything else (Cloudinary, Anthropic, Peach, Pudo, TCG, Resend, SMSPortal) degrades
+- Everything else (Cloudinary, Anthropic, Ozow, Pudo, TCG, Resend, SMSPortal) degrades
   gracefully when unconfigured. You do not need any of those accounts to get a running
   site.
 
@@ -255,7 +255,7 @@ Read this section before you file a bug against your own machine.
 - **Checkout returns 503 "Card payments are launching soon".** `PAYMENTS_LIVE` defaults to
   `false` (`backend/src/payments/payment-mode.ts`). The money engine is complete and
   rail-agnostic; only the entry gate is closed. Set `PAYMENTS_LIVE=true` locally to walk the
-  flow — with no `PEACH_*` credentials the Peach adapter runs in **mock mode**, returning
+  flow — with no `OZOW_*` credentials the Ozow adapter runs in **mock mode**, returning
   fake checkout ids and never calling out. To see the card UI rather than the manual one,
   set `PAYMENT_MODE=paygate` in the backend and `NEXT_PUBLIC_PAYMENT_MODE=paygate` in the
   frontend; the backend is the authority, the frontend flag only changes what is rendered.
@@ -281,8 +281,9 @@ Read this section before you file a bug against your own machine.
   documentation. `AUDIT-2026-06-10.md`, `DUMMY-RUN-REPORT.md`, `TAKEALOT-UX-PARITY-REPORT.md`
   and friends describe a moment in time. Treat them as archaeology.
 - **`CLAUDE.md` has stale patches.** Its Tech Stack section still names Stitch as the
-  payment provider and says not to reintroduce Peach; the code has used Peach since
-  2026-07-23. Where CLAUDE.md and the code disagree, the code wins.
+  payment provider and says not to reintroduce Peach; the code has used Ozow since
+  2026-09 (Peach before that, from 2026-07). Where CLAUDE.md and the code disagree, the
+  code wins.
 
 ---
 
@@ -301,7 +302,7 @@ Every module is registered in `app.module.ts`; read that file first, it's the ho
 | `offers/` | "Take a Shot" — buyer offers, seller accept/reject/counter, auto-accept thresholds, and the reject-reason strike policy. |
 | `auctions/` | Timed bidding, auto-bids, anti-snipe extension (a bid in the last 2 minutes moves the clock), hidden reserves, bind windows, runner-up offers. |
 | `swaps/` | Swop/Trade — proposals, value-based fees, proof-of-possession via Claude vision, two-way shipping. |
-| `payments/` | The money engine: Peach adapter, transaction state (`HELD` → `RELEASED`), fee maths, refund arms, dispatch SLAs. `payment-mode.ts` is the seam that gates everything. |
+| `payments/` | The money engine: Ozow adapter, transaction state (`HELD` → `RELEASED`), fee maths, refund arms, dispatch SLAs. `payment-mode.ts` is the seam that gates everything. |
 | `orders/` | Multi-item order rollup over individual transactions. |
 | `shipping/` | Courier booking (PUDO lockers, The Courier Guy door-to-door), waybills, tracking, dealer hand-off. |
 | `my-shipments/` | The member-facing view of the above. |
@@ -411,7 +412,7 @@ you push a routing change.
 | **Take a Shot** | Our name for offers: the buyer names a price, the seller accepts, rejects or counters. |
 | **Swop** | Trade. Two items exchange hands, optionally with a cash top-up. Both sides pay a leg fee and we manage both shipments. |
 | **AO PRO** | The paid membership tier, R99/month. |
-| **ZAR / cents** | Prices are stored as **integer cents** throughout. Peach speaks decimal rand, so the payment adapter converts at the boundary — that conversion is the single place the two representations meet. |
+| **ZAR / cents** | Prices are stored as **integer cents** throughout. Ozow's pay-in API speaks decimal rand, so the payment adapter converts at the boundary — that conversion is the single place the two representations meet. |
 | **TPPP** | Third-Party Payment Provider. Holding buyer funds makes us one, which drives the bank onboarding, AML policy and statutory pages under `app/(legal)/`. |
 
 ---

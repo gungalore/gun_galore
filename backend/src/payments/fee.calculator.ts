@@ -33,14 +33,16 @@ export const MIN_COMMISSION_CENTS = 1_000; // R10
 // Top Seller discount — 0.5% off total price. LOCKED per CLAUDE.md.
 const TOP_SELLER_DISCOUNT = 0.005;
 
-// Card-gateway processing fee. Peach is the gateway (Stitch was evaluated in
-// 2026-06/07 and dropped); its published rate is
-// 3.5% + R1.50 fixed, VAT-EXCLUSIVE. SA VAT is 15%, so the buyer-facing
-// inclusive figure is (subtotal × 3.5% + R1.50) × 1.15 ≈ 4.025% + R1.725.
-// Computed inclusively so the buyer sees the figure billed against the card.
-const PEACH_RATE = 0.035;
-const PEACH_FIXED_CENTS = 150; // R1.50
-const VAT_MULTIPLIER = 1.15; // SA VAT — 15% on top of the net card fee
+// Gateway processing fee. Ozow is the gateway (Peach was replaced 2026-09);
+// its hosted page defaults to Pay by Bank / instant EFT at 1.5% (min R1.00),
+// VAT-EXCLUSIVE. SA VAT is 15%, so the buyer-facing inclusive figure is
+// (max(subtotal × 1.5%, R1.00)) × 1.15 ≈ 1.725% (min R1.15).
+// Computed inclusively so the buyer sees the figure billed against the EFT.
+// Card payments (2.85%) cost more; that difference is an accepted residual
+// the operator absorbs rather than a second price baked into the listing.
+const OZOW_EFT_RATE = 0.015;
+const OZOW_MIN_FEE_CENTS = 100; // R1.00 net minimum per Ozow pricing
+const VAT_MULTIPLIER = 1.15; // SA VAT — 15% on top of the net gateway fee
 
 // Manual EFT processing fee. While there is no card gateway, buyers pay
 // GG by bank EFT and a flat 1.5% handling fee is added to the order (no
@@ -156,19 +158,19 @@ export class FeeCalculator {
    *   ask                                    R450.00   seller receives this
    *   + commission (banded, min R30)         R 40.50   our margin
    *   = subtotal                             R490.50
-   *   + Peach on the subtotal (4.025%+R1.73) R 21.47   recovers the gateway
-   *   = LIST PRICE                           R511.97   the buyer sees this
+   *   + Ozow on the subtotal (1.725%+VAT)    R  8.46   recovers the gateway
+   *   = LIST PRICE                           R498.96   the buyer sees this
    *
-   * KNOWN, ACCEPTED RESIDUAL: Peach charges its percentage on the FINAL
+   * KNOWN, ACCEPTED RESIDUAL: Ozow charges its percentage on the FINAL
    * amount the buyer is billed, not on the subtotal we applied it to — so
-   * marking up by 4.025% of R490.50 recovers slightly less than the fee
-   * eventually charged on R511.97. About R0.86 on a R450 ask (0.17%). Exact
+   * marking up by 1.725% of R490.50 recovers slightly less than the fee
+   * eventually charged on R498.96. About R0.15 on a R450 ask (0.03%). Exact
    * recovery would need `list = (ask + commission + fixed) / (1 - rate)`;
    * that is a one-line change here if the leak is ever worth closing.
    *
-   * Shipping is NOT in this base — it is unknown until checkout. Peach's
+   * Shipping is NOT in this base — it is unknown until checkout. Ozow's
    * percentage on the shipping leg is covered by the R15/waybill handling
-   * margin, which comfortably exceeds it (R15 against ~R3 on a R79 leg).
+   * margin, which comfortably exceeds it.
    */
   listPriceFromSellerAsk(
     sellerAskZarCents: number,
@@ -254,14 +256,15 @@ export class FeeCalculator {
 
   /**
    * Processing fee on a given subtotal (listing price + shipping).
-   * - 'paygate': card rate, VAT-inclusive — (base × 3.5% + R1.50) × 1.15.
+   * - 'paygate': Ozow Pay by Bank rate, VAT-inclusive — max(base × 1.5%,
+   *   R1.00) × 1.15.
    * - 'manual': flat 1.5% EFT handling fee, no fixed component.
    */
   calculateProcessingFee(baseZarCents: number, mode: PaymentMode = 'paygate'): number {
     if (mode === 'manual') {
       return Math.round(baseZarCents * MANUAL_RATE);
     }
-    const net = baseZarCents * PEACH_RATE + PEACH_FIXED_CENTS;
+    const net = Math.max(baseZarCents * OZOW_EFT_RATE, OZOW_MIN_FEE_CENTS);
     return Math.round(net * VAT_MULTIPLIER);
   }
 

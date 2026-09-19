@@ -6,6 +6,7 @@ import {
   imageSize,
   isEmbeddable,
   planAnnexurePages,
+  planSafePhotoPages,
 } from './motivation-annexure-layout';
 
 // A4 at 72dpi with the motivation's own 71pt margins.
@@ -54,7 +55,12 @@ describe('planAnnexurePages', () => {
   it('⚠️ NEVER LETS AN IMAGE RUN OFF THE PAGE', () => {
     // Readable means printable. A placement that overflows the content box is
     // a copy the printer crops, which is worse than one that is merely small.
-    const many = [card(), card({ letter: 'B' }), a4({ letter: 'C' }), card({ letter: 'D' })];
+    const many = [
+      card(),
+      card({ letter: 'B' }),
+      a4({ letter: 'C' }),
+      card({ letter: 'D' }),
+    ];
     for (const page of planAnnexurePages(many, BOX)) {
       for (const p of page) {
         expect(p.captionY).toBeGreaterThanOrEqual(BOX.y - 1e-6);
@@ -103,6 +109,20 @@ describe('planAnnexurePages', () => {
     const [page] = planAnnexurePages([img({ width: 0, height: 0 })], BOX);
     expect(Number.isFinite(page[0].w)).toBe(true);
     expect(Number.isFinite(page[0].h)).toBe(true);
+  });
+});
+
+describe('planSafePhotoPages', () => {
+  it('keeps four safe photographs on one 2x2 page', () => {
+    const pages = planSafePhotoPages(
+      Array.from({ length: 4 }, (_, index) =>
+        card({ index: index + 1, total: 4, label: 'Photographs of the safe' }),
+      ),
+      BOX,
+    );
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toHaveLength(4);
+    expect(new Set(pages[0].map((p) => `${p.x}:${p.y}`)).size).toBe(4);
   });
 });
 
@@ -178,7 +198,10 @@ describe('imageSize', () => {
       })(),
       Buffer.alloc(8),
     ];
-    expect(imageSize(Buffer.concat(parts))).toEqual({ width: 900, height: 600 });
+    expect(imageSize(Buffer.concat(parts))).toEqual({
+      width: 900,
+      height: 600,
+    });
   });
 
   it('returns null rather than guessing', () => {

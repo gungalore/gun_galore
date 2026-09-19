@@ -411,8 +411,9 @@ export class UsersController {
   // SA ID at rest. Sets profileCompletedAt on success. Throws a
   // BadRequestException with the modal-displayable message on any
   // validation failure. Note: no automated AVS runs at this point —
-  // Peach BANV exists but is deployed inert, so bank details are verified
-  // manually by an admin at payout time. See users.service.completeProfile.
+  // Ozow has no BANV product, so bank details are verified manually by an
+  // admin at payout time (or rejected by the payout itself). See
+  // users.service.completeProfile.
   @Post('me/profile-complete')
   @UseGuards(AuthGuard)
   completeProfile(

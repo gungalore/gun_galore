@@ -1,4 +1,5 @@
 import { DocumentReadCacheService } from './document-read-cache.service';
+import { DocumentPageRasterService } from './document-page-raster.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { MotivationStatus } from '@prisma/client';
@@ -82,6 +83,7 @@ export class MotivationRetentionService {
     private readonly prisma: PrismaService,
     private readonly files: SecureFileStorageService,
     private readonly readCache: DocumentReadCacheService,
+    private readonly pageRaster: DocumentPageRasterService,
   ) {}
 
   /**
@@ -103,9 +105,16 @@ export class MotivationRetentionService {
        * cache. Thirty days, swept nightly with everything else.
        */
       const reads = await this.readCache.purgeExpired();
-      if (due + orphaned + reads > 0) {
+      /**
+       * ⚠️ AND THE PAGE IMAGES, WHICH ARE THE DOCUMENT RATHER THAN A NOTE ABOUT
+       * IT. A rasterised page is a faithful picture of somebody's licence or
+       * bank statement, so it is held to the standard of the bytes it came from
+       * — thirty days, swept nightly, bytes and all.
+       */
+      const pages = await this.pageRaster.purgeExpired();
+      if (due + orphaned + reads + pages > 0) {
         this.logger.log(
-          `Motivation retention: purged ${due} document(s) past their retention date, ${orphaned} from applications that were never completed and ${reads} expired document reading(s)`,
+          `Motivation retention: purged ${due} document(s) past their retention date, ${orphaned} from applications that were never completed, ${reads} expired document reading(s) and ${pages} expired page image(s)`,
         );
       }
     } catch (err) {

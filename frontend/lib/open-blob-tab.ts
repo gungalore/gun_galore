@@ -52,7 +52,9 @@ export async function openBlobTab({
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
     }
     // Long enough for the tab to have loaded it. The blob is pinned until
     // then, and leaked for the life of the tab if we never let go.

@@ -172,11 +172,11 @@ export interface OrderTransaction {
   payoutHoldReason: string | null;
 
   // Gateway — diagnostic identifiers, shown raw.
-  peachCheckoutId: string | null;
-  peachMerchantRef: string | null;
-  peachPaymentId: string | null;
-  peachPayoutId: string | null;
-  peachResultCode: string | null;
+  gatewayCheckoutId: string | null;
+  gatewayMerchantRef: string | null;
+  gatewayPaymentId: string | null;
+  gatewayPayoutId: string | null;
+  gatewayResultCode: string | null;
 
   // Risk signals, computed after capture. Log-only; they never blocked payment.
   riskScore: number;
@@ -279,7 +279,7 @@ export interface OrderReference {
  */
 export function orderReferenceOf(tx: OrderTransaction): OrderReference {
   if (tx.order?.orderReference) return { value: tx.order.orderReference, source: 'order' };
-  if (tx.peachMerchantRef) return { value: tx.peachMerchantRef, source: 'gateway' };
+  if (tx.gatewayMerchantRef) return { value: tx.gatewayMerchantRef, source: 'gateway' };
   return { value: tx.id, source: 'transaction' };
 }
 
@@ -627,18 +627,6 @@ function shippingWaitingOn(tx: OrderTransaction): OrderStep | null {
 
 export type ResultBucket = 'success' | 'pending' | 'rejected' | 'none';
 
-/**
- * ⚠️ MIRRORS backend payments/peach-signature.ts, classifyResultCode. Those
- * three patterns are the OPPWA standard set and they are what the platform
- * itself acted on when this payment came in — so they are the only honest
- * "meaning" to put beside the code. If that file's patterns change, change
- * these with them; better still, have the dossier return the bucket and
- * delete this block (see the handover note).
- */
-const SUCCESS = /^(000\.000\.|000\.100\.1|000\.[36]0)/;
-const SUCCESS_MANUAL_REVIEW = /^(000\.400\.0[^3]|000\.400\.100)/;
-const PENDING = /^(000\.200|800\.400\.5|100\.400\.500)/;
-
 export interface ResultCodeReading {
   code: string | null;
   bucket: ResultBucket;
@@ -646,19 +634,22 @@ export interface ResultCodeReading {
   meaning: string;
 }
 
+// Ozow's transaction status, the value the platform stores in
+// `gatewayResultCode` on a successful capture. Compare without case.
+const OZOW_SUCCESS = /^successful$/i;
+const OZOW_PENDING = /^(pending|incomplete)$/i;
+
 /**
- * ⚠️ NOT PARAPHRASED. A gateway code is diagnostic: the operator reads it to a
- * support line or pastes it into the gateway's own docs, so the raw string is
- * the payload and this sentence is only the classification our own code
+ * ⚠️ NOT PARAPHRASED. A gateway status is diagnostic: the operator reads it to
+ * a support line or pastes it into the gateway's own docs, so the raw string
+ * is the payload and this sentence is only the classification our own code
  * applied to it. Never invent a customer-facing phrasing for one of these.
  */
 export function readResultCode(code: string | null): ResultCodeReading {
   if (!code) {
-    // ⚠️ AN ABSENT CODE IS NOT EVIDENCE OF AN ABSENT ATTEMPT. This once read
-    // "this sale never reached the gateway", which is false for the single
-    // most interesting row that lands here: transactions.service.ts writes
-    // peachResultCode ONLY on the successful-capture claim, while
-    // peachCheckoutId is written when the checkout is created — so a payment
+    // ⚠️ AN ABSENT CODE IS NOT EVIDENCE OF AN ABSENT ATTEMPT. The platform
+    // stores gatewayResultCode ONLY on the successful-capture claim, while
+    // gatewayCheckoutId is written when the checkout is created — so a payment
     // the gateway DECLINED reaches this branch with a checkout id sitting
     // right beside it in the identifier list. State the absence; let the
     // identifiers say whether anything was attempted.
@@ -669,21 +660,21 @@ export function readResultCode(code: string | null): ResultCodeReading {
         'No result code recorded. The platform stores one only alongside a successful capture, so a declined or abandoned checkout also shows nothing here — check the identifiers below for whether one was ever created.',
     };
   }
-  if (SUCCESS.test(code) || SUCCESS_MANUAL_REVIEW.test(code)) {
+  if (OZOW_SUCCESS.test(code)) {
     return {
       code,
       bucket: 'success',
       meaning: 'Classified by the platform as a successful payment.',
     };
   }
-  if (PENDING.test(code)) {
+  if (OZOW_PENDING.test(code)) {
     return { code, bucket: 'pending', meaning: 'Classified by the platform as pending.' };
   }
   return {
     code,
     bucket: 'rejected',
     meaning:
-      'Classified by the platform as rejected. Anything the success and pending patterns do not match falls here, an unrecognised code included.',
+      'Classified by the platform as not successful. Anything the success and pending patterns do not match falls here, an unrecognised status included.',
   };
 }
 
@@ -702,10 +693,10 @@ export interface GatewayIdentifier {
 /** The identifiers, in the order support asks for them. Nulls are dropped. */
 export function gatewayIdentifiers(tx: OrderTransaction): GatewayIdentifier[] {
   const rows: { label: string; value: string | null }[] = [
-    { label: 'Merchant ref', value: tx.peachMerchantRef },
-    { label: 'Checkout ID', value: tx.peachCheckoutId },
-    { label: 'Payment ID', value: tx.peachPaymentId },
-    { label: 'Payout ID', value: tx.peachPayoutId },
+    { label: 'Merchant ref', value: tx.gatewayMerchantRef },
+    { label: 'Checkout ID', value: tx.gatewayCheckoutId },
+    { label: 'Payment ID', value: tx.gatewayPaymentId },
+    { label: 'Payout ID', value: tx.gatewayPayoutId },
     { label: 'Transaction ID', value: tx.id },
   ];
   return rows.filter((r): r is GatewayIdentifier => r.value !== null);

@@ -267,4 +267,18 @@ describe('saving your own documents to the Licence Centre', () => {
     );
     expect(screen.queryByRole('button', { name: 'Select all' })).toBeNull();
   });
+
+  it('renders a remove button and calls onRemove when clicked', async () => {
+    const onRemove = vi.fn();
+    render(
+      <DocumentShelf
+        documents={[doc({ id: 'u1', label: 'My ID' })]}
+        onUpload={vi.fn()}
+        onScan={vi.fn()}
+        onRemove={onRemove}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Remove My ID' }));
+    expect(onRemove).toHaveBeenCalledWith('u1');
+  });
 });

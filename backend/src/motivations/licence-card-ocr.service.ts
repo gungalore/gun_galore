@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { LlmService } from '../common/llm/llm.service';
+import type { LlmPart } from '../common/llm/llm.types';
 import type { FirearmSnapshot } from './motivation-seller-consent.service';
 
 // ────────────────────────────────────────────────────────────────────
@@ -9,343 +11,240 @@ import type { FirearmSnapshot } from './motivation-seller-consent.service';
 // card, as that is what is registered with the SAPS system. if it says NONE,
 // you put NONE."
 //
+// ⚠️ GEMINI NOW READS IT, NOT CLOUD VISION (2026-09-14). The Vision path
+// anchored on word bounding boxes and took the words to the right of a label;
+// it worked, but it needed a second Google API, a second key, and an IP
+// allowlist that a developer's machine is not on. The platform's model calls
+// already go through LlmService (see common/llm/llm.service.ts), so the card
+// is now read the same way every other document on the platform is. Same
+// contract out: a `LicenceCardReading`, never a throw.
+//
 // ⚠️ THIS PROPOSES. IT NEVER SUBMITS. Every value here lands in a form the
 // seller confirms before signing. The rule is the one the motivation extractor
 // already states: "a misread digit in an ID number would otherwise become a
 // false statement on a form they sign" — and this form is a consent to
 // transfer a firearm, so the same reasoning applies with more force.
 //
-// ⚠️ AND IT NEVER INVENTS "NONE". A field the OCR could not make out comes
+// ⚠️ AND IT NEVER INVENTS "NONE". A field the read could not make out comes
 // back UNDEFINED, not NONE. Those two mean opposite things to a DFO: NONE is a
 // fact the card asserts, undefined is our failure to read. Conflating them
 // would put a false statement on a signed document. Nothing below ever
 // defaults a missing value to the string NONE.
 //
-// ⚠️ WHY GEOMETRY AND NOT LINE ORDER. The card is TWO COLUMNS:
-//
-//     Serial Number   ZA2226548        Type    S/L: RIFLE CAL - RIFLE/CARBINE
-//     Make            NORDISKE PREC.   Model   NONE
-//     Calibre         .223 REM
-//
-// Read as a stream of lines, "Make" is as likely to pick up "Model"'s value as
-// its own, and on a five-card sample the serial rows interleave differently
-// every time. So we anchor on the LABEL's bounding box and take the words to
-// its right within the same horizontal band, stopping at the next label. That
-// is the only way the Marlin card — whose barrel row reads NONE while the
-// receiver carries the number — parses correctly.
-//
 // ⚠️ THE CARD IS COMPLETE BY CONSTRUCTION, AND THAT IS A RULE, NOT AN
 // OBSERVATION. Operator, 2026-09-08, holding one: "all the information is on a
 // license card. All of them will always have it. It will either be a serial
-// next to every component or NONE, but it will never be empty."
-//
-// So all three component rows are always printed, each with a serial-or-NONE
-// AND a make. A blank we come back with is a READ WE GOT WRONG — never a fact
-// the card did not carry — which is why a missing component is logged rather
-// than shrugged at.
-//
-// ⚠️ AND THERE ARE FOUR "MAKE" LABELS ON THE CARD, NOT ONE. The firearm's own,
-// and one against each of the barrel, receiver and frame rows. LABELS had a
-// single MAKE and the first band to match it won, so the three component makes
-// were never read at all: the seller photographs the card, the consent stores
-// what we read, and section E of the SAPS 271 printed three empty Make boxes
-// beside three filled serials. A MAKE is resolved by WHAT ELSE IS IN ITS BAND.
+// next to every component or NONE, but it will never be empty." So the read is
+// asked for all three component rows, each with its serial-or-NONE AND its
+// make, and a blank we come back with is a read we got wrong rather than a
+// fact the card did not carry.
 // ────────────────────────────────────────────────────────────────────
-
-const VISION_URL = 'https://vision.googleapis.com/v1/images:annotate';
-
-/** One word, with where it sits on the card. */
-export interface Word {
-  text: string;
-  x0: number;
-  x1: number;
-  /** Vertical centre — what the band grouping keys on. */
-  yMid: number;
-  height: number;
-}
-
-/**
- * The labels printed on the card, longest first.
- *
- * ⚠️ ORDER MATTERS. "Serial Number" must be tried before "Number", and
- * "Barrel Serial No" before "Serial No", or a prefix match swallows the row.
- */
-const LABELS: { label: string; key: keyof FirearmSnapshot }[] = [
-  { label: 'BARREL SERIAL NO', key: 'barrelSerial' },
-  { label: 'RECEIVER SERIAL NO', key: 'receiverSerial' },
-  { label: 'FRAME SERIAL NO', key: 'frameSerial' },
-  { label: 'SERIAL NUMBER', key: 'serial' },
-  { label: 'CALIBRE', key: 'calibre' },
-  { label: 'MODEL', key: 'model' },
-  { label: 'TYPE', key: 'type' },
-  { label: 'MAKE', key: 'make' },
-];
-
-/**
- * The component whose Make follows each serial label, in its own band.
- *
- * ⚠️ A LIST OF WHAT TO REASSIGN, NOT A LIST OF WHAT IS ALLOWED. A label
- * missing from here simply does not claim the Make beside it, which leaves the
- * firearm's own make — the safe direction to be incomplete in.
- */
-const COMPONENT_FIELDS: (keyof FirearmSnapshot)[] = [
-  'barrelSerial',
-  'receiverSerial',
-  'frameSerial',
-  'barrelMake',
-  'receiverMake',
-  'frameMake',
-];
-
-const COMPONENT_MAKE: Partial<
-  Record<keyof FirearmSnapshot, keyof FirearmSnapshot>
-> = {
-  barrelSerial: 'barrelMake',
-  receiverSerial: 'receiverMake',
-  frameSerial: 'frameMake',
-};
 
 /** What one read produced, and what it could not. */
 export interface LicenceCardReading {
-  /** Only keys the OCR actually established. Never contains a guessed NONE. */
+  /** Only keys the read actually established. Never contains a guessed NONE. */
   fields: Partial<FirearmSnapshot>;
   /** The holder's 13-digit ID, if the card showed one. */
   holderIdNumber?: string;
   /** "GJP FOURIE" — initials and surname, which is all the card carries. */
   holderNameOnCard?: string;
-  /** Raw text, kept so a human can see what we were working from. */
+  /** The model's raw reply, kept so a human can see what we were working from. */
   rawText: string;
-  /** False when the call failed or the key is unset — never throws. */
+  /** False when the call failed or no key is set — never throws. */
   ok: boolean;
 }
 
 const EMPTY: LicenceCardReading = { fields: {}, rawText: '', ok: false };
 
+/**
+ * The card fields we ask for, and the only keys `read` returns.
+ *
+ * ⚠️ THE THREE COMPONENT MAKES ARE SEPARATE KEYS, because the card prints a
+ * Make against each of the barrel, receiver and frame rows and they genuinely
+ * differ (one real card reads barrel CZ, receiver NONE, frame NONE). A single
+ * `make` would put the firearm's make on rows that do not carry it.
+ */
+const CARD_FIELDS = [
+  'make',
+  'model',
+  'type',
+  'calibre',
+  'serial',
+  'barrelSerial',
+  'barrelMake',
+  'receiverSerial',
+  'receiverMake',
+  'frameSerial',
+  'frameMake',
+  'section',
+] as const;
+
+type CardField = (typeof CARD_FIELDS)[number];
+
+const SYSTEM = `You read a photograph of a South African SAPS firearm licence card.
+You are transcribing, not interpreting: the card is the record of what SAPS has
+registered, so you copy what it prints, character for character.
+
+The card carries:
+- a headline "Serial Number" row, with the firearm's Type, Make, Model and
+  Calibre beside it;
+- three component rows — "Barrel Serial No", "Receiver Serial No" and
+  "Frame Serial No" — each with its OWN serial (or the literal word NONE) AND
+  its own "Make", which is often, but not always, the same as the firearm's;
+- the holder's 13-digit identity number and their name, printed as initials and
+  surname (for example "GJP FOURIE");
+- the section the licence was issued under, printed like "SECTION 16".
+
+Two rules decide the answer:
+1. COPY EXACTLY. If the card says NONE, return NONE — it is a fact the card
+   asserts, not an absence.
+2. NEVER INVENT. A value you cannot read clearly is an empty string, never a
+   guess and never NONE. NONE and "could not read" mean opposite things to the
+   officer who checks this.`;
+
+const USER = `Read this licence card and return every field you can see.
+- holder_id_number: the 13-digit identity number, digits only.
+- holder_name: exactly as printed, initials then surname (e.g. "GJP FOURIE").
+- section: the section line, e.g. "SECTION 16".
+- serial, make, model, type, calibre: from the firearm's own rows.
+- barrelSerial, barrelMake, receiverSerial, receiverMake, frameSerial,
+  frameMake: from the three component rows, each with its own serial-or-NONE
+  and its own make.
+Return an empty string for any field that is not visible or not legible. Do not
+guess.`;
+
+/**
+ * Every key is required and an unread value is the empty string.
+ *
+ * ⚠️ REQUIRED-ALL, NOT OPTIONAL. An optional property lets the model omit a
+ * field silently, which is indistinguishable from a field it could not read;
+ * making every key required forces it to consider each row and to say "" when
+ * there is nothing to say. `read` then drops the empty strings, so the
+ * undefined-vs-NONE rule survives the schema.
+ */
+const CARD_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    ...Object.fromEntries(CARD_FIELDS.map((k) => [k, { type: 'string' }])),
+    holder_id_number: { type: 'string' },
+    holder_name: { type: 'string' },
+  },
+  required: [...CARD_FIELDS, 'holder_id_number', 'holder_name'],
+};
+
 @Injectable()
 export class LicenceCardOcrService {
   private readonly logger = new Logger(LicenceCardOcrService.name);
-  private readonly apiKey = process.env.GOOGLE_VISION_API_KEY ?? '';
+
+  constructor(private readonly llm: LlmService) {}
 
   /**
    * Read one photograph of a licence card.
    *
-   * ⚠️ FAIL-SOFT, ALWAYS. No key, a 403 from the IP allowlist, a timeout, an
-   * unparseable body — all return `ok: false` with no fields. The seller then
-   * types what the card says, which is what they would have done anyway. A
-   * consent flow that only works when Google answers is a consent flow that
-   * strands somebody in bad light with a form they cannot finish.
+   * ⚠️ FAIL-SOFT, ALWAYS. No key, a provider error, a timeout, an unparseable
+   * reply — all return `ok: false` with no fields. The seller then types what
+   * the card says, which is what they would have done anyway. A consent flow
+   * that only works when the model answers is a consent flow that strands
+   * somebody in bad light with a form they cannot finish.
    */
   async read(bytes: Buffer, mimeType: string): Promise<LicenceCardReading> {
-    if (!this.apiKey) {
-      this.logger.warn('GOOGLE_VISION_API_KEY unset — licence OCR skipped');
+    if (!this.llm.isConfigured()) {
+      this.logger.warn('LLM not configured — licence-card read skipped');
       return EMPTY;
     }
     if (!bytes?.length) return EMPTY;
-    void mimeType; // Vision sniffs the content itself.
 
-    let body: unknown;
+    let text = '';
     try {
-      const res = await fetch(`${VISION_URL}?key=${this.apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requests: [
-            {
-              image: { content: bytes.toString('base64') },
-              // DOCUMENT_TEXT_DETECTION over TEXT_DETECTION: it is tuned for
-              // dense printed text and returns the same word boxes, which is
-              // what the column parse needs.
-              features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
-              imageContext: { languageHints: ['en'] },
-            },
-          ],
-        }),
-        signal: AbortSignal.timeout(20_000),
+      const res = await this.llm.complete({
+        maxTokens: 700,
+        timeoutMs: 45_000,
+        system: SYSTEM,
+        messages: [
+          {
+            role: 'user',
+            content: [blockFor(bytes, mimeType), { type: 'text', text: USER }],
+          },
+        ],
+        // A reading, not a verdict — no reasoning budget to spend.
+        thinking: { budgetTokens: 0 },
+        json: { schema: CARD_SCHEMA },
+        purpose: 'licence.card.read',
       });
-      if (!res.ok) {
-        this.logger.warn(`Vision returned HTTP ${res.status}`);
-        return EMPTY;
-      }
-      body = await res.json();
+      text = res.text.trim();
     } catch (err) {
-      this.logger.warn(`Vision call failed: ${(err as Error).message}`);
+      this.logger.warn(`Licence-card read failed: ${(err as Error).message}`);
       return EMPTY;
     }
 
-    const first = (body as { responses?: unknown[] })?.responses?.[0] as
-      | {
-          error?: { message?: string };
-          textAnnotations?: {
-            description?: string;
-            boundingPoly?: { vertices?: { x?: number; y?: number }[] };
-          }[];
-        }
-      | undefined;
-
-    if (first?.error) {
-      this.logger.warn(`Vision error: ${first.error.message ?? 'unknown'}`);
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      this.logger.warn('Licence-card read returned unparseable JSON');
       return EMPTY;
     }
-    const annotations = first?.textAnnotations ?? [];
-    if (annotations.length < 2) return { ...EMPTY, ok: true };
 
-    // [0] is the whole block; [1..] are the individual words.
-    const rawText = annotations[0]?.description ?? '';
-    const words: Word[] = [];
-    for (const a of annotations.slice(1)) {
-      const v = a.boundingPoly?.vertices ?? [];
-      if (v.length < 4) continue;
-      const xs = v.map((p) => p.x ?? 0);
-      const ys = v.map((p) => p.y ?? 0);
-      const y0 = Math.min(...ys);
-      const y1 = Math.max(...ys);
-      words.push({
-        text: (a.description ?? '').trim(),
-        x0: Math.min(...xs),
-        x1: Math.max(...xs),
-        yMid: (y0 + y1) / 2,
-        height: Math.max(1, y1 - y0),
-      });
+    // ⚠️ EMPTY STAYS EMPTY. A blank value is dropped rather than written, so a
+    // row we could not read never becomes the string NONE — see the header.
+    const fields: Partial<FirearmSnapshot> = {};
+    for (const key of CARD_FIELDS) {
+      const value = asText(parsed[key]);
+      if (value) (fields as Record<string, string>)[key] = value;
     }
-    if (!words.length) return { ...EMPTY, rawText, ok: true };
 
-    const fields = parseCard(words);
-    /**
-     * ⚠️ SAID OUT LOUD, BECAUSE THE CARD CANNOT BE SHORT. Every licence prints
-     * all three component rows with a serial-or-NONE and a make against each,
-     * so a gap here is OUR read failing — a glare band across the lower block,
-     * a photograph cropped below the frame row — and not a card that did not
-     * carry it. The seller then types it, which is the fallback that has
-     * always been there; this is so we find out it is happening.
-     */
-    const short = COMPONENT_FIELDS.filter((k) => !fields[k]);
+    const short = (
+      [
+        'barrelSerial',
+        'barrelMake',
+        'receiverSerial',
+        'receiverMake',
+        'frameSerial',
+        'frameMake',
+      ] as CardField[]
+    ).filter((k) => !fields[k]);
     if (short.length) {
       this.logger.warn(
-        `Licence card read is short of ${short.length} component field(s): ${short.join(', ')} — the card always prints all six`,
+        `Licence-card read is short of ${short.length} component field(s): ${short.join(', ')} — the card always prints all six`,
       );
     }
 
     return {
       fields,
-      holderIdNumber: findIdNumber(words),
-      holderNameOnCard: findHolderName(words, rawText),
-      rawText,
+      holderIdNumber: readId(parsed.holder_id_number),
+      holderNameOnCard: asText(parsed.holder_name) || undefined,
+      rawText: text,
       ok: true,
     };
   }
 }
 
-/** Words sharing a horizontal band, left to right. */
-function bandsOf(words: Word[]): Word[][] {
-  const medianHeight =
-    [...words].map((w) => w.height).sort((a, b) => a - b)[
-      Math.floor(words.length / 2)
-    ] || 10;
-  const tolerance = medianHeight * 0.6;
-  const sorted = [...words].sort((a, b) => a.yMid - b.yMid);
-  const bands: Word[][] = [];
-  for (const w of sorted) {
-    const band = bands[bands.length - 1];
-    if (band && Math.abs(band[0].yMid - w.yMid) <= tolerance) band.push(w);
-    else bands.push([w]);
-  }
-  return bands.map((b) => b.sort((a, z) => a.x0 - z.x0));
-}
-
 /**
- * Pull the labelled values out of one card.
+ * One base64 image part.
  *
- * ⚠️ A LABEL CLAIMS THE WORDS TO ITS RIGHT UNTIL THE NEXT LABEL STARTS. That
- * is what keeps the two columns apart: on the row `Make HOWA  Model NONE`, the
- * value of Make stops where Model begins, instead of swallowing "Model NONE".
+ * The mime is narrowed rather than passed through: the card is always a
+ * photograph, and anything that is not png or webp reads better as a JPEG than
+ * as a rejected request.
  */
-export function parseCard(words: Word[]): Partial<FirearmSnapshot> {
-  const out: Partial<FirearmSnapshot> = {};
-
-  for (const band of bandsOf(words)) {
-    // Where does each label start and end within this band?
-    const hits: { key: keyof FirearmSnapshot; from: number; to: number }[] = [];
-    const upper = band.map((w) => w.text.toUpperCase().replace(/[.:]/g, ''));
-
-    for (let i = 0; i < band.length; i++) {
-      for (const { label, key } of LABELS) {
-        const parts = label.split(' ');
-        if (upper.slice(i, i + parts.length).join(' ') !== label) continue;
-        if (hits.some((h) => i < h.to && i + parts.length > h.from)) continue;
-        hits.push({ key, from: i, to: i + parts.length });
-        break;
-      }
-    }
-    if (!hits.length) continue;
-    hits.sort((a, b) => a.from - b.from);
-
-    /**
-     * ⚠️ A "Make" BELONGS TO WHATEVER ROW IT IS ON. The lower block of the
-     * card is three rows of `<component> Serial No <value>  Make <value>`, so
-     * a MAKE preceded in its own band by a component serial is that
-     * component's make — and the bare `Make GLOCK  Model NONE` row in the
-     * upper block, which has no serial label before it, is the firearm's.
-     *
-     * Done here rather than with three more entries in LABELS because the
-     * label text really is identical; what tells them apart is the band.
-     */
-    for (let h = 0; h < hits.length; h++) {
-      if (hits[h].key !== 'make') continue;
-      for (let before = h - 1; before >= 0; before--) {
-        const owner = COMPONENT_MAKE[hits[before].key];
-        if (owner) {
-          hits[h].key = owner;
-          break;
-        }
-      }
-    }
-
-    for (let h = 0; h < hits.length; h++) {
-      const stop = hits[h + 1]?.from ?? band.length;
-      const value = band
-        .slice(hits[h].to, stop)
-        .map((w) => w.text)
-        .join(' ')
-        .trim();
-      // ⚠️ EMPTY STAYS EMPTY. Never substitute NONE for a value we did not
-      // read — see the file header.
-      if (value && out[hits[h].key] === undefined) {
-        (out as Record<string, string>)[hits[h].key] = value;
-      }
-    }
-  }
-
-  // SECTION 15 / SECTION 16 sits on its own line with no label before it.
-  const section = /\bSECTION\s+(\d{1,2})\b/i.exec(
-    words.map((w) => w.text).join(' '),
-  );
-  if (section) out.section = `SECTION ${section[1]}`;
-
-  return out;
+function blockFor(bytes: Buffer, mimeType: string): LlmPart {
+  return {
+    type: 'image',
+    mimeType:
+      mimeType === 'image/png'
+        ? 'image/png'
+        : mimeType === 'image/webp'
+          ? 'image/webp'
+          : 'image/jpeg',
+    data: bytes.toString('base64'),
+  };
 }
 
-/** The holder's 13-digit identity number, printed bare above the name. */
-function findIdNumber(words: Word[]): string | undefined {
-  for (const w of words) {
-    const digits = w.text.replace(/\D/g, '');
-    if (digits.length === 13) return digits;
-  }
-  // Sometimes split across boxes; fall back to a scan of the joined text.
-  const joined = words.map((w) => w.text).join('');
-  const m = /\d{13}/.exec(joined);
-  return m ? m[0] : undefined;
+function asText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
-/**
- * "GJP FOURIE" — initials and surname, which is all the card carries.
- *
- * ⚠️ NOT ENOUGH TO SIGN WITH, and that is why the seller types their full
- * names. This is returned only so the form can show it back to them and catch
- * the case where somebody is filling in a consent for the wrong person's card.
- */
-function findHolderName(words: Word[], rawText: string): string | undefined {
-  const m = /^\s*([A-Z]{1,4})\s+([A-Z][A-Z'\- ]{1,30})\s*$/m.exec(rawText);
-  if (m) return `${m[1]} ${m[2]}`.replace(/\s+/g, ' ').trim();
-  void words;
-  return undefined;
+/** The holder's 13-digit identity number, or undefined. */
+function readId(value: unknown): string | undefined {
+  const digits = asText(value).replace(/\D/g, '');
+  return digits.length === 13 ? digits : undefined;
 }

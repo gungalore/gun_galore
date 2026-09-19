@@ -123,7 +123,18 @@ export function calibreCandidates(raw: string): string[] {
     .replace(/\bParabellum\b/gi, 'Luger')
     .replace(/\bMagnum\b/gi, 'Mag')
     .replace(/\bAutomatic\b/gi, 'Auto')
-    .replace(/\bSpecial\b/gi, 'Spec');
+    .replace(/\bSpecial\b/gi, 'Spec')
+    /**
+     * ⚠️ AND "GOVERNMENT", WHICH THE EXPANSION ALREADY ASSUMES. `GOVT?` above
+     * expands to "Government", so a card printing the abbreviation was covered
+     * — but the reference file files the round as "45-70 Govt.", and a card
+     * printing the FULL word (".45-70 GOVERNMENT", which is what SAPS puts on
+     * the licence) reduced to 4570GOVERNMENT and matched nothing. Measured
+     * against the imported catalogue: the row is key 4570govt, alias
+     * ".45-70 GOVT.", and the lookup returned null. The contraction is the
+     * mirror of the expansion, exactly like Magnum -> Mag below it.
+     */
+    .replace(/\bGovernment\b/gi, 'Govt');
   push(contracted);
 
   /**

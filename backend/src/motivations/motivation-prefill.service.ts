@@ -18,7 +18,7 @@ import {
 } from '../common/answer-provenance';
 import { MotivationQuotaService } from './motivation-quota.service';
 import {
-  uploadKindsFor,
+  effectiveUploadKinds,
   CredentialChoices,
   credentialChoices,
   CredentialOffer,
@@ -851,12 +851,12 @@ export class MotivationPrefillService {
       // would report a Professional Hunter registration as a document
       // satisfying zero checklist rows.
       documents: credentials
-        .filter((c) => uploadKindsFor(c.kind).length > 0)
+        .filter((c) => effectiveUploadKinds(c, new Date()).length > 0)
         .map((c) => ({
           credentialId: c.id,
           title: c.title,
           kind: c.kind,
-          satisfies: uploadKindsFor(c.kind),
+          satisfies: effectiveUploadKinds(c, new Date()),
           expiresOn: c.expiresOn,
         })),
     };
@@ -941,6 +941,166 @@ export class MotivationPrefillService {
       answers: merged,
       missingRequired: missingRequired(row.licenceType, merged),
     };
+  }
+
+  /**
+   * Re-run the offer after a document lands, and write what it can now fill.
+   *
+   * ⚠️ AUTO-FILL, EMPTY BOXES ONLY, AND SILENT. Operator, 2026-09-14: "the your
+   * case on the motivation is supposed to pull in my associations when I upload
+   * it from the document library or straight while busy in the motivation. It
+   * should pull in at any time, even if the motivation has already been
+   * created." create() runs the offer once, and the manual "fill from Document
+   * Centre" endpoints were deleted with the wizard in Phase 4 — so after
+   * creation nothing re-offered the vault, and a document photographed onto the
+   * sheet was never a vault row at all. This is the missing trigger.
+   *
+   * ⚠️ IT INCLUDES THE DOCUMENTS ON THIS APPLICATION, not only the vault. A
+   * membership certificate photographed on the sheet lands as a
+   * MotivationUpload, and the offer only ever saw Credential rows — which is
+   * why the association block stayed empty for a member who had just uploaded
+   * the very document that fills it.
+   *
+   * ⚠️ IT NEVER TOUCHES A MEMBER VALUE. Provenance decides, per key, exactly as
+   * competencyOffer does: VAULT or DERIVED is ours to replace, an empty box is
+   * fillable, and a recorded MEMBER mark is theirs for ever.
+   */
+  async reapplyOffer(
+    userId: string,
+    id: string,
+  ): Promise<{ changed: string[] }> {
+    await this.quota.assertEnabled();
+    const user = await this.shared.requireUser(userId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        licenceType: true,
+        status: true,
+        answersEncrypted: true,
+        answerProvenance: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (!EDITABLE.includes(row.status)) return { changed: [] };
+
+    const answers = this.shared.readAnswers(row.answersEncrypted);
+    const provenance = parseProvenance(row.answerProvenance);
+
+    let sources: CredentialSource[];
+    try {
+      sources = [
+        ...(await this.credentialsFor(user.id, { includeUnconfirmed: true })),
+        ...(await this.uploadsAsCredentials(row.id)),
+      ];
+    } catch (err) {
+      this.logger.warn(
+        `Re-offer skipped for ${row.id}: ${(err as Error).message}`,
+      );
+      return { changed: [] };
+    }
+
+    const offer = credentialOffer(
+      row.licenceType,
+      sources,
+      answers,
+      requiredEndorsement(answers),
+    );
+    const { answers: clean } = sanitiseAnswers(row.licenceType, offer.values);
+
+    const written: Record<string, string> = {};
+    for (const [key, value] of Object.entries(clean)) {
+      const next = (value ?? '').trim();
+      if (!next) continue;
+      const source = provenance[key]?.source;
+      if (source === 'MEMBER') continue;
+      const ours = source === 'VAULT' || source === 'DERIVED';
+      const empty = !(answers[key] ?? '').trim();
+      if (!ours && !empty) continue;
+      if ((answers[key] ?? '').trim() === next) continue;
+      written[key] = next;
+    }
+    if (!Object.keys(written).length) return { changed: [] };
+
+    const merged = { ...answers, ...written };
+    const stamped = this.stampVault(provenance, written, offer.items, sources);
+
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: {
+        answersEncrypted: encryptJson(merged),
+        answersSchemaVersion: FIELD_REGISTRY_VERSION,
+        answerProvenance: stamped as unknown as object,
+      },
+    });
+
+    this.logger.log(
+      `Motivation ${row.id}: re-offer filled ${Object.keys(written).length} box(es) — ${Object.keys(written).join(', ')}`,
+    );
+    return { changed: Object.keys(written) };
+  }
+
+  /**
+   * The association documents on THIS application, as the offer reads them.
+   *
+   * ⚠️ THE UPLOAD READER SPEAKS THE REGISTRY'S KEY NAMES and the vault reader
+   * speaks its own (`association_name` vs `association`, `association_number`
+   * vs `membership_number`, `association_joined` vs `joined_on`). The offer was
+   * written against the vault's, so the mapping happens here rather than
+   * teaching the offer a second vocabulary.
+   */
+  private async uploadsAsCredentials(
+    motivationId: string,
+  ): Promise<CredentialSource[]> {
+    const rows = await this.prisma.motivationUpload.findMany({
+      where: {
+        motivationId,
+        kind: {
+          in: [
+            MotivationUploadKind.ASSOCIATION_CARD,
+            MotivationUploadKind.GOOD_STANDING_LETTER,
+          ],
+        },
+        extractionOk: true,
+        purgedAt: null,
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, kind: true, extractionEncrypted: true },
+    });
+
+    const out: CredentialSource[] = [];
+    for (const r of rows) {
+      if (!r.extractionEncrypted) continue;
+      let read: Record<string, string> = {};
+      try {
+        read = decryptJson<Record<string, string>>(r.extractionEncrypted) ?? {};
+      } catch {
+        continue;
+      }
+      const name = pick(read, 'association_name');
+      const number = pick(read, 'association_number');
+      if (!name && !number) continue;
+      const details: Record<string, string> = {};
+      if (name) details.association = name;
+      if (number) details.membership_number = number;
+      const joined = pick(read, 'association_joined');
+      if (joined) details.joined_on = joined;
+      out.push({
+        id: `upload:${r.id}`,
+        kind: 'DEDICATED_DISCIPLINE',
+        title:
+          r.kind === MotivationUploadKind.GOOD_STANDING_LETTER
+            ? 'the letter of good standing you uploaded'
+            : 'the association document you uploaded',
+        expiresOn: pick(read, 'association_expiry') || null,
+        details,
+        // The member just supplied the document and is looking at the value;
+        // the offer's date gate exists for readings nobody has stood behind.
+        confirmed: true,
+        dateSettled: true,
+      });
+    }
+    return out;
   }
 
   async profilePrefillOffer(userId: string, id: string) {
@@ -1241,4 +1401,13 @@ export class MotivationPrefillService {
     }
     return out;
   }
+}
+
+/** The first non-blank value among the keys, trimmed. */
+function pick(details: Record<string, string>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = (details[k] ?? '').trim();
+    if (v) return v;
+  }
+  return '';
 }

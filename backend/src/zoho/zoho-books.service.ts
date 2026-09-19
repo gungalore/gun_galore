@@ -433,7 +433,7 @@ export class ZohoBooksService {
       // you". Under BUYNOW_MARKUP that subtraction is false: the listed price
       // already contains BOTH our commission and the gateway fee, so
       // listingPrice - commission overshoots the payout by the fee every
-      // time (R511.97 - R40.50 = R471.47, but the seller is due R450.00).
+      // time (R498.96 - R40.50 = R458.46, but the seller is due R450.00).
       // Nothing was taken off them at all — our cut was added to the buyer's
       // price. Say that instead of printing an equation that does not hold.
       const isMarkup = tx.feeModel === FeeModel.BUYNOW_MARKUP;
@@ -460,11 +460,11 @@ export class ZohoBooksService {
         message?: string;
       };
 
-      // P0.7 — the payment-processing fee GG retains (1.5% EFT handling
-      // today; card rate under a gateway) is real revenue but was never
-      // documented in Books. When the SELLER absorbs it (passFeeToBuyer
-      // false — the default), it is deducted from their payout exactly
-      // like the commission, so it belongs on this same invoice as a
+      // P0.7 — the payment-processing fee we retain (Ozow's Pay by Bank rate
+      // today — 1.5% + VAT, R1.00 minimum — recovered from the buyer) is real
+      // revenue but was never documented in Books. When the SELLER absorbs it
+      // (passFeeToBuyer false — the default), it is deducted from their payout
+      // exactly like the commission, so it belongs on this same invoice as a
       // second line. When the BUYER paid it on top, invoicing the seller
       // would misstate who bore it — excluded here; the accountant picks
       // those up from the reconciliation. Posts to a dedicated

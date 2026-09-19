@@ -17,8 +17,7 @@ import {
   feeModelFor,
   sellerBreakdown,
 } from './fee-presentation';
-import { PeachService, PeachPaymentResult } from './peach.service';
-import { evaluateBanvMatches, banvFlagsSummary } from './peach-banks';
+import { OzowService, OzowPaymentResult } from './ozow.service';
 import { FraudRiskService } from './fraud-risk.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { estimateDeliveryDate } from '../shipping/delivery-estimate';
@@ -68,14 +67,11 @@ export const ACCEPT_DEADLINE_HOURS = 48;
 export const DISPATCH_DEADLINE_DAYS = 5;
 
 // Gateway-agnostic payment-result shape that markPaid() binds on. Kept
-// separate from PeachPaymentResult so the money-state machine never depends on
+// separate from OzowPaymentResult so the money-state machine never depends on
 // one provider's response shape. The verify-result and webhook paths each map
 // their provider response into this.
 //
-// The gateway is PEACH. Stitch was evaluated during the 2026-06/07 paygate
-// search and dropped; a run of comments in this file used to say otherwise and
-// a developer trusting them nearly removed the live Peach integration. If you
-// find another one, fix it rather than working around it.
+// The gateway is OZOW. Peach was replaced in 2026-09.
 interface GatewayPaymentResult {
   paymentId: string;
   resultCode: string;
@@ -93,7 +89,7 @@ export class TransactionsService {
     private readonly prisma: PrismaService,
     private readonly fees: FeeCalculator,
     private readonly notifications: NotificationsService,
-    private readonly peach: PeachService,
+    private readonly ozow: OzowService,
     private readonly kyc: KycService,
     private readonly shipping: ShippingService,
     private readonly tracking: TrackingService,
@@ -119,7 +115,7 @@ export class TransactionsService {
   ) {}
 
   // ------------------------------------------------------------------
-  // Create a transaction and a Peach checkout session
+  // Create a transaction and an Ozow checkout session
   // ------------------------------------------------------------------
   // Shared checkout CORE (Phase 8b). Validates buyer/listing/offer/shipping/
   // firearm-attestation/dealer, resolves price + quantity (Phase 8a), quotes
@@ -129,14 +125,6 @@ export class TransactionsService {
   // multi-item order checkout (OrdersService) call this; the CALLER owns the
   // payment step (one capture per order) and, for orders, the offer→CONVERTED
   // update. Returns every local the payment step needs.
-  // Public /api origin for server-to-server callbacks (Peach notificationUrl).
-  // PUBLIC_API_URL when set, else FRONTEND_URL + '/api', else localhost.
-  private apiBaseUrl(): string {
-    if (process.env.PUBLIC_API_URL) return process.env.PUBLIC_API_URL;
-    const fe = process.env.FRONTEND_URL;
-    return fe ? `${fe.replace(/\/$/, '')}/api` : 'http://localhost:3001/api';
-  }
-
   private async reserveAndCreateLine(
     buyerId: string,
     dto: CreateTransactionDto,
@@ -556,7 +544,7 @@ export class TransactionsService {
         dealerId: dto.dealerId,
         // PRIVATE_ARRANGE consent landed via DTO. We stamp the
         // timestamp here (not at markPaid time) because the consent is
-        // given at checkout, regardless of whether Peach captures the
+        // given at checkout, regardless of whether Ozow captures the
         // card. The immediate-payout branch in markPaid still verifies
         // this column is set before releasing funds — defence in depth.
         privateArrangeAcceptedAt:
@@ -684,30 +672,22 @@ export class TransactionsService {
     // assertPaymentsLive() above, so this path only runs once a card paygate
     // is live; it creates the gateway checkout below (rail-agnostic seam).
 
-    // Create the Peach Checkout V2 session (hosted payment page). We pass
-    // the BASE complete URL (no txId) because the gateway matches the
-    // redirect against a registered set; the txId rides back via the
-    // browser (localStorage) and, once the webhook lands, via
-    // merchantReference. The buyer's own name is fine to send to the
-    // gateway (it's their card payment, not exposed to other users).
+    // Create the Ozow One API payment (hosted payment page). We pass the BASE
+    // complete URL (no txId) because the gateway redirects the buyer back to a
+    // registered URL; the txId rides back via the browser (localStorage) and,
+    // once the webhook lands, via merchantReference. The buyer's own name is
+    // fine to send to the gateway (it's their payment, not exposed to others).
     const resultUrl = `${frontendUrl}/checkout/complete`;
-    // Peach posts the authoritative result server-to-server to this webhook
-    // (as well as redirecting the buyer to resultUrl). apiBaseUrl points at
-    // our public /api origin.
-    const notificationUrl = `${this.apiBaseUrl()}/payments/webhook/peach`;
     const payerName =
       [buyer.firstName, buyer.lastName].filter(Boolean).join(' ') ||
       buyer.username ||
       undefined;
     let gatewayCheckout;
     try {
-      gatewayCheckout = await this.peach.createCheckout({
+      gatewayCheckout = await this.ozow.createPayment({
         amountZarCents: buyerTotal,
         merchantTransactionId: tx.id,
-        shopperResultUrl: resultUrl,
-        notificationUrl,
-        shopperName: payerName,
-        shopperEmail: buyer.email,
+        returnUrl: resultUrl,
       });
     } catch (err) {
       // Roll back the listing reservation if the gateway call fails.
@@ -725,7 +705,7 @@ export class TransactionsService {
       });
       await this.prisma.transaction.delete({ where: { id: tx.id } });
       this.logger.error(
-        `Peach createCheckout failed for tx ${tx.id}: ${(err as Error).message}`,
+        `Ozow createPayment failed for tx ${tx.id}: ${(err as Error).message}`,
         (err as Error).stack,
       );
       throw new BadRequestException(
@@ -733,15 +713,15 @@ export class TransactionsService {
       );
     }
 
-    // Persist the Peach checkoutId (peachCheckoutId — the primary webhook
-    // match) + the minted 8-16 char merchant ref (fallback match) and mark
-    // the offer CONVERTED if this was an offer checkout.
+    // Persist the Ozow payment id (gatewayCheckoutId — the primary webhook
+    // match) + the minted merchant ref (fallback match) and mark the offer
+    // CONVERTED if this was an offer checkout.
     const [updated] = await this.prisma.$transaction([
       this.prisma.transaction.update({
         where: { id: tx.id },
         data: {
-          peachCheckoutId: gatewayCheckout.paymentId,
-          peachMerchantRef: gatewayCheckout.merchantReference,
+          gatewayCheckoutId: gatewayCheckout.paymentId,
+          gatewayMerchantRef: gatewayCheckout.merchantReference,
         },
       }),
       ...(offerRecord
@@ -755,11 +735,11 @@ export class TransactionsService {
     return {
       transactionId: updated.id,
       // Generic fields the frontend redirects on. paymentId carries the
-      // `mock-` prefix when Peach isn't configured (dev), which the UI
+      // `mock-` prefix when Ozow isn't configured (dev), which the UI
       // uses to render the test-mode card instead of redirecting.
       paymentId: gatewayCheckout.paymentId,
       redirectUrl: gatewayCheckout.redirectUrl,
-      provider: 'peach' as const,
+      provider: 'ozow' as const,
       breakdown: { listingPrice, commissionZar, processingFee, buyerTotal, sellerPayout },
     };
   }
@@ -1130,7 +1110,7 @@ export class TransactionsService {
   // delete its transaction. ATOMIC — one $transaction so it can never leave a
   // half-compensated state (some listings freed, some txs orphaned). If the
   // whole compensation fails, the orphan-reclaim sweep (tasks.service) is the
-  // backstop: it reclaims HELD txs with orderId/orderReference/peachCheckoutId/
+  // backstop: it reclaims HELD txs with orderId/orderReference/gatewayCheckoutId/
   // manualPayByAt all null. Runs BEFORE any Order row exists, so no
   // OrderLineItem references these txs (the delete is FK-safe).
   private async unwindOrderLines(
@@ -1173,11 +1153,11 @@ export class TransactionsService {
   // unchanged and ready for that seam.
 
   // ------------------------------------------------------------------
-  // Called from the result page — verify payment with Peach
+  // Called from the result page — verify payment with Ozow
   // ------------------------------------------------------------------
-  // The gateway checkout id was stored on peachCheckoutId at create() time.
+  // The gateway payment id was stored on gatewayCheckoutId at create() time.
   // We look the tx up by its own id, read ITS stored payment id, and query
-  // Peach for that payment — so the gateway result is bound to this exact
+  // Ozow for that payment — so the gateway result is bound to this exact
   // transaction by construction (an attacker who controls only the URL's
   // transactionId can never point it at someone else's payment). The
   // amount check in markPaid is the remaining money-state guard.
@@ -1188,9 +1168,6 @@ export class TransactionsService {
   // settling); reverting could double-sell a still-settling order.
   // Abandoned PAYMENT_PENDING listings are freed by the webhook/reconcile
   // path (deferred) after the 24h payment-link expiry.
-  //
-  // `_resourcePath` is the legacy Peach param — accepted for backward
-  // compatibility with the existing endpoint shape but unused.
   async verifyResult(transactionId: string, _resourcePath?: string) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -1201,21 +1178,21 @@ export class TransactionsService {
     // Already processed — idempotent
     if (tx.paidAt) return { success: true, alreadyProcessed: true };
 
-    const checkoutId = tx.peachCheckoutId;
+    const checkoutId = tx.gatewayCheckoutId;
     if (!checkoutId) {
       throw new BadRequestException('No payment reference on this transaction');
     }
 
     try {
-      const status = await this.peach.getPaymentStatus(checkoutId);
-      if (status.isSuccess) {
-        // Map the Peach result into the gateway-result shape markPaid binds
-        // on. merchantTransactionId is set to tx.id (bound by construction —
-        // see above) so a missing merchantReference echo can't break a
-        // genuine capture; the amount is the real guard. status.paymentId is
-        // Peach's refundable `id`, stored as peachPaymentId in markPaid.
+      const status = await this.ozow.getPaymentStatus(checkoutId);
+      if (status && status.isSuccess) {
+        // Map the Ozow result into the gateway-result shape markPaid binds on.
+        // merchantTransactionId is set to tx.id (bound by construction — see
+        // above) so a missing merchantReference echo can't break a genuine
+        // capture; the amount is the real guard. status.transactionId is
+        // Ozow's refundable transaction id, stored as gatewayPaymentId.
         const result: GatewayPaymentResult = {
-          paymentId: status.paymentId,
+          paymentId: status.transactionId,
           resultCode: status.status,
           amount: status.amountCents,
           currency: 'ZAR',
@@ -1226,9 +1203,9 @@ export class TransactionsService {
         return { success: true };
       }
       // Not captured (yet) — leave the listing reserved; do not revert.
-      return { success: false, resultCode: status.status };
+      return { success: false, resultCode: status?.status ?? 'Incomplete' };
     } catch (err) {
-      this.logger.error('Peach verify failed', err);
+      this.logger.error('Ozow verify failed', err);
       throw new BadRequestException('Payment verification failed');
     }
   }
@@ -1236,23 +1213,25 @@ export class TransactionsService {
   // ------------------------------------------------------------------
   // Exposed to the webhook controller — verify the Svix signature.
   // ------------------------------------------------------------------
-  verifyPeachWebhook(
+  verifyOzowWebhook(
     rawBody: string,
-    parsedBody: Record<string, unknown>,
     headers: { id?: string; timestamp?: string; signature?: string },
-    url: string,
   ): boolean {
-    return this.peach.verifyWebhookSignature(rawBody, parsedBody, headers, url);
+    return this.ozow.verifyWebhookSignature(rawBody, headers);
+  }
+
+  /** Validate the AccessToken header on the payout verification webhook. */
+  ozowPayoutAccessTokenValid(token: string | undefined): boolean {
+    return this.ozow.isPayoutAccessTokenValid(token);
   }
 
   // Raise a deduped admin alert when a webhook signature fails to verify.
   // Invalid-signature events are otherwise dropped with only a logger.warn —
-  // with the Peach raw-vs-hex HMAC key still unresolved until the first
-  // sandbox transaction, a mis-keyed secret could reject EVERY webhook (orders
-  // stuck unpaid, BANV never landing, payouts never confirming) in total
-  // silence. Dedup per source (referenceId = route name) so a flood of bad
-  // webhooks yields ONE unresolved alert per source until an admin clears it.
-  // Fire-and-forget: never let alerting block the always-200 webhook.
+  // a mis-keyed secret could reject EVERY webhook (orders stuck unpaid,
+  // payouts never confirming) in total silence. Dedup per source (referenceId
+  // = route name) so a flood of bad webhooks yields ONE unresolved alert per
+  // source until an admin clears it. Fire-and-forget: never let alerting block
+  // the always-200 webhook.
   async alertWebhookSignatureFailure(source: string): Promise<void> {
     try {
       const existing = await this.prisma.adminAlert.count({
@@ -1271,7 +1250,7 @@ export class TransactionsService {
           context:
             `Incoming "${source}" webhook FAILED signature verification and was dropped. ` +
             `If this repeats, the signing secret is wrong or the raw-body pipeline broke — ` +
-            `${source.startsWith('peach') ? 'payments/verifications/payouts will silently stall' : 'user provisioning will silently stall'}. ` +
+            `${source.startsWith('ozow') ? 'payments/verifications/payouts will silently stall' : 'user provisioning will silently stall'}. ` +
             `Check the webhook secret + endpoint config. This alert fires once per source until resolved.`,
         },
       });
@@ -1284,68 +1263,71 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
-  // Called from the Peach webhook. Confirms the matching
+  // Called from the Ozow webhook (transaction.complete). Confirms the matching
   // transaction even when the buyer closed the tab before returning to
   // /checkout/complete (or paid by async EFT). We re-fetch authoritative
-  // status from Peach — never trusting the webhook body's amount — and
-  // bind it in markPaid. Never reverts on a non-success (a still-settling
-  // payment could be double-sold); the webhook must always 200.
+  // status from Ozow — never trusting the webhook body's amount — and bind it
+  // in markPaid. Never reverts on a non-success (a still-settling payment
+  // could be double-sold); the webhook must always 200.
   // ------------------------------------------------------------------
-  async handlePeachWebhook(body: Record<string, unknown>) {
-    const evt = this.peach.parseWebhookEvent(body);
-    if (!evt.checkoutId && !evt.merchantReference) {
-      this.logger.warn('Peach webhook: no checkoutId/merchantReference');
+  async handleOzowWebhook(envelope: Record<string, unknown>) {
+    const type = String(envelope.type ?? '');
+    if (type !== 'transaction.complete') {
+      this.logger.warn(`Ozow webhook: ignoring event type "${type}"`);
+      return;
+    }
+    const data = (envelope.data ?? {}) as Record<string, unknown>;
+    const evt = this.ozow.parseTransactionWebhook(data);
+
+    if (evt.status.toLowerCase() !== 'successful') {
+      this.logger.log(
+        `Ozow webhook: transaction status "${evt.status}" — no action`,
+      );
       return;
     }
 
-    // Match by Peach checkoutId (peachCheckoutId, stored at create) first,
-    // then the minted merchant ref (peachMerchantRef). Never trust the
-    // webhook body's amount — re-fetch authoritative status below.
+    // Match by our merchant reference (a `full` subscription carries it). A
+    // `thin` delivery has no reference and cannot be matched without a lookup.
+    if (!evt.merchantReference) {
+      this.logger.warn(
+        'Ozow webhook: no merchantReference (thin delivery) — cannot match; ensure the webhook subscription uses the "full" message type',
+      );
+      return;
+    }
     const tx = await this.prisma.transaction.findFirst({
-      where: evt.checkoutId
-        ? { peachCheckoutId: evt.checkoutId }
-        : { peachMerchantRef: evt.merchantReference },
+      where: { gatewayMerchantRef: evt.merchantReference },
       include: { listing: true },
     });
     if (!tx) {
       this.logger.warn(
-        `Peach webhook: no transaction for ${evt.checkoutId ?? evt.merchantReference}`,
+        `Ozow webhook: no transaction for merchantReference ${evt.merchantReference}`,
       );
       return;
     }
     if (tx.paidAt) {
-      this.logger.log(`Peach webhook: transaction ${tx.id} already processed`);
-      return;
-    }
-    // Only a successful lifecycle event proceeds. Pending/Cancelled/Uncertain
-    // never revert a reservation (a still-settling payment could be double-
-    // sold); they're logged and left for the buyer's return or a later event.
-    if (evt.bucket !== 'success') {
-      this.logger.log(
-        `Peach webhook: ${tx.id} bucket=${evt.bucket} (code ${evt.resultCode ?? '?'}) — no action`,
-      );
+      this.logger.log(`Ozow webhook: transaction ${tx.id} already processed`);
       return;
     }
 
-    const checkoutId = tx.peachCheckoutId ?? evt.checkoutId;
+    const checkoutId = tx.gatewayCheckoutId;
     if (!checkoutId) {
-      this.logger.warn(`Peach webhook: transaction ${tx.id} has no checkout id`);
+      this.logger.warn(`Ozow webhook: transaction ${tx.id} has no checkout id`);
       return;
     }
 
     // Re-fetch authoritative status (never trust the webhook amount).
-    let status: PeachPaymentResult;
+    let status: OzowPaymentResult | null;
     try {
-      status = await this.peach.getPaymentStatus(checkoutId);
+      status = await this.ozow.getPaymentStatus(checkoutId);
     } catch (err) {
       this.logger.error(
-        `Peach webhook: status fetch failed for ${checkoutId}: ${(err as Error).message}`,
+        `Ozow webhook: status fetch failed for ${checkoutId}: ${(err as Error).message}`,
       );
       return;
     }
-    if (!status.isSuccess) {
+    if (!status || !status.isSuccess) {
       this.logger.warn(
-        `Peach webhook: ${checkoutId} not successful on re-fetch (status ${status.status})`,
+        `Ozow webhook: ${checkoutId} not successful on re-fetch (status ${status?.status ?? 'none'})`,
       );
       return;
     }
@@ -1357,7 +1339,7 @@ export class TransactionsService {
       await this.markPaid(
         tx.id,
         {
-          paymentId: status.paymentId,
+          paymentId: status.transactionId,
           resultCode: status.status,
           amount: status.amountCents,
           currency: 'ZAR',
@@ -1369,12 +1351,12 @@ export class TransactionsService {
       );
     } catch (err) {
       this.logger.error(
-        `Peach webhook: markPaid rejected for ${tx.id}: ${(err as Error).message}`,
+        `Ozow webhook: markPaid rejected for ${tx.id}: ${(err as Error).message}`,
       );
       await this.prisma.adminAlert
         .create({
           data: {
-            type: 'PEACH_WEBHOOK_MARKPAID_REJECTED',
+            type: 'OZOW_WEBHOOK_MARKPAID_REJECTED',
             referenceId: tx.id,
             urgent: true,
             context: `Webhook success for ${tx.id} but markPaid rejected: ${(err as Error).message}. Paid amount=${status.amountCents}c.`,
@@ -1385,200 +1367,131 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
-  // Dispute / chargeback path (rail-agnostic). Peach checkout webhooks are
-  // payment-lifecycle only; disputes arrive via a separate notification the
-  // operator wires to POST /payments/webhook/peach-dispute. Kept ready +
-  // callable so the money-safety logic below isn't lost. Matches on
-  // checkoutId/merchantRef; never auto-refunds (the chargeback IS the
-  // reversal); holds the payout → DISPUTED and alerts an admin.
+  // Ozow payout VERIFICATION webhook. Ozow calls this BEFORE processing each
+  // payout, passing the AccessToken header + a SHA-512 hashCheck. We confirm
+  // the payout was initiated by us, verify the hash, and hand back the AES
+  // key Ozow needs to decrypt the account number it is about to pay.
   // ------------------------------------------------------------------
-  async handlePeachDispute(body: Record<string, unknown>) {
-    const evt = this.peach.parseWebhookEvent(body);
-    await this.handleChargebackEvent({
-      paymentId: evt.checkoutId,
-      merchantReference: evt.merchantReference,
-      type: `dispute:${evt.resultCode ?? 'unknown'}`,
-    });
-  }
-
-  // ------------------------------------------------------------------
-  // Peach PAYOUT status webhook: { payoutId, status, resultCode }.
-  // runDuePayouts mints + stores Transaction.peachPayoutId BEFORE calling
-  // Peach and stamps paidOutAt on ACCEPTED rows; this reconciles the async
-  // outcome (matching on peachPayoutId):
-  //   failed / cancelled / reversed → clear paidOutAt so the row re-queues
-  //     on the next operator run + urgent alert (reversed = money came BACK
-  //     after a success — flagged loudest for manual reconciliation).
-  //   successful → confirm; pending/processing → log only.
-  // Always idempotent; the webhook must 200.
-  // ------------------------------------------------------------------
-  async handlePeachPayoutWebhook(body: Record<string, unknown>) {
-    const evt = this.peach.parsePayoutWebhook(body);
-    if (!evt.payoutId) {
-      this.logger.warn('Peach payout webhook: no payoutId');
-      return;
+  async handleOzowPayoutVerify(body: Record<string, unknown>): Promise<{
+    payoutId: string;
+    isVerified: boolean;
+    accountNumberDecryptionKey: string;
+    reason: string;
+  }> {
+    const payoutId = String(body.payoutId ?? body.PayoutId ?? '');
+    if (!payoutId) {
+      return {
+        payoutId: '',
+        isVerified: false,
+        accountNumberDecryptionKey: '',
+        reason: 'No payoutId',
+      };
     }
     const tx = await this.prisma.transaction.findUnique({
-      where: { peachPayoutId: evt.payoutId },
+      where: { gatewayPayoutId: payoutId },
       select: { id: true },
     });
     if (!tx) {
-      this.logger.warn(`Peach payout webhook: no transaction for payout ${evt.payoutId}`);
+      return {
+        payoutId,
+        isVerified: false,
+        accountNumberDecryptionKey: '',
+        reason: 'Payout not found',
+      };
+    }
+    if (!this.ozow.verifyPayoutVerifyHash(body)) {
+      return {
+        payoutId,
+        isVerified: false,
+        accountNumberDecryptionKey: '',
+        reason: 'Invalid hash check',
+      };
+    }
+    return {
+      payoutId,
+      isVerified: true,
+      accountNumberDecryptionKey: this.ozow.payoutDecryptionKey(),
+      reason: '',
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Ozow payout NOTIFICATION webhook: { payoutId, payoutStatus{status,
+  // subStatus} }. runDuePayouts stores Transaction.gatewayPayoutId BEFORE
+  // calling Ozow; this reconciles the async outcome (matching on
+  // gatewayPayoutId). status 5 = PayoutComplete; failures/returns clear
+  // paidOutAt so the row re-queues, with an urgent admin alert.
+  // Always idempotent; the webhook must 200.
+  // ------------------------------------------------------------------
+  async handleOzowPayoutNotification(body: Record<string, unknown>) {
+    if (!this.ozow.verifyPayoutNotificationHash(body)) {
+      this.logger.warn('Ozow payout notification: invalid hash — dropping');
+      return;
+    }
+    const evt = this.ozow.parsePayoutNotification(body);
+    if (!evt.payoutId) {
+      this.logger.warn('Ozow payout notification: no payoutId');
+      return;
+    }
+    const tx = await this.prisma.transaction.findUnique({
+      where: { gatewayPayoutId: evt.payoutId },
+      select: { id: true },
+    });
+    if (!tx) {
+      this.logger.warn(`Ozow payout notification: no transaction for ${evt.payoutId}`);
       return;
     }
     const txId = tx.id;
 
-    if (['failed', 'cancelled', 'reversed'].includes(evt.status)) {
-      const cleared = await this.prisma.transaction.updateMany({
-        where: { id: txId, releasedAt: { not: null } },
-        data: { paidOutAt: null },
-      });
-      await this.prisma.adminAlert
-        .create({
-          data: {
-            type: evt.status === 'reversed' ? 'PEACH_PAYOUT_REVERSED' : 'PEACH_PAYOUT_FAILED',
-            referenceId: txId,
-            urgent: true,
-            context: `Peach payout ${evt.status.toUpperCase()} for ${txId} (code ${evt.code ?? '?'}, payoutId ${evt.payoutId}). paidOutAt ${cleared.count ? 'cleared → row re-queues on the next payout run' : 'not set'}; check the seller's bank details${evt.status === 'reversed' ? ' — funds RETURNED after an earlier success, reconcile before re-running' : ''}.`,
-          },
-        })
-        .catch(() => undefined);
-      void this.tracking.recordInternal(txId, 'PAYOUT_FAILED', {
-        message: `Payout ${evt.status} (code ${evt.code ?? '?'}) — will retry after bank details are checked.`,
-      });
-      return;
-    }
-    if (evt.status === 'successful') {
-      this.logger.log(`Peach payout SUCCESS for ${txId} (payoutId ${evt.payoutId})`);
+    // status 5 = PayoutComplete (money left to the seller's bank).
+    if (evt.status === 5) {
+      this.logger.log(`Ozow payout SUCCESS for ${txId} (payoutId ${evt.payoutId})`);
       void this.tracking.recordInternal(txId, 'PAYOUT_SETTLED', {
         message: 'Payout settled to the seller’s bank.',
       });
       return;
     }
-    this.logger.log(`Peach payout ${evt.status} for ${txId}`);
-  }
 
-  // ------------------------------------------------------------------
-  // Peach BANK-ACCOUNT VERIFICATION (BANV) webhook. Domain-wise this is
-  // user data, but it's Peach payments plumbing (same signing + always-200
-  // controller), so it lives with the other Peach handlers. Matches the
-  // user on bankVerificationId (stored at request time):
-  //   status successful → evaluate the per-field match flags:
-  //     passed   → stamp bankVerifiedAt (the payout AVS gate opens);
-  //     mismatch → bankAvsResult=MISMATCH + admin alert (payouts stay held).
-  //   status failed → bankAvsResult=FAILED + admin alert.
-  // ------------------------------------------------------------------
-  async handlePeachBanvWebhook(body: Record<string, unknown>) {
-    const evt = this.peach.parseBanvWebhook(body);
-    if (!evt.bankVerificationId) {
-      this.logger.warn('Peach BANV webhook: no bankVerificationId');
-      return;
-    }
-    const user = await this.prisma.user.findUnique({
-      where: { bankVerificationId: evt.bankVerificationId },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        firstName: true,
-        phone: true,
-        bankVerifiedAt: true,
-      },
-    });
-    if (!user) {
-      this.logger.warn(
-        `Peach BANV webhook: no user for verification ${evt.bankVerificationId}`,
+    // Anything else that is final is a failure/return: clear paidOutAt so the
+    // row re-queues, and alert loudly.
+    const FINAL_FAILURE_SUBSTATUSES = new Set([
+      100, 101, 202, 204, 205, 401, 402, 403, 404, 405, 601, 9001,
+    ]);
+    const isFinalFailure =
+      evt.status === 0 || FINAL_FAILURE_SUBSTATUSES.has(evt.subStatus);
+    if (!isFinalFailure) {
+      this.logger.log(
+        `Ozow payout ${evt.status}/${evt.subStatus} for ${txId} — in progress`,
       );
       return;
     }
-    if (evt.status === 'pending' || evt.status === 'processing') {
-      this.logger.log(`Peach BANV ${evt.status} for user ${user.id}`);
-      return;
-    }
 
-    const flags = banvFlagsSummary(evt.matches);
-    if (evt.status === 'successful') {
-      const outcome = evaluateBanvMatches(evt.matches);
-      if (outcome === 'passed') {
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: {
-            bankVerifiedAt: new Date(),
-            bankAvsResult: `PASS:${evt.resultCode ?? ''}:${flags}`,
-          },
-        });
-        // Clear any open "fix your banking details" task + drop a quiet
-        // confirmation in their inbox.
-        void this.notifications.resolveByEntity('bank', user.id);
-        void this.notifications.bankVerificationPassed({
-          email: user.email,
-          userId: user.id,
-        });
-        this.logger.log(`Peach BANV PASSED for user ${user.id} (${flags})`);
-        return;
-      }
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          bankVerifiedAt: null,
-          bankAvsResult: `MISMATCH:${evt.resultCode ?? ''}:${flags}`,
-        },
-      });
-      await this.prisma.adminAlert
-        .create({
-          data: {
-            type: 'BANK_VERIFY_MISMATCH',
-            referenceId: user.id,
-            urgent: true,
-            context: `Bank account verification MISMATCH for ${user.username ?? user.id} (${flags}). The account exists check / ID-ownership check did not pass — payouts stay held. The seller has been notified (email+SMS+inbox) to correct their banking details (account must be in their own name).`,
-          },
-        })
-        .catch(() => undefined);
-      // Tell the seller — email + SMS + non-dismissible inbox task.
-      void this.notifications.bankVerificationFailed({
-        email: user.email,
-        name: user.firstName ?? 'there',
-        phone: user.phone,
-        userId: user.id,
-        kind: 'mismatch',
-      });
-      this.logger.warn(`Peach BANV MISMATCH for user ${user.id} (${flags})`);
-      return;
-    }
-
-    // status failed — the verification itself errored (not a mismatch).
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        bankVerifiedAt: null,
-        bankAvsResult: `FAILED:${evt.resultCode ?? ''}`,
-      },
+    const cleared = await this.prisma.transaction.updateMany({
+      where: { id: txId, releasedAt: { not: null } },
+      data: { paidOutAt: null },
     });
     await this.prisma.adminAlert
       .create({
         data: {
-          type: 'BANK_VERIFY_FAILED',
-          referenceId: user.id,
-          context: `Bank account verification FAILED (code ${evt.resultCode ?? '?'}) for ${user.username ?? user.id} — likely invalid branch/account details or a BANV service fault. The seller has been notified to re-check their details; re-run from the user dossier if it looks like a service fault instead.`,
+          type: 'OZOW_PAYOUT_FAILED',
+          referenceId: txId,
+          urgent: true,
+          context: `Ozow payout failed for ${txId} (status ${evt.status}, subStatus ${evt.subStatus}: ${evt.errorMessage || 'no message'}, payoutId ${evt.payoutId}). paidOutAt ${cleared.count ? 'cleared → row re-queues on the next payout run' : 'not set'}; check the seller's bank details.`,
         },
       })
       .catch(() => undefined);
-    void this.notifications.bankVerificationFailed({
-      email: user.email,
-      name: user.firstName ?? 'there',
-      phone: user.phone,
-      userId: user.id,
-      kind: 'failed',
+    void this.tracking.recordInternal(txId, 'PAYOUT_FAILED', {
+      message: `Payout failed (status ${evt.status}, subStatus ${evt.subStatus}) — will retry after bank details are checked.`,
     });
   }
 
   // ------------------------------------------------------------------
-  // Chargeback / dispute / reversal (Phase 4 P4.3) — invoked from
-  // handlePeachDispute. A chargeback means the buyer's bank is clawing the
-  // money back through the card scheme — it is itself the reversal, so we
-  // MUST NOT also refund (that double-pays the buyer). We hold the payout
-  // (→ DISPUTED) and raise an urgent admin alert to investigate + contest
-  // or concede.
+  // Chargeback / dispute / reversal (Phase 4 P4.3). Ozow's One API has no
+  // dedicated dispute webhook event, so this money-safety path is kept ready
+  // but currently unreached. A chargeback means the buyer's bank is clawing
+  // the money back — it is itself the reversal, so we MUST NOT also refund
+  // (that double-pays the buyer). We hold the payout (→ DISPUTED) and raise
+  // an urgent admin alert to investigate + contest or concede.
   // ------------------------------------------------------------------
   private async handleChargebackEvent(evt: {
     paymentId?: string;
@@ -1587,12 +1500,12 @@ export class TransactionsService {
   }) {
     const tx = await this.prisma.transaction.findFirst({
       where: evt.paymentId
-        ? { peachCheckoutId: evt.paymentId }
-        : { peachMerchantRef: evt.merchantReference },
+        ? { gatewayCheckoutId: evt.paymentId }
+        : { gatewayMerchantRef: evt.merchantReference },
     });
     if (!tx) {
       this.logger.warn(
-        `Peach chargeback: no transaction for ${evt.paymentId ?? evt.merchantReference} (type=${evt.type})`,
+        `Chargeback: no transaction for ${evt.paymentId ?? evt.merchantReference} (type=${evt.type})`,
       );
       await this.prisma.adminAlert
         .create({
@@ -1609,7 +1522,7 @@ export class TransactionsService {
 
     // Idempotent — a retried webhook on an already-DISPUTED tx is a no-op.
     if (tx.paymentStatus === 'DISPUTED') {
-      this.logger.log(`Peach chargeback: ${tx.id} already DISPUTED — skipping`);
+      this.logger.log(`Chargeback: ${tx.id} already DISPUTED — skipping`);
       return;
     }
 
@@ -1682,7 +1595,7 @@ export class TransactionsService {
         })
         .catch(() => undefined);
       this.logger.warn(
-        `Peach chargeback: ${tx.id} state changed during handling (now ${fresh?.paymentStatus}) — alerted`,
+        `Chargeback: ${tx.id} state changed during handling (now ${fresh?.paymentStatus}) — alerted`,
       );
       return;
     }
@@ -1700,7 +1613,7 @@ export class TransactionsService {
     void this.tracking.recordInternal(tx.id, 'CHARGEBACK_RECEIVED', {
       message: `Chargeback received (${evt.type}). Order moved to DISPUTED; payout blocked.`,
     });
-    this.logger.warn(`Peach chargeback: ${tx.id} → DISPUTED (${evt.type})`);
+    this.logger.warn(`Chargeback: ${tx.id} → DISPUTED (${evt.type})`);
   }
 
   // ------------------------------------------------------------------
@@ -1861,7 +1774,7 @@ export class TransactionsService {
   // Seller rejects the transaction (TOK-7 Phase 2)
   // ------------------------------------------------------------------
   // Alternative to accept — the seller can't or won't fulfil. Triggers:
-  //   1. Peach refund of buyerTotal
+  //   1. Ozow refund of buyerTotal
   //   2. Transaction.paymentStatus = REFUNDED + rejectedAt/Reason stamped
   //   3. Listing reactivated (status ACTIVE, soldAt cleared) so other
   //      buyers can pick it up again
@@ -1950,16 +1863,16 @@ export class TransactionsService {
       );
     }
 
-    // Fire the Peach refund first — only stamp rejectedAt if it
+    // Fire the Ozow refund first — only stamp rejectedAt if it
     // succeeded, so an admin can retry on failure rather than the buyer
     // being stuck without a refund AND the listing reactivated.
-    // peachPaymentId holds the gateway payment id.
+    // gatewayPaymentId holds the gateway transaction id.
     //
     // PAY-8 — if the tx has NO stored payment id we MUST NOT silently
     // flip to REFUNDED (the buyer was charged; no payment was reversed).
     // This previously diverged from the safer admin path. Treat it as a
     // hard failure that raises an admin alert for manual reconciliation.
-    if (!tx.peachPaymentId) {
+    if (!tx.gatewayPaymentId) {
       this.logger.error(
         `Reject failed for ${transactionId}: paid tx has NO payment id — cannot refund; raising admin alert`,
       );
@@ -1975,21 +1888,21 @@ export class TransactionsService {
         'Refund could not be issued automatically — support has been alerted and will resolve manually within 24h.',
       );
     }
-    const refundRes = await this.peach.refundPayment(
-      tx.peachPaymentId,
+    const refundRes = await this.ozow.refundPayment(
+      tx.gatewayPaymentId,
       tx.buyerTotal,
     );
 
     if (!refundRes.success) {
       this.logger.warn(
-        `Reject failed for ${transactionId}: Peach refund failed (${refundRes.resultCode}) — raising admin alert`,
+        `Reject failed for ${transactionId}: Ozow refund failed (${refundRes.resultCode}) — raising admin alert`,
       );
       await this.prisma.adminAlert.create({
         data: {
           type: 'SALE_REJECT_REFUND_FAILED',
           referenceId: transactionId,
           urgent: true,
-          context: `Seller tried to reject sale; Peach refund failed: ${refundRes.resultCode}. Buyer still owed ${tx.buyerTotal} cents.`,
+          context: `Seller tried to reject sale; Ozow refund failed: ${refundRes.resultCode}. Buyer still owed ${tx.buyerTotal} cents.`,
         },
       });
       throw new BadRequestException(
@@ -2168,7 +2081,7 @@ export class TransactionsService {
       );
     }
     // PAY-8 — a paid order MUST have a stored gateway payment id to refund.
-    if (!tx.peachPaymentId) {
+    if (!tx.gatewayPaymentId) {
       await this.prisma.adminAlert.create({
         data: {
           type: 'BUYER_CANCEL_NO_PAYMENT_ID',
@@ -2207,8 +2120,8 @@ export class TransactionsService {
       );
     }
 
-    const refundRes = await this.peach.refundPayment(
-      tx.peachPaymentId,
+    const refundRes = await this.ozow.refundPayment(
+      tx.gatewayPaymentId,
       tx.buyerTotal,
     );
     if (!refundRes.success) {
@@ -2228,7 +2141,7 @@ export class TransactionsService {
           type: 'BUYER_CANCEL_REFUND_FAILED',
           referenceId: transactionId,
           urgent: true,
-          context: `Buyer cancel of ${transactionId}: Peach refund failed (${refundRes.resultCode}). Buyer still owed ${tx.buyerTotal} cents.`,
+          context: `Buyer cancel of ${transactionId}: Ozow refund failed (${refundRes.resultCode}). Buyer still owed ${tx.buyerTotal} cents.`,
         },
       });
       throw new BadRequestException(
@@ -3196,7 +3109,7 @@ export class TransactionsService {
    * per-line confirmation is suppressed for order children precisely so this
    * can fire instead.
    *
-   * ⚠️ CAS-GUARDED, BECAUSE THE LAST LINE IS A RACE. Peach's result page and
+   * ⚠️ CAS-GUARDED, BECAUSE THE LAST LINE IS A RACE. Ozow's result page and
    * its webhook both drive markPaid, and a multi-seller cart pays several
    * lines that can land in any order and concurrently. Without an atomic
    * claim, two callers could each see "all lines paid" and the buyer would be
@@ -3283,16 +3196,16 @@ export class TransactionsService {
     expectedBuyerTotal: number,
   ) {
     // ─── SECURITY: bind the gateway result to THIS transaction ────────
-    // Without these two checks, a single genuine Peach success result
+    // Without these two checks, a single genuine gateway success result
     // (resourcePath / webhook) could be replayed against ANY other
     // transaction id, or against an order whose amount differs from what
     // was actually paid. We require an exact match on both before any
     // money-state mutation. This is the primary fix for the "mark any
     // order paid for free" class of attack — it holds even on the
-    // unauthenticated verify-result + webhook paths, because Peach binds
-    // its own resourcePath to one checkout (one merchantTransactionId +
-    // one amount), so an attacker cannot produce a success whose
-    // merchantTransactionId equals the victim tx without paying it.
+    // unauthenticated verify-result + webhook paths, because Ozow binds
+    // its own payment to one checkout (one merchantReference + one amount),
+    // so an attacker cannot produce a success whose merchantTransactionId
+    // equals the victim tx without paying it.
     if (result.merchantTransactionId !== txId) {
       this.logger.error(
         `markPaid REJECTED: gateway merchantTransactionId="${result.merchantTransactionId}" does not match transaction "${txId}" — possible replay/forgery`,
@@ -3328,8 +3241,8 @@ export class TransactionsService {
         where: { id: txId, paidAt: null },
         data: {
           paymentStatus: 'HELD',
-          peachPaymentId: result.paymentId,
-          peachResultCode: result.resultCode,
+          gatewayPaymentId: result.paymentId,
+          gatewayResultCode: result.resultCode,
           paidAt,
           acceptDeadlineAt,
         },

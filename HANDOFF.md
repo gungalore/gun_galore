@@ -1,10 +1,151 @@
 # Handoff
 
 What the last session did, where everything stands, and what the next one should
-pick up. **Rules do not live here — they live in `CLAUDE.md`.** This file is
-state, and it is meant to be overwritten.
+pick up. **Rules do not live here — they live in `AGENTS.md` and
+`docs/project-reference.md`.** This file is state, and it is meant to be
+overwritten.
 
-Last updated: **2026-09-13**.
+Last updated: **2026-09-15**.
+
+## Local dev (standing — not a dated entry)
+
+Kept out of the dated entries so it does not age out with them, and moved here
+from `docs/SESSION-LOG.md` under that file's retention rule.
+
+- Backend `npm run start:dev` → `:3001`; frontend `npm run dev` → `:3000`.
+  Healthy = `200 {"status":"ok"}` on `:3001/api/health` and `:3000/api/health`.
+- Phone-reachable consent links: `cloudflared tunnel --url http://localhost:3000`
+  → an ephemeral `*.trycloudflare.com`. ⚠️ ngrok's free tier injects a browser
+  interstitial (`ERR_NGROK_6024`) that is blank on phones and **cannot be
+  disabled** — use cloudflared. The host changes on every restart: update
+  `FRONTEND_URL` + `PUBLIC_WEB_URL` in `backend/.env` and restart the backend.
+- ⚠️ A tunnel to `:3000` alone is not enough. The browser calls `<host>/api`, so
+  the same-origin `/api` rewrite in `frontend/next.config.mjs` and the
+  `frontend/middleware.ts` entry must both be on. Gated by
+  `LOCAL_API_PROXY=true`, with `NEXT_PUBLIC_API_URL=/api` in
+  `frontend/.env.local`.
+- ⚠️ Sign-in renders blank on a tunnel host until `allowedDevOrigins` covers it —
+  the form is a client component under `Suspense fallback={null}` and Next dev
+  blocks the client runtime for an unknown origin.
+- The Google Maps key is referrer-restricted to the legacy domain + `localhost`,
+  so it fails on tunnel hosts. Console fix, not code. Fail-soft.
+- ⚠️ Stale `nest --watch` processes pile up and can serve an old `dist/`. Kill
+  every backend node process and confirm the PID changed. `node dist/src/main`
+  serves compiled code — prefer `start:dev`.
+- ⚠️ PowerShell strips single quotes in `node -e '...'`; use a here-string.
+- Local DB only, never production: `Setting motivation_writer_enabled=true`
+  (`false` 404s every motivation route).
+
+## 2026-09-15 — VAULT DELETION LEAVES NO CRUMBS; A PACK REVIEW FOUND SEVEN MORE
+
+**NOTHING DEPLOYED. The box is untouched.** Branch `feat/takealot-ux-parity`,
+and the whole of this session's work is **uncommitted** in the working tree.
+`git status` is large — 27 tracked files modified, `CLAUDE.md` deleted and
+replaced by `AGENTS.md`, plus untracked `docs/project-reference.md`,
+`docs/SESSION-LOG.md`, four `MOTIVATION-*.md` review documents and
+`backend/prisma/migrations/20260915000000_backfill_good_standing_covers/`.
+Read the diff before committing anything.
+
+### What this session fixed — deleting from the vault now cleans the drafts
+
+The operator deleted a MARLIN .45-70 from the vault to re-add it as a test
+licence, then found the firearm still printed in the generated pack
+(`MO000001.pdf`) as though they still owned it. **The cause was not a stale
+cache.** Generation reads the saved answers, and the vault only ever ADDED to
+them:
+
+- `MotivationGenerationService.topUpOwnedFirearms()` is add-only — it fills
+  `existing_firearm_N_*` from surviving credentials and **returns early when the
+  vault is empty**, so it never removes a row whose source is gone.
+- `LicenceCentreService.remove()` deliberately preserved the motivation copies
+  (`sourceRemovedAt`, `onDelete: SetNull`), and nothing cleared the copied
+  answers.
+- The renderer reads `existing_firearm_N_*` out of the answers blob, not the
+  vault.
+
+**The fix, and the boundary the operator chose:** "leave submitted packs
+unchanged." `MotivationDocumentsService.removeCredentialFromEditableDrafts()`
+now runs inside `LicenceCentreService.remove()` **before** `credential.delete`
+(after it, the pointer is null and indistinguishable from a copy that never
+came from the vault), and for `DRAFT` / `INTERVIEW` / `NEEDS_MORE_INFO` only:
+
+- deletes the motivation upload copies whose `sourceCredentialId` matches —
+  bytes first, fail-soft — and purges the content-addressed read cache for each;
+- deletes only answers whose provenance is `VAULT` **and** whose `sourceId`
+  equals the deleted credential. A `MEMBER` value survives, as it must.
+
+`COMPLETED` / `FAILED` / `ABANDONED` packs are never touched.
+
+**Verified:** `npm run build` exit 0, and 41 targeted tests green
+(`motivation-vault-delete-cleanup.spec.ts` new; the three licence-centre specs
+whose `motivations` doubles gained the method).
+
+⚠️ **MO000001.pdf still contains the MARLIN, and that is correct.** It was
+already generated; the fix governs future deletion and regeneration. To clear
+the existing draft, remove the MARLIN answers/attachment and regenerate.
+
+### The pack review — seven defects, none fixed yet
+
+A page-by-page read of `MO000001.pdf` (a section 13) produced this list. **A
+plan was written but the operator has NOT approved it, so no code has moved.**
+Take them together — they are one pipeline (autolink → annexure order → pdfkit
+layout):
+
+1. **Contents page is incomplete** — only body headings and a single
+   "Annexures" line; the real annexure index sits on a later page, and a long
+   list can overflow the sheet with no continuation.
+2. **The Bench cartridge drawing is not the cover hero** — the cover falls back
+   to the firearm photograph.
+3. **The "about the cartridge" page is missing** — no history/facts article and
+   no inset diagram. Gated on `hasCartridgeBlock`, which goes false when the
+   hero exists but the inset raster fails.
+4. **The current owner's licence prints as an extra annexure (`Annexure ?`)** —
+   `SELLER_LICENCE` is unlettered in `ANNEXURE_ORDER`, but `annexureImages()`
+   still walks every upload. The consent form already carries front and back.
+5. **The rifle proficiency is missing** — only Unit Standard 117705 (Knowledge
+   of the Firearms Control Act) attached. `pickProficiencyPair` treats a linked
+   certificate + its statement of results as two competing candidates and skips
+   both.
+6. **Safe photos spill across pages** — they must be one page, 2×2, max four.
+7. **Proficiency print order** — the statement of results must sit directly
+   behind the certificate it belongs to, with 117705 after it. Uploads print in
+   `createdAt` order today.
+
+⚠️ **Two traps for whoever takes this up.** Skipping `SELLER_LICENCE` in
+lettering only still reprints it — the filter has to be in `annexureImages()`.
+And the certificate + statement-of-results pair must be folded into ONE
+candidate **before** the `several-candidates` check, or the rifle pages stay
+dropped.
+
+### Also in the working tree this session (not deployed)
+
+- The dedicated sport-shooter / hunter certificate now qualifies as a letter of
+  good standing on its **`expiresOn` alone** — no issue date required — with a
+  backfill migration for editable drafts.
+- Standard documents auto-attach when an application opens: `SAFE_PHOTOGRAPHS`
+  moved into `AUTOLINK_KINDS`, the consent gate is `mayOfferAcross` (reuse
+  default-on, stops only on decline/withdraw), and the settled-date filter is
+  gone. A document uploaded straight to an application inherits the roles its
+  identical Document Centre row fills, matched by `sha256`.
+- Licence-card OCR moved onto `LlmService`.
+- Inline vault consent on the licence-centre page, and `vault-consent` finally
+  wired into the Document Centre.
+- `document-shelf.tsx` keeps the scan/upload tiles outside the scroll area.
+
+### Still outstanding (unchanged from the last entry)
+
+1. The `pruneJournal` sudoers line (`warden/README.md`).
+2. `npm run sweep` on the box; read every row.
+3. Delete `backend/.env.bak.didit` and `.env.bak.totp` once settled.
+4. Rotate the dead AWS keys rather than merely deleting them.
+5. Read-only Postgres role, Tailscale, an external uptime monitor on the apex.
+6. Confirm Places API is enabled/authorised on the Google Maps browser key
+   (Cloud Console → Credentials → API restrictions).
+7. Watch `motivation-pdf.service.spec.ts`'s cover-table test for recurring
+   timeouts under full-suite load — bump its timeout if it keeps happening
+   rather than re-diagnosing from scratch each time.
+
+---
 
 ## 2026-09-13 — SEVENTH DEPLOY: WhatsApp as a third notification channel
 

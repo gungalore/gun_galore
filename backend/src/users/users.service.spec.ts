@@ -57,7 +57,6 @@ describe('UsersService — address book & notification prefs', () => {
     service = new UsersService(
       prisma as never,
       {} as never,
-      { isBanvEnabled: () => false } as never,
       { resolveByEntity: jest.fn() } as never,
       { purgeForUser: jest.fn() } as never,
       // Account deletion removes a member's encrypted licence documents before
@@ -380,7 +379,6 @@ describe('UsersService.deleteById', () => {
     const svc = new UsersService(
       prisma as never,
       {} as never,
-      { isBanvEnabled: () => false } as never,
       { resolveByEntity: jest.fn() } as never,
       retention as never,
       licenceCentre as never,

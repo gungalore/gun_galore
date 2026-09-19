@@ -1275,6 +1275,15 @@ export function credentialOffer(
         c.title,
         c.id,
       );
+      if (slot === 0) {
+        offer(
+          'dedicated_since',
+          'Dedicated status held since',
+          first(c.details, 'joined_on'),
+          c.title,
+          c.id,
+        );
+      }
       if (body) seenBodies.add(body.toUpperCase());
       slot++;
     }
@@ -1659,6 +1668,63 @@ export function primaryUploadKind(
 /** Every checklist row a vault document answers. Empty for one that fills none. */
 export function uploadKindsFor(credentialKind: string): MotivationUploadKind[] {
   return CREDENTIAL_TO_UPLOAD[credentialKind as CredentialKind] ?? [];
+}
+
+/**
+ * Does a DEDICATED_DISCIPLINE certificate ALSO serve as a section 16 letter of
+ * good standing?
+ *
+ * ⚠️ THE OPERATOR'S DATE RULE (2026-09-14). A dedicated sport shooter or
+ * dedicated hunter certificate is a dedicated certificate by its own nature —
+ * that role is unconditional. What makes it ALSO a letter of good standing is
+ * its VALIDITY: the paper must carry an expiry date, and that expiry must still
+ * be in the future. "In good standing" is a present-tense claim, so a
+ * certificate whose window has lapsed — or that prints no expiry at all, as a
+ * bare status card does — is a dedicated certificate only.
+ *
+ * ⚠️ THE EXPIRY ALONE, NOT AN ISSUE DATE TOO. Most association certificates
+ * print a "valid until" and no issue date at all — the operator's own SA
+ * Hunters certificate reads `expiresOn: 2027-06-29, issuedOn: null` — so
+ * requiring an issue date rejected the very certificate the rule was written
+ * for.
+ *
+ * ⚠️ EVALUATED AGAINST `today` EACH TIME IT IS OFFERED, NOT FROZEN AT SCAN.
+ * Operator: the expiry must be "in the future past the date that it is
+ * scanned", re-checked today — so a certificate that lapses stops serving as
+ * the letter from then on.
+ */
+export function dedicatedAlsoGoodStanding(
+  doc: Pick<CredentialSource, 'expiresOn'>,
+  today: Date,
+): boolean {
+  const expires = doc.expiresOn ?? null;
+  if (!expires) return false;
+  const end = Date.parse(`${expires}T00:00:00Z`);
+  if (Number.isNaN(end)) return false;
+  return end > today.getTime();
+}
+
+/**
+ * The checklist rows a vault document answers, with the good-standing role
+ * gated on the date rule above.
+ *
+ * ⚠️ DEDICATED_DISCIPLINE IS THE ONE KIND WHERE "ALSO COVERS" IS CONDITIONAL.
+ * A dedicated certificate always fills ASSOCIATION_CARD; it fills
+ * GOOD_STANDING_LETTER as well only while its date window is still valid. Every
+ * other kind maps unconditionally (see CREDENTIAL_TO_UPLOAD).
+ */
+export function effectiveUploadKinds(
+  doc: Pick<CredentialSource, 'kind' | 'expiresOn'>,
+  today: Date,
+): MotivationUploadKind[] {
+  const kinds = uploadKindsFor(doc.kind);
+  if (
+    doc.kind === 'DEDICATED_DISCIPLINE' &&
+    !dedicatedAlsoGoodStanding(doc, today)
+  ) {
+    return kinds.filter((k) => k !== MotivationUploadKind.GOOD_STANDING_LETTER);
+  }
+  return kinds;
 }
 
 /**

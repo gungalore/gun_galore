@@ -29,7 +29,7 @@ import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module'
     FraudRiskService,
   ],
   controllers: [TransactionsController, PaymentsWebhookController],
-  // PeachService is provided globally by PeachModule — admin / featured /
+  // OzowService is provided globally by OzowModule — admin / featured /
   // dispatch-SLA / manual-payments inject it directly without importing
   // PaymentsModule. DealerVerificationService exported so AdminModule can
   // use it for admin-side override / re-scan.

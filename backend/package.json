@@ -24,7 +24,8 @@
     "dummy-run:setup": "ts-node --transpile-only --project tsconfig.json scripts/dummy-run-setup.ts",
     "dummy-run": "ts-node --transpile-only -r ./scripts/dummy-run-preload.cjs --project tsconfig.json scripts/dummy-run.ts",
     "saps271:checksum": "node scripts/saps271-checksum.js",
-    "crime-stats:load": "ts-node --transpile-only --project tsconfig.json scripts/crime-stats-load.ts",
+      "crime-stats:load": "ts-node --transpile-only --project tsconfig.json scripts/crime-stats-load.ts",
+      "motivation:eval": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/motivation-eval.ts",
     "crime-stats:fixture": "node scripts/crime-stats-make-fixture.cjs",
     "news:poll": "ts-node --transpile-only --project tsconfig.json scripts/news-poll.ts",
     "test:e2e:setup": "node scripts/e2e-db.mjs"

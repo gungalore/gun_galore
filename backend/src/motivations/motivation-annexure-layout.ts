@@ -22,6 +22,8 @@
 // ────────────────────────────────────────────────────────────────────
 
 export interface AnnexureImage {
+  /** Original bytes, retained by the renderer when it maps placements back. */
+  bytes?: Buffer;
   /** 'A', 'B' … from the annexure index. Shared by copies of one kind. */
   letter: string;
   /** The document's name, in the member's words. */
@@ -132,6 +134,39 @@ export function planAnnexurePages(
   return pages;
 }
 
+/** Pack safe photographs as a compact 2x2 sheet, never more than four. */
+export function planSafePhotoPages(
+  images: AnnexureImage[],
+  box: LayoutBox,
+): PlacedImage[][] {
+  const pages: PlacedImage[][] = [];
+  const cellW = (box.width - GAP) / 2;
+  const cellH = (box.height - GAP) / 2;
+  for (let offset = 0; offset < images.length; offset += 4) {
+    const page: PlacedImage[] = [];
+    for (const [slot, img] of images.slice(offset, offset + 4).entries()) {
+      const ratio =
+        img.width > 0 && img.height > 0 ? img.height / img.width : 1;
+      const w = Math.min(cellW, cellH / ratio);
+      const h = w * ratio;
+      const col = slot % 2;
+      const row = Math.floor(slot / 2);
+      const cellX = box.x + col * (cellW + GAP);
+      const cellY = box.y + row * (cellH + GAP);
+      page.push({
+        ...img,
+        x: cellX + (cellW - w) / 2,
+        y: cellY + CAPTION_H,
+        w,
+        h,
+        captionY: cellY,
+      });
+    }
+    pages.push(page);
+  }
+  return pages;
+}
+
 /**
  * The caption printed above one copy.
  *
@@ -195,7 +230,11 @@ export function imageSize(
       }
       const marker = buf[i + 1];
       // Standalone markers carry no length payload.
-      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      if (
+        marker === 0xd8 ||
+        marker === 0x01 ||
+        (marker >= 0xd0 && marker <= 0xd7)
+      ) {
         i += 2;
         continue;
       }

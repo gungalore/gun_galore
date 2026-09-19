@@ -410,19 +410,19 @@ export class TasksService {
   // removed with the manual-EFT rail (checkout is gated by assertPaymentsLive
   // so no unpaid manual reservations are created). This safety-net remains: a
   // checkout that died between reserving a line and finishing (single-item or
-  // cart) can leave a never-paid HELD tx with no orderId / peachCheckoutId /
+  // cart) can leave a never-paid HELD tx with no orderId / gatewayCheckoutId /
   // swapId, its reserved listing stranded and invisible to every other sweep.
   // Reclaim them (release the listing + delete the tx). Also picks up gateway/
   // cart orphans once a paygate lands, since a gateway checkout that failed
   // before persisting its checkout id matches the same shape.
   //
   // The filter is tight enough it can NEVER touch a live tx: a gateway tx has
-  // peachCheckoutId; an order child has orderId; a paid/refunded tx has paidAt;
+  // gatewayCheckoutId; an order child has orderId; a paid/refunded tx has paidAt;
   // a SWOP leg has a swapId. The 15-min age floor protects an in-flight
   // same-request tx.
   //
   // swapId: null is LOAD-BEARING. A swap creates two ZERO-money Transaction
-  // legs that carry NO orderId / peachCheckoutId / paidAt — they match every
+  // legs that carry NO orderId / gatewayCheckoutId / paidAt — they match every
   // other orphan condition. Without this guard the sweep would delete both legs
   // + un-reserve both listings ~15 min after every swap was agreed, orphaning
   // the Swap parent. The legs' lifecycle is owned by the swap flow.
@@ -435,7 +435,7 @@ export class TasksService {
         where: {
           paidAt: null,
           orderId: null,
-          peachCheckoutId: null,
+          gatewayCheckoutId: null,
           swapId: null,
           createdAt: { lt: orphanCutoff },
         },

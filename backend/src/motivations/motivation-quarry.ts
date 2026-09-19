@@ -181,10 +181,19 @@ export function quarriesFor(args: {
    * "under-matched to eland, kudu bulls, buffalo, elephant or lion" — and
    * matching the whole block would reliably picture the animal the document
    * has just said this firearm cannot ethically take.
+   *
+   * ⚠️ AND "POORLY SUITED" IS THE SAME CUT IN THE FIREARM BLOCK'S WORDS. The
+   * cartridge brief says "under-matched"; the firearm brief says "poorly suited
+   * applications" and "entirely unsuitable for small game" before naming the
+   * animals it must NOT be used on. Feeding the firearm block in (see
+   * motivation-generation.service.ts) without these two additions would put a
+   * steenbok or a duiker — the very animals the document says the round is too
+   * heavy for — into the plate.
    */
-  const stop = /under-?matched|not\s+(?:suited|recommended)|too\s+light\s+for/i.exec(
-    text,
-  );
+  const stop =
+    /under-?matched|not\s+(?:suited|suitable|recommended)|too\s+light\s+for|poorly\s+suited|unsuitable/i.exec(
+      text,
+    );
   const usable = stop ? text.slice(0, stop.index) : text;
 
   const wanted = new Set(

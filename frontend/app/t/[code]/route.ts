@@ -12,16 +12,26 @@
  *
  * 307, not 301: the mapping must stay changeable, and a 301 would get cached
  * by browsers and CDNs past the point we could still change our minds.
+ *
+ * ⚠️ THE ORIGIN COMES FROM `SITE_URL`, NEVER FROM `req.url`. This route is
+ * reached through a proxy, and `req.url` is whatever host THAT HOP used — on
+ * production the proxy rewrites Host to `localhost:3000`, so building the
+ * redirect from `req.url` sent every WhatsApp button to `https://localhost:3000`
+ * and a phone can only ever resolve that to itself. The redirect must name the
+ * public origin we published, which is exactly what `SITE_URL` is for (see its
+ * own note in lib/brand.ts). It is also env-driven, so a local run can point
+ * deep links at `http://localhost:3000` without the proxy being involved.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { SITE_URL } from '@/lib/brand';
 import { resolveShortCode } from '@/lib/t-route';
 
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ code: string }> },
 ) {
   const { code } = await params;
   const target = resolveShortCode(code);
-  return NextResponse.redirect(new URL(target, req.url), 307);
+  return NextResponse.redirect(new URL(target, SITE_URL), 307);
 }

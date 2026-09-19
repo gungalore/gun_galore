@@ -415,6 +415,31 @@ describe('prompts', () => {
     }
   });
 
+  it('⚠️ NAMES THE VOCABULARY THE SCOPE GUARD REFUSES, PER LICENCE TYPE', () => {
+    // MO000001 died on "defensive" in a hunting application. The guard is
+    // mechanical and stays; the brief has to name the words so the writer
+    // never reaches for one.
+    for (const t of [
+      MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+      MotivationLicenceType.S16_DEDICATED_SPORT,
+    ]) {
+      const s = generationSystemPrompt(t);
+      expect(s).toContain('SELF-DEFENCE');
+      expect(s).toContain('"defensive"');
+      expect(s).toContain('"self-defence"');
+    }
+    for (const t of [
+      MotivationLicenceType.S13_SELF_DEFENCE,
+      MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE,
+    ]) {
+      const s = generationSystemPrompt(t);
+      expect(s).toContain('RELOADING VOCABULARY IS REFUSED');
+      expect(s).toContain('"hunting"');
+      expect(s).toContain('"reloading"');
+    }
+  });
+
   it('instructs the gate to weigh groundedness hardest', () => {
     const p = gateUserPrompt(PACK, 'draft text');
     expect(p).toContain('<draft-document>');

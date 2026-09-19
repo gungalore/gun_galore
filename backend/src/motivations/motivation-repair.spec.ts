@@ -35,6 +35,24 @@ describe('what is worth mending', () => {
     expect(TEXT).toContain(targets![0].sentence);
   });
 
+  it('⚠️ MENDS THE SECTION-DISCIPLINE VOCABULARY, NOT ONLY THE CATALOGUE WORDS', () => {
+    // MO000001 (2026-09-15) died on exactly this: a hunting application said
+    // "defensive", the scope guard refused it, and the complaint reads "a
+    // hunting or sport application says ..." — a shape the matcher never
+    // parsed, so no rewrite ran and a clean document went FAILED on one word.
+    const sport = [
+      '5. Why I need this rifle',
+      'A bolt-action rifle in .308 Winchester is not a defensive firearm, and ' +
+        'it is the rifle this application is about.',
+    ].join(String.fromCharCode(10) + String.fromCharCode(10));
+    const targets = repairTargets(sport, [
+      'a hunting or sport application says "defensive" outside any sentence about a firearm already held under section 13 or 14',
+    ]);
+    expect(targets).toHaveLength(1);
+    expect(targets![0].phrases).toEqual(['defensive']);
+    expect(targets![0].sentence).toContain('not a defensive firearm');
+  });
+
   it('gathers two complaints about one sentence into one rewrite', () => {
     const text =
       'Its terminal ballistics prevent it from engaging targets at range.';

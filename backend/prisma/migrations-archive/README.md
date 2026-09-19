@@ -37,7 +37,8 @@ Two migrations in `prisma/migrations/`:
 
 Verified against the live GunGalore database, not assumed: **1116 of 1116 columns identical,
 253 of 253 indexes identical.** The single intentional difference is
-`Transaction.peachPaymentId`, which `schema.prisma` declares `@unique` and production only
+`Transaction.gatewayPaymentId` (named `peachPaymentId` at archive time), which
+`schema.prisma` declares `@unique` and production only
 had as a plain index — the baseline applies the constraint the schema always claimed.
 
 ## ⚠️ Never run `prisma migrate deploy` against the old GunGalore database with this repo

@@ -78,7 +78,7 @@ function makeService(
     {} as never, // listings
     audit as never,
     {} as never, // zohoBooks
-    {} as never, // peach
+    {} as never, // ozow
     {} as never, // transactions
     {} as never, // sms
     closures as never,

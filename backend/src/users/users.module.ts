@@ -17,8 +17,8 @@ import { KycModule } from '../kyc/kyc.module';
 // module that applies @UseGuards(AuthGuard) can resolve the guard's deps.
 //
 // (Previously imported PaymentsModule for PeachService.verifyBankAccount()
-// — that automated AVS check was removed with Peach, so the dependency is
-// gone too.)
+// — that automated AVS check was removed with Ozow, which has no BANV
+// product, so the dependency is gone too.)
 @Global()
 @Module({
   // MotivationsModule for MotivationRetentionService: the identity provider

@@ -450,7 +450,7 @@ describe('Warden red gates on the pile', () => {
     // composes its meta out of that promise; if the promise ever loosens,
     // this is the line through which a key reaches a browser.
     process.env.VERIFYNOW_MODE = 'sandbox';
-    process.env.PEACH_ENTITY_ID = '8ac7a4c8-not-for-the-pile';
+    process.env.OZOW_CLIENT_ID = '8ac7a4c8-not-for-the-pile';
     const feed = await new DeskService(makePrisma() as never).feed();
     const card = feed.cards.find((c) => c.id === 'warden:gate.VERIFYNOW_MODE');
 

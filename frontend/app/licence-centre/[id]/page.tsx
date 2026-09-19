@@ -29,6 +29,8 @@ import PackSummary from '@/components/licence-centre/pack-summary';
 import PreviewPanel from '@/components/licence-centre/preview-panel';
 import AddPanel from '@/components/licence-centre/add-panel';
 import DeleteApplication from '@/components/licence-pack/delete-application';
+import { VaultConsentBody } from '@/components/vault-consent';
+import { licenceCentreApi } from '@/lib/licence-centre-api';
 import type {
   DangerArea,
   LibraryItem,
@@ -183,6 +185,21 @@ export default function LicenceCentreSheetPage() {
   const [kinds, setKinds] = useState<PickableKind[]>([]);
 
   /**
+   * The "may we keep your documents?" answer, when it is what stands between
+   * the member and the save they just asked for.
+   *
+   * ⚠️ THE TOAST USED TO BE THE WHOLE RESPONSE. Pressing "Save N to my Licence
+   * Centre" without consent returns `needsConsent`, and the member was told to
+   * go to "Account, then Document Centre" and find the control there — while
+   * the documents they had just ticked stayed unsaved. The same notice now
+   * renders here, and answering it finishes the save they asked for.
+   */
+  const [keepConsent, setKeepConsent] = useState<{
+    ids: string[];
+    busy: boolean;
+  } | null>(null);
+
+  /**
    * Which sections are folded open. Null until the sheet has arrived.
    *
    * ⚠️ COMPUTED ONCE, THEN THE MEMBER OWNS IT. The sheet is refetched after
@@ -281,6 +298,40 @@ export default function LicenceCentreSheetPage() {
     }
   }, [getToken, id]);
 
+  /**
+   * Answer "may we keep your documents?" and finish the save that raised it.
+   *
+   * ⚠️ ANSWERING RETRIES THE SAVE. The member pressed "Save to my Licence
+   * Centre"; consent is a step in that, not a detour away from it. A "no"
+   * leaves the documents on the application and says so.
+   */
+  const answerKeepConsent = useCallback(
+    async (agreed: boolean) => {
+      const pending = keepConsent?.ids ?? [];
+      setKeepConsent((c) => (c ? { ...c, busy: true } : c));
+      try {
+        await licenceCentreApi.answerConsent(getToken, agreed);
+        setKeepConsent(null);
+        if (!agreed) {
+          setToast('We will not keep those documents.');
+          return;
+        }
+        if (!pending.length) return;
+        const r = await motivationsApi.keepInCentre(getToken, id, pending);
+        await load();
+        setToast(
+          r.kept === 1
+            ? 'Saved one document to your Licence Centre.'
+            : `Saved ${r.kept} documents to your Licence Centre.`,
+        );
+      } catch {
+        setKeepConsent((c) => (c ? { ...c, busy: false } : c));
+        setToast('We could not save those just now.');
+      }
+    },
+    [getToken, id, load, keepConsent],
+  );
+
   useEffect(() => {
     if (id) void load();
   }, [id, load]);
@@ -374,13 +425,22 @@ export default function LicenceCentreSheetPage() {
          * way to find out why.
          */
         setNeedsPlace(r.needsPlaceConfirm);
-        if (!r.attached.length) return;
+        /**
+         * ⚠️ THE OFFER CAN WRITE WITHOUT ATTACHING ANYTHING. Re-running the
+         * offer is what fills "Your case" from a document the member uploaded
+         * after this application was created — so a run that attached no
+         * document can still have changed answers, and the sheet must reload
+         * for them to appear.
+         */
+        if (!r.attached.length && !(r.filled?.length ?? 0)) return;
         await load();
-        setToast(
-          r.attached.length === 1
-            ? `Added ${r.attached[0].title} from your Licence Centre.`
-            : `Added ${r.attached.length} documents from your Licence Centre.`,
-        );
+        if (r.attached.length) {
+          setToast(
+            r.attached.length === 1
+              ? `Added ${r.attached[0].title} from your Licence Centre.`
+              : `Added ${r.attached.length} documents from your Licence Centre.`,
+          );
+        }
       } catch {
         /* Fail soft: an application must never fail to open because the
            Centre was slow. The shelf is simply emptier than it could be. */
@@ -1238,9 +1298,21 @@ export default function LicenceCentreSheetPage() {
           `autoStart` opens. Operator, 2026-09-08: "this is double. two scan
           with phone options."
         */}
-        <DocumentShelf
+         <DocumentShelf
           documents={sheet.documents}
           keeping={keeping}
+          onRemove={async (uploadId) => {
+            setBusy(true);
+            try {
+              await motivationsApi.removeUpload(getToken, id, uploadId);
+              await load();
+              setToast('Removed document.');
+            } catch {
+              setToast('We could not remove that just now.');
+            } finally {
+              setBusy(false);
+            }
+          }}
           /*
             ⚠️ NOTHING REACHES THE DOCUMENT CENTRE UNTIL THEY ASK. The
             automatic sweep is gone — operator, 2026-09-08: "yes, stop auto
@@ -1255,9 +1327,9 @@ export default function LicenceCentreSheetPage() {
             try {
               const r = await motivationsApi.keepInCentre(getToken, id, ids);
               if (r.needsConsent) {
-                setToast(
-                  'First tell us we may keep documents — Account, then Document Centre.',
-                );
+                // ⚠️ NOT A DEAD END. The notice renders below and answering it
+                // retries this exact save — see answerKeepConsent.
+                setKeepConsent({ ids, busy: false });
                 return;
               }
               await load();
@@ -1288,6 +1360,29 @@ export default function LicenceCentreSheetPage() {
             }
           }}
         />
+
+        {/*
+          ⚠️ THE CONSENT, IN PLACE OF THE DEAD-END TOAST. The member ticked
+          documents and pressed Save; the only thing missing is the answer to
+          this question, so it is asked here and answering it completes the
+          save. It renders only while that save is waiting on it.
+        */}
+        {keepConsent ? (
+          <div className="mx-4 mt-3 rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
+            <VaultConsentBody
+              retentionDays={null}
+              onAnswer={answerKeepConsent}
+              busy={keepConsent.busy}
+            />
+            <button
+              type="button"
+              onClick={() => setKeepConsent(null)}
+              className="mt-3 text-xs text-[var(--text-tertiary)] underline"
+            >
+              Not now
+            </button>
+          </div>
+        ) : null}
 
         {adding ? (
           <AddPanel

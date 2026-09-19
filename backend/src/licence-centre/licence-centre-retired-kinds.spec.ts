@@ -84,7 +84,13 @@ function build() {
   // `{}` here and never touch the call; the double is supplied so these tests
   // run the wired path rather than the swallow.
   const rearm = jest.fn(async () => 0);
-  const motivations = { rearmAutolinkFor: rearm };
+  const motivations = {
+    rearmAutolinkFor: rearm,
+    removeCredentialFromEditableDrafts: jest.fn(async () => ({
+      uploads: 0,
+      answers: 0,
+    })),
+  };
   const svc = new LicenceCentreService(
     prisma as never,
     files as never,

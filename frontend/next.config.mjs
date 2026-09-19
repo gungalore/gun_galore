@@ -1,7 +1,14 @@
 import withSerwistInit from '@serwist/next';
 
+const localApiProxy = process.env.LOCAL_API_PROXY === 'true';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Allow Next.js dev resources (HMR, etc.) when accessing via ngrok tunnel
+  // during local testing. Without this, dev-only features are blocked for
+  // cross-origin access.
+  allowedDevOrigins: ['*.trycloudflare.com', '*.ngrok-free.dev'],
+
   // Explicit empty Turbopack config — Next 16 runs Turbopack by
   // default in dev, but @serwist/next adds a webpack-only plugin
   // below. Without this, Next 16 errors out at startup with
@@ -48,6 +55,16 @@ const nextConfig = {
       { source: '/motivations/:id', destination: '/licence-centre/:id', permanent: true },
       { source: '/licence-services/:id', destination: '/licence-centre/:id', permanent: true },
     ];
+  },
+  async rewrites() {
+    return localApiProxy
+      ? [
+          {
+            source: '/api/:path*',
+            destination: 'http://localhost:3001/api/:path*',
+          },
+        ]
+      : [];
   },
   images: {
     remotePatterns: [

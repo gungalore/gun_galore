@@ -457,7 +457,6 @@ export const CERTIFICATION: Record<AnnexureKind, CertificationLevel> = {
   // Ours, signed by the applicant in front of nobody in particular. Not a
   // copy of anything, so there is nothing to certify it against.
 
-
   // reg 13(4)(b) — the only one the Regulations themselves require.
   IDENTITY_DOCUMENT: 'required',
 
@@ -567,6 +566,21 @@ export function annexureByKind(
     }
   }
   return out;
+}
+
+/**
+ * Whether an upload kind is lettered under the safe's single annexure letter.
+ *
+ * ⚠️ THE RENDERER USES THIS RATHER THAN MATCHING A LABEL. Safe photographs are
+ * laid out as a 2x2 sheet instead of one-per-width like every other copy, so
+ * the layout has to know which images belong to the safe group — and the one
+ * thing it must NOT do is match on the printed label ("Photographs of the
+ * safe"), because that string is display copy and the retired safe kinds
+ * (SAFE_PHOTO_AJAR and friends) are the same annexure under a different enum.
+ * The group is the truth; the label is a coincidence.
+ */
+export function isSafeAnnexureKind(kind: MotivationUploadKind): boolean {
+  return LETTER_GROUPS[kind]?.id === 'safe';
 }
 
 export interface AnnexureEntry {
@@ -782,7 +796,10 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
  * ⚠️ Items marked verifyBeforeUse carry a number or a form reference that can
  * go stale without notice. Confirm before the flag is flipped.
  */
-const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[] = [
+const APPLICANT_MUST_BRING: Omit<
+  ChecklistItem,
+  'done' | 'owner' | 'state' | 'closer'
+>[] = [
   {
     key: 'saps_form',
     label: 'The SAPS application form for this licence',
@@ -911,8 +928,7 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'cl
     // been granted. The row had no note at all, so a first-time applicant had
     // nowhere to learn that.
     key: 'competency_copy',
-    label:
-      'Your SAPS competency card or printout — the original, plus a copy',
+    label: 'Your SAPS competency card or printout — the original, plus a copy',
     note: 'SAPS’s own list asks for your original competency certificate, so take it — the plastic card or the CFR printout, whichever you were issued; a club checklist from a real submitted pack names both. The copy in your pack is what gets certified against it at the counter. If you have not applied for competency yet, that is a separate, earlier application with its own training, fingerprints, fee and waiting period — section 6(2) means no licence can be issued until it has been granted.',
   },
   {
@@ -1088,7 +1104,10 @@ const SECTION_MUST_BRING: Partial<
  * Section 16 is the one type where a third party — the accredited association
  * — has to have signed something, and the pack is not a pack without it.
  */
-const S16_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[] = [
+const S16_MUST_BRING: Omit<
+  ChecklistItem,
+  'done' | 'owner' | 'state' | 'closer'
+>[] = [
   {
     key: 's16_good_standing',
     label: "Your association's letter of good standing",
@@ -1146,7 +1165,10 @@ const S16_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>
  * ⚠️ DO NOT IMPORT THE CONSTANT FROM licence-centre.
  * licence-centre.module.spec.ts asserts the dependency runs one way only.
  */
-const S24_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[] = [
+const S24_MUST_BRING: Omit<
+  ChecklistItem,
+  'done' | 'owner' | 'state' | 'closer'
+>[] = [
   {
     // Part 10.3. The obvious one, and the one nothing on the sheet said: a
     // renewal is a renewal OF something, and the DFO checks the original.
@@ -1226,7 +1248,8 @@ function s24Bring(
   // counter-day instruction with. Anything that is not a yes is silence —
   // absent and "no" are the same answer here, because the finding is only
   // ever written when we are sure of it.
-  const due = (answers[COMPETENCY_RENEWS_KEY] ?? '').trim().toLowerCase() === 'yes';
+  const due =
+    (answers[COMPETENCY_RENEWS_KEY] ?? '').trim().toLowerCase() === 'yes';
   if (!due) return [...S24_MUST_BRING];
 
   const out: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[] = [];
@@ -1367,7 +1390,8 @@ export function buildChecklist(
   const counts = new Map<MotivationUploadKind, number>();
   for (const k of haveKinds) counts.set(k, (counts.get(k) ?? 0) + 1);
   const enough = (kind: MotivationUploadKind) =>
-    (counts.get(kind) ?? 0) >= (kind === 'SAFE_PHOTOGRAPHS' ? SAFE_PHOTO_MIN : 1);
+    (counts.get(kind) ?? 0) >=
+    (kind === 'SAFE_PHOTOGRAPHS' ? SAFE_PHOTO_MIN : 1);
   const byKind = new Map(annexures.map((a) => [a.kind, a]));
 
   const ours: ChecklistItem[] = [
@@ -1380,7 +1404,9 @@ export function buildChecklist(
       closer: documentReady
         ? 'We have written this from your answers.'
         : 'We write this for you, once the questions are answered.',
-      note: documentReady ? undefined : 'Finish the questions and we will prepare it.',
+      note: documentReady
+        ? undefined
+        : 'Finish the questions and we will prepare it.',
     },
     {
       key: 'paja',

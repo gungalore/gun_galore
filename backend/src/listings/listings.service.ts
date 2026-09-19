@@ -1107,7 +1107,7 @@ export class ListingsService {
    * What to store for a listing's price, given the number the seller typed.
    *
    * BUY_NOW is now a MARKED-UP price (operator 2026-08-15): the seller types
-   * what they want to RECEIVE, and we build our commission plus the Peach fee
+   * what they want to RECEIVE, and we build our commission plus the Ozow fee
    * on top to get the figure the buyer sees. `Listing.price` keeps meaning "the
    * buyer-facing price", so nothing downstream changes; `sellerAskCents`
    * carries the other half.
@@ -1555,7 +1555,7 @@ export class ListingsService {
         title: dto.title,
         description: finalDescription,
         // BUY_NOW: dto.price is what the SELLER WANTS TO RECEIVE; the stored
-        // price is that marked up by commission + the Peach fee. Other types
+        // price is that marked up by commission + the Ozow fee. Other types
         // store the typed number as-is.
         price: pricing.price,
         sellerAskCents: pricing.sellerAskCents,

@@ -7,7 +7,7 @@ import { LlmModule } from './common/llm/llm.module';
 import { DiditModule } from './didit/didit.module';
 import { CrimeStatsModule } from './crime-stats/crime-stats.module';
 import { NewsModule } from './news/news.module';
-import { PeachModule } from './payments/peach.module';
+import { OzowModule } from './payments/ozow.module';
 import { ScanModule } from './scan/scan.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { SearchModule } from './search/search.module';
@@ -77,7 +77,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     DiditModule,
     CrimeStatsModule,
     NewsModule,
-    PeachModule,
+    OzowModule,
     ScanModule,
     CloudinaryModule,
     SearchModule,

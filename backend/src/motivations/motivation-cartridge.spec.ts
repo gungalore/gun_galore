@@ -51,6 +51,17 @@ describe('matching what a licence card prints', () => {
     expect(calibreCandidates('.45-70 GOVT')).toContain('4570GOVERNMENT');
   });
 
+  it('⚠️ CONTRACTS "GOVERNMENT" BACK, BECAUSE THE REFERENCE FILE ABBREVIATES', () => {
+    // MO000001: the card prints ".45-70 GOVERNMENT", the imported Bench row is
+    // key 4570govt ("45-70 Govt."), and the lookup returned null. The expansion
+    // above turns GOVT into Government but nothing turned it back, so the two
+    // spellings never met.
+    expect(calibreCandidates('.45-70 GOVERNMENT')).toContain('4570GOVT');
+    expect(
+      findCartridge([{ name: '45-70 Govt.' }], '.45-70 GOVERNMENT')?.name,
+    ).toBe('45-70 Govt.');
+  });
+
   it('says nothing about an empty calibre', () => {
     expect(calibreCandidates('')).toEqual([]);
     expect(calibreCandidates('  ')).toEqual([]);

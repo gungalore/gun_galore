@@ -18,8 +18,7 @@ import { AdminAuditService } from './admin-audit.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { sniffMime } from '../common/sniff-mime';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
-import { PeachService } from '../payments/peach.service';
-import { decryptSaIdNumber } from '../common/id-crypto';
+import { OzowService } from '../payments/ozow.service';
 import { SmsService } from '../sms/sms.service';
 import { TransactionsService, PAYMENT_MODE } from '../payments/transactions.service';
 import { reversalListingData } from '../payments/inventory';
@@ -56,10 +55,10 @@ export class AdminService {
     // post a Credit Note to Books reversing the original commission
     // invoice.
     private readonly zohoBooks: ZohoBooksService,
-    // PaymentsModule (imported by AdminModule) exports PeachService.
+    // PaymentsModule (imported by AdminModule) exports OzowService.
     // refundTransaction() calls it to actually move the money back to the
     // buyer before flipping the row to REFUNDED.
-    private readonly peach: PeachService,
+    private readonly ozow: OzowService,
     // PaymentsModule also exports TransactionsService — used by
     // refundTransaction() to cancel any platform-booked carrier shipment so a
     // refunded sale doesn't leave a live (already-billed) waybill (P5.2).
@@ -908,70 +907,6 @@ export class AdminService {
   }
 
   // ---------------------------------------------------------------
-  // Re-run Peach bank-account verification (BANV) for a user, from the
-  // dossier — e.g. after a BANK_VERIFY_FAILED alert or when the seller
-  // says they've fixed their details bank-side. Same flow as the
-  // automatic post-save trigger (UsersService.requestBankVerification);
-  // duplicated thinly here because AdminModule doesn't import the users
-  // graph. The ID number is decrypted in memory only and never logged.
-  // ---------------------------------------------------------------
-  async rerunBankVerification(userId: string, adminId: string) {
-    if (!this.peach.isBanvEnabled()) {
-      throw new BadRequestException(
-        'Peach bank verification is not configured yet.',
-      );
-    }
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        bankAccountNumber: true,
-        bankBranchCode: true,
-        bankAccountType: true,
-        idNumberEncrypted: true,
-        firstName: true,
-        lastName: true,
-      },
-    });
-    if (!user) throw new NotFoundException('User not found');
-    if (!user.bankAccountNumber || !user.bankBranchCode) {
-      throw new BadRequestException('User has no banking details on file.');
-    }
-    if (!user.idNumberEncrypted) {
-      throw new BadRequestException(
-        'User has no SA ID on file — bank ownership cannot be verified until their seller profile is completed.',
-      );
-    }
-    const res = await this.peach.verifyBankAccount({
-      accountNumber: user.bankAccountNumber,
-      branchCode: user.bankBranchCode,
-      accountType: user.bankAccountType ?? 'unknown',
-      idNumber: decryptSaIdNumber(user.idNumberEncrypted),
-      initials: user.firstName ? user.firstName.trim().charAt(0) : undefined,
-      lastName: user.lastName ?? undefined,
-    });
-    if (!res) {
-      throw new BadRequestException('Verification request could not be submitted.');
-    }
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        bankVerifiedAt: null,
-        bankVerificationId: res.bankVerificationId,
-        bankAvsResult: `REQUESTED:${res.resultCode ?? res.status}`,
-      },
-    });
-    await this.audit.record({
-      adminUserId: adminId,
-      action: 'BANK_VERIFY_RERUN',
-      resourceType: 'User',
-      resourceId: userId,
-      reason: 'Admin re-ran Peach bank-account verification',
-    });
-    return { requested: true, bankVerificationId: res.bankVerificationId, status: res.status };
-  }
-
-  // ---------------------------------------------------------------
   // Claude-KYC human review — decides an UNDER_REVIEW verification
   // from the user dossier. Guarded transition (only moves a row that
   // is still UNDER_REVIEW) so two admins can't double-decide, and the
@@ -1429,7 +1364,7 @@ export class AdminService {
   // ---------------------------------------------------------------
   // Global admin search — typed in the header bar. Searches users
   // (email/username), listings (title/ref/make+model), transactions
-  // (id/peach IDs/ref number) in parallel. Returns a small mixed
+  // (id/gateway IDs/ref number) in parallel. Returns a small mixed
   // result set so the type-ahead can render quickly.
   // ---------------------------------------------------------------
   async globalSearch(query: string) {
@@ -1514,8 +1449,9 @@ export class AdminService {
           OR: [
             { id: q },
             { orderReference: insensitive },
-            { peachCheckoutId: q },
-            { peachPaymentId: q },
+            { gatewayCheckoutId: q },
+            { gatewayPaymentId: q },
+            { gatewayPayoutId: q },
             { tcgWaybill: insensitive },
           ],
         },
@@ -2297,7 +2233,7 @@ export class AdminService {
     // Hard gate — we will not move money to a seller who hasn't
     // (a) completed their profile (banking + ID on file), or
     // (b) passed KYC selfie.
-    // Bank-account verification (AVS) was removed with Peach — the admin
+    // Bank-account verification (AVS) is not run automatically — the admin
     // reviews the seller's bank details manually before the payout EFT.
     // Each failure surfaces a precise reason so the admin knows exactly
     // which step the seller still owes us.
@@ -2533,8 +2469,7 @@ export class AdminService {
     }
 
     // ─── Move the money back via the gateway ─────────────────────────
-    // peachPaymentId holds the Peach payment id (Stitch was evaluated as the
-    // rail in 2026-06/07 and dropped — the column never changed hands).
+    // gatewayPaymentId holds the Ozow transaction id.
     // On failure roll back the reservation (and
     // the status flip, if any) so the row returns to its refundable state.
     // Manual mode skips the gateway entirely — the FNB batch on the child
@@ -2542,8 +2477,8 @@ export class AdminService {
     const refund =
       PAYMENT_MODE === 'manual'
         ? { success: true as const, resultCode: 'MANUAL_EFT_BATCH' }
-        : tx.peachPaymentId
-          ? await this.peach.refundPayment(tx.peachPaymentId, amount)
+        : tx.gatewayPaymentId
+          ? await this.ozow.refundPayment(tx.gatewayPaymentId, amount)
           : { success: false, resultCode: 'NO_PAYMENT_ID' };
 
     if (!refund.success) {
@@ -2562,7 +2497,7 @@ export class AdminService {
             type: 'ADMIN_REFUND_GATEWAY_FAILED',
             referenceId: txId,
             urgent: true,
-            context: `Admin ${adminId} refund of ${amount}c failed at gateway (${refund.resultCode ?? 'unknown'}${tx.peachPaymentId ? '' : ' — no peachPaymentId on tx'}). Buyer NOT refunded; retry needed.`,
+            context: `Admin ${adminId} refund of ${amount}c failed at gateway (${refund.resultCode ?? 'unknown'}${tx.gatewayPaymentId ? '' : ' — no gatewayPaymentId on tx'}). Buyer NOT refunded; retry needed.`,
           },
         })
         .catch(() => undefined);
