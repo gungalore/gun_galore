@@ -39,7 +39,7 @@ describe('ReceiptService — buyer purchase receipt', () => {
       'tx1',
       'user_buyer',
     );
-    expect(filename).toBe('gun-galore-receipt-GG-0001.pdf');
+    expect(filename).toBe('alloutdoor-receipt-GG-0001.pdf');
     // Valid PDF starts with the %PDF- magic bytes.
     expect(Buffer.from(pdf.slice(0, 5)).toString()).toBe('%PDF-');
     expect(pdf.length).toBeGreaterThan(500);

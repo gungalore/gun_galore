@@ -642,50 +642,23 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // Mirrors the branch TransactionsService.create() takes, because the order
   // summary below has to foot to what the server will actually charge.
   //
-  // BUY NOW (operator 2026-08-15): our commission AND the gateway fee are
-  // already INSIDE listing.price — the seller named what they want to RECEIVE
-  // and we marked it up to get the buyer-facing number. Nothing is added at
-  // checkout but shipping and the R15/waybill handling, neither of which can
-  // be known before an address exists. So there is no fee line to show: it
-  // would double-count to the reader, since it's already in the item price.
-  //
-  // AUCTION WIN: a bid discovers the price, so there is nothing to mark up.
-  // The commission still comes out of the seller as it always did, and the
-  // BUYER pays the gateway fee — its own line, labelled "Transaction fee"
-  // (operator wording; never "processing fee"). The server forces that on for
-  // an auction win regardless of the listing's legacy passFeeToBuyer flag, so
-  // we mirror that here rather than reading the flag.
+  // Operator 2026-09: the BUYER always carries the Buyer Protection Fee, on
+  // both a Buy Now and an auction win. It is charged at checkout on
+  // (item + carrier rate) and shown as its own "Buyer Protection Fee" row —
+  // it is no longer baked into the listed price. The platform fee still comes
+  // out of the seller on auctions/offers, and is built into the listed price
+  // on Buy Now; the seller never sees the Protection Fee.
   //
   // The page only routes two listing kinds into this form: an ACTIVE BUY_NOW,
   // or an AUCTION already flipped to PAYMENT_PENDING (i.e. this buyer won it).
-  // This was a three-way ternary while Hunting Packages existed (an on-site
-  // booking honoured the listing's own passFeeToBuyer); with those gone it is
-  // exactly the auction test it always was for the two surviving kinds.
-  const isAuctionWin = listing.listingType === 'AUCTION';
-  const buyerPaysTransactionFee = isAuctionWin;
-
   // Live preview of what the buyer will pay. Mirrors the backend
-  // FeeCalculator math (bands locked in lib/types-derived constants
-  // wouldn't help here — we just inline the formulas). The actual
-  // numbers the buyer is charged are re-computed server-side on Pay so
-  // this is presentation-only and safe to trust as a "shown to user"
-  // value.
-  const OZOW_EFT_RATE = 0.015;
-  const OZOW_MIN_FEE_CENTS = 100;
-  const VAT_MULTIPLIER = 1.15;
-  // FLOW-F4 (M23) — the live rail is manual EFT, which charges a FLAT 1.5% of
-  // (item + shipping), no fixed component, no VAT multiplier (fee.calculator
-  // calculateProcessingFee, 'manual' branch). The preview used to hardcode the
-  // paygate card formula regardless, so on the manual rail every summary
-  // over-stated the fee — and DEALER_TRANSFER showed no summary at all, so the
-  // Pay button under-stated the true total by the whole 1.5%. A buyer then
-  // EFT'd the wrong amount and reconciliation (buyerTotal === amountCents
-  // exactly) rejected it as AMBIGUOUS. Match the server per PAYMENT_MODE.
+  // FeeCalculator math. The actual numbers the buyer is charged are
+  // re-computed server-side on Pay so this is presentation-only.
+  const OZOW_RATE = 0.0328;
+  const OZOW_FIXED_CENTS = 115; // R1.15 inclusive
   const PAYMENT_MODE =
     process.env.NEXT_PUBLIC_PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
   const MANUAL_RATE = 0.015;
-  // P6.4 — flat R15 handling per courier waybill. Applies to PUDO/TCG only;
-  // firearm dealer/in-person routes and collection produce no waybill.
   const SHIPPING_HANDLING_CENTS = 1500;
   function previewBreakdown(): {
     listing: number;
@@ -699,31 +672,16 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     const isCourier = method === 'PUDO' || method === 'TCG';
     const shipping =
       quoteState.kind === 'ready' ? quoteState.quote.priceCents : 0;
-    // NO separate handling row. Our delivery margin (10% of the carrier rate)
-    // is already inside the quoted shipping figure the buyer chose, exactly as
-    // our commission is already inside the item price. Adding it again here
-    // would both double-charge and re-introduce the checkout surprise this
-    // pricing model exists to remove.
+    // NO separate handling row — our delivery margin is folded into the
+    // quoted shipping figure.
     const handling = 0;
-    // The transaction fee is charged on (item + shipping) ONLY — the R15
-    // handling margin is EXCLUDED from the base, matching the backend
-    // FeeCalculator.breakdown() (we don't charge the % on our own margin).
-    // Handling is added to the total separately below. FLOW-F4 (M23): pick the
-    // formula by PAYMENT_MODE (manual EFT flat 1.5% vs paygate card rate).
-    //
-    // Zero on a BUY_NOW: the gateway fee is already inside listing.price under
-    // the marked-up model, so adding it here would charge it to the buyer
-    // twice — once invisibly in the item line and once on its own row.
-    // The transaction fee is charged on the item plus the CARRIER's rate —
-    // never on our own delivery margin. `shipping` above is the buyer-facing
-    // figure with the margin folded in, so the base uses the carrier rate the
-    // option carried, matching FeeCalculator.breakdown() on the server.
+    // The Buyer Protection Fee is charged on (item + CARRIER rate), never on
+    // our own delivery margin, matching FeeCalculator on the server.
     const base = item + (deliveryOption?.carrierRateCents ?? shipping);
-    const processing = !buyerPaysTransactionFee
-      ? 0
-      : PAYMENT_MODE === 'manual'
+    const processing =
+      PAYMENT_MODE === 'manual'
         ? Math.round(base * MANUAL_RATE)
-        : Math.round(Math.max(base * OZOW_EFT_RATE, OZOW_MIN_FEE_CENTS) * VAT_MULTIPLIER);
+        : Math.round(base * OZOW_RATE + OZOW_FIXED_CENTS);
     return {
       listing: item,
       shipping,
@@ -1227,10 +1185,8 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           // must see the whole total before committing, or they pay the wrong
           // amount. Courier-only rows (shipping) are gated on isCourier.
           //
-          // The rows differ by fee model (see buyerPaysTransactionFee above):
-          // a BUY_NOW price already contains our cut, so the item line IS the
-          // full price and there is no fee row to add. An auction win pays the
-          // gateway fee on top, as its own "Transaction fee" row.
+          // The buyer always pays the Buyer Protection Fee on top, under both
+          // fee models (operator 2026-09), shown as its own row.
           const b = previewBreakdown();
           if (!b) return null;
           const isCourier = method === 'PUDO' || method === 'TCG';
@@ -1284,14 +1240,12 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
               {/* No handling row: our delivery margin is inside the shipping
                   figure above, the same way our commission is inside the item
                   price. One number per thing the buyer is buying. */}
-              {/* Operator wording (2026-08-15): the buyer-paid gateway fee is
-                  a "Transaction fee". Never "processing fee" / "service fee".
-                  Only ever rendered on the models where it is genuinely added
-                  on top — an auction win, or an experience whose seller passes
-                  it on. On a BUY_NOW b.processing is 0 and this row is gone. */}
+              {/* Operator wording (2026-09): the buyer-paid gateway fee is the
+                  "Buyer Protection Fee". The buyer always carries it, under
+                  both fee models. */}
               {b.processing > 0 && (
                 <BreakdownLine
-                  label="Transaction fee"
+                  label="Buyer Protection Fee"
                   value={formatPrice(b.processing)}
                   muted
                 />
@@ -1321,17 +1275,15 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
                   </span>
                 </div>
               )}
-              {/* Why there's no fee row on a Buy Now. The listed price already
-                  carries our commission and the gateway fee, so the absence of
-                  a fee line is the point — say so, rather than leaving the
-                  buyer to wonder what we're taking. */}
-              {!isAuctionWin && (
+              {/* The buyer always sees the Buyer Protection Fee; explain what
+                  it covers rather than leaving them to wonder. */}
+              {b.processing > 0 && (
                 <p
                   className="text-xs mt-2"
                   style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
                 >
-                  The listed price is the full price — our fees are already
-                  inside it. Nothing else is added to the item at checkout.
+                  The Buyer Protection Fee covers secure payment handling,
+                  seller verification and dispute resolution on this order.
                 </p>
               )}
             </div>

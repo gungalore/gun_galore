@@ -4,16 +4,14 @@ import { Injectable } from '@nestjs/common';
 // is the WIDTH of the slice (not a cumulative cap), so the marginal
 // rate only applies to the rand that fall inside that slice.
 //
-// Reduced 2026-05-20: every band dropped by 1 percentage point and a
-// minimum platform fee added (see MIN_COMMISSION_CENTS below — R30 then,
-// lowered to R10 in 2026-08). The
-// minimum protects the platform on small-ticket sales — a R50 item at
-// 9% is only R4.50, which doesn't cover the processing overhead.
+// Operator decision 2026-09: widened to 10 / 8 / 6 / 4 across R5,000 /
+// R15,000 / R25,000. The R10 minimum (MIN_COMMISSION_CENTS) still protects
+// small-ticket sales — 10% of a R50 item is R5, below the floor.
 export const BANDS: { limit: number; rate: number; label: string }[] = [
-  { limit: 500_000, rate: 0.09, label: 'First R5,000 at 9%' },
-  { limit: 1_500_000, rate: 0.07, label: 'R5,001–R20,000 at 7%' },
-  { limit: 8_000_000, rate: 0.05, label: 'R20,001–R100,000 at 5%' },
-  { limit: Infinity, rate: 0.03, label: 'Above R100,000 at 3%' },
+  { limit: 500_000, rate: 0.10, label: 'First R5,000 at 10%' },
+  { limit: 1_000_000, rate: 0.08, label: 'R5,001–R15,000 at 8%' },
+  { limit: 1_000_000, rate: 0.06, label: 'R15,001–R25,000 at 6%' },
+  { limit: Infinity, rate: 0.04, label: 'Above R25,000 at 4%' },
 ];
 
 // Floor on platform commission. The bands above are applied first, then
@@ -33,16 +31,14 @@ export const MIN_COMMISSION_CENTS = 1_000; // R10
 // Top Seller discount — 0.5% off total price. LOCKED per CLAUDE.md.
 const TOP_SELLER_DISCOUNT = 0.005;
 
-// Gateway processing fee. Ozow is the gateway (Peach was replaced 2026-09);
-// its hosted page defaults to Pay by Bank / instant EFT at 1.5% (min R1.00),
-// VAT-EXCLUSIVE. SA VAT is 15%, so the buyer-facing inclusive figure is
-// (max(subtotal × 1.5%, R1.00)) × 1.15 ≈ 1.725% (min R1.15).
-// Computed inclusively so the buyer sees the figure billed against the EFT.
-// Card payments (2.85%) cost more; that difference is an accepted residual
-// the operator absorbs rather than a second price baked into the listing.
-const OZOW_EFT_RATE = 0.015;
-const OZOW_MIN_FEE_CENTS = 100; // R1.00 net minimum per Ozow pricing
-const VAT_MULTIPLIER = 1.15; // SA VAT — 15% on top of the net gateway fee
+// Buyer Protection Fee — the gateway cost, rebased as a buyer-facing service
+// (operator decision 2026-09). Ozow card pricing is 2.85% + R1.00 net; with
+// 15% VAT that is 3.28% + R1.15 inclusive, the figure the operator supplied
+// and the figure the buyer sees. Charged on (item + shipping). This replaced
+// the 1.5% Pay-by-Bank rate and is no longer VAT-grossed-up here — the
+// constant is already inclusive.
+const OZOW_RATE = 0.0328;
+const OZOW_FIXED_CENTS = 115; // R1.15 inclusive, per transaction
 
 // Manual EFT processing fee. While there is no card gateway, buyers pay
 // GG by bank EFT and a flat 1.5% handling fee is added to the order (no
@@ -135,65 +131,41 @@ export class FeeCalculator {
 
   /**
    * BUY NOW — turn what the SELLER wants to receive into the price the buyer
-   * sees. Operator decision 2026-08-15.
+   * sees. Operator decision 2026-08-15; fee stack changed 2026-09.
    *
-   * The old model took our cut OUT of the seller's price: they listed R450,
-   * we deducted commission, they got R409.50. The new one builds it IN: they
-   * ask R450, we list at R511.97, and they receive the R450 they asked for.
-   * Same percentages, opposite direction.
+   * The seller asks R1,000 and receives exactly R1,000. Our commission is
+   * built INTO the listed price, so the seller never sees a deduction from
+   * their ask. The Buyer Protection Fee is NOT baked in any more (operator
+   * 2026-09): it is added at checkout on (item + shipping), the same way the
+   * auction path charges it, so the listed number stays a clean
+   * "ask + commission".
    *
-   * Why it is worth the change: "list free, keep 100%" is a far stronger
-   * message to a seller than "we take 9%", even though the money comes from
-   * the same transaction. Yaga runs on exactly this and charges sellers
-   * nothing at all.
+   *   ask                          R1,000   seller receives this
+   *   + commission (banded)        R  100   our margin
+   *   = LIST PRICE                 R1,100   the buyer sees this
    *
-   * WHERE WE DIFFER FROM YAGA, deliberately: they show "R450 + Buyer
-   * Protection fee" and reveal the real number at checkout. We bake it into
-   * the listed price, so the number on the card IS the number you pay. No
-   * surprise at the last step.
+   * The buyer then pays LIST PRICE + Buyer Protection Fee + shipping.
    *
-   * The stack, in order — each layer applies to the running total, because
-   * that is what the next layer is actually charged on:
-   *
-   *   ask                                    R450.00   seller receives this
-   *   + commission (banded, min R30)         R 40.50   our margin
-   *   = subtotal                             R490.50
-   *   + Ozow on the subtotal (1.725%+VAT)    R  8.46   recovers the gateway
-   *   = LIST PRICE                           R498.96   the buyer sees this
-   *
-   * KNOWN, ACCEPTED RESIDUAL: Ozow charges its percentage on the FINAL
-   * amount the buyer is billed, not on the subtotal we applied it to — so
-   * marking up by 1.725% of R490.50 recovers slightly less than the fee
-   * eventually charged on R498.96. About R0.15 on a R450 ask (0.03%). Exact
-   * recovery would need `list = (ask + commission + fixed) / (1 - rate)`;
-   * that is a one-line change here if the leak is ever worth closing.
-   *
-   * Shipping is NOT in this base — it is unknown until checkout. Ozow's
-   * percentage on the shipping leg is covered by the R15/waybill handling
-   * margin, which comfortably exceeds it.
+   * Shipping is not in this base — it is unknown until checkout.
    */
   listPriceFromSellerAsk(
     sellerAskZarCents: number,
     isTopSeller: boolean,
-    mode: PaymentMode = 'paygate',
+    _mode: PaymentMode = 'paygate',
   ): {
     sellerAsk: number;
     commissionZar: number;
-    processingFee: number;
     listPrice: number;
   } {
     const sellerAsk = Math.max(0, Math.round(sellerAskZarCents));
     if (sellerAsk === 0) {
-      return { sellerAsk: 0, commissionZar: 0, processingFee: 0, listPrice: 0 };
+      return { sellerAsk: 0, commissionZar: 0, listPrice: 0 };
     }
     const commissionZar = this.calculateCommission(sellerAsk, isTopSeller);
-    const subtotal = sellerAsk + commissionZar;
-    const processingFee = this.calculateProcessingFee(subtotal, mode);
     return {
       sellerAsk,
       commissionZar,
-      processingFee,
-      listPrice: subtotal + processingFee,
+      listPrice: sellerAsk + commissionZar,
     };
   }
 
@@ -220,12 +192,10 @@ export class FeeCalculator {
   ): FeeBreakdown {
     // PER UNIT, then multiplied — NOT marked up on the line subtotal.
     //
-    // The old model marks up the whole line because commission bands are
-    // marginal and taper. Doing that here would make two units cost LESS than
-    // twice the price on the card (the second unit falls into a cheaper band,
-    // and the R30 floor is charged once). The listed price is a promise: two
-    // of them cost exactly twice. Buyer-facing consistency wins over the few
-    // rand of banding, and each unit really is a separate item at that price.
+    // Commission bands are marginal and taper, so re-banding the whole line
+    // would make two units cost LESS than twice the price on the card (the
+    // second unit falls into a cheaper band and the R10 floor is charged
+    // once). The listed price is a promise: two of them cost exactly twice.
     const qty = Math.max(1, Math.round(quantity));
     const unit = this.listPriceFromSellerAsk(
       sellerAskZarCents,
@@ -235,11 +205,16 @@ export class FeeCalculator {
     const marked = {
       sellerAsk: unit.sellerAsk * qty,
       commissionZar: unit.commissionZar * qty,
-      processingFee: unit.processingFee * qty,
       listPrice: unit.listPrice * qty,
     };
     const shippingCost = Math.max(0, Math.round(shippingCostZarCents));
     const shippingHandlingCents = Math.max(0, Math.round(handlingFeeCents));
+    // Buyer Protection Fee — charged at checkout on (item + shipping), NOT
+    // baked into the listed price (operator 2026-09). The buyer always pays it.
+    const processingFee = this.calculateProcessingFee(
+      marked.listPrice + shippingCost,
+      mode,
+    );
 
     return {
       // What the buyer is charged for the goods — the number on the card.
@@ -247,25 +222,25 @@ export class FeeCalculator {
       shippingCost,
       shippingHandlingCents,
       commissionZar: marked.commissionZar,
-      processingFee: marked.processingFee,
-      buyerTotal: marked.listPrice + shippingCost + shippingHandlingCents,
+      processingFee,
+      buyerTotal:
+        marked.listPrice + processingFee + shippingCost + shippingHandlingCents,
       // The whole point: the seller receives exactly what they asked for.
       sellerPayout: marked.sellerAsk,
     };
   }
 
   /**
-   * Processing fee on a given subtotal (listing price + shipping).
-   * - 'paygate': Ozow Pay by Bank rate, VAT-inclusive — max(base × 1.5%,
-   *   R1.00) × 1.15.
-   * - 'manual': flat 1.5% EFT handling fee, no fixed component.
+   * Buyer Protection Fee on a given base (listing price + shipping).
+   * - 'paygate': Ozow card, VAT-inclusive — base × 3.28% + R1.15.
+   * - 'manual': legacy flat 1.5% EFT handling fee, no fixed component.
    */
   calculateProcessingFee(baseZarCents: number, mode: PaymentMode = 'paygate'): number {
+    if (!Number.isFinite(baseZarCents) || baseZarCents <= 0) return 0;
     if (mode === 'manual') {
       return Math.round(baseZarCents * MANUAL_RATE);
     }
-    const net = Math.max(baseZarCents * OZOW_EFT_RATE, OZOW_MIN_FEE_CENTS);
-    return Math.round(net * VAT_MULTIPLIER);
+    return Math.round(baseZarCents * OZOW_RATE + OZOW_FIXED_CENTS);
   }
 
   /**
@@ -277,15 +252,15 @@ export class FeeCalculator {
    */
   breakdown(
     listingPriceZarCents: number,
-    passFeeToBuyer: boolean,
+    _passFeeToBuyer: boolean,
     isTopSeller: boolean,
     shippingCostZarCents = 0,
     mode: PaymentMode = 'paygate',
     // P6.4 — flat GG handling margin for this line, ZAR cents. Non-zero ONLY
     // for a courier line that produces its OWN waybill (the caller decides:
     // PUDO/TCG and not a zero-cost consolidated sibling). Buyer-paid on top of
-    // everything else and GG-retained; it does NOT enter the processing-fee
-    // base (we don't charge the EFT % on our own margin) and never touches the
+    // everything else and GG-retained; it does NOT enter the protection-fee
+    // base (we don't charge the fee on our own margin) and never touches the
     // seller payout. Defaults to 0 so every existing caller is unchanged.
     handlingFeeCents = 0,
   ): FeeBreakdown {
@@ -293,28 +268,20 @@ export class FeeCalculator {
     const shippingCost = Math.max(0, Math.round(shippingCostZarCents));
     const shippingHandlingCents = Math.max(0, Math.round(handlingFeeCents));
     const commissionZar = this.calculateCommission(listingPrice, isTopSeller);
-    // The processing fee is charged on whatever the buyer actually pays,
-    // which always includes shipping. Don't strip shipping out of the
-    // base or we under-collect. Mode selects card (3.5%+R1.50) vs the
-    // manual EFT flat 1.5%. The handling margin is EXCLUDED from the base.
+    // The Buyer Protection Fee is charged on whatever the buyer actually
+    // pays, which always includes shipping. The handling margin is EXCLUDED
+    // from the base.
     const processingFee = this.calculateProcessingFee(
       listingPrice + shippingCost,
       mode,
     );
 
-    // If buyer absorbs fee: buyer pays price + shipping + fee,
-    //                       seller receives price - commission
-    // If seller absorbs fee: buyer pays price + shipping,
-    //                        seller receives price - commission - fee
-    // The R15 handling margin is buyer-paid regardless of who absorbs the
-    // processing fee (it's a shipping surcharge, not the EFT fee).
+    // Operator 2026-09: the buyer ALWAYS carries the Buyer Protection Fee.
+    // The seller-absorb branch is retired — `_passFeeToBuyer` is kept only so
+    // existing call sites and stored rows still type-check, and is ignored.
     const buyerTotal =
-      (passFeeToBuyer
-        ? listingPrice + shippingCost + processingFee
-        : listingPrice + shippingCost) + shippingHandlingCents;
-    const sellerPayout = passFeeToBuyer
-      ? listingPrice - commissionZar
-      : listingPrice - commissionZar - processingFee;
+      listingPrice + processingFee + shippingCost + shippingHandlingCents;
+    const sellerPayout = Math.max(0, listingPrice - commissionZar);
 
     return {
       listingPrice,
@@ -323,7 +290,7 @@ export class FeeCalculator {
       commissionZar,
       processingFee,
       buyerTotal,
-      sellerPayout: Math.max(0, sellerPayout),
+      sellerPayout,
     };
   }
 }

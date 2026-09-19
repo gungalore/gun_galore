@@ -42,37 +42,26 @@ const inputStyle: React.CSSProperties = {
 };
 
 // ─── What the buyer pays on an accepted offer ────────────────────────────
-// An offer DISCOVERS the price the same way a bid does, so there is nothing
-// to mark up: the seller still pays the platform commission out of the agreed
-// price, and the BUYER carries the gateway cost — shown as its own
-// "Transaction fee" row (operator wording 2026-08-15; never "processing fee"
-// or "service fee"). This is not conditional on the listing's legacy
-// passFeeToBuyer flag: the server forces it on for every offer-backed
-// transaction.
-//
-// Contrast with a straight Buy Now, where the seller names what they want to
-// RECEIVE and the listed price already carries our commission plus the gateway
-// fee — nothing is added there, so that checkout shows no fee row at all.
+// An offer DISCOVERS the price the same way a bid does: the seller pays the
+// platform commission out of the agreed price, and the BUYER carries the
+// Buyer Protection Fee — shown as its own "Buyer Protection Fee" row
+// (operator 2026-09). This is not conditional on the listing's legacy
+// passFeeToBuyer flag: the buyer always pays it now, on every rail.
 //
 // Formulas mirror the backend FeeCalculator exactly:
-//   paygate — (base × 3.5% + R1.50) × 1.15 VAT, i.e. the VAT-inclusive figure
-//             billed against the card
+//   paygate — base × 3.28% + R1.15, the VAT-inclusive Buyer Protection Fee
 //   manual  — flat 1.5% EFT handling, no fixed component
 // Presentation only; the amount actually charged is recomputed server-side on
 // POST /transactions.
-const PEACH_RATE = 0.035;
-const PEACH_FIXED_CENTS = 150; // R1.50
-const VAT_MULTIPLIER = 1.15;
+const OZOW_RATE = 0.0328;
+const OZOW_FIXED_CENTS = 115; // R1.15 inclusive
 const MANUAL_RATE = 0.015;
 const PAYMENT_MODE =
   process.env.NEXT_PUBLIC_PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
 function transactionFee(baseZarCents: number): number {
   return PAYMENT_MODE === 'manual'
     ? Math.round(baseZarCents * MANUAL_RATE)
-    : Math.round(
-        baseZarCents * PEACH_RATE * VAT_MULTIPLIER +
-          PEACH_FIXED_CENTS * VAT_MULTIPLIER,
-      );
+    : Math.round(baseZarCents * OZOW_RATE + OZOW_FIXED_CENTS);
 }
 
 // FLOW-F5 — the 9 SA provinces, values matching the Prisma Province enum.
@@ -470,7 +459,7 @@ export function OfferCheckoutForm({
 
       {/* What the buyer actually pays. The agreed price is the price — an
           offer discovers it, so nothing is marked up on top of it — and the
-          gateway cost sits on the buyer as its own "Transaction fee" row.
+          gateway cost sits on the buyer as its own "Buyer Protection Fee" row.
           P6.4: a courier parcel also carries the flat R15 handling. Shipping
           (and therefore the exact fee, which is charged on item + shipping) is
           only priced server-side at payment, so those rows say so rather than
@@ -505,14 +494,14 @@ export function OfferCheckoutForm({
               muted={!deliveryOption}
             />
             <SummaryLine
-              label="Transaction fee"
+              label="Buyer Protection Fee"
               value="Calculated at payment"
               muted
             />
           </>
         ) : (
           <SummaryLine
-            label="Transaction fee"
+            label="Buyer Protection Fee"
             value={formatPrice(feeOnAgreedPrice)}
             muted
           />

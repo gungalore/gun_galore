@@ -153,6 +153,8 @@ const isPublicRoute = createRouteMatcher([
   '/aml-policy',
   '/acceptable-use',
   '/refund-policy',
+  '/buyer-protection',   // what the Buyer Protection Fee covers — linked from
+                         // /fees and checkout, must be reachable signed-out.
   // '/firearms-compliance' REMOVED — the Regulated Items Annex is
   // members-only now and lives at /members/regulated-items. The old path
   // still exists as a 308 for indexed/bookmarked links, but it is gated so

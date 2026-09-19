@@ -933,7 +933,7 @@ function OrderCardSection({ card }: { card: OrderCard }) {
       <Kv k="Items" v={formatRand(card.itemsSubtotal)} />
       <Kv k="Shipping" v={formatRand(card.shippingSubtotal)} />
       <Kv k="Handling" v={formatRand(card.handlingSubtotal)} />
-      <Kv k="Processing fee" v={formatRand(card.processingFee)} />
+      <Kv k="Buyer Protection Fee" v={formatRand(card.processingFee)} />
       <Kv k="Order total" v={formatRand(card.buyerTotal)} last />
 
       {manual ? (

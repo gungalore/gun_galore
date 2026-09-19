@@ -109,18 +109,11 @@ export function buyerBreakdown(f: FeeFacts): BuyerBreakdown {
   const delivery = f.shippingCost + f.shippingHandlingCents;
   if (delivery > 0) lines.push({ label: 'Delivery', cents: delivery });
 
-  // ⚠️ ONLY under SELLER_DEDUCT, and only when the buyer really was charged.
-  // Under the markup model this amount is already inside "Item price"; adding
-  // it here is the double-count that made the receipt stop footing.
-  //
-  // "Transaction fee" is the operator's wording for the buyer-facing label —
-  // never "processing fee", which is what the SELLER sees deducted.
-  if (
-    f.feeModel === FeeModel.SELLER_DEDUCT &&
-    f.passFeeToBuyer &&
-    f.processingFee > 0
-  ) {
-    lines.push({ label: 'Transaction fee', cents: f.processingFee });
+  // Buyer Protection Fee — the buyer always carries it (operator 2026-09),
+  // under BOTH fee models. It is added at checkout on (item + shipping), so
+  // it is never inside "Item price" any more and never double-counts.
+  if (f.processingFee > 0) {
+    lines.push({ label: 'Buyer Protection Fee', cents: f.processingFee });
   }
 
   return {
@@ -152,35 +145,14 @@ export function sellerBreakdown(f: FeeFacts): SellerBreakdown {
     };
   }
 
-  if (f.feeModel === FeeModel.BUYNOW_MARKUP) {
-    return {
-      grossLabel: 'Your price',
-      gross: f.sellerPayout,
-      deductions: [],
-      netLabel: 'You receive',
-      net: f.sellerPayout,
-      feesInPrice: true,
-      note: `Listed to the buyer at ${randPhrase(
-        f.listingPrice,
-      )}. Our fees were built into that price, so nothing is deducted from you.`,
-      // ⚠️ THE MARKUP IDENTITY, not a restatement of "nothing was deducted"
-      // (which would be true by construction and therefore worthless). If a
-      // row is labelled BUYNOW_MARKUP, the price the buyer saw must be the
-      // seller's ask with our two fees stacked on top — that is how
-      // listPriceFromSellerAsk built it. A row failing this is mislabelled,
-      // and the caller should not present it as a markup sale.
-      balances:
-        f.listingPrice === f.sellerPayout + f.commissionZar + f.processingFee,
-    };
-  }
-
+  // Operator 2026-09: the seller is shown the sale price with our platform
+  // fee deducted, under BOTH models — the H&G-style statement. On a markup
+  // listing the seller still receives their full ask (the fee came from the
+  // buyer's marked-up price), but the document shows it as a deduction so the
+  // seller sees one consistent statement shape.
   const deductions: MoneyLine[] = [];
   if (f.commissionZar > 0) {
-    deductions.push({ label: 'Commission', cents: f.commissionZar });
-  }
-  // The seller only carries the gateway fee when the buyer did not.
-  if (!f.passFeeToBuyer && f.processingFee > 0) {
-    deductions.push({ label: 'Payment processing fee', cents: f.processingFee });
+    deductions.push({ label: 'Platform Fee', cents: f.commissionZar });
   }
 
   return {
@@ -190,26 +162,12 @@ export function sellerBreakdown(f: FeeFacts): SellerBreakdown {
     netLabel: 'You receive',
     net: f.sellerPayout,
     feesInPrice: false,
-    note: f.passFeeToBuyer
-      ? 'The buyer paid the transaction fee; our commission comes off the sale price.'
-      : 'Our commission and the payment fee come off the sale price.',
+    note:
+      f.feeModel === FeeModel.BUYNOW_MARKUP
+        ? 'The listed price included our platform fee; we invoice you for it and pay you the balance.'
+        : 'Our platform fee comes off the sale price.',
     balances: f.listingPrice - sum(deductions) === f.sellerPayout,
   };
-}
-
-/**
- * R-prefixed rand, comma thousands separator.
- *
- * ⚠️ en-US ON PURPOSE. en-ZA yields a non-breaking space (U+00A0) which some
- * PDF fonts have no glyph for — it rendered as "R 10<FFFD>000" on a live Zoho
- * invoice. Same reasoning as ZohoBooksService.formatRand.
- */
-function randPhrase(cents: number): string {
-  const rand = cents / 100;
-  return `R${rand.toLocaleString('en-US', {
-    minimumFractionDigits: rand % 1 === 0 ? 0 : 2,
-    maximumFractionDigits: 2,
-  })}`;
 }
 
 /**

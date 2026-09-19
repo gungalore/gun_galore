@@ -153,17 +153,10 @@ export class ReceiptService {
     };
     // ⚠️ THE LINES COME FROM ONE SHARED BUILDER, and they FOOT.
     //
-    // This block used to print "Item price", then "Shipping", then
-    // "Handling", then a "Processing fee" gated on `tx.passFeeToBuyer` — and
-    // on a marked-up BUY NOW that fee is ALREADY INSIDE the item price, so
-    // the receipt overshot its own "Total paid" by the fee. On an auction
-    // whose listing carried a legacy false flag it undershot instead. Two
-    // ways to hand a buyer a receipt that does not add up.
-    //
-    // It also itemised our delivery margin as its own "Handling" line, which
-    // fee.calculator.ts is explicit must never be shown separately.
-    //
-    // buyerBreakdown() decides both, from the fee model recorded on the row.
+    // buyerBreakdown() decides the lines from the fee model recorded on the
+    // row. Operator 2026-09: the Buyer Protection Fee is a line on every
+    // receipt, and the delivery margin is folded into a single "Delivery"
+    // figure — never itemised as its own "Handling" line.
     const shown = buyerBreakdown(tx);
     for (const l of shown.lines) line(l.label, l.cents);
     if (!shown.balances) {
@@ -218,9 +211,9 @@ export class ReceiptService {
     note(
       `This is a proof-of-purchase receipt, not a tax invoice. Questions: ${SUPPORT_EMAIL}`,
     );
-    note('All Outdoor — gungalore.co.za');
+    note('All Outdoor — alloutdoor.co.za');
 
     const pdf = await doc.save();
-    return { pdf, filename: `gun-galore-receipt-${ref}.pdf` };
+    return { pdf, filename: `alloutdoor-receipt-${ref}.pdf` };
   }
 }

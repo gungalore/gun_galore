@@ -180,16 +180,13 @@ export default function OrderDetailPage() {
             <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{formatPrice(order.shippingSubtotal + order.handlingSubtotal)}</span>
           </div>
         )}
-        {/* Processing fee is only a BUYER line when the seller passes it on
-            (it's per-transaction passFeeToBuyer, which the order rollup
-            doesn't expose). Deriving it as the leftover of buyerTotal keeps
-            the column honest either way: it equals the passed-through fee
-            when the buyer pays it and 0 when the seller absorbs it — so
-            Items + Shipping + Handling + this always foots to Total, which
-            is the whole point of showing it on a money screen. */}
+        {/* Buyer Protection Fee is a BUYER line on every order now (operator
+            2026-09). Deriving it as the leftover of buyerTotal keeps the
+            column honest: Items + Shipping + Handling + this always foots to
+            Total, which is the whole point of showing it on a money screen. */}
         {order.buyerTotal - order.itemsSubtotal - order.shippingSubtotal - order.handlingSubtotal > 0 && (
           <div className="flex justify-between text-sm py-1">
-            <span style={{ color: 'var(--text-tertiary)' }}>Processing fee</span>
+            <span style={{ color: 'var(--text-tertiary)' }}>Buyer Protection Fee</span>
             <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
               {formatPrice(
                 order.buyerTotal -

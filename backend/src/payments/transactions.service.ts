@@ -294,14 +294,11 @@ export class TransactionsService {
     // describe the sale truthfully — and five of them described it three
     // different ways. Snapshotted here, beside the money they explain.
     const feeModel = feeModelFor({ isExperience: false, isMarkedUpBuyNow });
-    // ⚠️ THE EFFECTIVE FLAG. An auction win and an accepted offer FORCE the
-    // buyer to carry the gateway fee whatever the seller once ticked on the
-    // listing. This is the value the fee maths actually runs with, so it is
-    // the value we store — the row used to keep `listing.passFeeToBuyer`,
-    // which answered a different question than every consumer was asking of
-    // it.
-    const buyerPaysProcessingFee =
-      auctionWin || offerRecord ? true : listing.passFeeToBuyer;
+    // Operator 2026-09: the buyer ALWAYS carries the Buyer Protection Fee, on
+    // every rail. The old listing-level choice is retired; the column is kept
+    // (and stored true) so historical rows and every consumer still read a
+    // meaningful value.
+    const buyerPaysProcessingFee = true;
     // ⚠️ The null fallback below is a SAFETY NET, not a supported state. The
     // buyer's checkout cannot tell a marked-up BUY_NOW from a legacy one —
     // sellerAskCents is owner-gated and never reaches a buyer — so it assumes

@@ -53,10 +53,10 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 // MIN_COMMISSION_CENTS constants on the backend.
 
 const COMMISSION_BANDS: { limit: number; rate: number; label: string }[] = [
-  { limit: 500_000, rate: 0.09, label: 'First R5,000 at 9%' },
-  { limit: 1_500_000, rate: 0.07, label: 'R5,001–R20,000 at 7%' },
-  { limit: 8_000_000, rate: 0.05, label: 'R20,001–R100,000 at 5%' },
-  { limit: Infinity, rate: 0.03, label: 'Above R100,000 at 3%' },
+  { limit: 500_000, rate: 0.10, label: 'First R5,000 at 10%' },
+  { limit: 1_000_000, rate: 0.08, label: 'R5,001–R15,000 at 8%' },
+  { limit: 1_000_000, rate: 0.06, label: 'R15,001–R25,000 at 6%' },
+  { limit: Infinity, rate: 0.04, label: 'Above R25,000 at 4%' },
 ];
 // R10 floor — see backend fee.calculator.ts. Lowered from R30 on 2026-08-15:
 // that figure existed to cover VerifyNow KYC at ~R28 per seller, a cost that no
@@ -68,12 +68,11 @@ const MIN_COMMISSION_CENTS = 1_000;
 // Mirrors TOP_SELLER_DISCOUNT in fee.calculator.ts.
 const TOP_SELLER_DISCOUNT = 0.005;
 
-// Card-gateway fee (Peach). Published rate is 3.5% + R1.50, VAT-EXCLUSIVE;
-// SA VAT of 15% goes on top, which is what the card is actually billed.
-// Same three constants the backend uses — keep them in step.
-const PEACH_RATE = 0.035;
-const PEACH_FIXED_CENTS = 150; // R1.50
-const VAT_MULTIPLIER = 1.15;
+// Buyer Protection Fee (Ozow card). 2.85% + R1.00 net, i.e. 3.28% + R1.15
+// VAT-inclusive — the same constants the backend uses. Charged to the BUYER
+// at checkout on (item + shipping); never part of the listed price.
+const OZOW_RATE = 0.0328;
+const OZOW_FIXED_CENTS = 115; // R1.15 inclusive
 
 // Per-waybill handling margin the buyer pays on top of the courier quote —
 // mirrors SHIPPING_HANDLING_FEE_CENTS in fee.calculator.ts. Only relevant to
@@ -151,48 +150,44 @@ function calcCommissionCents(priceCents: number, isTopSeller = false): number {
   return rounded;
 }
 
-// Card-gateway fee on a given base, VAT-inclusive — mirror of
+// Buyer Protection Fee on a given base, VAT-inclusive — mirror of
 // FeeCalculator.calculateProcessingFee (paygate mode).
 function calcProcessingFeeCents(baseCents: number): number {
-  return Math.round(
-    (baseCents * PEACH_RATE + PEACH_FIXED_CENTS) * VAT_MULTIPLIER,
-  );
+  if (baseCents <= 0) return 0;
+  return Math.round(baseCents * OZOW_RATE + OZOW_FIXED_CENTS);
 }
 
 // BUY NOW — turn what the seller wants to RECEIVE into the price the buyer
-// sees. Mirror of FeeCalculator.listPriceFromSellerAsk (operator decision
-// 2026-08-15): our cut is no longer deducted from the seller, it is built
-// into the listed price. Same percentages, opposite direction.
+// sees. Mirror of FeeCalculator.listPriceFromSellerAsk (operator 2026-08-15;
+// fee stack changed 2026-09): our commission is built into the listed price,
+// so the seller receives their full ask. The Buyer Protection Fee is NOT in
+// the listed price — the buyer pays it at checkout on (item + shipping).
 //
-// This exists so the seller sees BOTH numbers — their payout AND the
-// buyer-facing price — live as they type, before they publish. A seller who
-// asks R450 and then finds their listing showing R511.97 with no warning will
-// believe they were cheated, so this must never drift from the backend.
+// This exists so the seller sees their payout AND the buyer-facing price
+// live as they type, before they publish. A seller who asks R1,000 and then
+// finds their listing showing R1,100 with no warning will believe they were
+// cheated, so this must never drift from the backend.
 //
 // AUCTION and TAKE_A_SHOT are NOT marked up: a bid or an offer discovers the
 // price, so there is nothing to mark up. Commission still comes off the sale
-// price on those, and the buyer pays the transaction fee on top at checkout.
+// price on those, and the buyer pays the Buyer Protection Fee on top.
 function listPriceFromSellerAsk(
   askCents: number,
   isTopSeller = false,
 ): {
   sellerAsk: number;
   commissionZar: number;
-  processingFee: number;
   listPrice: number;
 } {
   const sellerAsk = Math.max(0, Math.round(askCents));
   if (sellerAsk === 0) {
-    return { sellerAsk: 0, commissionZar: 0, processingFee: 0, listPrice: 0 };
+    return { sellerAsk: 0, commissionZar: 0, listPrice: 0 };
   }
   const commissionZar = calcCommissionCents(sellerAsk, isTopSeller);
-  const subtotal = sellerAsk + commissionZar;
-  const processingFee = calcProcessingFeeCents(subtotal);
   return {
     sellerAsk,
     commissionZar,
-    processingFee,
-    listPrice: subtotal + processingFee,
+    listPrice: sellerAsk + commissionZar,
   };
 }
 
@@ -5118,10 +5113,11 @@ function PriceBreakdown({
 }
 
 // BUY NOW breakdown — the markup model. The seller types what they want to
-// RECEIVE; our commission and the card fee are added on top to produce the
-// price buyers see. Four rows, and "Buyers see" is deliberately the loudest
-// thing in the box: it is the number that will appear on their listing, and a
-// seller surprised by it is the single biggest risk in this whole change.
+// RECEIVE; our commission is added on top to produce the price buyers see.
+// "Buyers see" is deliberately the loudest thing in the box: it is the number
+// that will appear on their listing, and a seller surprised by it is the
+// single biggest risk in this whole change. The Buyer Protection Fee is NOT
+// shown here — the buyer pays it at checkout, not in the listing price.
 //
 // Mirrors listPriceFromSellerAsk above (which mirrors the backend), so the
 // figure shown here is the figure that publishes.
@@ -5133,7 +5129,7 @@ function SellerAskBreakdown({
   isTopSeller?: boolean;
 }) {
   if (askCents <= 0) return null;
-  const { commissionZar, processingFee, listPrice } = listPriceFromSellerAsk(
+  const { commissionZar, listPrice } = listPriceFromSellerAsk(
     askCents,
     isTopSeller,
   );
@@ -5171,11 +5167,6 @@ function SellerAskBreakdown({
         value={`+ ${formatRand(commissionZar)}`}
         muted
       />
-      <BreakdownRow
-        label="Card fee"
-        value={`+ ${formatRand(processingFee)}`}
-        muted
-      />
       <div
         className="flex justify-between items-baseline pt-3 mt-2"
         style={{ borderTop: '0.5px solid var(--border)' }}
@@ -5206,8 +5197,9 @@ function SellerAskBreakdown({
         <strong style={{ color: 'var(--text-primary)' }}>
           {formatRand(askCents)}
         </strong>{' '}
-        in full — our commission and the card fee are built into what the
-        buyer pays, not deducted from your payout.
+        in full — our commission is built into what the buyer pays, not
+        deducted from your payout. The buyer also pays a Buyer Protection Fee
+        and delivery at checkout.
       </p>
       <div
         className="text-xs mt-3 pt-3"
@@ -5237,9 +5229,10 @@ function SellerAskBreakdown({
             Top Seller tier gets a 0.5% discount once you qualify.
           </li>
           <li>
-            Card fee: the gateway&apos;s{' '}
-            {(PEACH_RATE * 100).toFixed(1)}% + R
-            {(PEACH_FIXED_CENTS / 100).toFixed(2)} on the subtotal, plus VAT.
+            Buyer Protection Fee: the buyer pays{' '}
+            {(OZOW_RATE * 100).toFixed(2)}% + R
+            {(OZOW_FIXED_CENTS / 100).toFixed(2)} at checkout, on the item plus
+            shipping. It is not part of your listed price.
           </li>
           <li>
             Courier shipping (and the R

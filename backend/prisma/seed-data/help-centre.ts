@@ -45,23 +45,23 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What is the Top Seller discount?',
     question: 'Do Top Sellers pay less commission?',
     answer:
-      "Yes. Top Sellers get 0.5% of the total sale price off their commission — on a R10,000 sale that is R50 off. It applies automatically once you hold Top Seller status, and the discounted figure shows in your fee preview when you list. The R30 minimum platform fee still applies.",
+      "Yes. Top Sellers get 0.5% of the total sale price off their commission — on a R10,000 sale that is R50 off. It applies automatically once you hold Top Seller status, and the discounted figure shows in your fee preview when you list. The R10 minimum platform fee still applies.",
     tags: ['fees', 'commission', 'top seller'],
   },
   {
-    sourceKey: 'fees-processing-fee',
-    title: 'What is the payment processing fee?',
-    question: 'Why is there a processing fee added at checkout?',
+    sourceKey: 'fees-buyer-protection-fee',
+    title: 'What is the Buyer Protection Fee?',
+    question: 'Why is there a Buyer Protection Fee added at checkout?',
     answer:
-      'A payment processing fee (currently 1.5% on EFT) covers the cost of moving your money. It is calculated on the item price plus shipping and shown at checkout before you pay. Depending on how the seller set up the listing, the fee is either added to the buyer total or absorbed by the seller — either way, the total you see at checkout is final, with no hidden charges.',
+      'Every order carries a Buyer Protection Fee (currently 3.28% + R1.15, VAT included). It is charged on the item price plus the carrier’s rate, and shown at checkout before you pay. The fee funds the protections every buyer gets: your payment is held until the order is safely completed, sellers are identity-checked before they can be paid, and disputes are handled by our team — with a refund where a claim is valid.',
     tags: ['fees', 'payments', 'checkout'],
   },
   {
     sourceKey: 'fees-buyer-costs',
     title: 'What does it cost to buy?',
-    question: 'Are there fees for buyers on Gun Galore?',
+    question: 'Are there fees for buyers on All Outdoor?',
     answer:
-      'Browsing and bidding are free. When you buy, your total is the item price + shipping (a live courier quote) + a payment processing fee (currently 1.5% on EFT) where the listing passes it to the buyer + a flat R15 shipping handling fee per courier parcel. Every line is itemised at checkout before you pay — no hidden charges.',
+      'Browsing and bidding are free. When you buy, your total is the item price + a live courier quote for delivery + a Buyer Protection Fee (currently 3.28% + R1.15, VAT included) charged on the item and the carrier’s rate together. Every line is itemised at checkout before you pay — no hidden charges.',
     tags: ['fees', 'buying', 'checkout'],
   },
   {
