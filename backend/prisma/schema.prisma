@@ -2016,6 +2016,10 @@ model Transaction {
   //     invoice paid. Created when the seller payout fires.
   //   - zohoCreditNoteId: only set on refund — credit note against
   //     the original commission invoice.
+  //   - zohoBuyerInvoiceId: All Outdoor → Buyer invoice for the platform's
+  //     own supplies to the buyer (Buyer Protection Fee + delivery). Created
+  //     when the sale completes. Separate from the seller invoice because it
+  //     is a different counterparty and a different supply.
   //
   // zohoSyncStatus tracks the most recent attempt:
   //   - null / 'IDLE': nothing has tried to sync yet
@@ -2026,6 +2030,7 @@ model Transaction {
   zohoCommissionInvoiceId String?
   zohoCommissionPaymentId String?
   zohoCreditNoteId        String?
+  zohoBuyerInvoiceId      String?
   // ── Daily Deals first-party Zoho (DD-2) ─────────────────────────────
   // A house deal (Listing.isDealListing) is a FIRST-PARTY sale: GG is the
   // seller, so there is no commission invoice + payout. Instead a

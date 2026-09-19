@@ -37,7 +37,7 @@ export function DownloadReceiptButton({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `gun-galore-receipt-${transactionId}.pdf`;
+      a.download = `alloutdoor-receipt-${transactionId}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();

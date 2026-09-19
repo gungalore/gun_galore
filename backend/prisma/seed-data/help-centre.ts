@@ -16,7 +16,7 @@ import { SUPPORT_EMAIL } from '../../src/common/brand';
 export interface HelpCentreSeedEntry {
   /** Stable unique key, kebab-case, prefixed by area: e.g. 'fees-commission-bands' */
   sourceKey: string;
-  title: string; // short, user-facing ("What commission does Gun Galore charge?")
+  title: string; // short, user-facing ("What commission does All Outdoor charge?")
   question: string; // the question as a user would ask it
   answer: string; // the verified answer, plain text / light markdown, ≤900 chars
   tags: string[]; // 2-5 lowercase tags
@@ -26,8 +26,8 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   // ── Fees & payments ────────────────────────────────────────────────
   {
     sourceKey: 'fees-commission-bands',
-    title: 'What commission does Gun Galore charge?',
-    question: 'How much commission does Gun Galore take when I sell something?',
+    title: 'What commission does All Outdoor charge?',
+    question: 'How much commission does All Outdoor take when I sell something?',
     answer:
       "Commission is charged only on a completed sale and works like tax brackets — each rate applies only to the rand inside its slice: 9% on the first R5,000, 7% on R5,001–R20,000, 5% on R20,001–R100,000, and 3% above R100,000. Example: a R8,000 sale = 9% of R5,000 (R450) + 7% of R3,000 (R210) = R660. A R30 minimum platform fee applies. The exact figure is always shown up front before you list — see [How selling works](/how-selling-works).",
     tags: ['fees', 'commission', 'selling'],
@@ -67,16 +67,16 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   {
     sourceKey: 'fees-how-to-pay',
     title: 'How can I pay?',
-    question: 'What payment methods does Gun Galore accept?',
+    question: 'What payment methods does All Outdoor accept?',
     answer:
-      'The available method is shown at checkout — currently manual EFT: you get Gun Galore banking details plus a unique payment reference, pay from your own bank, and the order confirms once the payment reconciles. Always use the exact reference so the payment matches automatically. Whichever method you use, your payment is held by Gun Galore and only released to the seller after delivery is confirmed.',
+      'The available method is shown at checkout — pay by bank or card through our secure payment provider. Your payment is held by All Outdoor and only released to the seller after delivery is confirmed (or, for a firearm, after the dealer transfer is verified).',
     tags: ['payments', 'eft', 'checkout'],
   },
 
   // ── Selling modes ──────────────────────────────────────────────────
   {
     sourceKey: 'sell-ways-to-sell',
-    title: 'What are the ways to sell on Gun Galore?',
+    title: 'What are the ways to sell on All Outdoor?',
     question: 'Which selling formats can I choose?',
     answer:
       "Three: Marketplace (Buy Now) — one fixed price, the fastest way to sell; Auction — buyers bid and the highest bid at the deadline wins, with an optional hidden reserve; and Take a Shot — buyers name their price and you accept, decline or counter. Whichever you pick, listings are checked before going live and the buyer's payment is held until delivery is confirmed. Full guide: [How selling works](/how-selling-works).",
@@ -87,13 +87,13 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How does Marketplace (Buy Now) work?',
     question: 'How does a fixed-price listing work?',
     answer:
-      'You set one price; the buyer taps Buy and pays — no waiting, no negotiation. The payment is held by Gun Galore until the buyer confirms delivery, then released to you less commission. Selling several identical units? Set a quantity when you list and the listing stays live until every unit is sold.',
+      'You set one price; the buyer taps Buy and pays — no waiting, no negotiation. The payment is held by All Outdoor until the buyer confirms delivery, then released to you less commission. Selling several identical units? Set a quantity when you list and the listing stays live until every unit is sold.',
     tags: ['selling', 'marketplace', 'buy now'],
   },
   {
     sourceKey: 'sell-auction-how',
     title: 'How do auctions work?',
-    question: 'How do I run an auction on Gun Galore?',
+    question: 'How do I run an auction on All Outdoor?',
     answer:
       'Set a duration and a starting bid when you list on the [Sell page](/sell). Buyers bid, and the highest bid when time runs out wins. You can set a hidden reserve to protect yourself — the item only sells if bidding reaches your minimum. Bidding is free; the winner pays and the money is held until they confirm delivery. Bids in the final 2 minutes extend the end time, so snipers cannot steal it at the last second.',
     tags: ['selling', 'auction', 'reserve'],
@@ -135,9 +135,9 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   {
     sourceKey: 'buy-payment-protection',
     title: 'How does payment protection work?',
-    question: 'Is my money safe when I buy on Gun Galore?',
+    question: 'Is my money safe when I buy on All Outdoor?',
     answer:
-      'When you pay, the funds are held by Gun Galore — the seller does not receive them yet. They are only released after you confirm delivery (or, for a firearm, after the dealer transfer is verified). If something goes wrong before then, you can raise a dispute and request a refund, so you are never out of pocket for an item that never arrives. Full detail: [Refund & Dispute Policy](/refund-policy).',
+      'When you pay, the funds are held by All Outdoor — the seller does not receive them yet. They are only released after you confirm delivery (or, for a firearm, after the dealer transfer is verified). If something goes wrong before then, you can raise a dispute and request a refund, so you are never out of pocket for an item that never arrives. Full detail: [Refund & Dispute Policy](/refund-policy).',
     tags: ['buying', 'payment held', 'protection'],
   },
   {
@@ -185,7 +185,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   {
     sourceKey: 'ship-courier-options',
     title: 'How are items delivered?',
-    question: 'Which couriers does Gun Galore use?',
+    question: 'Which couriers does All Outdoor use?',
     answer:
       'Non-firearm gear ships with our courier partners — Pudo locker-to-locker or The Courier Guy door-to-door — with live rate quotes at checkout and tracking on your order page. Sellers can also offer in-person collection. Firearms are never couriered to a buyer: they always route through a SAPS-licensed dealer instead.',
     tags: ['shipping', 'pudo', 'courier guy'],
@@ -195,7 +195,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What is the R15 shipping handling fee?',
     question: 'Why is there a R15 handling fee on my order?',
     answer:
-      'R15 is a flat handling fee charged once per courier parcel (waybill) that Gun Galore books — it covers arranging the courier, the label, tracking and delivery support. Multiple items consolidated into one parcel are charged the R15 once. It never applies where no parcel is booked: firearm dealer transfers and in-person collection carry no handling fee.',
+      'Delivery carries a handling margin of 10% of the courier’s rate, folded into the single delivery figure you are quoted at checkout — it covers arranging the courier, the label, tracking and delivery support. Multiple items consolidated into one parcel produce one waybill. It never applies where no parcel is booked: firearm dealer transfers and in-person collection carry no delivery charge.',
     tags: ['shipping', 'fees', 'handling'],
   },
   {
@@ -217,9 +217,9 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   {
     sourceKey: 'ship-collection',
     title: 'Can I collect my purchase in person?',
-    question: 'Does Gun Galore support collection instead of courier?',
+    question: 'Does All Outdoor support collection instead of courier?',
     answer:
-      'Yes, where the seller offers it. A collection order has no courier cost and no R15 handling fee, and your payment is still held by Gun Galore. Once you have collected and inspected the item, confirm on the order page to release the payment to the seller. If a collection stalls, we nudge you to confirm and our team steps in on orders that stay unresolved.',
+      'Yes, where the seller offers it. A collection order has no courier cost and no delivery charge, and your payment is still held by All Outdoor. Once you have collected and inspected the item, confirm on the order page to release the payment to the seller. If a collection stalls, we nudge you to confirm and our team steps in on orders that stay unresolved.',
     tags: ['shipping', 'collection', 'delivery'],
   },
   {
@@ -227,7 +227,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How does shipping get booked and tracked?',
     question: 'Who books the courier and how do I track my parcel?',
     answer:
-      'Gun Galore books the courier automatically the moment the seller accepts your order — the seller receives the waybill, label and drop-off PIN by SMS and email. From there, live tracking events appear on the order page for both sides, from collection through to delivery. Once your parcel lands, inspect it and confirm delivery to complete the order.',
+      'All Outdoor books the courier automatically the moment the seller accepts your order — the seller receives the waybill, label and drop-off PIN by SMS and email. From there, live tracking events appear on the order page for both sides, from collection through to delivery. Once your parcel lands, inspect it and confirm delivery to complete the order.',
     tags: ['shipping', 'tracking', 'waybill'],
   },
 
@@ -235,14 +235,14 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   {
     sourceKey: 'firearm-dealer-transfer-steps',
     title: 'How does a firearm dealer transfer work?',
-    question: 'What are the steps when I buy a firearm on Gun Galore?',
+    question: 'What are the steps when I buy a firearm on All Outdoor?',
     answer:
-      'Six steps: 1) at checkout you choose a SAPS-licensed dealer from our vetted directory; 2) the seller dispatches the firearm to that dealer by approved, insured courier; 3) the dealer receives, verifies and holds it; 4) you present your Competency Certificate, Possession Licence (or proof of a pending application) and ID at the dealer; 5) the dealer completes the SAPS transfer paperwork; 6) you confirm delivery on Gun Galore, which releases the seller payout. Your payment is held the whole time. Full detail: [Firearms Compliance](/firearms-compliance). Confirm specifics with your DFO or a firearms attorney.',
+      'Six steps: 1) at checkout you choose a SAPS-licensed dealer from our vetted directory; 2) the seller dispatches the firearm to that dealer by approved, insured courier; 3) the dealer receives, verifies and holds it; 4) you present your Competency Certificate, Possession Licence (or proof of a pending application) and ID at the dealer; 5) the dealer completes the SAPS transfer paperwork; 6) you confirm delivery on All Outdoor, which releases the seller payout. Your payment is held the whole time. Full detail: [Firearms Compliance](/firearms-compliance). Confirm specifics with your DFO or a firearms attorney.',
     tags: ['firearms', 'dealer transfer', 'compliance'],
   },
   {
     sourceKey: 'firearm-eligibility',
-    title: 'Who may buy or sell a firearm on Gun Galore?',
+    title: 'Who may buy or sell a firearm on All Outdoor?',
     question: 'What are the requirements to trade firearms on the platform?',
     answer:
       'You must be 18 or older, a permanent resident of or lawfully present in South Africa, and hold a valid SAPS Competency Certificate for the relevant category. As a buyer you must either hold the relevant Possession Licence or have a pending application on file, and you may not be under a court order, interdict or licence revocation prohibiting possession. Sellers also complete identity verification (KYC) before payouts are released. Confirm specifics with your DFO or a firearms attorney.',
@@ -253,7 +253,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'Can a firearm be couriered to my door?',
     question: 'Will my firearm be delivered to my home?',
     answer:
-      'No. By law a firearm cannot be couriered to a home address. Every firearm transfer on Gun Galore completes through a SAPS-licensed dealer: the seller sends the firearm to the dealer you chose at checkout, and you collect it there once the transfer paperwork is done. Attempting to transfer a firearm outside the dealer route breaches the Firearms Control Act and leads to a permanent ban and a report to SAPS. Confirm specifics with your DFO or a firearms attorney.',
+      'No. By law a firearm cannot be couriered to a home address. Every firearm transfer on All Outdoor completes through a SAPS-licensed dealer: the seller sends the firearm to the dealer you chose at checkout, and you collect it there once the transfer paperwork is done. Attempting to transfer a firearm outside the dealer route breaches the Firearms Control Act and leads to a permanent ban and a report to SAPS. Confirm specifics with your DFO or a firearms attorney.',
     tags: ['firearms', 'delivery', 'dealer transfer'],
   },
   {
@@ -261,7 +261,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'Can I sell ammunition to another member?',
     question: 'Is peer-to-peer ammo selling allowed?',
     answer:
-      'No. Loose live ammunition may not be sold peer-to-peer between private individuals on Gun Galore — such listings are removed. Live-ammunition sales are restricted to SAPS-licensed dealer sellers where supported. Confirm specifics with your DFO or a firearms attorney.',
+      'No. Loose live ammunition may not be sold peer-to-peer between private individuals on All Outdoor — such listings are removed. Live-ammunition sales are restricted to SAPS-licensed dealer sellers where supported. Confirm specifics with your DFO or a firearms attorney.',
     tags: ['firearms', 'ammunition', 'compliance'],
   },
   {
@@ -277,7 +277,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What is the SAPS 534 and who completes it?',
     question: 'What paperwork do I complete when my firearm sells?',
     answer:
-      "The SAPS 534 'Transfer of Firearm Ownership' form records the change of ownership. When your firearm sells via dealer transfer, Gun Galore emails you the form pre-filled with the details we already hold (your particulars and the firearm details). After the dealer transfer, you upload photos of the completed, dealer-stamped SAPS 534 (block letters only), the dealer's stock-register entry and the serial number; once verified, your payout is released. Confirm specifics with your DFO or a firearms attorney.",
+      "The SAPS 534 'Transfer of Firearm Ownership' form records the change of ownership. When your firearm sells via dealer transfer, All Outdoor emails you the form pre-filled with the details we already hold (your particulars and the firearm details). After the dealer transfer, you upload photos of the completed, dealer-stamped SAPS 534 (block letters only), the dealer's stock-register entry and the serial number; once verified, your payout is released. Confirm specifics with your DFO or a firearms attorney.",
     tags: ['firearms', 'saps 534', 'paperwork', 'selling'],
   },
   {
@@ -301,7 +301,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   {
     sourceKey: 'kyc-why-required',
     title: 'Why do sellers verify their identity?',
-    question: 'Why does Gun Galore require KYC?',
+    question: 'Why does All Outdoor require KYC?',
     answer:
       'Identity verification keeps the marketplace trustworthy: buyers know a verified person stands behind every payout, fraud risk drops, and for firearm sales it lets us complete the legally required transfer paperwork. Sellers must be verified before any payout is released. Buyers do not need KYC for ordinary purchases — firearm buyers are identified through the regulated dealer-transfer process instead.',
     tags: ['kyc', 'verification', 'selling'],
@@ -317,7 +317,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   {
     sourceKey: 'kyc-payout-gates',
     title: "Why can't I receive my payout yet?",
-    question: 'What do I need before Gun Galore pays me out?',
+    question: 'What do I need before All Outdoor pays me out?',
     answer:
       'Two gates: your seller profile must be complete (SA ID and banking details captured) and your identity must be verified (KYC). Verification is prompted automatically at your first sale, and your money waits safely — held, not lost — until both are done. Track what is outstanding and what you are owed on [My earnings](/my/earnings).',
     tags: ['kyc', 'payouts', 'selling'],
@@ -325,7 +325,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   {
     sourceKey: 'kyc-bank-details',
     title: 'Whose bank account can payouts go to?',
-    question: "Can Gun Galore pay my money into someone else's account?",
+    question: "Can All Outdoor pay my money into someone else's account?",
     answer:
       'No. Payouts go only to a bank account in your own name — we do not pay out to third parties. Before your first payout, our team reviews that the account-holder name matches your verified identity. You can update your banking details on your profile at any time; a change may trigger that review again. This protects your money if your account is ever compromised.',
     tags: ['payouts', 'banking', 'kyc'],
@@ -343,7 +343,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   // ── Account & support ──────────────────────────────────────────────
   {
     sourceKey: 'account-get-help',
-    title: 'How do I contact Gun Galore support?',
+    title: 'How do I contact All Outdoor support?',
     question: 'Where do I get help with an order or my account?',
     answer:
       `Open a ticket at [Support](/support) — pick a category (general, payment, shipping/delivery, account, a listing, or other), describe the problem, and reply in the same thread when the team answers. You can also email ${SUPPORT_EMAIL}; include your order reference so we find it fast. For a problem with a paid order, the Raise dispute button on the order page is the best route — it also keeps your payment held while we review.`,
@@ -360,7 +360,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   {
     sourceKey: 'account-rules',
     title: 'What are the basic account rules?',
-    question: 'Can I have more than one Gun Galore account?',
+    question: 'Can I have more than one All Outdoor account?',
     answer:
       `No — one account per person. You must be 18 or older, keep your credentials confidential (never share access), and notify us immediately at ${SUPPORT_EMAIL} of any unauthorised use. You are responsible for all activity on your account, including listings, bids, offers and payments. You can close your account at any time; the [Terms](/terms) carry the full rules.`,
     tags: ['account', 'rules', 'terms'],
@@ -380,7 +380,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How do saved searches work?',
     question: 'Can I be told when a matching item is listed?',
     answer:
-      "Yes. Save any search and Gun Galore watches the marketplace for you — when a new listing matches, you get an alert. It's the fastest way to be first on hard-to-find items without checking back every day. You can turn alerts on or off per saved search. Manage them at [Saved searches](/saved-searches). Still nothing? Post a free Wanted ad and let sellers come to you.",
+      "Yes. Save any search and All Outdoor watches the marketplace for you — when a new listing matches, you get an alert. It's the fastest way to be first on hard-to-find items without checking back every day. You can turn alerts on or off per saved search. Manage them at [Saved searches](/saved-searches). Still nothing? Post a free Wanted ad and let sellers come to you.",
     tags: ['saved searches', 'alerts', 'buying'],
   },
   {
@@ -406,7 +406,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How do I bid, and what happens if I win?',
     question: 'How does bidding work and what must I do when I win an auction?',
     answer:
-      "Enter any amount at or above the next minimum — you can bid again any time before the auction ends. Better: set an auto-bid (your maximum) and Gun Galore bids the smallest amount needed to keep you in front, up to your max, so you don't have to watch the clock. A bid in the final moments extends the deadline (no last-second snipes). Your bid is binding. When you win, you pay through normal checkout within the payment window, with your payment held until delivery; firearms complete via a licensed-dealer transfer.",
+      "Enter any amount at or above the next minimum — you can bid again any time before the auction ends. Better: set an auto-bid (your maximum) and All Outdoor bids the smallest amount needed to keep you in front, up to your max, so you don't have to watch the clock. A bid in the final moments extends the deadline (no last-second snipes). Your bid is binding. When you win, you pay through normal checkout within the payment window, with your payment held until delivery; firearms complete via a licensed-dealer transfer.",
     tags: ['auction', 'bidding', 'buying'],
   },
   {
@@ -456,7 +456,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What is the Verified Expert badge?',
     question: 'How do I earn the Verified Expert badge?',
     answer:
-      "Verified Expert is a badge shown on your profile for members recognised for genuinely helpful, accurate contributions to the Gun Galore community — knowledge our team has reviewed and verified. Once you've contributed enough verified answers, the badge appears on your public profile and listings, signalling to buyers that you know your gear. It recognises expertise and knowledge-sharing rather than sales volume.",
+      "Verified Expert is a badge shown on your profile for members recognised for genuinely helpful, accurate contributions to the All Outdoor community — knowledge our team has reviewed and verified. Once you've contributed enough verified answers, the badge appears on your public profile and listings, signalling to buyers that you know your gear. It recognises expertise and knowledge-sharing rather than sales volume.",
     tags: ['badge', 'expert', 'community'],
   },
   {

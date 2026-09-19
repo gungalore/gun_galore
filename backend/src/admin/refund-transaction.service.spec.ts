@@ -62,6 +62,7 @@ function makeService(overrides: {
   const zohoBooks = {
     createCommissionCreditNote: jest.fn().mockResolvedValue(undefined),
     createCommissionInvoice: jest.fn().mockResolvedValue(undefined),
+    createBuyerInvoice: jest.fn().mockResolvedValue(undefined),
   };
   const ozow = { refundPayment };
 

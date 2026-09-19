@@ -949,6 +949,7 @@ export class AdminTransactionsController {
   @HttpCode(200)
   async retryZohoSync(@Param('id') id: string) {
     await this.zohoBooks.createCommissionInvoice(id);
+    await this.zohoBooks.createBuyerInvoice(id);
     await this.zohoBooks.markCommissionInvoicePaid(id);
     return { triggered: true };
   }

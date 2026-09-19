@@ -2920,6 +2920,7 @@ export class TransactionsService {
       });
       for (const sid of siblingIds) {
         void this.zohoBooks.createCommissionInvoice(sid);
+        void this.zohoBooks.createBuyerInvoice(sid);
         void this.tracking.recordInternal(sid, 'BUYER_CONFIRMED_DELIVERY', {
           occurredAt: now,
         });
@@ -2936,6 +2937,7 @@ export class TransactionsService {
     // ordinary courier sale never reached the books and the payout batch's
     // markCommissionInvoicePaid no-oped. Idempotent + never throws.
     void this.zohoBooks.createCommissionInvoice(transactionId);
+    void this.zohoBooks.createBuyerInvoice(transactionId);
     // Two INTERNAL timeline rows back-to-back: the buyer's explicit
     // confirmation and the resulting payout. The polling cron's PUDO
     // events may also land a COLLECTED_BY_BUYER row but we mark this
@@ -3473,6 +3475,7 @@ export class TransactionsService {
       // batch marks it paid when the settlement lands, exactly like a courier
       // sale.
       void this.zohoBooks.createCommissionInvoice(txId);
+      void this.zohoBooks.createBuyerInvoice(txId);
 
       // Two timeline rows so the buyer/seller order page shows the
       // waiver + payout chain rather than just an unexplained jump.

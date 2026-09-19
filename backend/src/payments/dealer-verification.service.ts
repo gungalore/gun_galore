@@ -689,6 +689,7 @@ export class DealerVerificationService {
       // get persisted as zohoSyncStatus=FAILED on the transaction
       // and surface in the admin panel for manual retry.
       await this.zohoBooks.createCommissionInvoice(transactionId);
+      await this.zohoBooks.createBuyerInvoice(transactionId);
       await this.zohoBooks.markCommissionInvoicePaid(transactionId);
     } catch (err) {
       this.logger.error(

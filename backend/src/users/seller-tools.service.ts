@@ -150,13 +150,13 @@ export class SellerToolsService {
       // price under the deduct model. NOT the marked-up number the buyer saw.
       grossSales: released.reduce((s, p) => s + p.b.gross, 0),
       totalCommission: released.reduce(
-        (s, p) => s + ded(p.b, 'Commission'),
+        (s, p) => s + ded(p.b, 'Platform Fee'),
         0,
       ),
-      totalProcessingFees: released.reduce(
-        (s, p) => s + ded(p.b, 'Payment processing fee'),
-        0,
-      ),
+      // Operator 2026-09: the Buyer Protection Fee is the BUYER's charge, so
+      // the seller carries no processing fee any more. Kept at 0 for the
+      // statement shape the desk UI consumes.
+      totalProcessingFees: 0,
       totalShipping: released.reduce((s, p) => s + p.r.shippingCost, 0),
       netPayout: released.reduce((s, p) => s + p.b.net, 0),
       refundedCount: rows.length - released.length,
@@ -177,8 +177,8 @@ export class SellerToolsService {
         buyerPaid: r.listingPrice,
         // The seller's own starting figure, which the deductions come off.
         yourPrice: b.gross,
-        commission: ded(b, 'Commission'),
-        processingFee: ded(b, 'Payment processing fee'),
+        commission: ded(b, 'Platform Fee'),
+        processingFee: 0,
         shipping: r.shippingCost,
         netPayout: b.net,
         // True when our fees were inside the buyer's price, so the UI can say

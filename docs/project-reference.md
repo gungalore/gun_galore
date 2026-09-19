@@ -533,14 +533,14 @@ at checkout.
   `PUBLIC_LISTING_SELECT`**, it is our margin per item. Checkout recomputes
   FORWARD from the ask (the markup is banded, floored and discounted, so it is not
   reliably invertible). Multi-buy is priced per unit and multiplied. **Nothing is
-  added at checkout but delivery** — no processing-fee row, it is already inside
-  the price. The compare-at "was" price validates against the marked-up price, or
-  a "was" could sit below the live price, which is a misleading discount claim
-  under CPA s41.
+  added at checkout but delivery** and the **Buyer Protection Fee** — the fee is
+  NOT inside the listed price, it is charged to the buyer on (item + carrier rate).
+  The compare-at "was" price validates against the listed price, or a "was" could
+  sit below the live price, which is a misleading discount claim under CPA s41.
 - **`SELLER_DEDUCT`** — auctions and offers. A bid discovers the price, so there
   is nothing to mark up: commission comes out of the seller and the **buyer** pays
-  the gateway fee, surfaced as a **"Transaction fee"** row (never "processing fee"
-  or "service fee"). Buy Now *on an auction* follows the auction rules.
+  the **Buyer Protection Fee** on top. Buy Now *on an auction* follows the auction
+  rules.
 
 **Delivery carries a 10% margin, quoted INCLUSIVE** — the buyer sees one figure
 and pays exactly that. Never render it as "quote + 10%" or a separate handling

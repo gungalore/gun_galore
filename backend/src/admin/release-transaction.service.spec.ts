@@ -36,6 +36,7 @@ function makeService(overrides: {
   };
   const zohoBooks = {
     createCommissionInvoice: jest.fn().mockResolvedValue(undefined),
+    createBuyerInvoice: jest.fn().mockResolvedValue(undefined),
   };
   const service = new AdminService(
     prisma as never,

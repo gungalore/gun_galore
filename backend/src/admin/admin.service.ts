@@ -2301,6 +2301,7 @@ export class AdminService {
     // dealer-verification path, so ordinary sales never reached Books.
     // Idempotent + never throws; fire-and-forget at every release point.
     void this.zohoBooks.createCommissionInvoice(txId);
+    void this.zohoBooks.createBuyerInvoice(txId);
     return { id: txId, paymentStatus: 'RELEASED' };
   }
 
@@ -2665,6 +2666,7 @@ export class AdminService {
 
     // P0.6 — commission invoice at every release point (idempotent).
     void this.zohoBooks.createCommissionInvoice(txId);
+    void this.zohoBooks.createBuyerInvoice(txId);
 
     await this.audit.record({
       adminUserId: adminId,

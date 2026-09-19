@@ -514,6 +514,136 @@ export class ZohoBooksService {
   }
 
   /**
+   * Buyer invoice: All Outdoor → Buyer for the platform's OWN supplies on this
+   * transaction — the Buyer Protection Fee and the delivery charge. The item
+   * price is the seller's supply (collected on their behalf), so it is shown
+   * in the reference, not raised as our revenue. Operator 2026-09: buyer and
+   * seller paperwork both live in Books, so an audit has one accounting
+   * system of record.
+   *
+   * Idempotent: skips if zohoBuyerInvoiceId already set. Never throws —
+   * failures persist as FAILED on the transaction.
+   */
+  async createBuyerInvoice(transactionId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        buyer: { select: { id: true, email: true } },
+        listing: { select: { title: true, referenceNumber: true } },
+      },
+    });
+    if (!tx) return;
+    if (tx.zohoBuyerInvoiceId) return; // already raised
+
+    try {
+      const contactId = await this.ensureContact(tx.buyer.id, tx.buyer.email);
+      if (!contactId) {
+        throw new Error('Could not resolve Books contact for buyer');
+      }
+
+      const feeAccountId =
+        (await this.getAccountIdByName('Buyer Protection Fee Revenue')) ??
+        (await this.getAccountIdByName('Processing Fee Revenue')) ??
+        (await this.getAccountIdByName('Commission Revenue'));
+      if (!feeAccountId) {
+        throw new Error(
+          'No revenue account found in Books chart-of-accounts for buyer invoice',
+        );
+      }
+      const deliveryAccountId =
+        (await this.getAccountIdByName('Delivery Revenue')) ?? feeAccountId;
+
+      const orderRef =
+        tx.listing?.referenceNumber ?? tx.id.slice(-8).toUpperCase();
+      const itemRand = tx.listingPrice / 100;
+      const feeRand = tx.processingFee / 100;
+      const deliveryRand =
+        (tx.shippingCost + tx.shippingHandlingCents) / 100;
+
+      const lineItems: Array<{
+        name: string;
+        description: string;
+        rate: number;
+        quantity: number;
+        account_id: string;
+      }> = [];
+      if (tx.processingFee > 0) {
+        lineItems.push({
+          name: 'Buyer Protection Fee',
+          description: `${orderRef} — payment protection`,
+          rate: feeRand,
+          quantity: 1,
+          account_id: feeAccountId,
+        });
+      }
+      if (tx.shippingCost + tx.shippingHandlingCents > 0) {
+        lineItems.push({
+          name: 'Delivery',
+          description: `${orderRef} — delivery`,
+          rate: deliveryRand,
+          quantity: 1,
+          account_id: deliveryAccountId,
+        });
+      }
+      if (lineItems.length === 0) {
+        await this.markSkipped(
+          transactionId,
+          'buyer invoice has no fee lines',
+        );
+        return;
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const reference =
+        `Item ${this.formatRand(itemRand)} collected on the seller's behalf; ` +
+        `our charges: Buyer Protection Fee ${this.formatRand(feeRand)}` +
+        ` + Delivery ${this.formatRand(deliveryRand)}`;
+
+      type CreateInvoiceResp = {
+        invoice?: { invoice_id?: string; invoice_number?: string };
+        code?: number;
+        message?: string;
+      };
+      const payload = {
+        customer_id: contactId,
+        reference_number: reference.slice(0, 100),
+        date: today,
+        line_items: lineItems,
+        notes: `${reference}.\nAll Outdoor transaction reference: ${orderRef}`,
+      };
+
+      await this.markPending(transactionId);
+      const resp = await this.request<CreateInvoiceResp>(
+        'POST',
+        '/invoices',
+        payload,
+      );
+      const invoiceId = resp.invoice?.invoice_id;
+      if (!invoiceId) {
+        throw new Error(
+          `Books buyer-invoice create returned no invoice_id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: {
+          zohoBuyerInvoiceId: invoiceId,
+          zohoSyncStatus: 'OK',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Created buyer invoice ${resp.invoice?.invoice_number ?? invoiceId} for tx ${transactionId} (R${(feeRand + deliveryRand).toFixed(2)})`,
+      );
+    } catch (err) {
+      await this.markFailed(transactionId, err as Error);
+    }
+  }
+
+  /**
    * Hourly self-heal for commission invoices that previously had NO
    * automatic retry (only the manual /zoho-retry button): invoices whose
    * last sync FAILED (or stranded PENDING >1h — a crash between
@@ -543,9 +673,29 @@ export class ZohoBooksService {
         await this.createCommissionInvoice(t.id);
       }
 
-      if (failedInvoices.length) {
+      // Same self-heal for buyer invoices (the platform's own supplies to the
+      // buyer). Guarded on zohoBuyerInvoiceId, so re-firing is a no-op.
+      const failedBuyerInvoices = await this.prisma.transaction.findMany({
+        where: {
+          zohoBuyerInvoiceId: null,
+          OR: [
+            { zohoSyncStatus: 'FAILED' },
+            {
+              zohoSyncStatus: 'PENDING',
+              zohoSyncLastAttemptAt: { lt: staleFloor },
+            },
+          ],
+        },
+        select: { id: true },
+        take: limit,
+      });
+      for (const t of failedBuyerInvoices) {
+        await this.createBuyerInvoice(t.id);
+      }
+
+      if (failedInvoices.length || failedBuyerInvoices.length) {
         this.logger.log(
-          `retryFailedRevenueDocs: re-fired ${failedInvoices.length} commission invoice(s)`,
+          `retryFailedRevenueDocs: re-fired ${failedInvoices.length} commission + ${failedBuyerInvoices.length} buyer invoice(s)`,
         );
       }
     } catch (err) {
