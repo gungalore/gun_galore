@@ -1,6 +1,6 @@
 // Seeded Help-Centre entries.
 // Was the Ask GG knowledge base; the assistant was removed 2026-08-26 and the
-// entries that described it, and the GG+ subscription that sold access to it,
+// entries that described it, and the subscription that sold access to it,
 // went with it. The content is retained as the site help corpus.
 // SINGLE SOURCE OF TRUTH for platform Q&A copy — edit here and rerun
 // `npm run seed:help` (idempotent upsert on sourceKey). Authored from the

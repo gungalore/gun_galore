@@ -82,8 +82,9 @@ export default function HowPaymentsWorkPage() {
           <strong>The seller is paid.</strong> The seller's proceeds are
           paid into the seller's bank account. On a{' '}
           <strong>Buy Now</strong> sale that is the seller's full asking
-          price — our commission and the transaction fee are built into
-          the price the buyer saw, so nothing comes off what the seller receives. On an{' '}
+          price — our commission is built into the price the buyer saw, so
+          nothing comes off what the seller receives. At checkout the buyer
+          also pays the Buyer Protection Fee and delivery. On an{' '}
           <strong>auction</strong> or an accepted{' '}
           <strong>Take-a-Shot offer</strong> the price is whatever the bid
           or offer settled at, and the proceeds are that price less our
@@ -117,14 +118,13 @@ export default function HowPaymentsWorkPage() {
       <p>
         All Outdoor earns a <strong>commission</strong> on completed sales
         and nothing more — no spread, and no interest earned on money that
-        is not ours. On a Buy Now listing
-        that commission, and the card <strong>transaction fee</strong>, are
-        included in the price the buyer sees rather than deducted from the
-        seller; on an auction or accepted offer the commission comes out of
-        the settled price and the buyer pays the transaction fee. Both
-        numbers — what the seller receives and what the buyer will see —
-        are shown to the seller before a listing is published. The full fee
-        schedule is on our{' '}
+        is not ours. On a Buy Now listing our commission is built into the
+        price the buyer sees rather than deducted from the seller; on an
+        auction or accepted offer the commission comes out of the settled
+        price. The buyer always pays the <strong>Buyer Protection Fee</strong>{' '}
+        and delivery on top. Both numbers — what the seller receives and what
+        the buyer will see — are shown to the seller before a listing is
+        published. The full fee schedule is on our{' '}
         <a href="/fees" style={{ color: 'var(--red)' }}>Fees</a> page.
       </p>
 

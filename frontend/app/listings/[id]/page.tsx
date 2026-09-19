@@ -218,7 +218,7 @@ export default async function ListingDetailPage({
   // AUCTION); Take-a-Shot has no listed price. `make` is deliberately left
   // out — it's hidden from buyers on this page by product decision.
   const siteUrl = (
-    process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gungalore.co.za'
+    process.env.NEXT_PUBLIC_SITE_URL ?? 'https://alloutdoor.co.za'
   ).replace(/\/$/, '');
   const ldImages = (listing.images ?? []).map((i) => i.url).slice(0, 6);
   const ldPrice = listing.price ?? listing.buyNowPrice ?? listing.currentBid;

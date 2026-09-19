@@ -102,14 +102,12 @@ function GgPlusPill({
 }) {
   // PRO uses the brand red at higher contrast; MEMBER stays
   // subdued to leave headroom for PRO to feel like an upgrade.
-  // Both keep the same "GG+" wordmark — the spec calls it "GG
-  // Plus pill" generically; tier-aware shading is a tasteful
-  // upgrade cue without screaming about it.
+  // Both keep the same "AO+" wordmark; tier-aware shading is a
+  // tasteful upgrade cue without screaming about it.
   const isPro = tier === 'PRO';
-  // Rebrand 2026-07-19: the single paid tier is PRO_NAME. Legacy MEMBER rows
-  // keep the old GG+ pill until they lapse — renaming a badge nobody can buy
-  // any more would only invent a tier that does not exist.
-  const label = isPro ? PRO_NAME : 'GG+';
+  // The single paid tier is PRO_NAME. Legacy MEMBER rows keep a Plus pill
+  // until they lapse — nobody can buy either any more.
+  const label = isPro ? PRO_NAME : 'AO+';
   return (
     <span
       // ⚠️ A title ATTRIBUTE IS SERVER-RENDERED MARKUP, and this badge sits on

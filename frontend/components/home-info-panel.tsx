@@ -22,13 +22,13 @@ const SECTIONS: { q: string; a: React.ReactNode }[] = [
     a: (
       <>
         <p>
-          List free — no listing fee, no subscription, nothing charged up
+          List free — no listing fee, nothing charged up
           front. Photos, a description and the price you want, and your gear
           goes in front of every buyer in the store.
         </p>
         <p>
-          Sell it your way: at a fixed price, by auction, by taking offers, or
-          swop it for something else. On a fixed-price sale you receive
+          Sell it your way: at a fixed price, by auction, or by taking offers.
+          On a fixed-price sale you receive
           exactly the price you set — our commission is added on top for the
           buyer, never taken out of your price.
         </p>
@@ -62,13 +62,13 @@ const SECTIONS: { q: string; a: React.ReactNode }[] = [
       <>
         <p>
           Browsing, bidding and listing are free. On a fixed-price listing our
-          commission and the card fee are built into the price the buyer sees,
-          so nothing is deducted from you. On an auction or an accepted offer,
-          commission comes out of the settled price and the buyer pays the
-          transaction fee.
+          commission is built into the price the buyer sees, so nothing is
+          deducted from you. On an auction or an accepted offer, commission
+          comes out of the settled price and the buyer pays the Buyer
+          Protection Fee and delivery.
         </p>
         <p>
-          Commission is banded — 9% on the first R5,000, then 7%, 5% and 3% on
+          Commission is banded — 10% on the first R5,000, then 8%, 6% and 4% on
           higher portions. The full schedule and a worked example are on the{' '}
           <Link href="/fees" style={{ color: 'var(--red)' }}>Fees</Link> page.
         </p>

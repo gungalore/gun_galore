@@ -153,7 +153,7 @@ export const DESK_SERVICES: DeskService[] = [
     purpose: 'gerhard.fourie@alloutdoor.co.za.',
   },
   {
-    name: 'Gun Galore webmail',
+    name: 'All Outdoor webmail',
     url: 'https://webmail.gungalore.co.za/',
     group: 'Mail',
     purpose: 'The old brand’s mailbox.',

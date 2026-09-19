@@ -37,15 +37,15 @@ const FAQS: { q: string; a: string }[] = [
     // FAQPage JSON-LD Google lifts into the SERP, so it describes the PUBLIC
     // store: the outdoor catalogue a signed-out visitor can actually browse.
     // Regulated stock is members-only and is not advertised here.
-    a: 'All Outdoor is a South African new and secondhand outdoor store — camping and overlanding kit, fishing tackle, clothing and outdoor gear. You can buy at a set price, bid in auctions, make an offer ("Take a Shot"), or swop item for item. Some regulated categories are available to registered members only.',
+    a: 'All Outdoor is a South African new and secondhand outdoor store — camping and overlanding kit, fishing tackle, clothing and outdoor gear. You can buy at a set price, bid in auctions, or make an offer ("Take a Shot"). Some regulated categories are available to registered members only.',
   },
   {
     q: 'How does payment protection work?',
     a: 'Every order is covered: the seller is only paid after your delivery is confirmed. If something goes wrong before then, you can raise a dispute and request a refund — so you never pay for an item that does not arrive.',
   },
   {
-    q: 'Do I need to verify my identity (KYC)?',
-    a: 'Sellers complete identity verification (KYC) before they can receive payouts — this keeps the store trustworthy for everyone. Buyers create a standard account.',
+    q: 'Do I need to verify my identity?',
+    a: 'Sellers complete identity verification before they can receive payouts — this keeps the store trustworthy for everyone. Buyers create a standard account.',
   },
   {
     q: 'How do refunds and disputes work?',
@@ -56,7 +56,7 @@ const FAQS: { q: string; a: string }[] = [
     // Operator decision 2026-08-15: on Buy Now our cut is built INTO the
     // listed price instead of deducted from the seller, so this answer must
     // separate the two modes. Full detail (bands, worked example) on /fees.
-    a: 'Listing is free, and browsing and bidding cost nothing. On a Buy Now listing you enter what you want to receive and get exactly that — our commission and the card transaction fee are included in the price buyers see, so nothing is deducted from you. On an auction or an accepted offer the price is whatever the bid or offer settled at, our commission comes out of that, and the buyer pays a transaction fee. Commission is banded (9% on the first R5,000, then 7%, 5% and 3% on higher portions, minimum R10). Delivery is quoted at checkout and paid by the buyer. See the Fees page for a worked example.',
+    a: 'Listing is free, and browsing and bidding cost nothing. On a Buy Now listing you enter what you want to receive and get exactly that — our commission is included in the price buyers see, so nothing is deducted from you. On an auction or an accepted offer the price is whatever the bid or offer settled at, and our commission comes out of that. The buyer always pays a Buyer Protection Fee and delivery at checkout. Commission is banded (10% on the first R5,000, then 8%, 6% and 4% on higher portions, minimum R10). See the Fees page for a worked example.',
   },
   {
     q: 'How can I pay?',
@@ -72,10 +72,8 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'How do I sell on All Outdoor?',
-    // Four selling modes, matching /how-selling-works and the sell form —
-    // Swop was live long before this answer was written and kept being left
-    // out, which is why sellers never discovered it.
-    a: 'Create a listing from the Sell page — add photos, a description and a price (or set it up as an auction, a Take-a-Shot, or a Swop / Trade). Listings are checked before going live. Complete seller verification (KYC) to receive payouts. Registered members listing in a regulated category are asked for the extra details the law requires.',
+    // Selling modes matching /how-selling-works and the sell form.
+    a: 'Create a listing from the Sell page — add photos, a description and a price (or set it up as an auction or a Take-a-Shot). Listings are checked before going live. Complete seller verification to receive payouts. Registered members listing in a regulated category are asked for the extra details the law requires.',
   },
   {
     q: 'Is my personal information safe?',

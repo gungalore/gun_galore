@@ -2,7 +2,7 @@
 
 // SMS-arrival welcome banner. Shows once per browser session when a visitor
 // lands from a marketing SMS link carrying an active campaign key
-// (gungalore.co.za/?c=KEY). Plain visits never trigger it. The key is
+// (alloutdoor.co.za/?c=KEY). Plain visits never trigger it. The key is
 // validated + hit-counted server-side, then stripped from the address bar so
 // it doesn't linger or get shared onward.
 //
@@ -22,7 +22,7 @@ const POINTS: { text: React.ReactNode }[] = [
   { text: <>The seller only gets paid once your delivery is confirmed. <em>Not a cent sooner.</em></> },
   { text: <>Every seller is vetted before a single item goes up.</> },
   { text: <>Couriered &amp; tracked to your door. <em>No parking-lot meetups.</em></> },
-  { text: <>Buy now, bid, make an offer — or swap your gear for theirs, ± cash.</> },
+  { text: <>Buy now, bid, or make an offer — all with delivery protection.</> },
   { text: <>Listing is free. <em>No upfront fees to advertise.</em></> },
 ];
 

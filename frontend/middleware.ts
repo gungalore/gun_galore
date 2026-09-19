@@ -155,6 +155,8 @@ const isPublicRoute = createRouteMatcher([
   '/refund-policy',
   '/buyer-protection',   // what the Buyer Protection Fee covers — linked from
                          // /fees and checkout, must be reachable signed-out.
+  '/data-deletion',      // data-deletion instructions — Meta/POPIA require a
+                         // public, sign-in-free page.
   // '/firearms-compliance' REMOVED — the Regulated Items Annex is
   // members-only now and lives at /members/regulated-items. The old path
   // still exists as a 308 for indexed/bookmarked links, but it is gated so
@@ -312,7 +314,7 @@ export default async function middleware(request: NextRequest) {
     // the localhost socket Next.js listens on, not the public hostname, so we
     // can't use it either.
     const publicBase =
-      process.env.NEXT_PUBLIC_APP_URL || 'https://gungalore.co.za';
+      process.env.NEXT_PUBLIC_APP_URL || 'https://alloutdoor.co.za';
     const currentPath =
       request.nextUrl.pathname + request.nextUrl.search;
 

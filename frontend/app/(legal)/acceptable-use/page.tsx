@@ -137,7 +137,7 @@ export default function AcceptableUsePage() {
         <li><strong>Privacy abuse</strong> — gathering, doxxing, scraping, publishing or selling another user's personal information.</li>
         <li><strong>Platform abuse</strong> — automated scraping, denial-of-service traffic, attempts to bypass authentication, attempts to reverse-engineer or interfere with the Platform's operation.</li>
         <li><strong>Tax evasion</strong> — falsifying your income or VAT status; failing to issue an invoice where one is legally required.</li>
-        <li><strong>False identity</strong> — registering under a name other than your own, attempting KYC with someone else's documents.</li>
+        <li><strong>False identity</strong> — registering under a name other than your own, attempting identity verification with someone else's documents.</li>
       </ul>
 
       <h2>7. Enforcement</h2>

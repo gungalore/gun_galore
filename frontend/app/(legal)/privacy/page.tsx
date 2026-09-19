@@ -27,7 +27,7 @@ export const metadata = {
 export default function PrivacyPage() {
   return (
     <>
-      <LegalDocHeader title="Privacy Policy" lastUpdated="Effective 22 July 2026" />
+      <LegalDocHeader title="Privacy Policy" lastUpdated="Effective 22 July 2026 · Updated 19 September 2026" />
 
       <h2>1. Who we are</h2>
       <p>
@@ -91,21 +91,22 @@ export default function PrivacyPage() {
         <li>Profile photo (optional)</li>
       </ul>
 
-      <h3>3.2 KYC and identity verification (Sellers only)</h3>
+      <h3>3.2 Identity verification (Sellers only)</h3>
       <ul>
         <li>South African ID number (stored encrypted at rest with AES-GCM; we also derive a salted SHA-256 hash for duplicate-registration checks. We retain the encrypted ID — see &ldquo;How long we keep your information&rdquo; below — so that we can confirm the person being paid is the person we verified, prevent fraud and impersonation, and meet the record-keeping and transfer-documentation obligations that apply to certain regulated categories, where the seller&rsquo;s identity number must be reproduced on a prescribed statutory form)</li>
-        <li>VerifyNow Home Affairs lookup result (full name, date of birth, status), which may include the official record photograph held by the Department of Home Affairs</li>
+        <li>The result of your identity verification: the details read from your identity document, a liveness result and a face-match result</li>
         <li>An image of the identity document you upload during verification (an identity card, identity book page or passport, or a PDF of one). This image is stored encrypted on our own servers, which are hosted in South Africa, and is retained as an audit record of the verification for the life of your account.</li>
         <li><strong>Selfie image captured during face-match verification.</strong> The image is <strong>stored</strong> encrypted on our own servers, which are hosted in South Africa. We retain it as an audit record of the verification for the life of your account, and we re-use it only to re-run a verification check on that same account. If you delete your account we remove the link to the image from your account record, but the stored image itself is <strong>not deleted today</strong> — that deletion is a follow-up we have not yet implemented, and we will not describe it as done until it is.</li>
         <li>Number of face-match attempts and outcome</li>
       </ul>
       <p>
-        The identity-document image is transmitted to Google (Gemini API),
-        which reads the text on it on our behalf. The identity-document image,
-        the selfie and — where the anchored check is used — the official record
-        photograph returned by the Home Affairs lookup are transmitted to
-        Amazon Web Services in Ireland (AWS Europe, eu-west-1), which runs the
-        face match and liveness check on our behalf. See paragraphs 7 and 8.
+        Identity verification is carried out by our specialist verification
+        provider, <strong>Didit</strong>, whose hosted session reads your
+        identity document, checks that it appears genuine, and performs a
+        liveness and face-match check. The details used for verification (your
+        name and date of birth) are read from the document you upload and
+        checked against the ID number itself. We do <strong>not</strong> claim
+        a Department of Home Affairs verification. See paragraphs 7 and 8.
       </p>
       <p>
         Additional terms apply to regulated categories. See the{' '}
@@ -159,13 +160,28 @@ export default function PrivacyPage() {
         and opt out of marketing at any time.
       </p>
 
+      <h3>3.8 Communications (email, SMS and WhatsApp)</h3>
+      <p>
+        We send transactional messages about your account, orders, dispatches,
+        disputes and payouts by email, by SMS and — where you have opted in —
+        by WhatsApp. To send a WhatsApp message we process your mobile number
+        and the content of the message (which may include an order reference
+        and a link to your order), and we receive delivery and read-status
+        information about it. WhatsApp messages are sent through Meta&apos;s
+        WhatsApp Business Platform, operated by Meta Platforms, Inc. (see
+        paragraph 7). You can turn WhatsApp messages off at any time in your
+        notification preferences, or by replying STOP; transactional email and
+        SMS remain as described in paragraph 12.
+      </p>
+
       <h2>4. How we collect this information</h2>
       <p>
         We collect personal information directly from you when you
         register, complete your profile, create a listing, make a
         purchase or use any other feature of the Store. We also
         collect information from our service providers (for example,
-        VerifyNow returns your name, ID status and face-match score)
+        Didit returns the document details, liveness result and face-match
+        score)
         and automatically when you interact with the Store (session,
         device, activity). Payment-instrument and transaction data
         will be processed by our appointed licensed South African
@@ -176,7 +192,7 @@ export default function PrivacyPage() {
       <p>We process personal information for the following purposes:</p>
       <ul>
         <li><strong>To provide the Store</strong> — register and authenticate your account, display your listings, route your transactions, accept your payments and pay you what you are owed.</li>
-        <li><strong>To verify your identity</strong> — meet our KYC obligations before sellers can be paid, prevent fraud and identity theft.</li>
+        <li><strong>To verify your identity</strong> — meet our identity-verification obligations before sellers can be paid, prevent fraud and identity theft.</li>
         <li><strong>To comply with the law</strong> — including the sector-specific legislation that governs licence- and age-restricted categories of goods, which is identified by name in our{' '}
           <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>, together with the Consumer Protection Act, the Financial Intelligence Centre Act (FICA) and tax obligations.</li>
         <li><strong>To detect and prevent fraud, abuse and misuse of the Store</strong> — including off-platform contact-detail sharing, sock-puppet accounts and money-laundering risk.</li>
@@ -192,10 +208,10 @@ export default function PrivacyPage() {
       </p>
       <ul>
         <li><strong>Performance of a contract:</strong> processing necessary to deliver the service you signed up for (§ 11(1)(b)).</li>
-        <li><strong>Compliance with legal obligation:</strong> KYC, the statutory records we must keep for licence- and age-restricted categories, tax (§ 11(1)(c)). The particular legislation imposing that obligation, and the records kept under it, are identified in our{' '}
+        <li><strong>Compliance with legal obligation:</strong> identity verification, the statutory records we must keep for licence- and age-restricted categories, tax (§ 11(1)(c)). The particular legislation imposing that obligation, and the records kept under it, are identified in our{' '}
           <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>, which is publicly available and which we also give you as the notification required by § 18(1)(f).</li>
         <li><strong>Legitimate interest:</strong> fraud prevention, user safety, dispute investigation (§ 11(1)(f)) — balanced against your rights.</li>
-        <li><strong>Consent:</strong> KYC Home Affairs lookup, direct marketing, and the sharing of contact details where you agree that hand-over of an item that requires a licence or permit will be arranged directly between the parties or through an authorised third party (§ 11(1)(a)).</li>
+        <li><strong>Consent:</strong> the identity-verification check, direct marketing, and the sharing of contact details where you agree that hand-over of an item that requires a licence or permit will be arranged directly between the parties or through an authorised third party (§ 11(1)(a)).</li>
       </ul>
       <p>
         Additional terms apply to regulated categories. See the{' '}
@@ -225,13 +241,13 @@ export default function PrivacyPage() {
         <tbody>
           {[
             ['Clerk', 'United States', 'Email, name, sessions, login activity'],
-            ['VerifyNow', 'South Africa', 'ID number, name, selfie image (KYC face-match)'],
+            ['Didit', 'Israel', 'Identity document image, selfie image, ID number and name (identity verification)'],
             ['Bob Go', 'South Africa', 'Buyer address, collection address, parcel size + weight, contact phone, waybill reference'],
             ['Cloudinary', 'United States', 'Listing photos and compliance documents you upload'],
             ['Resend', 'United States', 'Email address, content of transactional emails'],
             ['SMSPortal', 'South Africa', 'Phone number, content of transactional SMS'],
-            ['Google (Gemini API)', 'United States', 'Listing title + description + photos (for moderation); pre-purchase question text (for Q&A moderation); documents and photographs you ask us to read — licences, competency and training certificates, ID copies and dealer paperwork — for automated text extraction; and the identity-verification document image, for the same'],
-            ['Amazon Web Services', 'Ireland (eu-west-1)', 'Identity-verification images (ID document, selfie and, where applicable, the official record photograph) for face match and liveness check'],
+            ['Meta Platforms (WhatsApp Business Platform)', 'United States / Ireland', 'Your mobile number and the content of the WhatsApp messages we send you, and their delivery status'],
+            ['Google (Gemini API)', 'United States', 'Listing title + description + photos (for moderation); pre-purchase question text (for Q&A moderation); and documents and photographs you ask us to read — licences, competency and training certificates, ID copies and dealer paperwork — for automated text extraction'],
           ].map(([op, country, share], i) => (
             <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
               <td style={{ padding: '6px 8px 6px 0' }}>{op}</td>
@@ -251,8 +267,8 @@ export default function PrivacyPage() {
       <h2>8. Cross-border transfers (POPIA § 72)</h2>
       <p>
         Some of the operators above are located outside South Africa
-        (notably Clerk, Cloudinary, Resend and Google in the United
-        States, and Amazon Web Services in Ireland). Where personal
+        (notably Clerk, Cloudinary, Resend, Google and Meta Platforms in
+        the United States, and Didit in Israel). Where personal
         information is transferred across
         borders, we rely on the following POPIA § 72 grounds:
       </p>
@@ -264,16 +280,13 @@ export default function PrivacyPage() {
       <p>
         The information transferred across borders includes the
         identity-verification images described in paragraph 3.2 — the
-        identity-document image, the face image (selfie) and, where the
-        anchored check is used, the official record photograph. Those images
-        are stored encrypted on our own servers in South Africa and are transmitted
-        to Amazon
-        Web Services in Ireland (AWS Europe, eu-west-1) for the automated text
-        extraction, face match and liveness check. For that transfer
-        specifically we rely on the consent you give before verification
-        begins — the consent screen names the processor and states that it is
-        in Ireland — on the necessity of the transfer for the verification
-        step you asked us to perform, and on the contractual safeguards above.
+        identity-document image and the face image (selfie). Those images are
+        stored encrypted on our own servers in South Africa and are transmitted
+        to Didit for the automated document read, face match and liveness
+        check. For that transfer specifically we rely on the consent you give
+        before verification begins, on the necessity of the transfer for the
+        verification step you asked us to perform, and on the contractual
+        safeguards above.
       </p>
 
       <h2>9. How long we keep your information</h2>
@@ -284,11 +297,11 @@ export default function PrivacyPage() {
       <ul>
         <li><strong>Transaction records:</strong> 5 years from completion, in line with FICA record-keeping requirements.</li>
         <li><strong>Listings, ratings and Q&amp;A:</strong> for the lifetime of your account (kept for public-history integrity); permanently de-identified within 90 days of account deletion.</li>
-        <li><strong>KYC ID hash:</strong> retained while your account is active, plus 12 months after deletion to prevent duplicate registration.</li>
+        <li><strong>Identity-verification ID hash:</strong> retained while your account is active, plus 12 months after deletion to prevent duplicate registration.</li>
         <li><strong>Encrypted SA ID number:</strong> retained (AES-GCM encrypted at rest) while your account is active, so that we can confirm the identity of the person being paid, prevent impersonation, and complete any prescribed statutory transfer or record-keeping document required for the regulated categories we handle; where such a document has been completed, the encrypted ID is kept for the period that legislation requires that record to be retained, and is otherwise deleted on account closure. The legislation imposing that requirement is identified in our{' '}
           <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>.</li>
-        <li><strong>KYC selfie (face image):</strong> stored encrypted on our own servers in South Africa and retained as an audit record of the verification for the life of your account; re-used only to re-run a verification check on that same account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present; that deletion is a tracked follow-up and is not yet implemented.</li>
-        <li><strong>KYC identity-document image:</strong> stored encrypted on our own servers in South Africa and retained as an audit record of the verification for the life of your account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present, on the same basis as the selfie above.</li>
+        <li><strong>Identity-verification selfie (face image):</strong> stored encrypted on our own servers in South Africa and retained as an audit record of the verification for the life of your account; re-used only to re-run a verification check on that same account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present; that deletion is a tracked follow-up and is not yet implemented.</li>
+        <li><strong>Identity-verification document image:</strong> stored encrypted on our own servers in South Africa and retained as an audit record of the verification for the life of your account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present, on the same basis as the selfie above.</li>
         <li><strong>Email and SMS logs:</strong> 90 days.</li>
         <li><strong>Usage analytics (raw activity events):</strong> up to 12 months, after which they are deleted; we keep only aggregated, de-identified statistics beyond that period.</li>
         <li><strong>Banking details:</strong> retained while your account is active; deleted on account closure unless there is an unresolved transaction or legal-hold reason to retain.</li>
@@ -304,7 +317,7 @@ export default function PrivacyPage() {
         <li><strong>Request correction or deletion</strong> of information that is inaccurate, irrelevant, excessive, out of date, incomplete, misleading or obtained unlawfully (§ 24) — subject to our legal retention obligations;</li>
         <li><strong>Object</strong> to processing in certain circumstances, including direct marketing (§ 11(3));</li>
         <li><strong>Withdraw consent</strong> at any time where processing relies on your consent;</li>
-        <li><strong>Lodge a complaint</strong> with the Information Regulator (see paragraph 14).</li>
+        <li><strong>Lodge a complaint</strong> with the Information Regulator (see paragraph 15).</li>
       </ul>
       <p>
         To exercise any of these rights, contact our Information
@@ -312,7 +325,33 @@ export default function PrivacyPage() {
         reasonable proof of identity before acting on your request.
       </p>
 
-      <h2>11. Direct marketing</h2>
+      <h2>11. How to delete your data</h2>
+      <p>
+        You can ask us to delete your personal information at any time:
+      </p>
+      <ol>
+        <li>
+          In the app, open <strong>Account</strong> and choose{' '}
+          <strong>Close account</strong>; or
+        </li>
+        <li>
+          Email our Information Officer at{' '}
+          <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>{SUPPORT_EMAIL}</a>{' '}
+          from the email address on your account, with the subject
+          &ldquo;Delete my data&rdquo;.
+        </li>
+      </ol>
+      <p>
+        We then delete or de-identify your personal information as set out in
+        paragraph 9 (How long we keep your information), except where we are
+        required or permitted by law to keep it — for example transaction,
+        tax and anti-fraud records we must retain, and the statutory records
+        described in paragraph 9 for regulated categories. Step-by-step
+        instructions are also published at{' '}
+        <a href="/data-deletion" style={{ color: 'var(--red)' }}>alloutdoor.co.za/data-deletion</a>.
+      </p>
+
+      <h2>12. Direct marketing</h2>
       <p>
         All Outdoor sends two kinds of communications:
       </p>
@@ -321,7 +360,7 @@ export default function PrivacyPage() {
         <li><strong>Marketing</strong> — newsletters and promotional offers. These are only sent if you have <strong>opted in</strong> at sign-up or in your profile settings. You may withdraw consent at any time by clicking the unsubscribe link in any marketing message or by changing your preferences in your account.</li>
       </ul>
 
-      <h2>12. Information about children</h2>
+      <h2>13. Information about children</h2>
       <p>
         The Platform is not directed at, and may not be used by, any
         person under the age of 18. We do not knowingly collect
@@ -331,7 +370,7 @@ export default function PrivacyPage() {
         delete it.
       </p>
 
-      <h2>13. Security</h2>
+      <h2>14. Security</h2>
       <p>
         We implement reasonable technical and organisational measures
         to safeguard personal information against loss, unauthorised
@@ -349,7 +388,7 @@ export default function PrivacyPage() {
         creates a real risk of harm, in line with section 22 of POPIA.
       </p>
 
-      <h2>14. Complaints to the Information Regulator</h2>
+      <h2>15. Complaints to the Information Regulator</h2>
       <p>
         If you believe that we have not handled your personal
         information in accordance with POPIA, you may lodge a complaint
@@ -377,7 +416,7 @@ export default function PrivacyPage() {
         concern directly first — please contact our Information Officer.
       </p>
 
-      <h2>15. Changes to this policy</h2>
+      <h2>16. Changes to this policy</h2>
       <p>
         We may update this Privacy Policy from time to time. Material
         changes will be notified to you by email and posted on the

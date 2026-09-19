@@ -126,7 +126,7 @@ export default function PaiaPage() {
           contracts with suppliers and service providers.
         </li>
         <li>
-          <strong>Customer and verification (KYC) records</strong> —
+          <strong>Customer and identity-verification records</strong> —
           account details, contact information, and the identity- and
           bank-verification information we collect from sellers before a
           payout, as described in our{' '}

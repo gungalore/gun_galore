@@ -37,7 +37,7 @@ export const metadata = {
 export default function TermsPage() {
   return (
     <>
-      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 15 August 2026" />
+      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 19 September 2026" />
 
       <h2>1. About us</h2>
       <p>
@@ -92,17 +92,15 @@ export default function TermsPage() {
       </p>
       <p>
         Most items in the Store are listed and sold by their owners.
-        Except for <strong>Daily Deals</strong> (section 11), where
-        All Outdoor itself is the seller of record, we do not own,
-        stock or dispatch the goods members list: the agreement of
-        sale for each such item is concluded between the Seller and
-        the Buyer, with All Outdoor providing the Store, the checkout,
-        delivery arrangement and support. Where a transaction involves an
-        item that requires a licence or permit to possess, physical
-        possession is transferred only through the authorised channel
-        prescribed for that category. All Outdoor is not an authorised
-        dealer in any restricted category and does not handle such
-        items in any physical capacity.
+        We do not own, stock or dispatch the goods members list: the
+        agreement of sale for each such item is concluded between the
+        Seller and the Buyer, with All Outdoor providing the Store, the
+        checkout, delivery arrangement and support. Where a transaction
+        involves an item that requires a licence or permit to possess,
+        physical possession is transferred only through the authorised
+        channel prescribed for that category. All Outdoor is not an
+        authorised dealer in any restricted category and does not handle
+        such items in any physical capacity.
       </p>
 
       <h2>3. Acceptance and changes</h2>
@@ -137,7 +135,7 @@ export default function TermsPage() {
         <li>have the legal capacity to enter into a binding contract;</li>
         <li>not have been previously banned by All Outdoor;</li>
         <li>where you list, bid on or purchase any item in a <strong>restricted category</strong>, hold (and continue to hold for the whole duration of the transaction) every competency, licence, permit or other authorisation that the relevant authority requires for that item, as set out in the <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>; and</li>
-        <li>where applicable, complete our identity verification (KYC) process before you can be paid.</li>
+        <li>where applicable, complete our identity verification process before you can be paid.</li>
       </ul>
 
       <h2>5. Your account</h2>
@@ -199,12 +197,12 @@ export default function TermsPage() {
         For most transactions, settlement to the Seller is{' '}
         <strong>deferred</strong>: the Buyer's payment is collected by
         the payment service provider at checkout, and the Seller is
-        paid (less commission and the transaction fee, as set out in
-        section 8) only once the Buyer confirms delivery of the item,
-        the Buyer's confirmation window elapses, or a dispute is
-        resolved. Once one of these triggers occurs, All Outdoor
-        instructs the payment service provider to pay the Seller's
-        proceeds to the Seller's bank account.
+        paid (less the commission, as set out in section 8) only once the
+        Buyer confirms delivery of the item, the Buyer's confirmation
+        window elapses, or a dispute is resolved. Once one of these
+        triggers occurs, All Outdoor instructs the payment service
+        provider to pay the Seller's proceeds to the Seller's bank
+        account.
       </p>
       <p>
         For the avoidance of doubt: deferred settlement is a{' '}
@@ -236,27 +234,26 @@ export default function TermsPage() {
       <h2>8. Fees, commission and payouts</h2>
       <p>
         All Outdoor charges a <strong>banded commission</strong> on each
-        completed sale, and the payment service provider charges a{' '}
-        <strong>transaction fee</strong> on each payment. How they are
-        collected depends on the sale mode:
+        completed sale, and a <strong>Buyer Protection Fee</strong> is
+        charged to the Buyer on each order. How they are collected depends
+        on the sale mode:
       </p>
       <ul>
         <li>
           <strong>Buy Now.</strong> The amount the Seller enters when
           creating the listing is the amount the Seller is to{' '}
-          <strong>receive</strong>. All Outdoor adds the commission and
-          the transaction fee to that amount and publishes the result as
-          the listing price payable by the Buyer. The Seller is paid
-          the amount the Seller entered, without deduction, and nothing
-          further is added to the Buyer's total at checkout other than
-          delivery charges under paragraph 9.
+          <strong>receive</strong>. All Outdoor adds the commission to
+          that amount and publishes the result as the listing price. The
+          Seller is paid the amount the Seller entered, without deduction.
+          At checkout the Buyer pays the listing price plus the Buyer
+          Protection Fee and delivery charges (paragraph 9).
         </li>
         <li>
           <strong>Auction and Take-a-Shot.</strong> The sale price is the
           price established by the winning bid or the accepted offer. The
           commission is deducted from that price and the balance is the
-          Seller's proceeds; the transaction fee is payable by the Buyer in
-          addition to the sale price.
+          Seller's proceeds; the Buyer Protection Fee and delivery are
+          payable by the Buyer in addition to the sale price.
         </li>
       </ul>
       <p>
@@ -265,13 +262,9 @@ export default function TermsPage() {
         before a listing is published, and are snapshotted onto each
         Transaction record at the point of sale. Sellers may review the
         current fee schedule at any time via the in-product fee explainer.
-        Our current commission bands and transaction fee are published at{' '}
+        Our current commission bands and the Buyer Protection Fee are
+        published at{' '}
         <a href="/fees" style={{ color: 'var(--red)' }}>alloutdoor.co.za/fees</a>.
-      </p>
-      <p>
-        Where the Store offers paid placement features, the cost of
-        those features is non-refundable except as expressly set out
-        in the relevant product T&amp;Cs.
       </p>
       <p>
         Sellers are paid in South African Rand (ZAR) by electronic
@@ -348,23 +341,7 @@ export default function TermsPage() {
         the Seller's response window where applicable.
       </p>
 
-      <h2>11. Daily Deals</h2>
-      <p>
-        <strong>Daily Deals</strong> are limited-time offers in which
-        All Outdoor itself is the seller of record: your purchase
-        contract for a Daily Deal is with ALLOUTDOOR (PTY) LTD, not
-        with another member. Deal purchases are delivered by
-        courier from our supplier's warehouse within the delivery
-        window shown on the deal, are covered by the same
-        delivery-confirmation protection as every other purchase, and buyers receive a
-        formal receipt by email. Returns and refunds for Daily Deals
-        are governed by our{' '}
-        <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>{' '}
-        and the Consumer Protection Act. Daily Deals never include
-        items from a restricted category.
-      </p>
-
-      <h2>12. Disputes and refunds</h2>
+      <h2>11. Disputes and refunds</h2>
       <p>
         If you believe a Buyer or Seller has not met their obligations
         — for example, an item arrived damaged or never arrived — you
@@ -393,7 +370,7 @@ export default function TermsPage() {
         return defective goods).
       </p>
 
-      <h2>13. Suspension and termination</h2>
+      <h2>12. Suspension and termination</h2>
       <p>
         We may suspend or terminate your account immediately, with or
         without notice, where we reasonably believe that you have:
@@ -403,7 +380,7 @@ export default function TermsPage() {
         <li>provided false information or impersonated another person;</li>
         <li>engaged in fraud, money laundering, intimidation or any criminal activity;</li>
         <li>attempted to bypass our payment, moderation or contact-detail safeguards; or</li>
-        <li>failed to complete KYC or other compliance obligations within a reasonable time.</li>
+        <li>failed to complete identity verification or other compliance obligations within a reasonable time.</li>
       </ul>
       <p>
         You may close your account at any time by emailing{' '}
@@ -414,7 +391,7 @@ export default function TermsPage() {
         transactions in progress, fees due or warranties given.
       </p>
 
-      <h2>14. Intellectual property</h2>
+      <h2>13. Intellectual property</h2>
       <p>
         The Platform (including its software, design, brand, written
         content and structure) is owned by All Outdoor (or its licensors)
@@ -425,7 +402,7 @@ export default function TermsPage() {
         the Store.
       </p>
 
-      <h2>15. Limitation of liability</h2>
+      <h2>14. Limitation of liability</h2>
       <p>
         To the maximum extent permitted by South African law, All Outdoor
         will not be liable to you for any indirect, incidental,
@@ -446,7 +423,7 @@ export default function TermsPage() {
         misconduct, and liability under the Consumer Protection Act.
       </p>
 
-      <h2>16. Indemnity</h2>
+      <h2>15. Indemnity</h2>
       <p>
         You agree to indemnify, defend and hold harmless All Outdoor,
         its directors, officers, employees and agents from and against
@@ -464,7 +441,7 @@ export default function TermsPage() {
         Platform.
       </p>
 
-      <h2>17. Force majeure</h2>
+      <h2>16. Force majeure</h2>
       <p>
         Neither party will be liable for any failure or delay in
         performance caused by events beyond its reasonable control,
@@ -475,7 +452,7 @@ export default function TermsPage() {
         authentication service providers).
       </p>
 
-      <h2>18. Notices and communications</h2>
+      <h2>17. Notices and communications</h2>
       <p>
         Notices to you will be sent to the email address registered on
         your account and, where appropriate, by SMS to your verified
@@ -486,7 +463,7 @@ export default function TermsPage() {
         or by post to the registered address set out in paragraph 1.
       </p>
 
-      <h2>19. Severability</h2>
+      <h2>18. Severability</h2>
       <p>
         If any provision of these Terms is found by a competent court
         to be unenforceable, that provision will be severed and the
@@ -494,7 +471,7 @@ export default function TermsPage() {
         effect.
       </p>
 
-      <h2>20. Governing law and jurisdiction</h2>
+      <h2>19. Governing law and jurisdiction</h2>
       <p>
         These Terms are governed by and construed in accordance with
         the laws of the Republic of South Africa. You and All Outdoor
@@ -503,7 +480,7 @@ export default function TermsPage() {
         any dispute arising out of or in connection with these Terms.
       </p>
 
-      <h2>21. Complaints and contact</h2>
+      <h2>20. Complaints and contact</h2>
       <p>
         We aim to acknowledge complaints within 2 business days and
         resolve them within 14 business days. To raise a complaint or
@@ -528,7 +505,7 @@ export default function TermsPage() {
         <strong>Postal:</strong> ALLOUTDOOR (PTY) LTD, 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570
       </p>
 
-      <h2>22. ECT Act § 43 disclosures</h2>
+      <h2>21. ECT Act § 43 disclosures</h2>
       <p>
         In compliance with Section 43 of the Electronic Communications
         and Transactions Act 25 of 2002:

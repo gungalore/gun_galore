@@ -433,18 +433,7 @@ export default function RegulatedItemsAnnexPage() {
         at checkout.
       </p>
 
-      <h2>13. Daily Deals — All Outdoor as seller of record</h2>
-      <p>
-        Daily Deals never include items requiring a licence to possess.
-        Where All Outdoor is itself the seller of record — that is, on
-        Daily Deals — the goods offered are always unregulated outdoor
-        goods. All Outdoor does not and will not sell any item subject
-        to the FCA as principal, because it holds no dealer licence
-        under that Act. Nothing in the Daily Deals programme may be
-        read as All Outdoor dealing in firearms on its own account.
-      </p>
-
-      <h2>14. Payments, funds held and payouts</h2>
+      <h2>13. Payments, funds held and payouts</h2>
       <p>
         A firearm never ships between private individuals. It moves
         only between SAPS-licensed dealers, and both buyer and seller
@@ -461,17 +450,17 @@ export default function RegulatedItemsAnnexPage() {
         successful payment (paragraph 11).
       </p>
 
-      <h2>15. Fees and charges on regulated transactions</h2>
+      <h2>14. Fees and charges on regulated transactions</h2>
       <ul>
         <li>
           <strong>Buy Now — the seller receives the asking price in
           full.</strong> On a fixed-price listing the amount the seller
-          enters is what the seller receives; our commission and the card
-          transaction fee are included in the price the buyer sees, and
-          nothing is deducted from the seller. On an auction or an
-          accepted offer the price is whatever the bidding or the offer
-          settled at, our commission comes out of that price, and the
-          buyer pays a transaction fee on top.
+          enters is what the seller receives; our commission is included in
+          the price the buyer sees, and nothing is deducted from the seller.
+          On an auction or an accepted offer the price is whatever the
+          bidding or the offer settled at, our commission comes out of that
+          price, and the buyer pays the Buyer Protection Fee and delivery on
+          top.
         </li>
         <li>
           <strong>No platform shipping fee.</strong> A firearm dealer
@@ -496,7 +485,7 @@ export default function RegulatedItemsAnnexPage() {
         page.
       </p>
 
-      <h2>16. Refunds, disputes and cancellations</h2>
+      <h2>15. Refunds, disputes and cancellations</h2>
       <ul>
         <li>
           <strong>Private Arrangement — no funds-held protection.</strong>{' '}
@@ -533,7 +522,7 @@ export default function RegulatedItemsAnnexPage() {
         </li>
       </ul>
 
-      <h2>17. Seller responsibilities</h2>
+      <h2>16. Seller responsibilities</h2>
       <p>As a seller of a regulated item on All Outdoor, you must:</p>
       <ul>
         <li>only list items you lawfully own, with proof of ownership available on request;</li>
@@ -544,7 +533,7 @@ export default function RegulatedItemsAnnexPage() {
         <li>furnish a valid South African identity number before a payout is released, so that the prescribed transfer form can be completed.</li>
       </ul>
 
-      <h2>18. Buyer responsibilities</h2>
+      <h2>17. Buyer responsibilities</h2>
       <p>As a buyer of a regulated item on All Outdoor, you must:</p>
       <ul>
         <li>hold (or have a pending application for) the relevant Possession Licence and a current Competency Certificate;</li>
@@ -553,7 +542,7 @@ export default function RegulatedItemsAnnexPage() {
         <li>retain a copy of the SAPS Possession Acquisition Notification (SAP 534) for at least 5 years.</li>
       </ul>
 
-      <h2>19. False declarations</h2>
+      <h2>18. False declarations</h2>
       <p>
         Falsifying a Competency Certificate, Possession Licence,
         identity document or any other compliance document is a
@@ -563,7 +552,7 @@ export default function RegulatedItemsAnnexPage() {
         be permanently banned and the matter referred to SAPS.
       </p>
 
-      <h2>20. Lost, stolen or recovered firearms</h2>
+      <h2>19. Lost, stolen or recovered firearms</h2>
       <p>
         If a firearm transacted on All Outdoor is later reported lost or
         stolen, contact SAPS immediately (10111) and notify us at{' '}
@@ -575,7 +564,7 @@ export default function RegulatedItemsAnnexPage() {
         investigation.
       </p>
 
-      <h2>21. Records, your personal information and PAIA</h2>
+      <h2>20. Records, your personal information and PAIA</h2>
 
       <h3>21.1 Why we retain your encrypted identity number</h3>
       <p>
@@ -654,7 +643,7 @@ export default function RegulatedItemsAnnexPage() {
         itself.
       </p>
 
-      <h2>22. Complaints and escalation</h2>
+      <h2>21. Complaints and escalation</h2>
       <p>
         Firearms-related complaints, and any complaint concerning the
         lawfulness of a firearm, its licensing, its storage or its
@@ -680,7 +669,7 @@ export default function RegulatedItemsAnnexPage() {
         are unaffected and remain available to you.
       </p>
 
-      <h2>23. Cooperation with authorities</h2>
+      <h2>22. Cooperation with authorities</h2>
       <p>
         In addition to the Financial Intelligence Centre and any other
         competent authority, All Outdoor cooperates fully with the
@@ -701,7 +690,7 @@ export default function RegulatedItemsAnnexPage() {
         .
       </p>
 
-      <h2>24. Indemnity</h2>
+      <h2>23. Indemnity</h2>
       <p>
         You agree to indemnify, defend and hold harmless All Outdoor,
         its directors, officers, employees and agents from and against
@@ -716,7 +705,7 @@ export default function RegulatedItemsAnnexPage() {
         Service; it adds to that indemnity and does not narrow it.
       </p>
 
-      <h2>25. Contact</h2>
+      <h2>24. Contact</h2>
       <p>
         For any compliance enquiry, contact{' '}
         <a href={`mailto:${SUPPORT_EMAIL}`} style={linkStyle}>

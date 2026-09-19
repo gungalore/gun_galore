@@ -1362,7 +1362,7 @@ export class NotificationsService {
     await this.sendSms(
       d.buyerPhone,
       d.needsBankDetails
-        ? `All Outdoor: Seller cancelled ${truncate(d.listingTitle, 30)}. Add your bank details at gungalore.co.za/profile/edit so we can EFT your R${(d.buyerTotal / 100).toFixed(0)} refund.`
+        ? `All Outdoor: Seller cancelled ${truncate(d.listingTitle, 30)}. Add your bank details at alloutdoor.co.za/profile/edit so we can EFT your R${(d.buyerTotal / 100).toFixed(0)} refund.`
         : `All Outdoor: Seller cancelled ${truncate(d.listingTitle, 30)}. R${(d.buyerTotal / 100).toFixed(0)} refund on the way (${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}).`,
       `sale-rejected-${d.transactionId}`,
     );
@@ -3800,7 +3800,7 @@ export class NotificationsService {
     await this.sendSms(
       d.buyer.phone,
       d.needsBankDetails
-        ? `All Outdoor: ${truncate(d.listingTitle, 30)} not dispatched — refund approved. Add your bank details at gungalore.co.za/profile/edit so we can pay it.`
+        ? `All Outdoor: ${truncate(d.listingTitle, 30)} not dispatched — refund approved. Add your bank details at alloutdoor.co.za/profile/edit so we can pay it.`
         : `All Outdoor: ${truncate(d.listingTitle, 30)} not dispatched. Refunded ${formatRand(d.buyerTotal)}${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
       `auto-refund-buyer-${d.transactionId}`,
     );
@@ -3893,7 +3893,7 @@ export class NotificationsService {
     await this.sendSms(
       d.buyer.phone,
       d.needsBankDetails
-        ? `All Outdoor: order for ${truncate(d.listingTitle, 30)} cancelled. Add your bank details at gungalore.co.za/profile/edit so we can EFT your ${formatRand(d.buyerTotal)} refund.`
+        ? `All Outdoor: order for ${truncate(d.listingTitle, 30)} cancelled. Add your bank details at alloutdoor.co.za/profile/edit so we can EFT your ${formatRand(d.buyerTotal)} refund.`
         : `All Outdoor: order for ${truncate(d.listingTitle, 30)} cancelled. ${formatRand(d.buyerTotal)} refunded${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
       `buyer-cancel-buyer-${d.transactionId}`,
     );

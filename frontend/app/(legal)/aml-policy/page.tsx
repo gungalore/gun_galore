@@ -1,7 +1,7 @@
 // AML Policy — All Outdoor's voluntary FICA-aligned controls.
 //
 //   All Outdoor is not a designated accountable institution but
-//   voluntarily applies KYC, contact-detail filtering and audit
+//   voluntarily applies identity verification, contact-detail filtering and audit
 //   retention consistent with FICA principles. Worth disclosing
 //   publicly so sellers / partners / regulators can see the controls.
 
@@ -47,16 +47,15 @@ export default function AmlPolicyPage() {
         marketplace.
       </p>
 
-      <h3>2.1 Know-Your-Customer (KYC)</h3>
+      <h3>2.1 Know-Your-Customer (identity verification)</h3>
       <p>
         Every Seller must complete identity verification before their
         first payout can be released. Verification includes:
       </p>
       <ul>
-        <li>A South African ID number record check through VerifyNow, a South African verification provider;</li>
+        <li>A South African ID number check through Didit, our identity-verification provider;</li>
         <li>Upload of an identity document, and a live face image captured at the time of verification;</li>
         <li>An automated authenticity and face-match assessment of those images by our verification provider, with manual review where the automated check is inconclusive;</li>
-        <li>For higher-assurance verification, a comparison against the official Department of Home Affairs record photograph;</li>
         <li>A manual review of the Seller's bank details against their verified identity before the first payout, to confirm the payout account belongs to the verified person.</li>
       </ul>
       <p>
@@ -64,8 +63,8 @@ export default function AmlPolicyPage() {
         manual admin review and the Seller is directed to contact
         support. Verification outcomes (pass, fail, attempts) are retained
         for audit, and the identity document and face image are stored
-        with our image-hosting provider as a record of the verification.
-        See the{' '}
+        encrypted on our own servers in South Africa as a record of the
+        verification. See the{' '}
         <a href="/privacy" style={{ color: 'var(--red)' }}>
           Privacy Policy
         </a>{' '}
@@ -96,7 +95,7 @@ export default function AmlPolicyPage() {
       <h3>2.3 Audit trail</h3>
       <p>
         Every administrative action that affects a user, listing or
-        transaction (ban, refund, KYC override, moderation decision,
+        transaction (ban, refund, identity-verification override, moderation decision,
         etc.) is recorded in an immutable audit log together with the
         admin's identity, the reason given and before/after values.
         Audit records are retained for at least 5 years.

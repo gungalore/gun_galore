@@ -5103,8 +5103,8 @@ function PriceBreakdown({
             Top Seller tier gets a 0.5% discount once you qualify.
           </li>
           <li>
-            The buyer pays the transaction fee on top at checkout — it
-            never comes out of your payout.
+            The buyer pays the Buyer Protection Fee and delivery on top at
+            checkout — it never comes out of your payout.
           </li>
         </ul>
       </div>

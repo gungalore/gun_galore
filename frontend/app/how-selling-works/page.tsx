@@ -3,12 +3,11 @@ import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'How selling works — All Outdoor',
-  // "Four", not three: Swop / Trade has been a live selling mode since the
-  // S-module shipped and is rendered below with the other three. The count
-  // is stated in three places (here, the intro line, and the sell-flow
-  // HelpTip on /listings/new) — keep them in step.
+  // Three selling modes. The count is stated in three places (here, the
+  // intro line, and the sell-flow HelpTip on /listings/new) — keep them in
+  // step.
   description:
-    'The four ways to sell on All Outdoor — Buy Now, Auction, Take a Shot and Swop / Trade — what each one is, who it suits, and how it works, so you list your item the right way.',
+    'The three ways to sell on All Outdoor — Buy Now, Auction and Take a Shot — what each one is, who it suits, and how it works, so you list your item the right way.',
   alternates: { canonical: '/how-selling-works' },
 };
 
@@ -30,8 +29,8 @@ const MODES: {
       'Selling several identical units (set a quantity and the listing stays live until they all sell)',
     ],
     how: [
-      'You set one price — what you want to RECEIVE. Our commission and the card transaction fee are added on top, and that total is the price buyers see. You are shown both numbers before you publish, and you receive your asking price in full: nothing is deducted from your payout.',
-      'The buyer taps Buy and pays the listed price — no waiting, no negotiation. Nothing is added at their checkout except delivery.',
+      'You set one price — what you want to RECEIVE. Our commission is added on top, and that total is the price buyers see. You are shown both numbers before you publish, and you receive your asking price in full: nothing is deducted from your payout.',
+      'The buyer taps Buy and pays the listed price, plus the Buyer Protection Fee and delivery — no waiting, no negotiation.',
       'You are paid out once the buyer confirms delivery.',
       'List more than one unit by setting the quantity; the listing stays up until every unit is sold.',
     ],
@@ -48,7 +47,7 @@ const MODES: {
       'You set a duration and a starting bid. Buyers bid; the highest bid at the end wins.',
       'Set a hidden reserve to protect yourself — the item only sells if bidding reaches your minimum.',
       'Bids in the final 2 minutes extend the end time by 2 minutes, so nobody wins by sniping at the last second.',
-      'Because the bidding sets the price, there is nothing to build our fee into: the sale price is the winning bid, our commission comes out of it, and the buyer pays a transaction fee on top.',
+      'Because the bidding sets the price, there is nothing to build our fee into: the sale price is the winning bid, our commission comes out of it, and the buyer pays the Buyer Protection Fee and delivery on top.',
     ],
   },
   {
@@ -62,22 +61,8 @@ const MODES: {
     how: [
       'Buyers send you an offer. You can accept, decline, or counter once.',
       'Set an optional hidden auto-accept price — offers at or above it are flagged to you for one-tap confirmation. Declining any offer needs a reason and records a strike (genuine buyer concerns go to admin review instead); keep your listings accurate — three strikes suspends selling on your account. Countering is always penalty-free.',
-      'The offer sets the price, so — as with an auction — our commission comes out of the agreed price and the buyer pays a transaction fee on top.',
+      'The offer sets the price, so — as with an auction — our commission comes out of the agreed price and the buyer pays the Buyer Protection Fee and delivery on top.',
       'As with every sale, you are paid out once delivery is confirmed.',
-    ],
-  },
-  {
-    name: 'Swop / Trade',
-    tagline: 'Trade your gear for someone else’s — add cash if it’s not an even deal.',
-    bestFor: [
-      'Upgrading your kit without laying out cash',
-      'Item-for-item deals, with optional cash either way',
-      'When you’d rather trade than sell',
-    ],
-    how: [
-      'You list the item you want to trade — no price. Buyers browse and propose a swap: their item, plus optional cash in either direction.',
-      'You accept, decline, or counter the cash once. All Outdoor arranges both couriers, and any cash difference is paid over once both parcels are delivered.',
-      'Items in a regulated category can be swopped too, but they are not couriered — each side is handed over the same way it would be on a normal sale in that category.',
     ],
   },
 ];
@@ -96,7 +81,7 @@ export default function HowSellingWorksPage() {
         How selling works
       </h1>
       <p className="text-sm mt-2" style={{ color: 'var(--text-tertiary)' }}>
-        There are four ways to list an item on All Outdoor. Pick the one that
+        There are three ways to list an item on All Outdoor. Pick the one that
         fits what you&apos;re selling — you can always change it before it goes
         live.
       </p>

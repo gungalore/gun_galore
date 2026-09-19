@@ -29,7 +29,7 @@ export const dynamic = 'force-dynamic';
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ??
-  'https://gungalore.co.za';
+  'https://alloutdoor.co.za';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
@@ -56,6 +56,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     '/privacy',
     '/aml-policy',
     '/refund-policy',
+    '/buyer-protection',
+    '/data-deletion',
     '/acceptable-use',
     // '/firearms-compliance' deliberately ABSENT — it is the members-only
     // Regulated Items Annex now (see /members/regulated-items). A sign-in-walled
