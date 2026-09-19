@@ -263,6 +263,19 @@ export default function PrivacyPage() {
         by valid legal process or where we believe in good faith that
         disclosure is necessary to prevent imminent harm.
       </p>
+      <p>
+        <strong>We challenge unlawful or overbroad requests.</strong> Where we
+        receive a request for your personal information from a law-enforcement
+        agency, regulator or other authority, we will not disclose it unless
+        the request is lawful, properly authorised and specific enough to
+        respond to. Where a request appears unlawful, overbroad, or otherwise
+        invalid, we will <strong>challenge its legality</strong> and, where
+        appropriate, resist disclosure — unless we are legally prohibited from
+        doing so, or there is an imminent risk of serious harm that requires us
+        to act. Where we are required to disclose, we limit the disclosure to
+        what the request lawfully requires and, where we are permitted to, we
+        tell you that it has happened.
+      </p>
 
       <h2>8. Cross-border transfers (POPIA § 72)</h2>
       <p>
