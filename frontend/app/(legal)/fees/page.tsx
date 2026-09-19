@@ -196,9 +196,7 @@ export default function FeesPage() {
       <h2>4. Buyer Protection Fee</h2>
       {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
-        Payments are handled by our appointed third-party payment service
-        provider (a licensed South African payment service provider). Every
-        order carries a <strong>Buyer Protection Fee</strong> of{' '}
+        Every order carries a <strong>Buyer Protection Fee</strong> of{' '}
         <strong>3.28% + R1.15</strong> (VAT included), charged on the item
         price and the carrier&apos;s rate together, shown as its own line at
         checkout before the buyer confirms payment.
