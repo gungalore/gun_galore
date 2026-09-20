@@ -15,19 +15,24 @@ import {
 // already. Put it on every page."
 //
 // ────────────────────────────────────────────────────────────────────
-// ⚠️ THE UNIT IS THE QUESTION, NOT THE BOX. This is the whole design and it
-// was got wrong once.
+// ⚠️ THE UNIT IS THE REQUIRED QUESTION, NOT EVERY QUESTION AND NOT THE BOX.
 //
-// The obvious implementation counts boxes on the SAPS 271 — there are 236
-// mapped, so "38 of 61" writes itself. It is the wrong denominator, because
-// one question fills wildly different numbers of boxes: marital status ticks
-// one of five, an identity number fills a thirteen-cell character row, and a
-// single owned-firearm licence fills six. Progress would lurch — answer one
-// thing and jump six, answer the next and move one — and the number would be
-// bookkeeping about a form the applicant has never seen.
+// This has been got wrong twice and is worth stating plainly.
 //
-// "Twelve of eighteen questions" is something they can act on. So the unit is
-// the REGISTRY FIELD: the question actually put to them.
+// Counting boxes on the SAPS 271 is wrong because one question fills wildly
+// different numbers of boxes, so progress would lurch. Counting EVERY
+// registry question is wrong for the same reason seen from the other side: it
+// scores the optional ones, so a section a member has fully answered can never
+// read 100%. Five declarations ticked read 83% because an optional prose box
+// sat in the denominator, and a section with no required question at all
+// ("Firearms you already own") invented a denominator from whichever optional
+// columns happened to be touched.
+//
+// The denominator is the questions a member MUST answer to lodge the
+// application — `f.required` after applicability. When those are done the
+// section reads 100%, and the footer's "Write my motivation" unlocks on the
+// same fact. Optional questions are still printed into the pack; they are
+// simply not held against anybody.
 //
 // ⚠️ AND "APPLIES TO ME" IS isVisible(), NOT A SECOND MODEL. The registry
 // already decides what to ask: `showIf` closes a history question's four
@@ -45,7 +50,17 @@ export type CoverageStatus =
   | 'in-progress'
   | 'not-started'
   /** Somebody else answers this section. Never scored against the applicant. */
-  | 'theirs';
+  | 'theirs'
+  /**
+   * There is nothing here to score.
+   *
+   * ⚠️ AN HONEST BLANK, NOT A ZERO AND NOT A HUNDRED. The owner of this
+   * section answers as many or as few as apply to them — "Firearms you already
+   * own" is the whole example: a member with no other firearm owns none, and
+   * no document tells us how many exist, so any percentage is a denominator we
+   * invented. It carries counts in its `note` and no progress bar.
+   */
+  | 'unscored';
 
 export interface CoverageSection {
   /** The letter the SAPS 271 uses, so the panel and the form agree. */
@@ -119,7 +134,14 @@ const PANEL: { id: string; label: string; from: string[] }[] = [
   // annexure — so a panel headed "of the boxes that apply to you" was
   // counting questions the form never asks. See EXCLUDED_SECTIONS.
   { id: 'G4', label: 'Dedicated status', from: ['Dedicated status'] },
-  { id: 'S', label: 'Safe and storage', from: ['Storage and safety'] },
+  // ⚠️ 'Your premises', NOT 'Storage and safety'. The safe fields were moved
+  // out of 'Storage and safety' into 'Your premises' (motivation-fields.ts,
+  // PREMISES_SECTION) and this row was never updated, so the four REQUIRED
+  // safe questions — safe_present, safe_type, safe_mounted, safe_mounted_to —
+  // were counted by no panel at all. Coverage could read 100% with every one
+  // of them blank, while the sheet's own `missing` list blocked generation on
+  // them: the meter and the footer disagreeing about the same form.
+  { id: 'S', label: 'Your premises', from: ['Your premises'] },
   { id: 'H', label: 'Declarations', from: ['History'] },
 ];
 
@@ -305,21 +327,72 @@ export function saps271Coverage(
 
   for (const panel of PANEL) {
     const mine = fields.filter((f) => panel.from.includes(f.section)).filter(applies);
+
+    /**
+     * ⚠️ THE SCORE IS OVER REQUIRED QUESTIONS, NOT EVERY QUESTION WE ASK.
+     *
+     * Counting optional boxes made a section impossible to finish and the
+     * headline impossible to trust. The operator's live examples: five
+     * declarations all ticked read H 83% because the optional `prior_refusals`
+     * prose box sat in the denominator, and "Firearms you already own" had no
+     * required field at all, so it scored the optional columns of whichever
+     * rows happened to be touched. A member who has done everything asked of
+     * them must be able to read 100%.
+     *
+     * Optional questions still exist and are still printed into the pack; they
+     * simply do not count against the applicant.
+     */
+    const required = mine.filter((f) => f.required);
+
     if (!mine.length) continue; // Not part of this licence type at all.
 
-    const done = mine.filter((f) => answered(answers, f.key));
-    const missingRequired = mine.filter(
-      (f) => f.required && !answered(answers, f.key),
+    /**
+     * ⚠️ NO REQUIRED QUESTION MEANS NO SCORE — `unscored`, not 100%.
+     *
+     * `Firearms you already own` is the case this exists for: the registry
+     * never marks a row required, because owning nothing is a legitimate
+     * answer. A section with `applicable: 0` would read 100% and a section with
+     * the optional columns would read 68% — both are numbers we invented. It
+     * contributes nothing to the overall total and says what it holds in its
+     * note instead.
+     */
+    if (!required.length) {
+      const section: CoverageSection = {
+        id: panel.id,
+        label: panel.label,
+        applicable: 0,
+        answered: 0,
+        percent: null,
+        missingRequired: 0,
+        status: 'unscored',
+      };
+      if (panel.id === 'G2') {
+        const rows = [...ownedRows].filter((n) =>
+          Object.keys(answers).some(
+            (k) => ownedRowOf(k) === n && answered(answers, k),
+          ),
+        ).length;
+        section.note = rows
+          ? `${rows} firearm${rows === 1 ? '' : 's'} listed.`
+          : 'Add the firearms you already hold.';
+      }
+      sections.push(section);
+      continue;
+    }
+
+    const done = required.filter((f) => answered(answers, f.key));
+    const missingRequired = required.filter(
+      (f) => !answered(answers, f.key),
     ).length;
 
     const section: CoverageSection = {
       id: panel.id,
       label: panel.label,
-      applicable: mine.length,
+      applicable: required.length,
       answered: done.length,
-      percent: percentOf(done.length, mine.length),
+      percent: percentOf(done.length, required.length),
       missingRequired,
-      status: statusOf(done.length, mine.length),
+      status: statusOf(done.length, required.length),
     };
 
     if (panel.id === 'G2') {

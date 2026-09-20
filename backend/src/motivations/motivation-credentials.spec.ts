@@ -1215,11 +1215,35 @@ describe('when they joined, and when they became dedicated', () => {
     },
   };
 
-  it('fills dedicated_since from the vault joined_on for the first association', () => {
+  it('⚠️ fills member-since from the card and leaves dedicated-since EMPTY', () => {
+    // ⚠️ THE BOX IS LABELLED "Dedicated status held since" AND THIS CARD
+    // CARRIES NO STATUS DATE. The join date was written into it anyway, and
+    // deriveFacts counts `years_dedicated` from it, so the motivation argued
+    // from a join date. It is the member's now.
     const o = offerWith(T, [card], {});
     expect(o.values.association_joined).toBe('2015-02-01');
-    expect(o.values.dedicated_since).toBe('2015-02-01');
-    expect(o.items.some((i) => i.key === 'dedicated_since')).toBe(true);
+    expect(o.values.dedicated_since).toBeUndefined();
+    expect(o.items.some((i) => i.key === 'dedicated_since')).toBe(false);
+  });
+
+  it('fills dedicated-since from the status date the card actually prints', () => {
+    const withStatus: CredentialSource = {
+      ...card,
+      details: { ...card.details, status_since: '2019-04-01' },
+    };
+    const o = offerWith(T, [withStatus], {});
+    expect(o.values.association_joined).toBe('2015-02-01');
+    expect(o.values.dedicated_since).toBe('2019-04-01');
+  });
+
+  it('⚠️ fills member-since even when the association name was typed by hand', () => {
+    // ⚠️ THE DATE HAD NO RE-DERIVATION PATH AND THE EXPIRY DID. Once the name
+    // was on the form — typed by the member or filled by an earlier pass —
+    // every one of their own cards hit the same-body dedup and the join date
+    // stayed blank. It is read back from the body's documents now.
+    const o = offerWith(T, [card], { association_name: 'NATSHOOT' });
+    expect(o.values.association_joined).toBe('2015-02-01');
+    expect(o.items.some((i) => i.key === 'association_joined')).toBe(true);
   });
 
   it('slots two and three keep their own join boxes', () => {

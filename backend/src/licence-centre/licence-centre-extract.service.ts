@@ -240,6 +240,10 @@ const NO_EXPIRY_ON_THE_PAGE: ReadonlySet<string> = new Set([
 const DATE_DETAILS: ReadonlySet<string> = new Set([
   'competency_issued',
   'joined_on',
+  // ⚠️ THE DEDICATED-SINCE DATE IS A DATE LIKE THE OTHERS. It was read off
+  // the certificate (WANTED, below) but left out of this set, so it was stored
+  // as raw prose and a malformed read was never rejected the way joined_on is.
+  'status_since',
   'issue_date',
 ]);
 

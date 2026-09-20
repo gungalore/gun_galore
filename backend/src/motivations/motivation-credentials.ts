@@ -377,6 +377,34 @@ function bestDatedFor(
   })[0];
 }
 
+/**
+ * The "member since" date for one body, from any of its own documents.
+ *
+ * ⚠️ EARLIEST WINS, BECAUSE MEMBERSHIP BEGINS ONCE. A body may hand the member
+ * a status certificate and, a year later, a letter of good standing; both may
+ * carry a joined date, and the earlier one is the membership's start. The
+ * expiry picks the LATEST for the mirror reason — a renewed letter supersedes
+ * last year's.
+ *
+ * Returns null when no document for the body states a joined date, so the box
+ * stays the member's to answer rather than being filled with a guess.
+ */
+function bestJoinedFor(
+  dedicated: readonly CredentialSource[],
+  body: string,
+): CredentialSource | null {
+  const want = body.trim().toUpperCase();
+  const mine = dedicated.filter(
+    (c) =>
+      Boolean(first(c.details, 'joined_on')) &&
+      first(c.details, 'association', 'issuer').trim().toUpperCase() === want,
+  );
+  if (!mine.length) return null;
+  return [...mine].sort((a, b) =>
+    first(a.details, 'joined_on') <= first(b.details, 'joined_on') ? -1 : 1,
+  )[0];
+}
+
 /** Why we would not take association details off this document, in their words. */
 function wrongDisciplineReason(
   licenceType: MotivationLicenceType,
@@ -1276,10 +1304,20 @@ export function credentialOffer(
         c.id,
       );
       if (slot === 0) {
+        // ⚠️ THE STATUS DATE IS NOT THE JOIN DATE. This box read the vault's
+        // `joined_on` — the day the member joined the body — while the box is
+        // labelled "Dedicated status held since". For a SAHGCA or NARFO member
+        // those are routinely years apart: you join, and then you qualify. It
+        // is what deriveFacts counts `years_dedicated` from, so the motivation
+        // itself argued from a join date.
+        //
+        // ⚠️ AND `status_since` IS NOW READ OFF THE CARD. It is offered where
+        // the document carries it; where it does not, the box stays the
+        // member's to answer rather than being filled with the wrong date.
         offer(
           'dedicated_since',
           'Dedicated status held since',
-          first(c.details, 'joined_on'),
+          first(c.details, 'status_since'),
           c.title,
           c.id,
         );
@@ -1345,6 +1383,27 @@ export function credentialOffer(
           dated.expiresOn ?? '',
           dated.title,
           dated.id,
+        );
+      }
+
+      // ⚠️ "MEMBER SINCE" HAD NO RE-DERIVATION PATH AND THE EXPIRY HAD ONE.
+      // The joined date was only offered while a document was claiming a NEW
+      // slot, so the moment the member typed their association name by hand —
+      // or an earlier pass had filled it — every one of their own cards took
+      // the `sameBody` dedup branch and the date stayed blank. The operator
+      // asked for it explicitly: "make sure it pulls the dates in for member
+      // since and valid until".
+      //
+      // Read back from the body's own documents, exactly as the expiry is, so
+      // the name and the date always describe one membership.
+      const joined = bestJoinedFor(dedicated, slotOneBody);
+      if (joined) {
+        offer(
+          'association_joined',
+          'Member since',
+          first(joined.details, 'joined_on'),
+          joined.title,
+          joined.id,
         );
       }
     }

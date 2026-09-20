@@ -221,6 +221,17 @@ export default function DesignPicker({
 
       {open ? (
         <div className="mt-4">
+          {/*
+            ⚠️ A COLOUR YOU CAN ACTUALLY SEE. This was a 32px grey circle with
+            the banner colour as its fill and an 8px dot of the accent in the
+            middle — on a light banner the fill and the border were nearly the
+            same value, so every swatch looked like a dot in a grey ring and
+            the name was only in a `title` a phone never shows. Operator,
+            2026-09-20: "The design color picker sucks, it needs to show the
+            colors more visibly than a dot in a grey circle."
+            Each one is a banner swatch now — the gradient the cover actually
+            uses, the accent rule on it, and the name printed underneath.
+          */}
           <div className="flex flex-wrap gap-2">
             {colours.map((c) => (
               <button
@@ -233,17 +244,34 @@ export default function DesignPicker({
                   setPickedColour(c.key);
                   save({ colourway: c.key });
                 }}
-                className={`h-8 w-8 rounded-full border p-0 ${
+                className={`w-[112px] overflow-hidden rounded-[8px] border p-0 text-left ${
                   c.key === pickedColour
-                    ? 'border-[var(--text-primary)] border-2'
+                    ? 'border-2 border-[var(--red)]'
                     : 'border-[var(--border)]'
                 }`}
-                style={{ background: c.bannerTo }}
               >
                 <span
-                  className="mx-auto block h-2 w-2 rounded-full"
-                  style={{ background: c.accent }}
-                />
+                  className="relative block h-11 w-full"
+                  style={{
+                    background: `linear-gradient(140deg, ${
+                      c.bannerFrom || c.bannerTo
+                    } 0%, ${c.bannerTo} 100%)`,
+                  }}
+                >
+                  <span
+                    className="absolute bottom-1.5 left-1.5 block h-[3px] w-10 rounded-full"
+                    style={{ background: c.accent }}
+                  />
+                </span>
+                <span
+                  className={`block px-2 py-1.5 text-[12px] font-medium ${
+                    c.key === pickedColour
+                      ? 'text-[var(--text-primary)]'
+                      : 'text-[var(--text-secondary)]'
+                  }`}
+                >
+                  {c.name}
+                </span>
               </button>
             ))}
           </div>

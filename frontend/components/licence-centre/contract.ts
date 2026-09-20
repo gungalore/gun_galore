@@ -234,6 +234,12 @@ export interface SheetResponse {
     licenceType: string;
     licenceTypeLabel: string;
     label: string | null;
+    /**
+     * The name to render: the member's `label` when set, otherwise the firearm
+     * and the section ("Glock 19 9mm — Section 13"). Server-derived, see
+     * backend/src/motivations/motivation-title.ts.
+     */
+    title?: string;
     status: string;
     /**
      * When the applicant confirmed the declaration, or null.

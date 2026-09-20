@@ -53,6 +53,11 @@ import DocumentSection from '@/components/document-centre/section';
 import DocumentRow from '@/components/document-centre/document-row';
 import { DocThumb } from '@/components/document-centre/doc-thumb';
 import { DocSectionId } from '@/components/document-centre/kinds';
+import CompletedMotivations from '@/components/licence-centre/completed-motivations';
+import {
+  motivationsApi,
+  type MotivationSummary,
+} from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
 // THE LICENCE & COMPETENCY CENTRE.
@@ -201,6 +206,16 @@ export default function LicenceCentrePage() {
    * dates depend on whether its usage loaded.
    */
   const [usage, setUsage] = useState<Record<string, CredentialUsage[]>>({});
+
+  /**
+   * The member's finished motivations, for the section below the documents.
+   *
+   * ⚠️ ITS OWN REQUEST, AND IT IS ALLOWED TO FAIL. It is a second endpoint
+   * (the motivations list), and folding it into `refresh`'s list call would
+   * make the vault render depend on whether the applications endpoint
+   * answered. Only COMPLETED rows are kept — see CompletedMotivations.
+   */
+  const [completed, setCompleted] = useState<MotivationSummary[]>([]);
 
   /**
    * ⚠️ WHICH SECTIONS ARE OPEN, AND WHY IT IS REMEMBERED PER BROWSER.
@@ -383,6 +398,12 @@ export default function LicenceCentrePage() {
     licenceCentreApi
       .consent(token)
       .then((c) => setConsent(c.state))
+      .catch(() => undefined);
+    // ⚠️ THE FINISHED MOTIVATIONS, WHICH THE VAULT NEVER LISTED. Fail-soft:
+    // the documents were read first and the page is already usable.
+    motivationsApi
+      .list(token)
+      .then((all) => setCompleted(all.filter((m) => m.status === 'COMPLETED')))
       .catch(() => undefined);
   }, [token]);
 
@@ -873,6 +894,12 @@ export default function LicenceCentrePage() {
           `/documents` are two doors to THIS page — reminder emails and
           notification-module.ts still deep-link the first — which is why the
           applications list took a child path rather than the index. */}
+      {/* ── finished motivations ────────────────────────────────────
+          ⚠️ ABOVE THE APPLICATIONS LINK, BECAUSE IT IS THE THING THEY CAME
+          BACK FOR. A completed pack is a document in their paperwork, and the
+          vault is where they look for their paperwork. */}
+      <CompletedMotivations rows={completed} />
+
       <Link
         href="/licence-centre/applications"
         className="mt-8 flex min-h-[44px] items-center justify-between gap-3 rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3 text-[14px] font-medium text-[var(--text-primary)] no-underline"

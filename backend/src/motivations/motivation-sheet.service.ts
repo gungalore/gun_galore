@@ -30,6 +30,7 @@ import {
   type SheetCredentials,
 } from './motivation-credential-slots';
 import { overlapFromAnswers } from './motivation-overlap';
+import { motivationTitle } from './motivation-title';
 import { saps271Coverage } from './saps271-coverage';
 import { previewFor, type PreviewSection } from './motivation-preview';
 import { MotivationSharedService } from './motivation-shared.service';
@@ -153,6 +154,11 @@ export interface SheetResponse {
     licenceType: MotivationLicenceType;
     licenceTypeLabel: string;
     label: string | null;
+    /**
+     * The name to render: the member's label when set, otherwise the firearm
+     * and the section. See motivation-title.ts.
+     */
+    title: string;
     status: MotivationStatus;
     /**
      * When the applicant confirmed the declaration, or null.
@@ -704,6 +710,8 @@ export class MotivationSheetService {
         licenceType: row.licenceType,
         licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
         label: row.label,
+        // ⚠️ THE NAME THE HEADING AND THE VAULT SHOW. See motivation-title.ts.
+        title: motivationTitle(row.licenceType, answers, row.label),
         status: row.status,
         declarationAcceptedAt: row.declarationAcceptedAt
           ? row.declarationAcceptedAt.toISOString()

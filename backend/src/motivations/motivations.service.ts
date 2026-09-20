@@ -48,6 +48,7 @@ import {
   sanitiseAnswers,
 } from './motivation-fields';
 import { overlapFromAnswers } from './motivation-overlap';
+import { motivationTitle } from './motivation-title';
 import { profileOffer } from './motivation-profile';
 import {
   EDITABLE,
@@ -123,7 +124,15 @@ export class MotivationsService {
     return this.documents.removeCredentialFromEditableDrafts(userId, credentialId);
   }
 
-  /** Own list. Metadata only — nothing is decrypted here. */
+  /**
+   * Own list.
+   *
+   * ⚠️ THE ANSWERS ARE DECRYPTED NOW, FOR THE TITLE ONLY. This was "metadata
+   * only — nothing is decrypted here" until the motivation gained a derived
+   * name: the list is where four applications a member cannot tell apart show
+   * up, and the title needs the firearm off `answersEncrypted`. It is a short
+   * personal list, decrypted once for two fields.
+   */
   async listMine(userId: string) {
     await this.quota.assertEnabled();
     const user = await this.shared.requireUser(userId);
@@ -139,11 +148,24 @@ export class MotivationsService {
         createdAt: true,
         completedAt: true,
         label: true,
+        answersEncrypted: true,
       },
     });
     return rows.map((r) => ({
-      ...r,
+      id: r.id,
+      referenceNumber: r.referenceNumber,
+      licenceType: r.licenceType,
+      status: r.status,
+      qualityScore: r.qualityScore,
+      createdAt: r.createdAt,
+      completedAt: r.completedAt,
+      label: r.label,
       licenceTypeLabel: LICENCE_TYPE_LABELS[r.licenceType],
+      title: motivationTitle(
+        r.licenceType,
+        this.shared.readAnswers(r.answersEncrypted),
+        r.label,
+      ),
     }));
   }
 
@@ -556,6 +578,9 @@ export class MotivationsService {
       // The member's own name, or null if they have not set one — see
       // rename() below. Purely a list label; not an answer.
       label: row.label,
+      // ⚠️ THE NAME A LIST SHOWS: the member's if they set one, otherwise the
+      // firearm and the section. See motivation-title.ts.
+      title: motivationTitle(row.licenceType, answers, row.label),
       status: row.status,
       fields: fieldsFor(row.licenceType),
       answers,

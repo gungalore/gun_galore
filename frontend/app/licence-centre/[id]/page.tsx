@@ -1279,6 +1279,7 @@ export default function LicenceCentreSheetPage() {
         <SheetHeader
           reference={sheet.application.referenceNumber}
           licenceType={sheet.application.licenceTypeLabel}
+          title={sheet.application.title}
           missingCount={sheet.missing.length}
           sections={sectionsForStrip}
           active={active}

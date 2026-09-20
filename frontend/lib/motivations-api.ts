@@ -206,6 +206,19 @@ export interface MotivationSummary {
   licenceType: string;
   status: string;
   createdAt: string;
+  /**
+   * The member's own name for this application, or null. See `title`.
+   *
+   * ⚠️ THE SERVER HAS ALWAYS SENT THESE AND THIS TYPE OMITTED THEM, so the
+   * list could not show what it already held. `title` is the name to render:
+   * the member's `label` when they set one, otherwise the firearm and the
+   * section ("Glock 19 9mm — Section 13"). The section label is the fallback.
+   */
+  label?: string | null;
+  licenceTypeLabel?: string;
+  completedAt?: string | null;
+  qualityScore?: number | null;
+  title?: string;
 }
 
 export interface MotivationDetail extends MotivationSummary {
@@ -691,12 +704,13 @@ export interface ChecklistProgress {
   theirsTotal: number;
 }
 
-/** `theirs` is never scored against the applicant. */
+/** `theirs` is never scored against the applicant, and `unscored` has nothing to score. */
 export type CoverageStatus =
   | 'complete'
   | 'in-progress'
   | 'not-started'
-  | 'theirs';
+  | 'theirs'
+  | 'unscored';
 
 export interface CoverageSection {
   /** The letter the SAPS 271 uses, so the panel and the form agree. */

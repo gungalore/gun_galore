@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { motivationsApi } from '@/lib/motivations-api';
 import type { SheetResponse } from '@/components/licence-centre/contract';
 import PackSummary from '@/components/licence-centre/pack-summary';
+import PreparingMotivation from '@/components/licence-centre/preparing-motivation';
 
 // ────────────────────────────────────────────────────────────────────
 // YOUR PACK — after the motivation is written.
@@ -23,10 +24,25 @@ import PackSummary from '@/components/licence-centre/pack-summary';
 // seller's consent, the annexure index with its certification levels, the
 // take-to-the-station checklist. It is embedded here and read in place.
 //
-// ⚠️ AND THE DOWNLOAD STAYS. An embedded viewer is not a filing cabinet: some
-// browsers refuse to render a PDF inline, and the member needs the file
-// itself to take to a station. The fallback below is shown when the embed
-// cannot render rather than assumed to be unnecessary.
+// ⚠️ NOTHING TO DOWNLOAD UNTIL THERE IS SOMETHING TO DOWNLOAD.
+//
+// Operator, 2026-09-20: "we need to hide all the download and print options
+// for the motivation and 271 and show a big preparing you motivation. Only on
+// a successful motivation do they appear."
+//
+// Generation is detached and takes about a minute and a half (see
+// motivation-generation.service.ts), and the PDF endpoint REFUSES with a 409
+// until the gate passes. So while it runs this page polls the status and shows
+// one thing: the preparing panel, with our logo on it. The controls appear
+// only at COMPLETED, and a failure says so and offers the way back to the
+// answers rather than a button that cannot work.
+//
+// ⚠️ ONE DOWNLOAD, TWO DOCUMENTS. Operator, 2026-09-20: "Remove the download
+// and print 271... When clicking download, we download the motivation and the
+// 271 as two separate documents in one go if possible." The separate SAPS 271
+// section is gone; Download fetches both PDFs and saves them back to back.
+// A section 24 renewal has no 271 — it is lodged on the SAPS 518(a) — so only
+// the motivation comes down.
 //
 // ⚠️ NO RED BUTTON ON THIS SCREEN, DELIBERATELY. Print and Download are
 // outlined. The one red button in this surface is "Write my motivation" on the
@@ -41,12 +57,42 @@ const SOURCE_ROUTE: Record<string, 'dealer' | 'seller' | 'estate' | 'unstated'> 
     'Inherited from a deceased estate': 'estate',
   };
 
+/**
+ * The statuses the writer passes through on its way to COMPLETED.
+ *
+ * ⚠️ NOT A COMPLETE SET OF `MotivationStatus`. Anything not here and not
+ * `COMPLETED` is terminal — FAILED, NEEDS_MORE_INFO, ABANDONED, or a DRAFT
+ * that never started — and each of those needs the back link, not a spinner.
+ */
+const PREPARING_STATUSES = new Set(['GENERATING', 'QUALITY_REVIEW']);
+
+/** How long to wait before we stop claiming it is still working. */
+const POLL_DEADLINE_MS = 6 * 60_000;
+const POLL_INTERVAL_MS = 3_000;
+
+/**
+ * ⚠️ MUST BE ATTACHED TO THE DOM AND REVOKED ASYNCHRONOUSLY. Modern browsers
+ * (Chrome 80+, Firefox) ignore programmatic .click() on detached anchors for
+ * security reasons, and revoking the object URL synchronously on the next line
+ * cancels the download before the browser's download manager can read the
+ * blob.
+ */
+function saveBlob(url: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 export default function PackPage() {
   const { getToken } = useAuth();
   const params = useParams<{ id: string }>();
   const id = params?.id ?? '';
 
   const [sheet, setSheet] = useState<SheetResponse | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   /**
    * The rendered pack, as a blob URL.
    *
@@ -55,21 +101,8 @@ export default function PackPage() {
    * hands the browser bytes it already holds. Same reason the download does.
    */
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const [written, setWritten] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
-
-  /**
-   * The pre-filled SAPS 271, fetched only when asked for.
-   *
-   * ⚠️ NOT LOADED WITH THE PAGE. It is a twelve-page form behind a bearer
-   * token, and the motivation is already a ten-megabyte blob sitting in this
-   * document. Two of those on every visit to "Your pack" is a phone browser
-   * dropping the tab.
-   */
-  const [formUrl, setFormUrl] = useState<string | null>(null);
-  const [formBusy, setFormBusy] = useState(false);
-  const [formErr, setFormErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -79,19 +112,59 @@ export default function PackPage() {
         const s = await motivationsApi.sheet(getToken, id);
         if (!live) return;
         setSheet(s);
+        // ⚠️ THE SERVER'S OWN STATUS, NOT AN INFERENCE FROM THE DRAFT. A held
+        // or failed run already has document text, so "there is text" is not
+        // "it is ready". See the type's note on `hasDocument`.
+        setStatus(s.application.status);
+      } catch (err) {
+        if (live) setError((err as Error).message);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [getToken, id]);
 
-        /**
-         * ⚠️ THE DRAFT IS STILL WHAT SAYS WHETHER ANYTHING WAS WRITTEN. The
-         * PDF endpoint answers for a motivation that does not exist yet too,
-         * and a viewer showing an error page is a worse answer than a sentence
-         * saying it has not been written.
-         */
-        const d = await motivationsApi.draft(getToken, id).catch(() => null);
-        if (!live) return;
-        if (!d?.text) {
-          setWritten(false);
-          return;
+  const preparing = status !== null && PREPARING_STATUSES.has(status);
+  const ready = status === 'COMPLETED';
+
+  /**
+   * Follow the writer until it stops.
+   *
+   * ⚠️ A DEADLINE, NOT AN ETERNAL POLL. The generator's own worst case is a
+   * quarter of an hour, so this stops at six minutes and says it is taking
+   * longer rather than spinning for ever on a tab nobody is watching.
+   */
+  useEffect(() => {
+    if (!id || !preparing) return;
+    let live = true;
+    const deadline = Date.now() + POLL_DEADLINE_MS;
+    const timer = setInterval(() => {
+      if (Date.now() > deadline) {
+        clearInterval(timer);
+        return;
+      }
+      void (async () => {
+        try {
+          const d = await motivationsApi.get(getToken, id);
+          if (live && d.status !== status) setStatus(d.status);
+        } catch {
+          /* A poll that fails is not news; keep waiting for the next one. */
         }
+      })();
+    }, POLL_INTERVAL_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [id, preparing, status, getToken]);
+
+  /** Fetch the pack once the writer is done, and only then. */
+  useEffect(() => {
+    if (!id || !ready || pdfUrl) return;
+    let live = true;
+    void (async () => {
+      try {
         const url = await motivationsApi.pdfBlobUrl(getToken, id);
         if (!live) {
           URL.revokeObjectURL(url);
@@ -105,7 +178,7 @@ export default function PackPage() {
     return () => {
       live = false;
     };
-  }, [getToken, id]);
+  }, [id, ready, pdfUrl, getToken]);
 
   // ⚠️ THE BLOB IS RELEASED WHEN THE PAGE GOES. Ten megabytes per visit, held
   // by the document until something revokes it.
@@ -116,30 +189,45 @@ export default function PackPage() {
     [pdfUrl],
   );
 
+  /**
+   * Both documents, one tap.
+   *
+   * ⚠️ THE TWO SAVES FIRE IN THE SAME TICK, AFTER BOTH FETCHES. A download
+   * triggered after an `await` has lost the user gesture that allowed it; both
+   * bytes are held first and then the anchors are clicked back to back. The
+   * 271 is skipped on a renewal, where there is no 271 to fetch.
+   */
   const download = useCallback(async () => {
     setDownloading(true);
     setError(null);
     try {
-      const isReusing = Boolean(pdfUrl);
-      const url = pdfUrl ?? (await motivationsApi.pdfBlobUrl(getToken, id));
-      // ⚠️ A BLOB URL, NOT A DIRECT LINK. The PDF is behind a bearer token, so
-      // an <a href> to the API would 401 — the client fetches it with the
-      // token and hands the browser bytes it already holds.
-      //
-      // ⚠️ MUST BE ATTACHED TO THE DOM AND REVOKED ASYNCHRONOUSLY.
-      // Modern browsers (Chrome 80+, Firefox) ignore programmatic .click() on
-      // detached anchors for security reasons, and revoking the object URL
-      // synchronously on the next line cancels the download before the browser's
-      // download manager can read the blob.
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${sheet?.application.referenceNumber ?? 'motivation'}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      if (!isReusing) {
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      const reference = sheet?.application.referenceNumber ?? 'motivation';
+      const isRenewal = sheet?.application.licenceType === 'S24_RENEWAL';
+      const reusableMotivation = pdfUrl;
+      const motivation =
+        reusableMotivation ?? (await motivationsApi.pdfBlobUrl(getToken, id));
+
+      let form: string | null = null;
+      let formError: string | null = null;
+      if (!isRenewal) {
+        try {
+          form = await motivationsApi.saps271BlobUrl(getToken, id);
+        } catch (err) {
+          // ⚠️ THE MOTIVATION STILL DOWNLOADS. A refusal on the form — a
+          // section 24 by name, a form the map cannot fill — must not take the
+          // document the member actually came for down with it.
+          formError = (err as Error).message;
+        }
       }
+
+      saveBlob(motivation, `${reference}.pdf`);
+      if (form) saveBlob(form, `${reference}-saps271.pdf`);
+
+      if (!reusableMotivation) {
+        window.setTimeout(() => URL.revokeObjectURL(motivation), 60_000);
+      }
+      if (form) window.setTimeout(() => URL.revokeObjectURL(form), 60_000);
+      if (formError) setError(formError);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -148,58 +236,18 @@ export default function PackPage() {
   }, [getToken, id, pdfUrl, sheet]);
 
   /**
-   * ⚠️ THE 271 REFUSES BY NAME, AND THE MESSAGE IS THE POINT. A section 24
-   * comes back 409 with a sentence explaining that a renewal is lodged on the
-   * SAPS 518(a); so does a form the map cannot fill against the blank PDF it
-   * was measured on. Both are worth reading, so the server's own wording is
-   * shown rather than "Something went wrong".
+   * Print, by opening the document itself.
+   *
+   * ⚠️ `window.print()` ON THIS PAGE PRINTS THE PAGE, NOT THE PACK. The PDF is
+   * embedded behind `print:hidden` precisely because an embedded viewer prints
+   * its own chrome, not the document. Opening the blob in a tab hands the
+   * member the browser's PDF viewer, which is where its print button lives.
    */
-  const showForm = useCallback(async () => {
-    if (formUrl) {
-      URL.revokeObjectURL(formUrl);
-      setFormUrl(null);
-      return;
-    }
-    setFormBusy(true);
-    setFormErr(null);
-    try {
-      setFormUrl(await motivationsApi.saps271BlobUrl(getToken, id));
-    } catch (err) {
-      setFormErr((err as Error).message);
-    } finally {
-      setFormBusy(false);
-    }
-  }, [formUrl, getToken, id]);
-
-  const downloadForm = useCallback(async () => {
-    setFormBusy(true);
-    setFormErr(null);
-    try {
-      const isReusing = Boolean(formUrl);
-      const url = formUrl ?? (await motivationsApi.saps271BlobUrl(getToken, id));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${sheet?.application.referenceNumber ?? 'application'}-saps271.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      if (!isReusing) {
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      }
-    } catch (err) {
-      setFormErr((err as Error).message);
-    } finally {
-      setFormBusy(false);
-    }
-  }, [formUrl, getToken, id, sheet]);
-
-  // The form's blob goes the same way the motivation's does.
-  useEffect(
-    () => () => {
-      if (formUrl) URL.revokeObjectURL(formUrl);
-    },
-    [formUrl],
-  );
+  const print = useCallback(() => {
+    if (!pdfUrl) return;
+    const tab = window.open(pdfUrl, '_blank', 'noopener,noreferrer');
+    if (tab) tab.opener = null;
+  }, [pdfUrl]);
 
   if (error && !sheet) {
     return (
@@ -208,7 +256,7 @@ export default function PackPage() {
       </main>
     );
   }
-  if (!sheet) {
+  if (!sheet || status === null) {
     return (
       <main className="px-4 py-10 text-[14px] text-[var(--text-tertiary)]">
         Loading your pack…
@@ -223,143 +271,108 @@ export default function PackPage() {
 
   return (
     <main className="mx-auto w-full max-w-[760px] px-4 pb-10 pt-5">
+      {/*
+        ⚠️ A BACK TO THE ANSWERS, NOT `router.back()`. Somebody who arrives on
+        this page from a notification has no history, and "edit your answers"
+        is the one thing they may need when the document reads wrong. Operator,
+        2026-09-20: "we need a back button if the user want to edit any
+        information."
+      */}
+      <Link
+        href={`/licence-centre/${id}`}
+        className="mb-3 inline-flex min-h-[36px] items-center gap-1.5 text-[13px] font-medium text-[var(--text-secondary)] no-underline"
+      >
+        <span aria-hidden="true">&#8592;</span> Edit your answers
+      </Link>
+
       <h1 className="m-0 font-[family-name:var(--font-head)] text-[24px] font-medium leading-[1.15] tracking-[-0.01em] text-[var(--text-primary)]">
         Your pack
       </h1>
       <p className="m-0 mt-1 font-mono text-[12px] text-[var(--text-tertiary)]">
-        {sheet.application.referenceNumber} ·{' '}
-        {sheet.application.licenceTypeLabel}
+        {sheet.application.title ?? sheet.application.licenceTypeLabel} ·{' '}
+        {sheet.application.referenceNumber}
       </p>
 
-      <div className="mt-4 flex gap-2 print:hidden">
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="min-h-[44px] flex-1 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-4 text-[14px] font-medium text-[var(--text-primary)]"
-        >
-          Print
-        </button>
-        <button
-          type="button"
-          onClick={() => void download()}
-          disabled={downloading}
-          className="min-h-[44px] flex-1 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-4 text-[14px] font-medium text-[var(--text-primary)] disabled:opacity-50"
-        >
-          {downloading ? 'Preparing…' : 'Download PDF'}
-        </button>
-      </div>
-      {error && (
-        <p className="mt-2 text-[12.5px] text-[var(--red)] print:hidden">
-          {error}
-        </p>
-      )}
-
-      <section className="mt-6">
-        {!written ? (
-          <p className="mt-2 text-[13.5px] text-[var(--text-tertiary)]">
-            Your motivation has not been written yet.{' '}
-            <Link
-              href={`/licence-centre/${id}`}
-              className="text-[var(--red)] underline"
-            >
-              Back to your application
-            </Link>
-            .
-          </p>
-        ) : pdfUrl ? (
-          /*
-            ⚠️ THE DOCUMENT ITSELF, AT THE PAPER'S OWN PROPORTIONS. A4 is
-            1:1.414, so the frame is tall rather than square — a viewer letter-
-            boxed into a 16:9 box shows a third of a page and makes a 27-page
-            pack look like a fragment.
-          */
-          <div className="print:hidden">
-            <iframe
-              src={pdfUrl}
-              title="Your motivation"
-              className="block h-[min(1100px,140vh)] w-full rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-inset)]"
-            />
-            {/*
-              ⚠️ SAID OUT LOUD, BECAUSE AN EMBED CAN FAIL SILENTLY. A browser
-              with its PDF viewer disabled renders an empty box and nothing
-              explains it — and the member is one tap from the file itself.
-            */}
-            <p className="m-0 mt-2 text-[12.5px] leading-[1.45] text-[var(--text-tertiary)]">
-              Not showing? Use Download PDF above — the file is the same one you
-              take to the station.
-            </p>
-          </div>
-        ) : (
-          <p className="mt-2 text-[13.5px] text-[var(--text-tertiary)]">
-            Preparing your document…
-          </p>
-        )}
-      </section>
-
-      {/*
-        ⚠️ THE FORM ITSELF, WHICH NOBODY COULD REACH. The pre-filled SAPS 271
-        has been built, mapped and tested since August, and the route
-        (GET /motivations/:id/saps271) and the client helper
-        (motivationsApi.saps271BlobUrl) both still work. The only screen that
-        ever offered it was `components/licence-pack/pack-finish.tsx` — the
-        finish step of the /licence-services wizard deleted on 2026-09-08 —
-        and this page never picked it up. So a member reached "Your pack",
-        read a completeness meter telling them how much of the 271 was done,
-        and had no way to open the thing it was measuring.
-
-        ⚠️ AND IT IS NO LONGER OPT-IN. pack-finish gated the button on
-        `saps271Filled`; that answer is retired and every pack ships a form.
-        The one case with no 271 is a section 24, which is lodged on the
-        518(a) — PackSummary below says so, and the backend refuses by
-        licence type rather than by this flag.
-      */}
-      {!isRenewal ? (
-        <section className="mt-6">
-          <h2 className="m-0 mb-1 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.2] text-[var(--text-primary)]">
-            Your SAPS 271
-          </h2>
-          <p className="m-0 mb-3 text-[13.5px] leading-[1.45] text-[var(--text-secondary)]">
-            The application form, filled in from your answers. Print it, check
-            it, sign it where it asks for a signature and take it in with your
-            pack.
-          </p>
-
-          <div className="flex gap-2 print:hidden">
-            <button
-              type="button"
-              onClick={() => void showForm()}
-              disabled={formBusy}
-              className="min-h-[44px] flex-1 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-4 text-[14px] font-medium text-[var(--text-primary)] disabled:opacity-50"
-            >
-              {formBusy ? 'Preparing…' : formUrl ? 'Hide the form' : 'Show the form'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void downloadForm()}
-              disabled={formBusy}
-              className="min-h-[44px] flex-1 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-4 text-[14px] font-medium text-[var(--text-primary)] disabled:opacity-50"
-            >
-              Download the form
-            </button>
-          </div>
-
-          {formErr ? (
-            <p className="m-0 mt-2 text-[12.5px] leading-[1.45] text-[var(--red)]">
-              {formErr}
-            </p>
-          ) : null}
-
-          {formUrl ? (
-            <div className="mt-3 print:hidden">
-              <iframe
-                src={formUrl}
-                title="Your SAPS 271"
-                className="block h-[min(1100px,140vh)] w-full rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-inset)]"
-              />
-            </div>
-          ) : null}
+      {preparing ? (
+        <section className="mt-5">
+          <PreparingMotivation />
         </section>
-      ) : null}
+      ) : ready ? (
+        <>
+          <div className="mt-4 flex gap-2 print:hidden">
+            <button
+              type="button"
+              onClick={() => print()}
+              disabled={!pdfUrl}
+              className="min-h-[44px] flex-1 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-4 text-[14px] font-medium text-[var(--text-primary)] disabled:opacity-50"
+            >
+              Print
+            </button>
+            <button
+              type="button"
+              onClick={() => void download()}
+              disabled={downloading}
+              className="min-h-[44px] flex-1 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-4 text-[14px] font-medium text-[var(--text-primary)] disabled:opacity-50"
+            >
+              {downloading
+                ? 'Preparing…'
+                : isRenewal
+                  ? 'Download PDF'
+                  : 'Download the pack'}
+            </button>
+          </div>
+          {error ? (
+            <p className="mt-2 text-[12.5px] text-[var(--red)] print:hidden">
+              {error}
+            </p>
+          ) : null}
+
+          <section className="mt-6">
+            {pdfUrl ? (
+              /*
+                ⚠️ THE DOCUMENT ITSELF, AT THE PAPER'S OWN PROPORTIONS. A4 is
+                1:1.414, so the frame is tall rather than square — a viewer
+                letter-boxed into a 16:9 box shows a third of a page and makes
+                a 27-page pack look like a fragment.
+              */
+              <div className="print:hidden">
+                <iframe
+                  src={pdfUrl}
+                  title="Your motivation"
+                  className="block h-[min(1100px,140vh)] w-full rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-inset)]"
+                />
+                {/*
+                  ⚠️ SAID OUT LOUD, BECAUSE AN EMBED CAN FAIL SILENTLY. A
+                  browser with its PDF viewer disabled renders an empty box and
+                  nothing explains it — and the member is one tap from the file
+                  itself.
+                */}
+                <p className="m-0 mt-2 text-[12.5px] leading-[1.45] text-[var(--text-tertiary)]">
+                  Not showing? Use Download above — the file is the same one
+                  you take to the station.
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 text-[13.5px] text-[var(--text-tertiary)]">
+                Preparing your document…
+              </p>
+            )}
+          </section>
+        </>
+      ) : (
+        <section className="mt-5 rounded-[var(--r-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-5 py-6">
+          <p className="m-0 text-[14px] leading-[1.5] text-[var(--text-primary)]">
+            {status === 'DRAFT' || status === 'INTERVIEW'
+              ? 'Your motivation has not been written yet.'
+              : status === 'NEEDS_MORE_INFO'
+                ? 'We need a little more from you before this can be written.'
+                : 'We could not write this one.'}
+          </p>
+          <p className="m-0 mt-2 text-[13px] leading-[1.5] text-[var(--text-secondary)]">
+            Open your answers, check them, and write it again.
+          </p>
+        </section>
+      )}
 
       <section className="mt-6">
         <h2 className="m-0 mb-2 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.2] text-[var(--text-primary)]">

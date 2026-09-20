@@ -17,6 +17,11 @@
 export interface SheetHeaderProps {
   reference: string;
   licenceType: string;
+  /**
+   * The motivation's own name — the member's label, or the firearm and the
+   * section ("Glock 19 9mm — Section 13"). Falls back to `licenceType`.
+   */
+  title?: string;
   missingCount: number;
   sections: { id: string; label: string; missing: number }[];
   /** Which section the reader is in. Driven by an IntersectionObserver. */
@@ -59,6 +64,7 @@ function EyeIcon() {
 export default function SheetHeader({
   reference,
   licenceType,
+  title,
   missingCount,
   sections,
   active,
@@ -74,8 +80,17 @@ export default function SheetHeader({
         <span className="flex-shrink-0 font-mono text-[12.5px] text-[var(--text-tertiary)]">
           {reference}
         </span>
-        <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[13.5px] font-medium text-[var(--text-primary)]">
-          {licenceType}
+        {/*
+          ⚠️ THE FIREARM AND THE SECTION, NOT THE SECTION ALONE. Every sheet
+          heading read "Section 16 — Dedicated sport shooter" whatever the
+          application was for. `title` is server-derived; `licenceType` is the
+          fallback for a payload that predates it.
+        */}
+        <span
+          className="overflow-hidden text-ellipsis whitespace-nowrap text-[13.5px] font-medium text-[var(--text-primary)]"
+          title={title ?? licenceType}
+        >
+          {title ?? licenceType}
         </span>
         <span
           className={`ml-auto flex-shrink-0 whitespace-nowrap rounded-full border px-[10px] py-1 text-[11.5px] font-medium ${

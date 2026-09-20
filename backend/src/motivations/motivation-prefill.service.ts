@@ -1085,6 +1085,15 @@ export class MotivationPrefillService {
       if (number) details.membership_number = number;
       const joined = pick(read, 'association_joined');
       if (joined) details.joined_on = joined;
+      // ⚠️ THE STATUS DATE IS THE OTHER FACT, AND IT WAS DROPPED HERE. The
+      // in-wizard reader already produces `dedicated_since` (see
+      // motivation-extract.service.ts ASSOCIATION_CARD / GOOD_STANDING_LETTER),
+      // but this mapper carried only the join date, so a certificate
+      // photographed in the wizard filled "Dedicated status held since" with
+      // nothing while the box existed to be filled. `status_since` is the vault
+      // reader's name for the same fact; the offer reads that one.
+      const statusSince = pick(read, 'dedicated_since');
+      if (statusSince) details.status_since = statusSince;
       out.push({
         id: `upload:${r.id}`,
         kind: 'DEDICATED_DISCIPLINE',

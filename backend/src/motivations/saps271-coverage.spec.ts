@@ -103,14 +103,20 @@ describe('the section panel', () => {
     }
   });
 
-  it('counts a second association only once the member adds one', () => {
+  it('⚠️ does not let a second association change the required score', () => {
+    // ⚠️ OPTIONAL SLOTS ARE NOT DEBT. Slots two and three carry no required
+    // field, so adding a body you shoot with does not lower your percentage —
+    // it is extra evidence, not an unanswered question. The required three
+    // (name, number, dedicated-since) are the same whether you belong to one
+    // association or three.
     const t = MotivationLicenceType.S16_DEDICATED_SPORT;
     const one = sectionOf(saps271Coverage(t, {}), 'G4')!;
     const two = sectionOf(
       saps271Coverage(t, { association_2_name: 'Bisley SA' }),
       'G4',
     )!;
-    expect(two.applicable).toBeGreaterThan(one.applicable);
+    expect(two.applicable).toBe(one.applicable);
+    expect(two.percent).toBe(one.percent);
   });
 
   it('never files an experience answer under the association block', () => {
@@ -141,14 +147,30 @@ describe('the section panel', () => {
     expect(after.applicable).toBe(before.applicable);
   });
 
-  it('gives every section a percentage and a required-count', () => {
+  it('gives every scored section a percentage, and unscored ones a null', () => {
     for (const s of saps271Coverage(S16, {}).sections) {
-      expect(typeof s.percent).toBe('number');
-      expect(s.percent!).toBeGreaterThanOrEqual(0);
-      expect(s.percent!).toBeLessThanOrEqual(100);
+      if (s.status === 'unscored') {
+        // ⚠️ NO INVENTED DENOMINATOR. "Firearms you already own" has no
+        // required question, so a number here would be one we made up.
+        expect(s.percent).toBeNull();
+      } else {
+        expect(typeof s.percent).toBe('number');
+        expect(s.percent!).toBeGreaterThanOrEqual(0);
+        expect(s.percent!).toBeLessThanOrEqual(100);
+      }
       expect(typeof s.missingRequired).toBe('number');
       expect(s.answered).toBeLessThanOrEqual(s.applicable);
     }
+  });
+
+  it('⚠️ counts the required premises questions, which no panel used to', () => {
+    // The S row pointed at 'Storage and safety', a section the registry had
+    // renamed to 'Your premises'. The four required safe questions were counted
+    // by nothing, so coverage could read 100% with every one of them blank.
+    const s = sectionOf(saps271Coverage(S16, {}), 'S')!;
+    expect(s).toBeDefined();
+    expect(s.applicable).toBeGreaterThan(0);
+    expect(s.missingRequired).toBeGreaterThan(0);
   });
 });
 
@@ -185,6 +207,43 @@ describe('what applies to this applicant', () => {
     expect(answered.status).toBe('complete');
   });
 
+  it('⚠️ reads 100% with all declarations ticked and the optional prose blank', () => {
+    // ⚠️ THE OPERATOR'S LIVE 83%. Five declarations ticked, `prior_refusals`
+    // left empty because it is optional — and it sat in the denominator, so the
+    // section could never be finished. It is 5/5 now.
+    const ticked = {
+      history_conviction: 'No',
+      history_pending_case: 'No',
+      history_lost_stolen: 'No',
+      history_declared_unfit: 'No',
+      history_confiscated: 'No',
+    };
+    const h = sectionOf(saps271Coverage(S16, ticked), 'H')!;
+    expect(h.applicable).toBe(5);
+    expect(h.answered).toBe(5);
+    expect(h.percent).toBe(100);
+    expect(h.status).toBe('complete');
+  });
+
+  it('does not move the percentage when an optional answer is filled', () => {
+    // ⚠️ OPTIONAL IS OPTIONAL. The prior-refusals prose box is printed into the
+    // pack but is not a debt; answering it must not change the score.
+    const ticked = {
+      history_conviction: 'No',
+      history_pending_case: 'No',
+      history_lost_stolen: 'No',
+      history_declared_unfit: 'No',
+      history_confiscated: 'No',
+    };
+    const without = sectionOf(saps271Coverage(S16, ticked), 'H')!;
+    const with_ = sectionOf(
+      saps271Coverage(S16, { ...ticked, prior_refusals: 'Nothing to declare.' }),
+      'H',
+    )!;
+    expect(with_.percent).toBe(without.percent);
+    expect(with_.applicable).toBe(without.applicable);
+  });
+
   it('opens the follow-ups only for the question answered yes', () => {
     const one = {
       history_conviction: 'Yes',
@@ -206,12 +265,6 @@ describe('what applies to this applicant', () => {
 });
 
 describe('the owned-firearm grid', () => {
-  // ⚠️ NINE COLUMNS SINCE 2026-09-08, NOT EIGHT. `existing_firearm_N_primary_use`
-  // joined as the tappable, profile-scoped sibling of `_use` (motivation-fields.ts,
-  // brief §5.1) — same row, one more question the panel counts. It is unrelated
-  // to the SAPS 271 opt-in this file otherwise exists to guard, but COLUMNS is
-  // derived from this fixture rather than restated as a number, precisely so the
-  // next field the registry adds updates this test instead of breaking it.
   const row = (n: number) => ({
     [`existing_firearm_${n}_make`]: 'CZ',
     [`existing_firearm_${n}_model`]: '550',
@@ -224,77 +277,39 @@ describe('the owned-firearm grid', () => {
     [`existing_firearm_${n}_section_held`]: 'section_16',
     [`existing_firearm_${n}_licence_no`]: '4009117823',
   });
-  const COLUMNS = Object.keys(row(1)).length;
 
-  it('counts one row when nothing has been listed yet', () => {
-    // Not zero — a section with nothing applicable would read as complete
-    // when it has not been started. Not six — five untouched rows are not
-    // thirty-five unanswered questions.
+  it('⚠️ is UNSCORED — it reports what is held, never a percentage', () => {
+    // ⚠️ THE OPERATOR CALLED THIS NUMBER OUT ON A LIVE APPLICATION. "Firearms
+    // you own" has no required field — owning none is a legitimate answer — so
+    // the old denominator was the optional columns of whichever rows happened
+    // to be touched, and a fully-filled row read 91%, never 100%. Nobody knows
+    // how many firearms the applicant owns, so there is no honest denominator.
     const g2 = sectionOf(saps271Coverage(S16, {}), 'G2')!;
-    expect(g2.applicable).toBeLessThan(12);
+    expect(g2.status).toBe('unscored');
+    expect(g2.percent).toBeNull();
+    expect(g2.applicable).toBe(0);
     expect(g2.answered).toBe(0);
-    expect(g2.status).toBe('not-started');
     expect(g2.note).toMatch(/add the firearms/i);
   });
 
-  it('counts only the rows in use, so one firearm is not a fraction of a section', () => {
-    // ⚠️ THE FAILURE THIS RULE EXISTS FOR. isVisible says every owned-firearm
-    // field applies, always — the registry's rows are fixed and none of them
-    // is conditional. Counting them straight would peg an applicant who owns
-    // one firearm near seven per cent for ever, and it got worse the day the
-    // registry went from six rows to the form's own fourteen.
-    const one = saps271Coverage(S16, { ...row(1) });
-    const g2 = sectionOf(one, 'G2')!;
-
-    expect(g2.answered).toBe(COLUMNS);
-    // The row, plus overlap_justification.
-    expect(g2.applicable).toBeLessThanOrEqual(COLUMNS + 1);
-    expect(g2.percent!).toBeGreaterThan(80);
-    expect(g2.note).toBe('1 firearm listed.');
-  });
-
-  it('grows the denominator only as rows are used', () => {
+  it('counts the firearms it holds in the note, however many are listed', () => {
     const one = sectionOf(saps271Coverage(S16, { ...row(1) }), 'G2')!;
-    const three = sectionOf(
-      saps271Coverage(S16, { ...row(1), ...row(2), ...row(3) }),
-      'G2',
-    )!;
+    expect(one.note).toBe('1 firearm listed.');
+    expect(one.percent).toBeNull();
 
-    expect(three.applicable).toBe(one.applicable + COLUMNS * 2);
-    expect(three.answered).toBe(one.answered + COLUMNS * 2);
-    expect(three.note).toBe('3 firearms listed.');
+    let many = {};
+    for (let n = 1; n <= OWNED_ROWS; n++) many = { ...many, ...row(n) };
+    const all = sectionOf(saps271Coverage(S16, many), 'G2')!;
+    expect(all.note).toBe(`${OWNED_ROWS} firearms listed.`);
   });
 
-  it('counts the seventh firearm and the fourteenth', () => {
-    // ⚠️ THE ROWS THIS PANEL COULD NOT SEE. saps271-coverage.ts carried its own
-    // `const OWNED_ROWS = 6` beside a comment claiming the paper form holds
-    // 26. Both were wrong: item 2.1 is FOURTEEN rows, measured off the blank
-    // form, and the registry now offers fourteen. While the copy stood, a
-    // member who listed ten firearms was told the section was complete with
-    // four of them uncounted — the meter's TOO HIGH failure, on the one
-    // section where an undercount also understates a statutory precondition.
-    let answers = {};
-    for (let n = 1; n <= OWNED_ROWS; n++) answers = { ...answers, ...row(n) };
-    const g2 = sectionOf(saps271Coverage(S16, answers), 'G2')!;
-
-    expect(g2.note).toBe(`${OWNED_ROWS} firearms listed.`);
-    expect(g2.answered).toBe(COLUMNS * OWNED_ROWS);
-    // Every row in use is applicable, plus overlap_justification.
-    expect(g2.applicable).toBeLessThanOrEqual(COLUMNS * OWNED_ROWS + 1);
-  });
-
-  it('treats a half-filled row as half-filled, not as absent', () => {
-    const partial = sectionOf(
-      saps271Coverage(S16, {
-        existing_firearm_1_make: 'CZ 550',
-        existing_firearm_1_calibre: '.308 Winchester',
-      }),
-      'G2',
-    )!;
-    expect(partial.answered).toBe(2);
-    expect(partial.percent!).toBeGreaterThan(0);
-    expect(partial.percent!).toBeLessThan(100);
-    expect(partial.status).toBe('in-progress');
+  it('does not move the overall percentage at all', () => {
+    // It is neither a debt nor a credit — the overall number is about the
+    // required questions, and this section has none.
+    const blank = saps271Coverage(S16, {});
+    const listed = saps271Coverage(S16, { ...row(1) });
+    expect(listed.percent).toBe(blank.percent);
+    expect(listed.applicable).toBe(blank.applicable);
   });
 });
 

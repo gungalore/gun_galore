@@ -53,9 +53,7 @@ export default function Saps271Meter({
           {coverage.percent}%
         </span>
         <span className="text-[12.5px] text-[var(--text-tertiary)]">
-          {isRenewal
-            ? 'of the questions that apply to you'
-            : 'of the boxes that apply to you'}
+          of the required questions
         </span>
       </div>
 
@@ -68,17 +66,35 @@ export default function Saps271Meter({
       <p className="mt-[18px] border-t border-[var(--border-divider)] pt-3.5 text-[12px] leading-normal text-[var(--text-tertiary)]">
         {isRenewal
           ? 'A renewal is lodged on the SAPS 518(a), not the 271, so there is no form for us to fill in here — this counts your answers. '
-          : 'A section counts only the boxes that apply to you. '}
-        Answering &ldquo;no&rdquo; to a history question closes its follow-ups;
-        an owned-firearm row you never use is not an empty box.
+          : 'A section counts only the questions you must answer. '}
+        Answering &ldquo;no&rdquo; to a history question closes its
+        follow-ups, and a question we do not require never counts against you —
+        so a section you have finished reads 100%.
       </p>
     </aside>
   );
 }
 
 function SectionRow({ section }: { section: CoverageSection }) {
-  // Somebody else's half of the form. Gold, and the word rather than a number.
-  const waiting = section.percent === null;
+  /*
+    ⚠️ THE THREE UNSCORED STATES ARE NOT THE SAME, AND THE METER USED TO
+    FLATTEN THEM.
+
+    It keyed "waiting" off `percent === null` alone, so section F — the current
+    owner's half, whose percent is deliberately null whether or not he has
+    signed — printed the word "waiting" for ever. A seller signed at 12:02 and
+    the meter still said waiting while the card beside it said "Signed."
+
+    So the state is read from `status`, and the three cases render differently:
+      - `theirs`   · the seller has not signed — gold, the word "waiting".
+      - `complete` with no percent · he HAS signed — green, the word "signed".
+      - `unscored` · nothing here is scored ("Firearms you own") — a dash and
+        the note, no bar, because any percentage would be a denominator we
+        invented.
+  */
+  const waiting = section.status === 'theirs';
+  const unscored = section.status === 'unscored';
+  const signed = !waiting && !unscored && section.percent === null;
   const pct = section.percent ?? 0;
 
   // ⚠️ IN PROGRESS IS GOLD, NOT RED — the same rule pack-row.tsx states in
@@ -89,11 +105,12 @@ function SectionRow({ section }: { section: CoverageSection }) {
   // wrong, and it spends red on the eight rows beside the one thing on screen
   // that might genuinely need it.
   //
-  // Green at 100, gold while it is being filled, the plain border colour at
-  // zero so an untouched section reads as "not yet" rather than as a failure.
+  // Green at 100 or signed, gold while it is being filled, the plain border
+  // colour at zero so an untouched section reads as "not yet" rather than as a
+  // failure. Unscored is the neutral border too.
   const fill = waiting
     ? 'var(--gold)'
-    : pct === 100
+    : signed || pct === 100
       ? 'var(--success)'
       : pct > 0
         ? 'var(--gold)'
@@ -101,7 +118,7 @@ function SectionRow({ section }: { section: CoverageSection }) {
 
   const ink = waiting
     ? 'var(--gold-strong)'
-    : pct === 100
+    : signed || pct === 100
       ? 'var(--success)'
       : pct > 0
         ? 'var(--text-primary)'
@@ -121,22 +138,24 @@ function SectionRow({ section }: { section: CoverageSection }) {
           className="text-[11.5px] font-medium tabular-nums"
           style={{ color: ink }}
         >
-          {waiting ? 'waiting' : `${pct}%`}
+          {waiting ? 'waiting' : signed ? 'signed' : unscored ? '—' : `${pct}%`}
         </span>
       </div>
 
-      <div className="ml-[30px] h-[6px] overflow-hidden rounded-full bg-[var(--bg-inset)]">
-        <div
-          className="h-full rounded-full"
-          style={{
-            // A token sliver while waiting: a bar at 0 reads as failure, and
-            // this row is not the member's to fail.
-            width: `${waiting ? 8 : Math.max(0, Math.min(100, pct))}%`,
-            background: fill,
-            transition: 'width .5s var(--ease-out)',
-          }}
-        />
-      </div>
+      {!unscored ? (
+        <div className="ml-[30px] h-[6px] overflow-hidden rounded-full bg-[var(--bg-inset)]">
+          <div
+            className="h-full rounded-full"
+            style={{
+              // A token sliver while waiting: a bar at 0 reads as failure, and
+              // this row is not the member's to fail. A signed seller fills it.
+              width: `${waiting ? 8 : signed ? 100 : Math.max(0, Math.min(100, pct))}%`,
+              background: fill,
+              transition: 'width .5s var(--ease-out)',
+            }}
+          />
+        </div>
+      ) : null}
 
       {(section.note || section.missingRequired > 0) && (
         <div className="ml-[30px] mt-1 text-[11px] text-[var(--text-tertiary)]">
