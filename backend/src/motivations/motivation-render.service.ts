@@ -21,6 +21,7 @@ import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
 import { QuarryPlateService } from './quarry-plate.service';
 import { huntsAtAll, quarryCaption, quarryFromKey } from './motivation-quarry';
+import { displayCalibre } from './saps-vocabulary';
 import { asLayout } from './motivation-pdf-layouts';
 import { consentFormFor } from './motivation-consent-statement';
 import {
@@ -36,6 +37,7 @@ import { parseTravelledAreas } from './motivation-danger-areas';
 import { TRAVELLED_AREAS_KEY } from './motivation-fields';
 import type { NewsIncident } from '../news/news.types';
 import { imageSize, isEmbeddable } from './motivation-annexure-layout';
+import { documentLabel, documentStatus } from './motivation-documents';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { type SectionId } from './motivation-structure';
 import {
@@ -372,6 +374,12 @@ function heroSubtitle(answers: Record<string, string>): string | undefined {
  * ⚠️ AN ABSENT FIELD DROPS ITS ROW RATHER THAN PRINTING A DASH. A blank
  * against "Serial number" on the cover of a licence application reads as a
  * firearm with no serial.
+ *
+ * ⚠️ AND A FIELD THE CARD PRINTS AS "NONE" PRINTS AS "NONE". Operator,
+ * 2026-09-20: "When a NONE value is read from a license disk, it must display
+ * NONE. It may never be altered or thrown away. It is how it was captured by
+ * SAPS and they expect it should stay like that." The row is the card's own
+ * value, not our house style.
  */
 function coverParticulars(
   answers: Record<string, string>,
@@ -389,7 +397,12 @@ function coverParticulars(
   push('Firearm type and action', typeAndAction);
   push('Make', v('firearm_make'));
   push('Model', v('firearm_model'));
-  push('Calibre', v('firearm_calibre'));
+  // ⚠️ THE SAME TIDIED STRING THE BODY USES. The card stores ".45-70
+  // GOVERNMENT"; the prose and the cartridge heading both say ".45-70
+  // Government". A cover reading one way and a body the other is the
+  // inconsistency this closes. (The consent annexure is a copy of the licence
+  // and keeps the card's own string verbatim.)
+  push('Calibre', displayCalibre(v('firearm_calibre')));
   push('Serial number', v('firearm_serial'));
   push('Section applied under', licenceTypeLabel);
   push(
@@ -1109,6 +1122,20 @@ export class MotivationRenderService {
       kinds,
       sellerConsent ? ['SELLER_CONSENT'] : [],
     );
+    /**
+     * ⚠️ THE GAP IS PRINTED, NOT SILENT. Operator, 2026-09-20, on MO000002: the
+     * letter of good standing is a required section 16 document and the pack
+     * simply had no trace of it when the upload was absent. Blocking the pack
+     * would contradict the module's "SAPS requires it, we do not refuse to
+     * proceed" posture, so the pack states the gap plainly on the annexure
+     * index: the applicant sees what to bring, and a DFO sees it was not
+     * withheld.
+     */
+    const missingDocuments = documentStatus(
+      row.licenceType,
+      kinds,
+      answers,
+    ).missingRequired.map((kind) => documentLabel(kind));
     const printable = await this.annexureImages(row.uploads ?? [], annexures);
     const pressClippings = await this.buildPressClippings(pressIncidents);
 
@@ -1174,6 +1201,10 @@ export class MotivationRenderService {
       // first application" rather than dropping the section.
       ownedFirearms: existingFirearms(answers),
       annexures,
+      // ⚠️ THE GAP IS STATED ON THE INDEX PAGE. See the note where this is
+      // built: a required document that is absent is named, so the applicant
+      // knows what to bring and the DFO sees it was not withheld.
+      missingDocuments,
       priorNotice,
       pressClippings,
       // ⚠️ THE FIGURES THE CUTTINGS ARE EXAMPLES OF. The body argues "eleven
@@ -1200,6 +1231,12 @@ export class MotivationRenderService {
       // part of the flow, it must not be just placed there because it has to
       // be there."
       exposureHeading: headingOf(row.structurePlan, 'the_threat'),
+      // ⚠️ THE CARTRIDGE FEATURE FOLLOWS THE FIREARM SECTION. Operator,
+      // 2026-09-20: "move THE CARTRIDGE straight after THE FIREARM APPLIED FOR
+      // AND WHY IT SUITS THE PURPOSE as they are very relevant to each other".
+      // The renderer draws the feature when this heading's section ends; the
+      // heading itself comes off the plan, never matched on words.
+      firearmHeading: headingOf(row.structurePlan, 'the_firearm'),
       firearmPhoto: await this.coverPhotoForRender(row, answers),
       characterStatements,
       sellerConsent,
@@ -1406,7 +1443,16 @@ export class MotivationRenderService {
          * note — the spliced page it replaces was captioned "(C.I.P. data)"
          * and printed straight into the table of contents.
          */
-        label: `The cartridge \u2014 ${hit.name}`,
+        /**
+         * ⚠️ THE HEADING USES THE DOCUMENT'S OWN CALIBRE, NOT THE REFERENCE
+         * NAME. It lands in the contents page beside prose that says ".45-70
+         * Government", and the reference file files the round as "45-70 Govt."
+         * — so the contents read one way and the body another. `displayCalibre`
+         * is the same string the writer was handed, so the two agree. Falls
+         * back to the reference name only if the applicant's calibre is blank,
+         * which cannot happen here.
+         */
+        label: `The cartridge \u2014 ${displayCalibre(printed) || hit.name}`,
         name: hit.name,
         /**
          * ⚠️ THE LABEL IS STILL BUILT ON A HERO PACK. It is the contents-page
@@ -1659,7 +1705,7 @@ export class MotivationRenderService {
          * figure comes from. This label read "(C.I.P. data)" and printed it
          * straight into the table of contents of a document we sell.
          */
-        label: `The cartridge — ${sheet.name}`,
+        label: `The cartridge — ${displayCalibre(name) || sheet.name}`,
       };
     } catch {
       return undefined;

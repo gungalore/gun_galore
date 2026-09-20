@@ -1,12 +1,15 @@
 import {
-  breakBeforeParagraph,
-  MIN_PAGE_FILL,
+  HEADING_KEEP_WITH_NEXT,
+  headingWouldOrphan,
   DEFAULT_SCHEME,
   FORMAT_FEATURES,
   MotivationPdfService,
   asFormat,
   asScheme,
   isQuotedSubsection,
+  runInOf,
+  runningLabelFor,
+  splitHeading,
   titleCase,
 } from './motivation-pdf.service';
 import { WATERMARK_TEXT } from './motivation-pdf-chrome';
@@ -1310,6 +1313,39 @@ describe('the cartridge drawing', () => {
     expect(pages[feature]).not.toContain('answers an attack');
   });
 
+  it('⚠️ FOLLOWS THE FIREARM SECTION when the plan names it', async () => {
+    // Operator, 2026-09-20: "move THE CARTRIDGE straight after THE FIREARM
+    // APPLIED FOR AND WHY IT SUITS THE PURPOSE as they are very relevant to
+    // each other." It used to be deferred to the close, just before the
+    // declaration.
+    const body = [
+      '1. Introduction',
+      'I apply for a licence under section 16.',
+      '5. The firearm applied for and why it suits the purpose',
+      'The rifle is a lever action in .45-70 Government for dense bush.',
+      '6. Firearms already licensed to me',
+      'I currently hold a Tikka rifle in .308 Winchester.',
+      '9. Safe storage and transport',
+      'The firearm will be stored in a SABS-approved safe.',
+    ].join('\n\n');
+    const { pdf } = await svc.render({
+      ...makeInput(body),
+      cartridgeDrawing: insetHero,
+      cartridgeArticle: article,
+      firearmHeading: '5. THE FIREARM APPLIED FOR AND WHY IT SUITS THE PURPOSE',
+    } as never);
+    const pages = await pageTexts(pdf);
+    const feature = pages.findIndex((p) => p.includes('introduced in 1902'));
+    const firearm = pages.findIndex((p) => p.includes('dense bush'));
+    const next = pages.findIndex((p) => p.includes('Tikka'));
+    expect(feature).toBeGreaterThan(-1);
+    expect(firearm).toBeGreaterThan(-1);
+    expect(next).toBeGreaterThan(-1);
+    // The feature sits between the firearm section and the one after it.
+    expect(feature).toBeGreaterThan(firearm);
+    expect(feature).toBeLessThan(next);
+  });
+
   /**
    * ⚠️ THE THREE FIXED SLOTS.
    *
@@ -1611,56 +1647,173 @@ describe('telling the Act’s words from the applicant’s', () => {
   });
 });
 
-describe('⚠️ WHERE A PAGE IS ALLOWED TO END', () => {
+describe('⚠️ WHERE A HEADING MAY BE DRAWN', () => {
   /**
-   * Two operator rules that pull against each other, both given on 2026-09-10:
-   *
-   *   "The paragraph overflowed into the next page, I don't like that."
-   *   "Also keep the pages full. Minimun of 70% then the nezt section can
-   *    start on a new page."
-   *
-   * The first alone strands a page at forty per cent whenever one paragraph
-   * happens to be long. The second alone splits paragraphs. The rule is the
-   * first, bounded by the second.
+   * ⚠️ THE WHOLE-PARAGRAPH MOVE IS GONE. Operator, 2026-09-20: "Headings and
+   * paragraphs can be split over two pages, paragraphs can be split from each
+   * other but a heading can't be orphaned alone on a page." Paragraphs flow and
+   * split freely now; the one pagination rule left is that a heading keeps the
+   * opening of its section beneath it.
    */
-  const TOP = 100;
-  const BOTTOM = 900; // an 800pt column, so 70% is 560pt used.
+  const PAGE_HEIGHT = 1000;
+  const MARGIN_BOTTOM = 100; // the body column ends at y = 900.
 
-  const decide = (y: number, height: number) =>
-    breakBeforeParagraph({ y, top: TOP, bottom: BOTTOM, height });
+  const orphan = (y: number, need?: number) =>
+    headingWouldOrphan({
+      y,
+      pageHeight: PAGE_HEIGHT,
+      marginBottom: MARGIN_BOTTOM,
+      need,
+    });
 
-  it('leaves a paragraph alone when it fits', () => {
-    expect(decide(700, 100)).toBe(false);
-    expect(decide(TOP, 800)).toBe(false);
+  it('leaves a heading alone where its section has room', () => {
+    expect(orphan(400)).toBe(false);
   });
 
-  it('⚠️ MOVES IT WHOLE ONCE THE PAGE HAS EARNED ITS BREAK', () => {
-    // 660 of 800 used is 82% — past the floor, so the page may end here.
-    expect(decide(760, 200)).toBe(true);
+  it('⚠️ MOVES IT WHEN IT WOULD BE LEFT ALONE AT THE FOOT', () => {
+    // Within one keep-with-next of the column bottom: the heading would sit
+    // alone with none of its paragraph under it.
+    expect(orphan(900 - HEADING_KEEP_WITH_NEXT + 1)).toBe(true);
   });
 
-  it('⚠️ SPLITS IT RATHER THAN STRAND A HALF-EMPTY PAGE', () => {
-    // 200 of 800 used is 25%. Moving a 700pt paragraph whole would end the
-    // page a quarter full, which is the document the second rule forbids.
-    expect(decide(300, 700)).toBe(false);
+  it('sits exactly on the boundary', () => {
+    // Exactly `need` above the bottom is still room enough; a hair past it is
+    // not. The boundary is y = pageHeight - marginBottom - need.
+    expect(orphan(900 - HEADING_KEEP_WITH_NEXT)).toBe(false);
+    expect(orphan(900 - HEADING_KEEP_WITH_NEXT + 1)).toBe(true);
   });
 
-  it('sits exactly on the floor', () => {
-    // 560 of 800 is exactly 70%, which counts as full enough.
-    expect(decide(TOP + 800 * MIN_PAGE_FILL, 500)).toBe(true);
-    // A hair under does not.
-    expect(decide(TOP + 800 * MIN_PAGE_FILL - 1, 500)).toBe(false);
+  it('⚠️ HONOURS A LARGER NEED — a heading carrying a drawing or a table', () => {
+    // The cartridge feature reserves its own height; the boundary moves up.
+    expect(orphan(900 - HEADING_KEEP_WITH_NEXT, 300)).toBe(true);
   });
+});
 
-  it('⚠️ NEVER FOR A PARAGRAPH TALLER THAN A WHOLE PAGE', () => {
-    // There is no page it fits on, so a break would put a blank sheet in front
-    // of it and split it regardless.
-    expect(decide(800, 1200)).toBe(false);
-  });
-
-  it('does not divide by a column of no height', () => {
+describe('⚠️ THE CARTRIDGE CARD’S RUN-IN LABELS', () => {
+  it('splits a hyphenated run-in, so it renders like every other label', () => {
+    // MO000002: "WELL MATCHED TO" was a label and "Under-Matched To: It is
+    // under-matched to …" was inline prose, because the hyphen defeated the
+    // pattern. One card, two label styles.
     expect(
-      breakBeforeParagraph({ y: 10, top: 10, bottom: 10, height: 50 }),
-    ).toBe(false);
+      runInOf('Under-Matched To: It is under-matched to long ranges.'),
+    ).toEqual({
+      head: 'Under-Matched To',
+      rest: 'Long ranges.',
+    });
+  });
+
+  it('⚠️ STRIPS THE LABEL ECHOED INTO ITS OWN SENTENCE', () => {
+    // The research writes the label twice: once as the heading, once as the
+    // opening words of the sentence beneath it.
+    expect(
+      runInOf(
+        'Well Matched To: It is well matched to medium and large plains game.',
+      ),
+    ).toEqual({
+      head: 'Well Matched To',
+      rest: 'Medium and large plains game.',
+    });
+    // And the bare echo, with no "It is".
+    expect(runInOf('Origin: Origin of the cartridge is 1873.')).toEqual({
+      head: 'Origin',
+      rest: 'Of the cartridge is 1873.',
+    });
+  });
+
+  it('leaves a sentence that does NOT echo the label untouched', () => {
+    expect(
+      runInOf('Effective Range: Due to a looping trajectory, 180 metres.'),
+    ).toEqual({
+      head: 'Effective Range',
+      rest: 'Due to a looping trajectory, 180 metres.',
+    });
+  });
+
+  it('still splits an ordinary run-in', () => {
+    expect(runInOf('Origin: Developed in 1873.')).toEqual({
+      head: 'Origin',
+      rest: 'Developed in 1873.',
+    });
+  });
+
+  it('never treats a long colon sentence as a label', () => {
+    // More than four words before the colon is prose, not a heading.
+    expect(
+      runInOf('It is standardised with a case length of 48.77 mm: the figure'),
+    ).toBeNull();
+  });
+});
+
+describe('⚠️ THE RUNNING BANNER LABEL', () => {
+  it('shortens the long skeleton headings, number stripped', () => {
+    // The full heading ellipsised mid-word in the banner of every page:
+    // "…WHY IT SUITS T…". The banner has room for about forty characters.
+    expect(
+      runningLabelFor(
+        '5. The firearm applied for and why it suits the purpose',
+      ),
+    ).toBe('The firearm applied for');
+    expect(runningLabelFor('6. Firearms already licensed to me')).toBe(
+      'Firearms already licensed',
+    );
+    expect(
+      runningLabelFor('8. Association membership and dedicated status'),
+    ).toBe('Association membership');
+  });
+
+  it('falls back to the heading for anything not listed', () => {
+    expect(runningLabelFor('7. My competency and training')).toBe(
+      'Competency and training',
+    );
+    expect(runningLabelFor('3. My hunting')).toBe('My hunting');
+  });
+
+  it('keeps every label short enough to fit the banner', () => {
+    for (const h of [
+      '5. The firearm applied for and why it suits the purpose',
+      '6. Firearms already licensed to me',
+      '8. Association membership and dedicated status',
+      '11. Section 16 applied to my application',
+      '12. Declaration and request',
+    ]) {
+      expect(runningLabelFor(h).length).toBeLessThanOrEqual(28);
+    }
+  });
+
+  it('strips a decimal number, and names the cartridge plainly', () => {
+    // The cartridge feature is numbered 5.1; its banner reads "The cartridge",
+    // not the calibre.
+    expect(runningLabelFor('5.1 The cartridge — .45-70 Government')).toBe(
+      'The cartridge',
+    );
+  });
+});
+
+describe('⚠️ SPLITTING A NUMBERED HEADING', () => {
+  it('keeps the twelve skeleton numbers', () => {
+    expect(splitHeading('5. The firearm applied for')).toEqual({
+      number: '5',
+      title: 'The firearm applied for',
+    });
+    expect(splitHeading('11. Section 16 applied to my application')).toEqual({
+      number: '11',
+      title: 'Section 16 applied to my application',
+    });
+  });
+
+  it('reads a decimal as one number, not number-plus-title', () => {
+    // "5.1 The cartridge" used to split as number "5" and title "1 The
+    // cartridge", printing "5 · 1 THE CARTRIDGE".
+    expect(splitHeading('5.1 The cartridge — .45-70 Government')).toEqual({
+      number: '5.1',
+      title: 'The cartridge — .45-70 Government',
+    });
+  });
+
+  it('leaves an unnumbered heading alone', () => {
+    expect(splitHeading('The cartridge — .45-70 Government')).toEqual({
+      number: '',
+      title: 'The cartridge — .45-70 Government',
+    });
   });
 });

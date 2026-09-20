@@ -14,7 +14,11 @@ import {
   loadPdfAnnexures,
   type PdfAnnexure,
 } from './motivation-pdf-merge';
-import type { AnnexureEntry, CertificationLevel } from './motivation-checklist';
+import {
+  certificationPhrase,
+  type AnnexureEntry,
+  type CertificationLevel,
+} from './motivation-checklist';
 import { COVER_FRAME_MM } from './motivation-cover-photo';
 import { coverMasthead, edgeBar, EDGE_BAR_W } from './motivation-pdf-cover';
 import { closingRule, drawMark, type MarkName } from './motivation-pdf-marks';
@@ -167,68 +171,94 @@ function subheadingOf(text: string): string | null {
  *
  * Returns null when the paragraph does not open with one.
  */
-function runInOf(text: string): { head: string; rest: string } | null {
-  const m = /^\s*([A-Z][A-Za-z][A-Za-z ]{0,28}?):\s+(\S.*)$/s.exec(text);
+export function runInOf(text: string): { head: string; rest: string } | null {
+  /**
+   * ⚠️ THE HEAD MAY CARRY A HYPHEN, WHICH IS THE WHOLE POINT OF THE CLASS
+   * BELOW. MO000002's cartridge card had "WELL MATCHED TO" as a proper label
+   * and "Under-Matched To: It is under-matched to …" as inline body prose,
+   * because the hyphen defeated this pattern and the run-in never split. One
+   * card, two label styles. Allowing the hyphen splits it and it renders like
+   * every other label — uppercased on its own line.
+   */
+  const m = /^\s*([A-Z][A-Za-z][A-Za-z -]{0,28}?):\s+(\S.*)$/s.exec(text);
   if (!m) return null;
   const head = m[1].trim();
   // Four words at most, and never a sentence that merely contains a colon.
   if (head.split(/\s+/).length > 4) return null;
-  return { head, rest: m[2].trim() };
+  return { head, rest: stripLabelEcho(head, m[2].trim()) };
 }
 
 /**
- * How full a page must be before it is allowed to end early.
+ * Drop a leading repetition of the label from the sentence beneath it.
  *
- * Operator, 2026-09-10: "Also keep the pages full. Minimun of 70% then the
- * nezt section can start on a new page."
+ * ⚠️ THE RESEARCH WRITES THE LABEL INTO THE SENTENCE. The card came back
+ * "WELL MATCHED TO" followed by "It is well matched to medium and large plains
+ * game …" and "UNDER-MATCHED TO" followed by "It is under-matched to long-range
+ * …" — the label printed twice, once as a heading and once as the opening
+ * words of its own sentence. The heading already says it; the sentence should
+ * carry only what follows.
+ *
+ * Only an exact echo is removed — "It is" + the head words, or the head words
+ * alone — and never anything that changes what the sentence asserts. Anything
+ * that does not match is returned untouched.
  */
-export const MIN_PAGE_FILL = 0.7;
+function stripLabelEcho(head: string, rest: string): string {
+  const clean = (w: string) => w.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const headWords = head.split(/\s+/).map(clean).filter(Boolean);
+  if (!headWords.length) return rest;
+  const restWords = rest.split(/\s+/);
+  const restClean = restWords.map(clean);
+  const starts = (seq: string[]) => seq.every((w, i) => restClean[i] === w);
+
+  let consumed = 0;
+  if (starts(['it', 'is', ...headWords, 'to'])) consumed = headWords.length + 3;
+  else if (starts(['it', 'is', ...headWords])) consumed = headWords.length + 2;
+  else if (starts(headWords)) consumed = headWords.length;
+  else return rest;
+
+  const tail = restWords.slice(consumed).join(' ').trim();
+  if (!tail) return rest;
+  return tail.charAt(0).toUpperCase() + tail.slice(1);
+}
 
 /**
- * Should this paragraph start a new page rather than be split across one?
+ * ⚠️ THE WHOLE-PARAGRAPH PAGE MOVE IS GONE. Operator, 2026-09-20: "Headings and
+ * paragraphs can be split over two pages, paragraphs can be split from each
+ * other but a heading can't be orphaned alone on a page."
  *
- * TWO RULES THAT PULL AGAINST EACH OTHER, AND THE OPERATOR GAVE BOTH:
- *
- *   ⚠️ A PARAGRAPH IS NOT BROKEN ACROSS A PAGE. "The paragraph overflowed
- *     into the next page, I don't like that." In a document read a paragraph
- *     at a time, an argument split across a turn of the page is one the reader
- *     has to hold in their head.
- *
- *   ⚠️ AND A PAGE IS NOT LEFT HALF EMPTY TO ACHIEVE IT. "Keep the pages
- *     full. Minimum of 70%." Moving every long paragraph whole would strand a
- *     page at forty per cent whenever one happened to be long, which is a
- *     worse-looking document than the split it avoided.
- *
- * So: move it whole when it does not fit AND the page is already at least
- * {@link MIN_PAGE_FILL} used. Below that the page is too empty to end, and the
- * paragraph flows and splits as pdfkit would have done anyway.
- *
- * ⚠️ AND NEVER FOR A PARAGRAPH TALLER THAN A WHOLE PAGE. There is no page
- * it fits on, so breaking would put a blank sheet in front of it and split it
- * regardless.
- *
- * PURE, so the trade-off can be tested without rendering a document.
+ * This replaces the old `MIN_PAGE_FILL` / `breakBeforeParagraph` pair, which
+ * moved a paragraph whole to the next page once the current one was 70% full.
+ * That rule pulled against itself — it stranded pages to keep paragraphs
+ * intact — and, worse, it defeated the heading keep-with-next: a paragraph
+ * moved whole after a heading left the heading alone at the foot of the page.
+ * Paragraphs now flow and split; the only pagination rule is that a heading
+ * carries its opening lines (see `renderHeading` and `need` in the body loop).
  */
-export function breakBeforeParagraph(args: {
-  /** Where the paragraph would start. */
+
+/**
+ * Room a heading must have beneath it, in points, before it may be drawn on the
+ * current page. 110pt is about eight body lines at the document's leading.
+ */
+export const HEADING_KEEP_WITH_NEXT = 110;
+
+/**
+ * Would a heading drawn at `y` be orphaned — left alone at the foot of the page
+ * with none of its section under it?
+ *
+ * ⚠️ THE ONE PAGINATION RULE LEFT. Operator, 2026-09-20: "a heading can't be
+ * orphaned alone on a page." Paragraphs split freely now; this is what keeps a
+ * heading with at least the opening of what follows it. Pure, so the rule can
+ * be tested without rendering a document.
+ */
+export function headingWouldOrphan(args: {
   y: number;
-  /** The top of the text column. */
-  top: number;
-  /** The bottom of the text column. */
-  bottom: number;
-  /** How tall the paragraph is at this width. */
-  height: number;
-  minFill?: number;
+  pageHeight: number;
+  marginBottom: number;
+  /** Extra room a block under the heading needs — a drawing, a table. */
+  need?: number;
 }): boolean {
-  const { y, top, bottom, height } = args;
-  const minFill = args.minFill ?? MIN_PAGE_FILL;
-  const column = bottom - top;
-  if (column <= 0) return false;
-  // It fits where it is.
-  if (y + height <= bottom) return false;
-  // Taller than any page: nothing to be gained.
-  if (height > column) return false;
-  return (y - top) / column >= minFill;
+  const need = args.need ?? HEADING_KEEP_WITH_NEXT;
+  return args.y > args.pageHeight - args.marginBottom - need;
 }
 
 const MARGIN = K.PAD_X;
@@ -734,6 +764,15 @@ export interface MotivationPdfInput {
    */
   exposureHeading?: string;
   /**
+   * The printed heading of the firearm section, uppercased.
+   *
+   * ⚠️ THE CARTRIDGE FEATURE FOLLOWS THIS SECTION. Operator, 2026-09-20: the
+   * cartridge and the firearm are "very relevant to each other", so the feature
+   * is drawn when this heading's section ends rather than deferred to the close.
+   * Read off the plan, never matched on words — see headingOf.
+   */
+  firearmHeading?: string;
+  /**
    * "Barrett self-loading rifle, serial BR009252" — the firearm named in the
    * running footer, so a loose sheet can be filed against the right
    * application. Optional: a renewal or a pack with no firearm chosen yet
@@ -763,6 +802,15 @@ export interface MotivationPdfInput {
    * motivation-checklist.ts.
    */
   annexures?: AnnexureEntry[];
+  /**
+   * Required documents the pack does NOT carry, by label.
+   *
+   * ⚠️ PRINTED, NOT SILENT. A required section 16 document that is absent —
+   * the letter of good standing, most often — used to leave no trace in the
+   * pack at all. Blocking would contradict the module's "SAPS requires it, we
+   * do not refuse to proceed" posture, so the annexure index names the gap.
+   */
+  missingDocuments?: string[];
   /**
    * The scanned copies themselves, reprinted after the index.
    *
@@ -1089,6 +1137,42 @@ export function titleCase(heading: string): string {
   );
 }
 
+/**
+ * Short labels for the running banner.
+ *
+ * ⚠️ THE FULL HEADING CLIPS MID-WORD. "5. The firearm applied for and why it
+ * suits the purpose" ellipsised to "…WHY IT SUITS T…" in the banner of every
+ * page of that section — the banner has room for about forty characters, and
+ * the fixed skeleton's headings run longer than that. These are the book's own
+ * short forms; anything not listed falls back to its heading.
+ */
+const RUNNING_LABELS: Record<string, string> = {
+  'The firearm applied for and why it suits the purpose':
+    'The firearm applied for',
+  'Firearms already licensed to me': 'Firearms already licensed',
+  'Association membership and dedicated status': 'Association membership',
+  'My competency and training': 'Competency and training',
+  'Safe storage and transport': 'Safe storage',
+  'Section 13 applied to my application': 'Section 13 applied',
+  'Section 14 applied to my application': 'Section 14 applied',
+  'Section 15 applied to my application': 'Section 15 applied',
+  'Section 16 applied to my application': 'Section 16 applied',
+  'Section 24 applied to my application': 'Section 24 applied',
+  'Why I need a firearm for self-defence': 'Why a firearm is needed',
+  'Why a section 13 firearm will not provide sufficient protection':
+    'Why section 13 is not enough',
+  'What I already do and where it stops': 'Existing measures',
+  'How I have used this firearm since it was licensed': 'Use since licensing',
+};
+
+/** The banner label for a heading — its short form, with the number stripped. */
+export function runningLabelFor(heading: string): string {
+  const title = heading.replace(/^\d{1,2}(?:\.\d+)?\.?\s*/, '').trim();
+  // The cartridge feature's banner reads "The cartridge", not the calibre.
+  if (/^the cartridge\b/i.test(title)) return 'The cartridge';
+  return RUNNING_LABELS[title] ?? title;
+}
+
 /** Millimetres, for the section spacing. Same unit the handoff is written in. */
 const mmGap = (n: number): number => K.mm(n);
 
@@ -1147,8 +1231,16 @@ export function isQuotedSubsection(
  * 1..9 as they are drawn would renumber the spine the SAPS 271 mirrors, and
  * the contents page would disagree with every other pack a DFO has read.
  */
-function splitHeading(heading: string): { number: string; title: string } {
-  const m = /^(\d{1,2})\.\s+(.*)$/.exec(heading.trim());
+export function splitHeading(heading: string): {
+  number: string;
+  title: string;
+} {
+  // ⚠️ A DECIMAL IS A NUMBER TOO. The cartridge feature is numbered "5.1" — a
+  // sub-section of the firearm section it belongs to — and the original
+  // `^(\d{1,2})\.` split "5.1 The cartridge" into number "5" and title
+  // "1 The cartridge", printing "5 · 1 THE CARTRIDGE". The optional decimal
+  // group keeps the twelve skeleton numbers (all integers) exactly as they are.
+  const m = /^(\d{1,2}(?:\.\d+)?)\.?\s+(.*)$/.exec(heading.trim());
   // ⚠️ NOT ZERO-PADDED. The band used to draw a running "01, 02, 03";
   // these are the book's twelve, so "9" and "11" are what the contents
   // page and the SAPS 271's own spine say, and "09" would not match.
@@ -2250,6 +2342,13 @@ export class MotivationPdfService {
     let featureBreakPending = false;
 
     /**
+     * Set when the firearm section's heading is drawn, so the cartridge feature
+     * is placed when that section ends — at the next heading. See
+     * `placeCartridgeFeature`.
+     */
+    let cartridgeAfterFirearm = false;
+
+    /**
      * The picture for the body: the drawing itself, or — when the cover took
      * the hero — the inset re-drawn for the feature.
      *
@@ -2291,6 +2390,22 @@ export class MotivationPdfService {
 
     /** Whether the body still owns anything to put under a cartridge heading. */
     const hasCartridgeBlock = !!bodyPicture || !!article;
+
+    /**
+     * The cartridge feature's heading, NUMBERED AS A SUB-SECTION.
+     *
+     * ⚠️ THE CARTRIDGE IS NOT ONE OF THE TWELVE SKELETON SECTIONS, so it had no
+     * number and stood out in the contents between "5." and "6.". It is a
+     * sub-part of the firearm section it belongs to, so it is numbered "5.1" —
+     * taken from the plan's own firearm heading, never hard-coded, so a plan
+     * that numbers it differently still reads correctly.
+     */
+    const cartridgeHeading = (() => {
+      const label = input.cartridgeDrawing?.label;
+      if (!label) return '';
+      const n = (input.firearmHeading ?? '').match(/^(\d{1,2})\./)?.[1];
+      return n ? `${n}.1 ${label}` : label;
+    })();
 
     /**
      * How much room the block needs, so a heading is never orphaned above it.
@@ -2662,6 +2777,37 @@ export class MotivationPdfService {
       }
     };
 
+    /**
+     * Place the cartridge feature when the firearm section ends.
+     *
+     * ⚠️ THE CARTRIDGE BELONGS WITH THE FIREARM. Operator, 2026-09-20: "move THE
+     * CARTRIDGE straight after THE FIREARM APPLIED FOR AND WHY IT SUITS THE
+     * PURPOSE as they are very relevant to each other". It used to be deferred
+     * to the close, just before the declaration; it is drawn here instead, on
+     * its own page, the moment the next section's heading appears.
+     *
+     * Backward compatible: on a document whose stored plan carries no firearm
+     * heading, `cartridgeAfterFirearm` never sets and the deferred path draws it
+     * as before.
+     */
+    const placeCartridgeFeature = () => {
+      cartridgeAfterFirearm = false;
+      if (!hasCartridgeBlock || cartridgeDrawn || !input.cartridgeDrawing)
+        return;
+      // The feature takes a sheet of its own — same rule as the deferred path.
+      if (article && doc.y > K.BODY_TOP + K.mm(1)) doc.addPage();
+      else if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20))
+        doc.addPage();
+      renderHeading(cartridgeHeading);
+      drawCartridge();
+      // The spread owns its sheet on both sides, so the next section starts a
+      // page. The loop's own latch runs before this branch, so spend it here.
+      if (featureBreakPending) {
+        featureBreakPending = false;
+        doc.addPage();
+      }
+    };
+
     doc.addPage();
 
     // ── Body ──────────────────────────────────────────────────────────
@@ -2721,7 +2867,7 @@ export class MotivationPdfService {
         if (article && doc.y > K.BODY_TOP + K.mm(1)) doc.addPage();
         else if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20))
           doc.addPage();
-        renderHeading(input.cartridgeDrawing.label);
+        renderHeading(cartridgeHeading);
         drawCartridge();
       }
 
@@ -2769,6 +2915,13 @@ export class MotivationPdfService {
         const wantsCartridge =
           hasCartridgeBlock && !cartridgeDrawn && /\bCARTRIDGE\b/i.test(block);
         /**
+         * ⚠️ THE FIREARM SECTION HAS ENDED — the cartridge feature follows it,
+         * before this next section's heading. Skipped when this block is itself
+         * the writer's cartridge heading, which the `wantsCartridge` path below
+         * already draws under. See placeCartridgeFeature.
+         */
+        if (cartridgeAfterFirearm && !wantsCartridge) placeCartridgeFeature();
+        /**
          * ⚠️ MATCHED ON THE PLAN'S OWN HEADING, NOT ON WORDS. `comparison` has
          * four alternates per licence type and the plan picks one by seed;
          * "already hold" would match three of them and quietly stop the day a
@@ -2798,7 +2951,7 @@ export class MotivationPdfService {
           ? cartridgeHeight() + mmGap(24)
           : wantsBattery
             ? 140
-            : 110;
+            : HEADING_KEEP_WITH_NEXT;
         /**
          * ⚠️ THE CARTRIDGE FEATURE TAKES A PAGE OF ITS OWN.
          *
@@ -2838,7 +2991,16 @@ export class MotivationPdfService {
           if (doc.y > K.BODY_TOP + K.mm(1)) doc.addPage();
         } else if (wantsCartridge && article && doc.y > K.BODY_TOP + K.mm(1)) {
           doc.addPage();
-        } else if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - need) doc.addPage();
+        } else if (
+          headingWouldOrphan({
+            y: doc.y,
+            pageHeight: PAGE_HEIGHT,
+            marginBottom: MARGIN_BOTTOM,
+            need,
+          })
+        ) {
+          doc.addPage();
+        }
         // ⚠️ CENTRED, BOLD, ALL CAPS — measured off Safari Outdoor, where
         // "CURRENT COMPETENCY STATUS" sits centred in Arial-Bold 11 with 49pt
         // above it. Ours were left-aligned sentence case with a trailing
@@ -2861,6 +3023,17 @@ export class MotivationPdfService {
         inStatutorySection = /^11\.\s/.test(block.trim());
         if (wantsCartridge) drawCartridge();
         if (wantsBattery) drawBattery();
+        /**
+         * ⚠️ REMEMBER THE FIREARM SECTION. The cartridge feature is placed when
+         * THIS section ends, at the next heading. Read off the plan's own
+         * heading, never matched on words — see `firearmHeading`.
+         */
+        if (
+          input.firearmHeading &&
+          block.replace(/:\s*$/, '').toUpperCase() === input.firearmHeading
+        ) {
+          cartridgeAfterFirearm = true;
+        }
         pendingCrime = wantsCrime;
       } else {
         // A parenthetical annexure reference is its own line in their
@@ -2880,28 +3053,19 @@ export class MotivationPdfService {
         const statuteIndent = isStatute ? K.mm(6) : 0;
 
         /**
-         * ⚠️ A PARAGRAPH IS NOT BROKEN ACROSS A PAGE — UNLESS KEEPING IT
-         * WHOLE WOULD LEAVE THE PAGE TOO EMPTY. See `breakBeforeParagraph`.
+         * ⚠️ A PARAGRAPH MAY BREAK ACROSS A PAGE. Operator, 2026-09-20:
+         * "Headings and paragraphs can be split over two pages, paragraphs can
+         * be split from each other but a heading can't be orphaned alone on a
+         * page."
+         *
+         * The whole-paragraph move that used to sit here is gone, and BOTH of
+         * its faults went with it: it left a page half empty to keep a
+         * paragraph intact, AND it defeated the heading guard above — a
+         * paragraph moved whole after a heading left that heading alone at the
+         * foot of the page, which is the orphan this rule exists to prevent.
+         * The paragraph now flows and splits as pdfkit would have done, and the
+         * only pagination rule is the keep-with-next on the heading.
          */
-        const measured = doc
-          .font(isRef ? B.bodyItalic : B.body)
-          .fontSize(isStatute ? BODY_SIZE * (10.5 / 11) : BODY_SIZE)
-          .heightOfString(block, {
-            width: contentWidth - K.SECTION_INDENT - statuteIndent,
-            align: 'left',
-            lineGap: BODY_LEADING,
-          });
-        if (
-          breakBeforeParagraph({
-            y: doc.y,
-            top: MARGIN_TOP,
-            bottom: K.BODY_BOTTOM,
-            height: measured,
-          })
-        ) {
-          doc.addPage();
-        }
-
         doc
           .font(isRef ? B.bodyItalic : B.body)
           .fontSize(isStatute ? BODY_SIZE * (10.5 / 11) : BODY_SIZE)
@@ -3286,7 +3450,7 @@ export class MotivationPdfService {
     const annexureContentsHeading = (a: AnnexureEntry) =>
       `Annexure ${a.letter} - ${a.label} (${a.count} ${
         a.count === 1 ? 'item' : 'items'
-      }; ${a.certification})`;
+      }; ${certificationPhrase(a.certification)})`;
 
     // ── Annexure index ────────────────────────────────────────────────
     if (input.annexures?.length) {
@@ -3508,6 +3672,29 @@ export class MotivationPdfService {
               width: contentWidth,
               indent: 12,
             });
+        }
+      }
+
+      // ⚠️ AND NAME WHAT IS REQUIRED BUT ABSENT. A required document the
+      // applicant has not uploaded at all — the letter of good standing on a
+      // section 16, most often — used to leave no trace on this page. It is not
+      // a refusal: the pack still prints, and the line tells the applicant what
+      // to bring and the DFO that it was not withheld.
+      if (input.missingDocuments?.length) {
+        doc.moveDown(0.6);
+        doc
+          .font(FONT_BOLD)
+          .fontSize(9.5)
+          .fillColor(REQUIRED_RED)
+          .text('Still to be attached — required, and not yet in this pack:', {
+            width: contentWidth,
+          });
+        for (const label of input.missingDocuments) {
+          doc
+            .font(FONT)
+            .fontSize(9.5)
+            .fillColor(GREY)
+            .text(`•  ${label}`, { width: contentWidth, indent: 12 });
         }
       }
     }
@@ -4186,7 +4373,9 @@ export class MotivationPdfService {
       for (let i = 0; i < range.count; i++) {
         const startedHere = labelSources.filter((t) => t.page === i + 1);
         if (startedHere.length) {
-          current = titleCase(startedHere[startedHere.length - 1].heading);
+          current = titleCase(
+            runningLabelFor(startedHere[startedHere.length - 1].heading),
+          );
         }
         pageLabels[i] = current;
       }

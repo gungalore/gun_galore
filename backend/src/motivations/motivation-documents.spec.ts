@@ -237,6 +237,25 @@ describe('the licences for what they already own', () => {
     const s = documentStatus(MotivationLicenceType.S24_RENEWAL, [], OWNS);
     expect(s.needs.filter((n) => n.kind === K.CURRENT_LICENCE)).toHaveLength(1);
   });
+
+  it('⚠️ DOES NOT DOUBLE UP ON A SECTION 16, WHERE STRENGTHENS ALSO LISTS IT', () => {
+    // The bug behind the React "Encountered two children with the same key,
+    // CURRENT_LICENCE" in the dev log: CURRENT_LICENCE is in STRENGTHENS for
+    // the sporting types AND is pushed into required when the applicant owns a
+    // firearm, so `needs` carried it twice. The frontend keys rows by kind.
+    const s = documentStatus(S16, [], OWNS);
+    expect(s.needs.filter((n) => n.kind === K.CURRENT_LICENCE)).toHaveLength(1);
+    expect(s.needs.find((n) => n.kind === K.CURRENT_LICENCE)!.tier).toBe(
+      'required',
+    );
+  });
+
+  it('⚠️ NEVER REPORTS ANY KIND TWICE, on any type', () => {
+    for (const t of Object.values(MotivationLicenceType)) {
+      const kinds = documentStatus(t, [], OWNS).needs.map((n) => n.kind);
+      expect(new Set(kinds).size).toBe(kinds.length);
+    }
+  });
 });
 
 describe('documents nobody asked for', () => {

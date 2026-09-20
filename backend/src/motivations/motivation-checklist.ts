@@ -453,6 +453,23 @@ const ANNEXURE_ORDER: AnnexureKind[] = [
  */
 export type CertificationLevel = 'required' | 'expected' | 'none';
 
+/**
+ * The certification tier as a person reads it, for the contents line.
+ *
+ * ⚠️ "none" WAS PRINTED AS "none", WHICH READS AS "NO ITEMS" BESIDE A COUNT.
+ * MO000002's contents page read "Annexure D - Proof of residential address
+ * (1 item; none)" — the item exists, the CERTIFICATION does not, and the bare
+ * word contradicted the count. The table's own vocabulary ("required",
+ * "usually asked") is reused so the two surfaces agree.
+ */
+export function certificationPhrase(level: CertificationLevel): string {
+  return level === 'required'
+    ? 'certification required'
+    : level === 'expected'
+      ? 'usually asked'
+      : 'no certification needed';
+}
+
 export const CERTIFICATION: Record<AnnexureKind, CertificationLevel> = {
   // Ours, signed by the applicant in front of nobody in particular. Not a
   // copy of anything, so there is nothing to certify it against.

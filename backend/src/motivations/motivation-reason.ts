@@ -76,7 +76,12 @@ export interface ReasonResult {
      * on the SAHGCA form — the strongest source there is, because the pack
      * annexes the form itself.
      */
-    source: 'primary_use' | 'previous_motivation' | 'endorsement' | 'inferred' | 'none';
+    source:
+      | 'primary_use'
+      | 'previous_motivation'
+      | 'endorsement'
+      | 'inferred'
+      | 'none';
   }[];
   continuity: string;
   /**
@@ -199,10 +204,20 @@ export const REASON_BANKS = {
 export const REASON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
-    angle: { type: 'string' },
-    paragraph: { type: 'string' },
+    angle: {
+      type: 'string',
+      description:
+        'The one angle chosen, exactly as it appears in the ALLOWED ANGLES list.',
+    },
+    paragraph: {
+      type: 'string',
+      description:
+        'The reason paragraph, first person, in the applicant’s voice. Two paragraphs separated by a blank line, within the word band.',
+    },
     examples: {
       type: 'array',
+      description:
+        'Three to six concrete examples that fit the angle and the calibre.',
       items: {
         type: 'object',
         properties: {
@@ -218,6 +233,8 @@ export const REASON_SCHEMA: Record<string, unknown> = {
     },
     existing_roles: {
       type: 'array',
+      description:
+        'One entry per firearm already held. Source is primary_use, previous_motivation or endorsement ONLY where that input was supplied; otherwise inferred.',
       items: {
         type: 'object',
         properties: {
@@ -237,9 +254,21 @@ export const REASON_SCHEMA: Record<string, unknown> = {
         required: ['firearm', 'role', 'source'],
       },
     },
-    continuity: { type: 'string' },
-    warnings: { type: 'array', items: { type: 'string' } },
-    word_count: { type: 'integer' },
+    continuity: {
+      type: 'string',
+      description:
+        'How this reason sits with any earlier motivation, or empty when there is none.',
+    },
+    warnings: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'Things the applicant should know — a thin distinction, an unconfirmed role. For the applicant to read, not a refusal.',
+    },
+    word_count: {
+      type: 'integer',
+      description: 'The word count of the paragraph.',
+    },
   },
   required: [
     'angle',
@@ -325,7 +354,7 @@ SECTION DISCIPLINE FOR EXISTING FIREARMS — THIS IS WHERE REFUSALS COME FROM
     - section 16: dedicated hunting or dedicated sport shooting. Never self-defence, protection, backup, carry or home defence.
     - section 17: collection. Never a use of any kind.
     Describing a section 16 handgun as "backup" or "close protection" tells the Registrar the applicant uses a sport firearm outside its licence. That is a refusal on its own.
-12. A role for an existing firearm comes ONLY from its supplied primary_use, or from a previous motivation, or from an association endorsement. If none was supplied, DO NOT ASSIGN ONE. Write the firearm with its make, calibre and section and nothing more — "a CZ in 6.35mm Browning, licensed under section 16" — list it in existing_roles with source "none", and add "roles_unconfirmed" to warnings. Never write "for precision work", "for small-game", "for backup" or any role you were not given.
+12. GIVE EVERY EXISTING FIREARM A ROLE. Where the input supplies a primary_use, a previous motivation or an association endorsement, use it and mark the entry with that source. WHERE NONE WAS SUPPLIED, ASSIGN the plausible role for that firearm's class, calibre and action — the role a firearm of that kind is genuinely kept for in South Africa — mark the entry "inferred", and write it into the paragraph as the applicant's own stated purpose. An inferred role is professional judgement about what the firearm is FOR, never a claim about what the applicant has DONE with it: write "the .30-06 is my plains-game rifle", not "I have hunted plains game with it". It must fit the section the firearm is licensed under (rule 11) — a section 15 or 16 firearm is never described with self-defence, protection, backup, carry or home-defence words. Never claim a source you were not given: an entry marked "primary_use", "previous_motivation" or "endorsement" must actually come from that input.
 13. Makes, models, calibres and association names appear only as they appear in the input, spelled the same way. If no model was supplied, write "the 9mm handgun applied for", not a model you believe is likely. If no association is in the input, name none.
 14. Discipline, exercise and division names come only from the input. Do not supply divisions from memory and do not name another association's disciplines. "Carry Optics" is a USPSA division and does not exist in South African shooting.
 15. Banned phrasing, because it reads like a product page and not like an applicant: power factor, split times, high-volume, platform, tactical, close protection, engage targets, dynamic, competitively, efficiently, and "dedicated" used as a synonym for "used for".
@@ -344,14 +373,14 @@ ALLOWED ANGLES
 ${angles}
 
 ${
-    hasActivityRules
-      ? `PREFERRED ANGLE: exercise_eligibility. The input carries association exercises with their equipment rules — a calibre floor or ceiling, a barrel length, an action or a class. Where the applied-for firearm meets one and a held firearm of the same type does not, lead with it and quote the rule. "The association's 7m rapid-fire handgun exercise is open only to 9mmP pistols and larger; my 6.35mm CZ shoots the 5m pocket-pistol exercise and cannot enter it." That is a gap the reviewer can check against the rules annexed to the same pack, and it is what the approved motivations on file actually do.`
-      : `NO ASSOCIATION EXERCISES WERE SUPPLIED, so you do not know what any exercise is shot with. Rest the gap on the two things the firearms themselves prove: TYPE and SECTION. "None of my rifles can be used in a handgun exercise" is provable; "cannot meet the capacity requirements" is not.
+  hasActivityRules
+    ? `PREFERRED ANGLE: exercise_eligibility. The input carries association exercises with their equipment rules — a calibre floor or ceiling, a barrel length, an action or a class. Where the applied-for firearm meets one and a held firearm of the same type does not, lead with it and quote the rule. "The association's 7m rapid-fire handgun exercise is open only to 9mmP pistols and larger; my 6.35mm CZ shoots the 5m pocket-pistol exercise and cannot enter it." That is a gap the reviewer can check against the rules annexed to the same pack, and it is what the approved motivations on file actually do.`
+    : `NO ASSOCIATION EXERCISES WERE SUPPLIED, so you do not know what any exercise is shot with. Rest the gap on the two things the firearms themselves prove: TYPE and SECTION. "None of my rifles can be used in a handgun exercise" is provable; "cannot meet the capacity requirements" is not.
 
 HOW TO REACH THE WORD FLOOR WITHOUT INVENTING ANYTHING. Name every held firearm with make and calibre, and its own section where its entry carries one — as ONE sentence with commas, the way a table row reads, not as one sentence per firearm. "I hold a Mauser in .30-06 Springfield and a Marlin in .45-70 Government under section 16, and a Howa in 6.5mm Creedmoor under section 15." Five sentences each beginning "I hold a" is a list, not a person writing, and one blanket "all licensed under section 16" over a mixed battery is false. Say what class of shooting the applied-for firearm opens that the held ones do not, in plain terms of type and action. Say what the applicant will do with it, in the words the input gives you. That is the length; padding it with capability claims is what rule 16 refuses.`
-  }
+}
 
-Anything you mark "inferred" in existing_roles is a suggestion the applicant must confirm: keep it out of the paragraph. Anything you mark "none" has no role at all: name the firearm, its calibre and its section, and stop.`;
+An "inferred" role is written into the paragraph as the applicant's own purpose: it is a judgement about what the firearm is for, not a claim about what they have done, and it must fit the section on its entry. A firearm with no discernible role at all is still named with its make, calibre and section.`;
 }
 
 /**
@@ -380,16 +409,14 @@ export function validateReason(
     /** Everything an example may legitimately name. */
     knownTerms: readonly string[];
     /**
-     * The held firearms we supplied NO role for.
+     * The held firearms we supplied NO documented role for.
      *
-     * ⚠️ THE ONE FACT THAT MAKES RULE 12 CHECKABLE. "Do not invent a role" is
-     * unverifiable from the paragraph alone — any sentence about a firearm
-     * could be a role or could be a description. It is verifiable against what
-     * we HANDED OVER: a live generation off the operator's own vault gave all
-     * five of his firearms a purpose ("dedicated to backup use and close
-     * protection", "for precision long-range shooting") and not one of them
-     * had a primary_use on file. Each entry is the firearm as the arsenal
-     * names it; the check is that the model did not claim a source for it.
+     * ⚠️ THE ONE FACT THAT MAKES RULE 12 CHECKABLE. The model may infer a role
+     * for these (rule 12) and write it into the paragraph as the applicant's
+     * own purpose; what it may not do is claim the role came from a
+     * primary_use, a previous motivation or an endorsement that does not
+     * exist. Each entry is the firearm as the arsenal names it; the check is
+     * against the SOURCE the model claims, not against the role itself.
      */
     roleless?: readonly string[];
     /**
@@ -426,7 +453,9 @@ export function validateReason(
   const words = countWords(r.paragraph);
 
   if (words < REASON_MIN_WORDS || words > REASON_MAX_WORDS) {
-    bad.push(`paragraph is ${words} words, outside ${REASON_MIN_WORDS}-${REASON_MAX_WORDS}`);
+    bad.push(
+      `paragraph is ${words} words, outside ${REASON_MIN_WORDS}-${REASON_MAX_WORDS}`,
+    );
   }
   /**
    * ⚠️ THE MODEL'S OWN COUNT IS NOT A SAFETY PROPERTY, AND REJECTING ON IT
@@ -631,16 +660,23 @@ export function validateReason(
   }
 
   /**
-   * ⚠️ A ROLE NOBODY GAVE US. See ctx.roleless: the model was handed these
-   * firearms with no primary_use, no previous motivation and no endorsement,
-   * so any source it claims for one of them is invented — and an invented role
-   * reads as fact on a document the applicant signs. "none" is the correct
-   * answer and passes; anything else is refused, because the paragraph was
-   * written from it.
+   * ⚠️ A SOURCE NOBODY GAVE US. The model may now INFER a role for a firearm
+   * with no primary_use, previous motivation or endorsement (see rule 12), and
+   * an inferred role is written into the paragraph as the applicant's own
+   * purpose. What it may never do is claim that role CAME from a document that
+   * does not exist: an entry marked "primary_use", "previous_motivation" or
+   * "endorsement" against a roleless firearm is a false attribution, and that
+   * is what this rejects. "inferred" and "none" pass.
    */
   const roleless = new Set(ctx.roleless ?? []);
+  const DOCUMENTED_ROLE_SOURCES = new Set([
+    'primary_use',
+    'previous_motivation',
+    'endorsement',
+  ]);
   for (const entry of r.existingRoles) {
-    if (entry.source === 'none' || !roleless.size) continue;
+    if (!roleless.size) continue;
+    if (!DOCUMENTED_ROLE_SOURCES.has(entry.source)) continue;
     const match = bestFirearmMatch(entry.firearm, ctx.knownFirearms);
     if (!match || !roleless.has(match)) continue;
     bad.push(
@@ -734,32 +770,31 @@ export function validateReason(
  * merely shouty. Being wrong in the other direction renames a manufacturer.
  */
 export function proseFirearmName(raw: string): string {
-  return (raw ?? '')
-    .split(/(\s+)/)
-    .map((token) => {
-      if (/^\s+$/.test(token) || !token) return token;
-      // Strip leading punctuation for the tests — ".30-06" is a digit token.
-      const core = token.replace(/^[^A-Za-z0-9]+/, '');
-      const hasDigit = /[0-9]/.test(core);
-      const startsDigit = /^[0-9]/.test(core);
-      // ⚠️ A MODEL DESIGNATION IS LEFT ALONE. "T3X", "P-10", "SP-01" and
-      // "AR-15" begin with a letter and carry a digit; lower-casing them would
-      // print a firearm nobody sells.
-      if (hasDigit && !startsDigit) return token;
-      // A calibre: "9MM" → "9mm", "9X19MM" → "9x19mm", ".30-06" unchanged.
-      if (startsDigit) return token.toLowerCase();
-      if (!/^[A-Z]+$/.test(core) || core.length < 4) return token;
-      return token.replace(
-        /[A-Z]+/,
-        (w) => w[0] + w.slice(1).toLowerCase(),
-      );
-    })
-    .join('')
-    // The card's own bracket spacing: "( 9x19mm )" is not how anybody writes.
-    .replace(/\(\s+/g, '(')
-    .replace(/\s+\)/g, ')')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
+  return (
+    (raw ?? '')
+      .split(/(\s+)/)
+      .map((token) => {
+        if (/^\s+$/.test(token) || !token) return token;
+        // Strip leading punctuation for the tests — ".30-06" is a digit token.
+        const core = token.replace(/^[^A-Za-z0-9]+/, '');
+        const hasDigit = /[0-9]/.test(core);
+        const startsDigit = /^[0-9]/.test(core);
+        // ⚠️ A MODEL DESIGNATION IS LEFT ALONE. "T3X", "P-10", "SP-01" and
+        // "AR-15" begin with a letter and carry a digit; lower-casing them would
+        // print a firearm nobody sells.
+        if (hasDigit && !startsDigit) return token;
+        // A calibre: "9MM" → "9mm", "9X19MM" → "9x19mm", ".30-06" unchanged.
+        if (startsDigit) return token.toLowerCase();
+        if (!/^[A-Z]+$/.test(core) || core.length < 4) return token;
+        return token.replace(/[A-Z]+/, (w) => w[0] + w.slice(1).toLowerCase());
+      })
+      .join('')
+      // The card's own bracket spacing: "( 9x19mm )" is not how anybody writes.
+      .replace(/\(\s+/g, '(')
+      .replace(/\s+\)/g, ')')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+  );
 }
 
 /** The sections whose firearms are sporting, and never defensive. */

@@ -1,4 +1,7 @@
-import { cardRowsFor, type FirearmSnapshot } from './motivation-seller-consent.service';
+import {
+  cardRowsFor,
+  type FirearmSnapshot,
+} from './motivation-seller-consent.service';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT THE PREVIOUS OWNER SIGNS.
@@ -72,6 +75,12 @@ export function declarationFor(s: ConsentStatement): string {
  * split into words we think we understand. The one thing that IS dropped is a
  * field nobody ever established — see cardRowsFor, and the note on
  * FirearmSnapshot about why unread and NONE must never converge.
+ *
+ * ⚠️ AND NONE IS THE VALUE SAPS PUT THERE. Operator, 2026-09-20: "When a NONE
+ * value is read from a license disk, it must display NONE. It may never be
+ * altered or thrown away. It is how it was captured by SAPS and they expect it
+ * should stay like that." A dash here would be us editing a copy of somebody
+ * else's licence — the row is the card, not our house style.
  */
 export function firearmRowsFor(
   s: ConsentStatement,
@@ -128,7 +137,11 @@ export const CONSENT_FORM_LAYOUT_VERSION = 'consent-1';
 
 export function consentFormFor(
   s: ConsentStatement,
-  media: { signature: Buffer | null; front: Buffer | null; back: Buffer | null },
+  media: {
+    signature: Buffer | null;
+    front: Buffer | null;
+    back: Buffer | null;
+  },
 ): CharacterStatementForm {
   const rows = firearmRowsFor(s);
   return {
@@ -143,15 +156,17 @@ export function consentFormFor(
       { kind: 'text', text: declarationFor(s) },
       { kind: 'part', label: '', title: FIREARM_LIST_HEADING },
       // ⚠️ EVERY ROW THE CARD GAVE US, IN CARD ORDER, INCLUDING ITS NONEs.
-      ...rows.map((r) => ({ kind: 'value' as const, label: r.label, value: r.value })),
+      ...rows.map((r) => ({
+        kind: 'value' as const,
+        label: r.label,
+        value: r.value,
+      })),
       ...(media.front || media.back
         ? [
             {
               kind: 'images' as const,
               label: LICENCE_PHOTO_NOTE,
-              images: [media.front, media.back].filter(
-                (b): b is Buffer => !!b,
-              ),
+              images: [media.front, media.back].filter((b): b is Buffer => !!b),
             },
           ]
         : []),

@@ -94,4 +94,27 @@ describe('measuring a motivation', () => {
     // The word count is still there, just not leading.
     expect(line).toMatch(/\d+w/);
   });
+
+  it('⚠️ CATCHES A LIST OR PHRASE REPEATED ACROSS SECTIONS', () => {
+    // The sample's fault (MO000002): the same quarry set and the same range
+    // phrase in two adjacent sections. Specificity cannot see it — both copies
+    // are specific — which is why repetition is its own measure.
+    const repeated =
+      'The species I target include bushpig, warthog, impala, blue wildebeest, hartebeest, and kudu. ' +
+      'Engagements occur from point-blank range out to approximately one hundred and twenty-five metres. ' +
+      'The species I target include bushpig, warthog, impala, blue wildebeest, hartebeest, and kudu. ' +
+      'Engagements occur from point-blank range out to approximately one hundred and twenty-five metres.';
+    const q = scoreMotivation(repeated);
+    expect(q.duplicateSentences).toBeGreaterThan(0);
+    expect(q.repeatedPhrases.length).toBeGreaterThan(0);
+  });
+
+  it('does not flag a document that says each thing once', () => {
+    const q = scoreMotivation(
+      'I hunt impala in the Karoo at 150 m. My competency is at Annexure C. ' +
+        'The rifle suits springbok on open plains, and I also take kudu at 200 m.',
+    );
+    expect(q.duplicateSentences).toBe(0);
+    expect(q.repeatedPhrases).toEqual([]);
+  });
 });

@@ -98,7 +98,9 @@ describe('packConsistency', () => {
   it('catches a missing ID number', () => {
     const doc = CLEAN.replace('890512 5220 089', 'as stated');
     const issues = packConsistency(doc, ANSWERS, ANNEXURES);
-    expect(issues.some((i) => i.toLowerCase().includes('id number'))).toBe(true);
+    expect(issues.some((i) => i.toLowerCase().includes('id number'))).toBe(
+      true,
+    );
   });
 
   it('checks NOTHING that was never answered', () => {

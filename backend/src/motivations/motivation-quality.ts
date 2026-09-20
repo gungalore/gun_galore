@@ -78,6 +78,16 @@ export interface MotivationQuality {
   longestGenericRun: number;
   /** Mean sentence length in characters — padding shows up here first. */
   meanSentenceChars: number;
+  /**
+   * Sentences that repeat an earlier sentence, near-verbatim.
+   *
+   * ⚠️ THE SAMPLE'S FAULT, MEASURED. MO000002 listed the same quarry set and
+   * the same range phrase in two adjacent sections; specificity cannot see
+   * that, because both copies are specific. This counts it.
+   */
+  duplicateSentences: number;
+  /** Distinct phrases (8 words) that occur more than once, worst first. */
+  repeatedPhrases: string[];
 }
 
 /** Sentences, split on terminal punctuation. */
@@ -186,6 +196,42 @@ export function scoreMotivation(body: string): MotivationQuality {
     }
   }
 
+  // ── repetition, within one document ───────────────────────────────
+  //
+  // ⚠️ THE SAMPLE'S FAULT, AND SPECIFICITY IS BLIND TO IT. MO000002 named the
+  // same quarry set and the same range phrase in two adjacent sections; both
+  // copies are "specific", so the headline number never moved. What repeats is
+  // the shape of a stitched document, and a reviewer notices it.
+  const normalise = (v: string) =>
+    v
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const sentenceCounts = new Map<string, number>();
+  for (const s of sentences) {
+    const key = normalise(s);
+    if (key.split(' ').filter(Boolean).length < 6) continue;
+    sentenceCounts.set(key, (sentenceCounts.get(key) ?? 0) + 1);
+  }
+  const duplicateSentences = [...sentenceCounts.values()].filter(
+    (n) => n > 1,
+  ).length;
+
+  const REPEAT_NGRAM = 8;
+  const docWords = normalise(text).split(' ').filter(Boolean);
+  const gramCounts = new Map<string, number>();
+  for (let i = 0; i + REPEAT_NGRAM <= docWords.length; i++) {
+    const gram = docWords.slice(i, i + REPEAT_NGRAM).join(' ');
+    gramCounts.set(gram, (gramCounts.get(gram) ?? 0) + 1);
+  }
+  const repeatedPhrases = [...gramCounts.entries()]
+    .filter(([, n]) => n > 1)
+    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+    .slice(0, 5)
+    .map(([gram]) => gram);
+
   return {
     words,
     paragraphs,
@@ -203,6 +249,8 @@ export function scoreMotivation(body: string): MotivationQuality {
           sentences.reduce((n, s) => n + s.length, 0) / sentences.length,
         )
       : 0,
+    duplicateSentences,
+    repeatedPhrases,
   };
 }
 
@@ -224,6 +272,8 @@ export function summarise(q: MotivationQuality): string {
     `terrain ${q.terrain.length}`,
     `dist ${q.distances.length}`,
     `annex ${q.annexures.length}`,
+    `dup ${q.duplicateSentences}`,
+    `rep ${q.repeatedPhrases.length}`,
     q.banned.length ? `BANNED ${q.banned.join('/')}` : 'banned 0',
   ].join(' | ');
 }

@@ -144,7 +144,8 @@ describe('the card, verbatim', () => {
     const rows = byLabel(card);
     for (const [label, value] of Object.entries(rows)) {
       // Whatever the card said, that is what came out. No blanks standing in
-      // for NONE and no NONEs standing in for blanks.
+      // for NONE and no NONEs standing in for blanks — it is the value SAPS
+      // captured, and it is never altered or thrown away.
       expect(value).not.toBe('');
       expect(typeof label).toBe('string');
     }
@@ -245,9 +246,7 @@ describe('the declaration', () => {
   );
 
   it('still reads sensibly when the applicant ID is not held', () => {
-    const d = declarationFor(
-      stmt({ ...MAUSER, applicantIdNumber: undefined }),
-    );
+    const d = declarationFor(stmt({ ...MAUSER, applicantIdNumber: undefined }));
     expect(d).toContain('A N Other');
     expect(d).not.toContain('identity number )');
     expect(d).not.toContain('undefined');
@@ -262,9 +261,9 @@ describe('the signed line', () => {
   });
 
   it('OMITS a place it does not have rather than guessing', () => {
-    expect(
-      signedLineFor({ ...stmt(MAUSER), signedPlace: null }),
-    ).toBe('Signed on 23 August 2026.');
+    expect(signedLineFor({ ...stmt(MAUSER), signedPlace: null })).toBe(
+      'Signed on 23 August 2026.',
+    );
   });
 
   it('degrades to bare "Signed." with neither', () => {

@@ -255,7 +255,10 @@ const EXPECTED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   // without the other." The pair rule in motivation-autolink enforces that, and
   // it can only enforce it over kinds this application actually wants.
   S13_SELF_DEFENCE: ['PROFICIENCY_CERTIFICATE', 'FIREARM_SOURCE_PROOF'],
-  S14_RESTRICTED_SELF_DEFENCE: ['PROFICIENCY_CERTIFICATE', 'FIREARM_SOURCE_PROOF'],
+  S14_RESTRICTED_SELF_DEFENCE: [
+    'PROFICIENCY_CERTIFICATE',
+    'FIREARM_SOURCE_PROOF',
+  ],
   S15_OCCASIONAL_HUNTER: ['PROFICIENCY_CERTIFICATE', 'FIREARM_SOURCE_PROOF'],
   S16_DEDICATED_HUNTER: [
     'PROFICIENCY_CERTIFICATE',
@@ -544,7 +547,8 @@ export function documentStatus(
   // A first-time applicant owns nothing and is never asked for one. Asking
   // everybody would be the same false demand as never asking anybody.
   const ownsFirearms = Object.keys(answers).some(
-    (k) => /^existing_firearm_\d+_calibre$/.test(k) && (answers[k] ?? '').trim(),
+    (k) =>
+      /^existing_firearm_\d+_calibre$/.test(k) && (answers[k] ?? '').trim(),
   );
   if (ownsFirearms && !required.includes('CURRENT_LICENCE')) {
     required.push('CURRENT_LICENCE');
@@ -622,17 +626,32 @@ export function documentStatus(
       ...(kind === 'FIREARM_SOURCE_PROOF' && source === SOURCE_PRIVATE
         ? { sellerConsent: true as const }
         : {}),
-      ...(min > 1
-        ? { minFiles: min, minFilesNote: SAFE_SHOTS_NOTE }
-        : {}),
+      ...(min > 1 ? { minFiles: min, minFilesNote: SAFE_SHOTS_NOTE } : {}),
     };
   };
 
-  const needs: DocumentNeed[] = [
-    ...required.map((k) => needOf(k, 'required')),
-    ...expected.map((k) => needOf(k, 'expected')),
-    ...strengthens.map((k) => needOf(k, 'strengthens')),
-  ];
+  // ⚠️ A KIND ON TWO TIERS IS ONE ROW, ON ITS HIGHEST TIER.
+  //
+  // CURRENT_LICENCE sits in STRENGTHENS for the sporting types AND is pushed
+  // into `required` above when the applicant owns a firearm — so this list
+  // carried it twice. The frontend keys each row by `kind`, and React rejects a
+  // duplicate key: "Encountered two children with the same key,
+  // CURRENT_LICENCE" in the dev log, with the row risked being duplicated or
+  // dropped. Deduping here, highest tier first, keeps it one row whatever any
+  // future tier adds.
+  const needs: DocumentNeed[] = [];
+  const seenNeeds = new Set<MotivationUploadKind>();
+  for (const [tier, kinds] of [
+    ['required', required],
+    ['expected', expected],
+    ['strengthens', strengthens],
+  ] as [DocumentTier, MotivationUploadKind[]][]) {
+    for (const kind of kinds) {
+      if (seenNeeds.has(kind)) continue;
+      seenNeeds.add(kind);
+      needs.push(needOf(kind, tier));
+    }
+  }
 
   // Anything uploaded that we never asked for. Accepted and lettered like the
   // rest — an applicant who wants to attach a range record or a letter from

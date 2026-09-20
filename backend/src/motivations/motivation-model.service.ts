@@ -12,6 +12,7 @@ import { LlmError, type LlmResponse } from '../common/llm/llm.types';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 import {
   FactPack,
+  GATE_VERDICT_SCHEMA,
   gateSystemPrompt,
   gateUserPrompt,
   generationSystemPrompt,
@@ -91,8 +92,9 @@ const RESEARCH_TIMEOUT_MS = 180_000;
 // grading its own output shares its own blind spots — if the writer invents a
 // plausible detail, the same model is the one most likely to wave it through.
 // Groundedness is the score that vetoes everything, so the checker was chosen
-// to fail DIFFERENTLY from the writer. Writer and gate are now the same model,
-// and that independence is gone. What still stands between an invented fact and
+// to fail DIFFERENTLY from the writer. Writer and gate fall back to the same
+// model, but `LLM_GATE_MODEL` restores that independence the moment an operator
+// sets it — see `gateModel`. What still stands between an invented fact and
 // a filed document: the mechanical checks in motivation-verify.ts (code, not a
 // model), the second verifier below, and the groundedness floor itself.
 //
@@ -142,6 +144,19 @@ export class MotivationModelService {
   // writer during a free beta is exactly the failure that goes unnoticed for a
   // week.
   private lastOutageAlertAt = 0;
+
+  /**
+   * The model the quality gate runs on, when an operator has pointed it at a
+   * different one from the writer's.
+   *
+   * ⚠️ UNSET MEANS "SAME AS THE WRITER", WHICH IS THE OLD BEHAVIOUR. Read from
+   * the env on every call so it can be changed with a restart and no deploy.
+   * `LlmRequest.model` carries the override; see llm.types.ts.
+   */
+  private get gateModel(): string | undefined {
+    const configured = (process.env.LLM_GATE_MODEL ?? '').trim();
+    return configured || undefined;
+  }
   private static readonly OUTAGE_ALERT_GAP_MS = 6 * 60 * 60 * 1000;
 
   constructor(
@@ -383,9 +398,7 @@ export class MotivationModelService {
    * Returns null on anything unexpected. The caller then fails the document
    * exactly as it would have without this.
    */
-  async repairSentences(
-    targets: readonly RepairTarget[],
-  ): Promise<{
+  async repairSentences(targets: readonly RepairTarget[]): Promise<{
     sentences: { original: string; replacement: string }[];
     usage: ModelUsage;
   } | null> {
@@ -407,7 +420,8 @@ export class MotivationModelService {
       const sentences = (parsed.sentences ?? [])
         .filter(
           (x) =>
-            typeof x?.original === 'string' && typeof x?.replacement === 'string',
+            typeof x?.original === 'string' &&
+            typeof x?.replacement === 'string',
         )
         .map((x) => ({
           original: x.original as string,
@@ -454,7 +468,7 @@ export class MotivationModelService {
           '- any VERIFIABLE fact about the applicant — an event, record,',
           '  membership, qualification, possession or incident — that the',
           '  supplied facts do not contain. Intentions, purposes and the',
-          '  rationale for the firearm are the writer\'s to supply and are',
+          "  rationale for the firearm are the writer's to supply and are",
           '  NOT defects.',
           'Do NOT comment on style, persuasiveness, or whether the',
           'application should succeed. An empty list is a good answer.',
@@ -492,7 +506,10 @@ export class MotivationModelService {
       if (!m) return null;
       const parsed = JSON.parse(m[0]) as { issues?: unknown };
       const issues = Array.isArray(parsed.issues)
-        ? parsed.issues.map((i) => String(i)).filter(Boolean).slice(0, 12)
+        ? parsed.issues
+            .map((i) => String(i))
+            .filter(Boolean)
+            .slice(0, 12)
         : [];
       return { issues, usage: this.usageOf(res) };
     } catch (err) {
@@ -514,7 +531,10 @@ export class MotivationModelService {
    *     caller can tell "the grader broke" from "the document is weak" and does
    *     not buy an expensive regeneration on a formatting regression
    */
-  async grade(pack: FactPack, documentText: string): Promise<{
+  async grade(
+    pack: FactPack,
+    documentText: string,
+  ): Promise<{
     verdict: GateVerdict;
     usage: ModelUsage;
     parsed: boolean;
@@ -572,6 +592,20 @@ export class MotivationModelService {
         messages: [
           { role: 'user', content: gateUserPrompt(pack, documentText) },
         ],
+        // ⚠️ AN INDEPENDENT GRADER WHEN ONE IS CONFIGURED. The gate is the score
+        // that vetoes everything, and a model grading its own output shares its
+        // blind spots — if the writer invents a plausible detail, the same
+        // model is the one most likely to wave it through. `LLM_GATE_MODEL`
+        // points the gate at a different model. UNSET it is `undefined` and the
+        // gate falls back to LLM_MODEL exactly as before, so the override is
+        // inert until an operator sets it.
+        model: this.gateModel,
+        // ⚠️ THE SHAPE IS THE PROVIDER'S JOB. The prompt asks for JSON in
+        // prose; the schema makes the provider enforce it, so a chatty or
+        // fenced reply can no longer be mistaken for an unusable verdict. The
+        // brace parse below remains only for the Anthropic path, which has no
+        // responseSchema.
+        json: { schema: GATE_VERDICT_SCHEMA },
         purpose: 'motivation.gate',
         timeoutMs: GRADE_TIMEOUT_MS,
       });
@@ -608,7 +642,9 @@ export class MotivationModelService {
           `endsWithBrace=${raw.trimEnd().endsWith('}')}`,
       );
       return {
-        verdict: this.failedVerdict('The reviewer did not return a usable verdict.'),
+        verdict: this.failedVerdict(
+          'The reviewer did not return a usable verdict.',
+        ),
         usage,
         parsed: false,
       };
@@ -650,7 +686,9 @@ export class MotivationModelService {
     );
 
     const thinFields = Array.isArray(o.thin_fields)
-      ? o.thin_fields.filter((x): x is string => typeof x === 'string').slice(0, 20)
+      ? o.thin_fields
+          .filter((x): x is string => typeof x === 'string')
+          .slice(0, 20)
       : [];
     const issues = Array.isArray(o.issues)
       ? o.issues
@@ -661,7 +699,8 @@ export class MotivationModelService {
 
     // Written as "below the floor fails", never "above the floor passes", so a
     // zero from a malformed field can only ever fail.
-    const passed = overall >= QUALITY_FLOOR && groundedness >= GROUNDEDNESS_FLOOR;
+    const passed =
+      overall >= QUALITY_FLOOR && groundedness >= GROUNDEDNESS_FLOOR;
 
     return {
       verdict: {

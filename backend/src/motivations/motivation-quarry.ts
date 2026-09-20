@@ -241,7 +241,20 @@ export function quarryFromKey(keys: string): QuarrySpecies[] {
     .filter((q): q is QuarrySpecies => !!q);
 }
 
-/** How the caption names them, in the order they stand. */
+/**
+ * How the caption names them, in the order they stand.
+ *
+ * ⚠️ IT LEADS WITH WHAT THE CARTRIDGE IS FOR. Operator, 2026-09-20: "There
+ * should be a proper indication of this is the species this cartridge is
+ * capable of humanly taking." The old caption read "… — game this cartridge is
+ * commonly used on, shown to scale", which named the animals under a
+ * photograph rather than stating the point. It now says so plainly.
+ *
+ * ⚠️ AND IT STILL CLAIMS NOTHING ABOUT THE APPLICANT. It must never say this
+ * person has hunted one, or intends to: the claim is about the CARTRIDGE, and
+ * a sentence putting the applicant in it would be a statement of fact they are
+ * signing for under section 120(9)(f).
+ */
 export function quarryCaption(species: readonly QuarrySpecies[]): string {
   const names = species.map((q) => q.name);
   if (!names.length) return '';
@@ -249,13 +262,7 @@ export function quarryCaption(species: readonly QuarrySpecies[]): string {
     names.length === 1
       ? names[0]
       : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-  /**
-   * ⚠️ IT NAMES THE ANIMALS AND CLAIMS NOTHING. It must never say this
-   * applicant has hunted one, or intends to: the picture illustrates what the
-   * cartridge is used on, and a sentence putting the applicant in it would be
-   * a statement of fact they are signing for.
-   */
-  return `${list} — game this cartridge is commonly used on, shown to scale.`;
+  return `Species this cartridge is suited to take humanely: ${list} — shown to scale.`;
 }
 
 /**

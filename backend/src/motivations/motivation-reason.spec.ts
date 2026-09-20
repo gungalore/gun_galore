@@ -396,23 +396,46 @@ describe('a role nobody gave us', () => {
     ).toEqual([]);
   });
 
-  it('⚠️ MATCHES ACROSS A RE-WORDING, or every invented role escapes', () => {
+  it('⚠️ MATCHES ACROSS A RE-WORDING, or every false attribution escapes', () => {
     // The arsenal supplies "Howa 6.5 Creedmoor"; the model returns "my Howa
     // rifle in 6.5 Creedmoor". Demanding the strings match would let the whole
-    // rule through on a paraphrase.
+    // rule through on a paraphrase. The source is a DOCUMENTED one, which is
+    // what this now guards: an inferred role is allowed, a claimed document is
+    // not.
     const bad = validateReason(
       result({
         existingRoles: [
           {
             firearm: 'my Howa rifle in 6.5 Creedmoor',
             role: 'precision long-range shooting',
-            source: 'inferred',
+            source: 'endorsement',
           },
         ],
       }),
       ctx({ knownFirearms: five, roleless: ['Howa 6.5 Creedmoor'] }),
     );
     expect(bad.join(' ')).toContain('Howa');
+  });
+
+  it('⚠️ ALLOWS AN INFERRED ROLE — the applicant is never asked for one', () => {
+    // Operator direction, 2026-09-20: the applicant does not sit and think up
+    // reasons for firearms they already own. The model assigns the plausible
+    // role for the firearm's class and marks it "inferred"; only claiming a
+    // source that does not exist is refused.
+    expect(
+      validateReason(
+        result({
+          existingRoles: [
+            {
+              firearm: 'my Howa rifle in 6.5 Creedmoor',
+              role: 'plains-game rifle at moderate ranges',
+              source: 'inferred',
+            },
+          ],
+        }),
+        ctx({ knownFirearms: five, roleless: ['Howa 6.5 Creedmoor'] }),
+      ),
+    ).toEqual([]);
   });
 
   it('⚠️ AND SAYS NOTHING WHEN TWO FIREARMS FIT EQUALLY WELL', () => {
@@ -539,8 +562,12 @@ describe('the paragraph that reached production', () => {
     expect(check()).toContain('section 15/16');
   });
 
-  it('names the invented roles', () => {
-    expect(check()).toContain('nothing on file gives a use for');
+  it('does NOT refuse a role merely for being inferred', () => {
+    // Inferred roles are the design now (operator, 2026-09-20). This paragraph
+    // is still refused — for the defence words on a section 16 firearm, the
+    // USPSA division and the catalogue vocabulary — but the role is not one of
+    // the reasons.
+    expect(check()).not.toContain('nothing on file gives a use for');
   });
 
   it('names the USPSA division', () => {

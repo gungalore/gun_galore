@@ -383,10 +383,7 @@ export function packConsistency(
    * which owns the list and the reasoning.
    */
   const calibre = (answers.firearm_calibre ?? '').trim();
-  if (
-    calibre &&
-    !calibreForms(calibre).some((f) => doc.includes(squash(f)))
-  ) {
+  if (calibre && !calibreForms(calibre).some((f) => doc.includes(squash(f)))) {
     issues.push(
       `The calibre the applicant gave (${calibre}) does not appear in the document.`,
     );
@@ -420,7 +417,9 @@ export function packConsistency(
   // ownedFirearmSerial() reads the current key and both retired ones, and
   // OWNED_ROWS is imported so the range cannot drift from the registry again.
   if (serial) {
-    for (const m of text.matchAll(/Serial\s*(?:Number|No)\.?\s*:?\s*([A-Z0-9-]{4,})/gi)) {
+    for (const m of text.matchAll(
+      /Serial\s*(?:Number|No)\.?\s*:?\s*([A-Z0-9-]{4,})/gi,
+    )) {
       const found = squash(m[1]);
       const owned = Array.from({ length: OWNED_ROWS }, (_, i) => i + 1).some(
         (n) => {

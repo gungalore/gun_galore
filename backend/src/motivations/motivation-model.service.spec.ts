@@ -57,9 +57,7 @@ function llmResponse(
 ): LlmResponse {
   const parts: LlmPart[] =
     typeof reply === 'string' ? [{ type: 'text', text: reply }] : reply;
-  const text = parts
-    .map((p) => (p.type === 'text' ? p.text : ''))
-    .join('');
+  const text = parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
   return {
     text,
     parts,
@@ -259,6 +257,26 @@ describe('MotivationModelService — the quality gate fails CLOSED', () => {
     expect(req.purpose).toBe('motivation.gate');
   });
 
+  it('⚠️ HAS THE PROVIDER ENFORCE THE VERDICT SHAPE', async () => {
+    // The gate used to parse free text and fail closed: a chatty or fenced
+    // reply found no brace and was scored "no usable verdict", which failed a
+    // sound document. The schema makes the shape the provider's job.
+    const { svc, complete } = build(good);
+    await svc.grade(PACK, 'x'.repeat(500));
+    const req = complete.mock.calls[0][0] as any;
+    expect(req.json?.schema).toBeTruthy();
+    expect(req.json.schema.required).toEqual(
+      expect.arrayContaining([
+        'completeness',
+        'specificity',
+        'consistency',
+        'groundedness',
+        'thin_fields',
+        'issues',
+      ]),
+    );
+  });
+
   it('sends no sampling parameters', async () => {
     // They were a 400 on the models this used to run on, every call site fails
     // soft, and the feature silently did nothing for two days. The parameter
@@ -276,16 +294,16 @@ describe('MotivationModelService — the quality gate fails CLOSED', () => {
 describe('generation', () => {
   it('fails SOFT with a retryable message, so no beta seat is burned', async () => {
     const { svc } = build(undefined, new Error('overloaded_error'));
-    await expect(svc.generate(PACK, planFor(PACK.licenceType, 1))).rejects.toThrow(
-      /try again/i,
-    );
+    await expect(
+      svc.generate(PACK, planFor(PACK.licenceType, 1)),
+    ).rejects.toThrow(/try again/i);
   });
 
   it('rejects a document too short to be a motivation', async () => {
     const { svc } = build('Too short.');
-    await expect(svc.generate(PACK, planFor(PACK.licenceType, 1))).rejects.toThrow(
-      /try again/i,
-    );
+    await expect(
+      svc.generate(PACK, planFor(PACK.licenceType, 1)),
+    ).rejects.toThrow(/try again/i);
   });
 
   it('returns text and token usage on success', async () => {
@@ -558,8 +576,13 @@ describe('the overlap direction in the generation prompt', () => {
     const { checkOverlap } = jest.requireActual<
       typeof import('./motivation-overlap')
     >('./motivation-overlap');
-    const note = checkOverlap('.270 Win', [{ calibre: '.308 Win' }]).writerNote!;
-    const p = generationUserPrompt(withNote(note), planFor(PACK.licenceType, 7));
+    const note = checkOverlap('.270 Win', [
+      { calibre: '.308 Win' },
+    ]).writerNote!;
+    const p = generationUserPrompt(
+      withNote(note),
+      planFor(PACK.licenceType, 7),
+    );
     expect(p).toMatch(/RATIONALE, not a fact about the applicant/);
     expect(p).toMatch(/MAY NOT DO IS ASSERT A NEW FACT/);
   });
@@ -585,7 +608,10 @@ describe('the overlap direction in the generation prompt', () => {
   it('says NOTHING when there is no overlap', () => {
     // A document that argues against a problem it does not have is worse than
     // one that stays quiet.
-    const p = generationUserPrompt(withNote(undefined), planFor(PACK.licenceType, 7));
+    const p = generationUserPrompt(
+      withNote(undefined),
+      planFor(PACK.licenceType, 7),
+    );
     expect(p).not.toContain('SOMETHING THIS DOCUMENT MUST ADDRESS');
   });
 });
@@ -620,7 +646,9 @@ describe('the overlap direction in the generation prompt', () => {
 describe('redactToArea', () => {
   it('drops the street and keeps the area', () => {
     expect(
-      redactToArea('36 Sterappel Crescent, Langeberg Glen, Cape Town, Western Cape'),
+      redactToArea(
+        '36 Sterappel Crescent, Langeberg Glen, Cape Town, Western Cape',
+      ),
     ).toBe('Langeberg Glen, Cape Town, Western Cape');
   });
 

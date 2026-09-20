@@ -41,6 +41,7 @@ import {
   SIMILARITY_REGENERATE_THRESHOLD,
 } from './motivation-structure';
 import { type FactPack } from './motivation-prompts';
+import { MotivationReasonService } from './motivation-reason.service';
 import {
   CrimeStatsService,
   precinctFactLines,
@@ -268,6 +269,20 @@ export const REGENERABLE: MotivationStatus[] = [
   MotivationStatus.FAILED,
 ];
 
+/**
+ * Is an automatic reason needed? True when the applicant has not written one.
+ *
+ * ⚠️ THE GUARD THAT DECIDES WHETHER TO SPEND A MODEL CALL. Operator,
+ * 2026-09-20: the applicant "never has to sit and think up reasons for his
+ * current firearms and for the new firearm". A reason they wrote themselves is
+ * theirs and is never regenerated; an empty box is filled from the pack's own
+ * facts before the writer sees them. Exported so this decision is testable
+ * without standing up the whole generation run.
+ */
+export function reasonNeeded(answers: Record<string, string>): boolean {
+  return !(answers.firearm_fit_reason ?? '').trim();
+}
+
 @Injectable()
 export class MotivationGenerationService {
   private readonly logger = new Logger(MotivationGenerationService.name);
@@ -292,6 +307,10 @@ export class MotivationGenerationService {
     private readonly quarryPlates: QuarryPlateService,
     // The member's vault, for the owned-firearm top-up below.
     private readonly prefill: MotivationPrefillService,
+    // The reason paragraph — the comparison the applicant would otherwise have
+    // to write themselves. Generated automatically when absent; see the call in
+    // runGeneration.
+    private readonly reason: MotivationReasonService,
   ) {}
 
   /**
@@ -1037,6 +1056,37 @@ export class MotivationGenerationService {
        */
       const cartridge = await this.cartridgeFor(answers);
 
+      /**
+       * ⚠️ THE APPLICANT IS NEVER ASKED TO WRITE A REASON.
+       *
+       * Operator, 2026-09-20: "the applicant never has to sit and think up
+       * reasons for his current firearms and for the new firearm, we need to
+       * use AI to generate proper good reasons for both cases". If they have
+       * not written one themselves, it is generated here from the pack's own
+       * facts — the firearm applied for, the battery, the licence type and
+       * whatever evidence is on file — and folded into the facts the writer
+       * receives. Failure is not fatal: the writer falls back to composing the
+       * comparison from <arsenal> and the overlap note.
+       */
+      let packAnswers = answers;
+      if (reasonNeeded(answers)) {
+        try {
+          const reason = await this.reason.writeFor(row.userId, row.id);
+          if (reason.written && reason.paragraph) {
+            packAnswers = { ...answers, firearm_fit_reason: reason.paragraph };
+            this.logger.log(
+              `Motivation ${row.id}: reason generated automatically (${reason.angle})`,
+            );
+          }
+        } catch (err) {
+          this.logger.warn(
+            `Motivation ${row.id}: automatic reason generation skipped — ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
+
       const pack: FactPack = {
         licenceType: row.licenceType,
         /**
@@ -1052,8 +1102,8 @@ export class MotivationGenerationService {
          * give. `packConsistency` knows about both forms.
          */
         answers: {
-          ...answers,
-          firearm_calibre: displayCalibre(answers.firearm_calibre),
+          ...packAnswers,
+          firearm_calibre: displayCalibre(packAnswers.firearm_calibre),
         },
         arsenal,
         intendedUses,

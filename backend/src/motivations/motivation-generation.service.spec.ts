@@ -2,6 +2,7 @@ import { MotivationStatus } from '@prisma/client';
 import {
   REGENERABLE,
   STALE_GENERATION_MS,
+  reasonNeeded,
 } from './motivation-generation.service';
 
 // ────────────────────────────────────────────────────────────────────
@@ -59,5 +60,22 @@ describe('⚠️ WHAT MAY BE CLAIMED', () => {
     // An admin voided it, or the member walked away. Regenerating would spend
     // money on a document nobody is waiting for.
     expect(REGENERABLE).not.toContain(MotivationStatus.ABANDONED);
+  });
+});
+
+describe('the automatic reason', () => {
+  // ⚠️ THE APPLICANT IS NEVER ASKED TO WRITE ONE. Operator, 2026-09-20. The
+  // reason is generated from the pack's own facts when the box is empty, so
+  // the guard has to fire exactly when there is nothing there.
+  it('is needed when the applicant wrote nothing', () => {
+    expect(reasonNeeded({})).toBe(true);
+    expect(reasonNeeded({ firearm_fit_reason: '' })).toBe(true);
+    expect(reasonNeeded({ firearm_fit_reason: '   ' })).toBe(true);
+  });
+
+  it('is NOT needed when the applicant wrote one', () => {
+    expect(
+      reasonNeeded({ firearm_fit_reason: 'The low recoil suits my practice.' }),
+    ).toBe(false);
   });
 });

@@ -382,6 +382,10 @@ function build(
     // every generation; these tests assert on drafts, and an empty vault is
     // the state every one of them was written against.
     { credentialsFor: async () => [] } as never,
+    // ⚠️ A REASON THAT WRITES NOTHING. The automatic reason runs before the
+    // pack is built when `firearm_fit_reason` is empty; a stub returning
+    // not-written keeps these tests on the writer path they were written for.
+    { writeFor: async () => ({ written: false }) } as never,
   );
   const render = new MotivationRenderService(
     prisma as never,

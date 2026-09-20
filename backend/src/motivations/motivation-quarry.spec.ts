@@ -156,10 +156,11 @@ describe('the caption', () => {
   });
 
   it('reads properly for one animal and for two', () => {
-    expect(quarryCaption([quarryByKey('kudu')!])).toMatch(/^Kudu —/);
-    expect(
-      quarryCaption([quarryByKey('kudu')!, quarryByKey('impala')!]),
-    ).toMatch(/^Kudu and Impala —/);
+    const one = quarryCaption([quarryByKey('kudu')!]);
+    expect(one).toMatch(/^Species this cartridge is suited to take humanely:/);
+    expect(one).toContain('Kudu');
+    const two = quarryCaption([quarryByKey('kudu')!, quarryByKey('impala')!]);
+    expect(two).toContain('Kudu and Impala');
   });
 
   it('is empty when there is nothing to name', () => {
