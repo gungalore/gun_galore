@@ -1163,6 +1163,11 @@ const RUNNING_LABELS: Record<string, string> = {
     'Why section 13 is not enough',
   'What I already do and where it stops': 'Existing measures',
   'How I have used this firearm since it was licensed': 'Use since licensing',
+  // ⚠️ THE PAJA LETTER'S BANNER CLIPPED MID-WORD. "REQUEST FOR PRIOR NOTICE AND
+  // WRITTEN REASO…" ran on the pages a DFO reads most closely; it is a fixed
+  // page, so it gets a fixed short form too.
+  'Request for prior notice and written reasons': 'Prior notice request',
+  Annexures: 'Annexures',
 };
 
 /** The banner label for a heading — its short form, with the number stripped. */
@@ -1170,6 +1175,16 @@ export function runningLabelFor(heading: string): string {
   const title = heading.replace(/^\d{1,2}(?:\.\d+)?\.?\s*/, '').trim();
   // The cartridge feature's banner reads "The cartridge", not the calibre.
   if (/^the cartridge\b/i.test(title)) return 'The cartridge';
+  /**
+   * ⚠️ AN ANNEXURE'S BANNER IS THE LETTER, NOT THE TITLE. Annexure headings are
+   * built as "Annexure C - Proficiency / training certificate (3 items; usually
+   * asked)" and none of them is short enough for the ~40-character banner, so
+   * every annexure page read "ANNEXURE C - PROFICIENCY / TRAINING CERTIFIC…".
+   * The letter alone is what a reader thumbing the pack is looking for; the
+   * full title is on the index and printed over the copy itself.
+   */
+  const annexure = /^Annexure\s+([A-Za-z])\b/.exec(title);
+  if (annexure) return `Annexure ${annexure[1].toUpperCase()}`;
   return RUNNING_LABELS[title] ?? title;
 }
 
@@ -2264,6 +2279,21 @@ export class MotivationPdfService {
        * heading row is the part with no room to wrap; the cells wrap freely and
        * the row grows to the tallest of them.
        */
+      /**
+       * ⚠️ THE PURPOSE COLUMN IS DROPPED WHEN NOTHING CARRIES A PURPOSE. `status`
+       * is the licence's "licensed for" value and is blank on every row until an
+       * endorsement or the member's own answer fills it (motivation-arsenal.ts).
+       * The old fixed seven-column table printed a column of em-dashes, which
+       * reads as a failed lookup rather than as a fact we hold. A blank column
+       * is worse than no column; the data policy ("say nothing where nothing was
+       * stated") is not changed by dropping the space that would have said it.
+       *
+       * Widths still sum to contentWidth by construction — the last column takes
+       * whatever the fixed ones leave.
+       */
+      const hasPurpose = owned.some((f) =>
+        String(f.status ?? '').trim(),
+      );
       const cols: {
         head: string;
         w: number;
@@ -2274,9 +2304,16 @@ export class MotivationPdfService {
         { head: 'Calibre', w: 68, key: 'calibre' },
         { head: 'Serial', w: 74, key: 'serial' },
         { head: 'Section', w: 46, key: 'section' },
-        { head: 'Purpose', w: 62, key: 'status' },
-        { head: 'Expires', w: contentWidth - 398, key: 'expiry' },
+        ...(hasPurpose
+          ? [{ head: 'Purpose', w: 62, key: 'status' as const }]
+          : []),
+        // Width assigned below from the room the fixed columns leave.
+        { head: 'Expires', w: 0, key: 'expiry' },
       ];
+      const fixedWidth = cols
+        .slice(0, -1)
+        .reduce((sum, col) => sum + col.w, 0);
+      cols[cols.length - 1].w = contentWidth - fixedWidth;
 
       const headTop = doc.y;
       doc.rect(MARGIN, headTop, contentWidth, 20).fill(C.band);
@@ -3618,6 +3655,78 @@ export class MotivationPdfService {
         doc.y += K.mm(3.5);
       }
 
+      /**
+       * ⚠️ A REQUIRED DOCUMENT THAT IS ABSENT IS A ROW IN THE TABLE, NOT A NOTE
+       * UNDER IT. The index is the sheet a DFO reads down while checking a
+       * folder and the applicant reads while assembling one; a required letter
+       * mentioned in a paragraph below the table is exactly the line that gets
+       * skimmed. It gets a row, a dash for its tab, and the same REQUIRED pill
+       * the certified copies carry — so every required document, present or not,
+       * is accounted for in one column.
+       */
+      if (input.missingDocuments?.length) {
+        doc.y += K.mm(2);
+        K.label(
+          chrome,
+          'Required — still to be attached',
+          MARGIN,
+          doc.y,
+          contentWidth,
+        );
+        doc.y += K.px(8.5) * 1.2 + K.mm(2);
+        for (const label of input.missingDocuments) {
+          doc.font(B.body).fontSize(K.px(13));
+          const need =
+            doc.heightOfString(label, { width: labelW, lineGap: K.px(2) }) +
+            K.mm(6);
+          if (doc.y + need > K.BODY_BOTTOM) {
+            doc.addPage();
+            doc.y = K.BODY_TOP;
+            drawTableHead(true);
+          }
+          const y = doc.y;
+          doc
+            .font(F.sansBold)
+            .fontSize(K.px(11))
+            .fillColor(C.deep)
+            .text('—', MARGIN, y + 1, { width: letterW, lineBreak: false });
+          doc
+            .font(B.body)
+            .fontSize(K.px(13))
+            .fillColor(C.ink)
+            .text(label, MARGIN + letterW, y, {
+              width: labelW,
+              lineGap: K.px(2),
+            });
+          const rowBottom = Math.max(doc.y, y + K.px(13) * 1.3);
+          const cx = MARGIN + contentWidth - certW;
+          const h = K.mm(5.4);
+          doc
+            .roundedRect(cx, y, certW, h, h / 2)
+            .lineWidth(0.8)
+            .fillAndStroke(C.band, C.deep);
+          doc
+            .font(F.sansBold)
+            .fontSize(K.px(8))
+            .fillColor(C.deep2)
+            .text('REQUIRED', cx, y + K.mm(1.5), {
+              width: certW,
+              align: 'center',
+              characterSpacing: K.px(8) * 0.12,
+              lineBreak: false,
+            });
+          doc.x = MARGIN;
+          doc.y = rowBottom + K.mm(3);
+          doc
+            .moveTo(MARGIN, doc.y)
+            .lineTo(MARGIN + contentWidth, doc.y)
+            .lineWidth(0.5)
+            .strokeColor(C.hair)
+            .stroke();
+          doc.y += K.mm(3.5);
+        }
+      }
+
       // The distinction, stated once.
       if (input.annexures.some((a) => a.certification !== 'none')) {
         doc.y += K.mm(2);
@@ -3675,28 +3784,10 @@ export class MotivationPdfService {
         }
       }
 
-      // ⚠️ AND NAME WHAT IS REQUIRED BUT ABSENT. A required document the
-      // applicant has not uploaded at all — the letter of good standing on a
-      // section 16, most often — used to leave no trace on this page. It is not
-      // a refusal: the pack still prints, and the line tells the applicant what
-      // to bring and the DFO that it was not withheld.
-      if (input.missingDocuments?.length) {
-        doc.moveDown(0.6);
-        doc
-          .font(FONT_BOLD)
-          .fontSize(9.5)
-          .fillColor(REQUIRED_RED)
-          .text('Still to be attached — required, and not yet in this pack:', {
-            width: contentWidth,
-          });
-        for (const label of input.missingDocuments) {
-          doc
-            .font(FONT)
-            .fontSize(9.5)
-            .fillColor(GREY)
-            .text(`•  ${label}`, { width: contentWidth, indent: 12 });
-        }
-      }
+      // ⚠️ THE REQUIRED-BUT-ABSENT DOCUMENTS ARE ROWS IN THE INDEX NOW, not a
+      // bullet list under it — see the block inside the table above. This used
+      // to print a red "Still to be attached" caption here, which the eye
+      // skimmed past on the way to the annexures.
     }
 
     // ── The copies themselves ─────────────────────────────────────────
@@ -4319,6 +4410,28 @@ export class MotivationPdfService {
         .text(
           'The last sheets are yours rather than the Registrar’s: a checklist ' +
             'of what to take with you to the police station.',
+          MARGIN,
+          doc.y,
+          { width: contentWidth, lineGap: K.px(2) },
+        );
+      /**
+       * ⚠️ THE GAPS ARE DELIBERATE, AND THE CONTENTS NEVER SAID SO. The headings
+       * are numbered to the SAPS 271's own sections and do NOT re-sequence when a
+       * section is omitted (motivation-structure.ts). Read cold, "1 · Introduction
+       * … 3 · My hunting … 11 ·" looks like pages were lost. The line below is the
+       * explanation the reader would otherwise have to guess at — and it is what
+       * lets the gaps do their job (showing at a glance that heading 2, 4 or 10
+       * does not apply) instead of reading as an error.
+       */
+      doc.y += K.mm(4);
+      doc
+        .font(F.sans)
+        .fontSize(K.px(9.5))
+        .fillColor(C.mut)
+        .text(
+          'Headings are numbered to the SAPS 271 and do not renumber when a part ' +
+            'does not apply. A gap — 2, 4 or 10 — means that part is not required ' +
+            'for this application.',
           MARGIN,
           doc.y,
           { width: contentWidth, lineGap: K.px(2) },

@@ -246,6 +246,21 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * 118/117/118/118/118/112), which is the signature of one shared block added
  * to all six, not a per-type change.
  */
+/**
+ * ⚠️ RE-BASELINED ON 2026-09-20 — the wrong-copy pass on a real pack.
+ *
+ * Three briefs were tightened after reviewing a rendered MO000002: the
+ * `held_firearms` brief now forbids restating the section twice and repeating an
+ * earlier list; the `storage_safety` brief now forbids pasting the option-card
+ * labels into one ungrammatical sentence; and system rule 6 now asks for
+ * measurements in figures and names "manoeuvrability" and "diameter". Only the
+ * first two reach the USER message, so only its hashes move.
+ *
+ * ⚠️ EVERY LINE COUNT IS UNCHANGED (118/117/118/118/118/112) — the signature of
+ * a rewording inside existing lines, not an added block. The system-prompt edit
+ * does not appear here at all: this identity is the user message, and the system
+ * prompt is sent separately.
+ */
 const BEFORE_THE_REORDER: Record<
   MotivationLicenceType,
   { lines: number; sha: string }
@@ -275,27 +290,27 @@ const BEFORE_THE_REORDER: Record<
    */
   S14_RESTRICTED_SELF_DEFENCE: {
     lines: 117,
-    sha: 'a563ffdd84d54232683c6c08f43efd079b2582d9e3a41e93acba473d21af3d82',
+    sha: 'cfa57983b9af2186a4e6064a194b680c013ef2fd6ebbebef56637fc9c9227407',
   },
   S13_SELF_DEFENCE: {
     lines: 118,
-    sha: '4b7659109479796728ac958264e466644d934b1ae60874b38ca7e53570b826fe',
+    sha: 'b9dc337677378cba6c2aa972999beb97ad5c9c062e14d3c1e45c6def2063dfcd',
   },
   S15_OCCASIONAL_HUNTER: {
     lines: 118,
-    sha: 'cdcb45f25197fed8d4759406ff5e5f8fb8fa482b7c807e523143c059fdb89bea',
+    sha: '1888243577c748dfdbc78f27530a26a129cd2a991a3e05d83e67bb768fe6564d',
   },
   S16_DEDICATED_HUNTER: {
     lines: 118,
-    sha: '53c09733204ca9b92bcb6726c27113d3b9d92ba73f95a854b6e0cdca84ec44ab',
+    sha: 'f8d08d0cc672b1e701ffe79bd2d35e4bf11f1f57a923d16a13e1ef70ebe158a8',
   },
   S16_DEDICATED_SPORT: {
     lines: 118,
-    sha: 'a1990b119935bc6f9fc5eaeb0a8c42f50ac2c57c4b4d60c6c07af1124dd8dbd7',
+    sha: '93768594e9f77638b8d36460b75f0a98f1f8ee8a7adf0f5cae47c8e55196d263',
   },
   S24_RENEWAL: {
     lines: 112,
-    sha: 'ce3d52eec6d9601c85f13488993fd63fb8cd1ac9c73b27d4e3a9383618766b43',
+    sha: '7492a75586d581b8873ef2a225ba7def0f6d5eccc633f9c5bacf1aa9913510d8',
   },
 };
 

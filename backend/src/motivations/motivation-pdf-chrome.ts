@@ -533,9 +533,30 @@ const MARK_LIGHT_FILE = 'all-outdoor-mark-light.png';
 const LOGO_ASPECT = 600 / 392;
 export const MARK_ASPECT = 538 / 308;
 export const LOCKUP_ASPECT = LOGO_ASPECT;
+/**
+ * The watermark words asset, 2104 x 268. Regenerate the PNG and this number
+ * together — a mismatch scales the mark's height only, which reads as a subtly
+ * wrong watermark rather than a failure.
+ */
+export const WORDS_ASPECT = 2104 / 268;
 
 /** What the mark says, in one place so the renderer and its spec agree. */
 export const WATERMARK_TEXT = 'NOT FOR USE';
+
+/**
+ * ⚠️ THE WORDS ARE AN IMAGE, NOT GLYPHS. MOTIVATION-GUIDE-BOOK Part 14 and the
+ * S13 output review both forbid a text-layer watermark: any text tool (and any
+ * DFO who copies a line out of the PDF) reads "NOT FOR USE" as stray capitals
+ * interleaved into the applicant's prose. Drawn as running text, this mark put
+ * "NOT FOR USE" into the text layer twice on every page.
+ *
+ * The asset is Archivo-Bold, black on transparent, generated from the same face
+ * the document uses and placed at the same size the text run occupied, so the
+ * page looks unchanged while the text layer holds nothing but the document.
+ * Regenerate it with the same letter-spacing if the mark's wording ever
+ * changes. See `all-outdoor-watermark-words.png`.
+ */
+const WORDS_FILE = 'all-outdoor-watermark-words.png';
 
 /**
  * ⚠️ LIGHT ENOUGH TO READ THROUGH, HEAVY ENOUGH TO SEE. The whole reason an
@@ -662,6 +683,7 @@ export function watermark({ doc, f }: Chrome): void {
   const logoH = logoW / LOGO_ASPECT;
   const gap = mm(8);
   const logo = logoPath();
+  const wordsImage = assetPath(WORDS_FILE);
 
   doc.save();
   // ⚠️ -55° IS A4's OWN DIAGONAL, not a taste. atan(297/210) is 54.7°, so the
@@ -682,7 +704,28 @@ export function watermark({ doc, f }: Chrome): void {
   const textW = doc.widthOfString(WATERMARK_TEXT, {
     characterSpacing: tracking,
   });
+  /**
+   * ⚠️ THE IMAGE PATH KEEPS THE GLYPHS OUT OF THE TEXT LAYER. The text fallback
+   * runs only where the asset is missing (a build that skipped backend/assets),
+   * and it is deliberately the ugly behaviour rather than no mark at all: an
+   * unsigned pack still has to say it is unsigned. A deploy that ships the asset
+   * — which is every normal one — never reaches it.
+   */
   const words = (atY: number) => {
+    if (wordsImage) {
+      const imgH = textW / WORDS_ASPECT;
+      // ⚠️ CENTRED IN THE OLD LINE BOX. The text run was drawn from atY with
+      // pdfkit's ascent offset; the image is a tight glyph box, so it is centred
+      // in the same line height to land where the words used to.
+      doc
+        .fillOpacity(WATERMARK_OPACITY)
+        .image(wordsImage, cx - textW / 2, atY + (lineH - imgH) / 2, {
+          width: textW,
+          height: imgH,
+        })
+        .fillOpacity(1);
+      return;
+    }
     doc
       .fillColor(WATERMARK_INK)
       .fillOpacity(WATERMARK_OPACITY)

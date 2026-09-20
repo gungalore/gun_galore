@@ -349,7 +349,7 @@ describe('the unpaid mark', () => {
         .match(/\/Type\s*\/Pages[\s\S]{0,200}?\/Count\s+(\d+)/)?.[1] ?? 0,
     );
 
-  it('stamps every page and adds none', async () => {
+  it('stamps every page, adds none, and leaves the text layer clean', async () => {
     // ⚠️ THE PAGE COUNT IS THE POINT OF THIS TEST. pdfkit answers anything
     // drawn below the bottom margin by starting a fresh page and drawing
     // there, so a mark through the middle of an A4 is one careless option away
@@ -361,13 +361,15 @@ describe('the unpaid mark', () => {
     expect(pageCount(clean.pdf)).toBeGreaterThan(2);
     expect(pageCount(marked.pdf)).toBe(pageCount(clean.pdf));
 
-    // Twice per page: the words are set above the logo and below it.
-    // squash() because the mark is tracked, and pdfkit positions every glyph
-    // of a letter-spaced run separately — the spaces are geometry, not
-    // characters, and never reach the text stream.
+    // ⚠️ AND NO WATERMARK GLYPHS IN THE TEXT LAYER — THE REVERSE OF WHAT THIS
+    // ONCE ASSERTED. The words are a raster now
+    // (all-outdoor-watermark-words.png). Drawn as a text run they came out of
+    // any text tool as stray capitals interleaved into the applicant's prose,
+    // on every page, twice; MOTIVATION-GUIDE-BOOK Part 14 and the S13 output
+    // review both forbid that. The mark is carried by images, so the text
+    // stream must hold none of it.
     const { text } = await readPdfAsync(marked.pdf);
-    const said = squash(text).split(squash(WATERMARK_TEXT)).length - 1;
-    expect(said).toBe(pageCount(marked.pdf) * 2);
+    expect(squash(text)).not.toContain(squash(WATERMARK_TEXT));
   });
 
   it('embeds the logo ONCE, however many pages carry it', async () => {
