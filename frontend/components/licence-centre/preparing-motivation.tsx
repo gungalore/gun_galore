@@ -36,7 +36,7 @@ export default function PreparingMotivation() {
         width={177}
         height={30}
         priority
-        className="mx-auto h-auto w-[177px]"
+        className="mx-auto"
       />
       <p className="m-0 mt-5 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.25] text-[var(--text-primary)]">
         Preparing your motivation
