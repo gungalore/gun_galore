@@ -19,6 +19,7 @@ import { ProfileSetupPrompt } from '@/components/profile-setup-prompt';
 import { ProfileCompleteNudge } from '@/components/profile-complete-nudge';
 import { WishlistProvider } from '@/lib/use-wishlist';
 import { WelcomeBanner } from '@/components/welcome-banner';
+import { TrustGuaranteeModal } from '@/components/trust-guarantee-modal';
 import './globals.css';
 
 // Inline script that runs BEFORE first paint and:
@@ -377,6 +378,10 @@ export default function RootLayout({
           {/* SMS-arrival welcome banner — self-gates: renders only when the
               URL carries an active campaign key (?c=KEY), once per session. */}
           <WelcomeBanner />
+          {/* Safe Trade Guarantee pop-up — self-gates on the URL query
+              param (?why=alloutdoor / ?guarantee=true) and renders null
+              otherwise. Attach the param to any URL to open it. */}
+          <TrustGuaranteeModal />
           </WishlistProvider>
         </body>
       </html>
