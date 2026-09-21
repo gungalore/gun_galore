@@ -31,12 +31,16 @@ describe("the operator's example", () => {
     expect(r.verdict.kind).toBe('overlap');
     expect(r.needsJustification).toBe(true);
     expect(r.prompt).toMatch(/medium plains game/);
-    // ⚠️ WHAT WE SAY TO THE APPLICANT IS AN OFFER, NOT A TASK. It used to end
-    // "the application should say plainly why you need both... What does this
-    // one do that the other cannot?" — homework, on the page of someone who
-    // is paying us to write the argument.
+    // ⚠️ WHAT WE SAY TO THE APPLICANT IS A STATEMENT, NOT A TASK. It used to
+    // end "the application should say plainly why you need both... What does
+    // this one do that the other cannot?" — homework, on the page of someone
+    // paying us to write the argument. Then it offered "if there is a
+    // particular reason of your own... add it below", and THAT box is gone
+    // too (2026-09-20): the writer builds the reason itself, so there is
+    // nothing to add and nothing to promise.
     expect(r.prompt).toMatch(/we write that argument for you/i);
-    expect(r.prompt).toMatch(/if there is a particular reason of your own/i);
+    expect(r.prompt).not.toMatch(/particular reason of your own/i);
+    expect(r.prompt).not.toMatch(/add it below/i);
     expect(r.prompt).not.toMatch(/why you need both/i);
     if (r.verdict.kind === 'overlap') {
       expect(r.verdict.quarry).toBe('medium_game');
@@ -75,8 +79,11 @@ describe("the operator's example", () => {
     expect(r.writerNote).toMatch(/never write that no\s+reason was given/i);
     expect(r.writerNote).toMatch(/MAY NOT DO IS ASSERT A NEW FACT/);
     expect(r.writerNote).toMatch(/never\s+suggest the overlap does not matter/i);
-    // And where the applicant DID write something, it leads.
-    expect(r.writerNote).toMatch(/LEAD WITH IT/);
+    // ⚠️ AND THE APPLICANT IS NOT ASKED FOR A REASON ANY MORE. Their box was
+    // retired on 2026-09-20 — the writer does this thinking, so there is no
+    // "lead with their reason" clause and no reason field to fill.
+    expect(r.writerNote).toMatch(/NOT ASKED FOR A REASON/);
+    expect(r.writerNote).not.toMatch(/LEAD WITH IT/);
   });
 });
 

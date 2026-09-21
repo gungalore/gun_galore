@@ -534,7 +534,6 @@ export class MotivationReasonService {
       'hunt_game_class',
       'hunt_where',
       'sport_reasons',
-      'overlap_angle',
     ]
       .map((k) => a(k))
       .filter(Boolean)

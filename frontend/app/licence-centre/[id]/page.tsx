@@ -807,19 +807,9 @@ export default function LicenceCentreSheetPage() {
         item={i}
         onChange={(v) => onChange(i.key, v)}
         onConfirm={() => onConfirm(i)}
-        /*
-          ⚠️ ONE CONTROL FOR overlap_angle, NOT TWO. OverlapCard rendered this
-          question near the top of the section with its own copy of the tiles,
-          writing the same key, while the registry row rendered them again lower
-          down — so the sheet asked one question twice under two headings and
-          the operator could not tell them apart. The registry row won: it is
-          the only one carrying the own-words box, and it sits where the section
-          says it should rather than "popping up" beside an unrelated answer.
-          Its prompt — "You already hold a CZ 75 in 9mm" — comes across here.
-        */
-        prompt={
-          i.key === 'overlap_angle' ? sheet.overlap.prompt : undefined
-        }
+        // ⚠️ THE overlap_angle PROMPT PROP IS GONE WITH THE FIELD (2026-09-20).
+        // There is no reason card for the applicant to answer, so there is no
+        // overlap prompt to hang above one.
         ownWords={i.ownWordsKey ? byKey.get(i.ownWordsKey) : undefined}
         onOwnWordsChange={
           i.ownWordsKey ? (v) => onChange(i.ownWordsKey as string, v) : undefined

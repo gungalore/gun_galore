@@ -270,20 +270,18 @@ export function buildPreview(
     ),
   );
 
-  // ── What they already hold, and how this one differs ────────────
+  // ── What they already hold ──────────────────────────────────────
+  //
+  // ⚠️ NO "HOW THIS ONE DIFFERS" LINE ANY MORE. The overlap reason cards and
+  // the own-words box were retired on 2026-09-20; the writer builds that
+  // argument from the pack's own facts, so there is nothing tapped to preview.
   const owned = ownedLines(answers);
-  const angles = cardSentences(answers, 'overlap_angle');
   out.push(
     section(
       'held_firearms',
       'Firearms I already own',
       'The firearms on your licences, with what each one is for.',
-      [
-        owned.length ? `I already hold ${list(owned)}.` : null,
-        ...angles,
-        val(answers, 'overlap_justification'),
-      ],
-      angles,
+      [owned.length ? `I already hold ${list(owned)}.` : null],
     ),
   );
 

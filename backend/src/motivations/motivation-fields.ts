@@ -9,7 +9,6 @@ import {
   HUNT_TERRAIN,
   FIREARM_USE_KIND,
   HUNT_WHERE,
-  OVERLAP_ANGLES,
   OWNED_SECTION_HELD,
   PRIMARY_USE,
   S13_CARRY_STYLE,
@@ -193,11 +192,15 @@ export const SOURCE_ESTATE = 'Inherited from a deceased estate';
 export const COMPETENCY_RENEWS_KEY = 'competency_renews_with_licence';
 
 /**
- * The confirmed overlap angle — "this one will be my ___".
+ * The retired overlap angle — "this one will be my ___".
  *
- * Named because three modules reach for it: the registry declares it,
- * motivation-overlap.ts ranks its options, and the sheet renders it as a card
- * under the source row. See OVERLAP_ANGLES for the wording.
+ * ⚠️ RETIRED FROM THE WIZARD ON 2026-09-20, AND THE KEY IS KEPT FOR READING, NOT
+ * FOR ASKING. Operator: "this needs to go. the writer must think of reasons
+ * itself." The applicant is no longer shown the reason cards: the writer builds
+ * the "why this one as well as the ones you hold" argument from the facts
+ * already in the pack (see ARGUE_IT in motivation-overlap.ts). The key survives
+ * only so stored drafts holding an answer can still be recognised; it is no
+ * longer a registry field, so it never reaches the writer or the sheet.
  */
 export const OVERLAP_ANGLE_KEY = 'overlap_angle';
 
@@ -1543,35 +1546,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     maxLength: 60,
   },
   {
-    // ⚠️ THE ANSWER THAT USED TO BE AN EMPTY TEXTAREA ON STEP 3.
-    //
-    // "You already hold a CZ 75 in 9mm — what will this one be?" is the
-    // question that gets a second similar firearm refused, and the Registrar
-    // asks it whether or not we raised it first. It arrived as
-    // `overlap_justification`, a blank long box titled "overlap
-    // justification", and almost nobody filled it in.
-    //
-    // ⚠️ THE OPTIONS ARE RANKED BY motivation-overlap.ts, NOT LISTED HERE. The
-    // vocabulary is fixed (OVERLAP_ANGLES) so allowedValues can validate a
-    // stored answer; which of them are offered, and in what order, comes from
-    // the type, action, calibre class and section of what is already held.
-    //
-    // Never required: an applicant who holds nothing has no overlap to
-    // explain, and the sheet does not render the card at all in that case.
-    key: OVERLAP_ANGLE_KEY,
-    // ⚠️ TOLD APART FROM THE OWNED-FIREARM SET ON PURPOSE. Both read "What
-    // this one will be" / "What it is for" and both sat in the firearm area,
-    // and the operator could not tell which was which: "There is two What this
-    // one will be. One at the bottom and one that pops up." One is about the
-    // firearm being APPLIED FOR against the ones already held; the other is
-    // about a firearm already held. The labels now say which.
-    label: 'Why this one as well as the ones you hold',
-    kind: 'cards',
-    section: 'The firearm',
-    options: OVERLAP_ANGLES,
-    help: 'Tap whichever of these are true. We use them to explain how this firearm differs from the ones you already hold.',
-  },
-  {
     // ⚠️ OPTIONAL SINCE 2026-09-08, AND PREFILLED. It was `required` and it was
     // the largest single reason an application stalled: it asked the applicant
     // to write the argument the product exists to write for them, about a
@@ -2147,26 +2121,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     maxLength: 200,
   },
   ...OWNED_FIREARM_FIELDS,
-  {
-    key: 'overlap_justification',
-    label: 'Anything you want us to lead with (optional)',
-    kind: 'long',
-    section: 'Firearms you already own',
-    // ⚠️ OFFERED, NEVER DEMANDED — and it used to be demanded. It was shown
-    // only when the overlap check fired, and if it was left empty the gate
-    // queued it as a follow-up question. Operator, 2026-08-22: "Questions like
-    // this should not be asked unless there is critical information needed
-    // that would compromise the motivation. It is the job of the AI to do
-    // research as to why the applicant would need this firearm and justify it
-    // for them."
-    //
-    // So the writer now argues the comparison itself, out of facts already in
-    // the pack (see ARGUE_IT in motivation-overlap.ts), and this box exists
-    // only for an applicant who has a reason of their own that beats any
-    // inference. Never required, never a question.
-    help: 'We argue this for you from the rest of your application. If there is a reason of your own — what this one does that the other cannot, in ranges, terrain, quarry or discipline — put it here and your motivation will lead with it.',
-    maxLength: 2000,
-  },
 
   // ── the rest of what the SAPS 271 asks and we did not collect ─────
   {

@@ -172,21 +172,14 @@ describe('cards and the registry agree', () => {
 });
 
 describe('the overlap angles', () => {
-  it('are a fixed vocabulary the registry can validate against', () => {
-    // ⚠️ RANKED PER APPLICANT, BUT NEVER INVENTED PER APPLICANT.
-    // motivation-overlap.ts reorders these; it may not add to them. A set
-    // computed per applicant could not be checked on save at all.
-    const field = fieldsFor(MotivationLicenceType.S16_DEDICATED_SPORT).find(
-      (f) => f.key === OVERLAP_ANGLE_KEY,
-    )!;
-    expect(field.kind).toBe('cards');
-    expect(allowedValues(field)).toEqual(OVERLAP_ANGLES.map((o) => o.key));
-  });
-
-  it('is never required — somebody who holds nothing has no overlap', () => {
+  it('⚠️ ARE NO LONGER A WIZARD FIELD — the writer argues the overlap', () => {
+    // Retired 2026-09-20: the applicant is not asked to pick a reason; the
+    // writer builds the distinction from the pack's own facts. The vocabulary
+    // stays in motivation-cards.ts only because motivation-overlap.ts ranks it
+    // internally — it is no longer offered anywhere, so it must not appear in
+    // any licence type's registry.
     for (const t of Object.values(MotivationLicenceType)) {
-      const field = fieldsFor(t).find((f) => f.key === OVERLAP_ANGLE_KEY);
-      if (field) expect(field.required).toBeUndefined();
+      expect(fieldsFor(t).some((f) => f.key === OVERLAP_ANGLE_KEY)).toBe(false);
     }
   });
 });

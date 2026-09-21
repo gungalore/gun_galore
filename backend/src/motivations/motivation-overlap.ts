@@ -723,10 +723,15 @@ export interface OverlapOptions {
  * the calibre and the type test fire, the applicant used to be told twice in
  * consecutive sentences that a reviewer would see both firearms.
  */
+/**
+ * ⚠️ THE "ADD IT BELOW" PROMISE IS GONE WITH THE BOX. There is no reason field
+ * for the applicant to fill any more — the whole point of the 2026-09-20
+ * change is that the writer builds the argument itself — so promising to lead
+ * with a reason they were never asked for would be a lie on the page.
+ */
 const OFFER_TAIL = [
   'A reviewer will see both on your licence record, so your motivation deals with it head-on — we write',
-  'that argument for you from the rest of your application. If there is a particular reason of your own —',
-  'what this one does that the other cannot — add it below and we will lead with it.',
+  'that argument for you from the rest of your application.',
 ].join(' ');
 
 /**
@@ -759,9 +764,9 @@ const ARGUE_IT = [
   'build — from the licence type applied for, the purpose stated, the disciplines or quarry named, the',
   'ranges, ground and conditions described, the experience and record supplied, and what each firearm is',
   'chambered for and therefore suited to. Reason it out and state it plainly.',
-  'Where the applicant gave a reason of their own, LEAD WITH IT and build around it — their reason is',
-  'better evidence than any inference of yours. Where they gave none, argue it anyway: never write that no',
-  'reason was given, and never leave the objection standing.',
+  '⚠️ THE APPLICANT IS NOT ASKED FOR A REASON AND NONE WILL BE HANDED TO YOU. The reason cards were',
+  'removed on purpose so that you, not they, do this thinking. Argue it anyway: never write that no reason',
+  'was given, and never leave the objection standing.',
   '⚠️ WHAT YOU MAY NOT DO IS ASSERT A NEW FACT to make the argument work — a firearm they do not own, a',
   'discipline they did not name, an event that did not happen. Argue from what is in the pack, and never',
   'suggest the overlap does not matter.',

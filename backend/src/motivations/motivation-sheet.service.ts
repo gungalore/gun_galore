@@ -16,13 +16,11 @@ import {
   fieldsFor,
   isVisible,
   missingRequired,
-  OVERLAP_ANGLE_KEY,
   ownedFirearmSerial,
   ownedRowTaken,
 } from './motivation-fields';
 import { ServedField, expandFields } from './motivation-field-options';
 import { UPLOAD_KIND_LABELS, buildAnnexures } from './motivation-checklist';
-import { overlapAnglesFor } from './motivation-cards';
 import { documentStatus } from './motivation-documents';
 import { requiredEndorsement } from './motivation-eligibility';
 import {
@@ -394,7 +392,6 @@ const OWN_WORDS: Record<string, string> = {
   hunt_game_class: 'intended_quarry',
   hunt_where: 'hunting_locations',
   sport_reasons: 'competition_record',
-  overlap_angle: 'overlap_justification',
 };
 
 @Injectable()
@@ -418,25 +415,8 @@ export class MotivationSheetService {
     field: MotivationField,
     answers: Record<string, string>,
     provenance: ProvenanceMap,
-    overlap: ReturnType<typeof overlapFromAnswers>,
   ): SheetItemState {
     if (!isVisible(field, answers)) return 'na';
-    /**
-     * ⚠️ NEVER ASK SOMEBODY WHY THEY WANT THIS ONE "AS WELL" WHEN THEY HOLD
-     * NOTHING. The overlap question exists to answer a Registrar who has
-     * noticed the applicant already owns something similar; put in front of a
-     * first-time applicant it invents a difficulty to argue against and implies
-     * they hold firearms they do not.
-     *
-     * OverlapCard used to carry this rule by rendering itself away — "⚠️
-     * RENDERS NOTHING WHEN THE VERDICT IS CLEAR" — and that component is gone
-     * now that the question has one control instead of two. The rule outlived
-     * it and belongs here anyway: this service is the only visibility decision
-     * in the system.
-     */
-    if (field.key === OVERLAP_ANGLE_KEY && !overlap.suggestedAngle?.length) {
-      return 'na';
-    }
     /**
      * ⚠️ A CARD THAT SAYS "NONE" HAS ANSWERED THE QUESTION. Reading this
      * through answerValue made a licence printing "Model NONE" render as
@@ -622,7 +602,7 @@ export class MotivationSheetService {
     );
 
     const items: SheetItem[] = served.map((f) => {
-      const state = this.stateOf(f, answers, provenance, overlap);
+      const state = this.stateOf(f, answers, provenance);
       const item: SheetItem = {
         key: f.key,
         label: f.label,
@@ -636,26 +616,10 @@ export class MotivationSheetService {
         required: !!f.required,
       };
       if (f.help) item.help = f.help;
-      /**
-       * ⚠️ THE OVERLAP ANGLES ARE FILTERED BY SECTION, HERE AND NOWHERE ELSE.
-       * The registry serves all sixteen; five argue the sport and four argue
-       * hunting, and the operator's own section 13 carries
-       * `overlap_angle: "different_division"` — "a different division of the
-       * sport" — because that sentence was on the screen of a self-defence
-       * application. The tapped sentence goes into the document verbatim, so
-       * this is not a bad option shown to a model, it is a refusal trigger the
-       * applicant put there because we offered it.
-       *
-       * ⚠️ OFFERED, NEVER ACCEPTED. allowedValues still takes the whole set —
-       * a draft holding a now-unoffered angle must keep saving rather than
-       * failing on every keystroke. See the retiredChoices rule.
-       */
-      if (f.options) {
-        item.options =
-          f.key === OVERLAP_ANGLE_KEY
-            ? overlapAnglesFor(row.licenceType)
-            : f.options;
-      }
+      // ⚠️ THE OVERLAP-ANGLE FILTERING THAT USED TO LIVE HERE IS GONE WITH THE
+      // FIELD (2026-09-20). There is no per-licence option list to compute any
+      // more; a field's options are its registry options.
+      if (f.options) item.options = f.options;
       if (f.optionGroups) item.optionGroups = f.optionGroups;
       if (f.choices) item.choices = f.choices;
       if (f.kind === 'cards') {
