@@ -798,8 +798,11 @@ pathname.
 
 - **Where:** the sticky nav (`components/nav.tsx`) on every public page —
   inline on desktop (`hidden md:flex`) and full-width at the top of the mobile
-  drawer. Admin, checkout and chromeless routes render their own chrome and no
-  nav, so no toggle there (intentionally).
+  drawer. In the installed PWA — where the nav is hidden — it instead renders in
+  the shell header (`components/shell/shell-header.tsx`), in both archetypes,
+  using the compact `size="sm"` variant (between the title and the cart on the
+  PUSH header). Admin, checkout and chromeless routes render their own chrome
+  and no nav, so no toggle there (intentionally).
 - **What it does:** navigates. Shop goes to the storefront home `/`; Community
   goes to `/community` (which carries the feed + the member's My rail, §18).
   Signed-out Community → the join gate (the `/community` page already does
@@ -827,10 +830,6 @@ pathname.
 
 **Do not** add a bottom-tab slot (the five-tab pack is locked) and **do not**
 make `/community` publicly indexable.
-
-**Follow-up:** the toggle lives in the browser nav + mobile drawer. The
-installed-PWA shell header (`components/shell/shell-header.tsx`) does not yet
-carry it.
 
 ---
 

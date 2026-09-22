@@ -26,6 +26,7 @@ import { useCart } from '@/lib/cart-store';
 import { useWishlist } from '@/lib/use-wishlist';
 import { pushTitleFor } from '@/lib/shell-routes';
 import { ShellStepRow } from '@/components/shell/shell-step';
+import { ViewModeToggle } from '@/components/view-mode-toggle';
 
 // Routes that get the ROOT header. Everything else gets PUSH.
 const ROOT_PATHS = new Set(['/', '/account']);
@@ -225,6 +226,8 @@ function RootHeader() {
         ALL <span style={{ color: 'var(--red)' }}>OUTDOOR</span>
       </Link>
       <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+        {/* Shop/Community — the always-on view switch (installed PWA). */}
+        <ViewModeToggle size="sm" />
         <TapTarget href="/wishlist" aria-label={`Wishlist, ${savedCount} saved`} badge={savedCount}>
           <IconHeart />
         </TapTarget>
@@ -305,6 +308,8 @@ function PushHeader({ pathname }: { pathname: string }) {
       >
         {title}
       </span>
+      {/* Shop/Community — the always-on view switch (installed PWA). */}
+      <ViewModeToggle size="sm" />
       {/* Trailing slot — cart on every push route now (board review,
           2026-08-27), reusing CartLink from the ROOT header so the icon,
           badge and count logic can't drift between the two archetypes. The

@@ -14,7 +14,14 @@ import { useMotivationBusy } from '@/lib/motivation-busy';
  * views mid-save would drop the member out of an in-flight action; see
  * lib/motivation-busy.ts.
  */
-export function ViewModeToggle({ full = false }: { full?: boolean }) {
+export function ViewModeToggle({
+  full = false,
+  size = 'md',
+}: {
+  full?: boolean;
+  /** `sm` is the tighter variant for the installed-PWA shell header. */
+  size?: 'md' | 'sm';
+}) {
   const router = useRouter();
   const pathname = usePathname() ?? '/';
   const busy = useMotivationBusy();
@@ -30,7 +37,9 @@ export function ViewModeToggle({ full = false }: { full?: boolean }) {
   });
   const tabClass = full
     ? 'gg-press flex-1 rounded-full text-[13px] font-medium py-2'
-    : 'gg-press rounded-full text-[13px] font-medium px-3 py-1.5';
+    : `gg-press rounded-full font-medium ${
+        size === 'sm' ? 'px-2 py-1 text-[12px]' : 'px-3 py-1.5 text-[13px]'
+      }`;
 
   return (
     <div
@@ -41,7 +50,7 @@ export function ViewModeToggle({ full = false }: { full?: boolean }) {
         background: 'var(--bg-inset)',
         border: '0.5px solid var(--border)',
         borderRadius: 999,
-        padding: 3,
+        padding: size === 'sm' && !full ? 2 : 3,
         gap: 2,
       }}
     >
