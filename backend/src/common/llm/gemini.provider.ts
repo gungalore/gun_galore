@@ -693,6 +693,7 @@ export function toGeminiPart(part: LlmPart): Part {
       return { text: part.text };
     case 'image':
     case 'document':
+    case 'video':
       return { inlineData: { mimeType: part.mimeType, data: part.data } };
     case 'tool_call':
       return {

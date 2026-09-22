@@ -4,6 +4,7 @@ import { useAuth } from '../../../lib/auth';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motivationsApi } from '@/lib/motivations-api';
+import { useReportMotivationBusy } from '@/lib/motivation-busy';
 import type {
   CredentialSlot,
   PreviewSection,
@@ -175,6 +176,10 @@ export default function LicenceCentreSheetPage() {
   const [sheet, setSheet] = useState<SheetResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Hide the always-on Shop/Community toggle while a save/generate is in
+  // flight (see lib/motivation-busy.ts) — switching views mid-save would drop
+  // the member out of the action.
+  useReportMotivationBusy(busy);
   const [toast, setToast] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [active, setActive] = useState<string>('firearm');

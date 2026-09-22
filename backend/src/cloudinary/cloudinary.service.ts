@@ -75,6 +75,56 @@ export class CloudinaryService implements OnModuleInit {
     await cloudinary.uploader.destroy(publicId);
   }
 
+  /**
+   * Upload a video. Cloudinary stores it on the `video` resource type and
+   * returns dimensions/duration. A poster frame is derived from the delivery
+   * URL (`so_0` = first frame) so the feed can show a thumbnail without a
+   * second upload.
+   */
+  async uploadVideo(
+    fileBuffer: Buffer,
+    folder: string,
+    publicId?: string,
+  ): Promise<{
+    url: string;
+    publicId: string;
+    thumbnailUrl: string;
+    durationSeconds?: number;
+    width?: number;
+    height?: number;
+  }> {
+    if (!this.configured) throw new Error('Cloudinary not configured');
+    return new Promise((resolve, reject) => {
+      const options: Record<string, unknown> = {
+        folder: `gun-galore/${folder}`,
+        resource_type: 'video',
+      };
+      if (publicId) options.public_id = publicId;
+
+      cloudinary.uploader
+        .upload_stream(options, (error, result: UploadApiResponse | undefined) => {
+          if (error || !result) return reject(error ?? new Error('Upload failed'));
+          const thumbnailUrl = result.secure_url
+            .replace('/video/upload/', '/video/upload/so_0/')
+            .replace(/\.\w+$/, '.jpg');
+          resolve({
+            url: result.secure_url,
+            publicId: result.public_id,
+            thumbnailUrl,
+            durationSeconds: result.duration,
+            width: result.width,
+            height: result.height,
+          });
+        })
+        .end(fileBuffer);
+    });
+  }
+
+  async deleteVideo(publicId: string): Promise<void> {
+    if (!this.configured) return;
+    await cloudinary.uploader.destroy(publicId, { resource_type: 'video' });
+  }
+
   async deleteImages(publicIds: string[]): Promise<void> {
     if (!this.configured || publicIds.length === 0) return;
     await cloudinary.api.delete_resources(publicIds);

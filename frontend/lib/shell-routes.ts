@@ -95,6 +95,7 @@ const PUSH_TITLES: Array<[string, string]> = [
   ['/my/sales', 'Sales'],
   ['/my/earnings', 'Earnings'],
   ['/saved-searches', 'Saved searches'],
+  ['/community', 'Community'],
   ['/shipping', 'Deliveries'],
   ['/profile', 'Profile'],
   ['/settings', 'Settings'],

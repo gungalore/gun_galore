@@ -280,28 +280,26 @@ export default async function HomePage({
 
       {/* Hero now carries the trust card on its right, so the competitive
           "why All Outdoor" proof lives inside <Hero /> — no separate banner. */}
-      {showHero && <Hero />}
-
-      {/* The storefront's primary fork, and the first thing under the hero.
-          Until this existed the landing page went hero → "Good to know" with
-          nothing shopping-shaped in between, which is most of why it read as a
-          help page with products underneath. */}
-      {showHero && (
-        <ShopModeTiles
-          buyNowCount={buyNowCount}
-          auctionCount={auctionCount}
-          signedIn={Boolean(userId)}
-        />
-      )}
-
-      {/* ─── Bare landing page: no filter, no pagination ───
-          When the user lands on "/" with no filters, the page shows the
-          "Good to know" panel, the recently-viewed rail, then the 24
-          newest listings — intentionally curated, not a filtered browse. */}
       {showHero ? (
-        <section
-          className="max-w-[var(--page-max)] mx-auto px-4 py-10"
-        >
+        <>
+              <Hero />
+
+              {/* The storefront's primary fork, and the first thing under the
+                  hero. Until this existed the landing page went hero → "Good to
+                  know" with nothing shopping-shaped in between, which is most
+                  of why it read as a help page with products underneath. */}
+              <ShopModeTiles
+                buyNowCount={buyNowCount}
+                auctionCount={auctionCount}
+                signedIn={Boolean(userId)}
+              />
+
+              {/* ─── Bare landing page: no filter, no pagination ───
+                  When the user lands on "/" with no filters, the page shows the
+                  "Good to know" panel, the recently-viewed rail, then the 24
+                  newest listings — intentionally curated, not a filtered
+                  browse. */}
+              <section className="max-w-[var(--page-max)] mx-auto px-4 py-10">
           {/* "Shop by category" curtain REMOVED (operator, 2026-08-15).
               It was the fallback breadth entry, but the category tree
               already lives in the nav's Categories flyout and the mobile
@@ -384,7 +382,8 @@ export default async function HomePage({
               users get a quick re-entry into things they were looking
               at. */}
           <RecentlyViewedRail />
-        </section>
+              </section>
+        </>
       ) : hasBackground ? (
         /* Filtered surfaces (marketplace/auctions/take-a-shot) keep
            this layout. */

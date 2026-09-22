@@ -116,6 +116,11 @@ const isPublicRoute = createRouteMatcher([
   '/brand(.*)',    // P5.7 — public brand index (/brands) + brand landing
                    // pages (/brand/[slug]); SEO surfaces, must be crawlable
                    // without auth (mirrors /category above).
+  '/community(.*)', // Community feed + post permalinks + profiles. PUBLIC so a
+                   // SHARED LINK renders the designed join gate instead of
+                   // 307ing to a bare sign-in. The pages do their own
+                   // server-side auth check and show no member content signed
+                   // out — the auth wall, not cloaking.
   '/faq',          // public help/FAQ page
   '/how-selling-works', // public "how selling works" explainer (linked from sell flow)
   '/condition-guide', // public grading rubric — linked from the sell form and
@@ -163,6 +168,9 @@ const isPublicRoute = createRouteMatcher([
   // an anonymous follower lands on /sign-in rather than the document.
   '/cookies',
   '/legal',              // index of all legal docs + ECT § 43 disclosures
+  '/community-guidelines', // public feed rules — reachable from a shared link
+                         // and from the join gate, so it must not 307 to
+                         // sign-in.
   '/a/(.*)',             // SMS-link action pages — token in the URL IS the
                          // auth credential. Each /a/<token> page resolves
                          // server-side via /api/actions/:token and shows a

@@ -32,7 +32,10 @@ export type NotificationLinkedType =
   // Licence motivations — linkedId is the Motivation id. Nothing resolves
   // these (the rows are dismissible); the link is carried for the push TAG,
   // so a later outcome on the same document replaces the earlier one.
-  | 'motivation';
+  | 'motivation'
+  // Community feed — a post or comment the member was notified about.
+  | 'post'
+  | 'comment';
 
 interface PersistOpts {
   userId: string;
@@ -563,6 +566,103 @@ export class NotificationsService {
       );
       return 0;
     }
+  }
+
+  // ─── Community feed ──────────────────────────────────────────────
+  // In-app + push only for the MVP. Feed activity is informational and must
+  // not become a second email/SMS inbox — always dismissible, never a send on
+  // a channel the member did not expect. Usernames only, never real names.
+  async postLiked(d: {
+    recipientId: string;
+    actorUsername: string;
+    postId: string;
+    postTitle?: string;
+  }): Promise<void> {
+    await this.persist({
+      userId: d.recipientId,
+      category: 'ACCOUNT',
+      type: 'post_liked',
+      title: 'Someone liked your post',
+      body: `@${d.actorUsername} liked your post${
+        d.postTitle ? ` "${d.postTitle}"` : ''
+      }.`,
+      url: `/community/p/${d.postId}`,
+      linkedType: 'post',
+      linkedId: d.postId,
+      dismissible: true,
+    });
+  }
+
+  async commentReply(d: {
+    recipientId: string;
+    actorUsername: string;
+    postId: string;
+    commentId: string;
+  }): Promise<void> {
+    await this.persist({
+      userId: d.recipientId,
+      category: 'ACCOUNT',
+      type: 'comment_reply',
+      title: 'New reply',
+      body: `@${d.actorUsername} replied to you in the community.`,
+      url: `/community/p/${d.postId}`,
+      linkedType: 'comment',
+      linkedId: d.commentId,
+      dismissible: true,
+    });
+  }
+
+  async newFollower(d: {
+    recipientId: string;
+    actorUsername: string;
+  }): Promise<void> {
+    await this.persist({
+      userId: d.recipientId,
+      category: 'ACCOUNT',
+      type: 'new_follower',
+      title: 'New follower',
+      body: `@${d.actorUsername} started following you.`,
+      url: `/community/u/${d.actorUsername}`,
+      dismissible: true,
+    });
+  }
+
+  async postPublished(d: {
+    recipientId: string;
+    postId: string;
+    title?: string;
+  }): Promise<void> {
+    await this.persist({
+      userId: d.recipientId,
+      category: 'ACCOUNT',
+      type: 'post_published',
+      title: 'Your post is live',
+      body: d.title
+        ? `"${d.title}" is now on your feed.`
+        : 'Your post is now on your feed.',
+      url: `/community/p/${d.postId}`,
+      linkedType: 'post',
+      linkedId: d.postId,
+      dismissible: true,
+    });
+  }
+
+  async postRejected(d: {
+    recipientId: string;
+    postId: string;
+    reason?: string;
+  }): Promise<void> {
+    await this.persist({
+      userId: d.recipientId,
+      category: 'ACCOUNT',
+      type: 'post_rejected',
+      title: 'Your post was blocked',
+      body: 'Something in it broke our content rules. Open it to dispute the decision.',
+      url: `/community/p/${d.postId}`,
+      linkedType: 'post',
+      linkedId: d.postId,
+      dismissible: true,
+    });
   }
 
   // Wrap the pure renderEmail() helper with the logo URL injection so

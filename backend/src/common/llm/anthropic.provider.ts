@@ -335,6 +335,12 @@ export function toAnthropicBlock(part: LlmPart): Record<string, unknown> {
         type: 'document',
         source: { type: 'base64', media_type: part.mimeType, data: part.data },
       };
+    case 'video':
+      // Anthropic's API reads images and PDFs, not video.
+      throw new LlmError(
+        'unsupported',
+        'anthropic path does not accept video',
+      );
     case 'tool_call':
       return {
         type: 'tool_use',

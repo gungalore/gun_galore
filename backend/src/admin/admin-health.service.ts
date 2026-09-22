@@ -382,6 +382,7 @@ export class AdminHealthService {
       { key: 'cron-watchdog', label: 'Cron watchdog', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'stale-listing-sweep', label: 'Stale listing expiry', schedule: 'daily 04:00', expectedIntervalSec: 86_400 },
       { key: 'photoless-listing-sweep', label: 'Photo-less listing sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
+      { key: 'feed-moderation-sweep', label: 'Community feed moderation sweep', schedule: 'every 5 min', expectedIntervalSec: 600 },
 
       // 🚨 THESE FOUR RAN FOR WEEKS WITH NOTHING WATCHING THEM. They call
       // recordCronRun, so they stamp `cron:lastrun:*` on every pass and LOOK

@@ -52,6 +52,7 @@ import { ReloadingModule } from './reloading/reloading.module';
 import { ManualPaymentsModule } from './manual-payments/manual-payments.module';
 import { MyShipmentsModule } from './my-shipments/my-shipments.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { FeedModule } from './feed/feed.module';
 
 @Module({
   imports: [
@@ -121,6 +122,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     LicenceCentreModule,
     ActivityModule,
     WhatsappModule,
+    FeedModule,
   ],
   controllers: [AppController],
   providers: [

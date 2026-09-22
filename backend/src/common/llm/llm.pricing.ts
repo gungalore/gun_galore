@@ -75,6 +75,22 @@ const PRICES: Record<string, ModelPrice> = {
     cachedInputPerMillion: 0.025,
     imageOutputPerMillion: 30,
   },
+  /**
+   * DeepSeek-V4.1-Flash (model id `deepseek-flash`) — feed moderation only.
+   *
+   * ⚠️ READ FROM https://api-docs.deepseek.com/quick_start/pricing. DeepSeek
+   * has PEAK and OFF-PEAK rates and `costUsdMicros` is a PURE function with no
+   * clock, so this table carries the PEAK (higher) numbers. That means an
+   * off-peak call is over-reported by up to 2× — deliberately the safe
+   * direction: /admin/credits must never under-count spend. Peak hours are
+   * 01:00–04:00 and 06:00–10:00 UTC, Mon–Fri (SAST 03:00–06:00 and
+   * 08:00–12:00), i.e. the SA morning moderation runs at these rates anyway.
+   */
+  'deepseek-flash': {
+    inputPerMillion: 0.3,
+    outputPerMillion: 1.2,
+    cachedInputPerMillion: 0.006,
+  },
 };
 
 /**

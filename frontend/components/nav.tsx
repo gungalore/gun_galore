@@ -15,6 +15,7 @@ import { installPlatform, useInstallPrompt } from '@/lib/use-install-prompt';
 import { trackInstall } from '@/lib/activity-beacon';
 import { AccountMenuList, LogoutIcon } from '@/lib/account-menu';
 import { CategoryMenu } from '@/components/category-menu';
+import { ViewModeToggle } from '@/components/view-mode-toggle';
 
 // The nav is a singleton, so a fixed id is safe and keeps aria-controls on
 // the search button pointing at the panel without threading a useId through.
@@ -314,6 +315,13 @@ export function Nav() {
             </button>
           </div>
 
+          {/* Shop/Community — the always-on view switch (desktop). Navigates
+              between the storefront and the feed; hides itself only while a
+              motivation is busy. See components/view-mode-toggle.tsx. */}
+          <div className="hidden md:flex shrink-0">
+            <ViewModeToggle />
+          </div>
+
           {/* Right side */}
           {isLoaded && (
             <div className="flex items-center gap-2 sm:gap-3 ml-auto md:ml-0 shrink-0">
@@ -346,6 +354,10 @@ export function Nav() {
               <div className="hidden md:flex items-center gap-3">
                 {isSignedIn ? (
                   <>
+                    {/* The Community entry point is the homepage
+                        Shop/Community toggle, NOT a nav pill (operator,
+                        2026-09-22). See
+                        docs/design/community-feed/spec.md §11A.2. */}
                     {/* `relative` and the menuRef were positioning
                         context for the dropdown that used to hang off
                         this tile. The menu is gone; the wrapper stays
@@ -647,6 +659,11 @@ export function Nav() {
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
+            </div>
+
+            {/* Shop/Community — the always-on view switch (mobile drawer). */}
+            <div className="px-4 pt-4">
+              <ViewModeToggle full />
             </div>
 
             {/* Search */}

@@ -276,6 +276,50 @@ const FLAGS: SettingFlag[] = [
     // whose trust in us is the entire reason for starting small.
     danger: true,
   },
+
+  // ─── Community Feed ───────────────────────────────────────────
+  // Mirrors of settings.service.ts FLAGS. Both registries, or neither.
+  {
+    key: 'feed_enabled',
+    label: 'Community feed enabled',
+    hint: 'Master switch for /community. OFF = every feed endpoint 404s and the frontend shows nothing. The whole feature ships dark and is switched on here. Moderation spend begins the moment this is ON.',
+    group: 'Community Feed',
+    type: 'boolean',
+    default: 'false',
+    danger: true,
+  },
+  {
+    key: 'feed_gate_enabled',
+    label: 'Public join gate',
+    hint: 'Shows the designed "join the community" gate to signed-out visitors arriving from a shared link, instead of a bare sign-in redirect.',
+    group: 'Community Feed',
+    type: 'boolean',
+    default: 'true',
+  },
+  {
+    key: 'feed_graphic_blur_forced',
+    label: 'Always blur graphic content',
+    hint: 'Forces the blur treatment on graphic-tier (field/hunting) photos for everyone. OFF lets a member reveal it by tapping.',
+    group: 'Community Feed',
+    type: 'boolean',
+    default: 'true',
+  },
+  {
+    key: 'feed_awards_enabled',
+    label: 'Community awards enabled',
+    hint: 'Cosmetic points, badges and leaderboard. Not built yet (C4). OFF is the resting state.',
+    group: 'Community Feed',
+    type: 'boolean',
+    default: 'false',
+  },
+  {
+    key: 'feed_ads_enabled',
+    label: 'Featured ads in the feed',
+    hint: 'Shows active featured ads (FeedAd) between posts in the community feed. Members cannot advertise; ads are admin-created. OFF is the resting state.',
+    group: 'Community Feed',
+    type: 'boolean',
+    default: 'false',
+  },
 ];
 
 @Injectable()

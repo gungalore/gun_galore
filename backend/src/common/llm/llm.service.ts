@@ -19,6 +19,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AnthropicProvider } from './anthropic.provider';
+import { DeepSeekProvider } from './deepseek.provider';
 import { GeminiProvider } from './gemini.provider';
 import { costUsdMicros } from './llm.pricing';
 import type { LlmProviderClient } from './provider.interface';
@@ -48,12 +49,14 @@ const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
 // providers are constructed below. Tests bypass Nest and pass fakes directly.
 export const LLM_GEMINI_PROVIDER = Symbol('LLM_GEMINI_PROVIDER');
 export const LLM_ANTHROPIC_PROVIDER = Symbol('LLM_ANTHROPIC_PROVIDER');
+export const LLM_DEEPSEEK_PROVIDER = Symbol('LLM_DEEPSEEK_PROVIDER');
 
 @Injectable()
 export class LlmService {
   private readonly logger = new Logger(LlmService.name);
   private readonly gemini: LlmProviderClient;
   private readonly anthropic: LlmProviderClient;
+  private readonly deepseek: LlmProviderClient;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -62,14 +65,50 @@ export class LlmService {
     // real ones — see the token comment above.
     @Optional() @Inject(LLM_GEMINI_PROVIDER) gemini?: LlmProviderClient,
     @Optional() @Inject(LLM_ANTHROPIC_PROVIDER) anthropic?: LlmProviderClient,
+    @Optional() @Inject(LLM_DEEPSEEK_PROVIDER) deepseek?: LlmProviderClient,
   ) {
     this.gemini = gemini ?? new GeminiProvider();
     this.anthropic = anthropic ?? new AnthropicProvider();
+    this.deepseek = deepseek ?? new DeepSeekProvider();
   }
 
   /** Which provider is live, from LLM_PROVIDER (default 'gemini'). */
   get provider(): LlmProvider {
-    return process.env.LLM_PROVIDER === 'anthropic' ? 'anthropic' : 'gemini';
+    return process.env.LLM_PROVIDER === 'anthropic'
+      ? 'anthropic'
+      : process.env.LLM_PROVIDER === 'deepseek'
+        ? 'deepseek'
+        : 'gemini';
+  }
+
+  /**
+   * The provider that serves ONE purpose.
+   *
+   * ⚠️ PER-PURPOSE ROUTING IS WHY THIS EXISTS. Feed moderation runs on
+   * DeepSeek while everything else (motivations, KYC reads, image generation)
+   * stays on Gemini. The override is an env var derived from the purpose:
+   * `feed.moderation` → `LLM_PROVIDER_FEED_MODERATION`. Unset falls back to
+   * the global `LLM_PROVIDER`, so the default never changes.
+   *
+   * To kill-switch feed moderation back to Gemini: set
+   * `LLM_PROVIDER_FEED_MODERATION=gemini` and reload. Same "env + reload, no
+   * deploy" lever as `LLM_PROVIDER=anthropic`.
+   */
+  private providerFor(purpose: string): LlmProviderClient {
+    const key = `LLM_PROVIDER_${purpose.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+    const explicit = process.env[key];
+    if (explicit === 'anthropic') return this.anthropic;
+    if (explicit === 'deepseek') return this.deepseek;
+    if (explicit === 'gemini') return this.gemini;
+    // ⚠️ VIDEO IS GEMINI-ONLY ON THIS PLATFORM. A video moderation call must
+    // not fall through to DeepSeek (whose vision path rejects video) just
+    // because a global LLM_PROVIDER switch is set. An explicit per-purpose env
+    // var still wins, above.
+    if (purpose === 'feed.moderation.video') return this.gemini;
+    const name = process.env.LLM_PROVIDER ?? 'gemini';
+    if (name === 'anthropic') return this.anthropic;
+    if (name === 'deepseek') return this.deepseek;
+    return this.gemini;
   }
 
   /**
@@ -89,33 +128,42 @@ export class LlmService {
     return this.active().isConfigured();
   }
 
+  /** A key is present for the provider that serves `purpose`. */
+  isConfiguredFor(purpose: string): boolean {
+    return this.providerFor(purpose).isConfigured();
+  }
+
   private active(): LlmProviderClient {
-    return this.provider === 'anthropic' ? this.anthropic : this.gemini;
+    return this.provider === 'anthropic'
+      ? this.anthropic
+      : this.provider === 'deepseek'
+        ? this.deepseek
+        : this.gemini;
   }
 
   // ══════════════════════════════════════════════════════════════════
   // COMPLETE
   // ══════════════════════════════════════════════════════════════════
   async complete(req: LlmRequest): Promise<LlmResponse> {
-    const provider = this.active();
-    const model = req.model ?? this.model;
+    const provider = this.providerFor(req.purpose);
+    const model = req.model ?? provider.defaultModel();
     const startedAt = Date.now();
 
     if (!provider.isConfigured()) {
       const err = new LlmError(
         'not_configured',
-        `${this.provider} is not configured — no API key${this.provider === 'anthropic' ? ' or LLM_MODEL' : ''}`,
+        `${provider.name} is not configured — no API key${provider.name === 'anthropic' ? ' or LLM_MODEL' : ''}`,
       );
-      this.record(req, model, startedAt, undefined, err);
+      this.record(req, provider.name, model, startedAt, undefined, err);
       throw err;
     }
 
     try {
       const res = await provider.complete({ ...req, model });
-      this.record(req, res.model, startedAt, res.usage);
+      this.record(req, res.provider, res.model, startedAt, res.usage);
       return res;
     } catch (err) {
-      this.record(req, model, startedAt, undefined, err);
+      this.record(req, provider.name, model, startedAt, undefined, err);
       throw err;
     }
   }
@@ -124,16 +172,16 @@ export class LlmService {
   // STREAM
   // ══════════════════════════════════════════════════════════════════
   async *stream(req: LlmRequest): AsyncGenerator<LlmStreamEvent> {
-    const provider = this.active();
-    const model = req.model ?? this.model;
+    const provider = this.providerFor(req.purpose);
+    const model = req.model ?? provider.defaultModel();
     const startedAt = Date.now();
 
     if (!provider.isConfigured()) {
       const err = new LlmError(
         'not_configured',
-        `${this.provider} is not configured — no API key${this.provider === 'anthropic' ? ' or LLM_MODEL' : ''}`,
+        `${provider.name} is not configured — no API key${provider.name === 'anthropic' ? ' or LLM_MODEL' : ''}`,
       );
-      this.record(req, model, startedAt, undefined, err);
+      this.record(req, provider.name, model, startedAt, undefined, err);
       throw err;
     }
 
@@ -144,12 +192,12 @@ export class LlmService {
     try {
       for await (const event of provider.stream({ ...req, model })) {
         if (event.type === 'done') {
-          this.record(req, event.response.model, startedAt, event.response.usage);
+          this.record(req, event.response.provider, event.response.model, startedAt, event.response.usage);
         }
         yield event;
       }
     } catch (err) {
-      this.record(req, model, startedAt, undefined, err);
+      this.record(req, provider.name, model, startedAt, undefined, err);
       throw err;
     }
   }
@@ -172,35 +220,35 @@ export class LlmService {
    * mapper with a shape error.
    */
   async generateImage(req: LlmImageRequest): Promise<LlmImageResponse> {
-    const provider = this.active();
+    const provider = this.providerFor(req.purpose);
     const startedAt = Date.now();
     const model =
-      req.model ?? provider.defaultImageModel?.() ?? this.model;
+      req.model ?? provider.defaultImageModel?.() ?? provider.defaultModel();
 
     if (!provider.generateImage) {
       const err = new LlmError(
         'unsupported',
-        `${this.provider} has no image model on this platform`,
+        `${provider.name} has no image model on this platform`,
       );
-      this.record(req, model, startedAt, undefined, err);
+      this.record(req, provider.name, model, startedAt, undefined, err);
       throw err;
     }
 
     if (!provider.isConfigured()) {
       const err = new LlmError(
         'not_configured',
-        `${this.provider} is not configured — no API key`,
+        `${provider.name} is not configured — no API key`,
       );
-      this.record(req, model, startedAt, undefined, err);
+      this.record(req, provider.name, model, startedAt, undefined, err);
       throw err;
     }
 
     try {
       const res = await provider.generateImage({ ...req, model });
-      this.record(req, res.model, startedAt, res.usage);
+      this.record(req, res.provider, res.model, startedAt, res.usage);
       return res;
     } catch (err) {
-      this.record(req, model, startedAt, undefined, err);
+      this.record(req, provider.name, model, startedAt, undefined, err);
       throw err;
     }
   }
@@ -269,6 +317,10 @@ export class LlmService {
     // ⚠️ STRUCTURAL, so an image call books into the same ledger. Only these
     // two fields were ever read off the request.
     req: { purpose: string; grounding?: { web?: boolean } },
+    // The provider that ACTUALLY served this call — with per-purpose routing
+    // this is not always `this.provider`, and the ledger must name the one
+    // that spent the money.
+    provider: LlmProvider,
     model: string,
     startedAt: number,
     usage?: LlmUsage,
@@ -306,14 +358,14 @@ export class LlmService {
     // are applying for. `webSearchQueries` comes back on the response and is
     // deliberately never read here.
     const grounded = req.grounding?.web ? ' grounded' : '';
-    const summary = `llm ${req.purpose} ${this.provider}/${model} in=${inputTokens} out=${outputTokens} ${latencyMs}ms${grounded}`;
+    const summary = `llm ${req.purpose} ${provider}/${model} in=${inputTokens} out=${outputTokens} ${latencyMs}ms${grounded}`;
     if (ok) this.logger.log(summary);
     else this.logger.warn(`${summary} FAILED ${String(errorCode)}`);
 
     void this.prisma.aiUsage
       .create({
         data: {
-          provider: this.provider,
+          provider,
           model,
           purpose: req.purpose,
           inputTokens,

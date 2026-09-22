@@ -16,7 +16,7 @@
 // when a caller needs to, never speculatively.
 // ────────────────────────────────────────────────────────────────────
 
-export type LlmProvider = 'gemini' | 'anthropic';
+export type LlmProvider = 'gemini' | 'anthropic' | 'deepseek';
 
 /** Base64 bytes with their type. Both providers take exactly this. */
 export interface LlmBlob {
@@ -30,6 +30,11 @@ export type LlmPart =
   | ({ type: 'image' } & LlmBlob)
   /** A PDF (or other document the provider can read as a whole). */
   | ({ type: 'document' } & LlmBlob)
+  /**
+   * A video. ⚠️ ONLY GEMINI READS VIDEO — DeepSeek's vision path rejects it,
+   * which is why video purposes are pinned to Gemini in LlmService.providerFor.
+   */
+  | ({ type: 'video' } & LlmBlob)
   /** The model asked for a tool. Echoed back verbatim in the next turn. */
   | {
       type: 'tool_call';

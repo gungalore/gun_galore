@@ -96,5 +96,16 @@ export function moduleForNotification(
     return '/dashboard';
   }
 
+  // Community feed — likes, replies and follows all live on /community.
+  if (
+    type === 'post_liked' ||
+    type === 'comment_reply' ||
+    type === 'new_follower' ||
+    type === 'post_published' ||
+    type === 'post_rejected'
+  ) {
+    return '/community';
+  }
+
   return null;
 }

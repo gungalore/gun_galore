@@ -111,12 +111,13 @@ export default function AcceptableUsePage() {
         to you for correction.
       </p>
 
-      <h2>5. What your listing description, questions and notes must NOT contain</h2>
+      <h2>5. What your descriptions, questions, notes and posts must NOT contain</h2>
       <p>
         Across <strong>every</strong> freeform field on All Outdoor
         (listing title, description, pre-purchase Q&amp;A, offer
-        notes, counter-offer notes, rating comments and any future
-        message channel), the following are never permitted:
+        notes, counter-offer notes, rating comments, community feed
+        posts and comments, and any future message channel), the
+        following are never permitted:
       </p>
       <ul>
         <li>Phone numbers, email addresses, WhatsApp / Telegram / Signal / Facebook Messenger handles, Instagram / TikTok / Facebook / X / Snapchat usernames, or any other personal contact channel.</li>
@@ -138,6 +139,7 @@ export default function AcceptableUsePage() {
         <li><strong>Platform abuse</strong> — automated scraping, denial-of-service traffic, attempts to bypass authentication, attempts to reverse-engineer or interfere with the Platform's operation.</li>
         <li><strong>Tax evasion</strong> — falsifying your income or VAT status; failing to issue an invoice where one is legally required.</li>
         <li><strong>False identity</strong> — registering under a name other than your own, attempting identity verification with someone else's documents.</li>
+        <li><strong>Advertising in the community feed</strong> — no shop or channel links, social handles, "DM me" requests, or for-sale posts, including for your own listings. See the <a href="/community-guidelines" style={{ color: 'var(--red)' }}>Community Guidelines</a>.</li>
       </ul>
 
       <h2>7. Enforcement</h2>
@@ -164,14 +166,20 @@ export default function AcceptableUsePage() {
 
       <h2>8. Reporting an AUP breach</h2>
       <p>
-        If you spot a listing, message or behaviour that breaches this
-        AUP, report it via the in-product report button (on Q&amp;A
-        rows) or email{' '}
+        If you spot a listing, message, community post or comment, or
+        behaviour that breaches this AUP, report it via the in-product
+        report control (on Q&amp;A rows and on community posts and
+        comments) or email{' '}
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
           {SUPPORT_EMAIL}
         </a>
         {' '}with the URL or reference number of what you saw. We treat
-        every report seriously and respond within 2 business days.
+        every report seriously and respond within 2 business days. The
+        feed's own rules are set out in the{' '}
+        <a href="/community-guidelines" style={{ color: 'var(--red)' }}>
+          Community Guidelines
+        </a>
+        .
       </p>
     </>
   );

@@ -416,6 +416,46 @@ export const FLAGS = {
     default: false,
     parse: (s) => s === 'true' || s === '1',
   } as FlagDefinition<boolean>,
+
+  // ─── Community feed (see docs/design/community-feed/spec.md) ─────
+  // ⚠️ Also in admin-settings.service.ts — both registries, or neither.
+  //
+  // The master kill switch. OFF = every /community endpoint returns 404 and
+  // the frontend shows nothing. The whole feed is dark-deployable: ship the
+  // code with this false, flip it in Settings when the content is ready.
+  feedEnabled: {
+    key: 'feed_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  // The public join gate ("sign in to see what members are sharing"). On by
+  // default so a shared link lands on a designed front door rather than a
+  // bare sign-in redirect. Only matters when feedEnabled is true.
+  feedGateEnabled: {
+    key: 'feed_gate_enabled',
+    default: true,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  // Force the blur/censor treatment on graphic-tier content. OFF lets members
+  // reveal it by tapping; ON keeps it blurred regardless.
+  feedGraphicBlurForced: {
+    key: 'feed_graphic_blur_forced',
+    default: true,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  // Cosmetic awards (points/badges/leaderboard). Deferred to C4; default OFF.
+  feedAwardsEnabled: {
+    key: 'feed_awards_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  // Featured ads in the community feed. Fresh model (FeedAd), admin-managed;
+  // members may not advertise. Default OFF.
+  feedAdsEnabled: {
+    key: 'feed_ads_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
 } as const;
 
 @Injectable()

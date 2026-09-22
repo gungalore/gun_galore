@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import CancelButton from './cancel-button';
 import RenewButton from './renew-button';
+import FeatureButton from './feature-button';
 import { LISTING_STATUS, resolveStatus, toneColor } from '@/lib/status-labels';
 import { PageReveal } from '@/components/page-reveal';
 
@@ -254,6 +255,7 @@ export default async function MyListingsPage() {
                         <RenewButton listingId={l.id} daysOld={ageDays} />
                       )}
                       {l.status === 'ACTIVE' && <CancelButton listingId={l.id} />}
+                      {l.status === 'ACTIVE' && <FeatureButton listingId={l.id} />}
                       {/* Relist CTA for terminal-no-sale auction
                           outcomes — gives the seller a clear next
                           step instead of leaving them to figure out

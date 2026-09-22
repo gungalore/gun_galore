@@ -178,6 +178,15 @@ export interface AccountMenuGroup {
   items: AccountMenuItem[];
 }
 
+// Community feed — a members-only social space (join gate for signed-out).
+const CommunityIcon: IconC = () => (
+  <Svg>
+    <path d="M4 19v-1a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v1" />
+    <circle cx="10" cy="8" r="3" />
+    <path d="M17.5 11a3 3 0 0 0 0-6M20 19v-1a4 4 0 0 0-3-3.9" />
+  </Svg>
+);
+
 export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
   {
     title: 'Buying',
@@ -250,6 +259,13 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
       { href: '/profile', label: 'Profile', Icon: UserIcon },
       { href: '/settings', label: 'Settings', Icon: SettingsIcon },
       { href: '/notifications', label: 'Notifications', Icon: BellIcon },
+    ],
+  },
+  {
+    title: 'Community',
+    items: [
+      { href: '/community', label: 'Community feed', Icon: CommunityIcon },
+      { href: '/community/settings', label: 'Feed preferences', Icon: SettingsIcon },
     ],
   },
   // Shared with the /account hub (which used to hard-code its own copy —

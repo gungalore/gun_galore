@@ -54,3 +54,47 @@ export function boundedImageUrl(url: string, maxEdge: number): string {
   // prepended so both apply; Cloudinary chains slash-separated segments.
   return url.slice(0, at) + bound + '/' + rest;
 }
+
+const VIDEO_UPLOAD_SEGMENT = '/video/upload/';
+
+/**
+ * A Cloudinary video delivery URL bounded to `maxEdge` and re-encoded, so the
+ * bytes fetched are a fraction of the original.
+ *
+ * ⚠️ WHY THIS EXISTS. A phone video is tens of MB and Gemini's inline-data
+ * request tops out near 20 MB, so the original could not be sent for
+ * moderation. Cloudinary transcodes on request; a 720p `q_auto:eco` MP4 is
+ * usually well under the cap. Any non-Cloudinary URL is returned unchanged.
+ *
+ * `f_mp4` pins the container (Gemini accepts mp4/webm/mov) and `c_limit`
+ * never upscales.
+ */
+export function boundedVideoUrl(url: string, maxEdge: number): string {
+  if (!url || !url.includes(VIDEO_UPLOAD_SEGMENT)) return url;
+  const at = url.indexOf(VIDEO_UPLOAD_SEGMENT) + VIDEO_UPLOAD_SEGMENT.length;
+  const rest = url.slice(at);
+  const firstSegment = rest.split('/')[0] ?? '';
+  if (/(^|,)w_\d+/.test(firstSegment)) return url;
+  // ⚠️ `ac_none` STRIPS THE AUDIO. Moderation is visual-only (gore), so the
+  // soundtrack is dead weight — dropping it shrinks the clip and keeps it under
+  // Gemini's inline cap. Playback uses optimizedVideoUrl, which keeps audio.
+  const bound = `w_${Math.max(1, Math.round(maxEdge))},c_limit,q_auto:eco,f_mp4,ac_none`;
+  return url.slice(0, at) + bound + '/' + rest;
+}
+
+/**
+ * A compressed-but-complete delivery URL for PLAYBACK — audio kept, only the
+ * cost trimmed. Never used for moderation.
+ */
+export function optimizedVideoUrl(url: string, maxEdge: number): string {
+  if (!url || !url.includes(VIDEO_UPLOAD_SEGMENT)) return url;
+  const at = url.indexOf(VIDEO_UPLOAD_SEGMENT) + VIDEO_UPLOAD_SEGMENT.length;
+  const rest = url.slice(at);
+  const firstSegment = rest.split('/')[0] ?? '';
+  if (/(^|,)w_\d+/.test(firstSegment)) return url;
+  const bound = `w_${Math.max(1, Math.round(maxEdge))},c_limit,q_auto,f_mp4`;
+  return url.slice(0, at) + bound + '/' + rest;
+}
+
+/** Edge used when compressing a video for a model (not for playback). */
+export const VIDEO_MODEL_EDGE = 720;

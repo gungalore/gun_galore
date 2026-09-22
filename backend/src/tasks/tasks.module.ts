@@ -13,6 +13,7 @@ import { SavedSearchesModule } from '../saved-searches/saved-searches.module';
 import { RatingsModule } from '../ratings/ratings.module';
 import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module';
 import { ListingsModule } from '../listings/listings.module';
+import { FeedModule } from '../feed/feed.module';
 
 @Module({
   // AdminModule is imported so we can inject AdminCreditsService into
@@ -44,6 +45,8 @@ import { ListingsModule } from '../listings/listings.module';
     // Stale-listing expiry + photo-less listing sweeps need ListingsService
     // to yank a de-activated listing out of the Meilisearch index.
     ListingsModule,
+    // Community-feed moderation sweep needs FeedService.runModeration.
+    FeedModule,
   ],
   providers: [TasksService],
 })

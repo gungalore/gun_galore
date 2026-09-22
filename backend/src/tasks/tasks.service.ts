@@ -25,6 +25,8 @@ import { RatingsService } from '../ratings/ratings.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { ListingsService } from '../listings/listings.service';
+import { FeedService } from '../feed/feed.service';
+import { PostStatus } from '@prisma/client';
 
 // Threshold-alert dedup window. Once we've fired an alert at any
 // severity for a given service, we won't fire ANOTHER alert at the
@@ -72,7 +74,42 @@ export class TasksService {
     private readonly wishlistAlerts: WishlistAlertsService,
     private readonly health: AdminHealthService,
     private readonly listings: ListingsService,
+    private readonly feed: FeedService,
   ) {}
+
+  // ─── Community feed: re-run moderation on stranded posts ─────────
+  // A post is queued (status PENDING_MODERATION, moderatedAt null) and
+  // moderated fire-and-forget. A crash or a reload mid-pass strands it, so this
+  // sweeps anything older than two minutes. Idempotent — runModeration skips a
+  // post already ruled on.
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async feedModerationSweep() {
+    try {
+      const cutoff = new Date(Date.now() - 2 * 60_000);
+      const stuck = await this.prisma.post.findMany({
+        where: {
+          status: PostStatus.PENDING_MODERATION,
+          moderatedAt: null,
+          createdAt: { lt: cutoff },
+        },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+        take: 25,
+      });
+      for (const p of stuck) {
+        await this.feed.runModeration(p.id).catch(() => undefined);
+      }
+      if (stuck.length > 0) {
+        this.logger.log(`feed moderation sweep: processed ${stuck.length}`);
+      }
+    } catch (e) {
+      this.logger.warn(
+        `feed moderation sweep failed: ${(e as Error).message}`,
+      );
+    } finally {
+      await this.recordCronRun('feed_moderation_sweep');
+    }
+  }
 
   // Process start time — the cron watchdog skips its first STARTUP_GRACE
   // window so a just-restarted instance (whose fast crons haven't fired their
