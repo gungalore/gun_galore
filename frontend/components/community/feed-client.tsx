@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, useUser } from '../../lib/auth';
 import {
@@ -15,6 +15,7 @@ import {
   likePost,
   reportPost,
   savePreferences,
+  searchFeed,
   unlikePost,
 } from '../../lib/community-api';
 import { POST_TYPE_LABELS, POST_TYPE_ORDER } from '../../lib/post-types';
@@ -40,8 +41,10 @@ export function FeedClient() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [disabled, setDisabled] = useState(false);
-  const [includeFiltered, setIncludeFiltered] = useState(false);
+  const [includeFiltered] = useState(false);
   const [filterType, setFilterType] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [forceBlur, setForceBlur] = useState(false);
   const [sortBy, setSortBy] = useState('latest');
@@ -54,33 +57,57 @@ export function FeedClient() {
     feedShowAvatar: true,
     feedShowGraphic: true,
   });
+  const requestId = useRef(0);
 
-  const loadFirst = useCallback(async () => {
-    setLoading(true);
-    try {
-      const token = await getToken();
-      if (!token) return;
-      const cfg = await fetchConfig(token).catch(() => null);
-      if (cfg) setForceBlur(cfg.graphicBlurForced);
-      const page = await fetchFeed(token, {
-        type: filterType || undefined,
-        includeFiltered,
-      });
-      setPosts(page.posts);
-      setAds(page.ads ?? []);
-      setNextBefore(page.nextBefore);
-      setError(null);
-      setDisabled(false);
-    } catch (e) {
-      if (e instanceof CommunityApiError && e.status === 404) {
-        setDisabled(true);
-      } else {
-        setError('Could not load the feed. Please try again.');
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQuery(searchText.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchText]);
+
+  const loadFirst = useCallback(
+    async (opts: { silent?: boolean } = {}) => {
+      const silent = opts.silent === true;
+      const currentRequest = ++requestId.current;
+      // ⚠️ A background poll must NOT toggle `loading`. Toggling it flashed the
+      // "Loading…" line in and out of the feed every few seconds, which read as
+      // the whole feed refreshing/jumping. A silent refresh swaps the data in
+      // place and leaves the existing posts on screen.
+      if (!silent) setLoading(true);
+      try {
+        const token = await getToken();
+        if (!token) return;
+        if (!silent) {
+          const cfg = await fetchConfig(token).catch(() => null);
+          if (cfg) setForceBlur(cfg.graphicBlurForced);
+        }
+        const query = {
+          type: filterType || undefined,
+          includeFiltered,
+        };
+        const page = searchQuery
+          ? await searchFeed(token, { ...query, q: searchQuery })
+          : await fetchFeed(token, query);
+        if (currentRequest !== requestId.current) return;
+        setPosts(page.posts);
+        setAds(page.ads ?? []);
+        setNextBefore(page.nextBefore);
+        setError(null);
+        setDisabled(false);
+      } catch (e) {
+        if (currentRequest !== requestId.current) return;
+        // A failed background poll keeps whatever is already on screen.
+        if (silent) return;
+        if (e instanceof CommunityApiError && e.status === 404) {
+          setDisabled(true);
+        } else {
+          setError('Could not load the feed. Please try again.');
+        }
+      } finally {
+        if (!silent && currentRequest === requestId.current) setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [getToken, filterType, includeFiltered]);
+    },
+    [getToken, filterType, includeFiltered, searchQuery],
+  );
 
   const loadPrefs = useCallback(async () => {
     const token = await getToken();
@@ -105,38 +132,43 @@ export function FeedClient() {
   // refresh when a post is created there — the two are sibling components.
   useEffect(() => {
     function onPosted() {
-      void loadFirst();
+      void loadFirst({ silent: true });
     }
     window.addEventListener('gg:feed-refresh', onPosted);
     return () => window.removeEventListener('gg:feed-refresh', onPosted);
   }, [loadFirst]);
 
   // Poll while any of the member's own posts is still being checked, so it
-  // flips to "live" on its own — the member was told it will appear automatically.
+  // flips to "live" on its own — the member was told it will appear
+  // automatically. Keyed on the boolean, not on `posts`, so the interval is
+  // NOT torn down and recreated on every refresh.
+  const hasPending = posts.some(
+    (p) => p.moderationState === 'PROCESSING' || p.moderationState === 'IN_REVIEW',
+  );
   useEffect(() => {
-    const pending = posts.some(
-      (p) =>
-        p.moderationState === 'PROCESSING' ||
-        p.moderationState === 'IN_REVIEW',
-    );
-    if (!pending) return;
+    if (!hasPending) return;
     const id = setInterval(() => {
-      void loadFirst();
+      void loadFirst({ silent: true });
     }, 8000);
     return () => clearInterval(id);
-  }, [posts, loadFirst]);
+  }, [hasPending, loadFirst]);
 
   async function loadMore() {
     if (!nextBefore || loadingMore) return;
+    const currentRequest = requestId.current;
     setLoadingMore(true);
     try {
       const token = await getToken();
       if (!token) return;
-      const page = await fetchFeed(token, {
+      const query = {
         before: nextBefore,
         type: filterType || undefined,
         includeFiltered,
-      });
+      };
+      const page = searchQuery
+        ? await searchFeed(token, { ...query, q: searchQuery })
+        : await fetchFeed(token, query);
+      if (currentRequest !== requestId.current) return;
       setPosts((prev) => [...prev, ...page.posts]);
       setNextBefore(page.nextBefore);
     } catch {
@@ -271,6 +303,29 @@ export function FeedClient() {
         size="sm"
       />
 
+      <label className="relative block mt-1">
+        <span className="sr-only">Search the community feed</span>
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[16px]"
+          style={{ color: 'var(--text-tertiary)' }}
+        >
+          ⌕
+        </span>
+        <input
+          type="search"
+          value={searchText}
+          onChange={(event) => setSearchText(event.target.value)}
+          placeholder="Search posts, tags, categories or people"
+          className="w-full rounded-[10px] py-3 pl-10 pr-3 text-[14px] outline-none focus-visible:ring-2"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            color: 'var(--text-primary)',
+          }}
+        />
+      </label>
+
       <div className="flex items-center justify-between mt-2">
         <div />
         <select
@@ -304,7 +359,9 @@ export function FeedClient() {
           className="text-center text-[14px] py-8"
           style={{ color: 'var(--text-tertiary)' }}
         >
-          Nothing here yet. Be the first to post.
+          {searchQuery
+            ? `No posts found for “${searchQuery}”.`
+            : 'Nothing here yet. Be the first to post.'}
         </p>
       )}
 

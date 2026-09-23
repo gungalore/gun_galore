@@ -36,6 +36,10 @@ export interface FeedPost {
   title: string | null;
   body: string;
   tags: string[];
+  /** Google Places place name tagged on the post; null when none. */
+  location: string | null;
+  /** Google Places place_id for `location`, so the tag opens that exact place. */
+  locationPlaceId: string | null;
   graphicTier: GraphicTier;
   isOfficial: boolean;
   likeCount: number;
@@ -146,6 +150,18 @@ export function fetchFeed(
   return jsonFetch(`/community/feed${q ? `?${q}` : ''}`, token);
 }
 
+/** Search published feed posts, respecting the viewer's feed filters. */
+export function searchFeed(
+  token: string,
+  opts: { q: string; before?: string; type?: string; includeFiltered?: boolean },
+): Promise<FeedPage> {
+  const qs = new URLSearchParams({ q: opts.q });
+  if (opts.before) qs.set('before', opts.before);
+  if (opts.type) qs.set('type', opts.type);
+  if (opts.includeFiltered) qs.set('includeFiltered', 'true');
+  return jsonFetch(`/community/search?${qs.toString()}`, token);
+}
+
 export function fetchPost(
   token: string,
   id: string,
@@ -186,6 +202,7 @@ export function createPost(
     tags?: string[];
     groupId?: string;
     location?: string;
+    locationPlaceId?: string;
   },
 ): Promise<{ post: FeedPost; moderation: { decision: string; reasons: string[] } }> {
   return jsonFetch('/community/posts', token, {

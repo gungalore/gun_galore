@@ -4,22 +4,38 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../lib/auth';
 import {
-  type FeedGroup,
+  CommunityApiError,
   createPost,
-  fetchGroups,
+  deletePost,
   submitPost,
   uploadPostImage,
   uploadPostVideo,
 } from '../../lib/community-api';
 import { processImage } from '../../lib/process-image';
 import { POST_TYPE_LABELS, POST_TYPE_ORDER, type PostTypeKey } from '../../lib/post-types';
+import FilePickerButton from '../file-picker-button';
 
 declare global {
   interface Window {
     google?: {
       maps?: {
         places?: {
-          Autocomplete: any;
+          Autocomplete: new (
+            input: HTMLInputElement,
+            opts?: Record<string, unknown>,
+          ) => {
+            addListener: (event: string, handler: () => void) => void;
+            getPlace: () => {
+              name?: string;
+              formatted_address?: string;
+              place_id?: string;
+              address_components?: Array<{
+                long_name: string;
+                short_name: string;
+                types: string[];
+              }>;
+            };
+          };
         };
       };
     };
@@ -31,7 +47,65 @@ interface Picked {
   url: string;
 }
 
+/**
+ * The label stored on the post: the place name plus its town, and nothing more
+ * ("Hunting Lodge, Swartruggens") — no street, postal code or country. Falls
+ * back down the address hierarchy when a place has no name (a bare area pick).
+ */
+export function placeLabel(place: {
+  name?: string;
+  address_components?: Array<{ long_name: string; types: string[] }>;
+}): string {
+  const comps = place.address_components ?? [];
+  const part = (type: string) =>
+    comps.find((c) => c.types.includes(type))?.long_name?.trim() ?? '';
+  const name = (place.name ?? '').trim();
+  const town =
+    part('locality') ||
+    part('postal_town') ||
+    part('administrative_area_level_2') ||
+    part('sublocality_level_1') ||
+    part('administrative_area_level_1');
+  if (name && town && name.toLowerCase() !== town.toLowerCase()) {
+    return `${name}, ${town}`;
+  }
+  return name || town;
+}
+
 const MAX_IMAGES = 6;
+
+/**
+ * Mirrors `FEED_MAX_VIDEO_BYTES` in `backend/src/feed/feed.types.ts`. Checked
+ * here so an over-size clip is refused with a clear message BEFORE a post row
+ * is created — otherwise the post is created, the upload 400s, and the
+ * moderation sweep later publishes an orphan with no video.
+ */
+const MAX_VIDEO_MB = 64;
+const MAX_VIDEO_BYTES = MAX_VIDEO_MB * 1024 * 1024;
+
+/** Turn a failed create/upload into a message that names the actual problem. */
+function describePostError(e: unknown): string {
+  if (e instanceof CommunityApiError) {
+    if (e.status === 401) return 'Your session expired — please sign in again.';
+    if (e.status === 429) {
+      return 'Too many attempts just now — please wait a moment and try again.';
+    }
+    if (e.status === 413 || /file size|too large|maximum/i.test(e.message)) {
+      return `That video is too large. The maximum is ${MAX_VIDEO_MB} MB — please trim or compress it.`;
+    }
+    if (/expected type|file type/i.test(e.message)) {
+      return 'That video format is not supported. Please use MP4, MOV or WebM.';
+    }
+    if (e.status === 400) {
+      return 'That post was blocked by our moderation rules.';
+    }
+    if (e.status >= 500) {
+      return 'The server had a problem posting. Please try again.';
+    }
+    return 'Something went wrong posting. Please try again.';
+  }
+  return 'Something went wrong posting. Please try again.';
+}
 
 export function PostComposer({
   onPosted,
@@ -63,53 +137,58 @@ export function PostComposer({
   const [phase, setPhase] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [groups, setGroups] = useState<FeedGroup[]>([]);
-  const [groupId, setGroupId] = useState('');
+  // `place` is what the location input SHOWS (the full text Google returned).
+  // `location` is the short label stored on the post ("Place, Town"). They
+  // differ on purpose: the box mirrors the pick, the post stays tidy.
   const [place, setPlace] = useState('');
+  const [location, setLocation] = useState('');
+  const [placeId, setPlaceId] = useState('');
   const placeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!open || groups.length) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const token = await getToken();
-        if (!token) return;
-        const res = await fetchGroups(token);
-        if (!cancelled) setGroups(res.groups);
-      } catch {
-        /* groups are optional */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, groups.length, getToken]);
-
-  useEffect(() => {
     if (!open || !placeRef.current || !window.google?.maps?.places) return;
+    // The post shows place name + town only (no street/postal/country); the
+    // input shows the full formatted text so the member sees what they picked.
+    // place_id is kept so the post's location link opens THAT exact place.
     const autocomplete = new window.google.maps.places.Autocomplete(placeRef.current, {
-      fields: ['formatted_address', 'name'],
-      types: ['address'],
+      fields: ['name', 'formatted_address', 'place_id', 'address_components'],
+      componentRestrictions: { country: 'za' },
     });
     autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      setPlace(place.formatted_address ?? '');
+      const selected = autocomplete.getPlace();
+      const full = (selected.formatted_address ?? '').trim();
+      const short = placeLabel(selected) || full;
+      setPlace(full || short);
+      setLocation(short);
+      setPlaceId(selected.place_id ?? '');
     });
   }, [open]);
 
-  function pickImages(list: FileList | null) {
+  function pickImages(files: File[]) {
     images.forEach((i) => URL.revokeObjectURL(i.url));
-    const next = Array.from(list ?? [])
+    const next = files
       .slice(0, MAX_IMAGES)
       .map((file) => ({ file, url: URL.createObjectURL(file) }));
     setImages(next);
   }
 
-  function pickVideo(list: FileList | null) {
+  function pickVideo(files: File[]) {
     if (video) URL.revokeObjectURL(video.url);
-    const file = list?.[0];
-    setVideo(file ? { file, url: URL.createObjectURL(file) } : null);
+    const file = files[0];
+    if (!file) {
+      setVideo(null);
+      return;
+    }
+    // Refuse an over-size clip up front — see MAX_VIDEO_BYTES.
+    if (file.size > MAX_VIDEO_BYTES) {
+      setVideo(null);
+      setMessage(
+        `That video is ${(file.size / (1024 * 1024)).toFixed(0)} MB. The maximum is ${MAX_VIDEO_MB} MB — please trim or compress it.`,
+      );
+      return;
+    }
+    setMessage(null);
+    setVideo({ file, url: URL.createObjectURL(file) });
   }
 
   function removeImage(index: number) {
@@ -133,6 +212,8 @@ export function PostComposer({
     setBody('');
     setTags('');
     setPlace('');
+    setLocation('');
+    setPlaceId('');
     setImages([]);
     setVideo(null);
   }
@@ -142,8 +223,10 @@ export function PostComposer({
     setBusy(true);
     setMessage(null);
     setPhase(null);
+    let token: string | null = null;
+    let createdId: string | null = null;
     try {
-      const token = await getToken();
+      token = await getToken();
       if (!token) {
         setMessage('Please sign in again.');
         return;
@@ -158,9 +241,10 @@ export function PostComposer({
         title: title.trim() || undefined,
         body: body.trim(),
         tags: tagList.length ? tagList : undefined,
-        groupId: groupId || undefined,
-        location: place || undefined,
+        location: location || undefined,
+        locationPlaceId: placeId || undefined,
       });
+      createdId = created.post.id;
 
       const total = images.length + (video ? 1 : 0);
       let done = 0;
@@ -184,11 +268,16 @@ export function PostComposer({
       );
       onPosted();
     } catch (e) {
-      setMessage(
-        e instanceof Error && e.message.includes('400')
-          ? 'That post was blocked by our moderation rules.'
-          : 'Something went wrong posting. Please try again.',
-      );
+      // A post row may already exist when a media upload fails. Remove it: the
+      // moderation sweep would otherwise publish it a couple of minutes later
+      // WITHOUT the photos/video the member attached, which reads as "the post
+      // is up but the video never made it".
+      if (createdId && token) {
+        await deletePost(token, createdId).catch(() => {
+          /* best effort — nothing more we can do */
+        });
+      }
+      setMessage(describePostError(e));
     } finally {
       setBusy(false);
       setPhase(null);
@@ -260,25 +349,6 @@ export function PostComposer({
             </option>
           ))}
         </select>
-        {groups.length > 0 && (
-          <select
-            value={groupId}
-            onChange={(e) => setGroupId(e.target.value)}
-            className="px-2 py-2 rounded-[6px] text-[13px]"
-            style={{
-              background: 'var(--bg-inset)',
-              border: '0.5px solid var(--border)',
-              color: 'var(--text-primary)',
-            }}
-          >
-            <option value="">No group</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-        )}
       </div>
 
       <input
@@ -320,8 +390,15 @@ export function PostComposer({
       <input
         ref={placeRef}
         value={place}
-        onChange={(e) => setPlace(e.target.value)}
-        placeholder="Location (optional)"
+        onChange={(e) => {
+          // Editing the text invalidates the picked place — drop its id so we
+          // never link a stale place to a name the member has changed. Typed
+          // text becomes the post label verbatim.
+          setPlace(e.target.value);
+          setLocation(e.target.value);
+          setPlaceId('');
+        }}
+        placeholder="Place or area (optional)"
         className="w-full px-3 py-2 rounded-[6px] text-[13px] mb-3"
         style={{
           background: 'var(--bg-inset)',
@@ -331,29 +408,31 @@ export function PostComposer({
       />
 
       <div className="flex gap-3 flex-wrap mb-3">
-        <label className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
-          Photos (up to {MAX_IMAGES})
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            multiple
-            disabled={busy}
-            onChange={(e) => pickImages(e.target.files)}
-            className="block mt-1 text-[12px]"
-            style={{ color: 'var(--text-secondary)' }}
-          />
-        </label>
-        <label className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
-          Video (one)
-          <input
-            type="file"
-            accept="video/mp4,video/quicktime,video/webm"
-            disabled={busy}
-            onChange={(e) => pickVideo(e.target.files)}
-            className="block mt-1 text-[12px]"
-            style={{ color: 'var(--text-secondary)' }}
-          />
-        </label>
+        <div className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+          <span>Photos (up to {MAX_IMAGES})</span>
+          <div className="mt-1">
+            <FilePickerButton
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              disabled={busy}
+              onFiles={pickImages}
+            >
+              Choose photos
+            </FilePickerButton>
+          </div>
+        </div>
+        <div className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+          <span>Video (one, up to {MAX_VIDEO_MB} MB)</span>
+          <div className="mt-1">
+            <FilePickerButton
+              accept="video/mp4,video/quicktime,video/webm"
+              disabled={busy}
+              onFiles={pickVideo}
+            >
+              Choose video
+            </FilePickerButton>
+          </div>
+        </div>
       </div>
 
       {/* Live preview of what will be posted, as it is attached. */}

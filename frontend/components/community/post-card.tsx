@@ -24,6 +24,18 @@ interface PostCardProps {
   showGraphic?: boolean;
 }
 
+/**
+ * A post's tagged place opens in the member's maps — the Google Maps universal
+ * link hands off to the installed app on a phone and to the website on desktop.
+ * `query_place_id` pins it to the exact place the member picked; without it the
+ * query is just a name and Maps lands on a generic search.
+ */
+function mapsUrl(location: string, placeId?: string | null): string {
+  const query = encodeURIComponent(location);
+  const base = `https://www.google.com/maps/search/?api=1&query=${query}`;
+  return placeId ? `${base}&query_place_id=${encodeURIComponent(placeId)}` : base;
+}
+
 function timeAgo(iso: string): string {
   const then = new Date(iso).getTime();
   const secs = Math.max(1, Math.floor((Date.now() - then) / 1000));
@@ -115,10 +127,21 @@ export function PostCard({
 
   return (
     <article
-      className="gg-tile gg-tile-lift rounded-lg overflow-hidden"
+      className="gg-tile gg-tile-lift rounded-lg"
       style={{
         background: 'var(--bg-card)',
         border: '0.5px solid var(--border)',
+        // ⚠️ NO `overflow-hidden` HERE, AND A HIGHER z-index WHILE THE ⋯ MENU IS
+        // OPEN. The tile clipped its own dropdown: the menu is absolutely
+        // positioned and can extend past the card's bottom edge, and
+        // `overflow-hidden` (there to round the media corners) sliced it off at
+        // the border. The media wrapper below keeps its own `overflow-hidden`
+        // for its own rounded corners. The z-index is raised because each card
+        // is its own `gg-tile-lift` stacking context at z-index 0; without it
+        // the NEXT card in the feed would paint over an open menu that reaches
+        // into it. (`.gg-tile-lift:focus-within` handles the mouse case; this
+        // covers touch/Safari, where a tapped button does not take focus.)
+        zIndex: menuOpen ? 30 : undefined,
       }}
     >
       <header className="flex items-center gap-3 px-4 pt-4">
@@ -378,6 +401,32 @@ export function PostCard({
               </span>
             ))}
           </div>
+        )}
+        {post.location && (
+          <a
+            href={mapsUrl(post.location, post.locationPlaceId)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="gg-press hover:underline inline-flex items-center gap-1 mt-2 text-[12px]"
+            style={{ color: 'var(--text-tertiary)' }}
+            aria-label={`Open ${post.location} in maps`}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0Z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+            {post.location}
+          </a>
         )}
       </div>
 

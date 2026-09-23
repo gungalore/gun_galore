@@ -37,6 +37,8 @@ import {
   normaliseMuteList,
   normaliseTags,
   PUBLIC_AUTHOR_SELECT,
+  POST_TYPE_LABELS,
+  POST_TYPES,
   PublicAuthor,
 } from './feed.types';
 
@@ -190,6 +192,8 @@ export class FeedService {
       title: post.title,
       body: post.body,
       tags: post.tags,
+      location: post.location,
+      locationPlaceId: post.locationPlaceId,
       graphicTier: post.graphicTier,
       isOfficial: post.isOfficial,
       likeCount: post.likeCount,
@@ -345,15 +349,34 @@ export class FeedService {
     const v = await this.viewer(userId);
     const limit = Math.min(q.limit ?? FEED_PAGE_DEFAULT, FEED_PAGE_MAX);
     const needle = q.q.trim();
+    const lowerNeedle = needle.toLowerCase();
+    const tagNeedles = Array.from(
+      new Set([
+        lowerNeedle,
+        lowerNeedle.replace(/^#+/, '').replace(/\s+/g, '-'),
+      ]),
+    );
+    const matchingTypes = POST_TYPES.filter(
+      (type) =>
+        type.toLowerCase().includes(lowerNeedle) ||
+        POST_TYPE_LABELS[type].toLowerCase().includes(lowerNeedle),
+    );
     const posts = (await this.prisma.post.findMany({
       where: {
         status: PostStatus.PUBLISHED,
+        ...(q.type ? { type: q.type } : {}),
         ...(q.before ? { createdAt: { lt: new Date(q.before) } } : {}),
         ...this.filterWhere(v, !!q.includeFiltered),
         OR: [
           { title: { contains: needle, mode: 'insensitive' } },
           { body: { contains: needle, mode: 'insensitive' } },
-          { tags: { has: needle.toLowerCase() } },
+          { tags: { hasSome: tagNeedles } },
+          { author: { username: { contains: needle, mode: 'insensitive' } } },
+          { category: { name: { contains: needle, mode: 'insensitive' } } },
+          { group: { name: { contains: needle, mode: 'insensitive' } } },
+          { location: { contains: needle, mode: 'insensitive' } },
+          { listing: { title: { contains: needle, mode: 'insensitive' } } },
+          ...(matchingTypes.length ? [{ type: { in: matchingTypes } }] : []),
         ],
       },
       orderBy: { createdAt: 'desc' },
@@ -590,6 +613,7 @@ export class FeedService {
         categoryId: dto.categoryId ?? null,
         groupId,
         location: dto.location ?? null,
+        locationPlaceId: dto.locationPlaceId ?? null,
         status,
         graphicTier: verdict.graphicTier,
         isOfficial: official,

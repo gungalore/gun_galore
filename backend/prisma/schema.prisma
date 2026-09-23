@@ -6780,7 +6780,9 @@ model Post {
   /// Official accounts bypass the promotional/contact filter only — never the
   /// illegal or graphic moderation — and render with an Official badge.
   isOfficial       Boolean      @default(false)
-  location         String?      // Google Places formatted address
+  location         String?      // Google Places place name (venue / locality)
+  /// Google Places place_id, so the tag opens THAT place instead of a text search.
+  locationPlaceId  String?
   likeCount        Int          @default(0)
   commentCount     Int          @default(0)
   reportedCount    Int          @default(0)

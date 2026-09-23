@@ -53,4 +53,9 @@ export class CreatePostDto {
   @IsOptional()
   @IsString()
   location?: string;
+
+  /** Google Places place_id for `location`, so the tag opens that exact place. */
+  @IsOptional()
+  @IsString()
+  locationPlaceId?: string;
 }

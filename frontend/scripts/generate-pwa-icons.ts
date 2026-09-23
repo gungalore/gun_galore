@@ -1,4 +1,4 @@
-// Generates the 5 PWA icon PNGs from a single source image.
+﻿// Generates the 5 PWA icon PNGs from a single source image.
 //
 // Usage:
 //   1. Drop a square source icon at one of:
@@ -11,11 +11,11 @@
 //        npx ts-node scripts/generate-pwa-icons.ts
 //
 // Outputs (in frontend/public/):
-//   icon-192.png            — 192x192, alpha preserved
-//   icon-512.png            — 512x512, alpha preserved
-//   icon-maskable-192.png   — 192x192, icon in inner 80% safe zone, brand bg
-//   icon-maskable-512.png   — 512x512, icon in inner 80% safe zone, brand bg
-//   apple-icon-180.png      — 180x180, icon in inner 90%, brand bg
+//   icon-192.png            â€” 192x192, alpha preserved
+//   icon-512.png            â€” 512x512, alpha preserved
+//   icon-maskable-192.png   â€” 192x192, icon in inner 80% safe zone, brand bg
+//   icon-maskable-512.png   â€” 512x512, icon in inner 80% safe zone, brand bg
+//   apple-icon-180.png      â€” 180x180, icon in inner 90%, brand bg
 //
 // Re-run the script any time the source icon changes. It will overwrite
 // the outputs in place.
@@ -24,14 +24,14 @@ import sharp from 'sharp';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-// Resolve paths from the current working directory — the script is
+// Resolve paths from the current working directory â€” the script is
 // meant to be run from the frontend dir, not the scripts subdir.
 const FRONTEND_DIR = process.cwd();
 const PUBLIC_DIR = path.join(FRONTEND_DIR, 'public');
 
-// Brand dark background — matches manifest theme_color + background_color
+// Brand dark background â€” matches manifest theme_color + background_color
 // and the layout.tsx viewport themeColor. Keep these in sync.
-const BRAND_BG = { r: 15, g: 15, b: 15, alpha: 1 } as const; // #0f0f0f
+const BRAND_BG = { r: 19, g: 17, b: 16, alpha: 1 } as const; // #131110 — dark theme surface (matches manifest + layout themeColor)
 const TRANSPARENT = { r: 0, g: 0, b: 0, alpha: 0 } as const;
 
 const SOURCE_CANDIDATES = [
@@ -41,7 +41,7 @@ const SOURCE_CANDIDATES = [
   'icon-source.jpeg',
 ];
 
-// Look in both frontend/ and frontend/public/ — users naturally drop
+// Look in both frontend/ and frontend/public/ â€” users naturally drop
 // it in /public alongside the other static assets.
 function findSource(): string {
   const searchDirs = [FRONTEND_DIR, PUBLIC_DIR];
@@ -65,7 +65,7 @@ async function plainIcon(source: string, size: number, outName: string) {
 }
 
 async function maskableIcon(source: string, size: number, outName: string) {
-  // Inner 80% safe zone — Android adaptive icon masks (circle, squircle,
+  // Inner 80% safe zone â€” Android adaptive icon masks (circle, squircle,
   // rounded square) crop anything outside this. The 20% padding is
   // filled with brand bg so cropping never reveals a hard edge.
   const inner = Math.round(size * 0.8);
@@ -83,7 +83,7 @@ async function maskableIcon(source: string, size: number, outName: string) {
 }
 
 async function appleIcon(source: string) {
-  // iOS rounds corners with a ~22% radius — fill 90% of the canvas so
+  // iOS rounds corners with a ~22% radius â€” fill 90% of the canvas so
   // the rounded corners don't clip the logo. Brand bg fills the rest;
   // iOS doesn't honour transparency on apple-touch-icon.
   const inner = Math.round(180 * 0.9);
