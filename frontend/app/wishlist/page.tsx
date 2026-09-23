@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+﻿import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../lib/auth-server';
@@ -46,7 +46,7 @@ interface WishlistRow {
 }
 
 export const metadata = {
-  title: 'Wishlist — All Outdoor',
+  title: 'Wishlist — ALL Outdoor',
 };
 
 export default async function WishlistPage() {

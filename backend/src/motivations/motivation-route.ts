@@ -19,7 +19,7 @@ import { haversineKm, type LatLng } from '../news/news-geo';
 // kilometres of the line the applicant drives. Reading suburb names out of the
 // step instructions would miss every area the road passes without turning in.
 //
-// PURE — no HTTP, no Nest. The Directions call lives in the service.
+// PURE — no HTTP, no Nest. The Routes call lives in the service.
 // ────────────────────────────────────────────────────────────────────
 
 /**

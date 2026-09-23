@@ -1,4 +1,4 @@
-import { FeeModel } from '@prisma/client';
+﻿import { FeeModel } from '@prisma/client';
 import { FeeCalculator } from './fee.calculator';
 import {
   buyerBreakdown,
@@ -149,7 +149,7 @@ describe('what the seller is shown', () => {
 
   it('⚠️ answers a row with no seller side instead of failing the invariant', () => {
     // A refund child row zeroes commission AND payout, as would any
-    // first-party sale where All Outdoor is the seller of record. Neither can
+    // first-party sale where ALL Outdoor is the seller of record. Neither can
     // balance against a non-zero price.
     const f = { ...deductFacts(), commissionZar: 0, sellerPayout: 0 };
     const s = sellerBreakdown(f);

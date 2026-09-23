@@ -1,4 +1,4 @@
-import {
+﻿import {
   DEFAULT_SCHEME,
   FORMAT_FEATURES,
   FORMAT_KEYS,
@@ -114,7 +114,7 @@ const FORMAT_COPY: Record<
  */
 const SCHEME_NAMES: Record<Scheme, string> = {
   // The house scheme, and the one a new motivation opens on.
-  alloutdoor: 'All Outdoor',
+  alloutdoor: 'ALL Outdoor',
   eucalyptus: 'Eucalyptus',
   slate: 'Slate',
   stone: 'Stone',

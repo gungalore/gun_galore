@@ -1,4 +1,4 @@
-// /regulated-categories — public statutory schedule.
+﻿// /regulated-categories — public statutory schedule.
 //
 // Why this page exists, and why it is public but not indexed:
 //
@@ -47,7 +47,7 @@ export default function RegulatedCategoriesSchedulePage() {
 
       <p>
         This schedule is published by <strong>ALLOUTDOOR (PTY) LTD</strong>{' '}
-        ("<strong>All Outdoor</strong>") as a supplement to our{' '}
+        ("<strong>ALL Outdoor</strong>") as a supplement to our{' '}
         <a href="/privacy" style={linkStyle}>
           Privacy Policy
         </a>{' '}

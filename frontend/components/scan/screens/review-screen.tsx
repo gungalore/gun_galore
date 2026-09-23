@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import type { ScanFilter } from '@/lib/scan/capture';
@@ -25,7 +25,7 @@ import { T, primaryBtn } from '../scan-theme';
 const GRADE_STYLE = {
   good: { ink: T.good, wash: T.goodWash, line: T.goodLine },
   acceptable: { ink: T.warn, wash: T.warnWash, line: T.warnLine },
-  poor: { ink: T.danger, wash: T.redWash, line: 'rgba(200,16,46,0.3)' },
+  poor: { ink: T.danger, wash: T.redWash, line: 'rgba(227,6,19,0.3)' },
 } as const;
 
 /**

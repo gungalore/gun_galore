@@ -1,4 +1,4 @@
-// ─── WhatsApp template registry — THE ONE REVIEWED FILE ────────────────────
+﻿// ─── WhatsApp template registry — THE ONE REVIEWED FILE ────────────────────
 //
 // 🚨 HARD RULE, ENFORCED HERE STRUCTURALLY: a WhatsApp message may NEVER
 // contain the listed item's title or description — only the order
@@ -214,6 +214,6 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     linkVars: [],
     linkCode: () => 'p',
     render: () =>
-      `Welcome to All Outdoor. Finish setting up your profile so you can buy, sell and get your order updates here.`,
+      `Welcome to ALL Outdoor. Finish setting up your profile so you can buy, sell and get your order updates here.`,
   },
 };

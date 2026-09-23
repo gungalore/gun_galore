@@ -1,4 +1,4 @@
-// Site-wide footer mounted in the root layout. Two roles:
+﻿// Site-wide footer mounted in the root layout. Two roles:
 //
 //   1. ECT § 43 compliance — Section 43 of the Electronic
 //      Communications and Transactions Act 25 of 2002 requires every
@@ -58,7 +58,7 @@ export function SiteFooter() {
               marginBottom: 8,
             }}
           >
-            All Outdoor
+            ALL Outdoor
           </p>
           <p style={{ color: 'var(--text-tertiary-on-card)', lineHeight: 1.6, margin: 0 }}>
             South Africa&apos;s online store for new and secondhand

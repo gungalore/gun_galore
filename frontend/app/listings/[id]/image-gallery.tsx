@@ -101,7 +101,7 @@ export function ImageGallery({
           gets a red outline so the user knows which one is in the
           hero. */}
       {images.length > 1 && (
-        <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
+        <div className="flex gap-2 mt-2 gg-row pb-1">
           {images.map((img, idx) => {
             const isActive = idx === activeIdx;
             return (

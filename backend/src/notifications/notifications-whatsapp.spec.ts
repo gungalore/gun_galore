@@ -1,4 +1,4 @@
-jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
+﻿jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
 import { NotificationsService } from './notifications.service';
 
@@ -44,10 +44,10 @@ const WA_OPT = { templateKey: 'order_confirmed_buyer', vars: { ref: 'ABCDEF12', 
 describe('sendSms fan-out seam', () => {
   it('behaves byte-identically to today when no `whatsapp:` opt is passed', async () => {
     const svc = makeService();
-    await svc.sendSms('0820000000', 'All Outdoor: hello', REF);
+    await svc.sendSms('0820000000', 'ALL Outdoor: hello', REF);
     expect(svc.sms.sendSms).toHaveBeenCalledWith({
       to: '0820000000',
-      message: 'All Outdoor: hello',
+      message: 'ALL Outdoor: hello',
       reference: REF,
     });
     expect(svc.whatsapp.sendTemplate).not.toHaveBeenCalled();

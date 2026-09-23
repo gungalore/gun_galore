@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Image from 'next/image';
 import { av } from '@/lib/asset-version';
@@ -31,7 +31,7 @@ export default function PreparingMotivation() {
       className="rounded-[var(--r-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-5 py-8 text-center"
     >
       <Image
-        src={av('/logo-nav-dark.svg')}
+        src={av('/brand/logo-horizontal-dark-transparent.svg')}
         alt={BRAND_NAME}
         width={177}
         height={30}

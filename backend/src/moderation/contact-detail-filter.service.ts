@@ -1,11 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 
 /**
  * Two-layer contact-detail filter for ANY user-to-user freeform text.
  *
- * Background — All Outdoor charges a platform fee on completed transactions.
+ * Background — ALL Outdoor charges a platform fee on completed transactions.
  * Any channel that lets one user reach another off-platform (phone, email,
  * WhatsApp handle, "meet me at..." etc.) is a fee-bypass vector and a
  * trust-and-safety risk. The operator's rule: contact-detail sharing is
@@ -48,7 +48,7 @@ import { LlmService } from '../common/llm/llm.service';
  * every freeform write without UX cost.
  */
 
-const FILTER_PROMPT = `You decide whether a short message from one All Outdoor user to another is trying to share off-platform contact details or coordinate a deal outside the platform.
+const FILTER_PROMPT = `You decide whether a short message from one ALL Outdoor user to another is trying to share off-platform contact details or coordinate a deal outside the platform.
 
 REJECT if the message contains, or is trying to obscure:
 - a phone number (any form — digits, spelled-out words, split with dots/spaces/dashes/non-digit characters, "oh-eight-two...", "treble-five", etc.)
@@ -149,14 +149,14 @@ export type FilterResult =
 
 const PUBLIC_REASONS: Record<RejectCategory, string> = {
   phone:
-    'No phone numbers in messages — keep negotiation on All Outdoor. Once payment goes through, the platform handles handoff.',
+    'No phone numbers in messages — keep negotiation on ALL Outdoor. Once payment goes through, the platform handles handoff.',
   email:
-    'No email addresses in messages — keep negotiation on All Outdoor. Once payment goes through, the platform handles handoff.',
-  url: 'No external links in messages — keep negotiation on All Outdoor.',
+    'No email addresses in messages — keep negotiation on ALL Outdoor. Once payment goes through, the platform handles handoff.',
+  url: 'No external links in messages — keep negotiation on ALL Outdoor.',
   'social-platform':
-    'No WhatsApp / social handles in messages — keep negotiation on All Outdoor. Once payment goes through, the platform handles handoff.',
+    'No WhatsApp / social handles in messages — keep negotiation on ALL Outdoor. Once payment goes through, the platform handles handoff.',
   'off-platform-coordination':
-    'Keep negotiation on All Outdoor — once payment goes through, the platform handles direct contact for shipping.',
+    'Keep negotiation on ALL Outdoor — once payment goes through, the platform handles direct contact for shipping.',
   address:
     'No street addresses in messages — physical handoff happens through the courier flow after payment.',
 };

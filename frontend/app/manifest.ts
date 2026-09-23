@@ -1,4 +1,4 @@
-import type { MetadataRoute } from 'next';
+﻿import type { MetadataRoute } from 'next';
 import { av } from '@/lib/asset-version';
 import { SITE_URL } from '@/lib/brand';
 
@@ -6,7 +6,7 @@ import { SITE_URL } from '@/lib/brand';
 // file is present in the app dir. The combination of this manifest +
 // the meta tags in layout.tsx is enough for browsers (Chrome, Edge,
 // Samsung Internet, Safari) to surface "Add to Home Screen" and
-// launch All Outdoor in standalone mode without browser chrome.
+// launch ALL Outdoor in standalone mode without browser chrome.
 //
 // Phase C additions:
 //   * `id` — explicit PWA identity, recommended so browsers don't
@@ -20,8 +20,8 @@ import { SITE_URL } from '@/lib/brand';
 export default function manifest(): MetadataRoute.Manifest & { colors?: string[] } {
   return {
     id: '/',
-    name: 'All Outdoor',
-    short_name: 'All Outdoor',
+    name: 'ALL Outdoor',
+    short_name: 'ALL Outdoor',
     description:
       'South Africa’s new and secondhand outdoor store — camping, overlanding, fishing and outdoor clothing.',
     start_url: '/',
@@ -98,7 +98,7 @@ export default function manifest(): MetadataRoute.Manifest & { colors?: string[]
         icons: [{ src: av('/icon-192.png'), sizes: '192x192', type: 'image/png' }],
       },
     ],
-    // SCREENSHOTS REMOVED at the All Outdoor rebrand.
+    // SCREENSHOTS REMOVED at the ALL Outdoor rebrand.
     //
     // These were live prod captures, so they still showed the old GUN-GALORE
     // bullet logo, the old "outdoor & sport marketplace" hero and the previous

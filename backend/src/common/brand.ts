@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Backend mirror of frontend/lib/brand.ts. Deliberately a separate file —
  * neither app imports the other — so keep the two in step by hand.
  *
- * The platform trades as ALL OUTDOOR and the registered company is
+ * The platform trades as ALL Outdoor and the registered company is
  * ALLOUTDOOR (PTY) LTD (reg 2026/639713/07, CIPC 2026). ECT s43 requires the
  * REGISTERED name in public disclosures, which is why both constants exist.
  * The old GunGalore (Pty) Ltd entity is a SEPARATE company being wound down —
@@ -15,7 +15,7 @@
  */
 
 /** Trading name — what customers see. */
-export const BRAND_NAME = 'All Outdoor';
+export const BRAND_NAME = 'ALL Outdoor';
 
 /** Registered company. ECT s43 disclosure only. */
 export const LEGAL_ENTITY = 'ALLOUTDOOR (PTY) LTD';

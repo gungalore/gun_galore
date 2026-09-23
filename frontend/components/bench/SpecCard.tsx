@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 /**
  * THE BENCH — the cartridge spec card.
@@ -752,7 +752,7 @@ export function SpecCard({
       {/* The pill row scrolls sideways rather than wrapping: three options at
           a 44px tap height would otherwise stack into two rows on a 320px
           phone and push the drawing under the fold. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         {viewSeg}
       </div>
       {viewBody}

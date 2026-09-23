@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
@@ -292,7 +292,7 @@ export function ProfileSetupPrompt() {
             margin: 0,
           }}
         >
-          Welcome to All Outdoor
+          Welcome to ALL Outdoor
         </p>
         <h2
           id="gg-profile-setup-title"

@@ -1,4 +1,4 @@
-// Custom sign-up form — PRODUCTION, fully wired to Clerk (see sign-up-form.tsx:
+﻿// Custom sign-up form — PRODUCTION, fully wired to Clerk (see sign-up-form.tsx:
 // signUp.create → email-code verification → setActive). Consent is recorded via
 // POST /users/me/consent (flushed by <ConsentSync/>).
 //
@@ -15,7 +15,7 @@
 import SignUpForm from './sign-up-form';
 
 export const metadata = {
-  title: 'Create your account — All Outdoor',
+  title: 'Create your account — ALL Outdoor',
 };
 
 export default function SignUpPage() {

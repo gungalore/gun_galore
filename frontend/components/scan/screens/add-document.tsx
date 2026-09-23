@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useRef } from 'react';
 import { av } from '@/lib/asset-version';
@@ -178,7 +178,7 @@ export default function AddDocument({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={av('/logo-mark-dark.svg')}
+          src={av('/brand/emblem-dark-transparent.svg')}
           alt=""
           aria-hidden="true"
           style={{ height: 26, width: 'auto' }}

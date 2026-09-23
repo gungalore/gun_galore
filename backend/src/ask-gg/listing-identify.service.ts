@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -92,7 +92,7 @@ export function buildIdentifySystemPrompt(
     ? `\n\nAVAILABLE CATEGORIES (top-level → sub-categories — indentation shows hierarchy):\n${opts.categoryTree}\n\nPick the most SPECIFIC slug that fits the item. Prefer a sub-category slug over its parent when the photos give you enough confidence. If unsure between sub-categories, return the parent slug. Return null only if no category fits at all.`
     : '\n\nReturn one of these top-level slugs in suggestedCategorySlug, or null: "firearms", "ammunition", "optics", "reloading", "knives", "shooting-accessories", "camping-outdoor", "overlanding", "fishing", "hunting", "hiking", "outdoor-clothing", "archery".';
 
-  return `You are an SA outdoor-gear identification assistant for All Outdoor (South Africa's outdoor & firearms marketplace). Look at the photos and return a STRICT JSON object describing the item, to pre-fill a marketplace listing form. The item could be ANYTHING All Outdoor sells — a firearm, optic, ammunition/reloading gear, a camping fridge or tent, a rooftop tent, dual-battery/solar kit, recovery/4x4 gear, a fishing rod/reel/kayak, a hiking pack or boots, outdoor clothing, a knife/multitool, a bow, etc.
+  return `You are an SA outdoor-gear identification assistant for ALL Outdoor (South Africa's outdoor & firearms marketplace). Look at the photos and return a STRICT JSON object describing the item, to pre-fill a marketplace listing form. The item could be ANYTHING ALL Outdoor sells — a firearm, optic, ammunition/reloading gear, a camping fridge or tent, a rooftop tent, dual-battery/solar kit, recovery/4x4 gear, a fishing rod/reel/kayak, a hiking pack or boots, outdoor clothing, a knife/multitool, a bow, etc.
 
 Output ONLY the JSON object, no markdown fence, no preamble, no explanation.
 

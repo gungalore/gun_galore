@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -278,7 +278,7 @@ export default function CartPage() {
           // and no tombstone label inviting a click through to a profile that
           // 404s. ⚠️ It fires only for a line with no sellerUsername key at
           // all: both add-to-cart writers coerce a null handle before it gets
-          // here — the PDP to 'Seller', /deals to 'All Outdoor' — so a
+          // here — the PDP to 'Seller', /deals to 'ALL Outdoor' — so a
           // nameless seller's block still reads 'Seller'. Aligning that is a
           // change at the writer; never by rewriting a stored value.
           name: i.sellerUsername ?? 'Anonymous seller',
@@ -588,7 +588,7 @@ export default function CartPage() {
                   <span
                     className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-[4px] uppercase"
                     style={{
-                      background: 'rgba(200,16,46,0.08)',
+                      background: 'rgba(227,6,19,0.08)',
                       border: '0.5px solid var(--red)',
                       color: 'var(--red)',
                       letterSpacing: '0.03em',
@@ -742,7 +742,7 @@ export default function CartPage() {
         <div
           key={i.listingId}
           className="rounded-[8px] mb-4 p-3"
-          style={{ border: '0.5px solid var(--red)', background: 'rgba(200,16,46,0.06)' }}
+          style={{ border: '0.5px solid var(--red)', background: 'rgba(227,6,19,0.06)' }}
         >
           <p className="text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
             {i.title}

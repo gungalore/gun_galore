@@ -1,4 +1,4 @@
-// Community Guidelines — the feed-specific rules. Public and crawlable, like
+﻿// Community Guidelines — the feed-specific rules. Public and crawlable, like
 // the AUP it sits beside.
 //
 // ⚠️ PUBLIC PAGE. Do NOT name restricted product categories or use the
@@ -13,7 +13,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Community Guidelines',
   description:
-    'How the All Outdoor community feed works — what to share, what is not allowed, and how reporting works.',
+    'How the ALL Outdoor community feed works — what to share, what is not allowed, and how reporting works.',
 };
 
 export default function CommunityGuidelinesPage() {
@@ -26,7 +26,7 @@ export default function CommunityGuidelinesPage() {
 
       <h2>1. The community is members-only</h2>
       <p>
-        The All Outdoor community is a space for signed-in members to share
+        The ALL Outdoor community is a space for signed-in members to share
         experiences, ask questions and discuss the outdoors. It sits behind
         your login: nothing you post is visible to signed-out visitors, and
         posts are not indexed by search engines. Shared links show a join
@@ -58,12 +58,12 @@ export default function CommunityGuidelinesPage() {
       <ul>
         <li>Links to your own shop, website, channel or storefront.</li>
         <li>Social-media handles, "DM me", "link in bio", or any request to take a conversation off the platform.</li>
-        <li>Offers to sell, prices for sale, or "for sale" posts — even for your own All Outdoor listings.</li>
+        <li>Offers to sell, prices for sale, or "for sale" posts — even for your own ALL Outdoor listings.</li>
         <li>Watermarks or contact text baked into images.</li>
       </ul>
       <p>
-        Selling happens through All Outdoor's own listing tools, not the feed.
-        Official All Outdoor accounts may post announcements and features;
+        Selling happens through ALL Outdoor's own listing tools, not the feed.
+        Official ALL Outdoor accounts may post announcements and features;
         those posts carry an <strong>Official</strong> badge.
       </p>
 

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
@@ -422,8 +422,8 @@ export function ProfileCompletionModal({
             display: 'flex',
             gap: 10,
             alignItems: 'flex-start',
-            background: 'rgba(200,16,46,0.08)',
-            border: '0.5px solid rgba(200,16,46,0.35)',
+            background: 'rgba(227,6,19,0.08)',
+            border: '0.5px solid rgba(227,6,19,0.35)',
             borderRadius: 8,
             padding: '11px 13px',
             margin: '0 0 24px',
@@ -681,7 +681,7 @@ export function ProfileCompletionModal({
               padding: '10px 12px',
               fontSize: 13,
               color: '#fff',
-              background: 'rgba(200,16,46,0.12)',
+              background: 'rgba(227,6,19,0.12)',
               border: '0.5px solid var(--red)',
               borderRadius: 6,
               lineHeight: 1.5,

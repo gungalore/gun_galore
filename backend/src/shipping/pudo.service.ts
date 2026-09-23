@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { SearchService, INDEXES } from '../search/search.service';
 import { PostalCodesService } from './postal-codes.service';
 import { CarrierContact, CarrierShipmentResult } from './carrier.types';
@@ -517,7 +517,7 @@ export class PudoService {
           submitted_width_cm: String(parcel.widthCm),
           submitted_height_cm: String(parcel.heightCm),
           submitted_weight_kg: String(parcel.weightGrams / 1000),
-          parcel_description: 'All Outdoor marketplace parcel',
+          parcel_description: 'ALL Outdoor marketplace parcel',
           alternative_tracking_reference: '',
         },
       ],

@@ -1,4 +1,4 @@
-// Data deletion instructions — public. Meta (and POPIA) expect a clear,
+﻿// Data deletion instructions — public. Meta (and POPIA) expect a clear,
 // reachable page explaining how a user asks us to delete their data, what is
 // deleted, and what we must keep by law. Linked from the Privacy Policy and
 // usable without signing in.
@@ -10,7 +10,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Delete your data',
   description:
-    'How to ask All Outdoor to delete your personal information, what is deleted, and what we are required to keep.',
+    'How to ask ALL Outdoor to delete your personal information, what is deleted, and what we are required to keep.',
 };
 
 export default function DataDeletionPage() {

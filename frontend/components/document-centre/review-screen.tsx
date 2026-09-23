@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import ConfirmPanel from '@/components/document-centre/confirm-panel';
@@ -446,7 +446,7 @@ export default function ReviewScreen({
                   </span>
                 )}
                 {rejected.length > 0 && (
-                  <span className="rounded-full border border-[rgba(200,16,46,0.5)] bg-[rgba(200,16,46,0.09)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--red)]">
+                  <span className="rounded-full border border-[rgba(227,6,19,0.5)] bg-[rgba(227,6,19,0.09)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--red)]">
                     {rejected.length} did not go through
                   </span>
                 )}
@@ -604,7 +604,7 @@ export default function ReviewScreen({
                   onClick={() => void refile(sheetItem, k)}
                   className={`flex min-h-[44px] items-center justify-between gap-3 rounded-[6px] border px-3 text-left text-[12.5px] disabled:opacity-50 ${
                     k === sheetItem.kind
-                      ? 'border-[var(--red)] bg-[rgba(200,16,46,0.09)] font-semibold'
+                      ? 'border-[var(--red)] bg-[rgba(227,6,19,0.09)] font-semibold'
                       : 'border-transparent hover:bg-[var(--bg-card-hover)]'
                   }`}
                 >

@@ -1,4 +1,4 @@
-import { FeeModel } from '@prisma/client';
+﻿import { FeeModel } from '@prisma/client';
 
 // ────────────────────────────────────────────────────────────────────
 // ONE PLACE THAT DECIDES HOW A SALE'S MONEY IS SHOWN.
@@ -84,7 +84,7 @@ const sum = (lines: MoneyLine[]) => lines.reduce((t, l) => t + l.cents, 0);
 
 /**
  * ⚠️ A ROW WITH NO SELLER SIDE. A refund child row zeroes both commissionZar
- * and sellerPayout, as would any future first-party sale where All Outdoor is
+ * and sellerPayout, as would any future first-party sale where ALL Outdoor is
  * the seller of record. Such a row cannot produce a seller breakdown that
  * balances against a non-zero price, so it is answered explicitly rather than
  * being allowed to fail the invariant.

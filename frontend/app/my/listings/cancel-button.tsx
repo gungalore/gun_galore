@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -136,7 +136,7 @@ export default function CancelButton({ listingId }: { listingId: string }) {
               <div
                 className="rounded-[6px] p-3"
                 style={{
-                  background: 'rgba(200,16,46,0.08)',
+                  background: 'rgba(227,6,19,0.08)',
                   border: '0.5px solid var(--red)',
                 }}
               >

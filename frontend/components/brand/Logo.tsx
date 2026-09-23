@@ -20,7 +20,6 @@ export function Logo({ variant = 'horizontal', on: propOn = 'light', height = 36
   useEffect(() => {
     const updateOn = () => {
       const theme = document.documentElement.dataset.theme as 'light' | 'dark';
-      console.log(`[Logo] DOM theme: ${theme}`);
       setOn(theme);
     };
     updateOn();

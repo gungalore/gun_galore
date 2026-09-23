@@ -1,4 +1,4 @@
-export type ListingType = 'BUY_NOW' | 'TAKE_A_SHOT' | 'AUCTION';
+﻿export type ListingType = 'BUY_NOW' | 'TAKE_A_SHOT' | 'AUCTION';
 export type ListingStatus = 'DRAFT' | 'PENDING_REVIEW' | 'ACTIVE' | 'PAYMENT_PENDING' | 'SOLD' | 'CANCELLED' | 'EXPIRED';
 export type Condition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
 export type SellerTier = 'NEW' | 'ESTABLISHED' | 'TRUSTED' | 'TOP_SELLER' | 'DEALER';
@@ -90,7 +90,7 @@ export interface CategoryWithCount {
 export interface ListingSeller {
   id: string;
   userId: string;
-  // Public-facing handle. All Outdoor platform policy: we DON'T
+  // Public-facing handle. ALL Outdoor platform policy: we DON'T
   // display real names anywhere on public listings. Use this in
   // listing-detail / card / Q&A / seller-profile views. firstName/
   // lastName are kept on the payload for internal flows (order

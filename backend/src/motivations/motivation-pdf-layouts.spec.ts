@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+﻿import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -369,7 +369,7 @@ describe('choosing a layout', () => {
 describe('the house scheme', () => {
   it('\u26a0\ufe0f is what a new motivation opens on', () => {
     // The document used to default to Eucalyptus — the design handoff's own
-    // colour, and nothing to do with All Outdoor. Safe to change only because
+    // colour, and nothing to do with ALL Outdoor. Safe to change only because
     // asScheme() validates on read: a row that stored a colour still gets it.
     expect(DEFAULT_SCHEME).toBe('alloutdoor');
     expect(SCHEME_KEYS[0]).toBe('alloutdoor');

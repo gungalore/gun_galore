@@ -1,10 +1,10 @@
-import { MotivationLicenceType } from '@prisma/client';
+﻿import { MotivationLicenceType } from '@prisma/client';
 import { fieldsFor } from './motivation-fields';
 
 // ────────────────────────────────────────────────────────────────────
 // FILLING THE FORM FROM THE APPLICANT'S OWN PROFILE — WITH PERMISSION.
 //
-// Operator, 2026-08-18: ask before using their All Outdoor profile details.
+// Operator, 2026-08-18: ask before using their ALL Outdoor profile details.
 //
 // So this module answers two questions and nothing else: WHAT would we copy,
 // and WHERE did each value come from. The applicant is shown that list, agrees

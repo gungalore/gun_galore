@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // CrossSellRow — "You might also need…". A SECONDARY suggestion row that
 // renders below the user's primary results (or on a listing detail page).
@@ -119,7 +119,7 @@ export function CrossSellRow({
             margin: '2px 0 0',
           }}
         >
-          Related items from across All Outdoor
+          Related items from across ALL Outdoor
         </p>
       </header>
       <div

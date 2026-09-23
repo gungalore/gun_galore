@@ -1,4 +1,4 @@
-// Buyer Protection — what the Buyer Protection Fee actually buys. Public
+﻿// Buyer Protection — what the Buyer Protection Fee actually buys. Public
 // (linked from /fees and checkout), so it must be reachable signed-out.
 //
 // House rules: never the word "escrow" (say "funds held" / "payment held");
@@ -15,7 +15,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Buyer Protection',
   description:
-    'What the All Outdoor Buyer Protection Fee covers — funds held until completion, verified sellers, and dispute resolution.',
+    'What the ALL Outdoor Buyer Protection Fee covers — funds held until completion, verified sellers, and dispute resolution.',
 };
 
 export default function BuyerProtectionPage() {
@@ -28,7 +28,7 @@ export default function BuyerProtectionPage() {
 
       <h2>What it is</h2>
       <p>
-        Every order on All Outdoor carries a{' '}
+        Every order on ALL Outdoor carries a{' '}
         <strong>Buyer Protection Fee</strong> — <strong>3.28% + R1.15</strong>{' '}
         (VAT included), charged at checkout on the item price and the
         carrier&apos;s rate together. The fee funds the protections below, on

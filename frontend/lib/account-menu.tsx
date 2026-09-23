@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -145,7 +145,7 @@ export function AccountMenuList({
                   fontSize,
                   textDecoration: 'none',
                   color: active ? '#fff' : 'var(--text-secondary)',
-                  background: active ? 'rgba(200,16,46,0.14)' : 'transparent',
+                  background: active ? 'rgba(227,6,19,0.14)' : 'transparent',
                   borderLeft: active
                     ? '2px solid var(--red)'
                     : '2px solid transparent',

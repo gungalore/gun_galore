@@ -20,6 +20,8 @@ interface PostCardProps {
   showMuted?: boolean;
   /** Operator policy: keep graphic content hidden, no tap-to-reveal. */
   forceBlur?: boolean;
+  /** Member preference: show graphic content. Default true. */
+  showGraphic?: boolean;
 }
 
 function timeAgo(iso: string): string {
@@ -47,6 +49,7 @@ export function PostCard({
   onDeletePost,
   showMuted,
   forceBlur,
+  showGraphic = true,
 }: PostCardProps) {
   const [revealed, setRevealed] = useState(post.graphicTier === 'NONE');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -78,8 +81,9 @@ export function PostCard({
   // Only EXTREME content is force-hidden. FIELD (normal hunting/fishing field
   // photos) is blurred with a tap-to-reveal, per the tiered policy — forceBlur
   // must not make an ordinary field photo permanently invisible.
+  // showGraphic false (member preference) blurs all graphic content.
   const hiddenForever =
-    graphic && post.graphicTier === 'EXTREME' && !!forceBlur;
+    graphic && post.graphicTier === 'EXTREME' && (!!forceBlur || !showGraphic);
 
   // The content-warning badge. Big and red on purpose — members kept tapping
   // past a small, low-contrast hint.
@@ -111,7 +115,7 @@ export function PostCard({
 
   return (
     <article
-      className="gg-tile gg-tile-lift rounded-[8px] overflow-hidden"
+      className="gg-tile gg-tile-lift rounded-lg overflow-hidden"
       style={{
         background: 'var(--bg-card)',
         border: '0.5px solid var(--border)',
@@ -145,6 +149,12 @@ export function PostCard({
             >
               {post.author.username}
             </span>
+            <span
+              className="text-[12px] px-1.5 py-0.5 rounded"
+              style={{ background: 'var(--bg-inset)', color: 'var(--text-secondary)' }}
+            >
+              {postTypeLabel(post.type)}
+            </span>
             {post.isOfficial && (
               <span
                 className="text-[10px] font-medium px-1.5 py-0.5 rounded"
@@ -159,12 +169,6 @@ export function PostCard({
             >
               · {timeAgo(post.createdAt)}
             </span>
-          </div>
-          <div
-            className="text-[12px]"
-            style={{ color: 'var(--text-tertiary)' }}
-          >
-            {postTypeLabel(post.type)}
           </div>
         </div>
         <div className="relative">
@@ -379,11 +383,11 @@ export function PostCard({
 
       {(post.images.length > 0 || post.video) && (
         <div className="mt-3 px-4">
-          <div className="relative rounded-[6px] overflow-hidden">
+          <div className="relative rounded-lg overflow-hidden">
             <div
               className="flex flex-col gap-1"
               style={{
-                filter: graphic && !revealed ? 'blur(18px)' : 'none',
+                filter: graphic && !revealed ? 'blur(28px)' : 'none',
               }}
             >
               {post.video && (
@@ -435,42 +439,34 @@ export function PostCard({
                 </button>
               ))}
             </div>
-            {graphic && !revealed && hiddenForever && (
+            {graphic && !revealed && (
               <div
                 className="absolute inset-0 flex items-center justify-center text-center px-4"
                 style={{
-                  background: 'color-mix(in srgb, var(--bg-card) 30%, transparent)',
+                  background: 'rgba(0,0,0,0.35)',
+                  backdropFilter: 'blur(28px)',
                 }}
               >
-                <span className="flex flex-col items-center" style={overlayBoxStyle}>
-                  <span style={{ fontSize: 39, fontWeight: 700, lineHeight: 1.1 }}>
-                    Graphic content hidden
+                <div className="flex flex-col items-center gap-3 px-6 text-center">
+                  <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  </div>
+                  <span className="text-white text-base font-semibold">Graphic content</span>
+                  <span className="text-white/80 text-sm">
+                    {post.graphicTier === 'EXTREME' ? 'This post shows a harvested animal.' : 'Tap to reveal'}
                   </span>
-                  <span style={{ fontSize: 36, marginTop: 8, opacity: 0.9 }}>
-                    Blurred for everyone
-                  </span>
-                </span>
+                  <button
+                    type="button"
+                    onClick={() => setRevealed(true)}
+                    className="bg-white text-[var(--stone-900)] px-4 py-2 rounded-full text-sm font-medium"
+                  >
+                    {post.graphicTier === 'EXTREME' ? 'Show image' : 'Tap to reveal'}
+                  </button>
+                </div>
               </div>
-            )}
-            {graphic && !revealed && !hiddenForever && (
-              <button
-                type="button"
-                onClick={() => setRevealed(true)}
-                aria-label="Graphic content — tap to reveal"
-                className="absolute inset-0 flex items-center justify-center text-center px-4"
-                style={{
-                  background: 'color-mix(in srgb, var(--bg-card) 30%, transparent)',
-                }}
-              >
-                <span className="flex flex-col items-center" style={overlayBoxStyle}>
-                  <span style={{ fontSize: 39, fontWeight: 700, lineHeight: 1.1 }}>
-                    Graphic content
-                  </span>
-                  <span style={{ fontSize: 36, marginTop: 8, opacity: 0.9 }}>
-                    Tap to reveal
-                  </span>
-                </span>
-              </button>
             )}
           </div>
         </div>

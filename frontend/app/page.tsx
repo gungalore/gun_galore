@@ -1,4 +1,4 @@
-import Link from 'next/link';
+﻿import Link from 'next/link';
 import { BRAND_NAME } from '@/lib/brand';
 import { viewerFetch } from '@/lib/api-viewer';
 import { serverAuth } from '@/lib/auth-server';
@@ -81,8 +81,8 @@ export async function generateMetadata({
   if (q) {
     return {
       title: listingType
-        ? `“${q}” in ${surface.title} — All Outdoor`
-        : `Results for “${q}” — All Outdoor`,
+        ? `“${q}” in ${surface.title} — ALL Outdoor`
+        : `Results for “${q}” — ALL Outdoor`,
     };
   }
   return {
@@ -279,7 +279,7 @@ export default async function HomePage({
           reintroduce a background image on any surface. */}
 
       {/* Hero now carries the trust card on its right, so the competitive
-          "why All Outdoor" proof lives inside <Hero /> — no separate banner. */}
+          "why ALL Outdoor" proof lives inside <Hero /> — no separate banner. */}
       {showHero ? (
         <>
               <Hero />
@@ -342,7 +342,7 @@ export default async function HomePage({
                     color: 'var(--text-primary)',
                     // Boards set section headings in the display face at
                     // 700/20px — this was rendering in the body font at 500.
-                    fontFamily: 'var(--font-display), Archivo, sans-serif',
+                    fontFamily: 'var(--font-display)',
                     fontWeight: 700,
                     fontSize: 20,
                     letterSpacing: '-0.01em',

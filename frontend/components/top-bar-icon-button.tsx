@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // TopBarIconButton — shared shell for the icon buttons that sit beside the
 // search input in MobileSearchBar (wishlist, cart).
@@ -51,7 +51,7 @@ export function TopBarIconButton({
         minWidth: 48,
         padding: '0 12px',
         borderRadius: 6,
-        background: active ? 'rgba(200,16,46,0.10)' : 'var(--bg-inset)',
+        background: active ? 'rgba(227,6,19,0.10)' : 'var(--bg-inset)',
         border: active ? '0.5px solid var(--red)' : '0.5px solid var(--border)',
         color: active ? 'var(--red)' : 'var(--text-secondary)',
         textDecoration: 'none',

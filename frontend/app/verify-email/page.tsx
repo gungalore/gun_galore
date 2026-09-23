@@ -1,4 +1,4 @@
-import { Suspense } from 'react';
+﻿import { Suspense } from 'react';
 import Link from 'next/link';
 import { av } from '@/lib/asset-version';
 import { VerifyEmailForm } from './verify-email-form';
@@ -11,10 +11,10 @@ export default function VerifyEmailPage() {
       className="flex min-h-screen flex-col items-center justify-center gap-6 px-4"
       style={{ background: 'var(--bg-deep)' }}
     >
-      <Link href="/" aria-label="All Outdoor">
+      <Link href="/" aria-label="ALL Outdoor">
         <img
-          src={av('/logo-nav-dark.svg')}
-          alt="All Outdoor"
+          src="/brand/logo-horizontal-dark-transparent.svg"
+          alt="ALL Outdoor"
           style={{ height: 44, width: 'auto' }}
         />
       </Link>

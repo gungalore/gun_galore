@@ -1,4 +1,4 @@
-import { safeJson } from './safe-json';
+﻿import { safeJson } from './safe-json';
 
 // ─── /users/me client ────────────────────────────────────────────────
 //
@@ -45,7 +45,7 @@ export class UsersApiError extends Error {
  * or an accusation about another member into a row nobody moderates.
  */
 export const ACCOUNT_CLOSURE_REASONS = [
-  ['NOT_USING', 'I am not using All Outdoor'],
+  ['NOT_USING', 'I am not using ALL Outdoor'],
   ['DID_NOT_FIND', 'I did not find what I was looking for'],
   ['BAD_EXPERIENCE', 'I had a bad experience'],
   ['PRIVACY', 'I am worried about my privacy'],

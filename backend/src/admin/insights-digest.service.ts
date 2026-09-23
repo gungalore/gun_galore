@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
@@ -128,7 +128,7 @@ export class InsightsDigestService {
     try {
       const r = await this.llm.complete({
         system:
-          'You are a marketplace analyst for All Outdoor, a South African online ' +
+          'You are a marketplace analyst for ALL Outdoor, a South African online ' +
           'marketplace for outdoor, hunting and sport goods (firearms transfer via ' +
           'licensed dealers). You write a short weekly operator digest. Use ONLY the ' +
           'numbers in the JSON provided — never invent figures. Be specific and ' +
@@ -147,7 +147,7 @@ export class InsightsDigestService {
           {
             role: 'user',
             content:
-              "This week's All Outdoor data (JSON):\n\n" +
+              "This week's ALL Outdoor data (JSON):\n\n" +
               JSON.stringify(data, null, 2),
           },
         ],

@@ -1,4 +1,4 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   ForbiddenException,
@@ -234,7 +234,7 @@ function brandSlugify(s: string): string {
 // ─────────────────────────────────────────────────────────────────────────
 // AMMUNITION BAN — platform policy, enforced in code (2026-08, rebuilt)
 //
-// All Outdoor does not sell ammunition. Live / loaded ammunition may never be
+// ALL Outdoor does not sell ammunition. Live / loaded ammunition may never be
 // listed, sold or traded here. This is a PERMANENT prohibition, not a
 // paperwork step: no licence, permit or dealer arrangement unlocks it, so the
 // error copy has to say so plainly or sellers just resubmit.
@@ -278,7 +278,7 @@ function brandSlugify(s: string): string {
 // ─────────────────────────────────────────────────────────────────────────
 
 export const AMMUNITION_BAN_MESSAGE =
-  'All Outdoor does not sell ammunition. Live ammunition may not be listed, sold or traded on this platform under any circumstances. ' +
+  'ALL Outdoor does not sell ammunition. Live ammunition may not be listed, sold or traded on this platform under any circumstances. ' +
   'This is a permanent platform rule, not a paperwork problem — there is no licence, permit or approval that unlocks it, so please do not resubmit this listing with the wording changed. ' +
   'Reloading components are still welcome: projectiles / bullets and brass cases can be listed under Reloading Components. ' +
   'Primers and propellant powder cannot be listed here either — there is no category for them. Reloading equipment (presses, dies, scales, powder measures) is fine.';

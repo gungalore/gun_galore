@@ -1,4 +1,4 @@
-import Link from 'next/link';
+﻿import Link from 'next/link';
 import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -46,7 +46,7 @@ export async function generateMetadata({
   // gate that answers 200 has not told the crawler the page is gone.
   if (!tree) notFound();
   const { category } = tree;
-  const title = `${category.name} for sale — All Outdoor`;
+  const title = `${category.name} for sale — ALL Outdoor`;
   // Shared blurb (lib/seo.ts) — this description is stamped onto EVERY
   // category's SERP snippet, so it must not lead with "firearms" on the
   // Fishing and Camping pages.

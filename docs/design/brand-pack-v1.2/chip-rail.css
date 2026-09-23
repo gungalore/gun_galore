@@ -1,0 +1,109 @@
+/* chip-rail.css - global chip / pill selector. Requires tokens.css. */
+
+.chip-rail {
+  --chip-h: 38px; --chip-px: 16px; --chip-fs: 0.8125rem; --chip-gap: 8px;
+  --fade: 48px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;          /* lets it shrink inside flex/grid parents */
+}
+.chip-rail--sm { --chip-h: 32px; --chip-px: 12px; --chip-fs: 0.75rem; --chip-gap: 6px; }
+
+.chip-rail__scroller {
+  display: flex;
+  gap: var(--chip-gap);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: var(--fade);
+  scrollbar-width: none;                 /* no visible scrollbar, ever */
+  padding: 4px 2px;                      /* room for focus ring + shadow */
+  margin: -4px -2px;
+  -webkit-mask-image: linear-gradient(90deg,
+    transparent 0, #000 var(--fs, 0px), #000 calc(100% - var(--fe, 0px)), transparent 100%);
+          mask-image: linear-gradient(90deg,
+    transparent 0, #000 var(--fs, 0px), #000 calc(100% - var(--fe, 0px)), transparent 100%);
+}
+.chip-rail__scroller::-webkit-scrollbar { display: none; }
+.chip-rail[data-fade-start="true"] .chip-rail__scroller { --fs: var(--fade); }
+.chip-rail[data-fade-end="true"]   .chip-rail__scroller { --fe: var(--fade); }
+
+/* ---- chip ---- */
+.chip {
+  position: relative;
+  isolation: isolate;
+  flex: none;
+  scroll-snap-align: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--chip-h);
+  padding: 0 var(--chip-px);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font: 600 var(--chip-fs)/1 var(--font-body);
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out),
+              background-color var(--dur-2) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+@media (hover: hover) {
+  .chip:hover { color: var(--text); border-color: var(--border-strong); background: var(--stone-25); }
+}
+.chip:active { transform: scale(0.96); }
+.chip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* single-select active: dark ink pill slides between chips (red stays reserved for primary actions) */
+.chip[data-active="true"] { color: #fff; border-color: transparent; background: transparent; }
+.chip__pill {
+  position: absolute; inset: -1px; z-index: -1;
+  border-radius: inherit;
+  background: var(--stone-900);
+  box-shadow: var(--shadow-sm), var(--inner-highlight);
+}
+/* multi-select active: soft red tint + check */
+.chip[role="checkbox"][data-active="true"] {
+  color: var(--red-700); background: var(--accent-soft); border-color: var(--red-200);
+}
+.chip__check { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round; margin-left: -2px; }
+.chip__icon { display: inline-flex; width: 16px; height: 16px; margin-left: -2px; }
+.chip__icon > svg { width: 100%; height: 100%; }
+.chip__count {
+  min-width: 20px; height: 20px; padding: 0 6px; margin-right: -6px;
+  display: inline-grid; place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken); color: var(--text-3);
+  font-size: 0.6875rem; font-variant-numeric: tabular-nums;
+}
+.chip[data-active="true"] .chip__count { background: rgb(255 255 255 / 0.16); color: #fff; }
+
+/* ---- scroll arrows: desktop pointer only, appear only when there is more ---- */
+.chip-rail__arrow {
+  position: absolute; top: 50%; z-index: 2;
+  width: 32px; height: 32px; margin-top: -16px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: transform var(--dur-1) var(--ease-out), opacity var(--dur-2) var(--ease-out);
+}
+.chip-rail__arrow[hidden] { display: grid; opacity: 0; pointer-events: none; transform: scale(0.85); }
+.chip-rail__arrow--start { left: -4px; }
+.chip-rail__arrow--end { right: -4px; }
+.chip-rail__arrow:active { transform: scale(0.92); }
+.chip-rail__arrow svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+@media (hover: none) { .chip-rail__arrow { display: none !important; } }
+
+/* dark surfaces */
+.surface-dark .chip { background: rgb(255 255 255 / 0.06); border-color: rgb(255 255 255 / 0.12); }
+.surface-dark .chip__pill { background: #fff; }
+.surface-dark .chip[data-active="true"] { color: var(--stone-900); }

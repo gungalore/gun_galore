@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -23,7 +23,7 @@ const LAYOUTS = [
   { key: 'classic', name: 'Classic', blurb: 'Plain and formal.' },
 ];
 const COLOURS = [
-  { key: 'alloutdoor', name: 'All Outdoor', accent: '#C8102E', bannerTo: '#e7e3d9' },
+  { key: 'alloutdoor', name: 'ALL Outdoor', accent: '#E30613', bannerTo: '#e7e3d9' },
   { key: 'petrol', name: 'Petrol', accent: '#298e9a', bannerTo: '#95a7aa' },
 ];
 

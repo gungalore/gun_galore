@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from 'next';
+﻿import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import './admin.css';
 
@@ -17,8 +17,8 @@ import './admin.css';
  */
 
 export const metadata: Metadata = {
-  title: 'Warden — All Outdoor',
-  description: 'Operations console for All Outdoor.',
+  title: 'Warden — ALL Outdoor',
+  description: 'Operations console for ALL Outdoor.',
   manifest: '/admin/manifest.webmanifest',
   robots: { index: false, follow: false },
   appleWebApp: {

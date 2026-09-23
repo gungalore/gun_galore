@@ -1,4 +1,4 @@
-// /shipping — the account "Shipping" module. One place for a user's
+﻿// /shipping — the account "Shipping" module. One place for a user's
 // incoming (bought) + outgoing (sold) shipments: courier status + tracking,
 // and firearm hand-off (dealer-transfer dealer details / private-arrangement
 // contact). Server component — fetches with the user's token like /account.
@@ -201,7 +201,7 @@ function ShipmentCard({ s }: { s: Shipment }) {
 
       {/* Seller drop-off PIN reminder */}
       {isCourier && s.role === 'outgoing' && s.dropoffPin && (
-        <div className="mt-3 rounded-[6px] px-3 py-2 text-xs" style={{ background: 'rgba(200,16,46,0.06)', border: '0.5px solid var(--red)', color: 'var(--text-secondary)' }}>
+        <div className="mt-3 rounded-[6px] px-3 py-2 text-xs" style={{ background: 'rgba(227,6,19,0.06)', border: '0.5px solid var(--red)', color: 'var(--text-secondary)' }}>
           Hand-over PIN <strong style={{ color: 'var(--text-primary)', letterSpacing: '0.1em' }}>{s.dropoffPin}</strong> — give this to the courier / locker when dropping off.
         </div>
       )}
@@ -233,7 +233,7 @@ function ShipmentCard({ s }: { s: Shipment }) {
 
       {/* Firearm: private-arrangement contact */}
       {s.method === 'PRIVATE_ARRANGE' && s.contact && (
-        <div className="mt-3 rounded-[6px] p-3 text-xs" style={{ background: s.contact.revealed ? 'rgba(200,16,46,0.06)' : 'var(--bg-inset)', border: `0.5px solid ${s.contact.revealed ? 'var(--red)' : 'var(--border)'}` }}>
+        <div className="mt-3 rounded-[6px] p-3 text-xs" style={{ background: s.contact.revealed ? 'rgba(227,6,19,0.06)' : 'var(--bg-inset)', border: `0.5px solid ${s.contact.revealed ? 'var(--red)' : 'var(--border)'}` }}>
           <p className="uppercase mb-1" style={{ color: s.contact.revealed ? 'var(--red)' : 'var(--text-tertiary)', letterSpacing: '0.05em', fontWeight: 600 }}>
             {s.role === 'incoming' ? 'Seller contact' : 'Buyer contact'}
           </p>
@@ -266,7 +266,7 @@ function CourierTimeline({
 }) {
   if (status === 'DELIVERY_FAILED' || status === 'RETURNED') {
     return (
-      <div className="mt-3 rounded-[6px] px-3 py-2 text-xs" style={{ background: 'rgba(200,16,46,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}>
+      <div className="mt-3 rounded-[6px] px-3 py-2 text-xs" style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}>
         {status === 'DELIVERY_FAILED' ? 'Delivery attempt failed — the courier will retry or hold the parcel.' : 'Parcel returned to sender.'}
       </div>
     );

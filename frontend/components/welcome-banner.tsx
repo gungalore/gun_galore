@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // SMS-arrival welcome banner. Shows once per browser session when a visitor
 // lands from a marketing SMS link carrying an active campaign key
@@ -181,7 +181,7 @@ export function WelcomeBanner() {
           ✕
         </button>
 
-        <p className="ggw-eyebrow ggw-stage">Welcome to All Outdoor</p>
+        <p className="ggw-eyebrow ggw-stage">Welcome to ALL Outdoor</p>
 
         <h2 className="ggw-headline ggw-stage ggw-sheen" id="ggw-headline">
           {headline}

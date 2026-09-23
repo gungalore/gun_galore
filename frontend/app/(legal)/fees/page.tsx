@@ -1,4 +1,4 @@
-// Fees & Charges — the public fee schedule. Every number here is sourced
+﻿// Fees & Charges — the public fee schedule. Every number here is sourced
 // directly from the code so the page can never drift from what is actually
 // charged:
 //   - Seller commission bands + R10 minimum + Top Seller discount:
@@ -32,7 +32,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Fees',
   description:
-    'What All Outdoor charges — Buy Now sellers receive their full asking price, banded commission, the Buyer Protection Fee, payouts and delivery.',
+    'What ALL Outdoor charges — Buy Now sellers receive their full asking price, banded commission, the Buyer Protection Fee, payouts and delivery.',
 };
 
 export default function FeesPage() {
@@ -76,7 +76,7 @@ export default function FeesPage() {
 
       <h2>1. Our commission</h2>
       <p>
-        All Outdoor earns a commission on every completed sale. It is
+        ALL Outdoor earns a commission on every completed sale. It is
         charged in bands, so only the portion of the price that falls
         inside each band is charged at that band&apos;s rate:
       </p>
@@ -212,7 +212,7 @@ export default function FeesPage() {
 
       <h2>5. When the seller is paid</h2>
       <p>
-        All Outdoor holds the buyer&apos;s payment until the sale has safely
+        ALL Outdoor holds the buyer&apos;s payment until the sale has safely
         completed, then releases the seller&apos;s proceeds to the seller&apos;s
         bank account — the full asking price on a Buy Now sale, or the
         sale price less commission on an auction or accepted offer.
@@ -246,10 +246,10 @@ export default function FeesPage() {
         folded into the single delivery figure the buyer sees (items combined
         into one parcel produce one waybill). An item handed over through a
         licensed dealer, or a hand-over the parties arrange privately,
-        creates no waybill and carries no All Outdoor delivery or handling
+        creates no waybill and carries no ALL Outdoor delivery or handling
         charge. Any charge a dealer levies for receiving, storing or
         processing an item is that dealer&apos;s own charge, is payable
-        directly to them, and is not collected or refunded by All Outdoor.
+        directly to them, and is not collected or refunded by ALL Outdoor.
       </p>
 
       <h2>7. Currency and VAT</h2>

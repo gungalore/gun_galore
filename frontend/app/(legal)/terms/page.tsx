@@ -1,11 +1,11 @@
-// Terms of Service — the master contract between All Outdoor and
+﻿// Terms of Service — the master contract between ALL Outdoor and
 // every user of the platform. Drafted with reference to:
 //   - Electronic Communications and Transactions Act 25 of 2002 (§ 43)
 //   - Consumer Protection Act 68 of 2008
 //   - Protection of Personal Information Act 4 of 2013
 //
 // Conventions in this file:
-//   - "All Outdoor" / "we" / "us" / "our" = ALLOUTDOOR (PTY) LTD
+//   - "ALL Outdoor" / "we" / "us" / "our" = ALLOUTDOOR (PTY) LTD
 //   - "you" / "your" = any user of the store
 //   - This page is PUBLIC. Category-specific statutory procedure for
 //     restricted categories lives in the members-only Regulated Items
@@ -16,9 +16,9 @@
 //     are referred to generically here. Relocating them does not weaken
 //     them: the Annex is incorporated by reference in section 2.
 //   - Per the operator's policy this document NEVER uses the word
-//     "escrow" (regulated SA financial term that All Outdoor is not
+//     "escrow" (regulated SA financial term that ALL Outdoor is not
 //     registered to operate), and — while the TPPP application is
-//     pending — never describes All Outdoor as holding funds. Payment
+//     pending — never describes ALL Outdoor as holding funds. Payment
 //     is COLLECTED by the licensed payment service provider and the
 //     Seller is PAID after delivery confirmation ("deferred
 //     settlement"). Substance of every clause unchanged; drafting
@@ -47,8 +47,8 @@ export default function TermsPage() {
         company registered in the Republic of South Africa with its
         registered office at <strong>36 Sterappel Crescent, Langeberg
         Glen, Cape Town, 7570</strong>{' '}
-        (collectively "<strong>All Outdoor</strong>", "<strong>we</strong>",
-        "<strong>us</strong>" or "<strong>our</strong>"). All Outdoor
+        (collectively "<strong>ALL Outdoor</strong>", "<strong>we</strong>",
+        "<strong>us</strong>" or "<strong>our</strong>"). ALL Outdoor
         operates the website and applications available at{' '}
         <a href="https://alloutdoor.co.za" style={{ color: 'var(--red)' }}>
           alloutdoor.co.za
@@ -58,9 +58,9 @@ export default function TermsPage() {
         is a reference to the Store.
       </p>
 
-      <h2>2. What All Outdoor does</h2>
+      <h2>2. What ALL Outdoor does</h2>
       <p>
-        All Outdoor is an online store for <strong>new and
+        ALL Outdoor is an online store for <strong>new and
         secondhand outdoor goods</strong>. It allows registered users
         ("<strong>Sellers</strong>") to list items — including camping,
         hiking and fishing gear, overlanding equipment and outdoor
@@ -69,7 +69,7 @@ export default function TermsPage() {
         ("<strong>Buyers</strong>") to purchase those goods.
       </p>
       <p>
-        All Outdoor also lists a number of{' '}
+        ALL Outdoor also lists a number of{' '}
         <strong>restricted categories</strong>. Listings in those
         categories are shown only to registered members who are signed
         in, and are subject to additional eligibility, verification and
@@ -94,11 +94,11 @@ export default function TermsPage() {
         Most items in the Store are listed and sold by their owners.
         We do not own, stock or dispatch the goods members list: the
         agreement of sale for each such item is concluded between the
-        Seller and the Buyer, with All Outdoor providing the Store, the
+        Seller and the Buyer, with ALL Outdoor providing the Store, the
         checkout, delivery arrangement and support. Where a transaction
         involves an item that requires a licence or permit to possess,
         physical possession is transferred only through the authorised
-        channel prescribed for that category. All Outdoor is not an
+        channel prescribed for that category. ALL Outdoor is not an
         authorised dealer in any restricted category and does not handle
         such items in any physical capacity.
       </p>
@@ -127,13 +127,13 @@ export default function TermsPage() {
 
       <h2>4. Eligibility</h2>
       <p>
-        To register and use All Outdoor you must:
+        To register and use ALL Outdoor you must:
       </p>
       <ul>
         <li>be at least <strong>18 years old</strong>;</li>
         <li>be a permanent resident of, or lawfully present in, the Republic of South Africa;</li>
         <li>have the legal capacity to enter into a binding contract;</li>
-        <li>not have been previously banned by All Outdoor;</li>
+        <li>not have been previously banned by ALL Outdoor;</li>
         <li>where you list, bid on or purchase any item in a <strong>restricted category</strong>, hold (and continue to hold for the whole duration of the transaction) every competency, licence, permit or other authorisation that the relevant authority requires for that item, as set out in the <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>; and</li>
         <li>where applicable, complete our identity verification process before you can be paid.</li>
       </ul>
@@ -146,7 +146,7 @@ export default function TermsPage() {
         <li>provide accurate, current and complete information when you register;</li>
         <li>keep your account credentials confidential and not share access with any third party;</li>
         <li>notify us immediately at <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>{SUPPORT_EMAIL}</a> of any unauthorised use of your account;</li>
-        <li>maintain a single All Outdoor account (multiple accounts per natural person are not permitted); and</li>
+        <li>maintain a single ALL Outdoor account (multiple accounts per natural person are not permitted); and</li>
         <li>cooperate fully and truthfully with any verification, dispute or compliance request we make.</li>
       </ul>
       <p>
@@ -164,11 +164,11 @@ export default function TermsPage() {
         We reserve the right (but assume no obligation) to remove,
         modify, hide or reject any listing or content that, in our
         reasonable opinion, breaches that policy, breaches any law, or
-        is otherwise harmful to All Outdoor or its users.
+        is otherwise harmful to ALL Outdoor or its users.
       </p>
       <p>
         You retain ownership of any content you submit. By submitting
-        content you grant All Outdoor a non-exclusive, royalty-free,
+        content you grant ALL Outdoor a non-exclusive, royalty-free,
         worldwide licence to host, display, copy, distribute and make
         derivative works of that content for the purpose of operating
         and promoting the Store.
@@ -184,12 +184,12 @@ export default function TermsPage() {
       <h2>7. Payments and settlement</h2>
       {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
-        All payments on All Outdoor are processed by{' '}
+        All payments on ALL Outdoor are processed by{' '}
         <strong>our appointed third-party payment service provider</strong>{' '}
         (a licensed South African payment service provider). By making a
         payment you authorise the payment service provider to capture
         funds from your chosen payment instrument, and you authorise
-        All Outdoor to instruct payment of the Seller's proceeds in
+        ALL Outdoor to instruct payment of the Seller's proceeds in
         accordance with these Terms. All prices are quoted and charged in South
         African Rand (ZAR).
       </p>
@@ -200,14 +200,14 @@ export default function TermsPage() {
         paid (less the commission, as set out in section 8) only once the
         Buyer confirms delivery of the item, the Buyer's confirmation
         window elapses, or a dispute is resolved. Once one of these
-        triggers occurs, All Outdoor instructs the payment service
+        triggers occurs, ALL Outdoor instructs the payment service
         provider to pay the Seller's proceeds to the Seller's bank
         account.
       </p>
       <p>
         For the avoidance of doubt: deferred settlement is a{' '}
         <strong>buyer-protection measure</strong> and not a regulated
-        banking, savings or investment product. All Outdoor is not a
+        banking, savings or investment product. ALL Outdoor is not a
         bank, does not provide deposit-taking or fund-custody
         financial services, does not pay interest on amounts pending
         settlement, does not guarantee amounts pending settlement
@@ -233,7 +233,7 @@ export default function TermsPage() {
 
       <h2>8. Fees, commission and payouts</h2>
       <p>
-        All Outdoor charges a <strong>banded commission</strong> on each
+        ALL Outdoor charges a <strong>banded commission</strong> on each
         completed sale, and a <strong>Buyer Protection Fee</strong> is
         charged to the Buyer on each order. How they are collected depends
         on the sale mode:
@@ -242,7 +242,7 @@ export default function TermsPage() {
         <li>
           <strong>Buy Now.</strong> The amount the Seller enters when
           creating the listing is the amount the Seller is to{' '}
-          <strong>receive</strong>. All Outdoor adds the commission to
+          <strong>receive</strong>. ALL Outdoor adds the commission to
           that amount and publishes the result as the listing price. The
           Seller is paid the amount the Seller entered, without deduction.
           At checkout the Buyer pays the listing price plus the Buyer
@@ -292,7 +292,7 @@ export default function TermsPage() {
         and caravans, oversized or awkward goods, and dangerous goods such as
         batteries sold on their own are marked <strong>collection only</strong>.
         No courier is quoted for them. The Buyer collects the item in person
-        from the Seller, or sends their own transporter; All Outdoor does not
+        from the Seller, or sends their own transporter; ALL Outdoor does not
         arrange, quote, carry or insure that transport. A courier pickup point
         is not the same thing as collecting from a Seller.
       </p>
@@ -321,15 +321,15 @@ export default function TermsPage() {
       <p>
         The Seller must dispatch within 48 hours of payment being
         confirmed. If dispatch is not confirmed within that window,
-        All Outdoor will send a reminder; if dispatch is still not
-        confirmed within a further extended period, All Outdoor reserves
+        ALL Outdoor will send a reminder; if dispatch is still not
+        confirmed within a further extended period, ALL Outdoor reserves
         the right to cancel the transaction and refund the Buyer in
         full.
       </p>
 
       <h2>10. Auctions, Take-a-Shot offers and Buy Now</h2>
       <p>
-        All Outdoor supports three sale modes: <strong>Buy Now</strong>{' '}
+        ALL Outdoor supports three sale modes: <strong>Buy Now</strong>{' '}
         (fixed-price purchase), <strong>Auction</strong> (timed bidding
         with optional reserve and snipe-protection extension) and{' '}
         <strong>Take-a-Shot</strong> (buyer-initiated price offer with
@@ -347,7 +347,7 @@ export default function TermsPage() {
         — for example, an item arrived damaged or never arrived — you
         may raise a dispute within the time limits set out in our{' '}
         <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>.
-        Disputes are reviewed by the All Outdoor admin team within{' '}
+        Disputes are reviewed by the ALL Outdoor admin team within{' '}
         <strong>48 hours of receipt</strong>, and outcomes may include
         full refund, partial refund, payment to the Seller or referral to
         the appropriate authorities.
@@ -394,7 +394,7 @@ export default function TermsPage() {
       <h2>13. Intellectual property</h2>
       <p>
         The Platform (including its software, design, brand, written
-        content and structure) is owned by All Outdoor (or its licensors)
+        content and structure) is owned by ALL Outdoor (or its licensors)
         and is protected by South African and international copyright,
         trade mark and other intellectual-property laws. Except as
         expressly permitted by these Terms, you may not copy, modify,
@@ -404,14 +404,14 @@ export default function TermsPage() {
 
       <h2>14. Limitation of liability</h2>
       <p>
-        To the maximum extent permitted by South African law, All Outdoor
+        To the maximum extent permitted by South African law, ALL Outdoor
         will not be liable to you for any indirect, incidental,
         consequential, special or punitive damages (including but not
         limited to loss of profits, loss of goodwill or loss of data)
         arising out of or in connection with your use of the Store.
       </p>
       <p>
-        All Outdoor's aggregate liability to you in respect of any
+        ALL Outdoor's aggregate liability to you in respect of any
         transaction or series of related transactions is limited to
         the lesser of (a) the amount actually paid by you in respect
         of that transaction or (b) R10,000.
@@ -425,7 +425,7 @@ export default function TermsPage() {
 
       <h2>15. Indemnity</h2>
       <p>
-        You agree to indemnify, defend and hold harmless All Outdoor,
+        You agree to indemnify, defend and hold harmless ALL Outdoor,
         its directors, officers, employees and agents from and against
         any third-party claim, action, demand, loss, damage, fine,
         penalty or expense (including reasonable legal fees) arising
@@ -456,7 +456,7 @@ export default function TermsPage() {
       <p>
         Notices to you will be sent to the email address registered on
         your account and, where appropriate, by SMS to your verified
-        phone number. Notices to All Outdoor must be sent to{' '}
+        phone number. Notices to ALL Outdoor must be sent to{' '}
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
           {SUPPORT_EMAIL}
         </a>{' '}
@@ -474,7 +474,7 @@ export default function TermsPage() {
       <h2>19. Governing law and jurisdiction</h2>
       <p>
         These Terms are governed by and construed in accordance with
-        the laws of the Republic of South Africa. You and All Outdoor
+        the laws of the Republic of South Africa. You and ALL Outdoor
         irrevocably submit to the exclusive jurisdiction of the High
         Court of South Africa (Western Cape Division, Cape Town) over
         any dispute arising out of or in connection with these Terms.
@@ -513,7 +513,7 @@ export default function TermsPage() {
       <ul>
         <li><strong>Full registered name:</strong> ALLOUTDOOR (PTY) LTD</li>
         <li><strong>Registration number:</strong> 2026/639713/07</li>
-        <li><strong>Trading as:</strong> All Outdoor</li>
+        <li><strong>Trading as:</strong> ALL Outdoor</li>
         <li><strong>Director:</strong> Gerhard Johan Petrus Fourie</li>
         <li><strong>Physical address:</strong> 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa</li>
         <li><strong>Email:</strong> {SUPPORT_EMAIL}</li>

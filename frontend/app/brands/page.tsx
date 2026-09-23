@@ -1,4 +1,4 @@
-import Link from 'next/link';
+﻿import Link from 'next/link';
 import { BrowseRailShell } from '@/components/browse-rail-shell';
 import type { Metadata } from 'next';
 import { viewerFetch } from '@/lib/api-viewer';
@@ -9,7 +9,7 @@ import type { BrandSummary } from '@/lib/types';
 // both shoppers and crawlers can reach the per-brand landing pages.
 
 export const metadata: Metadata = {
-  title: 'Shop by brand — All Outdoor',
+  title: 'Shop by brand — ALL Outdoor',
   // Shared blurb (lib/seo.ts) so the brand index, brand pages and category
   // pages all describe the marketplace the same outdoor-first way.
   description: browseMetaDescription('gear by brand'),

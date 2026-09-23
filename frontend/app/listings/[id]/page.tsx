@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation';
+﻿import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { serverAuth as auth } from '../../../lib/auth-server';
 import { apiFetch } from '@/lib/api';
@@ -560,7 +560,7 @@ export default async function ListingDetailPage({
                 attests:" and the tooltip makes the source explicit. */}
             {listing.testedWorkingAttestedAt && (
               <span
-                title="This is the seller's own statement, not a All Outdoor test or guarantee."
+                title="This is the seller's own statement, not a ALL Outdoor test or guarantee."
                 className="text-xs px-2 py-0.5 rounded-[3px]"
                 style={{
                   background: 'rgba(0,160,60,0.10)',
@@ -655,12 +655,12 @@ export default async function ListingDetailPage({
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   <span
                     className="text-sm px-2 py-0.5 rounded-[4px]"
-                    style={{ background: 'rgba(200,16,46,0.10)', color: 'var(--red)', fontWeight: 600 }}
+                    style={{ background: 'rgba(227,6,19,0.10)', color: 'var(--red)', fontWeight: 600 }}
                   >
                     {compareAtPct}% off
                   </span>
                   <HelpTip title="Original price">
-                    Original price stated by the seller — All Outdoor does not
+                    Original price stated by the seller — ALL Outdoor does not
                     verify it.
                   </HelpTip>
                 </span>
@@ -776,7 +776,7 @@ export default async function ListingDetailPage({
                       {`${trackedSellable} in stock`}
                     </p>
                   )}
-                {/* Board review — Buy CTA typography. Display face (Archivo)
+                {/* Board review — Buy CTA typography. Display face (League Spartan)
                     at 700, sized up from the body-font 500 the buttons used
                     to render at; matches the treatment now also applied to
                     AddToCartButton. Appearance only — href/behaviour
@@ -905,7 +905,7 @@ export default async function ListingDetailPage({
             <WishlistButton listingId={listing.id} variant="inline" />
             <ShareListingButton
               title={listing.title}
-              text={`Check out this listing on All Outdoor: ${listing.title}`}
+              text={`Check out this listing on ALL Outdoor: ${listing.title}`}
             />
           </div>
 
@@ -995,7 +995,7 @@ export default async function ListingDetailPage({
                       removes is imaginary: the buyer never has to be the
                       person who arrives, and the hold releases on THEIR
                       confirmation either way. Deliberately worded as the
-                      buyer's own arrangement — All Outdoor quotes, books and
+                      buyer's own arrangement — ALL Outdoor quotes, books and
                       insures nothing on that leg, and there is no freight
                       shipping method to sell them. */}
                   {collectionMode === 'FREIGHT_OK' && (
@@ -1006,7 +1006,7 @@ export default async function ListingDetailPage({
                       collect in person, or send your own transporter or
                       freight company to fetch it — the seller just hands it
                       over. Your payment stays held either way until you
-                      confirm the item is with you. All Outdoor doesn&apos;t
+                      confirm the item is with you. ALL Outdoor doesn&apos;t
                       arrange, quote or insure that transport; it&apos;s
                       between you and whoever you hire.
                     </p>
@@ -1064,7 +1064,7 @@ export default async function ListingDetailPage({
                       <strong>Private arrangement</strong> is also
                       offered — you and the seller pick a dealer
                       together and do the licence transfer in person.
-                      You waive All Outdoor&apos;s payment protection
+                      You waive ALL Outdoor&apos;s payment protection
                       (the seller is paid immediately; no dispute or
                       refund via us). Use only if you know the seller.
                     </p>
@@ -1289,7 +1289,7 @@ export default async function ListingDetailPage({
                 {listing.title}
               </p>
               {/* Same price treatment as the cards the buyer arrived from —
-                  Archivo 600 with tabular figures — so the number they tapped
+                  League Spartan 600 with tabular figures — so the number they tapped
                   and the number they are about to pay look like the same
                   number. */}
               <p

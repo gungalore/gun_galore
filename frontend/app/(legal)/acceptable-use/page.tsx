@@ -1,4 +1,4 @@
-// Acceptable Use Policy — what's allowed and what's banned on the
+﻿// Acceptable Use Policy — what's allowed and what's banned on the
 // platform. Referenced from the Terms of Service. Drafted to be
 // readable AND enforceable: each "banned" item has a clear test so
 // admins can apply it consistently.
@@ -18,7 +18,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Acceptable Use Policy',
   description:
-    'What is and is not allowed on All Outdoor — listings, content and behaviour rules.',
+    'What is and is not allowed on ALL Outdoor — listings, content and behaviour rules.',
 };
 
 export default function AcceptableUsePage() {
@@ -32,7 +32,7 @@ export default function AcceptableUsePage() {
       <h2>1. Who this applies to</h2>
       <p>
         This Acceptable Use Policy ("<strong>AUP</strong>") applies to
-        every person who creates an account on All Outdoor, uses the
+        every person who creates an account on ALL Outdoor, uses the
         Platform as a visitor, lists or transacts goods, or submits
         any kind of content. The AUP is incorporated by reference into
         our{' '}
@@ -42,13 +42,13 @@ export default function AcceptableUsePage() {
 
       <h2>2. What you can list</h2>
       <p>
-        You may list goods on All Outdoor where all of the following are
+        You may list goods on ALL Outdoor where all of the following are
         true:
       </p>
       <ul>
         <li>You own the item (or have express authority from the owner to sell it on their behalf).</li>
         <li>The item is lawful to sell, possess and transfer in South Africa.</li>
-        <li>The item fits one of All Outdoor's category trees (camping, fishing, overlanding, outdoor clothing, accessories, regulated categories, etc.).</li>
+        <li>The item fits one of ALL Outdoor's category trees (camping, fishing, overlanding, outdoor clothing, accessories, regulated categories, etc.).</li>
         <li>The item is accurately described, with the correct condition (New, Like New, Good, Fair or Poor) and clear, recent photographs showing the actual item.</li>
         <li>For items that require a licence or permit, both you and the buyer hold every authorisation the relevant authority requires for that category, and the item is transferred through a licensed dealer rather than directly between the two of you.</li>
       </ul>
@@ -61,7 +61,7 @@ export default function AcceptableUsePage() {
       <h2>3. What you cannot list</h2>
       <p>
         The following are <strong>never</strong> permitted on
-        All Outdoor. Listing any of these will result in immediate
+        ALL Outdoor. Listing any of these will result in immediate
         removal and may result in account suspension:
       </p>
       <ul>
@@ -82,7 +82,7 @@ export default function AcceptableUsePage() {
           before putting any product wording back. */}
       <h2>3a. Categories that require a licence or permit</h2>
       <p>
-        Some categories on All Outdoor may only be listed, bought or
+        Some categories on ALL Outdoor may only be listed, bought or
         transferred by people who hold every authorisation the law
         requires for that category. Those categories are shown only to
         registered members who are signed in.
@@ -113,7 +113,7 @@ export default function AcceptableUsePage() {
 
       <h2>5. What your descriptions, questions, notes and posts must NOT contain</h2>
       <p>
-        Across <strong>every</strong> freeform field on All Outdoor
+        Across <strong>every</strong> freeform field on ALL Outdoor
         (listing title, description, pre-purchase Q&amp;A, offer
         notes, counter-offer notes, rating comments, community feed
         posts and comments, and any future message channel), the

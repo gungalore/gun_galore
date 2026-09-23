@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { Suspense, useEffect, useState } from 'react';
 import Image from 'next/image';
@@ -171,7 +171,7 @@ function TrustGuaranteeModalInner({
             {/* Header */}
             <div className="relative pt-6 px-7 pb-4">
               <Image
-                src={av('/logo-nav-dark.svg')}
+                src="/brand/logo-horizontal-dark-transparent.svg"
                 alt={BRAND_NAME}
                 width={264}
                 height={44}

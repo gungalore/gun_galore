@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // Share button — wraps navigator.share() with a clipboard-copy
 // fallback. Used on the listing-detail page next to the Wishlist
@@ -66,7 +66,7 @@ export function ShareListingButton({ title, text, url }: Props) {
       (typeof window !== 'undefined' ? window.location.href : '');
     const shareTitle =
       title ??
-      (typeof document !== 'undefined' ? document.title : 'All Outdoor');
+      (typeof document !== 'undefined' ? document.title : 'ALL Outdoor');
 
     // Web Share API check — `navigator.share` is undefined on desktop
     // browsers. `canShare` gates the data shape on iOS.

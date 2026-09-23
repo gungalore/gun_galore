@@ -1,4 +1,4 @@
-import { serverAuth as auth } from '../../../lib/auth-server';
+﻿import { serverAuth as auth } from '../../../lib/auth-server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -315,7 +315,7 @@ export default async function MyOrdersPage() {
         <h1
           style={{
             color: 'var(--text-primary)',
-            fontFamily: 'var(--font-display), Archivo, sans-serif',
+            fontFamily: 'var(--font-display)',
             fontWeight: 700,
             fontSize: 22,
           }}
@@ -352,7 +352,7 @@ export default async function MyOrdersPage() {
             className="text-sm mb-5"
             style={{ color: 'var(--text-tertiary)' }}
           >
-            When you buy something on All Outdoor, your order will show
+            When you buy something on ALL Outdoor, your order will show
             up here with shipping updates and dispatch details.
           </p>
           <Link

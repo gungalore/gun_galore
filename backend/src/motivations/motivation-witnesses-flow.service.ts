@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+﻿import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { MotivationQuotaService } from './motivation-quota.service';
@@ -56,7 +56,7 @@ export class MotivationWitnessesService {
     return this.witnesses.invite({
       motivationId: row.id,
       applicantUserId: user.id,
-      applicantName: (answers.full_name ?? '').trim() || 'An All Outdoor member',
+      applicantName: (answers.full_name ?? '').trim() || 'An ALL Outdoor member',
       slot: args.slot,
       name: args.name,
       phone: args.phone,

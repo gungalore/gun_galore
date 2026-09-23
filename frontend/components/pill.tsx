@@ -42,16 +42,16 @@ export function Pill({
         clickPulse(ref.current);
         onClick();
       }}
-      className="rounded-full"
+      className="rounded-pill"
       style={{
         padding,
         fontSize,
-        background: selected ? 'var(--red)' : 'var(--bg-inset)',
+        background: selected ? 'var(--stone-900)' : 'var(--bg-inset)',
         color: selected ? '#fff' : 'var(--text-secondary)',
         border: selected
-          ? '0.5px solid var(--red)'
+          ? 'none'
           : '0.5px solid var(--border)',
-        fontWeight: selected ? 500 : 400,
+        fontWeight: selected ? 600 : 400,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.45 : 1,
         lineHeight: 1.2,

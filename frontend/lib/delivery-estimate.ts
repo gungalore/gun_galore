@@ -1,4 +1,4 @@
-// UX-1c — pre-purchase delivery estimate for the PDP.
+﻿// UX-1c — pre-purchase delivery estimate for the PDP.
 //
 // A presentational helper: it maps a listing's shipping shape to the delivery
 // line shown under the price BEFORE checkout. All inputs (shippingMethods,
@@ -65,7 +65,7 @@ export function getListingDeliveryEstimate(
 // two sides can coordinate. So the buyer may send their own transporter; this
 // helper only decides whether we are allowed to SAY so.
 //
-// Honesty guard: All Outdoor books nothing and insures nothing on that leg.
+// Honesty guard: ALL Outdoor books nothing and insures nothing on that leg.
 // Copy consuming FREIGHT_OK must stay "arrange your own", never an offered
 // service, and must never imply a quoted/booked freight rail exists.
 //

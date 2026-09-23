@@ -1,13 +1,13 @@
-import type { Metadata } from 'next';
+﻿import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'How selling works — All Outdoor',
+  title: 'How selling works — ALL Outdoor',
   // Three selling modes. The count is stated in three places (here, the
   // intro line, and the sell-flow HelpTip on /listings/new) — keep them in
   // step.
   description:
-    'The three ways to sell on All Outdoor — Buy Now, Auction and Take a Shot — what each one is, who it suits, and how it works, so you list your item the right way.',
+    'The three ways to sell on ALL Outdoor — Buy Now, Auction and Take a Shot — what each one is, who it suits, and how it works, so you list your item the right way.',
   alternates: { canonical: '/how-selling-works' },
 };
 
@@ -81,7 +81,7 @@ export default function HowSellingWorksPage() {
         How selling works
       </h1>
       <p className="text-sm mt-2" style={{ color: 'var(--text-tertiary)' }}>
-        There are three ways to list an item on All Outdoor. Pick the one that
+        There are three ways to list an item on ALL Outdoor. Pick the one that
         fits what you&apos;re selling — you can always change it before it goes
         live.
       </p>

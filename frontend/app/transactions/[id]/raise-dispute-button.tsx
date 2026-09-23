@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // Buyer-facing dispute flow. Opens a modal with:
 //   1. Reason picker (radio): damaged / wrong item / never arrived / other
@@ -300,7 +300,7 @@ export function RaiseDisputeModal({
                 className="flex items-start gap-3 px-3 py-2.5 rounded-[6px] cursor-pointer"
                 style={{
                   background: selected
-                    ? 'rgba(200,16,46,0.08)'
+                    ? 'rgba(227,6,19,0.08)'
                     : 'var(--bg-inset)',
                   border: selected
                     ? '1px solid var(--red)'

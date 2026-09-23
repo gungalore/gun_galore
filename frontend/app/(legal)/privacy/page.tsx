@@ -1,4 +1,4 @@
-// Privacy Policy — drafted with reference to the Protection of
+﻿// Privacy Policy — drafted with reference to the Protection of
 // Personal Information Act 4 of 2013 (POPIA). Mirrors the actual data
 // the codebase collects + the actual third-party processors used in
 // production.
@@ -32,9 +32,9 @@ export default function PrivacyPage() {
       <h2>1. Who we are</h2>
       <p>
         This Privacy Policy explains how <strong>ALLOUTDOOR (PTY) LTD</strong>{' '}
-        ("<strong>All Outdoor</strong>", "<strong>we</strong>",
+        ("<strong>ALL Outdoor</strong>", "<strong>we</strong>",
         "<strong>us</strong>") collects, uses, shares and protects your
-        personal information when you use the All Outdoor online store at{' '}
+        personal information when you use the ALL Outdoor online store at{' '}
         <a href="https://alloutdoor.co.za" style={{ color: 'var(--red)' }}>
           alloutdoor.co.za
         </a>{' '}
@@ -42,7 +42,7 @@ export default function PrivacyPage() {
       </p>
       <p>
         For the purposes of the Protection of Personal Information Act
-        4 of 2013 (<strong>"POPIA"</strong>), All Outdoor is the{' '}
+        4 of 2013 (<strong>"POPIA"</strong>), ALL Outdoor is the{' '}
         <strong>responsible party</strong> in respect of personal
         information processed through the Store.
       </p>
@@ -147,7 +147,7 @@ export default function PrivacyPage() {
       <p>
         To understand how the Store is used, improve it, and decide what
         to feature and promote, we collect first-party analytics about your
-        activity on All Outdoor. This includes the pages and listings you view,
+        activity on ALL Outdoor. This includes the pages and listings you view,
         the searches you run, items you save or make offers/bids on, and when
         and how often you sign in. Where you are signed in, this activity is
         linked to your account; where you are signed out, it is linked to a
@@ -364,7 +364,7 @@ export default function PrivacyPage() {
 
       <h2>12. Direct marketing</h2>
       <p>
-        All Outdoor sends two kinds of communications:
+        ALL Outdoor sends two kinds of communications:
       </p>
       <ul>
         <li><strong>Transactional</strong> — order updates, dispatch confirmations, dispute outcomes, account-security alerts. These are necessary to operate the Store and are sent regardless of your marketing preferences.</li>

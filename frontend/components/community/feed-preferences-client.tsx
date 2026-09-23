@@ -17,6 +17,7 @@ const EMPTY: FeedPreferences = {
   feedMutedTags: [],
   feedMutedTopicIds: [],
   feedShowAvatar: true,
+  feedShowGraphic: true,
 };
 
 export function FeedPreferencesClient() {
@@ -125,6 +126,34 @@ export function FeedPreferencesClient() {
           }}
         >
           {prefs.feedShowAvatar ? 'On' : 'Off'}
+        </button>
+      </section>
+
+      <section>
+        <h2
+          className="text-[15px] font-medium mb-2"
+          style={{ color: 'var(--text-primary)' }}
+        >
+          Graphic content
+        </h2>
+        <p className="text-[13px] mb-3" style={{ color: 'var(--text-tertiary)' }}>
+          Show graphic content (hunting, fishing, etc.) in your feed. On by
+          default — turn it off to blur all graphic posts.
+        </p>
+        <button
+          type="button"
+          onClick={() =>
+            void persist({ ...prefs, feedShowGraphic: !prefs.feedShowGraphic })
+          }
+          aria-pressed={prefs.feedShowGraphic}
+          className="gg-press px-4 py-2 rounded-full text-[12px] font-medium"
+          style={{
+            background: prefs.feedShowGraphic ? 'var(--red)' : 'var(--bg-inset)',
+            color: prefs.feedShowGraphic ? '#fff' : 'var(--text-secondary)',
+            border: '0.5px solid var(--border)',
+          }}
+        >
+          {prefs.feedShowGraphic ? 'On' : 'Off'}
         </button>
       </section>
 

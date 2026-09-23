@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // ────────────────────────────────────────────────────────────────────
 // THE STEP RAIL, as the operator's Natshoot reference sets it: a numbered
@@ -40,7 +40,7 @@ export default function WitnessStepper({
 }) {
   return (
     <ol
-      className="flex w-full items-center justify-between gap-1 overflow-x-auto px-1 py-4"
+      className="flex w-full items-center justify-between gap-1 gg-row px-1 py-4"
       aria-label="Progress"
     >
       {steps.map((s, i) => {

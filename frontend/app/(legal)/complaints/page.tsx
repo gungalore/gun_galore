@@ -1,4 +1,4 @@
-// /complaints — the full complaints-handling procedure and the
+﻿// /complaints — the full complaints-handling procedure and the
 // external escalation routes, broken down by subject matter. Split
 // out from /legal so it has a canonical URL that the footer, /legal
 // and /contact can all link to. Intake is email + phone; escalation
@@ -19,7 +19,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Complaints',
   description:
-    'How to raise a complaint with All Outdoor, our resolution timeframes, and where to escalate if we cannot resolve it.',
+    'How to raise a complaint with ALL Outdoor, our resolution timeframes, and where to escalate if we cannot resolve it.',
 };
 
 export default function ComplaintsPage() {
@@ -217,7 +217,7 @@ export default function ComplaintsPage() {
         are open to registered members only. A complaint about the
         lawful possession, hand-over or licensing of an item in one of
         those categories is a matter for the responsible state
-        authority rather than for All Outdoor, and you may approach
+        authority rather than for ALL Outdoor, and you may approach
         that authority directly. Additional terms apply to regulated
         categories. See the{' '}
         <Link href="/members/regulated-items" style={{ color: 'var(--red)' }}>

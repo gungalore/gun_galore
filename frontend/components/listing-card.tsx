@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useState } from 'react';
 import Image from 'next/image';
@@ -175,7 +175,7 @@ export function ListingCard({ listing }: { listing: Listing }) {
             above it — so the two things a browser actually scans for, the
             picture and the number, were the two things competing hardest with
             their neighbours. Title drops to secondary; price sits alone in
-            Archivo at 17px. */}
+            League Spartan at 17px. */}
         <div className="p-3">
           <div className="flex items-center justify-between">
             <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
@@ -368,7 +368,7 @@ function AuctionTimeChip({ endTime }: { endTime: string | null | undefined }) {
       // count beside it give way instead — it already truncates.
       className="px-1.5 py-0.5 rounded-[3px] whitespace-nowrap shrink-0"
       style={{
-        background: urgent ? 'rgba(200,16,46,0.10)' : 'var(--bg-inset)',
+        background: urgent ? 'rgba(227,6,19,0.10)' : 'var(--bg-inset)',
         color: urgent ? 'var(--red)' : 'var(--text-secondary)',
         fontWeight: urgent ? 500 : 400,
         border: `0.5px solid ${urgent ? 'var(--red)' : 'var(--border)'}`,

@@ -1,4 +1,4 @@
-import { BLOCK_LABELS, sectionOf } from './motivation-research.service';
+﻿import { BLOCK_LABELS, sectionOf } from './motivation-research.service';
 import { withoutRefusedCopy } from './motivation-scope';
 import { PDFDocument } from 'pdf-lib';
 import {
@@ -127,7 +127,7 @@ const SAMPLE_BODY = [
 ].join(String.fromCharCode(10) + String.fromCharCode(10));
 
 const DISCLAIMER_TEXT =
-  'I prepared this motivation with assistance from All Outdoor, from ' +
+  'I prepared this motivation with assistance from ALL Outdoor, from ' +
   'information I supplied, and I submit it as my own. It is not legal ' +
   'advice. I confirm that the facts stated in it are true and correct to the ' +
   'best of my knowledge.';

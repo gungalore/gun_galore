@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { addToCart, removeFromCart, useCart, type CartItem } from '@/lib/cart-store';
@@ -51,7 +51,7 @@ export function AddToCartButton({ item }: { item: CartItem }) {
           );
         }
       }}
-      // Board review — Buy CTA typography: display face (Archivo) at 700
+      // Board review — Buy CTA typography: display face (League Spartan) at 700
       // (was body-font 500), plus a cart icon (16px, matches the nav
       // CartButton glyph) since this is "the add-to-cart action". Flex
       // replaces block+text-center so the icon sits on the text baseline

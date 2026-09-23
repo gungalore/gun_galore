@@ -115,7 +115,7 @@ export function MyControlPanel() {
     <>
       <section
         aria-label="My menu"
-        className="gg-tile rounded-[8px] p-4 flex flex-col gap-4"
+        className="gg-tile rounded-lg p-4 flex flex-col gap-4"
         style={{
           background: 'var(--bg-card)',
           border: '0.5px solid var(--border)',
@@ -125,7 +125,7 @@ export function MyControlPanel() {
         <button
           type="button"
           onClick={() => setComposerOpen(true)}
-          className="gg-press w-full rounded-[6px] py-2.5 text-[13px] font-medium"
+          className="gg-press w-full rounded-pill py-2.5 text-[13px] font-medium"
           style={{ background: 'var(--red)', color: '#fff', border: 'none' }}
         >
           Create Post
@@ -176,91 +176,6 @@ export function MyControlPanel() {
           {stat(summary?.followingCount, 'Following')}
         </div>
 
-        {summary && summary.pendingCount > 0 && (
-          <Link
-            href="/community/me"
-            className="gg-press text-[12px] rounded-[6px] px-3 py-2"
-            style={{ background: 'var(--red-wash)', color: 'var(--red)' }}
-          >
-            {summary.pendingCount} post
-            {summary.pendingCount === 1 ? '' : 's'} still being checked →
-          </Link>
-        )}
-
-        <div className="flex flex-col gap-2">
-          <span
-            className="text-[12px] font-medium"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            My recent posts
-          </span>
-
-          {loading && (
-            <span className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
-              Loading…
-            </span>
-          )}
-          {!loading && posts.length === 0 && (
-            <span className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
-              You haven&apos;t posted yet.
-            </span>
-          )}
-
-          {posts.map((post) => {
-            const status = postStatusMeta(post);
-            const thumb = thumbOf(post);
-            return (
-              <div key={post.id} className="flex items-center gap-2">
-                <Link
-                  href={`/community/p/${post.id}`}
-                  className="w-10 h-10 rounded-[4px] shrink-0 overflow-hidden"
-                  style={{ background: 'var(--bg-inset)' }}
-                  aria-label={post.title ?? postTypeLabel(post.type)}
-                >
-                  {thumb && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={thumb}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </Link>
-                <div className="min-w-0 flex-1">
-                  <div
-                    className="text-[12px] truncate"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
-                    {post.title ?? post.body}
-                  </div>
-                  <span
-                    className="text-[10px] font-medium px-1.5 py-0.5 rounded"
-                    style={{ background: status.bg, color: status.fg }}
-                  >
-                    {status.label}
-                  </span>
-                </div>
-                <Link
-                  href={`/community/me?edit=${post.id}`}
-                  className="gg-press text-[12px] shrink-0"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  Edit
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => onDelete(post)}
-                  disabled={busyId === post.id}
-                  className="gg-press text-[12px] shrink-0"
-                  style={{ color: 'var(--red)' }}
-                >
-                  {busyId === post.id ? '…' : 'Delete'}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
         <div
           className="flex flex-col gap-1 pt-2 text-[13px]"
           style={{ borderTop: '0.5px solid var(--border)' }}
@@ -273,18 +188,11 @@ export function MyControlPanel() {
             Feed filters
           </Link>
           <Link
-            href="/community/groups"
+            href="/community/settings"
             className="gg-press py-1"
             style={{ color: 'var(--text-secondary)' }}
           >
-            Groups
-          </Link>
-          <Link
-            href="/notifications"
-            className="gg-press py-1"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            Notifications
+            Muted content
           </Link>
         </div>
       </section>

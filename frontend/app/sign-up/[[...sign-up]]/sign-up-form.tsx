@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useRef, useId, FormEvent } from 'react';
 import { av } from '@/lib/asset-version';
@@ -452,10 +452,10 @@ export default function SignUpForm() {
     <div className="w-full max-w-[480px]">
       {/* Logo / brand — centred wordmark, 5:1 aspect locked. */}
       <div className="flex justify-center mb-6">
-        <Link href="/" aria-label="All Outdoor">
+        <Link href="/" aria-label="ALL Outdoor">
           <img
-            src={av('/logo-nav-dark.svg')}
-            alt="All Outdoor"
+            src="/brand/logo-horizontal-dark-transparent.svg"
+            alt="ALL Outdoor"
             style={{ height: 48, width: 'auto' }}
           />
         </Link>
@@ -491,7 +491,7 @@ export default function SignUpForm() {
             tabIndex={-1}
             className="mb-4 px-3 py-2 rounded-[6px] text-xs"
             style={{
-              background: 'rgba(200,16,46,0.08)',
+              background: 'rgba(227,6,19,0.08)',
               border: '0.5px solid var(--red)',
               color: 'var(--red)',
               outline: 'none',
@@ -841,10 +841,10 @@ function VerifyStep({
           every new user saw "Gun·Galore" at the moment they typed their
           verification code. */}
       <div className="flex justify-center mb-6">
-        <Link href="/" aria-label="All Outdoor">
+        <Link href="/" aria-label="ALL Outdoor">
           <img
-            src={av('/logo-nav-dark.svg')}
-            alt="All Outdoor"
+            src="/brand/logo-horizontal-dark-transparent.svg"
+            alt="ALL Outdoor"
             style={{ height: 48, width: 'auto' }}
           />
         </Link>
@@ -893,7 +893,7 @@ function VerifyStep({
             aria-live="assertive"
             className="mb-4 px-3 py-2 rounded-[6px] text-xs"
             style={{
-              background: 'rgba(200,16,46,0.08)',
+              background: 'rgba(227,6,19,0.08)',
               border: '0.5px solid var(--red)',
               color: 'var(--red)',
             }}

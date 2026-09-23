@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -110,7 +110,7 @@ export function AdminHeader() {
           <Icon name="shield" size={18} />
         </span>
         <div style={{ minWidth: 0 }}>
-          <div className="adm-brand-title">All Outdoor</div>
+          <div className="adm-brand-title">ALL Outdoor</div>
           <div className="adm-brand-sub">
             WARDEN OS{admin?.email ? ` // ${admin.email.split('@')[0]}` : ''}
           </div>

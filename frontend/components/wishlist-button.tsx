@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // Heart-shaped Save-for-later button.
 //
@@ -109,7 +109,7 @@ export function WishlistButton({
           gap: 8,
           padding: '10px 16px',
           borderRadius: 8,
-          background: saved ? 'rgba(200,16,46,0.08)' : 'var(--bg-card)',
+          background: saved ? 'rgba(227,6,19,0.08)' : 'var(--bg-card)',
           border: `0.5px solid ${saved ? 'var(--red)' : 'var(--border)'}`,
           color: saved ? 'var(--red)' : 'var(--text-secondary)',
           fontSize: 14,

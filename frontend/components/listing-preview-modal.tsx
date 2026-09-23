@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useRef } from 'react';
 import type { Condition, Province, ListingType, Category } from '@/lib/types';
@@ -249,7 +249,7 @@ export function ListingPreviewModal({
               className="text-xs uppercase mb-1"
               style={{ color: verdictColor, letterSpacing: '0.12em', fontWeight: 500 }}
             >
-              All Outdoor review · {Math.round(preview.confidence * 100)}% confident
+              ALL Outdoor review · {Math.round(preview.confidence * 100)}% confident
             </p>
             <h2
               className="text-lg sm:text-xl"
@@ -530,7 +530,7 @@ export function ListingPreviewModal({
           <div
             className="mx-6 mb-4 px-4 py-3 rounded-[6px] text-sm"
             style={{
-              background: 'rgba(200,16,46,0.08)',
+              background: 'rgba(227,6,19,0.08)',
               border: '0.5px solid var(--red)',
               color: 'var(--red)',
             }}

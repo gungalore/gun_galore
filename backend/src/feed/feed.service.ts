@@ -589,6 +589,7 @@ export class FeedService {
         listingId: dto.listingId ?? null,
         categoryId: dto.categoryId ?? null,
         groupId,
+        location: dto.location ?? null,
         status,
         graphicTier: verdict.graphicTier,
         isOfficial: official,

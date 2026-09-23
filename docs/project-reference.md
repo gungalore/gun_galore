@@ -1,4 +1,4 @@
-# All Outdoor — Claude Code Context
+﻿# All Outdoor — Claude Code Context
 
 ## How to use this file
 
@@ -798,11 +798,11 @@ both retired.
 - **Text:** `--text-primary` #1A1613 (16.4:1), `--text-secondary` #4A443C (9.0:1),
   `--text-tertiary` #7A7267 (4.5:1), `--text-faint` #9C948A (3.0:1 — large text
   and disabled states only, never body copy).
-- **Brand red `--red` #C8102E** (hover #A00D24) — prices, primary CTAs, active
-  states, live badges. ⚠️ **The logo's red is a different value, #E01B24**, and
+- **Brand red `--red` #E30613** (hover #C7050F) — prices, primary CTAs, active
+  states, live badges. ⚠️ **The logo's red is a different value, #E30613**, and
   stays that on every ground. Do not "fix" either to match the other, and never
   recolour a logo path to `var(--red)`.
-- Borders 0.5px; border-radius max 8px; system font stack; weights 400 and 500
+- Borders 0.5px; radii: xs 6px, sm 10px, md 14px, lg 20px, xl 28px, pill 999px; League Spartan (display) + Montserrat (body), self-hosted; weights 400 and 500
   only; mobile-first ~390px; content max-width 1280px.
 - **Tiles opt into depth** via `.gg-tile` (+ `.gg-tile-lift` on hover), using
   `--elev-1`/`--elev-2`, which are warm-tinted from the ink because `rgba(0,0,0,…)`
@@ -848,14 +848,14 @@ The Desk is deliberately exempt.
 
 ### Logos
 
-Six files in three light/dark pairs. **The app renders the `-dark` variants
+Pack-aligned horizontal/emblem SVGs live at public/brand/: four files. **The app renders the `-dark` variants
 everywhere**, because on a white page the ink must be dark: `logo-nav-dark.svg`
-(the wordmark lockup, #111111 ink plus the #E01B24 road) and `logo-mark-dark.svg`
+(the wordmark lockup, #111111 ink plus the #E30613 road) and `logo-mark-dark.svg`
 (the AO monogram — an A whose counter is a snow-capped peak, an O, and a red road
 running out of it). The white-ink `logo.svg` / `logo-nav.svg` / `logo-mark.svg`
 are for dark grounds only.
 
-- On centred pages: width 100%, max-width 300px, never a fixed height.
+- On centred pages: Horizontal logo for headers; emblem below 380px viewport.
 - ⚠️ A transparent favicon is invisible on a tab strip the colour of its own ink.
   `app/icon.svg` is theme-aware and preferred.
 - Regenerate the PNG icon set together or the install prompt and the tab icon

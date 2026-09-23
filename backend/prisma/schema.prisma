@@ -717,6 +717,10 @@ model User {
   // off from Feed settings, and the avatar then falls back to the initial.
   feedShowAvatar Boolean @default(true)
 
+  /// Graphic content visibility. On by default — members can turn it off from
+  /// Feed settings; when off, the graphic gate blurs all graphic posts.
+  feedShowGraphic Boolean @default(true)
+
   // Campaign attribution rollup: groupBy(campaignKey) on the admin page.
   @@index([campaignKey])
 }
@@ -740,6 +744,7 @@ model User {
 // Opening the inbox or tapping a row does NOT clear anything — that
 // was the explicit user-spec'd behaviour. The badge only drops when
 // the user actually acts on the underlying entity.
+
 enum NotificationCategory {
   BUYER // events relevant to the user as a buyer
   SELLER // events relevant to the user as a seller
@@ -6775,6 +6780,7 @@ model Post {
   /// Official accounts bypass the promotional/contact filter only — never the
   /// illegal or graphic moderation — and render with an Official badge.
   isOfficial       Boolean      @default(false)
+  location         String?      // Google Places formatted address
   likeCount        Int          @default(0)
   commentCount     Int          @default(0)
   reportedCount    Int          @default(0)

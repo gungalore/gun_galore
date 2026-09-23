@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import type { Grade } from '@/lib/scan/quality';
 import { T, primaryBtn, quietBtn } from '../scan-theme';
@@ -323,7 +323,7 @@ export default function PagesTray({
               padding: '12px 14px',
               borderRadius: T.r.md,
               background: worst === 'poor' ? T.redWash : T.warnWash,
-              border: `1px solid ${worst === 'poor' ? 'rgba(200,16,46,0.25)' : T.warnLine}`,
+              border: `1px solid ${worst === 'poor' ? 'rgba(227,6,19,0.25)' : T.warnLine}`,
             }}
           >
             <div

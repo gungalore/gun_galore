@@ -1,4 +1,4 @@
-import Link from 'next/link';
+﻿import Link from 'next/link';
 import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -29,8 +29,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const brand = await getBrand(slug);
-  if (!brand) return { title: 'Brand not found — All Outdoor' };
-  const title = `${brand.label} for sale — All Outdoor`;
+  if (!brand) return { title: 'Brand not found — ALL Outdoor' };
+  const title = `${brand.label} for sale — ALL Outdoor`;
   // Shared blurb (lib/seo.ts) — brand pages cover camp fridges and rods as
   // often as rifles, so the snippet leads outdoor like every other surface.
   const description = browseMetaDescription(`${brand.label} gear for sale`);

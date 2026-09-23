@@ -1,4 +1,4 @@
-// UX-1a — "Only N left" low-stock urgency chip.
+﻿// UX-1a — "Only N left" low-stock urgency chip.
 //
 // Rendered ONLY for inventory-tracked listings at ≤5 sellable units. The
 // CALLER owns the threshold guard so the chip can never fake scarcity on a
@@ -19,7 +19,7 @@ export function UrgencyChip({
         className ?? 'text-xs px-1.5 py-0.5 rounded-[3px] leading-none'
       }
       style={{
-        background: 'rgba(200,16,46,0.10)',
+        background: 'rgba(227,6,19,0.10)',
         color: 'var(--red)',
         fontWeight: 500,
         border: '0.5px solid var(--red)',

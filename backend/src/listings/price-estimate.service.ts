@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
@@ -169,7 +169,7 @@ export class PriceEstimateService {
           basis: 'sold-comps',
           soldCount,
           activeCount: 0,
-          note: `Based on ${soldCount} recent sales of similar items on All Outdoor.`,
+          note: `Based on ${soldCount} recent sales of similar items on ALL Outdoor.`,
           disclaimer: DISCLAIMER,
         };
       }

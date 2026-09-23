@@ -1,4 +1,4 @@
-// /legal — index of every legal document, plus the full ECT § 43
+﻿// /legal — index of every legal document, plus the full ECT § 43
 // disclosure block. Linked from the site footer. The point of this
 // page is to give regulators, lawyers, journalists and curious users
 // one URL where the entire compliance posture is visible.
@@ -11,7 +11,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Legal',
   description:
-    'All All Outdoor legal documents and statutory disclosures in one place.',
+    'All ALL Outdoor legal documents and statutory disclosures in one place.',
 };
 
 const DOCS: { href: string; title: string; description: string }[] = [
@@ -19,7 +19,7 @@ const DOCS: { href: string; title: string; description: string }[] = [
     href: '/terms',
     title: 'Terms of Service',
     description:
-      'The master contract governing your use of the All Outdoor platform.',
+      'The master contract governing your use of the ALL Outdoor platform.',
   },
   {
     href: '/privacy',
@@ -31,7 +31,7 @@ const DOCS: { href: string; title: string; description: string }[] = [
     href: '/acceptable-use',
     title: 'Acceptable Use Policy',
     description:
-      'What you may and may not list, post or do on All Outdoor — and how we enforce it.',
+      'What you may and may not list, post or do on ALL Outdoor — and how we enforce it.',
   },
   {
     href: '/refund-policy',
@@ -167,7 +167,7 @@ export default function LegalIndexPage() {
           <br />
           <strong>Registration number:</strong> 2026/639713/07
           <br />
-          <strong>Trading as:</strong> All Outdoor
+          <strong>Trading as:</strong> ALL Outdoor
           <br />
           <strong>Director:</strong> Gerhard Johan Petrus Fourie
           <br />

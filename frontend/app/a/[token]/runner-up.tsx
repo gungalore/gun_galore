@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 /**
  * Auction runner-up page — the seller's one-tap "offer it to the next bidder"
@@ -102,7 +102,7 @@ export function RunnerUpPage({
         message:
           err instanceof Error
             ? err.message
-            : "Couldn't reach All Outdoor — try again in a moment.",
+            : "Couldn't reach ALL Outdoor — try again in a moment.",
       });
     }
   }

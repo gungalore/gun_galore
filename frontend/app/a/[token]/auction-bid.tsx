@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 /**
  * Auction outbid SMS-link page. Two-step flow:
@@ -125,7 +125,7 @@ export function AuctionBidPage({
         message:
           err instanceof Error
             ? err.message
-            : "Couldn't reach All Outdoor — try again in a moment.",
+            : "Couldn't reach ALL Outdoor — try again in a moment.",
       });
     }
   }
@@ -508,7 +508,7 @@ function AuctionEndedScreen({ payload }: { payload: AuctionBidPayload }) {
           color: 'var(--text-tertiary)',
         }}
       >
-        Sign in to your All Outdoor account to see who won and whether the reserve was met.
+        Sign in to your ALL Outdoor account to see who won and whether the reserve was met.
       </p>
     </div>
   );

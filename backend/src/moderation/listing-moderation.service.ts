@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { LlmService } from '../common/llm/llm.service';
 import { LlmError, type LlmPart } from '../common/llm/llm.types';
@@ -162,13 +162,13 @@ export interface ListingModerationResult {
   publicReason?: string;
 }
 
-// Deliberately small prompt — All Outdoor moderation only catches TWO
+// Deliberately small prompt — ALL Outdoor moderation only catches TWO
 // things. Anything else is the seller's business or the admin queue's
 // problem. Earlier versions tried to enforce SA firearm law, photo
 // quality, category matching, confidence thresholds etc — most of those
 // produced false positives that frustrated good sellers. We rolled them
 // all back per the operator's call: "Claude needs to relax."
-const SYSTEM_PROMPT = `You are the listing moderator for All Outdoor — a South African marketplace.
+const SYSTEM_PROMPT = `You are the listing moderator for ALL Outdoor — a South African marketplace.
 
 You only check for TWO things. Anything else: APPROVE.
 
@@ -272,7 +272,7 @@ product, the answer is APPROVE.
 
 # CHECK 2 — AMMUNITION, PRIMERS and PROPELLANT being offered
 
-All Outdoor does not sell ammunition. Live ammunition may not be listed,
+ALL Outdoor does not sell ammunition. Live ammunition may not be listed,
 sold or traded on this platform under any circumstances. This is a
 permanent platform prohibition — not a licensing question — so there is
 no version of the listing that makes it acceptable.
@@ -300,7 +300,7 @@ REJECT when the seller is offering ammunition:
   factory boxes", "Case of 500 rounds .223 Remington, sealed", "200 rounds
   9mm boxed and sealed"
 
-Use publicReason: "All Outdoor does not sell ammunition — live ammunition
+Use publicReason: "ALL Outdoor does not sell ammunition — live ammunition
 may not be listed under any circumstances. Remove it and relist without
 it." Put "ammunition offered for sale" in the reasons array so the repeat
 -attempt tracker buckets it correctly.
@@ -457,7 +457,7 @@ export class ListingModerationService {
       };
     }
 
-    const system = `You are a listing assistant for All Outdoor, a South African marketplace for new and secondhand firearms, accessories and outdoor equipment.
+    const system = `You are a listing assistant for ALL Outdoor, a South African marketplace for new and secondhand firearms, accessories and outdoor equipment.
 
 You take a seller's rough draft and make it read like a professional shop wrote it. You change HOW IT READS. You never change WHAT IT SAYS.
 

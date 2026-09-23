@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // Dealer stock-in verification — seller-facing upload page.
 //
@@ -346,7 +346,7 @@ export default function DealerVerificationPage() {
       <div
         className="rounded-[8px] p-4 mb-5"
         style={{
-          background: 'rgba(200,16,46,0.06)',
+          background: 'rgba(227,6,19,0.06)',
           border: '0.5px solid var(--red)',
         }}
       >
@@ -564,7 +564,7 @@ export default function DealerVerificationPage() {
           <div
             className="rounded-[6px] px-3 py-2 text-sm"
             style={{
-              background: 'rgba(200,16,46,0.08)',
+              background: 'rgba(227,6,19,0.08)',
               border: '0.5px solid var(--red)',
               color: 'var(--red)',
             }}

@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+﻿import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -34,7 +34,7 @@ jest.setTimeout(120000);
 // DECISION OVERTAKING AN EARLIER OPERATOR DECISION.
 //
 // Operator, 2026-08-24: "add ALLOUTDOORS logo on the footer of each page and
-// say Prepared by All Outdoor." MOTIVATION-GUIDE-BOOK Part 1 rule 2, decided
+// say Prepared by ALL Outdoor." MOTIVATION-GUIDE-BOOK Part 1 rule 2, decided
 // 2026-09-09: "First person, applicant's voice, no service name anywhere in
 // the lodged pack. No 'prepared by', no footer brand, no 'we'. The applicant
 // signs it as their own letter." Failure mode 20 is the same point from the

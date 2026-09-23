@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // Phase E1 — Ask Boet subscription badges rendered next to a username
 // on every public surface (listing card, listing-detail seller chip,
@@ -67,12 +67,12 @@ function IdVerifiedBadge({
 }: {
   dim: { px: string; py: string; fontSize: string; gap: string };
 }) {
-  // Blue "ID verified" tick — the seller passed All Outdoor's identity
+  // Blue "ID verified" tick — the seller passed ALL Outdoor's identity
   // (KYC) check. Blue distinguishes it from the green Expert badge and
   // the red GG+ pill. Boolean trust signal only; no name or ID shown.
   return (
     <span
-      title="Identity verified — this seller passed All Outdoor's KYC identity check"
+      title="Identity verified — this seller passed ALL Outdoor's KYC identity check"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -131,8 +131,8 @@ function GgPlusPill({
         borderRadius: '3px',
         lineHeight: 1.2,
         color: isPro ? '#fff' : 'var(--red)',
-        background: isPro ? 'var(--red)' : 'rgba(200,16,46,0.10)',
-        border: `0.5px solid ${isPro ? 'var(--red)' : 'rgba(200,16,46,0.40)'}`,
+        background: isPro ? 'var(--red)' : 'rgba(227,6,19,0.10)',
+        border: `0.5px solid ${isPro ? 'var(--red)' : 'rgba(227,6,19,0.40)'}`,
       }}
     >
       {label}
@@ -156,7 +156,7 @@ function ExpertBadge({
       title={
         reason
           ? `Verified Expert — ${reason}`
-          : 'Verified Expert — recognised contributor on All Outdoor'
+          : 'Verified Expert — recognised contributor on ALL Outdoor'
       }
       style={{
         display: 'inline-flex',
@@ -205,7 +205,7 @@ export function UserBadgesWithTooltip({
       />
       {hasExpert && (
         <HelpTip title="Verified Expert" side="bottom">
-          Awarded by All Outdoor staff after this seller has contributed
+          Awarded by ALL Outdoor staff after this seller has contributed
           5+ verified entries to the Ask Boet knowledge base. Their answers
           on listings + Q&A carry extra weight.
           {expertBadgeReason ? (

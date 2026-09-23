@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../../lib/auth';
@@ -33,7 +33,7 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 const SOURCE_LABEL: Record<string, string> = {
-  INTERNAL: 'All Outdoor',
+  INTERNAL: 'ALL Outdoor',
   PUDO: 'Pudo',
   TCG: 'Door delivery',
 };

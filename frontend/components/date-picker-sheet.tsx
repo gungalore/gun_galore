@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -976,7 +976,6 @@ function DecadeStrip({
       style={{
         display: 'flex',
         gap: 6,
-        overflowX: 'auto',
         paddingBottom: 8,
         marginBottom: 4,
       }}

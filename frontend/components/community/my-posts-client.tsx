@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -14,14 +14,15 @@ import {
 } from '../../lib/community-api';
 import { postTypeLabel } from '../../lib/post-types';
 import { postStatusMeta } from './my-control-panel';
+import { ChipRail, type Chip } from '../ui/ChipRail';
 
 type Tab = 'all' | 'live' | 'processing' | 'blocked';
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'live', label: 'Live' },
-  { key: 'processing', label: 'Processing' },
-  { key: 'blocked', label: 'Blocked' },
+const POST_TABS: Chip[] = [
+  { value: 'all', label: 'All' },
+  { value: 'live', label: 'Live' },
+  { value: 'processing', label: 'Processing' },
+  { value: 'blocked', label: 'Blocked' },
 ];
 
 function timeAgo(iso: string): string {
@@ -230,22 +231,13 @@ export function MyPostsClient() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className="gg-press px-3 py-1.5 rounded-full text-[12px] whitespace-nowrap"
-            style={{
-              background: tab === t.key ? 'var(--red)' : 'var(--bg-inset)',
-              color: tab === t.key ? '#fff' : 'var(--text-secondary)',
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <ChipRail
+        items={POST_TABS}
+        value={tab}
+        onChange={(v) => setTab(v as Tab)}
+        label="Post status"
+        size="sm"
+      />
 
       {loading && (
         <p className="text-center text-[14px]" style={{ color: 'var(--text-tertiary)' }}>

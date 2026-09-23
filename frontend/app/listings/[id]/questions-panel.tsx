@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -66,7 +66,7 @@ function whoAsked(q: PublicQuestion): string {
 }
 
 function whoAnswered(q: PublicQuestion): string {
-  if (q.status === 'AUTO_ANSWERED') return 'All Outdoor AI';
+  if (q.status === 'AUTO_ANSWERED') return 'ALL Outdoor AI';
   return q.answeredByUser?.username ?? 'Seller';
 }
 

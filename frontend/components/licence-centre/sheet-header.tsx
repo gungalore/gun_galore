@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // ────────────────────────────────────────────────────────────────────
 // THE STICKY STRIP — reference, licence type, one progress figure, the
@@ -106,7 +106,7 @@ export default function SheetHeader({
       </div>
 
       <div className="flex items-center gap-2 px-4 pb-[10px] pt-1">
-        <div className="flex min-w-0 flex-1 gap-[6px] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex min-w-0 flex-1 gap-[6px] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden gg-row">
           {sections.map((s) => (
             <a
               key={s.id}

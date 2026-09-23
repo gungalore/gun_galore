@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 
@@ -41,7 +41,7 @@ export default function AwaitingAcceptChip({
     <div
       className="rounded-[8px] px-4 py-3"
       style={{
-        background: expired ? 'rgba(200,16,46,0.10)' : 'rgba(245,158,11,0.08)',
+        background: expired ? 'rgba(227,6,19,0.10)' : 'rgba(245,158,11,0.08)',
         border: `0.5px solid ${expired ? 'var(--red)' : 'rgba(245,158,11,0.45)'}`,
         lineHeight: 1.55,
       }}
@@ -80,7 +80,7 @@ export default function AwaitingAcceptChip({
           <>
             We&apos;ve received your payment and the funds are{' '}
             <strong style={{ color: 'var(--text-primary)' }}>held safely</strong>{' '}
-            by All Outdoor. The seller has 48 hours to confirm they can fulfil.
+            by ALL Outdoor. The seller has 48 hours to confirm they can fulfil.
             If they don&apos;t, our team steps in and refunds you in full.
           </>
         )}

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
 import { useRouter, useParams } from 'next/navigation';
@@ -567,7 +567,7 @@ export default function EditListingPage() {
       </div>
 
       {error && (
-        <div className="mb-4 px-4 py-3 rounded-[6px] text-sm" style={{ background: 'rgba(200,16,46,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}>
+        <div className="mb-4 px-4 py-3 rounded-[6px] text-sm" style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}>
           {error}
         </div>
       )}
@@ -676,7 +676,7 @@ export default function EditListingPage() {
             <div
               className="mt-2 px-3 py-2 rounded-[6px] text-xs"
               style={{
-                background: 'rgba(200,16,46,0.08)',
+                background: 'rgba(227,6,19,0.08)',
                 border: '0.5px solid var(--red)',
                 color: 'var(--text-secondary)',
                 lineHeight: 1.5,
@@ -1004,7 +1004,7 @@ export default function EditListingPage() {
             <div
               className="mt-2 px-3 py-2 rounded-[6px] text-xs"
               style={{
-                background: 'rgba(200,16,46,0.08)',
+                background: 'rgba(227,6,19,0.08)',
                 border: '0.5px solid var(--red)',
                 color: 'var(--text-secondary)',
                 lineHeight: 1.5,

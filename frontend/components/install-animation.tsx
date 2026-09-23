@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // iOS install-flow animation. 4 scenes × 4s = 16s loop.
 //
@@ -570,7 +570,7 @@ function Header() {
           letterSpacing: '-0.025em',
         }}
       >
-        All Outdoor{' '}
+        ALL Outdoor{' '}
         <span style={{ color: GG.muted, fontWeight: 500 }}>on iPhone</span>
       </div>
     </div>

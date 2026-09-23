@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 /**
  * Transaction-accept page — seller's one-tap "I'll handle this sale"
@@ -128,7 +128,7 @@ export function TransactionAcceptPage({
         message:
           err instanceof Error
             ? err.message
-            : "Couldn't reach All Outdoor — try again in a moment.",
+            : "Couldn't reach ALL Outdoor — try again in a moment.",
       });
     }
   }
@@ -161,7 +161,7 @@ export function TransactionAcceptPage({
         message:
           err instanceof Error
             ? err.message
-            : "Couldn't reach All Outdoor — try again in a moment.",
+            : "Couldn't reach ALL Outdoor — try again in a moment.",
       });
     }
   }
@@ -362,7 +362,7 @@ export function TransactionAcceptPage({
             marginTop: 4,
           }}
         >
-          Payment is being <strong>held safely</strong> by All Outdoor and
+          Payment is being <strong>held safely</strong> by ALL Outdoor and
           will be released once the buyer confirms delivery.
         </p>
       </div>

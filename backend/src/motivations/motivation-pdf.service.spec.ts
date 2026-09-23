@@ -1,4 +1,4 @@
-import {
+﻿import {
   HEADING_KEEP_WITH_NEXT,
   headingWouldOrphan,
   DEFAULT_SCHEME,
@@ -333,7 +333,7 @@ describe('the unpaid mark', () => {
 
   // ⚠️ THE MARK IS THE ONLY THING BETWEEN AN UNPAID PACK AND A FILEABLE ONE,
   // so what is asserted here is not decoration. Operator, 2026-08-22: "Add NOT
-  // FOR USE around the All Outdoor logo as the watermark."
+  // FOR USE around the ALL Outdoor logo as the watermark."
 
   const long = Array.from(
     { length: 30 },
@@ -417,7 +417,7 @@ describe('the unpaid mark', () => {
     expect(flat(text)).not.toContain('Preview copy');
     // ⚠️ AND NO BRANDING EITHER, WHICH REVERSES WHAT THIS ONCE ASSERTED.
     // Operator, 2026-08-24: "add ALLOUTDOORS logo on the footer of each page
-    // and say Prepared by All Outdoor" — overtaken by MOTIVATION-GUIDE-BOOK
+    // and say Prepared by ALL Outdoor" — overtaken by MOTIVATION-GUIDE-BOOK
     // Part 1 rule 2 (2026-09-09): no service name anywhere in the lodged
     // pack. squash(), not flat(): the footer is set with wide character
     // spacing and extracts as "P R E P A R E D  B Y ...".

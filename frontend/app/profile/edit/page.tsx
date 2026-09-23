@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useRef, useState, FormEvent, ReactNode } from 'react';
 import { av } from '@/lib/asset-version';
@@ -1218,7 +1218,7 @@ export default function EditProfilePage() {
             </div>
           )}
 
-          {/* Step 2 — enter OTP. Branded with the All Outdoor logo. */}
+          {/* Step 2 — enter OTP. Branded with the ALL Outdoor logo. */}
           {phoneMode === 'entering-code' && (
             <div className="rounded-[8px] p-5 sm:p-6 text-center"
               style={{
@@ -1228,8 +1228,8 @@ export default function EditProfilePage() {
             >
               <Image
                 // Nav mark — the full scene's wordmark is unreadable at 36px.
-                src={av('/logo-nav-dark.svg')}
-                alt="All Outdoor"
+                src="/brand/logo-horizontal-dark-transparent.svg"
+                alt="ALL Outdoor"
                 width={96}
                 height={36}
                 priority

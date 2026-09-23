@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
@@ -49,10 +49,10 @@ export default function ForgotPasswordPage() {
       className="flex min-h-screen flex-col items-center justify-center gap-6 px-4"
       style={{ background: 'var(--bg-deep)' }}
     >
-      <Link href="/" aria-label="All Outdoor">
+      <Link href="/" aria-label="ALL Outdoor">
         <img
-          src={av('/logo-nav-dark.svg')}
-          alt="All Outdoor"
+          src="/brand/logo-horizontal-dark-transparent.svg"
+          alt="ALL Outdoor"
           style={{ height: 44, width: 'auto' }}
         />
       </Link>

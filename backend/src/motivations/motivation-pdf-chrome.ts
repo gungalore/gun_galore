@@ -1,4 +1,4 @@
-import * as fs from 'node:fs';
+﻿import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SchemeColours } from './motivation-pdf.service';
 import type { HeadingStyle } from './motivation-pdf-layouts';
@@ -53,7 +53,7 @@ export const px = (n: number): number => n * 0.75;
 // two shades off the mark it sits beside is worse than either shade alone.
 // ────────────────────────────────────────────────────────────────────
 
-/** All Outdoor red, sampled from the lockup. Never scheme-dependent. */
+/** ALL Outdoor red, sampled from the lockup. Never scheme-dependent. */
 export const BRAND_RED = '#E01B24';
 /** The near-black the lockup is drawn in. */
 export const BRAND_INK = '#111111';
@@ -417,7 +417,7 @@ export function footerStrip(
    * AND THAT REVERSES AN EXPLICIT INSTRUCTION.
    *
    * Operator, 2026-08-24: "add ALLOUTDOORS logo on the footer of each page and
-   * say Prepared by All Outdoor." MOTIVATION-GUIDE-BOOK Part 1 rule 2, decided
+   * say Prepared by ALL Outdoor." MOTIVATION-GUIDE-BOOK Part 1 rule 2, decided
    * 2026-09-09, is the later word and it is absolute: "First person,
    * applicant's voice, no service name anywhere in the lodged pack. No
    * 'prepared by', no footer brand, no 'we'. The applicant signs it as their
@@ -480,7 +480,7 @@ export function footerStrip(
 // ── the unpaid mark ─────────────────────────────────────────────────
 //
 // Operator, 2026-08-22: "remember to add a watermark as this is not been paid
-// yet. Add NOT FOR USE around the All Outdoor logo as the watermark."
+// yet. Add NOT FOR USE around the ALL Outdoor logo as the watermark."
 //
 // ⚠️ THIS IS THE ONE PLACE THE BRAND APPEARS ON THE DOCUMENT, and it is a
 // deliberate exception to the "no branding beyond one discreet footer line"

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -14,7 +14,7 @@ import {
   type InstallSurface,
 } from '@/lib/activity-beacon';
 
-// "Get the All Outdoor app" install popup + the shared install-help modal.
+// "Get the ALL Outdoor app" install popup + the shared install-help modal.
 //
 // Install state (native event capture, installed-detection, iOS) lives in
 // useInstallPrompt() so the nav drawer's manual "Install app" button shares it.
@@ -525,7 +525,7 @@ function InstallPromptBody() {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Get the All Outdoor app"
+            aria-label="Get the ALL Outdoor app"
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'relative',
@@ -535,7 +535,7 @@ function InstallPromptBody() {
               border: '0.5px solid var(--border)',
               borderRadius: 16,
               boxShadow:
-                '0 24px 60px rgba(0,0,0,0.55), 0 0 22px rgba(200,16,46,0.22)',
+                '0 24px 60px rgba(0,0,0,0.55), 0 0 22px rgba(227,6,19,0.22)',
               padding: '24px 22px 18px',
               display: 'flex',
               flexDirection: 'column',
@@ -570,7 +570,7 @@ function InstallPromptBody() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/icon-192.png"
-              alt="All Outdoor"
+              alt="ALL Outdoor"
               width={56}
               height={56}
               style={{
@@ -640,7 +640,7 @@ function InstallPromptBody() {
                       width: 18,
                       height: 18,
                       borderRadius: '50%',
-                      background: 'rgba(200,16,46,0.14)',
+                      background: 'rgba(227,6,19,0.14)',
                       color: 'var(--red)',
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -723,7 +723,7 @@ function InstallPromptBody() {
               to { opacity: 1; transform: translateY(0) scale(1); }
             }
             @media (prefers-reduced-motion: reduce) {
-              [aria-label="Get the All Outdoor app"] { animation: none !important; }
+              [aria-label="Get the ALL Outdoor app"] { animation: none !important; }
             }
           `}</style>
         </div>
@@ -974,7 +974,7 @@ function InstallHelpModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="How to install All Outdoor"
+      aria-label="How to install ALL Outdoor"
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -1017,7 +1017,7 @@ function InstallHelpModal({
           <>
             <div>
               <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
-                Open All Outdoor in Safari to install
+                Open ALL Outdoor in Safari to install
               </p>
               <p
                 style={{
@@ -1029,7 +1029,7 @@ function InstallHelpModal({
               >
                 On iPhone, home-screen apps can only be added from{' '}
                 <strong>Safari</strong>. You&rsquo;re in another browser — open
-                All Outdoor in Safari, then add it to your home screen.
+                ALL Outdoor in Safari, then add it to your home screen.
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8, width: '100%' }}>
@@ -1116,7 +1116,7 @@ function InstallHelpModal({
             </div>
             <div>
               <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
-                Add All Outdoor to your home screen
+                Add ALL Outdoor to your home screen
               </p>
               <p
                 style={{
@@ -1135,8 +1135,8 @@ function InstallHelpModal({
           <div>
             <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
               {canInstall || isDesktop
-                ? 'Install the All Outdoor app'
-                : 'Add All Outdoor to your home screen'}
+                ? 'Install the ALL Outdoor app'
+                : 'Add ALL Outdoor to your home screen'}
             </p>
             {canInstall ? (
               <p
@@ -1147,7 +1147,7 @@ function InstallHelpModal({
                   margin: '0 0 4px',
                 }}
               >
-                Tap <strong>Install</strong> below to add All Outdoor to your home
+                Tap <strong>Install</strong> below to add ALL Outdoor to your home
                 screen.
               </p>
             ) : isDesktop ? (
@@ -1170,7 +1170,7 @@ function InstallHelpModal({
                   </li>
                   <li>
                     Don&rsquo;t see it? Open the browser menu (<strong>⋮</strong>,
-                    top-right) → <strong>Install All Outdoor…</strong>.
+                    top-right) → <strong>Install ALL Outdoor…</strong>.
                   </li>
                   <li>
                     Click <strong>Install</strong> to confirm.
@@ -1184,7 +1184,7 @@ function InstallHelpModal({
                     margin: '8px 0 0',
                   }}
                 >
-                  All Outdoor opens in its own window and lives in your taskbar /
+                  ALL Outdoor opens in its own window and lives in your taskbar /
                   apps — no store needed.
                 </p>
               </>
@@ -1220,7 +1220,7 @@ function InstallHelpModal({
                   }}
                 >
                   On some phones only &ldquo;Add to Home screen&rdquo; is
-                  available — that still puts an All Outdoor icon on your home
+                  available — that still puts an ALL Outdoor icon on your home
                   screen; it just opens in your browser.
                 </p>
               </>

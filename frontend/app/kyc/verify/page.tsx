@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 /**
  * Seller identity verification.
@@ -309,7 +309,7 @@ export default function KycVerifyPage() {
               the current flow does, so saying so would be false.
             */}
             <span>
-              I consent to All Outdoor verifying my identity using my SA ID
+              I consent to ALL Outdoor verifying my identity using my SA ID
               number, date of birth, ID document and a live selfie. My ID
               document and selfie are captured and checked by Didit, our
               identity-verification provider, which reads the document, checks
@@ -449,7 +449,7 @@ export default function KycVerifyPage() {
             ✓ You are verified.
           </p>
           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-            {returnTo ? 'Taking you back…' : 'You can sell on All Outdoor.'}
+            {returnTo ? 'Taking you back…' : 'You can sell on ALL Outdoor.'}
           </p>
         </section>
       )}

@@ -1,4 +1,4 @@
-import { serverAuth as auth } from '../../../lib/auth-server';
+﻿import { serverAuth as auth } from '../../../lib/auth-server';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -239,7 +239,7 @@ function ExpiryCountdown({
       <p
         className="text-xs mb-2 px-2 py-1 rounded"
         style={{
-          background: 'rgba(200,16,46,0.10)',
+          background: 'rgba(227,6,19,0.10)',
           border: '0.5px solid var(--red)',
           color: 'var(--red)',
         }}
@@ -253,7 +253,7 @@ function ExpiryCountdown({
   const isCritical = hours < 2;
   const isWarning = hours < 6;
   const tone = isCritical
-    ? { bg: 'rgba(200,16,46,0.10)', border: 'var(--red)', label: 'var(--red)' }
+    ? { bg: 'rgba(227,6,19,0.10)', border: 'var(--red)', label: 'var(--red)' }
     : isWarning
       ? { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.45)', label: 'var(--warning)' }
       : { bg: 'var(--bg-inset)', border: 'var(--border)', label: 'var(--text-secondary)' };

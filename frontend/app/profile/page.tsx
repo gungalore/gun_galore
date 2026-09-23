@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+﻿import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../lib/auth-server';
@@ -119,7 +119,7 @@ function formatRelative(iso: string): string {
 }
 
 export const metadata = {
-  title: 'My profile — All Outdoor',
+  title: 'My profile — ALL Outdoor',
 };
 
 // Parse a fetch Response safely: null on a missing/non-OK response or an
@@ -339,7 +339,7 @@ export default async function ProfilePage() {
             <div
               className="mt-3 rounded-[6px] px-3 py-2.5 text-xs"
               style={{
-                background: 'rgba(200,16,46,0.10)',
+                background: 'rgba(227,6,19,0.10)',
                 border: '0.5px solid var(--red)',
                 color: 'var(--text-primary)',
                 lineHeight: 1.55,

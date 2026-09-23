@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -452,7 +452,7 @@ function CloseAccountDialog({
               className="mt-2 text-sm leading-relaxed"
               style={{ color: 'var(--text-secondary)' }}
             >
-              We keep a record of what you did on All Outdoor: your sales and
+              We keep a record of what you did on ALL Outdoor: your sales and
               purchases, the offers and bids you made, ratings written by you
               and about you, any complaints you or another member lodged, and
               any statutory firearm transfer paperwork we completed for you.
@@ -655,7 +655,7 @@ function CloseAccountDialog({
               className="mt-3 text-sm leading-relaxed"
               style={{ color: 'var(--text-secondary)' }}
             >
-              Signing you out. Thank you for using All Outdoor.
+              Signing you out. Thank you for using ALL Outdoor.
             </p>
           </>
         )}

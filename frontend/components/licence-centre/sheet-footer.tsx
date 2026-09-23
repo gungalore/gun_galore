@@ -109,7 +109,7 @@ export default function SheetFooter({
         disabled={blocked || busy}
         onClick={() => onWrite({ testimonialConsent: testimonial })}
         className={`flex min-h-[44px] w-full items-center justify-center rounded-[var(--r-sm)] bg-[var(--red)] px-4 text-[15px] font-medium text-white ${
-          blocked || busy ? 'opacity-50' : 'hover:bg-[#A00D24]'
+          blocked || busy ? 'opacity-50' : 'hover:bg-[#C7050F]'
         }`}
       >
         {busy ? 'Writing your motivation…' : 'Write my motivation'}

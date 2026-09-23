@@ -1,4 +1,4 @@
-// /contact — the single public "how to reach us" page. Static, no
+﻿// /contact — the single public "how to reach us" page. Static, no
 // auth and deliberately no form: email and phone only, plus the
 // registered company details a visitor (or a regulator) needs to
 // know exactly who they are dealing with. Links onward to complaints
@@ -20,7 +20,7 @@ export default function ContactPage() {
       <LegalDocHeader title="Contact us" lastUpdated="Effective 16 July 2026" />
 
       <p>
-        All Outdoor is operated by ALLOUTDOOR (PTY) LTD. You can reach us
+        ALL Outdoor is operated by ALLOUTDOOR (PTY) LTD. You can reach us
         by email or phone using the details below. We aim to respond
         within <strong>2 business days</strong>.
       </p>
@@ -65,7 +65,7 @@ export default function ContactPage() {
           <br />
           <strong>Registration number:</strong> 2026/639713/07
           <br />
-          <strong>Trading as:</strong> All Outdoor
+          <strong>Trading as:</strong> ALL Outdoor
           <br />
           <strong>Director:</strong> Gerhard Johan Petrus Fourie
           <br />

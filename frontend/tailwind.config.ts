@@ -17,7 +17,16 @@ const config: Config = {
   // resolved to an invalid value, and nothing in the app consumed
   // bg-background / text-foreground anyway. Removed 2026-08-27.
   theme: {
-    extend: {},
+    extend: {
+      borderRadius: {
+        xs: "var(--r-xs)",
+        sm: "var(--r-sm)",
+        md: "var(--r-md)",
+        lg: "var(--r-lg)",
+        xl: "var(--r-xl)",
+        pill: "var(--r-pill)",
+      },
+    },
   },
   plugins: [],
 };

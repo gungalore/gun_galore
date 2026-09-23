@@ -1,4 +1,4 @@
-// ────────────────────────────────────────────────────────────────────
+﻿// ────────────────────────────────────────────────────────────────────
 // GEMINI. The provider every model call on this platform goes through.
 //
 // Operator, 2026-09-07: "we are switching from claude API to gemini 2.5
@@ -165,7 +165,7 @@ const MAX_BACKOFF_MS = 8_000;
 /**
  * ⚠️ SAFETY IS TURNED DOWN ON PURPOSE, AND THIS IS THE REASON.
  *
- * All Outdoor is a lawful, regulated South African firearms marketplace.
+ * ALL Outdoor is a lawful, regulated South African firearms marketplace.
  * The model is asked to read firearm licences, grade Section 13
  * self-defence motivations, moderate hunting and self-defence listings,
  * and answer questions about ammunition components. Every one of those is

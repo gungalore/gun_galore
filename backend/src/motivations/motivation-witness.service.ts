@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -255,7 +255,7 @@ export class MotivationWitnessService {
       message:
         `${args.applicantName} has asked you to complete a character statement ` +
         `for a firearm licence application.\n\n${link}\n\n` +
-        `This link works for one hour. All Outdoor.`,
+        `This link works for one hour. ALL Outdoor.`,
       reference: `witness-${row.id}`,
     });
 
@@ -434,7 +434,7 @@ export class MotivationWitnessService {
       // number is the whole point of the check; letting the page choose where
       // the code goes would make the check verify nothing.
       to: row.invitedPhone,
-      message: `All Outdoor verification code: ${code}\n\nValid for 10 minutes.`,
+      message: `ALL Outdoor verification code: ${code}\n\nValid for 10 minutes.`,
       reference: `witness-otp-${row.id}`,
     });
     if (!sent.success) {

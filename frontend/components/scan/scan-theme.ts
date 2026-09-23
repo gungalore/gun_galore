@@ -25,10 +25,10 @@ export const T = {
   ink2: '#4A443C',
   ink3: '#7A7267',
 
-  red: '#C8102E',
-  redHover: '#A00D24',
-  redWash: 'rgba(200, 16, 46, 0.09)',
-  link: '#B10E28',
+   red: '#E30613',
+   redHover: '#C7050F',
+   redWash: 'rgba(227, 6, 19, 0.09)',
+   link: '#B8050F',
 
   /** Semantic. */
   good: '#1F7A50',
@@ -37,7 +37,7 @@ export const T = {
   warn: '#8F6E0F',
   warnWash: 'rgba(168, 123, 20, 0.10)',
   warnLine: 'rgba(168, 123, 20, 0.38)',
-  danger: '#C8102E',
+   danger: '#B8050F',
 
   /** On the black camera overlay. */
   onDark: '#F4F1ED',
@@ -49,7 +49,7 @@ export const T = {
   ready: '#3DDC84',
   handle: '#2A6FB0',
 
-  r: { sm: 6, md: 8, lg: 12 },
+   r: { sm: 10, md: 14, lg: 20 },
 
   /**
    * ⚠️ 44 IS A FLOOR, NOT A SUGGESTION. Everything here is operated one-handed
@@ -57,8 +57,8 @@ export const T = {
    */
   tap: 44,
 
-  font: "'Public Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
-  head: "'Archivo', 'Public Sans', system-ui, sans-serif",
+   font: "'Montserrat', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+   head: "'League Spartan', 'Montserrat', system-ui, sans-serif",
 } as const;
 
 /** A filled primary button. */

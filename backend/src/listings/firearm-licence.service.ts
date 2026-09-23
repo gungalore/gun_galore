@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 import type { LlmPart } from '../common/llm/llm.types';
@@ -355,7 +355,7 @@ export class FirearmLicenceService {
       throw new Error('no AI review model configured');
     }
 
-    const systemPrompt = `You are the firearm-listing licence verifier for All Outdoor, a South African firearms marketplace.
+    const systemPrompt = `You are the firearm-listing licence verifier for ALL Outdoor, a South African firearms marketplace.
 
 You will be shown TWO photos in order:
   1. A close-up of the SERIAL NUMBER stamped on a firearm or barrel.

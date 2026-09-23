@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // Bottom tab bar — the primary nav for installed-PWA users.
 //
@@ -1034,7 +1034,7 @@ function SheetHandle({ onClose }: { onClose: () => void }) {
 //      CategoryMenu flyout and this sheet was never touched.
 //   2. Or browse by how it sells — the selling-mode surfaces, demoted.
 //      A transaction-mode taxonomy only helps someone who already knows
-//      how All Outdoor sells, so it stops being the first thing you see.
+//      how ALL Outdoor sells, so it stops being the first thing you see.
 // Patterned after the App Store's "Today / Games / Apps / ..." selector.
 function ShopSheet({
   pathname,
@@ -1277,11 +1277,11 @@ function ShopSheet({
                             padding: '10px 12px',
                             borderRadius: 10,
                             background: active
-                              ? 'rgba(200, 16, 46, 0.10)'
+                              ? 'rgba(227, 6, 19, 0.10)'
                               : 'var(--bg-inset)',
                             border: `0.5px solid ${
                               active
-                                ? 'rgba(200, 16, 46, 0.40)'
+                                ? 'rgba(227, 6, 19, 0.40)'
                                 : 'var(--border)'
                             }`,
                             color: 'var(--text-primary)',
@@ -1363,10 +1363,10 @@ function ShopSheet({
                   padding: '14px 16px',
                   borderRadius: 10,
                   background: s.isActive
-                    ? 'rgba(200, 16, 46, 0.10)'
+                    ? 'rgba(227, 6, 19, 0.10)'
                     : 'var(--bg-inset)',
                   border: `0.5px solid ${
-                    s.isActive ? 'rgba(200, 16, 46, 0.40)' : 'var(--border)'
+                    s.isActive ? 'rgba(227, 6, 19, 0.40)' : 'var(--border)'
                   }`,
                   color: 'var(--text-primary)',
                   textDecoration: 'none',
@@ -1379,7 +1379,7 @@ function ShopSheet({
                     height: 40,
                     borderRadius: 8,
                     background: s.isActive
-                      ? 'rgba(200, 16, 46, 0.20)'
+                      ? 'rgba(227, 6, 19, 0.20)'
                       : 'var(--bg-card)',
                     color: s.isActive
                       ? 'var(--red)'
@@ -1608,7 +1608,7 @@ function MoreSheet({
                   width: 44,
                   height: 44,
                   borderRadius: '50%',
-                  background: 'rgba(200,16,46,0.18)',
+                  background: 'rgba(227,6,19,0.18)',
                   color: 'var(--red)',
                   display: 'inline-flex',
                   alignItems: 'center',

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { LlmService } from '../common/llm/llm.service';
 import { LlmError, type LlmPart } from '../common/llm/llm.types';
 import { boundedImageUrl, IMAGE_EDGE } from '../common/image-url';
@@ -149,7 +149,7 @@ export interface KycScanInput {
   subjectAgeYears?: number;
 }
 
-const SYSTEM_PROMPT = `You are the identity-verification scanner for All Outdoor, a South African online marketplace. You will be shown:
+const SYSTEM_PROMPT = `You are the identity-verification scanner for ALL Outdoor, a South African online marketplace. You will be shown:
 1. A South African identity document, as a photo or PDF. There are exactly two valid formats and BOTH are in wide circulation:
    - GREEN_BOOK — the old green bar-coded identity book. A small booklet with a dark green cover. The photo inside is often small, low-contrast, monochrome or colour-faded, and sits behind a laminate that yellows and scuffs. Issued at 16 and NEVER reissued, so the photo can be decades old and the book itself visibly worn. Wear is normal; judge tampering, not age.
    - SMART_ID_CARD — the newer credit-card sized card, WHITE/pale with a green-and-gold South African coat of arms, holographic overlays and a laser-engraved portrait. Introduced in 2013. Also not routinely reissued, so its photo can still be over a decade old. Holograms cause glare, banding and colour shifts across the portrait — that is the card working as designed, not evidence of tampering.

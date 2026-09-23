@@ -48,4 +48,9 @@ export class CreatePostDto {
   @IsOptional()
   @IsString()
   groupId?: string;
+
+  /** Optional location from Google Places autocomplete. */
+  @IsOptional()
+  @IsString()
+  location?: string;
 }

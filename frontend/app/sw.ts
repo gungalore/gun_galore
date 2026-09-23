@@ -1,4 +1,4 @@
-// Service worker source — compiled by @serwist/next during `next build`
+﻿// Service worker source — compiled by @serwist/next during `next build`
 // into /sw.js at the project root and registered automatically by the
 // Serwist runtime.
 //
@@ -166,7 +166,7 @@ const imageCaching: RuntimeCaching[] = [
     }),
   },
   {
-    // Brand static assets — logo.svg, logo-mark.svg, PWA icons,
+    // Brand static assets — brand logos, favicons, PWA icons,
     // background photos in /public. Stale-while-revalidate so a
     // logo update lands within a tab refresh, not a full re-deploy.
     matcher: ({ request, url }) =>
@@ -292,9 +292,9 @@ self.addEventListener('push', (event) => {
   } catch {
     // Plain-text fallback — backend always sends JSON but defend
     // against partner-injected pushes anyway.
-    payload = { title: 'All Outdoor', body: e.data.text() };
+    payload = { title: 'ALL Outdoor', body: e.data.text() };
   }
-  const title = payload.title ?? 'All Outdoor';
+  const title = payload.title ?? 'ALL Outdoor';
   const body = payload.body ?? '';
   const url = payload.url ?? '/';
   e.waitUntil(

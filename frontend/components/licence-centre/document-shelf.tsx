@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import type { SheetDocument } from "./contract";
@@ -254,7 +254,7 @@ export default function DocumentShelf({
         Your documents
       </p>
       <div className="flex items-start gap-[10px] pr-4">
-        <div className="flex min-w-0 flex-1 gap-[10px] overflow-x-auto pb-2">
+        <div className="flex min-w-0 flex-1 gap-[10px] gg-row">
           {documents.map((d) => (
             <div key={d.id} className="w-[72px] flex-shrink-0">
               <div className="relative flex h-[92px] w-[72px] items-center justify-center overflow-hidden rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-tertiary)]">

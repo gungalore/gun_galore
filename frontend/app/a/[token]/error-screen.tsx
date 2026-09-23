@@ -1,4 +1,4 @@
-import Link from 'next/link';
+﻿import Link from 'next/link';
 
 /**
  * Friendly error screen for the four expected failure modes when a
@@ -56,7 +56,7 @@ export function ActionTokenError({ status }: { status: number }) {
           minWidth: 200,
         }}
       >
-        Sign in to All Outdoor
+        Sign in to ALL Outdoor
       </Link>
     </div>
   );

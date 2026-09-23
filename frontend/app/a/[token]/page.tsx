@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+﻿import { redirect } from 'next/navigation';
 import { av } from '@/lib/asset-version';
 import { apiFetch } from '@/lib/api';
 import { withDiagnostics } from '@/lib/scan/diag-flag';
@@ -171,7 +171,7 @@ export default async function ActionTokenPage({
 /**
  * Mobile-only chrome — single column, centered, max ~480px wide.
  * The logo bar at the top serves as the visual anchor + reassurance
- * ("yes you're really on All Outdoor"). No nav, no footer beyond the
+ * ("yes you're really on ALL Outdoor"). No nav, no footer beyond the
  * fine print, no auth provider wrapper, no PWA install prompt — just the
  * action page.
  */
@@ -206,8 +206,8 @@ function LogoHeader() {
     <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={av('/logo-mark-dark.svg')}
-        alt="All Outdoor"
+        src="/brand/emblem-dark-transparent.svg"
+        alt="ALL Outdoor"
         style={{ width: 56, height: 56, display: 'inline-block' }}
       />
     </div>
@@ -225,7 +225,7 @@ function PageFootnote() {
         marginTop: 12,
       }}
     >
-      This is a single-use link from All Outdoor. It expires after use
+      This is a single-use link from ALL Outdoor. It expires after use
       and does not sign you into your account.
       <br />
       Need full account access?{' '}

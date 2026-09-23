@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
 import { FeeModel, NotificationCategory } from '@prisma/client';
 import { SmsService } from '../sms/sms.service';
@@ -63,7 +63,7 @@ interface PersistOpts {
 // Fails open — emails are fire-and-forget; never block the main flow.
 
 // Single source — see backend/src/common/brand.ts. The 80-odd SMS templates
-// below still inline "All Outdoor:" rather than importing SMS_PREFIX: they are
+// below still inline "ALL Outdoor:" rather than importing SMS_PREFIX: they are
 // literal message copy, and threading a constant through every one would add
 // churn without making the next rename any safer (the rename is a sweep either
 // way). The From header is different — it also carries the sending DOMAIN,
@@ -164,7 +164,7 @@ function renderEmail(c: EmailContent, logoUrl: string): string {
   <!--[if mso]>
   <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
   <![endif]-->
-  <title>All Outdoor</title>
+  <title>ALL Outdoor</title>
   <style type="text/css">
     /* Aggressive dark-mode lockdown. Even with all of this, Gmail
        may strip the style block on some configs — inline styles
@@ -216,7 +216,7 @@ function renderEmail(c: EmailContent, logoUrl: string): string {
             <span style="font-family:Arial,sans-serif;font-size:20px;font-weight:700;color:#ffffff;letter-spacing:0.12em;">ALL OUTDOOR</span>
             <![endif]-->
             <!--[if !mso]><!-->
-            <img src="${logoUrl}" alt="All Outdoor" width="180" height="36"
+            <img src="${logoUrl}" alt="ALL Outdoor" width="180" height="36"
                  style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;height:36px;width:180px;" />
             <!--<![endif]-->
           </td>
@@ -247,10 +247,10 @@ function renderEmail(c: EmailContent, logoUrl: string): string {
           <td style="padding:0 24px 40px;background-color:${TOKEN.bgPage} !important;">
             <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border-top:1px solid ${TOKEN.border};">
               <tr><td style="height:24px;font-size:0;line-height:0;">&nbsp;</td></tr>
-              <tr><td align="center"><p style="margin:0;font-size:12px;color:${TOKEN.textTertiary} !important;line-height:1.5;">All Outdoor (Pty) Ltd &middot; South Africa</p></td></tr>
+              <tr><td align="center"><p style="margin:0;font-size:12px;color:${TOKEN.textTertiary} !important;line-height:1.5;">ALL Outdoor (Pty) Ltd &middot; South Africa</p></td></tr>
               <tr><td align="center" style="padding-top:6px;"><a href="mailto:${SUPPORT_EMAIL}" style="font-size:12px;color:${TOKEN.red} !important;text-decoration:none;">${SUPPORT_EMAIL}</a></td></tr>
-              <tr><td align="center" style="padding-top:10px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">Transactional email related to your All Outdoor account.</p></td></tr>
-              <tr><td align="center" style="padding-top:4px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">&copy; ${new Date().getFullYear()} All Outdoor. All rights reserved.</p></td></tr>
+              <tr><td align="center" style="padding-top:10px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">Transactional email related to your ALL Outdoor account.</p></td></tr>
+              <tr><td align="center" style="padding-top:4px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">&copy; ${new Date().getFullYear()} ALL Outdoor. All rights reserved.</p></td></tr>
             </table>
           </td>
         </tr>
@@ -740,8 +740,8 @@ export class NotificationsService {
     await this.sendSms(
       d.buyerPhone,
       isCollection
-        ? `All Outdoor: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. Collection item — seller contact is on your order page; tap Confirm collection when you have it.`
-        : `All Outdoor: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. We'll SMS again when it's dispatched.`,
+        ? `ALL Outdoor: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. Collection item — seller contact is on your order page; tap Confirm collection when you have it.`
+        : `ALL Outdoor: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. We'll SMS again when it's dispatched.`,
       `order-confirmed-${d.transactionId}`,
       {
         whatsapp: {
@@ -788,7 +788,7 @@ export class NotificationsService {
     }
     await this.sendSms(
       d.buyerPhone,
-      `All Outdoor: Order confirmed (${items}). Total paid ${formatRand(d.buyerTotal)}. We'll SMS again as items are dispatched.`,
+      `ALL Outdoor: Order confirmed (${items}). Total paid ${formatRand(d.buyerTotal)}. We'll SMS again as items are dispatched.`,
       `order-confirmed-multi-${d.orderId}`,
     );
   }
@@ -853,8 +853,8 @@ export class NotificationsService {
     await this.sendSms(
       d.sellerPhone,
       overdue
-        ? `All Outdoor: your sale of ${truncate(d.listingTitle, 24)} is OVERDUE for a response. Act now: ${url}`
-        : `All Outdoor: ~${d.hoursLeft}h left to accept your sale of ${truncate(d.listingTitle, 24)}. One tap: ${url}`,
+        ? `ALL Outdoor: your sale of ${truncate(d.listingTitle, 24)} is OVERDUE for a response. Act now: ${url}`
+        : `ALL Outdoor: ~${d.hoursLeft}h left to accept your sale of ${truncate(d.listingTitle, 24)}. One tap: ${url}`,
       `accept-reminder-${d.transactionId}${overdue ? '-overdue' : ''}`,
       {
         whatsapp: {
@@ -918,7 +918,7 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.sellerPhone,
-        `All Outdoor: ~${d.hoursLeft}h left to answer R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 22)}. Decide: ${d.actionUrl}`,
+        `ALL Outdoor: ~${d.hoursLeft}h left to answer R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 22)}. Decide: ${d.actionUrl}`,
         `offer-reminder-${d.offerId}`,
       );
     }
@@ -1010,7 +1010,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `All Outdoor: ~${d.hoursLeft}h left to pay for ${truncate(d.listingTitle, 26)} (your offer was accepted). Pay: ${url}`,
+      `ALL Outdoor: ~${d.hoursLeft}h left to pay for ${truncate(d.listingTitle, 26)} (your offer was accepted). Pay: ${url}`,
       `offer-pay-reminder-${d.offerId}`,
     );
   }
@@ -1061,7 +1061,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `All Outdoor: ~${d.hoursLeft}h left to pay for ${truncate(d.listingTitle, 26)} (you won it). Pay: ${url}`,
+      `ALL Outdoor: ~${d.hoursLeft}h left to pay for ${truncate(d.listingTitle, 26)} (you won it). Pay: ${url}`,
       `auction-pay-reminder-${d.listingId}`,
     );
   }
@@ -1128,7 +1128,7 @@ export class NotificationsService {
         : `<p style="margin: 0 0 14px;"><b>First — confirm you can fulfil this sale within 48 hours.</b> Tap the Accept button below to lock the sale in. After accepting you have 5 days to dispatch.</p>`
       : '';
     const bodyText = isDealerTransfer
-      ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by All Outdoor. Once you transfer the firearm to the chosen dealer, you'll need to upload 3 photos so we can verify the stock-in before releasing your payout:
+      ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by ALL Outdoor. Once you transfer the firearm to the chosen dealer, you'll need to upload 3 photos so we can verify the stock-in before releasing your payout:
 <ol style="margin: 12px 0; padding-left: 22px; line-height: 1.7;">
   <li>The completed <b>SAPS 534</b> form (<b>BLOCK LETTERS ONLY</b> — our verification bot can't read cursive)</li>
   <li>The <b>last line</b> of the dealer's stock register (only your entry — no other customers' details)</li>
@@ -1136,8 +1136,8 @@ export class NotificationsService {
 </ol>
 <p style="margin: 8px 0; font-size: 13px; color: #666;">Ask the dealer to print in BLOCK LETTERS — that lets our automated check pass instantly. Cursive or unclear writing means a 48-hour human review before payout.</p>`
       : isCollection
-        ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by All Outdoor. This is a <b>collection</b> sale — the buyer collects in person. Their contact details are on the sale page, so arrange the handover with them. Your payment is released as soon as the buyer confirms collection.`
-        : `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by All Outdoor — pack and dispatch as soon as possible. Once the buyer confirms delivery, payment will be released to you automatically.`;
+        ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by ALL Outdoor. This is a <b>collection</b> sale — the buyer collects in person. Their contact details are on the sale page, so arrange the handover with them. Your payment is released as soon as the buyer confirms collection.`
+        : `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by ALL Outdoor — pack and dispatch as soon as possible. Once the buyer confirms delivery, payment will be released to you automatically.`;
 
     const html = this.email({
       status: { tone: 'success', label: 'New sale' },
@@ -1183,15 +1183,15 @@ export class NotificationsService {
     // no token, fall back to the legacy "see email" copy.
     const smsBody = hasAcceptToken
       ? isDealerTransfer
-        ? `All Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (then 5d to dispatch): ${acceptUrl}`
+        ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (then 5d to dispatch): ${acceptUrl}`
         : isCollection
-          ? `All Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (collection - arrange pickup): ${acceptUrl}`
-          : `All Outdoor: New sale ${truncate(d.listingTitle, 28)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h: ${acceptUrl}`
+          ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (collection - arrange pickup): ${acceptUrl}`
+          : `ALL Outdoor: New sale ${truncate(d.listingTitle, 28)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h: ${acceptUrl}`
       : isDealerTransfer
-        ? `All Outdoor: New sale ${truncate(d.listingTitle, 30)} - R${(d.sellerPayout / 100).toFixed(0)}. After dealer transfer, upload 3 photos (SAPS 534 BLOCK LETTERS) to release payout. See email.`
+        ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 30)} - R${(d.sellerPayout / 100).toFixed(0)}. After dealer transfer, upload 3 photos (SAPS 534 BLOCK LETTERS) to release payout. See email.`
         : isCollection
-          ? `All Outdoor: New sale! ${truncate(d.listingTitle, 36)} - R${(d.sellerPayout / 100).toFixed(0)}. Collection sale - arrange pickup with the buyer. See email.`
-          : `All Outdoor: New sale! ${truncate(d.listingTitle, 40)} - R${(d.sellerPayout / 100).toFixed(0)} payout pending dispatch. Check email for details.`;
+          ? `ALL Outdoor: New sale! ${truncate(d.listingTitle, 36)} - R${(d.sellerPayout / 100).toFixed(0)}. Collection sale - arrange pickup with the buyer. See email.`
+          : `ALL Outdoor: New sale! ${truncate(d.listingTitle, 40)} - R${(d.sellerPayout / 100).toFixed(0)} payout pending dispatch. Check email for details.`;
     await this.sendSms(
       d.sellerPhone,
       smsBody,
@@ -1264,7 +1264,7 @@ export class NotificationsService {
 <ol style="margin: 12px 0; padding-left: 22px; line-height: 1.7;">
   <li><b>Check</b> the pre-filled details and complete anything that's blank (in <b>BLOCK LETTERS</b>).</li>
   <li><b>Sign</b> the form and take it to your SAPS-licensed dealer to be completed and stamped when you hand over the firearm.</li>
-  <li><b>Upload</b> a clear photo of the completed, stamped form back to All Outdoor so we can verify the stock-in and release your payment.</li>
+  <li><b>Upload</b> a clear photo of the completed, stamped form back to ALL Outdoor so we can verify the stock-in and release your payment.</li>
 </ol>
 <p style="margin: 8px 0; font-size: 13px; color: #666;">Pre-filled fields are a convenience only — please double-check every value against your licence before signing. Sections for the police and the dealer have been left blank on purpose.</p>`,
         rows: [
@@ -1381,8 +1381,8 @@ export class NotificationsService {
     await this.sendSms(
       d.buyerPhone,
       d.isCollection
-        ? `All Outdoor: Seller accepted ${truncate(d.listingTitle, 40)}. Collection item — arrange pickup (seller contact is on your order page) and tap Confirm collection.`
-        : `All Outdoor: Seller accepted ${truncate(d.listingTitle, 40)}. Dispatch within 5 days — we'll SMS the tracking ref when it ships.`,
+        ? `ALL Outdoor: Seller accepted ${truncate(d.listingTitle, 40)}. Collection item — arrange pickup (seller contact is on your order page) and tap Confirm collection.`
+        : `ALL Outdoor: Seller accepted ${truncate(d.listingTitle, 40)}. Dispatch within 5 days — we'll SMS the tracking ref when it ships.`,
       `sale-accepted-${d.transactionId}`,
     );
   }
@@ -1462,8 +1462,8 @@ export class NotificationsService {
     await this.sendSms(
       d.buyerPhone,
       d.needsBankDetails
-        ? `All Outdoor: Seller cancelled ${truncate(d.listingTitle, 30)}. Add your bank details at alloutdoor.co.za/profile/edit so we can EFT your R${(d.buyerTotal / 100).toFixed(0)} refund.`
-        : `All Outdoor: Seller cancelled ${truncate(d.listingTitle, 30)}. R${(d.buyerTotal / 100).toFixed(0)} refund on the way (${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}).`,
+        ? `ALL Outdoor: Seller cancelled ${truncate(d.listingTitle, 30)}. Add your bank details at alloutdoor.co.za/profile/edit so we can EFT your R${(d.buyerTotal / 100).toFixed(0)} refund.`
+        : `ALL Outdoor: Seller cancelled ${truncate(d.listingTitle, 30)}. R${(d.buyerTotal / 100).toFixed(0)} refund on the way (${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}).`,
       `sale-rejected-${d.transactionId}`,
     );
   }
@@ -1544,13 +1544,13 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: Dealer stock-in approved for ${truncate(d.listingTitle, 30)}. Payout R${(d.sellerPayout / 100).toFixed(0)} on the way (2-3 days).`,
+      `ALL Outdoor: Dealer stock-in approved for ${truncate(d.listingTitle, 30)}. Payout R${(d.sellerPayout / 100).toFixed(0)} on the way (2-3 days).`,
       `dv-approved-${d.transactionId}`,
     );
   }
 
   // ---------------------------------------------------------------
-  // Buyer: firearm stocked at dealer — All Outdoor's job is done.
+  // Buyer: firearm stocked at dealer — ALL Outdoor's job is done.
   // Sent the moment dealer verification approves. Includes the
   // dealer's name + address + phone so the buyer knows where their
   // firearm is and can arrange the inter-dealer transfer (or
@@ -1571,7 +1571,7 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'success', label: 'Dealer-stocked' },
       headline: 'Your firearm has been booked into stock',
-      body: `Hi ${b(d.buyerName)}, the seller (${b(d.sellerName)}) has dropped ${b(d.listingTitle)} with their SAPS-licensed dealer and we've verified the SAPS 534 + stock-register paperwork. The firearm is now legally in the dealer's stock register at the address below. We've released the funds to the seller — All Outdoor's part of this transaction is done. From here, please liaise with the seller directly to arrange the inter-dealer transfer to your own dealer (or your preferred collection method).`,
+      body: `Hi ${b(d.buyerName)}, the seller (${b(d.sellerName)}) has dropped ${b(d.listingTitle)} with their SAPS-licensed dealer and we've verified the SAPS 534 + stock-register paperwork. The firearm is now legally in the dealer's stock register at the address below. We've released the funds to the seller — ALL Outdoor's part of this transaction is done. From here, please liaise with the seller directly to arrange the inter-dealer transfer to your own dealer (or your preferred collection method).`,
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
         { label: 'Dealer name', value: d.dealerName },
@@ -1588,7 +1588,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `All Outdoor: Your ${truncate(d.listingTitle, 25)} is booked into stock at ${truncate(d.dealerName, 30)} (${d.dealerPhone}). Contact the seller to arrange your transfer.`,
+      `ALL Outdoor: Your ${truncate(d.listingTitle, 25)} is booked into stock at ${truncate(d.dealerName, 30)} (${d.dealerPhone}). Contact the seller to arrange your transfer.`,
       `stocked-${d.transactionId}`,
       {
         whatsapp: {
@@ -1642,7 +1642,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: Dealer photos rejected for ${truncate(d.listingTitle, 28)}. Most common cause: SAPS 534 not in BLOCK LETTERS. Reshoot needed.`,
+      `ALL Outdoor: Dealer photos rejected for ${truncate(d.listingTitle, 28)}. Most common cause: SAPS 534 not in BLOCK LETTERS. Reshoot needed.`,
       `dv-rejected-${d.transactionId}`,
     );
   }
@@ -1687,7 +1687,7 @@ export class NotificationsService {
     // a single 160-char segment even with a long tracking reference.
     await this.sendSms(
       d.buyerPhone,
-      `All Outdoor: ${truncate(d.listingTitle, 30)} dispatched.${d.trackingReference ? ' Ref: ' + d.trackingReference + '.' : ''} Track: ${txUrl}`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 30)} dispatched.${d.trackingReference ? ' Ref: ' + d.trackingReference + '.' : ''} Track: ${txUrl}`,
       `dispatched-${d.transactionId}`,
       {
         whatsapp: {
@@ -1741,7 +1741,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: Payout of R${(d.sellerPayout / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} is on the way. Allow 2-3 business days.`,
+      `ALL Outdoor: Payout of R${(d.sellerPayout / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} is on the way. Allow 2-3 business days.`,
       `payout-${d.transactionId}`,
       {
         whatsapp: {
@@ -1875,7 +1875,7 @@ export class NotificationsService {
     const ref = orderRef({ id: d.transactionId });
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
       `booked-${d.transactionId}`,
       {
         // Waybill + Pudo PIN are delivery-essential — without them the
@@ -1936,7 +1936,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Collected — ' + d.listingTitle, html);
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: ${truncate(d.listingTitle, 40)} was collected by the courier. We'll notify you on delivery.`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 40)} was collected by the courier. We'll notify you on delivery.`,
       `seller-collected-${d.transactionId}`,
     );
   }
@@ -1975,7 +1975,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Delivered — ' + d.listingTitle, html);
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: ${truncate(d.listingTitle, 38)} was delivered to the buyer. Payout follows once confirmed.`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 38)} was delivered to the buyer. Payout follows once confirmed.`,
       `seller-delivered-${d.transactionId}`,
       {
         whatsapp: {
@@ -2021,7 +2021,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Action needed — arrange dispatch for ' + d.listingTitle, html);
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: We couldn't auto-book the courier for ${truncate(d.listingTitle, 30)}. Please arrange dispatch + add the tracking number: ${txUrl}`,
+      `ALL Outdoor: We couldn't auto-book the courier for ${truncate(d.listingTitle, 30)}. Please arrange dispatch + add the tracking number: ${txUrl}`,
       `booking-failed-${d.transactionId}`,
     );
   }
@@ -2098,8 +2098,8 @@ export class NotificationsService {
       await this.sendSms(
         d.buyerPhone,
         d.needsBankDetails
-          ? `All Outdoor: R${(d.buyerTotal / 100).toFixed(0)} refund approved for ${truncate(d.listingTitle, 30)}. Add your bank details on your profile so we can pay it: ${this.appUrl}/profile/edit`
-          : `All Outdoor: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow ${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}.`,
+          ? `ALL Outdoor: R${(d.buyerTotal / 100).toFixed(0)} refund approved for ${truncate(d.listingTitle, 30)}. Add your bank details on your profile so we can pay it: ${this.appUrl}/profile/edit`
+          : `ALL Outdoor: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow ${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}.`,
         `refund-${d.transactionId}`,
         {
           whatsapp: {
@@ -2431,8 +2431,8 @@ export class NotificationsService {
       await this.sendSms(
         d.sellerPhone,
         qualifies
-          ? `All Outdoor: R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 24)} MEETS your asking price. Confirm: ${d.actionUrl}`
-          : `All Outdoor: ${truncate(d.buyerName, 20)} offered R${Math.round(d.offerAmount / 100)} on ${truncate(d.listingTitle, 28)}. Decide: ${d.actionUrl}`,
+          ? `ALL Outdoor: R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 24)} MEETS your asking price. Confirm: ${d.actionUrl}`
+          : `ALL Outdoor: ${truncate(d.buyerName, 20)} offered R${Math.round(d.offerAmount / 100)} on ${truncate(d.listingTitle, 28)}. Decide: ${d.actionUrl}`,
         `offer-${d.offerId}`,
       );
     }
@@ -2485,7 +2485,7 @@ export class NotificationsService {
     await this.send(d.email, 'Action needed: bank account could not be verified', html);
     await this.sendSms(
       d.phone,
-      `All Outdoor: we couldn't verify your bank account — payouts are on hold. Fix your details: ${fixUrl}`,
+      `ALL Outdoor: we couldn't verify your bank account — payouts are on hold. Fix your details: ${fixUrl}`,
       `banv-${d.userId}`,
     );
   }
@@ -2549,7 +2549,7 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.buyerPhone,
-        `All Outdoor: Your offer R${Math.round(d.acceptedAmount / 100)} on ${truncate(d.listingTitle, 30)} was accepted. Pay within 24h: ${d.actionUrl}`,
+        `ALL Outdoor: Your offer R${Math.round(d.acceptedAmount / 100)} on ${truncate(d.listingTitle, 30)} was accepted. Pay within 24h: ${d.actionUrl}`,
         `offer-acc-${d.offerId}`,
       );
     }
@@ -2643,7 +2643,7 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.buyerPhone,
-        `All Outdoor: Seller countered at R${Math.round(d.counterAmount / 100)} on ${truncate(d.listingTitle, 28)}. 24h to respond: ${d.actionUrl}`,
+        `ALL Outdoor: Seller countered at R${Math.round(d.counterAmount / 100)} on ${truncate(d.listingTitle, 28)}. 24h to respond: ${d.actionUrl}`,
         `counter-${d.offerId}`,
       );
     }
@@ -2762,7 +2762,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Sold at your auto-accept price — ' + d.listingTitle, html);
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: ${truncate(d.listingTitle, 30)} auto-accepted at R${Math.round(d.amount / 100)}. Buyer has 24h to pay.`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 30)} auto-accepted at R${Math.round(d.amount / 100)}. Buyer has 24h to pay.`,
       `offer-auto-acc-${d.offerId}`,
     );
   }
@@ -2905,7 +2905,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Buyer never paid — ' + d.listingTitle, sellerHtml);
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: The accepted offer on ${truncate(d.listingTitle, 30)} wasn't paid in 24h. Your listing is active again.`,
+      `ALL Outdoor: The accepted offer on ${truncate(d.listingTitle, 30)} wasn't paid in 24h. Your listing is active again.`,
       `offer-lapse-s-${d.offerId}`,
     );
     // Buyer side
@@ -2956,7 +2956,7 @@ export class NotificationsService {
     if (sellerPhone) {
       await this.sendSms(
         sellerPhone,
-        `All Outdoor: New bid R${(amount / 100).toFixed(0)} on ${truncate(listingTitle, 40)}.`,
+        `ALL Outdoor: New bid R${(amount / 100).toFixed(0)} on ${truncate(listingTitle, 40)}.`,
         `bid-${listingId ?? 'x'}-${amount}`,
       );
     }
@@ -3006,8 +3006,8 @@ export class NotificationsService {
     await this.send(buyerEmail, 'Outbid on: ' + listingTitle, html);
     if (buyerPhone) {
       const smsBody = actionUrl
-        ? `All Outdoor: Outbid on ${truncate(listingTitle, 26)} — high R${(newAmount / 100).toFixed(0)}. Raise: ${actionUrl}`
-        : `All Outdoor: Outbid on ${truncate(listingTitle, 30)} — current bid R${(newAmount / 100).toFixed(0)}.`;
+        ? `ALL Outdoor: Outbid on ${truncate(listingTitle, 26)} — high R${(newAmount / 100).toFixed(0)}. Raise: ${actionUrl}`
+        : `ALL Outdoor: Outbid on ${truncate(listingTitle, 30)} — current bid R${(newAmount / 100).toFixed(0)}.`;
       await this.sendSms(
         buyerPhone,
         smsBody,
@@ -3079,7 +3079,7 @@ export class NotificationsService {
     if (winnerPhone) {
       await this.sendSms(
         winnerPhone,
-        `All Outdoor: Your win on ${truncate(listingTitle, 26)} was cancelled — the 24h payment window passed.`,
+        `ALL Outdoor: Your win on ${truncate(listingTitle, 26)} was cancelled — the 24h payment window passed.`,
         `auction-lapsed-${listingId}`,
       );
     }
@@ -3126,7 +3126,7 @@ export class NotificationsService {
     if (winnerPhone) {
       await this.sendSms(
         winnerPhone,
-        `All Outdoor: You WON ${truncate(listingTitle, 26)} for R${(amount / 100).toFixed(0)}. 24h to pay: ${url}`,
+        `ALL Outdoor: You WON ${truncate(listingTitle, 26)} for R${(amount / 100).toFixed(0)}. 24h to pay: ${url}`,
         `auction-won-${listingId ?? 'x'}`,
       );
     }
@@ -3234,12 +3234,12 @@ export class NotificationsService {
     if (sellerPhone) {
       const smsBody =
         outcome === 'WON'
-          ? `All Outdoor: Your auction ${truncate(listingTitle, 24)} SOLD for R${(amount / 100).toFixed(0)}. Buyer has 24h to pay.`
+          ? `ALL Outdoor: Your auction ${truncate(listingTitle, 24)} SOLD for R${(amount / 100).toFixed(0)}. Buyer has 24h to pay.`
           : outcome === 'WINNER_UNPAID'
-            ? `All Outdoor: The winner of ${truncate(listingTitle, 22)} didn't pay in time. You can relist it: ${ctaUrl}`
+            ? `ALL Outdoor: The winner of ${truncate(listingTitle, 22)} didn't pay in time. You can relist it: ${ctaUrl}`
             : outcome === 'NO_RESERVE'
-              ? `All Outdoor: ${truncate(listingTitle, 22)} closed at R${(amount / 100).toFixed(0)} — below your reserve. Relist: ${ctaUrl}`
-              : `All Outdoor: ${truncate(listingTitle, 24)} ended with no bids. Relist: ${ctaUrl}`;
+              ? `ALL Outdoor: ${truncate(listingTitle, 22)} closed at R${(amount / 100).toFixed(0)} — below your reserve. Relist: ${ctaUrl}`
+              : `ALL Outdoor: ${truncate(listingTitle, 24)} ended with no bids. Relist: ${ctaUrl}`;
       await this.sendSms(sellerPhone, smsBody, `auction-ended-${outcome.toLowerCase()}-${listingId ?? 'x'}`);
     }
   }
@@ -3302,7 +3302,7 @@ export class NotificationsService {
     // High-value SMS — the buyer wants to be home for it.
     await this.sendSms(
       buyerPhone,
-      `All Outdoor: ${truncate(listingTitle, 34)} is out for delivery today.`,
+      `ALL Outdoor: ${truncate(listingTitle, 34)} is out for delivery today.`,
       `buyer-out-for-delivery-${transactionId}`,
       {
         whatsapp: {
@@ -3347,7 +3347,7 @@ export class NotificationsService {
     // High-value SMS — nudges the buyer to confirm, which releases the payout.
     await this.sendSms(
       buyerPhone,
-      `All Outdoor: ${truncate(listingTitle, 30)} was delivered. Confirm receipt so the seller can be paid: ${url}`,
+      `ALL Outdoor: ${truncate(listingTitle, 30)} was delivered. Confirm receipt so the seller can be paid: ${url}`,
       `buyer-delivered-${transactionId}`,
       {
         whatsapp: {
@@ -3466,7 +3466,7 @@ export class NotificationsService {
 
     // SMS body — kept under 160 chars for single-segment delivery so
     // the alarm reaches the operator's lock screen without truncation.
-    return `All Outdoor: ${friendlyService} credits at ${d.balance} ${d.unit}. Top up: ${url}`;
+    return `ALL Outdoor: ${friendlyService} credits at ${d.balance} ${d.unit}. Top up: ${url}`;
   }
 
   // ---------------------------------------------------------------
@@ -3518,7 +3518,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: ${truncate(d.listingTitle, 30)} still not dispatched (${d.hoursElapsed}h). Auto-refund in ${d.autoRefundDays}d. Ship now: ${txUrl}`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 30)} still not dispatched (${d.hoursElapsed}h). Auto-refund in ${d.autoRefundDays}d. Ship now: ${txUrl}`,
       `dispatch-nudge-${d.transactionId}`,
       {
         whatsapp: {
@@ -3576,7 +3576,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: ${truncate(d.listingTitle, 30)} — buyer paid ${d.daysElapsed}d ago. Complete the dealer transfer to release your payment: ${txUrl}`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 30)} — buyer paid ${d.daysElapsed}d ago. Complete the dealer transfer to release your payment: ${txUrl}`,
       `dt-stall-nudge-${d.transactionId}`,
     );
   }
@@ -3627,7 +3627,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `All Outdoor: ${truncate(d.listingTitle, 30)} is waiting for collection. Arrange pickup (seller contact on your order page) and tap Confirm collection: ${txUrl}`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 30)} is waiting for collection. Arrange pickup (seller contact on your order page) and tap Confirm collection: ${txUrl}`,
       `collection-confirm-nudge-${d.transactionId}`,
     );
   }
@@ -3685,7 +3685,7 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.sellerPhone,
-        `All Outdoor: winner didn't pay for ${truncate(d.listingTitle, 22)}. Next bidder offered R${Math.round(d.amount / 100)}. Sell to them? ${d.actionUrl}`,
+        `ALL Outdoor: winner didn't pay for ${truncate(d.listingTitle, 22)}. Next bidder offered R${Math.round(d.amount / 100)}. Sell to them? ${d.actionUrl}`,
         `runner-up-${d.listingId}`,
       );
     }
@@ -3772,8 +3772,8 @@ export class NotificationsService {
       await this.sendSms(
         d.phone,
         needsUser
-          ? `All Outdoor: we need more info on complaint ${d.referenceNumber}. Reply here: ${url}`
-          : `All Outdoor: complaint ${d.referenceNumber} is now ${pretty}. Details: ${url}`,
+          ? `ALL Outdoor: we need more info on complaint ${d.referenceNumber}. Reply here: ${url}`
+          : `ALL Outdoor: complaint ${d.referenceNumber} is now ${pretty}. Details: ${url}`,
         `complaint-status-${d.referenceNumber}`,
       );
     }
@@ -3824,7 +3824,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `All Outdoor: ${truncate(d.listingTitle, 28)} was delivered. Tap Confirm receipt to release payment (or raise an issue if there's a problem): ${txUrl}`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 28)} was delivered. Tap Confirm receipt to release payment (or raise an issue if there's a problem): ${txUrl}`,
       `confirm-receipt-nudge-${d.transactionId}`,
       {
         whatsapp: {
@@ -3900,8 +3900,8 @@ export class NotificationsService {
     await this.sendSms(
       d.buyer.phone,
       d.needsBankDetails
-        ? `All Outdoor: ${truncate(d.listingTitle, 30)} not dispatched — refund approved. Add your bank details at alloutdoor.co.za/profile/edit so we can pay it.`
-        : `All Outdoor: ${truncate(d.listingTitle, 30)} not dispatched. Refunded ${formatRand(d.buyerTotal)}${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
+        ? `ALL Outdoor: ${truncate(d.listingTitle, 30)} not dispatched — refund approved. Add your bank details at alloutdoor.co.za/profile/edit so we can pay it.`
+        : `ALL Outdoor: ${truncate(d.listingTitle, 30)} not dispatched. Refunded ${formatRand(d.buyerTotal)}${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
       `auto-refund-buyer-${d.transactionId}`,
     );
 
@@ -3922,7 +3922,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.seller.phone,
-      `All Outdoor: ${truncate(d.listingTitle, 30)} auto-refunded (no dispatch). Strike added.`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 30)} auto-refunded (no dispatch). Strike added.`,
       `auto-refund-seller-${d.transactionId}`,
     );
   }
@@ -3993,8 +3993,8 @@ export class NotificationsService {
     await this.sendSms(
       d.buyer.phone,
       d.needsBankDetails
-        ? `All Outdoor: order for ${truncate(d.listingTitle, 30)} cancelled. Add your bank details at alloutdoor.co.za/profile/edit so we can EFT your ${formatRand(d.buyerTotal)} refund.`
-        : `All Outdoor: order for ${truncate(d.listingTitle, 30)} cancelled. ${formatRand(d.buyerTotal)} refunded${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
+        ? `ALL Outdoor: order for ${truncate(d.listingTitle, 30)} cancelled. Add your bank details at alloutdoor.co.za/profile/edit so we can EFT your ${formatRand(d.buyerTotal)} refund.`
+        : `ALL Outdoor: order for ${truncate(d.listingTitle, 30)} cancelled. ${formatRand(d.buyerTotal)} refunded${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
       `buyer-cancel-buyer-${d.transactionId}`,
     );
 
@@ -4012,7 +4012,7 @@ export class NotificationsService {
     await this.send(d.seller.email, 'Buyer cancelled: ' + d.listingTitle, sellerHtml);
     await this.sendSms(
       d.seller.phone,
-      `All Outdoor: buyer cancelled ${truncate(d.listingTitle, 30)} before dispatch. It's back on the marketplace. No strike.`,
+      `ALL Outdoor: buyer cancelled ${truncate(d.listingTitle, 30)} before dispatch. It's back on the marketplace. No strike.`,
       `buyer-cancel-seller-${d.transactionId}`,
     );
   }
@@ -4046,7 +4046,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Order refunded: ' + d.listingTitle, html);
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: the order for ${truncate(d.listingTitle, 30)} was refunded by support. It's back on the marketplace. No strike.`,
+      `ALL Outdoor: the order for ${truncate(d.listingTitle, 30)} was refunded by support. It's back on the marketplace. No strike.`,
       `admin-refund-seller-${d.transactionId}`,
     );
   }
@@ -4106,7 +4106,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyer.phone,
-      `All Outdoor: Contact ${sellerName}${d.seller.phone ? ' on ' + d.seller.phone : ''} to arrange the dealer meet for ${truncate(d.listingTitle, 30)}.`,
+      `ALL Outdoor: Contact ${sellerName}${d.seller.phone ? ' on ' + d.seller.phone : ''} to arrange the dealer meet for ${truncate(d.listingTitle, 30)}.`,
       `pa-buyer-${d.transactionId}`,
     );
 
@@ -4134,7 +4134,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.seller.phone,
-      `All Outdoor: ${truncate(d.listingTitle, 30)} sold to ${buyerName}${d.buyer.phone ? ' (' + d.buyer.phone + ')' : ''}. Payment released. Arrange the dealer meet.`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 30)} sold to ${buyerName}${d.buyer.phone ? ' (' + d.buyer.phone + ')' : ''}. Payment released. Arrange the dealer meet.`,
       `pa-seller-${d.transactionId}`,
     );
 
@@ -4186,7 +4186,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `All Outdoor: New question on ${truncate(d.listingTitle, 30)}. Reply: ${url}`,
+      `ALL Outdoor: New question on ${truncate(d.listingTitle, 30)}. Reply: ${url}`,
       `listing-question-${d.listingId}`,
     );
   }
@@ -4227,7 +4227,7 @@ export class NotificationsService {
       cta: { label: 'Go to dashboard', url: `${this.appUrl}/dashboard` },
       preheader: 'Your identity has been verified',
     });
-    await this.send(sellerEmail, 'Identity verified — All Outdoor', html);
+    await this.send(sellerEmail, 'Identity verified — ALL Outdoor', html);
   }
 
   // Face-match failed — link them back so they can retry with better
@@ -4331,13 +4331,13 @@ export class NotificationsService {
     const html = this.email({
       headline: 'Confirm your email address',
       body:
-        `Enter this code to finish creating your All Outdoor account. It ` +
+        `Enter this code to finish creating your ALL Outdoor account. It ` +
         `expires in ${b(String(d.minutes))} minutes and can be used once.`,
       rows: [{ label: 'Your code', value: d.code }],
       footnote:
         'If you did not try to create an account, ignore this email — ' +
         'nothing has been set up and no further email will be sent.',
-      preheader: `Your All Outdoor code is ${d.code}`,
+      preheader: `Your ALL Outdoor code is ${d.code}`,
     });
     await this.sendAuthEmail(d.email, 'Confirm your email address', html);
   }
@@ -4354,7 +4354,7 @@ export class NotificationsService {
       footnote:
         'If you did not ask for this, you can ignore this email — your ' +
         'password has not changed.',
-      preheader: 'Reset your All Outdoor password',
+      preheader: 'Reset your ALL Outdoor password',
     });
     await this.sendAuthEmail(d.email, 'Reset your password', html);
   }
@@ -4366,11 +4366,11 @@ export class NotificationsService {
       status: { tone: 'success', label: 'Password changed' },
       headline: 'Your password was changed',
       body:
-        `Hi ${b(d.name || 'there')}, the password on your All Outdoor account ` +
+        `Hi ${b(d.name || 'there')}, the password on your ALL Outdoor account ` +
         `was just changed, and every other signed-in device was signed out.`,
       footnote:
         `If this was not you, contact ${SUPPORT_EMAIL} immediately.`,
-      preheader: 'Your All Outdoor password was changed',
+      preheader: 'Your ALL Outdoor password was changed',
     });
     await this.sendAuthEmail(d.email, 'Your password was changed', html).catch(
       () => undefined,
@@ -4622,10 +4622,10 @@ export class NotificationsService {
     await this.sendSms(
       d.phone,
       failed
-        ? `All Outdoor: we could not finish document ${d.referenceNumber}. Nothing is lost and nothing was charged. Open it and try again: ${url}`
+        ? `ALL Outdoor: we could not finish document ${d.referenceNumber}. Nothing is lost and nothing was charged. Open it and try again: ${url}`
         : ready
-          ? `All Outdoor: your document ${d.referenceNumber} is ready. Read it and download the pack: ${url}`
-          : `All Outdoor: your document ${d.referenceNumber} needs more detail before it is ready. Open it: ${url}`,
+          ? `ALL Outdoor: your document ${d.referenceNumber} is ready. Read it and download the pack: ${url}`
+          : `ALL Outdoor: your document ${d.referenceNumber} needs more detail before it is ready. Open it: ${url}`,
       // The outcome is in the reference so a regenerate is a distinct send
       // rather than something that looks like a duplicate of the first.
       `motivation-${d.outcome}-${d.motivationId}`,
@@ -4758,8 +4758,8 @@ export class NotificationsService {
       await this.sendSms(
         d.phone,
         gone
-          ? `All Outdoor: a document in your Document Centre has expired.${also} Check it: ${url}`
-          : `All Outdoor: a document in your Document Centre expires in ${d.daysLeft} days.${also} Check it: ${url}`,
+          ? `ALL Outdoor: a document in your Document Centre has expired.${also} Check it: ${url}`
+          : `ALL Outdoor: a document in your Document Centre expires in ${d.daysLeft} days.${also} Check it: ${url}`,
         `lc-expiry-${d.credentialId}-${d.stage}`,
       );
     }

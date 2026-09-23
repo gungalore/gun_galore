@@ -1,4 +1,4 @@
-// ────────────────────────────────────────────────────────────────────
+﻿// ────────────────────────────────────────────────────────────────────
 // FEED MODERATION — fail-closed classification for posts and comments.
 //
 // Operator decision: every post and comment is screened before publish, and
@@ -6,7 +6,7 @@
 // (never PUBLISHED). This is the same posture as listing moderation.
 //
 // Categories:
-//   - promotional — members may NOT advertise anything, their own All Outdoor
+//   - promotional — members may NOT advertise anything, their own ALL Outdoor
 //     listings included. Official @alloutdoor.co.za accounts are exempt from
 //     THIS category only.
 //   - illegal — ammunition/primers/propellant sales talk, threats, doxxing,
@@ -66,14 +66,14 @@ export interface FeedModerationVerdict {
   reasons: string[];
 }
 
-const SYSTEM_PROMPT = `You are the content moderation classifier for All Outdoor, a South African outdoor and firearms community. You classify a POST — its text, any attached photos, and any attached video's PICTURE and on-screen text (the video's audio is not provided) — and return json.
+const SYSTEM_PROMPT = `You are the content moderation classifier for ALL Outdoor, a South African outdoor and firearms community. You classify a POST — its text, any attached photos, and any attached video's PICTURE and on-screen text (the video's audio is not provided) — and return json.
 
 POLICY — judge INTENT, not pixels alone:
 - Incidental branding is FINE. A company name, logo, decal or phone number printed on a vehicle, trailer, tent, shirt or other equipment that happens to be in shot is NOT a violation on its own — this is normal in 4x4, overlanding and hunting content.
 - What IS a violation is the POST using the platform to advertise, sell, or move a conversation off-platform.
 
 Look for exactly these categories:
-- promotional: the post itself is advertising, selling or self-promoting — shop/website/channel links, "DM me", "visit my store", "link in bio", a price offered for sale, or the author promoting their OWN All Outdoor listing. Incidental branding on equipment is NOT promotional.
+- promotional: the post itself is advertising, selling or self-promoting — shop/website/channel links, "DM me", "visit my store", "link in bio", a price offered for sale, or the author promoting their OWN ALL Outdoor listing. Incidental branding on equipment is NOT promotional.
 - contact: the author shares or invites contact details to take a deal off-platform — a number/email/handle given for that purpose, or on-screen text asking to be contacted. A business number merely visible on a vehicle is NOT this unless the post is soliciting contact.
 - illegal: offers to sell live ammunition, primers or propellant; threats or harassment; doxxing (publishing someone's private details); animal cruelty; anything unlawful under South African law.
 - graphic: "FIELD" is normal hunting/fishing field content (blood on a carcass or hide, field dressing) — ALLOWED behind a content warning. "EXTREME" is exposed viscera/guts, dismemberment, or a severely damaged head or body. A plain 4x4, camping or fishing clip is NONE.

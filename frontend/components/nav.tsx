@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { av } from '@/lib/asset-version';
@@ -219,7 +219,7 @@ export function Nav() {
           <Link
             href="/"
             className="shrink min-w-0 flex items-center"
-            aria-label="All Outdoor"
+            aria-label="ALL Outdoor"
           >
             <Logo
               variant="emblem"
@@ -512,7 +512,7 @@ export function Nav() {
                 style={{
                   background: 'var(--red)',
                   color: '#fff',
-                  fontFamily: 'var(--font-display), Archivo, sans-serif',
+                  fontFamily: 'var(--font-display)',
                   fontWeight: 700,
                   fontSize: 13.5,
                   height: 38,
@@ -639,8 +639,8 @@ export function Nav() {
               style={{ borderBottom: '0.5px solid var(--border)' }}
             >
               <Image
-                src={av('/logo-nav-dark.svg')}
-                alt="All Outdoor"
+                src="/brand/logo-horizontal-dark-transparent.svg"
+                alt="ALL Outdoor"
                 width={96}
                 height={36}
                 style={{ height: 36, width: 'auto' }}
@@ -754,7 +754,7 @@ export function Nav() {
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
-                  Install All Outdoor
+                  Install ALL Outdoor
                 </button>
                 <p
                   className="text-xs mt-2"

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // The mobile header, in the design's two archetypes.
 //
@@ -122,7 +122,7 @@ function TapTarget({
             color: '#fff',
             fontSize: 10,
             fontWeight: 700,
-            fontFamily: 'var(--font-display), Archivo, sans-serif',
+            fontFamily: 'var(--font-display)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -214,7 +214,7 @@ function RootHeader() {
       <Link
         href="/"
         style={{
-          fontFamily: 'var(--font-display), Archivo, sans-serif',
+          fontFamily: 'var(--font-display)',
           fontWeight: 800,
           fontSize: 17,
           letterSpacing: '-0.3px',
@@ -245,7 +245,7 @@ function PushHeader({ pathname }: { pathname: string }) {
 
   // Where the route table has no entry — a listing, a seller profile — the page
   // has already told the browser its name through Next's metadata. Taking the
-  // first segment of document.title turns "Blue bait — All Outdoor — All
+  // first segment of document.title turns "Blue bait — ALL Outdoor — All
   // Outdoor" into "Blue bait" without every page having to push a title into a
   // context. Runs after paint, so the mapped value (or nothing) renders first.
   useEffect(() => {
@@ -297,7 +297,7 @@ function PushHeader({ pathname }: { pathname: string }) {
         style={{
           flex: 1,
           minWidth: 0,
-          fontFamily: 'var(--font-display), Archivo, sans-serif',
+          fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: 16,
           color: 'var(--text-primary)',

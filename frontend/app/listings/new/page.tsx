@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useMemo, useRef, FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -2051,7 +2051,7 @@ export default function NewListingPage() {
 
   // RVE — fetch an indicative resale-price range for this item. Uses the
   // title + category + condition the seller has entered so far; the server
-  // leads with recent All Outdoor sales and falls back to a web-anchored SA
+  // leads with recent ALL Outdoor sales and falls back to a web-anchored SA
   // retail price depreciated for condition when local data is thin.
   async function handleEstimatePrice() {
     if (estimating) return;
@@ -2780,7 +2780,7 @@ export default function NewListingPage() {
             fontWeight: 500,
           }}
         >
-          Sell on All Outdoor
+          Sell on ALL Outdoor
         </p>
         <h1
           className="text-3xl sm:text-4xl mb-2"
@@ -2907,7 +2907,7 @@ export default function NewListingPage() {
           role="alert"
           className="mb-6 px-4 py-3 rounded-[6px] text-sm max-w-[760px]"
           style={{
-            background: 'rgba(200,16,46,0.08)',
+            background: 'rgba(227,6,19,0.08)',
             border: '0.5px solid var(--red)',
             color: 'var(--red)',
           }}
@@ -2922,7 +2922,7 @@ export default function NewListingPage() {
         <div
           className="mb-6 px-4 py-3 rounded-[6px] text-sm max-w-[760px]"
           style={{
-            background: 'rgba(200,16,46,0.08)',
+            background: 'rgba(227,6,19,0.08)',
             border: '0.5px solid var(--red)',
             color: 'var(--red)',
           }}
@@ -3016,7 +3016,7 @@ export default function NewListingPage() {
                   className="mt-3 text-sm"
                   style={{
                     color: 'var(--text-secondary)',
-                    background: 'rgba(200, 16, 46, 0.10)',
+                    background: 'rgba(227, 6, 19, 0.10)',
                     border: '1px solid var(--border)',
                     borderRadius: 'var(--r-md)',
                     padding: '10px 12px',
@@ -3344,7 +3344,7 @@ export default function NewListingPage() {
                       className="text-left rounded-[8px] p-3"
                       style={{
                         background: selected
-                          ? 'rgba(200,16,46,0.03)'
+                          ? 'rgba(227,6,19,0.03)'
                           : 'var(--bg-card)',
                         border: `1px solid ${selected ? 'var(--red)' : 'var(--border)'}`,
                         cursor: 'pointer',
@@ -4073,7 +4073,7 @@ export default function NewListingPage() {
               <div
                 className="rounded-[6px] p-4 text-sm space-y-3 mb-4"
                 style={{
-                  background: 'rgba(200,16,46,0.06)',
+                  background: 'rgba(227,6,19,0.06)',
                   border: '0.5px solid var(--red)',
                   color: 'var(--text-primary)',
                   lineHeight: 1.55,
@@ -4117,7 +4117,7 @@ export default function NewListingPage() {
 
             {/* P5.4 — OPTIONAL "tested & working" seller attestation for
                 electronics/appliances. Never gates publish. Worded as the
-                SELLER'S own claim, explicitly NOT a All Outdoor test (CPA s41). */}
+                SELLER'S own claim, explicitly NOT a ALL Outdoor test (CPA s41). */}
             {showTestedWorking && (
               <div
                 className="rounded-[6px] p-4 text-sm space-y-2 mb-4"
@@ -4289,7 +4289,7 @@ export default function NewListingPage() {
                 <label
                   className="mt-3 flex items-start gap-2 rounded-[8px] p-3 cursor-pointer"
                   style={{
-                    background: paConsent ? 'rgba(200,16,46,0.06)' : 'var(--bg-inset)',
+                    background: paConsent ? 'rgba(227,6,19,0.06)' : 'var(--bg-inset)',
                     border: `0.5px solid ${paConsent ? 'var(--red)' : 'var(--border)'}`,
                   }}
                 >
@@ -4723,7 +4723,7 @@ export default function NewListingPage() {
                   <div className="px-3 py-3 space-y-1">
                     <div
                       style={{
-                        fontFamily: 'var(--font-display), Archivo, sans-serif',
+                        fontFamily: 'var(--font-display)',
                         fontWeight: 700,
                         fontSize: 17,
                         color:

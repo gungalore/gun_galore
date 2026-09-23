@@ -1,6 +1,6 @@
-// AML Policy — All Outdoor's voluntary FICA-aligned controls.
+﻿// AML Policy — ALL Outdoor's voluntary FICA-aligned controls.
 //
-//   All Outdoor is not a designated accountable institution but
+//   ALL Outdoor is not a designated accountable institution but
 //   voluntarily applies identity verification, contact-detail filtering and audit
 //   retention consistent with FICA principles. Worth disclosing
 //   publicly so sellers / partners / regulators can see the controls.
@@ -11,7 +11,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'AML Policy',
   description:
-    'How All Outdoor handles anti-money-laundering controls across the marketplace.',
+    'How ALL Outdoor handles anti-money-laundering controls across the marketplace.',
 };
 
 export default function AmlPolicyPage() {
@@ -26,7 +26,7 @@ export default function AmlPolicyPage() {
       <p>
         This document explains the anti-money-laundering
         ("<strong>AML</strong>") controls ALLOUTDOOR (PTY) LTD applies
-        voluntarily across the marketplace. All Outdoor is not a
+        voluntarily across the marketplace. ALL Outdoor is not a
         designated accountable institution, but we choose to disclose
         these controls publicly so buyers, sellers, partners and
         regulators can see how we protect the integrity of the
@@ -36,7 +36,7 @@ export default function AmlPolicyPage() {
       <h2>2. AML posture</h2>
       {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
-        All Outdoor is <strong>not a designated accountable institution</strong>{' '}
+        ALL Outdoor is <strong>not a designated accountable institution</strong>{' '}
         under the Financial Intelligence Centre Act 38 of 2001 ("FICA")
         and is not licensed as a financial services provider. We
         process payments through our appointed third-party payment
@@ -113,7 +113,7 @@ export default function AmlPolicyPage() {
 
       <h3>2.5 Reporting suspicious activity</h3>
       <p>
-        While All Outdoor is not obliged under FICA to file Suspicious
+        While ALL Outdoor is not obliged under FICA to file Suspicious
         Transaction Reports, we will cooperate fully with the Financial
         Intelligence Centre, law enforcement and any other competent
         authority where compelled by valid legal process. If you suspect money laundering, fraud or any other

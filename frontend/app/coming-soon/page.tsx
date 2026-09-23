@@ -1,4 +1,4 @@
-import { av } from '@/lib/asset-version';
+﻿import { av } from '@/lib/asset-version';
 import { SUPPORT_EMAIL } from '@/lib/brand';
 /**
  * Coming-soon gate page.
@@ -17,7 +17,7 @@ import { SUPPORT_EMAIL } from '@/lib/brand';
  */
 
 export const metadata = {
-  title: 'Coming Soon — All Outdoor',
+  title: 'Coming Soon — ALL Outdoor',
   // Outdoor-first, same framing as the root layout and manifest. This gate
   // is the ONLY page a gated visitor (or a crawler that hits us while the
   // gate is on) ever sees, so a "marketplace for firearms" line here quietly
@@ -45,8 +45,8 @@ export default function ComingSoonPage() {
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={av('/logo-mark.svg')}
-        alt="All Outdoor"
+        src="/brand/emblem-light-transparent.svg"
+        alt="ALL Outdoor"
         style={{ width: 96, height: 96, marginBottom: '2rem' }}
       />
       <h1
@@ -85,7 +85,7 @@ export default function ComingSoonPage() {
             lineHeight: 1.5,
           }}
         >
-          All Outdoor (Pty) Ltd
+          ALL Outdoor (Pty) Ltd
           <br />
           {SUPPORT_EMAIL}
         </p>

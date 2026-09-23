@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // One row in the notifications inbox.
 //
@@ -152,7 +152,7 @@ export function NotificationItem({
           height: 36,
           flexShrink: 0,
           borderRadius: 8,
-          background: resolved ? 'var(--bg-inset)' : 'rgba(200, 16, 46, 0.10)',
+          background: resolved ? 'var(--bg-inset)' : 'rgba(227, 6, 19, 0.10)',
           color: resolved ? 'var(--text-tertiary)' : 'var(--red)',
           display: 'inline-flex',
           alignItems: 'center',
@@ -292,7 +292,7 @@ export function NotificationItem({
             letterSpacing: 0.6,
             padding: '4px 8px',
             borderRadius: 6,
-            background: 'rgba(200, 16, 46, 0.10)',
+            background: 'rgba(227, 6, 19, 0.10)',
             color: 'var(--red)',
             flexShrink: 0,
             whiteSpace: 'nowrap',

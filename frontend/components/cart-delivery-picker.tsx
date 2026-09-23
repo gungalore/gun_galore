@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 
@@ -227,7 +227,7 @@ export function CartDeliveryPicker({
       <div
         className="rounded-[8px] p-4 text-sm"
         style={{
-          background: 'rgba(200,16,46,0.08)',
+          background: 'rgba(227,6,19,0.08)',
           border: '0.5px solid var(--red)',
           color: 'var(--red)',
         }}
@@ -277,7 +277,7 @@ export function CartDeliveryPicker({
                     key={o.serviceCode}
                     className="flex items-center gap-3 rounded-[8px] p-3 cursor-pointer"
                     style={{
-                      background: checked ? 'rgba(200,16,46,0.06)' : 'var(--bg-card)',
+                      background: checked ? 'rgba(227,6,19,0.06)' : 'var(--bg-card)',
                       border: `0.5px solid ${checked ? 'var(--red)' : 'var(--border)'}`,
                     }}
                   >

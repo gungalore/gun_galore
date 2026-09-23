@@ -20,9 +20,15 @@ import {
 import { POST_TYPE_LABELS, POST_TYPE_ORDER } from '../../lib/post-types';
 import { AdCard } from './ad-card';
 import { PostCard } from './post-card';
+import { ChipRail, type Chip } from '../ui/ChipRail';
 
 /** Insert a featured ad after every Nth post. */
 const AD_EVERY = 4;
+
+const FEED_FILTERS: Chip[] = [
+  { value: '', label: 'All' },
+  ...POST_TYPE_ORDER.map((t) => ({ value: t, label: POST_TYPE_LABELS[t] as string })),
+];
 
 export function FeedClient() {
   const router = useRouter();
@@ -38,7 +44,16 @@ export function FeedClient() {
   const [filterType, setFilterType] = useState('');
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [forceBlur, setForceBlur] = useState(false);
+  const [sortBy, setSortBy] = useState('latest');
   const [ads, setAds] = useState<FeedAd[]>([]);
+  const [prefs, setPrefs] = useState<FeedPreferences>({
+    feedMutedPostTypes: [],
+    feedMutedAuthorIds: [],
+    feedMutedTags: [],
+    feedMutedTopicIds: [],
+    feedShowAvatar: true,
+    feedShowGraphic: true,
+  });
 
   const loadFirst = useCallback(async () => {
     setLoading(true);
@@ -67,11 +82,24 @@ export function FeedClient() {
     }
   }, [getToken, filterType, includeFiltered]);
 
+  const loadPrefs = useCallback(async () => {
+    const token = await getToken();
+    if (!token) return;
+    try {
+      const p = await fetchPreferences(token);
+      setPrefs(p);
+    } catch {
+      /* leave defaults */
+    }
+  }, [getToken]);
+
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn) return;
     void loadFirst();
-  }, [isLoaded, isSignedIn, loadFirst]);
+    // Load preferences
+    void loadPrefs();
+  }, [isLoaded, isSignedIn, loadFirst, loadPrefs]);
 
   // The composer now lives in the "My" panel (Create Post), so tell the feed to
   // refresh when a post is created there — the two are sibling components.
@@ -207,6 +235,7 @@ export function FeedClient() {
         post={post}
         showMuted={includeFiltered}
         forceBlur={forceBlur}
+        showGraphic={prefs.feedShowGraphic}
         onToggleLike={toggleLike}
         onHideType={hideType}
         onMuteAuthor={muteAuthor}
@@ -234,45 +263,31 @@ export function FeedClient() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        <button
-          type="button"
-          onClick={() => setFilterType('')}
-          className="gg-press px-3 py-1.5 rounded-full text-[12px] whitespace-nowrap"
+      <ChipRail
+        items={FEED_FILTERS}
+        value={filterType}
+        onChange={(v) => setFilterType(typeof v === 'string' ? v : '')}
+        label="Community categories"
+        size="sm"
+      />
+
+      <div className="flex items-center justify-between mt-2">
+        <div />
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="bg-transparent text-[13px] font-medium cursor-pointer appearance-none pr-6"
           style={{
-            background: filterType === '' ? 'var(--red)' : 'var(--bg-inset)',
-            color: filterType === '' ? '#fff' : 'var(--text-secondary)',
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%2376746f' stroke-width='1.5'/%3E%3C/svg%3E")`,
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'right center',
           }}
         >
-          All
-        </button>
-        {POST_TYPE_ORDER.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setFilterType(t)}
-            className="gg-press px-3 py-1.5 rounded-full text-[12px] whitespace-nowrap"
-            style={{
-              background: filterType === t ? 'var(--red)' : 'var(--bg-inset)',
-              color: filterType === t ? '#fff' : 'var(--text-secondary)',
-            }}
-          >
-            {POST_TYPE_LABELS[t]}
-          </button>
-        ))}
+          <option value="latest">Latest ▾</option>
+          <option value="most-liked">Most liked</option>
+          <option value="most-commented">Most commented</option>
+        </select>
       </div>
-
-      <label
-        className="flex items-center gap-2 text-[12px]"
-        style={{ color: 'var(--text-tertiary)' }}
-      >
-        <input
-          type="checkbox"
-          checked={includeFiltered}
-          onChange={(e) => setIncludeFiltered(e.target.checked)}
-        />
-        Show content I&apos;ve muted (marked)
-      </label>
 
       {loading && (
         <p className="text-center text-[14px]" style={{ color: 'var(--text-tertiary)' }}>

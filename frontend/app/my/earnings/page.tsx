@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../../lib/auth';
@@ -185,7 +185,7 @@ export default function EarningsPage() {
               Download CSV
             </button>
           </div>
-          <div className="overflow-x-auto">
+          <div className="flex overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-[var(--text-tertiary)] text-xs">

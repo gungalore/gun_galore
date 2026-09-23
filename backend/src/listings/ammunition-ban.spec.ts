@@ -1,6 +1,6 @@
-// The ammunition ban.
+﻿// The ammunition ban.
 //
-// Platform policy: All Outdoor does not sell ammunition. Live / loaded
+// Platform policy: ALL Outdoor does not sell ammunition. Live / loaded
 // ammunition may never be listed, sold or traded here, under any
 // circumstances — it is a permanent prohibition, not a paperwork step.
 //

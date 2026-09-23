@@ -1,4 +1,4 @@
-import {
+﻿import {
   base32Decode,
   base32Encode,
   generateTotpSecret,
@@ -220,7 +220,7 @@ describe('otpauthUri', () => {
     const uri = otpauthUri({
       secret: 'JBSWY3DPEHPK3PXP',
       account: 'ops@alloutdoor.co.za',
-      issuer: 'All Outdoor Desk',
+      issuer: 'ALL Outdoor Desk',
     });
     expect(uri.startsWith('otpauth://totp/')).toBe(true);
     const parsed = new URL(uri);

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -3115,11 +3115,11 @@ export default function DocumentScanner({
 
         {phase === 'working' && (
           <div style={{ ...overlayCentre, gap: 18 }}>
-            {/* ⚠️ THE MARK, NOT THE FULL LOCKUP. /logo.svg is the horizontal
+            {/* ⚠️ THE MARK, NOT THE FULL LOCKUP. /brand/logo-horizontal-light-transparent.svg is the horizontal
                 wordmark and it would run edge to edge on a phone held
                 portrait; the mark is square and reads at any size.
 
-                ⚠️ AND logo-mark.svg, NOT logo-mark-dark.svg. The suffix names
+                ⚠️ AND brand/emblem-light-transparent.svg, NOT brand/emblem-dark-transparent.svg. The suffix names
                 the INK, not the ground it goes on: -dark is the #111111 ink
                 for LIGHT surfaces, and the plain file is the #F5F5F5 ink for
                 dark ones. This overlay is black on every device, so the dark
@@ -3127,7 +3127,7 @@ export default function DocumentScanner({
                 road where the logo should be. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={av('/logo-mark.svg')}
+              src={av('/brand/emblem-light-transparent.svg')}
               alt=""
               aria-hidden="true"
               width={64}
@@ -3396,7 +3396,7 @@ export default function DocumentScanner({
                 ? '10px 8px 10px 16px'
                 : '10px 8px max(10px, env(safe-area-inset-bottom)) 16px',
             // The brand red at 90%, previously spelled out longhand as
-            // rgba(200,16,46,0.9) — the same colour, but nothing tied it to the
+            // rgba(227,6,19,0.9) — the same colour, but nothing tied it to the
             // token, so it read as a third arbitrary red. color-mix rather than
             // bare var(--red), which would silently drop the alpha.
             background: 'color-mix(in srgb, var(--red) 90%, transparent)',

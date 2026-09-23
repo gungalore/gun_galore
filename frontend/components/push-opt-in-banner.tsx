@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // PushOptInBanner — slim card mounted at the top of /notifications.
 // Surfaces the "Enable push" CTA for signed-in users on supported
@@ -89,7 +89,7 @@ export function PushOptInBanner() {
         }}
       >
         <span style={{ flex: 1 }}>
-          Install All Outdoor to your home screen first, then enable
+          Install ALL Outdoor to your home screen first, then enable
           push notifications from this page.
         </span>
         <button
@@ -153,7 +153,7 @@ export function PushOptInBanner() {
           width: 32,
           height: 32,
           borderRadius: '50%',
-          background: 'rgba(200,16,46,0.18)',
+          background: 'rgba(227,6,19,0.18)',
           color: 'var(--red)',
           display: 'inline-flex',
           alignItems: 'center',

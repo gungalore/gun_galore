@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // The horizontal step rail — one system, every multi-step flow.
 //
@@ -35,7 +35,7 @@
 //
 // Values are the pack's own, read off SellListing.dc.html:
 //   rail      15px 24px padding, white, 1px bottom rule, 12px gap
-//   circle    24px, complete #1F7A50 + tick, current #C8102E, upcoming outlined
+//   circle    24px, complete #1F7A50 + tick, current #E30613, upcoming outlined
 //   label     12.5px — 600 complete, 700 current, 500 upcoming
 //   connector 1px hairline, flex:1, min-width 16px
 
@@ -184,7 +184,7 @@ export function StepRail({
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            fontFamily: 'var(--font-display), Archivo, sans-serif',
+            fontFamily: 'var(--font-display)',
             fontSize: 11.5,
             lineHeight: 1,
             ...(isComplete

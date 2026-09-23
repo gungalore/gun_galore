@@ -1,4 +1,4 @@
-import Image from 'next/image';
+﻿import Image from 'next/image';
 import { av } from '@/lib/asset-version';
 import Link from 'next/link';
 
@@ -11,7 +11,7 @@ import Link from 'next/link';
 // available, even on the very first offline visit after install.
 
 export const metadata = {
-  title: 'Offline — All Outdoor',
+  title: 'Offline — ALL Outdoor',
 };
 
 // Self-heal: the moment the browser reports connectivity is back, reload
@@ -34,9 +34,9 @@ export default function OfflinePage() {
       <div style={{ maxWidth: 400, textAlign: 'center' }}>
         <Image
           // Nav mark: the full scene is 1.5:1 and its wordmark is unreadable
-          // below ~120px tall. See the header of logo-nav.svg.
-          src={av('/logo-nav-dark.svg')}
-          alt="All Outdoor"
+          // below ~120px tall. See /brand/logo-horizontal-dark-transparent.svg.
+          src="/brand/logo-horizontal-dark-transparent.svg"
+          alt="ALL Outdoor"
           width={106}
           height={40}
           priority
@@ -61,7 +61,7 @@ export default function OfflinePage() {
             marginBottom: 28,
           }}
         >
-          All Outdoor needs a network connection to show fresh listings,
+          ALL Outdoor needs a network connection to show fresh listings,
           bids and prices. Check your Wi-Fi or mobile data and try
           again.
         </p>
@@ -89,7 +89,7 @@ export default function OfflinePage() {
           }}
         >
           We&apos;ll reconnect automatically the moment your connection
-          returns. Tip: install All Outdoor to your home screen and core
+          returns. Tip: install ALL Outdoor to your home screen and core
           interface assets will be cached for faster repeat visits.
         </p>
       </div>

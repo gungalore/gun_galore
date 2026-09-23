@@ -1,4 +1,4 @@
-// /paia — the section 51 manual required of every private body under
+﻿// /paia — the section 51 manual required of every private body under
 // the Promotion of Access to Information Act 2 of 2000 (PAIA).
 // Structured to follow the Information Regulator's published manual
 // template: particulars of the body, the section 10 Guide, categories
@@ -49,7 +49,7 @@ export default function PaiaPage() {
         <br />
         <strong>Registration number:</strong> 2026/639713/07
         <br />
-        <strong>Trading as:</strong> All Outdoor
+        <strong>Trading as:</strong> ALL Outdoor
         <br />
         <strong>Registered office:</strong> 36 Sterappel Crescent,
         Langeberg Glen, Cape Town, 7570, South Africa
@@ -259,8 +259,8 @@ export default function PaiaPage() {
         <li>a breach of a duty of confidence owed to a third party;</li>
         <li>a risk to the safety of an individual or to the protection of property;</li>
         <li>the disclosure of a record that is privileged from production in legal proceedings;</li>
-        <li>the disclosure of commercial or confidential information of All Outdoor itself, including our own trade secrets and financial or technical information; or</li>
-        <li>the disclosure of protected research information of a third party or of All Outdoor.</li>
+        <li>the disclosure of commercial or confidential information of ALL Outdoor itself, including our own trade secrets and financial or technical information; or</li>
+        <li>the disclosure of protected research information of a third party or of ALL Outdoor.</li>
       </ul>
       <p>
         Where only part of a record may be refused, we will grant access

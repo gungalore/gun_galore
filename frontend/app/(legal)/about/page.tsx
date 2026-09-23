@@ -1,4 +1,4 @@
-// /about — a short, honest description of what All Outdoor is, who
+﻿// /about — a short, honest description of what ALL Outdoor is, who
 // operates it and where to find the detail. Kept factual (no
 // marketing claims): what the store does, how held payments work, and
 // the registered company behind it.
@@ -22,17 +22,17 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'About',
   description:
-    'What All Outdoor is, how it works, and the company that operates it.',
+    'What ALL Outdoor is, how it works, and the company that operates it.',
 };
 
 export default function AboutPage() {
   return (
     <>
-      <LegalDocHeader title="About All Outdoor" lastUpdated="Effective 16 July 2026" />
+      <LegalDocHeader title="About ALL Outdoor" lastUpdated="Effective 16 July 2026" />
 
-      <h2>What All Outdoor is</h2>
+      <h2>What ALL Outdoor is</h2>
       <p>
-        All Outdoor is a South African new and secondhand outdoor store
+        ALL Outdoor is a South African new and secondhand outdoor store
         — camping and overlanding gear, fishing tackle,
         clothing, outdoor equipment and accessories. You can buy at a
         set price, bid in auctions, or make an offer, from both
@@ -74,7 +74,7 @@ export default function AboutPage() {
 
       <h2>Who runs it</h2>
       <p>
-        All Outdoor is operated by ALLOUTDOOR (PTY) LTD, a South African
+        ALL Outdoor is operated by ALLOUTDOOR (PTY) LTD, a South African
         private company, directed by Gerhard Johan Petrus Fourie.
       </p>
       <div
@@ -92,7 +92,7 @@ export default function AboutPage() {
           <br />
           <strong>Registration number:</strong> 2026/639713/07
           <br />
-          <strong>Trading as:</strong> All Outdoor
+          <strong>Trading as:</strong> ALL Outdoor
           <br />
           <strong>Director:</strong> Gerhard Johan Petrus Fourie
           <br />

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // UX-8 — delivery/transfer method as option cards (icon + title + one-liner +
 // price) instead of button pills. Presentation only: the card's onClick still
@@ -96,7 +96,7 @@ export function DeliveryMethodCards({
               aria-pressed={active}
               className="flex gap-3 items-start text-left rounded-[8px] p-4"
               style={{
-                background: active ? 'rgba(200,16,46,0.06)' : 'var(--bg-card)',
+                background: active ? 'rgba(227,6,19,0.06)' : 'var(--bg-card)',
                 border: `${active ? '1.5px' : '0.5px'} solid ${active ? 'var(--red)' : 'var(--border)'}`,
                 cursor: 'pointer',
               }}

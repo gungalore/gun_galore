@@ -1,4 +1,4 @@
-// ────────────────────────────────────────────────────────────────────
+﻿// ────────────────────────────────────────────────────────────────────
 // WHETHER TO TEXT THE OPERATOR, AND WHAT TO SAY.
 //
 // Pure — no Nest, no Prisma, no clock, no SMS. The cron does the IO and this
@@ -123,7 +123,7 @@ export function decideOpsAlert(input: OpsAlertInput): OpsAlertDecision {
 
   return {
     send: true,
-    message: `All Outdoor ops:\n${lines.join('\n')}\nSee /admin/alerts.`,
+    message: `ALL Outdoor ops:\n${lines.join('\n')}\nSee /admin/alerts.`,
     fingerprint,
     clear: false,
     reason: 'sending',

@@ -1,4 +1,4 @@
-import {
+﻿import {
   CanActivate,
   ExecutionContext,
   Injectable,
@@ -12,7 +12,7 @@ import { extractAccessToken } from './extract-token';
 
 /**
  * Dual-auth guard for the KYC endpoints: accepts EITHER a member session OR
- * an All Outdoor KYC_VERIFY action token via ?t=<token>.
+ * an ALL Outdoor KYC_VERIFY action token via ?t=<token>.
  *
  * Mirrors AuthOrTokenGuard but scoped to the KYC_VERIFY purpose so the seller
  * can complete identity verification straight from the SMS link without

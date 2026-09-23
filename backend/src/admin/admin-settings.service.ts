@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+﻿import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminAuditService } from './admin-audit.service';
 
@@ -203,7 +203,7 @@ const FLAGS: SettingFlag[] = [
   {
     key: 'motivation_buyer_price_cents',
     label: 'Motivation price for firearm buyers (cents)',
-    hint: 'Discounted price for someone who bought the firearm on All Outdoor. 9900 = R99. NOT YET WIRED — there is no voucher or store-credit system in the platform, so nothing reads this. It is here so the price lives in one place when that is built.',
+    hint: 'Discounted price for someone who bought the firearm on ALL Outdoor. 9900 = R99. NOT YET WIRED — there is no voucher or store-credit system in the platform, so nothing reads this. It is here so the price lives in one place when that is built.',
     group: 'Motivations',
     type: 'number',
     default: '9900',

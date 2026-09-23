@@ -1,4 +1,4 @@
-import {
+﻿import {
   Injectable,
   Logger,
   ForbiddenException,
@@ -267,7 +267,7 @@ export class KycService {
       (Date.now() - dobDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
     if (age < 18) {
       throw new BadRequestException(
-        'You must be at least 18 to sell on All Outdoor.',
+        'You must be at least 18 to sell on ALL Outdoor.',
       );
     }
 
@@ -279,7 +279,7 @@ export class KycService {
     });
     if (existing && existing.id !== user.id) {
       throw new BadRequestException(
-        'This SA ID number is already linked to another All Outdoor account. Contact support if this is an error.',
+        'This SA ID number is already linked to another ALL Outdoor account. Contact support if this is an error.',
       );
     }
 
@@ -373,7 +373,7 @@ export class KycService {
     });
     await this.sms.sendSms({
       to: user.phone,
-      message: `All Outdoor: Continue your identity verification on your phone: ${appUrl}/a/${token}`,
+      message: `ALL Outdoor: Continue your identity verification on your phone: ${appUrl}/a/${token}`,
       reference: `kyc-handoff-${user.id}`,
     });
 
@@ -443,7 +443,7 @@ export class KycService {
       if (seller.phone) {
         await this.sms.sendSms({
           to: seller.phone,
-          message: `All Outdoor: You have a pending sale. Verify your identity to release the payout: ${kycUrl}`,
+          message: `ALL Outdoor: You have a pending sale. Verify your identity to release the payout: ${kycUrl}`,
           reference: `kyc-required-${seller.id}`,
         });
       }
@@ -729,7 +729,7 @@ export class KycService {
           .sendSms({
             to: user.phone,
             message:
-              'All Outdoor: your identity has been verified. You can now sell.',
+              'ALL Outdoor: your identity has been verified. You can now sell.',
             reference: `kyc-approved-${user.id}`,
           })
           .catch(() => undefined);
@@ -769,7 +769,7 @@ export class KycService {
       await this.sms
         .sendSms({
           to: user.phone,
-          message: `All Outdoor: we could not verify your identity. Contact ${SUPPORT_EMAIL}.`,
+          message: `ALL Outdoor: we could not verify your identity. Contact ${SUPPORT_EMAIL}.`,
           reference: `kyc-failed-${user.id}`,
         })
         .catch(() => undefined);

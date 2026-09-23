@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation';
+﻿import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../../lib/auth-server';
@@ -14,8 +14,8 @@ export async function generateMetadata({
 }) {
   const { listingId } = await params;
   const listing = await apiFetch<Listing>(`/listings/${listingId}`, { cache: 'no-store' }).catch(() => null);
-  if (!listing) return { title: 'Checkout — All Outdoor' };
-  return { title: `Buy ${listing.title} — All Outdoor` };
+  if (!listing) return { title: 'Checkout — ALL Outdoor' };
+  return { title: `Buy ${listing.title} — ALL Outdoor` };
 }
 
 export default async function CheckoutPage({

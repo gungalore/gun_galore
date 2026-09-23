@@ -1,4 +1,4 @@
-// Bob Go → the existing carrier-neutral shapes.
+﻿// Bob Go → the existing carrier-neutral shapes.
 //
 // This is the whole of the "Bob Go replaces Pudo and TCG" mapping, kept in one
 // pure, testable file so the 1265-line orchestrator gains a call site rather
@@ -33,7 +33,7 @@ export function slotForRate(rate: BobGoRate): CarrierSlot {
  * Bob Go prices in RAND; every price in this codebase is integer CENTS.
  *
  * Math.round, not floor or ceil: a half-cent rounding down would under-collect
- * from the buyer and All Outdoor pays the carrier the real amount, so the
+ * from the buyer and ALL Outdoor pays the carrier the real amount, so the
  * shortfall comes out of margin on every single order.
  */
 export function randToCents(rand: number): number {

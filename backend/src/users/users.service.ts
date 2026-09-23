@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   Injectable,
   Logger,
@@ -734,7 +734,7 @@ export class UsersService {
       });
       if (idClash && idClash.id !== user.id) {
         throw new BadRequestException(
-          'That SA ID number is already associated with another All Outdoor account',
+          'That SA ID number is already associated with another ALL Outdoor account',
         );
       }
     }
@@ -1000,7 +1000,7 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    // Hard-block duplicates: one SA mobile = one All Outdoor account.
+    // Hard-block duplicates: one SA mobile = one ALL Outdoor account.
     // Phone @unique isn't enforced at the DB level yet (there's a
     // pre-existing test-account dupe we're handling pre-rollout), so
     // we enforce in app code. Own-row match (re-verifying the same
@@ -1012,7 +1012,7 @@ export class UsersService {
     });
     if (owner) {
       throw new BadRequestException(
-        'That phone number is already linked to another All Outdoor account.',
+        'That phone number is already linked to another ALL Outdoor account.',
       );
     }
 
@@ -1053,7 +1053,7 @@ export class UsersService {
     try {
       result = await this.sms.sendSms({
         to: e164,
-        message: `${code} is your All Outdoor verification code. It expires in ${minutes} minutes.`,
+        message: `${code} is your ALL Outdoor verification code. It expires in ${minutes} minutes.`,
         // ⚠️ The `phone-change-` prefix is not decoration: SmsService derives
         // "never auto-retry" from it. A code redelivered twenty minutes later
         // by the retry cron is expired, confusing, and bills us twice.

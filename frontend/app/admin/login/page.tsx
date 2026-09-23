@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -64,7 +64,7 @@ export default function AdminLoginPage() {
             <Icon name="shield" size={18} />
           </span>
           <div>
-            <div className="adm-brand-title">All Outdoor</div>
+            <div className="adm-brand-title">ALL Outdoor</div>
             <div className="adm-brand-sub">WARDEN OS</div>
           </div>
         </div>

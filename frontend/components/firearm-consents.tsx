@@ -1,4 +1,4 @@
-// Shared firearm checkout consents — copied from checkout-form.tsx so the cart reuses the exact SA-firearms-law wording. Keep the two in sync.
+﻿// Shared firearm checkout consents — copied from checkout-form.tsx so the cart reuses the exact SA-firearms-law wording. Keep the two in sync.
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -86,7 +86,7 @@ export function DealerTransferConsent({
           <li>
             You pay now — your funds are{' '}
             <strong style={{ color: 'var(--text-primary)' }}>
-              held by All Outdoor
+              held by ALL Outdoor
             </strong>
             .
           </li>
@@ -101,7 +101,7 @@ export function DealerTransferConsent({
             <strong style={{ color: 'var(--text-primary)' }}>
               3 photos
             </strong>{' '}
-            on All Outdoor — the completed SAPS 534, the dealer&apos;s
+            on ALL Outdoor — the completed SAPS 534, the dealer&apos;s
             stock-register last line, and the firearm with its serial
             visible. Our AI checks the documents; if anything&apos;s
             unclear a human reviewer steps in.
@@ -115,7 +115,7 @@ export function DealerTransferConsent({
             held funds to the seller.
           </li>
           <li>
-            All Outdoor&apos;s job in the transaction ends there. You
+            ALL Outdoor&apos;s job in the transaction ends there. You
             and the seller arrange the inter-dealer transfer to your
             own dealer (or your preferred collection method) between
             yourselves.
@@ -152,7 +152,7 @@ export function DealerTransferConsent({
           style={{ marginTop: 3, accentColor: 'var(--red)' }}
         />
         <span style={{ color: 'var(--text-secondary)' }}>
-          I understand All Outdoor holds my funds until the
+          I understand ALL Outdoor holds my funds until the
           seller&apos;s dealer stock-in is verified, after which Gun
           Galore notifies me which dealer has the firearm and
           releases the funds — the inter-dealer transfer onwards is
@@ -206,7 +206,7 @@ export function PrivateArrangeConsent({
     <div
       className="rounded-[6px] p-4 text-sm space-y-3"
       style={{
-        background: 'rgba(200,16,46,0.06)',
+        background: 'rgba(227,6,19,0.06)',
         border: '0.5px solid var(--red)',
         color: 'var(--text-primary)',
         lineHeight: 1.55,
@@ -220,7 +220,7 @@ export function PrivateArrangeConsent({
           fontWeight: 600,
         }}
       >
-        Private arrangement — you waive All Outdoor&apos;s payment protection
+        Private arrangement — you waive ALL Outdoor&apos;s payment protection
       </p>
 
       <p style={{ color: 'var(--text-secondary)' }}>
@@ -330,7 +330,7 @@ export function FirearmAttestation({
     <div
       className="rounded-[6px] p-4 text-sm space-y-3"
       style={{
-        background: 'rgba(200,16,46,0.06)',
+        background: 'rgba(227,6,19,0.06)',
         border: '0.5px solid var(--red)',
         color: 'var(--text-primary)',
         lineHeight: 1.55,

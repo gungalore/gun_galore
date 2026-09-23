@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -304,7 +304,7 @@ export function ImageLightbox({
             background: 'rgba(255,255,255,0.06)',
             borderRadius: 6,
             maxWidth: '90vw',
-            overflowX: 'auto',
+
           }}
         >
           {images.map((img, i) => (

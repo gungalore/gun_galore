@@ -1,4 +1,4 @@
-// Shared layout for the legal pages (Terms, Privacy, AML Policy).
+﻿// Shared layout for the legal pages (Terms, Privacy, AML Policy).
 // Constrains width + applies consistent typography so the documents
 // read like documents, not like marketing pages.
 //
@@ -16,7 +16,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
         className="text-xs inline-block mb-6"
         style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }}
       >
-        ← Back to All Outdoor
+        ← Back to ALL Outdoor
       </Link>
       <article
         className="prose prose-invert"

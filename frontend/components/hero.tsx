@@ -1,4 +1,4 @@
-// Homepage hero. Full-bleed moonlit overlanding scene with the store intro
+﻿// Homepage hero. Full-bleed moonlit overlanding scene with the store intro
 // set on it. Server component — no JS.
 // Focus: outdoor, hunting & sport recreation (firearms stay in the catalogue
 // + nav, just not the landing headline).
@@ -110,7 +110,7 @@ export function Hero() {
              the red CTA pop without flattening the moonlight. */
           background:
             linear-gradient(90deg, rgba(8,10,14,0.55) 0%, rgba(8,10,14,0.30) 34%, rgba(8,10,14,0.06) 62%, rgba(8,10,14,0) 100%),
-            radial-gradient(circle at 0% 100%, rgba(200,16,46,0.10) 0%, transparent 45%);
+            radial-gradient(circle at 0% 100%, rgba(227,6,19,0.10) 0%, transparent 45%);
         }
         @media (max-width: 767.98px) {
           .hero-bg {

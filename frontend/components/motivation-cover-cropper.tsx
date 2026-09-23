@@ -399,7 +399,7 @@ export default function MotivationCoverCropper({
                 width: frame.w,
                 height: frame.h,
                 // ⚠️ THE TOKEN, NOT A LOOKALIKE. #e01b24 is a different red
-                // from the brand's #C8102E and sat one control away from
+                // from the brand's #E30613 and sat one control away from
                 // buttons drawn in the real one.
                 border: '2px solid var(--red)',
               }}

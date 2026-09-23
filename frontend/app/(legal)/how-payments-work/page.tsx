@@ -1,4 +1,4 @@
-// How payments work — the canonical payments explainer. Pulls the story
+﻿// How payments work — the canonical payments explainer. Pulls the story
 // that otherwise lives scattered across /how-selling-works, /faq and
 // /refund-policy into one page a buyer, a seller, or a due-diligence
 // reviewer can read end to end.
@@ -15,7 +15,7 @@
 // House rules baked in:
 //   NEVER name a payment provider here until a contract is signed (TPPP).
 //   NEVER use the word "escrow", and — while the TPPP application is
-//   pending — never say All Outdoor HOLDS funds. The sanctioned framing is
+//   pending — never say ALL Outdoor HOLDS funds. The sanctioned framing is
 //   settlement timing: payment is COLLECTED by the licensed PSP; the seller
 //   is PAID once delivery is confirmed. See memory feedback_no_escrow_term.
 //   NEVER claim automated bank-account verification — it is a MANUAL review.
@@ -27,7 +27,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'How Payments Work',
   description:
-    'How checkout, delivery confirmation and seller payment work on All Outdoor — and how regulated items, refunds and disputes are handled.',
+    'How checkout, delivery confirmation and seller payment work on ALL Outdoor — and how regulated items, refunds and disputes are handled.',
 };
 
 export default function HowPaymentsWorkPage() {
@@ -39,7 +39,7 @@ export default function HowPaymentsWorkPage() {
       />
 
       <p>
-        When you buy something on All Outdoor, the seller is{' '}
+        When you buy something on ALL Outdoor, the seller is{' '}
         <strong>only paid once the sale has safely completed</strong>. Your
         payment is collected at checkout by our appointed payment service
         provider, and the seller receives their proceeds after delivery is
@@ -116,7 +116,7 @@ export default function HowPaymentsWorkPage() {
         make sure money is only ever paid to the verified account holder.
       </p>
       <p>
-        All Outdoor earns a <strong>commission</strong> on completed sales
+        ALL Outdoor earns a <strong>commission</strong> on completed sales
         and nothing more — no spread, and no interest earned on money that
         is not ours. On a Buy Now listing our commission is built into the
         price the buyer sees rather than deducted from the seller; on an
@@ -154,7 +154,7 @@ export default function HowPaymentsWorkPage() {
 
       <h2>6. Where we operate</h2>
       <p>
-        All Outdoor serves <strong>South Africa only</strong>, and all
+        ALL Outdoor serves <strong>South Africa only</strong>, and all
         payments are made in <strong>South African Rand (ZAR)</strong>.
         We do not support cross-border payments or other currencies.
       </p>

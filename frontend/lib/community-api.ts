@@ -1,4 +1,4 @@
-// Typed client for the community feed API. Mirrors lib/users-api.ts: the token
+﻿// Typed client for the community feed API. Mirrors lib/users-api.ts: the token
 // is fetched INSIDE each call, every read is `no-store`, and errors carry the
 // HTTP status so the UI can distinguish "disabled" (404) from a real failure.
 
@@ -109,6 +109,8 @@ export interface FeedPreferences {
   feedMutedTopicIds: string[];
   /** Show the member's profile picture in the community. Default on. */
   feedShowAvatar: boolean;
+  /** Show graphic content (hunting, fishing, etc.) in the feed. Default on. */
+  feedShowGraphic: boolean;
 }
 
 async function jsonFetch<T>(
@@ -183,6 +185,7 @@ export function createPost(
     body: string;
     tags?: string[];
     groupId?: string;
+    location?: string;
   },
 ): Promise<{ post: FeedPost; moderation: { decision: string; reasons: string[] } }> {
   return jsonFetch('/community/posts', token, {

@@ -1,4 +1,4 @@
-import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
+﻿import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import {
   applicationWarnings,
   type ApplicationWarning,
@@ -931,7 +931,7 @@ const APPLICANT_MUST_BRING: Omit<
   {
     key: 'tax_invoice',
     label: "The dealer's tax invoice for the firearm",
-    note: 'Proof of purchase. If you bought it on All Outdoor, your invoice is in your orders.',
+    note: 'Proof of purchase. If you bought it on ALL Outdoor, your invoice is in your orders.',
   },
   {
     // ⚠️ SAPS ASKS FOR THE ORIGINAL, AND WE SAID "A COPY". Their licence-stage

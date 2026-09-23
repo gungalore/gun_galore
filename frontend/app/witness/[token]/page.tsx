@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { use, useCallback, useEffect, useState } from 'react';
 import WitnessStepper from '@/components/witness-stepper';
@@ -614,7 +614,7 @@ export default function WitnessPage({
       </div>
 
       <p className="mt-4 text-center text-xs text-[var(--text-secondary)]">
-        All Outdoor · {state.version}
+        ALL Outdoor · {state.version}
       </p>
     </Shell>
   );
@@ -642,7 +642,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       </main>
       <footer className="mx-auto w-full max-w-2xl px-4 pb-10 text-xs text-[var(--text-secondary)]">
         <p>
-          Sent to you by an All Outdoor member. If you were not expecting this,
+          Sent to you by an ALL Outdoor member. If you were not expecting this,
           you can close this page — nothing is submitted until you sign.
         </p>
       </footer>

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // Thin client wrapper that decides whether to render the public-site
 // chrome (Nav at the top, SiteFooter at the bottom). The root layout
@@ -26,12 +26,9 @@ function CheckoutHeader() {
   return (
     <div style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--bg-deep)' }}>
       <div className="max-w-[var(--page-max)] mx-auto px-4 h-14 flex items-center justify-between">
-        <Link href="/" aria-label="All Outdoor" className="flex items-center shrink-0">
-          {/* /logo-nav.svg, not /logo.svg: the stacked lockup is 1.6:1, so at
-              36px tall it draws 58px wide and the wordmark becomes ~10px — an
-              illegible smudge at the exact moment the buyer is handing over
-              money. The nav lockup sets the same words beside the mark. */}
-          <Image src={av('/logo-nav-dark.svg')} alt="All Outdoor" width={280} height={36} priority style={{ height: 36, width: 'auto' }} />
+        <Link href="/" aria-label="ALL Outdoor" className="flex items-center shrink-0">
+          {/* Horizontal logo — pack brand asset at correct proportions. */}
+          <Image src="/brand/logo-horizontal-dark-transparent.svg" alt="ALL Outdoor" width={280} height={36} priority style={{ height: 36, width: 'auto' }} />
         </Link>
         <span className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
           <span aria-hidden>🔒</span> Secure checkout

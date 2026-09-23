@@ -1,4 +1,4 @@
-// Regulated Items Annex — the members-only half of the legal split.
+﻿// Regulated Items Annex — the members-only half of the legal split.
 //
 // The public policies (/terms, /privacy, /paia, /aml-policy, /acceptable-use,
 // /refund-policy, /fees, /how-payments-work, /about, /complaints,
@@ -15,7 +15,7 @@
 // point: this is the half that has to be legally precise.
 //
 // Key positions:
-//   - All Outdoor is NOT a SAPS-licensed dealer and never takes custody.
+//   - ALL Outdoor is NOT a SAPS-licensed dealer and never takes custody.
 //   - Every firearm transfer routes through a SAPS-licensed dealer.
 //   - Live ammunition, primers and propellant powder are banned outright — no
 //     dealer-storefront carve-out. Listable reloading components are limited to
@@ -33,7 +33,7 @@ import { LegalDocHeader } from '../../(legal)/legal-frame';
 export const metadata = {
   title: 'Regulated Items Annex',
   description:
-    'Additional terms that apply to licence- and age-restricted categories on All Outdoor: our role, your obligations, and how those items are verified, transferred and paid for.',
+    'Additional terms that apply to licence- and age-restricted categories on ALL Outdoor: our role, your obligations, and how those items are verified, transferred and paid for.',
 };
 
 const linkStyle = { color: 'var(--red)' };
@@ -55,7 +55,7 @@ export default function RegulatedItemsAnnexPage() {
         and is incorporated into them by reference. It applies to every
         registered member who lists, bids on, offers for, buys or
         otherwise deals in an item in a licence- or age-restricted
-        category on All Outdoor. It adds to the public policies; it
+        category on ALL Outdoor. It adds to the public policies; it
         does not replace them. Where an obligation appears both here
         and, in generalised wording, on a public page, the two describe
         the same duty and the stricter statement governs.
@@ -78,7 +78,7 @@ export default function RegulatedItemsAnnexPage() {
 
       <div
         style={{
-          background: 'rgba(200,16,46,0.06)',
+          background: 'rgba(227,6,19,0.06)',
           border: '0.5px solid var(--red)',
           borderRadius: 8,
           padding: 16,
@@ -89,7 +89,7 @@ export default function RegulatedItemsAnnexPage() {
         }}
       >
         <p style={{ margin: 0 }}>
-          <strong>All Outdoor is NOT a SAPS-licensed firearm dealer.</strong>{' '}
+          <strong>ALL Outdoor is NOT a SAPS-licensed firearm dealer.</strong>{' '}
           We never take physical possession of firearms. Every firearm
           transfer on this Platform must complete through a
           SAPS-licensed dealer. Listing or attempting to transfer a
@@ -103,8 +103,8 @@ export default function RegulatedItemsAnnexPage() {
       <p>
         Where a transaction involves an item subject to the FCA,
         physical possession is transferred only through a SAPS-licensed
-        dealer. All Outdoor is not a SAPS-licensed dealer and does not
-        handle such items in any physical capacity. All Outdoor holds
+        dealer. ALL Outdoor is not a SAPS-licensed dealer and does not
+        handle such items in any physical capacity. ALL Outdoor holds
         no dealer, manufacturer, gunsmith or import/export licence
         under the FCA, never takes custody of a firearm, and never
         receives, stores, transports or hands over a firearm. Our role
@@ -136,7 +136,7 @@ export default function RegulatedItemsAnnexPage() {
 
       <h2>3. Which categories this Annex covers</h2>
       <p>
-        All Outdoor trades in firearms, gun parts, reloading components
+        ALL Outdoor trades in firearms, gun parts, reloading components
         (projectiles/bullets and brass cases only), air rifles,
         self-defence items and shooting accessories. These categories
         are open to registered members only and are not browsable while
@@ -163,7 +163,7 @@ export default function RegulatedItemsAnnexPage() {
       </h2>
       <div
         style={{
-          background: 'rgba(200,16,46,0.06)',
+          background: 'rgba(227,6,19,0.06)',
           border: '0.5px solid var(--red)',
           borderRadius: 8,
           padding: 16,
@@ -175,7 +175,7 @@ export default function RegulatedItemsAnnexPage() {
       >
         <p style={{ margin: 0 }}>
           <strong>
-            All Outdoor does not sell ammunition. Live ammunition may
+            ALL Outdoor does not sell ammunition. Live ammunition may
             not be listed, sold or traded on this platform under any
             circumstances. The same absolute prohibition applies to
             primers and propellant powder.
@@ -256,7 +256,7 @@ export default function RegulatedItemsAnnexPage() {
         moment you bid or make an offer, and at the moment the transfer
         is completed. If your competency or licence lapses, is
         suspended, is surrendered or is withdrawn at any point during a
-        transaction, you must notify All Outdoor immediately and the
+        transaction, you must notify ALL Outdoor immediately and the
         transaction will be cancelled. Bidding on, offering for, or
         listing a firearm you are not lawfully entitled to possess is a
         breach of the Terms and may be reported to the South African
@@ -269,7 +269,7 @@ export default function RegulatedItemsAnnexPage() {
         <li>hold a valid <strong>Competency Certificate</strong> issued by SAPS for the relevant firearm category;</li>
         <li>where you are the buyer of a firearm requiring a Possession Licence, either already hold a Possession Licence in that category or have applied for one and have a pending application on file;</li>
         <li>not be subject to a court order, interdict or licence revocation prohibiting you from possessing firearms;</li>
-        <li>complete All Outdoor KYC verification (Home Affairs ID lookup + selfie face-match) where you are a seller.</li>
+        <li>complete ALL Outdoor KYC verification (Home Affairs ID lookup + selfie face-match) where you are a seller.</li>
       </ul>
 
       <h2>7. What counts as a "firearm" for this Annex</h2>
@@ -285,7 +285,7 @@ export default function RegulatedItemsAnnexPage() {
       </ul>
       <p>
         Suppressors and sound moderators are dealt with in paragraph 5:
-        they may not be listed on All Outdoor at all.
+        they may not be listed on ALL Outdoor at all.
       </p>
 
       <h2>8. Listing a regulated item — conditions and disclosures</h2>
@@ -363,12 +363,12 @@ export default function RegulatedItemsAnnexPage() {
 
       <h2>10. Transfer through a SAPS-licensed dealer</h2>
       <p>
-        Every firearm sale on All Outdoor (other than the Private
+        Every firearm sale on ALL Outdoor (other than the Private
         Arrangement option in paragraph 11) routes through a
         SAPS-licensed dealer. The flow is:
       </p>
       <ol>
-        <li><strong>Buyer chooses a dealer</strong> at checkout, from the directory of dealers All Outdoor has vetted. The chosen dealer is recorded against the transaction.</li>
+        <li><strong>Buyer chooses a dealer</strong> at checkout, from the directory of dealers ALL Outdoor has vetted. The chosen dealer is recorded against the transaction.</li>
         <li><strong>Seller hands the firearm to a SAPS-licensed dealer</strong>, from where it moves between licensed dealers to the receiving dealer, fully insured and tracked. It is never couriered to the buyer.</li>
         <li><strong>Dealer receives, verifies and holds</strong> the item pending the buyer&apos;s appointment.</li>
         <li><strong>Buyer presents</strong> their Competency Certificate, Possession Licence (or proof of pending application, if the buyer is purchasing on the basis of an open application), and ID at the dealer&apos;s premises.</li>
@@ -376,7 +376,7 @@ export default function RegulatedItemsAnnexPage() {
         <li><strong>The completed transfer is verified</strong>, and only then is the seller&apos;s payout released — see paragraph 14.</li>
       </ol>
       <p>
-        All Outdoor is not party to the dealer&apos;s process and does
+        ALL Outdoor is not party to the dealer&apos;s process and does
         not intermediate between the buyer and the dealer for licence
         paperwork. Each hand-off must be accompanied by the documents
         SAPS requires for the transfer, including the parties&apos;
@@ -397,7 +397,7 @@ export default function RegulatedItemsAnnexPage() {
       </p>
       <ul>
         <li>Payment is captured and released immediately to the Seller upon successful payment. The funds-held mechanism does not apply to that transaction, and the Buyer explicitly consents to this at checkout via a two-checkbox and typed-confirmation gate.</li>
-        <li>Because All Outdoor has no delivery event to verify in a private arrangement, <strong>no buyer-protection hold, delivery-confirmation window or dispute window is available</strong> on such a transaction. Buyers who want the funds-held protection must choose the licensed-dealer transfer option instead.</li>
+        <li>Because ALL Outdoor has no delivery event to verify in a private arrangement, <strong>no buyer-protection hold, delivery-confirmation window or dispute window is available</strong> on such a transaction. Buyers who want the funds-held protection must choose the licensed-dealer transfer option instead.</li>
         <li>The parties&apos; contact details are revealed to each other on payment so the meet can be coordinated. That sharing happens only with the Seller&apos;s recorded consent — see paragraph 21.</li>
       </ul>
       <p>
@@ -465,7 +465,7 @@ export default function RegulatedItemsAnnexPage() {
         <li>
           <strong>No platform shipping fee.</strong> A firearm dealer
           transfer and a privately arranged hand-over both create no
-          courier waybill and therefore carry no All Outdoor shipping or
+          courier waybill and therefore carry no ALL Outdoor shipping or
           handling charge.
         </li>
         <li>
@@ -474,7 +474,7 @@ export default function RegulatedItemsAnnexPage() {
           holding or processing a firearm pending the buyer&apos;s
           appointment is that dealer&apos;s own charge, is payable
           directly to that dealer by the party who agreed it, and is
-          neither collected by nor refundable from All Outdoor.
+          neither collected by nor refundable from ALL Outdoor.
         </li>
       </ul>
       <p>
@@ -517,13 +517,13 @@ export default function RegulatedItemsAnnexPage() {
           months from the date of delivery — applies directly to that
           dealer as supplier, and the buyer may require that dealer to
           repair, replace or refund. Where goods are sold by a
-          private-individual Seller, All Outdoor acts only as
+          private-individual Seller, ALL Outdoor acts only as
           facilitator.
         </li>
       </ul>
 
       <h2>16. Seller responsibilities</h2>
-      <p>As a seller of a regulated item on All Outdoor, you must:</p>
+      <p>As a seller of a regulated item on ALL Outdoor, you must:</p>
       <ul>
         <li>only list items you lawfully own, with proof of ownership available on request;</li>
         <li>list the correct serial number (partially masked in photographs — last 3 digits hidden);</li>
@@ -534,7 +534,7 @@ export default function RegulatedItemsAnnexPage() {
       </ul>
 
       <h2>17. Buyer responsibilities</h2>
-      <p>As a buyer of a regulated item on All Outdoor, you must:</p>
+      <p>As a buyer of a regulated item on ALL Outdoor, you must:</p>
       <ul>
         <li>hold (or have a pending application for) the relevant Possession Licence and a current Competency Certificate;</li>
         <li>present those documents in person at the receiving dealer;</li>
@@ -554,7 +554,7 @@ export default function RegulatedItemsAnnexPage() {
 
       <h2>19. Lost, stolen or recovered firearms</h2>
       <p>
-        If a firearm transacted on All Outdoor is later reported lost or
+        If a firearm transacted on ALL Outdoor is later reported lost or
         stolen, contact SAPS immediately (10111) and notify us at{' '}
         <a href={`mailto:${SUPPORT_EMAIL}`} style={linkStyle}>
           {SUPPORT_EMAIL}
@@ -568,7 +568,7 @@ export default function RegulatedItemsAnnexPage() {
 
       <h3>21.1 Why we retain your encrypted identity number</h3>
       <p>
-        Where a firearm is sold through All Outdoor, the FCA and its
+        Where a firearm is sold through ALL Outdoor, the FCA and its
         regulations require the transfer to be recorded on the
         prescribed SAP 534 firearm-transfer form, and the
         seller&apos;s South African identity number must be reproduced
@@ -672,7 +672,7 @@ export default function RegulatedItemsAnnexPage() {
       <h2>22. Cooperation with authorities</h2>
       <p>
         In addition to the Financial Intelligence Centre and any other
-        competent authority, All Outdoor cooperates fully with the
+        competent authority, ALL Outdoor cooperates fully with the
         South African Police Service, including the Central Firearms
         Register, where compelled by valid legal process or where a
         report or notification is required in relation to a regulated
@@ -692,7 +692,7 @@ export default function RegulatedItemsAnnexPage() {
 
       <h2>23. Indemnity</h2>
       <p>
-        You agree to indemnify, defend and hold harmless All Outdoor,
+        You agree to indemnify, defend and hold harmless ALL Outdoor,
         its directors, officers, employees and agents from and against
         any third-party claim, action, demand, loss, damage, fine,
         penalty or expense (including reasonable legal fees) arising

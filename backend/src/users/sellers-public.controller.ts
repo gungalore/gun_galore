@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
+﻿import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -16,7 +16,7 @@ import { PrismaService } from '../prisma/prisma.service';
  *     rationale; the private grant-reason lives in AdminAuditEvent.
  *
  * firstName / lastName / email / phone / address / bank fields are
- * deliberately NOT selected — All Outdoor platform policy forbids
+ * deliberately NOT selected — ALL Outdoor platform policy forbids
  * leaking real names on public surfaces.
  *
  * ⚠️ NEVER select the `closure` relation (AccountClosure) here. It holds

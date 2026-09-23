@@ -1,8 +1,8 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* All Outdoor design tokens — "Winkel" white retail theme.
+/* ALL Outdoor design tokens — "Winkel" white retail theme.
    Canonical source: CLAUDE.md. Every name here is load-bearing: components
    read these vars, so the theme changes by editing VALUES, never names. */
 :root {
@@ -129,31 +129,18 @@
    --border-hover: #D2CFC7;
    --border-divider: #EFEEE9;
 
-  /* Brand */
-  --red:         #C8102E;
-  --red-hover:   #A00D24;
-  /* Diluted red, for the admin status chips and their keylines. Named to
-     match --gold-wash / --gold-line, which do the same job for gold.
-
-     ⚠️ THESE EXIST BECAUSE YOU CANNOT ALPHA-DILUTE A var() BY CONCATENATION.
-     The admin surfaces used to append a two-digit hex alpha straight onto the
-     token reference — the red equivalent of writing `#C8102E` + `18` — to mean
-     "--red at 9%". Custom-property substitution is TOKEN-based, not string-
-     based, so that expands to two separate tokens rather than one 8-digit
-     colour, the whole declaration is invalid at computed-value time, and the
-     property takes its INITIAL value. Every one of those chip fills rendered
-     `transparent`, and the matching 25% keylines rendered `currentColor` —
-     a solid near-black hairline instead of a faint red one. Nothing warns:
-     not tsc, not the build, not the console. Verified in-browser before and
-     after. Fixed 2026-08-27.
-
-     If you need a dilution these two don't cover, reach for
-     `color-mix(in srgb, var(--red) N%, transparent)`. Never concatenate. */
-  --red-wash:    rgba(200, 16, 46, 0.09);
-  --red-line:    rgba(200, 16, 46, 0.25);
-  /* Links. Red at full strength vibrates against body text at reading
-     size, so inline links get the deeper tone. */
-  --link:        #B10E28;
+   /* Brand — Outdoor Red (#E30613) aligns with brand pack v1.2.
+      The logo's road also uses this value now (was #E01B24).
+      The old `#C8102E` was inconsistent across CSS vs SVG — single source
+      of truth is the pack. */
+   --red:         #E30613;
+   --red-hover:   #C7050F;
+   /* Diluted red, for status chips and keylines. Same trap as before:
+      cannot alpha-dilute a var() by concatenation hex digits. */
+   --red-wash:    rgba(227, 6, 19, 0.09);
+   --red-line:    rgba(227, 6, 19, 0.25);
+   /* Links — red-700, deep enough for body-size on light. */
+   --link:        #B8050F;
 
    /* Text. Contrast against --bg-card (#FFFFFF):
         --text-primary   16.4:1   --text-secondary 9.0:1
@@ -189,7 +176,7 @@
      #f59e0b is 2.1:1 — so the sweep points every semantic use here. */
   --success: #1F7A50;
   --warning: #8F6E0F;
-  --danger:  #C8102E;
+   --danger:  var(--red-700);
   --info:    #2A6FB0;
 
   /* The last-minute auction accent. NOT --red and NOT --gold: it is a third
@@ -222,66 +209,116 @@
 
      --success is #1F7A50, 5.1:1 on white — safe for small ink as well as for
      borders, unlike --gold. */
-  --success-line:  rgba(31, 122, 80, 0.35);
-  --success-wash:  rgba(31, 122, 80, 0.08);
+   --success-line:  rgba(31, 122, 80, 0.35);
+   --success-wash:  rgba(31, 122, 80, 0.08);
 
-  /* Typefaces. The *-var values are set by next/font on <html>; the
-     fallback chain matters because it is what renders for the ~100ms
-     before the woff2 lands. See app/fonts.ts. */
-  --font-sans: var(--font-body), system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-head: var(--font-display), var(--font-body), system-ui, 'Segoe UI', sans-serif;
+   /* ── Pack scale — stone neutrals (brand pack v1.2) ───────────────── */
+   --stone-0:   #ffffff;
+   --stone-25:  #fbfaf8;
+   --stone-50:  #f7f6f3;
+   --stone-100: #efeee9;
+   --stone-200: #e4e2dc;
+   --stone-300: #d2cfc7;
+   --stone-400: #a3a19c;
+   --stone-500: #76746f;
+   --stone-600: #5c5b57;
+   --stone-700: #3d3c39;
+   --stone-800: #262523;
+   --stone-900: #1a1a1a;
+   --stone-950: #111111;
 
-  /* ── Radii ────────────────────────────────────────────────────────
-     One system. The page previously mixed 6px, 8px, 10px, 12px and 16px
-     within a single viewport, which reads as unresolved rather than
-     designed. Everything now picks from these three. */
-  --r-sm: 6px;    /* chips, inputs, small controls */
-  --r-md: 8px;    /* cards, panels, buttons */
-  --r-lg: 12px;   /* hero-level surfaces (trust card) */
+   /* Red scale — UI variants for chips, focus rings, etc.
+      red-500 = brand Outdoor Red (#E30613). red-400 is for dark surfaces. */
+   --red-50:  #fff1f2;
+   --red-100: #ffe0e2;
+   --red-200: #ffc2c6;
+   --red-400: #ff4d57;
+   --red-500: #e30613;
+   --red-600: #c7050f;
+   --red-700: #b8050f;
+   --red-800: #8f040c;
 
-  /* Hairline. 0.5px is a Retina affectation: on a standard-DPI desktop
-     monitor it rounds to 0 or to a muddy grey and the border simply
-     disappears, so cards lost their edges on exactly the screens most
-     buyers use. A 1px line reads as a crisp edge on both.
+   /* ── Pack role aliases → canonical code names ───────────────────────
+      ChipRail and pack-derived components read these names verbatim.
+      They all alias back to existing token values so no var() reference
+      breaks. Verify no collision with an existing name before touching. */
+   --surface:       var(--bg-card);
+   --surface-raised: var(--bg-card);
+   --surface-sunken: var(--bg-inset);
+   --text:          var(--text-primary);
+   --text-2:        var(--text-secondary);
+   --text-3:        var(--text-tertiary);
+   --border-strong: var(--border-hover);
+   --accent:        var(--red);
+   --accent-hover:  var(--red-hover);
+   --accent-press:  #B8050F;
+   --accent-soft:   var(--red-wash);
+   --danger-bg:     var(--red-50);
+   --warning-bg:    #fff7ed;
+   --info-bg:       #eff6ff;
+   --success-bg:    #ecfdf3;
+   --focus-ring:    0 0 0 3px rgb(227 6 19 / 0.28);
 
-     ⚠️ This ink INVERTED with the theme. It was white at 9% (a light line
-     on dark); on Winkel it must be the dark ink at 10%, or every card edge
-     drawn with it vanishes into the white page. */
-  --hairline: rgba(26, 22, 19, 0.10);
+   /* Radius + shadow aliases for pack components (ChipRail uses --radius-*). */
+   --radius-xs:   var(--r-xs);
+   --radius-sm:   var(--r-sm);
+   --radius-md:   var(--r-md);
+   --radius-lg:   var(--r-lg);
+   --radius-xl:   var(--r-xl);
+   --radius-pill: var(--r-pill);
 
-  /* ── Motion ───────────────────────────────────────────────────────
-     THE curves and durations. Before these existed the codebase ran EIGHT
-     different cubic-beziers with no names, and the design pack introduced a
-     ninth — so a 23-surface rebuild would have had every surface picking its
-     own feel. These three are not new: two are simply the two curves already
-     most used here, given names.
+   /* Shadow aliases — elev-1/2 point here so .gg-tile works through migration. */
+   --shadow-xs:  0 1px 2px rgb(26 22 19 / 0.06);
+   --shadow-sm:  0 1px 2px rgb(26 22 19 / 0.06), 0 2px 6px rgb(26 22 19 / 0.05);
+   --shadow-md:  0 2px 4px rgb(26 22 19 / 0.05), 0 8px 20px -4px rgb(26 22 19 / 0.10);
+   --shadow-lg:  0 4px 8px rgb(26 22 19 / 0.05), 0 18px 40px -8px rgb(26 22 19 / 0.16);
+   --shadow-xl:  0 8px 16px rgb(26 22 19 / 0.06), 0 32px 64px -12px rgb(26 22 19 / 0.24);
+   --shadow-red: 0 6px 18px -4px rgb(227 6 19 / 0.45);
+   --inner-highlight: inset 0 1px 0 rgb(255 255 255 / 0.18);
 
-     --ease-out       the house curve. Anything entering, growing or settling.
-                      Already what heroSlideIn uses.
-     --ease-standard  symmetrical moves — colour, a disclosure opening, a
-                      thing that goes out the way it came in.
-     --ease-odo       AUCTION ONLY. The design pack's own signature, kept
-                      separate so the odometer stays a deliberate exception
-                      rather than leaking into ordinary UI.
+   /* Typefaces — League Spartan (display/headings) + Montserrat (body/UI).
+      Self-hosted woff2 via app/fonts.ts (no next/font/google dependency).
+      Fallbacks per brand pack README: Arial Black / Arial. */
+   --font-display: "League Spartan", "Arial Black", system-ui, sans-serif;
+   --font-body:    "Montserrat", Arial, system-ui, sans-serif;
+   --font-sans:    var(--font-body);
+   --font-head:    var(--font-display), var(--font-body);
 
-     Durations are a ladder, not a menu — pick the rung, don't invent 250ms.
-     --dur-press is deliberately below the 160ms feedback floor: the card it
-     exists for is the most-tapped control on the site, and at that frequency
-     anything slower is felt as lag rather than as feedback.
+   /* Radii — rounded, warm, nested: inner radius = outer minus padding.
+      Pill buttons, search bar, segmented controls, avatars use pill. */
+   --r-xs:   6px;   /* badges, tags, small chips, inputs inside cards */
+   --r-sm:   10px;  /* inputs, selects, small buttons, thumbnails */
+   --r-md:   14px;  /* dropdowns, menus, toasts, list rows */
+   --r-lg:   20px;  /* cards, tiles, listing cards, panels */
+   --r-xl:   28px;  /* modals, hero panels, feature blocks */
+   --r-pill: 999px; /* primary/secondary buttons, search bar, pills, avatars */
 
-     ⚠️ Animate transform and opacity. Colour is fine. Anything that triggers
-     layout (height, width, top) is not — use a grid-template-rows 0fr→1fr
-     wrapper for disclosure instead. And remember `* { box-shadow: none
-     !important }` further down: a shadow cannot animate here because it
-     cannot render at all. */
-  --ease-out:      cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-odo:      cubic-bezier(0.16, 0.9, 0.24, 1);
+   /* Hairline. 0.5px Retina hairline for card edges where shadow isn't enough. */
+   --hairline: rgba(26, 22, 19, 0.10);
+
+   /* Motion — durations and easing curves.
+      --ease-out is the house curve for enters/hovers/settles.
+      --ease-standard for symmetrical moves (colour changes, disclosures).
+      --ease-odo is auction-only (deliberate exception).
+      --ease-spring for small pops (like button, badge bumps). */
+   --ease-out:      cubic-bezier(0.22, 1, 0.36, 1);
+   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+   --ease-odo:      cubic-bezier(0.16, 0.9, 0.24, 1);
+   --ease-in-out:   cubic-bezier(0.65, 0, 0.35, 1);
+   --ease-spring:   cubic-bezier(0.34, 1.56, 0.64, 1);
 
    --dur-press: 120ms;   /* :active feedback on high-frequency controls */
    --dur-fast:  200ms;   /* colour, image fade, small state swaps          */
    --dur-base:  300ms;   /* entrances, outcome cards                       */
    --dur-sheet: 420ms;   /* sheets and drawers                             */
+   /* Duration aliases matching pack spec (120/200/320/500ms ladder). */
+   --dur-1: 120ms;   /* press, colour */
+   --dur-2: 200ms;   /* hover, focus */
+   --dur-3: 320ms;   /* dropdowns, accordions, toasts */
+   --dur-4: 500ms;   /* page/section enters */
+
+   --elev-1: var(--shadow-sm);
+   --elev-2: var(--shadow-md);
 }
 
 /* ── Dark theme ────────────────────────────────────────────────────
@@ -307,47 +344,62 @@
    --bg-card-hover: #242220;
    --bg-inset:    #1A1816;
 
-   /* Elevation. Cooler (black-based), higher alpha. Dark surfaces need
-      more shadow to read as depth — the warm-tinted light shadows would
-      look muddy on near-black. */
-   --elev-1:
-     0 1px 2px   rgba(0, 0, 0, 0.30),
-     0 4px 8px   rgba(0, 0, 0, 0.25),
-     0 10px 24px rgba(0, 0, 0, 0.30);
-   --elev-2:
-     0 2px 4px   rgba(0, 0, 0, 0.35),
-     0 10px 20px rgba(0, 0, 0, 0.30),
-     0 22px 48px rgba(0, 0, 0, 0.40);
-
-   /* Borders. Darker, higher contrast against dark cards. */
-   --border:      #2E2B27;
-   --border-hover: #3D3935;
-   --border-divider: #242220;
-
-   /* Text. Near-white primary, muted secondary. --text-tertiary stays
-      at #7A7267 (4.1:1 on #1C1A18) — borderline AA, acceptable for meta. */
+   /* Text. Near-white primary, muted secondary. */
    --text-primary:   #F4F1ED;
    --text-secondary: #B0A99F;
    --text-tertiary:  #7A7267;
    --text-faint:     #5C5650;
    --text-tertiary-on-card: #8A8379;
 
+   /* Borders. Darker, higher contrast against dark cards. */
+   --border:      #2E2B27;
+   --border-hover: #3D3935;
+   --border-divider: #242220;
+
    /* Hairline. Inverted: light ink on dark surface. */
    --hairline: rgba(244, 241, 237, 0.08);
 
-   /* Status dilutions. Keep the same rgba values — they work on both
-      light and dark because they are relative to the status colour itself. */
+   /* Shadows — cooler (black-based), higher alpha. Dark surfaces need
+      more shadow to read as depth. Pack values adapted for dark mode. */
+   --shadow-xs:  0 1px 2px rgb(0 0 0 / 0.40);
+   --shadow-sm:  0 1px 2px rgb(0 0 0 / 0.30), 0 2px 6px rgb(0 0 0 / 0.25);
+   --shadow-md:  0 2px 4px rgb(0 0 0 / 0.35), 0 8px 20px -4px rgb(0 0 0 / 0.30);
+   --shadow-lg:  0 4px 8px rgb(0 0 0 / 0.40), 0 18px 40px -8px rgb(0 0 0 / 0.35);
+   --shadow-xl:  0 8px 16px rgb(0 0 0 / 0.50), 0 32px 64px -12px rgb(0 0 0 / 0.40);
+   --shadow-red: 0 6px 18px -4px rgb(227 6 19 / 0.55);
+
+   /* Status dilutions. Same rgba values — relative to the status colour itself. */
    --success-line:  rgba(31, 122, 80, 0.45);
    --success-wash:  rgba(31, 122, 80, 0.12);
+
+   /* Red text/icons on dark surfaces: brand red fails contrast on near-black;
+      use red-400 (#ff4d57) instead, 5.8:1 on #111. DESIGN.md §3 rule. */
+   --accent-text: var(--red-400);
+}
+
+/* ── .surface-dark scope — deliberately dark sections that DO NOT invert ─
+   Hero photo overlay, footer, live auction panel wrap in this class.
+   Tokens flip automatically so UI chrome stays legible without
+   manually reading `--text-on-dark` on every element. See DESIGN.md §3.
+   Shadow tokens inside .surface-dark are already higher-contrast from
+   the dark-theme overrides above. */
+.surface-dark {
+   --surface:       var(--stone-900);
+   --surface-raised: var(--stone-800);
+   --border:        rgb(255 255 255 / 0.10);
+   --text:          #f5f4f1;
+   --text-2:        rgb(245 244 241 / 0.72);
+   --text-3:        rgb(245 244 241 / 0.55);
+   color: var(--text);
 }
 
 html,
 body {
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-weight: 400;
-  letter-spacing: -0.01em;
-  -webkit-font-smoothing: antialiased;
+   color: var(--text-primary);
+   font-family: var(--font-sans);
+   font-weight: 400;
+   letter-spacing: -0.01em;
+   -webkit-font-smoothing: antialiased;
 }
 
 /* The page colour lives on <html> ONLY, and <body> is deliberately
@@ -366,23 +418,23 @@ body {
    the footer, with no page needing a z-index of its own. Setting a colour
    on <body> again will silently black out every backdrop on the site. */
 body {
-  background-color: transparent;
+   background-color: transparent;
 }
 
 html {
-  background-color: var(--bg);
+   background-color: var(--bg);
 }
 
-/* ── Headings ──────────────────────────────────────────────────────
-   Archivo carries every heading. Tighter tracking than the body face
-   because a display grotesque at 2rem+ needs the letters pulled in to
-   read as one shape rather than a row of glyphs. `text-wrap: balance`
-   stops the one-word orphan line that a 3-word headline gets on mobile. */
+/* ── Headings — League Spartan, tighter tracking than body face.
+   Per brand pack type spec: display faces get tighter tracking.
+   `text-wrap: balance` stops the one-word orphan line that a 3-word
+   headline gets on mobile. Max 3 font sizes per card. Prices/counts
+   use tabular nums. No sharp corners anywhere except full-bleed hero. */
 h1, h2, h3, h4 {
-  font-family: var(--font-head);
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  text-wrap: balance;
+   font-family: var(--font-head);
+   font-weight: 600;
+   letter-spacing: -0.025em;
+   text-wrap: balance;
 }
 h1 { letter-spacing: -0.035em; }
 
@@ -397,44 +449,34 @@ time[data-countdown] {
 }
 
 /* No gradients, no drop shadows, no glow — per CLAUDE.md.
-   ...EXCEPT the opt-in .gg-tile elevation below, added 2026-08-28.
+   ...EXCEPT pack-specified depth (shadow-first on cards).
 
-   ⚠️ THIS RULE STAYS. Operator: "all the tiles on the website looks stale
-   and boring, can we give them like a shade or small 3D effect" — and the
-   obvious move, deleting this rule, is a trap. Thirty box-shadows are already
-   written across the app, authored over months by people who knew none of
-   them could render: `0 30px 80px -20px rgba(0,0,0,.7)`, a
-   `0 10px 30px rgba(0,0,0,0.55)` sized for the old DARK theme, and a
-   `ggw-pulse` keyframe that throbs a red glow. Deleting this line switches
-   every one of them on at once, on a white site. So the kill switch stays and
-   elevation is opt-in: a class beats the universal selector on specificity,
-   both being !important, and nothing gets a shadow unless it asks. */
-* {
-  box-shadow: none !important;
-}
+   ⚠️ THE GLOBAL SHADOW KILL SWITCH IS RETIRED (2026-09-23). Brand pack v1.2
+   adopts soft shadow as the primary depth cue: "depth through soft shadow and
+   layering, not borders everywhere". The old universal selector killed
+   thirty dormant shadows written over months knowing they could never render:
+   `0 30px 80px -20px rgba(0,0,0,.7)`, a `0 10px 30px rgba(0,0,0,0.55)` sized
+   for the old DARK theme, and a `ggw-pulse` keyframe that throbs a red glow.
 
-/* ── Tile elevation ──────────────────────────────────────────
+   Retiring it required auditing all 84 box-shadow declarations across the
+   codebase and deleting those three specifically (they would wreck the light
+   site). Legitimate elevation reads --shadow-* tokens. Tailwind ring-* utilities
+   compile to box-shadow; --focus-ring replaces the dead ring focus styles.
 
-   Why now: the page canvas went white the same day. A card used to be held
-   apart from the page by its white fill against a beige ground; on white that
-   cue is gone and only a 1px border is left, which is what "stale and boring"
-   is describing.
+   Scoped reset keeps known-dead selectors off — but any element may now carry
+   a real shadow if it reads from a token. Shadow animations are live (transform
+   + opacity on hover/lift). Per DESIGN.md §6: resting cards = --shadow-sm with
+   no border; hover lifts to --shadow-md + translateY(-2px). Dropdowns/popovers
+   = --shadow-lg. Modals = --shadow-xl + backdrop blur. */
 
-   ⚠️ THE SHADOW IS WARM, NOT BLACK. rgba(0,0,0,…) over a warm neutral
-   palette goes visibly grey and dirties everything under it. These are built
-   from the ink colour (#1A1613 → 26,22,19), so the shade reads as the same
-   family as the text and borders around it.
+/* ── Tile elevation (pack shadow-primary depth) ────────────────
 
-   Two layers each, which is what makes it read as depth rather than a blur:
-   a tight contact shadow that anchors the tile to the page, and a wider
-   ambient one that gives it height. */
+   Cards use --shadow-sm at rest (--elev-1 alias). Hover lifts to --shadow-md
+   (--elev-2 alias) with translateY(-2px). Resting cards have NO border — only
+   shadow defines them, per brand pack v1.2 design spec. Border-only cards are
+   gone; every card now has depth via the token system. */
 .gg-tile {
-  box-shadow: var(--elev-1) !important;
-  /* ⚠️ background-color AND border-color BELONG IN THIS LIST even though the
-     shadow is the point. globals.css loads after `@tailwind utilities`, so
-     this declaration beats the `transition-colors` utility the cards already
-     carry — leaving it out silently un-animates the hover tint and border
-     those cards have always had, and the swap starts snapping. */
+  box-shadow: var(--shadow-sm);
   transition:
     box-shadow var(--dur-fast) var(--ease-out),
     transform var(--dur-fast) var(--ease-out),
@@ -465,25 +507,17 @@ time[data-countdown] {
 @media (hover: hover) and (pointer: fine) {
   .gg-tile-lift:hover,
   .gg-tile-lift:focus-within {
-    box-shadow: var(--elev-2) !important;
-    /* translateY alone slides; the scale is what makes it read as coming
-       toward you. 1.5% — enough to feel, small enough that a card photo
-       does not visibly soften. */
-    transform: translateY(-4px) scale(1.015);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px) scale(1.015);
     z-index: 2;
     border-color: var(--border-hover);
   }
 }
 
-/* Reduced motion keeps the DEPTH and drops the MOVEMENT. Removing the shadow
-   change too would leave those users with no hover feedback at all, which is
-   a worse outcome than the thing the preference asks for. */
+/* Reduced motion keeps the DEPTH (shadow change) but drops the MOVEMENT
+   (translateY/scale) — users with prefers-reduced-motion still get hover
+   feedback via shadow only, which is better than nothing. */
 @media (prefers-reduced-motion: reduce) {
-  .gg-tile { transition: box-shadow var(--dur-fast) ease; }
-  /* Kills BOTH the raise and the scale — `transform: none` covers the whole
-     declaration, so there is no separate scale left behind. The deeper
-     shadow stays: dropping that too would leave these users with no hover
-     feedback at all, which is worse than the thing the preference asks for. */
   .gg-tile-lift:hover,
   .gg-tile-lift:focus-within { transform: none; }
 }
@@ -859,16 +893,17 @@ html:not([data-standalone='true'])
 }
 .cat-submenu-item:hover,
 .cat-submenu-item:focus-visible {
-  background: rgba(200, 16, 46, 0.12);
+  background: rgba(227, 6, 19, 0.12);
   border-left-color: var(--red);
   color: #fff;
 }
 
 .gg-adv {
-  background: radial-gradient(120% 90% at 50% 108%, #211d16 0%, #141310 55%, #100f0d 100%);
-  border: 0.5px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+   background: radial-gradient(120% 90% at 50% 108%, #211d16 0%, #141310 55%, #100f0d 100%);
+   border: 0.5px solid var(--border);
+   border-radius: 12px;
+   /* Card shadow on dark surface — uses higher-alpha pack shadows */
+   box-shadow: 0 1px 2px rgb(0 0 0 / 0.30), 0 4px 8px rgb(0 0 0 / 0.25), 0 10px 24px rgb(0 0 0 / 0.30);
   overflow: hidden;
   transform-origin: 100% 100%;
   animation: gg-adv-pop 420ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -1058,6 +1093,24 @@ html:not([data-standalone='true'])
   .gg-pane::-webkit-scrollbar { width: 5px; }
   .gg-pane::-webkit-scrollbar-track { background: transparent; }
   .gg-pane::-webkit-scrollbar-thumb { border-radius: 3px; }
+}
+
+/* ── Global scrollbar theming — sitswides ──────────────────────────
+   All vertical scroll containers (overflow-y: auto / overflow: auto)
+   use this thin themed thumb. Horizontal scroll containers (.gg-row)
+   hide theirs entirely. Override by setting a more-specific rule
+   afterward. Covers the gap left by converting overflow-x/y-auto
+   classes: any inline-style flex panel now gets a styled scrollbar too. */
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track { background: var(--border-divider); }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: 5px;
+}
+* { scrollbar-width: thin; scrollbar-color: var(--border-hover) var(--border-divider); }
+@media (max-width: 767.98px) {
+  *::-webkit-scrollbar { width: 5px; height: 5px; }
+  *::-webkit-scrollbar-thumb { border-radius: 3px; }
 }
 
 .gg-row {
@@ -1448,7 +1501,7 @@ html[data-standalone='true'] [data-shell-tabs] {
    Ported from the Claude Design source gg-welcome-banner.html. Scoped under
    #ggw-root so nothing leaks into the app. Demo-page styles omitted. */
 #ggw-root {
-  --ggw-red:#C8102E;
+  --ggw-red:#E30613;
   --ggw-gold:#E8B53A;
   --ggw-surface:#1a1617;
   --ggw-surface-2:#141112;
@@ -1499,11 +1552,10 @@ html[data-standalone='true'] [data-shell-tabs] {
   position:relative; width:100%; max-width:520px;
   max-height:calc(100vh - 40px); max-height:calc(100dvh - 40px);
   overflow-y:auto; overscroll-behavior:contain;
-  background:linear-gradient(178deg, var(--ggw-surface) 0%, var(--ggw-surface-2) 100%);
-  border:1px solid var(--ggw-line); border-radius:var(--ggw-radius);
-  padding:36px 32px 28px;
-  box-shadow:0 30px 80px -20px rgba(0,0,0,.7), 0 0 0 1px rgba(0,0,0,.35),
-             0 -18px 60px -40px rgba(200,16,46,.35) inset;
+   background:linear-gradient(178deg, var(--ggw-surface) 0%, var(--ggw-surface-2) 100%);
+   border:1px solid var(--ggw-line); border-radius:var(--ggw-radius);
+   padding:36px 32px 28px;
+   box-shadow:var(--shadow-lg), 0 -18px 60px -40px var(--red-wash) inset;
   opacity:0; transform:translateY(30px) scale(.965);
   animation:ggw-rise .7s cubic-bezier(.16,1.3,.32,1) .15s forwards;
 }
@@ -1555,7 +1607,7 @@ html[data-standalone='true'] [data-shell-tabs] {
 .ggw-list li { display:flex; align-items:flex-start; gap:12px; font-size:15px; line-height:1.45; color:var(--ggw-text); }
 .ggw-list li em { font-style:normal; color:var(--ggw-text-dim); }
 .ggw-check { flex:0 0 22px; width:22px; height:22px; margin-top:1px; }
-.ggw-check circle { fill:rgba(200,16,46,.12); stroke:rgba(200,16,46,.45); stroke-width:1; }
+.ggw-check circle { fill:var(--red-wash); stroke:var(--accent); stroke-width:1; }
 .ggw-check path {
   fill:none; stroke:var(--ggw-red); stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round;
   stroke-dasharray:16; stroke-dashoffset:16; animation:ggw-draw .45s ease-out forwards;
@@ -1569,14 +1621,14 @@ html[data-standalone='true'] [data-shell-tabs] {
 .ggw-cta {
   display:block; width:100%; border:0; border-radius:12px; cursor:pointer;
   padding:16px 20px; font-size:16px; font-weight:600; letter-spacing:.01em;
-  color:#fff; background:var(--ggw-red);
-  box-shadow:0 6px 24px -6px rgba(200,16,46,.55);
-  transition:transform .18s ease, box-shadow .3s ease, background .2s; will-change:transform;
+   color:#fff; background:var(--ggw-red);
+   box-shadow:0 6px 24px -6px var(--red-hover);
+   transition:transform .18s ease, box-shadow .3s ease, background .2s; will-change:transform;
 }
 .ggw-cta.ggw-glow { animation:ggw-up .55s cubic-bezier(.2,.9,.3,1) 1.38s forwards, ggw-pulse 3.4s ease-in-out 2s infinite; }
-.ggw-cta:hover { background:#d8173a; }
+.ggw-cta:hover { background:var(--accent-hover); }
 .ggw-cta:active { transform:scale(.985); }
-@keyframes ggw-pulse { 0%,100% { box-shadow:0 6px 24px -6px rgba(200,16,46,.5); } 50% { box-shadow:0 6px 34px -2px rgba(200,16,46,.8); } }
+@keyframes ggw-pulse { 0%,100% { box-shadow:0 6px 24px -6px var(--red-hover); } 50% { box-shadow:0 6px 34px -2px var(--red-hover); } }
 .ggw-cta span { display:inline-block; transition:transform .25s ease; }
 .ggw-cta:hover span { transform:translateX(3px); }
 .ggw-foot { margin:16px 0 0; text-align:center; font-size:11.5px; letter-spacing:.02em; color:var(--ggw-text-dim); }
@@ -1702,3 +1754,115 @@ canvas,
   -webkit-user-select: text;
   user-select: text;
 }
+
+/* === ChipRail global chip/pill selector (DESIGN.md §8) === */
+/* chip-rail.css - global chip / pill selector. Requires tokens.css. */
+
+.chip-rail {
+  --chip-h: 38px; --chip-px: 16px; --chip-fs: 0.8125rem; --chip-gap: 8px;
+  --fade: 48px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;          /* lets it shrink inside flex/grid parents */
+}
+.chip-rail--sm { --chip-h: 32px; --chip-px: 12px; --chip-fs: 0.75rem; --chip-gap: 6px; }
+
+.chip-rail__scroller {
+  display: flex;
+  gap: var(--chip-gap);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: var(--fade);
+  scrollbar-width: none;                 /* no visible scrollbar, ever */
+  padding: 4px 2px;                      /* room for focus ring + shadow */
+  margin: -4px -2px;
+  -webkit-mask-image: linear-gradient(90deg,
+    transparent 0, #000 var(--fs, 0px), #000 calc(100% - var(--fe, 0px)), transparent 100%);
+          mask-image: linear-gradient(90deg,
+    transparent 0, #000 var(--fs, 0px), #000 calc(100% - var(--fe, 0px)), transparent 100%);
+}
+.chip-rail__scroller::-webkit-scrollbar { display: none; }
+.chip-rail[data-fade-start="true"] .chip-rail__scroller { --fs: var(--fade); }
+.chip-rail[data-fade-end="true"]   .chip-rail__scroller { --fe: var(--fade); }
+
+/* ---- chip ---- */
+.chip {
+  position: relative;
+  isolation: isolate;
+  flex: none;
+  scroll-snap-align: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--chip-h);
+  padding: 0 var(--chip-px);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font: 600 var(--chip-fs)/1 var(--font-body);
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out),
+              background-color var(--dur-2) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+@media (hover: hover) {
+  .chip:hover { color: var(--text); border-color: var(--border-strong); background: var(--stone-25); }
+}
+.chip:active { transform: scale(0.96); }
+.chip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* single-select active: dark ink pill slides between chips (red stays reserved for primary actions) */
+.chip[data-active="true"] { color: #fff; border-color: transparent; background: transparent; }
+.chip__pill {
+  position: absolute; inset: -1px; z-index: -1;
+  border-radius: inherit;
+  background: var(--stone-900);
+  box-shadow: var(--shadow-sm), var(--inner-highlight);
+}
+/* multi-select active: soft red tint + check */
+.chip[role="checkbox"][data-active="true"] {
+  color: var(--red-700); background: var(--accent-soft); border-color: var(--red-200);
+}
+.chip__check { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round; margin-left: -2px; }
+.chip__icon { display: inline-flex; width: 16px; height: 16px; margin-left: -2px; }
+.chip__icon > svg { width: 100%; height: 100%; }
+.chip__count {
+  min-width: 20px; height: 20px; padding: 0 6px; margin-right: -6px;
+  display: inline-grid; place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken); color: var(--text-3);
+  font-size: 0.6875rem; font-variant-numeric: tabular-nums;
+}
+.chip[data-active="true"] .chip__count { background: rgb(255 255 255 / 0.16); color: #fff; }
+
+/* ---- scroll arrows: desktop pointer only, appear only when there is more ---- */
+.chip-rail__arrow {
+  position: absolute; top: 50%; z-index: 2;
+  width: 32px; height: 32px; margin-top: -16px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: transform var(--dur-1) var(--ease-out), opacity var(--dur-2) var(--ease-out);
+}
+.chip-rail__arrow[hidden] { display: grid; opacity: 0; pointer-events: none; transform: scale(0.85); }
+.chip-rail__arrow--start { left: -4px; }
+.chip-rail__arrow--end { right: -4px; }
+.chip-rail__arrow:active { transform: scale(0.92); }
+.chip-rail__arrow svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+@media (hover: none) { .chip-rail__arrow { display: none !important; } }
+
+/* dark surfaces */
+.surface-dark .chip { background: rgb(255 255 255 / 0.06); border-color: rgb(255 255 255 / 0.12); }
+.surface-dark .chip__pill { background: #fff; }
+.surface-dark .chip[data-active="true"] { color: var(--stone-900); }
+

@@ -1,4 +1,4 @@
-// Cookie Policy — covers the actual cookies the platform uses today.
+﻿// Cookie Policy — covers the actual cookies the platform uses today.
 // Essential, functional and a FIRST-PARTY analytics item (`gg_did`) are in
 // use; marketing is the only category that is genuinely "none at this time".
 // That category is still written out in full, rather than dropped, so adding
@@ -84,7 +84,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Cookie Policy',
   description:
-    'What cookies All Outdoor uses, why, and how to manage them.',
+    'What cookies ALL Outdoor uses, why, and how to manage them.',
 };
 
 export default function CookiesPage() {
@@ -118,7 +118,7 @@ export default function CookiesPage() {
         them you can't sign in, your basket can't survive a page
         navigation and your dispute submission can't be matched back
         to your account. You can't disable these and continue to use
-        All Outdoor.
+        ALL Outdoor.
       </p>
       <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 16 }}>
         <thead>
@@ -131,11 +131,11 @@ export default function CookiesPage() {
         </thead>
         <tbody>
           {[
-            ['ao_at', 'All Outdoor', 'Your signed-in session — keeps you signed in across pages', 'Up to 15 minutes (renewed while you browse)'],
-            ['ao_rt', 'All Outdoor', 'Renews the session above so you are not signed out every 15 minutes', 'Up to 30 days'],
-            ['gg_admin_sess', 'All Outdoor', 'Admin-only — the signed-in token for the admin panel', 'Up to 15 minutes'],
-            ['gg_admin_rt', 'All Outdoor', 'Admin-only — renews the admin panel session', 'Up to 30 days'],
-            ['gg-preview', 'All Outdoor', 'Set only if you opened the site through a preview link we sent you — lets you past the coming-soon screen', 'Up to 30 days'],
+            ['ao_at', 'ALL Outdoor', 'Your signed-in session — keeps you signed in across pages', 'Up to 15 minutes (renewed while you browse)'],
+            ['ao_rt', 'ALL Outdoor', 'Renews the session above so you are not signed out every 15 minutes', 'Up to 30 days'],
+            ['gg_admin_sess', 'ALL Outdoor', 'Admin-only — the signed-in token for the admin panel', 'Up to 15 minutes'],
+            ['gg_admin_rt', 'ALL Outdoor', 'Admin-only — renews the admin panel session', 'Up to 30 days'],
+            ['gg-preview', 'ALL Outdoor', 'Set only if you opened the site through a preview link we sent you — lets you past the coming-soon screen', 'Up to 30 days'],
           ].map(([cookie, by, purpose, retention], i) => (
             <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
               <td style={{ padding: '6px 8px 6px 0', fontFamily: 'monospace' }}>{cookie}</td>
@@ -216,7 +216,7 @@ export default function CookiesPage() {
         <tbody>
           <tr style={{ borderBottom: '0.5px solid var(--border)' }}>
             <td style={{ padding: '6px 8px 6px 0', fontFamily: 'monospace' }}>gg_did</td>
-            <td style={{ padding: '6px 8px' }}>All Outdoor</td>
+            <td style={{ padding: '6px 8px' }}>ALL Outdoor</td>
             <td style={{ padding: '6px 8px' }}>
               Random first-party device identifier used to group activity
               from the same browser
@@ -248,13 +248,13 @@ export default function CookiesPage() {
       <p>You can manage cookies in two ways:</p>
       <ul>
         <li><strong>Browser settings</strong> — every modern browser lets you block all cookies, block third-party cookies, or delete cookies on exit. Check your browser's "Privacy" or "Site Settings" page for details. Blocking strictly necessary cookies will prevent you from signing in.</li>
-        <li><strong>Clear site data</strong> — to fully reset All Outdoor in your browser, open DevTools → Application → Storage → Clear site data. You'll be signed out, your drafts will be lost and you'll have to opt back in to any preferences.</li>
+        <li><strong>Clear site data</strong> — to fully reset ALL Outdoor in your browser, open DevTools → Application → Storage → Clear site data. You'll be signed out, your drafts will be lost and you'll have to opt back in to any preferences.</li>
       </ul>
 
       <h2>4. Third-party cookies</h2>
       <p>
         <strong>There are none.</strong> Every cookie listed above is
-        first-party — set by All Outdoor on alloutdoor.co.za — and no
+        first-party — set by ALL Outdoor on alloutdoor.co.za — and no
         third-party service embedded in this Platform sets a cookie in
         your browser. Sign-in is handled by our own servers; we do not
         use a hosted identity provider, an analytics tag or an

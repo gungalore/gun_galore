@@ -1,4 +1,4 @@
-// Refund & Dispute Policy — explains when and how refunds happen,
+﻿// Refund & Dispute Policy — explains when and how refunds happen,
 // the dispute flow timeline, and what the buyer's statutory rights
 // are under the Consumer Protection Act.
 //
@@ -187,12 +187,12 @@ export default function RefundPolicyPage() {
       </p>
       <ul>
         <li><strong>Section 55</strong> — the right to safe, good-quality goods that are reasonably suitable for the purposes for which they are generally intended, are of good quality, in good working order and free of any defects.</li>
-        <li><strong>Section 56</strong> — an implied warranty of quality lasting <strong>6 months</strong> from the date of delivery; if the goods fail to meet the standards in Section 55 within that period, you may require the supplier (the seller) to repair them, replace them or refund the price. (For private-individual sellers, All Outdoor acts only as facilitator; for goods sold by a business or licensed-dealer Seller, Section 56 applies directly to that Seller.)</li>
+        <li><strong>Section 56</strong> — an implied warranty of quality lasting <strong>6 months</strong> from the date of delivery; if the goods fail to meet the standards in Section 55 within that period, you may require the supplier (the seller) to repair them, replace them or refund the price. (For private-individual sellers, ALL Outdoor acts only as facilitator; for goods sold by a business or licensed-dealer Seller, Section 56 applies directly to that Seller.)</li>
         <li><strong>Section 17</strong> — the right to cancel an advance reservation within reasonable terms.</li>
         <li><strong>Section 19</strong> — the right to delivery at the agreed time and place. Section&nbsp;19 applies <em>unless otherwise expressly provided or anticipated in an agreement</em>: where a listing is marked collection-only, or is a regulated item that transfers through a licensed dealer, the town shown on the listing is the agreed place, and you confirm it at checkout before paying.</li>
       </ul>
       <p>
-        Where a dispute cannot be resolved by All Outdoor and falls
+        Where a dispute cannot be resolved by ALL Outdoor and falls
         within the jurisdiction of the National Consumer Commission or
         the Consumer Goods and Services Ombud, you may escalate it
         directly to them:
@@ -230,7 +230,7 @@ export default function RefundPolicyPage() {
       <h2>7. Chargebacks</h2>
       <p>
         If you initiate a chargeback through your bank or card
-        provider without first raising a dispute with All Outdoor, your
+        provider without first raising a dispute with ALL Outdoor, your
         account may be suspended while the chargeback is investigated.
         We strongly prefer the on-site dispute route — it is
         faster, your seller is protected from punitive chargeback

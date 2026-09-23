@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // UX-3 — saved-address picker for checkout (address book, P2.3).
 //
@@ -83,7 +83,7 @@ export function SavedAddressPicker({
             key={a.id}
             className="flex items-start gap-3 rounded-[6px] p-3 cursor-pointer"
             style={{
-              background: active ? 'rgba(200,16,46,0.06)' : 'var(--bg-inset)',
+              background: active ? 'rgba(227,6,19,0.06)' : 'var(--bg-inset)',
               border: `0.5px solid ${active ? 'var(--red)' : 'var(--border)'}`,
             }}
           >

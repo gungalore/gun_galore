@@ -1,4 +1,4 @@
-// Which mobile routes get which shell chrome.
+﻿// Which mobile routes get which shell chrome.
 //
 // The design pack draws two mobile header archetypes and only ever puts the
 // five-tab bar on the shopping surfaces:
@@ -59,7 +59,7 @@ export function hasShell(pathname: string | null): boolean {
  *
  * Only routes whose title cannot be derived need an entry. Everything else
  * falls back to the document title's first segment, which Next's metadata
- * already sets per page ("Blue bait — All Outdoor — All Outdoor" → "Blue
+ * already sets per page ("Blue bait — ALL Outdoor — ALL Outdoor" → "Blue
  * bait") — that is how a listing's own name reaches the header without every
  * page having to push a title into a context.
  */

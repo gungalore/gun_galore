@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation';
+﻿import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../../lib/auth-server';
@@ -330,7 +330,7 @@ export default async function TransactionPage({
             <div
               className="rounded-[8px] p-4 text-sm space-y-2"
               style={{
-                background: 'rgba(200,16,46,0.06)',
+                background: 'rgba(227,6,19,0.06)',
                 border: '0.5px solid var(--red)',
               }}
             >
@@ -745,7 +745,7 @@ export default async function TransactionPage({
             <div
               className="rounded-[8px] p-4"
               style={{
-                background: 'rgba(200,16,46,0.06)',
+                background: 'rgba(227,6,19,0.06)',
                 border: '0.5px solid var(--red)',
               }}
             >
@@ -846,7 +846,7 @@ export default async function TransactionPage({
             <div
               className="rounded-[8px] px-4 py-3"
               style={{
-                background: 'rgba(200,16,46,0.08)',
+                background: 'rgba(227,6,19,0.08)',
                 border: '0.5px solid var(--red)',
                 lineHeight: 1.55,
               }}
@@ -927,9 +927,9 @@ export default async function TransactionPage({
               const isDealerTransfer =
                 tx.shippingMethod === 'DEALER_TRANSFER';
               const tone = expired
-                ? { bg: 'rgba(200,16,46,0.12)', border: 'var(--red)', label: 'var(--red)' }
+                ? { bg: 'rgba(227,6,19,0.12)', border: 'var(--red)', label: 'var(--red)' }
                 : isCritical
-                  ? { bg: 'rgba(200,16,46,0.08)', border: 'var(--red)', label: 'var(--red)' }
+                  ? { bg: 'rgba(227,6,19,0.08)', border: 'var(--red)', label: 'var(--red)' }
                   : { bg: 'rgba(0,160,60,0.06)', border: 'rgba(0,160,60,0.35)', label: 'var(--success)' };
               const remaining = expired
                 ? 'overdue'
@@ -1143,7 +1143,7 @@ export default async function TransactionPage({
           {/* Buyer-facing dealer details panel — shown to the BUYER
               once the verification has approved and we know where
               the firearm has been booked into stock. This is the
-              hand-off moment: All Outdoor is done with the
+              hand-off moment: ALL Outdoor is done with the
               transaction, the buyer contacts the seller and the
               dealer directly to arrange the inter-dealer transfer
               onwards. Surfaces alongside the released-payment block
@@ -1174,7 +1174,7 @@ export default async function TransactionPage({
                   stock-register paperwork. From here, contact the
                   seller to arrange the inter-dealer transfer to your
                   own dealer (or your preferred collection method).
-                  All Outdoor&apos;s part of this transaction is
+                  ALL Outdoor&apos;s part of this transaction is
                   complete.
                 </p>
                 <div

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import {
   GAP,
@@ -66,7 +66,7 @@ import {
 //
 // ⚠️ NO MASCOT. Boet runs the interview; Boet appears nowhere on the document.
 // No red, no branding beyond one discreet footer line — with ONE exception,
-// added 2026-08-22: the unpaid pack carries the All Outdoor logo as its
+// added 2026-08-22: the unpaid pack carries the ALL Outdoor logo as its
 // watermark, because a mark that says whose product this is is exactly what an
 // unpaid pack needs. It never appears on a document somebody has paid for.
 //
@@ -367,7 +367,7 @@ export interface SchemeColours {
    * lives in the mark, which prints on every page. This is each colourway's
    * own harmonious answer to it: somebody who chose Sage did not choose a red
    * document, and a flat #E01B24 rule on a mauve page is a clash rather than a
-   * signature. On the All Outdoor scheme the two are the same value.
+   * signature. On the ALL Outdoor scheme the two are the same value.
    */
   accent: string;
   /**
@@ -431,7 +431,7 @@ export const SCHEMES: Record<Scheme, SchemeColours> = {
     band: '#f0f0f0',
     hair: '#e0e0e0',
     wash: '#f7f7f7',
-    accent: '#C8102E',
+    accent: '#E30613',
     bannerFrom: '#f4f2ec',
     bannerTo: '#e7e3d9',
   },
@@ -932,7 +932,7 @@ export interface MotivationPdfInput {
    * see it is that they can decide whether it is worth paying for. Diagonal,
    * large, very light, and UNDER the text rather than over it.
    *
-   * The mark itself is the All Outdoor logo with NOT FOR USE above and below
+   * The mark itself is the ALL Outdoor logo with NOT FOR USE above and below
    * it — see K.watermark. ⚠️ IT MEANS UNPAID, NOT UNSEATED: a free beta seat
    * is not a payment, so a beta pack carries it too. The caller decides; see
    * isPaidFor in motivations.service.
@@ -1385,7 +1385,7 @@ export class MotivationPdfService {
       // shared folder does not leak who applied for what.
       info: {
         Title: `Motivation ${input.referenceNumber}`,
-        Creator: 'All Outdoor',
+        Creator: 'ALL Outdoor',
       },
       autoFirstPage: true,
       bufferPages: true, // needed to stamp footers across all pages at the end
@@ -4515,7 +4515,7 @@ export class MotivationPdfService {
       // the banner for that reason.
       //
       // ⚠️ IT USED TO SAY "PREVIEW" IN 90 PT HELVETICA. Operator, 2026-08-22:
-      // "Add NOT FOR USE around the All Outdoor logo as the watermark." The
+      // "Add NOT FOR USE around the ALL Outdoor logo as the watermark." The
       // composition — logo, words above and below, the whole thing on the
       // sheet's own diagonal — is page furniture, so it lives with the banner
       // and the footer strip in motivation-pdf-chrome rather than here.

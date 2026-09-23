@@ -211,7 +211,7 @@ const TRAVELLED_STATS_MAX = 3;
  * How long the commute lookup may take.
  *
  * ⚠️ SHORT, BECAUSE THE MEMBER IS WAITING FOR A LIST THIS DOES NOT GATE. The
- * areas render with or without a route; a slow Directions call must degrade to
+ * areas render with or without a route; a slow Routes call must degrade to
  * "nothing pre-ticked", never to a spinner.
  */
 const COMMUTE_TIMEOUT_MS = 6_000;
@@ -1920,7 +1920,7 @@ export class MotivationGenerationService {
      *
      * ⚠️ AND IT NEEDS THE ROLL-UP'S OWN OUTPUT TO KNOW WHAT TO GEOCODE. So the
      * list is built twice: once to learn the names, once ordered and flagged.
-     * The second pass is pure and free — the geocodes and the Directions call
+     * The second pass is pure and free — the geocodes and the Routes call
      * are the cost, and they happen once.
      */
     const provisional = dangerAreas(incidents);
@@ -2317,27 +2317,35 @@ export class MotivationGenerationService {
     if (!key || !home || !work) return [];
 
     try {
-      const url =
-        'https://maps.googleapis.com/maps/api/directions/json' +
-        `?origin=${encodeURIComponent(home)}` +
-        `&destination=${encodeURIComponent(work)}` +
-        `&region=za&key=${key}`;
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(COMMUTE_TIMEOUT_MS),
-      });
+      const res = await fetch(
+        'https://routes.googleapis.com/directions/v2:computeRoutes',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': key,
+            'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
+          },
+          body: JSON.stringify({
+            origin: { address: home },
+            destination: { address: work },
+            travelMode: 'DRIVE',
+            regionCode: 'ZA',
+          }),
+          signal: AbortSignal.timeout(COMMUTE_TIMEOUT_MS),
+        },
+      );
       if (!res.ok) return [];
       const body = (await res.json()) as {
-        status?: string;
-        routes?: { overview_polyline?: { points?: string } }[];
+        routes?: { polyline?: { encodedPolyline?: string } }[];
       };
-      if (body.status !== 'OK') return [];
       /**
        * ⚠️ THE FIRST ROUTE ONLY. Google returns alternatives; pre-ticking the
        * union of every way Google can get there would tick areas the applicant
        * has never driven, on a document they sign. The first is the one it
        * recommends, which is the closest thing to "the way they go".
        */
-      const points = body.routes?.[0]?.overview_polyline?.points;
+      const points = body.routes?.[0]?.polyline?.encodedPolyline;
       return points ? decodePolyline(points) : [];
     } catch {
       return [];

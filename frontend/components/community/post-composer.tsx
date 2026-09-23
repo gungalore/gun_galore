@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../lib/auth';
 import {
@@ -13,6 +13,18 @@ import {
 } from '../../lib/community-api';
 import { processImage } from '../../lib/process-image';
 import { POST_TYPE_LABELS, POST_TYPE_ORDER, type PostTypeKey } from '../../lib/post-types';
+
+declare global {
+  interface Window {
+    google?: {
+      maps?: {
+        places?: {
+          Autocomplete: any;
+        };
+      };
+    };
+  }
+}
 
 interface Picked {
   file: File;
@@ -53,6 +65,8 @@ export function PostComposer({
   const [notice, setNotice] = useState<string | null>(null);
   const [groups, setGroups] = useState<FeedGroup[]>([]);
   const [groupId, setGroupId] = useState('');
+  const [place, setPlace] = useState('');
+  const placeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open || groups.length) return;
@@ -71,6 +85,18 @@ export function PostComposer({
       cancelled = true;
     };
   }, [open, groups.length, getToken]);
+
+  useEffect(() => {
+    if (!open || !placeRef.current || !window.google?.maps?.places) return;
+    const autocomplete = new window.google.maps.places.Autocomplete(placeRef.current, {
+      fields: ['formatted_address', 'name'],
+      types: ['address'],
+    });
+    autocomplete.addListener('place_changed', () => {
+      const place = autocomplete.getPlace();
+      setPlace(place.formatted_address ?? '');
+    });
+  }, [open]);
 
   function pickImages(list: FileList | null) {
     images.forEach((i) => URL.revokeObjectURL(i.url));
@@ -106,6 +132,7 @@ export function PostComposer({
     setTitle('');
     setBody('');
     setTags('');
+    setPlace('');
     setImages([]);
     setVideo(null);
   }
@@ -132,6 +159,7 @@ export function PostComposer({
         body: body.trim(),
         tags: tagList.length ? tagList : undefined,
         groupId: groupId || undefined,
+        location: place || undefined,
       });
 
       const total = images.length + (video ? 1 : 0);
@@ -283,6 +311,18 @@ export function PostComposer({
         onChange={(e) => setTags(e.target.value)}
         placeholder="Tags, comma separated (e.g. biltong, gauteng)"
         className="w-full px-3 py-2 rounded-[6px] text-[13px] mb-2"
+        style={{
+          background: 'var(--bg-inset)',
+          border: '0.5px solid var(--border)',
+          color: 'var(--text-primary)',
+        }}
+      />
+      <input
+        ref={placeRef}
+        value={place}
+        onChange={(e) => setPlace(e.target.value)}
+        placeholder="Location (optional)"
+        className="w-full px-3 py-2 rounded-[6px] text-[13px] mb-3"
         style={{
           background: 'var(--bg-inset)',
           border: '0.5px solid var(--border)',

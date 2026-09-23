@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useRef, useState, DragEvent } from 'react';
 
@@ -130,7 +130,7 @@ export function PhotoDropzone({
         className="rounded-[8px] text-center transition-colors cursor-pointer"
         style={{
           padding: '36px 16px',
-          background: dragOverDrop ? 'rgba(200,16,46,0.06)' : 'var(--bg-inset)',
+          background: dragOverDrop ? 'rgba(227,6,19,0.06)' : 'var(--bg-inset)',
           border: dragOverDrop
             ? '0.5px dashed var(--red)'
             : belowMin

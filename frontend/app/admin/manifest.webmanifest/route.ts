@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 
 /**
  * The admin PWA's own manifest.
@@ -16,9 +16,9 @@ export function GET() {
   return NextResponse.json(
     {
       id: '/admin/warden',
-      name: 'All Outdoor Warden',
+      name: 'ALL Outdoor Warden',
       short_name: 'Warden',
-      description: 'Operations console for All Outdoor.',
+      description: 'Operations console for ALL Outdoor.',
       start_url: '/admin/warden',
       scope: '/admin/',
       display: 'standalone',

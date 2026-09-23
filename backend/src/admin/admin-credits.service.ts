@@ -1,10 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 
 /**
  * AdminCreditsService — unified credit/balance fetcher for every paid
- * external service All Outdoor touches at runtime.
+ * external service ALL Outdoor touches at runtime.
  *
  * Why this lives in /admin and not next to each service:
  *   - Operator monitoring is a cross-cutting concern. Spreading the

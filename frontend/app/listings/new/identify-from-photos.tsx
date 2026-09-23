@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // Ask Boet "Help me describe this" button for /listings/new.
 //
@@ -198,8 +198,8 @@ export default function IdentifyFromPhotos({
         style={{
           marginTop: 12,
           padding: '12px 14px',
-          background: 'rgba(200,16,46,0.08)',
-          border: '0.5px solid rgba(200,16,46,0.35)',
+          background: 'rgba(227,6,19,0.08)',
+          border: '0.5px solid rgba(227,6,19,0.35)',
           borderRadius: 10,
           fontSize: 13,
           color: 'var(--text-primary)',
@@ -289,7 +289,7 @@ export default function IdentifyFromPhotos({
             padding: '8px 10px',
             fontSize: 12,
             color: 'var(--red)',
-            background: 'rgba(200,16,46,0.10)',
+            background: 'rgba(227,6,19,0.10)',
             border: '0.5px solid var(--red)',
             borderRadius: 6,
           }}

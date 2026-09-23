@@ -1,4 +1,4 @@
-import * as K from './motivation-pdf-chrome';
+﻿import * as K from './motivation-pdf-chrome';
 import type { CoverStyle } from './motivation-pdf-layouts';
 
 // ────────────────────────────────────────────────────────────────────
@@ -496,7 +496,7 @@ function classicCover(chrome: K.Chrome, input: CoverInput): number {
 /**
  * The accent rule under a title.
  *
- * ⚠️ THE SCHEME'S ACCENT, NOT THE BRAND RED FLAT. On the All Outdoor scheme
+ * ⚠️ THE SCHEME'S ACCENT, NOT THE BRAND RED FLAT. On the ALL Outdoor scheme
  * they are the same value and the rule is unmistakably ours; on the ten muted
  * colourways a flat #E01B24 would fight a mauve or an olive page, and a member
  * who chose Sage did not choose a red document. The brand stays constant where

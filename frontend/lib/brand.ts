@@ -1,4 +1,4 @@
-// THE single source of truth for how this platform names itself.
+﻿// THE single source of truth for how this platform names itself.
 //
 // The site trades as ALL OUTDOOR and the registered company IS
 // ALLOUTDOOR (PTY) LTD, reg 2026/639713/07 — a NEW entity registered at CIPC
@@ -22,7 +22,7 @@
 // in step; they are deliberately separate so neither app imports the other.
 
 /** Trading name. What users, crawlers and customers see everywhere. */
-export const BRAND_NAME = 'All Outdoor';
+export const BRAND_NAME = 'ALL Outdoor';
 
 /** Registered company — ECT s43 disclosure. Matches the trading name. */
 export const LEGAL_ENTITY = 'ALLOUTDOOR (PTY) LTD';
@@ -39,9 +39,9 @@ export const LEGAL_DISCLOSURE = `${LEGAL_ENTITY} (Reg. ${LEGAL_REG_NO})`;
  *  the headline identity. */
 export const BRAND_TAGLINE = 'New and secondhand outdoor gear';
 
-/** Longer blurb for meta descriptions and the footer. */
+/** Longer blurb for meta descriptions and the footer — matches brand pack v1.2. */
 export const BRAND_BLURB =
-  "South Africa's new and secondhand outdoor store";
+  'New and secondhand outdoor gear. Marketplace, auctions and more across South Africa.';
 
 /**
  * Subscription tier name. Was "GG PRO" — GG meant Gun Galore, the wound-down

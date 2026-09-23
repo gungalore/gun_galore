@@ -1,0 +1,159 @@
+/* ==========================================================================
+   ALL Outdoor - design tokens v1.1
+   Single source of truth for colour, type, radius, shadow and motion.
+   Import once in app/globals.css:  @import "./tokens.css";
+   ========================================================================== */
+
+:root {
+  /* ---- Brand (never change these three) ---- */
+  --ao-red: #e30613;          /* Outdoor Red: CTAs, active states, accents */
+  --ao-black: #000000;        /* logo artwork only, not UI text */
+  --ao-white: #ffffff;
+
+  /* ---- Red scale (UI) ---- */
+  --red-50:  #fff1f2;
+  --red-100: #ffe0e2;
+  --red-200: #ffc2c6;
+  --red-400: #ff4d57;         /* red text/icons on dark surfaces (5.8:1 on #111) */
+  --red-500: #e30613;         /* = brand red. On white 4.9:1, OK for text >= 14px bold */
+  --red-600: #c7050f;         /* hover */
+  --red-700: #b8050f;         /* pressed, red body text on light (6.9:1) */
+  --red-800: #8f040c;
+
+  /* ---- Warm neutrals ("stone") ---- */
+  --stone-0:   #ffffff;
+  --stone-25:  #fbfaf8;
+  --stone-50:  #f7f6f3;       /* page background */
+  --stone-100: #efeee9;
+  --stone-200: #e4e2dc;       /* borders */
+  --stone-300: #d2cfc7;
+  --stone-400: #a3a19c;
+  --stone-500: #76746f;       /* muted text on white (4.7:1) */
+  --stone-600: #5c5b57;       /* secondary text (6.8:1) */
+  --stone-700: #3d3c39;
+  --stone-800: #262523;
+  --stone-900: #1a1a1a;       /* primary text, dark surfaces */
+  --stone-950: #111111;       /* hero overlays, footer */
+
+  /* ---- Semantic ---- */
+  --success: #15803d;  --success-bg: #ecfdf3;
+  --warning: #b45309;  --warning-bg: #fff7ed;
+  --info:    #1d4ed8;  --info-bg:    #eff6ff;
+  --danger:  var(--red-700); --danger-bg: var(--red-50);
+
+  /* ---- Roles (use these in components, not raw scales) ---- */
+  --bg: var(--stone-50);
+  --surface: var(--stone-0);
+  --surface-raised: var(--stone-0);
+  --surface-sunken: var(--stone-100);
+  --border: var(--stone-200);
+  --border-strong: var(--stone-300);
+  --text: var(--stone-900);
+  --text-2: var(--stone-600);
+  --text-3: var(--stone-500);
+  --accent: var(--red-500);
+  --accent-hover: var(--red-600);
+  --accent-press: var(--red-700);
+  --accent-soft: var(--red-50);
+  --focus-ring: 0 0 0 3px rgb(227 6 19 / 0.28);
+
+  /* ---- Typography ---- */
+  --font-display: "League Spartan", "Arial Black", system-ui, sans-serif;
+  --font-body: "Montserrat", Arial, system-ui, sans-serif;
+  --text-xs: 0.75rem;   /* 12 */
+  --text-sm: 0.8125rem; /* 13 */
+  --text-base: 0.9375rem; /* 15 */
+  --text-md: 1.0625rem; /* 17 */
+  --text-lg: 1.25rem;   /* 20 */
+  --text-xl: 1.5rem;    /* 24 */
+  --text-2xl: 2rem;     /* 32 */
+  --text-3xl: 2.75rem;  /* 44 */
+  --text-4xl: 3.5rem;   /* 56 */
+
+  /* ---- Spacing (4px grid) ---- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --space-12: 48px; --space-16: 64px; --space-20: 80px;
+  --container: 1280px;
+
+  /* ---- Radius ---- */
+  --radius-xs: 6px;     /* badges, chips inside cards */
+  --radius-sm: 10px;    /* inputs, small buttons, thumbnails */
+  --radius-md: 14px;    /* dropdowns, toasts, list rows */
+  --radius-lg: 20px;    /* cards, tiles, panels */
+  --radius-xl: 28px;    /* hero panels, modals, feature blocks */
+  --radius-pill: 999px; /* primary buttons, segmented controls, search */
+
+  /* ---- Elevation (warm-tinted, layered) ---- */
+  --shadow-xs: 0 1px 2px rgb(26 20 12 / 0.06);
+  --shadow-sm: 0 1px 2px rgb(26 20 12 / 0.06), 0 2px 6px rgb(26 20 12 / 0.05);
+  --shadow-md: 0 2px 4px rgb(26 20 12 / 0.05), 0 8px 20px -4px rgb(26 20 12 / 0.10);
+  --shadow-lg: 0 4px 8px rgb(26 20 12 / 0.05), 0 18px 40px -8px rgb(26 20 12 / 0.16);
+  --shadow-xl: 0 8px 16px rgb(26 20 12 / 0.06), 0 32px 64px -12px rgb(26 20 12 / 0.24);
+  --shadow-red: 0 6px 18px -4px rgb(227 6 19 / 0.45);
+  --inner-highlight: inset 0 1px 0 rgb(255 255 255 / 0.18);
+
+  /* ---- Motion ---- */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);     /* default for enters/hovers */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);  /* for moving/resizing */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* small pops only */
+  --dur-1: 120ms;  /* press, colour */
+  --dur-2: 200ms;  /* hover, focus */
+  --dur-3: 320ms;  /* dropdowns, accordions, toasts */
+  --dur-4: 500ms;  /* page/section enters */
+
+  /* ---- Layers ---- */
+  --z-header: 40; --z-dropdown: 50; --z-toast: 60; --z-modal: 70;
+}
+
+/* Dark surfaces (hero, footer, auction live panel) */
+.surface-dark {
+  --surface: var(--stone-900);
+  --surface-raised: var(--stone-800);
+  --border: rgb(255 255 255 / 0.10);
+  --text: #f5f4f1;
+  --text-2: rgb(245 244 241 / 0.72);
+  --text-3: rgb(245 244 241 / 0.55);
+  --accent-text: var(--red-400);
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- Tailwind v4 mapping (delete if not on v4) ---- */
+@theme inline {
+  --color-brand: var(--ao-red);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--surface-sunken);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-red-50: var(--red-50);   --color-red-100: var(--red-100);
+  --color-red-400: var(--red-400); --color-red-500: var(--red-500);
+  --color-red-600: var(--red-600); --color-red-700: var(--red-700);
+  --color-stone-50: var(--stone-50);   --color-stone-100: var(--stone-100);
+  --color-stone-200: var(--stone-200); --color-stone-300: var(--stone-300);
+  --color-stone-500: var(--stone-500); --color-stone-600: var(--stone-600);
+  --color-stone-800: var(--stone-800); --color-stone-900: var(--stone-900);
+  --color-stone-950: var(--stone-950);
+  --font-display: var(--font-display);
+  --font-sans: var(--font-body);
+  --radius-xs: 6px; --radius-sm: 10px; --radius-md: 14px;
+  --radius-lg: 20px; --radius-xl: 28px;
+  --shadow-sm: var(--shadow-sm); --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg); --shadow-xl: var(--shadow-xl);
+  --shadow-red: var(--shadow-red);
+  --ease-out: var(--ease-out);
+}

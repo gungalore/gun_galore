@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -276,7 +276,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
   const failureNotice = failure && (
     <div
       className="rounded-[8px] p-4"
-      style={{ background: 'rgba(200,16,46,0.08)', border: '0.5px solid var(--red)' }}
+      style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)' }}
     >
       <p className="text-sm mb-1" style={{ color: 'var(--red)', fontWeight: 600 }}>
         This shipment failed
@@ -483,7 +483,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
         {error && (
           <div
             className="px-3 py-2 rounded-[6px] text-sm"
-            style={{ background: 'rgba(200,16,46,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
+            style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
           >
             {error}
           </div>
@@ -539,7 +539,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
       {error && (
         <div
           className="px-3 py-2 rounded-[6px] text-sm"
-          style={{ background: 'rgba(200,16,46,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
+          style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
         >
           {error}
         </div>

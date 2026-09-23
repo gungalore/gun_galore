@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuctionOdometer } from '@/components/auction-odometer';
@@ -211,7 +211,7 @@ export default function AuctionPanel({
           className="rounded-[6px] px-4 py-4 mb-5 text-sm"
           role="alert"
           style={{
-            background: 'rgba(200,16,46,0.08)',
+            background: 'rgba(227,6,19,0.08)',
             border: '0.5px solid var(--red)',
             color: 'var(--text-secondary)',
             lineHeight: 1.5,
@@ -539,7 +539,7 @@ export default function AuctionPanel({
         <div
           className="rounded-[6px] px-4 py-3 text-sm"
           style={{
-            background: 'rgba(200,16,46,0.10)',
+            background: 'rgba(227,6,19,0.10)',
             border: '0.5px solid var(--red)',
             color: 'var(--text-primary)',
             lineHeight: 1.5,

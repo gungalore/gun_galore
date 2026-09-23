@@ -1,4 +1,4 @@
-import { serverAuth as auth } from '../../../../lib/auth-server';
+﻿import { serverAuth as auth } from '../../../../lib/auth-server';
 import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Offer } from '@/lib/types';
@@ -52,7 +52,7 @@ export default async function OfferCheckoutPage({
         <div
           className="rounded-[6px] px-4 py-3 text-sm"
           style={{
-            background: 'rgba(200,16,46,0.10)',
+            background: 'rgba(227,6,19,0.10)',
             border: '0.5px solid var(--red)',
             color: 'var(--text-primary)',
             lineHeight: 1.55,

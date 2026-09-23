@@ -1,9 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 
 /**
- * System Health monitor — pings every external service All Outdoor
+ * System Health monitor — pings every external service ALL Outdoor
  * depends on + reports cron last-run timestamps + a few internal queue
  * depths. Used by /admin/health to give the operator a one-screen
  * answer to "is everything still up?".

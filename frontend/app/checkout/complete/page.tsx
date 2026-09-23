@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -185,7 +185,7 @@ function CheckoutCompleteInner() {
         <>
           <div
             className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 text-xl"
-            style={{ background: 'rgba(200,16,46,0.10)', color: 'var(--red)' }}
+            style={{ background: 'rgba(227,6,19,0.10)', color: 'var(--red)' }}
           >
             ✕
           </div>

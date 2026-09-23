@@ -1,4 +1,4 @@
-import {
+﻿import {
   declarationFor,
   firearmRowsFor,
   signedLineFor,
@@ -866,7 +866,7 @@ export class MotivationSellerConsentService {
       const sellerMessage =
         `${args.applicantName} is applying for a licence for your ` +
         `${label} and needs your consent as the current owner.\n\n${link}\n\n` +
-        `This link works for 48 hours. All Outdoor.`;
+        `This link works for 48 hours. ALL Outdoor.`;
 
       /**
        * ⚠️ EVERY TICKED CHANNEL, AND THE GATE IS "DID ANY OF THEM GO".
@@ -918,7 +918,7 @@ export class MotivationSellerConsentService {
         });
         const mine =
           `Here is the consent link for ${name} to sign for the ${label}. ` +
-          `Send it to them — it works for 48 hours.\n\n${link}\n\nAll Outdoor.`;
+          `Send it to them — it works for 48 hours.\n\n${link}\n\nALL Outdoor.`;
         if (want.meSms) {
           if (!me?.phone) {
             failures.push('the SMS to you (no number on your profile)');

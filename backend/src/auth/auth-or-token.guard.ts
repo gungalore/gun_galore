@@ -1,4 +1,4 @@
-import {
+﻿import {
   CanActivate,
   ExecutionContext,
   Injectable,
@@ -11,7 +11,7 @@ import { SessionService } from './session.service';
 import { extractAccessToken } from './extract-token';
 
 /**
- * Dual-auth guard: accepts EITHER a member session OR an All Outdoor
+ * Dual-auth guard: accepts EITHER a member session OR an ALL Outdoor
  * CHECKOUT-scoped action token via ?t=<token>.
  *
  * Used on endpoints that need to work from BOTH the normal signed-in app AND

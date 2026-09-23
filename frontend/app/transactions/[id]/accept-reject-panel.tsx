@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 /**
  * Seller-facing Accept / Reject panel on /transactions/[id].
@@ -290,7 +290,7 @@ export function AcceptRejectPanel({
     <div
       className="rounded-[8px] p-4"
       style={{
-        background: expired ? 'rgba(200,16,46,0.08)' : 'var(--bg-card)',
+        background: expired ? 'rgba(227,6,19,0.08)' : 'var(--bg-card)',
         border: `0.5px solid ${expired ? 'var(--red)' : 'var(--red)'}`,
       }}
     >
@@ -314,7 +314,7 @@ export function AcceptRejectPanel({
         className="text-xs mb-4"
         style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
       >
-        The buyer has paid and the funds are being held by All Outdoor. Tap{' '}
+        The buyer has paid and the funds are being held by ALL Outdoor. Tap{' '}
         <strong style={{ color: 'var(--text-primary)' }}>Accept</strong> to
         commit —{' '}
         {isCollection ? (
@@ -339,7 +339,7 @@ export function AcceptRejectPanel({
         <p
           className="text-xs mb-3 p-2 rounded-[6px]"
           style={{
-            background: 'rgba(200,16,46,0.10)',
+            background: 'rgba(227,6,19,0.10)',
             border: '0.5px solid var(--red)',
             color: 'var(--red)',
             lineHeight: 1.45,

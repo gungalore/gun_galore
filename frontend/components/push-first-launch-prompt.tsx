@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 // PushFirstLaunchPrompt — friendly card asking for push permission
 // the first time a signed-in user opens the installed PWA.
@@ -157,7 +157,7 @@ export function PushFirstLaunchPrompt() {
             width: 40,
             height: 40,
             borderRadius: '50%',
-            background: 'rgba(200,16,46,0.18)',
+            background: 'rgba(227,6,19,0.18)',
             color: 'var(--red)',
             display: 'inline-flex',
             alignItems: 'center',

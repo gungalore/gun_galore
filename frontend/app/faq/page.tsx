@@ -1,11 +1,11 @@
-import type { Metadata } from 'next';
+﻿import type { Metadata } from 'next';
 import Link from 'next/link';
 import { BRAND_NAME, SUPPORT_EMAIL } from '@/lib/brand';
 
 export const metadata: Metadata = {
   title: `Help & FAQ — ${BRAND_NAME}`,
   description:
-    'Answers to common questions about buying and selling on All Outdoor: ordering, delivery, refunds and disputes, verification and fees.',
+    'Answers to common questions about buying and selling on ALL Outdoor: ordering, delivery, refunds and disputes, verification and fees.',
   alternates: { canonical: '/faq' },
 };
 
@@ -32,12 +32,12 @@ export const metadata: Metadata = {
 // in the Regulated Items Annex. Restate it there, never here.
 const FAQS: { q: string; a: string }[] = [
   {
-    q: 'What is All Outdoor?',
+    q: 'What is ALL Outdoor?',
     // Answer 1 is the single most-read sentence on the site and it feeds the
     // FAQPage JSON-LD Google lifts into the SERP, so it describes the PUBLIC
     // store: the outdoor catalogue a signed-out visitor can actually browse.
     // Regulated stock is members-only and is not advertised here.
-    a: 'All Outdoor is a South African new and secondhand outdoor store — camping and overlanding kit, fishing tackle, clothing and outdoor gear. You can buy at a set price, bid in auctions, or make an offer ("Take a Shot"). Some regulated categories are available to registered members only.',
+    a: 'ALL Outdoor is a South African new and secondhand outdoor store — camping and overlanding kit, fishing tackle, clothing and outdoor gear. You can buy at a set price, bid in auctions, or make an offer ("Take a Shot"). Some regulated categories are available to registered members only.',
   },
   {
     q: 'How does payment protection work?',
@@ -71,7 +71,7 @@ const FAQS: { q: string; a: string }[] = [
     a: 'Most items ship by courier — to your door or to a pickup point near you — with live rate quotes at checkout and tracking on the order page. Bulky items are collected, or you can arrange your own transporter; either way the seller is only paid once you confirm you have the item.',
   },
   {
-    q: 'How do I sell on All Outdoor?',
+    q: 'How do I sell on ALL Outdoor?',
     // Selling modes matching /how-selling-works and the sell form.
     a: 'Create a listing from the Sell page — add photos, a description and a price (or set it up as an auction or a Take-a-Shot). Listings are checked before going live. Complete seller verification to receive payouts. Registered members listing in a regulated category are asked for the extra details the law requires.',
   },
@@ -110,7 +110,7 @@ export default function FaqPage() {
         Help &amp; FAQ
       </h1>
       <p className="text-sm mt-2" style={{ color: 'var(--text-tertiary)' }}>
-        Common questions about buying and selling on All Outdoor. Still stuck?{' '}
+        Common questions about buying and selling on ALL Outdoor. Still stuck?{' '}
         <a
           href={`mailto:${SUPPORT_EMAIL}`}
           style={{ color: 'var(--red)', textDecoration: 'underline' }}
