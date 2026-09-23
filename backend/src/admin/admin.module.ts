@@ -16,6 +16,7 @@ import { AdminCategoriesService } from './admin-categories.service';
 import { AdminCategoryAttributesService } from './admin-category-attributes.service';
 import { AdminSettingsService } from './admin-settings.service';
 import { AdminBroadcastService } from './admin-broadcast.service';
+import { WardenService } from './warden.service';
 import {
   AdminAuthController,
   AdminAlertsController,
@@ -38,6 +39,7 @@ import {
   AdminSettingsController,
   AdminBroadcastController,
 } from './admin.controller';
+import { WardenController } from './warden.controller';
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
 import { SuperadminGuard } from './guards/superadmin.guard';
 import { ListingsModule } from '../listings/listings.module';
@@ -89,6 +91,7 @@ import { UsersModule } from '../users/users.module';
     AdminCategoryAttributesService,
     AdminSettingsService,
     AdminBroadcastService,
+    WardenService,
     AdminJwtGuard,
     SuperadminGuard,
   ],
@@ -113,6 +116,7 @@ import { UsersModule } from '../users/users.module';
     AdminCategoryAttributesController,
     AdminSettingsController,
     AdminBroadcastController,
+    WardenController,
   ],
   // Export AdminCreditsService so TasksModule's pollCreditBalances
   // cron can inject it without us having to declare the service in

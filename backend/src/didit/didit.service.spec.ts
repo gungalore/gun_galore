@@ -213,3 +213,137 @@ describe('DiditService configuration', () => {
     expect(() => new DiditService().onModuleInit()).not.toThrow();
   });
 });
+
+/**
+ * fetchSessionImage — the "show me the person" path.
+ *
+ * ⚠️ THE FIELD CHOICE IS THE WHOLE FEATURE AND IT IS EASY TO GET WRONG. The
+ * live selfie is `liveness_checks[].reference_image`; `id_verifications[].
+ * portrait_image` is the face cropped off the card, which is a photograph of a
+ * photograph and not what an admin reviewing a member needs to see. These
+ * tests exist so a future tidy-up cannot quietly swap them.
+ */
+describe('DiditService.fetchSessionImage', () => {
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
+  let service: DiditService;
+  let fetchMock: jest.Mock;
+
+  /** Queue one response for the decision call and one for the media call. */
+  function queue(decision: unknown, media?: { status?: number; body?: Buffer; mime?: string }) {
+    fetchMock = jest.fn(async (url: string) => {
+      if (url.includes('/decision/')) {
+        const status = (decision as { __status?: number })?.__status ?? 200;
+        return {
+          ok: status < 400,
+          status,
+          text: async () => JSON.stringify(decision),
+          json: async () => decision,
+          arrayBuffer: async () => Buffer.alloc(0),
+          headers: { get: () => 'application/json' },
+        } as unknown as Response;
+      }
+      const s = media?.status ?? 200;
+      const body = media?.body ?? JPEG;
+      return {
+        ok: s < 400,
+        status: s,
+        text: async () => '',
+        json: async () => ({}),
+        arrayBuffer: async () => body,
+        headers: { get: (h: string) => (h === 'content-type' ? media?.mime ?? 'image/jpeg' : null) },
+      } as unknown as Response;
+    });
+    (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+  }
+
+  beforeEach(() => {
+    process.env.DIDIT_API_KEY = 'test-key';
+    process.env.DIDIT_WORKFLOW_ID = 'wf-1';
+    process.env.DIDIT_MODE = 'sandbox';
+    delete process.env.NODE_ENV;
+    service = new DiditService();
+  });
+
+  const decision = (extra: Record<string, unknown>) => ({
+    session_id: 'sess-1',
+    status: 'Approved',
+    ...extra,
+  });
+
+  it('takes the selfie from the liveness reference image, never the card portrait', async () => {
+    queue(
+      decision({
+        id_verifications: [{ portrait_image: 'https://s3.example/card.jpg' }],
+        liveness_checks: [{ reference_image: 'https://s3.example/live.jpg' }],
+      }),
+    );
+    const result = await service.fetchSessionImage('sess-1', 'selfie');
+    expect(result.ok).toBe(true);
+    // The media fetch must have been pointed at the LIVE image.
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/live.jpg');
+  });
+
+  it('prefers the uncropped document capture, falling back to the cropped one', async () => {
+    queue(
+      decision({
+        id_verifications: [
+          { front_image: 'https://s3.example/front.jpg', full_front_image: 'https://s3.example/full.jpg' },
+        ],
+      }),
+    );
+    await service.fetchSessionImage('sess-1', 'id_front');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/full.jpg');
+  });
+
+  it('falls back to the cropped front when there is no full capture', async () => {
+    queue(decision({ id_verifications: [{ front_image: 'https://s3.example/front.jpg' }] }));
+    await service.fetchSessionImage('sess-1', 'id_front');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/front.jpg');
+  });
+
+  it('reports no_image when the decision carries none', async () => {
+    queue(decision({ id_verifications: [{ status: 'Approved' }], liveness_checks: [] }));
+    expect(await service.fetchSessionImage('sess-1', 'selfie')).toEqual({
+      ok: false,
+      reason: 'no_image',
+    });
+  });
+
+  it('reports gone when Didit no longer has the session', async () => {
+    queue({ __status: 404, detail: 'Not found.' });
+    expect(await service.fetchSessionImage('sess-1', 'id_front')).toEqual({
+      ok: false,
+      reason: 'gone',
+    });
+  });
+
+  it('names the wrong-environment case — a sandbox key cannot read a live session', async () => {
+    queue({ __status: 403, detail: 'You do not have permission.' });
+    expect(await service.fetchSessionImage('sess-1', 'id_front')).toEqual({
+      ok: false,
+      reason: 'forbidden',
+    });
+  });
+
+  it('refuses bytes that are not an image', async () => {
+    queue(
+      decision({ id_verifications: [{ front_image: 'https://s3.example/front.pdf' }] }),
+      { body: Buffer.from('%PDF-1.4 something'), mime: 'application/pdf' },
+    );
+    expect(await service.fetchSessionImage('sess-1', 'id_front')).toEqual({
+      ok: false,
+      reason: 'not_an_image',
+    });
+  });
+
+  it('treats an expired media signature as gone', async () => {
+    queue(decision({ id_verifications: [{ front_image: 'https://s3.example/front.jpg' }] }), {
+      status: 403,
+    });
+    expect(await service.fetchSessionImage('sess-1', 'id_front')).toEqual({
+      ok: false,
+      reason: 'gone',
+    });
+  });
+});

@@ -83,6 +83,7 @@ function makeService(overrides: {
     transactions as never, // P5.2 — cancels booked shipment on full refund
     {} as never, // sms — unused by refund
     {} as never, // account closures — unused by refund
+    {} as never, // didit — unused by refund
   );
   return { service, prisma, txc, notifications, audit, zohoBooks, refundPayment, transactions };
 }

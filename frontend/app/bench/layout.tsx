@@ -3,9 +3,9 @@ import type { Metadata } from 'next';
 /**
  * THE BENCH — the module's shell.
  *
- * The stylesheet is imported HERE rather than in the page, following the Desk
- * (app/admin/desk/layout.tsx): a layout imports once for the whole subtree,
- * where a client page re-declares the dependency on every route inside it.
+ * The stylesheet is imported HERE rather than in the page: a layout imports
+ * once for the whole subtree, where a client page re-declares the dependency on
+ * every route inside it.
  */
 import '../../components/bench/bench.css';
 

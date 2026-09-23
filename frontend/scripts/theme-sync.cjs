@@ -18,9 +18,11 @@
  * stayed on the Winkel cream #F6F5F1. Nobody was careless; the comment simply
  * was not in the path of the person changing the CSS. This is.
  *
- * ⚠️ The Desk is deliberately NOT checked. app/admin/desk/layout.tsx overrides
- * themeColor to the Desk ground (#101312) on purpose — it is a different
- * surface with a different skin, not a drift.
+ * ⚠️ The Desk was deliberately NOT checked while it existed. app/admin/desk/
+ * layout.tsx overrode themeColor to the Desk ground (#101312) on purpose — a
+ * different surface with a different skin, not a drift. The Desk was removed
+ * on 2026-09-22 and is being rebuilt; if the rebuild carries its own theme
+ * colour, it stays out of this gate for the same reason.
  *
  * Wired into `npm run build`, because there is no CI in this repo and
  * `next build` is the only gate that actually runs.

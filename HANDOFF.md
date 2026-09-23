@@ -5,7 +5,59 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-09-15**.
+Last updated: **2026-09-23**.
+
+## 2026-09-23 — THE WARDEN DAEMON IS WIRED (local, uncommitted)
+
+**NOTHING DEPLOYED.** Branch `feat/takealot-ux-parity`, working tree only. The
+open backend task from the panel's own handoff — "rebuilding that proxy is the
+main open backend task" — is done, and the panel's `NOT WIRED` card is gone.
+
+**The proxy is back, adapted, and no longer Desk-shaped.** The deleted
+`backend/src/desk/warden.*` was restored into `backend/src/admin/` (it is an
+admin surface; co-locating let it reuse `AdminModule`'s `AdminJwtGuard` and
+`AdminAuditService` with no import cycle). Two Desk couplings were **dropped, not
+rebuilt**: `gates()` (its source, `DeskSiteService`, is deleted) and `settings()`
+plus `maskSaPhone()` (the operator removed the settings board on sight — a
+decided rule must not sit behind an off switch).
+
+- Routes: `GET|POST /admin/warden/chat`, `POST /admin/warden/proposals/:id/approve|decline`,
+  `GET /admin/warden/board`, `GET /admin/warden/audit`, `POST /admin/warden/sweep|pause|resume`.
+  Method is the authorisation (GET any admin, POST SUPERADMIN).
+- **`GET /admin/warden/board` is new**, and it names the absence instead of
+  collapsing it: `WardenBoardView` carries `present` + `absence`
+  (`not_deployed` | `unreachable`), because a null board is three different
+  facts and rendering any of them as "all clear" reports a board nobody read.
+- `warden.boot.spec.ts` compiles the controller with `AdminJwtGuard` for real
+  (the crash-loop class the news module spec documents). `warden.spec.ts` was
+  restored minus the gates/settings/maskSaPhone describes; its hand-mirror now
+  holds backend types against **both** `warden/src/types.ts` and the new panel
+  component.
+- Frontend: `components/admin/warden-thread.tsx` (exports `WARDEN_KINDS`, the
+  third leg of the mirror), the daemon page at `/admin/warden/daemon` (thread +
+  composer, proposal cards with an approve confirm that restates the exact
+  command, board, audit trail, sweep/pause/resume behind a reason dialog), and
+  `WardenDaemonCard` on the Warden tab is now a real compact card linking to it.
+- ⚠️ **A RED GATE RENDERS NO BUTTONS.** It has no command and cannot be approved
+  or declined; the card says so in words. `operationName === null` reads as
+  "free-hand, not safe-list-bounded" (the louder warning), and `reversible` is
+  never inferred.
+
+**Proven against a real daemon on this machine.** `warden/.env` (untracked;
+`warden/.gitignore` has `.env`) booted the daemon on `127.0.0.1:8787` with a
+local token and **no** model key. The compiled backend `WardenService` was then
+pointed at it directly: reads returned a real 30-row board (`ok:3 bad:2
+unknown:25`, `dropped:0`), a 10-message thread and one red gate with
+`command: null`; writes exercised `send` (the daemon answered honestly that it
+has no model), `sweep` (`finished:true forced:true`), `pause` (expiry + operator
+recorded) and `resume`. The daemon was then stopped. `backend/.env` was left
+**unset** for `WARDEN_BASE_URL`/`WARDEN_TOKEN`, so the local panel honestly shows
+`NOT DEPLOYED` and the box's own config is untouched.
+
+**Verified:** backend `tsc` 0, `nest build` 0, jest **4900 pass** (1 pre-existing
+failure, `motivations/motivation-consent-pack.spec.ts:100` — unrelated); frontend
+`tsc` 0, `npm test` **1449 pass** (4 new), `npm run build` 0 with
+`/admin/warden/daemon` emitted. Local-only; no commit, no deploy.
 
 ## Local dev (standing — not a dated entry)
 
@@ -35,6 +87,190 @@ from `docs/SESSION-LOG.md` under that file's retention rule.
 - ⚠️ PowerShell strips single quotes in `node -e '...'`; use a here-string.
 - Local DB only, never production: `Setting motivation_writer_enabled=true`
   (`false` 404s every motivation route).
+
+## 2026-09-22 (cont. 2) — KYC IMAGES COME FROM DIDIT; FULL MEMBER PROFILE; PRIVACY CORRECTED
+
+**NOTHING DEPLOYED.** Same session, same branch, working tree only.
+
+### The privacy policy now describes what we actually do
+Four places claimed we store the identity document image and the selfie on our own
+servers for the life of the account. We do not, and with this change we will not:
+the images are captured and held by **Didit**, and an admin views them from
+Didit on demand. Corrected in `frontend/app/(legal)/privacy/page.tsx` (§3.2, §8,
+§9), plus the liveness video is now named. Two further corrections found while
+editing: **Didit's country was wrong** — their own docs state EU-by-default
+processing on AWS, so `Israel` became `European Union` in the provider table and
+§8; and **stale Clerk disclosures were removed** — the provider table still
+listed Clerk as a recipient, §8 still named it, and §3.1/§3.6 still said email
+was "verified via Clerk" and session data was "handled by Clerk". Clerk was
+removed from the codebase on 2026-09-10.
+
+### Reveal ID / selfie now pulls from Didit (view-only, nothing stored)
+`DiditService.fetchSessionImage(sessionId, 'id_front' | 'selfie')` re-requests the
+decision — which mints **fresh 4-hour presigned links** — and streams the bytes
+back. `AdminService.readKycFile` tries any stored key first (worthless now: no
+row has one) and then walks the member's `DiditVerification` rows newest-first.
+Field choice is load-bearing and unit-tested: the **selfie is
+`liveness_checks[].reference_image`** (the live capture), NOT
+`id_verifications[].portrait_image` (the face cropped off the card); the ID is
+`full_front_image` with `front_image` as fallback. Every failure is named —
+`gone` (retention passed), `forbidden` (wrong environment), `no_image`,
+`unreachable`, `not_an_image` — because "the button did nothing" was the
+original complaint.
+
+**⚠️ THE LOCAL BOX CANNOT EXERCISE THIS.** It holds a **sandbox** Didit key and
+the only stored session is **live**, so the reveal correctly answers "this
+deployment cannot read that verification session". That message is the feature,
+not a bug; the real image needs the live key on the box.
+
+### Full member profile at `/admin/people/[id]`
+Leads with a **verified / not-verified checklist** (email, phone, profile
+complete, identity, bank, selling ban, standing), then identity-verification
+detail, contact/address, banking, consent, comms prefs, selling standing,
+activity counts, enforcement, and the admin audit trail. The People drawer gained
+an "Open full profile" link and now shares one `components/admin/user-actions.tsx`
+with the page — the ban/close/erase/strike/KYC-review flows and their exact
+confirmation wording live in ONE place so the two surfaces cannot drift.
+
+**⚠️ THE ID NUMBER IS NOT A DOSSIER FIELD, AND SHOULD NOT BECOME ONE.** The
+dossier selects `idNumberEncrypted` only to derive `hasIdNumber` and strips it
+before responding; the number itself comes from `GET
+/admin/users/:id/id-number`, which decrypts with `decryptSaIdNumber()` and
+**writes an `AdminAuditEvent` on every reveal**. The audit is the point: it is the
+most sensitive field we hold outside the documents, and the log answers "who
+looked at whose ID". A key rotation makes the value undecryptable and that is
+reported as such — never as "no ID number", which is a different and actionable
+wrong conclusion.
+
+**⚠️ THE BACKEND ON THIS BOX RUNS COMPILED `dist/`, NOT `--watch`.** Source
+changes are invisible to the running API until `npm run build` + restart. Half an
+hour was spent staring at a profile that showed "email not verified" for a user
+whose row says otherwise — the new select simply was not deployed yet.
+
+## 2026-09-22 (cont.) — THE WARDEN ADMIN PANEL (the new `/admin`)
+
+**NOTHING DEPLOYED.** Same session, same branch, working tree only.
+
+The Desk's replacement is built as a from-scratch dark neon PWA. Design mockup
+and spec live at `docs/design/admin-pwa/` (+ a live copy at
+`frontend/public/admin-mockup.html`); the real panel is under `frontend/app/admin/`.
+
+**What exists now**
+
+- `/admin` → redirects to `/admin/warden`; `/admin/login` is outside the gate.
+- Five tabs: **Warden** (`/admin/warden`), **Money** (`/admin/money`),
+  **People** (`/admin/people`), **Operate** (`/admin/operate`),
+  **Insights** (`/admin/insights`).
+- It is its **own installable PWA**: `app/admin/manifest.webmanifest/route.ts`
+  with id/start_url `/admin/warden` and scope `/admin/`, so "Add to Home Screen"
+  installs Warden rather than the shop.
+- Theme is scoped to `.admin-os` in `app/admin/admin.css`; nothing touches
+  `:root`, and `html:has(.admin-os)` repaints the canvas so the white shop
+  ground never shows through. The global box-shadow kill switch still applies —
+  every glow class restates `box-shadow !important` on a class to outrank `*`.
+- Session gate is a component that runs (`components/admin/admin-session.tsx`),
+  not an exported helper; `AdminJwtGuard` reads a Bearer token, so
+  `lib/admin-api.ts` owns the token store and a single-flight refresh.
+- Writes are gated on role (SUPERADMIN only) and go through
+  `ReasonDialog`/`ConfirmDialog`; danger flags require 15+ characters, mirroring
+  the backend.
+- Polling only (no websockets): attention queue 15s, pulse/alerts/services/queues
+  30s, crons/activity 60s, analytics 60–120s, settings 120s.
+
+**The Warden card is honest about what is not wired.** `WardenDaemonCard` probes
+`/admin/warden/board` once and says "NOT WIRED" when it 404s — because the
+standalone `warden/` daemon's **backend proxy is still not rebuilt** (it was
+deleted with the Desk). Rebuilding that proxy is the main open backend task;
+until then the daemon's proposals and red gates cannot appear in the panel.
+
+**🚨 NEVER PUT A `z-index` ON `.adm-col`, AND THE AMBIENT GRID IS A BACKGROUND
+FOR THAT REASON.** The operator reported drawer buttons "obstructed by the
+navbar". Cause: the ambient mesh was a `position: fixed` `::before` at
+`z-index: 0`, which forced `.adm-col` into a stacking context (`z-index: 1`) to
+sit above it. The bottom tab bar is a **sibling** of `.adm-col` at `z-index:
+200`, so it painted over that whole subtree — including drawers and dialogs
+whose own `z-index: 500` was trapped inside it. Measured with
+`elementFromPoint`: the tab bar won the overlap and **"Clear strikes" and
+"Erase data" were underneath it** — visible, untappable. Fixed by painting the
+mesh as `.admin-os`'s own `background-image` (`background-attachment: fixed`)
+and deleting both the pseudo-element and the wrapper's z-index. Any future
+decorative layer must go on the wrapper's background, not on a child element.
+
+**⚠️ DRAWERS MOUNT ONLY WHILE OPEN, AND THEIR BASE STATE IS VISIBLE.** The
+operator found "windows generated off screen" on the People board. Two causes,
+both fixed: (1) Money and Operate kept their drawers mounted permanently and
+parked below the viewport for the exit animation — now they render nothing when
+closed, and the entrance is a CSS keyframe with `fill-mode: backwards` so the
+base state stays on-screen even if the animation never runs; (2) the drag
+handle was a 5px sliver, so grabbing the sheet did nothing — the whole header
+now drags (`.adm-grab`, `touch-action: none`, `user-select: none`), and People
+and Money were moved onto the shared `AdminDrawer` so all three boards have the
+same drag, Escape and focus-trap behaviour. **Never restore a resting
+`transform: translateY(100%)`** — that is the off-screen window.
+
+**⚠️ A FAILED ACTION MUST SAY SO.** "Reveal ID" did nothing when tapped: the
+KYC route answers 404 "No stored file for this user. It may still be on the old
+CDN" and the handler swallowed it. `adminFetchBlob` now parses the backend's
+message, and the reveal buttons have a busy state plus an inline reason. Any
+new admin fetch must follow the same rule — a silent catch reads to the
+operator as a broken button.
+
+**⚠️ NO SETTINGS TABLE IN THE PANEL, AND DO NOT RE-ADD ONE.** Insights first
+shipped the runtime flag registry as an on/off board. The operator removed it on
+sight (2026-09-22): those flags are rules the codebase has already decided — the
+community feed's moderation posture, the motivation writer's gate, the licence
+vault's master switch — and a decided rule must not sit behind an off switch in
+an operator screen, because the toggle implies the decision is still open and a
+mis-tap can silently stop a statutory workflow. `PATCH /admin/settings/:key` and
+the registry still exist for deliberate deploy-time changes; the UI does not
+surface them. Insights is analytics only: KPIs, sales velocity, sales by
+category, top makes/models. The Warden's "services below alarm" row therefore
+went from a link to a plain count — there is no longer a board to land on.
+
+**Verified:** frontend `tsc --noEmit` exit 0; `npm test` 110 files / 1445 pass;
+`npm run build` exit 0 with all six admin routes emitted
+(`warden|money|people|operate|insights|login`). Login was exercised against the
+running backend and returned the backend's own credential error, so the auth
+wiring is proven end-to-end; the gated boards have **not** been eyeballed yet
+because the local admin password is not the seed default. Sign in at
+`http://localhost:3000/admin/login` to review them.
+
+## 2026-09-22 — THE DESK IS OUT; FOUR PILLARS ONLY (local, uncommitted)
+
+**NOTHING DEPLOYED.** Branch `feat/takealot-ux-parity`, working tree only.
+
+Goal: leave only Marketplace, Auctions, The Armory and Community. The route and
+surface audit found almost nothing else removable — the help, legal,
+condition-guide, witness and `/t/[code]` shortlink routes are all live/linked,
+and the operator said leave the footer intact — so the real removal is the Desk:
+
+- Backend: `src/desk/` (incl. `warden.*`, `desk-payouts`, `desk-whatsapp`) and
+  its `app.module.ts` entries deleted. `src/ballistics/` deleted (orphaned; no
+  caller). `ask-gg` trimmed to `POST /ask-gg/identify-listing` only — the admin
+  KB + page-guide editors went with the Desk.
+- Frontend: all of `app/admin/**`, `components/desk/**`, `lib/desk-*.ts` (+
+  specs), `scripts/desk-guard.cjs`, `desk-cutover.cjs`, `make-desk-icons.py`,
+  the four `public/icon-desk-*.png`, and the `desk:guard`/`desk:cutover`
+  scripts removed. The `build` script no longer runs the desk gates.
+- `app/sw.ts` decoupled from `lib/desk-offline.ts`: the shop's fallback rule
+  moved to the new `lib/sw-offline.ts` (+ spec). The `/admin` NetworkOnly route
+  and the `/admin` fallback carve-out are kept as insurance for the rebuild.
+
+**⚠️ SELLER PAYOUTS ARE PAUSED BY DESIGN.** The Desk was the only trigger for
+`ManualPaymentsService.getPayoutsDue()` → `OzowService.createPayout()`; the old
+FNB batch cron was already gone (`tasks.service.ts`). The operator chose to
+pause payouts until the rebuilt Desk exists. The connectors themselves stay:
+`ManualPaymentsModule`, `OzowService`, Bob Go, Zoho.
+
+**Prisma orphans kept deliberately** (no migration): `Deal`, `DealPurchaseOrder`,
+`Message`, `Competition`, and the ask-gg conversation/message/KbEntry/
+GuideOverride tables. Nothing writes them.
+
+**Verified:** backend `tsc --noEmit` exit 0; frontend `typecheck` exit 0 after
+clearing a stale `.next/types`; frontend suite 110 files / 1445 pass; frontend
+production build exit 0 with **no `/admin` routes emitted**; backend jest 4831
+pass with **one pre-existing failure** in
+`motivations/motivation-consent-pack.spec.ts:100` (untouched area).
 
 ## 2026-09-15 — VAULT DELETION LEAVES NO CRUMBS; A PACK REVIEW FOUND SEVEN MORE
 

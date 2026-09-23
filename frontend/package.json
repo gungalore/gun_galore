@@ -4,14 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "node scripts/desk-guard.cjs && node scripts/desk-cutover.cjs && node scripts/theme-sync.cjs && next build --webpack",
+    "build": "node scripts/theme-sync.cjs && next build --webpack",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "desk:guard": "node scripts/desk-guard.cjs",
-    "typecheck": "tsc --noEmit",
-    "desk:cutover": "node scripts/desk-cutover.cjs --report"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@serwist/next": "^9.5.11",

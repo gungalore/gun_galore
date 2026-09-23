@@ -1,15 +1,27 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { sniffMime } from '../common/sniff-mime';
 import {
   DiditCreatedSession,
   DiditDecision,
   DiditError,
-  DiditOtpResult,
+  DiditMediaResult,
+  DiditSessionImageKind,
 } from './didit.types';
 
 const DEFAULT_BASE_URL = 'https://verification.didit.me';
 /** Didit's own freshness window for a webhook signature. */
 const WEBHOOK_MAX_SKEW_SECONDS = 300;
+/** A media download is a stream of one image; 15s is generous, not optimistic. */
+const MEDIA_TIMEOUT_MS = 15_000;
+/** Refuse to buffer anything larger — a document capture is a few megabytes. */
+const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
+/** Only what the dossier route is willing to stream back as an image. */
+const STREAMABLE_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
 
 export interface CreateSessionInput {
   /** User.id. Binds the session to our member and gives us webhook routing. */
@@ -226,6 +238,95 @@ export class DiditService implements OnModuleInit {
     );
   }
 
+  /**
+   * Fetch one of a member's verification images, fresh, from Didit.
+   *
+   * ⚠️ THIS IS A VIEW, NOT A STORE, AND THE DIFFERENCE IS LOAD-BEARING. We
+   * deliberately keep no copy of the identity document, the selfie or the
+   * liveness video. The URLs in a decision are presigned for four hours, so
+   * "save the URL" is not an option — this re-requests the decision, which
+   * mints new links, and streams the bytes back. That is why an admin can open
+   * a two-year-old verification and still see the card.
+   *
+   * It lives HERE, not in the caller, because `didit/` is the only module
+   * allowed to parse a Didit response (see docs/ARCHITECTURE.md §8.1). A
+   * second place that knew which field holds the selfie would be the second
+   * place that could get it wrong.
+   */
+  async fetchSessionImage(
+    sessionId: string,
+    kind: DiditSessionImageKind,
+  ): Promise<DiditMediaResult> {
+    let decision: DiditDecision;
+    try {
+      decision = await this.getDecision(sessionId);
+    } catch (err) {
+      if (err instanceof DiditError) {
+        // ⚠️ A 403 HERE HAS TWO CAUSES AND THEY ARE INDISTINGUISHABLE FROM THE
+        // OUTSIDE, so both are logged rather than guessed at:
+        //   · the key lacks the `read:sessions` privilege (Didit answers
+        //     "You do not have permission to perform this action"), or
+        //   · the key belongs to a DIFFERENT application than the one that
+        //     created the session — a sandbox key against a live session
+        //     (Didit answers "Authentication credentials were not provided or
+        //     are invalid", because for that session's app this key is unknown).
+        // The operator needs the provider's own words to tell them apart; the
+        // caller's message must therefore name both possibilities.
+        if (err.httpStatus === 403 || err.httpStatus === 401) {
+          this.logger.warn(
+            `Didit refused the decision read for session ${sessionId} (HTTP ${err.httpStatus}): ${err.message}`,
+          );
+        }
+        // 404 — the session is not there any more (purged, or created against
+        // another environment).
+        if (err.httpStatus === 404) return { ok: false, reason: 'gone' };
+        if (err.httpStatus === 403) return { ok: false, reason: 'forbidden' };
+      }
+      return { ok: false, reason: 'unreachable' };
+    }
+
+    const url = pickSessionImageUrl(decision, kind);
+    if (!url) return { ok: false, reason: 'no_image' };
+
+    return this.fetchImageBytes(url);
+  }
+
+  /** Download the signed URL's bytes, refusing anything that is not an image. */
+  private async fetchImageBytes(url: string): Promise<DiditMediaResult> {
+    let res: Response;
+    try {
+      // `https` only: the URL comes from Didit's own payload, but this process
+      // is carrying the request and a downgrade to plain http is not a thing
+      // an identity image may travel over.
+      if (!/^https:\/\//i.test(url)) return { ok: false, reason: 'not_an_image' };
+      // Redirects are FOLLOWED on purpose: S3's global host answers with a
+      // 307 to the regional one and the signature rides along in the query.
+      res = await fetch(url, { signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS) });
+    } catch {
+      return { ok: false, reason: 'unreachable' };
+    }
+
+    if (!res.ok) {
+      // An expired or already-used signature is a 403 from S3, which for our
+      // purposes means the same thing as a purged session to the admin.
+      return { ok: false, reason: res.status === 403 ? 'gone' : 'unreachable' };
+    }
+
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.length === 0) return { ok: false, reason: 'no_image' };
+    if (bytes.length > MAX_MEDIA_BYTES) return { ok: false, reason: 'not_an_image' };
+
+    // ⚠️ THE DECLARED TYPE IS A CLAIM. Sniffed from the bytes, and only the
+    // three image types we are willing to stream back through the dossier are
+    // accepted — a PDF (or anything else) is refused rather than served.
+    const mimeType = sniffMime(bytes, '');
+    if (!STREAMABLE_IMAGE_TYPES.has(mimeType)) {
+      return { ok: false, reason: 'not_an_image' };
+    }
+
+    return { ok: true, bytes, mimeType };
+  }
+
   // ── Webhook signature ────────────────────────────────────────────────
 
   /**
@@ -288,9 +389,36 @@ export class DiditService implements OnModuleInit {
   }
 }
 
+/**
+ * Which URL in a decision holds the image the admin asked for.
+ *
+ * ⚠️ THE SELFIE IS THE LIVENESS REFERENCE IMAGE, NOT THE DOCUMENT PORTRAIT.
+ * `id_verifications[].portrait_image` is the face Didit crops OFF THE CARD —
+ * a picture of a photograph, which is not what "show me the person" means and
+ * is trivially spoofable. The live capture is `liveness_checks[].reference_image`.
+ *
+ * For the document, the `full_` variants are the uncropped capture and are
+ * preferred, because the point of looking is to READ the card.
+ */
+function pickSessionImageUrl(
+  decision: DiditDecision,
+  kind: DiditSessionImageKind,
+): string | null {
+  if (kind === 'selfie') {
+    for (const check of decision.liveness_checks ?? []) {
+      if (check?.reference_image) return check.reference_image;
+    }
+    return null;
+  }
+  for (const id of decision.id_verifications ?? []) {
+    const url = id?.full_front_image ?? id?.front_image;
+    if (url) return url;
+  }
+  return null;
+}
+
 /** Constant-time compare that does not leak length through an early return. */
-function constantTimeEquals(a: string, b: string): boolean {
-  const ab = Buffer.from(a, 'utf8');
+function constantTimeEquals(a: string, b: string): boolean {  const ab = Buffer.from(a, 'utf8');
   const bb = Buffer.from(b, 'utf8');
   if (ab.length !== bb.length) {
     // Still burn a comparison so a length mismatch is not faster than a

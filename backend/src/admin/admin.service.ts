@@ -5,6 +5,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
@@ -17,6 +19,8 @@ import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { sniffMime } from '../common/sniff-mime';
+import { DiditService } from '../didit/didit.service';
+import { decryptSaIdNumber } from '../common/id-crypto';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { OzowService } from '../payments/ozow.service';
 import { SmsService } from '../sms/sms.service';
@@ -72,6 +76,9 @@ export class AdminService {
     // AFTER our DB write, and the userId tombstone AFTER the webhook lands),
     // and a second implementation would drift out of step with it.
     private readonly closures: AccountClosureService,
+    // @Global (DiditModule). readKycFile() falls back to this when we hold no
+    // stored copy — the identity images live at Didit and are signed on demand.
+    private readonly didit: DiditService,
   ) {}
 
   // ---------------------------------------------------------------
@@ -1033,6 +1040,16 @@ export class AdminService {
    * Only the two. There is no path here that takes an arbitrary storage key —
    * the key is looked up from the user row, so an admin cannot read another
    * namespace by guessing.
+   *
+   * ⚠️ WE STORE NOTHING ANY MORE, SO THE FALLBACK IS THE REAL PATH. The retired
+   * VerifyNow/Claude flow wrote an encrypted copy of the document and the
+   * selfie to disk; the Didit flow does not, and the privacy policy now says so
+   * ("we keep no copy"). So for every seller verified since the cut-over the
+   * storage keys are null and the image has to come from Didit: re-request the
+   * decision (which mints fresh 4-hour links), stream the bytes, store nothing.
+   *
+   * The stored-key branch is kept because it is one line and any pre-cut-over
+   * row still resolves through it — but it is the exception now, not the rule.
    */
   async readKycFile(
     userId: string,
@@ -1047,21 +1064,135 @@ export class AdminService {
       },
     });
     if (!u) throw new NotFoundException('User not found');
-    const key =
-      which === 'id' ? u.kycIdStorageKey : u.kycSelfieStorageKey;
-    if (!key) {
+
+    const key = which === 'id' ? u.kycIdStorageKey : u.kycSelfieStorageKey;
+    if (key) {
+      const bytes = await this.files.read(key);
+      return {
+        bytes,
+        // A selfie is always a JPEG (it is captured from a canvas); a document
+        // can be any of the four the uploader accepts, so its type is stored.
+        mimeType:
+          which === 'id' ? u.kycIdMimeType || sniffMime(bytes) : 'image/jpeg',
+      };
+    }
+
+    // ── No stored copy: ask Didit, which still holds the session ──────────
+    const sessions = await this.prisma.diditVerification.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      // A member usually has one session. Retries can leave a handful; past
+      // that, walking the list is not a lookup any more.
+      take: 5,
+      select: { diditSessionId: true },
+    });
+    if (sessions.length === 0) {
       throw new NotFoundException(
-        'No stored file for this user. It may still be on the old CDN — see the legacy link.',
+        'This member has no identity images on record — they were never verified, or their verification did not capture an image.',
       );
     }
-    const bytes = await this.files.read(key);
-    return {
-      bytes,
-      // A selfie is always a JPEG (it is captured from a canvas); a document
-      // can be any of the four the uploader accepts, so its type is stored.
-      mimeType:
-        which === 'id' ? u.kycIdMimeType || sniffMime(bytes) : 'image/jpeg',
-    };
+
+    const kind = which === 'id' ? 'id_front' : 'selfie';
+    let lastReason: string | null = null;
+    for (const session of sessions) {
+      const media = await this.didit.fetchSessionImage(session.diditSessionId, kind);
+      if (media.ok) return { bytes: media.bytes, mimeType: media.mimeType };
+      lastReason = media.reason;
+      // ⚠️ A session-specific miss is worth retrying on an older session; a
+      // credential or network failure is not, and retrying it just multiplies
+      // the latency of a guaranteed failure.
+      if (media.reason === 'forbidden' || media.reason === 'unreachable') break;
+    }
+
+    throw this.kycMediaError(lastReason);
+  }
+
+  /** Say precisely why the image could not be produced — each cause reads differently. */
+  private kycMediaError(reason: string | null): HttpException {
+    switch (reason) {
+      case 'gone':
+        return new NotFoundException(
+          'Didit no longer holds this verification session, so the image is not available. This is expected once their retention period has passed.',
+        );
+      case 'forbidden':
+        // ⚠️ BOTH CAUSES, BECAUSE THE ERROR CANNOT TELL THEM APART (proven
+        // against the live API on 2026-09-22: one endpoint answers "no
+        // permission", the other "credentials invalid", for the same key).
+        // Naming only one sends the operator to fix the wrong thing.
+        return new ServiceUnavailableException(
+          'Didit refused to let this deployment read that verification session. Two causes look identical from here: the API key in use does not have the “read sessions” privilege, or it belongs to a different Didit application than the one that created the session (for example a sandbox key against a live session). Check the key’s privileges and its environment in the Didit console.',
+        );
+      case 'unreachable':
+        return new ServiceUnavailableException(
+          'Could not reach Didit to retrieve the image. Try again shortly.',
+        );
+      case 'not_an_image':
+        return new NotFoundException(
+          'Didit returned something that is not an image for this verification.',
+        );
+      default:
+        return new NotFoundException(
+          'That verification did not capture this image, or Didit is configured not to return it.',
+        );
+    }
+  }
+
+  /**
+   * Hand an admin the member's SA ID number, decrypted, and record that they saw it.
+   *
+   * ⚠️ THIS IS THE FIELD THE DOSSIER GET WITHHOLDS ON PURPOSE, so it has its own
+   * route and its own audit row. `idNumberEncrypted` exists for the SAPS 534
+   * prefill and the identity cross-check; the human case is an admin checking a
+   * seller's bank details or paperwork against the person we verified. Every
+   * reveal writes an AdminAuditEvent — the audit IS the feature, not a
+   * courtesy, because the number is the single most sensitive field we hold
+   * outside the documents themselves.
+   *
+   * The audit reason is fixed rather than operator-typed: the question the log
+   * answers is "who looked at whose ID number, and when", and a required
+   * free-text box in front of a button that should be instant would just train
+   * people to type a full stop.
+   */
+  async revealIdNumber(
+    userId: string,
+    adminId: string,
+  ): Promise<{ idNumber: string; masked: string }> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { idNumberEncrypted: true },
+    });
+    if (!u) throw new NotFoundException('User not found');
+    if (!u.idNumberEncrypted) {
+      throw new NotFoundException(
+        'No ID number is held for this member. It is captured when a seller completes their profile.',
+      );
+    }
+
+    let idNumber: string;
+    try {
+      idNumber = decryptSaIdNumber(u.idNumberEncrypted);
+    } catch {
+      // ⚠️ A KEY ROTATION MAKES STORED CIPHERTEXT UNREADABLE, and that is a real
+      // operational state rather than a 500. Say so plainly: a blank field would
+      // read as "this member never gave an ID number", which is a different and
+      // much more dangerous conclusion.
+      this.logger.error(
+        `ID number decryption failed for user ${userId} — key rotated, or the value is corrupt.`,
+      );
+      throw new ServiceUnavailableException(
+        'The stored ID number could not be decrypted — the encryption key may have changed. Do not read this as "no ID number".',
+      );
+    }
+
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'USER_ID_NUMBER_REVEAL',
+      resourceType: 'User',
+      resourceId: userId,
+      reason: 'ID number revealed from the member profile',
+    });
+
+    return { idNumber, masked: maskSaIdNumber(idNumber) };
   }
 
   async getUserDossier(userId: string) {
@@ -1079,9 +1210,10 @@ export class AdminService {
       //    exists precisely so someone can watch without being trusted to act
       //    — could read all of it.
       //
-      // The frontend narrowed this at the TYPE layer (see MemberUser in
-      // lib/desk-member.ts, whose own comment lists these as "deliberately
-      // absent"). A type does not stop bytes: the full row still crossed the
+      // The Desk's frontend narrowed this at the TYPE layer (MemberUser in
+      // lib/desk-member.ts, removed with the Desk on 2026-09-22; its comment
+      // listed these as "deliberately absent"). A type does not stop bytes:
+      // the full row still crossed the
       // wire into the network tab, any body-logging proxy, and any XSS on the
       // admin panel. Same lesson as the listing-detail leak — fix it at the
       // SELECT, never at the render.
@@ -1140,6 +1272,60 @@ export class AdminService {
         dispatchStrikes: true,
         sellerRejectStrikes: true,
         sellingBannedAt: true,
+        lastStrikeAt: true,
+
+        // ── The full-profile fields (2026-09-22) ──────────────────────────
+        // The dossier was built for a narrow drawer and left a lot of the
+        // member record unreadable. These are what the full profile page needs
+        // to show "what is verified and what is not" without a second call.
+        emailVerifiedAt: true,
+        avatarUrl: true,
+        lastLoginAt: true,
+        failedLoginCount: true,
+        lockedUntil: true,
+
+        addrBuilding: true,
+        addrStreet: true,
+        addrAddress2: true,
+        addrSuburb: true,
+        addrCity: true,
+        addrPostalCode: true,
+        addrProvince: true,
+        addrLat: true,
+        addrLng: true,
+
+        notifyEmailEnabled: true,
+        notifySmsEnabled: true,
+        notifyOffersEnabled: true,
+        notifyWhatsappEnabled: true,
+        notifyFallbackChannel: true,
+        channelPrefsPromptedAt: true,
+
+        termsAcceptedAt: true,
+        privacyConsentAt: true,
+        ageAffirmedAt: true,
+        consentPolicyVersion: true,
+        marketingConsentAt: true,
+        kycConsentGivenAt: true,
+        documentVaultConsentVersion: true,
+        documentVaultConsentAt: true,
+        documentVaultConsentWithdrawnAt: true,
+
+        kycFaceMatchStatus: true,
+        bankBranchCode: true,
+        bankAccountType: true,
+        bankVerificationId: true,
+        zohoContactId: true,
+
+        defaultWeightGrams: true,
+        defaultLengthCm: true,
+        defaultWidthCm: true,
+        defaultHeightCm: true,
+
+        // ⚠️ PRESENCE ONLY. Selected so the profile can answer "is there an ID
+        // number?", then stripped before the response leaves this function —
+        // see below. Never ship the ciphertext.
+        idNumberEncrypted: true,
 
         // Relation names live on the User model — listings,
         // buyerTransactions, sellerTransactions, offersPlaced (NOT
@@ -1155,6 +1341,17 @@ export class AdminService {
       },
     });
     if (!user) throw new NotFoundException('User not found');
+
+    // ⚠️ THE CIPHERTEXT NEVER LEAVES THIS FUNCTION. `idNumberEncrypted` is
+    // selected only to answer "is there one?" — the number itself is fetched on
+    // demand by revealIdNumber(), which writes an audit row. Shipping the
+    // ciphertext to the browser would put the member's ID one key-rotation away
+    // from being readable in a network tab, for no benefit.
+    const { idNumberEncrypted, ...profile } = user;
+    const profileWithFlags = {
+      ...profile,
+      hasIdNumber: !!idNumberEncrypted,
+    };
 
     // Pull every adjacent dataset in parallel. Each query is bounded
     // so a power-seller with 5,000 listings doesn't melt the page.
@@ -1345,7 +1542,7 @@ export class AdminService {
     ]);
 
     return {
-      user,
+      user: profileWithFlags,
       listings,
       buyerTransactions,
       sellerTransactions,
@@ -1799,11 +1996,11 @@ export class AdminService {
             // 🚨 bankAccountNumber / bankAccountHolder / bankName WERE HERE
             // AND ARE GONE. They are stored in plaintext (deliberately, see
             // schema.prisma), and this is the ORDER drawer — it judges a sale,
-            // not a payout, and never renders them. lib/desk-order.ts's own
-            // comment already said the endpoint "hands back far more about the
-            // two members than this drawer has any business showing" and named
-            // these exactly — but it fixed it by not declaring them in the
-            // TypeScript types, which does not stop the account number
+            // not a payout, and never renders them. The Desk's former
+            // lib/desk-order.ts already said the endpoint "hands back far more
+            // about the two members than this drawer has any business showing"
+            // and named these exactly — but it fixed it by not declaring them
+            // in the TypeScript types, which does not stop the account number
             // crossing the wire on every load of the drawer.
             //
             // `bankVerifiedAt` is what a money question here actually needs:
@@ -3038,4 +3235,23 @@ export class AdminService {
 
     return { ...updated, sessionsEnded: sessionsEnded.count };
   }
+}
+
+/**
+ * A 13-digit SA ID with the middle hidden: `840912••••083`.
+ *
+ * ⚠️ THE MASK IS NOT SECURITY — the profile withholds the number itself, and
+ * this only decides how much is shown back once it HAS been revealed. Six
+ * leading digits are the date of birth, which the admin already sees as
+ * `dateOfBirth`; the trailing three are the citizenship/checksum end. The
+ * middle four are the sequence that identifies the person.
+ *
+ * Anything that is not a clean 13-digit value is masked entirely rather than
+ * partly — an unexpected length means the stored value surprised us, and
+ * half-showing something we did not expect is worse than showing nothing.
+ */
+function maskSaIdNumber(raw: string): string {
+  const digits = (raw ?? '').replace(/\D/g, '');
+  if (digits.length !== 13) return '•••••••••••••';
+  return `${digits.slice(0, 6)}••••${digits.slice(-3)}`;
 }

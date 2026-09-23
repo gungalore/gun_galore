@@ -1,0 +1,1768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>ALL OUTDOOR // WARDEN ADMIN OS</title>
+  <style>
+    :root {
+      --bg-black: #030507;
+      --bg-surface: #0a0e12;
+      --bg-card: rgba(16, 22, 28, 0.85);
+      --bg-card-hover: rgba(24, 34, 44, 0.9);
+      --bg-glass: rgba(12, 18, 24, 0.7);
+      
+      --neon-cyan: #00F0FF;
+      --neon-cyan-glow: rgba(0, 240, 255, 0.4);
+      --neon-green: #00FF88;
+      --neon-green-glow: rgba(0, 255, 136, 0.45);
+      --neon-amber: #FFB800;
+      --neon-amber-glow: rgba(255, 184, 0, 0.45);
+      --neon-red: #FF0055;
+      --neon-red-glow: rgba(255, 0, 85, 0.5);
+      --neon-purple: #B026FF;
+      --neon-purple-glow: rgba(176, 38, 255, 0.4);
+      
+      --text-white: #FFFFFF;
+      --text-muted: #8E9CA4;
+      --text-dim: #4B5963;
+      
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-bright: rgba(255, 255, 255, 0.18);
+      --font-mono: 'SF Mono', 'Fira Code', 'Roboto Mono', Menlo, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: #000204;
+      font-family: var(--font-sans);
+      color: var(--text-white);
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-image: 
+        radial-gradient(circle at 50% 0%, rgba(0, 240, 255, 0.08) 0%, transparent 60%),
+        radial-gradient(circle at 10% 90%, rgba(176, 38, 255, 0.06) 0%, transparent 50%);
+    }
+
+    /* Ambient Cyber Background Grid */
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      background-size: 36px 36px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Top Device Mode Toolbar */
+    .device-switcher {
+      position: fixed;
+      top: 16px;
+      z-index: 1000;
+      display: flex;
+      gap: 8px;
+      background: rgba(10, 14, 18, 0.85);
+      backdrop-filter: blur(12px);
+      padding: 6px;
+      border-radius: 999px;
+      border: 1px solid var(--border-bright);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+    }
+
+    .device-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .device-btn.active {
+      background: rgba(0, 240, 255, 0.15);
+      color: var(--neon-cyan);
+      box-shadow: 0 0 12px var(--neon-cyan-glow);
+      border: 1px solid var(--neon-cyan);
+    }
+
+    .device-btn:hover:not(.active) {
+      color: var(--text-white);
+    }
+
+    /* Device Container */
+    .pwa-viewport {
+      position: relative;
+      z-index: 10;
+      background: var(--bg-black);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Phone Frame Mode */
+    .pwa-viewport.mode-mobile {
+      width: 400px;
+      height: 840px;
+      max-height: 92vh;
+      border-radius: 48px;
+      border: 4px solid #222c36;
+      box-shadow: 
+        0 0 0 2px #0a0e14,
+        0 20px 60px rgba(0, 0, 0, 0.9),
+        0 0 40px rgba(0, 240, 255, 0.15);
+    }
+
+    /* Tablet / Desktop Frame Mode */
+    .pwa-viewport.mode-desktop {
+      width: 1180px;
+      height: 860px;
+      max-height: 92vh;
+      border-radius: 20px;
+      border: 2px solid #222c36;
+      box-shadow: 
+        0 20px 70px rgba(0,0,0,0.95),
+        0 0 50px rgba(0, 240, 255, 0.12);
+    }
+
+    /* Dynamic Island Notch (Phone only) */
+    .notch {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 110px;
+      height: 28px;
+      background: #000;
+      border-radius: 20px;
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      box-shadow: 0 0 2px rgba(255,255,255,0.1);
+    }
+
+    .notch-camera {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #0d1218;
+      box-shadow: inset 0 0 3px #00F0FF;
+    }
+
+    .pwa-viewport.mode-desktop .notch {
+      display: none;
+    }
+
+    /* iOS Status Bar */
+    .status-bar {
+      height: 48px;
+      padding: 12px 24px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-white);
+      flex-shrink: 0;
+      z-index: 100;
+    }
+
+    .status-icons {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      font-size: 12px;
+    }
+
+    /* App Header */
+    .app-header {
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(8, 12, 16, 0.85);
+      backdrop-filter: blur(20px);
+      z-index: 50;
+      flex-shrink: 0;
+    }
+
+    .brand-cluster {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-badge {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #00F0FF, #B026FF);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 15px var(--neon-cyan-glow);
+    }
+
+    .brand-title {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: linear-gradient(90deg, #FFFFFF 40%, var(--neon-cyan) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-sub {
+      font-size: 10px;
+      color: var(--neon-cyan);
+      font-family: var(--font-mono);
+      letter-spacing: 0.12em;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .live-pulse-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 255, 136, 0.1);
+      border: 1px solid rgba(0, 255, 136, 0.4);
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      color: var(--neon-green);
+      font-family: var(--font-mono);
+      font-weight: 600;
+      box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
+    }
+
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--neon-green);
+      box-shadow: 0 0 8px var(--neon-green);
+      animation: pulseGlow 1.8s infinite;
+    }
+
+    @keyframes pulseGlow {
+      0% { transform: scale(0.9); opacity: 0.7; }
+      50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 14px var(--neon-green); }
+      100% { transform: scale(0.9); opacity: 0.7; }
+    }
+
+    .god-badge {
+      background: linear-gradient(90deg, rgba(255, 0, 85, 0.2), rgba(176, 38, 255, 0.2));
+      border: 1px solid var(--neon-red);
+      color: #FFF;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 4px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      box-shadow: 0 0 10px var(--neon-red-glow);
+    }
+
+    /* Scrollable Tab Content Container */
+    .tab-viewport {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+    }
+
+    .tab-viewport::-webkit-scrollbar {
+      width: 4px;
+    }
+    .tab-viewport::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.1);
+      border-radius: 4px;
+    }
+
+    .tab-pane {
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+      animation: tabFadeIn 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+    }
+
+    .tab-pane.active {
+      display: flex;
+    }
+
+    @keyframes tabFadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Cards & Containers */
+    .card {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 18px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-bright);
+      background: var(--bg-card-hover);
+    }
+
+    .card.neon-border-cyan {
+      border-color: rgba(0, 240, 255, 0.3);
+      box-shadow: 0 0 18px rgba(0, 240, 255, 0.08);
+    }
+
+    .card.neon-border-amber {
+      border-color: rgba(255, 184, 0, 0.3);
+      box-shadow: 0 0 18px rgba(255, 184, 0, 0.08);
+    }
+
+    .card.neon-border-red {
+      border-color: rgba(255, 0, 85, 0.35);
+      box-shadow: 0 0 20px rgba(255, 0, 85, 0.1);
+    }
+
+    .card.neon-border-purple {
+      border-color: rgba(176, 38, 255, 0.35);
+      box-shadow: 0 0 20px rgba(176, 38, 255, 0.1);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-white);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* KPI Grid */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .kpi-tile {
+      background: rgba(10, 16, 22, 0.8);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .kpi-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-weight: 600;
+    }
+
+    .kpi-val {
+      font-size: 18px;
+      font-weight: 800;
+      color: #FFF;
+      font-family: var(--font-mono);
+      letter-spacing: -0.02em;
+    }
+
+    .kpi-trend {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .trend-up { color: var(--neon-green); }
+    .trend-down { color: var(--neon-red); }
+
+    /* Action List Items (Cards that can be tapped) */
+    .action-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .action-row:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border-bright);
+      transform: translateX(2px);
+    }
+
+    .action-row:active {
+      transform: scale(0.98);
+    }
+
+    .action-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .action-icon-box {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .icon-box-cyan { background: rgba(0, 240, 255, 0.1); color: var(--neon-cyan); border: 1px solid rgba(0, 240, 255, 0.3); }
+    .icon-box-green { background: rgba(0, 255, 136, 0.1); color: var(--neon-green); border: 1px solid rgba(0, 255, 136, 0.3); }
+    .icon-box-amber { background: rgba(255, 184, 0, 0.1); color: var(--neon-amber); border: 1px solid rgba(255, 184, 0, 0.3); }
+    .icon-box-red { background: rgba(255, 0, 85, 0.1); color: var(--neon-red); border: 1px solid rgba(255, 0, 85, 0.3); }
+    .icon-box-purple { background: rgba(176, 38, 255, 0.1); color: var(--neon-purple); border: 1px solid rgba(176, 38, 255, 0.3); }
+
+    .action-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .action-heading {
+      font-size: 13px;
+      font-weight: 700;
+      color: #FFF;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .action-caption {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .action-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    /* Badges & Pills */
+    .pill {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .pill-green { background: rgba(0, 255, 136, 0.12); color: var(--neon-green); border: 1px solid rgba(0, 255, 136, 0.4); }
+    .pill-amber { background: rgba(255, 184, 0, 0.12); color: var(--neon-amber); border: 1px solid rgba(255, 184, 0, 0.4); }
+    .pill-red { background: rgba(255, 0, 85, 0.12); color: var(--neon-red); border: 1px solid rgba(255, 0, 85, 0.4); }
+    .pill-purple { background: rgba(176, 38, 255, 0.12); color: var(--neon-purple); border: 1px solid rgba(176, 38, 255, 0.4); }
+    .pill-cyan { background: rgba(0, 240, 255, 0.12); color: var(--neon-cyan); border: 1px solid rgba(0, 240, 255, 0.4); }
+
+    /* Interactive Neon Buttons */
+    .btn {
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+      border: 1px solid transparent;
+      outline: none;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-neon-cyan {
+      background: rgba(0, 240, 255, 0.15);
+      border-color: var(--neon-cyan);
+      color: var(--neon-cyan);
+      box-shadow: 0 0 15px var(--neon-cyan-glow);
+    }
+    .btn-neon-cyan:hover {
+      background: var(--neon-cyan);
+      color: #000;
+      box-shadow: 0 0 25px var(--neon-cyan);
+    }
+
+    .btn-neon-green {
+      background: rgba(0, 255, 136, 0.15);
+      border-color: var(--neon-green);
+      color: var(--neon-green);
+      box-shadow: 0 0 15px var(--neon-green-glow);
+    }
+    .btn-neon-green:hover {
+      background: var(--neon-green);
+      color: #000;
+      box-shadow: 0 0 25px var(--neon-green);
+    }
+
+    .btn-neon-red {
+      background: rgba(255, 0, 85, 0.15);
+      border-color: var(--neon-red);
+      color: var(--neon-red);
+      box-shadow: 0 0 15px var(--neon-red-glow);
+    }
+    .btn-neon-red:hover {
+      background: var(--neon-red);
+      color: #FFF;
+      box-shadow: 0 0 25px var(--neon-red);
+    }
+
+    .btn-ghost {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border-subtle);
+      color: var(--text-white);
+    }
+    .btn-ghost:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--border-bright);
+    }
+
+    /* Filter Carousel (Draggable) */
+    .filter-scroll {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scroll-snap-type: x mandatory;
+    }
+
+    .filter-scroll::-webkit-scrollbar { display: none; }
+
+    .filter-chip {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      scroll-snap-align: start;
+      transition: all 0.2s;
+    }
+
+    .filter-chip.active {
+      background: rgba(0, 240, 255, 0.15);
+      border-color: var(--neon-cyan);
+      color: var(--neon-cyan);
+      box-shadow: 0 0 10px var(--neon-cyan-glow);
+    }
+
+    /* Toggle Switches (God Mode Settings) */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .toggle-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-width: 78%;
+    }
+
+    .toggle-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: #FFF;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .toggle-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 48px;
+      height: 28px;
+      flex-shrink: 0;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: #1e262e;
+      border: 1px solid var(--border-bright);
+      transition: .3s cubic-bezier(0.2, 0.8, 0.2, 1);
+      border-radius: 28px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #8E9CA4;
+      transition: .3s cubic-bezier(0.2, 0.8, 0.2, 1);
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: rgba(0, 240, 255, 0.2);
+      border-color: var(--neon-cyan);
+      box-shadow: 0 0 12px var(--neon-cyan-glow);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+      background-color: var(--neon-cyan);
+      box-shadow: 0 0 10px var(--neon-cyan);
+    }
+
+    input.danger:checked + .slider {
+      background-color: rgba(255, 0, 85, 0.25);
+      border-color: var(--neon-red);
+      box-shadow: 0 0 14px var(--neon-red-glow);
+    }
+
+    input.danger:checked + .slider:before {
+      background-color: var(--neon-red);
+      box-shadow: 0 0 10px var(--neon-red);
+    }
+
+    /* Bottom 5-Tab Bar (PWA Shell) */
+    .tab-bar {
+      height: 72px;
+      padding: 0 12px 14px;
+      background: rgba(8, 12, 16, 0.95);
+      backdrop-filter: blur(24px);
+      border-top: 1px solid var(--border-subtle);
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      align-items: center;
+      z-index: 200;
+      flex-shrink: 0;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      color: var(--text-muted);
+      cursor: pointer;
+      position: relative;
+      padding: 6px 0;
+      transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .tab-btn svg {
+      width: 22px;
+      height: 22px;
+      transition: transform 0.2s, stroke 0.2s;
+    }
+
+    .tab-btn span {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .tab-btn.active {
+      color: var(--neon-cyan);
+    }
+
+    .tab-btn.active svg {
+      stroke: var(--neon-cyan);
+      transform: scale(1.15) translateY(-2px);
+      filter: drop-shadow(0 0 8px var(--neon-cyan));
+    }
+
+    .tab-badge {
+      position: absolute;
+      top: 2px;
+      right: 18%;
+      background: var(--neon-red);
+      color: #FFF;
+      font-size: 9px;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 999px;
+      box-shadow: 0 0 8px var(--neon-red);
+    }
+
+    /* Interactive Drag-to-Dismiss Drawer */
+    .drawer-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(10px);
+      z-index: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      display: flex;
+      align-items: flex-end;
+    }
+
+    .drawer-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .drawer-sheet {
+      width: 100%;
+      max-height: 88%;
+      background: #090e13;
+      border-top: 1px solid var(--border-bright);
+      border-radius: 28px 28px 0 0;
+      padding: 12px 20px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      transform: translateY(100%);
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 -10px 40px rgba(0,0,0,0.8), 0 0 20px rgba(0, 240, 255, 0.15);
+      overflow-y: auto;
+    }
+
+    .drawer-overlay.open .drawer-sheet {
+      transform: translateY(0);
+    }
+
+    .drawer-handle-bar {
+      width: 44px;
+      height: 5px;
+      border-radius: 999px;
+      background: #2b3944;
+      align-self: center;
+      cursor: grab;
+      margin-bottom: 4px;
+    }
+
+    .drawer-handle-bar:active {
+      cursor: grabbing;
+      background: var(--neon-cyan);
+    }
+
+    /* Swipeable Alert Item Simulation */
+    .swipeable-card {
+      position: relative;
+      touch-action: pan-y;
+      transition: transform 0.2s ease;
+    }
+
+    .swipe-delete-bg {
+      position: absolute;
+      inset: 0;
+      background: var(--neon-green);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      color: #000;
+      font-weight: 800;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      justify-content: flex-start;
+      z-index: 1;
+    }
+
+    .swipeable-content {
+      position: relative;
+      z-index: 2;
+      background: #10161c;
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    /* Monospace Terminal / Code Box */
+    .terminal-box {
+      background: #040608;
+      border: 1px solid rgba(176, 38, 255, 0.4);
+      border-radius: 12px;
+      padding: 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #A3E635;
+      line-height: 1.5;
+      box-shadow: inset 0 0 12px rgba(0,0,0,0.8);
+      position: relative;
+      overflow-x: auto;
+    }
+
+    .terminal-box::before {
+      content: "WARDEN PROPOSAL // EXECUTION PAYLOAD";
+      display: block;
+      font-size: 9px;
+      color: var(--neon-purple);
+      letter-spacing: 0.1em;
+      margin-bottom: 6px;
+      font-weight: 800;
+    }
+
+    /* Live Toast */
+    .toast {
+      position: absolute;
+      bottom: 84px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(16, 24, 32, 0.95);
+      border: 1px solid var(--neon-cyan);
+      box-shadow: 0 0 20px var(--neon-cyan-glow);
+      color: #FFF;
+      padding: 10px 18px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 900;
+      white-space: nowrap;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="bg-grid"></div>
+
+  <!-- Viewport Switcher -->
+  <div class="device-switcher">
+    <button class="device-btn active" onclick="switchDevice('mobile')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+      iPhone 16 Pro
+    </button>
+    <button class="device-btn" onclick="switchDevice('desktop')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      Tablet / Desktop
+    </button>
+  </div>
+
+  <!-- PWA Container -->
+  <div class="pwa-viewport mode-mobile" id="viewport">
+    
+    <!-- Dynamic Island (Mobile only) -->
+    <div class="notch">
+      <div class="notch-camera"></div>
+      <div style="font-size: 9px; color: var(--neon-green); font-family: var(--font-mono); font-weight: 700;">● LIVE</div>
+    </div>
+
+    <!-- iOS Status Bar -->
+    <div class="status-bar">
+      <span id="live-clock">09:41</span>
+      <div class="status-icons">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+        <span style="font-family: var(--font-mono); font-size: 11px;">5G</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="16" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="4" y="9" width="12" height="6" fill="#00FF88"/><line x1="20" y1="11" x2="20" y2="13" stroke="currentColor" stroke-width="2"/></svg>
+      </div>
+    </div>
+
+    <!-- App Header -->
+    <header class="app-header">
+      <div class="brand-cluster">
+        <div class="brand-badge">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5"><polygon points="12 2 2 22 22 22"/></svg>
+        </div>
+        <div>
+          <div class="brand-title">ALL OUTDOOR</div>
+          <div class="brand-sub">WARDEN OS // GOD MODE</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="live-pulse-chip">
+          <div class="pulse-dot"></div>
+          <span id="poll-timer">POLL 5s</span>
+        </div>
+        <div class="god-badge">SUPERADMIN</div>
+      </div>
+    </header>
+
+    <!-- Scrollable Tab Content Container -->
+    <main class="tab-viewport">
+
+      <!-- ======================================================== -->
+      <!-- TAB 1: WARDEN (HEALTH & AUTONOMOUS DIAGNOSTICS)           -->
+      <!-- ======================================================== -->
+      <section class="tab-pane active" id="pane-warden">
+        
+        <!-- Big Plain-English Status Banner -->
+        <div class="card neon-border-green">
+          <div class="card-header">
+            <span class="card-title">
+              <span style="color: var(--neon-green)">●</span> WARDEN STATUS SUMMARY
+            </span>
+            <span class="pill pill-green">ALL CLEAR · 99.8% UP</span>
+          </div>
+          <p style="font-size: 16px; font-weight: 700; color: #FFF; line-height: 1.35;">
+            2 items require human review. All money rails and shipping services are operational.
+          </p>
+          <div class="card-subtitle">
+            Autonomous self-healing active · 33 background crons running · Last box backup: 02:10 SAST (OK)
+          </div>
+        </div>
+
+        <!-- Today Pulse Mini KPI -->
+        <div class="kpi-row">
+          <div class="kpi-tile">
+            <span class="kpi-label">Today GMV</span>
+            <span class="kpi-val" style="color: var(--neon-cyan)">R42,850</span>
+            <span class="kpi-trend trend-up">▲ 14% vs avg</span>
+          </div>
+          <div class="kpi-tile">
+            <span class="kpi-label">Completed Sales</span>
+            <span class="kpi-val">12</span>
+            <span class="kpi-trend trend-up">▲ 3 new</span>
+          </div>
+          <div class="kpi-tile">
+            <span class="kpi-label">Active Users</span>
+            <span class="kpi-val" style="color: var(--neon-green)">148</span>
+            <span class="kpi-trend trend-up">● 28 in app</span>
+          </div>
+        </div>
+
+        <!-- Attention Queue (Actionable Tasks) -->
+        <div class="card neon-border-amber">
+          <div class="card-header">
+            <span class="card-title">
+              <span style="color: var(--neon-amber)">⚠</span> CRITICAL ATTENTION QUEUE
+            </span>
+            <span class="pill pill-amber">2 PENDING</span>
+          </div>
+
+          <!-- Task 1: Firearm Review -->
+          <div class="action-row" onclick="openDrawer('drawer-listing-review')">
+            <div class="action-left">
+              <div class="action-icon-box icon-box-amber">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </div>
+              <div class="action-text">
+                <span class="action-heading">Tikka T3x Superlite .308 Win</span>
+                <span class="action-caption">Regulated Firearm · Serial match verified · R24,500</span>
+              </div>
+            </div>
+            <div class="action-right">
+              <span class="pill pill-amber">REVIEW</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+
+          <!-- Task 2: KYC Stalled Review -->
+          <div class="action-row" onclick="openDrawer('drawer-kyc-review')">
+            <div class="action-left">
+              <div class="action-icon-box icon-box-cyan">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <div class="action-text">
+                <span class="action-heading">Seller @johandutoit (ID Match Flag)</span>
+                <span class="action-caption">Didit Passive Liveness 99% · Smart ID blur detected</span>
+              </div>
+            </div>
+            <div class="action-right">
+              <span class="pill pill-cyan">DECIDE</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Warden AI Proposal Card -->
+        <div class="card neon-border-purple">
+          <div class="card-header">
+            <span class="card-title">
+              <span style="color: var(--neon-purple)">◈</span> WARDEN AUTONOMOUS PROPOSAL
+            </span>
+            <span class="pill pill-purple">AI REMEDIATION</span>
+          </div>
+          <p style="font-size: 13px; color: #FFF; font-weight: 600;">
+            Stale Nginx fastcgi proxy socket lock detected after heavy media uploads. Safe to flush.
+          </p>
+          <div class="terminal-box">
+            systemctl reload nginx && rm -f /var/run/alloutdoor/stale-locks.pid
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-neon-cyan" style="flex: 1;" onclick="showToast('⚡ Executing command via safe-list proxy...')">
+              ⚡ Approve & Run (God Mode)
+            </button>
+            <button class="btn btn-ghost" onclick="showToast('Proposal dismissed.')">
+              Decline
+            </button>
+          </div>
+        </div>
+
+        <!-- Realtime Service Probes -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">PROBE TELEMETRY</span>
+            <span class="pill pill-green">6/6 ONLINE</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
+            <div class="action-row" style="padding: 8px 10px;">
+              <span style="font-size: 12px; font-weight: 600;">Ozow Gateway</span>
+              <span class="pill pill-green">UP 82ms</span>
+            </div>
+            <div class="action-row" style="padding: 8px 10px;">
+              <span style="font-size: 12px; font-weight: 600;">Bob Go Courier</span>
+              <span class="pill pill-green">UP 110ms</span>
+            </div>
+            <div class="action-row" style="padding: 8px 10px;">
+              <span style="font-size: 12px; font-weight: 600;">Cloudinary CDN</span>
+              <span class="pill pill-green">UP 45ms</span>
+            </div>
+            <div class="action-row" style="padding: 8px 10px;">
+              <span style="font-size: 12px; font-weight: 600;">Meilisearch FTS</span>
+              <span class="pill pill-green">UP 12ms</span>
+            </div>
+            <div class="action-row" style="padding: 8px 10px;">
+              <span style="font-size: 12px; font-weight: 600;">Didit KYC</span>
+              <span class="pill pill-green">UP 140ms</span>
+            </div>
+            <div class="action-row" style="padding: 8px 10px;">
+              <span style="font-size: 12px; font-weight: 600;">Zoho Books</span>
+              <span class="pill pill-green">SYNCED</span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ======================================================== -->
+      <!-- TAB 2: MONEY / LEDGER (PAYOUTS, TRANSACTIONS, DISPUTES)  -->
+      <!-- ======================================================== -->
+      <section class="tab-pane" id="pane-money">
+        
+        <!-- Payout Dispatcher Card -->
+        <div class="card neon-border-cyan">
+          <div class="card-header">
+            <span class="card-title">
+              <span style="color: var(--neon-cyan)">⚡</span> DISBURSEMENT RADAR
+            </span>
+            <span class="pill pill-cyan">OZOW PAYOUTS</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <div>
+              <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Due For Immediate Release</div>
+              <div style="font-size: 26px; font-weight: 800; color: #FFF; font-family: var(--font-mono);">R42,500.00</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Held In Transit</div>
+              <div style="font-size: 16px; font-weight: 700; color: var(--neon-amber); font-family: var(--font-mono);">R184,200.00</div>
+            </div>
+          </div>
+          <button class="btn btn-neon-green" onclick="showToast('⚡ Firing Ozow Payouts API batch for 6 sellers...')">
+            ⚡ Execute Batch Payouts (6 Sellers)
+          </button>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="filter-scroll">
+          <div class="filter-chip active">All Transactions (48)</div>
+          <div class="filter-chip">Held (18)</div>
+          <div class="filter-chip">Payout Due (6)</div>
+          <div class="filter-chip">Disputed (1)</div>
+          <div class="filter-chip">Dealer Transfers (12)</div>
+        </div>
+
+        <!-- Live Transaction Cards -->
+        <div class="action-row" onclick="openDrawer('drawer-tx-detail')">
+          <div class="action-left">
+            <div class="action-icon-box icon-box-green">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </div>
+            <div class="action-text">
+              <span class="action-heading">TXN-9028 · Swarovski Z8i 2-16x50</span>
+              <span class="action-caption">Buyer @gerhardf · Seller @krugersafaris · Bob Go Door</span>
+            </div>
+          </div>
+          <div class="action-right">
+            <div style="text-align: right;">
+              <div style="font-size: 14px; font-weight: 800; font-family: var(--font-mono); color: #FFF;">R38,900</div>
+              <span class="pill pill-green">RELEASED</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-row" onclick="openDrawer('drawer-tx-detail')">
+          <div class="action-left">
+            <div class="action-icon-box icon-box-amber">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            </div>
+            <div class="action-text">
+              <span class="action-heading">TXN-9029 · RCBS Rock Chucker Supreme</span>
+              <span class="action-caption">Buyer @pieterb · Seller @reloadpro · Pudo Locker</span>
+            </div>
+          </div>
+          <div class="action-right">
+            <div style="text-align: right;">
+              <div style="font-size: 14px; font-weight: 800; font-family: var(--font-mono); color: #FFF;">R7,200</div>
+              <span class="pill pill-amber">HELD</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-row" onclick="openDrawer('drawer-tx-detail')">
+          <div class="action-left">
+            <div class="action-icon-box icon-box-red">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div class="action-text">
+              <span class="action-heading">TXN-9021 · Glock 19 Gen 5 9mm</span>
+              <span class="action-caption">Dealer Transfer · Tactical Arms Cape Town</span>
+            </div>
+          </div>
+          <div class="action-right">
+            <div style="text-align: right;">
+              <div style="font-size: 14px; font-weight: 800; font-family: var(--font-mono); color: #FFF;">R12,500</div>
+              <span class="pill pill-red">DISPUTE</span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ======================================================== -->
+      <!-- TAB 3: PEOPLE (USERS, KYC, GOD-MODE DOSSIERS)             -->
+      <!-- ======================================================== -->
+      <section class="tab-pane" id="pane-people">
+        
+        <div class="card neon-border-cyan">
+          <div class="card-header">
+            <span class="card-title">MEMBER & SELLER ROSTER</span>
+            <span class="pill pill-cyan">3,490 MEMBERS</span>
+          </div>
+          <input type="text" placeholder="🔍 Search handle, phone, verified email, SA ID..." 
+                 style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-bright); padding: 10px 14px; border-radius: 10px; color: #FFF; font-size: 13px; outline: none; width: 100%;">
+        </div>
+
+        <div class="filter-scroll">
+          <div class="filter-chip active">All Users</div>
+          <div class="filter-chip">Sellers (412)</div>
+          <div class="filter-chip">KYC Stalled (7)</div>
+          <div class="filter-chip">Top Dealers (18)</div>
+          <div class="filter-chip">Banned (3)</div>
+        </div>
+
+        <!-- User Dossier Row 1 -->
+        <div class="action-row" onclick="openDrawer('drawer-user-dossier')">
+          <div class="action-left">
+            <div class="action-icon-box" style="background: rgba(0, 240, 255, 0.15); color: var(--neon-cyan); font-weight: 800;">
+              JF
+            </div>
+            <div class="action-text">
+              <span class="action-heading">@johanfourie · Top Seller ★★★</span>
+              <span class="action-caption">Cape Town · FNB Verified · 38 sales · 0 disputes</span>
+            </div>
+          </div>
+          <div class="action-right">
+            <span class="pill pill-green">VERIFIED</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+
+        <!-- User Dossier Row 2 -->
+        <div class="action-row" onclick="openDrawer('drawer-user-dossier')">
+          <div class="action-left">
+            <div class="action-icon-box" style="background: rgba(255, 184, 0, 0.15); color: var(--neon-amber); font-weight: 800;">
+              WK
+            </div>
+            <div class="action-text">
+              <span class="action-heading">@willemkriek · New Seller</span>
+              <span class="action-caption">Pretoria · Didit Review Pending · 1 firearm listed</span>
+            </div>
+          </div>
+          <div class="action-right">
+            <span class="pill pill-amber">UNDER REVIEW</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+
+        <!-- User Dossier Row 3 -->
+        <div class="action-row" onclick="openDrawer('drawer-user-dossier')">
+          <div class="action-left">
+            <div class="action-icon-box" style="background: rgba(255, 0, 85, 0.15); color: var(--neon-red); font-weight: 800;">
+              XB
+            </div>
+            <div class="action-text">
+              <span class="action-heading">@xolani_b · Suspended</span>
+              <span class="action-caption">3 off-platform contact bypass attempts (Fee evasions)</span>
+            </div>
+          </div>
+          <div class="action-right">
+            <span class="pill pill-red">BANNED</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ======================================================== -->
+      <!-- TAB 4: OPERATE (MARKETPLACE, COMMUNITY, MODERATION)      -->
+      <!-- ======================================================== -->
+      <section class="tab-pane" id="pane-operate">
+        
+        <!-- Marketplace Triage -->
+        <div class="card neon-border-cyan">
+          <div class="card-header">
+            <span class="card-title">MARKETPLACE MODERATION</span>
+            <span class="pill pill-cyan">3 PENDING REVIEW</span>
+          </div>
+          
+          <div class="action-row" onclick="showToast('Opening quick review drawer...')">
+            <div class="action-left">
+              <div class="action-icon-box icon-box-cyan">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              </div>
+              <div class="action-text">
+                <span class="action-heading">Sako 85 Bavarian .375 H&H Mag</span>
+                <span class="action-caption">Flagged: High value > R35,000 threshold verification</span>
+              </div>
+            </div>
+            <div class="action-right">
+              <span class="pill pill-cyan">APPROVE</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Community Feed Moderation -->
+        <div class="card neon-border-purple">
+          <div class="card-header">
+            <span class="card-title">COMMUNITY FEED CONTROL</span>
+            <span class="pill pill-purple">1 FLAGGED POST</span>
+          </div>
+
+          <div class="action-row" onclick="showToast('Displaying graphic-tier media inspection...')">
+            <div class="action-left">
+              <div class="action-icon-box icon-box-purple">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+              </div>
+              <div class="action-text">
+                <span class="action-heading">Post #FEED-8821 in Hunting</span>
+                <span class="action-caption">Graphic Tier: FIELD (Harvest photo auto-blurred)</span>
+              </div>
+            </div>
+            <div class="action-right">
+              <span class="pill pill-purple">INSPECT</span>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-ghost" style="flex: 1;" onclick="showToast('Community Feed ads drawer opened')">
+              📢 Manage Feed Ads (3 Live)
+            </button>
+            <button class="btn btn-ghost" style="flex: 1;" onclick="showToast('Topic groups manager opened')">
+              👥 Groups (8 Active)
+            </button>
+          </div>
+        </div>
+
+        <!-- Support & Complaints Queue -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">DISPUTE & SUPPORT DESK</span>
+            <span class="pill pill-green">0 UNRESOLVED</span>
+          </div>
+          <div class="card-subtitle">
+            All customer tickets and statutory complaints resolved within SLA.
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ======================================================== -->
+      <!-- TAB 5: ANALYTICS & GOD-MODE SETTINGS                     -->
+      <!-- ======================================================== -->
+      <section class="tab-pane" id="pane-analytics">
+        
+        <!-- Sales & GMV Chart Simulation -->
+        <div class="card neon-border-cyan">
+          <div class="card-header">
+            <span class="card-title">SALES & VELOCITY HEATMAP</span>
+            <span class="pill pill-cyan">LAST 30 DAYS</span>
+          </div>
+          <!-- Canvas Simulation -->
+          <div style="height: 120px; width: 100%; display: flex; align-items: flex-end; gap: 6px; padding-top: 10px;">
+            <div style="flex: 1; height: 35%; background: rgba(0, 240, 255, 0.2); border-radius: 4px;"></div>
+            <div style="flex: 1; height: 45%; background: rgba(0, 240, 255, 0.3); border-radius: 4px;"></div>
+            <div style="flex: 1; height: 30%; background: rgba(0, 240, 255, 0.2); border-radius: 4px;"></div>
+            <div style="flex: 1; height: 60%; background: rgba(0, 240, 255, 0.4); border-radius: 4px;"></div>
+            <div style="flex: 1; height: 85%; background: rgba(0, 240, 255, 0.8); border-radius: 4px; box-shadow: 0 0 12px var(--neon-cyan);"></div>
+            <div style="flex: 1; height: 50%; background: rgba(0, 240, 255, 0.4); border-radius: 4px;"></div>
+            <div style="flex: 1; height: 75%; background: rgba(0, 240, 255, 0.6); border-radius: 4px;"></div>
+            <div style="flex: 1; height: 95%; background: var(--neon-cyan); border-radius: 4px; box-shadow: 0 0 16px var(--neon-cyan);"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; font-family: var(--font-mono); color: var(--text-muted);">
+            <span>01 Sep</span>
+            <span style="color: var(--neon-cyan)">Peak R64k/day</span>
+            <span>22 Sep</span>
+          </div>
+        </div>
+
+        <!-- GOD MODE RUNTIME FEATURE FLAGS -->
+        <div class="card neon-border-red">
+          <div class="card-header">
+            <span class="card-title" style="color: var(--neon-red);">
+              ⚡ GOD MODE // RUNTIME TOGGLES
+            </span>
+            <span class="pill pill-red">LIVE DB</span>
+          </div>
+          <div class="card-subtitle" style="color: var(--text-muted)">
+            Rule compliant: Only DB-backed runtime flags shown. Code-level constants omitted to avoid clutter.
+          </div>
+
+          <!-- Flag 1: Bob Go Door Delivery -->
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-name">bobgo_enabled</span>
+              <span class="toggle-desc">Master switch for door courier logistics rail</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" checked onchange="toggleFlag('bobgo_enabled', this.checked)">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <!-- Flag 2: AI Moderation -->
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-name">claude_moderation_enabled</span>
+              <span class="toggle-desc">Master vision/text automatic listing pass (DANGER)</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" class="danger" checked onchange="toggleFlag('claude_moderation_enabled', this.checked)">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <!-- Flag 3: Community Feed Master -->
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-name">feed_enabled</span>
+              <span class="toggle-desc">Turn on/off entire Community Feed feature</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" checked onchange="toggleFlag('feed_enabled', this.checked)">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <!-- Flag 4: Motivation Centre Master -->
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-name">motivation_writer_enabled</span>
+              <span class="toggle-desc">Legal motivation PDF generation engine</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" checked onchange="toggleFlag('motivation_writer_enabled', this.checked)">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <!-- Flag 5: WhatsApp Channel -->
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-name">whatsapp_enabled</span>
+              <span class="toggle-desc">Meta Cloud API notifications dispatcher</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" onchange="toggleFlag('whatsapp_enabled', this.checked)">
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- PWA Bottom 5-Tab Bar -->
+    <nav class="tab-bar">
+      
+      <!-- Tab 1: Warden -->
+      <button class="tab-btn active" onclick="switchTab('warden')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>Warden</span>
+      </button>
+
+      <!-- Tab 2: Money -->
+      <button class="tab-btn" onclick="switchTab('money')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>
+        <span>Money</span>
+      </button>
+
+      <!-- Tab 3: People -->
+      <button class="tab-btn" onclick="switchTab('people')">
+        <span class="tab-badge">2</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>People</span>
+      </button>
+
+      <!-- Tab 4: Operate -->
+      <button class="tab-btn" onclick="switchTab('operate')">
+        <span class="tab-badge">3</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+        <span>Operate</span>
+      </button>
+
+      <!-- Tab 5: Analytics & God -->
+      <button class="tab-btn" onclick="switchTab('analytics')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span>Insights</span>
+      </button>
+
+    </nav>
+
+    <!-- ======================================================== -->
+    <!-- INTERACTIVE DRAWERS (DRAG PHYSICS SIMULATION)            -->
+    <!-- ======================================================== -->
+
+    <!-- Drawer 1: Transaction Levers (God Mode) -->
+    <div class="drawer-overlay" id="drawer-tx-detail" onclick="closeDrawer(event, 'drawer-tx-detail')">
+      <div class="drawer-sheet" onclick="event.stopPropagation()">
+        <div class="drawer-handle-bar"></div>
+        <div class="card-header">
+          <div>
+            <span class="card-title">TRANSACTION #TXN-9029</span>
+            <div style="font-size: 11px; color: var(--text-muted)">RCBS Rock Chucker Supreme Reloading Kit</div>
+          </div>
+          <span class="pill pill-amber">FUNDS HELD</span>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.03); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; font-size: 13px;">
+            <span style="color: var(--text-muted)">Item Value (Buyer Paid)</span>
+            <span style="font-weight: 700; font-family: var(--font-mono);">R7,200.00</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px;">
+            <span style="color: var(--text-muted)">Platform Fee (7%)</span>
+            <span style="color: var(--neon-cyan); font-weight: 700; font-family: var(--font-mono);">- R504.00</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 14px; border-top: 1px solid var(--border-subtle); padding-top: 8px;">
+            <span style="color: #FFF; font-weight: 700;">Seller Net Payout</span>
+            <span style="color: var(--neon-green); font-weight: 800; font-family: var(--font-mono);">R6,696.00</span>
+          </div>
+        </div>
+
+        <div style="font-size: 11px; font-weight: 800; letter-spacing: 0.1em; color: var(--neon-cyan); text-transform: uppercase;">
+          ⚡ GOD-MODE DISBURSEMENT LEVERS
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <button class="btn btn-neon-green" onclick="showToast('Funds manually released to Seller payout queue!')">
+            ✓ Release Funds
+          </button>
+          <button class="btn btn-neon-red" onclick="showToast('Initiating refund modal with audit prompt...')">
+            ↺ Refund Buyer
+          </button>
+          <button class="btn btn-ghost" onclick="showToast('Payout locked with safety hold.')">
+            ⏸ Freeze Payout
+          </button>
+          <button class="btn btn-ghost" onclick="showToast('Zoho revenue sync queued.')">
+            ⟳ Re-sync Zoho
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drawer 2: User 360 Dossier -->
+    <div class="drawer-overlay" id="drawer-user-dossier" onclick="closeDrawer(event, 'drawer-user-dossier')">
+      <div class="drawer-sheet" onclick="event.stopPropagation()">
+        <div class="drawer-handle-bar"></div>
+        <div class="card-header">
+          <div>
+            <span class="card-title">@johanfourie // MEMBER DOSSIER</span>
+            <div style="font-size: 11px; color: var(--text-muted)">Member ID: usr_99214 · Joined 2026-08-11</div>
+          </div>
+          <span class="pill pill-green">VERIFIED</span>
+        </div>
+
+        <div style="display: flex; gap: 10px; background: rgba(0, 240, 255, 0.05); border: 1px solid rgba(0, 240, 255, 0.2); border-radius: 12px; padding: 12px;">
+          <div style="flex: 1;">
+            <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Encrypted Identity</div>
+            <div style="font-size: 13px; font-weight: 700; font-family: var(--font-mono); color: #FFF;">840912••••083</div>
+          </div>
+          <button class="btn btn-ghost" style="padding: 4px 10px; font-size: 11px;" onclick="showToast('Decrypted KYC Smart Card loaded via AES-GCM')">
+            👁 Reveal ID
+          </button>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 6px; font-size: 12px;">
+          <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-subtle);">
+            <span style="color: var(--text-muted)">Verified Bank Account</span>
+            <span style="color: #FFF; font-family: var(--font-mono);">FNB Cheque · ••••4821 (Checked by hand)</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-subtle);">
+            <span style="color: var(--text-muted)">Lifetime Marketplace Volume</span>
+            <span style="color: var(--neon-cyan); font-weight: 700; font-family: var(--font-mono);">R142,600 (38 Sales)</span>
+          </div>
+        </div>
+
+        <div style="font-size: 11px; font-weight: 800; letter-spacing: 0.1em; color: var(--neon-red); text-transform: uppercase;">
+          ⚡ GOD-MODE ENFORCEMENT CONTROLS
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <button class="btn btn-neon-red" onclick="showToast('User suspended & listings pulled.')">
+            ⛔ Suspend Seller
+          </button>
+          <button class="btn btn-ghost" onclick="showToast('POPIA right-to-erasure purged documents.')">
+            🗑 Erase POPIA Docs
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drawer 3: Listing Review -->
+    <div class="drawer-overlay" id="drawer-listing-review" onclick="closeDrawer(event, 'drawer-listing-review')">
+      <div class="drawer-sheet" onclick="event.stopPropagation()">
+        <div class="drawer-handle-bar"></div>
+        <div class="card-header">
+          <div>
+            <span class="card-title">Tikka T3x Superlite .308 Win</span>
+            <div style="font-size: 11px; color: var(--text-muted)">Serial #681921 · Requires SAPS Dealer Transfer</div>
+          </div>
+          <span class="pill pill-amber">PENDING APPROVAL</span>
+        </div>
+
+        <div style="height: 160px; background: #0c1218; border-radius: 14px; border: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 12px;">
+          [ Verified High-Res Seller Photos · No contact leaks detected ]
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-neon-green" style="flex: 1;" onclick="closeDrawerDirect('drawer-listing-review'); showToast('Listing approved! Indexed in Meilisearch.')">
+            ✓ Approve Listing
+          </button>
+          <button class="btn btn-neon-red" style="flex: 1;" onclick="closeDrawerDirect('drawer-listing-review'); showToast('Listing rejected. Seller notified with reason.')">
+            ✕ Reject
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Toast Message -->
+    <div class="toast" id="toast-msg">
+      <span style="color: var(--neon-cyan)">●</span>
+      <span id="toast-text">System Action Processed</span>
+    </div>
+
+  </div>
+
+  <script>
+    // Live Clock Simulator
+    function updateClock() {
+      const now = new Date();
+      const hrs = String(now.getHours()).padStart(2, '0');
+      const mins = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('live-clock').innerText = `${hrs}:${mins}`;
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // Live Polling Simulator
+    let pollCount = 5;
+    setInterval(() => {
+      pollCount--;
+      if (pollCount <= 0) {
+        pollCount = 5;
+        // Subtle pulse animation
+        const chip = document.querySelector('.live-pulse-chip');
+        chip.style.transform = 'scale(1.08)';
+        setTimeout(() => chip.style.transform = 'scale(1)', 200);
+      }
+      document.getElementById('poll-timer').innerText = `POLL ${pollCount}s`;
+    }, 1000);
+
+    // Tab Switching
+    function switchTab(tabId, el) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+
+      const activeBtn = el || (window.event && window.event.currentTarget) || document.querySelector(`.tab-btn[onclick*="${tabId}"]`);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      const targetPane = document.getElementById(`pane-${tabId}`);
+      if (targetPane) targetPane.classList.add('active');
+    }
+
+    // Viewport Mode Switcher
+    function switchDevice(mode, el) {
+      const vp = document.getElementById('viewport');
+      document.querySelectorAll('.device-btn').forEach(btn => btn.classList.remove('active'));
+      if (el) el.classList.add('active');
+      else {
+        const btn = mode === 'desktop' ? document.querySelectorAll('.device-btn')[1] : document.querySelectorAll('.device-btn')[0];
+        if (btn) btn.classList.add('active');
+      }
+
+      if (mode === 'desktop') {
+        vp.classList.remove('mode-mobile');
+        vp.classList.add('mode-desktop');
+      } else {
+        vp.classList.remove('mode-desktop');
+        vp.classList.add('mode-mobile');
+      }
+    }
+
+    // Drawer System
+    function openDrawer(id) {
+      const d = document.getElementById(id);
+      if (d) d.classList.add('open');
+    }
+
+    function closeDrawer(e, id) {
+      if (e.target.classList.contains('drawer-overlay')) {
+        document.getElementById(id).classList.remove('open');
+      }
+    }
+
+    function closeDrawerDirect(id) {
+      document.getElementById(id).classList.remove('open');
+    }
+
+    // Drag-to-dismiss gesture simulation on drawer handle
+    document.querySelectorAll('.drawer-sheet').forEach(sheet => {
+      let startY = 0;
+      let currentY = 0;
+      const handle = sheet.querySelector('.drawer-handle-bar');
+      if (!handle) return;
+
+      handle.addEventListener('mousedown', (e) => {
+        startY = e.clientY;
+        const onMouseMove = (moveEvent) => {
+          const delta = moveEvent.clientY - startY;
+          if (delta > 0) {
+            sheet.style.transform = `translateY(${delta}px)`;
+          }
+        };
+        const onMouseUp = (upEvent) => {
+          const delta = upEvent.clientY - startY;
+          sheet.style.transform = '';
+          if (delta > 100) {
+            sheet.parentElement.classList.remove('open');
+          }
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+        };
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+      });
+    });
+
+    // Toast Notification
+    function showToast(msg) {
+      const toast = document.getElementById('toast-msg');
+      const text = document.getElementById('toast-text');
+      text.innerText = msg;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
+
+    // God Mode Flag Toggler
+    function toggleFlag(flag, isChecked) {
+      showToast(`⚡ DB Flag [${flag}] set to ${isChecked.toString().toUpperCase()} (Audited)`);
+    }
+  </script>
+</body>
+</html>

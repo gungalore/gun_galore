@@ -1,0 +1,1106 @@
+/**
+ * ADMIN OS — the Warden panel's own theme.
+ *
+ * ⚠️ SCOPED, NEVER `:root`. The shop's white theme lives in app/globals.css
+ * and must not receive one of these values. Everything here hangs off
+ * `.admin-os`, the wrapper the admin layout renders, so a shop page can never
+ * inherit the dark ground or a neon accent.
+ *
+ * ⚠️ THE BOX-SHADOW KILL SWITCH IS STILL IN FORCE. app/globals.css carries
+ * `* { box-shadow: none !important }` for the whole site. Every glow class here
+ * therefore restates `box-shadow` with `!important` on a CLASS, which outranks
+ * the universal selector on specificity (0,1,0 against 0,0,0) while both keep
+ * the important flag. Without the flag the neon lighting silently disappears —
+ * that is the exact failure mode the kill switch was built to make visible.
+ */
+
+.admin-os {
+  --adm-bg: #030507;
+  --adm-surface: #0a0e12;
+  --adm-card: rgba(16, 22, 28, 0.85);
+  --adm-card-hover: rgba(24, 34, 44, 0.92);
+  --adm-glass: rgba(8, 12, 16, 0.86);
+
+  --adm-cyan: #00f0ff;
+  --adm-cyan-glow: rgba(0, 240, 255, 0.4);
+  --adm-green: #00ff88;
+  --adm-green-glow: rgba(0, 255, 136, 0.45);
+  --adm-amber: #ffb800;
+  --adm-amber-glow: rgba(255, 184, 0, 0.45);
+  --adm-red: #ff0055;
+  --adm-red-glow: rgba(255, 0, 85, 0.5);
+  --adm-purple: #b026ff;
+  --adm-purple-glow: rgba(176, 38, 255, 0.4);
+
+  --adm-ink: #ffffff;
+  --adm-ink-2: #8e9ca4;
+  --adm-ink-3: #4b5963;
+
+  --adm-line: rgba(255, 255, 255, 0.08);
+  --adm-line-bright: rgba(255, 255, 255, 0.18);
+
+  --adm-mono: 'SF Mono', 'Fira Code', 'Roboto Mono', Menlo, monospace;
+  --adm-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+
+  --adm-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --adm-spring: cubic-bezier(0.16, 1, 0.3, 1);
+
+  position: relative;
+  min-height: 100vh;
+  /* `background-color`, not the `background` shorthand — the shorthand would
+   * reset the ambient mesh declared below. */
+  background-color: var(--adm-bg);
+  color: var(--adm-ink);
+  font-family: var(--adm-sans);
+  overscroll-behavior-y: none;
+}
+
+/**
+ * AMBIENT MESH + GRID — PAINTED AS THE WRAPPER'S OWN BACKGROUND, NOT A
+ * PSEUDO-ELEMENT, AND THAT IS LOAD-BEARING.
+ *
+ * ⚠️ IT USED TO BE A `position: fixed` `::before` WITH `z-index: 0`, WHICH
+ * FORCED `.adm-col` INTO A STACKING CONTEXT (`z-index: 1`) TO SIT ABOVE IT.
+ * The bottom tab bar is a SIBLING of `.adm-col` at `z-index: 200`, so it
+ * painted over that entire subtree — including every drawer and dialog, whose
+ * own `z-index: 500` was trapped inside it. The operator could SEE the bottom
+ * buttons of a drawer and could not tap them: the bar's hit area sat on top.
+ * Measured, not guessed: `elementFromPoint` over the overlap returned the tab
+ * bar, with "Clear strikes" and "Erase data" underneath it.
+ *
+ * As a background there is no pseudo-element, no stacking context on the
+ * content column, and the drawer/tab-bar order is decided by z-index alone.
+ * `background-attachment: fixed` keeps the glow anchored to the viewport so it
+ * behaves the way the old fixed layer did while the page scrolls.
+ */
+.admin-os {
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(0, 240, 255, 0.08) 0%, transparent 60%),
+    radial-gradient(circle at 8% 92%, rgba(176, 38, 255, 0.06) 0%, transparent 52%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: auto, auto, 36px 36px, 36px 36px;
+  background-attachment: fixed;
+}
+
+.adm-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 1180px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.adm-main {
+  flex: 1;
+  padding: 16px 16px 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────── */
+
+.adm-card {
+  background: var(--adm-card);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--adm-line);
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.2s var(--adm-ease), background 0.2s var(--adm-ease);
+}
+
+.adm-card[data-tone='cyan'] {
+  border-color: rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 18px rgba(0, 240, 255, 0.08) !important;
+}
+.adm-card[data-tone='green'] {
+  border-color: rgba(0, 255, 136, 0.3);
+  box-shadow: 0 0 18px rgba(0, 255, 136, 0.08) !important;
+}
+.adm-card[data-tone='amber'] {
+  border-color: rgba(255, 184, 0, 0.3);
+  box-shadow: 0 0 18px rgba(255, 184, 0, 0.08) !important;
+}
+.adm-card[data-tone='red'] {
+  border-color: rgba(255, 0, 85, 0.35);
+  box-shadow: 0 0 20px rgba(255, 0, 85, 0.1) !important;
+}
+.adm-card[data-tone='purple'] {
+  border-color: rgba(176, 38, 255, 0.35);
+  box-shadow: 0 0 20px rgba(176, 38, 255, 0.1) !important;
+}
+
+.adm-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.adm-card-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--adm-ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adm-sub {
+  font-size: 12px;
+  color: var(--adm-ink-2);
+  line-height: 1.45;
+}
+
+/* ── KPI tiles ─────────────────────────────────────────────────────── */
+
+.adm-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.adm-kpi {
+  background: rgba(10, 16, 22, 0.8);
+  border: 1px solid var(--adm-line);
+  border-radius: 14px;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.adm-kpi-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--adm-ink-2);
+  font-family: var(--adm-mono);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adm-kpi-value {
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--adm-mono);
+  letter-spacing: -0.02em;
+  color: var(--adm-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adm-kpi-trend {
+  font-size: 10px;
+  font-family: var(--adm-mono);
+  font-weight: 700;
+}
+
+/* ── Rows / action list ────────────────────────────────────────────── */
+
+.adm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--adm-line);
+  border-radius: 12px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  transition: background 0.2s var(--adm-ease), border-color 0.2s var(--adm-ease),
+    transform 0.2s var(--adm-ease);
+}
+
+.adm-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--adm-line-bright);
+}
+
+.adm-row:active {
+  transform: scale(0.985);
+}
+
+.adm-row-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.adm-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.adm-row-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--adm-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adm-row-caption {
+  font-size: 11px;
+  color: var(--adm-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adm-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.adm-icon[data-tone='cyan'] {
+  background: rgba(0, 240, 255, 0.1);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: var(--adm-cyan);
+}
+.adm-icon[data-tone='green'] {
+  background: rgba(0, 255, 136, 0.1);
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  color: var(--adm-green);
+}
+.adm-icon[data-tone='amber'] {
+  background: rgba(255, 184, 0, 0.1);
+  border: 1px solid rgba(255, 184, 0, 0.3);
+  color: var(--adm-amber);
+}
+.adm-icon[data-tone='red'] {
+  background: rgba(255, 0, 85, 0.1);
+  border: 1px solid rgba(255, 0, 85, 0.3);
+  color: var(--adm-red);
+}
+.adm-icon[data-tone='purple'] {
+  background: rgba(176, 38, 255, 0.1);
+  border: 1px solid rgba(176, 38, 255, 0.3);
+  color: var(--adm-purple);
+}
+
+/* ── Pills ─────────────────────────────────────────────────────────── */
+
+.adm-pill {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-family: var(--adm-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.adm-pill[data-tone='green'] {
+  background: rgba(0, 255, 136, 0.12);
+  color: var(--adm-green);
+  border: 1px solid rgba(0, 255, 136, 0.4);
+}
+.adm-pill[data-tone='amber'] {
+  background: rgba(255, 184, 0, 0.12);
+  color: var(--adm-amber);
+  border: 1px solid rgba(255, 184, 0, 0.4);
+}
+.adm-pill[data-tone='red'] {
+  background: rgba(255, 0, 85, 0.12);
+  color: var(--adm-red);
+  border: 1px solid rgba(255, 0, 85, 0.4);
+}
+.adm-pill[data-tone='purple'] {
+  background: rgba(176, 38, 255, 0.12);
+  color: var(--adm-purple);
+  border: 1px solid rgba(176, 38, 255, 0.4);
+}
+.adm-pill[data-tone='cyan'] {
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--adm-cyan);
+  border: 1px solid rgba(0, 240, 255, 0.4);
+}
+.adm-pill[data-tone='muted'] {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--adm-ink-2);
+  border: 1px solid var(--adm-line);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────── */
+
+.adm-btn {
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  transition: background 0.2s var(--adm-ease), color 0.2s var(--adm-ease),
+    border-color 0.2s var(--adm-ease), transform 0.15s var(--adm-ease);
+}
+
+.adm-btn:active {
+  transform: scale(0.97);
+}
+
+.adm-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.adm-btn[data-tone='cyan'] {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: var(--adm-cyan);
+  color: var(--adm-cyan);
+  box-shadow: 0 0 15px var(--adm-cyan-glow) !important;
+}
+.adm-btn[data-tone='green'] {
+  background: rgba(0, 255, 136, 0.15);
+  border-color: var(--adm-green);
+  color: var(--adm-green);
+  box-shadow: 0 0 15px var(--adm-green-glow) !important;
+}
+.adm-btn[data-tone='red'] {
+  background: rgba(255, 0, 85, 0.15);
+  border-color: var(--adm-red);
+  color: var(--adm-red);
+  box-shadow: 0 0 15px var(--adm-red-glow) !important;
+}
+.adm-btn[data-tone='purple'] {
+  background: rgba(176, 38, 255, 0.15);
+  border-color: var(--adm-purple);
+  color: var(--adm-purple);
+  box-shadow: 0 0 15px var(--adm-purple-glow) !important;
+}
+.adm-btn[data-tone='ghost'] {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--adm-line);
+  color: var(--adm-ink);
+}
+.adm-btn[data-tone='ghost']:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--adm-line-bright);
+}
+
+/* ── Filter carousel ───────────────────────────────────────────────── */
+
+.adm-scroll-x {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.adm-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+.adm-chip {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--adm-line);
+  color: var(--adm-ink-2);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  scroll-snap-align: start;
+  font-family: inherit;
+  transition: all 0.2s var(--adm-ease);
+}
+
+.adm-chip[data-active='true'] {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: var(--adm-cyan);
+  color: var(--adm-cyan);
+  box-shadow: 0 0 10px var(--adm-cyan-glow) !important;
+}
+
+/* ── Toggles ───────────────────────────────────────────────────────── */
+
+.adm-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--adm-line);
+}
+
+.adm-toggle-row:last-child {
+  border-bottom: none;
+}
+
+.adm-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.adm-toggle-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--adm-ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.adm-toggle-hint {
+  font-size: 11px;
+  color: var(--adm-ink-2);
+  line-height: 1.4;
+}
+
+.adm-switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.adm-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.adm-switch-track {
+  position: absolute;
+  inset: 0;
+  background: #1e262e;
+  border: 1px solid var(--adm-line-bright);
+  border-radius: 28px;
+  transition: 0.3s var(--adm-ease);
+  cursor: pointer;
+}
+
+.adm-switch-track::before {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  left: 3px;
+  top: 3px;
+  background: var(--adm-ink-2);
+  border-radius: 50%;
+  transition: 0.3s var(--adm-ease);
+}
+
+.adm-switch input:checked + .adm-switch-track {
+  background: rgba(0, 240, 255, 0.2);
+  border-color: var(--adm-cyan);
+  box-shadow: 0 0 12px var(--adm-cyan-glow) !important;
+}
+
+.adm-switch input:checked + .adm-switch-track::before {
+  transform: translateX(20px);
+  background: var(--adm-cyan);
+}
+
+.adm-switch input[data-danger='true']:checked + .adm-switch-track {
+  background: rgba(255, 0, 85, 0.25);
+  border-color: var(--adm-red);
+  box-shadow: 0 0 14px var(--adm-red-glow) !important;
+}
+
+.adm-switch input[data-danger='true']:checked + .adm-switch-track::before {
+  background: var(--adm-red);
+}
+
+.adm-switch input:focus-visible + .adm-switch-track {
+  outline: 2px solid var(--adm-ink);
+  outline-offset: 2px;
+}
+
+/* ── Header ────────────────────────────────────────────────────────── */
+
+.adm-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--adm-glass);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--adm-line);
+}
+
+.adm-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.adm-brand-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--adm-cyan), var(--adm-purple));
+  box-shadow: 0 0 15px var(--adm-cyan-glow) !important;
+  flex-shrink: 0;
+}
+
+.adm-brand-title {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.adm-brand-sub {
+  font-size: 9.5px;
+  color: var(--adm-cyan);
+  font-family: var(--adm-mono);
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+.adm-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.adm-live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 255, 136, 0.1);
+  border: 1px solid rgba(0, 255, 136, 0.4);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--adm-green);
+  font-family: var(--adm-mono);
+  font-weight: 600;
+}
+
+.adm-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--adm-green);
+  box-shadow: 0 0 8px var(--adm-green) !important;
+  animation: adm-pulse 1.8s infinite;
+}
+
+@keyframes adm-pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0.7;
+  }
+}
+
+.adm-god {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 0, 85, 0.2),
+    rgba(176, 38, 255, 0.2)
+  );
+  border: 1px solid var(--adm-red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow: 0 0 10px var(--adm-red-glow) !important;
+  white-space: nowrap;
+}
+
+.adm-god[data-role='MONITORING_ADMIN'] {
+  border-color: var(--adm-cyan);
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--adm-cyan);
+  box-shadow: 0 0 10px var(--adm-cyan-glow) !important;
+}
+
+/* ── Bottom tab bar ────────────────────────────────────────────────── */
+
+.adm-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: center;
+  height: calc(66px + env(safe-area-inset-bottom, 0px));
+  padding: 0 8px env(safe-area-inset-bottom, 0px);
+  background: rgba(8, 12, 16, 0.96);
+  backdrop-filter: blur(24px);
+  border-top: 1px solid var(--adm-line);
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.adm-tab {
+  background: transparent;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: var(--adm-ink-2);
+  cursor: pointer;
+  position: relative;
+  padding: 6px 0;
+  font-family: inherit;
+  transition: color 0.2s var(--adm-ease);
+}
+
+.adm-tab svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.2;
+  transition: transform 0.2s var(--adm-ease), filter 0.2s var(--adm-ease);
+}
+
+.adm-tab span {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.adm-tab[data-active='true'] {
+  color: var(--adm-cyan);
+}
+
+.adm-tab[data-active='true'] svg {
+  transform: scale(1.15) translateY(-2px);
+  filter: drop-shadow(0 0 8px var(--adm-cyan));
+}
+
+.adm-tab-badge {
+  position: absolute;
+  top: 2px;
+  right: 22%;
+  background: var(--adm-red);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 999px;
+  box-shadow: 0 0 8px var(--adm-red) !important;
+}
+
+/* ── Drawer ────────────────────────────────────────────────────────── */
+
+/**
+ * ⚠️ THE DRAWER IS MOUNTED ONLY WHILE OPEN, AND THE ENTRANCE IS A KEYFRAME,
+ * NOT A TRANSITION. It used to stay mounted permanently and slide away on
+ * `data-open`, which meant every board that had one carried a fully-rendered
+ * window parked below the viewport — invisible, but present in the DOM and
+ * (before `inert`) in the accessibility tree. Mount-on-open with a keyframe
+ * gets the same spring entrance and leaves nothing behind when closed.
+ *
+ * `fill-mode: backwards` is load-bearing: it applies the `from` frame before
+ * the animation starts, and applies NOTHING after it ends — so the drag
+ * gesture's inline `transform` is free to win once the entrance is over.
+ */
+@keyframes adm-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes adm-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adm-overlay,
+  .adm-sheet {
+    animation: none;
+  }
+}
+
+.adm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  /* ⚠️ THE BASE STATE IS VISIBLE AND THE ENTRANCE IS AN ANIMATION, NOT THE
+   * REVERSE. The drawer only mounts while open, so there is nothing to hide
+   * from. Keying visibility off `data-open` — or off an animation that must
+   * run to bring the sheet in — means any skipped animation (a throttled tab,
+   * a browser setting, a future refactor) parks a real window off-screen with
+   * no error anywhere. That is the bug this layout produced once already.
+   * Worst case now: the drawer appears instantly instead of springing. */
+  animation: adm-overlay-in 0.22s ease-out backwards;
+}
+
+.adm-sheet {
+  width: 100%;
+  max-width: 640px;
+  max-height: 88vh;
+  background: #090e13;
+  border: 1px solid var(--adm-line-bright);
+  border-bottom: none;
+  border-radius: 28px 28px 0 0;
+  /* ⚠️ NO TOP PADDING — `.adm-grab` owns it. The drag surface has to start at
+   * the sheet's first pixel or a press on the top strip lands on the sheet
+   * itself and the gesture never begins. */
+  padding: 0 20px calc(28px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  animation: adm-sheet-in 0.38s var(--adm-spring) backwards;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 240, 255, 0.15) !important;
+}
+
+/**
+ * ⚠️ THE WHOLE HEADER IS THE DRAG HANDLE, NOT THE 5px BAR. A 5px strip is
+ * under a tenth of the 44px touch-target floor, so the gesture was effectively
+ * undiscoverable — and untestable with synthetic input, which is how it was
+ * found. Dragging from the title row is what every bottom sheet does.
+ *
+ * `touch-action: none` lives HERE, not on the sheet: the sheet scrolls, and
+ * killing touch-action on it would take that away. `user-select: none` stops
+ * the browser reading a drag as a text selection, which cancels the pointer.
+ */
+.adm-grab {
+  padding-top: 12px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+
+.adm-grab:active {
+  cursor: grabbing;
+}
+
+/**
+ * A CSS animation outranks an inline style, so a drag that begins inside the
+ * 380ms entrance would have its `translateY` overwritten frame by frame and
+ * the sheet would snap back. Cancelling the animation the moment a drag starts
+ * hands the transform back to the gesture.
+ */
+.adm-sheet[data-dragging='true'] {
+  animation: none;
+}
+
+.adm-handle {
+  width: 44px;
+  height: 5px;
+  border-radius: 999px;
+  background: #2b3944;
+  align-self: center;
+  margin-bottom: 10px;
+  /* Events belong to `.adm-grab`, which is the surface the finger actually hits. */
+  pointer-events: none;
+}
+
+/* ── Terminal / command block ──────────────────────────────────────── */
+
+.adm-terminal {
+  background: #040608;
+  border: 1px solid rgba(176, 38, 255, 0.4);
+  border-radius: 12px;
+  padding: 12px;
+  font-family: var(--adm-mono);
+  font-size: 11px;
+  color: #a3e635;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.8) !important;
+}
+
+.adm-terminal::before {
+  content: attr(data-label);
+  display: block;
+  font-size: 9px;
+  color: var(--adm-purple);
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+  font-weight: 800;
+}
+
+/* ── Warden thread ─────────────────────────────────────────────────── */
+
+.adm-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.adm-msg {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 2px solid var(--adm-cyan);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.adm-msg[data-role='operator'] {
+  border-left-color: var(--adm-green);
+  background: rgba(0, 255, 170, 0.04);
+}
+
+.adm-msg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.adm-msg-body {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--adm-ink);
+}
+
+.adm-msg-body:last-child {
+  margin-bottom: 0;
+}
+
+.adm-msg-foot {
+  margin: 6px 0 0;
+  font-size: 10.5px;
+  color: var(--adm-ink-2);
+  font-style: italic;
+}
+
+/* ── Toast ─────────────────────────────────────────────────────────── */
+
+.adm-toast {
+  position: fixed;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(16, 24, 32, 0.97);
+  border: 1px solid var(--adm-cyan);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s var(--adm-spring);
+  z-index: 900;
+  max-width: min(92vw, 560px);
+  text-align: center;
+  box-shadow: 0 0 20px var(--adm-cyan-glow) !important;
+}
+
+.adm-toast[data-open='true'] {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.adm-toast[data-tone='red'] {
+  border-color: var(--adm-red);
+  box-shadow: 0 0 20px var(--adm-red-glow) !important;
+}
+
+/* ── Form fields ───────────────────────────────────────────────────── */
+
+.adm-input,
+.adm-select,
+.adm-textarea {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--adm-line-bright);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: var(--adm-ink);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s var(--adm-ease);
+}
+
+.adm-input:focus,
+.adm-select:focus,
+.adm-textarea:focus {
+  border-color: var(--adm-cyan);
+  box-shadow: 0 0 12px var(--adm-cyan-glow) !important;
+}
+
+.adm-input::placeholder {
+  color: var(--adm-ink-3);
+}
+
+.adm-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--adm-ink-2);
+  font-family: var(--adm-mono);
+  font-weight: 600;
+}
+
+/* ── Login ─────────────────────────────────────────────────────────── */
+
+.adm-login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.adm-login-card {
+  width: 100%;
+  max-width: 380px;
+}
+
+/* ── Skeleton ──────────────────────────────────────────────────────── */
+
+.adm-skeleton {
+  border-radius: 10px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: adm-shimmer 1.4s infinite linear;
+}
+
+@keyframes adm-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ── Utility ───────────────────────────────────────────────────────── */
+
+.adm-mono {
+  font-family: var(--adm-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.adm-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.adm-spread {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.adm-hr {
+  border: none;
+  border-top: 1px solid var(--adm-line);
+  margin: 4px 0;
+}
+
+@media (max-width: 420px) {
+  .adm-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .adm-kpi-value {
+    font-size: 15px;
+  }
+}
+
+/* ── Page ground override ─────────────────────────────────────────────
+ * ⚠️ THE CANVAS IS PAINTED BY <html>, NOT BY .admin-os. app/globals.css sets
+ * `--bg` #FFFFFF on <html> for the shop, and that background propagates to the
+ * canvas — so without this rule the admin's dark wrapper sits on a white page
+ * and the first overscroll flashes white. Scoped with :has so a shop route can
+ * never match it.
+ */
+html:has(.admin-os) {
+  background: #030507;
+  color-scheme: dark;
+}
+
+html:has(.admin-os) body {
+  background: transparent;
+}

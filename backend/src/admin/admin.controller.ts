@@ -641,6 +641,26 @@ export class AdminUsersController {
     return new StreamableFile(f.bytes);
   }
 
+  /**
+   * Hand the admin the member's SA ID number, decrypted.
+   *
+   * ⚠️ ITS OWN ROUTE, BECAUSE THE DOSSIER GET WITHHOLDS IT. `idNumberEncrypted`
+   * is deliberately absent from that select — the dossier is a GET, so every
+   * active admin can read it, and the number has to be asked for on purpose.
+   * Asking writes an AdminAuditEvent, so "who looked at whose ID" is answerable
+   * afterwards. That is the whole reason this is not just another dossier field.
+   *
+   * ⚠️ NEVER CACHED. Same reason as the document below it.
+   */
+  @Get(':id/id-number')
+  @Header('Cache-Control', 'private, no-store')
+  revealIdNumber(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+  ) {
+    return this.adminService.revealIdNumber(id, admin.sub);
+  }
+
   @Patch(':id')
   updateUser(
     @Param('id') id: string,

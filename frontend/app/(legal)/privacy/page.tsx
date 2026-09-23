@@ -86,7 +86,7 @@ export default function PrivacyPage() {
       <h3>3.1 Account &amp; identity</h3>
       <ul>
         <li>First name, last name and chosen username</li>
-        <li>Email address (verified via Clerk)</li>
+        <li>Email address (verified by a one-time code we email you)</li>
         <li>South African cellphone number (verified via SMS OTP)</li>
         <li>Profile photo (optional)</li>
       </ul>
@@ -95,8 +95,7 @@ export default function PrivacyPage() {
       <ul>
         <li>South African ID number (stored encrypted at rest with AES-GCM; we also derive a salted SHA-256 hash for duplicate-registration checks. We retain the encrypted ID — see &ldquo;How long we keep your information&rdquo; below — so that we can confirm the person being paid is the person we verified, prevent fraud and impersonation, and meet the record-keeping and transfer-documentation obligations that apply to certain regulated categories, where the seller&rsquo;s identity number must be reproduced on a prescribed statutory form)</li>
         <li>The result of your identity verification: the details read from your identity document, a liveness result and a face-match result</li>
-        <li>An image of the identity document you upload during verification (an identity card, identity book page or passport, or a PDF of one). This image is stored encrypted on our own servers, which are hosted in South Africa, and is retained as an audit record of the verification for the life of your account.</li>
-        <li><strong>Selfie image captured during face-match verification.</strong> The image is <strong>stored</strong> encrypted on our own servers, which are hosted in South Africa. We retain it as an audit record of the verification for the life of your account, and we re-use it only to re-run a verification check on that same account. If you delete your account we remove the link to the image from your account record, but the stored image itself is <strong>not deleted today</strong> — that deletion is a follow-up we have not yet implemented, and we will not describe it as done until it is.</li>
+        <li><strong>Images captured during verification — the identity document and the selfie — and the short liveness video.</strong> These are captured and held by our verification provider, Didit, during the hosted session. <strong>We do not store our own copy of them.</strong> We can view them through Didit while Didit retains them (the retention period is configured on our account — see &ldquo;How long we keep your information&rdquo; below), which is how we review a verification when we need to. Because we hold no copy, there is no stored image or video of yours for us to delete.</li>
         <li>Number of face-match attempts and outcome</li>
       </ul>
       <p>
@@ -140,7 +139,7 @@ export default function PrivacyPage() {
 
       <h3>3.6 Device and session</h3>
       <ul>
-        <li>IP address, browser type, operating system, login times, session activity (handled by Clerk and visible to you in your Clerk account settings)</li>
+        <li>IP address, browser type, operating system, login times and session activity (recorded by us when you sign in and use the Store)</li>
         <li>Performance and error metrics used to keep the Store working</li>
       </ul>
 
@@ -240,8 +239,7 @@ export default function PrivacyPage() {
         </thead>
         <tbody>
           {[
-            ['Clerk', 'United States', 'Email, name, sessions, login activity'],
-            ['Didit', 'Israel', 'Identity document image, selfie image, ID number and name (identity verification)'],
+            ['Didit', 'European Union', 'Identity document image, selfie image, ID number and name (identity verification)'],
             ['Bob Go', 'South Africa', 'Buyer address, collection address, parcel size + weight, contact phone, waybill reference'],
             ['Cloudinary', 'United States', 'Listing photos and compliance documents you upload'],
             ['Resend', 'United States', 'Email address, content of transactional emails'],
@@ -280,8 +278,8 @@ export default function PrivacyPage() {
       <h2>8. Cross-border transfers (POPIA § 72)</h2>
       <p>
         Some of the operators above are located outside South Africa
-        (notably Clerk, Cloudinary, Resend, Google and Meta Platforms in
-        the United States, and Didit in Israel). Where personal
+        (notably Cloudinary, Resend, Google and Meta Platforms in
+        the United States, and Didit in the European Union). Where personal
         information is transferred across
         borders, we rely on the following POPIA § 72 grounds:
       </p>
@@ -292,11 +290,12 @@ export default function PrivacyPage() {
       </ul>
       <p>
         The information transferred across borders includes the
-        identity-verification images described in paragraph 3.2 — the
-        identity-document image and the face image (selfie). Those images are
-        stored encrypted on our own servers in South Africa and are transmitted
-        to Didit for the automated document read, face match and liveness
-        check. For that transfer specifically we rely on the consent you give
+        identity-verification media described in paragraph 3.2 — the
+        identity-document image, the face image (selfie) and the liveness
+        video. Those are captured by Didit during the hosted session and are
+        transmitted to Didit for the automated document read, face match and
+        liveness check. We do not retain our own copy of them. For that
+        transfer specifically we rely on the consent you give
         before verification begins, on the necessity of the transfer for the
         verification step you asked us to perform, and on the contractual
         safeguards above.
@@ -313,8 +312,7 @@ export default function PrivacyPage() {
         <li><strong>Identity-verification ID hash:</strong> retained while your account is active, plus 12 months after deletion to prevent duplicate registration.</li>
         <li><strong>Encrypted SA ID number:</strong> retained (AES-GCM encrypted at rest) while your account is active, so that we can confirm the identity of the person being paid, prevent impersonation, and complete any prescribed statutory transfer or record-keeping document required for the regulated categories we handle; where such a document has been completed, the encrypted ID is kept for the period that legislation requires that record to be retained, and is otherwise deleted on account closure. The legislation imposing that requirement is identified in our{' '}
           <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>.</li>
-        <li><strong>Identity-verification selfie (face image):</strong> stored encrypted on our own servers in South Africa and retained as an audit record of the verification for the life of your account; re-used only to re-run a verification check on that same account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present; that deletion is a tracked follow-up and is not yet implemented.</li>
-        <li><strong>Identity-verification document image:</strong> stored encrypted on our own servers in South Africa and retained as an audit record of the verification for the life of your account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present, on the same basis as the selfie above.</li>
+        <li><strong>Identity-verification media (identity document image, selfie and liveness video):</strong> not stored by us. They are captured and held by Didit and are deleted automatically under the retention period configured on our Didit account. We may view them through Didit for verification review while they exist; we keep no copy of our own, so there is nothing of yours for us to delete here.</li>
         <li><strong>Email and SMS logs:</strong> 90 days.</li>
         <li><strong>Usage analytics (raw activity events):</strong> up to 12 months, after which they are deleted; we keep only aggregated, de-identified statistics beyond that period.</li>
         <li><strong>Banking details:</strong> retained while your account is active; deleted on account closure unless there is an unresolved transaction or legal-hold reason to retain.</li>

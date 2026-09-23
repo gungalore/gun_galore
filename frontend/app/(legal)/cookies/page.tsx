@@ -60,9 +60,10 @@
 // Sweep with all five spellings, not one: res.cookie(, cookies.set(,
 // Set-Cookie, setHeader('Set-, document.cookie =.
 //
-// (frontend/lib/desk-auth.ts also writes document.cookie, but only to expire
-// `gg_admin_sess` at max-age=0 — a clear, never a set.) Change a TTL in any of
-// them and this table is part of the same change.
+// (The Desk's frontend lib was removed on 2026-09-22; it used to expire
+// `gg_admin_sess` at max-age=0, but the cookie itself is still set above by
+// backend/src/admin/admin.controller.ts.) Change a TTL in any of them and this
+// table is part of the same change.
 //
 // ⚠️ TWO CLAIMS ON THIS PAGE THE REPO CANNOT SETTLE. The anchors above do not
 // cover them, and nothing here has verified them:

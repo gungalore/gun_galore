@@ -6652,8 +6652,7 @@ model WhatsappMessageLog {
 
 /// Meta's 24-hour customer-service window, tracked per phone number. An
 /// inbound message opens or extends the window; only inside it may the Desk
-/// send free-form text (still refused by the drawer — see
-/// frontend/lib/desk-whatsapp.ts) rather than a registered template.
+/// send free-form text rather than a registered template.
 /// `transactionId` is set when the inbound message can be matched to an
 /// order, so the Desk drawer can show that order's context — no FK, because
 /// a thread must survive a transaction row disappearing under it.

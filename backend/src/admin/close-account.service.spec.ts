@@ -82,6 +82,7 @@ function makeService(
     {} as never, // transactions
     {} as never, // sms
     closures as never,
+    {} as never, // didit
   );
   // The real client would try to reach the identity provider over the network.
   // The session revoker the admin close calls after the commit. Reached
@@ -289,6 +290,7 @@ describe('AdminService.updateUser — the username columns', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never, // didit
     );
     return { service, prisma, audit };
   }
@@ -418,6 +420,7 @@ describe('AdminService.bulkBanUsers', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never, // didit
     );
     const updateUser = jest
       .spyOn(service, 'updateUser')

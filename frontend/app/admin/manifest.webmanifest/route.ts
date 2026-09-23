@@ -1,28 +1,62 @@
-import { deskManifest } from '../desk-manifest';
+import { NextResponse } from 'next/server';
 
 /**
- * Serves the Desk's manifest at /admin/manifest.webmanifest.
+ * The admin PWA's own manifest.
  *
- * ⚠️ A ROUTE HANDLER, BECAUSE Next's `manifest.ts` CONVENTION IS ROOT-ONLY.
- * The obvious shape — app/admin/manifest.ts, mirroring app/manifest.ts — looks
- * like it should work and silently does nothing: the build emits
- * /manifest.webmanifest and no /admin/manifest.webmanifest, so the Desk went
- * on linking the shop's manifest with no error anywhere. Verified by building
- * it and reading the route list, not by reasoning about the convention.
+ * ⚠️ SCOPE IS /admin/. The shop's manifest claims `/`, so a manifest override
+ * that left scope at the root would let the installed admin app capture shop
+ * navigations (and vice versa). `/admin/manifest.webmanifest` is exempted in
+ * middleware.ts so it is reachable without a member session.
  *
- * The `manifest` metadata field in app/admin/desk/layout.tsx points the Desk's
- * pages here; without that link this file is served and never read.
+ * Icons are the shop's existing PNG set. A dedicated Warden mark is a design
+ * task, not a routing one; when it exists it only has to replace these `src`
+ * values.
  */
-export const dynamic = 'force-static';
-
 export function GET() {
-  return new Response(JSON.stringify(deskManifest(), null, 2), {
-    headers: {
-      'Content-Type': 'application/manifest+json',
-      // Same posture as any other static asset: the icons inside it are
-      // already cache-busted by asset-version, so the document itself can be
-      // revalidated cheaply rather than pinned.
-      'Cache-Control': 'public, max-age=0, must-revalidate',
+  return NextResponse.json(
+    {
+      id: '/admin/warden',
+      name: 'All Outdoor Warden',
+      short_name: 'Warden',
+      description: 'Operations console for All Outdoor.',
+      start_url: '/admin/warden',
+      scope: '/admin/',
+      display: 'standalone',
+      orientation: 'portrait',
+      background_color: '#030507',
+      theme_color: '#030507',
+      icons: [
+        {
+          src: '/icon-192.png',
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any',
+        },
+        {
+          src: '/icon-512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any',
+        },
+        {
+          src: '/icon-maskable-192.png',
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'maskable',
+        },
+        {
+          src: '/icon-maskable-512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'maskable',
+        },
+      ],
     },
-  });
+    {
+      headers: {
+        'Content-Type': 'application/manifest+json',
+        'Cache-Control': 'public, max-age=0, must-revalidate',
+      },
+    },
+  );
 }

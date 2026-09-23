@@ -14,22 +14,72 @@ What each session did, found, and changed — so the next one does not re-derive
 
 ---
 
-## 2026-09-15 (cont.) — Deleting a vault document now clears the drafts
+## 2026-09-23 — WARDEN DAEMON PROXY REBUILT; PANEL DAEMON SURFACE
 
-**Goal:** the operator deleted a MARLIN .45-70 from the vault to re-add it as a test licence; it still printed in `MO000001.pdf` as a firearm they owned.
+**Goal:** wire the standalone `warden/` daemon into the new `/admin` panel (the last "NOT WIRED" card). Local only; nothing deployed.
 
 **Changed (uncommitted)**
 
-- `motivation-documents.service.ts` — new `removeCredentialFromEditableDrafts(userId, credentialId)`. For DRAFT/INTERVIEW/NEEDS_MORE_INFO only: deletes the upload copies whose `sourceCredentialId` matches (bytes first, purges `readCache.forget`), then deletes answers whose provenance is `VAULT` **and** `sourceId === credentialId`. A `MEMBER` value survives; COMPLETED/FAILED/ABANDONED are untouched.
-- `licence-centre.service.ts` `remove()` — calls it **before** `credential.delete`, because `onDelete: SetNull` nulls `sourceCredentialId` the instant the row goes. Fail-soft.
-- `motivations.service.ts` — thin delegator, so the Centre keeps its one-way dependency.
-- New `motivation-vault-delete-cleanup.spec.ts`; the `motivations` doubles in three licence-centre specs gained the method. `npm run build` exit 0; 41 targeted tests green.
+- `backend/src/admin/warden.{types,service,controller,dto,spec}.ts` restored from `HEAD:backend/src/desk/` (deleted with the Desk) and adapted. `warden.boot.spec.ts` added. Registered in `admin.module.ts` (`WardenService` + `WardenController`).
+- Dropped, not rebuilt: `gates()` (its `DeskSiteService` source is gone) and `settings()`/`maskSaPhone()` (settings board removed by operator decree). `WardenService`'s constructor is now just `AdminAuditService`.
+- Added `GET /admin/warden/board` → `WardenBoardView { present, absence, board }`. `absence: 'not_deployed' | 'unreachable'` so a null board is never rendered as "all clear".
+- `warden.spec.ts`: removed the gates/settings/maskSaPhone describes + the deleted `DeskSiteService.board()` test; added board-endpoint tests; the hand-mirror now reads **both** `warden/src/types.ts` and `frontend/components/admin/warden-thread.tsx`.
+- Frontend: `lib/admin-api.ts` warden block; new `components/admin/warden-thread.tsx` (+ spec); new `app/admin/(protected)/warden/daemon/page.tsx`; `WardenDaemonCard` rewired from a one-shot 404 probe to a real card.
 
 **Findings**
 
-- Not a cache. Generation reads the saved answers: `topUpOwnedFirearms` is add-only and returns early on an empty vault, so nothing removed `existing_firearm_N_*` once the credential was gone.
-- `MO000001.pdf` still shows the MARLIN and that is correct — it was already generated. Clear the draft by removing the answers/attachment and regenerating.
-- Seven pack defects found in the same review are written up in `HANDOFF.md` (contents page, cover cartridge hero, cartridge page, seller-licence annexure, rifle proficiency, safe photos, proficiency order). **Not fixed; no plan approved.**
+- ⚠️ A red gate has no command — the card renders **no** approve/decline buttons. `operationName === null` = free-hand (not safe-list-bounded); `reversible` requires an explicit `true`.
+- `warden/` deploys as a separate, non-fatal pm2 stage → daemon/backend version skew is real; the `dropped` counters on board + audit are load-bearing, not decoration.
+- The mirror was previously three-way but the third leg (`components/desk/chat.tsx`) was deleted with the Desk — the new thread component is now that leg, and the spec fails if it drifts.
+
+**Verified**
+
+- Backend: `tsc` 0, `nest build` 0, jest **4900 pass** (1 pre-existing `motivations/motivation-consent-pack.spec.ts:100` failure). Frontend: `tsc` 0, **1449 pass**, build 0 with `/admin/warden/daemon` emitted.
+- Against a **real** daemon (`warden/.env` local, untracked, `127.0.0.1:8787`, no model key): compiled `WardenService` read a real 30-row board + 10-message thread + 1 red gate, and exercised `send`/`sweep`/`pause`/`resume`. Daemon then stopped; `backend/.env` left without `WARDEN_BASE_URL`/`WARDEN_TOKEN` (panel honestly shows NOT DEPLOYED locally).
+- **Verified in Chrome** end-to-end (backend restarted on the rebuilt `dist/` with a local `WARDEN_BASE_URL`/`WARDEN_TOKEN`): Warden tab card reads CONNECTED + "2 faults" + "Review 1 proposal"; `/admin/warden/daemon` renders the red gate (no buttons), the full thread, the 30-row measured board and the empty execution audit. Clicking **Measure now** produced a real `POST /sweep 200` in the daemon log and a `WARDEN_SWEEP` row in `AdminAuditEvent` (22:59:19) — the write path is audited.
+- ⚠️ **Bug found and fixed while checking in Chrome:** `WardenDaemonCard` rendered a **failed read as CONNECTED / "nothing is red"** — a 404 (backend running pre-rebuild `dist/`) left `data` null and fell through to the healthy arm. The card now checks `chat.error`/`board.error` first and shows `READ FAILED`. This is the project's signature failure mode; any new card that branches on `data` must branch on `error` too.
+
+---
+
+## 2026-09-22 — FOUR PILLARS ONLY: DESK, WARDEN, BALLISTICS, ASK-GG KB REMOVED
+
+**Goal:** leave only Marketplace, Auctions, The Armory and Community in the code. Local box only; nothing deployed.
+
+**Changed (uncommitted)**
+
+- Backend: `src/desk/` (incl. `warden.*`, `desk-payouts`, `desk-whatsapp`) deleted + `app.module.ts` entries. `src/ballistics/` deleted (orphaned). `ask-gg` trimmed to `POST /ask-gg/identify-listing`; KB + page-guide editors deleted.
+- Frontend: `app/admin/**`, `components/desk/**`, `lib/desk-*.ts` (+ specs), `scripts/desk-guard.cjs`, `desk-cutover.cjs`, `make-desk-icons.py`, `scripts/artboard-spec.cjs`, `public/icon-desk-*.png`, and the `desk:guard`/`desk:cutover` package scripts removed; `build` no longer runs them.
+- `app/sw.ts` now imports the new `lib/sw-offline.ts` (shop fallback only); `lib/desk-offline*.ts` deleted. `/admin` NetworkOnly + fallback carve-out kept for the rebuild.
+- 168 files changed, ~53.5k deletions.
+
+**Findings**
+
+- The earlier audit's "dead route" list was wrong: `/coming-soon`, `/preview`, `/condition-guide`, `/witness/[token]`, `/t/[code]` are all live/linked. Footer and legal surfaces left intact by operator call.
+- `manual-payments` is mis-named — it is the Ozow pay-out engine, not manual EFT; kept as a connector.
+- ⚠️ Seller payouts paused by design: the Desk was the only trigger for `getPayoutsDue → Ozow.createPayout`; the old FNB cron was already gone. Operator will rebuild the Desk.
+- Prisma orphans kept (no migration): `Deal`, `DealPurchaseOrder`, `Message`, `Competition`, ask-gg tables.
+
+**Admin panel (same session, built after the strip)**
+
+- New `/admin` PWA: `app/admin/{layout.tsx,admin.css}`, `(protected)/{layout,page}.tsx` + `warden|money|people|operate|insights/page.tsx`, `login/page.tsx`, `manifest.webmanifest/route.ts`.
+- Components: `components/admin/{admin-ui,admin-chrome,admin-drawer,admin-confirm,admin-session}.tsx`; libs `lib/admin-api.ts`, `lib/use-admin-poll.ts`.
+- Design mockup + spec: `docs/design/admin-pwa/` (live copy `frontend/public/admin-mockup.html`).
+- Dark neon theme scoped to `.admin-os`; own PWA manifest (scope `/admin/`); Bearer-token store with single-flight refresh; polling only; role-gated writes with reason dialogs.
+- ⚠️ `WardenDaemonCard` probes `/admin/warden/board` once and shows "NOT WIRED" — the `warden/` daemon's backend proxy is still to be rebuilt.
+- ⚠️ The Insights flag board was **removed the same session, on the operator's call** — those flags are decided rules, not operator controls. Insights is analytics only (KPIs, velocity, by-category, top makes/models); `PATCH /admin/settings/:key` stays for deploy-time changes but has no UI. Do not re-add it.
+- Two real defects found by driving it in Chrome and fixed: closed drawers exposed `role="dialog" aria-modal="true"` (now `aria-hidden`+`inert`), and the flag board read `value` where the API returns `currentValue`, so it rendered defaults instead of live values.
+- People-board drive-through found two more, both fixed: **off-screen windows** (Money/Operate kept drawers mounted below the viewport; now they render nothing when closed and the base state is on-screen, animation is a `backwards` keyframe) and **silent button failures** (`Reveal ID` swallowed a 404 — `adminFetchBlob` now surfaces the backend message and the buttons have busy/error states). The 5px drag handle became the whole header, and People/Money drawers moved onto the shared `AdminDrawer` for drag + Escape + focus trap.
+- ⚠️ **Drawers were painting UNDER the tab bar.** `.admin-os > *` gave `.adm-col` `z-index: 1`, trapping every drawer/dialog (z 500) inside its stacking context while the sibling tab bar (z 200) sat above it — "Clear strikes" and "Erase data" were visible but untappable. Fixed by moving the ambient grid to `.admin-os`'s own `background-image` and deleting the wrapper z-index. Verified with `elementFromPoint`: the drawer button now wins the overlap.
+
+**KYC images from Didit + full member profile (same session)**
+
+- Privacy policy corrected: we store **no copy** of the ID image, selfie or liveness video — Didit holds them (`(legal)/privacy` §3.2/§8/§9). Also `Israel` → `European Union` (Didit's docs say EU-by-default AWS processing) and **stale Clerk disclosures removed** (provider table, §8, §3.1 "verified via Clerk", §3.6 "handled by Clerk").
+- `DiditService.fetchSessionImage()` re-requests the decision for **fresh 4h presigned links** and streams bytes; `readKycFile` falls back to it. Selfie = `liveness_checks[].reference_image`, ID = `full_front_image` → `front_image`. Nothing stored. 8 unit tests.
+- `GET /admin/users/:id/id-number` decrypts + **audits every reveal**; the ciphertext is stripped from the dossier (only `hasIdNumber` ships). 5 unit tests.
+- New `/admin/people/[id]` full profile (checklist first); drawer + page share `components/admin/user-actions.tsx`.
+- ⚠️ Local backend runs compiled `dist/` — **`npm run build` + restart is required** for backend changes to take effect; the sandbox key cannot read the live session (surfaces a named 403 message by design).
+
+**Verified:** backend `tsc --noEmit` 0; frontend typecheck 0 (after clearing stale `.next/types`); frontend 110 files / 1445 pass; frontend build 0 with `warden|money|people|operate|insights|login` emitted; backend jest 4831 pass, one pre-existing failure at `motivations/motivation-consent-pack.spec.ts:100`. Admin login exercised against the live backend (returned its credential error) — gated boards not yet eyeballed, local admin password ≠ seed default.
 
 ---
 
@@ -45,20 +95,3 @@ What each session did, found, and changed — so the next one does not re-derive
 - `components/licence-centre/document-shelf.tsx` — the Scan/Upload tiles are pinned OUTSIDE the horizontal scroll; the documents scroll behind them. They were the last items in the scroll, so they sat off-screen with a hidden scrollbar.
 - `npm run typecheck` clean; full frontend suite 139 files / 1917 tests pass.
 
----
-
-## 2026-09-15 — Good-standing keys on the expiry; direct uploads count too
-
-**Goal:** the operator's own dedicated certificate (`DEDICATED_DISCIPLINE`, `expiresOn: 2027-06-29`, `issuedOn: null`) still left the Sport draft asking for a letter of good standing.
-
-**Changed (uncommitted)**
-
-- `motivation-credentials.ts` — `dedicatedAlsoGoodStanding` now needs only a future `expiresOn`. Operator: the certificate "should not be issued on, it will say since the person has been a member" — association certificates print a "member since" (read as `joined_on`) and a "valid until", never an issue date, so requiring one rejected the very paper the rule was for.
-- `motivation-documents.service.ts` `addUpload` — a document uploaded straight to an application now inherits the roles its identical Document Centre row fills (matched by `sha256`), so a dedicated certificate photographed directly also covers GOOD_STANDING_LETTER. Its own read never asks an ASSOCIATION_CARD for an expiry.
-- `prisma/migrations/20260915000000_backfill_good_standing_covers/` — backfills the role onto still-editable applications (DRAFT/INTERVIEW/NEEDS_MORE_INFO). Applied to the local DB.
-- Tests: relaxed-rule block + 3 `addUpload` tests (harness gained `extract.ocr`/`classify` mocks). 327 + 141 green; backend typecheck clean.
-
-**Findings**
-
-- The Sport draft held the SAME bytes as the vault certificate as a manual `ASSOCIATION_CARD` upload with `coversKinds={}`, so the vault copy could never be attached (unique `(motivationId, sha256)` collision) and the autolink had already stamped. The role had to come from the direct upload.
-- A submitted pack's `coversKinds` must not be rewritten — the backfill is scoped to editable statuses.

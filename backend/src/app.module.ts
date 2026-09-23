@@ -41,7 +41,6 @@ import { SavedSearchesModule } from './saved-searches/saved-searches.module';
 import { ReportsModule } from './reports/reports.module';
 import { SupportModule } from './support/support.module';
 import { ComplaintsModule } from './complaints/complaints.module';
-import { DeskModule } from './desk/desk.module';
 import { BenchModule } from './bench/bench.module';
 import { MotivationsModule } from './motivations/motivations.module';
 import { LicenceCentreModule } from './licence-centre/licence-centre.module';
@@ -116,7 +115,6 @@ import { FeedModule } from './feed/feed.module';
     MyShipmentsModule,
     SupportModule,
     ComplaintsModule,
-    DeskModule,
     BenchModule,
     MotivationsModule,
     LicenceCentreModule,

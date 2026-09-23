@@ -1,62 +1,41 @@
 'use client';
 
-/**
- * Sign in to the Desk.
- *
- * ⚠️ IT WAS THE WRONG PRODUCT. See app/admin/login/layout.tsx for the full
- * account; in short, this page sat outside every Desk convention and rendered
- * a cream storefront card as the front door of a near-black control room — and
- * as the first screen of the installed PWA on every expired session.
- *
- * 🚨 AND IT COULD NOT SIGN IN AN ADMIN WITH AN AUTHENTICATOR. The form was one
- * step and never read a refusal body, so the 401 carrying
- * `code: 'TOTP_REQUIRED'` — which means the password was CORRECT — rendered as
- * "That email and password do not match." with no code box anywhere. The step
- * machine lives in lib/desk-admin-login.ts; this page owns only what is on
- * screen.
- */
-
-import * as React from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Input } from '../../../components/desk';
-import { clearLingeringSession } from '../../../lib/desk-auth';
-import { signInToDesk } from '../../../lib/desk-admin-login';
+import { adminLogin, adminMe, adminTokens } from '@/lib/admin-api';
+import { Icon } from '@/components/admin/admin-ui';
 
 /**
- * ⚠️ THE API BASE IS NOT DEFINED HERE, AND NEITHER IS THE LOGIN PATH.
+ * Admin sign-in.
  *
- * This file used to declare its own:
- *   `process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? …`
- * which is the exact duplicated-constant bug lib/desk-auth.ts documents as
- * fixed. It agreed with the real one only because INTERNAL_API_URL is unset —
- * the day it is set, the sign-in POST goes to one host and every subsequent
- * fetch to another, and the symptom reads as "login works, nothing loads".
- * (It was also dead in a client bundle: Next replaces a non-NEXT_PUBLIC_ var
- * with `undefined` there, so it could never have held a value anyway.)
+ * ⚠️ IT READS `?next=` FROM location.search, NOT useSearchParams(). The hook
+ * forces the whole route behind a Suspense boundary at build time, which for a
+ * single-field login form is all cost and no benefit.
  */
-
-/** Which half of the second factor the operator is typing. */
-type SecondFactor = 'app' | 'recovery';
-
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = React.useState('');
-  const [password, setPassword] = React.useState('');
-  const [step, setStep] = React.useState<'credentials' | 'code'>('credentials');
-  const [factor, setFactor] = React.useState<SecondFactor>('app');
-  const [code, setCode] = React.useState('');
-  const [error, setError] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [totpCode, setTotpCode] = useState('');
+  const [showTotp, setShowTotp] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [next, setNext] = useState('/admin/warden');
 
-  /**
-   * ⚠️ CLEAR ANY LINGERING SESSION ON MOUNT, which is what lib/desk-auth.ts's
-   * header has always claimed this screen does. It did not: the function was
-   * exported with zero callers, so an expired-but-present token survived a
-   * visit to the sign-in page and the next deskFetch bounced straight back
-   * here. Arriving at the front door means the previous session is over.
-   */
-  React.useEffect(() => {
-    clearLingeringSession();
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get('next');
+    if (target && target.startsWith('/admin')) setNext(target);
+
+    // Already signed in? Skip the form.
+    if (adminTokens.access() || adminTokens.refresh()) {
+      void adminMe()
+        .then(() => router.replace(next))
+        .catch(() => {
+          /* stale pair — the form below is the way back in */
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function submit(e: React.FormEvent) {
@@ -65,219 +44,103 @@ export default function AdminLoginPage() {
     setBusy(true);
     setError(null);
     try {
-      const outcome = await signInToDesk({
-        email,
+      await adminLogin({
+        email: email.trim(),
         password,
-        // ⚠️ THE PASSWORD IS RESENT ON THE SECOND STEP, because this backend
-        // has no intermediate "half-signed-in" ticket — /admin/auth/login is
-        // one call that takes all three. That is why the password stays in
-        // state rather than being cleared once the first step succeeds.
-        ...(step === 'code'
-          ? factor === 'app'
-            ? { totpCode: code }
-            : { recoveryCode: code }
-          : {}),
+        ...(totpCode.trim() ? { totpCode: totpCode.trim() } : {}),
       });
-
-      switch (outcome.kind) {
-        case 'need-code':
-          setStep('code');
-          setCode('');
-          return;
-        case 'in':
-          // replace(), and straight to the board: push('/admin') left the
-          // closed door in history and then bounced through a redirect.
-          router.replace('/admin/desk');
-          return;
-        default:
-          setError(outcome.message);
-          return;
-      }
-    } finally {
+      router.replace(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign-in failed');
       setBusy(false);
     }
   }
 
-  const onCodeStep = step === 'code';
-
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-        background: 'var(--dk-ground)',
-      }}
-    >
-      <form
-        onSubmit={submit}
-        style={{
-          width: '100%',
-          maxWidth: 360,
-          background: 'var(--dk-surface)',
-          border: '1px solid var(--dk-line)',
-          borderRadius: 'var(--dk-radius-card)',
-          padding: 24,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 14,
-        }}
-      >
-        <div>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 11,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: 'var(--dk-ink-3)',
-            }}
-          >
-            All Outdoor
-          </p>
-          <h1
-            style={{
-              margin: '4px 0 0',
-              fontSize: 18,
-              fontWeight: 500,
-              color: 'var(--dk-ink)',
-            }}
-          >
-            Desk
-          </h1>
+    <div className="adm-login-wrap">
+      <form className="adm-card adm-login-card" onSubmit={submit}>
+        <div className="adm-brand" style={{ marginBottom: 4 }}>
+          <span className="adm-brand-badge">
+            <Icon name="shield" size={18} />
+          </span>
+          <div>
+            <div className="adm-brand-title">All Outdoor</div>
+            <div className="adm-brand-sub">WARDEN OS</div>
+          </div>
         </div>
 
-        {/* ⚠️ THE EMAIL AND PASSWORD STAY MOUNTED AND GO READ-ONLY on the
-            second step rather than unmounting. Unmounting them empties the
-            browser's own record of the form, and a password manager that has
-            already filled a field it can no longer see does not re-fill it on
-            the retry — so a mistyped code turned into a re-typed password.
-            Disabled, not hidden: the operator can see which account they are
-            signing into while they read the code off the phone. */}
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={{ fontSize: 11.5, color: 'var(--dk-ink-2)' }}>Email</span>
-          <Input
-            type="email"
-            name="email"
-            autoComplete="username"
-            required
-            autoFocus={!onCodeStep}
-            disabled={onCodeStep}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </label>
+        <p className="adm-sub">
+          Operator sign-in. TOTP is required once your account has it enrolled.
+        </p>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={{ fontSize: 11.5, color: 'var(--dk-ink-2)' }}>
-            Password
-          </span>
-          <Input
-            type="password"
-            name="password"
-            autoComplete="current-password"
-            required
-            disabled={onCodeStep}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+        <label className="adm-label" htmlFor="adm-email">
+          Email
         </label>
+        <input
+          id="adm-email"
+          className="adm-input"
+          type="email"
+          autoComplete="username"
+          autoFocus
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
 
-        {onCodeStep ? (
+        <label className="adm-label" htmlFor="adm-password">
+          Password
+        </label>
+        <input
+          id="adm-password"
+          className="adm-input"
+          type="password"
+          autoComplete="current-password"
+          required
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+
+        {showTotp ? (
           <>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={{ fontSize: 11.5, color: 'var(--dk-ink-2)' }}>
-                {factor === 'app' ? 'Code from your authenticator app' : 'Recovery code'}
-              </span>
-              <Input
-                // The box the operator is about to type into, focused the
-                // moment it mounts — they are already holding the phone.
-                // autoFocus rather than a ref effect: the field is mounted by
-                // the step change, so there is nothing to re-focus later, and
-                // Input is a plain function component with no forwarded ref.
-                autoFocus
-                key={factor}
-                name={factor === 'app' ? 'totpCode' : 'recoveryCode'}
-                // one-time-code lets iOS and Android offer the code from the
-                // notification; it is wrong for a written-down recovery code,
-                // which no keyboard can suggest.
-                autoComplete={factor === 'app' ? 'one-time-code' : 'off'}
-                inputMode={factor === 'app' ? 'numeric' : 'text'}
-                placeholder={factor === 'app' ? '123456' : 'XXXXX-XXXXX'}
-                required
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-              />
+            <label className="adm-label" htmlFor="adm-totp">
+              Authenticator code
             </label>
-
-            {/* ⚠️ A RECOVERY CODE OPENS A READ-ONLY SESSION, and saying so
-                HERE is the difference between an operator choosing it and an
-                operator discovering it when their first decision is refused.
-                See AdminJwtGuard: recoveryOnly is checked before the role, so
-                even a Full admin can only read. */}
-            <button
-              type="button"
-              onClick={() => {
-                setFactor((f) => (f === 'app' ? 'recovery' : 'app'));
-                setCode('');
-                setError(null);
-              }}
-              style={{
-                alignSelf: 'stretch',
-                // ⚠️ IT HAS TO BE TAPPABLE, AND IT WAS 17px TALL. This is the
-                // ONE control on the locked-out path — the operator reaching
-                // it has lost their phone — and it was a bare underlined
-                // sentence with padding: 0. --dk-h-control is 34px at the desk
-                // and 44px under 1024px, which is the platform minimum tap
-                // target shell.tsx names for exactly this reason. Stretching
-                // rather than hugging the text also stops the target being a
-                // mid-paragraph word run.
-                minHeight: 'var(--dk-h-control)',
-                display: 'flex',
-                alignItems: 'center',
-                padding: '0 2px',
-                background: 'none',
-                border: 'none',
-                font: 'inherit',
-                fontSize: 11.5,
-                lineHeight: 1.5,
-                textAlign: 'left',
-                color: 'var(--dk-ink-3)',
-                textDecoration: 'underline',
-                cursor: 'pointer',
-              }}
-            >
-              {factor === 'app'
-                ? 'Lost the phone? Use a recovery code — that session can read but not change anything.'
-                : 'Use the code from your authenticator app instead.'}
-            </button>
+            <input
+              id="adm-totp"
+              className="adm-input"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value)}
+            />
           </>
-        ) : null}
-
-        {/* One form-level message, and deliberately no per-field error state.
-            Input prints its own copy beneath each box, so passing it to both
-            would say the same thing three times — and a red border on BOTH
-            fields claims we know which one is wrong, when refusing to say is
-            the whole point of the single message.
-
-            role="alert" so a screen reader announces the refusal; the old
-            markup was a bare <p> that told a sighted user the form had failed
-            and told everyone else nothing. */}
-        {error ? (
-          <p
-            role="alert"
-            style={{ margin: 0, fontSize: 12, color: 'var(--dk-bad)' }}
+        ) : (
+          <button
+            type="button"
+            className="adm-btn"
+            data-tone="ghost"
+            style={{ padding: '8px 12px', fontSize: 12 }}
+            onClick={() => setShowTotp(true)}
           >
-            {error}
-          </p>
+            <Icon name="lock" size={14} />
+            I have an authenticator code
+          </button>
+        )}
+
+        {error ? (
+          <p style={{ color: 'var(--adm-red)', fontSize: 12.5 }}>{error}</p>
         ) : null}
 
-        <Button type="submit" variant="primary" block loading={busy}>
-          {busy ? 'Signing in…' : onCodeStep ? 'Verify and sign in' : 'Sign in'}
-        </Button>
+        <button
+          type="submit"
+          className="adm-btn"
+          data-tone="cyan"
+          disabled={busy}
+        >
+          {busy ? 'Verifying…' : 'Sign in'}
+        </button>
       </form>
-    </main>
+    </div>
   );
 }

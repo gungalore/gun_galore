@@ -253,10 +253,9 @@ export interface SegProps<T extends string> {
 }
 
 /**
- * The red pill row. A real tablist, following components/desk/tabs.tsx: only
- * the active pill is in the tab order and the arrows move within the group,
- * so a four-cartridge filter costs one tab stop on the way past it rather
- * than four.
+ * The red pill row. A real tablist: only the active pill is in the tab order
+ * and the arrows move within the group, so a four-cartridge filter costs one tab
+ * stop on the way past it rather than four.
  *
  * Arrows MOVE FOCUS BUT DO NOT SELECT. Selection refetches the results, and
  * arrowing across four cartridges would fire four searches nobody asked for.

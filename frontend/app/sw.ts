@@ -17,9 +17,10 @@
 //     NOT cached. Network-only. Prices, auctions, bids, and auth must
 //     never go stale.
 //   • Offline fallback pages for navigations that fail — /offline for the
-//     shop, /admin/offline for the Desk. Which one answers a given failure is
-//     decided in lib/desk-offline.ts, because nothing under app/ is collected
-//     by vitest and a rule written here could never be tested.
+//     shop. The Desk's /admin/offline stand-in went with the Desk on
+//     2026-09-22. Which page answers a given failure is decided in
+//     lib/sw-offline.ts, because nothing under app/ is collected by vitest
+//     and a rule written here could never be tested.
 //
 // Kill switch: setting NEXT_PUBLIC_DISABLE_PWA=true at build time
 // disables SW generation entirely. Useful if a caching bug ships.
@@ -29,7 +30,6 @@ import type {
   PrecacheEntry,
   RuntimeCaching,
   SerwistGlobalConfig,
-  SerwistPlugin,
 } from 'serwist';
 import {
   Serwist,
@@ -40,16 +40,9 @@ import {
 // ⚠️ THE FALLBACK RULES LIVE IN lib/, NOT HERE, AND THAT IS THE ONLY REASON
 // THEY ARE TESTED. vitest's include is ['lib/**/*.spec.ts',
 // 'components/**/*.spec.tsx'] — nothing under app/ is collected, so a rule
-// written inline in this file can never go red. See lib/desk-offline.spec.ts;
+// written inline in this file can never go red. See lib/sw-offline.spec.ts;
 // this file is the adapter that hands serwist what that module decides.
-import {
-  DESK_OFFLINE_URL,
-  SHOP_OFFLINE_URL,
-  deskOfflineFallbackApplies,
-  deskOfflinePrecacheEntry,
-  deskStandInInstallFailureIsTolerated,
-  shopOfflineFallbackApplies,
-} from '../lib/desk-offline';
+import { SHOP_OFFLINE_URL, shopOfflineFallbackApplies } from '../lib/sw-offline';
 
 // Tell TypeScript this is the service worker's global scope.
 declare global {
@@ -91,6 +84,11 @@ const networkOnlyRoutes: RuntimeCaching[] = [
     handler: new NetworkOnly(),
   },
   {
+    // ⚠️ KEPT FOR THE DESK THAT WILL RETURN. The operator is rebuilding the
+    // admin surface, so there is no /admin route today and this matcher is
+    // dormant; it stays because a cached control panel is a number the
+    // operator acts on that stopped being true, and the rebuild should not
+    // have to remember to re-add it.
     matcher: ({ url }) => url.pathname.startsWith('/admin'),
     handler: new NetworkOnly(),
   },
@@ -102,7 +100,7 @@ const networkOnlyRoutes: RuntimeCaching[] = [
     // ⚠️ EVERY AUTH ROUTE, AND THE LIST IS DUPLICATED ELSEWHERE. A cached
     // sign-in page is a page that posts to a session that has moved on, and a
     // cached verify page shows a code entry for an account already created.
-    // SHOP_FALLBACK_EXCLUDES in lib/desk-offline.ts names the same paths for a
+    // SHOP_FALLBACK_EXCLUDES in lib/sw-offline.ts names the same paths for a
     // different reason — add a new auth route to BOTH.
     //
     // ⚠️ AND THE TWO LISTS ARE ALREADY ONE ENTRY OUT OF STEP: `/kyc` is
@@ -188,112 +186,13 @@ const imageCaching: RuntimeCaching[] = [
   },
 ];
 
-/**
- * THE DESK'S STAND-IN DOCUMENT, ADDED TO THE INSTALL-TIME PRECACHE BY HAND.
- *
- * 🚨 A SERWIST FALLBACK IS RESOLVED ONLY THROUGH `matchPrecache()`. No
- * precache key means `undefined` means the original error is rethrown and the
- * browser draws its own network page — so declaring a `fallbacks` entry for a
- * document that is not precached is decoration, not a feature. That is not a
- * theory: `globPublicPatterns` in next.config.mjs globs public/ and nothing
- * else, App Router HTML is not in public/, and a parse of the built
- * public/sw.js found 230 precache entries with `/offline` absent — only its JS
- * chunk present. The shop's fallback has been inert since it shipped.
- *
- * ⚠️ THE SHOP'S `/offline` IS DELIBERATELY NOT ADDED HERE. Switching on a
- * storefront page that has never once been served — on every visitor's phone,
- * as a side effect of an admin change — is its own decision and its own
- * commit. Phase 9 fixes the Desk and names the shop's gap.
- *
- * 🚨 AND IT IS THE ONE PRECACHE ENTRY WHOSE FAILURE MUST NOT SINK THE INSTALL.
- * A precache install is all-or-nothing: serwist's PrecacheStrategy throws on
- * any status >= 400 and rethrows a network failure, `Serwist.handleInstall`
- * awaits every entry inside `event.waitUntil`, and a rejected install means the
- * browser keeps NO service worker — for shoppers, not just the operator. Every
- * other url in the injected manifest is a file on disk — 169 build artefacts
- * under `/_next/static/` and 63 globbed out of `public/`, counted off a built
- * public/sw.js rather than assumed. This is the only RENDERED ROUTE in the
- * list, and it sits under a path an edge rule can plausibly be pointed at: an
- * IP allowlist on /admin, an access policy, a middleware change, a deploy
- * where the route 404s. So a Desk-only stand-in was gating the storefront's
- * PWA. `tolerateDeskStandInInstallFailure` below
- * is the narrowing; `deskStandInInstallFailureIsTolerated` in lib/ is the rule
- * it asks, and the spec is what stops that rule widening.
- *
- * ⚠️ AND IT IS FETCHED ANONYMOUSLY AT INSTALL TIME, by every visitor's service
- * worker, shopper or not. That is safe only because of what the document is:
- * `/admin(.*)` is public in middleware.ts (the Desk runs its own JWT and gates
- * client-side), so the server hands over the HTML — and the page therefore
- * carries no figure, no board name beyond what the manifest already publishes,
- * and no member data. See app/admin/offline/page.tsx.
- *
- * 🚨 THE INJECTION POINT IS READ EXACTLY ONCE, INTO THIS CONST, AND IT HAS TO
- * BE. `__SW_MANIFEST` on `self` is not a variable — it is a marker the serwist
- * webpack plugin rewrites, and it counts occurrences in the SOURCE. Naming it
- * twice fails the build outright: "Multiple instances ... were found in your
- * SW source. Include it only once." The obvious shape — reading it once to
- * derive the stamp and again to spread it — is the one that does not compile,
- * and it fails at `next build`, which on this repo is the only real gate.
- *
- * ⚠️ WHICH IS ALSO WHY THIS COMMENT SPELLS THE MARKER IN TWO PIECES. A source
- * scan that counts a literal counts it inside prose too; writing the full
- * token here to explain the rule would break the rule.
- */
-const injectedManifest = self.__SW_MANIFEST;
-const deskOffline = deskOfflinePrecacheEntry(injectedManifest);
-
-/**
- * WHAT THE SHOPPER'S SERVICE WORKER IS ALLOWED TO LOSE.
- *
- * 🚨 THIS IS THE WHOLE BLAST-RADIUS FIX, AND IT IS DELIBERATELY THE SMALLEST
- * ONE THAT KEEPS THE PAGE THERE WHEN IT IS NEEDED. The alternative considered
- * was caching the stand-in at RUNTIME on the first admin navigation, which has
- * no blast radius at all — but a stand-in that exists only after a successful
- * visit is missing from exactly the browser that most needs it, and it would
- * mean leaving serwist's `matchPrecache()` path (the only thing `fallbacks`
- * consults) for a hand-rolled cache with its own freshness and its own
- * cleanup. Precaching stays; only the failure changes shape.
- *
- * `handlerDidError` is consulted by `Strategy._getResponse` when `_handle`
- * throws; returning a response there means the entry is treated as handled and
- * `handleInstall` resolves. Nothing is written to the cache on this path —
- * `_handleInstall` throws only AFTER `cachePut` has already refused the
- * response — so the outcome is an install that succeeds with this one url
- * absent from the precache, not one that stores a broken page.
- *
- * ⚠️ WHAT THIS GIVES UP, SAID PLAINLY: when it fires, the operator's stand-in
- * is silently not there, and the service worker has nowhere to report that.
- * The Health board's "Offline stand-in" row is now the ONLY place a failed
- * stand-in fetch is visible, and it is visible only on the device it is true
- * of and only when somebody opens it. That was already the row's job; it is no
- * longer its only job.
- *
- * ⚠️ AND IT IS A PRODUCTION-BUILD BEHAVIOUR. In a service-worker bundle built
- * with NODE_ENV !== 'production', serwist's own `_getResponse` re-throws from
- * this very branch after logging (Strategy.ts: `throw logger.log(...)`), so
- * the rescue does not apply there. Next only generates this worker during
- * `next build`, which defines production — but a future SW build mode that
- * does not would take the rescue away without changing a line of this file.
- */
-const tolerateDeskStandInInstallFailure: SerwistPlugin = {
-  handlerDidError: async ({ event, request }) =>
-    deskStandInInstallFailureIsTolerated(event?.type, request.url)
-      ? // No body, and not a 200: nothing reads this response — `handleInstall`
-        // only awaits it — and a 204 cannot be mistaken for a page if anything
-        // ever does.
-        new Response(null, { status: 204, statusText: 'stand-in not stored' })
-      : undefined,
-};
-
 const serwist = new Serwist({
-  precacheEntries: deskOffline
-    ? [...(injectedManifest ?? []), deskOffline]
-    : injectedManifest,
-  // ⚠️ ADDS A PLUGIN, CHANGES NOTHING ELSE. `parsePrecacheOptions` spreads
-  // `plugins` in front of serwist's own PrecacheCacheKeyPlugin and defaults
-  // every other field it reads, so passing this object does not quietly drop
-  // the cache name, the concurrency limit or the network fallback.
-  precacheOptions: { plugins: [tolerateDeskStandInInstallFailure] },
+  // 🚨 THE INJECTION POINT IS READ EXACTLY ONCE, AND IT HAS TO BE.
+  // `__SW_MANIFEST` on `self` is not a variable — it is a marker the serwist
+  // webpack plugin rewrites, and it counts occurrences in the SOURCE. Naming
+  // it twice fails the build outright: "Multiple instances ... were found in
+  // your SW source. Include it only once."
+  precacheEntries: self.__SW_MANIFEST,
   // Controlled "prompt-to-update" — deliberately NOT auto-activating.
   // With skipWaiting/clientsClaim TRUE, a freshly deployed SW seizes an
   // already-open PWA mid-session; the old page then lazy-loads a chunk
@@ -314,39 +213,20 @@ const serwist = new Serwist({
   // Navigation fallback — when a document request fails and the page isn't
   // cached, serve a stand-in instead of the browser's default network error.
   //
-  // 🚨 "ADMIN PAGES NEVER FALL BACK" WAS TRUE HERE UNTIL PHASE 9, AND THE
-  // REASON IT GAVE IS STILL RIGHT. A cached admin page is a number the
-  // operator acts on that stopped being true, and a cached "0 things need you"
-  // is the worst thing that panel could render. What changed is not the rule
-  // but what /admin falls back TO: a static document that shows no figure at
-  // all. The board itself is still never cached — the /admin NetworkOnly rule
-  // above is untouched and `/api/*` stays network-only permanently — so the
-  // failure is still visible. It is the whole page. It simply says so in the
-  // Desk's own skin, with the last successful read and a retry, instead of in
-  // the browser's.
-  //
-  // ⚠️ THE ORDER OF THESE TWO ENTRIES IS NOT LOAD-BEARING AND MUST NOT BECOME
-  // SO. serwist's PrecacheFallbackPlugin walks the list, takes the first
-  // matcher that returns true, and — if THAT url is not in the precache —
-  // carries on to the next. The two matchers partition document requests
-  // between them (see lib/desk-offline.ts), so no request can match both; the
-  // Desk entry is written first only because it is the narrower rule.
+  // ⚠️ THE SHOP'S STAND-IN IS THE ONLY ONE LEFT. The Desk's /admin/offline
+  // document, its precache entry and its install-time rescue were removed on
+  // 2026-09-22 with the Desk. Admin navigations therefore fall through to the
+  // browser's own error page, which is exactly where they were before the
+  // Desk's stand-in existed — and the /admin NetworkOnly rule above is
+  // untouched, so `/api/*` stays network-only permanently.
   //
   // ⚠️ A FALLBACK PLUGIN IS ATTACHED TO EVERY RUNTIME STRATEGY, NOT JUST THE
   // NAVIGATION ONE — serwist pushes it onto each handler in `runtimeCaching`,
-  // NetworkOnly included, which is what lets an /admin navigation reach a
-  // fallback at all despite never being cached. It is also why both matchers
-  // test `destination === 'document'` first: without it a failed /admin image
-  // or a failed /admin fetch would each be answered with a page of HTML.
+  // NetworkOnly included. That is why the matcher below tests
+  // `destination === 'document'` first: without it a failed image or fetch
+  // would be answered with a page of HTML.
   fallbacks: {
     entries: [
-      {
-        url: DESK_OFFLINE_URL,
-        // The matcher is handed `request` and not `url`, so the pathname is
-        // derived here — same as the shop entry below.
-        matcher: ({ request }) =>
-          deskOfflineFallbackApplies(request.destination, new URL(request.url).pathname),
-      },
       {
         url: SHOP_OFFLINE_URL,
         matcher: ({ request }) =>
