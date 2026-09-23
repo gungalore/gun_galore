@@ -10,13 +10,13 @@ import { PageReveal } from '@/components/page-reveal';
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
-  PENDING:   { label: 'Awaiting seller', color: '#f59e0b' },
-  COUNTERED: { label: 'Counter received', color: '#3b82f6' },
-  ACCEPTED:  { label: 'Accepted — checkout now', color: '#22c55e' },
+  PENDING:   { label: 'Awaiting seller', color: 'var(--warning)' },
+  COUNTERED: { label: 'Counter received', color: 'var(--info)' },
+  ACCEPTED:  { label: 'Accepted — checkout now', color: 'var(--success)' },
   REJECTED:  { label: 'Rejected', color: 'var(--text-tertiary)' },
   WITHDRAWN: { label: 'Withdrawn', color: 'var(--text-tertiary)' },
   EXPIRED:   { label: 'Expired', color: 'var(--text-tertiary)' },
-  CONVERTED: { label: 'Purchased', color: '#22c55e' },
+  CONVERTED: { label: 'Purchased', color: 'var(--success)' },
 };
 
 export default async function MyOffersPage() {
@@ -125,7 +125,7 @@ function OfferCard({ offer }: { offer: Offer }) {
             background: isActive
               ? 'rgba(34,197,94,0.14)'
               : 'rgba(108,108,108,0.16)',
-            color: isActive ? '#22c55e' : 'var(--text-tertiary)',
+            color: isActive ? 'var(--success)' : 'var(--text-tertiary)',
             border: `0.5px solid ${
               isActive ? 'rgba(34,197,94,0.35)' : 'var(--border)'
             }`,
@@ -165,7 +165,7 @@ function OfferCard({ offer }: { offer: Offer }) {
               Your offer: {formatPrice(offer.offerAmount)}
             </span>
             {offer.counterAmount && (
-              <span className="text-xs" style={{ color: '#3b82f6' }}>
+              <span className="text-xs" style={{ color: 'var(--info)' }}>
                 Counter: {formatPrice(offer.counterAmount)}
               </span>
             )}
@@ -255,7 +255,7 @@ function ExpiryCountdown({
   const tone = isCritical
     ? { bg: 'rgba(200,16,46,0.10)', border: 'var(--red)', label: 'var(--red)' }
     : isWarning
-      ? { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.45)', label: '#f59e0b' }
+      ? { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.45)', label: 'var(--warning)' }
       : { bg: 'var(--bg-inset)', border: 'var(--border)', label: 'var(--text-secondary)' };
   const verb = mode === 'respond' ? 'left to respond' : 'left to pay';
   const left = hours >= 1 ? `${hours}h ${minutes}m ${verb}` : `${minutes}m ${verb}`;

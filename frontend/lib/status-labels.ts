@@ -35,7 +35,7 @@ export interface StatusEntry {
 export const REFUND_ETA_COPY = '3–7 business days';
 
 const TONE_COLOR: Record<StatusTone, string> = {
-  success: '#00a03c',
+  success: 'var(--success)',
   pending: '#d49a3a',
   error: 'var(--red)',
   info: '#6366f1',

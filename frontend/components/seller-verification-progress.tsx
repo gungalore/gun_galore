@@ -64,7 +64,7 @@ export function SellerVerificationProgress({ me }: { me: Me }) {
             className="text-xs"
             style={{
               background: 'rgba(245,158,11,0.14)',
-              color: '#f59e0b',
+              color: 'var(--warning)',
               border: '0.5px solid rgba(245,158,11,0.4)',
               borderRadius: 999,
               padding: '2px 10px',
@@ -75,7 +75,7 @@ export function SellerVerificationProgress({ me }: { me: Me }) {
           </span>
         )}
         {allDone && !underReview && (
-          <span className="text-xs" style={{ color: '#22c55e', fontWeight: 500 }}>
+          <span className="text-xs" style={{ color: 'var(--success)', fontWeight: 500 }}>
             All set &mdash; payouts enabled
           </span>
         )}
@@ -103,7 +103,7 @@ export function SellerVerificationProgress({ me }: { me: Me }) {
                 style={{
                   height: 6,
                   borderRadius: 3,
-                  background: done ? '#22c55e' : 'var(--bg-inset)',
+                  background: done ? 'var(--success)' : 'var(--bg-inset)',
                   border: done ? 'none' : '0.5px solid var(--border)',
                 }}
               />

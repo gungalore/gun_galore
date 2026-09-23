@@ -32,7 +32,7 @@ const TIER_COLOR: Record<string, string> = {
   NEW: 'var(--text-tertiary)',
   ESTABLISHED: '#6366f1',
   TRUSTED: '#0ea5e9',
-  TOP_SELLER: '#f59e0b',
+  TOP_SELLER: 'var(--warning)',
   DEALER: 'var(--red)',
 };
 
@@ -177,7 +177,7 @@ export default async function SellerProfilePage({
             </p>
             {avgRating && (
               <div className="flex items-center gap-2 mt-1">
-                <span style={{ color: '#f59e0b' }}>
+                <span style={{ color: 'var(--warning)' }}>
                   {'★'.repeat(Math.round(avgRating))}{'☆'.repeat(5 - Math.round(avgRating))}
                 </span>
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -270,7 +270,7 @@ export default async function SellerProfilePage({
                     <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                       {r.rater.username ?? 'Anonymous'} · {r.transaction.listing.title.slice(0, 28)}
                     </span>
-                    <span style={{ color: '#f59e0b', fontSize: '12px' }}>
+                    <span style={{ color: 'var(--warning)', fontSize: '12px' }}>
                       {'★'.repeat(r.stars)}{'☆'.repeat(5 - r.stars)}
                     </span>
                   </div>

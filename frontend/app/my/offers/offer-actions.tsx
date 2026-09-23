@@ -195,7 +195,7 @@ export default function OfferActions({
                 disabled={!!loading}
                 className="flex-1 py-2 rounded text-sm font-medium"
                 style={{
-                  background: loading ? 'var(--bg-inset)' : '#6b7280',
+                  background: loading ? 'var(--bg-inset)' : 'var(--bg-inset)',
                   color: loading ? 'var(--text-tertiary)' : '#fff',
                   border: 'none',
                   cursor: loading ? 'not-allowed' : 'pointer',

@@ -364,7 +364,7 @@ export default function SettingsPage() {
         border: 'none',
         cursor: disabled ? 'default' : 'pointer',
         opacity: disabled ? 0.5 : 1,
-        background: on ? '#00a03c' : 'var(--border-hover)',
+        background: on ? 'var(--success)' : 'var(--border-hover)',
         position: 'relative',
         transition: 'background 0.15s',
         flexShrink: 0,
@@ -676,7 +676,7 @@ export default function SettingsPage() {
                 {busy ? 'Saving…' : 'Save defaults'}
               </button>
               {shipSaved && (
-                <span className="text-xs" style={{ color: '#22c55e' }}>Saved ✓</span>
+                <span className="text-xs" style={{ color: 'var(--success)' }}>Saved ✓</span>
               )}
             </div>
           </section>
@@ -770,7 +770,7 @@ export default function SettingsPage() {
                       {a.isDefault && (
                         <span
                           className="ml-2 text-xs px-1.5 py-0.5 rounded"
-                          style={{ background: '#00a03c', color: '#fff' }}
+                          style={{ background: 'var(--success)', color: '#fff' }}
                         >
                           Default
                         </span>

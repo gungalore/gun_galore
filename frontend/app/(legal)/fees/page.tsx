@@ -44,7 +44,7 @@ export default function FeesPage() {
       <div
         style={{
           background: 'rgba(34,197,94,0.06)',
-          border: '0.5px solid #22c55e',
+          border: '0.5px solid var(--success)',
           borderRadius: 8,
           padding: 16,
           marginBottom: 24,

@@ -128,7 +128,7 @@ export default async function OfferCheckoutPage({
             {offer.counterAmount && (
               <div className="flex justify-between">
                 <span style={{ color: 'var(--text-tertiary)' }}>Seller counter</span>
-                <span style={{ color: '#3b82f6' }}>{formatPrice(offer.counterAmount)}</span>
+                <span style={{ color: 'var(--info)' }}>{formatPrice(offer.counterAmount)}</span>
               </div>
             )}
             <div className="flex justify-between pt-2" style={{ borderTop: '0.5px solid var(--border)' }}>

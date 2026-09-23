@@ -40,7 +40,7 @@ export function RatingWidget({
     return (
       <div
         className="rounded-[6px] px-4 py-3 text-sm"
-        style={{ background: 'rgba(0,160,60,0.10)', color: '#00a03c', border: '0.5px solid rgba(0,160,60,0.2)' }}
+        style={{ background: 'rgba(0,160,60,0.10)', color: 'var(--success)', border: '0.5px solid rgba(0,160,60,0.2)' }}
       >
         {existing ? 'Your rating has been updated.' : 'Thank you for your rating.'}
       </div>
@@ -127,7 +127,7 @@ export function RatingWidget({
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
-                color: n <= display ? '#f59e0b' : 'var(--border)',
+                color: n <= display ? 'var(--warning)' : 'var(--border)',
                 padding: '0 2px',
                 lineHeight: 1,
               }}

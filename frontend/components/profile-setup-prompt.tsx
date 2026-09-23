@@ -111,8 +111,8 @@ function markShownThisSession(userId: string) {
 // Progress-bar fill colour ramps red → amber → green as the profile fills,
 // so the bar reads as genuine forward progress (green = nearly there).
 function fillColour(percent: number): string {
-  if (percent >= 67) return '#22c55e';
-  if (percent >= 34) return '#f59e0b';
+  if (percent >= 67) return 'var(--success)';
+  if (percent >= 34) return 'var(--warning)';
   return 'var(--red)';
 }
 

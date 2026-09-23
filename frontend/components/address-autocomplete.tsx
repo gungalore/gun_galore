@@ -538,7 +538,7 @@ export function AddressAutocomplete({
         </button>
       )}
       {geoError && (
-        <p className="mt-1" style={{ fontSize: 11, color: '#f59e0b' }}>
+        <p className="mt-1" style={{ fontSize: 11, color: 'var(--warning)' }}>
           {geoError}
         </p>
       )}
@@ -547,7 +547,7 @@ export function AddressAutocomplete({
           className="mt-1.5"
           style={{
             fontSize: 11,
-            color: authFailed ? '#f59e0b' : 'var(--text-tertiary)',
+            color: authFailed ? 'var(--warning)' : 'var(--text-tertiary)',
           }}
         >
           {authFailed

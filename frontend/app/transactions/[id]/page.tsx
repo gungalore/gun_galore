@@ -28,9 +28,9 @@ const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
 };
 
 const PAYMENT_STATUS_COLOR: Record<PaymentStatus, string> = {
-  HELD: '#f59e0b',
+  HELD: 'var(--warning)',
   PENDING_ADMIN_VERIFICATION: '#6366f1',
-  RELEASED: '#00a03c',
+  RELEASED: 'var(--success)',
   DISPUTED: 'var(--red)',
   REFUNDED: 'var(--text-tertiary)',
 };
@@ -930,7 +930,7 @@ export default async function TransactionPage({
                 ? { bg: 'rgba(200,16,46,0.12)', border: 'var(--red)', label: 'var(--red)' }
                 : isCritical
                   ? { bg: 'rgba(200,16,46,0.08)', border: 'var(--red)', label: 'var(--red)' }
-                  : { bg: 'rgba(0,160,60,0.06)', border: 'rgba(0,160,60,0.35)', label: '#00a03c' };
+                  : { bg: 'rgba(0,160,60,0.06)', border: 'rgba(0,160,60,0.35)', label: 'var(--success)' };
               const remaining = expired
                 ? 'overdue'
                 : daysLeft > 0
@@ -1100,7 +1100,7 @@ export default async function TransactionPage({
                 className="rounded-[8px] p-4"
                 style={{
                   background: 'var(--bg-card)',
-                  border: `0.5px solid ${tx.dealerVerificationStatus === 'REJECTED' ? 'var(--red)' : '#f59e0b'}`,
+                  border: `0.5px solid ${tx.dealerVerificationStatus === 'REJECTED' ? 'var(--red)' : 'var(--warning)'}`,
                 }}
               >
                 <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
@@ -1322,7 +1322,7 @@ export default async function TransactionPage({
                   <span style={{ color: 'var(--text-secondary)' }}>
                     {tx.feeBreakdown.seller.netLabel}
                   </span>
-                  <span style={{ color: '#00a03c' }}>
+                  <span style={{ color: 'var(--success)' }}>
                     {formatPrice(tx.feeBreakdown.seller.net)}
                   </span>
                 </div>
@@ -1358,21 +1358,21 @@ function DealerVerificationStatusBanner({ status }: { status: string }) {
   const [colour, title, body] = (() => {
     if (status === 'PENDING_CLAUDE') {
       return [
-        '#f59e0b',
+        'var(--warning)',
         'Verification in progress',
         'Our bot is scanning the photos. This usually takes under a minute.',
       ];
     }
     if (status === 'PENDING_ADMIN_REVIEW') {
       return [
-        '#f59e0b',
+        'var(--warning)',
         'Sent for human review',
         'A team member is checking the photos. We aim to confirm within 48 hours. You will receive an email and SMS once verification completes.',
       ];
     }
     if (status === 'APPROVED') {
       return [
-        '#22c55e',
+        'var(--success)',
         'Dealer-stock verification approved',
         'Payment will be released to the seller. Buyer can now collect from the dealer with their licence paperwork.',
       ];

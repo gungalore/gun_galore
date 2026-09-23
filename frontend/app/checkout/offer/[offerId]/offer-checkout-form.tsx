@@ -447,7 +447,7 @@ export function OfferCheckoutForm({
           <p
             className="text-xs"
             style={{
-              color: firearmAttestation ? '#00a03c' : 'var(--text-tertiary)',
+              color: firearmAttestation ? 'var(--success)' : 'var(--text-tertiary)',
             }}
           >
             {firearmAttestation
@@ -721,7 +721,7 @@ function DealerTransferConsent({
           lineHeight: 1.5,
         }}
       >
-        <strong style={{ color: '#f59e0b' }}>Important:</strong>{' '}
+        <strong style={{ color: 'var(--warning)' }}>Important:</strong>{' '}
         The SAPS 534 must be filled in using{' '}
         <strong style={{ color: 'var(--text-primary)' }}>
           BLOCK LETTERS
@@ -750,7 +750,7 @@ function DealerTransferConsent({
       <p
         className="text-xs"
         style={{
-          color: accepted ? '#00a03c' : 'var(--text-tertiary)',
+          color: accepted ? 'var(--success)' : 'var(--text-tertiary)',
         }}
       >
         {accepted

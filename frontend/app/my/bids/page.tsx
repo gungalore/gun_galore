@@ -70,7 +70,7 @@ function PayDeadline({ payByAt }: { payByAt: string }) {
       ? {
           bg: 'rgba(245,158,11,0.10)',
           border: 'rgba(245,158,11,0.45)',
-          label: '#f59e0b',
+          label: 'var(--warning)',
         }
       : {
           bg: 'var(--bg-inset)',
@@ -116,7 +116,7 @@ function remainingColor(endTime: string | null): string {
   const ms = new Date(endTime).getTime() - Date.now();
   if (ms <= 0) return 'var(--text-tertiary)';
   if (ms < 3_600_000) return 'var(--red)';
-  if (ms < 6 * 3_600_000) return '#f59e0b';
+  if (ms < 6 * 3_600_000) return 'var(--warning)';
   return 'var(--text-tertiary)';
 }
 
@@ -312,14 +312,14 @@ function BidCard({
       : 'High bidder'
     : 'Outbid';
   const statusColor = row.isWinner
-    ? '#22c55e'
+    ? 'var(--success)'
     : ended
     ? 'var(--text-tertiary)'
     : ahead
     ? reserveShort
-      ? '#f59e0b'
-      : '#22c55e'
-    : '#f59e0b';
+      ? 'var(--warning)'
+      : 'var(--success)'
+    : 'var(--warning)';
   // Prominent Active vs Closed pill at the card head — the eye reads
   // intent instantly without parsing the detail row.
   const isActive = !ended && !row.isWinner;
@@ -346,7 +346,7 @@ function BidCard({
             background: isActive
               ? 'rgba(34,197,94,0.14)'
               : 'rgba(108,108,108,0.16)',
-            color: isActive ? '#22c55e' : 'var(--text-tertiary)',
+            color: isActive ? 'var(--success)' : 'var(--text-tertiary)',
             border: `0.5px solid ${
               isActive ? 'rgba(34,197,94,0.35)' : 'var(--border)'
             }`,

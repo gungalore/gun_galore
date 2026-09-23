@@ -100,8 +100,8 @@ const TIER_LABEL: Record<SellerTier, string> = {
 
 const KYC_TONE: Record<string, { label: string; colour: string }> = {
   NONE: { label: 'ID not verified', colour: 'var(--text-tertiary)' },
-  PENDING: { label: 'ID check pending', colour: '#f59e0b' },
-  VERIFIED: { label: 'ID verified', colour: '#22c55e' },
+  PENDING: { label: 'ID check pending', colour: 'var(--warning)' },
+  VERIFIED: { label: 'ID verified', colour: 'var(--success)' },
   REJECTED: { label: 'ID check failed', colour: 'var(--red)' },
 };
 

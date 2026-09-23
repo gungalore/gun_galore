@@ -263,7 +263,7 @@ export default function OfferPanel({
       <div className="mb-5">
         <div
           className="rounded-[6px] px-4 py-3 mb-2 text-sm text-center"
-          style={{ background: '#f59e0b14', border: '0.5px solid var(--warning)', color: 'var(--warning)' }}
+          style={{ background: 'var(--warning)14', border: '0.5px solid var(--warning)', color: 'var(--warning)' }}
         >
           This offer was below the seller&apos;s minimum and was declined
           automatically. You can try a higher offer — attempts are limited, so

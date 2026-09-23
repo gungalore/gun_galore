@@ -73,7 +73,7 @@ export function ConfirmDeliveryButton({
         onClick={() => setOpen(true)}
         className="w-full py-2.5 rounded-[6px] text-sm"
         style={{
-          background: '#00a03c',
+          background: 'var(--success)',
           color: '#fff',
           border: 'none',
           cursor: 'pointer',
@@ -206,7 +206,7 @@ export function ConfirmDeliveryButton({
                 disabled={!allChecked || busy}
                 className="flex-1 py-2.5 rounded-[6px] text-sm font-medium"
                 style={{
-                  background: allChecked && !busy ? '#00a03c' : 'var(--bg-inset)',
+                  background: allChecked && !busy ? 'var(--success)' : 'var(--bg-inset)',
                   color: allChecked && !busy ? '#fff' : 'var(--text-tertiary)',
                   border: 'none',
                   cursor: allChecked && !busy ? 'pointer' : 'not-allowed',

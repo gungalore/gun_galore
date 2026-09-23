@@ -49,7 +49,7 @@ export default function AwaitingAcceptChip({
       <p
         className="text-xs uppercase mb-1"
         style={{
-          color: expired ? 'var(--red)' : '#f59e0b',
+          color: expired ? 'var(--red)' : 'var(--warning)',
           letterSpacing: '0.06em',
           fontWeight: 600,
         }}

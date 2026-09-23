@@ -16,6 +16,9 @@ import { trackInstall } from '@/lib/activity-beacon';
 import { AccountMenuList, LogoutIcon } from '@/lib/account-menu';
 import { CategoryMenu } from '@/components/category-menu';
 import { ViewModeToggle } from '@/components/view-mode-toggle';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { Logo } from '@/components/brand/Logo';
+import { useTheme } from '@/lib/use-theme';
 
 // The nav is a singleton, so a fixed id is safe and keeps aria-controls on
 // the search button pointing at the panel without threading a useId through.
@@ -79,6 +82,7 @@ function WishlistNavButton() {
 
 export function Nav() {
   const { isSignedIn, isLoaded, user } = useUser();
+  const { theme } = useTheme();
   const { signOut } = useClerk();
   const router = useRouter();
   const pathname = usePathname();
@@ -210,26 +214,23 @@ export function Nav() {
               So phones get the monogram (square, ~36px) and everything from sm
               up gets the wordmark too. Both are the same artwork.
 
-              /logo.svg still owns the hero, share cards and print. */}
+              Uses brand pack Logo component with theme awareness:
+              light artwork on light theme, dark artwork on dark theme. */}
           <Link
             href="/"
             className="shrink min-w-0 flex items-center"
             aria-label="All Outdoor"
           >
-            <Image
-              src={av('/logo-mark-dark.svg')}
-              alt="All Outdoor"
-              width={36}
+            <Logo
+              variant="emblem"
+              on={theme === 'dark' ? 'dark' : 'light'}
               height={36}
-              priority
               className="h-9 w-auto object-contain sm:hidden"
             />
-            <Image
-              src={av('/logo-nav-dark.svg')}
-              alt="All Outdoor"
-              width={264}
+            <Logo
+              variant="horizontal"
+              on={theme === 'dark' ? 'dark' : 'light'}
               height={44}
-              priority
               className="hidden h-11 w-auto max-w-full object-contain sm:block"
             />
           </Link>
@@ -476,6 +477,13 @@ export function Nav() {
                     </button>
                   </SignInButton>
                 )}
+              </div>
+
+              {/* Theme toggle — right side of header cluster, between user menu
+                  and "Sell your gear". Desktop only (hidden on mobile where
+                  the cluster is already at capacity). */}
+              <div className="hidden md:flex items-center">
+                <ThemeToggle />
               </div>
 
               {/* Sell — last in the cluster (board review, 2026-08-27): icons

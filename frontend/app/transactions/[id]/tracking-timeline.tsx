@@ -40,8 +40,8 @@ const SOURCE_LABEL: Record<string, string> = {
 
 const SOURCE_COLOR: Record<string, string> = {
   INTERNAL: '#6366f1',
-  PUDO: '#00a03c',
-  TCG: '#f59e0b',
+  PUDO: 'var(--success)',
+  TCG: 'var(--warning)',
 };
 
 // Sub-set of collapsed statuses that mark the "active" branch of the

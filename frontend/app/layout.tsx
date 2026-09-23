@@ -4,6 +4,7 @@ import { fontDisplay, fontBody } from './fonts';
 import { BRAND_NAME, BRAND_BLURB, SITE_URL } from '@/lib/brand';
 import { Suspense } from 'react';
 import { AuthProvider } from '../lib/auth';
+import { ThemeProvider } from '@/components/theme-provider';
 import { PublicNav, PublicFooter } from '@/components/public-chrome';
 import { SiteFooter } from '@/components/site-footer';
 import { AddedToCartDrawer } from '@/components/added-to-cart-drawer';
@@ -67,6 +68,16 @@ const CHUNK_HEAL_SCRIPT = `(function(){try{var KEY='gg-chunk-reload-at';var seen
 // install UI (lib/use-install-prompt.ts) can pick it up whenever it mounts.
 // appinstalled clears the stash + flags installed. See useInstallPrompt().
 const INSTALL_CAPTURE_SCRIPT = `(function(){try{window.__ggInstallEvent=window.__ggInstallEvent||null;window.__ggInstalled=window.__ggInstalled||false;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__ggInstallEvent=e;try{window.dispatchEvent(new Event('gg:install-available'));}catch(_){}});window.addEventListener('appinstalled',function(){window.__ggInstallEvent=null;window.__ggInstalled=true;try{window.dispatchEvent(new Event('gg:installed'));}catch(_){}});}catch(_){}})();`;
+
+// Pre-paint theme detection — sets <html data-theme="light|dark"> before React
+// hydrates so CSS [data-theme] rules apply on the very first frame. Without
+// this, the page flashes the OS default (usually light) before the client-side
+// useTheme() hook reads localStorage and applies the stored preference.
+//
+// Reads localStorage 'gg-theme' (light|dark|system). Falls back to
+// prefers-color-scheme when 'system'. Writes data-theme to <html>.
+// Does NOT write to localStorage — that is the client hook's job.
+const THEME_DETECT_SCRIPT = `(function(){try{var KEY='gg-theme';var stored=localStorage&&localStorage.getItem(KEY);var pref=stored==='light'||stored==='dark'?stored:'system';var dark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;var theme=pref==='system'? (dark?'dark':'light') : pref;document.documentElement.dataset.theme=theme;}catch(_){}})();`;
 
 // Canonical origin now lives in lib/brand.ts so the manifest and this file
 // cannot disagree — see the note there.
@@ -185,12 +196,12 @@ export const viewport: Viewport = {
   // real notch / home-indicator insets on iOS. Without this, iOS Safari
   // returns 0 for the safe-area-inset values even on notch phones.
   viewportFit: 'cover',
-  // Both entries are the Winkel page colour (--bg). The site ships ONE
-  // theme, so the two media arms are deliberately identical rather than
-  // absent — a missing light arm lets Chrome pick its own tab colour.
+  // Light and dark arms match globals.css --bg and manifest.ts colours.
+  // Dark: #131110 (warm near-black, dark theme canvas).
+  // Light: #F7F6F3 (warm off-white, brand pack stone-50).
   themeColor: [
-    { media: '(prefers-color-scheme: dark)', color: '#FFFFFF' },
-    { media: '(prefers-color-scheme: light)', color: '#FFFFFF' },
+    { media: '(prefers-color-scheme: dark)', color: '#131110' },
+    { media: '(prefers-color-scheme: light)', color: '#F7F6F3' },
   ],
 };
 
@@ -201,6 +212,10 @@ export default function RootLayout({
 }>) {
   return (
     <AuthProvider>
+      {/* ThemeProvider sets data-theme on <html> via useTheme(). The pre-paint
+          script in <head> sets the initial value so CSS rules apply before
+          hydration — this component just keeps it in sync on the client. */}
+      <ThemeProvider>
       {/* WishlistProvider hydrates the user's saved-listing IDs once
           on sign-in (Set<string>) and makes the toggle helper
           available to every heart icon in the app. Mounted inside
@@ -235,9 +250,16 @@ export default function RootLayout({
             dangerouslySetInnerHTML={{ __html: CHUNK_HEAL_SCRIPT }}
           />
           {/* Capture beforeinstallprompt at first paint so the install UI
-              never misses it to a hydration race. See useInstallPrompt(). */}
+               never misses it to a hydration race. See useInstallPrompt(). */}
           <script
             dangerouslySetInnerHTML={{ __html: INSTALL_CAPTURE_SCRIPT }}
+          />
+          {/* Pre-paint theme detection — sets <html data-theme="light|dark">
+               before React hydrates so CSS [data-theme] rules apply on the
+               first frame. Without this the page flashes the OS default
+               (usually light) before useTheme() reads localStorage. */}
+          <script
+            dangerouslySetInnerHTML={{ __html: THEME_DETECT_SCRIPT }}
           />
           {/* Preload the homepage hero image so it kicks off in
               parallel with the JS bundle. Lighthouse mobile flagged
@@ -270,6 +292,17 @@ export default function RootLayout({
               regeneration: the corner pixel is (246,245,241) = --bg
               exactly, and the dark-ink mark reads at (4,4,2). */}
           {APPLE_SPLASH_LINKS.map((s) => (
+            <link
+              key={s.href}
+              rel="apple-touch-startup-image"
+              href={s.href}
+              media={s.media}
+            />
+          ))}
+          {/* Dark-mode splash screens — same sizes as APPLE_SPLASH_LINKS but
+              with (prefers-color-scheme: dark) in the media query. iOS picks
+              these when the user's OS is in dark mode. */}
+          {APPLE_SPLASH_DARK_LINKS.map((s) => (
             <link
               key={s.href}
               rel="apple-touch-startup-image"
@@ -385,6 +418,7 @@ export default function RootLayout({
           </WishlistProvider>
         </body>
       </html>
+      </ThemeProvider>
     </AuthProvider>
   );
 }
@@ -433,5 +467,34 @@ const APPLE_SPLASH_LINKS: Array<{ href: string; media: string }> = [
   { href: av('/splash/apple-splash-828-1792.jpeg'), media: '(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
   { href: av('/splash/apple-splash-1242-2208.jpeg'), media: '(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
   { href: av('/splash/apple-splash-750-1334.jpeg'), media: '(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
-  { href: av('/splash/apple-splash-640-1136.jpeg'), media: '(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+   { href: av('/splash/apple-splash-640-1136.jpeg'), media: '(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+ ];
+
+// Dark-mode splash links — same sizes as APPLE_SPLASH_LINKS but with
+// (prefers-color-scheme: dark) added to each media query. iOS picks the
+// matching entry when the user's OS is in dark mode.
+const APPLE_SPLASH_DARK_LINKS: Array<{ href: string; media: string }> = [
+  { href: av('/splash-dark/apple-splash-2064-2752.jpeg'), media: '(device-width: 1032px) and (device-height: 1376px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1668-2420.jpeg'), media: '(device-width: 834px) and (device-height: 1210px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1080-2340.jpeg'), media: '(device-width: 360px) and (device-height: 780px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-2048-2732.jpeg'), media: '(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1668-2388.jpeg'), media: '(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1536-2048.jpeg'), media: '(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1640-2360.jpeg'), media: '(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1668-2224.jpeg'), media: '(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1620-2160.jpeg'), media: '(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1488-2266.jpeg'), media: '(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1320-2868.jpeg'), media: '(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1206-2622.jpeg'), media: '(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1260-2736.jpeg'), media: '(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1290-2796.jpeg'), media: '(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1179-2556.jpeg'), media: '(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1170-2532.jpeg'), media: '(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1284-2778.jpeg'), media: '(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1125-2436.jpeg'), media: '(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1242-2688.jpeg'), media: '(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-828-1792.jpeg'), media: '(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-1242-2208.jpeg'), media: '(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-750-1334.jpeg'), media: '(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)' },
+  { href: av('/splash-dark/apple-splash-640-1136.jpeg'), media: '(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)' },
 ];

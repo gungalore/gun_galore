@@ -134,7 +134,7 @@ export function DealerTransferConsent({
           lineHeight: 1.5,
         }}
       >
-        <strong style={{ color: '#f59e0b' }}>Important:</strong>{' '}
+        <strong style={{ color: 'var(--warning)' }}>Important:</strong>{' '}
         The SAPS 534 must be filled in using{' '}
         <strong style={{ color: 'var(--text-primary)' }}>
           BLOCK LETTERS
@@ -163,7 +163,7 @@ export function DealerTransferConsent({
       <p
         className="text-xs"
         style={{
-          color: accepted ? '#00a03c' : 'var(--text-tertiary)',
+          color: accepted ? 'var(--success)' : 'var(--text-tertiary)',
         }}
       >
         {accepted
@@ -293,7 +293,7 @@ export function PrivateArrangeConsent({
           style={{
             ...inputStyle,
             border: phraseOk
-              ? '0.5px solid #00a03c'
+              ? '0.5px solid var(--success)'
               : '0.5px solid var(--border)',
           }}
         />
@@ -302,7 +302,7 @@ export function PrivateArrangeConsent({
       <p
         className="text-xs"
         style={{
-          color: allOk ? '#00a03c' : 'var(--text-tertiary)',
+          color: allOk ? 'var(--success)' : 'var(--text-tertiary)',
         }}
       >
         {allOk
@@ -374,7 +374,7 @@ export function FirearmAttestation({
       <p
         className="text-xs"
         style={{
-          color: accepted ? '#00a03c' : 'var(--text-tertiary)',
+          color: accepted ? 'var(--success)' : 'var(--text-tertiary)',
         }}
       >
         {accepted

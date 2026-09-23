@@ -83,7 +83,7 @@ function IdVerifiedBadge({
         letterSpacing: '0.02em',
         borderRadius: '3px',
         lineHeight: 1.2,
-        color: '#3b82f6',
+        color: 'var(--info)',
         background: 'rgba(59,130,246,0.08)',
         border: '0.5px solid rgba(59,130,246,0.40)',
       }}
@@ -168,7 +168,7 @@ function ExpertBadge({
         letterSpacing: '0.02em',
         borderRadius: '3px',
         lineHeight: 1.2,
-        color: '#22c55e',
+        color: 'var(--success)',
         background: 'rgba(34,197,94,0.08)',
         border: '0.5px solid rgba(34,197,94,0.40)',
       }}

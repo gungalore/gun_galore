@@ -31,11 +31,11 @@ function whenLabel(iso: string): string {
 function statusBadge(s: SellerQuestion['status']) {
   switch (s) {
     case 'AWAITING_SELLER_ANSWER':
-      return { label: 'Needs you', color: '#f59e0b' };
+      return { label: 'Needs you', color: 'var(--warning)' };
     case 'AUTO_ANSWERED':
       return { label: 'AI replied', color: '#6366f1' };
     case 'ANSWERED_BY_SELLER':
-      return { label: 'Answered', color: '#00a03c' };
+      return { label: 'Answered', color: 'var(--success)' };
   }
 }
 

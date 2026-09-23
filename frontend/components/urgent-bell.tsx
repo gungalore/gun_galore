@@ -24,8 +24,8 @@ interface UrgentNotification {
 }
 
 const SEV_COLOR: Record<NonNullable<UrgentNotification['severity']>, string> = {
-  info: '#6ea8fe',
-  warning: '#f59e0b',
+  info: 'var(--info)',
+  warning: 'var(--warning)',
   critical: 'var(--red)',
 };
 

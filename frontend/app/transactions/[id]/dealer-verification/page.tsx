@@ -322,7 +322,7 @@ export default function DealerVerificationPage() {
         className="rounded-[8px] p-4 mb-5"
         style={{
           background: 'rgba(245,158,11,0.08)',
-          border: '0.5px solid #f59e0b',
+          border: '0.5px solid var(--warning)',
         }}
       >
         <p
@@ -627,7 +627,7 @@ function Slot({
       className="rounded-[8px] p-4"
       style={{
         background: 'var(--bg-card)',
-        border: `0.5px solid ${state ? '#22c55e' : 'var(--border)'}`,
+        border: `0.5px solid ${state ? 'var(--success)' : 'var(--border)'}`,
       }}
     >
       <p
@@ -682,7 +682,7 @@ function Slot({
             <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
               {state.file.name} · {(state.file.size / 1024).toFixed(0)} KB
             </p>
-            <p className="text-xs" style={{ color: '#22c55e' }}>
+            <p className="text-xs" style={{ color: 'var(--success)' }}>
               ✓ ready
             </p>
           </div>
@@ -762,10 +762,10 @@ function VerificationResultPanel({
 }) {
   const headerColour =
     result.status === 'APPROVED'
-      ? '#22c55e'
+      ? 'var(--success)'
       : result.status === 'REJECTED'
         ? 'var(--red)'
-        : '#f59e0b';
+        : 'var(--warning)';
   const headerLabel =
     result.status === 'APPROVED'
       ? '✓ Verified — payout will be released'
@@ -909,9 +909,9 @@ function FindingsBreakdown({ findings }: { findings: VerificationFindings }) {
                 style={{
                   color:
                     r.score >= 80
-                      ? '#22c55e'
+                      ? 'var(--success)'
                       : r.score >= 50
-                        ? '#f59e0b'
+                        ? 'var(--warning)'
                         : 'var(--red)',
                 }}
               >

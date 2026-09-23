@@ -16,7 +16,7 @@ const TIER_COLOR: Record<SellerTier, string> = {
   NEW: 'var(--text-tertiary)',
   ESTABLISHED: '#6366f1',
   TRUSTED: '#0ea5e9',
-  TOP_SELLER: '#f59e0b',
+  TOP_SELLER: 'var(--warning)',
   DEALER: 'var(--red)',
 };
 
@@ -51,10 +51,10 @@ interface KycStatusDetail {
 
 const KYC_TONE: Record<string, { label: string; colour: string }> = {
   NONE: { label: 'Not verified', colour: 'var(--text-tertiary)' },
-  PENDING: { label: 'Verification pending', colour: '#f59e0b' },
-  VERIFIED: { label: 'ID verified', colour: '#22c55e' },
+  PENDING: { label: 'Verification pending', colour: 'var(--warning)' },
+  VERIFIED: { label: 'ID verified', colour: 'var(--success)' },
   REJECTED: { label: 'Verification rejected', colour: 'var(--red)' },
-  UNDER_REVIEW: { label: 'Verification being reviewed', colour: '#f59e0b' },
+  UNDER_REVIEW: { label: 'Verification being reviewed', colour: 'var(--warning)' },
 };
 
 function StatCard({

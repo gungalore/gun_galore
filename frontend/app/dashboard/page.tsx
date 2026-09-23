@@ -13,7 +13,7 @@ const TIER_COLOR: Record<SellerTier, string> = {
   NEW: 'var(--text-tertiary)',
   ESTABLISHED: '#6366f1',
   TRUSTED: '#0ea5e9',
-  TOP_SELLER: '#f59e0b',
+  TOP_SELLER: 'var(--warning)',
   DEALER: 'var(--red)',
 };
 
@@ -174,7 +174,7 @@ export default async function DashboardPage() {
                       <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                         {r.rater.username ?? 'Anonymous'} · {r.transaction.listing.title.slice(0, 30)}
                       </span>
-                      <span style={{ color: '#f59e0b', fontSize: '13px' }}>
+                      <span style={{ color: 'var(--warning)', fontSize: '13px' }}>
                         {'★'.repeat(r.stars)}{'☆'.repeat(5 - r.stars)}
                       </span>
                     </div>
@@ -198,7 +198,7 @@ export default async function DashboardPage() {
                 <span className="text-2xl font-medium" style={{ color: 'var(--text-primary)' }}>
                   {data.averageRating.toFixed(1)}
                 </span>
-                <span style={{ color: '#f59e0b' }}>★</span>
+                <span style={{ color: 'var(--warning)' }}>★</span>
                 <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                   average from {data.recentRatings.length} rating{data.recentRatings.length !== 1 ? 's' : ''}
                 </span>

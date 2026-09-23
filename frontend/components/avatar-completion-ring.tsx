@@ -60,7 +60,7 @@ export function AvatarCompletionRing({ children }: { children: ReactNode }) {
   const offset = showRing ? CIRCUMFERENCE - (percent / 100) * CIRCUMFERENCE : 0;
   // Tint: amber in the middle band, brand red otherwise (green would read
   // as "done" — matches the retired ProfileCompletionRing ramp).
-  const stroke = percent !== null && percent >= 34 && percent < 67 ? '#f59e0b' : 'var(--red)';
+  const stroke = percent !== null && percent >= 34 && percent < 67 ? 'var(--warning)' : 'var(--red)';
 
   return (
     <span

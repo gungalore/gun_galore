@@ -113,7 +113,7 @@ export function ProfileCompletionRing() {
     percent >= 67
       ? 'var(--red)' // close to done — still our brand red, not green; green looks "done"
       : percent >= 34
-        ? '#f59e0b'
+        ? 'var(--warning)'
         : 'var(--red)';
 
   return (

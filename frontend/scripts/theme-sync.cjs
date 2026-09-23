@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * THE SHOP'S LAUNCH COLOUR — one value, named in three files.
+ * THE SHOP'S LAUNCH COLOUR — two values, named in three files each.
  *
- * `--bg` in app/globals.css is what the page actually paints.
- * `background_color` + `theme_color` in app/manifest.ts are what Android
- * paints behind the install splash and into the status bar / task switcher.
- * `viewport.themeColor` in app/layout.tsx is what colours the browser chrome.
+ * Light arm: `--bg` in `:root` of app/globals.css == `background_color` +
+ *   `theme_color` in app/manifest.ts == light `themeColor` in app/layout.tsx.
+ * Dark arm:  `--bg` in `[data-theme="dark"]` of app/globals.css == dark
+ *   `themeColor` in app/layout.tsx.
  *
- * When they disagree the installed app launches in one colour and settles into
- * another — a visible flash on every single launch, on the surface a user sees
- * before anything else.
+ * When they disagree the installed app launches in one colour and settles
+ * into another — a visible flash on every single launch, on the surface a
+ * user sees before anything else.
  *
  * 🚨 WHY THIS IS A SCRIPT AND NOT A COMMENT. It was a comment. manifest.ts
  * said, in capitals, "Three places name this colour; they must not disagree
@@ -17,12 +17,6 @@
  * background only on the whole website" while the manifest and the viewport
  * stayed on the Winkel cream #F6F5F1. Nobody was careless; the comment simply
  * was not in the path of the person changing the CSS. This is.
- *
- * ⚠️ The Desk was deliberately NOT checked while it existed. app/admin/desk/
- * layout.tsx overrode themeColor to the Desk ground (#101312) on purpose — a
- * different surface with a different skin, not a drift. The Desk was removed
- * on 2026-09-22 and is being rebuilt; if the rebuild carries its own theme
- * colour, it stays out of this gate for the same reason.
  *
  * Wired into `npm run build`, because there is no CI in this repo and
  * `next build` is the only gate that actually runs.
@@ -70,38 +64,64 @@ function extract(label, file, re, opts = {}) {
   return distinct[0];
 }
 
-const bg = extract('globals.css --bg', 'app/globals.css', /--bg:\s*(#[0-9a-fA-F]{3,8})\s*;/g, {
-  expect: 1,
-});
-const manifest = extract(
-  'manifest.ts',
+// Light arm — globals.css :root --bg, manifest.ts, layout.tsx light themeColor.
+const bgLight = extract('globals.css :root --bg', 'app/globals.css', /:root\s*\{[\s\S]*?--bg:\s*(#[0-9a-fA-F]{3,8})\s*;/g);
+const manifestBg = extract(
+  'manifest.ts background_color',
   'app/manifest.ts',
-  /(?:background_color|theme_color):\s*'(#[0-9a-fA-F]{3,8})'/g,
-  { expect: 2 },
+  /background_color:\s*'(#[0-9a-fA-F]{3,8})'/g,
+  { expect: 1 },
 );
-const viewport = extract(
-  'layout.tsx viewport',
+const manifestTheme = extract(
+  'manifest.ts theme_color',
+  'app/manifest.ts',
+  /theme_color:\s*'(#[0-9a-fA-F]{3,8})'/g,
+  { expect: 1 },
+);
+const viewportLight = extract(
+  'layout.tsx viewport light',
   'app/layout.tsx',
-  /prefers-color-scheme: (?:dark|light)\)',\s*color:\s*'(#[0-9a-fA-F]{3,8})'/g,
-  { expect: 2 },
+  /prefers-color-scheme:\s*light\)',\s*color:\s*'(#[0-9a-fA-F]{3,8})'/g,
+  { expect: 1 },
 );
 
-const values = { bg, manifest, viewport };
-const present = Object.entries(values).filter(([, v]) => v);
-const distinct = [...new Set(present.map(([, v]) => v))];
+// Dark arm — globals.css [data-theme="dark"] --bg, layout.tsx dark themeColor.
+const bgDark = extract('globals.css [data-theme] --bg', 'app/globals.css', /\[data-theme="dark"\]\s*\{[\s\S]*?--bg:\s*(#[0-9a-fA-F]{3,8})\s*;/g);
+const viewportDark = extract(
+  'layout.tsx viewport dark',
+  'app/layout.tsx',
+  /prefers-color-scheme:\s*dark\)',\s*color:\s*'(#[0-9a-fA-F]{3,8})'/g,
+  { expect: 1 },
+);
 
-if (present.length === 3 && distinct.length > 1) {
+const lightValues = { bg: bgLight, manifestBg, manifestTheme, viewportLight };
+const darkValues = { bg: bgDark, viewport: viewportDark };
+
+const lightPresent = Object.entries(lightValues).filter(([, v]) => v);
+const lightDistinct = [...new Set(lightPresent.map(([, v]) => v))];
+
+const darkPresent = Object.entries(darkValues).filter(([, v]) => v);
+const darkDistinct = [...new Set(darkPresent.map(([, v]) => v))];
+
+if (lightPresent.length >= 3 && lightDistinct.length > 1) {
   problems.push(
-    'The shop launch colour disagrees across the three files that name it:\n' +
+    'The light launch colour disagrees across the files that name it:\n' +
       Object.entries(found)
+        .filter(([k]) => k.includes('light') || k.includes('bg') || k.includes('manifest'))
         .map(([k, v]) => `      ${v}   ${k}`)
         .join('\n') +
-      '\n    --bg is the one that is actually painted; the other two must follow it.\n' +
-      '    ⚠️ The iOS launch images in public/splash/ are ALSO baked to this colour.\n' +
-      '    Regenerate them when it changes, or the iOS splash keeps the old one:\n' +
-      '      npx pwa-asset-generator public/logo-mark-dark.svg public/splash \\\n' +
-      '        --background "<colour>" --splash-only --portrait-only --opaque false \\\n' +
-      '        --padding "30%" --quality 90 --type jpeg',
+      '\n    --bg (globals.css :root) is the one that is actually painted; the others must follow it.\n',
+  );
+}
+
+if (darkPresent.length >= 2 && darkDistinct.length > 1) {
+  problems.push(
+    'The dark launch colour disagrees:\n' +
+      Object.entries(found)
+        .filter(([k]) => k.includes('dark') || k.includes('globals'))
+        .map(([k, v]) => `      ${v}   ${k}`)
+        .join('\n') +
+      '\n    --bg (globals.css [data-theme="dark"]) must match the dark viewport themeColor.\n',
   );
 }
 
@@ -111,4 +131,4 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-console.log(`  Theme sync: clean (${distinct[0]} in globals.css, manifest.ts, layout.tsx)`);
+console.log(`  Theme sync: clean (light=${lightDistinct[0]}, dark=${darkDistinct[0] || 'N/A'})`);

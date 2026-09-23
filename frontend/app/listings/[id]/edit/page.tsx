@@ -554,11 +554,11 @@ export default function EditListingPage() {
         className="mb-5 px-3 py-2 rounded-[6px] text-xs flex items-center gap-2"
         style={{
           background: 'rgba(245,158,11,0.08)',
-          border: '0.5px solid #f59e0b',
+          border: '0.5px solid var(--warning)',
           color: 'var(--text-secondary)',
         }}
       >
-        <span style={{ color: '#f59e0b' }}>⚠</span>
+        <span style={{ color: 'var(--warning)' }}>⚠</span>
         <span>
           Saving any change re-runs automated moderation. Your listing
           may briefly return to <strong>Pending review</strong> while
@@ -583,7 +583,7 @@ export default function EditListingPage() {
           className="mb-4 px-4 py-3 rounded-[6px] text-sm"
           style={{
             background: 'rgba(245,158,11,0.08)',
-            border: '0.5px solid #f59e0b',
+            border: '0.5px solid var(--warning)',
             color: 'var(--text-secondary)',
             lineHeight: 1.55,
           }}
@@ -871,7 +871,7 @@ export default function EditListingPage() {
               placeholder="Leave blank to review every offer manually"
             />
             {form.autoAcceptThreshold.trim() && (
-              <p className="text-xs mt-1" style={{ color: '#f59e0b' }}>
+              <p className="text-xs mt-1" style={{ color: 'var(--warning)' }}>
                 ⚠ Offers at or above R{form.autoAcceptThreshold} will be auto-accepted with no further review.
               </p>
             )}

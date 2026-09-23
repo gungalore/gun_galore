@@ -17,7 +17,7 @@ import { SITE_URL } from '@/lib/brand';
 //   * `screenshots` — show preview cards on Android's richer install
 //     dialog. Optional but polishes the install flow.
 
-export default function manifest(): MetadataRoute.Manifest {
+export default function manifest(): MetadataRoute.Manifest & { colors?: string[] } {
   return {
     id: '/',
     name: 'All Outdoor',
@@ -46,8 +46,16 @@ export default function manifest(): MetadataRoute.Manifest {
     // asking three files to agree is not a mechanism — scripts/theme-sync.cjs
     // now fails the build when they drift, which is what should have been
     // written the first time.
-    background_color: '#FFFFFF',
-    theme_color: '#FFFFFF',
+    //
+    // 2026-09-23: aligned to brand pack stone-50 (#F7F6F3) light / warm
+    // near-black (#131110) dark. Dark arm is for the [data-theme="dark"]
+    // theme; light arm is for :root.
+    background_color: '#F7F6F3',
+    theme_color: '#F7F6F3',
+    // Chrome uses this array to pick the splash / status bar colour that
+    // matches the user's current theme. [light, dark] — Chrome reads the
+    // user's prefers-color-scheme and picks the matching entry.
+    colors: ['#F7F6F3', '#131110'],
     categories: ['shopping', 'sports', 'lifestyle'],
     lang: 'en-ZA',
     // Lets navigator.getInstalledRelatedApps() actually report THIS PWA as

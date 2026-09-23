@@ -168,7 +168,7 @@ function CheckoutCompleteInner() {
         <>
           <div
             className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 text-xl"
-            style={{ background: 'rgba(0,160,60,0.12)', color: '#00a03c' }}
+            style={{ background: 'rgba(0,160,60,0.12)', color: 'var(--success)' }}
           >
             ✓
           </div>
@@ -248,7 +248,7 @@ function CheckoutCompleteInner() {
         <>
           <div
             className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 text-xl"
-            style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}
+            style={{ background: 'rgba(245,158,11,0.12)', color: 'var(--warning)' }}
           >
             !
           </div>

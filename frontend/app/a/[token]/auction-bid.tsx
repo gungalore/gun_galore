@@ -176,7 +176,7 @@ export function AuctionBidPage({
           <p
             style={{
               fontSize: 12,
-              color: '#f59e0b',
+              color: 'var(--warning)',
               marginTop: 4,
             }}
           >
@@ -378,7 +378,7 @@ function DoneScreen({
           width: 72,
           height: 72,
           borderRadius: '50%',
-          background: outcome.youAreHighBidder ? '#22c55e' : 'var(--text-tertiary)',
+          background: outcome.youAreHighBidder ? 'var(--success)' : 'var(--text-tertiary)',
           color: '#fff',
           fontSize: 36,
           display: 'flex',
@@ -458,7 +458,7 @@ function DoneScreen({
         <p
           style={{
             fontSize: 13,
-            color: '#22c55e',
+            color: 'var(--success)',
             marginTop: 16,
             lineHeight: 1.5,
           }}

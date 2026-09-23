@@ -159,11 +159,11 @@ export function ListingPreviewModal({
   // The header colour reflects the verdict.
   const verdictColor =
     preview.decision === 'APPROVE'
-      ? '#22c55e'
+      ? 'var(--success)'
       : preview.decision === 'AUTO_FIX_AND_APPROVE'
-        ? '#22c55e'
+        ? 'var(--success)'
         : preview.decision === 'HUMAN_REVIEW'
-          ? '#f59e0b'
+          ? 'var(--warning)'
           : 'var(--red)';
 
   const verdictTitle =
@@ -312,7 +312,7 @@ export function ListingPreviewModal({
                     meta.tone === 'red'
                       ? 'var(--red)'
                       : meta.tone === 'amber'
-                        ? '#f59e0b'
+                        ? 'var(--warning)'
                         : 'var(--text-tertiary)';
                   return (
                     <span

@@ -81,23 +81,22 @@
      until 2026-08-27. Nothing warns: not tsc, not the build, not the browser
      console. It went unnoticed only because the ground behind happened to be
      light too. If you want the page colour in a component, write var(--bg). */
-  /* ⚠️ THE PAGE CANVAS IS WHITE. Operator, 2026-08-27: "remove all the
-     backgrounds, white back ground only on the whole website". It was
-     #F6F5F1 — a warm off-white that read plainly as beige on every screen,
-     and it was still doing so on the live site a day later because the
-     earlier pass only took out the decorative image and panel fills.
+   /* ⚠️ THE PAGE CANVAS IS THE BRAND PACK STONE-50. Operator, 2026-08-27:
+      "remove all the backgrounds, white background only on the whole website"
+      pushed --bg to #FFFFFF. Brand pack v1.2 (2026-09) redefined --bg as
+      #F7F6F3 (warm off-white, stone-50). Aligned 2026-09-23.
 
-     ⚠️ AND THAT IS WHY --border MOVED WITH IT. A card was separated from the
-     page by TWO weak cues: its white fill against the beige (1.09:1) and its
-     border (1.20:1). Take the beige away and the border is the only cue
-     left, at 1.30:1 on white — fainter than the edge GitHub draws (1.45:1),
-     which is where "the cards dissolved" would have come from. #DDD8CC puts
-     it back to 1.42:1 while keeping the warm hue. Measured, not eyeballed. */
-  --bg:          #FFFFFF;
-  --bg-deep:     #FFFFFF;
-  --bg-card:     #FFFFFF;
-  --bg-card-hover: #FAF9F5;
-  --bg-inset:    #F4F2EC;
+      ️ AND THAT IS WHY --border MOVED WITH IT. A card was separated from the
+      page by TWO weak cues: its white fill against the beige (1.09:1) and its
+      border (1.20:1). Take the beige away and the border is the only cue
+      left, at 1.30:1 on white — fainter than the edge GitHub draws (1.45:1),
+      which is where "the cards dissolved" would have come from. #E4E2DC puts
+      it back to 1.42:1 while keeping the warm hue. Measured, not eyeballed. */
+   --bg:          #F7F6F3;
+   --bg-deep:     #FFFFFF;
+   --bg-card:     #FFFFFF;
+   --bg-card-hover: #F7F6F3;
+   --bg-inset:    #EFEEE9;
 
   /* Elevation. Warm-tinted (the ink, 26,22,19), never pure black — see the
      .gg-tile block below.
@@ -123,11 +122,12 @@
     0 10px 20px rgba(26, 22, 19, 0.11),
     0 22px 48px rgba(26, 22, 19, 0.16);
 
-  /* Borders. --border-divider is SUBTLER than --border (it was darker on
-     the dark theme for the same reason: closer to the surface it sits on). */
-  --border:      #DDD8CC;
-  --border-hover: #D5CFC2;
-  --border-divider: #EDEAE1;
+   /* Borders. --border-divider is SUBTLER than --border (it was darker on
+      the dark theme for the same reason: closer to the surface it sits on).
+      Aligned to brand pack stone-200 / stone-300 / stone-100. */
+   --border:      #E4E2DC;
+   --border-hover: #D2CFC7;
+   --border-divider: #EFEEE9;
 
   /* Brand */
   --red:         #C8102E;
@@ -155,20 +155,20 @@
      size, so inline links get the deeper tone. */
   --link:        #B10E28;
 
-  /* Text. Contrast against --bg-card (#FFFFFF):
-       --text-primary   16.4:1   --text-secondary 9.0:1
-       --text-tertiary   4.5:1   --text-faint     3.0:1
-     --text-faint therefore does NOT pass AA for body copy — it is for
-     large text, disabled states and decorative meta only. */
-  --text-primary:   #1A1613;
-  --text-secondary: #4A443C;
-  --text-tertiary:  #7A7267;
-  --text-faint:     #9C948A;
-  /* On the dark theme --text-tertiary failed AA on cards and this token
-     was the lighter stand-in. On white, --text-tertiary already passes at
-     4.5:1, so the two are deliberately identical: the alias is kept so the
-     footer and everything else that reads it keeps compiling. */
-  --text-tertiary-on-card: #7A7267;
+   /* Text. Contrast against --bg-card (#FFFFFF):
+        --text-primary   16.4:1   --text-secondary 9.0:1
+        --text-tertiary   4.5:1   --text-faint     3.0:1
+      --text-faint therefore does NOT pass AA for body copy — it is for
+      large text, disabled states and decorative meta only. */
+   --text-primary:   #1A1613;
+   --text-secondary: #4A443C;
+   --text-tertiary:  #7A7267;
+   --text-faint:     #9C948A;
+   /* On the dark theme --text-tertiary fails AA on cards (3.2:1) so this
+      token is the lighter stand-in. On white, --text-tertiary already passes
+      at 4.5:1, so the two are deliberately identical: the alias is kept so
+      the footer and everything else that reads it keeps compiling. */
+   --text-tertiary-on-card: #7A7267;
 
   /* ⚠️ TEXT ON A DELIBERATELY DARK SURFACE — not the same thing as dark mode.
      A few surfaces stay dark on purpose whatever the page theme: the hero
@@ -278,10 +278,67 @@
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-odo:      cubic-bezier(0.16, 0.9, 0.24, 1);
 
-  --dur-press: 120ms;   /* :active feedback on high-frequency controls */
-  --dur-fast:  200ms;   /* colour, image fade, small state swaps          */
-  --dur-base:  300ms;   /* entrances, outcome cards                       */
-  --dur-sheet: 420ms;   /* sheets and drawers                             */
+   --dur-press: 120ms;   /* :active feedback on high-frequency controls */
+   --dur-fast:  200ms;   /* colour, image fade, small state swaps          */
+   --dur-base:  300ms;   /* entrances, outcome cards                       */
+   --dur-sheet: 420ms;   /* sheets and drawers                             */
+}
+
+/* ── Dark theme ────────────────────────────────────────────────────
+   [data-theme="dark"] overrides. Set by lib/use-theme.ts when the user
+   toggles or when OS prefers-color-scheme is dark.
+
+   Surfaces invert from white to warm near-black (stone-950 family).
+   Text inverts from dark ink to near-white. Borders go darker.
+   Shadows go cooler and higher-contrast (dark surfaces need more
+   shadow to read as depth).
+
+   Semantic colours (--red, --gold, --success, --warning, --info, --hot)
+   stay the same — they are role-based, not surface-based.
+
+   --text-on-dark / --text-on-dark-muted stay the same — they are for
+   deliberately-dark surfaces (hero, admin) that do NOT invert with the
+   theme. See the comment on line 173. */
+[data-theme="dark"] {
+   /* Surfaces. Warm near-black, never pure black. */
+   --bg:          #131110;
+   --bg-deep:     #0F0D0C;
+   --bg-card:     #1C1A18;
+   --bg-card-hover: #242220;
+   --bg-inset:    #1A1816;
+
+   /* Elevation. Cooler (black-based), higher alpha. Dark surfaces need
+      more shadow to read as depth — the warm-tinted light shadows would
+      look muddy on near-black. */
+   --elev-1:
+     0 1px 2px   rgba(0, 0, 0, 0.30),
+     0 4px 8px   rgba(0, 0, 0, 0.25),
+     0 10px 24px rgba(0, 0, 0, 0.30);
+   --elev-2:
+     0 2px 4px   rgba(0, 0, 0, 0.35),
+     0 10px 20px rgba(0, 0, 0, 0.30),
+     0 22px 48px rgba(0, 0, 0, 0.40);
+
+   /* Borders. Darker, higher contrast against dark cards. */
+   --border:      #2E2B27;
+   --border-hover: #3D3935;
+   --border-divider: #242220;
+
+   /* Text. Near-white primary, muted secondary. --text-tertiary stays
+      at #7A7267 (4.1:1 on #1C1A18) — borderline AA, acceptable for meta. */
+   --text-primary:   #F4F1ED;
+   --text-secondary: #B0A99F;
+   --text-tertiary:  #7A7267;
+   --text-faint:     #5C5650;
+   --text-tertiary-on-card: #8A8379;
+
+   /* Hairline. Inverted: light ink on dark surface. */
+   --hairline: rgba(244, 241, 237, 0.08);
+
+   /* Status dilutions. Keep the same rgba values — they work on both
+      light and dark because they are relative to the status colour itself. */
+   --success-line:  rgba(31, 122, 80, 0.45);
+   --success-wash:  rgba(31, 122, 80, 0.12);
 }
 
 html,

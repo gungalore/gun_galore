@@ -713,7 +713,7 @@ function CounterForm({
         <p
           style={{
             fontSize: 12,
-            color: '#f59e0b',
+            color: 'var(--warning)',
             textAlign: 'center',
             background: 'rgba(245,158,11,0.08)',
             border: '0.5px solid rgba(245,158,11,0.45)',
@@ -792,7 +792,7 @@ function DoneScreen({
           ? `You've accepted ${formatRand(amount ?? 0)} for "${listingTitle}". The buyer has 24 hours to pay — we'll text you when they do.`
           : `You've accepted the seller's counter at ${formatRand(amount ?? 0)} for "${listingTitle}". Check your phone for the payment link.`,
         emoji: '✓',
-        color: '#22c55e',
+        color: 'var(--success)',
       };
     }
     if (outcome === 'rejected') {

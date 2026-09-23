@@ -13,7 +13,7 @@
 
 import Link from 'next/link';
 
-const AMBER = '#f59e0b';
+const AMBER = 'var(--warning)';
 
 export function SellerRating({
   rating,

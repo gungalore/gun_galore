@@ -148,7 +148,7 @@ function ResponseDeadline({ expiresAt }: { expiresAt: string }) {
   const tone = isCritical
     ? { bg: 'rgba(200,16,46,0.10)', border: 'var(--red)', label: 'var(--red)' }
     : isWarning
-      ? { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.45)', label: '#f59e0b' }
+      ? { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.45)', label: 'var(--warning)' }
       : { bg: 'var(--bg-inset)', border: 'var(--border)', label: 'var(--text-secondary)' };
   const left = hours >= 1 ? `${hours}h ${minutes}m` : `${minutes}m`;
   return (
@@ -166,13 +166,13 @@ function ResponseDeadline({ expiresAt }: { expiresAt: string }) {
 }
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
-  PENDING:   { label: 'Pending', color: '#f59e0b' },
-  COUNTERED: { label: 'Countered', color: '#3b82f6' },
-  ACCEPTED:  { label: 'Accepted', color: '#22c55e' },
+  PENDING:   { label: 'Pending', color: 'var(--warning)' },
+  COUNTERED: { label: 'Countered', color: 'var(--info)' },
+  ACCEPTED:  { label: 'Accepted', color: 'var(--success)' },
   REJECTED:  { label: 'Rejected', color: 'var(--text-tertiary)' },
   WITHDRAWN: { label: 'Withdrawn', color: 'var(--text-tertiary)' },
   EXPIRED:   { label: 'Expired', color: 'var(--text-tertiary)' },
-  CONVERTED: { label: 'Sold', color: '#22c55e' },
+  CONVERTED: { label: 'Sold', color: 'var(--success)' },
 };
 
 function ReceivedOfferCard({ offer }: { offer: Offer }) {
@@ -210,7 +210,7 @@ function ReceivedOfferCard({ offer }: { offer: Offer }) {
         {offer.counterAmount && (
           <div>
             <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Your counter</p>
-            <p style={{ color: '#3b82f6', fontWeight: 500 }}>{formatPrice(offer.counterAmount)}</p>
+            <p style={{ color: 'var(--info)', fontWeight: 500 }}>{formatPrice(offer.counterAmount)}</p>
           </div>
         )}
       </div>

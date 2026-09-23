@@ -136,7 +136,7 @@ function StatusBanner({
   children: ReactNode;
 }) {
   const colour =
-    tone === 'success' ? '#22c55e' : tone === 'error' ? 'var(--red)' : '#f59e0b';
+    tone === 'success' ? 'var(--success)' : tone === 'error' ? 'var(--red)' : 'var(--warning)';
   return (
     <div
       className="text-xs rounded-[6px] px-3 py-2"
@@ -1014,8 +1014,8 @@ export default function EditProfilePage() {
                   background: emailVerified
                     ? 'rgba(34,197,94,0.12)'
                     : 'rgba(245,158,11,0.12)',
-                  border: `0.5px solid ${emailVerified ? '#22c55e' : '#f59e0b'}`,
-                  color: emailVerified ? '#22c55e' : '#f59e0b',
+                  border: `0.5px solid ${emailVerified ? 'var(--success)' : 'var(--warning)'}`,
+                  color: emailVerified ? 'var(--success)' : 'var(--warning)',
                   fontWeight: 500,
                   whiteSpace: 'nowrap',
                 }}
@@ -1134,8 +1134,8 @@ export default function EditProfilePage() {
                     background: me.phoneVerified
                       ? 'rgba(34,197,94,0.12)'
                       : 'rgba(245,158,11,0.12)',
-                    border: `0.5px solid ${me.phoneVerified ? '#22c55e' : '#f59e0b'}`,
-                    color: me.phoneVerified ? '#22c55e' : '#f59e0b',
+                    border: `0.5px solid ${me.phoneVerified ? 'var(--success)' : 'var(--warning)'}`,
+                    color: me.phoneVerified ? 'var(--success)' : 'var(--warning)',
                     fontWeight: 500,
                   }}
                 >
@@ -1359,16 +1359,16 @@ export default function EditProfilePage() {
                         : 'var(--bg-inset)',
                   border: `0.5px solid ${
                     kyc === 'VERIFIED'
-                      ? '#22c55e'
+                      ? 'var(--success)'
                       : kyc === 'UNDER_REVIEW'
-                        ? '#f59e0b'
+                        ? 'var(--warning)'
                         : 'var(--border)'
                   }`,
                   color:
                     kyc === 'VERIFIED'
-                      ? '#22c55e'
+                      ? 'var(--success)'
                       : kyc === 'UNDER_REVIEW'
-                        ? '#f59e0b'
+                        ? 'var(--warning)'
                         : 'var(--text-tertiary)',
                   fontWeight: 500,
                 }}
@@ -1783,7 +1783,7 @@ export default function EditProfilePage() {
               {percent >= 100 && (
                 <span
                   className="text-xs"
-                  style={{ color: '#22c55e', fontWeight: 500 }}
+                  style={{ color: 'var(--success)', fontWeight: 500 }}
                 >
                   Complete ✓
                 </span>
@@ -1799,9 +1799,9 @@ export default function EditProfilePage() {
                   width: `${percent}%`,
                   background:
                     percent >= 67
-                      ? '#22c55e'
+                      ? 'var(--success)'
                       : percent >= 34
-                        ? '#f59e0b'
+                        ? 'var(--warning)'
                         : 'var(--red)',
                   transition: 'width 0.3s',
                 }}
@@ -1839,7 +1839,7 @@ export default function EditProfilePage() {
                     style={{
                       color:
                         s.status === 'complete'
-                          ? '#22c55e'
+                          ? 'var(--success)'
                           : s.status === 'active'
                             ? 'var(--red)'
                             : 'var(--text-tertiary)',

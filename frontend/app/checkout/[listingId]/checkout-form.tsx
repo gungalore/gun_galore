@@ -1531,7 +1531,7 @@ function DeliveringToChip({
         background: incomplete
           ? 'rgba(245,158,11,0.08)'
           : 'rgba(34,197,94,0.08)',
-        border: `0.5px solid ${incomplete ? '#f59e0b' : 'rgba(34,197,94,0.45)'}`,
+        border: `0.5px solid ${incomplete ? 'var(--warning)' : 'rgba(34,197,94,0.45)'}`,
         color: 'var(--text-primary)',
       }}
     >
@@ -1540,7 +1540,7 @@ function DeliveringToChip({
       {incomplete && (
         <p
           style={{
-            color: '#f59e0b',
+            color: 'var(--warning)',
             fontSize: 12,
             marginTop: 6,
             fontWeight: 500,
@@ -1710,7 +1710,7 @@ function DealerTransferConsent({
           lineHeight: 1.5,
         }}
       >
-        <strong style={{ color: '#f59e0b' }}>Important:</strong>{' '}
+        <strong style={{ color: 'var(--warning)' }}>Important:</strong>{' '}
         The SAPS 534 must be filled in using{' '}
         <strong style={{ color: 'var(--text-primary)' }}>
           BLOCK LETTERS
@@ -1739,7 +1739,7 @@ function DealerTransferConsent({
       <p
         className="text-xs"
         style={{
-          color: accepted ? '#00a03c' : 'var(--text-tertiary)',
+          color: accepted ? 'var(--success)' : 'var(--text-tertiary)',
         }}
       >
         {accepted
@@ -1869,7 +1869,7 @@ function PrivateArrangeConsent({
           style={{
             ...inputStyle,
             border: phraseOk
-              ? '0.5px solid #00a03c'
+              ? '0.5px solid var(--success)'
               : '0.5px solid var(--border)',
           }}
         />
@@ -1878,7 +1878,7 @@ function PrivateArrangeConsent({
       <p
         className="text-xs"
         style={{
-          color: allOk ? '#00a03c' : 'var(--text-tertiary)',
+          color: allOk ? 'var(--success)' : 'var(--text-tertiary)',
         }}
       >
         {allOk
@@ -1950,7 +1950,7 @@ function FirearmAttestation({
       <p
         className="text-xs"
         style={{
-          color: accepted ? '#00a03c' : 'var(--text-tertiary)',
+          color: accepted ? 'var(--success)' : 'var(--text-tertiary)',
         }}
       >
         {accepted
@@ -2083,7 +2083,7 @@ function ExperienceAttestations({
 
       <p
         className="text-xs"
-        style={{ color: allOk ? '#00a03c' : 'var(--text-tertiary)' }}
+        style={{ color: allOk ? 'var(--success)' : 'var(--text-tertiary)' }}
       >
         {allOk
           ? '✓ Confirmations recorded. You can proceed to payment below.'
@@ -2145,7 +2145,7 @@ function CollectionPapersAck({
       <p
         className="text-xs"
         style={{
-          color: accepted ? '#00a03c' : 'var(--text-tertiary)',
+          color: accepted ? 'var(--success)' : 'var(--text-tertiary)',
         }}
       >
         {accepted

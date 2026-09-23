@@ -555,7 +555,7 @@ export default function SignUpForm() {
                   style={{
                     color:
                       usernameStatus.kind === 'available'
-                        ? '#22c55e'
+                        ? 'var(--success)'
                         : usernameStatus.kind === 'taken'
                           ? 'var(--red)'
                           : 'var(--text-tertiary)',
@@ -588,7 +588,7 @@ export default function SignUpForm() {
                 ...inputStyle,
                 borderColor:
                   usernameStatus.kind === 'available'
-                    ? '#22c55e60'
+                    ? 'var(--success)60'
                     : usernameStatus.kind === 'taken'
                       ? 'var(--red)'
                       : 'var(--border)',
@@ -909,7 +909,7 @@ function VerifyStep({
             style={{
               background: 'rgba(34,197,94,0.08)',
               border: '0.5px solid rgba(34,197,94,0.4)',
-              color: '#22c55e',
+              color: 'var(--success)',
             }}
           >
             {notice}

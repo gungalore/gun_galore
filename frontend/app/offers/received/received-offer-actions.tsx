@@ -226,7 +226,7 @@ export default function ReceivedOfferActions({
           </p>
         )}
         {counterWarning && (
-          <p className="text-xs" style={{ color: '#f59e0b' }}>
+          <p className="text-xs" style={{ color: 'var(--warning)' }}>
             {counterWarning}
           </p>
         )}
@@ -255,7 +255,7 @@ export default function ReceivedOfferActions({
               background:
                 loading || counterBlocked || counterCents === null
                   ? 'var(--bg-inset)'
-                  : '#3b82f6',
+                  : 'var(--info)',
               color:
                 loading || counterBlocked || counterCents === null
                   ? 'var(--text-tertiary)'
@@ -301,8 +301,8 @@ export default function ReceivedOfferActions({
           className="flex-1 py-2 rounded-[6px] text-sm"
           style={{
             background: 'var(--bg-inset)',
-            border: '0.5px solid #3b82f6',
-            color: '#3b82f6',
+            border: '0.5px solid var(--info)',
+            color: 'var(--info)',
           }}
         >
           Counter

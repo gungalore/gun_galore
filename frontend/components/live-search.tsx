@@ -93,7 +93,7 @@ function typeLabel(t: SearchHit['listingType']): string {
 // Each module gets a small colour accent so the user can scan results
 // and tell at a glance which buying surface they belong to.
 function typeColor(t: SearchHit['listingType']): string {
-  if (t === 'AUCTION') return '#f59e0b'; // amber — time-sensitive
+  if (t === 'AUCTION') return 'var(--warning)'; // amber — time-sensitive
   if (t === 'TAKE_A_SHOT') return '#a78bfa'; // violet — offer-based
   return 'var(--text-secondary)'; // BUY_NOW — neutral
 }

@@ -707,20 +707,20 @@ function DoneScreen({
             title: 'Sale already accepted',
             body: `You've already accepted the sale on "${listingTitle}" from @${buyerUsername}. We'll send another SMS with the dispatch link when it's time to ship.`,
             emoji: '✓',
-            color: '#22c55e',
+            color: 'var(--success)',
           }
         : justAccepted
           ? {
               title: 'Sale accepted',
               body: `You've accepted the sale on "${listingTitle}" from @${buyerUsername}. You have 5 days to dispatch — we'll send a separate SMS with a one-tap dispatch link.`,
               emoji: '✓',
-              color: '#22c55e',
+              color: 'var(--success)',
             }
           : {
               title: 'Done',
               body: `Action on "${listingTitle}" is complete.`,
               emoji: '✓',
-              color: '#22c55e',
+              color: 'var(--success)',
             };
 
   return (

@@ -357,7 +357,7 @@ function ChannelRow({
           border: 'none',
           cursor: disabled ? 'default' : 'pointer',
           opacity: disabled ? 0.5 : 1,
-          background: on ? '#00a03c' : 'var(--border-hover)',
+          background: on ? 'var(--success)' : 'var(--border-hover)',
           position: 'relative',
           transition: 'background 0.15s',
           flexShrink: 0,

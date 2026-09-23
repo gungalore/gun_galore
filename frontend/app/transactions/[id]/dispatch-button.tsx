@@ -334,7 +334,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
     return (
       <div
         className="rounded-[6px] px-4 py-3 text-sm"
-        style={{ background: 'rgba(0,160,60,0.10)', color: '#00a03c', border: '0.5px solid rgba(0,160,60,0.2)' }}
+        style={{ background: 'rgba(0,160,60,0.10)', color: 'var(--success)', border: '0.5px solid rgba(0,160,60,0.2)' }}
       >
         Marked as handed over. The buyer has been notified and tracking will
         update automatically.
@@ -441,7 +441,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
               <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                 {sellerDropsOff ? 'Locker drop-off PIN' : 'Collection PIN'}
               </span>
-              <code className="text-base" style={{ fontFamily: 'monospace', color: '#00a03c', fontWeight: 700, letterSpacing: '0.05em' }}>
+              <code className="text-base" style={{ fontFamily: 'monospace', color: 'var(--success)', fontWeight: 700, letterSpacing: '0.05em' }}>
                 {tx.carrierDropoffPin}
               </code>
             </div>

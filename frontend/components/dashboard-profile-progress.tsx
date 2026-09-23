@@ -19,8 +19,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 // the backend come back empty for authed users, whereas the browser's own
 // token call works fine.
 function fillColour(p: number): string {
-  if (p >= 67) return '#22c55e';
-  if (p >= 34) return '#f59e0b';
+  if (p >= 67) return 'var(--success)';
+  if (p >= 34) return 'var(--warning)';
   return 'var(--red)';
 }
 
@@ -121,7 +121,7 @@ export function DashboardProfileProgress() {
           </div>
         </Link>
       ) : me && percent >= 100 ? (
-        <p className="text-xs" style={{ color: '#22c55e', marginTop: 6 }}>
+        <p className="text-xs" style={{ color: 'var(--success)', marginTop: 6 }}>
           Profile complete ✓
         </p>
       ) : null}
