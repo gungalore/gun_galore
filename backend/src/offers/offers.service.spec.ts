@@ -23,7 +23,10 @@ function makeMocks() {
       }),
       update: jest.fn().mockResolvedValue({ auctionStrikes: 1, username: 'buyer1' }),
     },
-    listing: { findUnique: jest.fn() },
+    listing: {
+      findUnique: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     offer: {
       findUnique: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn().mockResolvedValue(null),
@@ -46,6 +49,8 @@ function makeMocks() {
     },
     adminAlert: { create: jest.fn().mockResolvedValue({}) },
   };
+  (prisma as typeof prisma & { $transaction: unknown }).$transaction =
+    jest.fn((callback: (tx: typeof prisma) => unknown) => callback(prisma));
   const notifications = {
     resolveByEntity: jest.fn().mockResolvedValue(undefined),
   };
@@ -162,6 +167,47 @@ describe('submit — the 30% floor', () => {
     await expect(
       service.submit('clerk-b', { listingId: 'L1', offerAmount: 5_000 }),
     ).rejects.toThrow(/at most 30% below/i);
+  });
+});
+
+describe('submit — auction offer floor', () => {
+  const auction = (overrides: Record<string, unknown> = {}) =>
+    tasListing({
+      listingType: 'AUCTION',
+      price: 10_000,
+      currentBid: 15_000,
+      bidCount: 2,
+      ...overrides,
+    });
+
+  it('rejects an offer below the current high bid', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue(auction());
+    await expect(
+      service.submit('clerk-b', { listingId: 'L1', offerAmount: 14_999 }),
+    ).rejects.toThrow(/at least the current high bid/i);
+    expect(prisma.offer.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts an offer equal to the current high bid with a listing CAS', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue(auction());
+    await service.submit('clerk-b', { listingId: 'L1', offerAmount: 15_000 });
+    expect(prisma.listing.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ currentBid: 15_000, bidCount: 2 }),
+      data: { bidCount: { increment: 0 } },
+    });
+    expect(prisma.offer.create).toHaveBeenCalled();
+  });
+
+  it('rejects when the auction snapshot changes before the offer write', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue(auction());
+    prisma.listing.updateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      service.submit('clerk-b', { listingId: 'L1', offerAmount: 15_000 }),
+    ).rejects.toThrow(/price just changed/i);
+    expect(prisma.offer.create).not.toHaveBeenCalled();
   });
 });
 

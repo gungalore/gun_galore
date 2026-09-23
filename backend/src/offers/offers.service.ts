@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,7 +21,7 @@ import { assertAccountNotClosed } from '../common/account-standing';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { CounterOfferDto } from './dto/counter-offer.dto';
-import { OfferStatus } from '@prisma/client';
+import { OfferStatus, Prisma } from '@prisma/client';
 
 const OFFER_TTL_HOURS = 48;
 // ⚠️ Frontend copy mirrors this value — keep in sync when changing:
@@ -110,6 +111,18 @@ export class OffersService {
     // on it would leave those listings silently refusing offers while the
     // buyer's page invites them.
     if (listing.sellerId === buyer.id) throw new BadRequestException('Sellers cannot offer on their own listings');
+
+    // On auctions a Take a Shot offer may not undercut the live auction
+    // price. Use the starting bid until the first bid has landed.
+    const auctionHighBid =
+      listing.listingType === 'AUCTION'
+        ? (listing.currentBid ?? listing.price ?? 0)
+        : 0;
+    if (auctionHighBid > 0 && dto.offerAmount < auctionHighBid) {
+      throw new BadRequestException(
+        `Offers on this auction must be at least the current high bid of R ${(auctionHighBid / 100).toFixed(2)}.`,
+      );
+    }
 
     // ── The floor. Operator: "offers can only go below 30% of the value."
     // An offer may be at most 30% under the asking price, so the least we
@@ -217,8 +230,29 @@ export class OffersService {
     const expiresAt = new Date(Date.now() + OFFER_TTL_HOURS * 3_600_000);
 
     // Fresh round on the same row (attempt counted) or a first offer.
-    const offer = existing
-      ? await this.prisma.offer.update({
+    const writeOffer = async (db: Prisma.TransactionClient | PrismaService) => {
+      if (listing.listingType === 'AUCTION') {
+        // Serialize the offer write against bid writes. Auction bids update
+        // these same snapshot fields using a CAS; holding this row lock until
+        // the offer commits makes the checked high bid authoritative.
+        const claim = await db.listing.updateMany({
+          where: {
+            id: listing.id,
+            status: 'ACTIVE',
+            listingType: 'AUCTION',
+            currentBid: listing.currentBid,
+            bidCount: listing.bidCount,
+          },
+          data: { bidCount: { increment: 0 } },
+        });
+        if (claim.count === 0) {
+          throw new ConflictException(
+            'The auction price just changed. Refresh and submit your offer again.',
+          );
+        }
+      }
+      return existing
+        ? db.offer.update({
           where: { id: existing.id },
           data: {
             offerAmount: dto.offerAmount,
@@ -238,7 +272,7 @@ export class OffersService {
             attemptCount: { increment: 1 },
           },
         })
-      : await this.prisma.offer.create({
+        : db.offer.create({
           data: {
             listingId: listing.id,
             buyerId: buyer.id,
@@ -249,6 +283,11 @@ export class OffersService {
             metAutoAccept: autoAccept,
           },
         });
+    };
+    const offer =
+      listing.listingType === 'AUCTION'
+        ? await this.prisma.$transaction((tx) => writeOffer(tx))
+        : await writeOffer(this.prisma);
 
     this.activity.record({
       eventType: 'offer_placed',

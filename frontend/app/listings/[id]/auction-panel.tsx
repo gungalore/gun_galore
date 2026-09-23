@@ -581,14 +581,17 @@ export default function AuctionPanel({
         />
       ) : isOwnAuction ? (
         <div
+          aria-disabled="true"
           className="rounded-[6px] px-4 py-3 text-sm text-center"
           style={{
             background: 'var(--bg-inset)',
             border: '0.5px solid var(--border)',
             color: 'var(--text-tertiary)',
+            opacity: 0.6,
+            cursor: 'not-allowed',
           }}
         >
-          This is your auction — you can&apos;t bid on it.
+          Place bid — your own auction
         </div>
       ) : !user ? (
         <SignInButton mode="modal">

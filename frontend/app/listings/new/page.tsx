@@ -356,8 +356,7 @@ function AttributeField({
   value: string | boolean | undefined;
   onChange: (next: string | boolean) => void;
 }) {
-  // BOOLEAN → a checkbox whose label is the attribute label. Matches the
-  // "Offer Buy Now" checkbox styling used elsewhere in this form.
+  // BOOLEAN → a checkbox whose label is the attribute label.
   if (def.type === 'BOOLEAN') {
     return (
       <label
@@ -3667,58 +3666,6 @@ export default function NewListingPage() {
                     placeholder="No reserve"
                   />
                 </Field>
-
-                {/* Buy Now — opt-in. Seller ticks the box, then types
-                    the price. Unticking blanks the value so we don't
-                    submit a stale figure if they change their mind. */}
-                <div>
-                  <label
-                    className="flex items-start gap-2 cursor-pointer"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={form.offerBuyNow}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setForm((f) => ({
-                          ...f,
-                          offerBuyNow: checked,
-                          buyNowPrice: checked ? f.buyNowPrice : '',
-                        }));
-                      }}
-                      style={{
-                        accentColor: 'var(--red)',
-                        marginTop: 3,
-                      }}
-                    />
-                    <span className="text-sm">
-                      Offer Buy Now
-                      <span
-                        className="block text-xs mt-0.5"
-                        style={{ color: 'var(--text-tertiary)' }}
-                      >
-                        Lets a buyer skip bidding and buy outright — only
-                        honoured while no bids have landed.
-                      </span>
-                    </span>
-                  </label>
-
-                  {form.offerBuyNow && (
-                    <div className="mt-3 ml-6">
-                      <Field
-                        label="Buy Now price"
-                        hint="Shown on the listing as 'Buy Now — R{X}'. Must exceed the starting bid."
-                      >
-                        <PriceInput
-                          value={form.buyNowPrice}
-                          onChange={(v) => set('buyNowPrice', v)}
-                          placeholder="0.00"
-                        />
-                      </Field>
-                    </div>
-                  )}
-                </div>
 
                 {form.reservePrice ? (
                   // ─── Reserve set → starting bid is derived ────

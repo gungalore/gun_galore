@@ -58,6 +58,7 @@ export default function OfferPanel({
   listingId,
   listingPrice,
   sellerId,
+  isAuction = false,
   secondary = false,
 }: {
   listingId: string;
@@ -71,6 +72,7 @@ export default function OfferPanel({
    */
   listingPrice: number | null;
   sellerId: string;
+  isAuction?: boolean;
   // True when this panel sits ALONGSIDE a primary CTA (Buy Now / Place a
   // bid) rather than being the page's only action — i.e. any BUY_NOW or
   // AUCTION listing with acceptsOffers on. Keeps the fresh, never-made-an-
@@ -84,12 +86,16 @@ export default function OfferPanel({
   const { user, isLoaded } = useUser();
   const { getToken } = useAuth();
   const [amount, setAmount] = useState('');
+  const [auctionHighBid, setAuctionHighBid] = useState<number | null>(null);
 
   // The lowest offer this listing will take: 30% under the asking price.
   // Math.ceil matches the server's rounding exactly — a half-cent of drift
   // between them would show the buyer a number the API then refuses.
   // 100 (R 1.00) when there is no price to measure from; see the prop's note.
   const minOffer = listingPrice ? Math.ceil(listingPrice * 0.7) : 100;
+  const minAllowedOffer = isAuction
+    ? Math.max(minOffer, auctionHighBid ?? 0)
+    : minOffer;
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -120,6 +126,24 @@ export default function OfferPanel({
   const [expanded, setExpanded] = useState(!secondary);
 
   const isOwner = isLoaded && user?.id === sellerId;
+
+  useEffect(() => {
+    if (!isAuction) return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const res = await fetch(`${API_URL}/auctions/${listingId}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = (await res.json()) as { currentBid: number | null; startingBid: number | null };
+        if (active) setAuctionHighBid(data.currentBid ?? data.startingBid ?? 0);
+      } catch {
+        // Keep the last known amount; server validation remains authoritative.
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 5_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [isAuction, listingId]);
 
   // /offers/mine returns every offer this buyer has ever made, each with its
   // listing.id — filter to this listing client-side. No new endpoint needed.
@@ -188,9 +212,11 @@ export default function OfferPanel({
     // purely so the buyer finds out before spending their one attempt on a
     // round-trip. Keep the two in step — the same 0.7 and the same
     // Math.ceil, so a number this accepts is never one the server rejects.
-    if (cents < minOffer) {
+    if (cents < minAllowedOffer) {
       setError(
-        `Offers can be at most 30% below the asking price — the lowest here is ${rand(minOffer)}.`,
+        isAuction && auctionHighBid !== null && auctionHighBid >= minOffer
+          ? `Offers on this auction must be at least the current high bid of ${rand(auctionHighBid)}.`
+          : `Offers can be at most 30% below the asking price — the lowest here is ${rand(minAllowedOffer)}.`,
       );
       return;
     }
@@ -490,7 +516,11 @@ export default function OfferPanel({
             listing — finding out the rule from a rejection is finding out too
             late. Hidden when there is no price to measure from (legacy
             TAKE_A_SHOT), where any amount is fair game. */}
-        {listingPrice ? (
+        {isAuction && auctionHighBid !== null ? (
+          <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)' }}>
+            Minimum offer: {rand(minAllowedOffer)} — at least the current highest bid.
+          </p>
+        ) : listingPrice ? (
           <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)' }}>
             Lowest we&apos;ll take is {rand(minOffer)} — offers can go up to 30%
             below the asking price.

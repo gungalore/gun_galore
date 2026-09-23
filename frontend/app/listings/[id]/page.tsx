@@ -140,7 +140,11 @@ export default async function ListingDetailPage({
   // Buy Now CTA can swap to a non-purchase state. The backend
   // already rejects self-purchase, but the button shouldn't even
   // appear — it's confusing UX and was triggering a 400 round-trip.
-  const isOwnListing = !!userId && userId === listing.seller.userId;
+  // PUBLIC_LISTING_SELECT exposes seller.id (the member id) but deliberately
+  // omits a separate seller.userId field. Keep the fallback for payloads that
+  // may include it so owner-only controls work with both response shapes.
+  const sellerUserId = listing.seller.userId ?? listing.seller.id;
+  const isOwnListing = !!userId && userId === sellerUserId;
 
   // Take a Shot is an OPTION on every BUY_NOW / AUCTION listing now, not a
   // third selling mode — the seller turns offers on or off per listing, and
@@ -181,13 +185,13 @@ export default async function ListingDetailPage({
   // and shipping they have no way to act without scrolling all the way back
   // up. The bar is suppressed in exactly the cases where the inline CTA is
   // also suppressed, so it can never offer an action the page refuses:
-  //   • the seller viewing their own listing (self-buy is rejected anyway),
   //   • anything not ACTIVE (sold / cancelled / expired / payment-pending),
   //   • sold-out inventory-tracked listings (wishlist is the only CTA there).
+  // The seller's own active listing keeps a muted, disabled bar so the mobile
+  // affordance matches the inline self-purchase state without offering a link.
   const soldOut = trackedSellable !== null && trackedSellable <= 0;
   const showBuyBar =
     listing.status === 'ACTIVE' &&
-    !isOwnListing &&
     !soldOut;
   // The bar stays DUMB for auctions: the live figure comes from the polled
   // auction state, not listing.price (which is only the starting bid), so it
@@ -430,7 +434,7 @@ export default async function ListingDetailPage({
               messaging entirely; sellers reply from /dashboard. */}
           <QuestionsPanel
             listingId={listing.id}
-            sellerId={listing.seller.userId}
+            sellerId={sellerUserId}
           />
           </div>
         </div>
@@ -608,7 +612,7 @@ export default async function ListingDetailPage({
                 <SellerRating
                   rating={listing.seller.averageRating}
                   count={listing.seller._count?.ratingsReceived}
-                  href={`/sellers/${listing.seller.userId}`}
+                  href={`/sellers/${sellerUserId}`}
                 />
               </div>
             )}
@@ -616,7 +620,7 @@ export default async function ListingDetailPage({
           {/* Seller-only moderation banner — shows above the CTA. */}
           <ModerationBanner
             listingId={listing.id}
-            sellerId={listing.seller.userId}
+            sellerId={sellerUserId}
             status={listing.status}
             // These moderation fields only come back from the owner-aware
             // endpoint for the seller themselves; coalesce for the public
@@ -722,19 +726,18 @@ export default async function ListingDetailPage({
           <div id="buy-panel" className="gg-anchor-buy">
           {listing.status === 'ACTIVE' && listing.listingType === 'BUY_NOW' ? (
             isOwnListing ? (
-              // Self-buy guard. Backend rejects the purchase anyway,
-              // but the button shouldn't be clickable in the first
-              // place — confusing UX. Show a neutral chip so the
-              // seller knows this is their own item.
+              // Keep the purchase affordance visible but clearly disabled
+              // for the seller; backend rejects self-purchase as well.
               <div
-                className="block w-full py-3 rounded-[6px] text-sm text-center mb-5"
+                aria-disabled="true"
+                className="block w-full py-3 rounded-[6px] text-sm text-center mb-5 opacity-60 cursor-not-allowed"
                 style={{
                   background: 'var(--bg-inset)',
-                  color: 'var(--text-secondary)',
+                  color: 'var(--text-tertiary)',
                   border: '0.5px solid var(--border)',
                 }}
               >
-                This is your own listing
+                Buy Now — your own listing
               </div>
             ) : (
               trackedSellable !== null && trackedSellable <= 0 ? (
@@ -825,7 +828,7 @@ export default async function ListingDetailPage({
                       imageUrl:
                         listing.images?.find((i) => i.isPrimary)?.url ??
                         listing.images?.[0]?.url,
-                      sellerId: listing.seller.userId,
+                      sellerId: sellerUserId,
                       sellerUsername: listing.seller.username ?? 'Seller',
                       isFirearm: listing.isFirearm,
                       shippingMethods: listing.shippingMethods,
@@ -845,12 +848,12 @@ export default async function ListingDetailPage({
             <OfferPanel
               listingId={listing.id}
               listingPrice={listing.price}
-              sellerId={listing.seller.userId}
+              sellerId={sellerUserId}
             />
           ) : listing.listingType === 'AUCTION' ? (
             <AuctionPanel
               listingId={listing.id}
-              sellerId={listing.seller.userId}
+              sellerId={sellerUserId}
             />
           ) : listing.status !== 'ACTIVE' ? (
             <div
@@ -883,7 +886,8 @@ export default async function ListingDetailPage({
               <OfferPanel
                 listingId={listing.id}
                 listingPrice={listing.price}
-                sellerId={listing.seller.userId}
+                sellerId={sellerUserId}
+                isAuction
                 secondary
               />
             )}
@@ -1151,7 +1155,7 @@ export default async function ListingDetailPage({
             size={44}
           />
           <Link
-            href={`/sellers/${listing.seller.userId}`}
+            href={`/sellers/${sellerUserId}`}
             className="block flex-1 min-w-0 rounded-[6px] p-3 text-sm"
             style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', textDecoration: 'none' }}
           >
@@ -1208,7 +1212,7 @@ export default async function ListingDetailPage({
               profile page. */}
           <SellerControls
             listingId={listing.id}
-            sellerId={listing.seller.userId}
+            sellerId={sellerUserId}
             status={listing.status}
           />
         </div>
@@ -1306,7 +1310,22 @@ export default async function ListingDetailPage({
                 {buyBarPrice}
               </p>
             </div>
-            {listing.listingType === 'BUY_NOW' ? (
+            {isOwnListing ? (
+              <button
+                type="button"
+                disabled
+                aria-label="This is your own listing and cannot be purchased by you"
+                className="py-2.5 px-5 rounded-[6px] text-sm flex-shrink-0 opacity-60 cursor-not-allowed"
+                style={{
+                  background: 'var(--bg-inset)',
+                  color: 'var(--text-tertiary)',
+                  border: '0.5px solid var(--border)',
+                  fontWeight: 500,
+                }}
+              >
+                Your listing
+              </button>
+            ) : listing.listingType === 'BUY_NOW' ? (
               <Link
                 href={`/checkout/${listing.id}`}
                 className="py-2.5 px-5 rounded-[6px] text-sm flex-shrink-0"
