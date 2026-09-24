@@ -2,20 +2,25 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PAYMENT_MODE } from '../payments/transactions.service';
 import { PAYMENTS_LIVE } from '../payments/payment-mode';
-import { OzowService, OzowPayoutBeneficiary } from '../payments/ozow.service';
+import {
+  OzowService,
+  OzowPayoutBeneficiary,
+  OzowPayoutResult,
+} from '../payments/ozow.service';
 import { normaliseOzowBank, bankByBranchCode } from '../payments/ozow-banks';
 
 // Manual-EFT reconciliation (the inContact inbox scan + FNB statement CSV
 // upload + unmatched queue + FNB payout-batch builder) has been REMOVED with
 // the manual-EFT payment rail. What remains here are the rail-agnostic,
-// read-only money-state accounting views the operator still needs:
+// Ozow payout runner and money-state views:
+//   - runDuePayouts — operator-triggered Ozow seller disbursement
 //   - getPayoutsDue / getPayoutsDuePreview / collectDue — owed seller payouts
 //     + buyer refunds (the docking / zero-net / residual math), plus the rows
 //     a settlement would have to skip (missing bank details / KYC gate).
 //   - getHeldFundsReport — the Client-Funds-Payable position.
 //   - getZohoFailedSyncs — the Books failed-sync radar.
-// A future card paygate settles the due rows directly by stamping
-// Transaction.paidOutAt; none of this depends on the deleted EFT plumbing.
+// Accepted payout requests stamp Transaction.paidOutAt; their final outcomes
+// are reconciled through Ozow's notification and status-check endpoints.
 
 // A due payout/refund row a settlement would SKIP, with a structured reason,
 // so the admin payouts-due preview can show blocked money.
@@ -62,12 +67,11 @@ export class ManualPaymentsService {
 
   // ── Seller payout disbursement via Ozow Payouts ─────────────────────
   // Operator-triggered (admin endpoint). Gathers the due seller payouts and
-  // disburses each payable one to the seller's bank (one requestpayout per
-  // seller), stamping paidOutAt on rows Ozow ACCEPTS (exactly-once — a re-run
-  // skips already-stamped rows). The payout notification webhook later
-  // confirms PayoutComplete or, on failure, clears paidOutAt so the row
-  // re-queues. Buyer refunds are NOT here: the gateway reverses those on the
-  // original payment via refundPayment.
+  // disburses each payable transaction (one requestpayout per transaction).
+  // An atomic payout hold claims each row before the API call. Accepted
+  // requests stamp payoutRequestedAt; status notifications / polling stamp
+  // paidOutAt only on completion, or hold final failures for review. Buyer
+  // refunds are NOT here: the gateway reverses those on the original payment.
   async runDuePayouts(): Promise<{
     attempted: number;
     accepted: number;
@@ -79,6 +83,9 @@ export class ManualPaymentsService {
       throw new Error(
         'Payments are not live (PAYMENTS_LIVE!=true) — payout disbursement is disabled.',
       );
+    }
+    if (!this.ozow.isPayoutsConfigured()) {
+      throw new Error('Ozow Payouts API is not configured — refusing payout run.');
     }
     const due = await this.getPayoutsDue();
     const collected = await this.collectDue(due);
@@ -145,36 +152,118 @@ export class ManualPaymentsService {
       };
     }
 
-    // One requestpayout per seller. Store the Ozow payoutId as soon as it is
-    // returned so the verification + notification webhooks always match back.
+    // Persist a per-attempt encrypted key and its signed request fields before
+    // Ozow is called, then bind the returned payoutId for both callbacks.
     let accepted = 0;
+    let attempted = 0;
     let totalCents = 0;
     const failures: string[] = [];
     for (const b of beneficiaries) {
-      const res = await this.ozow.createPayout(b);
-      if (res.accepted && res.payoutId) {
-        await this.prisma.transaction.update({
-          where: { id: b.txId },
-          data: { gatewayPayoutId: res.payoutId },
+      // Claim the due row before any outbound call. This prevents overlapping
+      // admin runs from sending two payout requests for the same transaction.
+      const claim = await this.prisma.transaction.updateMany({
+        where: {
+          id: b.txId,
+          releasedAt: { not: null },
+          payoutRequestedAt: null,
+          paidOutAt: null,
+          payoutHeldAt: null,
+        },
+        data: {
+          payoutHeldAt: new Date(),
+          payoutHoldReason: 'Ozow payout request in progress',
+          payoutHeldById: null,
+        },
+      });
+      if (claim.count === 0) continue;
+      attempted += 1;
+
+      let res: OzowPayoutResult;
+      let persistedAttemptId: string | undefined;
+      try {
+        res = await this.ozow.createPayout(b, async (material) => {
+          const attempt = await this.prisma.ozowPayoutAttempt.create({
+            data: {
+              transactionId: material.txId,
+              siteCode: material.siteCode,
+              merchantReference: material.merchantReference,
+              customerBankReference: material.customerBankReference,
+              amountCents: material.amountCents,
+              isRtc: material.isRtc,
+              notifyUrl: material.notifyUrl,
+              bankGroupId: material.bankGroupId,
+              encryptedAccountNumber: material.encryptedAccountNumber,
+              branchCode: material.branchCode,
+              encryptionKeyCiphertext: material.ciphertext,
+              encryptionKeyIv: material.iv,
+              encryptionKeyAuthTag: material.authTag,
+            },
+            select: { id: true },
+          });
+          persistedAttemptId = attempt.id;
+          return attempt.id;
         });
-        // Stamp paidOutAt (exactly-once) — CAS on paidOutAt=null so a
-        // concurrent run can't double-stamp.
-        const stamp = await this.prisma.transaction.updateMany({
-          where: { id: b.txId, paidOutAt: null },
-          data: { paidOutAt: new Date() },
-        });
-        if (stamp.count > 0) {
-          accepted += 1;
-          totalCents += b.amountCents;
+      } catch (err) {
+        const name = (err as Error).name || 'Error';
+        const message = `Ozow request outcome unknown (${name}); held for reference reconciliation`;
+        if (persistedAttemptId) {
+          await this.prisma.ozowPayoutAttempt.update({
+            where: { id: persistedAttemptId },
+            data: { requestErrorMessage: message },
+          }).catch(() => undefined);
         }
+        failures.push(`${b.txId.slice(0, 8)}: ${message}`);
+        await this.holdFailedPayout(b.txId, message, !!persistedAttemptId);
+        continue;
+      }
+
+      if (res.accepted && res.payoutId && res.attemptId) {
+        await this.prisma.$transaction([
+          this.prisma.transaction.update({
+            where: { id: b.txId },
+            data: {
+              gatewayPayoutId: res.payoutId,
+              payoutRequestedAt: new Date(),
+              payoutHeldAt: null,
+              payoutHoldReason: null,
+              payoutHeldById: null,
+            },
+          }),
+          this.prisma.ozowPayoutAttempt.update({
+            where: { id: res.attemptId },
+            data: {
+              gatewayPayoutId: res.payoutId,
+              requestStatus: res.status,
+              requestSubStatus: res.subStatus,
+              requestErrorMessage: res.errorMessage || null,
+            },
+          }),
+        ]);
+        accepted += 1;
+        totalCents += b.amountCents;
       } else {
-        failures.push(
-          `${b.txId.slice(0, 8)}: ${res.errorMessage ?? 'rejected'}`,
-        );
+        const reason = res.errorMessage ?? 'Ozow rejected the payout request';
+        if (res.attemptId) {
+          await this.prisma.ozowPayoutAttempt.update({
+            where: { id: res.attemptId },
+            data: {
+              requestStatus: res.status,
+              requestSubStatus: res.subStatus,
+              requestErrorMessage: reason,
+              lastStatus: res.status,
+              lastSubStatus: res.subStatus,
+              lastStatusMessage: reason,
+              lastStatusCheckedAt: new Date(),
+              terminalAt: new Date(),
+            },
+          });
+        }
+        failures.push(`${b.txId.slice(0, 8)}: ${reason}`);
+        await this.holdFailedPayout(b.txId, reason);
       }
     }
 
-    const failed = beneficiaries.length - accepted;
+    const failed = attempted - accepted;
     if (failed > 0) {
       await this.prisma.adminAlert
         .create({
@@ -182,16 +271,16 @@ export class ManualPaymentsService {
             type: 'OZOW_PAYOUT_PARTIAL',
             referenceId: `payout-${new Date().toISOString().slice(0, 10)}`,
             urgent: true,
-            context: `Ozow payout run: ${accepted}/${beneficiaries.length} accepted, ${failed} not accepted. ${failures.join('; ')}`,
+            context: `Ozow payout run: ${accepted}/${attempted} accepted, ${failed} not accepted. ${failures.join('; ')}`,
           },
         })
         .catch(() => undefined);
     }
     this.logger.log(
-      `Ozow payout run: ${accepted}/${beneficiaries.length} accepted, R${Math.round(totalCents / 100)} disbursed`,
+      `Ozow payout run: ${accepted}/${attempted} accepted, R${Math.round(totalCents / 100)} submitted`,
     );
     return {
-      attempted: beneficiaries.length,
+      attempted,
       accepted,
       failed,
       totalCents,
@@ -199,10 +288,31 @@ export class ManualPaymentsService {
     };
   }
 
+  private async holdFailedPayout(
+    txId: string,
+    reason: string,
+    requestMayBeInFlight = false,
+  ): Promise<void> {
+    const now = new Date();
+    await this.prisma.transaction.updateMany({
+      where: {
+        id: txId,
+        paidOutAt: null,
+      },
+      data: {
+        ...(requestMayBeInFlight ? { payoutRequestedAt: now } : {}),
+        payoutHeldAt: now,
+        payoutHoldReason: `Ozow payout needs review: ${reason}`.slice(0, 500),
+        payoutHeldById: null,
+      },
+    });
+  }
+
   // Public /api origin for the payout notifyUrl (PUBLIC_API_URL, else
   // FRONTEND_URL + '/api', else localhost).
   private publicApiBase(): string {
-    if (process.env.PUBLIC_API_URL) return process.env.PUBLIC_API_URL;
+    if (process.env.PUBLIC_API_URL)
+      return process.env.PUBLIC_API_URL.replace(/\/$/, '');
     const fe = process.env.FRONTEND_URL;
     return fe ? `${fe.replace(/\/$/, '')}/api` : 'http://localhost:3001/api';
   }
@@ -450,15 +560,15 @@ export class ManualPaymentsService {
   // Seller payouts: transactions whose funds have been RELEASED (buyer
   // confirmed delivery / dealer-verify approved / PRIVATE_ARRANGE) and are
   // owed to the seller. Buyer refunds: transactions marked REFUNDED that still
-  // need the money sent back. "Due" = owed but not yet settled (paidOutAt null)
-  // and not on a payout hold (payoutHeldAt null). A future paygate settles
-  // these by stamping paidOutAt.
+  // need the money sent back. "Due" = not paid (paidOutAt null), no payout
+  // request already in flight (payoutRequestedAt null), and not held.
   async getPayoutsDue() {
     const payouts = await this.prisma.transaction.findMany({
       where: {
         paymentStatus: 'RELEASED',
         sellerPayout: { gt: 0 },
         paidOutAt: null,
+        payoutRequestedAt: null,
         // P0.3 — synthetic refund children are never seller payouts.
         refundOfId: null,
         // M26 — a held row is withheld from the sweep until an admin clears

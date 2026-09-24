@@ -5,7 +5,10 @@ import {
   buildPayoutVerifyHash,
   buildPayoutNotificationHash,
   encryptAccountNumber,
+  generatePayoutEncryptionKey,
   safeEqualHex,
+  unwrapPayoutEncryptionKey,
+  wrapPayoutEncryptionKey,
 } from './ozow-signature';
 
 // The published Svix golden vector from hub.ozow.com (verify-a-webhook).
@@ -142,5 +145,28 @@ describe('encryptAccountNumber (AES-256-CBC)', () => {
     const a = encryptAccountNumber('123456789', 'KEY', 'AO123', 10000);
     const b = encryptAccountNumber('123456789', 'KEY', 'AO123', 10001);
     expect(a).not.toBe(b);
+  });
+});
+
+describe('per-payout encryption keys', () => {
+  const wrappingSecret = 'test-only-payout-key-wrapping-secret';
+
+  it('generates a unique key per payout and round-trips it through authenticated encryption', () => {
+    const first = generatePayoutEncryptionKey();
+    const second = generatePayoutEncryptionKey();
+    expect(first).toHaveLength(32);
+    expect(second).toHaveLength(32);
+    expect(second).not.toBe(first);
+
+    const wrapped = wrapPayoutEncryptionKey(first, wrappingSecret);
+    expect(unwrapPayoutEncryptionKey(wrapped, wrappingSecret)).toBe(first);
+  });
+
+  it('rejects a wrapped key when the wrapping secret is wrong', () => {
+    const wrapped = wrapPayoutEncryptionKey(
+      generatePayoutEncryptionKey(),
+      wrappingSecret,
+    );
+    expect(() => unwrapPayoutEncryptionKey(wrapped, 'wrong-secret')).toThrow();
   });
 });

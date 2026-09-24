@@ -1671,6 +1671,7 @@ model Transaction {
   refundOfId     String?
   refundOf       Transaction?  @relation("RefundChildren", fields: [refundOfId], references: [id])
   refundChildren Transaction[] @relation("RefundChildren")
+  ozowPayoutAttempts OzowPayoutAttempt[]
 
   // Buyer-initiated cancellation (Phase 4 P4.2). Set when the buyer
   // cancels a paid-but-undispatched courier order; the cancel path
@@ -1698,12 +1699,13 @@ model Transaction {
   paidAt           DateTime?
   releasedAt       DateTime?
 
-  // Payout settlement. The outbound payout to the seller (RELEASED) or refund
-  // to the buyer (REFUNDED) is stamped paidOutAt when settled. A row is "due"
-  // while paidOutAt is null (and it isn't on a payout hold). The manual-EFT FNB
-  // bulk-payment batch (PayoutBatch) has been removed; a future paygate settles
-  // these rows directly via paidOutAt.
-  paidOutAt DateTime?
+  // Ozow returns status 1 when a payout request is merely queued. Keep that
+  // distinct from paidOutAt, which is set only on PayoutComplete. While
+  // payoutRequestedAt is set the row is in-flight/uncertain and cannot be
+  // resubmitted. An uncertain response is reconciled by merchant reference.
+  payoutRequestedAt DateTime?
+  /// Set only on PayoutComplete; a later PayoutReturned clears it and holds the row.
+  paidOutAt         DateTime?
 
   // M26 (FLOW-F4) — admin payout-HOLD lever. A RELEASED (or otherwise-due) row
   // with payoutHeldAt set is excluded from getPayoutsDue/collectDue and never
@@ -2139,6 +2141,7 @@ model Transaction {
   @@index([manualPayByAt])
   // Payout due-queue: RELEASED/REFUNDED rows not yet paid out.
   @@index([paymentStatus, paidOutAt])
+  @@index([paymentStatus, paidOutAt, payoutRequestedAt, payoutHeldAt])
   // P0.3 — refund children lookup (parent → its synthetic refund slices).
   @@index([refundOfId])
   // P6.2 — consolidated-shipment group lookup (carrier → its sibling lines).
@@ -6999,4 +7002,41 @@ model PostVideo {
   width           Int?
   height          Int?
   createdAt       DateTime @default(now())
+}
+
+/// Durable record of each Ozow payout request. The one-off account-number
+/// decryption key is AES-GCM wrapped with OZOW_PAYOUT_ENCRYPTION_KEY at rest;
+/// request fields are retained to authenticate the matching verification call
+/// and status reconciliation without relying on mutable seller bank details.
+model OzowPayoutAttempt {
+  id                       String       @id @default(cuid())
+  transactionId            String
+  transaction              Transaction  @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  gatewayPayoutId          String?      @unique
+  siteCode                 String
+  merchantReference        String
+  customerBankReference    String
+  amountCents              Int
+  isRtc                    Boolean
+  notifyUrl                String
+  bankGroupId              String
+  encryptedAccountNumber   String
+  branchCode               String
+  encryptionKeyCiphertext  String
+  encryptionKeyIv          String
+  encryptionKeyAuthTag     String
+  requestStatus            Int?
+  requestSubStatus         Int?
+  requestErrorMessage      String?
+  lastStatus               Int?
+  lastSubStatus            Int?
+  lastStatusMessage        String?
+  lastStatusCheckedAt      DateTime?
+  completedAt              DateTime?
+  terminalAt               DateTime?
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+
+  @@index([transactionId, createdAt])
+  @@index([terminalAt, lastStatusCheckedAt, createdAt])
 }

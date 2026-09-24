@@ -5,7 +5,11 @@ import {
   buildPayoutVerifyHash,
   buildPayoutNotificationHash,
   encryptAccountNumber,
+  generatePayoutEncryptionKey,
   safeEqualHex,
+  unwrapPayoutEncryptionKey,
+  wrapPayoutEncryptionKey,
+  type WrappedPayoutEncryptionKey,
   type SvixHeaders,
 } from './ozow-signature';
 import { normaliseOzowBank, bankByBranchCode, type OzowBank } from './ozow-banks';
@@ -84,15 +88,62 @@ export interface OzowPayoutResult {
   payoutId: string;
   /** `true` only when payoutId is populated and errorMessage is empty. */
   accepted: boolean;
+  attemptId?: string;
   status?: number;
   subStatus?: number;
   errorMessage?: string;
+}
+
+export interface OzowPayoutAttemptMaterial extends WrappedPayoutEncryptionKey {
+  txId: string;
+  siteCode: string;
+  merchantReference: string;
+  customerBankReference: string;
+  amountCents: number;
+  isRtc: boolean;
+  notifyUrl: string;
+  bankGroupId: string;
+  encryptedAccountNumber: string;
+  branchCode: string;
+}
+
+export interface OzowPayoutStatus {
+  payoutId: string;
+  status: number;
+  subStatus: number;
+  errorMessage: string;
+}
+
+export interface OzowPayoutReferenceResult extends OzowPayoutStatus {
+  merchantReference: string;
+  customerBankReference: string;
+  amountCents: number;
+  siteCode: string;
+  isRtc: boolean;
 }
 
 const ONE_API_LIVE = 'https://one.ozow.com/v1';
 const ONE_API_STAGING = 'https://stagingone.ozow.com/v1';
 const PAYOUTS_LIVE = 'https://payoutsapi.ozow.com/v1';
 const PAYOUTS_STAGING = 'https://stagingpayoutsapi.ozow.com/v1';
+
+function webhookText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return undefined;
+}
+
+function webhookNumber(value: unknown): number | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function webhookRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
 
 @Injectable()
 export class OzowService {
@@ -106,13 +157,14 @@ export class OzowService {
 
   // Payouts API
   private readonly payoutApiKey = process.env.OZOW_PAYOUT_API_KEY ?? '';
-  private readonly payoutSiteCode =
-    process.env.OZOW_PAYOUT_SITE_CODE ?? this.siteCode;
+  private readonly payoutSiteCode = process.env.OZOW_PAYOUT_SITE_CODE ?? '';
   private readonly payoutAccessToken =
     process.env.OZOW_PAYOUT_ACCESS_TOKEN ?? '';
-  private readonly payoutEncryptionKey =
+  // Master secret used only to wrap unique per-request payout keys at rest.
+  private readonly payoutKeyWrappingSecret =
     process.env.OZOW_PAYOUT_ENCRYPTION_KEY ?? '';
-  private readonly payoutIsRtc = process.env.OZOW_PAYOUT_IS_RTC === 'true';
+  private readonly payoutIsRtc =
+    process.env.OZOW_ENV === 'live' && process.env.OZOW_PAYOUT_IS_RTC === 'true';
 
   private readonly live = process.env.OZOW_ENV === 'live';
 
@@ -128,7 +180,9 @@ export class OzowService {
   private readonly payoutsConfigured = !!(
     this.payoutApiKey &&
     this.payoutSiteCode &&
-    this.payoutEncryptionKey
+    this.payoutKeyWrappingSecret &&
+    this.payoutKeyWrappingSecret.length >= 32 &&
+    this.payoutAccessToken
   );
 
   // Cached bearer token (One API).
@@ -149,7 +203,7 @@ export class OzowService {
     }
     if (!this.payoutsConfigured) {
       this.logger.warn(
-        'Ozow Payouts not configured (OZOW_PAYOUT_API_KEY / OZOW_PAYOUT_SITE_CODE / OZOW_PAYOUT_ENCRYPTION_KEY missing) — payouts run in MOCK mode.',
+        'Ozow Payouts not configured (payout API key, site code, verification access token, or key-wrapping secret missing) — no payout requests will be sent.',
       );
     }
     if (this.live && (this.payInConfigured || this.payoutsConfigured)) {
@@ -399,12 +453,39 @@ export class OzowService {
   // ─── Create payout (seller disbursement) ────────────────────────────
   async createPayout(
     beneficiary: OzowPayoutBeneficiary,
+    persistAttempt: (material: OzowPayoutAttemptMaterial) => Promise<string>,
   ): Promise<OzowPayoutResult> {
     if (!this.payoutsConfigured) {
       this.logger.warn(
         `Ozow payouts not configured — logging payout intent for ${beneficiary.txId} (${beneficiary.amountCents}c)`,
       );
       return { payoutId: '', accepted: false, errorMessage: 'payouts not configured' };
+    }
+
+    let notifyUrl: URL;
+    try {
+      notifyUrl = new URL(beneficiary.notifyUrl);
+    } catch {
+      return {
+        payoutId: '',
+        accepted: false,
+        errorMessage: 'Payout notification URL must be a public HTTPS URL',
+      };
+    }
+    const notifyHost = notifyUrl.hostname
+      .toLowerCase()
+      .replace(/^\[|\]$/g, '');
+    if (
+      notifyUrl.protocol !== 'https:' ||
+      ['localhost', '127.0.0.1', '::1'].includes(notifyHost) ||
+      notifyHost.endsWith('.local') ||
+      beneficiary.notifyUrl.length > 150
+    ) {
+      return {
+        payoutId: '',
+        accepted: false,
+        errorMessage: 'Payout notification URL must be a public HTTPS URL',
+      };
     }
 
     const bank = bankByBranchCode(beneficiary.branchCode);
@@ -424,12 +505,34 @@ export class OzowService {
       };
     }
 
+    const payoutEncryptionKey = generatePayoutEncryptionKey();
+    const wrappedKey = wrapPayoutEncryptionKey(
+      payoutEncryptionKey,
+      this.payoutKeyWrappingSecret,
+    );
     const encryptedAccountNumber = encryptAccountNumber(
       beneficiary.bankAccountNumber,
-      this.payoutEncryptionKey,
+      payoutEncryptionKey,
       beneficiary.merchantReference,
       beneficiary.amountCents,
     );
+
+    // Persist the encrypted, unique key and exact signed request fields before
+    // contacting Ozow. The verification callback arrives after requestpayout
+    // returns and must use this attempt, never mutable seller profile data.
+    const attemptId = await persistAttempt({
+      txId: beneficiary.txId,
+      siteCode: this.payoutSiteCode,
+      merchantReference: beneficiary.merchantReference,
+      customerBankReference: beneficiary.customerBankReference,
+      amountCents: beneficiary.amountCents,
+      isRtc: this.payoutIsRtc,
+      notifyUrl: beneficiary.notifyUrl,
+      bankGroupId,
+      encryptedAccountNumber,
+      branchCode: beneficiary.branchCode,
+      ...wrappedKey,
+    });
 
     const hashCheck = buildPayoutRequestHash({
       siteCode: this.payoutSiteCode,
@@ -470,7 +573,12 @@ export class OzowService {
     if (!res.ok) {
       const message = await res.text().catch(() => '');
       this.logger.warn(`Ozow requestpayout ${res.status}: ${message}`);
-      return { payoutId: '', accepted: false, errorMessage: `HTTP ${res.status}` };
+      return {
+        payoutId: '',
+        accepted: false,
+        attemptId,
+        errorMessage: `HTTP ${res.status}`,
+      };
     }
 
     const json = (await res.json()) as {
@@ -485,11 +593,129 @@ export class OzowService {
     const errorMessage = json.payoutStatus?.errorMessage ?? '';
     return {
       payoutId,
+      attemptId,
       accepted: !!payoutId && !errorMessage,
       status: json.payoutStatus?.status,
       subStatus: json.payoutStatus?.subStatus,
       errorMessage,
     };
+  }
+
+  /** Query the authoritative payout outcome after a notification is delayed. */
+  async getPayoutStatus(payoutId: string): Promise<OzowPayoutStatus> {
+    if (!this.payoutsConfigured) throw new Error('Ozow payouts not configured');
+    const url = new URL(`${this.payoutsHost}/getpayout`);
+    url.searchParams.set('payoutId', payoutId);
+    const res = await fetch(url, {
+      headers: {
+        SiteCode: this.payoutSiteCode,
+        ApiKey: this.payoutApiKey,
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`Ozow getpayout ${res.status}: ${await res.text()}`);
+    }
+    const json = (await res.json()) as {
+      id?: string;
+      payoutId?: string;
+      payoutStatus?: {
+        status?: number;
+        subStatus?: number;
+        errorMessage?: string;
+      };
+    };
+    if (!json.payoutStatus || json.payoutStatus.status === undefined) {
+      throw new Error('Ozow getpayout response is missing payoutStatus.status');
+    }
+    return {
+      payoutId: json.id ?? json.payoutId ?? payoutId,
+      status: Number(json.payoutStatus.status),
+      subStatus: Number(json.payoutStatus.subStatus ?? 0),
+      errorMessage: String(json.payoutStatus.errorMessage ?? ''),
+    };
+  }
+
+  /** Find payouts by the client-minted reference when the request response was lost. */
+  async getPayoutsByReference(
+    merchantReference: string,
+  ): Promise<OzowPayoutReferenceResult[]> {
+    if (!this.payoutsConfigured) throw new Error('Ozow payouts not configured');
+    const res = await fetch(`${this.payoutsHost}/getpayoutbyreference`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        SiteCode: this.payoutSiteCode,
+        ApiKey: this.payoutApiKey,
+      },
+      body: JSON.stringify({
+        pageSize: 10,
+        pageIndex: 1,
+        searchFields: [1],
+        searchString: merchantReference,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`Ozow getpayoutbyreference ${res.status}: ${await res.text()}`);
+    }
+    const payouts = (await res.json()) as {
+      id?: string;
+      amount?: string | number;
+      merchantReference?: string;
+      customerBankReference?: string;
+      siteCode?: string;
+      isRtc?: boolean;
+      payoutStatus?: {
+        status?: number;
+        subStatus?: number;
+        errorMessage?: string;
+      };
+    }[];
+    return payouts.map((payout) => ({
+      payoutId: String(payout.id ?? ''),
+      merchantReference: String(payout.merchantReference ?? ''),
+      customerBankReference: String(payout.customerBankReference ?? ''),
+      amountCents: this.decimalToCents(payout.amount),
+      siteCode: String(payout.siteCode ?? ''),
+      isRtc: payout.isRtc === true,
+      status: Number(payout.payoutStatus?.status ?? 0),
+      subStatus: Number(payout.payoutStatus?.subStatus ?? 0),
+      errorMessage: String(payout.payoutStatus?.errorMessage ?? ''),
+    }));
+  }
+
+  decryptPayoutEncryptionKey(
+    wrapped: WrappedPayoutEncryptionKey,
+  ): string {
+    return unwrapPayoutEncryptionKey(wrapped, this.payoutKeyWrappingSecret);
+  }
+
+  /** Compare every signed verification field with the durable request record. */
+  matchesPayoutVerification(
+    body: Record<string, unknown>,
+    expected: OzowPayoutAttemptMaterial,
+  ): boolean {
+    const banking = webhookRecord(body.bankingDetails ?? body.BankingDetails);
+    const value = (lower: string, upper: string) => body[lower] ?? body[upper];
+    const sameText = (actual: unknown, wanted: string) =>
+      (webhookText(actual) ?? '').toLowerCase() === wanted.toLowerCase();
+    const amount = webhookNumber(value('amount', 'Amount'));
+    if (amount === undefined) return false;
+    const amountCents = Math.round(amount * 100);
+    const actualRtc = value('isRtc', 'IsRtc');
+    if (actualRtc === undefined || actualRtc === null) return false;
+    if (typeof actualRtc !== 'boolean' && typeof actualRtc !== 'string') return false;
+    const isRtc = actualRtc === true || actualRtc === 'true';
+    return (
+      sameText(value('siteCode', 'SiteCode'), expected.siteCode) &&
+      sameText(value('merchantReference', 'MerchantReference'), expected.merchantReference) &&
+      sameText(value('customerBankReference', 'CustomerBankReference'), expected.customerBankReference) &&
+      amountCents === expected.amountCents &&
+      isRtc === expected.isRtc &&
+      sameText(value('notifyUrl', 'NotifyUrl'), expected.notifyUrl) &&
+      sameText(banking.bankGroupId ?? banking.BankGroupId, expected.bankGroupId) &&
+      sameText(banking.accountNumber ?? banking.AccountNumber, expected.encryptedAccountNumber) &&
+      sameText(banking.branchCode ?? banking.BranchCode, expected.branchCode)
+    );
   }
 
   // ─── Webhook helpers ────────────────────────────────────────────────
@@ -517,15 +743,14 @@ export class OzowService {
     amountCents?: number;
   } {
     const first = (k: string): string | undefined => {
-      const v = data[k];
-      return v === undefined || v === null ? undefined : String(v);
+      return webhookText(data[k]);
     };
+    const amount = first('Amount');
     return {
       transactionId: first('TransactionId') ?? first('id'),
       merchantReference: first('TransactionReference') ?? first('merchantReference'),
       status: first('Status') ?? first('status') ?? 'Incomplete',
-      amountCents:
-        first('Amount') !== undefined ? this.decimalToCents(first('Amount')) : undefined,
+      amountCents: amount !== undefined ? this.decimalToCents(amount) : undefined,
     };
   }
 
@@ -537,65 +762,107 @@ export class OzowService {
     subStatus: number;
     errorMessage: string;
   } {
-    const ps = (body.payoutStatus ?? body.PayoutStatus ?? {}) as Record<string, unknown>;
-    const status = Number(ps.status ?? body.status ?? 0);
-    const subStatus = Number(ps.subStatus ?? body.subStatus ?? 0);
+    const ps = webhookRecord(body.payoutStatus ?? body.PayoutStatus);
+    const status = webhookNumber(ps.status ?? body.status ?? body.Status) ?? 0;
+    const subStatus = webhookNumber(ps.subStatus ?? body.subStatus ?? body.SubStatus) ?? 0;
     return {
-      payoutId: String(body.payoutId ?? body.PayoutId ?? ''),
-      merchantReference: String(body.merchantReference ?? body.MerchantReference ?? ''),
+      payoutId: webhookText(body.payoutId ?? body.PayoutId) ?? '',
+      merchantReference:
+        webhookText(body.merchantReference ?? body.MerchantReference) ?? '',
       status,
       subStatus,
-      errorMessage: String(ps.errorMessage ?? body.errorMessage ?? ''),
+      errorMessage: webhookText(ps.errorMessage ?? body.errorMessage ?? body.ErrorMessage) ?? '',
     };
   }
 
   /** Verify a payout notification hash (SHA-512, lowercased, apiKey-appended). */
   verifyPayoutNotificationHash(body: Record<string, unknown>): boolean {
     if (!this.payoutApiKey) return false;
-    const ps = (body.payoutStatus ?? body.PayoutStatus ?? {}) as Record<string, unknown>;
-    const status = Number(ps.status ?? body.status ?? 0);
-    const subStatus = Number(ps.subStatus ?? body.subStatus ?? 0);
+    const ps = webhookRecord(body.payoutStatus ?? body.PayoutStatus);
+    const status = webhookNumber(ps.status ?? body.status ?? body.Status);
+    const subStatus = webhookNumber(ps.subStatus ?? body.subStatus ?? body.SubStatus);
+    const payoutId = webhookText(body.payoutId ?? body.PayoutId);
+    const merchantReference = webhookText(
+      body.merchantReference ?? body.MerchantReference,
+    );
+    const customerMerchantReference = webhookText(
+      body.customerMerchantReference ?? body.CustomerMerchantReference,
+    );
+    const provided = webhookText(body.hashCheck ?? body.HashCheck);
+    if (
+      status === undefined ||
+      subStatus === undefined ||
+      !payoutId ||
+      !merchantReference ||
+      customerMerchantReference === undefined ||
+      !provided
+    ) {
+      return false;
+    }
     const expected = buildPayoutNotificationHash({
-      payoutId: String(body.payoutId ?? body.PayoutId ?? ''),
+      payoutId,
       siteCode: this.payoutSiteCode,
-      merchantReference: String(body.merchantReference ?? body.MerchantReference ?? ''),
-      customerMerchantReference: String(
-        body.customerMerchantReference ?? body.CustomerMerchantReference ?? '',
-      ),
+      merchantReference,
+      customerMerchantReference,
       status,
       subStatus,
       apiKey: this.payoutApiKey,
     });
-    const provided = String(body.hashCheck ?? body.HashCheck ?? '');
-    return !!provided && safeEqualHex(expected, provided);
+    return safeEqualHex(expected, provided);
   }
 
   /** Verify the pre-dispersal payout verification webhook hash. */
   verifyPayoutVerifyHash(body: Record<string, unknown>): boolean {
     if (!this.payoutApiKey) return false;
-    const banking = (body.bankingDetails ?? body.BankingDetails ?? {}) as Record<string, unknown>;
-    const amountCents = Math.round(parseFloat(String(body.amount ?? '0')) * 100);
-    const isRtc = String(body.isRtc ?? body.IsRtc ?? 'false').toLowerCase() === 'true';
+    const banking = webhookRecord(body.bankingDetails ?? body.BankingDetails);
+    const amount = webhookNumber(body.amount ?? body.Amount);
+    const rawRtc = body.isRtc ?? body.IsRtc;
+    const payoutId = webhookText(body.payoutId ?? body.PayoutId);
+    const merchantReference = webhookText(
+      body.merchantReference ?? body.MerchantReference,
+    );
+    const customerBankReference = webhookText(
+      body.customerBankReference ?? body.CustomerBankReference,
+    );
+    const notifyUrl = webhookText(body.notifyUrl ?? body.NotifyUrl);
+    const bankGroupId = webhookText(
+      banking.bankGroupId ?? banking.BankGroupId,
+    );
+    const encryptedAccountNumber = webhookText(
+      banking.accountNumber ?? banking.AccountNumber,
+    );
+    const branchCode = webhookText(banking.branchCode ?? banking.BranchCode);
+    const provided = webhookText(body.hashCheck ?? body.HashCheck);
+    if (
+      amount === undefined ||
+      (typeof rawRtc !== 'boolean' && typeof rawRtc !== 'string') ||
+      payoutId === undefined ||
+      merchantReference === undefined ||
+      customerBankReference === undefined ||
+      notifyUrl === undefined ||
+      bankGroupId === undefined ||
+      encryptedAccountNumber === undefined ||
+      branchCode === undefined ||
+      !provided
+    ) {
+      return false;
+    }
+    const amountCents = Math.round(amount * 100);
+    const isRtc = rawRtc === true || rawRtc === 'true';
     const expected = buildPayoutVerifyHash({
-      payoutId: String(body.payoutId ?? body.PayoutId ?? ''),
+      payoutId,
       siteCode: this.payoutSiteCode,
       amountCents,
-      merchantReference: String(body.merchantReference ?? body.MerchantReference ?? ''),
-      customerBankReference: String(body.customerBankReference ?? body.CustomerBankReference ?? ''),
+      merchantReference,
+      customerBankReference,
       isRtc,
-      notifyUrl: String(body.notifyUrl ?? body.NotifyUrl ?? ''),
-      bankGroupId: String(banking.bankGroupId ?? banking.BankGroupId ?? ''),
-      encryptedAccountNumber: String(banking.accountNumber ?? banking.AccountNumber ?? ''),
-      branchCode: String(banking.branchCode ?? banking.BranchCode ?? ''),
+      notifyUrl,
+      bankGroupId,
+      encryptedAccountNumber,
+      branchCode,
       apiKey: this.payoutApiKey,
     });
-    const provided = String(body.hashCheck ?? body.HashCheck ?? '');
-    return !!provided && safeEqualHex(expected, provided);
-  }
-
-  /** The per-request AES key Ozow expects back on a verified payout. */
-  payoutDecryptionKey(): string {
-    return this.payoutEncryptionKey;
+    return safeEqualHex(expected, provided);
   }
 
   isPayoutAccessTokenValid(token: string | undefined): boolean {

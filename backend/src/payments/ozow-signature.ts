@@ -1,4 +1,11 @@
-import { createHash, createHmac, createCipheriv, timingSafeEqual } from 'crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'crypto';
 
 // ─── Ozow payments cryptography + verification (pure) ──────────────────
 //
@@ -215,4 +222,61 @@ export function encryptAccountNumber(
     cipher.final(),
   ]);
   return encrypted.toString('base64');
+}
+
+export interface WrappedPayoutEncryptionKey {
+  ciphertext: string;
+  iv: string;
+  authTag: string;
+}
+
+/** Generate the one-off 32-character UTF-8 AES key required for one payout. */
+export function generatePayoutEncryptionKey(): string {
+  return randomBytes(24).toString('base64url');
+}
+
+function payoutKeyWrappingKey(masterKey: string): Buffer {
+  if (masterKey.length < 32) {
+    throw new Error('Ozow payout key-wrapping secret must be at least 32 characters');
+  }
+  return createHash('sha256').update(masterKey, 'utf8').digest();
+}
+
+/** Encrypt an individual payout key before persisting it in the database. */
+export function wrapPayoutEncryptionKey(
+  payoutKey: string,
+  masterKey: string,
+): WrappedPayoutEncryptionKey {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv(
+    'aes-256-gcm',
+    payoutKeyWrappingKey(masterKey),
+    iv,
+  );
+  const ciphertext = Buffer.concat([
+    cipher.update(payoutKey, 'utf8'),
+    cipher.final(),
+  ]);
+  return {
+    ciphertext: ciphertext.toString('base64'),
+    iv: iv.toString('base64'),
+    authTag: cipher.getAuthTag().toString('base64'),
+  };
+}
+
+/** Decrypt a payout key only for Ozow's matching verification callback. */
+export function unwrapPayoutEncryptionKey(
+  wrapped: WrappedPayoutEncryptionKey,
+  masterKey: string,
+): string {
+  const decipher = createDecipheriv(
+    'aes-256-gcm',
+    payoutKeyWrappingKey(masterKey),
+    Buffer.from(wrapped.iv, 'base64'),
+  );
+  decipher.setAuthTag(Buffer.from(wrapped.authTag, 'base64'));
+  return Buffer.concat([
+    decipher.update(Buffer.from(wrapped.ciphertext, 'base64')),
+    decipher.final(),
+  ]).toString('utf8');
 }

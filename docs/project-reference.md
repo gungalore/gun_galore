@@ -575,9 +575,13 @@ this repo.**
   APPROVED (firearms) or buyer Confirm-Delivery (non-firearms) make a payout DUE
   (they stamp `releasedAt`); an admin then runs the batch —
   `ManualPaymentsService.runDuePayouts()` → `ozow.createPayout()` (one
-  `requestpayout` per seller, AES-256-CBC account encryption + SHA-512
-  hashCheck), gated on `PAYMENTS_LIVE`, stamping `paidOutAt` only on rows Ozow
-  accepts and re-queueing on a failed payout notification.
+  `requestpayout` per payable transaction, AES-256-CBC account encryption with a
+  unique per-attempt key wrapped at rest, plus SHA-512 `hashCheck`), gated on
+  `PAYMENTS_LIVE`. An accepted request stamps `payoutRequestedAt`; only status 5
+  stamps `paidOutAt`, and Ozow can still later report a return. Notifications and
+  the `getpayout` fallback reconcile the attempt; final failures put the
+  transaction on payout hold for admin review rather than automatically
+  resubmitting it.
 - **Refunds:** `ozow.refundPayment(...)` is called BEFORE flipping the row to
   `REFUNDED`. Money moves first, ledger second — never the other way around.
 - **`PaymentStatus`:** `HELD`, `PENDING_ADMIN_VERIFICATION`, `RELEASED`,
@@ -586,6 +590,10 @@ this repo.**
   destination account is validated by the payout itself (an invalid account
   fails with payout subStatus 405). The manual admin review of the seller's
   bank details remains the pre-payout gate.
+- `OZOW_PAYOUT_ENCRYPTION_KEY` is the stable, 32+-character master secret used
+  to wrap each payout's generated account-decryption key at rest. Rotating it
+  while payout attempts are outstanding prevents verification from recovering
+  their keys; rewrap outstanding attempts before rotation.
 
 ### KYC — seller-only
 

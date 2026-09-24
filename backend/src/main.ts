@@ -80,9 +80,8 @@ function assertProductionConfig() {
       '⚠️  OZOW_WEBHOOK_SECRET is not set — incoming Ozow webhooks will be REJECTED (fail-closed). Set the Svix signing secret from the Ozow Dashboard before relying on webhooks.',
     );
   }
-  // NOTE: Ozow Payouts needs OZOW_PAYOUT_API_KEY / OZOW_PAYOUT_SITE_CODE /
-  // OZOW_PAYOUT_ENCRYPTION_KEY — until those are set, run-payouts logs intent
-  // only (the manual admin bank-details review remains the payout gate).
+  // NOTE: Payout disbursement is refused unless the separate Payouts API key,
+  // site code, verification access token, and key-wrapping secret are set.
   // WARN: Didit webhook secret missing — verification outcomes arrive
   // UNVERIFIED and are dropped, so a seller who finishes on Didit's page
   // stays PENDING forever with nothing in any log saying why.

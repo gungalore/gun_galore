@@ -4,13 +4,10 @@ import { ManualPaymentsService } from './manual-payments.service';
 import { ManualPaymentsController } from './manual-payments.controller';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 
-// Read-only money-state views (payouts-due preview, held-funds, Zoho
-// failed-sync radar). The manual-EFT reconciler + FNB payout-batch builder
-// have been removed with the manual-EFT rail, so the reconciler's provider
-// dependencies (PaymentsModule/SwapsModule/SubscriptionsModule/FeaturedModule/
-// ZohoBooksModule) are no longer imported. JwtModule + AdminJwtGuard secure the
-// admin read endpoints; PrismaService is provided globally. ManualPaymentsService
-// is exported for anything that reads the money-state views.
+// Admin money-state reports plus the operator-triggered Ozow seller-payout run.
+// The manual-EFT reconciler and FNB batch builder were removed; payout requests
+// use the global OzowService. JwtModule + AdminJwtGuard are registered here so
+// this module resolves its controller guard dependencies locally.
 @Module({
   imports: [JwtModule.register({})],
   controllers: [ManualPaymentsController],

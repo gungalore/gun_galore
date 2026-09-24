@@ -140,17 +140,15 @@ export class AccountClosureService {
       });
     }
 
-    // ⚠️ THE EXACT getPayoutsDue PREDICATE. This is what makes it safe for the
-    // closure to clear the bank quartet — hasBank() is the readiness check for
-    // every payout run, and clearing it while money is due makes that money
-    // permanently unpayable, with nobody left to re-collect details from.
+    // Any outstanding payout liability blocks closure, including held and
+    // in-flight requests. Clearing the bank quartet while it is due or awaiting
+    // Ozow reconciliation would make the money permanently unpayable.
     const payoutDue = await this.prisma.transaction.count({
       where: {
         sellerId: userId,
         paymentStatus: 'RELEASED' as never,
         sellerPayout: { gt: 0 },
         paidOutAt: null,
-        payoutHeldAt: null,
         refundOfId: null,
       },
     });

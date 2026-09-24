@@ -568,18 +568,15 @@ export class UsersService {
         },
       });
 
-      // ⚠️ AND MONEY WE STILL OWE THEM. hasBank() is the readiness predicate
-      // for every payout run; clearing the quartet while a payout is due makes
-      // that money permanently unpayable, with no alert and no way to
-      // re-collect the details from somebody whose account is gone. The
-      // published privacy policy already promises this carve-out.
+      // ⚠️ AND MONEY WE STILL OWE THEM. Clearing the bank quartet while a
+      // payout is due, held or in-flight makes it permanently unpayable, with
+      // no way to re-collect the details from somebody whose account is gone.
       const payoutDue = await this.prisma.transaction.count({
         where: {
           sellerId: target?.id ?? '',
           paymentStatus: 'RELEASED',
           sellerPayout: { gt: 0 },
           paidOutAt: null,
-          payoutHeldAt: null,
           refundOfId: null,
         },
       });

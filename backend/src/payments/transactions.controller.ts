@@ -497,7 +497,13 @@ export class PaymentsWebhookController {
     const accessToken = req.headers['accesstoken'] as string | undefined;
     if (!this.txService.ozowPayoutAccessTokenValid(accessToken)) {
       this.logger.warn('Ozow payout verification: invalid access token');
-      return { received: true, isVerified: false, reason: 'Unauthorized webhook call' };
+      const rawPayoutId = body.payoutId ?? body.PayoutId;
+      return {
+        payoutId: typeof rawPayoutId === 'string' ? rawPayoutId : '',
+        isVerified: false,
+        accountNumberDecryptionKey: '',
+        reason: 'Unauthorized webhook call',
+      };
     }
     try {
       return await this.txService.handleOzowPayoutVerify(body);
@@ -506,8 +512,9 @@ export class PaymentsWebhookController {
         `Ozow payout verification handler failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
+      const rawPayoutId = body.payoutId ?? body.PayoutId;
       return {
-        payoutId: String(body.payoutId ?? ''),
+        payoutId: typeof rawPayoutId === 'string' ? rawPayoutId : '',
         isVerified: false,
         accountNumberDecryptionKey: '',
         reason: 'Server error',

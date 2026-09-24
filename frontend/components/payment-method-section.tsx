@@ -1,10 +1,8 @@
 'use client';
 
-// Phase-1 payment gate — manual EFT pay-in is retired and the card paygate
-// isn't live yet, so there's no active buyer payment method to select. This
-// shell simply signals that card payments are on the way; it binds no state
-// and does NOT change any checkout payload. No vendor names (Peach/Stitch/
-// Nedbank) — neutral by design. The paygate PR flips this card to "Active".
+// Ozow redirect checkout: the buyer chooses from the payment methods enabled
+// on the merchant account on Ozow's hosted payment page. Keep this state shell
+// until payments are activated; it does not change the checkout payload.
 
 function CardIcon() {
   return (
@@ -30,10 +28,10 @@ export function PaymentMethodSection() {
         </span>
         <span style={{ flex: 1, minWidth: 0 }}>
           <span className="block text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-            Card &amp; digital wallets
+            Ozow hosted checkout
           </span>
           <span className="block text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-            Visa, Mastercard, Apple Pay, Google Pay — launching soon.
+            Choose an available payment method on Ozow’s hosted payment page.
           </span>
         </span>
         <span

@@ -2900,6 +2900,7 @@ export class AdminService {
         id: true,
         paymentStatus: true,
         paidOutAt: true,
+        payoutRequestedAt: true,
         payoutHeldAt: true,
       },
     });
@@ -2912,6 +2913,11 @@ export class AdminService {
     if (tx.paidOutAt) {
       throw new BadRequestException(
         'This payout has already been paid out — it can no longer be held.',
+      );
+    }
+    if (tx.payoutRequestedAt) {
+      throw new BadRequestException(
+        'This payout has already been submitted to Ozow and cannot be cancelled or held while processing.',
       );
     }
     if (tx.payoutHeldAt) {
@@ -2950,11 +2956,16 @@ export class AdminService {
     }
     const tx = await this.prisma.transaction.findUnique({
       where: { id: txId },
-      select: { id: true, payoutHeldAt: true },
+      select: { id: true, payoutHeldAt: true, payoutRequestedAt: true },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
     if (!tx.payoutHeldAt) {
       throw new BadRequestException('This payout is not currently on hold.');
+    }
+    if (tx.payoutRequestedAt) {
+      throw new BadRequestException(
+        'An Ozow payout may still be processing. Reconcile it with Ozow before releasing this hold.',
+      );
     }
 
     await this.prisma.transaction.update({

@@ -40,6 +40,7 @@ import { TrackingService } from '../shipping/tracking.service';
 import { Inject, forwardRef } from '@nestjs/common';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 // Payment-mode seam moved to ./payment-mode (a dependency-free module) so
 // lightweight consumers can read the rail + gate without pulling in the
@@ -1384,18 +1385,6 @@ export class TransactionsService {
         reason: 'No payoutId',
       };
     }
-    const tx = await this.prisma.transaction.findUnique({
-      where: { gatewayPayoutId: payoutId },
-      select: { id: true },
-    });
-    if (!tx) {
-      return {
-        payoutId,
-        isVerified: false,
-        accountNumberDecryptionKey: '',
-        reason: 'Payout not found',
-      };
-    }
     if (!this.ozow.verifyPayoutVerifyHash(body)) {
       return {
         payoutId,
@@ -1404,20 +1393,134 @@ export class TransactionsService {
         reason: 'Invalid hash check',
       };
     }
+
+    let attempt = await this.prisma.ozowPayoutAttempt.findUnique({
+      where: { gatewayPayoutId: payoutId },
+    });
+    if (!attempt) {
+      // Ozow can begin the verification callback immediately after requestpayout
+      // returns. Recover the narrow race where this callback reaches us before
+      // the request thread has persisted the returned payoutId.
+      const merchantReference = String(
+        body.merchantReference ?? body.MerchantReference ?? '',
+      );
+      const candidates = merchantReference
+        ? await this.prisma.ozowPayoutAttempt.findMany({
+            where: {
+              merchantReference: { equals: merchantReference, mode: 'insensitive' },
+              gatewayPayoutId: null,
+              terminalAt: null,
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+          })
+        : [];
+      const matching = candidates.filter((candidate) =>
+        this.ozow.matchesPayoutVerification(body, {
+          txId: candidate.transactionId,
+          siteCode: candidate.siteCode,
+          merchantReference: candidate.merchantReference,
+          customerBankReference: candidate.customerBankReference,
+          amountCents: candidate.amountCents,
+          isRtc: candidate.isRtc,
+          notifyUrl: candidate.notifyUrl,
+          bankGroupId: candidate.bankGroupId,
+          encryptedAccountNumber: candidate.encryptedAccountNumber,
+          branchCode: candidate.branchCode,
+          ciphertext: candidate.encryptionKeyCiphertext,
+          iv: candidate.encryptionKeyIv,
+          authTag: candidate.encryptionKeyAuthTag,
+        }),
+      );
+      if (matching.length === 1) attempt = matching[0];
+      else if (matching.length > 1) {
+        return {
+          payoutId,
+          isVerified: false,
+          accountNumberDecryptionKey: '',
+          reason: 'Multiple pending payout attempts match this verification request',
+        };
+      }
+    }
+    if (!attempt) {
+      return {
+        payoutId,
+        isVerified: false,
+        accountNumberDecryptionKey: '',
+        reason: 'Payout not found',
+      };
+    }
+    if (!this.ozow.matchesPayoutVerification(body, {
+        txId: attempt.transactionId,
+        siteCode: attempt.siteCode,
+        merchantReference: attempt.merchantReference,
+        customerBankReference: attempt.customerBankReference,
+        amountCents: attempt.amountCents,
+        isRtc: attempt.isRtc,
+        notifyUrl: attempt.notifyUrl,
+        bankGroupId: attempt.bankGroupId,
+        encryptedAccountNumber: attempt.encryptedAccountNumber,
+        branchCode: attempt.branchCode,
+        ciphertext: attempt.encryptionKeyCiphertext,
+        iv: attempt.encryptionKeyIv,
+        authTag: attempt.encryptionKeyAuthTag,
+      })) {
+      return {
+        payoutId,
+        isVerified: false,
+        accountNumberDecryptionKey: '',
+        reason: 'Payout details or hash do not match the recorded request',
+      };
+    }
+    if (!attempt.gatewayPayoutId) {
+      const boundAt = new Date();
+      await this.prisma.$transaction(async (tx) => {
+        const payoutBound = await tx.ozowPayoutAttempt.updateMany({
+          where: {
+            id: attempt.id,
+            gatewayPayoutId: null,
+            terminalAt: null,
+          },
+          data: { gatewayPayoutId: payoutId },
+        });
+        if (payoutBound.count !== 1) {
+          throw new Error('Payout attempt was already bound to another payout');
+        }
+        const transactionBound = await tx.transaction.updateMany({
+          where: {
+            id: attempt.transactionId,
+            OR: [{ gatewayPayoutId: null }, { gatewayPayoutId: payoutId }],
+          },
+          data: {
+            gatewayPayoutId: payoutId,
+            payoutRequestedAt: boundAt,
+            payoutHeldAt: null,
+            payoutHoldReason: null,
+            payoutHeldById: null,
+          },
+        });
+        if (transactionBound.count !== 1) {
+          throw new Error('Payout transaction was already bound to another payout');
+        }
+      });
+    }
     return {
       payoutId,
       isVerified: true,
-      accountNumberDecryptionKey: this.ozow.payoutDecryptionKey(),
+      accountNumberDecryptionKey: this.ozow.decryptPayoutEncryptionKey({
+        ciphertext: attempt.encryptionKeyCiphertext,
+        iv: attempt.encryptionKeyIv,
+        authTag: attempt.encryptionKeyAuthTag,
+      }),
       reason: '',
     };
   }
 
   // ------------------------------------------------------------------
   // Ozow payout NOTIFICATION webhook: { payoutId, payoutStatus{status,
-  // subStatus} }. runDuePayouts stores Transaction.gatewayPayoutId BEFORE
-  // calling Ozow; this reconciles the async outcome (matching on
-  // gatewayPayoutId). status 5 = PayoutComplete; failures/returns clear
-  // paidOutAt so the row re-queues, with an urgent admin alert.
+  // subStatus} }. runDuePayouts stores the payout attempt and binds the
+  // gatewayPayoutId after the request is accepted. Status 5 is complete;
+  // final failures are held for admin review, never blindly resubmitted.
   // Always idempotent; the webhook must 200.
   // ------------------------------------------------------------------
   async handleOzowPayoutNotification(body: Record<string, unknown>) {
@@ -1430,55 +1533,328 @@ export class TransactionsService {
       this.logger.warn('Ozow payout notification: no payoutId');
       return;
     }
-    const tx = await this.prisma.transaction.findUnique({
-      where: { gatewayPayoutId: evt.payoutId },
-      select: { id: true },
+    await this.reconcileOzowPayoutStatus({
+      payoutId: evt.payoutId,
+      status: evt.status,
+      subStatus: evt.subStatus,
+      errorMessage: evt.errorMessage,
     });
-    if (!tx) {
-      this.logger.warn(`Ozow payout notification: no transaction for ${evt.payoutId}`);
+  }
+
+  /**
+   * Backup reconciliation for payout notifications that do not arrive. Ozow
+   * recommends checking after 2–5 minutes; start at three minutes and continue
+   * checking unresolved attempts once per three-minute interval.
+   */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async reconcileUnnotifiedOzowPayouts(): Promise<void> {
+    if (!this.ozow.isPayoutsConfigured()) return;
+    const now = new Date();
+    const eligibleBefore = new Date(now.getTime() - 3 * 60_000);
+    const completedPollBefore = new Date(now.getTime() - 24 * 60 * 60_000);
+    const attempts = await this.prisma.ozowPayoutAttempt.findMany({
+      where: {
+        terminalAt: null,
+        OR: [
+          {
+            gatewayPayoutId: { not: null },
+            completedAt: null,
+            createdAt: { lte: eligibleBefore },
+            OR: [
+              { lastStatusCheckedAt: null },
+              { lastStatusCheckedAt: { lte: eligibleBefore } },
+            ],
+          },
+          {
+            gatewayPayoutId: { not: null },
+            completedAt: { not: null },
+            OR: [
+              { lastStatusCheckedAt: null },
+              { lastStatusCheckedAt: { lte: completedPollBefore } },
+            ],
+          },
+          {
+            gatewayPayoutId: null,
+            completedAt: null,
+            createdAt: { lte: eligibleBefore },
+            OR: [
+              { lastStatusCheckedAt: null },
+              { lastStatusCheckedAt: { lte: eligibleBefore } },
+            ],
+          },
+        ],
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    });
+    for (const attempt of attempts) {
+      try {
+        if (!attempt.gatewayPayoutId) {
+          await this.reconcileOzowPayoutByReference(attempt);
+          continue;
+        }
+        const status = await this.ozow.getPayoutStatus(attempt.gatewayPayoutId);
+        await this.reconcileOzowPayoutStatus({
+          payoutId: status.payoutId,
+          status: status.status,
+          subStatus: status.subStatus,
+          errorMessage: status.errorMessage,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Ozow payout status check failed for ${attempt.gatewayPayoutId}: ${(err as Error).message}`,
+        );
+        await this.prisma.ozowPayoutAttempt.update({
+          where: { id: attempt.id },
+          data: { lastStatusCheckedAt: now },
+        }).catch(() => undefined);
+      }
+    }
+  }
+
+  private async reconcileOzowPayoutByReference(attempt: {
+    id: string;
+    transactionId: string;
+    merchantReference: string;
+    customerBankReference: string;
+    amountCents: number;
+    siteCode: string;
+    isRtc: boolean;
+    lastStatusCheckedAt: Date | null;
+  }): Promise<void> {
+    const payouts = await this.ozow.getPayoutsByReference(
+      attempt.merchantReference,
+    );
+    const exactMatches = payouts.filter(
+      (payout) =>
+        payout.payoutId &&
+        payout.merchantReference.toLowerCase() ===
+          attempt.merchantReference.toLowerCase() &&
+        payout.customerBankReference.toLowerCase() ===
+          attempt.customerBankReference.toLowerCase() &&
+        payout.amountCents === attempt.amountCents &&
+        payout.siteCode.toLowerCase() === attempt.siteCode.toLowerCase() &&
+        payout.isRtc === attempt.isRtc,
+    );
+    const checkedAt = new Date();
+    if (exactMatches.length !== 1) {
+      await this.prisma.ozowPayoutAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          lastStatusCheckedAt: checkedAt,
+          lastStatusMessage:
+            exactMatches.length > 1
+              ? 'Multiple Ozow payouts match the merchant reference; manual reconciliation required.'
+              : 'Payout response was not recorded; no exact payout match found by merchant reference yet.',
+        },
+      });
+      if (exactMatches.length > 1 && !attempt.lastStatusCheckedAt) {
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'OZOW_PAYOUT_FAILED',
+              referenceId: attempt.transactionId,
+              urgent: true,
+              context: `Multiple Ozow payouts match ${attempt.merchantReference}; transaction ${attempt.transactionId} remains held for manual reconciliation.`,
+            },
+          })
+          .catch(() => undefined);
+      }
       return;
     }
-    const txId = tx.id;
 
-    // status 5 = PayoutComplete (money left to the seller's bank).
+    const payout = exactMatches[0];
+    await this.prisma.$transaction(async (tx) => {
+      const transactionBound = await tx.transaction.updateMany({
+        where: {
+          id: attempt.transactionId,
+          gatewayPayoutId: null,
+          paidOutAt: null,
+        },
+        data: {
+          gatewayPayoutId: payout.payoutId,
+          payoutRequestedAt: checkedAt,
+          payoutHeldAt: null,
+          payoutHoldReason: null,
+          payoutHeldById: null,
+        },
+      });
+      if (transactionBound.count !== 1) {
+        throw new Error(
+          `Cannot bind recovered Ozow payout ${payout.payoutId} to transaction ${attempt.transactionId}`,
+        );
+      }
+      const attemptBound = await tx.ozowPayoutAttempt.updateMany({
+        where: { id: attempt.id, gatewayPayoutId: null, terminalAt: null },
+        data: {
+          gatewayPayoutId: payout.payoutId,
+          requestStatus: payout.status,
+          requestSubStatus: payout.subStatus,
+          requestErrorMessage: payout.errorMessage || null,
+        },
+      });
+      if (attemptBound.count !== 1) {
+        throw new Error(
+          `Cannot bind recovered Ozow payout ${payout.payoutId} to attempt ${attempt.id}`,
+        );
+      }
+    });
+
+    await this.reconcileOzowPayoutStatus({
+      payoutId: payout.payoutId,
+      status: payout.status,
+      subStatus: payout.subStatus,
+      errorMessage: payout.errorMessage,
+    });
+  }
+
+  private async reconcileOzowPayoutStatus(evt: {
+    payoutId: string;
+    status: number;
+    subStatus: number;
+    errorMessage: string;
+  }): Promise<void> {
+    const attempt = await this.prisma.ozowPayoutAttempt.findUnique({
+      where: { gatewayPayoutId: evt.payoutId },
+      select: {
+        id: true,
+        transactionId: true,
+        terminalAt: true,
+        completedAt: true,
+      },
+    });
+    if (!attempt) {
+      this.logger.warn(`Ozow payout status: no attempt for ${evt.payoutId}`);
+      return;
+    }
+    if (attempt.terminalAt) return;
+
+    const txId = attempt.transactionId;
+    const checkedAt = new Date();
+    const FINAL_FAILURE_SUBSTATUSES = new Set([
+      100, 101, 202, 204, 205, 401, 402, 404, 405, 601, 9001, 9903, 9904,
+    ]);
+
     if (evt.status === 5) {
-      this.logger.log(`Ozow payout SUCCESS for ${txId} (payoutId ${evt.payoutId})`);
+      const firstCompletion = attempt.completedAt === null;
+      if (!firstCompletion) {
+        await this.prisma.ozowPayoutAttempt.updateMany({
+          where: { id: attempt.id, terminalAt: null },
+          data: {
+            lastStatus: evt.status,
+            lastSubStatus: evt.subStatus,
+            lastStatusMessage: evt.errorMessage,
+            lastStatusCheckedAt: checkedAt,
+          },
+        });
+        return;
+      }
+      const completed = await this.prisma.$transaction(async (tx) => {
+        const attemptCompleted = await tx.ozowPayoutAttempt.updateMany({
+          where: { id: attempt.id, terminalAt: null, completedAt: null },
+          data: {
+            lastStatus: evt.status,
+            lastSubStatus: evt.subStatus,
+            lastStatusMessage: evt.errorMessage,
+            lastStatusCheckedAt: checkedAt,
+            completedAt: checkedAt,
+          },
+        });
+        if (attemptCompleted.count === 0) return false;
+        const transactionPaid = await tx.transaction.updateMany({
+          where: {
+            id: txId,
+            gatewayPayoutId: evt.payoutId,
+            paymentStatus: 'RELEASED',
+          },
+          data: {
+            paidOutAt: checkedAt,
+            payoutRequestedAt: null,
+          },
+        });
+        if (transactionPaid.count !== 1) {
+          throw new Error(`Could not mark Ozow payout ${evt.payoutId} complete`);
+        }
+        return true;
+      });
+      if (!completed) return;
+      this.logger.log(`Ozow payout COMPLETE for ${txId} (payoutId ${evt.payoutId})`);
       void this.tracking.recordInternal(txId, 'PAYOUT_SETTLED', {
-        message: 'Payout settled to the seller’s bank.',
+        message: 'Ozow reports the payout complete; a later return notification is still possible.',
       });
       return;
     }
 
-    // Anything else that is final is a failure/return: clear paidOutAt so the
-    // row re-queues, and alert loudly.
-    const FINAL_FAILURE_SUBSTATUSES = new Set([
-      100, 101, 202, 204, 205, 401, 402, 403, 404, 405, 601, 9001,
-    ]);
-    const isFinalFailure =
-      evt.status === 0 || FINAL_FAILURE_SUBSTATUSES.has(evt.subStatus);
+    // Insufficient float is final as a snapshot but Ozow processes the payout
+    // automatically after top-up; never hold or resubmit that request.
+    const awaitsFloat = evt.subStatus === 403;
+    const isFinalFailure = !awaitsFloat && (
+      evt.status === 4 ||
+      evt.status === 90 ||
+      evt.status === 99 ||
+      FINAL_FAILURE_SUBSTATUSES.has(evt.subStatus)
+    );
     if (!isFinalFailure) {
+      await this.prisma.ozowPayoutAttempt.updateMany({
+        where: { id: attempt.id, terminalAt: null },
+        data: {
+          lastStatus: evt.status,
+          lastSubStatus: evt.subStatus,
+          lastStatusMessage: evt.errorMessage,
+          lastStatusCheckedAt: checkedAt,
+        },
+      });
       this.logger.log(
         `Ozow payout ${evt.status}/${evt.subStatus} for ${txId} — in progress`,
       );
       return;
     }
 
-    const cleared = await this.prisma.transaction.updateMany({
-      where: { id: txId, releasedAt: { not: null } },
-      data: { paidOutAt: null },
+    const reason = `Ozow payout failed/returned (status ${evt.status}, subStatus ${evt.subStatus}: ${evt.errorMessage || 'no message'}). Review before any resubmission.`;
+    const terminal = await this.prisma.$transaction(async (tx) => {
+      const attemptFailed = await tx.ozowPayoutAttempt.updateMany({
+        where: { id: attempt.id, terminalAt: null },
+        data: {
+          lastStatus: evt.status,
+          lastSubStatus: evt.subStatus,
+          lastStatusMessage: evt.errorMessage,
+          lastStatusCheckedAt: checkedAt,
+          terminalAt: checkedAt,
+        },
+      });
+      if (attemptFailed.count === 0) return false;
+      const transactionHeld = await tx.transaction.updateMany({
+        where: {
+          id: txId,
+          gatewayPayoutId: evt.payoutId,
+          releasedAt: { not: null },
+        },
+        data: {
+          paidOutAt: null,
+          payoutRequestedAt: null,
+          payoutHeldAt: checkedAt,
+          payoutHoldReason: reason.slice(0, 500),
+          payoutHeldById: null,
+        },
+      });
+      if (transactionHeld.count !== 1) {
+        throw new Error(`Could not place failed Ozow payout ${evt.payoutId} on hold`);
+      }
+      return true;
     });
+    if (!terminal) return;
     await this.prisma.adminAlert
       .create({
         data: {
           type: 'OZOW_PAYOUT_FAILED',
           referenceId: txId,
           urgent: true,
-          context: `Ozow payout failed for ${txId} (status ${evt.status}, subStatus ${evt.subStatus}: ${evt.errorMessage || 'no message'}, payoutId ${evt.payoutId}). paidOutAt ${cleared.count ? 'cleared → row re-queues on the next payout run' : 'not set'}; check the seller's bank details.`,
+          context: `${reason} Payout ${evt.payoutId} is held and will not be automatically resubmitted.`,
         },
       })
       .catch(() => undefined);
     void this.tracking.recordInternal(txId, 'PAYOUT_FAILED', {
-      message: `Payout failed (status ${evt.status}, subStatus ${evt.subStatus}) — will retry after bank details are checked.`,
+      message: `${reason} An admin must review and explicitly release the payout hold.`,
     });
   }
 
