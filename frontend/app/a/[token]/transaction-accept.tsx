@@ -37,7 +37,14 @@ export interface TransactionAcceptPayload {
     rejectedAt: string | null;
     acceptDeadlineAt: string | null;
     shippingMethod: string | null;
+    deliveryOption: 'DOOR_CHEAPEST' | 'DOOR_FASTEST' | 'STORE_PICKUP' | null;
   };
+  pickupDates: { iso: string; weekday: string }[];
+  pickupWindows: {
+    key: string;
+    label: string;
+    collectionWindow: string | null;
+  }[];
   listing: {
     id: string;
     title: string;
@@ -63,14 +70,12 @@ export interface TransactionAcceptPayload {
 }
 
 const REJECT_REASONS = [
-  { value: 'SOLD_ELSEWHERE', label: 'I’ve sold this elsewhere' },
-  { value: 'STOCK_ISSUE', label: 'Out of stock / item damaged' },
-  {
-    value: 'CANT_FULFIL_SHIPPING',
-    label: 'Can’t fulfil shipping (location / dealer)',
-  },
-  { value: 'BUYER_SUSPICIOUS', label: 'Buyer seems suspicious' },
-  { value: 'OTHER', label: 'Other (write a reason)' },
+  { value: 'SOLD_ELSEWHERE', label: 'Sold elsewhere' },
+  { value: 'STOCK_ISSUE', label: 'No longer available / out of stock' },
+  { value: 'ITEM_DAMAGED', label: 'Item damaged or faulty' },
+  { value: 'CANT_FULFIL_SHIPPING', label: "Can't arrange handover / shipping" },
+  { value: 'CHANGED_MIND', label: 'Listing was wrong / changed my mind' },
+  { value: 'OTHER', label: 'Other (describe it)' },
 ] as const;
 
 type RejectReasonKey = (typeof REJECT_REASONS)[number]['value'];
@@ -95,6 +100,9 @@ export function TransactionAcceptPage({
   // rather than the live Accept button.
   const alreadyAccepted = payload.transaction.acceptedAt != null;
   const alreadyRejected = payload.transaction.rejectedAt != null;
+  const isCourier = payload.transaction.shippingMethod === 'COURIER';
+  const [selectedPickupDate, setSelectedPickupDate] = useState<string | null>(null);
+  const [selectedPickupWindow, setSelectedPickupWindow] = useState<string | null>(null);
 
   const [view, setView] = useState<ViewState>(
     alreadyRejected
@@ -104,12 +112,24 @@ export function TransactionAcceptPage({
         : { kind: 'choice' },
   );
 
-  async function callAccept(): Promise<void> {
+  async function callAccept(
+    collectionNotBefore?: string,
+    collectionWindow?: string | null,
+  ): Promise<void> {
     setView({ kind: 'submitting' });
     try {
       const res = await fetch(
         `${API_URL}/actions/${token}/accept-transaction`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: collectionNotBefore
+            ? JSON.stringify({
+                collectionNotBefore,
+                ...(collectionWindow ? { collectionWindow } : {}),
+              })
+            : undefined,
+        },
       );
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as {
@@ -419,8 +439,32 @@ export function TransactionAcceptPage({
         </ol>
       </div>
 
-      {/* Action buttons — Accept / Reject */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Courier accept goes through the collection date + time picker. */}
+      {isCourier ? (
+        <PickupSchedulePicker
+          dates={payload.pickupDates ?? []}
+          windows={payload.pickupWindows ?? []}
+          selectedDate={selectedPickupDate}
+          selectedWindow={selectedPickupWindow}
+          disabled={isSubmitting}
+          onSelectDate={(date) => {
+            setSelectedPickupDate(date);
+            setSelectedPickupWindow(null);
+          }}
+          onSelectWindow={setSelectedPickupWindow}
+          onAccept={() => {
+            if (!selectedPickupDate || !selectedPickupWindow) return;
+            const window = payload.pickupWindows.find(
+              (candidate) => candidate.key === selectedPickupWindow,
+            );
+            void callAccept(
+              `${selectedPickupDate}T08:00:00+02:00`,
+              window?.collectionWindow,
+            );
+          }}
+          submitting={isSubmitting}
+        />
+      ) : (
         <ActionButton
           variant="primary"
           disabled={isSubmitting}
@@ -428,6 +472,9 @@ export function TransactionAcceptPage({
         >
           {isSubmitting ? 'Working…' : 'Accept this sale'}
         </ActionButton>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <ActionButton
           variant="ghost"
           disabled={isSubmitting}
@@ -450,6 +497,138 @@ export function TransactionAcceptPage({
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────
+
+function PickupSchedulePicker({
+  dates,
+  windows,
+  selectedDate,
+  selectedWindow,
+  disabled,
+  submitting,
+  onSelectDate,
+  onSelectWindow,
+  onAccept,
+}: {
+  dates: { iso: string; weekday: string }[];
+  windows: { key: string; label: string; collectionWindow: string | null }[];
+  selectedDate: string | null;
+  selectedWindow: string | null;
+  disabled: boolean;
+  submitting: boolean;
+  onSelectDate: (date: string) => void;
+  onSelectWindow: (key: string) => void;
+  onAccept: () => void;
+}) {
+  const ready = Boolean(selectedDate && selectedWindow);
+
+  return (
+    <section
+      aria-label="Choose courier collection"
+      style={{
+        background: 'var(--bg-card)',
+        border: '0.5px solid var(--border)',
+        borderRadius: 12,
+        padding: 18,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14,
+      }}
+    >
+      <div>
+        <h2 style={{ margin: 0, fontSize: 17, color: 'var(--text-primary)' }}>
+          Choose a collection day
+        </h2>
+        <p style={{ margin: '5px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
+          Bob Go confirms the collection date when the booking is made.
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        {dates.slice(0, 2).map((date, index) => {
+          const selected = selectedDate === date.iso;
+          return (
+            <button
+              key={date.iso}
+              type="button"
+              aria-pressed={selected}
+              disabled={disabled}
+              onClick={() => onSelectDate(date.iso)}
+              style={{
+                minHeight: 76,
+                padding: '12px 10px',
+                borderRadius: 10,
+                border: `1px solid ${selected ? 'var(--red)' : 'var(--border)'}`,
+                background: selected ? 'var(--red-wash)' : 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                textAlign: 'left',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)' }}>
+                {index === 0 ? 'Soonest' : 'Following business day'}
+              </span>
+              <strong style={{ display: 'block', marginTop: 4, fontSize: 14 }}>
+                {date.weekday}, {formatPickupDate(date.iso)}
+              </strong>
+            </button>
+          );
+        })}
+      </div>
+
+      <div>
+        <h3 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--text-primary)' }}>
+          Preferred collection time
+        </h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {windows.map((window) => {
+            const selected = selectedWindow === window.key;
+            return (
+              <button
+                key={window.key}
+                type="button"
+                aria-pressed={selected}
+                disabled={disabled}
+                onClick={() => onSelectWindow(window.key)}
+                style={{
+                  minHeight: 46,
+                  borderRadius: 9,
+                  border: `1px solid ${selected ? 'var(--red)' : 'var(--border)'}`,
+                  background: selected ? 'var(--red-wash)' : 'var(--bg-card)',
+                  color: selected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  fontSize: 13,
+                  fontWeight: selected ? 600 : 500,
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {window.label}
+              </button>
+            );
+          })}
+        </div>
+        <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.45 }}>
+          This is a preferred collection window; the courier confirms its route.
+        </p>
+      </div>
+
+      <ActionButton
+        variant="primary"
+        disabled={disabled || !ready}
+        onClick={onAccept}
+      >
+        {submitting ? 'Just a moment…' : 'Accept this sale'}
+      </ActionButton>
+    </section>
+  );
+}
+
+function formatPickupDate(iso: string): string {
+  const date = new Date(`${iso}T12:00:00Z`);
+  return date.toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
 
 function DeadlineCountdown({ deadlineIso }: { deadlineIso: string }) {
   // Re-render every 30s so the countdown stays roughly fresh. Tab

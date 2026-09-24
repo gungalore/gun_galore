@@ -31,9 +31,29 @@ export class ComplaintsController {
       subject: string;
       body: string;
       transactionId?: string | null;
+      photos?: { url: string; publicId: string }[];
     },
   ) {
     return this.complaints.create(userId, body);
+  }
+
+  // Upload one evidence photo BEFORE lodging the dispute. The dispute form
+  // uploads here, then passes the returned pointers to POST /complaints.
+  @Post('evidence')
+  @UseInterceptors(FileInterceptor('photo', { storage: memoryStorage() }))
+  uploadEvidence(
+    @CurrentUser() userId: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 25 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /image\/(jpeg|png|webp)|video\/(mp4|webm)/ }),
+        ],
+      }),
+    )
+    file: { buffer: Buffer; mimetype: string },
+  ) {
+    return this.complaints.uploadEvidence(userId, file);
   }
 
   @Get('mine')

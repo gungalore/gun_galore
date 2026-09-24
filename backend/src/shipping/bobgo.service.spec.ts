@@ -1,11 +1,8 @@
 import {
   BobGoService,
   classifySubmission,
-  dedupeLocations,
-  haversineKm,
   toWholeRand,
 } from './bobgo.service';
-import { BobGoLocation } from './bobgo.types';
 
 // Response fragments below are trimmed copies of what the Bob Go sandbox
 // actually returned on 2026-08-13, not invented fixtures.
@@ -181,43 +178,6 @@ describe('BobGoService.getRates', () => {
   });
 });
 
-describe('BobGoService.getUsableLocations', () => {
-  const svc = new BobGoService();
-  const originalFetch = global.fetch;
-
-  beforeEach(() => {
-    process.env.BOBGO_API_KEY = 'test-key';
-  });
-  afterEach(() => {
-    global.fetch = originalFetch;
-  });
-
-  it('excludes lockers with no compartment for the parcel', async () => {
-    global.fetch = mockFetch({
-      locations: [
-        { id: 1, name: 'Has room', latitude: -26.18, longitude: 28.01, active: true, compartment_errors: [] },
-        { id: 2, name: 'Full', latitude: -26.19, longitude: 28.02, active: true, compartment_errors: ['no_available_compartments'] },
-        { id: 3, name: 'Closed', latitude: -26.2, longitude: 28.03, active: false, compartment_errors: [] },
-      ],
-    }) as any;
-
-    const usable = await svc.getUsableLocations({ lat: -26.18, lng: 28.01 });
-    expect(usable.map((l) => l.id)).toEqual([1]);
-  });
-
-  it('sorts by distance from the buyer', async () => {
-    global.fetch = mockFetch({
-      locations: [
-        { id: 91, name: 'Far', latitude: -26.5, longitude: 28.4, active: true, compartment_errors: [] },
-        { id: 92, name: 'Near', latitude: -26.181, longitude: 28.011, active: true, compartment_errors: [] },
-      ],
-    }) as any;
-    const out = await svc.getLocations({ lat: -26.18, lng: 28.01 });
-    expect(out[0].name).toBe('Near');
-    expect(out[0].distanceKm!).toBeLessThan(out[1].distanceKm!);
-  });
-});
-
 describe('BobGoService.getShipment', () => {
   const svc = new BobGoService();
   const originalFetch = global.fetch;
@@ -260,73 +220,14 @@ describe('BobGoService.getShipment', () => {
   });
 });
 
-describe('dedupeLocations', () => {
-  const loc = (over: Partial<BobGoLocation>): BobGoLocation => ({
-    id: 545,
-    name: '44 on Stanley',
-    lat: -26.18,
-    lng: 28.01,
-    type: 'locker',
-    address: '44 Stanley Ave',
-    active: true,
-    compartmentErrors: [],
-    ...over,
-  });
-
-  it('collapses the duplicate the sandbox actually returns', () => {
-    // /locations returned locker #545 twice in one response.
-    const out = dedupeLocations([
-      loc({ compartmentErrors: ['no_available_compartments'] }),
-      loc({ compartmentErrors: ['no_available_compartments'] }),
-    ]);
-    expect(out).toHaveLength(1);
-  });
-
-  it('keeps the usable duplicate over the unusable one', () => {
-    const out = dedupeLocations([
-      loc({ compartmentErrors: ['no_available_compartments'] }),
-      loc({ compartmentErrors: [] }),
-    ]);
-    expect(out).toHaveLength(1);
-    expect(out[0].compartmentErrors).toEqual([]);
-  });
-
-  it('leaves distinct locations alone', () => {
-    const out = dedupeLocations([loc({ id: 1 }), loc({ id: 2 })]);
-    expect(out.map((l) => l.id)).toEqual([1, 2]);
-  });
-
-  it('never merges locations on an untrustworthy id', () => {
-    // Number(undefined) is NaN, and Map treats every NaN as one key.
-    const out = dedupeLocations([
-      loc({ id: NaN, name: 'Alpha' }),
-      loc({ id: NaN, name: 'Bravo' }),
-      loc({ id: 0, name: 'Charlie' }),
-    ]);
-    expect(out.map((l) => l.name)).toEqual(['Alpha', 'Bravo', 'Charlie']);
-  });
-});
-
 describe('toWholeRand', () => {
-  it('converts cents to whole rand the way TcgService does', () => {
+  it('converts cents to whole rand for Bob Go declared value', () => {
     expect(toWholeRand(150000)).toBe(1500);
     expect(toWholeRand(11495)).toBe(115);
   });
 
   it('clamps negatives to zero', () => {
     expect(toWholeRand(-500)).toBe(0);
-  });
-});
-
-describe('haversineKm', () => {
-  it('measures Cape Town to Johannesburg at roughly 1265 km', () => {
-    const d = haversineKm(-33.9249, 18.4241, -26.2041, 28.0473);
-    expect(d).toBeGreaterThan(1240);
-    expect(d).toBeLessThan(1290);
-  });
-
-  it('is zero for the same point', () => {
-    expect(haversineKm(-26.2, 28.04, -26.2, 28.04)).toBe(0);
   });
 });
 

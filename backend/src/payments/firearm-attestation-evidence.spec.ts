@@ -68,11 +68,12 @@ function makeService(listing: Record<string, unknown>) {
     maybeUpgradeKycTier: jest.fn().mockResolvedValue(undefined),
   };
   // Only the non-firearm case reaches the quote — a dealer transfer has no
-  // courier rate and skips the call entirely.
+  // courier rate and skips the call entirely. reserveAndCreateLine now resolves
+  // the buyer's selected option server-side via quoteForSelection.
   const shipping = {
-    quoteForListing: jest
+    quoteForSelection: jest
       .fn()
-      .mockResolvedValue({ priceCents: 5_000, serviceCode: 'PUDO_L2L' }),
+      .mockResolvedValue({ priceCents: 5_000, serviceCode: 'bobgo_door' }),
   };
 
   const service = new TransactionsService(
@@ -134,7 +135,18 @@ describe('M33 firearm attestation evidence', () => {
     );
 
     await reserve(
-      firearmDto({ shippingMethod: 'PUDO', pudoPickupLockerId: 'LCK1' }),
+      firearmDto({
+        shippingMethod: 'COURIER',
+        deliveryAddress: {
+          streetAddress: '1 Main Road',
+          suburb: 'Milpark',
+          city: 'Johannesburg',
+          postalCode: '2092',
+          province: 'GAUTENG',
+          lat: -26.18,
+          lng: 28.01,
+        },
+      }),
     );
 
     expect(created.data.firearmAttestationAcceptedAt).toBeNull();

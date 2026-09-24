@@ -2,7 +2,6 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
   BobGoAddress,
   BobGoContact,
-  BobGoLocation,
   BobGoParcel,
   BobGoQuote,
   BobGoRate,
@@ -16,8 +15,8 @@ import {
  *
  * Why one service where there were two: Bob Go is an aggregator. A single
  * POST /rates-at-checkout returns door-to-door rates AND priced, distance-
- * ranked pickup-point rates in the same response, so the "quote TCG for
- * door, quote Pudo for lockers, merge" dance collapses into one call with
+ * ranked pickup-point rates in the same response, so the old "quote TCG for
+ * door, quote Pudo for lockers, merge" dance collapsed into one call with
  * one wallet, one waybill format and one tracking vocabulary.
  *
  * ─────────────────────────────────────────────────────────────────────────
@@ -48,7 +47,7 @@ export class BobGoService implements OnModuleInit {
    * Say out loud, at boot, which Bob Go we are pointed at.
    *
    * BOBGO_BASE_URL defaults to the SANDBOX, which is the opposite of every
-   * other integration here (PUDO_BASE_URL and friends default to production).
+   * other integration here (they default to production).
    * Sandbox is the right default — you cannot accidentally spend real money or
    * dispatch a real parcel from it — but it makes the dangerous mistake the
    * quiet one: an operator who sets BOBGO_API_KEY and flips the admin switch,
@@ -176,14 +175,13 @@ export class BobGoService implements OnModuleInit {
     delivery: BobGoAddress;
     parcels: BobGoParcel[];
     /**
-     * ZAR **CENTS**, matching every other price in this codebase and
-     * TcgService.getQuote's declaredValueCents. Bob Go wants whole rand on the
-     * wire, so the conversion happens here, once.
+     * ZAR **CENTS**, matching every other price in this codebase. Bob Go wants
+     * whole rand on the wire, so the conversion happens here, once.
      *
-     * The unit is in the NAME on purpose: shipping.service.ts:293 passes
-     * `listing.price` (cents) straight into the TCG quote, and a client that
-     * silently expected rand would declare a R1,500 parcel as R150,000 —
-     * inflating liability cover and any value-based surcharge on every quote.
+     * The unit is in the NAME on purpose: callers pass `listing.price` (cents)
+     * straight into the quote, and a client that silently expected rand would
+     * declare a R1,500 parcel as R150,000 — inflating liability cover and any
+     * value-based surcharge on every quote.
      */
     declaredValueCents: number;
     /** Optional line items; synthesised from parcels when absent. */
@@ -285,83 +283,12 @@ export class BobGoService implements OnModuleInit {
     };
   }
 
-  // ─────────────────────────── pickup points ───────────────────────────
-
-  /**
-   * Pickup points near a coordinate.
-   *
-   * Coordinates are mandatory — /locations without them returns nothing
-   * useful. For a buyer who has typed an address but not shared GPS, quote
-   * first: the pickup-point rates from getRates() already carry the locker,
-   * its distance and its price, so this endpoint is only needed when the
-   * buyer wants to browse a map before committing to a rate.
-   */
-  async getLocations(input: {
-    lat: number;
-    lng: number;
-    /** Straight-line cut-off applied client-side; the API does not take one. */
-    radiusKm?: number;
-  }): Promise<BobGoLocation[]> {
-    const raw = await this.call<{ locations?: unknown[] }>(
-      'GET',
-      `/locations?lat=${encodeURIComponent(input.lat)}&lng=${encodeURIComponent(input.lng)}`,
-    );
-
-    const out = (raw.locations ?? []).map((l) => {
-      const o = l as Record<string, any>;
-      const lat = Number(o.latitude ?? o.lat ?? 0);
-      const lng = Number(o.longitude ?? o.lng ?? 0);
-      return {
-        id: Number(o.id ?? 0),
-        name: String(o.name ?? ''),
-        humanName: o.human_name ?? undefined,
-        lat,
-        lng,
-        type: String(o.type ?? ''),
-        address: String(o.address ?? o.street_address ?? ''),
-        fullAddress: o.full_address ?? undefined,
-        tradingHours: o.trading_hours ?? undefined,
-        providerName: o.provider_name ?? undefined,
-        active: o.active !== false,
-        compartmentErrors: Array.isArray(o.compartment_errors)
-          ? o.compartment_errors.map(String)
-          : [],
-        distanceKm: haversineKm(input.lat, input.lng, lat, lng),
-      } satisfies BobGoLocation;
-    });
-
-    const withinRadius =
-      input.radiusKm == null
-        ? out
-        : out.filter((l) => (l.distanceKm ?? Infinity) <= input.radiusKm!);
-
-    return dedupeLocations(withinRadius).sort(
-      (a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity),
-    );
-  }
-
-  /**
-   * Locations that can actually take this parcel.
-   *
-   * Keep this separate from getLocations() so the caller can still show a
-   * greyed-out "full" locker on a map if it wants to, rather than silently
-   * hiding a site the buyer knows is round the corner.
-   */
-  async getUsableLocations(input: {
-    lat: number;
-    lng: number;
-    radiusKm?: number;
-  }): Promise<BobGoLocation[]> {
-    const all = await this.getLocations(input);
-    return all.filter((l) => l.active && l.compartmentErrors.length === 0);
-  }
-
   // ─────────────────────────────── booking ─────────────────────────────
 
   /**
    * Book a collection.
    *
-   * One call — unlike TCG there is no order-then-shipment two-step.
+   * One call — there is no order-then-shipment two-step.
    *
    * READ THE `submission` FIELD ON THE RESULT. See the class docblock.
    */
@@ -388,6 +315,25 @@ export class BobGoService implements OnModuleInit {
     customerReference?: string;
     instructionsCollection?: string;
     instructionsDelivery?: string;
+    /**
+     * Earliest collection date, ISO with SAST offset
+     * (`YYYY-MM-DDT08:00:00+02:00`). Bob Go normalises it to its own business
+     * calendar. PROVEN honoured on POST /shipments (2026-09-24 sandbox).
+     */
+    collectionMinDate?: string;
+    /** Preferred window start "HH:MM" → `collection_after`. */
+    collectionAfter?: string;
+    /** Preferred window end "HH:MM" → `collection_before`. */
+    collectionBefore?: string;
+    /**
+     * Pargo counter the parcel is delivered to (STORE_PICKUP). The same
+     * `pickup_point_location_id` from the rate request must be replayed.
+     *
+     * Bob Go's create-shipment docs call the door→counter field
+     * `delivery_pickup_point_location_id`. The id is the one returned by the
+     * chosen pickup-point rate; providerSlug is sent alongside it.
+     */
+    pickupPointLocationId?: number;
   }): Promise<BobGoShipmentResult> {
     const body = {
       collection_address: this.addressPayload(input.collection),
@@ -416,6 +362,18 @@ export class BobGoService implements OnModuleInit {
         : {}),
       ...(input.instructionsDelivery
         ? { instructions_delivery: input.instructionsDelivery }
+        : {}),
+      ...(input.collectionMinDate
+        ? { collection_min_date: input.collectionMinDate }
+        : {}),
+      ...(input.collectionAfter
+        ? { collection_after: input.collectionAfter }
+        : {}),
+      ...(input.collectionBefore
+        ? { collection_before: input.collectionBefore }
+        : {}),
+      ...(input.pickupPointLocationId != null
+        ? { delivery_pickup_point_location_id: input.pickupPointLocationId }
         : {}),
     };
 
@@ -493,7 +451,7 @@ export class BobGoService implements OnModuleInit {
       rawSubmissionStatus: rawStatus,
       failedReason: s.failed_reason || undefined,
       // Speculative field names — no successful sandbox booking has yet shown
-      // where a locker PIN lives, or whether one exists at all. Reading a few
+      // where a collection PIN lives, or whether one exists at all. Reading a few
       // plausible keys costs nothing and means the day a real booking succeeds
       // we see the value rather than a silent undefined.
       pin:
@@ -596,45 +554,10 @@ export function classifySubmission(
 }
 
 /**
- * Collapse repeated entries for the same physical location.
- *
- * OBSERVED, not defensive: /locations returned locker #545 ("44 on Stanley")
- * twice in a single response. Left alone that shows the buyer the same locker
- * twice in a picker. Where duplicates disagree about availability we keep the
- * USABLE one — a duplicate that reports no free compartment alongside one that
- * reports space most likely describes a different compartment size at the same
- * site, and hiding a locker that can take the parcel is the worse error.
- *
- * Exported for testing.
- */
-export function dedupeLocations(locations: BobGoLocation[]): BobGoLocation[] {
-  const usable = (l: BobGoLocation) =>
-    l.active && l.compartmentErrors.length === 0;
-
-  const byId = new Map<number, BobGoLocation>();
-  // An id we cannot trust is not a dedupe key. Without this, every location
-  // with a missing or non-numeric id normalises to NaN, and Map treats all
-  // NaNs as the same key — quietly merging unrelated lockers into one.
-  const unkeyed: BobGoLocation[] = [];
-
-  for (const l of locations) {
-    if (!Number.isFinite(l.id) || l.id === 0) {
-      unkeyed.push(l);
-      continue;
-    }
-    const seen = byId.get(l.id);
-    if (!seen || (usable(l) && !usable(seen))) byId.set(l.id, l);
-  }
-  return [...byId.values(), ...unkeyed];
-}
-
-/**
  * ZAR cents -> whole rand for Bob Go's `declared_value`.
  *
- * Identical to what TcgService puts on its wire (tcg.service.ts:135), so the
- * two carriers declare the same value for the same parcel and their quotes stay
- * comparable. Clamped at zero — a negative declared value would be nonsense to
- * price liability cover against.
+ * The value Bob Go expects on its wire. Clamped at zero — a negative declared
+ * value would be nonsense to price liability cover against.
  *
  * Exported for testing.
  */
@@ -642,19 +565,3 @@ export function toWholeRand(cents: number): number {
   return Math.max(0, Math.round(cents / 100));
 }
 
-/** Great-circle distance in km. Same formula PudoService uses for locker ranking. */
-export function haversineKm(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number,
-): number {
-  const R = 6371;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}

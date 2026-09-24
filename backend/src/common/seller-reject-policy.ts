@@ -27,7 +27,10 @@
 
 import type { PrismaClient } from '@prisma/client';
 
-export const BAN_AT = 3;
+// Two strikes and the seller is banned from listing (operator 2026-09; was 3).
+// A rejection ledger (SellerStrike) is the system of record, so an admin can
+// remove a single unfair strike and the ban is recomputed live.
+export const BAN_AT = 2;
 
 export type RejectConsequence = 'STRIKE' | 'DELIST' | 'TRUST' | 'NONE';
 
@@ -73,7 +76,15 @@ const OFFER_REASON_POLICY: Record<OfferRejectReason, RejectConsequence[]> = {
 const SALE_REASON_POLICY: Record<string, RejectConsequence[]> = {
   SOLD_ELSEWHERE: ['STRIKE', 'DELIST'],
   STOCK_ISSUE: ['STRIKE', 'DELIST'],
+  // Split out from STOCK_ISSUE (operator 2026-09) so the picker can offer both.
+  ITEM_DAMAGED: ['STRIKE', 'DELIST'],
   CANT_FULFIL_SHIPPING: ['STRIKE'],
+  // "Listing was wrong / changed my mind" — an honest reason that still
+  // strikes (the seller took a buyer's money).
+  CHANGED_MIND: ['STRIKE', 'DELIST'],
+  // LEGACY. No longer offered by the picker (buyer-concerns now go through the
+  // custom OTHER field, which strikes AND routes to admin review). Kept so
+  // historical rows still resolve.
   BUYER_SUSPICIOUS: ['TRUST'],
   OTHER: ['STRIKE', 'TRUST'],
 };
@@ -134,6 +145,20 @@ export async function applySellerRejectPenalty(
     result.struck = true;
     result.totalStrikes = user.sellerRejectStrikes;
 
+    // The ledger is the system of record: one row per strike, with the reason,
+    // so an admin can SEE why the seller was struck and remove a single unfair
+    // one. The counter above is kept in step only as the fast gate.
+    await prisma.sellerStrike.create({
+      data: {
+        userId: input.sellerId,
+        source: input.source,
+        reason: input.reason,
+        listingId: input.listingId ?? null,
+        referenceId: input.referenceId,
+        note: input.note ? input.note.slice(0, 500) : null,
+      },
+    });
+
     if (user.sellerRejectStrikes >= BAN_AT && !user.sellingBannedAt) {
       // BAN: no new listings (gate in listings.create), and every ACTIVE
       // listing comes down — banned from listing means nothing stays live.
@@ -190,4 +215,47 @@ export async function applySellerRejectPenalty(
   }
 
   return result;
+}
+
+/**
+ * Remove ONE strike from a seller's ledger (admin action). Marks the row
+ * removed, resyncs the fast counter, and LIFTS the listing ban when the live
+ * count drops below BAN_AT. Idempotent: an already-removed or missing strike is
+ * a no-op. Deliberately does NOT re-activate listings the ban cancelled — those
+ * come back by the seller relisting, not by an admin undo.
+ */
+export async function removeSellerStrike(
+  prisma: PrismaClient,
+  args: { strikeId: string; adminId: string },
+): Promise<{ removed: boolean; totalStrikes: number; unbanned: boolean }> {
+  const strike = await prisma.sellerStrike.findUnique({
+    where: { id: args.strikeId },
+    select: { id: true, userId: true, removedAt: true },
+  });
+  if (!strike || strike.removedAt) {
+    return { removed: false, totalStrikes: 0, unbanned: false };
+  }
+
+  await prisma.sellerStrike.update({
+    where: { id: args.strikeId },
+    data: { removedAt: new Date(), removedById: args.adminId },
+  });
+  const live = await prisma.sellerStrike.count({
+    where: { userId: strike.userId, removedAt: null },
+  });
+  const user = await prisma.user.update({
+    where: { id: strike.userId },
+    data: { sellerRejectStrikes: live },
+    select: { sellingBannedAt: true },
+  });
+
+  let unbanned = false;
+  if (live < BAN_AT && user.sellingBannedAt) {
+    await prisma.user.update({
+      where: { id: strike.userId },
+      data: { sellingBannedAt: null },
+    });
+    unbanned = true;
+  }
+  return { removed: true, totalStrikes: live, unbanned };
 }

@@ -299,11 +299,10 @@ export default function CartPage() {
     addr.postalCode.trim().length >= 4;
   // Courier shipping only needs to be ready when there ARE shippable items.
   //
-  // THE STRUCTURAL CHANGE. This used to prove "a locker or an address exists",
-  // which is not the same as "we know what delivery costs". Now every parcel
-  // the cart ships as must have a chosen, priced option — so the total on
-  // screen is the total that gets charged, and a group the courier cannot
-  // serve blocks checkout instead of silently pricing at zero.
+  // This proves more than "an address exists": every parcel the cart ships as
+  // must have a priced door rate — so the total on screen is the total that
+  // gets charged, and a group the courier cannot serve blocks checkout instead
+  // of silently pricing at zero.
   const courierReady =
     shippableItems.length === 0 ||
     (Boolean(addrComplete) &&
@@ -383,23 +382,23 @@ export default function CartPage() {
         // always did. The server re-resolves against live stock and reserves
         // that many units atomically before the order exists.
         const units = qtyOf(i.quantity);
-        // Which parcel is this line in, and what did the buyer choose for it?
-        const group = deliveryGroups.find((g) =>
+        const deliveryGroup = deliveryGroups.find((g) =>
           g.listingIds.includes(i.listingId),
         );
-        const option = group ? chosenDelivery[group.groupKey] : undefined;
-        // The METHOD is derived from the delivery the buyer picked, never
-        // asked for. PUDO and TCG are slots — a collection point and a door —
-        // not carriers, and the buyer chooses the shape of the hand-over.
-        const shippingMethod = option?.kind === 'PICKUP_POINT' ? 'PUDO' : 'TCG';
+        const chosenOption = deliveryGroup
+          ? chosenDelivery[deliveryGroup.groupKey]
+          : undefined;
+        const shippingMethod = 'COURIER';
         return {
           listingId: i.listingId,
           shippingMethod,
+          deliveryOption: chosenOption?.kind,
+          ...(chosenOption?.kind === 'STORE_PICKUP'
+            ? { pickupPointLocationId: chosenOption.pickupPointLocationId }
+            : {}),
           ...(units > 1 ? { quantity: units } : {}),
-          // The address rides on EVERY courier line regardless of slot. A
-          // collection point pins where within an area the parcel lands; it
-          // does not tell the carrier which area, and the server's re-quote
-          // returns null without it.
+          // The address rides on the courier line so the server can re-quote
+          // the door rate at payment.
           deliveryAddress: {
             building: addr.building.trim() || undefined,
             streetAddress: addr.street.trim(),
@@ -409,9 +408,6 @@ export default function CartPage() {
             province: addr.province,
             postalCode: addr.postalCode.trim(),
           },
-          ...(option?.kind === 'PICKUP_POINT' && option.locationId != null
-            ? { pudoPickupLockerId: String(option.locationId) }
-            : {}),
         };
       });
       const res = await fetch(`${API_URL}/orders/checkout`, {
@@ -778,9 +774,8 @@ export default function CartPage() {
           <h2 className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
             Delivery
           </h2>
-          {/* Address FIRST — nothing can be priced without it. There is no
-              carrier toggle any more: the buyer chooses a delivery, and which
-              carrier fulfils it is ours to decide. */}
+          {/* Address FIRST — nothing can be priced without it. Bob Go is the
+              only courier rail, so there is no carrier to choose. */}
           <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
             Where should we deliver? Delivery is priced once we have your
             address.
@@ -933,7 +928,7 @@ export default function CartPage() {
               ? '—'
               : deliveryTotalCents > 0
                 ? formatPrice(deliveryTotalCents)
-                : 'Choose an option above'}
+                : 'Calculating…'}
           </span>
         </div>
         <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
@@ -986,7 +981,7 @@ export default function CartPage() {
                   ? 'Remove the collection-only item to continue'
                   : !addrComplete
                     ? 'Enter a delivery address to continue'
-                    : 'Choose a delivery option to continue'}
+                    : 'Delivery isn’t available for this address'}
       </button>
       <p className="text-xs mt-2 text-center" style={{ color: 'var(--text-tertiary)' }}>
         The seller is only paid once you confirm delivery.

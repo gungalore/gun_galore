@@ -64,7 +64,8 @@ const paidHeldTx = {
   sellerId: 'S1',
   paymentStatus: 'HELD',
   paidAt: new Date('2026-06-01T10:00:00Z'), // funded
-  shippingMethod: 'PUDO',
+  shippingMethod: 'COURIER',
+  adminPayoutEnabledAt: new Date('2026-06-02T10:00:00Z'),
   dealerVerificationStatus: null,
   seller: {
     id: 'S1',
@@ -111,6 +112,16 @@ describe('AdminService.releaseTransaction (P5.3 money gate)', () => {
     await expect(
       service.releaseTransaction('TX1', 'admin1'),
     ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('refuses a courier payout before the 24h admin payout clock is enabled', async () => {
+    const { service, prisma } = makeService({
+      tx: { ...paidHeldTx, adminPayoutEnabledAt: null },
+    });
+    await expect(service.releaseTransaction('TX1', 'admin1')).rejects.toThrow(
+      /payout is not available yet/i,
+    );
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 

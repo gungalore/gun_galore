@@ -342,7 +342,7 @@ state — do not read its absence as the switch being broken).
 `MEILISEARCH_API_KEY`, `SMSPORTAL_CLIENT_ID`, `SMSPORTAL_API_SECRET`,
 `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`,
 `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`,
-`RESEND_API_KEY`, `PUDO_API_KEY`, `BOBGO_API_KEY`, `BOBGO_BASE_URL`,
+`RESEND_API_KEY`, `BOBGO_API_KEY`, `BOBGO_BASE_URL`,
 `BOBGO_WEBHOOK_SECRET`, `GOOGLE_MAPS_API_KEY`, `GOOGLE_VISION_API_KEY`,
 `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
 `VAPID_SUBJECT`, `WARDEN_TOKEN`, `WARDEN_BASE_URL`,
@@ -366,7 +366,7 @@ against real data. It warns on every boot and raises a Desk card. It is currentl
 **false**. Never turn it on once the platform carries real members.
 
 `STITCH_CLIENT_ID` / `STITCH_CLIENT_SECRET` are dead vars from a rejected
-evaluation. `ODOO_*` and `TCG_*` are gone.
+evaluation. `ODOO_*`, `PUDO_*` and `TCG_*` are gone.
 
 ---
 
@@ -405,7 +405,8 @@ evaluation. `ODOO_*` and `TCG_*` are gone.
   Centre's credential reader and `readFirearm()` are unchanged; only the KYC
   identity read moved, because Didit reads the document as part of its own
   session. Reads still use `json: { schema }` so the provider enforces shape.
-- **Shipping:** Pudo (lockers) + **Bob Go** (door). See Shipping.
+- **Shipping:** **Bob Go** — the only courier rail. The buyer picks Cheapest
+  Door, Fastest Door, or Pargo Store Pickup from one quote. See Shipping.
 - **Payments:** Ozow — built, **inert**. See Money.
 - **Accounting:** Zoho Books (live). Odoo was the earlier plan and is archived —
   do not build against it.
@@ -466,10 +467,6 @@ stats, news clippings, complaints, the reloading corpus, Warden.
 **Built but INERT, behind a switch:**
 - **Payments (Ozow).** `PAYMENT_MODE` and `PAYMENTS_LIVE` are both unset, so
   every checkout returns **503**. Going live = credentials + both flags.
-- **Bob Go door delivery.** `bobgo_enabled` defaults **false**, and with it off
-  there is no door rail at all — a door quote is refused outright. Its live value
-  is a DB row and cannot be read from the repo; check the box before touching
-  delivery.
 - **No automated bank verification.** Ozow has no BANV product, so an admin
   reviews the bank-holder name against the KYC identity by hand before the first
   payout (an invalid account then fails the payout itself). **Do not claim
@@ -485,8 +482,11 @@ stats, news clippings, complaints, the reloading corpus, Warden.
   `TAKE_A_SHOT` enum value survives.
 - **Hunting Packages / Experiences, AO PRO, Ask Boet chat, Daily Deals,
   the prize draw, Load Lab** (replaced by The Bench).
-- **The Courier Guy (TCG)** — retired 2026-09-04. The `TCG` enum value survives
-  and now names the **door shape**, served by Bob Go.
+- **Pudo (lockers)** and **The Courier Guy (TCG)** — retired 2026-09-24. The
+  `PUDO` and `TCG` enum values survive only as **deprecated, never-written**
+  placeholders. Door delivery is the `COURIER` method served by Bob Go. Pudo
+  lockers are gone; a **Pargo store-pickup** option (Bob Go pickup-point rate)
+  was added 2026-09-25 — the delivery rail, not a seller.
 - **Manual EFT pay-in**, **Stitch**, **Odoo**, **Sentry**, the legacy `/admin`
   dashboard, the 63-file email template pack.
 - **Clerk** — removed 2026-09-10. Member auth is self-hosted; see the Auth
@@ -673,9 +673,35 @@ this repo.**
 
 - **Firearms / barrels:** `DEALER_TRANSFER` or `PRIVATE_ARRANGE` only, enforced
   server-side. Never a courier, never a locker.
-- **Non-firearms:** Pudo locker-to-locker, or door delivery through the `TCG` enum
-  slot now served by Bob Go. `shippingMethod` names the **shape** of the delivery,
-  not the company — route post-booking work on `Transaction.carrierProvider`.
+- **Non-firearms:** the buyer chooses one of **three options** from ONE Bob Go
+  quote — **Cheapest Door Delivery**, **Fastest Door Delivery**, or **Store
+  Pickup** (the nearest Pargo counters; the buyer picks one). Every option is
+  re-quoted **server-side** at Pay (`ShippingService.quoteForSelection`): the
+  browser sends only the option kind and, for Store Pickup, the counter id — never
+  a price/carrier/service code. The 10% delivery margin is folded into each
+  displayed price. Firearms/barrels never see these (dealer/private only).
+  `Transaction.deliveryOption` records the pick; `pickupPointLocationId` +
+  `pickupPointSnapshot` the counter. `shippingMethod` names the **shape** of the
+  delivery, not the company — route post-booking work on
+  `Transaction.carrierProvider`.
+- **Seller pickup scheduling:** on accept the seller picks a collection day
+  (soonest business day, or the following business day) and an optional window
+  (`08:00-11:00` / `11:00-14:00` / `14:00-17:00`). Stored on
+  `Transaction.collectionNotBeforeAt` / `collectionWindow`, passed to Bob Go as
+  `collection_min_date` / `collection_after` / `collection_before`. The accept
+  picker takes the courier's cut-off (static `service-levels.ts`: Pargo 12:00,
+  default 14:00) into account and **rejects** a day/window outside the two
+  offered. The WhatsApp/SMS one-tap accept defaults to the soonest day.
+- **Delivery ETA:** stated as **up to 10 business days from PAYMENT** (not
+  dispatch — the seller moves the pickup date), always with "we always push for
+  the quickest possible collection and delivery". `delivery-estimate.ts` (backend
+  + frontend mirror; keep in sync).
+- **Payout clocks are admin-only (no auto-release):** door orders surface the
+  admin payout option at **delivered + 24h**; Store Pickup at **min(collected +
+  24h, end of the next business day after ready-for-pickup)**. `READY_FOR_PICKUP`
+  is a distinct shipping status (never out-for-delivery). The buyer's own Pargo
+  collection window (8 days) is unchanged. `AdminService.releaseTransaction`
+  refuses a courier payout until `adminPayoutEnabledAt` is stamped.
 - **`COLLECTION`** is a real method: buyer collects in person, forced for
   collection-only categories (trailers, oversized or dangerous goods) and rejected
   for everything else. Funds stay HELD until the buyer confirms collection, and
@@ -687,15 +713,14 @@ this repo.**
 - ⚠️ **The payout gate depends on a correct status map.** Exactly two carrier
   slugs reach Prisma `DELIVERED`, and `DELIVERED` starts the clock that releases
   the seller's money. Bob Go aggregates many providers, so its vocabulary is its
-  own. Enumerate it from the sandbox before adding a map row — mapping "in the
-  locker, buyer has not opened it" to DELIVERED pays sellers for goods buyers never
-  received.
+  own. Enumerate it from the sandbox before adding a map row — mapping "the parcel
+  is on a van, buyer has not received it" to DELIVERED pays sellers for goods buyers
+  never received.
 - ⚠️ **Bob Go returns rand with decimals into a codebase that is integer cents
   from the quote boundary onward.** Both sides are `number`, so types will not
   catch it. One missed conversion is a 100× error on every shipping charge.
 
 **Webhooks** are public routes, no JWT:
-- **Pudo** → `/api/shipping/webhook/pudo` (tracking status; no auth key).
 - **Bob Go** → `/api/shipping/webhook/bobgo/<secret>/<group>/<action>` — the topic
   AND the secret travel in the PATH, because subscriptions are registered one
   topic at a time and we choose the URL, so each self-identifies without relying
@@ -733,13 +758,20 @@ provider must point at **alloutdoor.co.za**.
   increments by 2. Ties go to the earlier bidder. `maxAmount` is never public.
 - **Seller failure is strikes, not fines.** Three counters on `User` —
   `auctionStrikes` (3 = bidding suspended), `dispatchStrikes`, and
-  `sellerRejectStrikes` (3 = `sellingBannedAt`: no new listings, buying
-  unaffected, lifted only by an admin). **There is no fine system** — no Penalty
-  model, no admin approval step, no paygate deduction.
+  `sellerRejectStrikes` (**2 = `sellingBannedAt`**: no new listings, buying
+  unaffected). A reject strike is also recorded in the **`SellerStrike` ledger**
+  (reason, source, reference), which is the system of record; an admin can list a
+  seller's strikes and remove a single unfair one (`GET /admin/:id/strikes`,
+  `POST /admin/strikes/:id/remove`), and the ban is recomputed live. The **only**
+  strike-free sale-decline route is a buyer-concern, which now rides the custom
+  `OTHER` reason (strikes + admin review). **There is no fine system** — no
+  Penalty model, no admin approval step, no paygate deduction.
 - **Seller tiers** (badge only; no listing-volume cap, no deposit): New (0 sales),
   Established (3+ / 50+ score), Trusted (10+ / 70+), Top Seller (25+ / 85+, 0.5%
-  commission discount), Dealer (admin-set, sticky). The **private Trust Score**
-  (0–100) is visible only on the seller's own dashboard, never publicly.
+  commission discount). The legacy `DEALER` tier is **retired** (never assigned,
+  no longer sticky) — the platform has no dealer *sellers*; dealers survive only
+  as the `DEALER_TRANSFER` handover registry. The **private Trust Score** (0–100)
+  is visible only on the seller's own dashboard, never publicly.
 
 **Moderation.** Every new listing is reviewed by the platform model before going
 live: APPROVE, AUTO_FIX_AND_APPROVE (silently strips contact info; original kept),

@@ -1,5 +1,14 @@
 # Bob Go — replacing Pudo + TCG
 
+> **Done — 2026-09-24.** The legacy Pudo (lockers) and The Courier Guy (TCG)
+> rails were deleted from the code. The `bobgo_enabled` runtime flag is gone;
+> Bob Go is unconditional. The rail is **door-to-door only**, and it always
+> books the **cheapest Bob Go door rate**. The `Listing`/`Transaction` Pudo/TCG
+> columns were dropped, and the `PUDO`/`TCG` `ShippingMethod` values survive only
+> as deprecated, never-written placeholders. The body below is the historical
+> record of the cutover and is **superseded** where it describes lockers or the
+> switch.
+
 Working document. Bob Go is an aggregator offering **both** door-to-door and Bob
 Box locker delivery through one API, one wallet and one tracking vocabulary. It
 replaces Pudo (lockers) and The Courier Guy (door).
@@ -623,3 +632,21 @@ a ready-made signal for the stalled-parcel sweep.
 3. One flag for both rails, or separate flags so door and lockers can migrate
    independently? The sandbox split (door works, pickup-point does not) is a
    concrete argument for two.
+
+---
+
+## 2026-09-25 - buyer options, Pargo Store Pickup, seller pickup scheduling
+
+- **Three buyer options from ONE /rates-at-checkout reply**: Cheapest Door, Fastest Door
+  (ranked by Bob Go's min_delivery_date, falling back to service-levels.ts), and
+  Store Pickup (nearest Pargo counters). All re-quoted server-side at Pay via
+  ShippingService.quoteForSelection - the browser sends only the option kind and the
+  counter id, never a price/carrier/service code.
+- **Seller-chosen pickup date/window** on accept (collectionNotBeforeAt /
+  collectionWindow) -> Bob Go collection_min_date / collection_after /
+  collection_before (all proven honoured on the sandbox 2026-09-24). ETA is now stated
+  as up to 10 business days from PAYMENT.
+- **Payout is admin-only**: door at delivered+24h; Store Pickup at
+  min(collected+24h, end of next business day after ready). No auto-release.
+- **Pargo booking wire field**: create-shipment sends delivery_pickup_point_location_id`n  (per Bob Go's door->pickup-point docs). STILL UNVERIFIED against a live counter - the
+  sandbox returns no pickup-point rates, so this has never round-tripped.

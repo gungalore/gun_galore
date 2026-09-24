@@ -1,9 +1,12 @@
 import {
-  pickupPointOptions,
+  cheapestDoorRate,
+  cheapestPickupPointRate,
+  doorRates,
+  fastestDoorRate,
+  isDoorRate,
+  pickupPointRates,
   randToCents,
   rateToQuote,
-  selectRateForSlot,
-  slotForRate,
 } from './bobgo-adapter';
 import type { BobGoRate } from './bobgo.types';
 
@@ -22,10 +25,10 @@ const rate = (over: Partial<BobGoRate>): BobGoRate => ({
   ...over,
 });
 
-describe('slotForRate', () => {
-  it('maps door onto the TCG slot and pickup-point onto the PUDO slot', () => {
-    expect(slotForRate(rate({ type: 'door' }))).toBe('TCG');
-    expect(slotForRate(rate({ type: 'pickup-point' }))).toBe('PUDO');
+describe('isDoorRate', () => {
+  it('is true for door rates and false for pickup-point rates', () => {
+    expect(isDoorRate(rate({ type: 'door' }))).toBe(true);
+    expect(isDoorRate(rate({ type: 'pickup-point' }))).toBe(false);
   });
 });
 
@@ -61,101 +64,91 @@ describe('rateToQuote', () => {
       serviceLevelCode: 'ECO',
     });
   });
-
-  it('carries the locker id on a pickup-point rate', () => {
-    const q = rateToQuote(
-      rate({ type: 'pickup-point', pickupPointLocationId: 545 }),
-    );
-    expect(q.pickupPointLocationId).toBe(545);
-  });
-
-  it('omits the locker id entirely on a door rate', () => {
-    expect('pickupPointLocationId' in rateToQuote(rate({}))).toBe(false);
-  });
 });
 
-describe('selectRateForSlot', () => {
+describe('cheapestDoorRate', () => {
   const door1 = rate({ id: 1, type: 'door', totalPrice: 150 });
   const door2 = rate({ id: 2, type: 'door', totalPrice: 114.95 });
-  const pp545 = rate({
+  const pp = rate({
     id: 3,
     type: 'pickup-point',
     totalPrice: 64.43,
     pickupPointLocationId: 545,
     pickupPointDistanceKm: 0.05,
   });
-  const pp999 = rate({
-    id: 4,
-    type: 'pickup-point',
-    totalPrice: 59.0,
-    pickupPointLocationId: 999,
-    pickupPointDistanceKm: 12,
-  });
-  const all = [door1, door2, pp545, pp999];
 
-  it('picks the cheapest door rate, matching what TCG always did', () => {
-    expect(selectRateForSlot(all, 'TCG')?.id).toBe(2);
+  it('picks the cheapest door rate and ignores cheaper pickup points', () => {
+    // The pickup point is R50 cheaper but delivery is door-only.
+    expect(cheapestDoorRate([door1, pp, door2])?.id).toBe(2);
   });
 
-  it('never returns a pickup-point rate for the door slot', () => {
-    expect(selectRateForSlot([pp545, pp999], 'TCG')).toBeNull();
-  });
-
-  it('honours the buyer\'s chosen locker even when another is cheaper', () => {
-    // pp999 is R5 cheaper. Sending the parcel there would put it 12km from
-    // where the buyer said to send it.
-    expect(selectRateForSlot(all, 'PUDO', { lockerId: 545 })?.id).toBe(3);
-  });
-
-  it('returns null when the chosen locker is not served, rather than substituting', () => {
-    expect(selectRateForSlot(all, 'PUDO', { lockerId: 12345 })).toBeNull();
-  });
-
-  it('falls back to cheapest-then-nearest with no locker chosen', () => {
-    expect(selectRateForSlot(all, 'PUDO')?.id).toBe(4);
-  });
-
-  it('breaks a price tie on distance', () => {
-    const near = rate({ id: 7, type: 'pickup-point', totalPrice: 70, pickupPointDistanceKm: 1 });
-    const far = rate({ id: 8, type: 'pickup-point', totalPrice: 70, pickupPointDistanceKm: 30 });
-    expect(selectRateForSlot([far, near], 'PUDO')?.id).toBe(7);
+  it('returns null when there is no door rate at all', () => {
+    expect(cheapestDoorRate([pp])).toBeNull();
   });
 
   it('returns null on an empty rate list', () => {
-    expect(selectRateForSlot([], 'TCG')).toBeNull();
-    expect(selectRateForSlot([], 'PUDO')).toBeNull();
+    expect(cheapestDoorRate([])).toBeNull();
   });
 });
 
-describe('pickupPointOptions', () => {
-  const pp = (id: number, loc: number, price: number, km: number): BobGoRate =>
-    rate({
-      id,
-      type: 'pickup-point',
-      totalPrice: price,
-      pickupPointLocationId: loc,
-      pickupPointDistanceKm: km,
+describe('fastestDoorRate', () => {
+  it('prefers the fewest business days, then the cheapest', () => {
+    // tcg/LSP is same-day (0d), ie is 1d, citylogistics is 3d.
+    const sameDay = rate({ id: 1, providerSlug: 'tcg', serviceLevelCode: 'LSP', totalPrice: 500 });
+    const express = rate({ id: 2, providerSlug: 'ie', serviceLevelCode: 'LX', totalPrice: 120 });
+    const slow = rate({ id: 3, providerSlug: 'citylogistics', totalPrice: 90 });
+    expect(fastestDoorRate([slow, express, sameDay])?.id).toBe(1);
+  });
+
+  it('breaks a speed tie on price', () => {
+    const a = rate({ id: 1, providerSlug: 'ie', serviceLevelCode: 'LX', totalPrice: 200 });
+    const b = rate({ id: 2, providerSlug: 'ie', serviceLevelCode: 'LECO', totalPrice: 120 });
+    expect(fastestDoorRate([a, b])?.id).toBe(2);
+  });
+
+  it('prefers Bob Go route-specific delivery dates over the fallback table', () => {
+    const later = rate({
+      id: 1,
+      providerSlug: 'ie',
+      serviceLevelCode: 'LECO',
+      minDeliveryDate: '2026-09-29',
+      totalPrice: 90,
     });
-
-  it('shows each location once, keeping its cheapest rate', () => {
-    // Bob Go returned locker #545 twice in one /locations response; rates are
-    // generated per location, so the picker inherits the same duplicate.
-    const out = pickupPointOptions([pp(1, 545, 80, 0.1), pp(2, 545, 64.43, 0.1)]);
-    expect(out).toHaveLength(1);
-    expect(out[0].totalPrice).toBe(64.43);
+    const earlier = rate({
+      id: 2,
+      providerSlug: 'citylogistics',
+      serviceLevelCode: 'ECOR',
+      minDeliveryDate: '2026-09-26',
+      totalPrice: 200,
+    });
+    expect(fastestDoorRate([later, earlier])?.id).toBe(2);
   });
 
-  it('orders nearest first, which is what a picker wants', () => {
-    const out = pickupPointOptions([pp(1, 10, 50, 12), pp(2, 20, 90, 0.5)]);
-    expect(out.map((r) => r.pickupPointLocationId)).toEqual([20, 10]);
+  it('ignores pickup points and returns null with no door rate', () => {
+    const pp = rate({ id: 9, type: 'pickup-point', totalPrice: 50 });
+    expect(fastestDoorRate([pp])).toBeNull();
+  });
+});
+
+describe('cheapestPickupPointRate', () => {
+  it('picks the cheapest pickup point, ignoring door rates', () => {
+    const door = rate({ id: 1, type: 'door', totalPrice: 60 });
+    const pp1 = rate({ id: 2, type: 'pickup-point', totalPrice: 98.39, pickupPointLocationId: 107 });
+    const pp2 = rate({ id: 3, type: 'pickup-point', totalPrice: 80, pickupPointLocationId: 108 });
+    expect(cheapestPickupPointRate([door, pp1, pp2])?.id).toBe(3);
   });
 
-  it('drops door rates', () => {
-    expect(pickupPointOptions([rate({ type: 'door' })])).toEqual([]);
+  it('returns null when there is no pickup point', () => {
+    expect(cheapestPickupPointRate([rate({ type: 'door' })])).toBeNull();
+    expect(cheapestPickupPointRate([])).toBeNull();
   });
+});
 
-  it('drops a pickup point with no location id, which could not be booked', () => {
-    const orphan = rate({ type: 'pickup-point', pickupPointLocationId: undefined });
-    expect(pickupPointOptions([orphan, pp(9, 77, 60, 1)])).toHaveLength(1);
+describe('doorRates / pickupPointRates', () => {
+  it('partitions the quote', () => {
+    const door = rate({ id: 1, type: 'door' });
+    const pp = rate({ id: 2, type: 'pickup-point' });
+    expect(doorRates([door, pp]).map((r) => r.id)).toEqual([1]);
+    expect(pickupPointRates([door, pp]).map((r) => r.id)).toEqual([2]);
   });
 });

@@ -15,29 +15,19 @@ function formatRand(cents: number) {
 }
 
 // P5.2: when the platform has booked the courier (shipmentBookedAt set), the
-// seller no longer types a tracking number — they get the waybill (plus a PIN
-// if the carrier issued one) here, print the label (or write the waybill on the
-// parcel), hand it over, and confirm. The legacy manual-entry form is kept as a
+// seller no longer types a tracking number — they get the tracking reference
+// (plus a collection PIN if the carrier issued one) here, write it on the
+// parcel, hand it over, and confirm. The legacy manual-entry form is kept as a
 // FALLBACK for the rare case where booking failed (carrier outage) so dispatch
 // never blocks.
 //
-// TWO THINGS ARE NOT KNOWABLE FROM HERE, and guessing either one costs the
-// seller a wasted trip or a wasted print:
+// ONE THING IS NOT KNOWABLE FROM HERE, and guessing it costs the seller a
+// wasted trip:
 //
-//   • WHAT THE SELLER HAS TO DO. shippingMethod names the SHAPE of the delivery
-//     (PUDO = collection point, TCG = door), not the company carrying it, so
-//     "drop it at a Pudo locker" is only true where the seller arranges their
-//     own hand-over. GET /shipping/seller-courier-model answers that
-//     server-side — `sellerPicksOption: false` means a courier collects from
-//     the seller's ADDRESS for BOTH delivery shapes and the buyer's choice of
-//     door vs collection point changes nothing on the seller's side. There is
-//     no feature flag for this page to read, by design.
-//
-//   • WHETHER A PRINTABLE WAYBILL EXISTS. Not every carrier serves a label, and
-//     a booking still awaiting the courier's acceptance has no label yet.
-//     GET /transactions/:id/waybill answers 400 for both, which is "there is no
-//     label", not an error — we drop the button and keep the "write the waybill
-//     number on the package" guidance instead.
+//   • WHETHER A PRINTABLE WAYBILL EXISTS. Bob Go has no printable label, so
+//     GET /transactions/:id/waybill answers 400, which is "there is no label",
+//     not an error — we drop the button and keep the "write the reference on
+//     the parcel" guidance instead.
 //
 // A booked shipment can also FAIL (parcel didn't fit, nobody home at
 // collection). GET /transactions/:id/shipment/failure is the seller's side of
@@ -74,7 +64,6 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
   const { getToken } = useAuth();
   const [open, setOpen] = useState(false);
   const [trackingRef, setTrackingRef] = useState(tx.trackingReference ?? '');
-  const [pudoId, setPudoId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -87,23 +76,6 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
   const [failure, setFailure] = useState<ShipmentFailure | null>(null);
   const [rebooking, setRebooking] = useState(false);
   const [rebookErr, setRebookErr] = useState<string | null>(null);
-  // Whether the seller still arranges their own hand-over, answered by the
-  // server. Seeded with today's rail so a slow or failed lookup leaves this
-  // panel exactly as it is now.
-  const [sellerPicksOption, setSellerPicksOption] = useState(true);
-
-  // Mirror the server's seller-courier model. One-shot on mount; a missing,
-  // failed or malformed response leaves the seller-picks default in place.
-  useEffect(() => {
-    fetch(`${API_URL}/shipping/seller-courier-model`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((m: { sellerPicksOption?: unknown } | null) => {
-        if (m && typeof m.sellerPicksOption === 'boolean') {
-          setSellerPicksOption(m.sellerPicksOption);
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   // The failed-shipment record, if there is one. Re-read when the booking stamp
   // changes so a re-book refreshes it. Nothing here surfaces an error: a seller
@@ -132,20 +104,11 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
 
   // A real shipment has been booked by the platform → show the booked panel.
   const booked = Boolean(tx.shipmentBookedAt && tx.trackingReference);
-  const isPudo = tx.shippingMethod === 'PUDO';
-  // The ONLY shape where the seller takes the parcel somewhere themselves. When
-  // the server says they no longer pick the option, a courier collects from
-  // their address for both shapes — telling them to visit a locker would send
-  // them on a wasted trip AND make them miss the collection.
-  const sellerDropsOff = sellerPicksOption && isPudo;
 
   // What the seller actually has to do, worded the same way the booking
-  // notification words it. Never names a carrier the parcel may not be with.
-  const handoverCopy = sellerDropsOff
-    ? 'We’ve booked your Pudo shipment. Drop the parcel at any Pudo locker using the PIN below.'
-    : sellerPicksOption
-      ? 'We’ve booked a courier to collect from your pickup address.'
-      : 'A courier collects the parcel from your address between 08:00 and 17:00 — have it packed and ready. You don’t drop it anywhere, whether the buyer chose their door or a collection point.';
+  // notification words it. Bob Go collects from the seller's address.
+  const handoverCopy =
+    'A courier collects the parcel from your address between 08:00 and 17:00 — have it packed and ready. You don’t drop it anywhere.';
 
   // The failure record deliberately SURVIVES a re-book — it's the record of
   // what happened and why the payout is short — so "a failure exists" is not
@@ -160,17 +123,12 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
       (failure.rebookCount > 0 && bookedAtMs === null && !!tx.carrierShipmentId));
   const needsRebook = failure !== null && !reBooked;
 
-  const requiresTracking =
-    tx.shippingMethod === 'PUDO' || tx.shippingMethod === 'TCG';
+  const requiresTracking = tx.shippingMethod === 'COURIER';
   const trackingOk = !requiresTracking || trackingRef.trim().length >= 3;
   const canSubmit = trackingOk && !loading;
-  // A carrier-specific example is wrong the moment the parcel isn't with that
-  // carrier, and the seller is copying the number off their own booking anyway.
-  const trackingPlaceholder = !sellerPicksOption
-    ? 'Waybill / tracking number'
-    : tx.shippingMethod === 'TCG'
-      ? 'Waybill / tracking number'
-      : 'e.g. PUD-12345';
+  // The seller copies the number off their own booking, so the placeholder
+  // stays generic.
+  const trackingPlaceholder = 'Waybill / tracking number';
 
   async function handleSubmit() {
     setLoading(true);
@@ -179,7 +137,6 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
       const token = await getToken();
       const body: Record<string, string> = {};
       if (trackingRef) body.trackingReference = trackingRef.trim();
-      if (sellerDropsOff && pudoId) body.pudoDropoffLockerId = pudoId.trim();
 
       const res = await fetch(`${API_URL}/transactions/${tx.id}/dispatch`, {
         method: 'POST',
@@ -306,7 +263,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
   );
 
   // P6.2 — a consolidated SIBLING never dispatches on its own. The carrier
-  // ("main item") line owns the waybill + Pudo PIN, and dispatching it mirrors
+  // ("main item") line owns the booking, and dispatching it mirrors
   // dispatch onto this line automatically. The order page already hides this
   // panel for siblings; this guard is defence-in-depth (and keeps a stray
   // sibling from showing the manual-entry fallback) — point the seller at the
@@ -372,9 +329,9 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
             </p>
           ) : (
             <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-              {sellerDropsOff
-                ? 'The old waybill is dead. Booking again issues a new waybill and a new drop-off PIN.'
-                : 'The old waybill is dead. Booking again gets a fresh collection — have the parcel packed and someone at the collection address between 08:00 and 17:00.'}
+              The old waybill is dead. Booking again gets a fresh collection —
+              have the parcel packed and someone at the collection address
+              between 08:00 and 17:00.
             </p>
           )}
 
@@ -428,18 +385,15 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
             </code>
           </div>
 
-          {/* Only a seller who walks the parcel to a locker has a DROP-OFF PIN.
-              Any other PIN belongs to the collection, so it's labelled as one
-              rather than sending someone to a locker screen. Carriers that
-              issue no PIN simply have nothing here — the legacy door slot never
-              had one either, so this renders exactly as before. */}
+          {/* A carrier PIN is the collection PIN the courier asks for on
+              pickup. Carriers that issue none simply have nothing here. */}
           {tx.carrierDropoffPin && (
             <div
               className="rounded-[6px] px-3 py-2 mb-2 flex items-center justify-between gap-3"
               style={{ background: 'rgba(0,160,60,0.08)', border: '0.5px solid rgba(0,160,60,0.25)' }}
             >
               <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                {sellerDropsOff ? 'Locker drop-off PIN' : 'Collection PIN'}
+                Collection PIN
               </span>
               <code className="text-base" style={{ fontFamily: 'monospace', color: 'var(--success)', fontWeight: 700, letterSpacing: '0.05em' }}>
                 {tx.carrierDropoffPin}
@@ -494,7 +448,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
           className="w-full py-2.5 rounded-[6px] text-sm"
           style={{ background: 'var(--bg-inset)', color: 'var(--text-primary)', border: '0.5px solid var(--border)', cursor: 'pointer', fontWeight: 500 }}
         >
-          {sellerDropsOff ? 'I’ve dropped it off' : 'I’ve handed it to the courier'}
+          I’ve handed it to the courier
         </button>
         <p className="text-xs text-center" style={{ color: 'var(--text-tertiary)' }}>
           Optional — tracking updates on its own once the courier scans it.
@@ -504,7 +458,6 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
           <ConfirmModal
             loading={loading}
             trackingRef={tx.trackingReference ?? ''}
-            pudoId={null}
             onCancel={() => setConfirmOpen(false)}
             onConfirm={handleSubmit}
           />
@@ -545,22 +498,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
         </div>
       )}
 
-      {/* Only asked where the seller genuinely drops the parcel at a locker —
-          elsewhere there is no drop-off, so there is no locker id to give. */}
-      {sellerDropsOff && (
-        <div>
-          <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
-            Pudo drop-off locker ID (optional)
-          </label>
-          <input
-            type="text"
-            value={pudoId}
-            onChange={(e) => setPudoId(e.target.value)}
-            placeholder="e.g. PUD-12345"
-            style={inputStyle}
-          />
-        </div>
-      )}
+      {/* No locker drop-off anywhere — Bob Go collects from the address. */}
 
       <div>
         <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
@@ -582,8 +520,8 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
         />
         {requiresTracking && (
           <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-            The buyer uses this to track their parcel — required for
-            {sellerDropsOff ? ' Pudo' : ' courier'} dispatch.
+            The buyer uses this to track their parcel — required for courier
+            dispatch.
           </p>
         )}
       </div>
@@ -617,7 +555,6 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
         <ConfirmModal
           loading={loading}
           trackingRef={trackingRef.trim()}
-          pudoId={sellerDropsOff && pudoId ? pudoId.trim() : null}
           onCancel={() => setConfirmOpen(false)}
           onConfirm={handleSubmit}
         />
@@ -632,13 +569,11 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
 function ConfirmModal({
   loading,
   trackingRef,
-  pudoId,
   onCancel,
   onConfirm,
 }: {
   loading: boolean;
   trackingRef: string;
-  pudoId: string | null;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -673,7 +608,7 @@ function ConfirmModal({
         <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}>
           The buyer&apos;s 7-day delivery clock starts now and they&apos;ll be
           notified the parcel is on its way. Only confirm once you&apos;ve
-          actually dropped it off / handed it to the courier.
+          actually handed it to the courier.
         </p>
         <div
           style={{
@@ -690,12 +625,6 @@ function ConfirmModal({
             <strong style={{ color: 'var(--text-primary)' }}>Tracking ref:</strong>{' '}
             <code style={{ fontFamily: 'monospace' }}>{trackingRef || '(none)'}</code>
           </p>
-          {pudoId && (
-            <p style={{ marginTop: 4 }}>
-              <strong style={{ color: 'var(--text-primary)' }}>Pudo locker:</strong>{' '}
-              <code style={{ fontFamily: 'monospace' }}>{pudoId}</code>
-            </p>
-          )}
         </div>
 
         <div className="flex gap-2">

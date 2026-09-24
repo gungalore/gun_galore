@@ -8,7 +8,7 @@ interface TimelineEvent {
   id: string;
   status: string;
   rawStatus: string | null;
-  source: 'INTERNAL' | 'PUDO' | 'TCG' | string;
+  source: 'INTERNAL' | 'COURIER' | string;
   message: string | null;
   occurredAt: string;
   recordedAt: string;
@@ -34,14 +34,12 @@ const API_URL =
 
 const SOURCE_LABEL: Record<string, string> = {
   INTERNAL: 'ALL Outdoor',
-  PUDO: 'Pudo',
-  TCG: 'Door delivery',
+  COURIER: 'Door delivery',
 };
 
 const SOURCE_COLOR: Record<string, string> = {
   INTERNAL: '#6366f1',
-  PUDO: 'var(--success)',
-  TCG: 'var(--warning)',
+  COURIER: 'var(--warning)',
 };
 
 // Sub-set of collapsed statuses that mark the "active" branch of the
@@ -107,7 +105,7 @@ export function TrackingTimeline({ transactionId }: { transactionId: string }) {
     }
     load();
     // Soft-refresh every 60s while the page is open so the buyer sees
-    // updates without reloading. The cron behind the API polls Pudo at
+    // updates without reloading. The cron behind the API polls Bob Go at
     // 10-min granularity, so a 60s page refresh keeps the timeline in
     // sync within a minute of new server-side data.
     const interval = setInterval(load, 60_000);

@@ -37,24 +37,21 @@ const PAYMENT_STATUS_COLOR: Record<PaymentStatus, string> = {
 
 // Carrier deep-link patterns. Returns null for methods that don't
 // have a public tracking URL (DEALER_TRANSFER doesn't, PRIVATE_ARRANGE
-// doesn't ship at all). PUDO and TCG both have public lookup pages
-// that accept the reference as a query param.
+// doesn't ship at all, and Bob Go has no public lookup page).
 function trackingUrl(
   method: string | null | undefined,
   reference: string | null | undefined,
 ): string | null {
   if (!method || !reference) return null;
   const ref = encodeURIComponent(reference.trim());
-  // NO CARRIER DEEP LINK. These used to point at pudo.co.za and
-  // thecourierguy.co.za, chosen off the ShippingMethod — but PUDO and TCG are
-  // SLOTS (a collection point and a door), not carriers, and since Bob Go
-  // became the rail a waybill will not resolve on either site. A dead tracking
-  // link is worse than none: it tells a buyer their parcel does not exist.
+  // NO CARRIER DEEP LINK. These used to point at the retired locker and
+  // courier sites, chosen off the ShippingMethod — both rails are gone and
+  // Bob Go has no public tracking page, so a dead tracking link is worse than
+  // none: it tells a buyer their parcel does not exist.
   //
   // To restore real links, plumb `carrierProvider` through to this page — the
   // server already selects it (transactions.service.ts) but the buyer payload
-  // and the frontend type do not carry it yet — and branch on the actual
-  // carrier rather than on the slot.
+  // and the frontend type do not carry it yet.
   void ref;
   return null;
 }
@@ -171,7 +168,7 @@ export default async function TransactionPage({
     !tx.confirmedDeliveryAt;
 
   // Phase 4 P4.2 — buyer can self-cancel a paid courier order that hasn't
-  // shipped yet (full refund). Self-service only for PUDO/TCG; firearm
+  // shipped yet (full refund). Self-service only for COURIER; firearm
   // dealer-transfer + PRIVATE_ARRANGE route through dispute/support.
   const canCancel =
     isBuyer &&
@@ -179,7 +176,7 @@ export default async function TransactionPage({
     !!tx.paidAt &&
     !tx.dispatchedAt &&
     !tx.rejectedAt &&
-    (tx.shippingMethod === 'PUDO' || tx.shippingMethod === 'TCG');
+    tx.shippingMethod === 'COURIER';
 
   const txRating = (
     tx as unknown as {
@@ -507,9 +504,7 @@ export default async function TransactionPage({
               <div className="flex justify-between">
                 <span style={{ color: 'var(--text-tertiary)' }}>Method</span>
                 <span style={{ color: 'var(--text-primary)' }}>
-                  {tx.shippingMethod === 'PUDO'
-                    ? 'Collection point'
-                    : tx.shippingMethod === 'TCG'
+                  {tx.shippingMethod === 'COURIER'
                     ? 'Door delivery'
                     : tx.shippingMethod === 'DEALER_TRANSFER'
                     ? 'Dealer Transfer'
@@ -628,7 +623,7 @@ export default async function TransactionPage({
             )}
 
             {/* Tracking timeline — append-only event log fed by both
-                internal milestones AND the 10-min Pudo polling cron.
+                internal milestones AND the Bob Go polling cron.
                 Hidden for collection — there's no courier to track — and for
                 a consolidated sibling, whose authoritative tracking lives on
                 the carrier (surfaced in the "Ships with your order" note). */}
@@ -910,8 +905,7 @@ export default async function TransactionPage({
             // so the countdown disappears once funds have moved.
             tx.paymentStatus === 'HELD' &&
             tx.dispatchDeadlineAt &&
-            (tx.shippingMethod === 'PUDO' ||
-              tx.shippingMethod === 'TCG' ||
+            (tx.shippingMethod === 'COURIER' ||
               tx.shippingMethod === 'DEALER_TRANSFER') &&
             (() => {
               const deadline = new Date(tx.dispatchDeadlineAt).getTime();

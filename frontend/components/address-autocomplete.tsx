@@ -28,6 +28,15 @@ interface Props {
   value: string;
   onChange: (address: string, placeId?: string) => void;
   onComponents?: (components: ParsedAddressComponents) => void;
+  /** Optional: choose a Google Places type for non-address place pickers. */
+  placeTypes?: string[];
+  /** Full selected place details for use cases such as a gunshop nomination. */
+  onPlaceSelected?: (place: {
+    name?: string;
+    formattedAddress?: string;
+    placeId?: string;
+    components: ParsedAddressComponents;
+  }) => void;
   placeholder?: string;
   /**
    * Hide "Use my current location".
@@ -51,6 +60,7 @@ interface GGeometry {
   location?: { lat: () => number; lng: () => number };
 }
 interface GPlace {
+  name?: string;
   formatted_address?: string;
   place_id?: string;
   address_components?: AddressComponent[];
@@ -227,6 +237,8 @@ export function AddressAutocomplete({
   value,
   onChange,
   onComponents,
+  placeTypes,
+  onPlaceSelected,
   placeholder = 'Search for address…',
   hideLocate = false,
 }: Props) {
@@ -234,6 +246,7 @@ export function AddressAutocomplete({
   const autocompleteRef = useRef<GAutocomplete | null>(null);
   const onChangeRef = useRef(onChange);
   const onComponentsRef = useRef(onComponents);
+  const onPlaceSelectedRef = useRef(onPlaceSelected);
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [authFailed, setAuthFailed] = useState(mapsAuthFailed);
   const [locating, setLocating] = useState(false);
@@ -241,6 +254,7 @@ export function AddressAutocomplete({
 
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
   useEffect(() => { onComponentsRef.current = onComponents; }, [onComponents]);
+  useEffect(() => { onPlaceSelectedRef.current = onPlaceSelected; }, [onPlaceSelected]);
 
   // UNCONTROLLED input — sync parent's value into input.value via the
   // ref instead of through React's controlled-input value prop. React's
@@ -299,8 +313,8 @@ export function AddressAutocomplete({
     try {
       autocompleteInstance = new PlacesLib.Autocomplete(inputRef.current, {
         componentRestrictions: { country: 'za' },
-        fields: ['formatted_address', 'place_id', 'address_components', 'geometry'],
-        types: ['address'],
+        fields: ['name', 'formatted_address', 'place_id', 'address_components', 'geometry'],
+        types: placeTypes ?? ['address'],
       });
 
       autocompleteInstance.addListener('place_changed', () => {
@@ -316,11 +330,16 @@ export function AddressAutocomplete({
             }
             onChangeRef.current(place.formatted_address, place.place_id);
 
-            if (onComponentsRef.current && place.address_components) {
-              onComponentsRef.current(
-                parseAddressComponents(place.address_components, place.geometry),
-              );
-            }
+            const components = place.address_components
+              ? parseAddressComponents(place.address_components, place.geometry)
+              : {};
+            onComponentsRef.current?.(components);
+            onPlaceSelectedRef.current?.({
+              name: place.name,
+              formattedAddress: place.formatted_address,
+              placeId: place.place_id,
+              components,
+            });
           }
         } catch {
           // place_changed handler failed — ignore silently

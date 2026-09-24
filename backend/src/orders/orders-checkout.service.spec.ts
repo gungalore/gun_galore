@@ -50,7 +50,7 @@ function makeService(over: {
             title: `Item ${id}`,
             shippingMethods: over.collectionOnlyIds?.includes(id)
               ? ['COLLECTION']
-              : ['PUDO', 'TCG'],
+              : ['COURIER'],
           })),
         ),
       ),
@@ -117,7 +117,7 @@ function core(over: Record<string, unknown> = {}) {
   };
 }
 
-const lineDto = (id: string) => ({ listingId: id, shippingMethod: 'PUDO' as const, pudoPickupLockerId: 'LCK' });
+const lineDto = (id: string) => ({ listingId: id, shippingMethod: 'COURIER' as const });
 // P6-A — a firearm cart line: dealer transfer, attestation supplied, no courier target.
 const firearmLineDto = (id: string) => ({
   listingId: id,
@@ -176,9 +176,9 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
     expect(prisma.transaction.delete).not.toHaveBeenCalled();
   });
 
-  it('P6.2 — consolidates a same-seller PUDO group: one combined quote + shipsWith on the sibling', async () => {
+  it('P6.2 — consolidates a same-seller courier group: one combined quote + shipsWith on the sibling', async () => {
     const { service, shipping, txcMock } = makeService({
-      combinedQuote: { priceCents: 6_000, serviceCode: 'PUDO-X' },
+      combinedQuote: { priceCents: 6_000, serviceCode: 'bobgo_door' },
     });
     const spy = jest
       .spyOn(service as never, 'reserveAndCreateLine')
@@ -187,7 +187,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
 
     await service.createOrderCheckout(
       'user_B',
-      { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] }, // same seller, PUDO, same locker
+      { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] }, // same seller, courier
       'https://x',
     );
 
@@ -195,7 +195,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
     expect(shipping.quoteCombined).toHaveBeenCalledTimes(1);
     // Carrier (first line, TX1) charged the combined cost; sibling (TX2) = 0.
     const overrides = spy.mock.calls.map((c) => (c as unknown[])[2]);
-    expect(overrides).toContainEqual({ costCents: 6_000, serviceCode: 'PUDO-X' });
+    expect(overrides).toContainEqual({ costCents: 6_000, serviceCode: 'bobgo_door' });
     expect(overrides).toContainEqual({ costCents: 0, serviceCode: null });
     // The sibling tx is linked to the carrier's shipment.
     expect(txcMock.transaction.update).toHaveBeenCalledWith(

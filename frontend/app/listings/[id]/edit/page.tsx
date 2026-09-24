@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '../../../../lib/auth';
 import { Listing, CategoryAttributeDef } from '@/lib/types';
 import { CONDITION_LABELS, PROVINCE_LABELS } from '@/lib/utils';
+import { AddressAutocomplete, type ParsedAddressComponents } from '@/components/address-autocomplete';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -105,6 +106,10 @@ export default function EditListingPage() {
     plannedDealerName: '',
     plannedDealerProvince: '',
     plannedDealerArea: '',
+    plannedDealerAddress: '',
+    plannedDealerPlaceId: '',
+    plannedDealerLat: null as number | null,
+    plannedDealerLng: null as number | null,
     // Auction-specific
     reservePrice: '',
     buyNowPrice: '',
@@ -202,6 +207,10 @@ export default function EditListingPage() {
           plannedDealerName: l.plannedDealerName ?? '',
           plannedDealerProvince: l.plannedDealerProvince ?? '',
           plannedDealerArea: l.plannedDealerArea ?? '',
+          plannedDealerAddress: l.plannedDealerLocation ?? '',
+          plannedDealerPlaceId: l.plannedDealerPlaceId ?? '',
+          plannedDealerLat: l.plannedDealerLat ?? null,
+          plannedDealerLng: l.plannedDealerLng ?? null,
           reservePrice: l.reservePrice ? String(l.reservePrice / 100) : '',
           buyNowPrice: l.buyNowPrice ? String(l.buyNowPrice / 100) : '',
           autoAcceptThreshold: l.autoAcceptThreshold
@@ -239,11 +248,14 @@ export default function EditListingPage() {
     if (
       listing?.category.isFirearm &&
       (!form.plannedDealerName.trim() ||
+        !form.plannedDealerPlaceId ||
+        form.plannedDealerLat == null ||
+        form.plannedDealerLng == null ||
         !form.plannedDealerProvince ||
         !form.plannedDealerArea.trim())
     ) {
       setError(
-        'Firearm listings need the planned dealer-stock location — a dealer name, province, and area.',
+        'Firearm listings need a gunshop selected from Google Places, plus its name and area.',
       );
       setSubmitting(false);
       return;
@@ -281,6 +293,9 @@ export default function EditListingPage() {
         body.plannedDealerName = form.plannedDealerName.trim();
         body.plannedDealerProvince = form.plannedDealerProvince;
         body.plannedDealerArea = form.plannedDealerArea.trim();
+        body.plannedDealerPlaceId = form.plannedDealerPlaceId;
+        body.plannedDealerLat = form.plannedDealerLat;
+        body.plannedDealerLng = form.plannedDealerLng;
       }
       // Auction + Take-a-Shot type-specific fields. We send them
       // regardless of listingType — backend ignores irrelevant ones.
@@ -770,6 +785,40 @@ export default function EditListingPage() {
                   placeholder="Dealer name — e.g. Pretoria Arms"
                   aria-label="Dealer name"
                 />
+                <AddressAutocomplete
+                  value={form.plannedDealerAddress}
+                  placeTypes={['establishment']}
+                  onChange={(address, placeId) =>
+                    setForm((current) => ({
+                      ...current,
+                      plannedDealerAddress: address,
+                      plannedDealerPlaceId: placeId ?? '',
+                      ...(placeId ? {} : { plannedDealerLat: null, plannedDealerLng: null }),
+                    }))
+                  }
+                  onPlaceSelected={(place) =>
+                    setForm((current) => ({
+                      ...current,
+                      plannedDealerName: place.name ?? current.plannedDealerName,
+                      plannedDealerPlaceId: place.placeId ?? '',
+                      plannedDealerLat: place.components.lat ?? null,
+                      plannedDealerLng: place.components.lng ?? null,
+                      plannedDealerProvince: place.components.province ?? current.plannedDealerProvince,
+                      plannedDealerArea: place.components.city || place.components.suburb || current.plannedDealerArea,
+                    }))
+                  }
+                  onComponents={(components) =>
+                    setForm((current) => ({
+                      ...current,
+                      plannedDealerLat: components.lat ?? null,
+                      plannedDealerLng: components.lng ?? null,
+                      plannedDealerProvince: components.province ?? current.plannedDealerProvince,
+                      plannedDealerArea: components.city || components.suburb || current.plannedDealerArea,
+                    }))
+                  }
+                  placeholder="Search for the gunshop address in Google Places…"
+                  hideLocate
+                />
                 <select
                   value={form.plannedDealerProvince}
                   onChange={(e) => set('plannedDealerProvince', e.target.value)}
@@ -807,9 +856,9 @@ export default function EditListingPage() {
                 className="text-xs mt-1"
                 style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
               >
-                Required for firearms — buyers use this to gauge their
-                collection drive. You&apos;re not locked in; the actual
-                dealer is captured later when you upload the stock-in proof.
+                Required for firearms — select the gunshop in Google Places so
+                buyers can gauge the collection drive. This nominated location
+                is used for the dealer transfer.
               </p>
             </Field>
           </>

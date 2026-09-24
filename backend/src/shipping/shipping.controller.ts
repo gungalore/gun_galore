@@ -5,11 +5,9 @@ import {
   Query,
   Body,
   Param,
-  Headers,
   HttpCode,
   Logger,
 } from '@nestjs/common';
-import { PudoService } from './pudo.service';
 import { DealersService } from './dealers.service';
 import {
   ShippingService,
@@ -17,12 +15,10 @@ import {
 } from './shipping.service';
 import { BobGoWebhookService } from './bobgo-webhook.service';
 import {
-  isShipmentFailureReason,
   SHIPMENT_FAILURE_LABEL,
   SHIPMENT_FAILURE_REASONS,
   sellerPaysFor,
 } from '../common/shipment-failure-policy';
-import { LockerSearchDto } from './dto/locker-search.dto';
 import { DealerQueryDto } from './dto/dealer-query.dto';
 import { CartDeliveryOptionsDto } from './dto/cart-delivery-options.dto';
 
@@ -31,36 +27,10 @@ export class ShippingController {
   private readonly logger = new Logger(ShippingController.name);
 
   constructor(
-    private readonly pudo: PudoService,
     private readonly dealers: DealersService,
     private readonly shipping: ShippingService,
     private readonly bobgoWebhook: BobGoWebhookService,
   ) {}
-
-  // ---------------------------------------------------------------
-  // Pudo locker lookups — public, no auth required.
-  //   GET /shipping/pudo/lockers              → nearest-to-lat-lng list
-  //   GET /shipping/pudo/lockers/search?q=    → Meilisearch-backed search
-  // ---------------------------------------------------------------
-  @Get('pudo/lockers')
-  findLockers(@Query() q: LockerSearchDto) {
-    return this.pudo.getNearbyLockers({
-      lat: q.lat,
-      lng: q.lng,
-      postalCode: q.postalCode,
-      radiusKm: q.radiusKm,
-      limit: q.limit,
-    });
-  }
-
-  @Get('pudo/lockers/search')
-  searchLockers(
-    @Query('q') q: string,
-    @Query('limit') limit?: string,
-  ) {
-    const cap = limit ? Math.min(parseInt(limit, 10) || 10, 50) : 10;
-    return this.pudo.searchLockers(q ?? '', cap);
-  }
 
   // ---------------------------------------------------------------
   // Dealer list — public, no auth required
@@ -87,7 +57,7 @@ export class ShippingController {
 
   // ---------------------------------------------------------------
   // Live shipping rate for a listing. Called from the checkout form
-  // after the buyer selects a method + locker/address. The returned
+  // after the buyer enters their delivery address. The returned
   // priceCents is what the checkout breakdown shows AND what we
   // re-quote at transaction-create time so the buyer's card lands on
   // the exact amount they saw. Public — listings are public anyway.
@@ -96,19 +66,6 @@ export class ShippingController {
   @HttpCode(200)
   async quote(@Body() body: QuoteRequestBody) {
     return this.shipping.quoteForListing(body);
-  }
-
-  // What the SELL FORM should ask a seller about couriering.
-  //
-  // Exists so the sell form never needs to read a feature flag. On the legacy
-  // rail the seller genuinely chooses their own hand-over (drop at a locker vs
-  // wait for a courier), so they pick. On the Bob Go rail a courier collects
-  // from their address either way and the buyer chooses how they receive it,
-  // so there is only one thing to opt into and asking again would be asking a
-  // question whose answer we ignore.
-  @Get('seller-courier-model')
-  async sellerCourierModel() {
-    return this.shipping.sellerCourierModel();
   }
 
   // The failure ticklist, so the admin UI renders exactly the reasons the
@@ -124,9 +81,9 @@ export class ShippingController {
     }));
   }
 
-  // The same menu for a whole CART — one entry per parcel it will ship as.
+  // The delivery menu for a whole CART — one entry per parcel it will ship as.
   //
-  // Separate from the single-listing route above because a cart consolidates:
+  // Separate from the single-listing route below because a cart consolidates:
   // same-seller lines share one waybill, and the price of that combined box is
   // arithmetically unrelated to the sum of its lines. Grouping is computed
   // server-side by the SAME function checkout uses to decide what to charge,
@@ -141,14 +98,8 @@ export class ShippingController {
     return this.shipping.deliveryOptionsForCart(body.lines, body.deliveryAddress);
   }
 
-  // The buyer's full delivery menu for ONE listing — door AND collection
-  // points, priced, in one call. The delivery option is the buyer's to decide,
-  // so this returns everything that can actually carry this parcel rather than
-  // a seller-curated subset.
-  //
-  // RAIL-AGNOSTIC: answers from Bob Go or from Pudo+TCG depending on the flag,
-  // in one shape. The checkout never learns which carrier it is talking to,
-  // which is what lets the UI be written once.
+  // The buyer's delivery option for ONE listing — the cheapest Bob Go door
+  // rate for this parcel and route.
   //
   // POST, not GET, because it carries a delivery address — a GET would put the
   // buyer's street address in a URL, and URLs end up in logs and referrers.
@@ -182,7 +133,7 @@ export class ShippingController {
   //
   // Always returns 200 (CLAUDE.md rule): Bob Go retries on non-2xx, and a
   // retry storm caused by our own handler bug is worse than a dropped event —
-  // the 5-minute poll is still there as the backstop.
+  // the resolve/poll backstops are still there.
   // ---------------------------------------------------------------
   @Post('webhook/bobgo/:secret/:group/:action')
   @HttpCode(200)
@@ -193,9 +144,8 @@ export class ShippingController {
     @Body() body: Record<string, unknown>,
   ) {
     const expected = process.env.BOBGO_WEBHOOK_SECRET;
-    // Fail CLOSED in production, exactly as the TCG webhook does: an
-    // unconfigured secret must not turn this into an open endpoint that lets
-    // anyone post shipment events at us.
+    // Fail CLOSED in production: an unconfigured secret must not turn this into
+    // an open endpoint that lets anyone post shipment events at us.
     if (!expected) {
       if (process.env.NODE_ENV === 'production') {
         this.logger.error(
@@ -209,24 +159,6 @@ export class ShippingController {
     }
 
     await this.bobgoWebhook.handle(`${group}/${action}`, body);
-    return { received: true };
-  }
-
-  // ---------------------------------------------------------------
-  // Pudo webhook — public route, no JWT, no auth key (CLAUDE.md).
-  // Always returns 200 regardless of content.
-  // ---------------------------------------------------------------
-  @Post('webhook/pudo')
-  @HttpCode(200)
-  async pudoWebhook(@Body() body: Record<string, unknown>) {
-    try {
-      await this.shipping.processPudoEvent(body);
-    } catch (err) {
-      this.logger.error(
-        `Pudo webhook handler failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    }
     return { received: true };
   }
 }

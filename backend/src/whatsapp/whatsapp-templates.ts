@@ -18,11 +18,10 @@
 // variable, no two adjacent variables, one URL button, one variable in its
 // suffix).
 //
-// The URL button always resolves to `https://alloutdoor.co.za/t/<code>` —
-// see `frontend/app/t/[code]/route.ts` for what each one-letter prefix does.
-// `linkCode` builds the suffix (everything after `/t/`) from the SAME `vars`
-// object `render` gets, which is why `vars` may carry `txId` even on
-// templates whose body has no variables at all (`welcome_complete_profile`).
+// Most URL buttons resolve through `https://alloutdoor.co.za/t/<code>` —
+// see `frontend/app/t/[code]/route.ts`. The courier sale template uses the
+// approved static base `https://alloutdoor.co.za/a/` and its action token as
+// the dynamic suffix, so it lands on the signed, one-use accept page.
 
 export interface WhatsappTemplateDef {
   /** Internal lookup key, used by call sites and by the Desk drawer. */
@@ -85,6 +84,21 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     render: (v) =>
       `You have a sale. Order ${v.ref} is paid and waiting for you to accept and arrange handover.`,
   },
+  // Courier sellers get the date/time picker from the URL button. The Meta
+  // template's static URL is https://alloutdoor.co.za/a/{{1}}; `acceptToken`
+  // is the one-use TRANSACTION_ACCEPT credential minted at payment. Decline
+  // is a Quick Reply handled by WhatsappWebhookController; the webhook then
+  // returns a reason-picker link inside Meta's 24h service window.
+  new_sale_seller_courier: {
+    key: 'new_sale_seller_courier',
+    metaName: 'new_sale_seller_courier',
+    lang: 'en',
+    requiredVars: ['ref'],
+    linkVars: ['acceptToken'],
+    linkCode: (v) => v.acceptToken,
+    render: (v) =>
+      `You have a sale. Order ${v.ref} is paid. Accept to choose a courier collection date and time.`,
+  },
   sale_accept_reminder_seller: {
     key: 'sale_accept_reminder_seller',
     metaName: 'sale_accept_reminder_seller',
@@ -142,7 +156,7 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     linkVars: ['txId'],
     linkCode: (v) => `t${v.txId}`,
     render: (v) =>
-      `Order ${v.ref} has been delivered. Please confirm receipt so the seller can be paid.`,
+      `Order ${v.ref} has been delivered. Confirm it is good or dispute within 24 hours.`,
   },
   confirm_receipt_nudge_buyer: {
     key: 'confirm_receipt_nudge_buyer',
@@ -151,7 +165,7 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     requiredVars: ['ref'],
     linkVars: ['txId'],
     linkCode: (v) => `t${v.txId}`,
-    render: (v) => `Order ${v.ref} is still waiting for you to confirm receipt.`,
+    render: (v) => `Order ${v.ref} is still waiting for you to confirm or dispute within 24 hours.`,
   },
   shipment_failed_buyer: {
     key: 'shipment_failed_buyer',

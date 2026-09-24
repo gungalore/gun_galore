@@ -38,7 +38,7 @@ const MISSING_LABEL: Partial<
   address: {
     label: 'Pickup / delivery address',
     href: '/profile/edit',
-    helper: 'So we can find your nearest Pudo locker + quote shipping.',
+    helper: 'So we can quote shipping and route the courier.',
   },
   banking: {
     label: 'Banking details',

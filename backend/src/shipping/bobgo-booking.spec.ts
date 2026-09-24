@@ -1,4 +1,4 @@
-// ShippingService → PudoService → SearchService → ESM-only meilisearch.
+// ShippingService → BobGoService → SearchService → ESM-only meilisearch.
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
 import { ShippingService } from './shipping.service';
@@ -35,9 +35,7 @@ function makeService(over: { tx?: unknown } = {}) {
   const svc = new ShippingService(
     prisma as never,
     notifications as never,
-    { createShipment: jest.fn() } as never,
     bobgo as never,
-    { get: jest.fn().mockResolvedValue(true) } as never, // bobgo_enabled ON
   );
   return { svc, prisma, bobgo, notifications };
 }
@@ -45,7 +43,7 @@ function makeService(over: { tx?: unknown } = {}) {
 const TX = {
   id: 'TX9',
   paymentStatus: 'HELD',
-  shippingMethod: 'TCG',
+  shippingMethod: 'COURIER',
   quantity: 1,
   listingPrice: 150000,
   shippingServiceCode: 'bobgo_3082_34_0',
@@ -242,7 +240,7 @@ describe('resolvePendingBobGoBookings', () => {
     const { svc, prisma, bobgo, notifications } = makeService();
     prisma.transaction.findMany.mockResolvedValue([PENDING_ROW]);
     prisma.transaction.findUnique.mockResolvedValue({
-      shippingMethod: 'TCG',
+      shippingMethod: 'COURIER',
       trackingReference: 'PEND1234',
       carrierDropoffPin: null,
       listing: { title: 'Lantern' },

@@ -157,7 +157,7 @@ export class CreateListingDto {
 
   // ---- Delivery + pickup address ---------------------------------------
   // At least one shipping method is required. For non-firearm categories
-  // the valid values are PUDO + TCG; for firearms/barrels they are
+  // the valid value is COURIER; for firearms/barrels they are
   // DEALER_TRANSFER + PRIVATE_ARRANGE. The listings service additionally
   // enforces that firearm listings MUST include DEALER_TRANSFER (per
   // SAPS regulation + platform policy 2026-05-26).
@@ -184,6 +184,12 @@ export class CreateListingDto {
   @IsOptional() @IsString() @MaxLength(120) plannedDealerName?: string;
   @IsOptional() @IsString() @MaxLength(60) plannedDealerProvince?: string;
   @IsOptional() @IsString() @MaxLength(120) plannedDealerArea?: string;
+  // The gunshop picked via Google Places. PlaceId is the stable identifier;
+  // lat/lng power the "≈560 km from you" distance the buyer sees. Optional
+  // (older clients send only the three text parts above).
+  @IsOptional() @IsString() @MaxLength(200) plannedDealerPlaceId?: string;
+  @IsOptional() @IsNumber() plannedDealerLat?: number;
+  @IsOptional() @IsNumber() plannedDealerLng?: number;
   // Legacy/derived display string. Server-composed from the three parts
   // above; accepted but ignored on input (kept for backward compat).
   @IsOptional() @IsString() @MaxLength(200) plannedDealerLocation?: string;
@@ -214,8 +220,6 @@ export class CreateListingDto {
   @IsOptional() @IsString() @MaxLength(10) pickupPostalCode?: string;
   @IsOptional() @IsNumber() pickupLat?: number;
   @IsOptional() @IsNumber() pickupLng?: number;
-  // Set when the seller picks (or we auto-suggest) a Pudo drop-off locker.
-  @IsOptional() @IsString() @MaxLength(60) pickupPudoLockerId?: string;
 
   // Parcel weight + dimensions for the courier rate API. Required for
   // non-firearm listings (validated at app level in ListingsService); the

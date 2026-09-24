@@ -17,6 +17,7 @@ import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
+import { removeSellerStrike } from '../common/seller-reject-policy';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { sniffMime } from '../common/sniff-mime';
 import { DiditService } from '../didit/didit.service';
@@ -439,7 +440,6 @@ export class AdminService {
     //                  member's choice, not misconduct. Kept findable because
     //                  the whole point of the closure record is that an admin
     //                  answering a police request can still reach it.
-    //   'dealers'     — sellerTier = DEALER
     // Anything else (or undefined) returns all users.
     const day = 24 * 3600 * 1000;
     const filterWhere: Record<string, unknown> = (() => {
@@ -462,7 +462,6 @@ export class AdminService {
       }
       if (filter === 'banned') return { isBanned: true };
       if (filter === 'closed') return { accountClosedAt: { not: null } };
-      if (filter === 'dealers') return { sellerTier: 'DEALER' };
       return {};
     })();
 
@@ -911,6 +910,55 @@ export class AdminService {
       reason: 'Seller reject-strikes cleared after review',
     });
     return { cleared: true };
+  }
+
+  // The seller's reject-strike ledger (newest first), so an admin can see WHY
+  // each strike landed and remove a single unfair one.
+  async listSellerStrikes(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, sellerRejectStrikes: true, sellingBannedAt: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    const strikes = await this.prisma.sellerStrike.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: {
+        id: true,
+        source: true,
+        reason: true,
+        referenceId: true,
+        listingId: true,
+        note: true,
+        createdAt: true,
+        removedAt: true,
+        removedById: true,
+      },
+    });
+    return {
+      sellerRejectStrikes: user.sellerRejectStrikes,
+      sellingBannedAt: user.sellingBannedAt,
+      strikes,
+    };
+  }
+
+  // Remove ONE strike. Recomputed against BAN_AT: dropping below the threshold
+  // lifts the listing ban. Audited.
+  async removeStrike(strikeId: string, adminId: string) {
+    const result = await removeSellerStrike(this.prisma, { strikeId, adminId });
+    if (!result.removed) {
+      throw new NotFoundException('Strike not found or already removed');
+    }
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'SELLER_STRIKE_REMOVED',
+      resourceType: 'SellerStrike',
+      resourceId: strikeId,
+      newValue: { totalStrikes: result.totalStrikes, unbanned: result.unbanned },
+      reason: 'Individual seller strike removed after review',
+    });
+    return result;
   }
 
   // ---------------------------------------------------------------
@@ -1649,7 +1697,7 @@ export class AdminService {
             { gatewayCheckoutId: q },
             { gatewayPaymentId: q },
             { gatewayPayoutId: q },
-            { tcgWaybill: insensitive },
+            { trackingReference: insensitive },
           ],
         },
         take: 8,
@@ -2112,7 +2160,9 @@ export class AdminService {
         createdAt: true,
         resolvedAt: true,
         user: { select: { id: true, username: true } },
-        photos: { select: { id: true, url: true } },
+        photos: {
+          select: { id: true, url: true, mediaType: true, thumbnailUrl: true, durationSeconds: true },
+        },
       },
     });
 
@@ -2409,6 +2459,17 @@ export class AdminService {
       throw new BadRequestException(
         `Transaction is not releasable (current: ${tx.paymentStatus}).`,
       );
+
+    // Courier payouts become admin-eligible only after the buyer's review
+    // clock has expired (door: delivered+24h; Store Pickup: collection/pickup
+    // deadline). The clock sweep stamps this field and raises the alert. The
+    // dispute-resolution endpoint is separate and remains the explicit
+    // audited override for DISPUTED orders.
+    if (tx.shippingMethod === 'COURIER' && !tx.adminPayoutEnabledAt) {
+      throw new BadRequestException(
+        'Admin payout is not available yet — wait for the buyer review and pickup window to finish.',
+      );
+    }
 
     // CRITICAL money gate — HELD is the DEFAULT status at creation
     // (schema: paymentStatus @default(HELD), paidAt null), so a courier order

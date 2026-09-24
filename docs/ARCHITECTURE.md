@@ -68,7 +68,7 @@ Two things about that diagram are easy to get wrong:
    **There is no `api.` vhost.** The conf says so in as many words at lines
    43–46, because older notes claimed one. Same-origin is not an accident: it
    is what lets the session cookies in §2.1 reach the API at all. Third-party
-   webhooks (Pudo, Bob Go, Ozow, Didit) post to that same `/api/*` path.
+   webhooks (Bob Go, Ozow, Didit) post to that same `/api/*` path.
 
    > `NEXT_PUBLIC_API_URL` **must include the `/api` suffix.** Every fallback
    > in the codebase is `http://localhost:3001/api`, and callers pass bare
@@ -603,7 +603,7 @@ paymentStatus = HELD ─── listing → SOLD, sibling offers rejected,
    │                     fraud-risk score computed (log-only)
    │  seller has 48h to ACCEPT, then 5 days to DISPATCH
    ▼
-dispatched ─── waybill booked with Pudo/TCG, tracking SMS to buyer
+dispatched ─── waybill booked with Bob Go (cheapest door rate), tracking SMS to buyer
    │
    │  buyer confirms delivery  (or, firearms: SAPS 534 verification APPROVED)
    ▼
@@ -677,12 +677,11 @@ copy. `paymentStatus` is the column name for the same reason.
 ## 6. Search
 
 Meilisearch, one client, configured in `backend/src/search/search.service.ts`
-(`onModuleInit` → `ensureIndexes`). Three indexes:
+(`onModuleInit` → `ensureIndexes`). Two indexes:
 
 | Index | Primary key | Contents |
 |---|---|---|
 | `listings` | `id` | Every active listing. |
-| `pudo_lockers` | `lockerId` | ~2,700 PUDO locker locations, refreshed on a 24h cache. |
 | `cartridges` | `id` | Distinct cartridges from `ManualLoad`, for the Load Lab typeahead. |
 
 If `MEILISEARCH_HOST` is unset, search is disabled with a warning and the app
@@ -757,7 +756,7 @@ The ones that move money or state, roughly grouped:
 | `dealerVerificationAgeingSweep` | hourly | Chases outstanding SAPS 534 paperwork. |
 | `reclaimOrphanReservations` | 5 min | Returns inventory reserved by an abandoned checkout. |
 | `orderStatusRollupSweep` | 30 min | Recomputes multi-line `Order.status` from its child transactions. |
-| `pollTrackingEvents` | 10 min | Polls Pudo/TCG for parcels the webhooks missed. |
+| `resolvePendingBobGoBookings` | 5 min | Finishes Bob Go bookings the courier had not yet accepted. Tracking itself arrives by webhook — there is no carrier poll. |
 | `retryOutboxEmails` / `retryFailedSms` | 10 min | Redelivery for the notification outboxes. |
 | `retryRevenueDocs`, `retrySwapFeeReceipts`, `retryDealPurchaseOrders` | hourly | Self-healing Zoho Books document creation. |
 | `refreshTrustScores` | daily 03:00 | Recomputes the private 0–100 seller trust score. |
@@ -783,13 +782,12 @@ a loud error for each missing integration secret.
 | **Didit** | Seller identity verification (hosted session) **only** — ⚠️ the e-mail and phone one-time codes moved back in-house 2026-09-11 (Resend / SMSPortal) | `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`, `DIDIT_MODE`, `DIDIT_BASE_URL` | **In production, a missing key or a non-`live` mode HARD-THROWS at boot.** Elsewhere: codes and KYC sessions report "not configured". See §8.1. |
 | **Ozow** | The payment gateway: One API pay-in (Pay by Bank / instant EFT) + refunds, Payouts API seller disbursement. No automated bank-verification product. | `OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`, `OZOW_WEBHOOK_SECRET`, `OZOW_ENV` (+ the `OZOW_PAYOUT_*` set) | Runs in **mock mode**. Webhooks are rejected (fail-closed) without `OZOW_WEBHOOK_SECRET`. |
 | **Cloudinary** | All user-uploaded images (listing photos, KYC documents, complaint photos) | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Uploads fail. |
-| **Meilisearch** | Listing / locker / cartridge search | `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY` | Search disabled, app still boots. |
+| **Meilisearch** | Listing / cartridge search | `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY` | Search disabled, app still boots. |
 | **Anthropic (Claude)** | Listing moderation, Q&A moderation, firearm-licence and dealer-document verification, swap proof-of-possession, Ask Boet, listing-quality scoring, weekly insights digest | `ANTHROPIC_API_KEY`, plus per-task `ANTHROPIC_MODEL_*` overrides | **Everything AI degrades to manual-review or blocked.** |
 | Anthropic Admin API | AI spend monitoring on `/admin/credits` | `ANTHROPIC_ADMIN_API_KEY` | No spend alerts. (Note: a regular key is not an admin key.) |
 | **SMSPortal** | Every outbound SMS — notifications, action links, waybill PINs | `SMSPORTAL_CLIENT_ID`, `SMSPORTAL_API_KEY`, `SMSPORTAL_API_SECRET`, `SMSPORTAL_BASE_URL` | SMS silently queues/fails; retry cron picks it up. |
 | **Resend** | Every outbound email | `RESEND_API_KEY`, `EMAIL_LOGO_URL` | Fails open — email is fire-and-forget and never blocks a flow. |
-| **PUDO** | Locker-to-locker parcel delivery + the locker directory | `PUDO_API_KEY`, `PUDO_API_SECRET`, `PUDO_BASE_URL` | **This is production mode — creating a shipment bills real credits.** |
-| **The Courier Guy (TCG)** | Door-to-door delivery | `TCG_API_KEY`, `TCG_BASE_URL`, `TCG_WEBHOOK_SECRET` | Webhooks rejected in production without the secret (fail-closed). |
+| **Bob Go** | Door-to-door courier — the **only** courier rail; every non-firearm parcel is booked at the cheapest Bob Go door rate. Lockers/pickup points are retired. | `BOBGO_API_KEY`, `BOBGO_BASE_URL`, `BOBGO_WEBHOOK_SECRET` | No key → service **inert** (rates and bookings skipped). Webhooks rejected in production without the secret (fail-closed). ⚠️ `BOBGO_BASE_URL` defaults to the **sandbox**. |
 | **Zoho Books** | Accounting — commission invoices, deal receipts, subscription documents | `ZOHO_BOOKS_*` (client id/secret, refresh token, org id, domains, `ZOHO_BOOKS_ENABLED`) | Documents are not raised; hourly retry crons self-heal once restored. |
 | **Google Maps** | Address autocomplete and "use my location" — **frontend only** | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (frontend `.env.local`) | Autocomplete degrades to a plain text field. The key needs **Maps JavaScript + Places + Geocoding** all enabled; missing Geocoding is what broke "use my location" before. |
 | **Web Push (VAPID)** | PWA push notifications | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | No push. Note the IPv4-first workaround in `main.ts` — this VPS has no global IPv6 and Apple's push endpoint advertises AAAA, which hung silently. |
@@ -888,12 +886,10 @@ and projectiles/bullets **are** allowed. The moderation service buckets primers
 and propellant as `prohibited-content`, deliberately *not* as `live-ammo`, since
 they are not ammunition — see `categorizeReason()`.
 
-**PUDO** — a South African parcel-locker network (~2,700 lockers). Sender drops
-a parcel in a locker, recipient collects from another with a PIN. Cheap, popular,
-and the default for small non-firearm items. The PIN is sent to the seller only.
-
-**The Courier Guy (TCG)** — a national door-to-door courier. The other
-non-firearm option.
+**Bob Go** — a door-to-door courier aggregator, and the platform's **only**
+courier rail. Every non-firearm parcel is booked at the **cheapest Bob Go door
+rate** for the parcel and route. The legacy `PUDO` and `TCG` `ShippingMethod`
+values are deprecated and never written; locker/pickup-point delivery is gone.
 
 **Bakkie** — a pickup truck. Ubiquitous here; it appears in brand copy and in
 the logo mark. Relevant to freight framing (an oversized item is a "bakkie job",

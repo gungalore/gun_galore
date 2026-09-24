@@ -22,6 +22,12 @@ import { OffersService } from '../offers/offers.service';
 import { AuctionsService } from '../auctions/auctions.service';
 import { TransactionsService } from '../payments/transactions.service';
 import { sellerBreakdown } from '../payments/fee-presentation';
+import {
+  nextPickupDay,
+  parseAcceptSchedule,
+  soonestPickupDate,
+} from '../shipping/pickup-dates';
+import { cutoffHour, resolveServiceLevel } from '../shipping/service-levels';
 
 /**
  * Public, token-gated endpoints powering the /a/<token> SMS-link
@@ -120,14 +126,22 @@ export class ActionTokensController {
 
   @Post(':token/accept-transaction')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  acceptTransaction(@Param('token') token: string, @Req() req: Request) {
+  acceptTransaction(
+    @Param('token') token: string,
+    @Body() body: { collectionNotBefore?: string; collectionWindow?: string },
+    @Req() req: Request,
+  ) {
     return this.tokens.runAction(
       token,
       'TRANSACTION_ACCEPT',
       'transaction',
       async ({ targetId, authorisedUserId }) => {
         const userId = await this.requireUser(authorisedUserId);
-        return this.transactions.acceptTransaction(targetId, userId);
+        return this.transactions.acceptTransaction(
+          targetId,
+          userId,
+          parseAcceptSchedule(body ?? {}),
+        );
       },
       reqIp(req),
       reqUa(req),
@@ -199,14 +213,13 @@ export class ActionTokensController {
 
   // ─── Dispatch (TOK-7) ────────────────────────────────────────────
   // Seller's one-tap "mark dispatched" from the 48h nudge SMS. Token
-  // authorisedUserId IS the seller. POST body provides tracking ref +
-  // optional Pudo locker.
+  // authorisedUserId IS the seller. POST body provides the tracking ref.
 
   @Post(':token/dispatch')
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
   dispatch(
     @Param('token') token: string,
-    @Body() body: { trackingReference?: string; pudoDropoffLockerId?: string },
+    @Body() body: { trackingReference?: string },
     @Req() req: Request,
   ) {
     const tracking = (body?.trackingReference ?? '').toString().trim();
@@ -216,9 +229,6 @@ export class ActionTokensController {
     if (tracking.length > 120) {
       throw new BadRequestException('Tracking reference too long (max 120).');
     }
-    const locker = body?.pudoDropoffLockerId
-      ? body.pudoDropoffLockerId.toString().trim().slice(0, 60) || undefined
-      : undefined;
     return this.tokens.runAction(
       token,
       'DISPATCH',
@@ -227,7 +237,6 @@ export class ActionTokensController {
         const userId = await this.requireUser(authorisedUserId);
         return this.transactions.confirmDispatch(targetId, userId, {
           trackingReference: tracking,
-          pudoDropoffLockerId: locker,
         });
       },
       reqIp(req),
@@ -572,6 +581,9 @@ export class ActionTokensController {
         rejectedAt: true,
         acceptDeadlineAt: true,
         shippingMethod: true,
+        deliveryOption: true,
+        shippingProviderSlug: true,
+        shippingServiceLevelCode: true,
         // The seller's own money. Without these the accept screen headlined
         // the BUYER's marked-up price as "Sale price" and showed no payout at
         // all - on the one screen where the seller decides to take the sale.
@@ -602,6 +614,21 @@ export class ActionTokensController {
     });
     if (!tx) throw new NotFoundException('Transaction no longer exists');
 
+    const pickupDates =
+      tx.shippingMethod === 'COURIER'
+        ? (() => {
+            const service = resolveServiceLevel(
+              tx.shippingProviderSlug,
+              tx.shippingServiceLevelCode,
+            );
+            const soonest = soonestPickupDate(
+              new Date(),
+              cutoffHour(service.collectionCutoff),
+            );
+            return [soonest, nextPickupDay(soonest)];
+          })()
+        : [];
+
     return {
       kind: 'TRANSACTION_ACCEPT' as const,
       expiresAt: resolved.expiresAt.toISOString(),
@@ -613,7 +640,15 @@ export class ActionTokensController {
         rejectedAt: tx.rejectedAt?.toISOString() ?? null,
         acceptDeadlineAt: tx.acceptDeadlineAt?.toISOString() ?? null,
         shippingMethod: tx.shippingMethod,
+        deliveryOption: tx.deliveryOption,
       },
+      pickupDates,
+      pickupWindows: [
+        { key: 'SOONEST', label: 'Soonest', collectionWindow: null },
+        { key: 'MORNING', label: '08:00–11:00', collectionWindow: '08:00-11:00' },
+        { key: 'MIDDAY', label: '11:00–14:00', collectionWindow: '11:00-14:00' },
+        { key: 'AFTERNOON', label: '14:00–17:00', collectionWindow: '14:00-17:00' },
+      ],
       listing: {
         id: tx.listing.id,
         title: tx.listing.title,
@@ -645,7 +680,6 @@ export class ActionTokensController {
         paidAt: true,
         dispatchedAt: true,
         shippingMethod: true,
-        pudoDropoffLockerId: true,
         trackingReference: true,
         listing: {
           select: {
@@ -674,10 +708,9 @@ export class ActionTokensController {
         paidAt: tx.paidAt?.toISOString() ?? null,
         dispatchedAt: tx.dispatchedAt?.toISOString() ?? null,
         shippingMethod: tx.shippingMethod,
-        // If a previous attempt persisted these fields (rare, but
-        // possible if the cron retried), surface them as defaults.
+        // If a previous attempt persisted a tracking reference (rare, but
+        // possible if the cron retried), surface it as a default.
         existingTrackingReference: tx.trackingReference,
-        existingPudoDropoffLockerId: tx.pudoDropoffLockerId,
       },
       listing: {
         id: tx.listing.id,

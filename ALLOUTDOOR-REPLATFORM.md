@@ -14,6 +14,17 @@
 > told you to open rename tickets with Pudo and The Courier Guy. Every one of those
 > instructions is now wrong. If you have a copy or a memory of it, discard it.
 
+> **Status — the Bob Go shipping migration is DONE (2026-09-24).** The legacy Pudo
+> (lockers) and The Courier Guy (TCG) rails were deleted from the code. Bob Go is now
+> the **only** courier rail, and it is **door-to-door only**: the platform always books
+> the **cheapest Bob Go door rate**. Lockers/pickup points no longer exist anywhere, and
+> the `bobgo_enabled` runtime flag was removed — Bob Go is unconditional. The
+> `ShippingMethod` enum uses a single **`COURIER`** value; `PUDO` and `TCG` survive only
+> as deprecated, never-written placeholders, and the `Listing`/`Transaction` Pudo/TCG
+> columns were dropped. Section 4 and Phase 9 below are retained as the **record of the
+> build** — their "recommendation", "unknown", effort and open-question framing is
+> historical, not pending work.
+
 ---
 
 ## 1. What this is
@@ -41,7 +52,7 @@ What is genuinely hard is everything the clean slate does *not* help with:
 | The hard part | Why |
 |---|---|
 | Ozow + Nedbank TPPP | Restarts from zero under the new entity. Weeks to months. Gates trading entirely. |
-| Bob Go courier integration | Pudo and The Courier Guy are both dropped. This is a real build, not a config change. 38–52 developer-days. See section 4. |
+| Bob Go courier integration — **DONE 2026-09-24** | Pudo and The Courier Guy were dropped; Bob Go is the only courier rail, door-to-door at the cheapest rate. Lockers dropped, the `bobgo_enabled` flag removed, enum collapsed to `COURIER`. See section 4. |
 | Legal documents | New AML/RMCP policies, new TPPP application, new Information Officer. Human work, attorney turnaround. |
 | Email sending reputation | A zero-history domain on a zero-history account. Multi-day warm-up floor, cannot be compressed. |
 
@@ -368,12 +379,20 @@ domain, billing cap set.
 
 ## 4. The Bob Go work
 
-**Pudo and The Courier Guy are both dropped. Bob Go replaces both.** Bob Go is an
-aggregator covering door-to-door *and* pickup points (lockers and counters) through one
-API, so it subsumes Pudo's locker network and TCG's door service.
+> **DONE — 2026-09-24.** This section is the record of the build. Bob Go is now the only
+> courier rail and it is **door-to-door only**: the platform always books the **cheapest
+> Bob Go door rate**. The locker/pickup-point half of the aggregator was **dropped, not
+> migrated** — there is no pickup-point picker. The `bobgo_enabled` flag was removed, and
+> the enum landed as a single **`COURIER`** value rather than the two recommended in 4.3.
+> The "what is not verified", effort and recommendation framing below is historical.
 
-This is the single largest piece of engineering in the whole programme. It is bigger than
-the box, the database, the DNS and the legal work combined.
+**Pudo and The Courier Guy are both dropped. Bob Go replaces both.** Bob Go is an
+aggregator, but only its **door-to-door** rail is used: the platform books the cheapest
+Bob Go door rate for the parcel and route. Its locker/pickup-point rates are ignored
+entirely, and there is no locker or pickup-point delivery anywhere in the product.
+
+This was the single largest piece of engineering in the whole programme — bigger than the
+box, the database, the DNS and the legal work combined. It is now **done**.
 
 ### 4.1 What is verified, and what is not
 
@@ -471,6 +490,11 @@ Add one exported helper, `isCourierBacked(method)`, so the next change is a one-
 > **Decide this before any code is written.** Changing your mind halfway means touching
 > every call site twice.
 
+> **Outcome (2026-09-24).** The enum landed as a **single `COURIER` value**, not the two
+> recommended above — pickup points were dropped entirely, so there was no second member to
+> keep. `PUDO` and `TCG` remain in the enum as **deprecated, never-written** placeholders so
+> historical `TrackingEvent`/`carrierProvider` rows still resolve.
+
 The tempting shortcut — keep the names `PUDO`/`TCG` and point them at Bob Go — saves about
 two days and bakes a dead carrier's name into the schema, the admin UI and the analytics
 SQL forever. On a database with zero rows the rename is free. It will never be this cheap
@@ -516,6 +540,11 @@ resumable.
 ### 4.5 What gets deleted
 
 The largest single subtraction, and it is satisfying:
+
+> **All of this landed (2026-09-24).** The locker cache/normaliser, the ranking, the
+> `pudo_lockers` Meilisearch index, `PostalCodesService`, the box-fit apparatus, the
+> unauthenticated `/shipping/webhook/pudo` route and the legacy Pudo/TCG columns are all
+> deleted. Tracking is webhook-only; the 10-minute poll was removed rather than kept.
 
 | Deleted | Where | Size |
 |---|---|---|
@@ -589,6 +618,10 @@ Keep it that way and the 100× bug cannot reach the UI.
 
 **These are the two most consequential findings in the whole courier scope.**
 
+> **Update (2026-09-24).** The "delivered to pickup point / locker" scenario below no longer
+> exists — there are no lockers. The payout-gate rule it illustrates still holds: map only
+> a genuine delivered-to-buyer event to `DELIVERED`. Unknown statuses stay default-deny.
+
 **Silent margin leak.** Two of Bob Go's six webhooks — *shipment charged amount changed* and
 *shipment charged weight changed* — exist specifically to tell you the carrier is billing
 something other than what it quoted. Re-weighing at the hub is routine in South African
@@ -659,6 +692,11 @@ occurredAt])` at `:1795` — with a tracking webhook running alongside the poll,
 matters more, not less.
 
 ### 4.9 The pickup-point picker — most of the frontend effort
+
+> **Dropped (2026-09-24).** Lockers/pickup points were not migrated at all. There is no
+> picker, no `GET /locations` plumbing and no geocode search. Door delivery needs only a
+> street address, so this entire frontend workstream was removed rather than ported. The
+> analysis below is kept only as a record of what was scoped.
 
 Three compounding problems, and they are why the frontend number is what it is.
 
@@ -753,19 +791,18 @@ into a second segment, doubling the cost forever, and these are flagged delivery
 so they cannot be suppressed. **Count characters against the worst case before choosing the
 wording.**
 
-**Environment variables:** six retire (`PUDO_API_KEY`, `PUDO_API_SECRET`, `PUDO_BASE_URL`,
-`TCG_API_KEY`, `TCG_BASE_URL`, `TCG_WEBHOOK_SECRET`) and are replaced by roughly two plus a
-webhook secret. Documented in three places: `backend/.env.example:235-250` and
-`docs/ENVIRONMENT.md:47,413-431,714` — that last one is a summary block, easy to miss when
-you only edit the two detailed sections.
+**Environment variables:** six retired (`PUDO_API_KEY`, `PUDO_API_SECRET`, `PUDO_BASE_URL`,
+`TCG_API_KEY`, `TCG_BASE_URL`, `TCG_WEBHOOK_SECRET`) and were replaced by `BOBGO_API_KEY`,
+`BOBGO_BASE_URL` and `BOBGO_WEBHOOK_SECRET`. Documented in three places:
+`backend/.env.example` and `docs/ENVIRONMENT.md` (the shipping section plus the summary
+block).
 
-**Webhook registration becomes self-service.** The 10-minute tracking poll exists because,
-per the comment at `tasks.service.ts:1196`, "Pudo webhooks need a support ticket". Bob Go
-has `POST/GET/DELETE /webhooks`, so registration becomes a scripted deploy step. **Keep the
-poll anyway** as a backstop — it costs one HTTP call per live parcel and it is the only
-thing that catches a silently-dropped webhook. Rename `pollPudoShipments` → `pollShipments`
-and drop the `shippingMethod: 'PUDO'` filter at `tracking.service.ts:115` (there was never a
-TCG poll; door orders have been webhook-only this whole time).
+**Webhook registration is self-service, and the poll was dropped.** The old 10-minute
+tracking poll existed because, per the comment at `tasks.service.ts`, "Pudo webhooks need a
+support ticket". Bob Go has `POST/GET/DELETE /webhooks`, so registration is a scripted deploy
+step. The poll was **removed**, not kept as a backstop: tracking arrives by webhook, and the
+only recurring job left is a 5-minute sweep that resolves Bob Go bookings the courier has
+not yet accepted.
 
 **Two admin surfaces collapse to one each:** the credit-balance probes
 (`admin-credits.service.ts`, both of which already guess at field names and degrade to null
@@ -778,6 +815,10 @@ mode — creating a shipment bills real credits." A sandbox-versus-production ba
 mistake spends real money. Keep that sentence, with Bob Go's name in it.
 
 ### 4.11 Effort — honestly
+
+> **Spent — completed 2026-09-24.** The figures below are the scoping record, not remaining
+> work. The pickup-point workstream was dropped and the tracking poll was removed, so the
+> landed scope is the door-to-door subset.
 
 Four independent scoping passes produced 51–66 developer-days between them. They
 double-count: the enum rename appears in three, the test rewrite in three, the money module
@@ -830,8 +871,8 @@ margin from the processing-fee base all look like tidy-up targets and are not.
 ## 5. The build, phased
 
 Phases 1–7 are the box and can be done in about a week. Phase 8 (self-hosted KYC storage)
-is a day and must land before the first real seller verifies. Phase 9 (Bob Go) runs in
-parallel and is the long pole. Phases 10–12 are the launch.
+is a day and must land before the first real seller verifies. Phase 9 (Bob Go) is **done**
+(2026-09-24) — door-to-door only, lockers dropped, flag removed. Phases 10–12 are the launch.
 
 ---
 
@@ -1512,9 +1553,9 @@ document to prove the base64 path works. Do not mark this done on unit tests alo
 
 ---
 
-### Phase 9 — Bob Go
+### Phase 9 — Bob Go (DONE 2026-09-24)
 
-Section 4 is the scope. Runs in parallel with everything above. The sequencing that matters:
+Section 4 is the scope. Runs in parallel with everything above. The sequencing that mattered:
 
 1. **Sandbox token on day one.** Answer the seven questions in 4.1 before estimating or
    building. Two of them (the booking two-step, and whether `service_code` expires) swing
@@ -1531,6 +1572,10 @@ Section 4 is the scope. Runs in parallel with everything above. The sequencing t
 Do not go live on the production Bob Go base URL until a full quote → book → waybill →
 track → cancel cycle has passed in sandbox. **Creating a shipment on production bills real
 money.**
+
+**Landed 2026-09-24:** door-to-door only at the cheapest Bob Go rate; the enum is a single
+`COURIER`; `bobgo_enabled` was removed; the Pudo/TCG columns were dropped; lockers, the
+pickup-point picker and the tracking poll were all removed.
 
 ---
 

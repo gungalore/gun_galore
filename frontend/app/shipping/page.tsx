@@ -27,7 +27,7 @@ interface Shipment {
   listingTitle: string;
   imageUrl: string | null;
   isFirearm: boolean;
-  method: 'PUDO' | 'TCG' | 'DEALER_TRANSFER' | 'PRIVATE_ARRANGE' | 'COLLECTION';
+  method: 'COURIER' | 'DEALER_TRANSFER' | 'PRIVATE_ARRANGE' | 'COLLECTION';
   status: string | null;
   trackingReference: string | null;
   dispatchedAt: string | null;
@@ -49,10 +49,8 @@ interface Shipment {
 }
 
 const METHOD_LABEL: Record<Shipment['method'], string> = {
-  // Slots, not carriers — a PUDO shipment is a collection point on whichever
-  // rail carried it, which since 2026-08-14 is Bob Go, not Pudo.
-  PUDO: 'Collection point',
-  TCG: 'Door delivery',
+  // Bob Go door-to-door is the only courier rail.
+  COURIER: 'Door delivery',
   DEALER_TRANSFER: 'Dealer-stocked transfer',
   PRIVATE_ARRANGE: 'Private arrangement',
   COLLECTION: 'Collection in person',
@@ -169,7 +167,7 @@ function Section({
 }
 
 function ShipmentCard({ s }: { s: Shipment }) {
-  const isCourier = s.method === 'PUDO' || s.method === 'TCG';
+  const isCourier = s.method === 'COURIER';
   return (
     <div className="rounded-[10px] p-4" style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}>
       <div className="flex items-start gap-3">
@@ -199,10 +197,10 @@ function ShipmentCard({ s }: { s: Shipment }) {
       {/* Courier status timeline */}
       {isCourier && <CourierTimeline status={s.status} dispatchedAt={s.dispatchedAt} deliveredAt={s.deliveredAt} />}
 
-      {/* Seller drop-off PIN reminder */}
+      {/* Seller collection PIN reminder */}
       {isCourier && s.role === 'outgoing' && s.dropoffPin && (
         <div className="mt-3 rounded-[6px] px-3 py-2 text-xs" style={{ background: 'rgba(227,6,19,0.06)', border: '0.5px solid var(--red)', color: 'var(--text-secondary)' }}>
-          Hand-over PIN <strong style={{ color: 'var(--text-primary)', letterSpacing: '0.1em' }}>{s.dropoffPin}</strong> — give this to the courier / locker when dropping off.
+          Collection PIN <strong style={{ color: 'var(--text-primary)', letterSpacing: '0.1em' }}>{s.dropoffPin}</strong> — give this to the courier when they collect.
         </div>
       )}
 

@@ -72,7 +72,7 @@ Cloudflare in front. Postgres `:5432` and Meilisearch `:7700` are on the same bo
   disabled and browse falls back to a Prisma query (see
   `listings.service.ts → browse()`). Everything else works. Install it if you're touching
   search; skip it otherwise.
-- Everything else (Cloudinary, Anthropic, Ozow, Pudo, TCG, Resend, SMSPortal) degrades
+- Everything else (Cloudinary, Anthropic, Ozow, Bob Go, Resend, SMSPortal) degrades
   gracefully when unconfigured. You do not need any of those accounts to get a running
   site.
 
@@ -195,7 +195,7 @@ MEILISEARCH_HOST=http://localhost:7700
 MEILISEARCH_API_KEY=
 ```
 
-`SearchService.onModuleInit` creates the three indexes (`listings`, `pudo_lockers`,
+`SearchService.onModuleInit` creates the two indexes (`listings`,
 `cartridges`) and configures filterable/sortable attributes on boot. If the host is unset it
 logs `MEILISEARCH_HOST not set — search disabled` and carries on; if the host is set but
 unreachable it logs the failure and disables itself. Neither case stops the backend.
@@ -304,7 +304,7 @@ Every module is registered in `app.module.ts`; read that file first, it's the ho
 | `swaps/` | Swop/Trade — proposals, value-based fees, proof-of-possession via Claude vision, two-way shipping. |
 | `payments/` | The money engine: Ozow adapter, transaction state (`HELD` → `RELEASED`), fee maths, refund arms, dispatch SLAs. `payment-mode.ts` is the seam that gates everything. |
 | `orders/` | Multi-item order rollup over individual transactions. |
-| `shipping/` | Courier booking (PUDO lockers, The Courier Guy door-to-door), waybills, tracking, dealer hand-off. |
+| `shipping/` | Courier booking (Bob Go door-to-door, the only courier rail), waybills, tracking, dealer hand-off. |
 | `my-shipments/` | The member-facing view of the above. |
 
 **Trust, identity and compliance**
@@ -347,7 +347,7 @@ touch the schema.
 | --- | --- |
 | `middleware.ts` | **Read this before adding any page.** The session-cookie check, the public-route allowlist, the coming-soon gate, token-authed pages. A new public page that isn't in `isPublicRoute` will 307 signed-out visitors to sign-in — including Googlebot. The pattern matching itself lives in `lib/route-matcher.ts`, with a spec. |
 | `app/` | App Router pages. `listings/`, `category/`, `checkout/`, `my/` (bids, offers, orders, sales, listings, earnings, swaps), `account/`, `admin/` (its own `(protected)` group), `(legal)/` (terms, privacy, PAIA, complaints, fees — statutory pages, treat as legal text), `a/[token]/` (SMS one-tap actions). |
-| `components/` | ~80 shared components. `listing-card`, `filter-bar`, `bid-stepper`, `locker-picker`, `dealer-picker`, `photo-dropzone`, `bottom-tab-bar`, plus `admin/` and `ask-gg/` subtrees. |
+| `components/` | ~80 shared components. `listing-card`, `filter-bar`, `bid-stepper`, `dealer-picker`, `photo-dropzone`, `bottom-tab-bar`, plus `admin/` and `ask-gg/` subtrees. |
 | `lib/` | Client helpers. `auth.tsx` (the client session — `useAuth()`, `useUser()`, `<SignInButton>`) and `auth-server.ts` (the server half, reading the `ao_at` cookie), `route-matcher.ts` (the middleware's public-route matcher, with a spec), `api.ts` (the `apiFetch` wrapper), `safe-json.ts` (**use this** — a raw `res.json()` on an empty 200 throws, which caused a whole class of sign-up bugs), `cart-store.ts`, `use-push.ts`, `account-menu-data.tsx`, `support-contact.ts`. |
 | `app/sw.ts` | Serwist service worker source, compiled to `public/sw.js` at build time only. Not active in dev. |
 
@@ -405,9 +405,7 @@ you push a routing change.
 | **Dealer transfer** | A firearm cannot legally move seller → buyer directly. It goes to a SAPS-licensed dealer, who handles the paperwork and hands it over. `Category.requiresLicence` forces this shipping path. |
 | **SAP 534** | The SAPS form for a change of firearm ownership. We capture the serial number and licence details needed to complete it. |
 | **KYC** | Know Your Customer — identity verification. Runs at a seller's first payment; a seller cannot be **paid out** until it passes. |
-| **PUDO** | A South African parcel-locker network. Buyer and seller each use a locker; nobody exchanges an address. One of the two non-firearm shipping methods. |
-| **TCG** | The Courier Guy — door-to-door courier, the other non-firearm option. |
-| **Shipping methods** | `PUDO`, `TCG`, `DEALER_TRANSFER` (firearm, via a SAPS dealer), `PRIVATE_ARRANGE` (firearm, the pair go to a dealer themselves — requires seller consent), `COLLECTION` (buyer collects; forced for trailers and dangerous goods), `ON_SITE_SERVICE` (hunting packages — no parcel at all). Each one has different rules about when funds release. |
+| **Shipping methods** | `COURIER` (non-firearm door delivery via Bob Go — the only courier rail, always booked at the cheapest Bob Go door rate), `DEALER_TRANSFER` (firearm, via a SAPS dealer), `PRIVATE_ARRANGE` (firearm, the pair go to a dealer themselves — requires seller consent), `COLLECTION` (buyer collects; forced for trailers and dangerous goods), `ON_SITE_SERVICE` (hunting packages — no parcel at all). The legacy `PUDO` and `TCG` values are deprecated and never written. Each one has different rules about when funds release. |
 | **Bakkie** | Pickup truck. Ubiquitous here; a whole product category (canopies, drawer systems, roof racks, bull bars) exists around it under Overlanding. |
 | **Take a Shot** | Our name for offers: the buyer names a price, the seller accepts, rejects or counters. |
 | **Swop** | Trade. Two items exchange hands, optionally with a cash top-up. Both sides pay a leg fee and we manage both shipments. |

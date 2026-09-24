@@ -63,6 +63,7 @@ export default function NewComplaintPage() {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [photos, setPhotos] = useState<File[]>([]);
+  const [video, setVideo] = useState<File | null>(null);
   const [orders, setOrders] = useState<OrderOption[]>([]);
   /**
    * Did the order list fail to load?
@@ -83,6 +84,8 @@ export default function NewComplaintPage() {
     () => CATEGORIES.find((c) => c.value === category)?.item ?? false,
     [category],
   );
+  const requiresEvidence =
+    category === 'ITEM_NOT_AS_DESCRIBED' || category === 'DAMAGED';
 
   const authed = useCallback(
     async (path: string, init?: RequestInit) => {
@@ -167,8 +170,33 @@ export default function NewComplaintPage() {
     if (subject.trim().length < 3) return setError('Add a short subject.');
     if (body.trim().length < 15)
       return setError('Please describe the issue in a bit more detail.');
+    if (requiresEvidence && photos.length === 0)
+      return setError('Attach at least one photo of the item to submit this dispute.');
     setBusy(true);
     try {
+      // Pre-upload so an item-received dispute arrives with evidence attached;
+      // the backend refuses to freeze payout for DAMAGED / ITEM_NOT_AS_DESCRIBED
+      // without at least one image. Video can be added later if useful.
+      const uploadedPhotos: {
+        url: string;
+        publicId: string;
+        mediaType: 'IMAGE' | 'VIDEO';
+        thumbnailUrl?: string;
+        durationSeconds?: number;
+      }[] = [];
+      for (const file of [...photos, ...(video ? [video] : [])]) {
+        const fd = new FormData();
+        fd.append('photo', file);
+        const token = await getToken();
+        const upload = await fetch(`${API_URL}/complaints/evidence`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        });
+        const evidence = await upload.json().catch(() => ({}));
+        if (!upload.ok) throw new Error(evidence?.message ?? 'Could not upload dispute evidence.');
+        uploadedPhotos.push(evidence as (typeof uploadedPhotos)[number]);
+      }
       const created = (await authed('/complaints', {
         method: 'POST',
         body: JSON.stringify({
@@ -176,21 +204,9 @@ export default function NewComplaintPage() {
           subject: subject.trim(),
           body: body.trim(),
           transactionId: transactionId || null,
+          photos: uploadedPhotos,
         }),
       })) as { id: string; referenceNumber: string; drovePayoutHold: boolean };
-
-      // Upload evidence photos one at a time (fresh token per file — the
-      // slow-mobile token-expiry fix used by the listing uploader).
-      for (const file of photos) {
-        const fd = new FormData();
-        fd.append('photo', file);
-        const token = await getToken();
-        await fetch(`${API_URL}/complaints/${created.id}/photos`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: fd,
-        }).catch(() => undefined);
-      }
 
       setDone({ ref: created.referenceNumber, held: created.drovePayoutHold });
     } catch (e) {
@@ -391,19 +407,36 @@ export default function NewComplaintPage() {
       {isItemCategory && (
         <div>
           <label style={labelStyle}>
-            Photos of the item (strongly recommended)
+            Photos of the item {requiresEvidence ? '(at least one required)' : '(optional)'}
           </label>
           <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: '0 0 8px' }}>
             Clear photos of the problem — all angles, plus any damage, wrong
-            markings or serial numbers — help us resolve it faster. Kept private
-            to you and our review team.
+            markings or serial numbers — help us review it. At least one photo
+            is required for an item-not-as-described or damage dispute. A video
+            of up to 30 seconds is optional. Evidence stays private; an admin
+            will contact you if more is needed.
           </p>
           <PhotoDropzone
             files={photos}
             onChange={setPhotos}
-            minFiles={0}
+            minFiles={requiresEvidence ? 1 : 0}
             maxFiles={6}
           />
+          <label className="mt-3 block text-xs" style={{ color: 'var(--text-secondary)' }}>
+            Optional short video (up to 30 seconds)
+            <input
+              type="file"
+              accept="video/mp4,video/webm"
+              onChange={(event) => setVideo(event.target.files?.[0] ?? null)}
+              className="mt-1 block w-full text-xs"
+            />
+          </label>
+          {video && (
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Video selected: {video.name}
+              <button type="button" className="ml-2 underline" onClick={() => setVideo(null)}>Remove</button>
+            </p>
+          )}
         </div>
       )}
 

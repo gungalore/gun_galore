@@ -39,7 +39,7 @@ function makeTx(over: Partial<StampTx> = {}): StampTx {
   return {
     id: 'TX1',
     shipsWithId: null,
-    shippingMethod: 'TCG',
+    shippingMethod: 'COURIER',
     listing: { title: 'Widget' },
     buyer: {
       email: 'b@x.co',

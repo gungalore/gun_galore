@@ -89,6 +89,10 @@ enum SellerTier {
   ESTABLISHED
   TRUSTED
   TOP_SELLER
+  // ⚠️ DEPRECATED (operator 2026-09). The platform no longer has dealer
+  // SELLERS; dealers survive only as the DEALER_TRANSFER handover registry.
+  // Kept so historical rows still parse; nothing assigns or reads it any more
+  // (ratings no longer treats it as sticky). Remove once no row carries it.
   DEALER
 }
 
@@ -112,12 +116,17 @@ enum ClaudeDecision {
 }
 
 enum ShippingMethod {
-  PUDO // Pudo locker-to-locker (non-firearm)
-  TCG // The Courier Guy door-to-door (non-firearm)
+  COURIER // Door-to-door courier via Bob Go (non-firearm). The ONLY courier rail; the platform books the cheapest Bob Go door rate.
+  // ⚠️ DEPRECATED — never written by current code. Pudo and The Courier Guy
+  // were retired 2026-09-24; Bob Go (door-to-door) replaced both. These two
+  // values survive only so historical rows/JSON still parse; do not select
+  // them or map new sales onto them.
+  PUDO // DEPRECATED (was Pudo locker-to-locker)
+  TCG // DEPRECATED (was The Courier Guy door-to-door)
   DEALER_TRANSFER // Routed through a SAPS-licensed dealer (firearm — buyer picks dealer at checkout)
   PRIVATE_ARRANGE // Buyer + seller arrange in-person legal transfer (firearm — pair go to a dealer themselves)
   COLLECTION // Buyer collects in person from the seller — no courier, no rate. Forced for collectionOnly categories (trailers, oversized/dangerous goods). Funds stay HELD until the buyer confirms collection (payment protection); contact details are revealed post-payment so they can coordinate the meet.
-  ON_SITE_SERVICE // Future-dated on-site SERVICE (hunting package / range day). No courier, no rate, no parcel — the buyer attends on a scheduled event date. Funds stay HELD until the buyer confirms the experience happened. Deliberately matches NONE of the courier-cron shippingMethod filters (PUDO/TCG/DEALER_TRANSFER/COLLECTION) so experience bookings are invisible to every dispatch/auto-refund sweep.
+  ON_SITE_SERVICE // Future-dated on-site SERVICE (hunting package / range day). No courier, no rate, no parcel — the buyer attends on a scheduled event date. Funds stay HELD until the buyer confirms the experience happened. Deliberately matches NONE of the courier-cron shippingMethod filters (COURIER/DEALER_TRANSFER/COLLECTION) so experience bookings are invisible to every dispatch/auto-refund sweep.
 }
 
 enum ShippingStatus {
@@ -125,9 +134,24 @@ enum ShippingStatus {
   COLLECTED
   IN_TRANSIT
   OUT_FOR_DELIVERY
+  // Parcel is at the Pargo counter awaiting the buyer (STORE_PICKUP only).
+  READY_FOR_PICKUP
   DELIVERED
   DELIVERY_FAILED
   RETURNED
+}
+
+// WHICH delivery the buyer chose for a couriered (non-firearm) sale. The legal
+// rail stays ShippingMethod.COURIER; this is the commercial choice within it.
+//   DOOR_CHEAPEST  — cheapest door-to-door rate (today's behaviour)
+//   DOOR_FASTEST   — door rate with the shortest published transit
+//   STORE_PICKUP   — cheapest Pargo pickup-point rate; buyer collects from a
+//                    nominated counter.
+// Null on firearm / collection / experience sales (no courier choice exists).
+enum DeliveryOption {
+  DOOR_CHEAPEST
+  DOOR_FASTEST
+  STORE_PICKUP
 }
 
 enum Province {
@@ -1105,11 +1129,10 @@ model Listing {
   firearmType           String?
 
   // Parcel weight + dimensions captured by the seller in the Sell form.
-  // Required for non-firearm listings (Pudo + TCG need them to quote
-  // rates). Firearm listings can leave them null because DEALER_TRANSFER
-  // and PRIVATE_ARRANGE don't use the courier API. Pudo's largest L2L
-  // locker box is 60×41×69 cm at 20 kg — anything beyond that forces
-  // TCG door-to-door (the Sell form hides the PUDO option when over).
+  // Required for non-firearm listings (Bob Go needs them to quote rates).
+  // Firearm listings can leave them null because DEALER_TRANSFER and
+  // PRIVATE_ARRANGE don't use the courier API. The courier rail is
+  // door-to-door only, so no locker size limit applies.
   weightGrams Int?
   lengthCm    Int?
   widthCm     Int?
@@ -1197,14 +1220,14 @@ model Listing {
   // is no longer selectable.
   acceptsOffers Boolean @default(true)
 
-  // Seller-offered shipping methods. For non-firearm listings this is
-  // some non-empty subset of [PUDO, TCG]. For firearm / barrel listings
-  // it's a subset of [DEALER_TRANSFER, PRIVATE_ARRANGE]. DEALER_TRANSFER
-  // is MANDATORY for firearm listings — the seller can additionally
-  // offer PRIVATE_ARRANGE, but they cannot list a firearm without
-  // dealer-stock as an option. ListingsService.create + update enforce
-  // this. The buyer picks ONE of these at checkout and that pick lands
-  // on Transaction.shippingMethod.
+  // Seller-offered shipping methods. For non-firearm, couriered listings this
+  // is exactly [COURIER]. For firearm / barrel listings it's a subset of
+  // [DEALER_TRANSFER, PRIVATE_ARRANGE]. DEALER_TRANSFER is MANDATORY for
+  // firearm listings — the seller can additionally offer PRIVATE_ARRANGE, but
+  // they cannot list a firearm without dealer-stock as an option.
+  // ListingsService.create + update enforce this. The buyer picks ONE of these
+  // at checkout and that pick lands on Transaction.shippingMethod. There is no
+  // door-vs-locker choice any more — the courier rail is door-to-door only.
   shippingMethods ShippingMethod[] @default([])
 
   // Seller's consent to share their phone + email with the BUYER of a
@@ -1233,8 +1256,16 @@ model Listing {
   plannedDealerName     String?
   plannedDealerProvince String?
   plannedDealerArea     String?
+  // Seller-nominated stocking dealer, chosen via Google Places (gunshop
+  // autocomplete). PlaceId is stable + the coords let the listing show a
+  // straight-line "≈560 km from you" so the buyer can judge the trip before
+  // buying. Previously this was a free-text hint; now it is a real place.
+  // Null for non-firearm listings.
+  plannedDealerPlaceId  String?
+  plannedDealerLat      Float?
+  plannedDealerLng      Float?
 
-  // Seller pickup address (where Pudo/TCG collect from, or where the
+  // Seller pickup address (where the courier collects from, or where the
   // private/dealer-transfer hand-off originates). Captured at listing
   // time. Auto-filled from Google Places autocomplete when available.
   pickupBuilding   String?
@@ -1245,11 +1276,6 @@ model Listing {
   pickupPostalCode String?
   pickupLat        Float?
   pickupLng        Float?
-
-  // Seller's preferred Pudo locker (set when shippingMethods includes
-  // PUDO). Auto-suggested from pickupLat/pickupLng → nearest 3 lockers,
-  // or overridden by the seller from a Meilisearch lookup.
-  pickupPudoLockerId String?
 
   claudeDecision            ClaudeDecision?
   claudeConfidence          Float?
@@ -1591,7 +1617,7 @@ model Transaction {
   listingPrice             Int // snapshot of listing.price × quantity
   commissionZar            Int
   processingFee            Int // Peach fee (3.5% + R1.50 fixed, ×1.15 VAT)
-  // Shipping cost the buyer paid, sourced from a live Pudo / TCG rate
+  // Shipping cost the buyer paid, sourced from a live Bob Go door rate
   // quote at checkout. Zero for firearm listings (DEALER_TRANSFER and
   // PRIVATE_ARRANGE don't use the courier API). Stored separately from
   // buyerTotal so we can show the breakdown later + remit to the
@@ -1603,19 +1629,51 @@ model Transaction {
   // firearm (DEALER_TRANSFER / PRIVATE_ARRANGE), collection, and consolidated
   // sibling lines — none of those create their own waybill.
   shippingHandlingCents    Int      @default(0)
-  // Service level snapshot — "L2LXS - ECO" / "D2DM - ECO" etc. Comes
-  // straight from Pudo's response so we can pass it back into the
-  // shipment-create call without re-fetching the quote.
+  // Service level snapshot — the chosen Bob Go rate's service_code, kept so we
+  // can pass it back into the shipment-create call without re-fetching the
+  // quote. Null on non-courier sales.
   shippingServiceCode      String?
   // Bob Go only — the rest of the chosen rate's identity. Bob Go's
   // POST /shipments needs provider_slug and service_level_code alongside
   // service_code, and BOTH vary per rate inside one quote response (a sandbox
   // reply carried provider "sandbox" on the door rate and "demo" on the
-  // pickup-point rate). Pudo and TCG each had a single provider, so the
-  // service code alone was a sufficient snapshot for them — it is not here.
-  // Null on every legacy-carrier row and on non-courier sales.
+  // pickup-point rate). Null on non-courier sales.
   shippingProviderSlug     String?
   shippingServiceLevelCode String?
+
+  // ── Buyer delivery choice + pickup-point snapshot ──────────────────
+  // deliveryOption is the buyer's pick at checkout (see the enum). STORE_PICKUP
+  // additionally snapshots the chosen Pargo counter so booking can replay the
+  // exact `pickup_point_location_id` + provider slug Bob Go requires, and so
+  // the buyer's collection details survive a re-quote. Null on non-courier
+  // sales.
+  deliveryOption        DeliveryOption?
+  pickupPointLocationId Int?
+  // { locationId, providerSlug, name, address, tradingHours, distanceKm } —
+  // display + booking replay. Never exposes another member's data.
+  pickupPointSnapshot   Json?
+
+  // ── Seller pickup scheduling (the accept picker) ───────────────────
+  // The seller picks a collection day (and optional window) at accept. The day
+  // is passed to Bob Go as `collection_min_date` and remembered here so the
+  // dispatch clock can be measured from a date the seller chose, not from
+  // accept. collectionWindow is the "HH:MM-HH:MM" preference (collection_after
+  // / collection_before), or null for "soonest / no preference".
+  collectionNotBeforeAt DateTime?
+  collectionWindow      String?
+
+  // ── Store Pickup payout clock (admin-only release) ─────────────────
+  // readyForPickupAt is stamped when the carrier reports the parcel is at the
+  // counter; collectedAt when the buyer collects it. The admin payout option
+  // appears at min(collectedAt + 24h, end-of-next-business-day after ready) —
+  // the buyer's own physical collection window (Pargo: 8 days) is untouched.
+  // Null on non-STORE_PICKUP sales.
+  readyForPickupAt     DateTime?
+  collectedAt          DateTime?
+  // Set once when the Store Pickup payout clock matures and the admin is
+  // offered the manual release. NO auto-release (operator 2026-09: admin-only
+  // until the flow is trusted). Mirrors adminAlertedForStuckFundsAt.
+  adminPayoutEnabledAt DateTime?
   // ⚠️ THE EFFECTIVE FLAG, NOT THE LISTING'S. Was "snapshot of
   // listing.passFeeToBuyer", which is a different fact: an auction win and an
   // accepted offer FORCE the buyer to pay the gateway fee regardless of what
@@ -1739,41 +1797,28 @@ model Transaction {
   podReference String?
   podProofUrl  String?
 
-  // Pudo locker-to-locker
-  pudoDropoffLockerId String? // seller's drop-off locker (set at dispatch)
-  pudoPickupLockerId  String? // buyer's chosen pickup locker
-  pudoTrackingCode    String?
-
-  // TCG door delivery
-  deliveryAddress Json? // { building?, streetAddress, address2?, suburb, city, province, postalCode, lat?, lng? } — contactName + contactPhone resolved from User at shipment-creation time
-  tcgWaybill      String?
+  // Delivery address — { building?, streetAddress, address2?, suburb, city,
+  // province, postalCode, lat?, lng? }. contactName + contactPhone are resolved
+  // from User at shipment-creation time.
+  deliveryAddress Json?
 
   // Platform-arranged shipment booking (P5.2). When the seller ACCEPTS a
-  // courier sale we book the real shipment with the carrier (Pudo L2L /
-  // TCG D2D) and stamp the result here. trackingReference (above) holds the
-  // carrier waybill. carrierShipmentId is the ShipLogic id used to fetch
-  // the label PDF + cancel. carrierDropoffPin is the Pudo locker drop PIN
-  // (null for TCG door-to-door). shipmentBookingStartedAt is an idempotency
-  // claim set BEFORE the (wallet-billed) carrier call so a retry/race can
-  // never double-book; shipmentBookedAt marks a confirmed booking.
+  // courier sale we book the real shipment with Bob Go (door-to-door) and
+  // stamp the result here. trackingReference (above) holds the carrier
+  // waybill. carrierShipmentId is the Bob Go shipment id used to fetch the
+  // label PDF + cancel. carrierDropoffPin is usually null for a door shipment.
+  // shipmentBookingStartedAt is an idempotency claim set BEFORE the
+  // (wallet-billed) carrier call so a retry/race can never double-book;
+  // shipmentBookedAt marks a confirmed booking.
   carrierShipmentId         String?
   carrierDropoffPin         String?
-  // WHICH API actually booked this shipment: "PUDO", "TCG" or "BOBGO".
-  //
-  // Not derivable from shippingMethod any more. Bob Go sits behind BOTH enum
-  // slots (its pickup-point rates serve PUDO, its door rates serve TCG), so the
-  // method now describes the SHAPE of the delivery, not the company holding the
-  // parcel. Every post-booking operation — waybill PDF, cancel, tracking poll,
-  // webhook match — must route on THIS, or it will call the wrong carrier's API
-  // with an id that carrier has never heard of.
-  //
-  // It also makes the bobgo_enabled flag genuinely reversible: flip it off
-  // mid-flight and shipments already with Bob Go keep being tracked and
-  // cancelled through Bob Go, while new sales go back to Pudo/TCG. Without the
-  // column, flipping the flag orphans every parcel in the network.
-  //
-  // Null on historical rows, which all predate Bob Go and are therefore
-  // Pudo/TCG — readers must treat null as "derive from shippingMethod".
+  // WHICH API actually booked this shipment. Since 2026-09-24 the only courier
+  // rail is Bob Go, so this is "BOBGO" on every courier sale and null on
+  // firearm / collection sales. It is kept (rather than inferred) because every
+  // post-booking operation — waybill PDF, cancel, tracking poll, webhook match
+  // — routes on THIS, and historical rows may still carry "PUDO"/"TCG".
+  carrierProvider           String?
+
   // ── Failed shipment + rebook (operator 2026-08-13) ──
   //
   // When a courier collection or delivery fails, the reason is recorded from a
@@ -1794,7 +1839,6 @@ model Transaction {
   // is the signal that something is wrong with the listing's measurements
   // rather than with any one collection.
   shipmentRebookCount       Int       @default(0)
-  carrierProvider           String?
   shipmentBookingStartedAt  DateTime?
   shipmentBookedAt          DateTime?
 
@@ -1805,7 +1849,7 @@ model Transaction {
   // the waybill/PIN/tracking. Every OTHER line points at it via shipsWithId,
   // carries shippingCost 0, is skipped by the booking + dispatch crons, and
   // mirrors the carrier's shippingStatus/dispatchedAt/deliveredAt (propagated
-  // on carrier update). Only PUDO/TCG lines consolidate; firearm + collection
+  // on carrier update). Only COURIER lines consolidate; firearm + collection
   // never enter a cart, so they never carry this. A refund SET NULLs the FK.
   shipsWithId String?
   shipsWith   Transaction?  @relation("ConsolidatedShipment", fields: [shipsWithId], references: [id])
@@ -1858,12 +1902,12 @@ model Transaction {
   // >=48h ago, buyer never confirmed, still HELD). Sits UNDER the 72h
   // adminAlertedForStuckFundsAt backstop — a gentle self-heal reminder to
   // the forgetful buyer before a human has to chase them. Courier legs only
-  // (PUDO/TCG); COLLECTION has its own collectionConfirmNudgedAt path.
+  // (COURIER); COLLECTION has its own collectionConfirmNudgedAt path.
   buyerConfirmNudgedAt DateTime?
 
   // Set once when the in-transit stall sweep alerts the admin that a
   // dispatched courier parcel has had no tracking progress for >7d (carrier
-  // lost it, or the Pudo/TCG poll silently returning nothing). Distinct from
+  // lost it, or the Bob Go poll silently returning nothing). Distinct from
   // adminAlertedForStuckFundsAt (which needs deliveredAt); this catches a
   // parcel wedged BEFORE delivery. IS NULL fires it once per stalled parcel.
   adminAlertedForTransitStallAt DateTime?
@@ -2158,17 +2202,17 @@ model Transaction {
 //   1. Internal flow — we record a row at each state change we own
 //      (paid, dispatched, delivered confirmed, payout released). These
 //      rows have source=INTERNAL.
-//   2. Polling cron — every 10 min the cron asks Pudo (and later TCG)
-//      for the parcel's tracking_events, maps carrier statuses to our
-//      internal status via status-map.ts, then appends any events we
-//      haven't seen yet. These rows have source=PUDO or source=TCG.
+//   2. Bob Go webhooks + the pending-booking resolver — carrier tracking
+//      events are mapped to our internal status via status-map.ts, then
+//      appended. These rows carry source=BOBGO. Historical rows may carry
+//      the retired source values PUDO / TCG.
 //
 // Idempotency: the @@unique([transactionId, status, occurredAt]) tuple
-// stops the cron from inserting the same carrier event twice if it
-// re-appears in a later poll. occurredAt is the carrier's timestamp
+// stops us inserting the same carrier event twice if it re-appears.
+// occurredAt is the carrier's timestamp
 // (or now() for internal events); recordedAt is when our system first
 // observed it. status uses the collapsed internal vocabulary from
-// status-map.ts (PUDO_PIN_ISSUED, PARCEL_DROPPED_OFF, AT_LOCKER, etc).
+// status-map.ts.
 model TrackingEvent {
   id            String      @id @default(cuid())
   transactionId String
@@ -2181,7 +2225,7 @@ model TrackingEvent {
   // Raw carrier value before mapping ("ARRIVED_AT_LOCKER" / "Out For
   // Delivery" / etc). Null for INTERNAL-sourced events.
   rawStatus String?
-  // INTERNAL | PUDO | TCG — who reported this event.
+  // INTERNAL | BOBGO (historical: PUDO | TCG) — who reported this event.
   source    String
   // Human-readable line shown on the timeline. Optional; the UI falls
   // back to a per-status default when null.
@@ -3254,9 +3298,9 @@ model ActionToken {
 // =====================================================================
 // External-service credit monitoring
 // =====================================================================
-// Gun Galore depends on several paid external services (SMSPortal for
-// OTPs, VerifyNow for KYC, Cloudinary for media, Anthropic for the
-// listing-review agent, Pudo for shipping). Each of those bills against
+// All Outdoor depends on several paid external services (SMSPortal for
+// OTPs, Didit for identity verification, Cloudinary for media, Gemini for
+// the listing-review agent, Bob Go for shipping). Each of those bills against
 // a per-account credit/balance pool — if any of them runs dry mid-flow
 // the user-facing experience silently breaks (OTP never arrives, KYC
 // hangs, image upload returns a 4xx, etc).
@@ -3283,10 +3327,9 @@ model CreditSnapshot {
   id        String   @id @default(cuid())
   // Service identifier — matches the `service` column in CreditThreshold.
   // String (not enum) so adding a new service doesn't need a migration.
-  // Known values: 'smsportal' | 'verifynow' | 'cloudinary' | 'gemini' | 'pudo'
-  // ⚠️ 'anthropic' appears in rows written before 2026-09-07, when the AI
-  // spend row was polled from Anthropic's org cost report. Nothing writes it
-  // now — the AI row is 'gemini' and is computed from the AiUsage ledger.
+  // Known values: 'smsportal' | 'cloudinary' | 'gemini' | 'bobgo'
+  // ⚠️ 'pudo' / 'verifynow' appear in rows written before their services were
+  // retired. Nothing writes them now.
   service   String
   balance   Float? // primary numeric metric; NULL when the fetch failed
   unit      String? // 'sms' | 'lookup' | 'ZAR' | 'USD' | 'credits' | 'GB'
@@ -3922,10 +3965,48 @@ model ComplaintPhoto {
   complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
   url         String
   publicId    String
+  // IMAGE | VIDEO — the legacy model name stays for compatibility; short
+  // dispute videos share the same private, admin-visible evidence relation.
+  mediaType       String   @default("IMAGE")
+  thumbnailUrl    String?
+  durationSeconds Float?
   order       Int       @default(0)
   createdAt   DateTime  @default(now())
 
   @@index([complaintId])
+}
+
+// ── Seller reject-strike ledger (operator 2026-09) ──────────────────────────
+// One row per seller rejection that strikes. Replaces the bare
+// User.sellerRejectStrikes counter as the SYSTEM OF RECORD: the counter could
+// not say WHY a seller was struck, and an admin had no way to remove a single
+// unfair strike. The ban is now computed live from the count of un-removed
+// rows against BAN_AT (2, not 3). The User column is kept in step for the
+// quick gate, but this ledger is what admins read + edit.
+//
+// No FK on userId on purpose (same reasoning as NotificationConsent): a strike
+// is an audit record that must outlive account deletion rather than cascade
+// away with it.
+model SellerStrike {
+  id          String    @id @default(cuid())
+  userId      String
+  // OFFER | SALE — which rejection surface produced the strike.
+  source      String
+  // SOLD_ELSEWHERE | STOCK_ISSUE | ITEM_DAMAGED | CANT_FULFIL_SHIPPING |
+  // CHANGED_MIND | OTHER | (legacy) BUYER_SUSPICIOUS.
+  reason      String
+  listingId   String?
+  // The offer / transaction id the strike came from (audit trail).
+  referenceId String?
+  note        String?
+  createdAt   DateTime  @default(now())
+  // Set when an admin removes this one strike; removing it recomputes the ban
+  // live (dropping below BAN_AT lifts sellingBannedAt).
+  removedAt   DateTime?
+  removedById String?
+
+  @@index([userId, removedAt])
+  @@index([userId, createdAt])
 }
 
 // ── Multi-item orders (Phase 8b) ───────────────────────────────────

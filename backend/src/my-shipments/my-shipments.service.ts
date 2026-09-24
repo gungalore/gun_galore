@@ -60,7 +60,7 @@ export class MyShipmentsService {
         paidAt: { not: null },
         paymentStatus: { notIn: ['REFUNDED'] },
         shippingMethod: {
-          in: ['PUDO', 'TCG', 'DEALER_TRANSFER', 'PRIVATE_ARRANGE', 'COLLECTION'],
+          in: ['COURIER', 'DEALER_TRANSFER', 'PRIVATE_ARRANGE', 'COLLECTION'],
         },
       },
       orderBy: [{ deliveredAt: 'asc' }, { paidAt: 'desc' }],

@@ -359,10 +359,11 @@ export class RatingsService {
 
     const trustScore = Math.round(salesScore + ratingScore + deliveryScore + speedScore + qualityScore + ageScore);
 
-    // Tier (DEALER is sticky — never auto-changed)
-    const newTier = user.sellerTier === 'DEALER'
-      ? 'DEALER'
-      : this.calcTier(completedSales, trustScore);
+    // Tier. DEALER is retired (operator 2026-09 — the platform no longer has
+    // dealer SELLERS; dealers survive only as the DEALER_TRANSFER handover
+    // registry). The tier is no longer sticky: a legacy DEALER row is
+    // recalculated like anyone else on the next rating recompute.
+    const newTier = this.calcTier(completedSales, trustScore);
 
     // Cached average rating
     const newAvg = starsList.length > 0 ? Math.round((avgRating * 10)) / 10 : null;

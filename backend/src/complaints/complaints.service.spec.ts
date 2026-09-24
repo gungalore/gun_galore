@@ -13,6 +13,7 @@ function makeService(over: { tx?: unknown; heldCount?: number } = {}) {
       create: jest.fn().mockResolvedValue({ id: 'C1', referenceNumber: 'CO000001' }),
       update: jest.fn().mockResolvedValue({}),
     },
+    complaintPhoto: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
     adminAlert: { create: jest.fn().mockResolvedValue({}) },
     trackingEvent: { create: jest.fn().mockResolvedValue({}) },
   };
@@ -50,6 +51,7 @@ describe('ComplaintsService.create', () => {
       subject: 'Wrong scope',
       body: 'The scope delivered is a different model to the listing.',
       transactionId: 'TX1',
+      photos: [{ url: 'https://img/1.jpg', publicId: 'p1' }],
     });
     expect(res.drovePayoutHold).toBe(true);
     expect(prisma.transaction.updateMany).toHaveBeenCalledWith(
@@ -121,5 +123,32 @@ describe('ComplaintsService.create', () => {
       transactionId: 'TX1',
     });
     expect(res.drovePayoutHold).toBe(false);
+  });
+
+  it('requires at least one evidence photo for a buyer item-received dispute', async () => {
+    const { svc, prisma } = makeService({ tx: HELD_TX });
+    await expect(
+      svc.create('clerk1', {
+        category: 'DAMAGED',
+        subject: 'Arrived broken',
+        body: 'The item arrived damaged in transit, please see the photos.',
+        transactionId: 'TX1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    // The dispute must not have frozen the seller's payout without evidence.
+    expect(prisma.transaction.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('accepts the item-received dispute once a photo is attached', async () => {
+    const { svc, prisma } = makeService({ tx: HELD_TX });
+    const res = await svc.create('clerk1', {
+      category: 'DAMAGED',
+      subject: 'Arrived broken',
+      body: 'The item arrived damaged in transit, please see the attached photo.',
+      transactionId: 'TX1',
+      photos: [{ url: 'https://img/1.jpg', publicId: 'p1' }],
+    });
+    expect(res.drovePayoutHold).toBe(true);
+    expect(prisma.complaintPhoto.createMany).toHaveBeenCalled();
   });
 });

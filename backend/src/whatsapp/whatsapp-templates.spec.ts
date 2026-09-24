@@ -11,6 +11,7 @@ const FULL_VARS: Record<string, string> = {
   waybill: 'WB123456789',
   pin: '4821',
   txId: 'cktxid1234567890',
+  acceptToken: 'safe-action-token',
   title: FIXTURE_TITLE,
   listingTitle: FIXTURE_TITLE,
   item: FIXTURE_TITLE,

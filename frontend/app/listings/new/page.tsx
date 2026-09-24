@@ -112,8 +112,7 @@ const SELL_MODES: {
 // straight into state would render as a phantom pill and then be rejected on
 // publish.
 const SHIPPING_METHOD_VALUES: ShippingMethod[] = [
-  'PUDO',
-  'TCG',
+  'COURIER',
   'DEALER_TRANSFER',
   'PRIVATE_ARRANGE',
   'COLLECTION',
@@ -561,29 +560,11 @@ export default function NewListingPage() {
   const [previousAttemptHashes, setPreviousAttemptHashes] = useState<string[]>([]);
 
   // Delivery + pickup-address state. Lives outside `form` because the
-  // shipping-methods array doesn't fit the flat string-map.
+  // shipping-methods array doesn't fit the flat string-map. Non-firearm
+  // listings always ship via the single Bob Go door courier rail (['COURIER'],
+  // set by the effect below); firearms pick their hand-over route and
+  // collection-only categories force ['COLLECTION'].
   const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>([]);
-  // What the courier question should ASK this seller — answered by the
-  // server (GET /shipping/seller-courier-model), never by a flag this form
-  // reads. On the seller-picks model the answer describes the seller's OWN
-  // hand-over (walk it to a locker vs wait for a courier), so they tick the
-  // carriers they'll use. On the single-option model a courier collects from
-  // their address either way and the BUYER chooses door vs collection point,
-  // so there's exactly one thing to opt into — asking again would be asking a
-  // question whose answer we ignore. Seeded with today's behaviour and left
-  // there if the lookup is slow or fails: a courier question we couldn't ask
-  // must never be what stops someone listing.
-  const [courierModel, setCourierModel] = useState<{
-    sellerPicksOption: boolean;
-    courierMethods: ShippingMethod[];
-    label: string;
-    hint: string;
-  }>({
-    sellerPicksOption: true,
-    courierMethods: ['PUDO', 'TCG'],
-    label: 'Courier delivery',
-    hint: '',
-  });
   // Seller's consent to share phone + email with the buyer for a
   // PRIVATE_ARRANGE firearm transfer. Required to offer that option.
   const [paConsent, setPaConsent] = useState(false);
@@ -594,6 +575,10 @@ export default function NewListingPage() {
   const [plannedDealerName, setPlannedDealerName] = useState('');
   const [plannedDealerProvince, setPlannedDealerProvince] = useState('');
   const [plannedDealerArea, setPlannedDealerArea] = useState('');
+  const [plannedDealerAddress, setPlannedDealerAddress] = useState('');
+  const [plannedDealerPlaceId, setPlannedDealerPlaceId] = useState('');
+  const [plannedDealerLat, setPlannedDealerLat] = useState<number | null>(null);
+  const [plannedDealerLng, setPlannedDealerLng] = useState<number | null>(null);
   // Collection-only papers attestation — required for requiresPapers
   // categories (trailers / caravans). Seller confirms they hold valid
   // registration + roadworthy papers and will hand them over at
@@ -617,17 +602,16 @@ export default function NewListingPage() {
     emptyManualAddress,
   );
   // Coordinates come from Google Places autocomplete. We persist them on
-  // the listing so the buyer-side checkout can compute distance to the
-  // chosen Pudo destination locker. Null when the seller typed manually
-  // instead of picking a Google suggestion.
+  // the listing so the courier can be routed from the pickup address. Null
+  // when the seller typed manually instead of picking a Google suggestion.
   const [pickupLat, setPickupLat] = useState<number | null>(null);
   const [pickupLng, setPickupLng] = useState<number | null>(null);
 
-  // Parcel weight + dimensions. Required for non-firearm listings — Pudo
-  // and TCG both need them to quote rates. Stored as strings here for
-  // forgiving input UX, parsed to numbers on submit. Weight in kilograms
-  // (the unit a seller intuits), dimensions in centimetres (matches
-  // Pudo's API). Empty for firearm listings (the courier API isn't used).
+  // Parcel weight + dimensions. Required for non-firearm listings — the
+  // courier needs them to quote a rate. Stored as strings here for forgiving
+  // input UX, parsed to numbers on submit. Weight in kilograms (the unit a
+  // seller intuits), dimensions in centimetres. Empty for firearm listings
+  // (the courier API isn't used).
   const [parcel, setParcel] = useState({
     weightKg: '',
     lengthCm: '',
@@ -838,6 +822,10 @@ export default function NewListingPage() {
           plannedDealerName?: string | null;
           plannedDealerProvince?: string | null;
           plannedDealerArea?: string | null;
+          plannedDealerLocation?: string | null;
+          plannedDealerPlaceId?: string | null;
+          plannedDealerLat?: number | null;
+          plannedDealerLng?: number | null;
           // Unknown-valued: NUMBER attributes arrive as numbers, so the map
           // is normalised (not spread) before it reaches the inputs.
           attributes?: Record<string, unknown> | null;
@@ -890,6 +878,10 @@ export default function NewListingPage() {
           setPlannedDealerProvince(l.plannedDealerProvince);
         }
         if (l.plannedDealerArea) setPlannedDealerArea(l.plannedDealerArea);
+        if (l.plannedDealerPlaceId) setPlannedDealerPlaceId(l.plannedDealerPlaceId);
+        if (l.plannedDealerLat != null) setPlannedDealerLat(l.plannedDealerLat);
+        if (l.plannedDealerLng != null) setPlannedDealerLng(l.plannedDealerLng);
+        if (l.plannedDealerLocation) setPlannedDealerAddress(l.plannedDealerLocation);
         // Selling mode — only one of the four the Step-3 cards render. Anything
         // else leaves it blank so the step still demands a deliberate choice.
         const relistType = SELL_MODES.some((m) => m.value === l.listingType)
@@ -986,6 +978,10 @@ export default function NewListingPage() {
         plannedDealerName?: string;
         plannedDealerProvince?: string;
         plannedDealerArea?: string;
+        plannedDealerAddress?: string;
+        plannedDealerPlaceId?: string;
+        plannedDealerLat?: number | null;
+        plannedDealerLng?: number | null;
         // Everything below used to be left out of the draft, which meant a
         // PWA reload silently reset it: required specifications came back
         // blank, a multi-unit seller's quantity fell back to 1 (they could
@@ -1053,6 +1049,10 @@ export default function NewListingPage() {
       if (d.plannedDealerArea !== undefined) {
         setPlannedDealerArea(d.plannedDealerArea);
       }
+      if (d.plannedDealerAddress !== undefined) setPlannedDealerAddress(d.plannedDealerAddress);
+      if (d.plannedDealerPlaceId !== undefined) setPlannedDealerPlaceId(d.plannedDealerPlaceId);
+      if (d.plannedDealerLat !== undefined) setPlannedDealerLat(d.plannedDealerLat);
+      if (d.plannedDealerLng !== undefined) setPlannedDealerLng(d.plannedDealerLng);
       if (typeof d.stock === 'string') setStock(d.stock);
       if (typeof d.serialNumber === 'string') setSerialNumber(d.serialNumber);
       // Consents restore as the seller left them — same device, same seller,
@@ -1090,6 +1090,10 @@ export default function NewListingPage() {
           plannedDealerName,
           plannedDealerProvince,
           plannedDealerArea,
+          plannedDealerAddress,
+          plannedDealerPlaceId,
+          plannedDealerLat,
+          plannedDealerLng,
           // Specifications / quantity / serial / consents — all plain data,
           // all previously lost on a reload. attrValues is saved as-is
           // (strings + booleans) and re-applied via pendingAttrValuesRef on
@@ -1114,6 +1118,10 @@ export default function NewListingPage() {
     plannedDealerName,
     plannedDealerProvince,
     plannedDealerArea,
+    plannedDealerAddress,
+    plannedDealerPlaceId,
+    plannedDealerLat,
+    plannedDealerLng,
     attrValues,
     stock,
     serialNumber,
@@ -1196,44 +1204,6 @@ export default function NewListingPage() {
         if (typeof n === 'number' && Number.isFinite(n) && n > 0) {
           setDgWhThreshold(n);
         }
-      })
-      .catch(() => {});
-  }, []);
-
-  // Mirror the server's seller-courier model (see the courierModel state).
-  // One-shot on mount; a missing, failed or malformed response leaves the
-  // seller-picks default in place, which is byte-for-byte today's form.
-  useEffect(() => {
-    fetch(`${API_URL}/shipping/seller-courier-model`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: unknown) => {
-        const m = data as {
-          sellerPicksOption?: unknown;
-          courierMethods?: unknown;
-          label?: unknown;
-          hint?: unknown;
-        } | null;
-        if (!m || typeof m.sellerPicksOption !== 'boolean') return;
-        // Same sanitising as the relist prefill — the methods arrive as plain
-        // strings, and an unknown / retired one stored on the listing would
-        // just be rejected on publish.
-        const methods = Array.isArray(m.courierMethods)
-          ? m.courierMethods.filter((v): v is ShippingMethod =>
-              SHIPPING_METHOD_VALUES.includes(v as ShippingMethod),
-            )
-          : [];
-        // Nothing storable came back: a single tick that saves nothing is
-        // worse than the picker we already render, so keep the picker.
-        if (methods.length === 0) return;
-        setCourierModel({
-          sellerPicksOption: m.sellerPicksOption,
-          courierMethods: methods,
-          label:
-            typeof m.label === 'string' && m.label.trim()
-              ? m.label
-              : 'Courier delivery',
-          hint: typeof m.hint === 'string' ? m.hint : '',
-        });
       })
       .catch(() => {});
   }, []);
@@ -1401,18 +1371,11 @@ export default function NewListingPage() {
     'Delivery & address',
   ] as const;
 
-  // Render ONE "Courier delivery" tick instead of the per-carrier pills.
-  // Firearms and collection-only categories are excluded outright — neither
-  // is couriered (a firearm always moves through a licensed dealer), so
-  // no courier model has anything to say about them and their delivery UI is
-  // untouched. Every courier-copy branch in the delivery step keys on this.
-  const singleCourierOption =
-    !courierModel.sellerPicksOption &&
-    !isFirearm &&
-    !effectiveCollectionOnly;
-  // The single pill's own value. It stands for the WHOLE set — the onChange
-  // in the delivery step stores and clears every courierMethod together.
-  const courierPillValue = courierModel.courierMethods[0];
+  // Non-firearm, non-collection listings always ride the single Bob Go
+  // door-to-door rail — the seller has nothing to pick. Firearms choose their
+  // hand-over route; collection-only categories are forced to COLLECTION.
+  // Every courier-copy branch in the delivery step keys on this.
+  const isCourierListing = !isFirearm && !effectiveCollectionOnly;
 
   // Fetch the per-category attribute definitions whenever the selected
   // category changes. Race-guarded: a fast-clicking seller can fire several
@@ -1535,77 +1498,24 @@ export default function NewListingPage() {
     };
   }, [parcel]);
 
-  // Pudo's largest L2L locker box is 60 × 41 × 69 cm at 20 kg. Anything
-  // beyond that physically can't ship via the locker network, so we hide
-  // the PUDO pill from the seller (TCG door-to-door still works). The
-  // check is orientation-agnostic — we sort parcel dims desc against the
-  // sorted box max and bail if any axis overshoots.
-  const PUDO_MAX_BOX_CM = [69, 60, 41] as const; // sorted desc
-  const PUDO_MAX_WEIGHT_KG = 20;
-  const isOversizeForPudo = useMemo(() => {
-    const { weightKg, lengthCm, widthCm, heightCm } = parsedParcel;
-    if (
-      lengthCm == null ||
-      widthCm == null ||
-      heightCm == null ||
-      weightKg == null
-    ) {
-      return false; // not enough info yet — don't lock the pill prematurely
-    }
-    if (weightKg > PUDO_MAX_WEIGHT_KG) return true;
-    const sorted = [lengthCm, widthCm, heightCm].sort((a, b) => b - a);
-    return (
-      sorted[0] > PUDO_MAX_BOX_CM[0] ||
-      sorted[1] > PUDO_MAX_BOX_CM[1] ||
-      sorted[2] > PUDO_MAX_BOX_CM[2]
-    );
-  }, [parsedParcel]);
-
-  // If the seller had PUDO selected and then types dimensions that push
-  // the parcel oversize, silently drop the PUDO pick — otherwise they'd
-  // sail through step 3 with an invalid combo and the buyer would hit
-  // "no rate available" at checkout.
-  //
-  // Only on the seller-picks model. When the seller doesn't pick there is no
-  // PUDO pill to drop — the methods travel as one set — and the size limit is
-  // the carrier's to enforce: an oversize parcel simply comes back with no
-  // collection points, leaving door-to-door. Stripping half the set here
-  // would block a listing the carrier would have happily carried.
+  // Non-firearm listings ride the single Bob Go door-to-door rail. Keep
+  // shippingMethods pinned to ['COURIER'] for them, regardless of what a
+  // legacy draft / relist restored — those rails no longer exist. Firearms
+  // and collection-only categories are handled by their own effects below and
+  // are excluded here so the two never fight.
   useEffect(() => {
-    if (!courierModel.sellerPicksOption) return;
-    if (isOversizeForPudo && shippingMethods.includes('PUDO')) {
-      setShippingMethods((prev) => prev.filter((m) => m !== 'PUDO'));
+    if (isFirearm || effectiveCollectionOnly) return;
+    if (shippingMethods.length !== 1 || shippingMethods[0] !== 'COURIER') {
+      setShippingMethods(['COURIER']);
     }
-  }, [courierModel.sellerPicksOption, isOversizeForPudo, shippingMethods]);
-
-  // One tick, both methods. A draft or Relist captured while the seller still
-  // picked can carry just one of them, and so can an older listing whose PUDO
-  // pick the effect above once stripped — either way the single pill would
-  // read as ticked while only half the set gets published. Complete the set
-  // instead. ADD-only, so unticking (which clears the whole set in one go)
-  // isn't fought by this.
-  useEffect(() => {
-    if (!singleCourierOption) return;
-    const picked = courierModel.courierMethods.filter((m) =>
-      shippingMethods.includes(m),
-    );
-    if (
-      picked.length === 0 ||
-      picked.length === courierModel.courierMethods.length
-    ) {
-      return;
-    }
-    setShippingMethods((prev) =>
-      Array.from(new Set([...prev, ...courierModel.courierMethods])),
-    );
-  }, [singleCourierOption, courierModel, shippingMethods]);
+  }, [isFirearm, effectiveCollectionOnly, shippingMethods]);
 
   // The delivery-method options change when the seller switches between
-  // a firearm and non-firearm category (PUDO + TCG vs DEALER_TRANSFER +
-  // PRIVATE_ARRANGE). Without this reset, a prior pick from the other
-  // set stays in shippingMethods and gets sent to the API alongside the
-  // new picks — the server then rejects with
-  // "shippingMethods must contain no more than 2 elements".
+  // a firearm and non-firearm category (DEALER_TRANSFER + PRIVATE_ARRANGE vs
+  // COURIER). Without this reset, a prior pick from the other set stays in
+  // shippingMethods and gets sent to the API alongside the new picks — the
+  // server then rejects with "shippingMethods must contain no more than 2
+  // elements".
   //
   // Phase M dealer-lock — for firearms we PRE-SET DEALER_TRANSFER so it's
   // always present. The pill renders disabled-locked below so the
@@ -1625,7 +1535,7 @@ export default function NewListingPage() {
       const restored =
         parked && parked.categoryId === form.categoryId ? parked.methods : null;
       if (restored) pendingShippingRef.current = null;
-      setShippingMethods(restored ?? (isFirearm ? ['DEALER_TRANSFER'] : []));
+      setShippingMethods(restored ?? (isFirearm ? ['DEALER_TRANSFER'] : ['COURIER']));
     }
   }, [isFirearm, form.categoryId]);
   // Defensive: even if DEALER_TRANSFER somehow gets stripped (e.g.
@@ -1746,14 +1656,9 @@ export default function NewListingPage() {
       if (!hasPrice) step3.push('Your price');
     }
 
-    // Step 4 — delivery + address. The seller picks ≥1 shipping method
-    // and fills the pickup address. NO locker selection here — for PUDO,
-    // the seller drops at any locker using a delivery PIN; the buyer
-    // picks the destination locker at checkout.
-    //
-    // The address is required on EVERY path and must stay that way: under the
-    // single-option courier model it's the address a courier is dispatched
-    // to, so "locker-only, no address" cannot be a listable state.
+    // Step 4 — delivery + address. Non-firearm listings ride the single door
+    // courier rail and firearms pick their hand-over route; the pickup address
+    // is always required because it is where a courier is dispatched from.
     const step4: string[] = [];
     if (shippingMethods.length === 0) {
       step4.push(
@@ -1772,14 +1677,10 @@ export default function NewListingPage() {
       step4.push('Pickup address — postal code');
     }
     if (!pickupAddress.province) step4.push('Pickup address — province');
-    // Parcel weight + dims required for non-firearm so the courier API
-    // has something to quote against. Firearms skip this — DEALER_TRANSFER
-    // and PRIVATE_ARRANGE don't use Pudo/TCG. Collection-only listings
-    // also skip it — there's no courier, so no parcel to quote.
-    // Parcel weight + dims are required for non-firearm so the courier API has
+    // Parcel weight + dims required for non-firearm so the courier API has
     // something to quote against. Firearms skip this — DEALER_TRANSFER and
-    // PRIVATE_ARRANGE don't use Pudo/TCG. Collection-only listings skip it
-    // too: there's no courier, so no parcel to quote.
+    // PRIVATE_ARRANGE don't use the courier API. Collection-only listings skip
+    // it too: there's no courier, so no parcel to quote.
     if (!isFirearm && !effectiveCollectionOnly) {
       if (parsedParcel.weightKg == null) step4.push('Parcel weight');
       if (
@@ -1799,6 +1700,9 @@ export default function NewListingPage() {
     // mandatory before publish (2026-07-13). Non-firearm listings skip it.
     if (isFirearm) {
       if (!plannedDealerName.trim()) step4.push('Dealer for the transfer');
+      if (!plannedDealerPlaceId || plannedDealerLat == null || plannedDealerLng == null) {
+        step4.push('Gunshop selected from Google Places');
+      }
       if (!plannedDealerProvince) step4.push('Dealer province');
       if (!plannedDealerArea.trim()) step4.push('Dealer area');
       // Serial + photos live in this step; without gating here a seller could
@@ -2165,6 +2069,9 @@ export default function NewListingPage() {
             plannedDealerName: plannedDealerName.trim(),
             plannedDealerProvince,
             plannedDealerArea: plannedDealerArea.trim(),
+            plannedDealerPlaceId,
+            plannedDealerLat,
+            plannedDealerLng,
           }
         : {}),
       // Collection papers attestation — only meaningful for requiresPapers
@@ -2183,11 +2090,8 @@ export default function NewListingPage() {
       pickupPostalCode: pickupAddress.postalCode.trim() || undefined,
       pickupLat: pickupLat ?? undefined,
       pickupLng: pickupLng ?? undefined,
-      // pickupPudoLockerId intentionally omitted — seller doesn't pre-pick
-      // a Pudo drop-off locker. They drop at any locker with the delivery
-      // PIN we issue at dispatch time.
-      // Parcel dimensions + weight — required by Pudo/TCG rates. Sent
-      // as integers in the units the schema stores (grams + cm). Skipped
+      // Parcel dimensions + weight — required to quote the door courier rate.
+      // Sent as integers in the units the schema stores (grams + cm). Skipped
       // for firearms since dealer transfers don't use the courier API.
       weightGrams: parsedParcel.weightKg
         ? Math.round(parsedParcel.weightKg * 1000)
@@ -2411,17 +2315,20 @@ export default function NewListingPage() {
       );
       return;
     }
-    // Planned dealer-stock guard — firearms/barrels must declare where the
-    // item will be dealer-stocked (dealer name + province + area). Mirrors
+    // Planned dealer-stock guard — firearms/barrels must identify where the
+    // item will be dealer-stocked, including the Google Place and coordinates. Mirrors
     // the serial guard: abort with an instant message before the API.
     if (
       isFirearm &&
       (!plannedDealerName.trim() ||
+        !plannedDealerPlaceId ||
+        plannedDealerLat == null ||
+        plannedDealerLng == null ||
         !plannedDealerProvince ||
         !plannedDealerArea.trim())
     ) {
       setPublishError(
-        'Firearm listings need the planned dealer-stock location — a dealer name, province, and area — in the Delivery & address step.',
+        'Firearm listings need a gunshop selected from Google Places, plus its name and area, in the Delivery & address step.',
       );
       return;
     }
@@ -3880,13 +3787,10 @@ export default function NewListingPage() {
                 ? 'Buyers collect this one from you — in person, or with a transporter they arrange themselves. No courier. Add your pickup address so buyers know where they’re collecting from.'
                 : isFirearm
                 ? 'Firearms must move through a SAPS-licensed dealer. Pick one or both arrangement options below, then add your pickup address.'
-                : singleCourierOption
-                ? 'Add the parcel size and the address a courier collects it from. Buyers choose door delivery or a collection point when they check out.'
-                : 'Pick which couriers you offer, then add the pickup address. We use it to suggest your nearest Pudo locker.'
+                : 'Add the parcel size and the address a courier collects it from. Delivery is door-to-door at checkout.'
             }
           >
-            {/* Parcel info — captured first so the delivery picker below
-                can disable PUDO if the parcel overshoots locker limits.
+            {/* Parcel info — required so Bob Go can quote the door rate.
                 Hidden for firearms because DEALER_TRANSFER and
                 PRIVATE_ARRANGE don't use the courier API. Also hidden for
                 collection-only listings — there's no courier to quote. */}
@@ -3894,27 +3798,13 @@ export default function NewListingPage() {
               <Field
                 label="Parcel weight & size"
                 required
-                hint={
-                  singleCourierOption
-                    ? 'We use this to quote real courier rates at checkout, and it decides what the buyer can choose — a parcel too big for a collection-point box is offered door-to-door only.'
-                    : "We use this to quote real Pudo / TCG rates at checkout. Pudo's largest locker box is 60 × 41 × 69 cm at 20 kg — anything bigger ships TCG door-to-door."
-                }
+                hint="We use this to quote a real courier rate at checkout."
                 tip={
-                  singleCourierOption ? (
-                    <>
-                      Used to quote couriers in real time. The size also
-                      decides the buyer&apos;s options: a parcel too big for a
-                      collection-point box simply comes back with no
-                      collection points, so they get door-to-door delivery.
-                    </>
-                  ) : (
-                    <>
-                      Used to quote couriers in real time. Pudo (locker
-                      drops) is cheapest and capped at 60 × 41 × 69 cm /
-                      20 kg. Anything bigger or heavier ships via TCG
-                      door-to-door.
-                    </>
-                  )
+                  <>
+                    Used to quote the door courier in real time. Weight and
+                    dimensions have to be right — a wrong size can get the
+                    booking rejected or re-charged after collection.
+                  </>
                 }
               >
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -3943,29 +3833,6 @@ export default function NewListingPage() {
                     placeholder="10"
                   />
                 </div>
-                {isOversizeForPudo && (
-                  <p
-                    className="text-xs mt-2"
-                    style={{
-                      color: 'var(--warning)',
-                      lineHeight: 1.55,
-                    }}
-                  >
-                    {singleCourierOption ? (
-                      <>
-                        Bigger than a collection-point box — buyers will only
-                        be offered door-to-door delivery for this parcel.
-                        Nothing to change; it still lists.
-                      </>
-                    ) : (
-                      <>
-                        Too big for a Pudo locker — only door-to-door (TCG)
-                        will be offered to buyers. Buyers will see this listing
-                        as &ldquo;courier only&rdquo;.
-                      </>
-                    )}
-                  </p>
-                )}
               </Field>
             )}
 
@@ -4105,9 +3972,9 @@ export default function NewListingPage() {
 
             {!effectiveCollectionOnly && (
             <Field
-              label="Delivery options"
-              required
-              tipTitle="Delivery options"
+              label={isFirearm ? 'Delivery options' : 'Delivery'}
+              required={isFirearm}
+              tipTitle={isFirearm ? 'Delivery options' : 'Delivery'}
               tip={
                 isFirearm ? (
                   <>
@@ -4118,25 +3985,17 @@ export default function NewListingPage() {
                     meet at a dealer to do the licence transfer in person.
                     Use this for local sales.
                   </>
-                ) : singleCourierOption ? (
-                  // The server owns this copy — it's the only place that
-                  // knows how the parcel actually moves on the live rail. A
-                  // blank hint renders no ⓘ at all (Field skips a falsy tip)
-                  // rather than an empty tooltip.
-                  courierModel.hint
                 ) : (
                   <>
-                    <strong>Pudo locker-to-locker:</strong> cheapest. You
-                    drop at any Pudo locker, buyer picks any locker to
-                    collect. Self-service, 24/7. Capped at 60 × 41 × 69 cm
-                    / 20 kg. <br />
-                    <strong>Door delivery:</strong> courier to the buyer’s address
-                    pickup and delivery. Pricier but works for any size or
-                    weight.
+                    Bob Go collects the parcel from your pickup address between
+                    08:00 and 17:00 and delivers it to the buyer&apos;s door.
+                    The buyer pays one delivery charge, quoted at checkout.
                   </>
                 )
               }
             >
+              {isFirearm ? (
+              <>
               <MultiSelectPillGroup<ShippingMethod>
                 value={shippingMethods}
                 onChange={(next) => {
@@ -4153,81 +4012,52 @@ export default function NewListingPage() {
                     ]);
                     return;
                   }
-                  // One pill standing for the whole set: a tick stores every
-                  // method the server named, an untick removes them all.
-                  // Toggling the pill on its own would leave the other value
-                  // behind and publish half a pair.
-                  if (singleCourierOption) {
-                    const ticked = next.includes(courierPillValue);
-                    const rest = shippingMethods.filter(
-                      (m) => !courierModel.courierMethods.includes(m),
-                    );
-                    setShippingMethods(
-                      ticked
-                        ? [...rest, ...courierModel.courierMethods]
-                        : rest,
-                    );
-                    return;
-                  }
                   setShippingMethods(next);
                 }}
-                options={
-                  isFirearm
-                    ? [
-                        {
-                          value: 'DEALER_TRANSFER',
-                          label: 'Dealer-stocked transfer · required',
-                          description:
-                            'You drop with your dealer; buyer collects from theirs. Required for all firearm listings.',
-                          disabled: true,
-                        },
-                        {
-                          value: 'PRIVATE_ARRANGE',
-                          label: 'Also offer: Arrange privately',
-                          description:
-                            'Optional. Buyer + seller meet at a dealer to do the transfer in person.',
-                        },
-                      ]
-                    : singleCourierOption
-                      ? [
-                          // Never disabled on size: the carrier decides what
-                          // it can carry, and an oversize parcel just loses
-                          // the collection-point half of the buyer's menu.
-                          {
-                            value: courierPillValue,
-                            label: courierModel.label,
-                            description: courierModel.hint,
-                          },
-                        ]
-                      : [
-                          {
-                            value: 'PUDO',
-                            label: isOversizeForPudo
-                              ? 'Pudo locker (unavailable — too large)'
-                              : 'Pudo locker-to-locker',
-                            description: isOversizeForPudo
-                              ? 'Parcel exceeds Pudo locker box limits.'
-                              : 'Self-service drop & collect.',
-                            disabled: isOversizeForPudo,
-                          },
-                          {
-                            value: 'TCG',
-                            label: 'Door delivery',
-                            description: 'Door-to-door courier.',
-                          },
-                        ]
-                }
+                options={[
+                  {
+                    value: 'DEALER_TRANSFER',
+                    label: 'Dealer-stocked transfer · required',
+                    description:
+                      'You drop with your dealer; buyer collects from theirs. Required for all firearm listings.',
+                    disabled: true,
+                  },
+                  {
+                    value: 'PRIVATE_ARRANGE',
+                    label: 'Also offer: Arrange privately',
+                    description:
+                      'Optional. Buyer + seller meet at a dealer to do the transfer in person.',
+                  },
+                ]}
               />
-              {/* MultiSelectPillGroup doesn't render option descriptions, and
-                  the hint is the whole explanation of what the seller just
-                  ticked — so it goes on the page, not only behind the ⓘ. */}
-              {singleCourierOption && courierModel.hint && (
-                <p
-                  className="text-xs mt-2"
-                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+              </>
+              ) : (
+                <div
+                  className="rounded-[6px] p-4 text-sm"
+                  style={{
+                    background: 'var(--bg-card)',
+                    border: '0.5px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    lineHeight: 1.55,
+                  }}
                 >
-                  {courierModel.hint}
-                </p>
+                  <p
+                    className="text-xs uppercase"
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      letterSpacing: '0.05em',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Door delivery
+                  </p>
+                  <p style={{ color: 'var(--text-secondary)' }}>
+                    A courier collects the parcel from your pickup address
+                    between 08:00 and 17:00 — have it packed and ready. It is
+                    delivered to the buyer&apos;s door, and they pay one
+                    delivery charge quoted at checkout.
+                  </p>
+                </div>
               )}
               {/* PRIVATE_ARRANGE contact-sharing consent — REQUIRED to offer
                   the option. When ticked, the buyer of a private-arrangement
@@ -4288,6 +4118,40 @@ export default function NewListingPage() {
                         fontSize: '14px',
                         outline: 'none',
                       }}
+                    />
+                    <AddressAutocomplete
+                      value={plannedDealerAddress}
+                      placeTypes={['establishment']}
+                      onChange={(address, placeId) => {
+                        setPlannedDealerAddress(address);
+                        setPlannedDealerPlaceId(placeId ?? '');
+                        if (!placeId) {
+                          setPlannedDealerLat(null);
+                          setPlannedDealerLng(null);
+                        }
+                      }}
+                      onPlaceSelected={(place) => {
+                        if (place.name) setPlannedDealerName(place.name);
+                        if (place.placeId) setPlannedDealerPlaceId(place.placeId);
+                        setPlannedDealerLat(place.components.lat ?? null);
+                        setPlannedDealerLng(place.components.lng ?? null);
+                        if (place.components.province) {
+                          setPlannedDealerProvince(place.components.province);
+                        }
+                        const area = place.components.city || place.components.suburb;
+                        if (area) setPlannedDealerArea(area);
+                      }}
+                      onComponents={(components) => {
+                        setPlannedDealerLat(components.lat ?? null);
+                        setPlannedDealerLng(components.lng ?? null);
+                        if (components.province) {
+                          setPlannedDealerProvince(components.province);
+                        }
+                        const area = components.city || components.suburb;
+                        if (area) setPlannedDealerArea(area);
+                      }}
+                      placeholder="Search for the gunshop address…"
+                      hideLocate
                     />
                     <select
                       value={plannedDealerProvince}
@@ -4352,10 +4216,9 @@ export default function NewListingPage() {
                     className="text-xs mt-1"
                     style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
                   >
-                    Required — buyers use this to see how far they&apos;d
-                    drive to collect. You&apos;re not locked in; the actual
-                    dealer is captured later when you upload the stock-in
-                    proof.
+                  Required — choose the gunshop in Google Places so buyers can
+                  see its distance from them. Dealer transfer and stock-in
+                  verification will use this nominated location.
                   </p>
                 </div>
               )}
@@ -4447,7 +4310,7 @@ export default function NewListingPage() {
               label="Pickup address"
               required
               hint={
-                singleCourierOption
+                isCourierListing
                   ? 'Search for your address, then check the details below. A courier collects the parcel from here between 08:00 and 17:00, so it has to be an address someone can reach you at.'
                   : 'Search for your address, then check the details below.'
               }
@@ -4476,12 +4339,9 @@ export default function NewListingPage() {
               </div>
             </Field>
 
-            {/* What happens at this address once it sells. On the
-                single-option model the seller drops the parcel NOWHERE — a
-                courier comes to them for both delivery shapes — so the Pudo
-                drop-off note below must not render there, even though PUDO is
-                one of the stored methods. */}
-            {singleCourierOption ? (
+            {/* What happens at this address once it sells. A courier collects
+                from the seller's address — they drop the parcel nowhere. */}
+            {isCourierListing && (
               <p
                 className="text-xs"
                 style={{
@@ -4491,24 +4351,8 @@ export default function NewListingPage() {
               >
                 Collection: once the listing sells, a courier comes to this
                 address between 08:00 and 17:00 — you don&apos;t drop the
-                parcel off anywhere. Have it packed and ready. The buyer
-                chooses whether it goes to their door or to a collection point
-                near them.
+                parcel off anywhere. Have it packed and ready.
               </p>
-            ) : (
-              shippingMethods.includes('PUDO') && (
-                <p
-                  className="text-xs"
-                  style={{
-                    color: 'var(--text-tertiary)',
-                    lineHeight: 1.5,
-                  }}
-                >
-                  Pudo drop-off: once the listing sells you'll get a delivery
-                  PIN — take the parcel to any Pudo locker, scan the PIN, and
-                  load it. The buyer picks the destination locker at checkout.
-                </p>
-              )
             )}
           </FormSection>
           )}
@@ -4788,12 +4632,9 @@ export default function NewListingPage() {
                   <strong style={{ color: 'var(--text-primary)' }}>
                     You dispatch.
                   </strong>{' '}
-                  {/* Keyed on the rail, not the category — this line covers
-                      firearms too, so singleCourierOption (which excludes
-                      them) would leave the wrong half of it standing. */}
-                  {courierModel.sellerPicksOption
-                    ? 'Ship within 48 hours by courier — to their door or a pickup point — or drop at your dealer for firearm transfers.'
-                    : 'Have the parcel ready within 48 hours — a courier collects it from your pickup address — or drop at your dealer for firearm transfers.'}
+                  Have the parcel ready within 48 hours — a courier collects it
+                  from your pickup address — or drop at your dealer for firearm
+                  transfers.
                 </li>
                 <li>
                   <strong style={{ color: 'var(--text-primary)' }}>

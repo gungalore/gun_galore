@@ -4,10 +4,11 @@ import { OzowService } from './ozow.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { ShippingService } from '../shipping/shipping.service';
+import { pickupDeadline } from '../shipping/pickup-dates';
 import { PAYMENT_MODE } from './transactions.service';
 import { reversalListingData } from './inventory';
 
-// Two thresholds for courier-shipped orders (PUDO / TCG only —
+// Two thresholds for courier-shipped orders (COURIER only —
 // PRIVATE_ARRANGE has no dispatch step, DEALER_TRANSFER routes
 // through the dealer and not the SLA). Both measured from
 // acceptedAt (TOK-7 Phase 2 change — was paidAt before).
@@ -27,7 +28,7 @@ const DISPATCH_WINDOW_DAYS = 5;
  * seller could not have dispatched if they wanted to.
  *
  * Deliberately NARROW. Any row where a booking genuinely completed
- * (shipmentBookedAt set), or one on the legacy Pudo/TCG rails where a create
+ * (shipmentBookedAt set), or one on any other provider where a create
  * call returning meant a courier was committed, is the seller's responsibility
  * exactly as before. Widening this beyond our own carrier failures would hand
  * every late seller a free excuse.
@@ -80,7 +81,7 @@ export class DispatchSlaService {
         rejectedAt: null,
         dispatchNudgedAt: null,
         paymentStatus: 'HELD',
-        shippingMethod: { in: ['PUDO', 'TCG'] },
+        shippingMethod: 'COURIER',
       },
       include: {
         listing: true,
@@ -146,7 +147,7 @@ export class DispatchSlaService {
         dispatchedAt: null,
         rejectedAt: null,
         paymentStatus: 'HELD',
-        shippingMethod: { in: ['PUDO', 'TCG'] },
+        shippingMethod: 'COURIER',
       },
       include: { listing: true, seller: true, buyer: true },
       take: 50,
@@ -321,7 +322,10 @@ export class DispatchSlaService {
   // that isn't APPROVED (unreleaseable anyway). Money never moves here.
   // ------------------------------------------------------------------
   async alertStuckHeldFunds(): Promise<{ scanned: number; alerted: number }> {
-    const STUCK_AFTER_HOURS = 72;
+    // Door payout clock (operator 2026-09): the buyer has 24h from delivery to
+    // confirm or dispute; after that the admin payout option appears. No
+    // auto-release — the admin still releases manually. (Was 72h.)
+    const STUCK_AFTER_HOURS = 24;
     const cutoff = new Date(Date.now() - STUCK_AFTER_HOURS * 60 * 60 * 1000);
 
     const stuck = await this.prisma.transaction.findMany({
@@ -332,7 +336,7 @@ export class DispatchSlaService {
         deliveredAt: { not: null, lte: cutoff },
         adminAlertedForStuckFundsAt: null,
         swapId: null,
-        shippingMethod: { in: ['PUDO', 'TCG'] },
+        shippingMethod: 'COURIER',
       },
       select: {
         id: true,
@@ -377,7 +381,12 @@ export class DispatchSlaService {
           }),
           this.prisma.transaction.update({
             where: { id: tx.id },
-            data: { adminAlertedForStuckFundsAt: new Date() },
+            data: {
+              adminAlertedForStuckFundsAt: new Date(),
+              // The payout option is now available to the admin. Stamped here
+              // so the clock is observable and fires once.
+              adminPayoutEnabledAt: new Date(),
+            },
           }),
         ]);
         alerted++;
@@ -393,13 +402,13 @@ export class DispatchSlaService {
     return { scanned: stuck.length, alerted };
   }
 
-  // 48h courier confirm-receipt nudge — sits UNDER the 72h stuck-funds admin
-  // alert above. A parcel DELIVERED >=48h ago that the buyer never confirmed
-  // is usually just a forgetful buyer: one push+SMS reminder self-heals most
-  // of them without a human chasing. One-shot via buyerConfirmNudgedAt.
-  // Courier legs only (COLLECTION has its own collectionConfirmNudgedAt path).
+  // 24h courier confirm-receipt nudge — sits UNDER the 24h stuck-funds admin
+  // payout-option alert above. A parcel DELIVERED >=24h ago that the buyer
+  // never confirmed is usually just a forgetful buyer: one push+SMS reminder
+  // self-heals most of them without a human chasing. One-shot via
+  // buyerConfirmNudgedAt. Courier legs only (COLLECTION has its own path).
   async nudgeUnconfirmedReceipt(): Promise<{ scanned: number; nudged: number }> {
-    const NUDGE_AFTER_HOURS = 48;
+    const NUDGE_AFTER_HOURS = 24;
     const cutoff = new Date(Date.now() - NUDGE_AFTER_HOURS * 60 * 60 * 1000);
     const due = await this.prisma.transaction.findMany({
       where: {
@@ -409,7 +418,7 @@ export class DispatchSlaService {
         deliveredAt: { not: null, lte: cutoff },
         buyerConfirmNudgedAt: null,
         swapId: null,
-        shippingMethod: { in: ['PUDO', 'TCG'] },
+        shippingMethod: 'COURIER',
       },
       include: { listing: { select: { title: true } }, buyer: true },
       take: 200,
@@ -450,8 +459,88 @@ export class DispatchSlaService {
     return { scanned: due.length, nudged };
   }
 
+  /**
+   * STORE_PICKUP payout clock (operator 2026-09). The buyer collects from a
+   * Pargo counter; the seller's admin payout option appears at whichever comes
+   * first:
+   *   - 24h after the buyer collected (carrier reports DELIVERED → collectedAt), or
+   *   - the end of the next business day after the parcel became collectable
+   *     (ready-for-pickup), if the buyer never collected.
+   * The buyer's own physical window (Pargo: 8 days) is untouched — this only
+   * decides when an ADMIN may release. No auto-release. One-shot via
+   * adminPayoutEnabledAt.
+   */
+  async enableStorePickupPayout(): Promise<{ scanned: number; enabled: number }> {
+    const candidates = await this.prisma.transaction.findMany({
+      where: {
+        paymentStatus: 'HELD',
+        deliveryOption: 'STORE_PICKUP',
+        adminPayoutEnabledAt: null,
+        swapId: null,
+      },
+      select: {
+        id: true,
+        orderReference: true,
+        buyerTotal: true,
+        sellerPayout: true,
+        readyForPickupAt: true,
+        collectedAt: true,
+        listing: { select: { title: true } },
+        buyer: { select: { username: true } },
+        seller: { select: { username: true } },
+      },
+      take: 200,
+    });
+
+    let enabled = 0;
+    const now = Date.now();
+    for (const tx of candidates) {
+      const collectedDue =
+        tx.collectedAt != null &&
+        tx.collectedAt.getTime() <= now - 24 * 60 * 60 * 1000;
+      const deadline = tx.readyForPickupAt
+        ? new Date(`${pickupDeadline(tx.readyForPickupAt).iso}T23:59:59+02:00`)
+        : null;
+      const nonPickupDue = deadline != null && now >= deadline.getTime();
+      if (!collectedDue && !nonPickupDue) continue;
+
+      const rand = (c: number) => 'R' + (c / 100).toFixed(2);
+      try {
+        // CAS-claim so overlapping runs enable exactly once.
+        const claim = await this.prisma.transaction.updateMany({
+          where: { id: tx.id, adminPayoutEnabledAt: null },
+          data: { adminPayoutEnabledAt: new Date() },
+        });
+        if (claim.count === 0) continue;
+        await this.prisma.adminAlert.create({
+          data: {
+            type: 'STORE_PICKUP_PAYOUT_AVAILABLE',
+            referenceId: tx.id,
+            urgent: false,
+            context:
+              `Store pickup order ${tx.orderReference ?? tx.id} (${tx.listing?.title ?? 'listing'}): ` +
+              (collectedDue
+                ? 'buyer collected and the 24h review window has passed. '
+                : 'not collected within the pickup deadline. ') +
+              `${rand(tx.buyerTotal)} HELD; seller @${tx.seller?.username ?? '—'} owed ${rand(tx.sellerPayout)}. ` +
+              `Review + release manually from the transaction dossier.`,
+          },
+        });
+        enabled++;
+      } catch (err) {
+        this.logger.warn(
+          `store-pickup payout enable failed for ${tx.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (enabled > 0) {
+      this.logger.log(`Store-pickup payout: enabled for ${enabled} order(s)`);
+    }
+    return { scanned: candidates.length, enabled };
+  }
+
   // In-transit stall detection — a dispatched courier parcel with NO scan
-  // progress for >7d (courier lost it, or the Pudo/TCG poll silently returning
+  // progress for >7d (courier lost it, or the tracking poll silently returning
   // nothing because creds broke). The pre-dispatch SLA and stuck-funds sweep
   // both miss this (one is pre-dispatch, the other needs deliveredAt), so a
   // wedged parcel is polled forever with money HELD and nobody told. One-shot
@@ -468,7 +557,7 @@ export class DispatchSlaService {
         deliveredAt: null,
         adminAlertedForTransitStallAt: null,
         swapId: null,
-        shippingMethod: { in: ['PUDO', 'TCG'] },
+        shippingMethod: 'COURIER',
       },
       select: {
         id: true,
@@ -530,7 +619,7 @@ export class DispatchSlaService {
   // ------------------------------------------------------------------
   // FLOW-F4 (H12/H15/H16) — DEALER_TRANSFER stall backstop. A firearm sale
   // routes through a licensed dealer, so it is deliberately EXCLUDED from the
-  // courier nudge/auto-refund/stuck-funds sweeps above (all PUDO/TCG-only).
+  // courier nudge/auto-refund/stuck-funds sweeps above (all courier-only).
   // That left an accepted-but-never-transferred firearm order with ZERO
   // backstop: money HELD indefinitely, no seller reminder, no admin signal,
   // and — until the raiseDispute fix — no buyer escape either.
@@ -661,7 +750,7 @@ export class DispatchSlaService {
 
   // ------------------------------------------------------------------
   // FLOW-F6 (H6) — COLLECTION stall backstop. An in-person pickup has no
-  // dispatch step, so it is EXCLUDED from every courier sweep (PUDO/TCG-only)
+  // dispatch step, so it is EXCLUDED from every courier sweep (courier-only)
   // and the DEALER_TRANSFER sweep. That left a paid + accepted + never-
   // collected order with ZERO backstop: money HELD indefinitely, no buyer
   // reminder, no admin signal — and it only polluted the mislabelled

@@ -16,7 +16,7 @@ describe('ReceiptService — buyer purchase receipt', () => {
     orderReference: 'GG-0001',
     paidAt: new Date('2026-06-01T10:00:00Z'),
     paymentStatus: 'HELD',
-    shippingMethod: 'PUDO',
+    shippingMethod: 'COURIER',
     listingPrice: 250000,
     shippingCost: 9900,
     processingFee: 9100,

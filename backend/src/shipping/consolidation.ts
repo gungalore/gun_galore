@@ -19,15 +19,13 @@
  * are booked.
  */
 
-/** The two courier shapes. Everything else is a non-courier hand-over. */
-export type CourierSlot = 'PUDO' | 'TCG';
+/** The one courier shape. Everything else is a non-courier hand-over. */
+export type CourierSlot = 'COURIER';
 
 export interface ShippingLineInput {
   listingId: string;
   shippingMethod: string;
   quantity?: number;
-  /** Bob Go collection-point id (or a legacy Pudo terminal code). */
-  pickupPointId?: string | number | null;
   deliveryAddress?: {
     streetAddress?: string;
     suburb?: string;
@@ -77,16 +75,13 @@ export function planShippingGroups(
     const m = meta.get(line.listingId);
     if (!m) continue;
     if (m.isFirearm) continue;
-    if (line.shippingMethod !== 'PUDO' && line.shippingMethod !== 'TCG') continue;
+    if (line.shippingMethod !== 'COURIER') continue;
 
     const owner = m.sellerId;
     const a = line.deliveryAddress;
     // The destination is part of the key: two lines only share a waybill if
     // they are going to the same place.
-    const destKey =
-      line.shippingMethod === 'PUDO'
-        ? `L:${line.pickupPointId ?? ''}`
-        : `A:${a?.streetAddress ?? ''}|${a?.suburb ?? ''}|${a?.city ?? ''}|${a?.postalCode ?? ''}`;
+    const destKey = `A:${a?.streetAddress ?? ''}|${a?.suburb ?? ''}|${a?.city ?? ''}|${a?.postalCode ?? ''}`;
     const groupKey = `${owner}|${line.shippingMethod}|${destKey}`;
 
     const existing = groups.get(groupKey);

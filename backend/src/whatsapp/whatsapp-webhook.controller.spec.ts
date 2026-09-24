@@ -34,6 +34,12 @@ function makePrisma() {
       findFirst: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({}),
     },
+    actionToken: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    transaction: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
     adminAlert: {
       count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockResolvedValue({}),
@@ -166,6 +172,83 @@ describe('WhatsappWebhookController', () => {
           data: expect.objectContaining({ body: 'hi', metaMessageId: 'wamid.IN1' }),
         }),
       );
+    });
+
+    it('Decline quick reply resolves the original courier sale and replies with its signed reason-picker link', async () => {
+      process.env.WHATSAPP_APP_SECRET = SECRET;
+      const prisma = makePrisma();
+      prisma.whatsappMessageLog.findFirst = jest.fn().mockResolvedValue({
+        id: 'log-sale',
+        to: '+27821234567',
+        templateKey: 'new_sale_seller_courier',
+        vars: { acceptToken: 'safe-token' },
+      });
+      prisma.actionToken.findUnique = jest.fn().mockResolvedValue({
+        purpose: 'TRANSACTION_ACCEPT',
+        targetType: 'transaction',
+        targetId: 'tx1',
+        authorisedUserId: 'seller1',
+        expiresAt: new Date(Date.now() + 60_000),
+        usedAt: null,
+      });
+      prisma.transaction.findUnique = jest.fn().mockResolvedValue({
+        sellerId: 'seller1',
+        seller: { phone: '+27821234567' },
+      });
+      const whatsapp = { sendSessionText: jest.fn().mockResolvedValue(true) };
+      const controller = new WhatsappWebhookController(
+        prisma as never,
+        whatsapp as never,
+      );
+      const body = {
+        object: 'whatsapp_business_account',
+        entry: [{ changes: [{ field: 'messages', value: { messages: [{
+          from: '27821234567',
+          id: 'wamid.DECLINE1',
+          type: 'button',
+          button: { text: 'Decline', payload: 'decline' },
+          context: { id: 'wamid.SALE1' },
+        }] } }] }],
+      };
+
+      await controller.receiveWebhook(fakeReq(body), body);
+
+      expect(whatsapp.sendSessionText).toHaveBeenCalledWith(expect.objectContaining({
+        to: '+27821234567',
+        reference: 'new-sale-decline-tx1',
+        text: expect.stringContaining('/a/safe-token'),
+      }));
+      expect(prisma.whatsappInboundMessage.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ body: 'Decline', metaMessageId: 'wamid.DECLINE1' }),
+      }));
+    });
+
+    it('does not act on a Decline tap from a phone that is not the seller', async () => {
+      process.env.WHATSAPP_APP_SECRET = SECRET;
+      const prisma = makePrisma();
+      prisma.whatsappMessageLog.findFirst = jest.fn().mockResolvedValue({
+        id: 'log-sale',
+        to: '+27821234567',
+        templateKey: 'new_sale_seller_courier',
+        vars: { acceptToken: 'safe-token' },
+      });
+      const whatsapp = { sendSessionText: jest.fn().mockResolvedValue(true) };
+      const controller = new WhatsappWebhookController(prisma as never, whatsapp as never);
+      const body = {
+        object: 'whatsapp_business_account',
+        entry: [{ changes: [{ field: 'messages', value: { messages: [{
+          from: '27829999999',
+          id: 'wamid.DECLINE2',
+          type: 'button',
+          button: { text: 'Decline' },
+          context: { id: 'wamid.SALE1' },
+        }] } }] }],
+      };
+
+      await controller.receiveWebhook(fakeReq(body), body);
+
+      expect(prisma.actionToken.findUnique).not.toHaveBeenCalled();
+      expect(whatsapp.sendSessionText).not.toHaveBeenCalled();
     });
 
     it('good signature + statuses[]: updates the matching WhatsappMessageLog row', async () => {

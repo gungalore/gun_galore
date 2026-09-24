@@ -24,8 +24,6 @@ function makeService(tx: Record<string, unknown> | null) {
     prisma as never,
     { shipmentBooked: jest.fn() } as never,
     {} as never,
-    {} as never,
-    { get: jest.fn().mockResolvedValue(false) } as never,
   );
   return { svc, prisma };
 }

@@ -276,6 +276,77 @@ export class WhatsappService {
     return { success: true, messageId: result.messageId };
   }
 
+  /**
+   * Send a session reply after a member taps a quick-reply button. Meta opens
+   * its 24h service window on that inbound tap, so a template is not needed.
+   * Used only to return the seller to the reason picker after they tap Decline;
+   * the actual rejection still goes through the signed action page.
+   */
+  async sendSessionText(params: {
+    to: string;
+    text: string;
+    reference: string;
+  }): Promise<boolean> {
+    const normalised = this.sms.toE164(params.to);
+    if (!normalised || !this.isConfigured()) return false;
+
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to: normalised,
+          type: 'text',
+          text: { body: params.text },
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        messages?: Array<{ id?: unknown }>;
+        error?: { message?: string };
+      };
+      if (!res.ok) {
+        this.log.warn(
+          `WhatsApp session reply failed (${params.reference}): ${body.error?.message ?? `HTTP ${res.status}`}`,
+        );
+        await this.prisma.whatsappMessageLog.create({
+          data: {
+            to: normalised,
+            templateKey: 'session_text',
+            vars: {},
+            reference: params.reference,
+            status: 'FAILED',
+            error: body.error?.message ?? `HTTP ${res.status}`,
+            retryable: false,
+          },
+        });
+        return false;
+      }
+      await this.prisma.whatsappMessageLog.create({
+        data: {
+          to: normalised,
+          templateKey: 'session_text',
+          vars: {},
+          reference: params.reference,
+          status: 'SENT',
+          messageId: body.messages?.[0]?.id ? String(body.messages[0].id) : null,
+          retryable: false,
+        },
+      });
+      return true;
+    } catch (err) {
+      this.log.warn(
+        `WhatsApp session reply failed (${params.reference}): ${(err as Error).message}`,
+      );
+      return false;
+    }
+  }
+
   // Retry FAILED-but-retryable messages whose backoff has elapsed. Mirrors
   // SmsService.retryFailed: re-dispatches on the SAME WhatsappMessageLog row
   // (updates status/attempts in place) so the audit trail stays one row per

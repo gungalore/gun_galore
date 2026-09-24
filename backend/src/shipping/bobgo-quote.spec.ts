@@ -2,13 +2,15 @@ jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
 import { ShippingService } from './shipping.service';
 
-// Quoting with the Bob Go rail ON.
+// Quoting on the Bob Go rail — the only courier rail left.
 //
 // The behaviour that matters here is what a buyer sees when things go wrong.
 // Both legacy clients returned null for everything, so "no rate for this route"
 // and "the carrier is down" were indistinguishable — the buyer got the same
 // empty shipping list and the sale was lost silently. Bob Go's client throws on
-// an outage, and these tests pin down that the distinction survives.
+// an outage, and these tests pin down that the distinction survives. Delivery
+// is door-to-door only: Bob Go may return cheaper pickup-point rates in the
+// same response, and they are deliberately ignored.
 
 const LISTING = {
   id: 'L1',
@@ -53,6 +55,8 @@ const DOOR = {
   surchargeTotal: 0,
 };
 
+// Bob Go returns pickup-point rates alongside the door rate, often cheaper.
+// They must never be selected: delivery is door-to-door.
 const PICKUP = {
   ...DOOR,
   id: 3084,
@@ -67,7 +71,7 @@ const PICKUP = {
 };
 
 function makeService(
-  bobgoBehaviour: { rates?: unknown[]; throws?: Error; flag?: boolean } = {},
+  bobgoBehaviour: { rates?: unknown[]; throws?: Error } = {},
 ) {
   const prisma = {
     listing: {
@@ -83,22 +87,16 @@ function makeService(
       : Promise.resolve({ rates: bobgoBehaviour.rates ?? [], pricingVerified: false }),
   );
   const bobgo = { getRates };
-  const svc = new ShippingService(
-    prisma as never,
-    {} as never,
-    {} as never,
-    bobgo as never,
-    { get: jest.fn().mockResolvedValue(bobgoBehaviour.flag ?? true) } as never,
-  );
+  const svc = new ShippingService(prisma as never, {} as never, bobgo as never);
   return { svc, bobgo, prisma };
 }
 
-describe('quoteForListing on the Bob Go rail', () => {
+describe('quoteForListing on the Bob Go door-only rail', () => {
   it('quotes the door slot from the door rate', async () => {
     const { svc } = makeService({ rates: [DOOR, PICKUP] });
     const q = await svc.quoteForListing({
       listingId: 'L1',
-      shippingMethod: 'TCG',
+      shippingMethod: 'COURIER',
       deliveryAddress: DELIVERY,
     });
     expect(q.priceCents).toBe(11495);
@@ -108,35 +106,32 @@ describe('quoteForListing on the Bob Go rail', () => {
     expect(q.serviceLevelCode).toBe('ECO');
   });
 
-  it('quotes the pickup-point slot from the same single call', async () => {
-    const { svc, bobgo } = makeService({ rates: [DOOR, PICKUP] });
+  it('ignores a cheaper pickup-point rate — delivery is door-to-door', async () => {
+    // The pickup point is R50 cheaper but is not an option we offer any more.
+    const { svc } = makeService({ rates: [DOOR, PICKUP] });
     const q = await svc.quoteForListing({
       listingId: 'L1',
-      shippingMethod: 'PUDO',
-      toLockerId: '545',
+      shippingMethod: 'COURIER',
       deliveryAddress: DELIVERY,
     });
-    expect(q.priceCents).toBe(6443);
-    expect(q.pickupPointLocationId).toBe(545);
-    // One call served both slots — that is the whole point of the aggregator.
-    expect(bobgo.getRates).toHaveBeenCalledTimes(1);
+    expect(q.priceCents).toBe(11495);
+    expect(q.serviceCode).toBe('bobgo_3082_34_0');
   });
 
   it('sends the declared value in cents for the client to convert', async () => {
     const { svc, bobgo } = makeService({ rates: [DOOR] });
     await svc.quoteForListing({
       listingId: 'L1',
-      shippingMethod: 'TCG',
+      shippingMethod: 'COURIER',
       deliveryAddress: DELIVERY,
     });
     expect(bobgo.getRates.mock.calls[0][0].declaredValueCents).toBe(150000);
   });
 
-  it('asks for a delivery address before offering pickup points', async () => {
-    // The flow inverts under Bob Go: address first, then the points near it.
-    const { svc, bobgo } = makeService({ rates: [PICKUP] });
+  it('asks for a delivery address before quoting a door rate', async () => {
+    const { svc, bobgo } = makeService({ rates: [DOOR] });
     await expect(
-      svc.quoteForListing({ listingId: 'L1', shippingMethod: 'PUDO', toLockerId: '545' }),
+      svc.quoteForListing({ listingId: 'L1', shippingMethod: 'COURIER' }),
     ).rejects.toThrow(/delivery address/i);
     expect(bobgo.getRates).not.toHaveBeenCalled();
   });
@@ -146,7 +141,7 @@ describe('quoteForListing on the Bob Go rail', () => {
     await expect(
       svc.quoteForListing({
         listingId: 'L1',
-        shippingMethod: 'TCG',
+        shippingMethod: 'COURIER',
         deliveryAddress: DELIVERY,
       }),
     ).rejects.toThrow(/try again/i);
@@ -157,21 +152,10 @@ describe('quoteForListing on the Bob Go rail', () => {
     await expect(
       svc.quoteForListing({
         listingId: 'L1',
-        shippingMethod: 'TCG',
+        shippingMethod: 'COURIER',
         deliveryAddress: DELIVERY,
       }),
     ).rejects.toThrow(/no door-delivery rate/i);
-  });
-
-  it('does not offer a door rate when the buyer asked for a pickup point', async () => {
-    const { svc } = makeService({ rates: [DOOR] });
-    await expect(
-      svc.quoteForListing({
-        listingId: 'L1',
-        shippingMethod: 'PUDO',
-        deliveryAddress: DELIVERY,
-      }),
-    ).rejects.toThrow(/collection point/i);
   });
 });
 
@@ -180,7 +164,7 @@ describe('quoteCombined on the Bob Go rail', () => {
 
   it('quotes the combined parcel', async () => {
     const { svc, bobgo } = makeService({ rates: [DOOR] });
-    const q = await svc.quoteCombined(items, 'TCG', { deliveryAddress: DELIVERY });
+    const q = await svc.quoteCombined(items, 'COURIER', { deliveryAddress: DELIVERY });
     expect(q?.priceCents).toBe(11495);
     // Stacked box: 2 x 15cm high, 2 x 2.5kg.
     const sent = bobgo.getRates.mock.calls[0][0];
@@ -194,89 +178,43 @@ describe('quoteCombined on the Bob Go rail', () => {
     // "fall back to per-line quoting". A throw here 500s a whole cart.
     const { svc } = makeService({ throws: new Error('Bob Go unreachable: ETIMEDOUT') });
     await expect(
-      svc.quoteCombined(items, 'TCG', { deliveryAddress: DELIVERY }),
+      svc.quoteCombined(items, 'COURIER', { deliveryAddress: DELIVERY }),
     ).resolves.toBeNull();
   });
 
   it('returns null when there is no rate', async () => {
     const { svc } = makeService({ rates: [] });
     await expect(
-      svc.quoteCombined(items, 'TCG', { deliveryAddress: DELIVERY }),
+      svc.quoteCombined(items, 'COURIER', { deliveryAddress: DELIVERY }),
     ).resolves.toBeNull();
   });
 
   it('returns null without a delivery address instead of throwing', async () => {
     const { svc } = makeService({ rates: [DOOR] });
-    await expect(svc.quoteCombined(items, 'PUDO', {})).resolves.toBeNull();
-  });
-
-  // THE CART REGRESSION. A consolidated collection-point group must quote when
-  // it carries an address AND a point id. It never did: createOrderCheckout
-  // sent `{ toLockerId }` alone for PUDO, so the address guard above fired for
-  // every locker cart, the caller `continue`d to per-line quoting, and that
-  // threw. Every multi-item locker checkout was dead on the live rail — masked
-  // only because assertPaymentsLive() rejects first while payments are off.
-  it('quotes a collection-point group given an address AND a point id', async () => {
-    const { svc, bobgo } = makeService({ rates: [PICKUP] });
-    const q = await svc.quoteCombined(items, 'PUDO', {
-      deliveryAddress: DELIVERY,
-      toLockerId: 545,
-    });
-    expect(q).not.toBeNull();
-    expect(q!.priceCents).toBeGreaterThan(0);
-    // The point id must reach the adapter, or it matches nothing and the buyer
-    // is told no collection point can take the parcel.
-    expect(bobgo.getRates).toHaveBeenCalled();
-  });
-
-  // A legacy Pudo code coerces to NaN, which passes the adapter's `!= null`
-  // test and then matches no location — surfacing a data error as a capacity
-  // error ("no collection point can take this parcel").
-  it('ignores a non-numeric point id rather than sending NaN', async () => {
-    const { svc } = makeService({ rates: [DOOR] });
-    const q = await svc.quoteCombined(items, 'TCG', {
-      deliveryAddress: DELIVERY,
-      toLockerId: 'CG929',
-    });
-    // Falls back to the door rate rather than silently matching nothing.
-    expect(q?.priceCents).toBe(11495);
+    await expect(svc.quoteCombined(items, 'COURIER', {})).resolves.toBeNull();
   });
 });
 
 describe('deliveryOptions — the buyer decides', () => {
-  it('returns the WHOLE menu: door and collection points together', async () => {
-    const far = { ...PICKUP, pickupPointLocationId: 900, pickupPointDistanceKm: 9, totalPrice: 70 };
-    const dupe = { ...PICKUP, totalPrice: 80 }; // same location 545, dearer
-    const { svc } = makeService({ rates: [DOOR, far, PICKUP, dupe] });
+  it('returns the door option with our 10% delivery margin folded in', async () => {
+    const { svc } = makeService({ rates: [DOOR, PICKUP] });
 
     const opts = await svc.deliveryOptions('L1', DELIVERY);
 
-    // Prices carry the R15 per-waybill handling margin, quoted up front rather
-    // than added at checkout — see delivery-options-rail.spec.
-    // Prices carry our 10% delivery margin, quoted up front rather than added
-    // at checkout. quoteForListing (above) still returns the BARE carrier rate —
-    // only the buyer-facing menu folds the margin in.
+    // The buyer sees ONE figure: the carrier rate plus our 10% delivery
+    // margin, quoted up front rather than added at checkout. quoteForListing
+    // (above) still returns the BARE carrier rate — only the buyer-facing menu
+    // folds the margin in.
     const withMargin = (c: number) => c + Math.round(c * 0.1);
     expect(opts.door?.priceCents).toBe(withMargin(11495));
-    expect(opts.pickupPoints.map((p) => p.locationId)).toEqual([545, 900]);
-    expect(opts.pickupPoints[0].priceCents).toBe(withMargin(6443)); // cheaper of two for 545
-    expect(opts.pickupPoints[0].serviceCode).toBe('bobgo_PP_3084_104_545_1');
-  });
-
-  it('offers no collection point when the parcel fits none', async () => {
-    // Bob Go is size-aware, so an oversized parcel simply comes back with door
-    // rates only — the locker size limit enforces itself.
-    const { svc } = makeService({ rates: [DOOR] });
-    const opts = await svc.deliveryOptions('L1', DELIVERY);
-    expect(opts.door).not.toBeNull();
-    expect(opts.pickupPoints).toEqual([]);
+    expect(opts.door?.carrierRateCents).toBe(11495);
+    expect(opts.door?.serviceCode).toBe('bobgo_3082_34_0');
   });
 
   it('distinguishes "nothing serves this route" from "we could not ask"', async () => {
     const { svc } = makeService({ rates: [] });
     const opts = await svc.deliveryOptions('L1', DELIVERY);
     expect(opts.door).toBeNull();
-    expect(opts.pickupPoints).toEqual([]);
 
     const outage = makeService({ throws: new Error('Bob Go unreachable') });
     await expect(outage.svc.deliveryOptions('L1', DELIVERY)).rejects.toThrow(
@@ -286,22 +224,6 @@ describe('deliveryOptions — the buyer decides', () => {
 });
 
 describe('the seller no longer curates the courier option', () => {
-  it('quotes a collection point even when the seller only listed door', async () => {
-    const { svc } = makeService({ rates: [DOOR, PICKUP] });
-    const prisma = (svc as unknown as { prisma: { listing: { findUnique: jest.Mock } } })
-      .prisma;
-    prisma.listing.findUnique.mockResolvedValue({
-      ...LISTING,
-      shippingMethods: ['TCG'],
-    });
-    const q = await svc.quoteForListing({
-      listingId: 'L1',
-      shippingMethod: 'PUDO',
-      deliveryAddress: DELIVERY,
-    });
-    expect(q.priceCents).toBe(6443);
-  });
-
   it('still refuses a courier when the seller offered none at all', async () => {
     // Collection-only stays the seller's (and physics') call.
     const { svc } = makeService({ rates: [DOOR, PICKUP] });
@@ -314,32 +236,9 @@ describe('the seller no longer curates the courier option', () => {
     await expect(
       svc.quoteForListing({
         listingId: 'L1',
-        shippingMethod: 'TCG',
+        shippingMethod: 'COURIER',
         deliveryAddress: DELIVERY,
       }),
     ).rejects.toThrow(/not available for courier/i);
-  });
-});
-
-describe("the LEGACY rail still honours the seller's pick", () => {
-  it('refuses a courier option the seller did not offer', async () => {
-    // Not a preference there — PUDO means the seller drops at a locker and may
-    // have no pickup address at all, TCG means a courier comes to them. The
-    // buyer-decides rule must not leak onto that rail.
-    const { svc } = makeService({ rates: [DOOR, PICKUP], flag: false });
-    const prisma = (svc as unknown as { prisma: { listing: { findUnique: jest.Mock } } })
-      .prisma;
-    prisma.listing.findUnique.mockResolvedValue({
-      ...LISTING,
-      shippingMethods: ['TCG'],
-    });
-    await expect(
-      svc.quoteForListing({
-        listingId: 'L1',
-        shippingMethod: 'PUDO',
-        toLockerId: 'CG929',
-        deliveryAddress: DELIVERY,
-      }),
-    ).rejects.toThrow(/not offering/i);
   });
 });

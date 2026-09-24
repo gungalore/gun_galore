@@ -7,9 +7,8 @@ import { ShippingService } from './shipping.service';
  * checkout charges must agree, to the cent, for the same group.
  *
  * They are two different code paths reached minutes apart, so nothing but a
- * test keeps them honest. Before this endpoint existed the cart could not even
- * ask the question — it made the buyer choose a CARRIER instead of a delivery,
- * and consolidated locker groups then failed to quote at all.
+ * test keeps them honest. Delivery is door-to-door only now — one menu per
+ * parcel a cart will ship as.
  */
 
 const base = {
@@ -52,18 +51,7 @@ const DOOR = {
   surchargeTotal: 0,
 };
 
-const PICKUP = {
-  ...DOOR,
-  serviceCode: 'bobgo_PP_3084_104_545_1',
-  serviceName: 'Bob Box Locker - 44 on Stanley',
-  type: 'pickup-point' as const,
-  totalPrice: 79,
-  baseRate: 79,
-  pickupPointLocationId: 545,
-  pickupPointDistanceKm: 1.2,
-};
-
-function makeService(listings: unknown[], rates: unknown[], flag = true) {
+function makeService(listings: unknown[], rates: unknown[]) {
   const getRates: jest.Mock = jest.fn(() =>
     Promise.resolve({ rates, pricingVerified: false }),
   );
@@ -74,19 +62,15 @@ function makeService(listings: unknown[], rates: unknown[], flag = true) {
     },
     deal: { findFirst: jest.fn().mockResolvedValue(null) },
   };
-  const svc = new ShippingService(
-    prisma as never,
-    {} as never,
-    {} as never,
-    { getRates } as never,
-    { get: jest.fn().mockResolvedValue(flag) } as never,
-  );
+  const svc = new ShippingService(prisma as never, {} as never, {
+    getRates,
+  } as never);
   return { svc, getRates };
 }
 
 describe('cart delivery menu', () => {
   it('returns ONE group for two same-seller lines, flagged consolidated', async () => {
-    const { svc } = makeService([L1, L2], [DOOR, PICKUP]);
+    const { svc } = makeService([L1, L2], [DOOR]);
     const groups = await svc.deliveryOptionsForCart(
       [{ listingId: 'L1', quantity: 1 }, { listingId: 'L2', quantity: 1 }],
       DELIVERY,
@@ -95,7 +79,6 @@ describe('cart delivery menu', () => {
     expect(groups[0].consolidated).toBe(true);
     expect(groups[0].listingIds.sort()).toEqual(['L1', 'L2']);
     expect(groups[0].door).not.toBeNull();
-    expect(groups[0].pickupPoints).toHaveLength(1);
   });
 
   it('prices the STACKED box, not the sum of the lines', async () => {
@@ -114,14 +97,14 @@ describe('cart delivery menu', () => {
 
   // The identity property. Same lines, same rates → same money.
   it('agrees with quoteCombined, the figure checkout actually charges', async () => {
-    const { svc } = makeService([L1, L2], [DOOR, PICKUP]);
+    const { svc } = makeService([L1, L2], [DOOR]);
     const items = [
       { listingId: 'L1', quantity: 1 },
       { listingId: 'L2', quantity: 2 },
     ];
 
     const [menu] = await svc.deliveryOptionsForCart(items, DELIVERY);
-    const charged = await svc.quoteCombined(items, 'TCG', {
+    const charged = await svc.quoteCombined(items, 'COURIER', {
       deliveryAddress: { ...DELIVERY, lat: 0, lng: 0 },
     });
 
@@ -138,19 +121,6 @@ describe('cart delivery menu', () => {
     expect(menu.door!.priceCents).toBeGreaterThan(menu.door!.carrierRateCents);
   });
 
-  it('holds for a collection-point choice too', async () => {
-    const { svc } = makeService([L1, L2], [DOOR, PICKUP]);
-    const items = [{ listingId: 'L1', quantity: 1 }, { listingId: 'L2', quantity: 1 }];
-
-    const [menu] = await svc.deliveryOptionsForCart(items, DELIVERY);
-    const charged = await svc.quoteCombined(items, 'PUDO', {
-      deliveryAddress: { ...DELIVERY, lat: 0, lng: 0 },
-      toLockerId: 545,
-    });
-
-    expect(menu.pickupPoints[0].carrierRateCents).toBe(charged!.priceCents);
-  });
-
   it('reports a group it cannot courier instead of failing the whole cart', async () => {
     const heavy = { ...L2, id: 'L2', collectionOnly: true };
     const { svc } = makeService([L1, heavy], [DOOR]);
@@ -161,12 +131,5 @@ describe('cart delivery menu', () => {
     // Same seller, so both land in one group; the group is unquotable.
     expect(groups[0].unavailableReason).toMatch(/cannot be sent by courier/i);
     expect(groups[0].door).toBeNull();
-  });
-
-  it('says options are unavailable on the legacy rail rather than inventing a price', async () => {
-    const { svc } = makeService([L1], [DOOR], false);
-    const groups = await svc.deliveryOptionsForCart([{ listingId: 'L1' }], DELIVERY);
-    expect(groups[0].door).toBeNull();
-    expect(groups[0].unavailableReason).toMatch(/unavailable/i);
   });
 });

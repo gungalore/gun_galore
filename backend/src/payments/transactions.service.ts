@@ -21,6 +21,14 @@ import { OzowService, OzowPaymentResult } from './ozow.service';
 import { FraudRiskService } from './fraud-risk.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { estimateDeliveryDate } from '../shipping/delivery-estimate';
+import {
+  collectionMinDateFromDate,
+  isAllowedCollectionWindow,
+  nextPickupDay,
+  pickupInstant,
+  soonestPickupDate,
+} from '../shipping/pickup-dates';
+import { cutoffHour, resolveServiceLevel } from '../shipping/service-levels';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { resolvePurchaseQuantity, reversalListingData } from './inventory';
@@ -33,7 +41,7 @@ import {
   assertNoDuplicateListings,
   OrderLineBreakdown,
 } from '../orders/order-math';
-import { ListingStatus, Province, ShippingMethod } from '@prisma/client';
+import { DeliveryOption, ListingStatus, Prisma, Province, ShippingMethod } from '@prisma/client';
 import { KycService } from '../kyc/kyc.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { TrackingService } from '../shipping/tracking.service';
@@ -140,8 +148,11 @@ export class TransactionsService {
       // Carried through with the code so a consolidated cart line books against
       // the same rate it was priced on. Omitted on the legacy carriers.
       providerSlug?: string | null;
-      serviceLevelCode?: string | null;
-    },
+       serviceLevelCode?: string | null;
+       deliveryOption?: DeliveryOption | null;
+       pickupPointLocationId?: number | null;
+       pickupPointSnapshot?: Record<string, unknown> | null;
+     },
   ) {
     const buyer = await this.prisma.user.findUnique({ where: { id: buyerId } });
     if (!buyer) throw new NotFoundException('Buyer not found');
@@ -338,9 +349,12 @@ export class TransactionsService {
     // carriers, where the shippingMethod already implies the provider.
     let shippingProviderSlug: string | null = null;
     let shippingServiceLevelCode: string | null = null;
+    let deliveryOption: DeliveryOption | null = null;
+    let pickupPointLocationId: number | null = null;
+    let pickupPointSnapshot: Record<string, unknown> | null = null;
     if (
       shippingOverride !== undefined &&
-      (dto.shippingMethod === 'PUDO' || dto.shippingMethod === 'TCG')
+      dto.shippingMethod === 'COURIER'
     ) {
       // Consolidated-shipment split, pre-computed by createOrderCheckout from a
       // single combined server-side quote — not client-supplied, so no tamper
@@ -349,46 +363,40 @@ export class TransactionsService {
       shippingServiceCode = shippingOverride.serviceCode;
       shippingProviderSlug = shippingOverride.providerSlug ?? null;
       shippingServiceLevelCode = shippingOverride.serviceLevelCode ?? null;
-    } else if (
-      dto.shippingMethod === 'PUDO' ||
-      dto.shippingMethod === 'TCG'
-    ) {
-      const quote = await this.shipping.quoteForListing({
-        listingId: listing.id,
-        shippingMethod: dto.shippingMethod,
-        toLockerId: dto.pudoPickupLockerId,
-        // Forwarded for BOTH slots, not just door. Bob Go needs a delivery
-        // address for a collection-point parcel too — the points it offers are
-        // the ones near that address. Gating this on TCG made a collection
-        // checkout fail at Pay asking for an address the buyer had already
-        // given. The legacy locker path simply ignores it.
-        deliveryAddress: dto.deliveryAddress
-          ? {
-                streetAddress: dto.deliveryAddress.streetAddress,
-                suburb: dto.deliveryAddress.suburb,
-                city: dto.deliveryAddress.city,
-                postalCode: dto.deliveryAddress.postalCode,
-                // DTO has province as string; Prisma's Province enum
-                // is a subset of those strings, so we cast. The rate
-                // helper guards against invalid values via its zone
-                // lookup (unknown enum → undefined, throws).
-                province: dto.deliveryAddress.province as Province,
-                // Required for D2D rate distance maths. If the frontend
-                // didn't capture lat/lng on the form, quoteForListing
-                // throws a clean BadRequestException.
-                lat: (dto.deliveryAddress as { lat?: number }).lat ?? 0,
-                lng: (dto.deliveryAddress as { lng?: number }).lng ?? 0,
-              }
-            : undefined,
-      });
+      deliveryOption = shippingOverride.deliveryOption ?? 'DOOR_CHEAPEST';
+      pickupPointLocationId = shippingOverride.pickupPointLocationId ?? null;
+      pickupPointSnapshot = shippingOverride.pickupPointSnapshot ?? null;
+    } else if (dto.shippingMethod === 'COURIER') {
+      if (!dto.deliveryAddress) {
+        throw new BadRequestException('A delivery address is required for courier delivery.');
+      }
+      const quote = await this.shipping.quoteForSelection(
+        listing.id,
+        {
+          streetAddress: dto.deliveryAddress.streetAddress,
+          suburb: dto.deliveryAddress.suburb,
+          city: dto.deliveryAddress.city,
+          postalCode: dto.deliveryAddress.postalCode,
+          province: dto.deliveryAddress.province as Province,
+          lat: (dto.deliveryAddress as { lat?: number }).lat ?? 0,
+          lng: (dto.deliveryAddress as { lng?: number }).lng ?? 0,
+        },
+        {
+          deliveryOption: dto.deliveryOption,
+          pickupPointLocationId: dto.pickupPointLocationId,
+        },
+      );
       shippingCostCents = quote.priceCents;
       shippingServiceCode = quote.serviceCode;
       shippingProviderSlug = quote.providerSlug ?? null;
       shippingServiceLevelCode = quote.serviceLevelCode ?? null;
+      deliveryOption = (quote.deliveryOption as DeliveryOption | undefined) ?? 'DOOR_CHEAPEST';
+      pickupPointLocationId = quote.pickupPointLocationId ?? null;
+      pickupPointSnapshot = quote.pickupPointSnapshot ?? null;
     }
 
     // P6.4 — flat R15 handling margin charged ONCE per waybill GG creates.
-    // A line produces its own waybill iff it's a PUDO/TCG courier line that is
+    // A line produces its own waybill iff it's a courier line that is
     // NOT a zero-cost consolidated sibling (siblings ship free inside the
     // carrier's single parcel). Firearm DEALER_TRANSFER / PRIVATE_ARRANGE and
     // COLLECTION create no waybill → no handling. The margin is buyer-paid and
@@ -396,7 +404,7 @@ export class TransactionsService {
     const isConsolidatedSibling =
       shippingOverride !== undefined && shippingOverride.costCents === 0;
     const producesWaybill =
-      (dto.shippingMethod === 'PUDO' || dto.shippingMethod === 'TCG') &&
+      dto.shippingMethod === 'COURIER' &&
       !isConsolidatedSibling;
     // 10% of the carrier's rate, not a flat fee. Folded into the single
     // delivery figure the buyer was quoted — never itemised to them.
@@ -530,6 +538,11 @@ export class TransactionsService {
         shippingServiceCode,
         shippingProviderSlug,
         shippingServiceLevelCode,
+        deliveryOption,
+        pickupPointLocationId,
+        pickupPointSnapshot: pickupPointSnapshot
+          ? (pickupPointSnapshot as Prisma.InputJsonValue)
+          : undefined,
         // The EFFECTIVE flag and the model that produced these columns — see
         // where both are derived above. Every document downstream reads them.
         passFeeToBuyer: buyerPaysProcessingFee,
@@ -537,7 +550,6 @@ export class TransactionsService {
         buyerTotal,
         sellerPayout,
         shippingMethod: dto.shippingMethod,
-        pudoPickupLockerId: dto.pudoPickupLockerId,
         deliveryAddress: dto.deliveryAddress ? { ...dto.deliveryAddress } : undefined,
         dealerId: dto.dealerId,
         // PRIVATE_ARRANGE consent landed via DTO. We stamp the
@@ -819,8 +831,8 @@ export class TransactionsService {
     // quote (combined weight + stacked box). If it succeeds, the FIRST line
     // becomes the "carrier" (charged the whole combined cost) and the rest ship
     // FREE with it (shipsWith the carrier) — the buyer pays one shipping fee,
-    // GG books one parcel. Too-big-to-combine groups (e.g. exceed a Pudo
-    // locker) get null and silently fall back to per-line quoting. Computed
+    // GG books one parcel. Too-big-to-combine groups (e.g. exceed the
+    // courier's size limits) get null and silently fall back to per-line quoting. Computed
     // BEFORE reservation so each line's fee breakdown uses the final shipping.
     const sellerByListing = new Map(
       lineListings.map((l) => [l.id, l.sellerId]),
@@ -832,6 +844,9 @@ export class TransactionsService {
         serviceCode: string | null;
         providerSlug?: string | null;
         serviceLevelCode?: string | null;
+        deliveryOption?: DeliveryOption | null;
+        pickupPointLocationId?: number | null;
+        pickupPointSnapshot?: Record<string, unknown> | null;
       }
     >();
     // sibling listingId -> carrier listingId (resolved to tx ids after create)
@@ -842,26 +857,24 @@ export class TransactionsService {
         // P6-A — a firearm NEVER consolidates: it ships via dealer / in-person,
         // not a courier waybill, even alongside same-seller accessories. The
         // method check below already excludes DEALER_TRANSFER / PRIVATE_ARRANGE,
-        // but skip explicitly on isFirearm too so a mis-routed firearm line
-        // (e.g. a tampered PUDO method) can never be pulled into a parcel.
+        // but skip explicitly on isFirearm too so a mis-routed firearm line can
+        // never be pulled into a parcel.
         if (firearmByListing.get(line.listingId)) continue;
-        if (line.shippingMethod !== 'PUDO' && line.shippingMethod !== 'TCG')
-          continue;
+        if (line.shippingMethod !== 'COURIER') continue;
         const sellerId = sellerByListing.get(line.listingId);
         if (!sellerId) continue;
         const a = line.deliveryAddress;
-        const destKey =
-          line.shippingMethod === 'PUDO'
-            ? `L:${line.pudoPickupLockerId ?? ''}`
-            : `A:${a?.streetAddress ?? ''}|${a?.suburb ?? ''}|${a?.city ?? ''}|${a?.postalCode ?? ''}`;
-        const key = `${sellerId}|${line.shippingMethod}|${destKey}`;
+        const destKey = `A:${a?.streetAddress ?? ''}|${a?.suburb ?? ''}|${a?.city ?? ''}|${a?.postalCode ?? ''}`;
+        const deliveryOption = line.deliveryOption ?? 'DOOR_CHEAPEST';
+        const pickupPointId = line.pickupPointLocationId ?? '';
+        const key = `${sellerId}|${line.shippingMethod}|${deliveryOption}|${pickupPointId}|${destKey}`;
         const arr = groups.get(key) ?? [];
         arr.push(line);
         groups.set(key, arr);
       }
       for (const group of groups.values()) {
         if (group.length < 2) continue;
-        const method = group[0].shippingMethod as 'PUDO' | 'TCG';
+        const method = 'COURIER' as const;
         const a = group[0].deliveryAddress;
         const combined = await this.shipping.quoteCombined(
           group.map((g) => ({
@@ -870,7 +883,6 @@ export class TransactionsService {
           })),
           method,
           {
-            // BOTH slots carry the address — see quoteCombined's dest docblock.
             deliveryAddress: a
               ? {
                   streetAddress: a.streetAddress,
@@ -882,16 +894,16 @@ export class TransactionsService {
                   lng: (a as { lng?: number }).lng ?? 0,
                 }
               : undefined,
-            // Pins the collection point within that area for a PUDO group.
-            ...(method === 'PUDO'
-              ? { toLockerId: group[0].pudoPickupLockerId }
-              : {}),
+          },
+          {
+            deliveryOption: (group[0].deliveryOption ?? 'DOOR_CHEAPEST') as DeliveryOption,
+            pickupPointLocationId: group[0].pickupPointLocationId,
           },
         );
         if (!combined) {
           // Was `continue`, which fell through to per-line quoting — a
           // DIFFERENT price from the one the buyer was shown for the group,
-          // and for a locker group a guaranteed 400 further down. If we cannot
+          // and for a courier group a guaranteed 400 further down. If we cannot
           // re-price the group the buyer chose, say so instead of quietly
           // charging something else.
           throw new BadRequestException(
@@ -906,6 +918,9 @@ export class TransactionsService {
           // WHOLE rate key, not just the code.
           providerSlug: combined.providerSlug ?? null,
           serviceLevelCode: combined.serviceLevelCode ?? null,
+          deliveryOption: combined.deliveryOption as DeliveryOption | null,
+          pickupPointLocationId: combined.pickupPointLocationId ?? null,
+          pickupPointSnapshot: combined.pickupPointSnapshot ?? null,
         });
         for (let i = 1; i < group.length; i++) {
           shipOverride.set(group[i].listingId, {
@@ -915,6 +930,9 @@ export class TransactionsService {
             // own, so they carry no rate key at all.
             providerSlug: null,
             serviceLevelCode: null,
+            deliveryOption: group[0].deliveryOption as DeliveryOption | null,
+            pickupPointLocationId: group[0].pickupPointLocationId ?? null,
+            pickupPointSnapshot: null,
           });
           carrierOfSibling.set(group[i].listingId, carrier.listingId);
         }
@@ -935,7 +953,6 @@ export class TransactionsService {
         const lineDto = {
           listingId: line.listingId,
           shippingMethod: line.shippingMethod,
-          pudoPickupLockerId: line.pudoPickupLockerId,
           deliveryAddress: line.deliveryAddress,
           quantity: line.quantity,
           // P6-A — firearm lines carry their own attestation + in-person
@@ -959,6 +976,8 @@ export class TransactionsService {
           // masked only because the sole requiresPapers category also happens
           // to be collectionOnly, which the cart rejects earlier.
           collectionPapersAccepted: line.collectionPapersAccepted,
+          deliveryOption: line.deliveryOption,
+          pickupPointLocationId: line.pickupPointLocationId,
           buyerTermsAccepted: dto.buyerTermsAccepted,
         } as CreateTransactionDto;
 
@@ -2004,7 +2023,11 @@ export class TransactionsService {
   // Idempotent — already-accepted txs just return without re-stamping.
   // (Important because the SMS link can be tapped multiple times by
   // accident; we don't want to extend the deadline by re-clicking.)
-  async acceptTransaction(transactionId: string, sellerId: string) {
+  async acceptTransaction(
+    transactionId: string,
+    sellerId: string,
+    opts?: { collectionNotBefore?: Date; collectionWindow?: string },
+  ) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: {
@@ -2038,7 +2061,37 @@ export class TransactionsService {
       return tx;
     }
 
-    const stamp = await this._stampAcceptAndBook(transactionId, tx);
+    let schedule = opts;
+    if (tx.shippingMethod === 'COURIER') {
+      if (schedule?.collectionWindow && !isAllowedCollectionWindow(schedule.collectionWindow)) {
+        throw new BadRequestException('Choose one of the available courier collection windows.');
+      }
+      const service = resolveServiceLevel(
+        tx.shippingProviderSlug,
+        tx.shippingServiceLevelCode,
+      );
+      const soonest = soonestPickupDate(
+        new Date(),
+        cutoffHour(service.collectionCutoff),
+      );
+      const second = nextPickupDay(soonest);
+      const allowed = new Set([soonest.iso, second.iso]);
+      const chosenIso = schedule?.collectionNotBefore
+        ? collectionMinDateFromDate(schedule.collectionNotBefore).slice(0, 10)
+        : soonest.iso;
+      if (!allowed.has(chosenIso)) {
+        throw new BadRequestException(
+          'Choose either the soonest available business day or the following business day.',
+        );
+      }
+      schedule = {
+        collectionNotBefore:
+          schedule?.collectionNotBefore ?? pickupInstant(soonest),
+        collectionWindow: schedule?.collectionWindow,
+      };
+    }
+
+    const stamp = await this._stampAcceptAndBook(transactionId, tx, schedule);
     const updated =
       (await this.prisma.transaction.findUnique({
         where: { id: transactionId },
@@ -2075,6 +2128,7 @@ export class TransactionsService {
         username: string | null;
       };
     },
+    opts?: { collectionNotBefore?: Date; collectionWindow?: string },
   ): Promise<{ acceptedAt: Date; dispatchDeadlineAt: Date } | null> {
     const acceptedAt = new Date();
     const dispatchDeadlineAt = new Date(
@@ -2096,7 +2150,20 @@ export class TransactionsService {
         rejectedAt: null,
         paymentStatus: 'HELD',
       },
-      data: { acceptedAt, dispatchDeadlineAt },
+      data: {
+        acceptedAt,
+        dispatchDeadlineAt,
+        // The seller's chosen pickup day/window (from the accept picker). Only
+        // set when supplied — an SMS one-tap accept omits them and Bob Go uses
+        // its own next-business-day default. Stored so booking (which re-reads
+        // the row) and the payout clocks both see the seller's intent.
+        ...(opts?.collectionNotBefore
+          ? { collectionNotBeforeAt: opts.collectionNotBefore }
+          : {}),
+        ...(opts?.collectionWindow
+          ? { collectionWindow: opts.collectionWindow }
+          : {}),
+      },
     });
     if (stamped.count === 0) {
       this.logger.warn(
@@ -2108,7 +2175,7 @@ export class TransactionsService {
     // P5.2: book the real carrier shipment on the CARRIER line, which combines
     // the whole group's parcel. Fire-and-forget + fully self-contained
     // (idempotent, courier-only, fail-safe). On success it SMSes/emails the
-    // seller the waybill + Pudo PIN + label.
+    // seller the waybill + collection PIN + label.
     void this.shipping.bookForTransaction(carrierId);
 
     // Timeline + notifications — fire-and-forget. (Unchanged for every sale.)
@@ -2376,7 +2443,7 @@ export class TransactionsService {
   // ------------------------------------------------------------------
   // A buyer may cancel + full-refund a paid order that hasn't shipped yet,
   // mirroring the seller-reject mechanics. Self-service is limited to
-  // courier orders (PUDO/TCG): PRIVATE_ARRANGE pays out immediately (no
+  // courier orders: PRIVATE_ARRANGE pays out immediately (no
   // funds to return), and firearm DEALER_TRANSFER must go through the
   // dispute/admin path while verification is in flight. Unlike a seller
   // reject, cancelling carries NO seller strike — the buyer changing their
@@ -2448,7 +2515,7 @@ export class TransactionsService {
         'This item ships as one parcel with other items in your order. To change or cancel it, please contact support so the whole parcel is handled together.',
       );
     }
-    if (!['PUDO', 'TCG'].includes(tx.shippingMethod ?? '')) {
+    if (tx.shippingMethod !== 'COURIER') {
       throw new BadRequestException(
         'This order type cannot be self-cancelled. Please contact support or raise a dispute.',
       );
@@ -2478,7 +2545,7 @@ export class TransactionsService {
         dispatchedAt: null,
         rejectedAt: null,
         cancelledByBuyerAt: null,
-        shippingMethod: { in: ['PUDO', 'TCG'] },
+        shippingMethod: 'COURIER',
       },
       data: {
         paymentStatus: 'REFUNDED',
@@ -2746,10 +2813,8 @@ export class TransactionsService {
       where: { id: transactionId },
       select: {
         shippingMethod: true,
-        carrierProvider: true,
         carrierShipmentId: true,
         shipmentBookedAt: true,
-        trackingReference: true,
         seller: { select: { id: true } },
       },
     });
@@ -2757,44 +2822,24 @@ export class TransactionsService {
     if (tx.seller.id !== sellerId) {
       throw new ForbiddenException('Not authorised');
     }
-    if (
-      !tx.carrierShipmentId ||
-      (tx.shippingMethod !== 'PUDO' && tx.shippingMethod !== 'TCG')
-    ) {
+    if (!tx.carrierShipmentId || tx.shippingMethod !== 'COURIER') {
       throw new BadRequestException('No waybill is available for this order yet.');
     }
     // A shipment id is NOT proof a courier accepted the job. Bob Go issues one
     // with its 201 and can still refuse the shipment afterwards, so a booking
-    // awaiting acceptance has an id but no shipmentBookedAt. Without this the
-    // seller downloads a real-looking label, tapes it to the box, and waits for
-    // a collection that was never agreed.
+    // awaiting acceptance has an id but no shipmentBookedAt. Without this a
+    // seller waits for a collection that was never agreed.
     if (!tx.shipmentBookedAt) {
       throw new BadRequestException(
         'This order is still being booked with the courier. The waybill will be available once the collection is confirmed.',
       );
     }
-    const provider = tx.carrierProvider ?? tx.shippingMethod;
-    if (provider !== 'PUDO') {
-      // Pudo is the only carrier we can fetch a label from.
-      //
-      //  • BOBGO — no verified label endpoint exists yet.
-      //  • TCG   — a parcel from before that integration was retired
-      //            (operator 2026-09-04); the client that fetched its labels
-      //            is gone. Production held zero transactions at the time, so
-      //            no seller can actually be holding such an order.
-      //
-      // Either way, say so plainly rather than falling through to a carrier
-      // that has never heard of this shipment id. The tracking reference is
-      // still shown on the order, which is what the parcel actually needs.
-      throw new BadRequestException(
-        'Printable waybills are not available for this courier — write the tracking reference on the parcel instead.',
-      );
-    }
-    const pdf = await this.shipping.getWaybillPdf('PUDO', tx.carrierShipmentId);
-    return {
-      pdf,
-      filename: `waybill-${tx.trackingReference ?? transactionId}.pdf`,
-    };
+    // Bob Go has no verified printable-label endpoint, so there is no PDF to
+    // serve. Say so plainly — the tracking reference is shown on the order,
+    // which is what the parcel actually needs.
+    throw new BadRequestException(
+      'Printable waybills are not available for this courier — write the tracking reference on the parcel instead.',
+    );
   }
 
   /**
@@ -2876,7 +2921,7 @@ export class TransactionsService {
   async confirmDispatch(
     transactionId: string,
     sellerId: string,
-    data: { pudoDropoffLockerId?: string; trackingReference?: string },
+    data: { trackingReference?: string },
   ) {
     const tx = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
     if (!tx) throw new NotFoundException('Transaction not found');
@@ -2904,13 +2949,13 @@ export class TransactionsService {
       );
     }
 
-    // Best-effort estimated delivery window (Phase 5 P5.1). Computed once
-    // at dispatch from the courier's transit days; null for non-courier
-    // methods. Always shown to the buyer as "estimated", never guaranteed.
+    // Best-effort delivery estimate is anchored to payment, not dispatch: the
+    // seller chooses the collection date after payment, so dispatch-based
+    // estimates would move under the buyer. Null for non-courier methods.
     const dispatchedAt = new Date();
     const estimatedDeliveryAt = estimateDeliveryDate(
       tx.shippingMethod,
-      dispatchedAt,
+      tx.paidAt ?? dispatchedAt,
     );
 
     const updated = await this.prisma.transaction.update({
@@ -2919,7 +2964,6 @@ export class TransactionsService {
         dispatchedAt,
         estimatedDeliveryAt,
         shippingStatus: 'COLLECTED',
-        pudoDropoffLockerId: data.pudoDropoffLockerId,
         trackingReference: data.trackingReference,
       },
     });
@@ -3032,7 +3076,7 @@ export class TransactionsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // The Pudo drop-off PIN is the SELLER's hand-over credential (P5.2) —
+    // The collection PIN is the SELLER's hand-over credential (P5.2) —
     // never include it in a BUYER's order list. (findMany returns the full
     // row, so strip it on the buyer view; the seller view keeps it.)
     if (role === 'buyer') {
@@ -3154,9 +3198,8 @@ export class TransactionsService {
       }
     }
 
-    // The Pudo drop-off PIN is the SELLER's hand-over credential (P5.2) —
-    // never expose it to the buyer. The buyer gets their own collection PIN
-    // from Pudo directly. trackingReference stays visible to both (the buyer
+    // The collection PIN is the SELLER's hand-over credential (P5.2) —
+    // never expose it to the buyer. trackingReference stays visible to both (the buyer
     // tracks with it). Applies regardless of shipping method.
     if (tx.sellerId !== user.id) {
       (tx as unknown as { carrierDropoffPin: string | null }).carrierDropoffPin =
@@ -3315,10 +3358,10 @@ export class TransactionsService {
     void this.zohoBooks.createCommissionInvoice(transactionId);
     void this.zohoBooks.createBuyerInvoice(transactionId);
     // Two INTERNAL timeline rows back-to-back: the buyer's explicit
-    // confirmation and the resulting payout. The polling cron's PUDO
+    // confirmation and the resulting payout. The carrier's tracking
     // events may also land a COLLECTED_BY_BUYER row but we mark this
     // one with its own status so the timeline distinguishes "buyer
-    // pressed the button" from "Pudo says the locker opened".
+    // pressed the button" from "the carrier says it was collected".
     void this.tracking.recordInternal(transactionId, 'BUYER_CONFIRMED_DELIVERY', {
       occurredAt: now,
     });
@@ -3389,7 +3432,7 @@ export class TransactionsService {
           tx.paymentStatus.toLowerCase().replace(/_/g, ' ') + '.',
       );
     }
-    // FLOW-F4 (H16) — only COURIER orders (PUDO/TCG) keep the dispatch-first
+    // FLOW-F4 (H16) — only COURIER orders keep the dispatch-first
     // rule: there's nothing to dispute before the parcel moves, and the
     // dispatch SLA auto-refunds a seller who never ships. Every OTHER funds-
     // held method has no courier dispatch event, so blocking pre-dispatch
@@ -3405,8 +3448,7 @@ export class TransactionsService {
     //     CAS requires HELD so a DISPUTED row can't auto-release underneath it.
     // (PRIVATE_ARRANGE releases funds immediately, so it never reaches here
     //  HELD — the paymentStatus!=='HELD' guard above already rejects it.)
-    const isCourier =
-      tx.shippingMethod === 'PUDO' || tx.shippingMethod === 'TCG';
+    const isCourier = tx.shippingMethod === 'COURIER';
     if (!tx.dispatchedAt && isCourier) {
       throw new BadRequestException(
         'Disputes can only be raised after the seller has dispatched. ' +
@@ -3957,6 +3999,7 @@ export class TransactionsService {
       // matches the operator-confirmed accept window; if the seller
       // never taps, the cron escalates to admin (Phase 2).
       let acceptActionUrl: string | undefined;
+      let acceptActionToken: string | undefined;
       try {
         const expiresAt = new Date(
           Date.now() + ACCEPT_DEADLINE_HOURS * 60 * 60 * 1000,
@@ -3968,8 +4011,9 @@ export class TransactionsService {
           authorisedUserId: tx.sellerId,
           expiresAt,
         });
+        acceptActionToken = token;
         const appUrl =
-          process.env.FRONTEND_URL ?? 'https://gungalore.co.za';
+          process.env.FRONTEND_URL ?? 'https://alloutdoor.co.za';
         acceptActionUrl = `${appUrl}/a/${token}`;
       } catch (err) {
         this.logger.warn(
@@ -4003,6 +4047,7 @@ export class TransactionsService {
         // Optional — when set, the seller-facing SMS + email use this
         // /a/<token> URL for the "Accept this sale" call-to-action.
         acceptActionUrl,
+        acceptActionToken,
       };
       await Promise.all([
         // Buyer "order confirmed" — SKIPPED for multi-item order children
@@ -4268,7 +4313,7 @@ export class TransactionsService {
     //    in person, just without a pre-picked one). Non-firearms can't
     //    touch either of those.
     const firearmLegal: ShippingMethod[] = ['DEALER_TRANSFER', 'PRIVATE_ARRANGE'];
-    const nonFirearmLegal: ShippingMethod[] = ['PUDO', 'TCG'];
+    const nonFirearmLegal: ShippingMethod[] = ['COURIER'];
     if (isFirearm && !firearmLegal.includes(chosen)) {
       throw new BadRequestException(
         'Firearms must ship via DEALER_TRANSFER or PRIVATE_ARRANGE',
@@ -4276,7 +4321,7 @@ export class TransactionsService {
     }
     if (!isFirearm && !nonFirearmLegal.includes(chosen)) {
       throw new BadRequestException(
-        'Non-firearms ship via PUDO or TCG only',
+        'Non-firearms ship via COURIER only',
       );
     }
     // 2. Seller's offered subset — if the seller didn't pick this method

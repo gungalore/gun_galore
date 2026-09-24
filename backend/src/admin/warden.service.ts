@@ -35,7 +35,7 @@ import {
  * draws the honest "not deployed" state, and every write is refused with a
  * 503. It does NOT degrade into a local stub — a chat that accepts messages
  * nothing will ever read is worse than one that says it is not there. Same
- * shape as the PEACH_* and TCG_WEBHOOK_SECRET gates elsewhere in this API.
+ * shape as the other webhook-secret gates elsewhere in this API.
  *
  * ⚠️ THIS PROCESS NEVER RUNS THE COMMAND. approve() verifies and forwards;
  * Warden runs it inside its own safe list and re-checks afterwards. Moving

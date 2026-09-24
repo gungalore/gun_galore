@@ -46,8 +46,8 @@ import { FeeCalculator } from '../payments/fee.calculator';
 //   • serialNumber / serialPhotoUrl / licencePhotoUrl / licenceHolderName
 //     (the seller's real name!) / licenceExpiresAt / licenceExpiryWarnedAt /
 //     firearmType — SAP-534 firearm serial + licence capture.
-//   • pickup* (building/street/address2/suburb/city/postalCode/lat/lng) +
-//     pickupPudoLockerId — the seller's private pickup address & geolocation.
+//   • pickup* (building/street/address2/suburb/city/postalCode/lat/lng) —
+//     the seller's private pickup address & geolocation.
 //   • adminReviewedById / adminReviewedAt / adminOverrideReason — internal
 //     admin moderation notes.
 //   • claudeConfidence / claudeReviewedAt / claudeOriginalDescription — model
@@ -127,6 +127,9 @@ export const PUBLIC_LISTING_SELECT = {
   plannedDealerName: true,
   plannedDealerProvince: true,
   plannedDealerArea: true,
+  plannedDealerPlaceId: true,
+  plannedDealerLat: true,
+  plannedDealerLng: true,
   expiresAt: true,
   soldAt: true,
   listedAt: true,
@@ -700,8 +703,8 @@ export function banMessageFor(kind: AmmunitionBanKind): string {
 }
 
 // P4.3b — dangerous-goods gate. A LOOSE lithium battery rated above the
-// energy limit (Watt-hours, UN3480) can't be carried by our couriers (Pudo /
-// TCG), so a listing whose `battery_wh` attribute exceeds it is forced
+// energy limit (Watt-hours, UN3480) can't be carried by our courier, so a
+// listing whose `battery_wh` attribute exceeds it is forced
 // COLLECTION-only (buyer collects in person) rather than entering the courier
 // path. The limit is admin-tunable (FLAGS.dgLithiumWhThreshold, default 100 Wh
 // — the standard loose-lithium threshold) so it can track carrier policy
@@ -1033,6 +1036,9 @@ export class ListingsService {
       plannedDealerName?: string;
       plannedDealerProvince?: string;
       plannedDealerArea?: string;
+      plannedDealerPlaceId?: string;
+      plannedDealerLat?: number;
+      plannedDealerLng?: number;
     },
     isFirearm: boolean,
   ): {
@@ -1040,6 +1046,9 @@ export class ListingsService {
     plannedDealerProvince: string | null;
     plannedDealerArea: string | null;
     plannedDealerLocation: string | null;
+    plannedDealerPlaceId: string | null;
+    plannedDealerLat: number | null;
+    plannedDealerLng: number | null;
   } {
     if (!isFirearm) {
       return {
@@ -1047,6 +1056,9 @@ export class ListingsService {
         plannedDealerProvince: null,
         plannedDealerArea: null,
         plannedDealerLocation: null,
+        plannedDealerPlaceId: null,
+        plannedDealerLat: null,
+        plannedDealerLng: null,
       };
     }
     const name = (dto.plannedDealerName ?? '').trim();
@@ -1076,11 +1088,31 @@ export class ListingsService {
         'Choose a valid South African province for the planned dealer-stock location.',
       );
     }
+    // The Places pick is optional; when present the coords must be a plausible
+    // SA location so the distance indicator can be trusted.
+    const placeId = (dto.plannedDealerPlaceId ?? '').trim() || null;
+    const hasPlaceData =
+      placeId != null || dto.plannedDealerLat != null || dto.plannedDealerLng != null;
+    const lat = dto.plannedDealerLat;
+    const lng = dto.plannedDealerLng;
+    if (
+      hasPlaceData &&
+      (!placeId ||
+        typeof lat !== 'number' || lat < -35 || lat > -22 ||
+        typeof lng !== 'number' || lng < 16 || lng > 33)
+    ) {
+      throw new BadRequestException(
+        'Choose a valid South African gunshop location from Google Places.',
+      );
+    }
     return {
       plannedDealerName: name,
       plannedDealerProvince: province,
       plannedDealerArea: area,
       plannedDealerLocation: `${name} — ${area}, ${province}`,
+      plannedDealerPlaceId: placeId,
+      plannedDealerLat: lat ?? null,
+      plannedDealerLng: lng ?? null,
     };
   }
 
@@ -1236,7 +1268,7 @@ export class ListingsService {
     // Collection-only categories (trailers, off-road caravans, oversized /
     // dangerous goods no courier will carry). The seller's UI hides courier
     // options; this forces COLLECTION server-side so a crafted payload can't
-    // attach PUDO/TCG to a collection-only listing (which would then try to
+    // attach a courier method to a collection-only listing (which would then try to
     // quote / book a courier that can't carry it). Mirrors the firearm
     // DEALER_TRANSFER lock.
     // COLLECTION is reserved for collection-only categories. A normal listing
@@ -1636,8 +1668,7 @@ export class ListingsService {
         pickupPostalCode: dto.pickupPostalCode ?? null,
         pickupLat: dto.pickupLat ?? null,
         pickupLng: dto.pickupLng ?? null,
-        pickupPudoLockerId: dto.pickupPudoLockerId ?? null,
-        // Parcel dimensions for the courier rate API (Pudo / TCG).
+        // Parcel dimensions for the courier rate API (Bob Go).
         weightGrams: dto.weightGrams ?? null,
         lengthCm: dto.lengthCm ?? null,
         widthCm: dto.widthCm ?? null,
@@ -2893,7 +2924,10 @@ export class ListingsService {
     const plannedDealerProvided =
       dto.plannedDealerName !== undefined ||
       dto.plannedDealerProvince !== undefined ||
-      dto.plannedDealerArea !== undefined;
+      dto.plannedDealerArea !== undefined ||
+      dto.plannedDealerPlaceId !== undefined ||
+      dto.plannedDealerLat !== undefined ||
+      dto.plannedDealerLng !== undefined;
     const plannedDealerUpdate = plannedDealerProvided
       ? this.buildPlannedDealer(dto, listing.isFirearm)
       : undefined;

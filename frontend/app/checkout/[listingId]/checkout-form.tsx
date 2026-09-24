@@ -137,19 +137,15 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // rows don't break.
   const legalForClass: ShippingMethod[] = listing.isFirearm
     ? ['DEALER_TRANSFER', 'PRIVATE_ARRANGE']
-    : ['PUDO', 'TCG'];
+    : ['COURIER'];
   const allowedMethods: ShippingMethod[] =
     listing.shippingMethods && listing.shippingMethods.length > 0
       ? legalForClass.filter((m) => listing.shippingMethods.includes(m))
       : legalForClass;
 
-  // Non-firearm goods choose their courier option from DeliveryOptionsPicker —
-  // door delivery and every nearby collection point, priced, in one list. It
-  // replaces BOTH the PUDO/TCG method cards and the locker directory.
-  //
-  // The list is deliberately NOT narrowed to allowedMethods: the delivery
-  // option is the BUYER'S to decide (operator, 2026-08-13), so the seller's
-  // pick no longer curates what the buyer may choose.
+  // Non-firearm goods have one courier rail: Bob Go door-to-door. The delivery
+  // address is captured first, then we price the single door rate for this
+  // parcel and show it as one "Shipping" line. There is no method to choose.
   //
   // Firearms are untouched — their hand-over is a dealer route, not a courier
   // one — and so are collection-only items, which have no courier leg at all.
@@ -158,12 +154,9 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   const [method, setMethod] = useState<ShippingMethod>(
     isCollection
       ? 'COLLECTION'
-      : allowedMethods[0] ?? (listing.isFirearm ? 'DEALER_TRANSFER' : 'PUDO'),
+      : allowedMethods[0] ?? (listing.isFirearm ? 'DEALER_TRANSFER' : 'COURIER'),
   );
-  // The buyer's chosen delivery option (picker path). Its `kind` decides the
-  // shippingMethod: DOOR → 'TCG', PICKUP_POINT → 'PUDO'. Those enum values are
-  // SLOTS — the SHAPE of the delivery — not carrier names; the backend maps a
-  // slot onto whichever courier is live, so the mapping has to hold.
+  // The single door option the picker priced for this parcel + address.
   const [deliveryOption, setDeliveryOption] = useState<DeliveryOption | null>(
     null,
   );
@@ -198,7 +191,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   const [quantity, setQuantity] = useState(1);
 
   // Live shipping quote, refreshed whenever the buyer changes method or
-  // their destination (PUDO locker / TCG address). Null while we're
+  // their destination (the delivery address). Null while we're
   // waiting on the API; { error: string } when the quote endpoint
   // refused (firearm, oversize, etc); { quote: ShippingQuote } when
   // we have a usable price to show in the breakdown.
@@ -230,7 +223,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
 
   // PRIVATE_ARRANGE consent — gated state for the hard-consent screen
   // (two checkboxes + literal "I UNDERSTAND" typed). Reset when the
-  // buyer changes shipping method, so they can't tick → switch to PUDO
+  // buyer changes shipping method, so they can't tick → switch away
   // → switch back to PRIVATE_ARRANGE without re-consenting.
   const [paConsentAccepted, setPaConsentAccepted] = useState(false);
   useEffect(() => {
@@ -403,21 +396,19 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // The chosen option already carries its price for THIS parcel to THIS
   // address, so it feeds the existing quote state directly instead of firing a
   // second round-trip at /shipping/quote — same state, same order summary,
-  // same Pay total as before. DOOR → 'TCG', PICKUP_POINT → 'PUDO'.
+  // same Pay total as before.
   function handleSelectDeliveryOption(option: DeliveryOption) {
     setDeliveryOption(option);
-    setMethod(option.kind === 'DOOR' ? 'TCG' : 'PUDO');
+    setMethod('COURIER');
     setQuoteState({
       kind: 'ready',
       quote: {
         serviceCode: option.serviceCode,
-        // What the "Shipping (…)" line in the order summary names: the
-        // carrier's own service name for door, the point's name for a
-        // collection point (which is the bit the buyer actually cares about).
-        serviceName:
-          option.kind === 'DOOR'
-            ? option.detail ?? 'Door delivery'
-            : option.label,
+        providerSlug: option.providerSlug,
+        serviceLevelCode: option.serviceLevelCode,
+        // What the "Shipping (…)" line in the order summary names: Bob Go's
+        // own service name for the door rate.
+        serviceName: option.detail ?? 'Door delivery',
         priceCents: option.priceCents,
       },
     });
@@ -436,7 +427,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // ON_SITE_SERVICE) goes back to idle, so a stale price can't survive a
   // method change.
   useEffect(() => {
-    if (method !== 'PUDO' && method !== 'TCG') {
+    if (method !== 'COURIER') {
       setQuoteState({ kind: 'idle' });
     }
   }, [method]);
@@ -523,35 +514,13 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     // ON_SITE_SERVICE is retained on the union for historic rows; nothing in
     // this form can select it now that Hunting Packages are gone.
     if (method === 'ON_SITE_SERVICE') return base;
-    // Collection — no locker, no address, no quote. Just the base payload
+    // Collection — no courier, no address, no quote. Just the base payload
     // with shippingMethod = 'COLLECTION' (+ the papers ack when required).
     if (method === 'COLLECTION') return base;
-    if (method === 'PUDO') {
-      // The destination collection point, in whatever form the rail that
-      // answered /shipping/delivery-options identifies it by — WITHOUT the
-      // frontend needing to know which rail that was. Bob Go points carry a
-      // numeric location id and the backend re-quotes against it; the legacy
-      // rail has no such id (it sends 0) and puts the Pudo terminal code in
-      // serviceCode instead. Reading the id only when there IS one keeps both
-      // correct off one field.
-      const pickupPointId = deliveryOption?.locationId
-        ? String(deliveryOption.locationId)
-        : deliveryOption?.serviceCode;
-      // The ADDRESS goes with it. A collection point pins where *within* an
-      // area the parcel lands; it does not tell the carrier which area. The
-      // server re-quotes this leg at Pay and, on the Bob Go rail, returns null
-      // without an address — so omitting it 400'd every collection-point
-      // purchase. The picker already priced against exactly this address.
-      return {
-        ...base,
-        pudoPickupLockerId: pickupPointId,
-        ...(pickerAddress ? { deliveryAddress: pickerAddress } : {}),
-      };
-    }
-    if (method === 'TCG') {
+    if (method === 'COURIER') {
       // Effective address: captureAddr when toggle is on OR there's
       // no saved address, else the profile values. The same flag drives
-      // the address the options were priced against, so what the buyer
+      // the address the rate was priced against, so what the buyer
       // was quoted is what we ship to. Contact name + phone are still
       // pulled from User on the backend — even when shipping somewhere
       // else this run we don't override identity.
@@ -579,7 +548,14 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
             lat: me?.addrLat ?? undefined,
             lng: me?.addrLng ?? undefined,
           };
-      return { ...base, deliveryAddress: addr };
+      return {
+        ...base,
+        deliveryAddress: addr,
+        deliveryOption: deliveryOption?.kind,
+        ...(deliveryOption?.kind === 'STORE_PICKUP'
+          ? { pickupPointLocationId: deliveryOption.pickupPointLocationId }
+          : {}),
+      };
     }
     // Dealer-transfer: no dealerId — buyer picks their own SAPS
     // dealer and uploads the SAPS 534 + stock register + firearm-
@@ -613,17 +589,14 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     if (listing.requiresPapers && !collectionPapersAck) return false;
 
 
-    // Collection — no locker, no address, no quote. Once the phone +
+    // Collection — no courier, no address, no quote. Once the phone +
     // papers gates above pass, the buyer can pay.
     if (method === 'COLLECTION') return true;
 
-    // PUDO + TCG also need a chosen delivery option and the price it carried —
-    // the buyer can't pay until we know what the shipping line costs.
-    // DEALER_TRANSFER and PRIVATE_ARRANGE skip the rate step entirely.
-    if (method === 'PUDO') {
-      return !!deliveryOption && quoteState.kind === 'ready';
-    }
-    if (method === 'TCG') {
+    // COURIER needs the priced door rate — the buyer can't pay until we know
+    // what the shipping line costs. DEALER_TRANSFER and PRIVATE_ARRANGE skip
+    // the rate step entirely.
+    if (method === 'COURIER') {
       // Door delivery needs coords for the destination — they're handed to the
       // courier to price and route the drop, and the backend re-quotes with
       // them on Pay. Source depends on whether the buyer's overriding (capture
@@ -669,7 +642,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   } | null {
     if (!listing.price) return null;
     const item = listing.price * (listing.trackInventory ? quantity : 1);
-    const isCourier = method === 'PUDO' || method === 'TCG';
+    const isCourier = method === 'COURIER';
     const shipping =
       quoteState.kind === 'ready' ? quoteState.quote.priceCents : 0;
     // NO separate handling row — our delivery margin is folded into the
@@ -1051,20 +1024,17 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
         </div>
       )}
 
-      {/* The buyer's delivery menu — door delivery and every nearby
-          collection point, each priced for THIS parcel to the address
-          above, in one list. Deliberately NOT filtered by what the seller
-          offered: the option is the buyer's to decide. Picking one sets the
-          shippingMethod slot and hands its price to the order summary. */}
+      {/* Shipping — Bob Go door-to-door is the only courier rail, so the
+          door rate for THIS parcel to the address above is shown as a single
+          line and handed to the order summary. */}
       {usesDeliveryPicker && (
         <div>
           <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-            How would you like it delivered?
+            Shipping
           </p>
           <DeliveryOptionsPicker
             listingId={listing.id}
             deliveryAddress={pickerAddress}
-            selectedServiceCode={deliveryOption?.serviceCode}
             onSelect={handleSelectDeliveryOption}
             getToken={getToken}
           />
@@ -1189,7 +1159,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           // fee models (operator 2026-09), shown as its own row.
           const b = previewBreakdown();
           if (!b) return null;
-          const isCourier = method === 'PUDO' || method === 'TCG';
+          const isCourier = method === 'COURIER';
           return (
             <div
               className="rounded-[8px] p-4"
@@ -1329,7 +1299,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
         {(() => {
           if (submitting) return 'Setting up payment…';
           const b = previewBreakdown();
-          const isCourier = method === 'PUDO' || method === 'TCG';
+          const isCourier = method === 'COURIER';
           // FLOW-F4 (M23) — courier still needs a ready quote for the true
           // total (shipping unknown until then); DEALER_TRANSFER / PA /
           // COLLECTION have no shipping, so b.total is complete immediately.
@@ -1489,8 +1459,8 @@ function BreakdownLine({
   );
 }
 
-// Shared "Delivering to <name> · address …" chip used by both the
-// PUDO and TCG branches when the buyer has a saved address on file.
+// Shared "Delivering to <name> · address …" chip used on the courier
+// checkout path when the buyer has a saved address on file.
 // Below the address line we surface:
 //   - "Wrong address? Edit in your profile" — sends the buyer to
 //     /profile/edit to update their persistent address (affects

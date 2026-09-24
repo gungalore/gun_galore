@@ -378,6 +378,8 @@ export interface SaleDetails {
    * for backwards-compat with any caller that doesn't pass it.
    */
   acceptActionUrl?: string;
+  /** Raw one-use token for the courier WhatsApp URL button (never rendered in body). */
+  acceptActionToken?: string;
 }
 
 export interface DispatchDetails {
@@ -1197,13 +1199,29 @@ export class NotificationsService {
       smsBody,
       `new-sale-${d.transactionId}`,
       {
-        whatsapp: {
-          templateKey: 'new_sale_seller',
-          vars: {
-            ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
-            txId: d.transactionId,
-          },
-        },
+        whatsapp: isDealerTransfer || isCollection
+          ? {
+              templateKey: 'new_sale_seller',
+              vars: {
+                ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
+                txId: d.transactionId,
+              },
+            }
+          : d.acceptActionToken
+            ? {
+                templateKey: 'new_sale_seller_courier',
+                vars: {
+                  ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
+                  acceptToken: d.acceptActionToken,
+                },
+              }
+            : {
+                templateKey: 'new_sale_seller',
+                vars: {
+                  ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
+                  txId: d.transactionId,
+                },
+              },
       },
     );
   }
@@ -1757,7 +1775,7 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   // Fires when the seller accepts a courier sale and we've booked the
   // carrier. Carries everything the seller needs to hand the parcel over:
-  // the waybill, the Pudo drop-off PIN (lockers only), a link to print the
+  // the waybill, the collection PIN (if one was issued), a link to print the
   // label, and the explicit "can't print? write the waybill on the parcel"
   // fallback. SMS + email + action-required inbox row.
   async shipmentBooked(d: {
@@ -1766,49 +1784,19 @@ export class NotificationsService {
     sellerPhone?: string | null;
     listingTitle: string;
     transactionId: string;
-    carrier: 'PUDO' | 'TCG';
-    /**
-     * WHICH carrier actually holds the parcel.
-     *
-     * `carrier` above is only the SLOT (PUDO = pickup-point, TCG = door) and
-     * on the Bob Go rail it no longer names the company or, more importantly,
-     * describes what the SELLER has to do. Absent on legacy rows, which is
-     * read as "derive from the slot" exactly as before.
-     */
-    provider?: 'PUDO' | 'TCG' | 'BOBGO' | null;
     trackingReference: string;
     dropoffPin?: string | null;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    // THE SELLER'S JOB IS DECIDED BY THE PROVIDER, NOT THE SLOT.
-    //
-    // On the legacy rail the slot WAS the seller's job: PUDO meant they walked
-    // a parcel to a locker, TCG meant a courier came to them. Bob Go collects
-    // from an address either way — verified against a real shipment, which
-    // carried collection_location_type "door" and an 08:00-17:00 collection
-    // window even for a booking delivering to a Bob Box, and exposes no
-    // collection-side pickup-point field at all.
-    //
-    // So under Bob Go a "PUDO" sale must NOT tell the seller to drop at a
-    // locker. They would make a wasted trip and then miss the courier who is
-    // actually coming to their door.
-    const isBobGo = d.provider === 'BOBGO';
-    const isPudo = !isBobGo && d.carrier === 'PUDO';
-    // The final arm is a door delivery on the legacy rail. It used to name The
-    // Courier Guy; that integration was retired (operator 2026-09-04), so
-    // nothing can promise WHICH company arrives and naming one would be a
-    // guess printed as a fact. "The courier" is the honest amount of detail —
-    // what the seller has to DO is identical either way.
-    const courier = isBobGo
-      ? 'Bob Go'
-      : isPudo
-        ? 'Pudo (locker-to-locker)'
-        : 'Courier (door-to-door)';
-    const handover = isBobGo
-      ? 'A courier will collect the parcel from your pickup address between 08:00 and 17:00 — have it packed and ready.'
-      : isPudo
-        ? 'Drop your parcel at any Pudo locker using the drop-off PIN below.'
-        : 'The courier will collect the parcel from your pickup address.';
+    // Bob Go is the only courier rail and it always collects from the seller's
+    // ADDRESS: verified against a real shipment, which carried
+    // collection_location_type "door" and an 08:00-17:00 collection window even
+    // for a booking delivering to a Bob Box, and exposes no collection-side
+    // pickup-point field at all. There is no locker drop-off any more, so the
+    // seller is never told to visit one.
+    const courier = 'Bob Go';
+    const handover =
+      'A courier collects from your address between 08:00 and 17:00 — have the parcel packed and ready.';
 
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
@@ -1827,11 +1815,8 @@ export class NotificationsService {
       { label: 'Waybill / tracking', value: d.trackingReference },
     ];
     if (d.dropoffPin) {
-      // Only Pudo's PIN is a DROP-OFF PIN. Whether Bob Go issues one at all is
-      // still unproven, so the label stays neutral rather than instructing a
-      // seller to use it at a locker screen they are not going to.
       rows.push({
-        label: isPudo ? 'Pudo drop-off PIN' : 'Collection PIN',
+        label: 'Collection PIN',
         value: d.dropoffPin,
       });
     }
@@ -1844,9 +1829,7 @@ export class NotificationsService {
           `<br><br>Open your sale to <b>print the waybill</b> and tape it to the parcel. ` +
           `<b>If you can't print it, write the waybill number ${b(d.trackingReference)} clearly on the package</b> so the courier can match it.` +
           (d.dropoffPin
-            ? isPudo
-              ? `<br><br>Your locker drop-off PIN is ${b(d.dropoffPin)} — you'll need it at the locker screen.`
-              : `<br><br>Your collection PIN is ${b(d.dropoffPin)} — give it to the courier.`
+            ? `<br><br>Your collection PIN is ${b(d.dropoffPin)} — give it to the courier.`
             : ''),
       rows,
       cta: { label: 'Print waybill & view details', url: txUrl },
@@ -1858,48 +1841,29 @@ export class NotificationsService {
       html,
     );
 
-    const smsHandover = isBobGo
-      ? `Courier collects from your address 08:00-17:00${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`
-      : isPudo
-        ? `Drop at any Pudo locker${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`
-        : 'The courier will collect.';
-    // ⚠️ A PIN ALONE DOES NOT MEAN A LOCKER. `shipment_booked_seller_locker`
-    // tells the seller to take the parcel to a locker screen — true only on the
-    // legacy Pudo rail. Bob Go collects from the seller's ADDRESS even when it
-    // issues a PIN (see `shipment-booked-copy.spec.ts`), so gating on
-    // `dropoffPin` alone would send locker instructions to a seller who has to
-    // stay home for the courier. That is the same mismatch the SMS and email
-    // above already avoid by branching on `isPudo`; the WhatsApp rail must make
-    // the SAME decision or the two disagree. `dropoffPin` is still checked, but
-    // only to guarantee `{{3}}` is never rendered blank.
+    const smsHandover = `Courier collects from your address 08:00-17:00${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`;
+    // Lockers are gone, so the WhatsApp rail always uses the door template —
+    // never `shipment_booked_seller_locker`, which would send the seller to a
+    // locker screen that has nothing to do with the courier coming to their
+    // door. `dropoffPin` is still checked, but only to guarantee `{{3}}` is
+    // never rendered blank on the door template.
     const ref = orderRef({ id: d.transactionId });
     await this.sendSms(
       d.sellerPhone,
       `ALL Outdoor: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
       `booked-${d.transactionId}`,
       {
-        // Waybill + Pudo PIN are delivery-essential — without them the
+        // Waybill + collection PIN are delivery-essential — without them the
         // parcel physically can't be handed over. Bypasses the SMS mute.
         critical: true,
-        whatsapp:
-          isPudo && d.dropoffPin
-            ? {
-                templateKey: 'shipment_booked_seller_locker',
-                vars: {
-                  ref,
-                  waybill: d.trackingReference,
-                  pin: d.dropoffPin,
-                  txId: d.transactionId,
-                },
-              }
-            : {
-                templateKey: 'shipment_booked_seller_door',
-                vars: {
-                  ref,
-                  waybill: d.trackingReference,
-                  txId: d.transactionId,
-                },
-              },
+        whatsapp: {
+          templateKey: 'shipment_booked_seller_door',
+          vars: {
+            ref,
+            waybill: d.trackingReference,
+            txId: d.transactionId,
+          },
+        },
       },
     );
   }
@@ -3313,6 +3277,45 @@ export class NotificationsService {
     );
   }
 
+  /**
+   * STORE_PICKUP only — the parcel has reached the Pargo counter. Tells the
+   * buyer to collect it. No WhatsApp template exists for this yet, so it rides
+   * the SMS rail.
+   */
+  async shippingReadyForPickup(
+    buyerEmail: string,
+    buyerName: string,
+    listingTitle: string,
+    transactionId: string,
+    buyerPhone?: string | null,
+  ) {
+    const url = `${this.appUrl}/transactions/${transactionId}`;
+    await this.persistByEmail(buyerEmail, {
+      category: 'BUYER',
+      type: 'shipping_ready_for_pickup',
+      title: 'Ready to collect',
+      body: `${listingTitle} is ready to collect at your chosen pickup point. Please collect it as soon as you can.`,
+      url: `/transactions/${transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: transactionId,
+      dismissible: false,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Ready to collect' },
+      headline: 'Ready to collect',
+      body: `Hi ${b(buyerName)}, ${b(listingTitle)} has arrived at your chosen pickup point and is ready to collect. Please collect it as soon as you can — you have up to 8 days.`,
+      cta: { label: 'View collection details', url },
+      preheader: `${listingTitle} is ready to collect`,
+    });
+    await this.send(buyerEmail, 'Ready to collect — ' + listingTitle, html);
+    await this.sendSms(
+      buyerPhone,
+      `ALL Outdoor: ${truncate(listingTitle, 30)} is ready to collect at your pickup point. View details: ${url}`,
+      `buyer-ready-for-pickup-${transactionId}`,
+    );
+  }
+
   async shippingDelivered(
     buyerEmail: string,
     buyerName: string,
@@ -3329,7 +3332,7 @@ export class NotificationsService {
       category: 'BUYER',
       type: 'shipping_delivered',
       title: 'Delivered — confirm receipt',
-      body: `${listingTitle} was delivered. Tap to confirm so the seller can be paid.`,
+      body: `${listingTitle} was delivered. You have 24 hours to confirm it is good or raise a dispute.`,
       url: `/transactions/${transactionId}`,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -3339,15 +3342,15 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'success', label: 'Delivered' },
       headline: 'Delivered',
-      body: `Hi ${b(buyerName)}, your ${b(listingTitle)} has been delivered. Please confirm receipt in your dashboard so the seller can be paid. If anything is wrong with the item, don't confirm — raise it from the order page and we'll hold the payment while we look into it.`,
+      body: `Hi ${b(buyerName)}, your ${b(listingTitle)} has been delivered. Please confirm it is good or raise a dispute within 24 hours. If anything is wrong, don't confirm — raise an issue from the order page and attach at least one photo so our team can review it.`,
       cta: { label: 'Confirm receipt', url },
       preheader: `${listingTitle} was delivered`,
     });
     await this.send(buyerEmail, 'Delivered — ' + listingTitle, html);
-    // High-value SMS — nudges the buyer to confirm, which releases the payout.
+    // High-value SMS — tells the buyer to confirm or dispute within 24 hours.
     await this.sendSms(
       buyerPhone,
-      `ALL Outdoor: ${truncate(listingTitle, 30)} was delivered. Confirm receipt so the seller can be paid: ${url}`,
+      `ALL Outdoor: ${truncate(listingTitle, 25)} delivered. Confirm it is good or dispute within 24h: ${url}`,
       `buyer-delivered-${transactionId}`,
       {
         whatsapp: {
@@ -3413,7 +3416,7 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   // Driven by the /admin/credits monitoring system (CreditThreshold
   // table). The 15-min poll cron calls this when an external service
-  // (SMSPortal / VerifyNow / Cloudinary / Anthropic / Pudo) crosses
+  // (SMSPortal / Didit / Cloudinary / Gemini / Bob Go) crosses
   // the operator-configured warn or alarm line.
   //
   // severity:
@@ -3799,7 +3802,7 @@ export class NotificationsService {
       category: 'BUYER',
       type: 'confirm_receipt_nudge',
       title: 'Confirm your delivery',
-      body: `${d.listingTitle} was delivered — tap Confirm receipt to release the seller's payment, or raise an issue if something's wrong.`,
+      body: `${d.listingTitle} was delivered. Confirm it is good or raise a dispute within 24 hours.`,
       url: `/transactions/${d.transactionId}`,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -3810,7 +3813,7 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'pending', label: 'Action needed' },
       headline: 'Confirm you received your order',
-      body: `Hi ${b(d.buyerName)}, ${b(d.listingTitle)} was marked delivered and is waiting for you to confirm. Please tap <b>Confirm receipt</b> so the seller's payment can be released. If the item never arrived, or wasn't as described, <b>raise an issue</b> from the same page instead — don't confirm.`,
+       body: `Hi ${b(d.buyerName)}, ${b(d.listingTitle)} was marked delivered. You have 24 hours to confirm it is good or <b>raise an issue</b> from the same page — don't confirm if anything is wrong.`,
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
       ],
@@ -3824,7 +3827,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `ALL Outdoor: ${truncate(d.listingTitle, 28)} was delivered. Tap Confirm receipt to release payment (or raise an issue if there's a problem): ${txUrl}`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 22)} delivered. Confirm or dispute within 24h: ${txUrl}`,
       `confirm-receipt-nudge-${d.transactionId}`,
       {
         whatsapp: {
@@ -4998,19 +5001,16 @@ function truncate(s: string, max: number): string {
 }
 
 // Friendly shipping-method label for emails. The template literal
-// rendering elsewhere shows "PUDO_LOCKER" / "DEALER_TRANSFER" which
-// looks raw; this turns them into something a buyer recognises.
+// rendering elsewhere shows "DEALER_TRANSFER" which looks raw; this
+// turns it into something a buyer recognises.
 function prettyShippingMethod(method: string | null | undefined): string {
   if (!method) return 'TBD';
   switch (method) {
-    // These describe the SHAPE of the delivery, not the company carrying it.
-    // The enum stopped naming a carrier when Bob Go moved in behind both slots,
-    // and a buyer told "Pudo Locker" about a Bob Box parcel would go looking
-    // for the wrong thing. The shape is true on either rail, and where a
-    // specific point matters the copy already names that point.
-    case 'PUDO':
-      return 'Collection point';
-    case 'TCG':
+    // This describes the SHAPE of the delivery, not the company carrying it.
+    // Bob Go is the only courier rail and it is always door-to-door; a buyer
+    // is never sent to a locker. Where a specific point matters the copy
+    // already names it.
+    case 'COURIER':
       return 'Door delivery';
     // Firearms: exactly two hand-overs, both through a licensed dealer.
     // Never "private collection".
@@ -5024,15 +5024,13 @@ function prettyShippingMethod(method: string | null | undefined): string {
 }
 
 // Same idea but specifically for the "courier" slot on the
-// sale-shipped template — PUDO / TCG are the only realistic values
-// once we're at the dispatched stage. Anything else collapses to a
-// generic label.
+// sale-shipped template — COURIER is the only realistic value once
+// we're at the dispatched stage. Anything else collapses to a generic
+// label.
 function prettyCourier(method: string | null | undefined): string {
-  // Same reasoning as prettyShippingMethod: the slot is not a carrier name any
-  // more. This one feeds a "courier" row, so it says how the parcel travels
-  // rather than inventing a company that may not be carrying it.
-  if (method === 'PUDO') return 'Collection point delivery';
-  if (method === 'TCG') return 'Door delivery';
+  // Same reasoning as prettyShippingMethod: the slot is not a carrier name.
+  // Bob Go is the only courier rail, so name it for the buyer.
+  if (method === 'COURIER') return 'Bob Go';
   return 'Courier';
 }
 
@@ -5052,8 +5050,6 @@ function prettyServiceName(slug: string): string {
       return 'Anthropic';
     case 'gemini':
       return 'Gemini API';
-    case 'pudo':
-      return 'Pudo';
     default:
       return slug;
   }

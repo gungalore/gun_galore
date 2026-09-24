@@ -1,39 +1,41 @@
-﻿// Bob Go → the existing carrier-neutral shapes.
+﻿// Bob Go → the shared carrier-neutral shapes.
 //
-// This is the whole of the "Bob Go replaces Pudo and TCG" mapping, kept in one
-// pure, testable file so the 1265-line orchestrator gains a call site rather
+// Kept in one pure, testable file so the orchestrator gains a call site rather
 // than a second brain.
 //
-// THE SLOT IDEA
-// We are NOT migrating the ShippingMethod enum. Bob Go is an aggregator that
-// returns door and pickup-point rates from one call, and those are exactly the
-// two shapes the platform already models:
+// DOOR + PICKUP-POINT SELECTION. Since 2026-09-24 the platform offers three
+// buyer options from ONE Bob Go quote: cheapest door, fastest door, and the
+// cheapest pickup-point rate (Pargo counters). Pudo lockers and TCG stay
+// retired — pickup-point delivery now comes only through Bob Go's Pargo
+// network, which the buyer reaches at a nominated counter.
 //
-//     ShippingMethod.TCG   -> the DOOR slot         (courier to the buyer's address)
-//     ShippingMethod.PUDO  -> the PICKUP-POINT slot (buyer collects from a locker)
-//
-// Every cron filter, consolidation rule, seller UI branch and auto-refund sweep
-// already understands those two shapes. Swapping the provider behind them means
-// none of that has to change. The cost is that the enum names now describe the
-// SHAPE of the delivery rather than the company performing it — hence this
-// comment, and the user-facing copy being renamed separately.
+// The four pickers below are the whole policy surface; keep them pure so the
+// "which option" decision is unit-testable without the orchestrator.
 
-import type { ShippingQuote } from './pudo.service';
+import type { ShippingQuote } from './shipping.types';
 import type { BobGoRate } from './bobgo.types';
+import { deliveryDaysFor } from './service-levels';
 
-/** The two delivery shapes, named by the enum values they map onto. */
-export type CarrierSlot = 'PUDO' | 'TCG';
+/** True when a Bob Go rate is a door-to-door delivery (not a pickup point). */
+export function isDoorRate(rate: BobGoRate): boolean {
+  return rate.type !== 'pickup-point';
+}
 
-/** Which slot a Bob Go rate belongs in. */
-export function slotForRate(rate: BobGoRate): CarrierSlot {
-  return rate.type === 'pickup-point' ? 'PUDO' : 'TCG';
+/** Every door rate in a quote. */
+export function doorRates(rates: BobGoRate[]): BobGoRate[] {
+  return rates.filter(isDoorRate);
+}
+
+/** Every pickup-point (counter/locker) rate in a quote. */
+export function pickupPointRates(rates: BobGoRate[]): BobGoRate[] {
+  return rates.filter((r) => !isDoorRate(r));
 }
 
 /**
  * Bob Go prices in RAND; every price in this codebase is integer CENTS.
  *
  * Math.round, not floor or ceil: a half-cent rounding down would under-collect
- * from the buyer and ALL Outdoor pays the carrier the real amount, so the
+ * from the buyer and All Outdoor pays the carrier the real amount, so the
  * shortfall comes out of margin on every single order.
  */
 export function randToCents(rand: number): number {
@@ -43,13 +45,9 @@ export function randToCents(rand: number): number {
 /**
  * Map a chosen rate into the shared ShippingQuote.
  *
- * OPEN QUESTION, deliberately not papered over: ShippingQuote.priceCents is
- * documented as VAT-INCLUSIVE (it has to match what the buyer is charged), and
- * we have NOT confirmed that Bob Go's total_price includes VAT. Every sandbox
- * quote had total_price === base_rate with zero surcharges and zero liability
- * cover, which tells us nothing either way. If it turns out to be VAT-exclusive
- * this is a ~15% under-collection on every courier sale — so it must be settled
- * against a real invoice before the flag is turned on, not after.
+ * OPEN QUESTION: ShippingQuote.priceCents is documented as VAT-INCLUSIVE (it
+ * has to match what the buyer is charged), and we have NOT confirmed that Bob
+ * Go's total_price includes VAT. Settle it against a real invoice.
  */
 export function rateToQuote(rate: BobGoRate): ShippingQuote {
   return {
@@ -58,91 +56,60 @@ export function rateToQuote(rate: BobGoRate): ShippingQuote {
     priceCents: randToCents(rate.totalPrice),
     providerSlug: rate.providerSlug,
     serviceLevelCode: rate.serviceLevelCode,
-    ...(rate.pickupPointLocationId != null
-      ? { pickupPointLocationId: rate.pickupPointLocationId }
-      : {}),
   };
 }
 
 /**
- * Choose the rate to quote for a slot.
+ * The cheapest door-to-door rate for a route.
  *
- * Door: cheapest, matching what TcgService.getQuote has always done (it sorts
- * ascending on rate and takes the first) — so switching provider does not also
- * silently switch the selection policy.
- *
- * Pickup-point WITH a chosen locker: only a rate that actually delivers to THAT
- * locker will do. Returning a cheaper rate for a different locker would send the
- * parcel somewhere the buyer never picked, so a miss returns null and the caller
- * reports it honestly.
- *
- * Pickup-point WITHOUT a chosen locker: cheapest, then nearest as the tiebreak.
+ * Bob Go returns every provider's rates in one response; the platform's policy
+ * is to charge the buyer the cheapest door option. Returns null when no door
+ * rate was quoted (a genuine "we cannot deliver this to that address").
  */
-export function selectRateForSlot(
-  rates: BobGoRate[],
-  slot: CarrierSlot,
-  opts: { lockerId?: number } = {},
-): BobGoRate | null {
-  const inSlot = rates.filter((r) => slotForRate(r) === slot);
-  if (inSlot.length === 0) return null;
-
-  if (slot === 'TCG') {
-    return [...inSlot].sort((a, b) => a.totalPrice - b.totalPrice)[0];
-  }
-
-  if (opts.lockerId != null) {
-    const exact = inSlot.filter(
-      (r) => r.pickupPointLocationId === opts.lockerId,
-    );
-    if (exact.length === 0) return null;
-    return exact.sort((a, b) => a.totalPrice - b.totalPrice)[0];
-  }
-
-  return [...inSlot].sort(
-    (a, b) =>
-      a.totalPrice - b.totalPrice ||
-      (a.pickupPointDistanceKm ?? Infinity) -
-        (b.pickupPointDistanceKm ?? Infinity),
-  )[0];
+export function cheapestDoorRate(rates: BobGoRate[]): BobGoRate | null {
+  const door = rates.filter(isDoorRate);
+  if (door.length === 0) return null;
+  return [...door].sort((a, b) => a.totalPrice - b.totalPrice)[0];
 }
 
 /**
- * The buyer's pickup-point picker, built from the quote instead of a directory.
- *
- * THE FLOW INVERTS. Today it is "pick a locker, then price it": the buyer
- * searches a cached Pudo directory, chooses a terminal, and only then do we
- * quote it. Bob Go returns pickup points already priced, already carrying their
- * distance, and already bookable — the location id is baked into the
- * serviceCode — so it becomes "quote the route, then pick one of the answers".
- *
- * That is strictly better in one way: every option shown is one Bob Go has
- * confirmed it will actually carry this parcel to, which the Pudo directory
- * could never promise. It is worse in another: the buyer needs a delivery
- * address before seeing any locker, where today they can browse first.
- *
- * Deduped by location, because rates are generated PER LOCATION and the same
- * duplicate seen on /locations (#545 returned twice in one response) shows up
- * here too — dedupeLocations in the client does not cover this path. Cheapest
- * wins per location; ordered nearest-first, which is what a picker wants.
+ * The FASTEST door rate: fewest business days from the static service-level
+ * lookup, then cheapest as the tie-break. Fastest first means a same-day
+ * service (0 days) always wins even if pricier — the buyer explicitly asked
+ * for speed. Returns null when no door rate was quoted.
  */
-export function pickupPointOptions(rates: BobGoRate[]): BobGoRate[] {
-  const best = new Map<number, BobGoRate>();
-  for (const r of rates) {
-    if (slotForRate(r) !== 'PUDO') continue;
-    const id = r.pickupPointLocationId;
-    // No location id means nothing to book against and nothing to dedupe on —
-    // showing it would give the buyer a choice we cannot honour.
-    if (id == null || !Number.isFinite(id)) continue;
-    const seen = best.get(id);
-    if (!seen || r.totalPrice < seen.totalPrice) best.set(id, r);
-  }
-  return [...best.values()].sort(
-    (a, b) =>
-      (a.pickupPointDistanceKm ?? Infinity) -
-        (b.pickupPointDistanceKm ?? Infinity) || a.totalPrice - b.totalPrice,
-  );
+export function fastestDoorRate(rates: BobGoRate[]): BobGoRate | null {
+  const door = rates.filter(isDoorRate);
+  if (door.length === 0) return null;
+  return [...door].sort((a, b) => {
+    // The quote's date window is route-specific and therefore beats our
+    // fallback lookup whenever Bob Go supplies it. `YYYY-MM-DD` is sortable
+    // lexicographically; invalid/missing values fall through to the static
+    // service-level days below.
+    const aDate = validDateKey(a.minDeliveryDate);
+    const bDate = validDateKey(b.minDeliveryDate);
+    if (aDate && bDate && aDate !== bDate) return aDate.localeCompare(bDate);
+    if (aDate && !bDate) return -1;
+    if (bDate && !aDate) return 1;
+    const da = deliveryDaysFor(a.providerSlug, a.serviceLevelCode).min;
+    const db = deliveryDaysFor(b.providerSlug, b.serviceLevelCode).min;
+    if (da !== db) return da - db;
+    return a.totalPrice - b.totalPrice;
+  })[0];
 }
 
-// Province long-form mapping is NOT repeated here. shipping.service.ts already
-// owns PROVINCE_LONG (:40) and builds every carrier address, and Bob Go's
-// `zone` wants the same long form TCG does — a second copy would only drift.
+function validDateKey(value: string | undefined): string | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  return value;
+}
+
+/**
+ * The cheapest pickup-point (Pargo) rate. Returns null when the quote carried
+ * no counter/locker option — which is the normal case for a route with no
+ * Pargo coverage, not an error.
+ */
+export function cheapestPickupPointRate(rates: BobGoRate[]): BobGoRate | null {
+  const pp = rates.filter((r) => !isDoorRate(r));
+  if (pp.length === 0) return null;
+  return [...pp].sort((a, b) => a.totalPrice - b.totalPrice)[0];
+}

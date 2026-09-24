@@ -14,7 +14,7 @@ import {
   IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ShippingMethod } from '@prisma/client';
+import { DeliveryOption, ShippingMethod } from '@prisma/client';
 import { DeliveryAddressDto } from './create-transaction.dto';
 
 // One line of a multi-item cart. A subset of CreateTransactionDto. BUY_NOW
@@ -33,15 +33,20 @@ export class CreateOrderLineDto {
   @IsEnum(ShippingMethod)
   shippingMethod: ShippingMethod;
 
-  @ValidateIf((o) => o.shippingMethod === 'PUDO')
-  @IsString()
-  @IsNotEmpty()
-  pudoPickupLockerId?: string;
-
-  @ValidateIf((o) => o.shippingMethod === 'TCG')
+  @ValidateIf((o) => o.shippingMethod === 'COURIER')
   @ValidateNested()
   @Type(() => DeliveryAddressDto)
   deliveryAddress?: DeliveryAddressDto;
+
+  @ValidateIf((o) => o.shippingMethod === 'COURIER')
+  @IsOptional()
+  @IsEnum(DeliveryOption)
+  deliveryOption?: DeliveryOption;
+
+  @ValidateIf((o) => o.shippingMethod === 'COURIER' && o.deliveryOption === 'STORE_PICKUP')
+  @IsInt()
+  @Min(1)
+  pickupPointLocationId?: number;
 
   // Firearm DEALER_TRANSFER: buyer's chosen receiving dealer. OPTIONAL — the
   // buyer nominates any SAPS-licensed dealer after the sale and payout is gated

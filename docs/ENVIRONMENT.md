@@ -47,7 +47,7 @@ it is actually "the integration is protecting you". The fail-closed set:
 | `DIDIT_MODE`          | The whole process, at boot, in production, unless it is `live`. Hard throw. |
 | `DIDIT_API_KEY` / `DIDIT_WORKFLOW_ID` | The whole process, at boot, in production. Hard throw. |
 | `DIDIT_WEBHOOK_SECRET`| Inbound verification outcomes are dropped unverified → a seller who finished on Didit's page stays `PENDING` forever |
-| `TCG_WEBHOOK_SECRET`  | Inbound Courier Guy tracking events rejected in production         |
+| `BOBGO_WEBHOOK_SECRET`| Inbound Bob Go tracking events rejected in production               |
 | `OZOW_WEBHOOK_SECRET` | Inbound Ozow webhooks rejected → orders never confirm as paid     |
 | `HEALTH_PING_SECRET`  | `/api/health/crons` returns 503 rather than 200                    |
 
@@ -80,10 +80,10 @@ Names in here that will not mean anything until you know the domain:
 - **SA ID number** — a 13-digit national identity number. It encodes date of
   birth, sex and citizenship, so it is high-sensitivity personal information
   under **POPIA** (the SA data-protection act). Hence the encryption.
-- **PUDO** — a parcel-locker network. Buyer and seller each use a locker
-  instead of a street address. Common here because inter-town home delivery is
-  unreliable.
-- **The Courier Guy (TCG)** — the door-to-door courier.
+- **Bob Go** — the door-to-door courier aggregator. The platform's **only**
+  courier rail; every non-firearm parcel is booked door-to-door at the cheapest
+  Bob Go rate for the parcel and route. Pudo (lockers) and The Courier Guy (TCG)
+  are retired — there is no locker or pickup-point delivery any more.
 - **Ozow** — the SA payment gateway. Pay by Bank (instant EFT) pay-in through
   One API, refunds, and payouts to seller bank accounts through the Payouts API.
   There is no automated bank-account name verification product; the destination
@@ -107,7 +107,7 @@ Names in here that will not mean anything until you know the domain:
 **Required.** `development` or `production`.
 
 Not just a logging switch. In `production` it: activates the config gate in
-`main.ts`, makes the TCG webhook fail closed instead of allowing unsigned
+`main.ts`, makes the Bob Go webhook fail closed instead of allowing unsigned
 calls, strips localhost/LAN origins out of the CORS allow-list, and makes
 `JWT_MEMBER_SECRET`, `JWT_ADMIN_SECRET` and a **live** `DIDIT_MODE` mandatory —
 each of those throws at boot rather than degrading. Local: `development`.
@@ -547,34 +547,28 @@ identifying us to the Apple and Google push gateways.
 > racing an IPv6 connection that could only hang. That silently broke iOS push.
 > Do not remove those two lines.
 
-## Shipping — PUDO (lockers)
+## Shipping — Bob Go (door-to-door)
 
-### `PUDO_API_KEY`, `PUDO_API_SECRET`, `PUDO_BASE_URL`
-`PUDO_API_KEY` **required for locker shipping**; secret and base URL
-**optional** (base URL defaults to `https://api-pudo.co.za`).
+Bob Go is the **only** courier rail; Pudo (lockers) and The Courier Guy (TCG)
+are retired. Every non-firearm parcel is booked door-to-door at the **cheapest
+Bob Go door rate**. There is no locker or pickup-point delivery any more.
 
-⚠️ **PUDO has no sandbox.** Creating a shipment bills real credits against the
-operator's live account. There is no test mode to fall back on, so do not
-exercise the create path casually and do not point local development at a real
-key unless you intend to spend money.
+### `BOBGO_API_KEY`, `BOBGO_BASE_URL`
+`BOBGO_API_KEY` is the Bearer token. Without it the service is **inert** — Bob Go
+rates and bookings are skipped and logged, which is the safe local default. Base
+URL **optional**, default `https://api.sandbox.bobgo.co.za/v2`.
 
-Missing key → shipment creation is skipped and logged, which is the safe local
-default.
+⚠️ **`BOBGO_BASE_URL` defaults to the SANDBOX**, the opposite of every other
+integration here. Set it to `https://api.bobgo.co.za/v2` on a real server, or
+real parcels never move even though quotes and bookings look normal.
 
-## Shipping — The Courier Guy (door-to-door)
-
-### `TCG_API_KEY`, `TCG_BASE_URL`
-Key **required for door shipping**; base URL **optional**, default
-`https://api.portal.thecourierguy.co.za`.
-
-### `TCG_WEBHOOK_SECRET`
-**Required in production. FAILS CLOSED.** Shared secret TCG sends back in the
-`x-tcg-webhook-secret` header on every tracking event.
+### `BOBGO_WEBHOOK_SECRET`
+**Required in production. FAILS CLOSED.** Shared secret carried in the receiver
+path: `/api/shipping/webhook/bobgo/<secret>/<group>/<action>`.
 
 In production, unset → the webhook rejects everything, so shipments never
-advance state. (This used to short-circuit the check entirely when unset,
-meaning anyone could POST shipping events; that is fixed.) In development,
-unset is allowed through so local testing works without the secret wired.
+advance state. In development, unset is allowed through so local testing works
+without the secret wired.
 
 The endpoint always returns HTTP 200 even when rejecting — a house rule, so a
 carrier's retry queue does not back up against us.
@@ -895,7 +889,7 @@ server, meaning the feature is running on its coded default:
 `ANTHROPIC_ADMIN_API_KEY`, all ten remaining
 `ANTHROPIC_MODEL_*`, `HB_RANGE_OPUS_THRESHOLD`, `OZOW_ENV`,
 `OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`, `OZOW_WEBHOOK_SECRET`,
-`PAYMENTS_LIVE`, `PUBLIC_API_URL`, `PUDO_API_SECRET`, `TCG_BASE_URL`,
+`PAYMENTS_LIVE`, `PUBLIC_API_URL`, `BOBGO_BASE_URL`, `BOBGO_WEBHOOK_SECRET`,
 `SMSPORTAL_API_KEY`, `SMSPORTAL_BASE_URL`,
 `LOW_CREDIT_THRESHOLD`, `SUPPORT_EMAIL`, `EMAIL_LOGO_URL`, `OCR_CHUNK_PAGES`,
 `HEALTH_PING_SECRET`.

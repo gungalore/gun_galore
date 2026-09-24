@@ -4,7 +4,6 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { OffersService } from '../offers/offers.service';
 import { AuctionsService } from '../auctions/auctions.service';
 import { KycService } from '../kyc/kyc.service';
-import { TrackingService } from '../shipping/tracking.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { DispatchSlaService } from '../payments/dispatch-sla.service';
 import { TransactionsService } from '../payments/transactions.service';
@@ -58,7 +57,6 @@ export class TasksService {
     private readonly offersService: OffersService,
     private readonly auctionsService: AuctionsService,
     private readonly kycService: KycService,
-    private readonly trackingService: TrackingService,
     private readonly shipping: ShippingService,
     private readonly dispatchSla: DispatchSlaService,
     private readonly transactions: TransactionsService,
@@ -897,28 +895,10 @@ export class TasksService {
   // per-check credit to run out of mid-sale. If /admin/health still lists a
   // 'verifynow-balance' cron, that row is the stale one — not a missed run.
 
-  // Run every 10 minutes — poll Pudo's tracking endpoint for every
-  // active PUDO shipment, append new carrier events to the per-
-  // transaction TrackingEvent log, and roll Transaction.shippingStatus
-  // forward in lockstep with the collapsed status. The polling-vs-
-  // webhook trade-off was deliberate (Pudo webhooks need a support
-  // email to enable) — at 10 min granularity the buyer's timeline is
-  // never more than 10 min stale, which is acceptable for a parcel
-  // service whose carrier scans are minutes-apart at best.
-  @Cron(CronExpression.EVERY_10_MINUTES)
-  async pollTrackingEvents() {
-    try {
-      const result = await this.trackingService.pollPudoShipments();
-      if (result.ingested > 0) {
-        this.logger.log(
-          `Pudo tracking poll: scanned ${result.scanned}, ingested ${result.ingested} new event(s)`,
-        );
-      }
-    } catch (err) {
-      this.logger.warn(`Pudo tracking poll failed: ${(err as Error).message}`);
-    }
-    await this.recordCronRun('shipping-poll');
-  }
+  // ⚠️ THE PUDO TRACKING POLL IS GONE (2026-09-24). It asked Pudo every 10
+  // minutes for each active locker shipment's tracking events. Pudo was
+  // retired; Bob Go's tracking now arrives by webhook and the pending-booking
+  // resolver below. There is no poll to run.
 
   // Resolve Bob Go bookings the courier had not yet accepted.
   //
@@ -1054,6 +1034,21 @@ export class TasksService {
       this.logger.error(
         `stuckHeldFundsSweep failed: ${(err as Error).message}`,
         (err as Error).stack,
+      );
+    }
+    // STORE_PICKUP payout clock — admin payout option once the buyer collected
+    // (+24h) or the pickup deadline passed. Separate try so a failure here
+    // never blocks the door-rail sweeps above.
+    try {
+      const sp = await this.dispatchSla.enableStorePickupPayout();
+      if (sp.enabled > 0) {
+        this.logger.log(
+          `Store-pickup payout: enabled for ${sp.enabled} of ${sp.scanned} order(s)`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `enableStorePickupPayout failed: ${(err as Error).message}`,
       );
     } finally {
       await this.recordCronRun('stuck-held-funds');

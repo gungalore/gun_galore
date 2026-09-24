@@ -1,4 +1,4 @@
-﻿import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 
@@ -47,8 +47,7 @@ export interface CreditSnapshotResult {
     | 'verifynow'
     | 'cloudinary'
     | 'gemini'
-    | 'anthropic'
-    | 'pudo';
+    | 'anthropic';
   balance: number | null;
   unit: string | null;
   metadata: Record<string, unknown> | null;
@@ -476,118 +475,6 @@ export class AdminCreditsService {
   }
 
   // -------------------------------------------------------------------
-  // Pudo — account balance / wallet status.
-  // -------------------------------------------------------------------
-  // Pudo's public REST API doesn't expose a documented /account or
-  // /balance endpoint at the time of writing — every shipment-create
-  // call returns a `flags` array that includes "zero_balance" when the
-  // merchant wallet is empty, but there's no "what's my balance" GET.
-  //
-  // We try GET {PUDO_BASE_URL}/api/v1/account first (per a community
-  // mention in their support thread); if it 404s we fall back to
-  // reporting "endpoint not exposed" gracefully — the operator can
-  // still see the live "zero_balance" flag via the shipment audit log.
-  //
-  // Auth uses the same Bearer scheme as PudoService.buildBearer().
-  async fetchPudo(): Promise<CreditSnapshotResult> {
-    const fetchedAt = new Date();
-    const apiKey = process.env.PUDO_API_KEY;
-    const apiSecret = process.env.PUDO_API_SECRET ?? '';
-    const baseUrl = process.env.PUDO_BASE_URL ?? 'https://api-pudo.co.za';
-
-    if (!apiKey) {
-      return {
-        service: 'pudo',
-        balance: null,
-        unit: 'ZAR',
-        metadata: null,
-        fetchedAt,
-        error: 'PUDO_API_KEY not configured',
-      };
-    }
-
-    // Pudo's bearer format is <id>|<secret>. Match PudoService's
-    // buildBearer() exactly so any working PUDO_API_KEY env keeps working.
-    const bearer = apiKey.includes('|')
-      ? apiKey
-      : apiSecret
-        ? `${apiKey}|${apiSecret}`
-        : apiKey;
-
-    try {
-      const res = await fetch(`${baseUrl}/api/v1/account`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${bearer}`,
-          Accept: 'application/json',
-        },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-
-      if (res.status === 404) {
-        // Endpoint not exposed — this is expected; report gracefully so
-        // the admin UI shows "—" rather than a misleading "0".
-        return {
-          service: 'pudo',
-          balance: null,
-          unit: 'ZAR',
-          metadata: { note: 'Pudo /account endpoint not exposed by their API' },
-          fetchedAt,
-          error:
-            'No public balance endpoint — monitor via shipment-create flags',
-        };
-      }
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        return {
-          service: 'pudo',
-          balance: null,
-          unit: 'ZAR',
-          metadata: { httpStatus: res.status, body: text.slice(0, 200) },
-          fetchedAt,
-          error: `HTTP ${res.status}`,
-        };
-      }
-
-      const raw = (await res.json().catch(() => ({}))) as Record<
-        string,
-        unknown
-      >;
-      // Pudo's account response shape isn't formally documented; we
-      // probe a few plausible field names. If none match we still
-      // record the raw so the operator can extend this mapping later.
-      const balanceCandidate =
-        (raw.balance as number | undefined) ??
-        (raw.wallet_balance as number | undefined) ??
-        (raw.account_balance as number | undefined) ??
-        (raw.credit as number | undefined) ??
-        null;
-
-      return {
-        service: 'pudo',
-        balance: typeof balanceCandidate === 'number' ? balanceCandidate : null,
-        unit: 'ZAR',
-        metadata: { raw },
-        fetchedAt,
-        error:
-          balanceCandidate == null
-            ? 'Balance field missing — see raw metadata'
-            : undefined,
-      };
-    } catch (err) {
-      return {
-        service: 'pudo',
-        balance: null,
-        unit: 'ZAR',
-        metadata: null,
-        fetchedAt,
-        error: (err as Error).message,
-      };
-    }
-  }
-
-  // -------------------------------------------------------------------
   // fetchAll — runs every service in parallel via Promise.allSettled
   // so one slow/broken service can't block the others. Never throws —
   // settled rejections are converted to error rows on the way out.
@@ -599,7 +486,6 @@ export class AdminCreditsService {
       this.fetchVerifyNow(),
       this.fetchCloudinary(),
       this.fetchGemini(),
-      this.fetchPudo(),
     ]);
 
     const services: CreditSnapshotResult['service'][] = [
@@ -607,7 +493,6 @@ export class AdminCreditsService {
       'verifynow',
       'cloudinary',
       'gemini',
-      'pudo',
     ];
 
     return settled.map((s, i): CreditSnapshotResult => {
@@ -776,15 +661,6 @@ export class AdminCreditsService {
           detail: r.ok
             ? `${r.provider}/${r.model} answered in ${r.latencyMs}ms`
             : (r.error ?? 'ping failed'),
-        };
-      }
-      case 'pudo': {
-        const r = await this.fetchPudo();
-        // For Pudo we count "endpoint missing" as a partial success —
-        // the auth at least round-tripped.
-        return {
-          ok: r.error == null || r.error.includes('endpoint'),
-          detail: r.error ?? `Account OK: balance ${r.balance} ${r.unit}`,
         };
       }
       default:

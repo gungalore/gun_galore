@@ -8,13 +8,13 @@
 // The transit-day windows mirror the backend post-purchase estimator
 // (backend/src/shipping/delivery-estimate.ts — TRANSIT_BUSINESS_DAYS). Both
 // are deliberately conservative upper bounds and are ALWAYS framed as an
-// estimate, never a guarantee — dispatch timing is at the seller's discretion
-// (and, on the manual-EFT rail, only starts once payment clears).
+// estimate, never a guarantee — the seller chooses a collection date after
+// payment, so the stated upper bound starts from payment rather than dispatch.
 
 import type { Listing } from './types';
 
 // Keep in sync with backend TRANSIT_BUSINESS_DAYS.
-const TRANSIT_BUSINESS_DAYS = { PUDO: 5, TCG: 4 } as const;
+const TRANSIT_BUSINESS_DAYS = { COURIER: 10 } as const;
 
 export type ListingDeliveryEstimate =
   | { kind: 'FIREARM' }
@@ -40,8 +40,7 @@ export function getListingDeliveryEstimate(
     return { kind: 'COLLECTION' };
 
   const days: number[] = [];
-  if (methods.includes('PUDO')) days.push(TRANSIT_BUSINESS_DAYS.PUDO);
-  if (methods.includes('TCG')) days.push(TRANSIT_BUSINESS_DAYS.TCG);
+  if (methods.includes('COURIER')) days.push(TRANSIT_BUSINESS_DAYS.COURIER);
   // Nothing platform-estimable (e.g. PRIVATE_ARRANGE only).
   if (days.length === 0) return null;
 

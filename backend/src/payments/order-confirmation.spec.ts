@@ -269,7 +269,7 @@ const CART_LINE = {
   sellerPayout: 45_000,
   passFeeToBuyer: true,
   feeModel: 'BUYNOW_MARKUP',
-  shippingMethod: 'PUDO',
+  shippingMethod: 'COURIER',
   paidAt: new Date(),
 };
 

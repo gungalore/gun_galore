@@ -114,10 +114,11 @@ export class AdminHealthService {
         method: 'HEAD',
       },
       {
-        name: 'Pudo (locker shipping)',
-        url: process.env.PUDO_BASE_URL ?? 'https://api-pudo.co.za',
+        name: 'Bob Go (courier)',
+        url: process.env.BOBGO_BASE_URL ?? 'https://api.sandbox.bobgo.co.za/v2',
         category: 'shipping',
         method: 'HEAD',
+        requiresEnv: ['BOBGO_API_KEY'],
       },
       {
         name: 'VerifyNow (KYC)',
@@ -291,7 +292,7 @@ export class AdminHealthService {
           const latencyMs = Date.now() - start;
           const message = (err as Error).message ?? 'unknown error';
           // Localhost probes that fail almost always mean the dev
-          // daemon isn't running (Meilisearch, local Pudo proxy etc.)
+          // daemon isn't running (Meilisearch, local carrier proxy etc.)
           // — surface a specific hint so the operator knows to start
           // it rather than chase an external-network issue.
           let detail: string;

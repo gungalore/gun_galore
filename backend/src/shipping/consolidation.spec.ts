@@ -13,6 +13,13 @@ const ADDR = {
   postalCode: '2092',
 };
 
+const OTHER_ADDR = {
+  streetAddress: '1 Long Street',
+  suburb: 'CBD',
+  city: 'Cape Town',
+  postalCode: '8001',
+};
+
 function meta(entries: Array<[string, Partial<ShippingLineMeta>]>) {
   return new Map<string, ShippingLineMeta>(
     entries.map(([id, m]) => [
@@ -26,8 +33,8 @@ describe('planShippingGroups', () => {
   it('puts two same-seller courier lines to one address in ONE parcel', () => {
     const groups = planShippingGroups(
       [
-        { listingId: 'L1', shippingMethod: 'TCG', deliveryAddress: ADDR },
-        { listingId: 'L2', shippingMethod: 'TCG', deliveryAddress: ADDR },
+        { listingId: 'L1', shippingMethod: 'COURIER', deliveryAddress: ADDR },
+        { listingId: 'L2', shippingMethod: 'COURIER', deliveryAddress: ADDR },
       ],
       meta([['L1', {}], ['L2', {}]]),
     );
@@ -39,8 +46,8 @@ describe('planShippingGroups', () => {
   it('splits different sellers — they ship from different places', () => {
     const groups = planShippingGroups(
       [
-        { listingId: 'L1', shippingMethod: 'TCG', deliveryAddress: ADDR },
-        { listingId: 'L2', shippingMethod: 'TCG', deliveryAddress: ADDR },
+        { listingId: 'L1', shippingMethod: 'COURIER', deliveryAddress: ADDR },
+        { listingId: 'L2', shippingMethod: 'COURIER', deliveryAddress: ADDR },
       ],
       meta([['L1', { sellerId: 'S1' }], ['L2', { sellerId: 'S2' }]]),
     );
@@ -53,8 +60,8 @@ describe('planShippingGroups', () => {
     // courier method on one must still not consolidate it.
     const groups = planShippingGroups(
       [
-        { listingId: 'F1', shippingMethod: 'TCG', deliveryAddress: ADDR },
-        { listingId: 'L1', shippingMethod: 'TCG', deliveryAddress: ADDR },
+        { listingId: 'F1', shippingMethod: 'COURIER', deliveryAddress: ADDR },
+        { listingId: 'L1', shippingMethod: 'COURIER', deliveryAddress: ADDR },
       ],
       meta([['F1', { isFirearm: true }], ['L1', {}]]),
     );
@@ -75,12 +82,11 @@ describe('planShippingGroups', () => {
     expect(groups).toEqual([]);
   });
 
-  it('separates collection-point groups by the chosen point', () => {
-    // Two different points are two different destinations, so two waybills.
+  it('separates groups by destination — different addresses are different parcels', () => {
     const groups = planShippingGroups(
       [
-        { listingId: 'L1', shippingMethod: 'PUDO', pickupPointId: 545 },
-        { listingId: 'L2', shippingMethod: 'PUDO', pickupPointId: 900 },
+        { listingId: 'L1', shippingMethod: 'COURIER', deliveryAddress: ADDR },
+        { listingId: 'L2', shippingMethod: 'COURIER', deliveryAddress: OTHER_ADDR },
       ],
       meta([['L1', {}], ['L2', {}]]),
     );
@@ -89,7 +95,7 @@ describe('planShippingGroups', () => {
 
   it('ignores a line whose listing metadata is missing', () => {
     const groups = planShippingGroups(
-      [{ listingId: 'GHOST', shippingMethod: 'TCG', deliveryAddress: ADDR }],
+      [{ listingId: 'GHOST', shippingMethod: 'COURIER', deliveryAddress: ADDR }],
       meta([]),
     );
     expect(groups).toEqual([]);

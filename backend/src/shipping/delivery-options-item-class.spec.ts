@@ -10,14 +10,11 @@ import { ShippingService } from './shipping.service';
  * this listing have parcel weight and dimensions". That is not a class check.
  * A firearm carries weight and dimensions (the sell form requires them), so a
  * firearm listing sailed straight past it and the endpoint returned live,
- * priced, bookable-looking door and pickup-point rates for a rifle to any
- * caller holding a listing id.
+ * priced, bookable-looking door rates for a rifle to any caller holding a
+ * listing id.
  *
  * A firearm moves as dealer stock through a licensed dealer, or the parties
  * arrange privately and both attend one. It is never a parcel on our rail.
- *
- * These assertions run against BOTH rails, because the guard sits above the
- * Bob Go / legacy fork and the legacy path was equally exposed.
  */
 
 const BASE_LISTING = {
@@ -64,7 +61,7 @@ const DOOR_RATE = {
   surchargeTotal: 0,
 };
 
-function makeService(listing: Record<string, unknown>, bobgoOn: boolean) {
+function makeService(listing: Record<string, unknown>) {
   const prisma = {
     listing: { findUnique: jest.fn().mockResolvedValue(listing) },
   };
@@ -73,68 +70,43 @@ function makeService(listing: Record<string, unknown>, bobgoOn: boolean) {
       .fn()
       .mockResolvedValue({ rates: [DOOR_RATE], pricingVerified: false }),
   };
-  const pudo = {
-    getNearbyLockers: jest.fn().mockResolvedValue([]),
-    quoteL2L: jest.fn().mockResolvedValue(null),
-  };
-  const svc = new ShippingService(
-    prisma as never,
-    {} as never,
-    pudo as never,
-    bobgo as never,
-    { get: jest.fn().mockResolvedValue(bobgoOn) } as never,
-  );
-  return { svc, bobgo, pudo };
+  const svc = new ShippingService(prisma as never, {} as never, bobgo as never);
+  return { svc, bobgo };
 }
 
-describe.each([
-  ['Bob Go rail', true],
-  ['legacy Pudo/TCG rail', false],
-])('deliveryOptions refuses non-shippable items — %s', (_name, bobgoOn) => {
+describe('deliveryOptions refuses non-shippable items', () => {
   it('refuses a firearm, and never reaches the carrier', async () => {
-    const { svc, bobgo, pudo } = makeService(
-      { ...BASE_LISTING, isFirearm: true },
-      bobgoOn,
-    );
+    const { svc, bobgo } = makeService({ ...BASE_LISTING, isFirearm: true });
     await expect(svc.deliveryOptions('L1', DELIVERY)).rejects.toThrow(
       /licensed dealer/i,
     );
     // The point is not just the error — no carrier call may be made at all.
     expect(bobgo.getRates).not.toHaveBeenCalled();
-    expect(pudo.getNearbyLockers).not.toHaveBeenCalled();
   });
 
   it('refuses a collection-only item even when it has parcel dimensions', async () => {
     // Dimensions present on purpose: the old dimension gate would have passed
     // this straight through to a live quote.
-    const { svc, bobgo, pudo } = makeService(
-      { ...BASE_LISTING, collectionOnly: true },
-      bobgoOn,
-    );
+    const { svc, bobgo } = makeService({ ...BASE_LISTING, collectionOnly: true });
     await expect(svc.deliveryOptions('L1', DELIVERY)).rejects.toThrow(
       /cannot be couriered/i,
     );
     expect(bobgo.getRates).not.toHaveBeenCalled();
-    expect(pudo.getNearbyLockers).not.toHaveBeenCalled();
   });
 
   it('refuses an on-site experience', async () => {
-    const { svc, bobgo, pudo } = makeService(
-      { ...BASE_LISTING, isExperience: true },
-      bobgoOn,
-    );
+    const { svc, bobgo } = makeService({ ...BASE_LISTING, isExperience: true });
     await expect(svc.deliveryOptions('L1', DELIVERY)).rejects.toThrow(
       /on-site booking/i,
     );
     expect(bobgo.getRates).not.toHaveBeenCalled();
-    expect(pudo.getNearbyLockers).not.toHaveBeenCalled();
   });
 
   it('refuses a listing whose seller offered no courier method', async () => {
-    const { svc } = makeService(
-      { ...BASE_LISTING, shippingMethods: ['COLLECTION'] },
-      bobgoOn,
-    );
+    const { svc } = makeService({
+      ...BASE_LISTING,
+      shippingMethods: ['COLLECTION'],
+    });
     await expect(svc.deliveryOptions('L1', DELIVERY)).rejects.toThrow(
       /not available for courier delivery/i,
     );
@@ -143,24 +115,8 @@ describe.each([
   it('still quotes an ordinary shippable listing', async () => {
     // Guard must not over-reach: the normal case has to keep working, and an
     // empty shippingMethods array means "no restriction", not "no courier".
-    const { svc } = makeService({ ...BASE_LISTING }, bobgoOn);
+    const { svc } = makeService({ ...BASE_LISTING });
     const opts = await svc.deliveryOptions('L1', DELIVERY);
-
-    if (bobgoOn) {
-      expect(opts.door?.priceCents).toBeGreaterThan(0);
-    } else {
-      // ⚠️ THE LEGACY RAIL HAS NO DOOR LEG ANY MORE. It was The Courier Guy's,
-      // and that integration was retired (operator 2026-09-04) — Bob Go serves
-      // the DOOR slot now, and Bob Go is exactly what this arm switches off.
-      // A null door here is the correct answer, not a regression. (Pudo is
-      // stubbed to return no lockers in this file, so there is no positive
-      // rate to assert on either.)
-      //
-      // What this case exists to prove is that the item-class guard does not
-      // OVER-REACH — it must reject a collection-only listing and let an
-      // ordinary one through. Returning a menu at all, rather than throwing
-      // "not available for courier delivery", is exactly that proof.
-      expect(opts.door).toBeNull();
-    }
+    expect(opts.door?.priceCents).toBeGreaterThan(0);
   });
 });

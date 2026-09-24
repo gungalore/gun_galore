@@ -140,8 +140,7 @@ export function MultiSelectPillGroup<T extends string>({
     value: T;
     label: string;
     description?: string;
-    /** Greys the pill and blocks clicks. Used by the Sell form to hide
-     *  PUDO when the parcel exceeds locker box limits. */
+    /** Greys the pill and blocks clicks (e.g. a locked mandatory option). */
     disabled?: boolean;
   }[];
   value: T[];

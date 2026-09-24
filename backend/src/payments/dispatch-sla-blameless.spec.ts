@@ -1,4 +1,4 @@
-// DispatchSlaService pulls in ShippingService -> PudoService -> SearchService
+// DispatchSlaService pulls in ShippingService -> BobGoService -> SearchService
 // -> ESM-only meilisearch. The function under test is pure, but importing the
 // module still loads the chain.
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
@@ -25,10 +25,11 @@ describe('blamelessSeller', () => {
     ).toBe(false);
   });
 
-  it('leaves the legacy rails exactly as they were', () => {
-    // Pudo and TCG are booked-or-throw, so an un-booked row there means the
-    // booking failed loudly and the seller had the manual fallback all along.
-    for (const p of ['PUDO', 'TCG', null]) {
+  it('blames a seller on any non-Bob-Go provider', () => {
+    // Only a Bob Go booking that never completed is excused; any other
+    // provider is booked-or-throw, so an un-booked row there means the booking
+    // failed loudly and the seller had the manual fallback all along.
+    for (const p of ['COURIER', null]) {
       expect(blamelessSeller({ carrierProvider: p, shipmentBookedAt: null })).toBe(
         false,
       );

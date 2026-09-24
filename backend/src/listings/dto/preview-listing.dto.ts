@@ -163,7 +163,6 @@ export class PreviewListingDto {
   @IsOptional() @IsString() @MaxLength(10) pickupPostalCode?: string;
   @IsOptional() @IsNumber() pickupLat?: number;
   @IsOptional() @IsNumber() pickupLng?: number;
-  @IsOptional() @IsString() @MaxLength(60) pickupPudoLockerId?: string;
 
   // Parcel weight + dimensions (preview shape mirrors create — see
   // create-listing.dto.ts for the lifecycle notes).

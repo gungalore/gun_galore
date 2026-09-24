@@ -271,7 +271,7 @@ describe('DispatchSlaService.nudgeUnconfirmedReceipt', () => {
           confirmedDeliveryAt: null,
           buyerConfirmNudgedAt: null,
           swapId: null,
-          shippingMethod: { in: ['PUDO', 'TCG'] },
+          shippingMethod: 'COURIER',
         }),
       }),
     );

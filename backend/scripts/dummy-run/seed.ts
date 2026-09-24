@@ -11,7 +11,7 @@
  */
 import type { INestApplicationContext } from '@nestjs/common';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { PudoService } from '../../src/shipping/pudo.service';
+import { BobGoService } from '../../src/shipping/bobgo.service';
 import { Reporter } from './harness';
 
 export interface Actor {
@@ -106,25 +106,32 @@ export async function cleanup(prisma: PrismaService) {
 }
 
 /**
- * Replace the two live courier-rate calls with deterministic in-memory quotes.
- * Keys are BLANK so the real methods return null (no network), which would dead-
- * end a courier checkout with "parcel too large". This stubs ONLY the external
- * rate lookup — every line of the transaction + fee-calculator code under test
- * still runs. Booking (bookForTransaction) is left as its real fire-and-forget
- * no-op (it self-guards on the blank keys and only logs).
+ * Replace the live courier-rate call with a deterministic in-memory quote.
+ * Keys are BLANK so the real method would return nothing (no network), which
+ * would dead-end a courier checkout. This stubs ONLY the external rate lookup —
+ * every line of the transaction + fee-calculator code under test still runs.
+ * Booking (bookForTransaction) is left as its real fire-and-forget no-op (it
+ * self-guards on the blank keys and only logs).
  */
 export function installStubs(app: INestApplicationContext): void {
-  const pudo = app.get(PudoService, { strict: false }) as any;
-  pudo.quoteL2L = async () => ({
-    serviceCode: 'L2LXS-ECO',
-    serviceName: 'Locker to Locker XS (stub)',
-    priceCents: 6500,
-    boxName: 'XS',
-  });
-  pudo.quoteD2D = async () => ({
-    serviceCode: 'D2DM-ECO',
-    serviceName: 'Door to Door M (stub)',
-    priceCents: 12400,
+  const bobgo = app.get(BobGoService, { strict: false }) as any;
+  bobgo.getRates = async () => ({
+    rates: [
+      {
+        id: 1,
+        serviceCode: 'bobgo_stub_door',
+        serviceName: 'Door to Door (stub)',
+        totalPrice: 124,
+        baseRate: 124,
+        currency: 'ZAR',
+        type: 'door',
+        serviceLevelCode: 'ECO',
+        providerSlug: 'stub',
+        liabilityCoverPrice: 0,
+        surchargeTotal: 0,
+      },
+    ],
+    pricingVerified: false,
   });
 }
 
@@ -299,7 +306,7 @@ export async function makeListing(
   };
   if (courierReady) {
     Object.assign(base, {
-      shippingMethods: ['PUDO', 'TCG'],
+      shippingMethods: ['COURIER'],
       weightGrams: 1500,
       lengthCm: 25,
       widthCm: 20,

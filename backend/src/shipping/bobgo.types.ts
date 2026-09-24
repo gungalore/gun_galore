@@ -4,7 +4,7 @@
 // copied from documentation. Where a value is inferred rather than seen, the
 // comment says so.
 //
-// Bob Go replaces BOTH Pudo (lockers) and TCG (door) — it aggregates
+// Bob Go replaced BOTH Pudo (lockers) and TCG (door) — it aggregates
 // door-to-door and pickup-point delivery behind one API, so the two-carrier
 // split in carrier.types.ts collapses into this one client.
 
@@ -40,8 +40,7 @@ export interface BobGoParcel {
  * One quoted option. Bob Go returns door and pickup-point rates TOGETHER
  * from a single /rates-at-checkout call — the pickup points near the
  * delivery address arrive already priced and already carrying their
- * distance, so there is no separate "find lockers then price them" step
- * the way PudoService needs.
+ * distance, so there is no separate "find lockers then price them" step.
  */
 export interface BobGoRate {
   /** Numeric rate id. Also embedded inside serviceCode. */
@@ -99,37 +98,6 @@ export interface BobGoQuote {
 }
 
 /**
- * A pickup point (locker or counter).
- *
- * Bob Go's /locations is size-aware: pass the stacked parcel dimensions and
- * it reports, per location, whether a compartment is actually available.
- * PudoService cannot do this — today a buyer can be sent to a locker their
- * parcel will not fit into, and it is only discovered at drop-off.
- */
-export interface BobGoLocation {
-  id: number;
-  name: string;
-  /** Trading name, where it differs from the site name. */
-  humanName?: string;
-  lat: number;
-  lng: number;
-  type: string;
-  address: string;
-  fullAddress?: string;
-  tradingHours?: string;
-  providerName?: string;
-  active: boolean;
-  /**
-   * Non-empty means this location CANNOT take the parcel — the value seen
-   * is ["no_available_compartments"]. Callers must filter on this before
-   * offering the location, not merely display it.
-   */
-  compartmentErrors: string[];
-  /** Straight-line km, when the caller supplied coordinates. */
-  distanceKm?: number;
-}
-
-/**
  * How far a booking actually got.
  *
  * THIS IS THE MOST IMPORTANT TYPE IN THE FILE. Bob Go returns HTTP 201 with
@@ -141,7 +109,7 @@ export interface BobGoLocation {
  * A 201 therefore means "we recorded your request", NOT "a courier is
  * coming". Treating the two as the same would tell a seller their collection
  * is booked, print a waybill, and SMS the buyer a tracking reference for a
- * shipment that does not exist. Both Pudo and TCG return booked-or-error, so
+ * shipment that does not exist. Both Pudo and TCG returned booked-or-error, so
  * this is genuinely new behaviour the port has to model rather than inherit.
  */
 export type BobGoSubmissionState =
@@ -163,7 +131,7 @@ export interface BobGoShipmentResult {
   /** Human explanation when submission is FAILED. */
   failedReason?: string;
   /**
-   * Locker collection PIN, if Bob Go issues one.
+   * Collection PIN, if Bob Go issues one.
    *
    * UNVERIFIED. No PIN, QR, OTP or barcode field appeared on a sandbox
    * shipment, and `reservation_details` was null — but the submission had

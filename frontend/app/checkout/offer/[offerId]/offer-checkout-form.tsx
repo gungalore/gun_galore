@@ -65,10 +65,9 @@ function transactionFee(baseZarCents: number): number {
 }
 
 // FLOW-F5 — the 9 SA provinces, values matching the Prisma Province enum.
-// The backend DeliveryAddressDto requires `province` (@IsNotEmpty) and the
-// TCG rate engine keys on PROVINCE_LONG[province], so a TCG offer checkout
-// with no province ALWAYS 400'd. TCG uses province-zone flat rates (no
-// lat/lng needed — same as the cart), so the select alone unblocks it.
+// The backend DeliveryAddressDto requires `province` (@IsNotEmpty), so an
+// offer checkout with no province ALWAYS 400'd. Bob Go quotes off the full
+// address, so the select alone unblocks it.
 const SA_PROVINCES: { value: string; label: string }[] = [
   { value: 'EASTERN_CAPE', label: 'Eastern Cape' },
   { value: 'FREE_STATE', label: 'Free State' },
@@ -110,11 +109,10 @@ export function OfferCheckoutForm({
 }) {
   const { getToken } = useAuth();
 
-  // Only meaningful for a firearm now - an ordinary item derives its slot
-  // from the delivery the buyer picks (see effectiveMethod).
-  const [method] = useState<ShippingMethod>(isFirearm ? 'DEALER_TRANSFER' : 'TCG');
-  // What the buyer chose, from the priced menu. The carrier is ours to
-  // decide; they choose a delivery.
+  // Only meaningful for a firearm now - an ordinary item rides the single
+  // Bob Go door courier rail (see effectiveMethod).
+  const [method] = useState<ShippingMethod>(isFirearm ? 'DEALER_TRANSFER' : 'COURIER');
+  // The door rate priced for this parcel + address.
   const [deliveryOption, setDeliveryOption] = useState<DeliveryOption | null>(null);
   // M33 — 18+/competency attestation. Backend hard-refuses firearm
   // transactions without this flag === true.
@@ -127,7 +125,7 @@ export function OfferCheckoutForm({
   useEffect(() => {
     if (method !== 'DEALER_TRANSFER') setDtConsentAccepted(false);
   }, [method]);
-  const [tcgAddress, setTcgAddress] = useState({
+  const [deliveryAddress, setDeliveryAddress] = useState({
     streetAddress: '',
     suburb: '',
     city: '',
@@ -145,29 +143,24 @@ export function OfferCheckoutForm({
   // returns 503 "launching soon". True once we've detected that.
   const [comingSoon, setComingSoon] = useState(false);
 
-  // PUDO and TCG are SLOTS - a collection point and a door - not carriers.
-  // For an ordinary item the buyer picks a delivery and the slot follows; a
-  // firearm never rides a courier at all and keeps its own route.
-  const effectiveMethod: ShippingMethod = isFirearm
-    ? method
-    : deliveryOption?.kind === 'PICKUP_POINT'
-      ? 'PUDO'
-      : 'TCG';
+  // Bob Go door-to-door is the only courier rail. A firearm never rides a
+  // courier at all and keeps its own route.
+  const effectiveMethod: ShippingMethod = isFirearm ? method : 'COURIER';
 
   // The address the menu is priced against, in the picker's shape.
   const addressComplete =
-    !!tcgAddress.streetAddress.trim() &&
-    !!tcgAddress.suburb.trim() &&
-    !!tcgAddress.city.trim() &&
-    !!tcgAddress.province &&
-    tcgAddress.postalCode.trim().length >= 4;
+    !!deliveryAddress.streetAddress.trim() &&
+    !!deliveryAddress.suburb.trim() &&
+    !!deliveryAddress.city.trim() &&
+    !!deliveryAddress.province &&
+    deliveryAddress.postalCode.trim().length >= 4;
   const pickerAddress = addressComplete
     ? {
-        streetAddress: tcgAddress.streetAddress.trim(),
-        suburb: tcgAddress.suburb.trim(),
-        city: tcgAddress.city.trim(),
-        postalCode: tcgAddress.postalCode.trim(),
-        province: tcgAddress.province,
+        streetAddress: deliveryAddress.streetAddress.trim(),
+        suburb: deliveryAddress.suburb.trim(),
+        city: deliveryAddress.city.trim(),
+        postalCode: deliveryAddress.postalCode.trim(),
+        province: deliveryAddress.province,
       }
     : null;
 
@@ -175,11 +168,11 @@ export function OfferCheckoutForm({
   useEffect(() => {
     setDeliveryOption(null);
   }, [
-    tcgAddress.streetAddress,
-    tcgAddress.suburb,
-    tcgAddress.city,
-    tcgAddress.province,
-    tcgAddress.postalCode,
+    deliveryAddress.streetAddress,
+    deliveryAddress.suburb,
+    deliveryAddress.city,
+    deliveryAddress.province,
+    deliveryAddress.postalCode,
   ]);
 
   // Courier routes carry a shipping leg the server only prices at payment
@@ -187,7 +180,7 @@ export function OfferCheckoutForm({
   // those neither the fee nor the final total can be stated honestly here.
   // A dealer transfer has no courier leg and no waybill, so its total is
   // knowable in full: agreed price + transaction fee, nothing else.
-  const isCourier = effectiveMethod === 'PUDO' || effectiveMethod === 'TCG';
+  const isCourier = effectiveMethod === 'COURIER';
   const feeOnAgreedPrice = transactionFee(settledAmount);
   const knownTotal = isCourier ? null : settledAmount + feeOnAgreedPrice;
 
@@ -205,14 +198,14 @@ export function OfferCheckoutForm({
       ...attestation,
     };
     if (isCourier) {
-      // The address rides on BOTH slots. A collection point pins where within
-      // an area the parcel lands; it does not tell the carrier which area, and
-      // the server's re-quote returns null without it.
+      // The address rides on the courier line. The server re-quotes this leg
+      // at Pay, so the address the rate was priced against must go with it.
       return {
         ...base,
-        deliveryAddress: tcgAddress,
-        ...(deliveryOption?.kind === 'PICKUP_POINT' && deliveryOption.locationId != null
-          ? { pudoPickupLockerId: String(deliveryOption.locationId) }
+        deliveryAddress: deliveryAddress,
+        deliveryOption: deliveryOption?.kind,
+        ...(deliveryOption?.kind === 'STORE_PICKUP'
+          ? { pickupPointLocationId: deliveryOption.pickupPointLocationId }
           : {}),
       };
     }
@@ -234,8 +227,8 @@ export function OfferCheckoutForm({
       // buyer can reach Pay without us knowing what delivery costs.
       return !!(
         addressComplete &&
-        tcgAddress.contactName &&
-        tcgAddress.contactPhone &&
+        deliveryAddress.contactName &&
+        deliveryAddress.contactPhone &&
         deliveryOption
       );
     }
@@ -314,7 +307,7 @@ export function OfferCheckoutForm({
               address fields; contact name/phone stay for the buyer. */}
           <SavedAddressPicker
             onSelect={(a: Address) =>
-              setTcgAddress((prev) => ({
+              setDeliveryAddress((prev) => ({
                 ...prev,
                 streetAddress: a.street,
                 suburb: a.suburb ?? '',
@@ -330,24 +323,24 @@ export function OfferCheckoutForm({
                 ['streetAddress', 'Street address'],
                 ['suburb', 'Suburb'],
                 ['city', 'City'],
-              ] as [keyof typeof tcgAddress, string][]
+              ] as [keyof typeof deliveryAddress, string][]
             ).map(([key, label]) => (
               <Field key={key} label={label}>
                 <input
                   type="text"
                   required
-                  value={tcgAddress[key]}
-                  onChange={(e) => setTcgAddress((a) => ({ ...a, [key]: e.target.value }))}
+                  value={deliveryAddress[key]}
+                  onChange={(e) => setDeliveryAddress((a) => ({ ...a, [key]: e.target.value }))}
                   style={inputStyle}
                 />
               </Field>
             ))}
-            {/* FLOW-F5 — province is required by the backend DTO + TCG rate
-                engine; it was missing entirely, so every TCG offer 400'd. */}
+            {/* FLOW-F5 — province is required by the backend DTO; it was
+                missing entirely, so every courier offer 400'd. */}
             <Field label="Province">
               <select
-                value={tcgAddress.province}
-                onChange={(e) => setTcgAddress((a) => ({ ...a, province: e.target.value }))}
+                value={deliveryAddress.province}
+                onChange={(e) => setDeliveryAddress((a) => ({ ...a, province: e.target.value }))}
                 style={inputStyle}
               >
                 <option value="">Select a province…</option>
@@ -363,31 +356,30 @@ export function OfferCheckoutForm({
                 ['postalCode', 'Postal code'],
                 ['contactName', 'Full name'],
                 ['contactPhone', 'Phone number'],
-              ] as [keyof typeof tcgAddress, string][]
+              ] as [keyof typeof deliveryAddress, string][]
             ).map(([key, label]) => (
               <Field key={key} label={label}>
                 <input
                   type="text"
                   required
-                  value={tcgAddress[key]}
-                  onChange={(e) => setTcgAddress((a) => ({ ...a, [key]: e.target.value }))}
+                  value={deliveryAddress[key]}
+                  onChange={(e) => setDeliveryAddress((a) => ({ ...a, [key]: e.target.value }))}
                   style={inputStyle}
                 />
               </Field>
             ))}
           </div>
 
-          {/* One priced list - door and collection points together. The buyer
-              is never asked to choose a carrier, and the same component serves
-              the Buy Now checkout, so the two cannot drift. */}
+          {/* Door rate for this parcel + address. The buyer is never asked to
+              choose a carrier, and the same component serves the Buy Now
+              checkout, so the two cannot drift. */}
           <div className="pt-1">
             <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-              How would you like it delivered?
+              Shipping
             </p>
             <DeliveryOptionsPicker
               listingId={listingId}
               deliveryAddress={pickerAddress}
-              selectedServiceCode={deliveryOption?.serviceCode}
               onSelect={setDeliveryOption}
               getToken={getToken}
             />
@@ -489,7 +481,7 @@ export function OfferCheckoutForm({
               value={
                 deliveryOption
                   ? formatPrice(deliveryOption.priceCents)
-                  : 'Choose an option above'
+                  : 'Enter your delivery address above'
               }
               muted={!deliveryOption}
             />

@@ -21,10 +21,12 @@ describe('delivery-estimate (P5.1)', () => {
     expect(out.getUTCDay()).toBe(1); // Monday
   });
 
-  it('estimates PUDO (5d) and TCG (4d) from dispatch', () => {
+  it('estimates COURIER (10d) from payment', () => {
     const mon = new Date('2026-06-22T09:00:00Z');
-    expect(estimateDeliveryDate('PUDO', mon)?.getUTCDate()).toBe(29); // +5 biz
-    expect(estimateDeliveryDate('TCG', mon)?.getUTCDate()).toBe(26); // +4 biz → Fri 26th
+    const out = estimateDeliveryDate('COURIER', mon)!;
+    expect(out.getUTCDate()).toBe(6); // +10 biz → Mon 6 Jul
+    expect(out.getUTCMonth()).toBe(6);
+    expect(out.getUTCDay()).toBe(1); // Monday
   });
 
   it('returns null for methods with no platform-estimable transit', () => {
@@ -35,9 +37,9 @@ describe('delivery-estimate (P5.1)', () => {
     expect(estimateDeliveryDate(undefined, now)).toBeNull();
   });
 
-  it('methodHasEstimate is true only for PUDO/TCG', () => {
-    expect(methodHasEstimate('PUDO')).toBe(true);
-    expect(methodHasEstimate('TCG')).toBe(true);
+  it('methodHasEstimate is true only for COURIER', () => {
+    expect(methodHasEstimate('COURIER')).toBe(true);
+    expect(methodHasEstimate('LEGACY_RAIL')).toBe(false);
     expect(methodHasEstimate('PRIVATE_ARRANGE')).toBe(false);
     expect(methodHasEstimate(null)).toBe(false);
   });

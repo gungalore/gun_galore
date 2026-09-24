@@ -22,6 +22,7 @@ import { AuthOrTokenGuard } from '../auth/auth-or-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { TransactionsService } from './transactions.service';
 import { TrackingService } from '../shipping/tracking.service';
+import { parseAcceptSchedule } from '../shipping/pickup-dates';
 import { DealerVerificationService } from './dealer-verification.service';
 import { ReceiptService } from './receipt.service';
 import { StreamableFile } from '@nestjs/common';
@@ -366,7 +367,7 @@ export class TransactionsController {
   confirmDispatch(
     @Param('id') id: string,
     @CurrentUser() userId: string,
-    @Body() body: { pudoDropoffLockerId?: string; trackingReference?: string },
+    @Body() body: { trackingReference?: string },
   ) {
     return this.txService.confirmDispatch(id, userId, body);
   }
@@ -380,8 +381,16 @@ export class TransactionsController {
   @Post(':id/accept')
   @UseGuards(AuthGuard)
   @HttpCode(200)
-  accept(@Param('id') id: string, @CurrentUser() userId: string) {
-    return this.txService.acceptTransaction(id, userId);
+  accept(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+    @Body() body: { collectionNotBefore?: string; collectionWindow?: string },
+  ) {
+    return this.txService.acceptTransaction(
+      id,
+      userId,
+      parseAcceptSchedule(body ?? {}),
+    );
   }
 
   // ---------------------------------------------------------------
@@ -404,7 +413,7 @@ export class TransactionsController {
   // ---------------------------------------------------------------
   // Buyer cancels their own paid-but-undispatched courier order
   // (Phase 4 P4.2). Reason required; full-refunds + reactivates the
-  // listing + notifies both parties. Self-service only for PUDO/TCG.
+  // listing + notifies both parties. Self-service only for courier orders.
   // ---------------------------------------------------------------
   @Post(':id/cancel')
   @UseGuards(AuthGuard)

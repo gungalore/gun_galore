@@ -52,6 +52,15 @@ const URGENT_CATEGORIES = new Set<string>([
 
 const MAX_PHOTOS = 6;
 
+// "I received the item and it's wrong/damaged" — the buyer has the goods, so
+// they can and MUST show us. An evidence photo is required before the dispute
+// is accepted (and before it can freeze the seller's payout); a short video is
+// optional. NOT_ARRIVED is excluded: there is no item to photograph.
+const ITEM_RECEIVED_CATEGORIES = new Set<string>([
+  'ITEM_NOT_AS_DESCRIBED',
+  'DAMAGED',
+]);
+
 @Injectable()
 export class ComplaintsService {
   private readonly logger = new Logger(ComplaintsService.name);
@@ -79,6 +88,17 @@ export class ComplaintsService {
       subject: string;
       body: string;
       transactionId?: string | null;
+      /**
+       * Evidence already uploaded via `uploadEvidence`. Required (>=1) for a
+       * buyer's item-received dispute (DAMAGED / ITEM_NOT_AS_DESCRIBED).
+       */
+      photos?: {
+        url: string;
+        publicId: string;
+        mediaType?: 'IMAGE' | 'VIDEO';
+        thumbnailUrl?: string;
+        durationSeconds?: number;
+      }[];
     },
   ) {
     const user = await this.prisma.user.findUnique({
@@ -145,6 +165,27 @@ export class ComplaintsService {
       };
     }
 
+    // Evidence gate — a buyer claiming an item they RECEIVED is wrong or
+    // damaged must attach at least one photo before the dispute is accepted
+    // (and before it can freeze the seller's payout). Video is optional.
+    // Runs BEFORE the case number is allocated so a rejected request never
+    // burns a CO number.
+    const photos = dto.photos ?? [];
+    const imageCount = photos.filter((p) => (p.mediaType ?? 'IMAGE') === 'IMAGE').length;
+    const videoCount = photos.filter((p) => p.mediaType === 'VIDEO').length;
+    if (imageCount > MAX_PHOTOS || videoCount > 1 || photos.length > MAX_PHOTOS + 1) {
+      throw new BadRequestException('Attach up to 6 photos and one optional video.');
+    }
+    if (
+      role === 'BUYER' &&
+      ITEM_RECEIVED_CATEGORIES.has(category) &&
+      imageCount === 0
+    ) {
+      throw new BadRequestException(
+        'Please attach at least one photo of the item so we can review your dispute.',
+      );
+    }
+
     const referenceNumber = await this.reference.allocate('CO');
 
     const complaint = await this.prisma.complaint.create({
@@ -159,6 +200,20 @@ export class ComplaintsService {
       },
       select: { id: true, referenceNumber: true },
     });
+
+    if (photos.length > 0) {
+      await this.prisma.complaintPhoto.createMany({
+        data: photos.map((p, i) => ({
+          complaintId: complaint.id,
+          url: p.url,
+          publicId: p.publicId,
+          mediaType: p.mediaType ?? 'IMAGE',
+          thumbnailUrl: p.thumbnailUrl ?? null,
+          durationSeconds: p.durationSeconds ?? null,
+          order: i,
+        })),
+      });
+    }
 
     // Payout hold — a buyer's payout-affecting complaint on a still-HELD,
     // non-swap, paid order moves that order to DISPUTED so it can't be
@@ -247,7 +302,7 @@ export class ComplaintsService {
     if (!file?.buffer) throw new BadRequestException('No photo provided.');
     const complaint = await this.owned(userId, complaintId);
     const count = await this.prisma.complaintPhoto.count({
-      where: { complaintId: complaint.id },
+      where: { complaintId: complaint.id, mediaType: 'IMAGE' },
     });
     if (count >= MAX_PHOTOS) {
       throw new BadRequestException(`Up to ${MAX_PHOTOS} photos per complaint.`);
@@ -261,6 +316,51 @@ export class ComplaintsService {
       select: { id: true, url: true },
     });
     return photo;
+  }
+
+  // Pre-upload for the dispute form. Uploads the file to Cloudinary and returns
+  // the pointer so `create` can attach it — a dispute that must carry evidence
+  // up front cannot rely on the add-after-create order.
+  async uploadEvidence(
+    userId: string,
+    file: { buffer: Buffer; mimetype?: string } | undefined,
+  ): Promise<{
+    url: string;
+    publicId: string;
+    mediaType: 'IMAGE' | 'VIDEO';
+    thumbnailUrl?: string;
+    durationSeconds?: number;
+  }> {
+    if (!file?.buffer) throw new BadRequestException('No photo provided.');
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (/^image\/(jpeg|png|webp)$/i.test(file.mimetype ?? '')) {
+      const { url, publicId } = await this.cloudinary.uploadImage(
+        file.buffer,
+        'complaints',
+      );
+      return { url, publicId, mediaType: 'IMAGE' };
+    }
+    if (/^video\/(mp4|webm)$/i.test(file.mimetype ?? '')) {
+      const video = await this.cloudinary.uploadVideo(file.buffer, 'complaints');
+      if (video.durationSeconds == null || video.durationSeconds > 30) {
+        await this.cloudinary.deleteVideo(video.publicId).catch(() => undefined);
+        throw new BadRequestException(
+          'Dispute videos must be 30 seconds or shorter; we could not verify this clip duration.',
+        );
+      }
+      return {
+        url: video.url,
+        publicId: video.publicId,
+        mediaType: 'VIDEO',
+        thumbnailUrl: video.thumbnailUrl,
+        durationSeconds: video.durationSeconds,
+      };
+    }
+    throw new BadRequestException('Evidence must be a JPEG/PNG/WebP image or MP4/WebM video.');
   }
 
   // The signed-in user's own complaints (newest first) with photos + a thin
@@ -284,7 +384,10 @@ export class ComplaintsService {
         drovePayoutHold: true,
         createdAt: true,
         resolvedAt: true,
-        photos: { select: { id: true, url: true }, orderBy: { order: 'asc' } },
+        photos: {
+          select: { id: true, url: true, mediaType: true, thumbnailUrl: true, durationSeconds: true },
+          orderBy: { order: 'asc' },
+        },
         transaction: {
           select: {
             id: true,
@@ -355,7 +458,10 @@ export class ComplaintsService {
         updatedAt: true,
         resolvedAt: true,
         user: { select: { username: true, email: true } },
-        photos: { select: { id: true, url: true }, orderBy: { order: 'asc' } },
+        photos: {
+          select: { id: true, url: true, mediaType: true, thumbnailUrl: true, durationSeconds: true },
+          orderBy: { order: 'asc' },
+        },
         transaction: {
           select: {
             id: true,
@@ -407,7 +513,10 @@ export class ComplaintsService {
         updatedAt: true,
         resolvedAt: true,
         user: { select: { username: true, email: true } },
-        photos: { select: { id: true, url: true }, orderBy: { order: 'asc' } },
+        photos: {
+          select: { id: true, url: true, mediaType: true, thumbnailUrl: true, durationSeconds: true },
+          orderBy: { order: 'asc' },
+        },
         transaction: {
           select: {
             id: true,

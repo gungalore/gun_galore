@@ -725,6 +725,22 @@ export class AdminUsersController {
     return this.adminService.clearRejectStrikes(id, admin.sub);
   }
 
+  // The seller's reject-strike ledger — why each strike landed.
+  @Get(':id/strikes')
+  listStrikes(@Param('id') id: string) {
+    return this.adminService.listSellerStrikes(id);
+  }
+
+  // Remove ONE strike; the ban is recomputed live against BAN_AT.
+  @Post('strikes/:strikeId/remove')
+  @HttpCode(200)
+  removeStrike(
+    @Param('strikeId') strikeId: string,
+    @CurrentAdmin() admin: { sub: string },
+  ) {
+    return this.adminService.removeStrike(strikeId, admin.sub);
+  }
+
   // Claude-KYC human review — decide an UNDER_REVIEW verification from
   // the dossier. Guarded transition; reason required for the audit row.
   @Post(':id/kyc-review')

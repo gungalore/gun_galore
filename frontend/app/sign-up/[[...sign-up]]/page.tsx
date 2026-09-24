@@ -11,7 +11,7 @@
 //   password      → Clerk password
 //
 // Delivery address is captured at first checkout (both seller + buyer give it,
-// so it can be passed to Pudo/TCG for the waybill).
+// so it can be passed to the courier for the waybill).
 import SignUpForm from './sign-up-form';
 
 export const metadata = {

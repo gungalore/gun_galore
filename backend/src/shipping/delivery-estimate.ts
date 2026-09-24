@@ -1,26 +1,30 @@
 // Estimated-delivery helper (Phase 5 P5.1). Pure functions, no deps, so
 // the logic is unit-testable without the Nest container.
 //
-// We don't have a live transit-time API for both couriers (PUDO's rate
-// response carries none; TCG's is buried in a service-level description),
-// so we use a conservative per-method business-day window. The result is
-// always framed to the user as "estimated / expected by" — NEVER a
-// guarantee, because dispatch timing is at the seller's discretion.
+// We don't have a live transit-time API, so we use a conservative
+// business-day window counted from PAYMENT. The result is always framed to
+// the user as "estimated / expected by" — NEVER a guarantee, because the
+// pickup date is chosen by the seller and dispatch timing is theirs to move.
 
-export type EstimableMethod = 'PUDO' | 'TCG';
+export type EstimableMethod = 'COURIER';
 
-// Upper-bound business days from dispatch to delivery, per courier.
-// Deliberately conservative so we under-promise.
+// Upper-bound business days for delivery, measured FROM PAYMENT.
+//
+// ⚠️ THE ANCHOR IS PAYMENT, NOT DISPATCH. The seller now chooses the pickup
+// date, so dispatch timing is theirs to move; counting from payment is the
+// only figure we can honestly stand behind. The number is deliberately
+// conservative (10 business days) to cover the seller's chosen pickup slot
+// plus the courier's worst published transit, and it is always framed as an
+// estimate, never a guarantee.
 const TRANSIT_BUSINESS_DAYS: Record<EstimableMethod, number> = {
-  PUDO: 5, // locker-to-locker
-  TCG: 4, // door-to-door
+  COURIER: 10,
 };
 
 // Methods with no carrier transit the platform can estimate.
 //  - PRIVATE_ARRANGE: buyer & seller coordinate the handover themselves.
 //  - DEALER_TRANSFER: gated on dealer verification, no platform ETA.
 export function methodHasEstimate(method: string | null | undefined): method is EstimableMethod {
-  return method === 'PUDO' || method === 'TCG';
+  return method === 'COURIER';
 }
 
 // Add N business days (Mon–Fri) to a date, returning a new Date. Does not
@@ -36,12 +40,13 @@ export function addBusinessDays(from: Date, days: number): Date {
   return d;
 }
 
-// The estimated delivery date for a dispatched courier order, or null when
-// the method has no platform-estimable transit.
+// The estimated delivery date for a couriered order, or null when the method
+// has no platform-estimable transit. `anchor` is the date the clock starts
+// from — PAID (the order's paidAt), never dispatch.
 export function estimateDeliveryDate(
   method: string | null | undefined,
-  dispatchedAt: Date,
+  anchor: Date,
 ): Date | null {
   if (!methodHasEstimate(method)) return null;
-  return addBusinessDays(dispatchedAt, TRANSIT_BUSINESS_DAYS[method]);
+  return addBusinessDays(anchor, TRANSIT_BUSINESS_DAYS[method]);
 }

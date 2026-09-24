@@ -20,8 +20,7 @@ import { toPublicLocality } from '../listings/locality';
 describe('buyer terms acknowledgement — DTO gate', () => {
   const baseTx = {
     listingId: 'L1',
-    shippingMethod: 'PUDO',
-    pudoPickupLockerId: 'CG929',
+    shippingMethod: 'COURIER',
   };
 
   it('rejects a single-item checkout with the acknowledgement missing', async () => {
@@ -52,7 +51,7 @@ describe('buyer terms acknowledgement — DTO gate', () => {
 
   it('requires it on the ORDER, not per line — one tick covers the cart', async () => {
     const missing = plainToInstance(CreateOrderDto, {
-      lines: [{ listingId: 'L1', shippingMethod: 'PUDO' }],
+      lines: [{ listingId: 'L1', shippingMethod: 'COURIER' }],
     });
     expect(
       (await validate(missing)).some((e) => e.property === 'buyerTermsAccepted'),
@@ -60,7 +59,7 @@ describe('buyer terms acknowledgement — DTO gate', () => {
 
     const ok = plainToInstance(CreateOrderDto, {
       buyerTermsAccepted: true,
-      lines: [{ listingId: 'L1', shippingMethod: 'PUDO' }],
+      lines: [{ listingId: 'L1', shippingMethod: 'COURIER' }],
     });
     expect(
       (await validate(ok)).some((e) => e.property === 'buyerTermsAccepted'),

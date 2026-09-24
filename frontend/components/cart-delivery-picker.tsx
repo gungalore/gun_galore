@@ -1,9 +1,9 @@
 ﻿'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
- * The cart's delivery menu — one radio list per parcel the cart will ship as.
+ * The cart's delivery line — one door rate per parcel the cart will ship as.
  *
  * WHY IT ISN'T DeliveryOptionsPicker. That component takes a single
  * `listingId`, and a cart consolidates: same-seller lines share one waybill,
@@ -13,15 +13,9 @@ import { useCallback, useEffect, useState } from 'react';
  * because every Daily Deal shares the house seller id and a client-side guess
  * would show one parcel where two suppliers each ship one.
  *
- * Otherwise this deliberately mirrors DeliveryOptionsPicker: one flat radio
- * list per group with door and collection points together, `serviceCode` as
- * both the React key and the checked identity, and the same five states —
- * address-incomplete, loading, error, no-options, and the list. The
- * no-options state is amber and deliberately distinct from the red error:
- * nothing is broken, the courier simply does not serve that parcel to that
- * address.
- *
- * The buyer is never asked to choose a carrier. They choose a DELIVERY.
+ * Each consolidated parcel group offers cheapest door, fastest door, and the
+ * nearest Pargo counters. The server computes both groupings and rates; the
+ * buyer's choice is copied to every line in that group at checkout.
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -35,37 +29,41 @@ export interface CartDeliveryAddress {
 }
 
 export interface CartDeliveryOption {
-  kind: 'DOOR' | 'PICKUP_POINT';
+  kind: 'DOOR_CHEAPEST' | 'DOOR_FASTEST' | 'STORE_PICKUP';
   serviceCode: string;
+  providerSlug: string;
+  serviceLevelCode: string;
   label: string;
   detail?: string;
-  distanceKm?: number;
   priceCents: number;
   /** Bare carrier rate — the processing-fee base; margin excluded. */
   carrierRateCents: number;
-  /** Only on a collection point: pins WHICH point, by numeric id. */
-  locationId?: number;
+  pickupPointLocationId?: number;
+  pickupPointDistanceKm?: number;
+  description?: string;
+}
+
+interface ApiRate {
+  priceCents: number;
+  carrierRateCents: number;
+  serviceName: string;
+  serviceCode: string;
+  providerSlug: string;
+  serviceLevelCode: string;
+  deliveryDaysMin: number;
+  deliveryDaysMax: number;
+  pickupPointLocationId?: number;
+  pickupPointDistanceKm?: number;
+  description?: string;
 }
 
 interface ApiGroup {
   groupKey: string;
   listingIds: string[];
   consolidated: boolean;
-  door: {
-    priceCents: number;
-    carrierRateCents: number;
-    serviceName: string;
-    serviceCode: string;
-  } | null;
-  pickupPoints: Array<{
-    locationId: number;
-    name: string;
-    description?: string;
-    distanceKm?: number;
-    priceCents: number;
-    carrierRateCents: number;
-    serviceCode: string;
-  }>;
+  door: ApiRate | null;
+  fastestDoor?: ApiRate | null;
+  storePickup?: ApiRate[];
   unavailableReason?: string;
 }
 
@@ -78,30 +76,33 @@ export interface CartDeliveryGroupView {
 }
 
 function toOptions(g: ApiGroup): CartDeliveryOption[] {
-  const out: CartDeliveryOption[] = [];
-  if (g.door) {
-    out.push({
-      kind: 'DOOR',
-      serviceCode: g.door.serviceCode,
-      label: 'Deliver to my address',
-      detail: g.door.serviceName,
-      priceCents: g.door.priceCents,
-      carrierRateCents: g.door.carrierRateCents,
-    });
-  }
-  for (const p of g.pickupPoints) {
-    out.push({
-      kind: 'PICKUP_POINT',
-      serviceCode: p.serviceCode,
-      label: p.name,
-      detail: p.description,
-      distanceKm: p.distanceKm,
-      priceCents: p.priceCents,
-      carrierRateCents: p.carrierRateCents,
-      locationId: p.locationId,
-    });
-  }
-  return out;
+  const doors = [
+    ...(g.door ? [{ rate: g.door, kind: 'DOOR_CHEAPEST' as const, label: 'Cheapest Door Delivery' }] : []),
+    ...(g.fastestDoor ? [{ rate: g.fastestDoor, kind: 'DOOR_FASTEST' as const, label: 'Fastest Door Delivery' }] : []),
+  ].map(({ rate, kind, label }): CartDeliveryOption => ({
+    kind,
+    serviceCode: rate.serviceCode,
+    providerSlug: rate.providerSlug,
+    serviceLevelCode: rate.serviceLevelCode,
+    label,
+    detail: `${rate.serviceName} · ${rate.deliveryDaysMin}–${rate.deliveryDaysMax} business days`,
+    priceCents: rate.priceCents,
+    carrierRateCents: rate.carrierRateCents,
+  }));
+  const points = (g.storePickup ?? []).map((rate): CartDeliveryOption => ({
+    kind: 'STORE_PICKUP',
+    serviceCode: rate.serviceCode,
+    providerSlug: rate.providerSlug,
+    serviceLevelCode: rate.serviceLevelCode,
+    label: 'Store Pickup',
+    detail: `${rate.serviceName}${rate.pickupPointDistanceKm != null ? ` · ${rate.pickupPointDistanceKm.toFixed(1)} km` : ''}`,
+    priceCents: rate.priceCents,
+    carrierRateCents: rate.carrierRateCents,
+    pickupPointLocationId: rate.pickupPointLocationId,
+    pickupPointDistanceKm: rate.pickupPointDistanceKm,
+    description: rate.description,
+  }));
+  return [...doors, ...points];
 }
 
 const rand = (cents: number) =>
@@ -126,6 +127,12 @@ export function CartDeliveryPicker({
   const [groups, setGroups] = useState<CartDeliveryGroupView[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Latest callbacks, so the fetch (which must not depend on the cart's
+  // per-render handlers) still reports into the current ones.
+  const onChooseRef = useRef(onChoose);
+  const onGroupsRef = useRef(onGroups);
+  onChooseRef.current = onChoose;
+  onGroupsRef.current = onGroups;
 
   const addressComplete =
     !!deliveryAddress &&
@@ -177,16 +184,23 @@ export function CartDeliveryPicker({
         unavailableReason: g.unavailableReason,
       }));
       setGroups(view);
-      onGroups(view);
+      onGroupsRef.current(view);
+      // Default each parcel group to its cheapest door option; buyer can then
+      // switch to fastest or one of the Store Pickup counters.
+      for (const g of view) {
+        if (!g.unavailableReason && g.options[0]) {
+          onChooseRef.current(g.groupKey, g.options[0]);
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load delivery options.');
       setGroups(null);
-      onGroups([]);
+      onGroupsRef.current([]);
     } finally {
       setLoading(false);
     }
-    // onGroups is a parent callback; including it would refetch on every parent
-    // render. The data dependencies are the address and the cart contents.
+    // The data dependencies are the address and the cart contents; the
+    // callbacks are read through refs so this doesn't refetch every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addrKey, linesKey, addressComplete]);
 
@@ -211,13 +225,7 @@ export function CartDeliveryPicker({
   if (loading) {
     return (
       <div aria-busy="true" aria-live="polite" className="space-y-2">
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className="gg-skeleton"
-            style={{ height: 52, borderRadius: 8 }}
-          />
-        ))}
+        <div className="gg-skeleton" style={{ height: 52, borderRadius: 8 }} />
       </div>
     );
   }
@@ -269,54 +277,34 @@ export function CartDeliveryPicker({
               {g.unavailableReason}
             </div>
           ) : (
-            <fieldset className="space-y-2">
-              {g.options.map((o) => {
-                const checked = chosen[g.groupKey]?.serviceCode === o.serviceCode;
-                return (
-                  <label
-                    key={o.serviceCode}
-                    className="flex items-center gap-3 rounded-[8px] p-3 cursor-pointer"
-                    style={{
-                      background: checked ? 'rgba(227,6,19,0.06)' : 'var(--bg-card)',
-                      border: `0.5px solid ${checked ? 'var(--red)' : 'var(--border)'}`,
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name={`delivery-${g.groupKey}`}
-                      checked={checked}
-                      onChange={() => onChoose(g.groupKey, o)}
-                      style={{ accentColor: 'var(--red)' }}
-                    />
-                    <span className="flex-1 min-w-0">
-                      <span
-                        className="block text-sm"
-                        style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-                      >
-                        {o.label}
-                      </span>
-                      {(o.detail || o.distanceKm != null) && (
-                        <span
-                          className="block text-xs"
-                          style={{ color: 'var(--text-tertiary)' }}
-                        >
-                          {o.detail}
-                          {o.distanceKm != null
-                            ? `${o.detail ? ' · ' : ''}${o.distanceKm.toFixed(1)} km away`
-                            : ''}
-                        </span>
-                      )}
+            g.options.map((o) => {
+              const active = chosen[g.groupKey]?.kind === o.kind &&
+                (o.kind !== 'STORE_PICKUP' || chosen[g.groupKey]?.pickupPointLocationId === o.pickupPointLocationId);
+              return (
+                <button
+                  key={`${o.kind}:${o.pickupPointLocationId ?? o.serviceCode}`}
+                  type="button"
+                  onClick={() => onChooseRef.current(g.groupKey, o)}
+                  aria-pressed={active}
+                  className="flex w-full items-center gap-3 rounded-[8px] p-3 text-left"
+                  style={{
+                    background: active ? 'var(--red-wash)' : 'var(--bg-card)',
+                    border: `0.5px solid ${active ? 'var(--red)' : 'var(--border)'}`,
+                  }}
+                >
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                      {o.label}
                     </span>
-                    <span
-                      className="text-sm gg-nums"
-                      style={{ color: 'var(--text-primary)', fontWeight: 600 }}
-                    >
-                      {rand(o.priceCents)}
-                    </span>
-                  </label>
-                );
-              })}
-            </fieldset>
+                    {o.detail && <span className="block text-xs" style={{ color: 'var(--text-tertiary)' }}>{o.detail}</span>}
+                    {o.kind === 'STORE_PICKUP' && o.description && <span className="block text-xs" style={{ color: 'var(--text-tertiary)' }}>{o.description}</span>}
+                  </span>
+                  <span className="text-sm gg-nums" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                    {rand(o.priceCents)}
+                  </span>
+                </button>
+              );
+            })
           )}
         </div>
       ))}

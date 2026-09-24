@@ -1,24 +1,11 @@
 'use client';
 
-// The buyer's delivery menu: door delivery and every nearby collection point,
-// priced, in one list.
-//
-// The delivery option is the BUYER'S to decide (operator, 2026-08-13). The
-// seller no longer curates it, so this component shows everything the courier
-// will actually carry for this parcel and lets the buyer choose.
-//
-// It talks to ONE endpoint, POST /shipping/delivery-options, which answers
-// identically whichever courier rail is live. That is deliberate: this
-// component must never learn which carrier it is talking to, or swapping the
-// carrier would become a frontend release too.
-//
-// THE ADDRESS COMES FIRST. Collection points are the ones near the buyer's
-// delivery address and are priced for this exact parcel, so there is nothing
-// truthful to show before the address exists. That is a change from the old
-// locker picker, which let people browse a directory and only learn the price
-// (and whether their parcel even fit) later.
+// The buyer's three delivery options: Store Pickup (Pargo), cheapest door, and
+// fastest door. All are quoted by one POST /shipping/delivery-options call.
+// THE ADDRESS COMES FIRST: the rate is for this exact parcel to this exact
+// address, so there is nothing truthful to show before the address exists.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatPrice } from '@/lib/utils';
 
 // Same convention as every other browse fetch — the API is a separate origin, so a
@@ -36,7 +23,7 @@ export interface DeliveryAddressInput {
 }
 
 export interface DeliveryOption {
-  kind: 'DOOR' | 'PICKUP_POINT';
+  kind: 'DOOR_CHEAPEST' | 'DOOR_FASTEST' | 'STORE_PICKUP';
   /**
    * The carrier's own rate, our delivery margin excluded. NEVER displayed —
    * the buyer sees one delivery figure (priceCents). It exists because the
@@ -46,40 +33,41 @@ export interface DeliveryOption {
   carrierRateCents: number;
   /** Echoed back at checkout so the booking replays the exact rate chosen. */
   serviceCode: string;
+  /** Bob Go booking needs these replayed alongside serviceCode. */
+  providerSlug?: string;
+  serviceLevelCode?: string;
+  pickupPointLocationId?: number;
+  pickupPointDistanceKm?: number;
+  description?: string;
+  deliveryDaysMin: number;
+  deliveryDaysMax: number;
+  minDeliveryDate?: string;
+  maxDeliveryDate?: string;
   label: string;
   detail?: string;
-  distanceKm?: number;
   priceCents: number;
-  locationId?: number;
 }
 
-interface ApiResponse {
-  door: {
+interface ApiRate {
     priceCents: number;
     carrierRateCents: number;
     serviceName: string;
     serviceCode: string;
-  } | null;
-  pickupPoints: Array<{
-    locationId: number;
-    name: string;
+    providerSlug: string;
+    serviceLevelCode: string;
+    deliveryDaysMin: number;
+    deliveryDaysMax: number;
+    minDeliveryDate?: string;
+    maxDeliveryDate?: string;
+    pickupPointLocationId?: number;
+    pickupPointDistanceKm?: number;
     description?: string;
-    distanceKm?: number;
-    priceCents: number;
-    carrierRateCents: number;
-    serviceCode: string;
-  }>;
 }
 
-function LockerIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="4" y="3" width="16" height="18" rx="1.5" />
-      <line x1="4" y1="9" x2="20" y2="9" />
-      <line x1="4" y1="15" x2="20" y2="15" />
-      <circle cx="16" cy="6" r="0.6" fill="currentColor" />
-    </svg>
-  );
+interface ApiResponse {
+  door: ApiRate | null;
+  fastestDoor: ApiRate | null;
+  storePickup: ApiRate[];
 }
 
 function TruckIcon() {
@@ -101,24 +89,35 @@ function addressComplete(a: DeliveryAddressInput | null): a is DeliveryAddressIn
 export function DeliveryOptionsPicker({
   listingId,
   deliveryAddress,
-  selectedServiceCode,
   onSelect,
   getToken,
 }: {
   listingId: string;
   deliveryAddress: DeliveryAddressInput | null;
-  selectedServiceCode?: string;
   onSelect: (option: DeliveryOption) => void;
   /** Clerk token getter — browse endpoints must forward the session. */
   getToken?: () => Promise<string | null>;
 }) {
-  const [options, setOptions] = useState<DeliveryOption[] | null>(null);
+  const [options, setOptions] = useState<DeliveryOption[]>([]);
+  const [selectedOption, setSelectedOption] = useState<DeliveryOption | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Latest onSelect, so the fetch (which must not depend on the parent's
+  // per-render function identity) still reports into the current handler.
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+
+  // Serialise the address so the effect keys on the VALUES, not on a fresh
+  // object identity every render (which would loop the fetch).
+  const addrComplete = addressComplete(deliveryAddress);
+  const addrKey = addrComplete
+    ? `${deliveryAddress.streetAddress}|${deliveryAddress.suburb}|${deliveryAddress.city}|${deliveryAddress.postalCode}|${deliveryAddress.province}|${deliveryAddress.lat ?? ''}|${deliveryAddress.lng ?? ''}`
+    : '';
 
   const load = useCallback(async () => {
-    if (!addressComplete(deliveryAddress)) {
-      setOptions(null);
+    if (!addrComplete) {
+      setOptions([]);
+      setSelectedOption(null);
       return;
     }
     setLoading(true);
@@ -144,41 +143,63 @@ export function DeliveryOptionsPicker({
           data?.message ??
             'We could not load delivery options. Please try again in a moment.',
         );
-        setOptions(null);
+        setOptions([]);
+        setSelectedOption(null);
         return;
       }
 
-      const next: DeliveryOption[] = [];
-      if (data?.door) {
-        next.push({
-          kind: 'DOOR',
-          serviceCode: data.door.serviceCode,
-          label: 'Deliver to my address',
-          detail: data.door.serviceName,
-          priceCents: data.door.priceCents,
-          carrierRateCents: data.door.carrierRateCents,
-        });
-      }
-      for (const p of data?.pickupPoints ?? []) {
-        next.push({
-          kind: 'PICKUP_POINT',
-          serviceCode: p.serviceCode,
-          label: p.name,
-          detail: p.description,
-          distanceKm: p.distanceKm,
-          priceCents: p.priceCents,
-          carrierRateCents: p.carrierRateCents,
-          locationId: p.locationId,
-        });
-      }
-      setOptions(next);
+      const toDoorOption = (
+        rate: ApiRate | null,
+        kind: 'DOOR_CHEAPEST' | 'DOOR_FASTEST',
+        label: string,
+      ): DeliveryOption | null => rate ? ({
+        kind,
+        serviceCode: rate.serviceCode,
+        providerSlug: rate.providerSlug,
+        serviceLevelCode: rate.serviceLevelCode,
+        label,
+        detail: deliveryDetail(rate),
+        priceCents: rate.priceCents,
+        carrierRateCents: rate.carrierRateCents,
+        deliveryDaysMin: rate.deliveryDaysMin,
+        deliveryDaysMax: rate.deliveryDaysMax,
+        minDeliveryDate: rate.minDeliveryDate,
+        maxDeliveryDate: rate.maxDeliveryDate,
+      }) : null;
+      const nextOptions: DeliveryOption[] = [
+        toDoorOption(data?.door ?? null, 'DOOR_CHEAPEST', 'Cheapest Door Delivery'),
+        toDoorOption(data?.fastestDoor ?? null, 'DOOR_FASTEST', 'Fastest Door Delivery'),
+        ...(data?.storePickup ?? []).map((point): DeliveryOption => ({
+          kind: 'STORE_PICKUP',
+          serviceCode: point.serviceCode,
+          providerSlug: point.providerSlug,
+          serviceLevelCode: point.serviceLevelCode,
+          pickupPointLocationId: point.pickupPointLocationId,
+          pickupPointDistanceKm: point.pickupPointDistanceKm,
+          description: point.description,
+          label: 'Store Pickup',
+          detail: point.serviceName,
+          priceCents: point.priceCents,
+          carrierRateCents: point.carrierRateCents,
+          deliveryDaysMin: point.deliveryDaysMin,
+          deliveryDaysMax: point.deliveryDaysMax,
+          minDeliveryDate: point.minDeliveryDate,
+          maxDeliveryDate: point.maxDeliveryDate,
+        })),
+      ].filter((option): option is DeliveryOption => option !== null);
+      setOptions(nextOptions);
+      setSelectedOption(null);
     } catch {
       setError('We could not load delivery options. Please try again in a moment.');
-      setOptions(null);
+      setOptions([]);
+      setSelectedOption(null);
     } finally {
       setLoading(false);
     }
-  }, [listingId, deliveryAddress, getToken]);
+    // Keyed on the address VALUES (addrKey) rather than the object identity;
+    // a fresh object every parent render would otherwise loop the fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listingId, addrKey, addrComplete, getToken]);
 
   useEffect(() => {
     void load();
@@ -187,7 +208,7 @@ export function DeliveryOptionsPicker({
   if (!addressComplete(deliveryAddress)) {
     return (
       <p className="rounded-lg border border-dashed border-neutral-300 px-4 py-6 text-center text-sm text-neutral-500">
-        Enter your delivery address to see delivery options and prices.
+        Enter your delivery address to see the delivery price.
       </p>
     );
   }
@@ -195,10 +216,8 @@ export function DeliveryOptionsPicker({
   if (loading) {
     return (
       <div className="space-y-2" aria-busy="true" aria-live="polite">
-        <span className="sr-only">Loading delivery options</span>
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-16 animate-pulse rounded-lg bg-neutral-100" />
-        ))}
+        <span className="sr-only">Loading delivery price</span>
+        <div className="h-16 animate-pulse rounded-lg bg-neutral-100" />
       </div>
     );
   }
@@ -218,69 +237,71 @@ export function DeliveryOptionsPicker({
     );
   }
 
-  if (options && options.length === 0) {
+  if (options.length === 0) {
     // Distinct from the error above on purpose: nothing is broken, the courier
     // simply does not serve this parcel to this address.
     return (
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        No courier option is available for this parcel to that address. Try a
-        different address, or contact the seller about collecting in person.
+        No delivery option is available for this parcel to that address. Try a
+        different address or contact the seller.
       </p>
     );
   }
 
   return (
-    <fieldset className="space-y-2">
-      <legend className="sr-only">Choose how you would like this delivered</legend>
-      {(options ?? []).map((o) => {
-        const checked = selectedServiceCode === o.serviceCode;
+    <div className="space-y-2">
+      {options.map((option) => {
+        const selected =
+          selectedOption?.kind === option.kind &&
+          (option.kind !== 'STORE_PICKUP' ||
+            selectedOption.pickupPointLocationId === option.pickupPointLocationId);
         return (
-          <label
-            key={o.serviceCode}
-            className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition ${
-              checked
-                ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
-                : 'border-neutral-200 hover:border-neutral-300'
-            }`}
+          <button
+            key={`${option.kind}:${option.pickupPointLocationId ?? option.serviceCode}`}
+            type="button"
+            onClick={() => {
+              setSelectedOption(option);
+              onSelectRef.current(option);
+            }}
+            aria-pressed={Boolean(selected)}
+            className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left"
+            style={{
+              borderColor: selected ? 'var(--red)' : 'var(--border)',
+              background: selected ? 'var(--red-wash)' : 'var(--bg-card)',
+              color: 'var(--text-primary)',
+            }}
           >
-            <input
-              type="radio"
-              name="delivery-option"
-              value={o.serviceCode}
-              checked={checked}
-              onChange={() => onSelect(o)}
-              className="sr-only"
-            />
-            <span
-              aria-hidden
-              className={checked ? 'text-emerald-700' : 'text-neutral-500'}
-            >
-              {o.kind === 'DOOR' ? <TruckIcon /> : <LockerIcon />}
-            </span>
+            <span aria-hidden className="text-neutral-500"><TruckIcon /></span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium text-neutral-900">
-                {o.label}
+              <span className="block font-medium">{option.label}</span>
+              <span className="block truncate text-sm" style={{ color: 'var(--text-secondary)' }}>
+                {option.kind === 'STORE_PICKUP'
+                  ? `${option.detail ?? 'Pargo counter'}${option.pickupPointDistanceKm != null ? ` · ${option.pickupPointDistanceKm.toFixed(1)} km` : ''}`
+                  : option.detail}
               </span>
-              {(o.detail || o.distanceKm != null) && (
-                <span className="block truncate text-sm text-neutral-500">
-                  {o.distanceKm != null && (
-                    <span className="tabular-nums">
-                      {o.distanceKm < 1
-                        ? `${Math.round(o.distanceKm * 1000)} m away`
-                        : `${o.distanceKm.toFixed(1)} km away`}
-                    </span>
-                  )}
-                  {o.distanceKm != null && o.detail ? ' · ' : ''}
-                  {o.detail}
-                </span>
+              {option.kind === 'STORE_PICKUP' && option.description && (
+                <span className="block text-xs" style={{ color: 'var(--text-tertiary)' }}>{option.description}</span>
               )}
             </span>
-            <span className="shrink-0 font-semibold tabular-nums text-neutral-900">
-              {formatPrice(o.priceCents)}
-            </span>
-          </label>
+            <span className="shrink-0 font-semibold tabular-nums">{formatPrice(option.priceCents)}</span>
+          </button>
         );
       })}
-    </fieldset>
+    </div>
   );
+}
+
+function deliveryDetail(rate: ApiRate): string {
+  if (rate.minDeliveryDate && rate.maxDeliveryDate) {
+    return `${rate.serviceName} · estimated ${formatIsoDay(rate.minDeliveryDate)}–${formatIsoDay(rate.maxDeliveryDate)}`;
+  }
+  return `${rate.serviceName} · ${rate.deliveryDaysMin}–${rate.deliveryDaysMax} business days`;
+}
+
+function formatIsoDay(iso: string): string {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
 }

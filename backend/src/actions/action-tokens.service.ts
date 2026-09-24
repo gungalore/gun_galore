@@ -39,7 +39,7 @@ export type ActionTokenPurpose =
   | 'AUCTION_RUNNER_UP'
   // DISPATCH — seller's one-tap link from the 48h dispatch nudge SMS.
   // Lands on `/a/<token>` which renders the dispatch form (tracking
-  // reference input + optional Pudo locker) so the seller can mark
+  // reference input) so the seller can mark
   // the parcel shipped WITHOUT signing in. targetType = 'transaction'.
   | 'DISPATCH'
   // TRANSACTION_ACCEPT — first step of the seller's two-step workflow

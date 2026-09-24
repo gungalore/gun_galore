@@ -14,7 +14,7 @@ import {
   IsDateString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ShippingMethod } from '@prisma/client';
+import { DeliveryOption, ShippingMethod } from '@prisma/client';
 
 export class DeliveryAddressDto {
   // Optional complex / unit / building identifier — same as ManualAddressFields.
@@ -49,7 +49,7 @@ export class DeliveryAddressDto {
 
   // Contact name + phone deliberately NOT collected on this DTO — the
   // backend pulls them from User.firstName/lastName + User.phone when
-  // building the TCG shipment request. This keeps the checkout form
+  // building the carrier shipment request. This keeps the checkout form
   // smaller and means the buyer can't accidentally ship to a typo'd
   // phone number.
 
@@ -75,17 +75,24 @@ export class CreateTransactionDto {
   @IsEnum(ShippingMethod)
   shippingMethod: ShippingMethod;
 
-  // Pudo: buyer's chosen pick-up locker
-  @ValidateIf((o) => o.shippingMethod === 'PUDO')
-  @IsString()
-  @IsNotEmpty()
-  pudoPickupLockerId?: string;
-
-  // TCG: buyer delivery address
-  @ValidateIf((o) => o.shippingMethod === 'TCG')
+  // Courier: buyer delivery address
+  @ValidateIf((o) => o.shippingMethod === 'COURIER')
   @ValidateNested()
   @Type(() => DeliveryAddressDto)
   deliveryAddress?: DeliveryAddressDto;
+
+  // Courier menu choice. Server re-quotes and resolves the selected kind; the
+  // buyer never supplies or controls a shipping price. STORE_PICKUP additionally
+  // carries the exact Pargo counter id selected from Bob Go's returned list.
+  @ValidateIf((o) => o.shippingMethod === 'COURIER')
+  @IsOptional()
+  @IsEnum(DeliveryOption)
+  deliveryOption?: DeliveryOption;
+
+  @ValidateIf((o) => o.shippingMethod === 'COURIER' && o.deliveryOption === 'STORE_PICKUP')
+  @IsInt()
+  @Min(1)
+  pickupPointLocationId?: number;
 
   // Dealer transfer: buyer's chosen receiving dealer. OPTIONAL — the
   // dealer dropdown was removed from checkout (the buyer nominates any

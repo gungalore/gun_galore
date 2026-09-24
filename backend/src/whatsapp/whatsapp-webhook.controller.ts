@@ -8,12 +8,18 @@ import {
   Query,
   Body,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { verifyMetaSignature } from './whatsapp-signature';
+import { WhatsappService } from './whatsapp.service';
 
 const WINDOW_MS = 24 * 60 * 60 * 1000; // Meta's customer-service window
+
+function normalisePhone(phone: string | null | undefined): string {
+  return (phone ?? '').replace(/\D/g, '');
+}
 
 interface MetaMessageEntry {
   from?: string;
@@ -21,6 +27,12 @@ interface MetaMessageEntry {
   timestamp?: string;
   type?: string;
   text?: { body?: string };
+  button?: { text?: string; payload?: string };
+  interactive?: {
+    type?: string;
+    button_reply?: { id?: string; title?: string };
+  };
+  context?: { id?: string };
 }
 
 interface MetaStatusEntry {
@@ -53,7 +65,10 @@ interface MetaWebhookBody {
 export class WhatsappWebhookController {
   private readonly logger = new Logger(WhatsappWebhookController.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly whatsapp?: WhatsappService,
+  ) {}
 
   // Meta's one-time subscription handshake. Echo the challenge ONLY when
   // every one of these holds:
@@ -171,12 +186,93 @@ export class WhatsappWebhookController {
       });
     }
 
+    const messageText =
+      message.text?.body ??
+      message.button?.text ??
+      message.interactive?.button_reply?.title ??
+      '';
     await this.prisma.whatsappInboundMessage.create({
       data: {
         threadId: thread.id,
-        body: message.text?.body ?? '',
+        body: messageText,
         metaMessageId: message.id,
       },
+    });
+
+    if (
+      message.context?.id &&
+      messageText.trim().toLocaleLowerCase() === 'decline'
+    ) {
+      await this.handleCourierSaleDecline(phone, message.context.id);
+    }
+  }
+
+  /**
+   * A template quick reply only carries its text. Resolve the exact outbound
+   * courier-sale message via Meta's context.id (wamid), then verify both the
+   * token's seller and the sender phone before returning a reason-picker link.
+   * The rejection itself is deliberately completed on the token-gated page,
+   * where the seller chooses one of the recorded reasons (or custom text).
+   */
+  private async handleCourierSaleDecline(
+    senderPhone: string,
+    repliedToMessageId: string,
+  ): Promise<void> {
+    if (!this.whatsapp) return;
+    const sent = await this.prisma.whatsappMessageLog.findFirst({
+      where: { messageId: repliedToMessageId },
+      select: { id: true, to: true, templateKey: true, vars: true },
+    });
+    if (!sent || sent.templateKey !== 'new_sale_seller_courier') return;
+    if (normalisePhone(sent.to) !== normalisePhone(senderPhone)) return;
+
+    const vars = sent.vars as Record<string, unknown> | null;
+    const actionToken = vars?.acceptToken;
+    if (typeof actionToken !== 'string' || !actionToken) return;
+
+    const action = await this.prisma.actionToken.findUnique({
+      where: { token: actionToken },
+      select: {
+        purpose: true,
+        targetType: true,
+        targetId: true,
+        authorisedUserId: true,
+        expiresAt: true,
+        usedAt: true,
+      },
+    });
+    if (
+      !action ||
+      action.purpose !== 'TRANSACTION_ACCEPT' ||
+      action.targetType !== 'transaction' ||
+      action.usedAt ||
+      action.expiresAt <= new Date()
+    ) {
+      return;
+    }
+
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: action.targetId },
+      select: {
+        sellerId: true,
+        seller: { select: { phone: true } },
+      },
+    });
+    if (
+      !tx ||
+      tx.sellerId !== action.authorisedUserId ||
+      normalisePhone(tx.seller.phone) !== normalisePhone(senderPhone)
+    ) {
+      return;
+    }
+
+    const appUrl = process.env.FRONTEND_URL ?? 'https://alloutdoor.co.za';
+    await this.whatsapp.sendSessionText({
+      to: senderPhone,
+      reference: `new-sale-decline-${action.targetId}`,
+      text:
+        `To decline this sale, open ${appUrl}/a/${actionToken} and choose a reason. ` +
+        `Declining records a seller strike and refunds the buyer.`,
     });
   }
 

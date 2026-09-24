@@ -76,7 +76,7 @@ const baseTx = {
   dispatchedAt: null,
   cancelledByBuyerAt: null,
   paymentStatus: 'HELD',
-  shippingMethod: 'PUDO',
+  shippingMethod: 'COURIER',
   gatewayPaymentId: 'pay_1',
   listing: { id: 'L1', title: 'Scope' },
   buyer: { id: 'B', email: 'b@x.co', firstName: 'Bo', phone: null },
@@ -84,7 +84,7 @@ const baseTx = {
 };
 
 describe('TransactionsService.cancelByBuyer', () => {
-  it('cancels a paid PUDO order: refunds, relists, notifies both parties', async () => {
+  it('cancels a paid courier order: refunds, relists, notifies both parties', async () => {
     const { service, prisma, notifications, refundPayment } = makeService({
       tx: { ...baseTx },
     });

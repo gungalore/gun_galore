@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { serverAuth as auth } from '../../../lib/auth-server';
 import { apiFetch } from '@/lib/api';
 import { BRAND_NAME } from '@/lib/brand';
-import { Listing, CategoryAttributeDef } from '@/lib/types';
+import { Listing, CategoryAttributeDef, Me } from '@/lib/types';
 import { AddToCartButton } from '@/components/add-to-cart-button';
 import {
   formatPrice,
@@ -41,6 +41,18 @@ import {
   getListingDeliveryEstimate,
   getCollectionMode,
 } from '@/lib/delivery-estimate';
+
+function straightLineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (degrees: number) => (degrees * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * 6371 * Math.asin(Math.min(1, Math.sqrt(a))));
+}
 
 export async function generateMetadata({
   params,
@@ -145,6 +157,30 @@ export default async function ListingDetailPage({
   // may include it so owner-only controls work with both response shapes.
   const sellerUserId = listing.seller.userId ?? listing.seller.id;
   const isOwnListing = !!userId && userId === sellerUserId;
+
+  // Dealer-distance is viewer-specific. Read the signed-in buyer's own saved
+  // coordinates server-side (never send them to the browser) and calculate a
+  // coarse straight-line figure for the seller-nominated gunshop. No shared
+  // cache: two buyers of the same listing have different distances.
+  const viewer = userId && token
+    ? await apiFetch<Me>('/users/me', {
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => null)
+    : null;
+  const dealerDistanceKm =
+    !isOwnListing &&
+    listing.plannedDealerLat != null &&
+    listing.plannedDealerLng != null &&
+    viewer?.addrLat != null &&
+    viewer?.addrLng != null
+      ? straightLineKm(
+          listing.plannedDealerLat,
+          listing.plannedDealerLng,
+          viewer.addrLat,
+          viewer.addrLng,
+        )
+      : null;
 
   // Take a Shot is an OPTION on every BUY_NOW / AUCTION listing now, not a
   // third selling mode — the seller turns offers on or off per listing, and
@@ -705,16 +741,11 @@ export default async function ListingDetailPage({
                   {collectionMode === 'FREIGHT_OK' &&
                     ' — collect yourself or send your own transporter'}
                 </>
-              ) : deliveryEstimate.minDays === deliveryEstimate.maxDays ? (
-                <>
-                  Estimated delivery: about {deliveryEstimate.maxDays} business
-                  days via courier (after dispatch)
-                </>
               ) : (
                 <>
-                  Estimated delivery: {deliveryEstimate.minDays}–
-                  {deliveryEstimate.maxDays} business days via courier (after
-                  dispatch)
+                  Delivery can take up to {deliveryEstimate.maxDays} business
+                  days from payment. We always push for the quickest possible
+                  collection and delivery.
                 </>
               )}
             </div>
@@ -981,7 +1012,7 @@ export default async function ListingDetailPage({
                   carry COLLECTION as its only method while the snapshot flag
                   is false (older DG-battery payloads — see
                   transactions.service.ts). Those buyers were being shown the
-                  courier paragraph, which quotes a Pudo/TCG rate that does
+                  courier paragraph, which quotes a courier rate that does
                   not exist for them. COLLECTION is only ever accepted for
                   collection-only items, so this can't mis-fire the other way. */}
               {listing.collectionOnly ||
@@ -1102,10 +1133,9 @@ export default async function ListingDetailPage({
             {vicinityLabel(listing)}
           </p>
 
-          {/* Phase M dealer-lock — surface the seller's optional
-              planned-dealer-stock hint so buyers near that dealer
-              know their collection drive's shorter. Only renders
-              for firearm listings where the seller filled it in. */}
+          {/* Seller-nominated stock-in gunshop. Distance is viewer-specific,
+              calculated server-side from the signed-in buyer's saved address;
+              neither party's coordinates are sent to the browser. */}
           {listing.isFirearm && listing.plannedDealerLocation && (
             <div
               className="mb-4 rounded-[6px] px-3 py-2 text-xs"
@@ -1131,12 +1161,16 @@ export default async function ListingDetailPage({
               <span style={{ color: 'var(--text-primary)' }}>
                 {listing.plannedDealerLocation}
               </span>
+              {dealerDistanceKm != null && (
+                <span className="ml-2" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                  ≈{dealerDistanceKm} km from you
+                </span>
+              )}
               <p
                 className="mt-1"
                 style={{ color: 'var(--text-tertiary)', fontSize: 11, lineHeight: 1.4 }}
               >
-                Seller&apos;s indication only — the actual stocking dealer
-                is confirmed after purchase.
+                The seller plans to dealer-stock the item at this gunshop.
               </p>
             </div>
           )}

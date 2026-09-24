@@ -10,24 +10,20 @@ import { Province } from '@prisma/client';
 import { PROVINCE_LONG } from '../common/province-labels';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import {
-  PudoService,
-  type ParcelDims,
-  type ResidentialAddress,
-  type ShippingQuote,
-} from './pudo.service';
 import { BobGoService } from './bobgo.service';
 import { planShippingGroups } from './consolidation';
 import type { BobGoAddress, BobGoRate } from './bobgo.types';
 import {
-  pickupPointOptions,
+  cheapestDoorRate,
+  fastestDoorRate,
+  pickupPointRates,
   rateToQuote,
-  selectRateForSlot,
 } from './bobgo-adapter';
-import { SettingsService, FLAGS } from '../settings/settings.service';
+import { deliveryDaysFor } from './service-levels';
+import { collectionMinDateFromDate, windowToBobGo } from './pickup-dates';
+import type { ParcelDims, ShippingQuote } from './shipping.types';
 import { displayShippingCents } from '../payments/fee.calculator';
 import { CarrierAddress, CarrierContact, CarrierShipmentResult } from './carrier.types';
-import { shiplogicToShippingStatus } from './status-map';
 import {
   failedShipmentChargeCents,
   requiresRemeasure,
@@ -35,62 +31,18 @@ import {
   type ShipmentFailureReason,
 } from '../common/shipment-failure-policy';
 
-export type ShippingMethod = 'PUDO' | 'TCG' | 'DEALER_TRANSFER';
-
-// Province enum → Pudo's two-letter "zone" code. Pudo's rate engine
-// uses the abbreviation to apply cross-province surcharges + estimate
-// transit time. Names match SA Post Office / SAPS conventions.
-const PROVINCE_ZONE: Record<Province, string> = {
-  EASTERN_CAPE: 'EC',
-  FREE_STATE: 'FS',
-  GAUTENG: 'GP',
-  KWAZULU_NATAL: 'KZN',
-  LIMPOPO: 'LP',
-  MPUMALANGA: 'MP',
-  NORTH_WEST: 'NW',
-  NORTHERN_CAPE: 'NC',
-  WESTERN_CAPE: 'WC',
-};
-
-// TCG / Shiplogic expects the full province NAME (e.g. "Western Cape")
-// in its `zone` field, not the abbreviation Pudo uses. Confirmed from
-// the TCG Postman collection's "Getting rates" example.
+export type ShippingMethod = 'COURIER' | 'DEALER_TRANSFER';
 
 /**
- * The two courier delivery shapes. Everything else on ShippingMethod
+ * The courier delivery shapes. Everything else on ShippingMethod
  * (DEALER_TRANSFER, PRIVATE_ARRANGE, COLLECTION, ON_SITE_SERVICE) is a
  * non-courier hand-over and is NOT the buyer's to choose.
+ *
+ * Since 2026-09-24 there is exactly ONE courier shape: door-to-door via Bob Go.
+ * Pudo lockers and The Courier Guy were retired.
  */
-const COURIER_METHODS = ['PUDO', 'TCG'] as const;
+const COURIER_METHODS = ['COURIER'] as const;
 
-/**
- * Does this listing offer couriering at all?
- *
- * Operator decision (2026-08-13): the DELIVERY OPTION IS THE BUYER'S TO
- * DECIDE. A seller who has opted into couriering no longer curates *which*
- * courier option the buyer gets — door versus collection point is the buyer's
- * call, and Bob Go's rate response is the authority on what is actually
- * possible for that parcel and route.
- *
- * What the seller (and the law, and physics) still decide is whether the item
- * is couriered AT ALL: firearms are dealer-transfer only, collection-only and
- * dangerous-goods items stay collection-only, and a parcel too big for a
- * locker simply never comes back with a pickup-point rate because Bob Go is
- * size-aware. Those constraints enforce themselves; seller preference between
- * two courier options does not need to.
- *
- * So: if a seller offered NO courier method, that is respected absolutely. If
- * they offered ANY, the buyer gets the full set.
- *
- * ONLY ON THE BOB GO RAIL. On the legacy rail the seller's pick is not a
- * preference between two deliveries — it is a choice about their OWN
- * hand-over: PUDO means they drop at a locker and need no pickup address at
- * all, TCG means a courier comes to them. Letting a buyer pick PUDO on a
- * TCG-only listing would quote a locker drop the seller never agreed to, and
- * picking TCG on a PUDO-only listing would quote against a pickup address that
- * does not exist. Bob Go removes the distinction — it collects from an address
- * either way — which is exactly what makes the choice the buyer's to make.
- */
 /**
  * The stacked box a group of cart lines ships as.
  *
@@ -123,30 +75,63 @@ function offersCourier(shippingMethods: string[]): boolean {
 }
 
 /**
- * One parcel's worth of delivery choices, as the cart sees it. Mirrors the
- * single-listing `deliveryOptions` shape exactly so the same picker component
- * renders both.
+ * One door option as the buyer sees it. `priceCents` already carries our 10%
+ * margin; `carrierRateCents` is the pure remittance (the fee maths runs on it).
+ * `deliveryDays*` come from the static service-level lookup so the UI can label
+ * speed without another call.
+ */
+export interface DoorOption {
+  priceCents: number;
+  carrierRateCents: number;
+  serviceName: string;
+  serviceCode: string;
+  providerSlug: string;
+  serviceLevelCode: string;
+  deliveryDaysMin: number;
+  deliveryDaysMax: number;
+  minDeliveryDate?: string;
+  maxDeliveryDate?: string;
+}
+
+/** A Pargo counter option. Adds the location the booking must replay. */
+export interface PickupPointOption extends DoorOption {
+  pickupPointLocationId: number;
+  pickupPointDistanceKm?: number;
+  /** Address + trading hours, from Bob Go's rate description. */
+  description?: string;
+}
+
+export interface DeliveryMenu {
+  /** Cheapest door rate, retained as the menu's default. */
+  door: DoorOption | null;
+  fastestDoor: DoorOption | null;
+  storePickup: PickupPointOption[];
+}
+
+export interface DeliverySelection {
+  deliveryOption?: 'DOOR_CHEAPEST' | 'DOOR_FASTEST' | 'STORE_PICKUP';
+  pickupPointLocationId?: number;
+}
+
+/**
+ * One parcel's worth of delivery as the cart sees it. Mirrors the
+ * single-listing `deliveryOptions` shape exactly so the same component renders
+ * both.
  */
 export interface CartDeliveryGroup {
   groupKey: string;
   listingIds: string[];
   /** True when these listings ship as ONE waybill - one delivery charge. */
   consolidated: boolean;
-  door: {
-    priceCents: number;
-    carrierRateCents: number;
-    serviceName: string;
-    serviceCode: string;
-  } | null;
-  pickupPoints: Array<{
-    locationId: number;
-    name: string;
-    description?: string;
-    distanceKm?: number;
-    priceCents: number;
-    carrierRateCents: number;
-    serviceCode: string;
-  }>;
+  /** Cheapest door rate (the default selection). Kept as `door` for every
+   *  existing consumer; it IS cheapestDoor. */
+  door: DoorOption | null;
+  /** Fastest door rate (fewest business days, price tie-break). Null when no
+   *  door rate exists. */
+  fastestDoor?: DoorOption | null;
+  /** Nearest Pargo counters (up to 5). Empty when the route has no pickup
+   *  point or the caller did not request them. */
+  storePickup?: PickupPointOption[];
   /** Set when THIS group alone could not be quoted; others still render. */
   unavailableReason?: string;
 }
@@ -154,9 +139,7 @@ export interface CartDeliveryGroup {
 export interface QuoteRequestBody {
   listingId: string;
   shippingMethod: ShippingMethod;
-  /** When PUDO — the buyer's chosen destination locker. */
-  toLockerId?: string;
-  /** When TCG — the buyer's delivery address (with coords). */
+  /** The buyer's delivery address (with coords). Required for a courier quote. */
   deliveryAddress?: {
     streetAddress: string;
     suburb: string;
@@ -174,6 +157,7 @@ export type ShippingStatus =
   | 'COLLECTED'
   | 'IN_TRANSIT'
   | 'OUT_FOR_DELIVERY'
+  | 'READY_FOR_PICKUP'
   | 'DELIVERED'
   | 'DELIVERY_FAILED'
   | 'RETURNED';
@@ -185,6 +169,9 @@ const STATUS_RANK: Record<ShippingStatus, number> = {
   COLLECTED: 1,
   IN_TRANSIT: 2,
   OUT_FOR_DELIVERY: 3,
+  // At the counter awaiting the buyer — same tier as out-for-delivery: the
+  // parcel is at its destination, just not in the buyer's hands yet.
+  READY_FOR_PICKUP: 3,
   DELIVERED: 4,
   DELIVERY_FAILED: 4,
   RETURNED: 4,
@@ -220,9 +207,7 @@ export class ShippingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly pudo: PudoService,
     private readonly bobgo: BobGoService,
-    private readonly settings: SettingsService,
   ) {}
 
   /**
@@ -231,26 +216,21 @@ export class ShippingService {
    */
   getDeliveryOptions(isFirearm: boolean): ShippingMethod[] {
     if (isFirearm) return ['DEALER_TRANSFER'];
-    return ['PUDO', 'TCG'];
+    return ['COURIER'];
   }
 
   /**
-   * Quote a route through Bob Go and pick the rate for one slot.
+   * Quote a route through Bob Go and return the cheapest door-to-door rate.
    *
-   * ONE call replaces the Pudo-or-TCG fork: Bob Go returns door and
-   * pickup-point rates together, so the slot only decides which of them we
-   * keep. Shared by quoteForListing and quoteCombined so the unit conversion
-   * and the selection policy exist in exactly one place.
+   * Shared by quoteForListing and quoteCombined so the unit conversion and the
+   * selection policy exist in exactly one place.
    *
    * Returns `outage` separately from an empty quote because the two mean
-   * opposite things to a buyer. Both legacy clients returned null for
-   * everything, which made "no rate for this route" and "the carrier is down"
-   * indistinguishable — the buyer saw the same empty shipping list either way
-   * and the sale was lost silently. The Bob Go client throws on an outage, and
-   * this is where that distinction is preserved for callers to act on.
+   * opposite things to a buyer. A null quote means "no door rate for this
+   * route"; `outage` means the carrier could not be reached, which is
+   * temporary and the buyer should be told to retry.
    */
-  private async bobgoQuoteForSlot(input: {
-    slot: 'PUDO' | 'TCG';
+  private async bobgoQuoteForRoute(input: {
     collection: CarrierAddress;
     delivery: {
       streetAddress: string;
@@ -261,9 +241,8 @@ export class ShippingService {
     };
     parcel: ParcelDims;
     declaredValueCents: number;
-    /** Pickup-point slot — the locker the buyer chose, when they chose one. */
-    lockerId?: number;
     description?: string;
+    selection?: DeliverySelection;
   }): Promise<{ quote: ShippingQuote | null; outage: boolean }> {
     const toBobGo = (a: {
       streetAddress: string;
@@ -280,8 +259,7 @@ export class ShippingService {
 
     const collection: BobGoAddress = {
       ...toBobGo(input.collection),
-      // The collection address already carries the LONG province name (it is
-      // built for TCG, which wants the same form Bob Go does).
+      // The collection address already carries the LONG province name.
       province: input.collection.province,
       company: input.collection.company,
     };
@@ -308,31 +286,24 @@ export class ShippingService {
       });
       rates = q.rates;
     } catch (err) {
-      this.logger.warn(
-        `Bob Go quote failed (${input.slot}): ${(err as Error).message}`,
-      );
+      this.logger.warn(`Bob Go quote failed: ${(err as Error).message}`);
       return { quote: null, outage: true };
     }
 
-    const rate = selectRateForSlot(rates, input.slot, {
-      lockerId: input.lockerId,
-    });
-    return { quote: rate ? rateToQuote(rate) : null, outage: false };
+    const quote = this.quoteFromMenu(this.menuFromRates(rates), input.selection ?? {});
+    return { quote, outage: false };
   }
 
   /**
-   * Live rate quote for a listing. Resolves seller-side address /
-   * locker from the listing row, then asks Pudo for an L2L or D2D
-   * price. Returns a ShippingQuote the buyer sees on the checkout
-   * breakdown and that we snapshot into Transaction.shippingCost when
-   * they hit Pay.
+   * Live rate quote for a listing. Resolves the seller-side collection
+   * address from the listing row, asks Bob Go for rates, and returns the
+   * cheapest door rate. Returns a ShippingQuote the buyer sees on the checkout
+   * breakdown and that we snapshot into Transaction.shippingCost when they hit
+   * Pay.
    *
-   * Throws BadRequestException with a user-readable reason if:
-   *   - the listing isn't priced for marketplace shipping (firearm),
-   *   - dimensions/weight haven't been captured by the seller,
-   *   - the chosen method isn't one the seller offered,
-   *   - the request body is missing locker / address details,
-   *   - or Pudo can't quote (no box fits L2L → caller falls back to TCG).
+   * Throws BadRequestException with a user-readable reason if the listing
+   * isn't courierable, dimensions/weight are missing, the seller doesn't offer
+   * couriering, the delivery address is missing, or no door rate exists.
    */
   async quoteForListing(body: QuoteRequestBody): Promise<ShippingQuote> {
     const listing = await this.prisma.listing.findUnique({
@@ -359,28 +330,14 @@ export class ShippingService {
         'This listing is missing parcel weight / dimensions. Ask the seller to update it.',
       );
     }
-    const useBobGo = await this.settings.get(FLAGS.bobgoEnabled);
-
-    // On the Bob Go rail the buyer chooses the courier option — see
-    // offersCourier(). A seller who offered no courier at all is still
-    // respected; one who offered any gets the full set. On the legacy rail the
-    // seller's pick is honoured exactly as before, because there it describes
-    // their own hand-over rather than the buyer's preference.
-    const courierRequested = (COURIER_METHODS as readonly string[]).includes(
-      body.shippingMethod,
-    );
-    if (useBobGo && courierRequested) {
-      if (!offersCourier(listing.shippingMethods)) {
-        throw new BadRequestException(
-          'This item is not available for courier delivery — arrange collection with the seller.',
-        );
-      }
-    } else if (
-      listing.shippingMethods.length > 0 &&
-      !listing.shippingMethods.includes(body.shippingMethod)
-    ) {
+    if (!offersCourier(listing.shippingMethods)) {
       throw new BadRequestException(
-        `Seller is not offering ${body.shippingMethod} for this listing.`,
+        'This item is not available for courier delivery — arrange collection with the seller.',
+      );
+    }
+    if (body.shippingMethod !== 'COURIER') {
+      throw new BadRequestException(
+        `${body.shippingMethod} doesn't use a courier rate.`,
       );
     }
 
@@ -391,184 +348,66 @@ export class ShippingService {
       weightGrams: listing.weightGrams,
     };
 
-    if (useBobGo && (body.shippingMethod === 'PUDO' || body.shippingMethod === 'TCG')) {
-      // Bob Go needs a delivery address for BOTH slots — a pickup-point parcel
-      // is still routed from the buyer's address, and the points it offers are
-      // the ones near that address.
-      //
-      // THIS IS A REAL UX CHANGE for the locker slot. Today a buyer picks a
-      // locker from a cached directory before entering an address; under Bob Go
-      // the flow inverts to "quote the route, then choose from the points it
-      // returns". Everything offered is then a point Bob Go has confirmed it
-      // will carry this parcel to, which the Pudo directory could never
-      // promise — but the address has to come first. Fail with a clear
-      // instruction rather than silently quoting the wrong thing.
-      if (!body.deliveryAddress) {
-        throw new BadRequestException(
-          'Enter your delivery address first so we can find the closest collection points and prices.',
-        );
-      }
-      if (!listing.pickupStreet || !listing.pickupCity) {
-        throw new BadRequestException(
-          "Seller hasn't provided a collection address yet.",
-        );
-      }
-      const from: CarrierAddress = {
-        streetAddress: listing.pickupStreet,
-        suburb: listing.pickupSuburb ?? '',
-        city: listing.pickupCity,
-        postalCode: listing.pickupPostalCode ?? '',
-        province: PROVINCE_LONG[listing.province],
-        lat: listing.pickupLat ?? undefined,
-        lng: listing.pickupLng ?? undefined,
-      };
-
-      const { quote, outage } = await this.bobgoQuoteForSlot({
-        slot: body.shippingMethod,
-        collection: from,
-        delivery: body.deliveryAddress,
-        parcel,
-        declaredValueCents: listing.price ?? 0,
-        lockerId: body.toLockerId ? Number(body.toLockerId) : undefined,
-      });
-      if (outage) {
-        // Deliberately distinct from "no rate": an outage is temporary and the
-        // buyer should be told to retry, not that we cannot deliver to them.
-        throw new BadRequestException(
-          'We could not reach the courier for a price just now. Please try again in a moment.',
-        );
-      }
-      if (!quote) {
-        throw new BadRequestException(
-          body.shippingMethod === 'PUDO'
-            ? 'No collection point near that address can take this parcel. Try door delivery instead.'
-            : 'No door-delivery rate available for this route right now.',
-        );
-      }
-      return quote;
-    }
-
-    if (body.shippingMethod === 'PUDO') {
-      // Pudo L2L doesn't bind the parcel to a specific SOURCE locker —
-      // the seller drops at any Pudo locker with the delivery PIN we
-      // issue at dispatch time, and Pudo routes it to the buyer's
-      // chosen destination. Rates are flat across source choice, so we
-      // only need the destination locker.
-      if (!body.toLockerId) {
-        throw new BadRequestException('Pick a collection locker first.');
-      }
-      const quote = await this.pudo.quoteL2L(body.toLockerId, parcel);
-      if (!quote) {
-        throw new BadRequestException(
-          'This parcel is too large for Pudo locker shipping. Use door delivery instead.',
-        );
-      }
-      return quote;
-    }
-
-    // ── The DOOR slot has no legacy quoting path any more ────────────────
-    //
-    // This used to quote The Courier Guy directly. That integration was
-    // retired (operator 2026-09-04), and the DOOR slot is now served only by
-    // Bob Go — which is handled far above, before this fallback runs.
-    //
-    // ⚠️ Reaching here with 'TCG' means bobgo_enabled is OFF, i.e. somebody
-    // flipped the incident-rollback switch. The legacy rail can still quote
-    // Pudo lockers, but nothing can quote a door delivery, so say that rather
-    // than falling through to the generic "doesn't use a courier rate"
-    // message below — which would be flatly untrue of a door parcel and would
-    // send an operator looking for a config error that isn't there.
-    if (body.shippingMethod === 'TCG') {
+    if (!body.deliveryAddress) {
       throw new BadRequestException(
-        'Door-to-door delivery is unavailable right now — please choose a Pudo pickup point instead.',
+        'Enter your delivery address first so we can quote a courier.',
       );
     }
-
-    throw new BadRequestException(
-      `${body.shippingMethod} doesn't use a courier rate.`,
-    );
-  }
-
-  /**
-   * What the sell form should ask a seller about couriering.
-   *
-   * `sellerPicksOption: false` means: offer ONE "courier delivery" choice and
-   * store both slots, because the buyer decides door versus collection point
-   * and the seller's hand-over is the same either way.
-   *
-   * Returned from the server so the sell form never needs a feature flag —
-   * same reasoning as the delivery menu.
-   */
-  async sellerCourierModel(): Promise<{
-    sellerPicksOption: boolean;
-    /** What to store on Listing.shippingMethods when they opt into couriering. */
-    courierMethods: Array<'PUDO' | 'TCG'>;
-    /** Copy for the single-option case. */
-    label: string;
-    hint: string;
-  }> {
-    if (await this.settings.get(FLAGS.bobgoEnabled)) {
-      return {
-        sellerPicksOption: false,
-        courierMethods: ['PUDO', 'TCG'],
-        label: 'Courier delivery',
-        hint: 'A courier collects from your address between 08:00 and 17:00. The buyer chooses whether it goes to their door or to a collection point near them.',
-      };
+    if (!listing.pickupStreet || !listing.pickupCity) {
+      throw new BadRequestException(
+        "Seller hasn't provided a collection address yet.",
+      );
     }
-    return {
-      sellerPicksOption: true,
-      courierMethods: ['PUDO', 'TCG'],
-      label: 'Courier delivery',
-      hint: 'Pick which couriers you offer.',
+    const from: CarrierAddress = {
+      streetAddress: listing.pickupStreet,
+      suburb: listing.pickupSuburb ?? '',
+      city: listing.pickupCity,
+      postalCode: listing.pickupPostalCode ?? '',
+      province: PROVINCE_LONG[listing.province],
+      lat: listing.pickupLat ?? undefined,
+      lng: listing.pickupLng ?? undefined,
     };
+
+    const { quote, outage } = await this.bobgoQuoteForRoute({
+      collection: from,
+      delivery: body.deliveryAddress,
+      parcel,
+      declaredValueCents: listing.price ?? 0,
+    });
+    if (outage) {
+      // Deliberately distinct from "no rate": an outage is temporary and the
+      // buyer should be told to retry, not that we cannot deliver to them.
+      throw new BadRequestException(
+        'We could not reach the courier for a price just now. Please try again in a moment.',
+      );
+    }
+    if (!quote) {
+      throw new BadRequestException(
+        'No door-delivery rate available for this route right now.',
+      );
+    }
+    return quote;
   }
 
   /**
-   * EVERY delivery option available to this buyer, priced, in one call.
+   * The delivery option for this buyer, priced, in one call.
    *
-   * This is the buyer's menu, and it is deliberately the whole menu: the
-   * operator's decision is that the delivery option is the BUYER'S to decide,
-   * so the door option and the collection points are returned together and the
-   * buyer picks. The seller does not curate it and neither does this method.
-   *
-   * Built from a QUOTE, not a directory. Bob Go returns options already priced,
-   * already distance-ranked and already bookable (the location id is baked into
-   * the service code), so there is no "find points, then price them" round
-   * trip — and every point returned is one Bob Go has confirmed will take THIS
-   * parcel, which the Pudo directory could never promise. A parcel too big for
-   * a locker simply comes back with no pickup points, so the size limit
-   * enforces itself rather than needing the seller to police it.
-   *
-   * An empty `door` AND empty `pickupPoints` means Bob Go serves neither for
-   * this route — distinct from the throw below, which means we could not ask.
+   * Door-to-door only: the cheapest Bob Go door rate for this parcel and route.
+   * Bob Go returns every provider's rates together, and the platform's policy
+   * is to charge the buyer the cheapest. A null `door` means no door rate
+   * exists for the route — distinct from the throw, which means we could not
+   * ask.
    */
   async deliveryOptions(
     listingId: string,
     deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>,
   ): Promise<{
-    door: {
-      /** What the buyer sees and pays — carrier rate + our 10% margin. */
-      priceCents: number;
-      /**
-       * The carrier's own rate, margin excluded. NOT for display — the buyer
-       * sees one delivery figure. It is here because the transaction fee is
-       * charged on the carrier rate only (we do not charge a gateway
-       * percentage on our own margin), and the checkout preview has to agree
-       * with the server's arithmetic to the cent.
-       */
-      carrierRateCents: number;
-      serviceName: string;
-      serviceCode: string;
-    } | null;
-    pickupPoints: Array<{
-      locationId: number;
-      name: string;
-      description?: string;
-      distanceKm?: number;
-      priceCents: number;
-      carrierRateCents: number;
-      serviceCode: string;
-    }>;
+    /** Cheapest door rate — the default selection. */
+    door: DoorOption | null;
+    /** Fastest door rate (fewest business days). */
+    fastestDoor: DoorOption | null;
+    /** Nearest Pargo counters (up to 5); empty when none cover the route. */
+    storePickup: PickupPointOption[];
   }> {
     const listing = await this.prisma.listing.findUnique({
       where: { id: listingId },
@@ -577,14 +416,12 @@ export class ShippingService {
 
     // ITEM-CLASS GATE — if it can't be shipped, don't quote a courier for it.
     //
-    // This runs BEFORE the parcel-dimension check on purpose, and covers both
-    // rails (Bob Go and the legacy Pudo/TCG path below), because the dimension
-    // check is not a class check and never was. A firearm carries weight and
-    // dimensions — the sell form requires them — so a firearm listing sailed
-    // straight past it and this endpoint returned live, priced, bookable-looking
-    // door and pickup-point rates for a rifle. The route is unauthenticated
-    // (shipping.controller.ts, no guard beyond the global throttler), so that
-    // was reachable by anyone with a listing id.
+    // This runs BEFORE the parcel-dimension check on purpose. A firearm
+    // carries weight and dimensions — the sell form requires them — so a
+    // firearm listing would sail straight past the dimension check and this
+    // endpoint would return live, priced, bookable-looking rates for a rifle.
+    // The route is unauthenticated (shipping.controller.ts, no guard beyond
+    // the global throttler), so that was reachable by anyone with a listing id.
     //
     // A firearm moves as dealer stock through a licensed dealer, or the parties
     // arrange privately and both attend one. It is never a parcel on our rail.
@@ -618,14 +455,6 @@ export class ShippingService {
       throw new BadRequestException(
         'This listing is missing parcel weight / dimensions. Ask the seller to update it.',
       );
-    }
-    // RAIL-AGNOSTIC ON PURPOSE. The frontend has no way to read a feature flag
-    // and should not be given one: that would make the checkout care which
-    // carrier we use, and the whole point of the slot design is that it does
-    // not have to. This answers for whichever rail is live, in one shape, so
-    // the buyer's UI is written once and the swap is invisible to it.
-    if (!(await this.settings.get(FLAGS.bobgoEnabled))) {
-      return this.legacyDeliveryOptions(listing, deliveryAddress);
     }
 
     const from = {
@@ -665,7 +494,7 @@ export class ShippingService {
       rates = q.rates;
     } catch (err) {
       this.logger.warn(
-        `Bob Go pickup-point lookup failed: ${(err as Error).message}`,
+        `Bob Go door-rate lookup failed: ${(err as Error).message}`,
       );
       throw new BadRequestException(
         'We could not reach the courier just now. Please try again in a moment.',
@@ -676,48 +505,119 @@ export class ShippingService {
   }
 
   /**
-   * Turn a Bob Go rate list into the buyer-facing menu.
+   * Re-quote the buyer's selected delivery option at Pay. The browser only
+   * submits the option kind and (for Store Pickup) a counter id — never a
+   * price, provider or service code. We regenerate Bob Go's menu and resolve
+   * that selection server-side so stale/tampered prices cannot be charged.
+   */
+  async quoteForSelection(
+    listingId: string,
+    deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>,
+    selection: DeliverySelection,
+  ): Promise<ShippingQuote> {
+    const menu = await this.deliveryOptions(listingId, deliveryAddress);
+    const quote = this.quoteFromMenu(menu, selection);
+    if (quote) return quote;
+    throw new BadRequestException(
+      selection.deliveryOption === 'STORE_PICKUP'
+        ? 'That pickup point is no longer available. Please choose another option.'
+        : 'That delivery option is no longer available. Please refresh the quote.',
+    );
+  }
+
+  private quoteFromMenu(
+    menu: DeliveryMenu,
+    selection: DeliverySelection = {},
+  ): ShippingQuote | null {
+    const kind = selection.deliveryOption ?? 'DOOR_CHEAPEST';
+    if (kind === 'STORE_PICKUP') {
+      const point = menu.storePickup.find(
+        (candidate) =>
+          candidate.pickupPointLocationId === selection.pickupPointLocationId,
+      );
+      if (!point?.pickupPointLocationId) return null;
+      return {
+        serviceCode: point.serviceCode,
+        serviceName: point.serviceName,
+        priceCents: point.carrierRateCents,
+        providerSlug: point.providerSlug,
+        serviceLevelCode: point.serviceLevelCode,
+        deliveryOption: kind,
+        pickupPointLocationId: point.pickupPointLocationId,
+        pickupPointSnapshot: {
+          providerSlug: point.providerSlug,
+          locationId: point.pickupPointLocationId,
+          name: point.serviceName,
+          description: point.description ?? null,
+          distanceKm: point.pickupPointDistanceKm ?? null,
+        },
+      };
+    }
+
+    const door = kind === 'DOOR_FASTEST' ? menu.fastestDoor : menu.door;
+    if (!door) return null;
+    return {
+      serviceCode: door.serviceCode,
+      serviceName: door.serviceName,
+      // ShippingQuote.priceCents is the pure carrier rate. The handling margin
+      // is stored separately on Transaction and only added for buyer display.
+      priceCents: door.carrierRateCents,
+      providerSlug: door.providerSlug,
+      serviceLevelCode: door.serviceLevelCode,
+      deliveryOption: kind,
+    };
+  }
+
+  /**
+   * Turn a Bob Go rate list into the buyer-facing menu — the cheapest door,
+   * the fastest door, and the nearest Pargo counters.
    *
    * Shared by the single-listing endpoint and the cart endpoint so both answer
-   * in one shape — which is what lets the picker component be written once and
-   * what keeps the frontend from ever learning which rail is live.
+   * in one shape. Bob Go returns door and pickup-point rates in ONE reply, so
+   * there is no second call.
    */
-  private menuFromRates(rates: BobGoRate[]): {
-    door: {
-      priceCents: number;
-      carrierRateCents: number;
-      serviceName: string;
-      serviceCode: string;
-    } | null;
-    pickupPoints: Array<{
-      locationId: number;
-      name: string;
-      description?: string;
-      distanceKm?: number;
-      priceCents: number;
-      carrierRateCents: number;
-      serviceCode: string;
-    }>;
-  } {
-    const doorRate = selectRateForSlot(rates, 'TCG');
+  private menuFromRates(rates: BobGoRate[]): DeliveryMenu {
     return {
-      door: doorRate
-        ? {
-            priceCents: withHandling(rateToQuote(doorRate).priceCents),
-            carrierRateCents: rateToQuote(doorRate).priceCents,
-            serviceName: doorRate.serviceName,
-            serviceCode: doorRate.serviceCode,
-          }
-        : null,
-      pickupPoints: pickupPointOptions(rates).map((r) => ({
-        locationId: r.pickupPointLocationId!,
-        name: r.serviceName,
-        description: r.description,
-        distanceKm: r.pickupPointDistanceKm,
-        priceCents: withHandling(rateToQuote(r).priceCents),
-        carrierRateCents: rateToQuote(r).priceCents,
-        serviceCode: r.serviceCode,
-      })),
+      door: this.doorOption(cheapestDoorRate(rates)),
+      fastestDoor: this.doorOption(fastestDoorRate(rates)),
+      // Nearest first (the buyer travels), capped at 5. Price is shown too;
+      // Pargo prices are usually flat across counters near one address.
+      storePickup: [...pickupPointRates(rates)]
+        .sort(
+          (a, b) =>
+            (a.pickupPointDistanceKm ?? Infinity) -
+            (b.pickupPointDistanceKm ?? Infinity),
+        )
+        .slice(0, 5)
+        .map((r) => this.pickupOption(r)),
+    };
+  }
+
+  private doorOption(rate: BobGoRate | null): DoorOption | null {
+    if (!rate) return null;
+    const q = rateToQuote(rate);
+    const days = deliveryDaysFor(rate.providerSlug, rate.serviceLevelCode);
+    return {
+      priceCents: withHandling(q.priceCents),
+      carrierRateCents: q.priceCents,
+      serviceName: rate.serviceName,
+      serviceCode: rate.serviceCode,
+      providerSlug: rate.providerSlug,
+      serviceLevelCode: rate.serviceLevelCode,
+      deliveryDaysMin: days.min,
+      deliveryDaysMax: days.max,
+      minDeliveryDate: rate.minDeliveryDate,
+      maxDeliveryDate: rate.maxDeliveryDate,
+    };
+  }
+
+  private pickupOption(rate: BobGoRate): PickupPointOption {
+    const door = this.doorOption(rate)!;
+    return {
+      ...door,
+      pickupPointLocationId: rate.pickupPointLocationId ?? 0,
+      pickupPointDistanceKm: rate.pickupPointDistanceKm,
+      description: rate.description,
     };
   }
 
@@ -727,10 +627,7 @@ export class ShippingService {
    * WHY THIS EXISTS. `deliveryOptions` above takes exactly one listingId and
    * builds one parcel from it, so a cart could not use it: a cart consolidates
    * same-seller lines into a single waybill, and the price of that combined
-   * box is arithmetically unrelated to the sum of its lines. The old cart
-   * dodged this by asking the buyer to pick a CARRIER (Pudo or The Courier
-   * Guy) instead of a delivery, which stopped being answerable the moment Bob
-   * Go became the rail.
+   * box is arithmetically unrelated to the sum of its lines.
    *
    * Grouping comes from planShippingGroups, the SAME function checkout uses to
    * decide what to charge - see that module for why the frontend must not
@@ -776,20 +673,18 @@ export class ShippingService {
     );
 
     // Every courier line in a cart goes to ONE address, so the destination
-    // half of the key is constant here and groups degenerate to owner|slot -
-    // which is exactly "one delivery choice per seller", what we want shown.
-    // The slot is nominal at menu time; the buyer's pick decides it.
+    // half of the key is constant here and groups degenerate to owner|method —
+    // which is exactly "one delivery charge per seller", what we want shown.
     const groups = planShippingGroups(
       lines.map((l) => ({
         listingId: l.listingId,
-        shippingMethod: 'TCG',
+        shippingMethod: 'COURIER',
         quantity: qtyById.get(l.listingId),
         deliveryAddress,
       })),
       meta,
     );
 
-    const bobgoRail = await this.settings.get(FLAGS.bobgoEnabled);
     const out: CartDeliveryGroup[] = [];
 
     for (const g of groups) {
@@ -818,22 +713,10 @@ export class ShippingService {
           out.push({
             ...base,
             door: null,
-            pickupPoints: [],
+            fastestDoor: null,
+            storePickup: [],
             unavailableReason:
               'One of these items cannot be sent by courier, so we cannot quote delivery for them together.',
-          });
-          continue;
-        }
-
-        if (!bobgoRail) {
-          // The legacy rails have no combined menu. Say so rather than
-          // invent a price we cannot honour.
-          out.push({
-            ...base,
-            door: null,
-            pickupPoints: [],
-            unavailableReason:
-              'Delivery options are briefly unavailable - please try again.',
           });
           continue;
         }
@@ -882,13 +765,13 @@ export class ShippingService {
         });
 
         const menu = this.menuFromRates(rates);
-        const pickupPoints = menu.pickupPoints;
 
         out.push({
           ...base,
           door: menu.door,
-          pickupPoints,
-          ...(menu.door === null && pickupPoints.length === 0
+          fastestDoor: menu.fastestDoor,
+          storePickup: menu.storePickup,
+          ...(menu.door === null
             ? {
                 unavailableReason:
                   'No courier option for these items to that address.',
@@ -902,7 +785,8 @@ export class ShippingService {
         out.push({
           ...base,
           door: null,
-          pickupPoints: [],
+          fastestDoor: null,
+          storePickup: [],
           unavailableReason:
             'Delivery options are briefly unavailable - please try again.',
         });
@@ -912,179 +796,26 @@ export class ShippingService {
     return out;
   }
 
-  /**
-   * The same menu, built from the legacy Pudo + TCG rails.
-   *
-   * Keeps the endpoint's contract identical while the old rail is live, so the
-   * checkout is written once and the carrier swap is invisible to it.
-   *
-   * The shapes differ underneath, and the difference is the whole argument for
-   * migrating: Pudo has no server-side proximity search, so collection points
-   * come from a cached directory ranked by postal code, and every locker costs
-   * the SAME flat locker-to-locker rate rather than carrying its own price.
-   * Door needs a separate TCG call. Two round trips and a directory where Bob
-   * Go needs one call.
-   */
-  private async legacyDeliveryOptions(
-    listing: {
-      id: string;
-      weightGrams: number | null;
-      lengthCm: number | null;
-      widthCm: number | null;
-      heightCm: number | null;
-      price: number | null;
-      province: Province;
-      shippingMethods?: string[];
-      pickupStreet: string | null;
-      pickupSuburb: string | null;
-      pickupCity: string | null;
-      pickupPostalCode: string | null;
-      pickupLat: number | null;
-      pickupLng: number | null;
-    },
-    deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>,
-  ): Promise<{
-    door: {
-      /** What the buyer sees and pays — carrier rate + our 10% margin. */
-      priceCents: number;
-      /**
-       * The carrier's own rate, margin excluded. NOT for display — the buyer
-       * sees one delivery figure. It is here because the transaction fee is
-       * charged on the carrier rate only (we do not charge a gateway
-       * percentage on our own margin), and the checkout preview has to agree
-       * with the server's arithmetic to the cent.
-       */
-      carrierRateCents: number;
-      serviceName: string;
-      serviceCode: string;
-    } | null;
-    pickupPoints: Array<{
-      locationId: number;
-      name: string;
-      description?: string;
-      distanceKm?: number;
-      priceCents: number;
-      carrierRateCents: number;
-      serviceCode: string;
-    }>;
-  }> {
-    const parcel: ParcelDims = {
-      lengthCm: listing.lengthCm!,
-      widthCm: listing.widthCm!,
-      heightCm: listing.heightCm!,
-      weightGrams: listing.weightGrams!,
-    };
-
-    // HONOUR THE SELLER'S PICK HERE, unlike the Bob Go branch.
-    //
-    // The buyer-decides rule is Bob Go's, because there a courier collects from
-    // an address either way so the seller has no stake in which shape the buyer
-    // chooses. On this rail the pick describes the SELLER'S own hand-over, and
-    // quoteForListing still enforces it — so offering an option they did not
-    // agree to would hand the buyer a price and then refuse it at the Pay
-    // button, which is the worst possible place to find out.
-    const offered = listing.shippingMethods ?? [];
-    const offers = (m: 'PUDO' | 'TCG') =>
-      offered.length === 0 || offered.includes(m);
-
-    // Door — permanently unavailable on the legacy rail.
-    //
-    // This used to carry one The Courier Guy quote. That integration was
-    // retired (operator 2026-09-04) and nothing replaced it *here*, because
-    // the DOOR slot is now Bob Go's and Bob Go has its own branch above.
-    //
-    // Null was already this branch's honest answer for "no door option" — a
-    // seller not offering it, or a quote that failed — so the menu below
-    // handles it correctly without further change. It now simply never fills.
-    const door: {
-      priceCents: number;
-      carrierRateCents: number;
-      serviceName: string;
-      serviceCode: string;
-    } | null = null;
-
-    // Collection points — nearest lockers from the cached directory. The L2L
-    // rate is FLAT across lockers, so one quote prices the whole list; if that
-    // one quote comes back null the parcel fits no locker at all and the list
-    // is empty, which is the same answer Bob Go gives by returning no
-    // pickup-point rates.
-    const points: Array<{
-      locationId: number;
-      name: string;
-      description?: string;
-      distanceKm?: number;
-      priceCents: number;
-      carrierRateCents: number;
-      serviceCode: string;
-    }> = [];
-    try {
-      if (!offers('PUDO')) throw new Error('seller does not offer locker delivery');
-      const lockers = await this.pudo.getNearbyLockers({
-        lat: deliveryAddress.lat,
-        lng: deliveryAddress.lng,
-        postalCode: deliveryAddress.postalCode,
-        limit: 10,
-      });
-      const flat = lockers.length
-        ? await this.pudo.quoteL2L(lockers[0].lockerId, parcel)
-        : null;
-      if (flat) {
-        for (const l of lockers) {
-          points.push({
-            // Pudo terminal codes are alphanumeric ("CG929") and this field is
-            // numeric for Bob Go location ids. NaN would be worse than
-            // useless, so the code travels in serviceCode and this stays 0 —
-            // the legacy checkout keys on the code, never on this.
-            locationId: 0,
-            name: l.name,
-            description: [l.address, l.suburb, l.city]
-              .filter(Boolean)
-              .join(', '),
-            distanceKm: l.distanceKm,
-            priceCents: withHandling(flat.priceCents),
-            carrierRateCents: flat.priceCents,
-            serviceCode: l.lockerId,
-          });
-        }
-      }
-    } catch (err) {
-      this.logger.debug(
-        `No legacy collection points: ${(err as Error).message}`,
-      );
-    }
-
-    return { door, pickupPoints: points };
-  }
 
   // P6.2 — quote ONE consolidated parcel for 2+ items from the SAME seller,
   // shipping via the SAME method to the SAME destination. Combined weight =
   // Σ(item weight × qty); combined box = a conservative STACKED bounding box
-  // (max length, max width, Σ height) so we never UNDER-quote (GG remits the
-  // real carrier cost). Returns null when the combined parcel is too big for
-  // the method (e.g. exceeds a Pudo locker) — the caller then falls back to
-  // per-line quoting so checkout never breaks. All items must be the same
-  // seller's non-firearm, non-collection, method-offering listings.
+  // (max length, max width, Σ height) so we never UNDER-quote (All Outdoor
+  // remits the real carrier cost). Returns null when the combined parcel
+  // cannot be quoted — the caller then falls back to per-line quoting so
+  // checkout never breaks. All items must be the same seller's non-firearm,
+  // non-collection, courier-offering listings.
   async quoteCombined(
     items: Array<{ listingId: string; quantity: number }>,
-    method: 'PUDO' | 'TCG',
+    method: 'COURIER',
     dest: {
-      /**
-       * The buyer's address. REQUIRED for both slots on the Bob Go rail: a
-       * pickup point is a destination *near an area*, not a substitute for
-       * knowing the area. The cart used to send this only for TCG and send
-       * `{ toLockerId }` alone for PUDO, so `if (!dest.deliveryAddress) return
-       * null` below fired for EVERY consolidated locker group — the caller
-       * then `continue`d to a per-line fallback that itself throws for a
-       * locker with no address. Every cart locker checkout was dead, masked
-       * only by assertPaymentsLive().
-       */
+      /** The buyer's address. REQUIRED — Bob Go quotes off it. */
       deliveryAddress?: QuoteRequestBody['deliveryAddress'];
-      /** Bob Go collection-point id. Numeric; see the guard below. */
-      toLockerId?: string | number;
     },
+    selection: DeliverySelection = {},
   ): Promise<ShippingQuote | null> {
     if (items.length === 0) return null;
-    const bobgoRail = await this.settings.get(FLAGS.bobgoEnabled);
+    if (method !== 'COURIER') return null;
     const listings = await this.prisma.listing.findMany({
       where: { id: { in: items.map((i) => i.listingId) } },
     });
@@ -1110,16 +841,7 @@ export class ShippingService {
         // Any ineligible / dimensionless item → don't consolidate this group.
         return null;
       }
-      // Same rule as the single-line quote, and gated the same way: the
-      // buyer's choice only overrides the seller's on the Bob Go rail.
-      if (bobgoRail) {
-        if (!offersCourier(l.shippingMethods)) return null;
-      } else if (
-        l.shippingMethods.length > 0 &&
-        !l.shippingMethods.includes(method)
-      ) {
-        return null;
-      }
+      if (!offersCourier(l.shippingMethods)) return null;
       weightGrams += l.weightGrams * qty;
       lengthCm = Math.max(lengthCm, l.lengthCm);
       widthCm = Math.max(widthCm, l.widthCm);
@@ -1128,85 +850,39 @@ export class ShippingService {
     }
     const parcel: ParcelDims = { lengthCm, widthCm, heightCm, weightGrams };
 
-    if (await this.settings.get(FLAGS.bobgoEnabled)) {
-      // Consolidated groups quote exactly like a single line, just with the
-      // combined box. Everything here returns null rather than throwing —
-      // including an outage — because this method's ONLY error contract is
-      // null, and the caller (transactions.service.ts createOrderCheckout)
-      // invokes it without a try/catch. A thrown error would turn a whole
-      // multi-item cart checkout into a 500 instead of falling back to
-      // per-line quoting, which is the designed behaviour.
-      const first = byId.get(items[0].listingId)!;
-      if (!dest.deliveryAddress) return null;
-      // The try/catch stays even though the address is now a plain literal:
-      // this method's ONLY error contract is null (see above), and the caller
-      // runs it without a try/catch. Anything that ever learns to throw while
-      // building the origin must keep degrading to per-line quoting rather
-      // than 500ing a whole cart checkout.
-      let from: CarrierAddress;
-      try {
-        from = {
-          streetAddress: first.pickupStreet ?? '',
-          suburb: first.pickupSuburb ?? '',
-          city: first.pickupCity ?? '',
-          postalCode: first.pickupPostalCode ?? '',
-          province: PROVINCE_LONG[first.province],
-          lat: first.pickupLat ?? undefined,
-          lng: first.pickupLng ?? undefined,
-        };
-      } catch {
-        return null;
-      }
-      if (!from.streetAddress || !from.city) return null;
-      const { quote } = await this.bobgoQuoteForSlot({
-        slot: method,
-        collection: from,
-        delivery: dest.deliveryAddress,
-        parcel,
-        declaredValueCents,
-        lockerId: (() => {
-          if (dest.toLockerId == null) return undefined;
-          const n = Number(dest.toLockerId);
-          if (!Number.isFinite(n)) {
-            // A legacy Pudo code like 'CG929' coerces to NaN, which passes the
-            // `!= null` test in the adapter and then matches nothing. Fail as
-            // "no id" rather than as "no locker fits this parcel".
-            this.logger.warn(
-              `quoteCombined: non-numeric collection-point id ${String(dest.toLockerId)} ignored`,
-            );
-            return undefined;
-          }
-          return n;
-        })(),
-      });
-      return quote;
-    }
-
-    if (method === 'PUDO') {
-      if (!dest.toLockerId) return null;
-      // Legacy Pudo takes an alphanumeric locker CODE ('CG929'), unlike Bob Go
-      // which takes a numeric location id — hence the widened parameter type.
-      return this.pudo.quoteL2L(String(dest.toLockerId), parcel);
-    }
-
-    // DOOR — no combined (multi-line) quote on the legacy rail.
-    //
-    // This used to ask The Courier Guy for one basket-wide door rate. That
-    // integration was retired (operator 2026-09-04); the DOOR slot is Bob Go's
-    // now, and Bob Go's combined quoting is handled before this fallback.
-    //
-    // Null is this method's established "couldn't combine" answer and callers
-    // already degrade to quoting each line on its own — which, for a door
-    // parcel on the legacy rail, then refuses with a clear message rather than
-    // silently pricing something we cannot book.
-    return null;
+    // Consolidated groups quote exactly like a single line, just with the
+    // combined box. Everything here returns null rather than throwing —
+    // including an outage — because this method's ONLY error contract is null,
+    // and the caller (transactions.service.ts createOrderCheckout) invokes it
+    // without a try/catch. A thrown error would turn a whole multi-item cart
+    // checkout into a 500 instead of falling back to per-line quoting.
+    const first = byId.get(items[0].listingId)!;
+    if (!dest.deliveryAddress) return null;
+    const from: CarrierAddress = {
+      streetAddress: first.pickupStreet ?? '',
+      suburb: first.pickupSuburb ?? '',
+      city: first.pickupCity ?? '',
+      postalCode: first.pickupPostalCode ?? '',
+      province: PROVINCE_LONG[first.province],
+      lat: first.pickupLat ?? undefined,
+      lng: first.pickupLng ?? undefined,
+    };
+    if (!from.streetAddress || !from.city) return null;
+    const { quote } = await this.bobgoQuoteForRoute({
+      collection: from,
+      delivery: dest.deliveryAddress,
+      parcel,
+      declaredValueCents,
+      selection,
+    });
+    return quote;
   }
 
   // ------------------------------------------------------------------
   // Platform-arranged shipment booking (P5.2)
   // ------------------------------------------------------------------
   // Books the real carrier shipment for a transaction and stamps the
-  // waybill + (Pudo) drop-off PIN onto it. Triggered when the seller
+  // waybill and any collection PIN onto it. Triggered when the seller
   // ACCEPTS a courier sale. This SPENDS the carrier wallet, so it is built
   // to be safe under retries/races and to NEVER throw into its caller:
   //
@@ -1288,26 +964,20 @@ export class ShippingService {
 
       // Courier sales only. Release the claim for everything else so the
       // row never looks like a stuck in-progress booking.
-      if (tx.shippingMethod !== 'PUDO' && tx.shippingMethod !== 'TCG') {
+      if (tx.shippingMethod !== 'COURIER') {
         await this.releaseBookingClaim(transactionId);
         return null;
       }
-
-      // Which rail carries this parcel. Read ONCE and reused for the whole
-      // booking, so a flag flip (or a transient DB error inside settings.get,
-      // which fails back to the default) cannot have us quote against one
-      // carrier and book against the other halfway through.
-      const useBobGo = await this.settings.get(FLAGS.bobgoEnabled);
 
       if (!tx.shippingServiceCode) {
         throw new Error(
           `${tx.shippingMethod} order has no service code — the shipping quote may be stale`,
         );
       }
-      // The carrier SMSes the hand-over PIN (Pudo) / collection notice (TCG),
-      // so a real mobile for BOTH parties is required. Missing → fail-safe to
-      // the manual-dispatch fallback rather than book a contactless shipment
-      // the carrier can't coordinate.
+      // The carrier coordinates collection + delivery, so a real mobile for
+      // BOTH parties is required. Missing → fail-safe to the manual-dispatch
+      // fallback rather than book a contactless shipment the carrier can't
+      // coordinate.
       if (!tx.seller.phone?.trim()) {
         throw new Error('seller has no phone on file — cannot book a courier shipment');
       }
@@ -1340,21 +1010,12 @@ export class ShippingService {
       // max W, Σ height×qty; Σ weight×qty) so the booked shipment matches the
       // combined quote the buyer was charged. Declared value = Σ line totals.
       // A standalone tx has no siblings → identical to single-parcel behaviour.
-      //
-      // HOISTED out of the TCG branch (was inline there): Pudo never needed
-      // dimensions because its service code already encodes the reserved box
-      // size, but Bob Go's create call takes explicit parcel dimensions for
-      // BOTH door and pickup-point shipments. Computing it once above the
-      // branch keeps a single definition of "what is in the box" — the
-      // alternative was a second copy that could drift from the quoted price.
       let weightGrams = (tx.listing.weightGrams ?? 0) * tx.quantity;
       let lengthCm = tx.listing.lengthCm ?? 0;
       let widthCm = tx.listing.widthCm ?? 0;
       let heightCm = (tx.listing.heightCm ?? 0) * tx.quantity;
       let declaredValueCents = tx.listingPrice;
-      // Defensive: the loader above always includes shippedWith, but this
-      // computation now runs for PUDO too, and the PUDO path never touched it
-      // before. A missing relation must degrade to "no siblings" — a thrown
+      // Defensive: a missing relation must degrade to "no siblings" — a thrown
       // TypeError here would land in the catch below and downgrade a
       // perfectly bookable sale to manual dispatch.
       const siblings = Array.isArray(tx.shippedWith) ? tx.shippedWith : [];
@@ -1366,13 +1027,7 @@ export class ShippingService {
         declaredValueCents += s.listingPrice;
       }
 
-      // Seller-side collection address, as a LAZY closure.
-      //
-      // Lazy on purpose: the legacy Pudo path never needed a street address
-      // (L2L collects from any locker), so evaluating this eagerly would start
-      // throwing 'seller pickup address incomplete' for Pudo sellers who have
-      // always booked fine. Bob Go needs it for BOTH slots, so it has to be
-      // reachable from both branches — but only actually run when asked.
+      // Seller-side collection address.
       const collectionAddress = (): CarrierAddress => {
         const L = tx.listing;
         if (
@@ -1394,109 +1049,83 @@ export class ShippingService {
         };
       };
 
-      let result: CarrierShipmentResult;
-      if (useBobGo) {
-        // ONE call books either slot — Bob Go carries both door and
-        // pickup-point shipments, and the chosen locker (when there is one) is
-        // baked into the service code rather than passed separately.
-        //
-        // The rate snapshot must be COMPLETE. Bob Go needs provider_slug and
-        // service_level_code alongside service_code, and both vary per rate
-        // within a single quote response, so they cannot be inferred here. A
-        // row quoted on the legacy rail (or through a path that only ever
-        // snapshotted the service code) has no business being booked against
-        // Bob Go days later with a guessed provider — throw, and let the catch
-        // below hand it to the seller's manual dispatch fallback.
-        if (!tx.shippingProviderSlug || !tx.shippingServiceLevelCode) {
-          throw new Error(
-            'order was quoted before the Bob Go rail was enabled (no provider/service-level snapshot) — book this one manually',
-          );
-        }
-        const d = tx.deliveryAddress as {
-          streetAddress: string;
-          suburb: string;
-          city: string;
-          province: Province;
-          postalCode: string;
-        } | null;
-        // Bob Go needs a delivery address for BOTH slots — a pickup-point
-        // shipment is still routed from the buyer's address. Legacy Pudo orders
-        // never captured one, which is exactly why this must fail loudly rather
-        // than book the parcel to nowhere.
-        if (!d?.streetAddress || !d.suburb || !d.city || !d.postalCode || !d.province) {
-          throw new Error('delivery address is incomplete for courier booking');
-        }
-        if (!PROVINCE_LONG[d.province]) {
-          throw new Error(`invalid delivery province on transaction: ${d.province}`);
-        }
-        const from = collectionAddress();
-        result = await this.bookWithBobGo({
-          slot: tx.shippingMethod,
-          collection: {
-            company: from.company,
-            streetAddress: from.streetAddress,
-            suburb: from.suburb,
-            city: from.city,
-            province: from.province,
-            postalCode: from.postalCode,
-          },
-          delivery: {
-            streetAddress: d.streetAddress,
-            suburb: d.suburb,
-            city: d.city,
-            province: PROVINCE_LONG[d.province],
-            postalCode: d.postalCode,
-          },
-          collectionContact,
-          deliveryContact,
-          parcel: {
-            lengthCm,
-            widthCm,
-            heightCm,
-            weightKg: weightGrams / 1000,
-          },
-          declaredValueCents,
-          serviceCode: tx.shippingServiceCode,
-          providerSlug: tx.shippingProviderSlug,
-          serviceLevelCode: tx.shippingServiceLevelCode,
-          customerReference: transactionId,
-        });
-      } else if (tx.shippingMethod === 'PUDO') {
-        if (!tx.pudoPickupLockerId) {
-          throw new Error('no destination locker on transaction');
-        }
-        result = await this.pudo.createShipment({
-          serviceCode: tx.shippingServiceCode,
-          toLockerId: tx.pudoPickupLockerId,
-          collectionContact,
-          deliveryContact,
-        });
-      } else {
-        // DOOR delivery on the legacy rail — no carrier left to book it.
-        //
-        // The Courier Guy served this branch until the integration was retired
-        // (operator 2026-09-04). Bob Go serves the DOOR slot now and is handled
-        // in the first branch above, so reaching here means bobgo_enabled is
-        // OFF and a door parcel has nowhere to go.
-        //
-        // ⚠️ THROWING IS THE SAFE OUTCOME, NOT A GAP. This whole block runs
-        // inside a try whose catch releases the idempotency claim, logs, and
-        // raises an admin alert, leaving the seller their manual
-        // tracking-entry fallback. The alternative — quietly marking the sale
-        // booked with no shipment behind it — would tell a buyer a parcel was
-        // collected that no courier has ever seen.
+      // ONE call books a door shipment. The rate snapshot must be COMPLETE:
+      // Bob Go needs provider_slug and service_level_code alongside
+      // service_code, and both vary per rate within a single quote response, so
+      // they cannot be inferred here. A row with no snapshot has no business
+      // being booked — throw, and let the catch below hand it to the seller's
+      // manual dispatch fallback.
+      if (!tx.shippingProviderSlug || !tx.shippingServiceLevelCode) {
         throw new Error(
-          'door delivery cannot be booked: the legacy courier rail was retired and Bob Go is disabled (bobgo_enabled=false)',
+          'order has no provider/service-level snapshot — book this one manually',
         );
       }
+      const d = tx.deliveryAddress as {
+        streetAddress: string;
+        suburb: string;
+        city: string;
+        province: Province;
+        postalCode: string;
+      } | null;
+      // A courier needs a real delivery address — no legacy locker orders exist
+      // any more, so this must fail loudly rather than book the parcel nowhere.
+      if (!d?.streetAddress || !d.suburb || !d.city || !d.postalCode || !d.province) {
+        throw new Error('delivery address is incomplete for courier booking');
+      }
+      if (!PROVINCE_LONG[d.province]) {
+        throw new Error(`invalid delivery province on transaction: ${d.province}`);
+      }
+      const from = collectionAddress();
+      // The seller's chosen pickup day/window (null when they accepted before
+      // the picker existed or the sale wasn't couriered). Bob Go's own calendar
+      // normalises the date.
+      const collectionWin = windowToBobGo(tx.collectionWindow);
+      const result = await this.bookWithBobGo({
+        collection: {
+          company: from.company,
+          streetAddress: from.streetAddress,
+          suburb: from.suburb,
+          city: from.city,
+          province: from.province,
+          postalCode: from.postalCode,
+        },
+        delivery: {
+          streetAddress: d.streetAddress,
+          suburb: d.suburb,
+          city: d.city,
+          province: PROVINCE_LONG[d.province],
+          postalCode: d.postalCode,
+        },
+        collectionContact,
+        deliveryContact,
+        parcel: {
+          lengthCm,
+          widthCm,
+          heightCm,
+          weightKg: weightGrams / 1000,
+        },
+        declaredValueCents,
+        serviceCode: tx.shippingServiceCode,
+        providerSlug: tx.shippingProviderSlug,
+        serviceLevelCode: tx.shippingServiceLevelCode,
+        customerReference: transactionId,
+        collectionMinDate: tx.collectionNotBeforeAt
+          ? collectionMinDateFromDate(tx.collectionNotBeforeAt)
+          : undefined,
+        collectionAfter: collectionWin.after,
+        collectionBefore: collectionWin.before,
+        pickupPointLocationId:
+          tx.deliveryOption === 'STORE_PICKUP'
+            ? (tx.pickupPointLocationId ?? undefined)
+            : undefined,
+      });
 
       // Persist the booking. trackingReference is the carrier waybill the
-      // existing tracking poll/webhook already keys on.
+      // webhook/poll already keys on.
       //
       // A carrier that RESPONDED is not the same as a carrier that AGREED.
-      // Pudo and TCG are booked-or-throw, so for them reaching this line was
-      // always the confirmation. Bob Go returns HTTP 201 for shipments the
-      // courier then refuses, so the result has to be read, not assumed.
+      // Bob Go returns HTTP 201 for shipments the courier then refuses, so the
+      // result has to be read, not assumed.
       if (result.submission === 'FAILED') {
         // Deliberately thrown rather than handled here: the catch below already
         // does exactly the right things — releases the booking claim so an
@@ -1545,12 +1174,12 @@ export class ShippingService {
         },
       });
       this.logger.log(
-        `Shipment booked for ${transactionId}: ${result.provider} (${result.carrier} slot) waybill ${result.trackingReference}${result.pin ? ` (PIN ${result.pin})` : ''}`,
+        `Shipment booked for ${transactionId}: ${result.provider} waybill ${result.trackingReference}${result.pin ? ` (PIN ${result.pin})` : ''}`,
       );
 
-      // Notify the seller (SMS + email + inbox) with the waybill, Pudo PIN,
-      // label link, and the "write it on the package" fallback. Best-effort —
-      // the booking already succeeded; a notification hiccup must not undo it.
+      // Notify the seller (SMS + email + inbox) with the waybill and the
+      // "write it on the package" fallback. Best-effort — the booking already
+      // succeeded; a notification hiccup must not undo it.
       const sellerName =
         [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
         tx.seller.username ||
@@ -1561,17 +1190,6 @@ export class ShippingService {
         sellerPhone: tx.seller.phone,
         listingTitle: tx.listing.title,
         transactionId,
-        carrier: result.carrier,
-        // 🚨 WITHOUT THIS THE SELLER IS TOLD THE WRONG COURIER IS COMING.
-        //
-        // shipmentBooked() picks its copy from `provider`, because `carrier` is
-        // only the SLOT and Bob Go sits behind both. This payload omitted it,
-        // so provider was undefined, isBobGo was false, and every fresh Bob Go
-        // DOOR booking (slot 'TCG') fell through to the legacy branch and told
-        // the seller The Courier Guy was collecting — a courier we no longer
-        // use at all. The tracking-poll path passed it; only this immediate
-        // post-booking notification did not.
-        provider: result.provider,
         trackingReference: result.trackingReference,
         dropoffPin: result.pin ?? null,
       };
@@ -1607,18 +1225,12 @@ export class ShippingService {
   }
 
   /**
-   * Book a shipment with Bob Go, for either slot.
-   *
-   * Bob Go carries both door and pickup-point parcels, and the chosen locker
-   * (when there is one) is encoded in the service code, so unlike Pudo/TCG
-   * there is no per-slot request shape — the slot only decides which enum
-   * value we report back.
+   * Book a door shipment with Bob Go.
    *
    * IMPORTANT: this returns normally for refused shipments. The submission
    * state on the result is the answer; a resolved promise is not.
    */
   private async bookWithBobGo(input: {
-    slot: 'PUDO' | 'TCG';
     collection: BobGoAddress;
     delivery: BobGoAddress;
     collectionContact: CarrierContact;
@@ -1636,6 +1248,13 @@ export class ShippingService {
     serviceLevelCode: string;
     customerReference?: string;
     instructions?: string;
+    /** Earliest collection date (ISO +02:00) from the seller's pickup picker. */
+    collectionMinDate?: string;
+    /** Preferred window "HH:MM" → collection_after / collection_before. */
+    collectionAfter?: string;
+    collectionBefore?: string;
+    /** Pargo counter id for a STORE_PICKUP booking. */
+    pickupPointLocationId?: number;
   }): Promise<CarrierShipmentResult> {
     const r = await this.bobgo.createShipment({
       collection: input.collection,
@@ -1649,9 +1268,20 @@ export class ShippingService {
       declaredValueCents: input.declaredValueCents,
       customerReference: input.customerReference,
       instructionsCollection: input.instructions,
+      ...(input.collectionMinDate
+        ? { collectionMinDate: input.collectionMinDate }
+        : {}),
+      ...(input.collectionAfter
+        ? { collectionAfter: input.collectionAfter }
+        : {}),
+      ...(input.collectionBefore
+        ? { collectionBefore: input.collectionBefore }
+        : {}),
+      ...(input.pickupPointLocationId != null
+        ? { pickupPointLocationId: input.pickupPointLocationId }
+        : {}),
     });
     return {
-      carrier: input.slot,
       provider: 'BOBGO',
       submission: r.submission,
       failedReason: r.failedReason,
@@ -1967,70 +1597,15 @@ export class ShippingService {
       return;
     }
 
-    // Route on the carrier that actually HOLDS the parcel, never on the enum
-    // slot — Bob Go sits behind both slots, so shippingMethod no longer names
-    // an API. Null carrierProvider means a row booked before the column
-    // existed, which can only be Pudo or TCG, so the slot is the right
-    // fallback for those and only those.
-    const provider = tx.carrierProvider ?? tx.shippingMethod;
-
-    let ok = false;
-    if (provider === 'BOBGO') {
-      // Bob Go exposes no cancel endpoint that we have been able to verify, so
-      // there is nothing honest to call here. Say so loudly rather than
-      // returning a quiet false that reads like "the carrier declined": an
-      // operator has to reclaim this one by hand, and the wallet charge and a
-      // collectable parcel are both still live until they do.
-      await this.raiseBookingFailedAlert(
-        transactionId,
-        `Sale reversed but Bob Go shipment ${tx.carrierShipmentId} cannot be cancelled automatically (no cancel API) — cancel it in the Bob Go portal to reclaim the charge and stop the collection`,
-      );
-      return;
-    }
-    if (provider === 'TCG') {
-      // A parcel genuinely held by The Courier Guy, from before that
-      // integration was retired (operator 2026-09-04). There is no client left
-      // to call, and the same reasoning as the Bob Go branch applies: a silent
-      // false would read as "the carrier declined" when in truth nobody asked.
-      // The charge and a collectable parcel both stay live until a human acts.
-      //
-      // Production held ZERO transactions when this was written, so this path
-      // is expected to be unreachable — it is here so that if a row does
-      // surface, it surfaces loudly instead of being swallowed.
-      await this.raiseBookingFailedAlert(
-        transactionId,
-        `Sale reversed but Courier Guy shipment ${tx.carrierShipmentId} cannot be cancelled automatically (integration retired) — cancel it in the Courier Guy portal to reclaim the charge and stop the collection`,
-      );
-      return;
-    }
-    try {
-      ok =
-        provider === 'PUDO'
-          ? await this.pudo.cancelShipment(tx.carrierShipmentId)
-          : false;
-    } catch {
-      ok = false;
-    }
-
-    if (ok) {
-      // Clear the booking marker so the seller UI stops showing the ship
-      // panel and the shipment can't be cancelled twice.
-      await this.prisma.transaction
-        .update({
-          where: { id: transactionId },
-          data: { shipmentBookedAt: null },
-        })
-        .catch(() => undefined);
-      this.logger.log(
-        `Shipment cancelled for ${transactionId} (${provider} ${tx.carrierShipmentId})`,
-      );
-    } else {
-      // Keep the marker (so the orphan stays visible) + alert for manual cleanup.
-      await this.raiseBookingFailedAlert(
-        transactionId,
-        'Shipment cancel failed — cancel manually with the carrier to reclaim the wallet charge',
-      );
-    }
+    // Bob Go exposes no cancel endpoint that we have been able to verify, so
+    // there is nothing honest to call here. Say so loudly rather than
+    // returning a quiet false that reads like "the carrier declined": an
+    // operator has to reclaim this one by hand, and the wallet charge and a
+    // collectable parcel are both still live until they do.
+    await this.raiseBookingFailedAlert(
+      transactionId,
+      `Sale reversed but Bob Go shipment ${tx.carrierShipmentId} cannot be cancelled automatically (no cancel API) — cancel it in the Bob Go portal to reclaim the charge and stop the collection`,
+    );
   }
 
   /**
@@ -2051,8 +1626,6 @@ export class ShippingService {
       .findUnique({
         where: { id: transactionId },
         select: {
-          shippingMethod: true,
-          carrierProvider: true,
           trackingReference: true,
           carrierDropoffPin: true,
           listing: { select: { title: true } },
@@ -2081,12 +1654,6 @@ export class ShippingService {
         sellerPhone: tx.seller.phone,
         listingTitle: tx.listing.title,
         transactionId,
-        carrier: tx.shippingMethod as 'PUDO' | 'TCG',
-        // Decides what the seller is actually told to DO — see the copy branch
-        // in notifications.service. Without it a Bob Go pickup-point sale would
-        // tell them to walk the parcel to a locker while a courier is on its
-        // way to their door.
-        provider: tx.carrierProvider as 'PUDO' | 'TCG' | 'BOBGO' | null,
         trackingReference: tx.trackingReference,
         dropoffPin: tx.carrierDropoffPin ?? null,
       });
@@ -2125,18 +1692,6 @@ export class ShippingService {
       listingTitle: tx.listing.title,
       transactionId,
     });
-  }
-
-  // Fetch a booked shipment's waybill/label PDF from the carrier.
-  //
-  // Pudo is the only carrier left with a label endpoint we can call: Bob Go
-  // has none we have verified, and The Courier Guy's client was deleted when
-  // that integration was retired (operator 2026-09-04). Both of those are
-  // refused by the caller with an explanation before reaching here, so the
-  // parameter is narrowed to what can actually be served — a union member that
-  // no longer has an implementation is an invitation to add a silent failure.
-  async getWaybillPdf(carrier: 'PUDO', shipmentId: string): Promise<Buffer> {
-    return this.pudo.fetchWaybillPdf(shipmentId);
   }
 
   private async releaseBookingClaim(transactionId: string): Promise<void> {
@@ -2216,6 +1771,7 @@ export class ShippingService {
           shippingStatus: true,
           dispatchedAt: true,
           deliveredAt: true,
+          deliveryOption: true, // STORE_PICKUP drives the ready/collected stamps
           swapId: true, // SWOP S4 — drives the both-legs-delivered rollup
           listing: { select: { title: true } },
           buyer: { select: { email: true, firstName: true, phone: true } },
@@ -2248,6 +1804,8 @@ export class ShippingService {
         shippingStatus: ShippingStatus;
         dispatchedAt?: Date;
         deliveredAt?: Date;
+        readyForPickupAt?: Date;
+        collectedAt?: Date;
       } = { shippingStatus: newStatus };
       const now = new Date();
       // First forward transition past PENDING marks dispatched (in case the
@@ -2260,6 +1818,14 @@ export class ShippingService {
       }
       if (newStatus === 'DELIVERED' && !transaction.deliveredAt) {
         dataPatch.deliveredAt = now;
+        // On a STORE_PICKUP, DELIVERED means the BUYER collected it at the
+        // counter — that is the event the payout clock's +24h runs from.
+        if (transaction.deliveryOption === 'STORE_PICKUP') {
+          dataPatch.collectedAt = now;
+        }
+      }
+      if (newStatus === 'READY_FOR_PICKUP') {
+        dataPatch.readyForPickupAt = now;
       }
 
       await tx.transaction.update({
@@ -2289,7 +1855,7 @@ export class ShippingService {
         case 'COLLECTED':
         case 'IN_TRANSIT':
           // Fire the buyer "on its way" notice ONCE — on the first move into a
-          // collected-or-later state. TCG scans a parcel through several hubs
+          // collected-or-later state. A carrier scans a parcel through several hubs
           // (collected → at-hub → in-transit → at-destination-hub), and all of
           // those land here; without this guard the buyer would be emailed +
           // pushed on every hub scan.
@@ -2299,6 +1865,10 @@ export class ShippingService {
           break;
         case 'OUT_FOR_DELIVERY':
           void this.notifications.shippingOutForDelivery(buyerEmail, buyerName, title, transactionId, buyerPhone);
+          break;
+        case 'READY_FOR_PICKUP':
+          // STORE_PICKUP: at the counter awaiting the buyer.
+          void this.notifications.shippingReadyForPickup(buyerEmail, buyerName, title, transactionId, buyerPhone);
           break;
         case 'DELIVERED':
           void this.notifications.shippingDelivered(buyerEmail, buyerName, title, transactionId, buyerPhone);
@@ -2400,83 +1970,4 @@ export class ShippingService {
     });
   }
 
-  // ------------------------------------------------------------------
-  // Shiplogic tracking webhook — SHARED by TCG and Pudo. Both couriers run
-  // on the Shiplogic platform, so the tracking payload is identical: a
-  // top-level HYPHENATED `status` slug + the tracking reference under
-  // short_/custom_tracking_reference (or parcel_tracking_references). There
-  // is NO `event`/`eventType` field. Non-tracking topics (notes, invoices,
-  // dimension-change arrays, address-changes) carry no status → ignored.
-  // ------------------------------------------------------------------
-  private async processShiplogicWebhook(
-    payload: Record<string, unknown>,
-    carrier: 'Pudo',
-  ): Promise<void> {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
-
-    // Single source of truth in status-map.ts (shared with the polling path)
-    // so the webhook + poll can never disagree on what a status means.
-    const status: ShippingStatus | null = shiplogicToShippingStatus(
-      String(payload.status ?? ''),
-    );
-    if (!status) {
-      // Not an actionable tracking status (e.g. collection-assigned, an
-      // internal hub state, a note/invoice topic, or an unknown slug).
-      this.logger.log(
-        `${carrier} webhook: status "${String(payload.status ?? 'none')}" is not customer-actionable — ignoring`,
-      );
-      return;
-    }
-
-    // The trackable reference is what we stored at booking — TCG stores
-    // short_tracking_reference, Pudo stores custom_tracking_reference. Try
-    // every field the webhook might carry it under (shipment- vs parcel-
-    // level + legacy Pudo names) until one matches. Parcel refs look like
-    // "SLXS7GL/1" — strip the "/N" parcel suffix.
-    const parcelRef = Array.isArray(payload.parcel_tracking_references)
-      ? String(payload.parcel_tracking_references[0] ?? '').split('/')[0]
-      : undefined;
-    const candidates = [
-      payload.short_tracking_reference,
-      payload.custom_tracking_reference,
-      payload.shipment_short_tracking_reference,
-      payload.shipment_custom_tracking_reference,
-      parcelRef,
-      payload.trackingCode,
-      payload.barcode,
-    ].filter((r): r is string => typeof r === 'string' && r.length > 0);
-
-    if (candidates.length === 0) {
-      this.logger.warn(`${carrier} webhook missing a tracking reference — ignoring`);
-      return;
-    }
-
-    let transaction: Awaited<
-      ReturnType<typeof this.findTransactionByTrackingNumber>
-    > = null;
-    for (const ref of candidates) {
-      transaction = await this.findTransactionByTrackingNumber(ref);
-      if (transaction) break;
-    }
-    if (!transaction) {
-      this.logger.warn(
-        `${carrier} webhook refs [${candidates.join(', ')}] matched no transaction — ignoring`,
-      );
-      return;
-    }
-
-    await this.applyShippingUpdate(transaction.id, status);
-  }
-
-  async processPudoEvent(payload: Record<string, unknown>): Promise<void> {
-    // Pudo runs on the ShipLogic platform, whose tracking payload is the
-    // hyphenated `status` slug + custom_/short_tracking_reference.
-    //
-    // processShiplogicWebhook is deliberately kept generic rather than folded
-    // into this method: it was written against the shared ShipLogic contract,
-    // not against one vendor, and it is the only reader of that payload shape.
-    // The Courier Guy used to be its second caller (processTcgEvent) until
-    // that integration was retired (operator 2026-09-04).
-    return this.processShiplogicWebhook(payload, 'Pudo');
-  }
 }

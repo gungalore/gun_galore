@@ -51,7 +51,7 @@ const MANUAL_RATE = 0.015;
 export type PaymentMode = 'paygate' | 'manual';
 
 // P6.4 — flat GG shipping handling margin, ZAR cents. Charged ONCE per waybill
-// the platform creates (a courier PUDO/TCG parcel). Buyer-paid and GG-RETAINED
+// the platform creates (a courier parcel). Buyer-paid and GG-RETAINED
 // (not remitted to the carrier), so shipping stops being pure cost pass-through.
 // A consolidated multi-item parcel books ONE waybill, so it is charged ONCE (on
 // the carrier line only). Firearm dealer/in-person transfers and collection
@@ -244,7 +244,7 @@ export class FeeCalculator {
   }
 
   /**
-   * Full breakdown. `shippingCost` is the Pudo / TCG quote at checkout
+   * Full breakdown. `shippingCost` is the courier quote at checkout
    * time, paid by the buyer on top of the listing price (per house
    * standard — shipping is always passed to the buyer for marketplace
    * sales). Zero for firearm DEALER_TRANSFER / PRIVATE_ARRANGE since
@@ -258,7 +258,7 @@ export class FeeCalculator {
     mode: PaymentMode = 'paygate',
     // P6.4 — flat GG handling margin for this line, ZAR cents. Non-zero ONLY
     // for a courier line that produces its OWN waybill (the caller decides:
-    // PUDO/TCG and not a zero-cost consolidated sibling). Buyer-paid on top of
+    // courier and not a zero-cost consolidated sibling). Buyer-paid on top of
     // everything else and GG-retained; it does NOT enter the protection-fee
     // base (we don't charge the fee on our own margin) and never touches the
     // seller payout. Defaults to 0 so every existing caller is unchanged.

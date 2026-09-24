@@ -1,4 +1,4 @@
-﻿-- Community feed: per-member graphic content visibility.
+-- Community feed: per-member graphic content visibility.
 --
 -- Defaults to TRUE: the operator wants graphic content shown by default.
 -- A member can turn it off from Feed settings; when off, the graphic gate

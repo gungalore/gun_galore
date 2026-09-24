@@ -168,10 +168,10 @@ function nextActionCue(tx: Transaction, now: number): OrderCue | null {
     return { text: 'Ships with another item in this order', tone: 'info' };
   }
 
-  // Courier (PUDO / TCG) only past this point — the confirm-receipt prompt
-  // belongs to those two rails and nothing else. An unrecognised (or null)
-  // method gets no cue rather than a wrong one.
-  if (method !== 'PUDO' && method !== 'TCG') return null;
+  // Courier only past this point — the confirm-receipt prompt belongs to the
+  // courier rail and nothing else. An unrecognised (or null) method gets no
+  // cue rather than a wrong one.
+  if (method !== 'COURIER') return null;
 
   if (!tx.dispatchedAt) {
     return { text: 'Seller is preparing your parcel for dispatch', tone: 'pending' };
@@ -208,14 +208,14 @@ function nextActionCue(tx: Transaction, now: number): OrderCue | null {
 }
 
 /** True when a courier parcel is physically between the seller and the
- * buyer — dispatched, not yet arrived. Only PUDO/TCG carry a courier leg;
+ * buyer — dispatched, not yet arrived. Only COURIER carries a courier leg;
  * DEALER_TRANSFER, COLLECTION and PRIVATE_ARRANGE all hand over in person
  * or through a dealer, so "on the way" (a courier phrase) never applies to
  * them. Feeds the "N on the way" figure in the header — derived from the
  * same fetched list, no extra request.
  */
 function isOnTheWay(tx: Transaction): boolean {
-  if (tx.shippingMethod !== 'PUDO' && tx.shippingMethod !== 'TCG') return false;
+  if (tx.shippingMethod !== 'COURIER') return false;
   if (!tx.dispatchedAt) return false;
   if (tx.deliveredAt || tx.confirmedDeliveryAt) return false;
   if (tx.shippingStatus === 'DELIVERY_FAILED' || tx.shippingStatus === 'RETURNED') return false;

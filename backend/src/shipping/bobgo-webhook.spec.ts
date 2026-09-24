@@ -1,4 +1,4 @@
-// BobGoWebhookService -> ShippingService -> PudoService -> SearchService ->
+// BobGoWebhookService -> ShippingService -> BobGoService -> SearchService ->
 // ESM-only meilisearch.
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
@@ -68,15 +68,14 @@ describe('BobGoWebhookService', () => {
     });
 
     it('refuses to apply a status it has never seen', async () => {
-      // status-map.ts collapses by substring, so an unseen "ready_for_pickup"
-      // would otherwise be read as OUT_FOR_DELIVERY and the buyer told their
-      // parcel is coming while it sits in a locker. Bob Go's own lifecycle has
-      // no ready-for-pickup step for a DOOR shipment, and we have never seen a
-      // successful locker booking — so this stays unmapped until we do.
+      // An unmapped status is recorded and the order is left alone. "expired"
+      // is deliberately unmapped — on a door parcel it would mean a terminal
+      // delivery failure, far too destructive to guess at. (ready-for-pickup
+      // IS mapped now that a Pargo counter is a real delivery option.)
       const { svc } = makeService();
       const res = await svc.handle('tracking/updated', {
         id: 16625,
-        status: 'ready_for_pickup',
+        status: 'expired',
       });
       expect(res.handled).toBe(false);
     });

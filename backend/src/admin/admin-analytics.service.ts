@@ -402,7 +402,7 @@ export class AdminAnalyticsService {
           END AS bucket
         FROM "Transaction"
         WHERE "paidAt" IS NOT NULL
-          AND "shippingMethod" IN ('PUDO', 'TCG', 'DEALER_TRANSFER')
+          AND "shippingMethod" IN ('COURIER', 'DEALER_TRANSFER')
       ) t
       GROUP BY bucket
       `,

@@ -259,9 +259,9 @@ export interface Listing {
   // signal (strikethrough + "% off"); BUY_NOW only, > price, ≤ 4× price.
   compareAtPriceZarCents?: number | null;
   listingType: ListingType;
-  // Shipping methods the seller offered in the Sell form. Subset of
-  // [PUDO, TCG] for non-firearms or [DEALER_TRANSFER, PRIVATE_ARRANGE]
-  // for firearms. Empty array means "any legal option" (legacy).
+  // Shipping methods the seller offered in the Sell form. [COURIER]
+  // for non-firearms or [DEALER_TRANSFER, PRIVATE_ARRANGE] for
+  // firearms. Empty array means "any legal option" (legacy).
   // Firearm listings ALWAYS include DEALER_TRANSFER (mandatory per
   // platform policy 2026-05-26 + SAPS regs); PRIVATE_ARRANGE is the
   // optional additional offer the seller can include.
@@ -278,6 +278,9 @@ export interface Listing {
   plannedDealerName: string | null;
   plannedDealerProvince: string | null;
   plannedDealerArea: string | null;
+  plannedDealerPlaceId?: string | null;
+  plannedDealerLat?: number | null;
+  plannedDealerLng?: number | null;
   status: ListingStatus;
   condition: Condition;
   province: Province;
@@ -405,11 +408,9 @@ export interface BrandSummary {
 
 export type PaymentStatus = 'HELD' | 'PENDING_ADMIN_VERIFICATION' | 'RELEASED' | 'DISPUTED' | 'REFUNDED';
 export type ShippingMethod =
-  | 'PUDO'              // Pudo locker-to-locker (non-firearm)
-  | 'TCG'               // DOOR slot — courier to the address (non-firearm).
-                        // Named for the retired Courier Guy integration; Bob Go
-                        // serves this slot now, so it means the SHAPE of the
-                        // delivery, never the company carrying the parcel.
+  | 'COURIER'           // Door-to-door courier via Bob Go (non-firearm). The
+                        // ONLY courier rail; the platform books the cheapest
+                        // Bob Go door rate for the parcel and route.
   | 'DEALER_TRANSFER'   // Routed through a SAPS-licensed dealer (firearm)
   | 'PRIVATE_ARRANGE'   // Buyer + seller arrange in-person transfer at a dealer
   | 'COLLECTION'        // In-person collection from the seller — no courier
@@ -477,9 +478,10 @@ export interface Transaction {
   dispatchedAt: string | null;
   deliveredAt: string | null;
   // P5.2 platform-arranged dispatch — set when the platform books the
-  // courier on seller-accept. carrierDropoffPin is the Pudo locker PIN
-  // (seller-only; blanked for the buyer). shipmentBookedAt present ⇒ a real
-  // waybill exists and the seller can print the label.
+  // courier on seller-accept. carrierDropoffPin is the carrier's
+  // collection PIN (seller-only; blanked for the buyer).
+  // shipmentBookedAt present ⇒ a booking exists; Bob Go has no printable
+  // label, so the seller writes the tracking reference on the parcel.
   carrierShipmentId: string | null;
   carrierDropoffPin: string | null;
   shipmentBookedAt: string | null;
@@ -563,20 +565,21 @@ export interface Transaction {
   dealer: { id: string; name: string; city: string } | null;
 }
 
-// Mirror of backend/src/shipping/pudo.service.ts → ShippingQuote.
+// Mirror of backend/src/shipping/shipping.types.ts → ShippingQuote.
 // Returned by POST /shipping/quote — the checkout breakdown reads
 // priceCents and serviceName to render the line item.
 export interface ShippingQuote {
   serviceCode: string;
   serviceName: string;
   priceCents: number;
-  boxName?: string;
+  providerSlug?: string;
+  serviceLevelCode?: string;
 }
 
 export interface FeeBreakdown {
   listingPrice: number;
   // ZAR cents. Courier rate locked at checkout time; 0 for firearm
-  // listings (DEALER_TRANSFER / PRIVATE_ARRANGE don't use Pudo).
+  // listings (DEALER_TRANSFER / PRIVATE_ARRANGE don't use a courier).
   shippingCost: number;
   commissionZar: number;
   processingFee: number;

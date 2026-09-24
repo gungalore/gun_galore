@@ -2,6 +2,7 @@ import {
   consequencesForOfferReject,
   consequencesForSaleReject,
   applySellerRejectPenalty,
+  removeSellerStrike,
   BAN_AT,
 } from './seller-reject-policy';
 
@@ -27,6 +28,8 @@ describe('seller-reject-policy — FIRM consequence matrix', () => {
   it('sale rejections all strike (paid commitment): sold-elsewhere/stock delist too', () => {
     expect(consequencesForSaleReject('SOLD_ELSEWHERE')).toEqual(['STRIKE', 'DELIST']);
     expect(consequencesForSaleReject('STOCK_ISSUE')).toEqual(['STRIKE', 'DELIST']);
+    expect(consequencesForSaleReject('ITEM_DAMAGED')).toEqual(['STRIKE', 'DELIST']);
+    expect(consequencesForSaleReject('CHANGED_MIND')).toEqual(['STRIKE', 'DELIST']);
     expect(consequencesForSaleReject('CANT_FULFIL_SHIPPING')).toEqual(['STRIKE']);
     expect(consequencesForSaleReject('SOME_LEGACY_FREE_TEXT')).toEqual(['STRIKE', 'TRUST']);
   });
@@ -46,6 +49,7 @@ function mockPrisma(strikesAfterIncrement: number) {
     },
     adminAlert: { create: jest.fn().mockResolvedValue({}) },
     listing: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    sellerStrike: { create: jest.fn().mockResolvedValue({}) },
   } as never;
 }
 
@@ -126,5 +130,34 @@ describe('applySellerRejectPenalty', () => {
         data: expect.objectContaining({ type: 'SELLER_REJECT_REVIEW' }),
       }),
     );
+  });
+});
+
+describe('removeSellerStrike', () => {
+  it('resyncs the counter and lifts the ban when below BAN_AT', async () => {
+    const prisma = {
+      sellerStrike: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'S1', userId: 'U1', removedAt: null }),
+        update: jest.fn().mockResolvedValue({}),
+        count: jest.fn().mockResolvedValue(1),
+      },
+      user: {
+        update: jest.fn().mockResolvedValue({ sellingBannedAt: new Date() }),
+      },
+    } as never;
+    const r = await removeSellerStrike(prisma, { strikeId: 'S1', adminId: 'A1' });
+    expect(r.removed).toBe(true);
+    expect(r.totalStrikes).toBe(1);
+    expect(r.unbanned).toBe(true);
+  });
+
+  it('is a no-op for an already-removed strike', async () => {
+    const prisma = {
+      sellerStrike: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'S1', userId: 'U1', removedAt: new Date() }),
+      },
+    } as never;
+    const r = await removeSellerStrike(prisma, { strikeId: 'S1', adminId: 'A1' });
+    expect(r.removed).toBe(false);
   });
 });
