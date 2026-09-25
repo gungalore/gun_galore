@@ -5859,9 +5859,9 @@ model Credential {
 
   /// ── WHO PUT THE DATE THERE ───────────────────────────────────
   ///
-  /// null | 'read' | 'derived'.
+  /// null | 'read' | 'derived' | 'none'.
   ///
-  /// NON-NULL MEANS: WE FILLED THIS IN AND NO HUMAN HAS CHECKED IT. Null means
+  /// NON-NULL MEANS: WE ANSWERED THIS AND NO HUMAN HAS CHECKED IT. Null means
   /// either nobody has settled it yet, or the member has (confirmedAt).
   ///
   /// ⚠️ WITHOUT THIS COLUMN, "RECOMPUTE WHEN A LICENCE CHANGES" DEGRADES TO
@@ -5881,6 +5881,14 @@ model Credential {
   ///             assumption: that figure is a DFO operating rule, the
   ///             reference forbids presenting it as the legal position, and a
   ///             reminder is the loudest way to present something.
+  /// 'none'    — the date question answered itself, so there is no date and
+  ///             nothing to arm. Written for a photograph (nothing is printed
+  ///             on one) and for a proficiency (it does not run out, operator
+  ///             2026-08-28). See settledByNature, which owns both. It exists
+  ///             because `neverExpires` alone is only a tick: everything
+  ///             downstream — the auto-attach, the Centre's own review rules —
+  ///             reads THIS column for "somebody stands behind this", and a
+  ///             ticked row without it reads as one nobody has answered for.
   dateSource        String? @db.VarChar(16)
   /// The sentence shown on the card, saying where the date came from. Written
   /// with dateSource and cleared with it.

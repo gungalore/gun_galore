@@ -16,7 +16,7 @@ import { documentLabel } from './motivation-documents';
 import { mayArmReadExpiry } from '../licence-centre/credential-auto-date';
 import { recomputeDerivedCompetencies } from '../licence-centre/credential-derive-recompute';
 import { parseIsoDate } from '../licence-centre/licence-dates';
-import { settledByNature } from '../licence-centre/credential-kinds';
+import { isPhotograph, settledByNature } from '../licence-centre/credential-kinds';
 
 // ────────────────────────────────────────────────────────────────────
 // KEEPING THE PAPERWORK FROM AN APPLICATION.
@@ -309,12 +309,24 @@ export class VaultAdoptionService {
      * pictures should automatically be set that the date never expires."
      */
     const settled = settledByNature(kind);
-    if (settled) return { write: settled, recompute: false };
+    /**
+     * ⚠️ SETTLED IS NOT THE SAME AS NOTHING TO READ, AND THIS LINE USED TO
+     * TREAT THEM AS ONE. `settledByNature` answers the EXPIRY question; it says
+     * nothing about whether the page carries anything else worth having. A
+     * photograph has nothing printed on it at all — that is what isPhotograph
+     * means, and with nothing to read the settled columns ARE the whole answer,
+     * so the early return is right for one. A proficiency is settled and
+     * PRINTED: a statement of results carries its course and its unit standards
+     * and an `issue_date`, and this path is how one reaches the Centre from an
+     * application (VAULTABLE admits PROFICIENCY_CERTIFICATE). Returning early
+     * for it would have thrown that date away.
+     */
+    if (settled && isPhotograph(kind)) return { write: settled, recompute: false };
 
     const details = this.readDetails(blob);
     const issuedOn = parseIsoDate(details.issued_on ?? details.issue_date ?? null);
     const expiresOn = parseIsoDate(details.expires_on ?? details.expiry_date ?? null);
-    if (!issuedOn && !expiresOn) return { write: {}, recompute: false };
+    if (!issuedOn && !expiresOn) return { write: settled ?? {}, recompute: false };
 
     const armed = mayArmReadExpiry({
       kind,
@@ -341,6 +353,19 @@ export class VaultAdoptionService {
 
     return {
       write: {
+        /**
+         * ⚠️ A DATE ON THE PAGE VOIDS THE SETTLEMENT, so the settled columns
+         * are dropped whole where one landed rather than merged under it. A
+         * document that prints an expiry is not a document whose expiry
+         * question answers itself, and the CHECK constraint would refuse the
+         * pair anyway (`Credential_never_expires_has_no_date`); `dateSource`
+         * 'none' — "nobody read it and nobody computed it" — left standing
+         * beside a date somebody did read is the same contradiction one column
+         * over. Reachable: this method reads the blob's raw keys, and the
+         * application's own reader is not the Centre's, so it is not bound by
+         * NO_EXPIRY_ON_THE_PAGE.
+         */
+        ...(settled && !expiresOn ? settled : {}),
         ...(issuedOn ? { issuedOn } : {}),
         ...(expiresOn ? { expiresOn, neverExpires: false } : {}),
         // ⚠️ IN THE CLEAR, SO A COMPETENCY CAN BE DATED OFF IT. The firearm

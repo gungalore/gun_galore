@@ -120,22 +120,59 @@ export function defaultsToNeverExpires(kind: CredentialKind): boolean {
  * vision call is spent on one (see PHOTOGRAPH_KINDS). Asking a member to
  * confirm the expiry date of a photograph is work we invented for them.
  *
+ * ⚠️ A PROFICIENCY IS THE SAME CASE, ON THE OPERATOR'S OWN RULING. Operator,
+ * 2026-08-28: "proficiencies never expires, only competencies" — which is why
+ * the tick already starts ON for one (NEVER_EXPIRES). Stopping at the tick was
+ * the gap: a statement of results landed with `neverExpires` true, `dateSource`
+ * null and `confirmedAt` null, so the auto-attach could never be handed one —
+ * and the Document Centre read that row as a document nobody had answered for,
+ * and asked the member to "check it is in the right box" on a row we had
+ * categorised confidently and correctly. On production, on 2026-09-25, the four
+ * statements of results were the whole of what that asking was about.
+ *
+ * ⚠️ AND THE READING STILL RUNS ON ONE. isPhotograph decides what has NOTHING
+ * PRINTED on it, and a statement of results is not that — it carries the course
+ * and the unit standards, and `issue_date` is read off it and written. What
+ * this supplies is the EXPIRY answer only, which is why "settled" and "nothing
+ * to read" are two separate questions in this file. A caller must not treat
+ * them as one: VaultAdoptionService.datesFor reconciles the two by reading the
+ * issue date and merging these columns around it.
+ *
+ * ⚠️ NOT AN IDENTITY DOCUMENT, AND THAT LINE IS THE WHOLE POINT. A green
+ * barcoded ID book does not expire and a passport does, and both are
+ * IDENTITY_DOCUMENT — the kind cannot answer, so its tick stays a tick the
+ * member can change and `dateSource` stays null. A proficiency has no such
+ * second case: there is one answer for the kind, the operator has given it, and
+ * create() is already acting on it by pre-ticking the box.
+ *
  * ⚠️ `expiresOn` IS NEVER WRITTEN HERE, and must not be: the model's CHECK
  * constraint `Credential_never_expires_has_no_date` refuses a standing tick
  * beside a date, so a caller merging these columns over a row that already
  * carries one has to clear the date or drop the tick.
  */
-export function settledByNature(
-  kind: CredentialKind,
-): { neverExpires: true; dateSource: string; dateSourceNote: string } | null {
-  if (!isPhotograph(kind)) return null;
-  return {
-    neverExpires: true,
-    // Fits `@db.VarChar(16)`. Reads as a third source beside 'read' and
-    // 'derived': nobody read it and nobody computed it, because there is
-    // nothing to read.
-    dateSource: 'none',
-    dateSourceNote:
-      'A photograph has no expiry date on it, so we have marked this one as never expiring. Change it if you want a reminder about it.',
-  };
+export function settledByNature(kind: CredentialKind): {
+  neverExpires: true;
+  dateSource: 'none';
+  dateSourceNote: string;
+} | null {
+  if (isPhotograph(kind)) {
+    return {
+      neverExpires: true,
+      // Fits `@db.VarChar(16)`. Reads as a third source beside 'read' and
+      // 'derived': nobody read it and nobody computed it, because there is
+      // nothing to read.
+      dateSource: 'none',
+      dateSourceNote:
+        'A photograph has no expiry date on it, so we have marked this one as never expiring. Change it if you want a reminder about it.',
+    };
+  }
+  if (kind === CredentialKind.PROFICIENCY) {
+    return {
+      neverExpires: true,
+      dateSource: 'none',
+      dateSourceNote:
+        'A proficiency does not run out, so we have marked this one as never expiring. Change it if you want a reminder about it.',
+    };
+  }
+  return null;
 }

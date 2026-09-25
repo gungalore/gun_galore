@@ -177,9 +177,32 @@ describe('documents whose date question answers itself', () => {
 
   it('fits the column', () => {
     // dateSource is VarChar(16).
-    expect(
-      settledByNature(CredentialKind.SAFE_PHOTOGRAPHS)!.dateSource.length,
-    ).toBeLessThanOrEqual(16);
+    for (const k of [
+      CredentialKind.SAFE_PHOTOGRAPHS,
+      CredentialKind.PROFICIENCY,
+    ]) {
+      expect(settledByNature(k)!.dateSource.length).toBeLessThanOrEqual(16);
+    }
+  });
+
+  it('⚠️ SETTLES A PROFICIENCY TOO, AND THE OPERATOR SAID SO FIRST', () => {
+    // Operator, 2026-08-28: "proficiencies never expires, only competencies".
+    //
+    // ⚠️ THIS IS THE SAME GAP AS THE PHOTOGRAPHS, ONE KIND OVER, AND IT WAS
+    // FOUND IN PRODUCTION RATHER THAN REASONED ABOUT. The tick already started
+    // ON for a proficiency (NEVER_EXPIRES) but no provenance was ever written
+    // with it, so the row sat at `dateSource: null` — which the Document Centre
+    // reads as a document nobody has answered for. On 2026-09-25 the four
+    // statements of results on production were the entire contents of "we were
+    // not sure what type these documents are", on rows we had categorised
+    // confidently, and none of them could be auto-attached to an application.
+    const out = settledByNature(CredentialKind.PROFICIENCY);
+    expect(out).not.toBeNull();
+    expect(out!.neverExpires).toBe(true);
+    expect(out!.dateSource).toBe('none');
+    // The member's words, and true of the document rather than of the kind's
+    // name: what does not run out is the proficiency.
+    expect(out!.dateSourceNote).toMatch(/proficiency does not run out/i);
   });
 
   it('⚠️ ANSWERS FOR NOBODY ELSE, and that is the line', () => {
@@ -187,19 +210,37 @@ describe('documents whose date question answers itself', () => {
     // the member can see the answer: a green barcoded ID does not expire and a
     // passport does, and both are IDENTITY_DOCUMENT. A photograph of a gun
     // safe is not that case — there is provably nothing printed on it, which
-    // is why no vision call is spent on one.
+    // is why no vision call is spent on one. Neither is a proficiency: there is
+    // no statement of results that lapses, so the kind really does carry one
+    // answer.
     for (const k of [
       CredentialKind.IDENTITY_DOCUMENT,
-      CredentialKind.PROFICIENCY,
       CredentialKind.COMPETENCY_CERTIFICATE,
       CredentialKind.FIREARM_LICENCE,
     ]) {
       expect(settledByNature(k)).toBeNull();
     }
-    // Including the two that START ticked for a different reason: the tick is
+    // Including the one that STARTS ticked for a different reason: the tick is
     // a default the member can change, and settling the date would take that
-    // decision away from them.
+    // decision away from them — because for an ID document we would be
+    // answering a question the kind cannot answer.
     expect(defaultsToNeverExpires(CredentialKind.IDENTITY_DOCUMENT)).toBe(true);
     expect(settledByNature(CredentialKind.IDENTITY_DOCUMENT)).toBeNull();
+  });
+});
+
+describe('⚠️ WHAT A SETTLED KIND IS NOT', () => {
+  it('is NOT "nothing printed to read" — only a photograph is that', () => {
+    // ⚠️ THE TWO QUESTIONS THIS FILE'S FLAGS SEPARATE. `isPhotograph` decides
+    // whether a vision call is worth spending; `settledByNature` decides
+    // whether the expiry question has an answer already. A statement of
+    // results is settled AND readable: it carries the course, the unit
+    // standards and an issue date, and VaultAdoptionService.datesFor reads that
+    // issue date on its way past. Collapsing the two would have thrown it away.
+    expect(isPhotograph(CredentialKind.PROFICIENCY)).toBe(false);
+    expect(settledByNature(CredentialKind.PROFICIENCY)).not.toBeNull();
+    // And the reverse pairing, which is what the early return actually keys on:
+    // a photograph is settled because it is unreadable, not because of its name.
+    expect(isPhotograph(CredentialKind.SAFE_PHOTOGRAPHS)).toBe(true);
   });
 });

@@ -219,8 +219,16 @@ export interface FiledRow {
   namedConfident: boolean;
   /** A human has looked at this row and said it is right. */
   confirmed: boolean;
-  /** Non-null means WE put the date there and nobody has checked it. */
-  dateSource: 'read' | 'derived' | null;
+  /**
+   * Non-null means WE answered the date question and nobody has checked it.
+   *
+   * ⚠️ 'none' IS AN ANSWER AND NOT A MISSING ONE. It means the question
+   * answered itself — a photograph has nothing printed on it, and a
+   * proficiency does not run out — so there is no date and nothing to arm. See
+   * settledByNature in the backend. A row carrying it has been settled by us
+   * and is not the member's outstanding work.
+   */
+  dateSource: 'read' | 'derived' | 'none' | null;
   neverExpires: boolean;
 }
 

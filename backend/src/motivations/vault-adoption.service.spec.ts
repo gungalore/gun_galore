@@ -460,6 +460,48 @@ describe('the dates on an adopted document', () => {
     expect(data.firearmCategory).toBeTruthy();
   });
 
+  /** A statement of results photographed onto an application. */
+  const proficiencyUpload = (details: Record<string, string>) => ({
+    kind: MotivationUploadKind.PROFICIENCY_CERTIFICATE,
+    storageKey: 'motivations/2026/08/p.enc',
+    purgedAt: null,
+    mimeType: 'image/jpeg',
+    sha256: 'sha-p',
+    extractionEncrypted: encryptJson(details),
+    extractionOk: true,
+    extractedFields: Object.keys(details),
+    motivation: { referenceNumber: 'MO000117' },
+  });
+
+  it('⚠️ SETTLES A PROFICIENCY AND STILL CARRIES ITS ISSUE DATE ACROSS', async () => {
+    // Operator, 2026-08-28: "proficiencies never expires, only competencies".
+    // Without the settlement the row lands at `dateSource: null`, which the
+    // Centre reads as a document nobody has answered for — it asked the member
+    // to check the TYPE of four of these on production on 2026-09-25 — and
+    // which keeps a statement of results out of the auto-attach.
+    const upload = proficiencyUpload({
+      unit_standard: '119652',
+      issued_on: '2014-03-11',
+    });
+    const { svc, prisma } = build({ upload });
+
+    expect(await svc.adoptUpload('u1', 'up-1')).toBe(true);
+    const data = prisma.credential.create.mock.calls[0][0].data;
+    expect(data.kind).toBe('PROFICIENCY');
+    expect(data.neverExpires).toBe(true);
+    expect(data.dateSource).toBe('none');
+    expect(data.dateSourceNote).toMatch(/proficiency does not run out/i);
+    // ⚠️ AND THE ISSUE DATE IS STILL READ. `settled` used to be an early
+    // return, so treating "the expiry question answers itself" as "there is
+    // nothing on the page to read" would have thrown away the one date a
+    // statement of results prints — and the operator's own reason for keeping
+    // one in the vault at all: 117705 off a 2014 handgun statement still has to
+    // be filed beside a rifle statement years later.
+    expect(data.issuedOn?.toISOString().slice(0, 10)).toBe('2014-03-11');
+    // ⚠️ AND NO EXPIRY BESIDE THE TICK, which is the CHECK constraint.
+    expect(data.expiresOn).toBeUndefined();
+  });
+
   it('⚠️ WRITES A DATE ALREADY PAST, AND REFUSES TO ARM IT', () => {
     // The Licence Centre's own guard, imported rather than reimplemented. The
     // reminder ladder's last stage fires on anything at or past its expiry, so

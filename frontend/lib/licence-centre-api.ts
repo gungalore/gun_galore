@@ -176,14 +176,20 @@ export interface CredentialRow {
   /** The other side of a two-sided document: a proficiency's certificate and its statement of results. */
   otherSide: { id: string; title: string | null } | null;
   /**
-   * Who put the expiry date there: null, 'read' or 'derived'.
+   * Who put the expiry date there: null, 'read', 'derived' or 'none'.
    *
-   * ⚠️ NON-NULL MEANS WE FILLED IT IN AND NOBODY HAS CHECKED IT — and that
-   * the reminder is nonetheless armed. Operator, 2026-08-25: "insert it. No
-   * further user interaction required." The row must say so plainly and must
-   * never claim the member confirmed it.
+   * ⚠️ NON-NULL MEANS WE FILLED IT IN AND NOBODY HAS CHECKED IT. Operator,
+   * 2026-08-25: "insert it. No further user interaction required." The row must
+   * say so plainly and must never claim the member confirmed it.
+   *
+   * ⚠️ 'none' IS NOT AN ARMED DATE AND MUST NOT BE READ AS ONE. It is the
+   * date question answering itself: a photograph has nothing printed on it and
+   * a proficiency does not run out, so there is no date to arm and no reminder
+   * to send. See settledByNature — it exists so the row reads as ANSWERED
+   * rather than as one nobody has got to, which is what the never-expires tick
+   * alone used to look like.
    */
-  dateSource: 'read' | 'derived' | null;
+  dateSource: 'read' | 'derived' | 'none' | null;
   /** The sentence saying where the date came from. Safe to show as-is. */
   dateSourceNote: string | null;
 

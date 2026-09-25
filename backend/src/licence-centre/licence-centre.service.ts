@@ -1042,11 +1042,14 @@ export class LicenceCentreService {
           // they are holding.
           neverExpires: defaultsToNeverExpires(resolved),
           /**
-           * ⚠️ AND SETTLED, NOT ONLY TICKED, FOR A PHOTOGRAPH. The tick says
-           * what the answer is; `dateSource` says somebody stands behind it,
-           * and the auto-attach candidate query reads the SECOND one. A safe
-           * photograph carried the tick and nothing else, so it was never a
-           * candidate — see settledByNature, which owns the reasoning.
+           * ⚠️ AND SETTLED, NOT ONLY TICKED, FOR A PHOTOGRAPH AND FOR A
+           * PROFICIENCY. The tick says what the answer is; `dateSource` says
+           * somebody stands behind it, and the auto-attach candidate query
+           * reads the SECOND one. A safe photograph carried the tick and
+           * nothing else, so it was never a candidate — see settledByNature,
+           * which owns the reasoning, and which now covers a statement of
+           * results for the same reason (the operator's ruling that a
+           * proficiency does not run out).
            *
            * Spread last so it wins over the line above for the kinds it
            * covers, and writes nothing at all for the kinds it does not.
@@ -1247,11 +1250,22 @@ export class LicenceCentreService {
             // the only thing now standing between an OCR misreading and an
             // SMS about somebody's firearm licence.
             expiresOn: parseIsoDate(reading.expiresOn),
-            // ⚠️ FOUND A DATE, SO IT IS NOT A NEVER-EXPIRES DOCUMENT. Only
-            // reachable if a kind is ever both pre-ticked and read; leaving
-            // the tick standing beside a date would break the CHECK
-            // constraint and store two contradictory answers.
-            ...(parseIsoDate(reading.expiresOn) ? { neverExpires: false } : {}),
+            /**
+             * ⚠️ FOUND A DATE, SO IT IS NOT A NEVER-EXPIRES DOCUMENT, AND THE
+             * PROVENANCE GOES WITH THE TICK. Only reachable if a kind is ever
+             * both pre-ticked and read; leaving the tick standing beside a date
+             * would break the CHECK constraint and store two contradictory
+             * answers. `dateSource` 'none' — "nobody read it and nobody
+             * computed it" — is the same contradiction one column over, so it
+             * is cleared in the same breath and the `armed` spread below can
+             * put 'read' back where the date really was read off the page.
+             * A proficiency is pre-ticked and read; its reader refuses to put
+             * an expiry on it (NO_EXPIRY_ON_THE_PAGE, in the extract service),
+             * which is the only reason this does not fire on one today.
+             */
+            ...(parseIsoDate(reading.expiresOn)
+              ? { neverExpires: false, dateSource: null, dateSourceNote: null }
+              : {}),
             extractionOk:
               Boolean(reading.expiresOn) ||
               Object.keys(reading.details).length > 0,

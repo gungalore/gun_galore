@@ -357,9 +357,31 @@ describe('what a stored document still owes the member', () => {
   });
 
   it('asks about the type of a dateless row, because that is all it has', () => {
+    // ⚠️ THE SHAPE THIS CATCHES IS NARROWER THAN IT LOOKS, AND THE NARROWING IS
+    // THE POINT. A ticked box nobody has recorded provenance for is the shape,
+    // and since 2026-09-25 it is reachable only for an IDENTITY_DOCUMENT — a
+    // photograph and a proficiency are both SETTLED by their kind, so they
+    // arrive with `dateSource: 'none'` and never reach this test's fixture at
+    // all. That is exactly right: a green barcoded ID does not expire and a
+    // passport does, so we pre-tick the box and still ask.
     const r = filed({ neverExpires: true });
     expect(needsDateCheck(r)).toBe(false);
     expect(needsFilingCheck(r)).toBe(true);
+  });
+
+  it('⚠️ leaves a dateless document we have ALREADY ANSWERED FOR alone', () => {
+    // The shape a settled proficiency or a photograph of a safe arrives in:
+    // the tick ON and the provenance saying somebody stands behind it.
+    //
+    // ⚠️ THE FOUR STATEMENTS OF RESULTS ON PRODUCTION WERE NOT IN THIS STATE —
+    // they carried the tick and a null dateSource — so the Centre told the
+    // member "we were not sure what type these documents are" about rows we
+    // had categorised confidently, and none of them could be attached to an
+    // application. See settledByNature, which is the half that was missing.
+    const r = filed({ neverExpires: true, dateSource: 'none' });
+    expect(needsDateCheck(r)).toBe(false);
+    expect(needsFilingCheck(r)).toBe(false);
+    expect(needsReview(r)).toBe(false);
   });
 
   it('leaves a confirmed row alone however it was filed', () => {
