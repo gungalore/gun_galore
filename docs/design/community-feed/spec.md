@@ -15,7 +15,8 @@
 - Frontend: `/community` (gate/feed), `/community/p/[id]`, `/community/u/[username]`, `/community/settings`; `lib/community-api.ts`, `lib/post-types.ts`, community components, middleware public route, account-menu entry.
 - Homepage split + nav (§11A): `components/home-view-toggle.tsx` wrapping the landing page's `showHero` branch in `app/page.tsx` (Shop default, SSR shop preserved); `CommunityGate` gained `as`; desktop top-nav Community link in `components/nav.tsx`; `/community` push-header title in `lib/shell-routes.ts`.
 - C2: report flow (post-menu + per-comment report via `POST /community/posts/:id/report` and `/comments/:id/report`); public `(legal)/community-guidelines` page + middleware allowlist + AUP updates; graphic-blur policy honoured through `GET /community/config` (`graphicBlurForced`) with a no-reveal "hidden" state.
-- C4: `FeedAward` points ledger + `FeedAwardsService` (levels, daily anti-farming cap, monthly leaderboard); `Group`/`GroupMember` + `Post.groupId` + `User.feedMutedTopicIds`; group list/feed/join endpoints and admin create; frontend `/community/groups`, `/community/g/[slug]`, `/community/leaderboard`, level badge on profiles, muted-groups in filters. Topic groups seedable with `npm run seed:feed-groups` (9 groups, one per post type). **Composer changes (operator, 2026-09-23):** the group selector was **removed** from the post composer (groups are reached only from the groups section); the location field now resolves to the picked Google **place name** (venue/locality), falling back to the formatted address only when the place has no name, and stores the picked **place_id** (`Post.locationPlaceId`) so the post's location tag opens that exact place in the member's maps rather than a name search.
+- C4: `FeedAward` points ledger + `FeedAwardsService` (levels, daily anti-farming cap, monthly leaderboard); frontend `/community/leaderboard`, level badge on profiles. **Composer changes (operator, 2026-09-23):** the location field now resolves to the picked Google **place name** (venue/locality), falling back to the formatted address only when the place has no name, and stores the picked **place_id** (`Post.locationPlaceId`) so the post's location tag opens that exact place in the member's maps rather than a name search.
+- **Groups removed (operator, 2026-09-25):** the community groups/topics feature was removed entirely — `Group`/`GroupMember` + `Post.groupId` + `User.feedMutedTopicIds`, the group list/feed/join endpoints and admin create, the `/community/groups` and `/community/g/[slug]` pages, muted-groups in filters, the group-selector notes, and the `seed:feed-groups` script. The awards/leaderboard half of C4 is unaffected.
 - C3: featured ads built **FRESH** (not the orphaned `FeaturedSlot*`): `FeedAd` + `FeedAdStatus`, admin CRUD (`/api/admin/community/ads`), served on the feed's first page and interleaved in the UI with a "Sponsored" label (click tracked via `POST /api/community/ads/:id/click`), flag `feed_ads_enabled`, seed `npm run seed:feed-ads`. **Ads promote a seller's listing:** `FeedAd.listingId` links a Listing, so title/photo/price/link come from the listing and the ad stops showing when the listing is no longer ACTIVE. Sellers feature/unfeature from **My Listings** (`GET|POST|DELETE /api/community/listings/:id/feature`), capped at `FEED_AD_MAX_PER_USER` (3) active ads each. Migration `20260921140000_feed_ads_listing_link`. **Pricing is not built yet** (operator deciding the model) — featuring is free for now.
 - Admin UI: `/admin/desk/community` — the feed moderation queue (approve/reject posts held in `PENDING_MODERATION`), a **Disputed** section, plus featured-ads management (list, create, set status, delete). Self-contained inside the Desk layout (uses `deskFetch` + `--dk-*` tokens; the four pinned Desk tabs are untouched).
 - **Background moderation + disputes** (built): `submitPost` queues the post (status `PENDING_MODERATION`, `moderatedAt` null) and returns at once with `PROCESSING`; `FeedService.runModeration()` does the real pass fire-and-forget, and a `feed_moderation_sweep` cron re-picks anything stranded. The author sees their own in-flight/rejected posts in the feed (`moderationState`: `PROCESSING` / `IN_REVIEW` / `BLOCKED`) and gets notified on publish/reject. **Dispute flow:** a blocked post offers *Dispute this decision* → `POST /community/posts/:id/dispute` → `AdminAlert POST_DISPUTED` + the promise of feedback **within 48 hours**; admins work it from the Disputed section.
@@ -52,7 +53,7 @@ A Facebook-for-the-outdoors: members share experiences, ask questions, post phot
 | 1 | Visibility | Feed is members-only. Public routes show a **join gate**; feed content requires a session. |
 | 2 | Sharing | Share URL unfurls a **generated brand card** (title + type + username, no member photo); click → gate/login. |
 | 3 | Post types | 9 condensed types (§4). |
-| 4 | Filters | Per-user, server-side, in feed **and** search; type / author / tag axes (topic later). Tags-only for keyword muting. |
+| 4 | Filters | Per-user, server-side, in feed **and** search; type / author / tag axes. Tags-only for keyword muting. |
 | 5 | Moderation | Fail-closed. Members may **not advertise at all** (own listings included). `@alloutdoor.co.za` accounts post anything, badged **Official**. Illegal/graphic moderation applies to everyone. |
 | 6 | Graphic content | Tiered: field-normal gore allowed with warning/blur; extreme gore mandatory blur + warning + review; hard-block only unlawful material. |
 | 7 | People tagging | None. No face recognition. No tagging of people in photos. Content tags (`Post.tags`) are topic hashtags only. |
@@ -274,7 +275,6 @@ Inside `model User` add the scalar filter columns (Prisma scalar lists on Postgr
   feedMutedPostTypes String[] @default([])
   feedMutedAuthorIds String[] @default([])
   feedMutedTags      String[] @default([])
-  // feedMutedTopicIds String[] @default([])   // C4, add with the topic model
 ```
 And the back-relations:
 ```prisma
@@ -574,7 +574,7 @@ Load the viewer's filter row once per feed request: `prisma.user.findUnique({ wh
 
 **`listFeed({ userId, before, limit, includeFiltered, type })`** → `prisma.post.findMany({ where: { status: 'PUBLISHED', ...(type ? { type } : {}), ...(before ? { createdAt: { lt: new Date(before) } } : {}), ...filterWhere(...) }, orderBy: { createdAt: 'desc' }, take: Math.min(limit ?? 20, 50), include: { images: true, author: { select: { username: true, avatarUrl: true, sellerTier: true, isVerifiedExpert: true } }, listing: { select: { id: true, title: true, price: true, listingType: true } } } })`. Never select `User.firstName`/`lastName`.
 
-**`searchFeed({ userId, q, before, limit, includeFiltered, type })`** — published posts only, with the same viewer mute predicate and cursor contract as the feed. Case-insensitive search covers post title/body, author username, assigned catalogue category, topic-group name, tagged location and linked listing title; topic hashtags match their normalized tag value, and the visible post-type labels/enum values match by substring. An optional `type` filter from the category rail is applied alongside the query. Meilisearch is deferred.
+**`searchFeed({ userId, q, before, limit, includeFiltered, type })`** — published posts only, with the same viewer mute predicate and cursor contract as the feed. Case-insensitive search covers post title/body, author username, assigned catalogue category, tagged location and linked listing title; topic hashtags match their normalized tag value, and the visible post-type labels/enum values match by substring. An optional `type` filter from the category rail is applied alongside the query. Meilisearch is deferred.
 
 **`getPost(userId, postId)`** — 404 (`NotFoundException`) when the post is not `PUBLISHED` (never 403; do not confirm existence).
 
@@ -910,8 +910,8 @@ Acceptance per phase: all type-checks clean (`npx tsc --noEmit` in both), both s
 **C3 — Commerce (featured ads) — BUILT FRESH**
 18. Operator decided **build fresh** (not the orphaned `FeaturedSlot*`). Done: `FeedAd` model + `FeedAdsService` + admin CRUD, feed serving/interleaving with a "Sponsored" label, click tracking, `feed_ads_enabled` flag. Ads promote a seller's `Listing` (`FeedAd.listingId`); the seller toggles "Feature in feed" from **My Listings** (`/api/community/listings/:id/feature`), capped at 3 active per seller. Admin page at `/admin/desk/community`. ⚠️ **Pricing model is still to be decided** — featuring is free today; when built it becomes a paid placement (likely created only after payment, or with an admin-approved credit).
 
-**C4 — Groups + awards**
-19. Topic/group model + membership; add `feedMutedTopicIds` column and wire it.
+**C4 — Awards** (the groups/topics half was removed — see the implementation-status note)
+19. ~~Topic/group model + membership; add `feedMutedTopicIds` column and wire it.~~ *Removed 2026-09-25.*
 20. Cosmetic points/levels/badges (never prize-draw entries).
 
 ---
@@ -963,7 +963,7 @@ grid collapses and the panel moves **above** the feed (`order-1` vs `order-2`)
 *summary*: a red **Create Post** button, the member's picture + name (with a
 Manage link), a four-up stat row, the latest five posts with a status pill and
 inline delete, a "still being checked" nudge when `pendingCount > 0`, and quick
-links (filters, groups, notifications).
+links (filters, notifications).
 
 **Composer lives in the rail, not the feed** (operator, 2026-09-22). The old
 "Share something with the community…" button is gone from the feed; the red

@@ -62,7 +62,6 @@ export interface FeedPost {
     price: number | null;
     listingType: string;
   } | null;
-  group: { id: string; slug: string; name: string } | null;
   liked: boolean;
   muted?: boolean;
   /** Only meaningful on the author's own not-yet-live posts. */
@@ -110,7 +109,6 @@ export interface FeedPreferences {
   feedMutedPostTypes: string[];
   feedMutedAuthorIds: string[];
   feedMutedTags: string[];
-  feedMutedTopicIds: string[];
   /** Show the member's profile picture in the community. Default on. */
   feedShowAvatar: boolean;
   /** Show graphic content (hunting, fishing, etc.) in the feed. Default on. */
@@ -200,7 +198,6 @@ export function createPost(
     title?: string;
     body: string;
     tags?: string[];
-    groupId?: string;
     location?: string;
     locationPlaceId?: string;
   },
@@ -430,58 +427,6 @@ export function disputePost(
   return jsonFetch(`/community/posts/${postId}/dispute`, token, {
     method: 'POST',
     body: JSON.stringify({ note }),
-  });
-}
-
-export interface FeedGroup {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  memberCount: number;
-  postCount: number;
-  joined: boolean;
-}
-
-export function fetchGroups(token: string): Promise<{ groups: FeedGroup[] }> {
-  return jsonFetch('/community/groups', token);
-}
-
-export function fetchGroup(
-  token: string,
-  slug: string,
-  opts: { before?: string; includeFiltered?: boolean } = {},
-): Promise<{
-  group: Omit<FeedGroup, 'postCount'>;
-  posts: FeedPost[];
-  nextBefore: string | null;
-  includeFiltered: boolean;
-}> {
-  const qs = new URLSearchParams();
-  if (opts.before) qs.set('before', opts.before);
-  if (opts.includeFiltered) qs.set('includeFiltered', 'true');
-  const q = qs.toString();
-  return jsonFetch(
-    `/community/groups/${encodeURIComponent(slug)}${q ? `?${q}` : ''}`,
-    token,
-  );
-}
-
-export function joinGroup(
-  token: string,
-  id: string,
-): Promise<{ joined: boolean }> {
-  return jsonFetch(`/community/groups/${id}/join`, token, {
-    method: 'POST',
-  });
-}
-
-export function leaveGroup(
-  token: string,
-  id: string,
-): Promise<{ joined: boolean }> {
-  return jsonFetch(`/community/groups/${id}/join`, token, {
-    method: 'DELETE',
   });
 }
 

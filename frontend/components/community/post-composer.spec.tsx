@@ -107,13 +107,6 @@ beforeEach(() => {
 });
 
 describe('PostComposer', () => {
-  it('no longer renders a group selector', () => {
-    openComposer();
-    expect(screen.queryByText('No group')).toBeNull();
-    // Only the post-type selector remains.
-    expect(document.querySelectorAll('select')).toHaveLength(1);
-  });
-
   it('uses the themed file picker, not the browser’s raw Choose File widget', () => {
     openComposer();
     const fileInputs = document.querySelectorAll('input[type="file"]');

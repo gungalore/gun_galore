@@ -62,7 +62,6 @@ const post = {
   images: [],
   video: null,
   listing: null,
-  group: null,
   liked: false,
 } satisfies FeedPost;
 
@@ -76,7 +75,6 @@ describe('Community feed search', () => {
       feedMutedPostTypes: [],
       feedMutedAuthorIds: [],
       feedMutedTags: [],
-      feedMutedTopicIds: [],
       feedShowAvatar: true,
       feedShowGraphic: true,
     });

@@ -3,9 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth, useUser } from '../../lib/auth';
 import {
-  type FeedGroup,
   type FeedPreferences,
-  fetchGroups,
   fetchPreferences,
   savePreferences,
 } from '../../lib/community-api';
@@ -15,7 +13,6 @@ const EMPTY: FeedPreferences = {
   feedMutedPostTypes: [],
   feedMutedAuthorIds: [],
   feedMutedTags: [],
-  feedMutedTopicIds: [],
   feedShowAvatar: true,
   feedShowGraphic: true,
 };
@@ -24,7 +21,6 @@ export function FeedPreferencesClient() {
   const { isLoaded, isSignedIn } = useUser();
   const { getToken } = useAuth();
   const [prefs, setPrefs] = useState<FeedPreferences>(EMPTY);
-  const [groups, setGroups] = useState<FeedGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [tagDraft, setTagDraft] = useState('');
 
@@ -33,12 +29,8 @@ export function FeedPreferencesClient() {
     try {
       const token = await getToken();
       if (!token) return;
-      const [p, g] = await Promise.all([
-        fetchPreferences(token),
-        fetchGroups(token).catch(() => ({ groups: [] as FeedGroup[] })),
-      ]);
+      const p = await fetchPreferences(token);
       setPrefs(p);
-      setGroups(g.groups);
     } finally {
       setLoading(false);
     }
@@ -67,16 +59,6 @@ export function FeedPreferencesClient() {
       feedMutedPostTypes: has
         ? prefs.feedMutedPostTypes.filter((t) => t !== type)
         : [...prefs.feedMutedPostTypes, type],
-    });
-  }
-
-  function toggleTopic(id: string) {
-    const has = prefs.feedMutedTopicIds.includes(id);
-    void persist({
-      ...prefs,
-      feedMutedTopicIds: has
-        ? prefs.feedMutedTopicIds.filter((t) => t !== id)
-        : [...prefs.feedMutedTopicIds, id],
     });
   }
 
@@ -249,40 +231,6 @@ export function FeedPreferencesClient() {
           </div>
         )}
       </section>
-
-      {groups.length > 0 && (
-        <section>
-          <h2
-            className="text-[15px] font-medium mb-2"
-            style={{ color: 'var(--text-primary)' }}
-          >
-            Groups
-          </h2>
-          <p className="text-[13px] mb-3" style={{ color: 'var(--text-tertiary)' }}>
-            Mute a group to hide its posts from your feed.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {groups.map((g) => {
-              const muted = prefs.feedMutedTopicIds.includes(g.id);
-              return (
-                <button
-                  key={g.id}
-                  type="button"
-                  onClick={() => toggleTopic(g.id)}
-                  className="gg-press px-3 py-1.5 rounded-full text-[12px]"
-                  style={{
-                    background: muted ? 'var(--bg-inset)' : 'var(--red-wash)',
-                    color: muted ? 'var(--text-tertiary)' : 'var(--red)',
-                    textDecoration: muted ? 'line-through' : 'none',
-                  }}
-                >
-                  {g.name}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
 
       <section>
         <h2

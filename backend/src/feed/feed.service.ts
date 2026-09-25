@@ -50,7 +50,6 @@ interface ViewerRow {
   feedMutedPostTypes: string[];
   feedMutedAuthorIds: string[];
   feedMutedTags: string[];
-  feedMutedTopicIds: string[];
   feedShowAvatar: boolean;
   avatarUrl: string | null;
   username: string;
@@ -72,7 +71,6 @@ type PostWithRelations = Post & {
     listingType: string;
     status: string;
   } | null;
-  group: { id: string; slug: string; name: string } | null;
   likes: { id: string }[];
 };
 
@@ -112,7 +110,6 @@ export class FeedService {
         feedMutedPostTypes: true,
         feedMutedAuthorIds: true,
         feedMutedTags: true,
-        feedMutedTopicIds: true,
         feedShowAvatar: true,
         avatarUrl: true,
         username: true,
@@ -136,7 +133,6 @@ export class FeedService {
         },
       },
       likes: { where: { userId }, select: { id: true } },
-      group: { select: { id: true, slug: true, name: true } },
       video: {
         select: {
           id: true,
@@ -163,9 +159,6 @@ export class FeedService {
     }
     if (v.feedMutedTags.length) {
       conditions.push({ tags: { hasSome: v.feedMutedTags } });
-    }
-    if (v.feedMutedTopicIds.length) {
-      conditions.push({ groupId: { in: v.feedMutedTopicIds } });
     }
     if (!conditions.length) return {};
     // Prisma's NOT array is NOT(a) AND NOT(b) — exactly "exclude any match".
@@ -234,7 +227,6 @@ export class FeedService {
           }
         : null,
       listing: post.listing,
-      group: post.group,
       liked: post.likes.length > 0,
       ...(includeFiltered ? { muted: this.isMuted(post, v) } : {}),
     };
@@ -373,7 +365,6 @@ export class FeedService {
           { tags: { hasSome: tagNeedles } },
           { author: { username: { contains: needle, mode: 'insensitive' } } },
           { category: { name: { contains: needle, mode: 'insensitive' } } },
-          { group: { name: { contains: needle, mode: 'insensitive' } } },
           { location: { contains: needle, mode: 'insensitive' } },
           { listing: { title: { contains: needle, mode: 'insensitive' } } },
           ...(matchingTypes.length ? [{ type: { in: matchingTypes } }] : []),
@@ -507,7 +498,6 @@ export class FeedService {
       feedMutedPostTypes: v.feedMutedPostTypes,
       feedMutedAuthorIds: v.feedMutedAuthorIds,
       feedMutedTags: v.feedMutedTags,
-      feedMutedTopicIds: v.feedMutedTopicIds,
       feedShowAvatar: v.feedShowAvatar,
     };
   }
@@ -539,9 +529,6 @@ export class FeedService {
     if (dto.feedMutedTags !== undefined) {
       data.feedMutedTags = normaliseMuteList(dto.feedMutedTags);
     }
-    if (dto.feedMutedTopicIds !== undefined) {
-      data.feedMutedTopicIds = normaliseMuteList(dto.feedMutedTopicIds);
-    }
     if (dto.feedShowAvatar !== undefined) {
       data.feedShowAvatar = dto.feedShowAvatar;
     }
@@ -552,7 +539,6 @@ export class FeedService {
         feedMutedPostTypes: true,
         feedMutedAuthorIds: true,
         feedMutedTags: true,
-        feedMutedTopicIds: true,
         feedShowAvatar: true,
       },
     });
@@ -589,18 +575,6 @@ export class FeedService {
         ? PostStatus.REJECTED
         : PostStatus.PENDING_MODERATION;
 
-    let groupId: string | null = null;
-    if (dto.groupId) {
-      const group = await this.prisma.group.findUnique({
-        where: { id: dto.groupId },
-        select: { id: true, isActive: true },
-      });
-      if (!group || !group.isActive) {
-        throw new BadRequestException('Unknown group.');
-      }
-      groupId = group.id;
-    }
-
     const post = (await this.prisma.post.create({
       data: {
         authorId: userId,
@@ -611,7 +585,6 @@ export class FeedService {
         gear: (dto.gear ?? undefined) as Prisma.InputJsonValue | undefined,
         listingId: dto.listingId ?? null,
         categoryId: dto.categoryId ?? null,
-        groupId,
         location: dto.location ?? null,
         locationPlaceId: dto.locationPlaceId ?? null,
         status,
@@ -1162,99 +1135,8 @@ export class FeedService {
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // Groups + leaderboard
+  // Leaderboard
   // ─────────────────────────────────────────────────────────────────
-
-  async listGroups(userId: string) {
-    await this.assertEnabled();
-    const groups = await this.prisma.group.findMany({
-      where: { isActive: true },
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      include: { _count: { select: { members: true, posts: true } } },
-    });
-    const memberships = await this.prisma.groupMember.findMany({
-      where: { userId, groupId: { in: groups.map((g) => g.id) } },
-      select: { groupId: true },
-    });
-    const joined = new Set(memberships.map((m) => m.groupId));
-    return {
-      groups: groups.map((g) => ({
-        id: g.id,
-        slug: g.slug,
-        name: g.name,
-        description: g.description,
-        memberCount: g._count.members,
-        postCount: g._count.posts,
-        joined: joined.has(g.id),
-      })),
-    };
-  }
-
-  async getGroup(userId: string, slug: string, q: FeedQueryDto) {
-    await this.assertEnabled();
-    const v = await this.viewer(userId);
-    const group = await this.prisma.group.findUnique({
-      where: { slug },
-      include: { _count: { select: { members: true } } },
-    });
-    if (!group || !group.isActive) throw new NotFoundException();
-
-    const limit = Math.min(q.limit ?? FEED_PAGE_DEFAULT, FEED_PAGE_MAX);
-    const posts = (await this.prisma.post.findMany({
-      where: {
-        groupId: group.id,
-        status: PostStatus.PUBLISHED,
-        ...(q.before ? { createdAt: { lt: new Date(q.before) } } : {}),
-        ...this.filterWhere(v, !!q.includeFiltered),
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      include: this.postInclude(userId),
-    })) as PostWithRelations[];
-
-    const membership = await this.prisma.groupMember.findUnique({
-      where: { groupId_userId: { groupId: group.id, userId } },
-      select: { id: true },
-    });
-
-    return {
-      group: {
-        id: group.id,
-        slug: group.slug,
-        name: group.name,
-        description: group.description,
-        memberCount: group._count.members,
-        joined: !!membership,
-      },
-      posts: posts.map((p) => this.shapePost(p, v, !!q.includeFiltered)),
-      nextBefore:
-        posts.length === limit && posts.length > 0
-          ? posts[posts.length - 1].createdAt.toISOString()
-          : null,
-      includeFiltered: !!q.includeFiltered,
-    };
-  }
-
-  async joinGroup(userId: string, groupId: string) {
-    await this.assertEnabled();
-    const group = await this.prisma.group.findUnique({
-      where: { id: groupId },
-      select: { id: true, isActive: true },
-    });
-    if (!group || !group.isActive) throw new NotFoundException();
-    await this.prisma.groupMember.upsert({
-      where: { groupId_userId: { groupId, userId } },
-      create: { groupId, userId },
-      update: {},
-    });
-    return { joined: true };
-  }
-
-  async leaveGroup(userId: string, groupId: string) {
-    await this.assertEnabled();
-    await this.prisma.groupMember.deleteMany({ where: { groupId, userId } });
-    return { joined: false };
-  }
 
   async getLeaderboard() {
     await this.assertEnabled();
@@ -1279,42 +1161,6 @@ export class FeedService {
   async unfeatureListing(userId: string, listingId: string) {
     await this.assertEnabled();
     return this.ads.unfeatureListing(userId, listingId);
-  }
-
-  /** Admin/official only. */
-  async adminCreateGroup(dto: {
-    slug: string;
-    name: string;
-    description?: string;
-    type?: PostType;
-    sortOrder?: number;
-  }) {
-    await this.assertEnabled();
-    const slug = (dto.slug ?? '').trim().toLowerCase();
-    if (!slug || !/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
-      throw new BadRequestException('Group slug must be lowercase letters, numbers and hyphens.');
-    }
-    // ⚠️ NO WEAPON-WORD GUARD HERE, DELIBERATELY. Groups live behind the
-    // members-only gate and are noindex, so the public-URL rule (which exists
-    // so the scanner cannot read a weapon word off a crawlable URL) does not
-    // apply — and applying it would block the legitimate "Firearms & Shooting"
-    // topic group. If a group is ever made public, revisit this.
-    return this.prisma.group.upsert({
-      where: { slug },
-      create: {
-        slug,
-        name: dto.name,
-        description: dto.description ?? null,
-        type: dto.type ?? null,
-        sortOrder: dto.sortOrder ?? 0,
-      },
-      update: {
-        name: dto.name,
-        description: dto.description ?? null,
-        type: dto.type ?? null,
-        sortOrder: dto.sortOrder ?? 0,
-      },
-    });
   }
 
   // ─────────────────────────────────────────────────────────────────

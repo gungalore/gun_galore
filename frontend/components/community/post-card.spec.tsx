@@ -28,7 +28,6 @@ const post: FeedPost = {
   images: [],
   video: null,
   listing: null,
-  group: null,
   liked: false,
 };
 

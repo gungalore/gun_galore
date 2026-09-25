@@ -725,7 +725,6 @@ model User {
   followers    Follow[]        @relation("UserFollowers")
   socialStats  UserSocialStats?
   feedAwards   FeedAward[]     @relation("UserFeedAwards")
-  groupMemberships GroupMember[] @relation("UserGroupMemberships")
 
   // Per-user feed content filters. Applied SERVER-SIDE in the feed and
   // post-search queries only — never to the marketplace. Array columns
@@ -734,7 +733,6 @@ model User {
   feedMutedPostTypes String[] @default([])
   feedMutedAuthorIds String[] @default([])
   feedMutedTags      String[] @default([])
-  feedMutedTopicIds  String[] @default([])
 
   // Whether the member's profile picture is shown in the community feed.
   // Default ON (the operator wants pictures viewable); a member can turn it
@@ -6847,8 +6845,6 @@ model Post {
   listing          Listing?     @relation("PostListing", fields: [listingId], references: [id], onDelete: SetNull)
   categoryId       String?
   category         Category?    @relation("PostCategory", fields: [categoryId], references: [id], onDelete: SetNull)
-  groupId          String?
-  group            Group?       @relation(fields: [groupId], references: [id], onDelete: SetNull)
   /// Reserved for a future public layer. Always false in this build.
   publicVisible    Boolean      @default(false)
   status           PostStatus   @default(PENDING_MODERATION)
@@ -6883,7 +6879,6 @@ model Post {
   @@index([status, createdAt(sort: Desc)])
   @@index([authorId, createdAt(sort: Desc)])
   @@index([type, createdAt(sort: Desc)])
-  @@index([groupId, status, createdAt(sort: Desc)])
   // Tag-based content muting uses `tags hasSome [...]`; GIN is the right index.
   @@index([tags(ops: ArrayOps)], type: Gin)
 }
@@ -6998,35 +6993,6 @@ model FeedAward {
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([createdAt])
-}
-
-/// A topic group. Admin/official-created (members join); mirrors the post-type
-/// taxonomy rather than letting members spin up unlimited groups.
-model Group {
-  id          String     @id @default(cuid())
-  slug        String     @unique
-  name        String
-  description String?
-  type        PostType?
-  isActive    Boolean    @default(true)
-  sortOrder   Int        @default(0)
-  createdAt   DateTime   @default(now())
-
-  members GroupMember[]
-  posts   Post[]
-}
-
-model GroupMember {
-  id        String   @id @default(cuid())
-  groupId   String
-  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation("UserGroupMemberships", fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-
-  @@unique([groupId, userId])
-  @@index([userId])
-  @@index([groupId, createdAt(sort: Desc)])
 }
 
 /// Featured ads — a FRESH model, deliberately not the orphaned FeaturedSlot*

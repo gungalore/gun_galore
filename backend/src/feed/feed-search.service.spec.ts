@@ -3,7 +3,7 @@ import { FeedSearchDto } from './dto/feed-search.dto';
 import { FeedService } from './feed.service';
 
 describe('FeedService.searchFeed', () => {
-  it('searches post text, tags, users, categories, groups and feed topics with viewer filters', async () => {
+  it('searches post text, tags, users and categories with viewer filters', async () => {
     const viewer = {
       id: 'viewer-id',
       email: 'member@example.test',
@@ -12,7 +12,6 @@ describe('FeedService.searchFeed', () => {
       feedMutedPostTypes: ['FISHING'],
       feedMutedAuthorIds: ['muted-author'],
       feedMutedTags: ['muted-tag'],
-      feedMutedTopicIds: ['muted-group'],
       feedShowAvatar: true,
       avatarUrl: null,
       username: 'member',
@@ -48,7 +47,6 @@ describe('FeedService.searchFeed', () => {
       { type: { in: ['FISHING'] } },
       { authorId: { in: ['muted-author'] } },
       { tags: { hasSome: ['muted-tag'] } },
-      { groupId: { in: ['muted-group'] } },
     ]);
     expect(where.OR).toEqual(
       expect.arrayContaining([
@@ -57,7 +55,6 @@ describe('FeedService.searchFeed', () => {
         { tags: { hasSome: ['hunting'] } },
         { author: { username: { contains: 'Hunting', mode: 'insensitive' } } },
         { category: { name: { contains: 'Hunting', mode: 'insensitive' } } },
-        { group: { name: { contains: 'Hunting', mode: 'insensitive' } } },
         { location: { contains: 'Hunting', mode: 'insensitive' } },
         { listing: { title: { contains: 'Hunting', mode: 'insensitive' } } },
         { type: { in: ['HUNTING'] } },

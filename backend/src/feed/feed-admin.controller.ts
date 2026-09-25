@@ -2,7 +2,6 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } f
 import { PostStatus } from '@prisma/client';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { CreateFeedAdDto } from './dto/create-feed-ad.dto';
-import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateFeedAdDto } from './dto/update-feed-ad.dto';
 import { FeedAdsService } from './feed-ads.service';
 import { FeedService } from './feed.service';
@@ -40,11 +39,6 @@ export class FeedAdminController {
     @Body() body: { action: 'APPROVE' | 'REJECT'; reason?: string },
   ) {
     return this.feed.adminReview(id, body?.action ?? 'APPROVE', body?.reason);
-  }
-
-  @Post('groups')
-  createGroup(@Body() dto: CreateGroupDto) {
-    return this.feed.adminCreateGroup(dto);
   }
 
   // ── Featured ads ─────────────────────────────────────────────────

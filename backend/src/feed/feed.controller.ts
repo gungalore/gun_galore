@@ -77,33 +77,6 @@ export class FeedController {
     return this.feed.getConfig(userId);
   }
 
-  @Get('groups')
-  groups(@CurrentUser() userId: string) {
-    return this.feed.listGroups(userId);
-  }
-
-  @Get('groups/:slug')
-  @Throttle({ default: { limit: 120, ttl: 60_000 } })
-  group(
-    @CurrentUser() userId: string,
-    @Param('slug') slug: string,
-    @Query() q: FeedQueryDto,
-  ) {
-    return this.feed.getGroup(userId, slug, q);
-  }
-
-  @Post('groups/:id/join')
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  joinGroup(@CurrentUser() userId: string, @Param('id') id: string) {
-    return this.feed.joinGroup(userId, id);
-  }
-
-  @Delete('groups/:id/join')
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  leaveGroup(@CurrentUser() userId: string, @Param('id') id: string) {
-    return this.feed.leaveGroup(userId, id);
-  }
-
   @Get('leaderboard')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   leaderboard() {

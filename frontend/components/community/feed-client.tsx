@@ -53,7 +53,6 @@ export function FeedClient() {
     feedMutedPostTypes: [],
     feedMutedAuthorIds: [],
     feedMutedTags: [],
-    feedMutedTopicIds: [],
     feedShowAvatar: true,
     feedShowGraphic: true,
   });

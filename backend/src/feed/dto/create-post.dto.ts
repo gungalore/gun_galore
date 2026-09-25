@@ -44,11 +44,6 @@ export class CreatePostDto {
   @IsString()
   categoryId?: string;
 
-  /** Optional topic group the post belongs to. */
-  @IsOptional()
-  @IsString()
-  groupId?: string;
-
   /** Optional location from Google Places autocomplete. */
   @IsOptional()
   @IsString()

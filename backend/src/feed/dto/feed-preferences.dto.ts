@@ -28,12 +28,6 @@ export class FeedPreferencesDto {
   @IsString({ each: true })
   feedMutedTags?: string[];
 
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(FEED_MAX_MUTES_PER_AXIS)
-  @IsString({ each: true })
-  feedMutedTopicIds?: string[];
-
   /** Show the member's profile picture in the community. Default on. */
   @IsOptional()
   @IsBoolean()
