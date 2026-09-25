@@ -167,17 +167,54 @@ describe('ListingsService — findById projection & owner-awareness', () => {
   });
 
   it('serves an anonymous caller the public projection and no reservePrice', async () => {
-    prisma.listing.findUnique.mockResolvedValueOnce(publicRow());
+    prisma.listing.findUnique.mockResolvedValueOnce(
+      publicRow({
+        seller: {
+          id: 'seller_1',
+          phoneVerified: true,
+          emailVerifiedAt: new Date('2026-01-01T00:00:00Z'),
+          kycIdVerifiedAt: new Date('2026-01-02T00:00:00Z'),
+        },
+      }),
+    );
 
-    const result = await service.findById('l1');
+    const result = (await service.findById('l1')) as {
+      seller: {
+        verification?: {
+          phoneVerified: boolean;
+          emailVerified: boolean;
+          idVerified: boolean;
+        };
+        phoneVerified?: unknown;
+        emailVerifiedAt?: unknown;
+        kycIdVerifiedAt?: unknown;
+      };
+    };
 
     expect(prisma.listing.findUnique).toHaveBeenCalledTimes(1);
     const call = prisma.listing.findUnique.mock.calls[0][0];
-    // The single query uses the shared public allowlist by reference.
-    expect(call.select).toBe(PUBLIC_LISTING_SELECT);
+    // The query extends the shared public allowlist with the three detail-only
+    // verification columns (converted to booleans before they leave the server).
+    expect(call.select).toMatchObject(PUBLIC_LISTING_SELECT);
+    expect(call.select.seller.select).toMatchObject({
+      ...PUBLIC_LISTING_SELECT.seller.select,
+      phoneVerified: true,
+      emailVerifiedAt: true,
+      kycIdVerifiedAt: true,
+    });
     expect(Object.prototype.hasOwnProperty.call(result, 'reservePrice')).toBe(
       false,
     );
+    // The three trust ticks are exposed as booleans…
+    expect(result.seller.verification).toEqual({
+      phoneVerified: true,
+      emailVerified: true,
+      idVerified: true,
+    });
+    // …and the raw trust columns are stripped.
+    expect(result.seller.phoneVerified).toBeUndefined();
+    expect(result.seller.emailVerifiedAt).toBeUndefined();
+    expect(result.seller.kycIdVerifiedAt).toBeUndefined();
   });
 
   it('adds the owner-only fields for the seller viewing their own listing', async () => {

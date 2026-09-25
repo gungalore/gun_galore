@@ -112,6 +112,14 @@ export interface ListingSeller {
   subscriptionTier?: SubscriptionTier;
   isVerifiedExpert?: boolean;
   expertBadgeReason?: string | null;
+  // Detail-only trust signals for the seller verification ring. Booleans
+  // only — never the underlying KYC / email / phone rows. Present on listing
+  // detail responses; absent from browse. "Fully verified" = all three true.
+  verification?: {
+    phoneVerified: boolean;
+    emailVerified: boolean;
+    idVerified: boolean;
+  };
   // UX-1b — seller-level rating shown on cards + near the PDP title.
   // averageRating is a cached denormalised field (null until the seller
   // has any rating); _count.ratingsReceived is the review count. Both are

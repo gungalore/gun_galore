@@ -223,6 +223,7 @@ export default function RootLayout({
       <html
         lang="en-ZA"
         className={`${fontDisplay.variable} ${fontBody.variable}`}
+        suppressHydrationWarning
       >
         <head>
           {/* Defense-in-depth fallback for the HTTP Referrer-Policy

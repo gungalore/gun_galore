@@ -13,9 +13,8 @@ import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { isChromelessRoute } from '@/lib/chromeless-routes';
 import Link from 'next/link';
-import Image from 'next/image';
 import { Nav } from '@/components/nav';
-import { av } from '@/lib/asset-version';
+import { Logo } from '@/components/brand/Logo';
 
 // UX-8 — stripped checkout chrome: logo + "Secure checkout 🔒" + Help only.
 // Replaces the full marketplace nav on /checkout/* so the buyer stays focused
@@ -28,7 +27,7 @@ function CheckoutHeader() {
       <div className="max-w-[var(--page-max)] mx-auto px-4 h-14 flex items-center justify-between">
         <Link href="/" aria-label="ALL Outdoor" className="flex items-center shrink-0">
           {/* Horizontal logo — pack brand asset at correct proportions. */}
-          <Image src="/brand/logo-horizontal-dark-transparent.svg" alt="ALL Outdoor" width={280} height={36} priority style={{ height: 36, width: 'auto' }} />
+          <Logo height={36} priority />
         </Link>
         <span className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
           <span aria-hidden>🔒</span> Secure checkout

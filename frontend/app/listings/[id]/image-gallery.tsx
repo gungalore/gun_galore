@@ -97,11 +97,11 @@ export function ImageGallery({
         />
       </button>
 
-      {/* Thumbnail strip — instant in-page swap. Active thumbnail
-          gets a red outline so the user knows which one is in the
-          hero. */}
+      {/* Thumbnail strip — sits BELOW the hero (not over it) but centred,
+          so the row spreads symmetrically about the middle. Active
+          thumbnail gets a red outline. */}
       {images.length > 1 && (
-        <div className="flex gap-2 mt-2 gg-row pb-1">
+        <div className="flex gap-2 mt-2 gg-row pb-1 justify-center">
           {images.map((img, idx) => {
             const isActive = idx === activeIdx;
             return (

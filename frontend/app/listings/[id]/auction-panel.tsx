@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuctionOdometer } from '@/components/auction-odometer';
 import Link from 'next/link';
 import { useUser, useAuth, SignInButton } from '../../../lib/auth';
-import { HelpTip } from '@/components/help-tip';
 import { HelpText } from '@/components/help-text';
 import {
   BidStepper,
@@ -445,41 +444,18 @@ export default function AuctionPanel({
         </p>
       )}
 
-      {/* What the odometer does NOT carry. The pack modelled none of this and
-          all of it matters: who is winning, whether the hidden reserve is met,
-          and why a starting bid sits where it does. */}
-      <div
-        className="rounded-[6px] px-4 py-4"
-        style={{
-          background: 'var(--bg-card)',
-          border: '0.5px solid var(--border)',
-        }}
-      >
-        {state.bidCount === 0 && state.hasReserve && (
-          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-            <span
-              className="text-xs uppercase"
-              style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}
-            >
-              Starting bid
-            </span>
-            <HelpTip title="Starting bid" side="bottom">
-              The starting bid is 30% below the seller&apos;s hidden
-              reserve price. Bidding can start low, but the auction
-              only closes a sale once the reserve is met.
-            </HelpTip>
-          </span>
-        )}
-
-        {/* Current high bidder — surfaces the actual winner so the
-            user doesn't have to infer from the bid history (where
-            proxy counters get attributed to the new bidder, not the
-            proxy holder). */}
-        {state.currentBidderName && state.bidCount > 0 && (
-          <p
-            className="text-xs mt-1.5"
-            style={{ color: 'var(--text-tertiary)' }}
-          >
+      {/* Current high bidder — surfaces the actual winner so the user
+          doesn't have to infer from the bid history (where proxy counters
+          get attributed to the new bidder, not the proxy holder). */}
+      {state.currentBidderName && state.bidCount > 0 && (
+        <div
+          className="rounded-[6px] px-4 py-4"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+          }}
+        >
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
             High bidder:{' '}
             <span
               style={{
@@ -490,45 +466,8 @@ export default function AuctionPanel({
               {myBid?.isHighBidder ? 'You ✓' : state.currentBidderName}
             </span>
           </p>
-        )}
-
-        {/* Reserve indicator + starting-bid pricing explainer.
-            Buyers see "Starting bid is 30% below the seller's reserve."
-            only when an actual reserve exists — for no-reserve auctions
-            the starting bid is whatever the seller set directly, so the
-            line would be misleading. */}
-        {state.hasReserve && (
-          <>
-            <span
-              className="mt-2"
-              style={{ display: 'inline-flex', alignItems: 'center' }}
-            >
-              <p
-                className="text-xs"
-                style={{
-                  color: state.reserveMet ? 'var(--success)' : 'var(--text-tertiary)',
-                }}
-              >
-                {state.reserveMet ? '✓ Reserve met' : 'Reserve not yet met'}
-              </p>
-              <HelpTip title="Reserve price" side="bottom">
-                The reserve is the lowest price the seller will accept,
-                set privately at listing time. Bids count toward closing
-                the sale only once the reserve is reached. The reserve
-                amount stays hidden from bidders.
-              </HelpTip>
-            </span>
-            {state.bidCount === 0 && (
-              <p
-                className="text-xs mt-1"
-                style={{ color: 'var(--text-tertiary)' }}
-              >
-                Starting bid is 30% below the seller&apos;s reserve.
-              </p>
-            )}
-          </>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Outbid banner — shows when the signed-in user previously
           placed a bid but is no longer the high bidder. Distinguishes

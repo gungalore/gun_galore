@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { av } from '@/lib/asset-version';
+import { Logo } from '@/components/brand/Logo';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -50,11 +50,7 @@ export default function ForgotPasswordPage() {
       style={{ background: 'var(--bg-deep)' }}
     >
       <Link href="/" aria-label="ALL Outdoor">
-        <img
-          src="/brand/logo-horizontal-dark-transparent.svg"
-          alt="ALL Outdoor"
-          style={{ height: 44, width: 'auto' }}
-        />
+        <Logo height={44} priority />
       </Link>
 
       {sent ? (

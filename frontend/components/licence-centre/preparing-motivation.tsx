@@ -1,8 +1,6 @@
 ﻿'use client';
 
-import Image from 'next/image';
-import { av } from '@/lib/asset-version';
-import { BRAND_NAME } from '@/lib/brand';
+import { Logo } from '@/components/brand/Logo';
 
 // ────────────────────────────────────────────────────────────────────
 // THE WAIT, WITH OUR NAME ON IT.
@@ -30,14 +28,7 @@ export default function PreparingMotivation() {
       aria-live="polite"
       className="rounded-[var(--r-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-5 py-8 text-center"
     >
-      <Image
-        src={av('/brand/logo-horizontal-dark-transparent.svg')}
-        alt={BRAND_NAME}
-        width={177}
-        height={30}
-        priority
-        className="mx-auto"
-      />
+      <Logo height={30} priority className="mx-auto" />
       <p className="m-0 mt-5 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.25] text-[var(--text-primary)]">
         Preparing your motivation
       </p>

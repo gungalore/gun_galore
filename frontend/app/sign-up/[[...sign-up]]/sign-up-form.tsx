@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useId, FormEvent } from 'react';
 import { av } from '@/lib/asset-version';
 import Link from 'next/link';
+import { Logo } from '@/components/brand/Logo';
 import { useSession } from '../../../lib/auth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { readCampaignAttrib, clearCampaignAttrib } from '@/lib/campaign-attrib';
@@ -453,11 +454,7 @@ export default function SignUpForm() {
       {/* Logo / brand — centred wordmark, 5:1 aspect locked. */}
       <div className="flex justify-center mb-6">
         <Link href="/" aria-label="ALL Outdoor">
-          <img
-            src="/brand/logo-horizontal-dark-transparent.svg"
-            alt="ALL Outdoor"
-            style={{ height: 48, width: 'auto' }}
-          />
+          <Logo height={48} priority />
         </Link>
       </div>
 
@@ -842,11 +839,7 @@ function VerifyStep({
           verification code. */}
       <div className="flex justify-center mb-6">
         <Link href="/" aria-label="ALL Outdoor">
-          <img
-            src="/brand/logo-horizontal-dark-transparent.svg"
-            alt="ALL Outdoor"
-            style={{ height: 48, width: 'auto' }}
-          />
+          <Logo height={48} priority />
         </Link>
       </div>
 

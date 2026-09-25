@@ -4,7 +4,7 @@ function apiBaseUrl(): string {
   // A relative `/api` base works in the browser through the Next rewrite, but
   // server components need an absolute backend URL for server-to-server fetches.
   if (typeof window === 'undefined' && API_URL.startsWith('/')) {
-    return process.env.API_INTERNAL_URL ?? 'http://localhost:3001/api';
+    return process.env.INTERNAL_API_URL ?? 'http://localhost:3001/api';
   }
 
   return API_URL;

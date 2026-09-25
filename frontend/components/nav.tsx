@@ -18,7 +18,6 @@ import { CategoryMenu } from '@/components/category-menu';
 import { ViewModeToggle } from '@/components/view-mode-toggle';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Logo } from '@/components/brand/Logo';
-import { useTheme } from '@/lib/use-theme';
 
 // The nav is a singleton, so a fixed id is safe and keeps aria-controls on
 // the search button pointing at the panel without threading a useId through.
@@ -82,7 +81,6 @@ function WishlistNavButton() {
 
 export function Nav() {
   const { isSignedIn, isLoaded, user } = useUser();
-  const { theme } = useTheme();
   const { signOut } = useClerk();
   const router = useRouter();
   const pathname = usePathname();
@@ -223,13 +221,11 @@ export function Nav() {
           >
             <Logo
               variant="emblem"
-              on={theme === 'dark' ? 'dark' : 'light'}
               height={36}
               className="h-9 w-auto object-contain sm:hidden"
             />
             <Logo
               variant="horizontal"
-              on={theme === 'dark' ? 'dark' : 'light'}
               height={44}
               className="hidden h-11 w-auto max-w-full object-contain sm:block"
             />
@@ -638,13 +634,7 @@ export function Nav() {
               className="flex items-center justify-between px-4 h-14"
               style={{ borderBottom: '0.5px solid var(--border)' }}
             >
-              <Image
-                src="/brand/logo-horizontal-dark-transparent.svg"
-                alt="ALL Outdoor"
-                width={96}
-                height={36}
-                style={{ height: 36, width: 'auto' }}
-              />
+              <Logo height={36} />
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}

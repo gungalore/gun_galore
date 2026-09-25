@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, FormEvent, ReactNode } from 'react';
 import { av } from '@/lib/asset-version';
 import Image from 'next/image';
+import { Logo } from '@/components/brand/Logo';
 import Link from 'next/link';
 import { useAuth, useUser, useSession } from '../../../lib/auth';
 import { Me } from '@/lib/types';
@@ -1226,20 +1227,7 @@ export default function EditProfilePage() {
                 border: '0.5px solid var(--border)',
               }}
             >
-              <Image
-                // Nav mark — the full scene's wordmark is unreadable at 36px.
-                src="/brand/logo-horizontal-dark-transparent.svg"
-                alt="ALL Outdoor"
-                width={96}
-                height={36}
-                priority
-                style={{
-                  height: 36,
-                  width: 'auto',
-                  margin: '0 auto 16px',
-                  display: 'block',
-                }}
-              />
+              <Logo height={36} priority className="mx-auto mb-4 block" />
               <p
                 className="text-sm mb-1"
                 style={{ color: 'var(--text-primary)', fontWeight: 500 }}

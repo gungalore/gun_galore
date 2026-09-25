@@ -2642,11 +2642,43 @@ export class ListingsService {
   async findById(id: string, userId?: string) {
     const listing = await this.prisma.listing.findUnique({
       where: { id },
-      select: PUBLIC_LISTING_SELECT,
+      // Detail-only enrichment: the public seller verification ring needs
+      // three trust booleans (phone / email / ID verified). Selected here and
+      // converted to booleans below, so the raw timestamps never leave the
+      // server and the browse projection is untouched.
+      select: {
+        ...PUBLIC_LISTING_SELECT,
+        seller: {
+          select: {
+            ...PUBLIC_LISTING_SELECT.seller.select,
+            phoneVerified: true,
+            emailVerifiedAt: true,
+            kycIdVerifiedAt: true,
+          },
+        },
+      },
     });
     if (!listing) throw new NotFoundException('Listing not found');
 
-    const isOwner = !!userId && listing.seller?.id === userId;
+    const {
+      phoneVerified,
+      emailVerifiedAt,
+      kycIdVerifiedAt,
+      ...publicSeller
+    } = listing.seller;
+    // No PII: only the three yes/no ticks. "Fully verified" (all three true)
+    // drives the glowing avatar ring on the PDP.
+    const seller = {
+      ...publicSeller,
+      verification: {
+        phoneVerified,
+        emailVerified: emailVerifiedAt != null,
+        idVerified: kycIdVerifiedAt != null,
+      },
+    };
+    const enriched = { ...listing, seller };
+
+    const isOwner = !!userId && seller.id === userId;
 
     // Insights — a listing view (fire-and-forget; owner previews still record
     // but the operator's own views are filtered out by ActivityService).
@@ -2664,7 +2696,7 @@ export class ListingsService {
         where: { id },
         select: OWNER_LISTING_EXTRAS_SELECT,
       });
-      return { ...listing, ...extras };
+      return { ...enriched, ...extras };
     }
 
     // Non-owner: don't let DRAFT / PENDING_REVIEW / CANCELLED listings be
@@ -2684,7 +2716,7 @@ export class ListingsService {
       throw new NotFoundException('Listing not found');
     }
 
-    return listing;
+    return enriched;
   }
 
   async update(id: string, userId: string, dto: UpdateListingDto) {

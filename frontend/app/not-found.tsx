@@ -1,6 +1,5 @@
-﻿import Image from 'next/image';
-import { av } from '@/lib/asset-version';
-import Link from 'next/link';
+﻿import Link from 'next/link';
+import { Logo } from '@/components/brand/Logo';
 
 // Catches every unmatched route. Brand-styled, dark theme, no Clerk
 // calls (so it renders even for signed-out users hitting bad URLs).
@@ -22,16 +21,7 @@ export default function NotFound() {
       }}
     >
       <div style={{ maxWidth: 480, textAlign: 'center' }}>
-        <Image
-          // Nav mark: the full scene is 1.5:1 and its wordmark is unreadable
-          // below ~120px tall. See /brand/logo-horizontal-dark-transparent.svg.
-          src="/brand/logo-horizontal-dark-transparent.svg"
-          alt="ALL Outdoor"
-          width={106}
-          height={40}
-          priority
-          style={{ height: 40, width: 'auto', margin: '0 auto 32px' }}
-        />
+        <Logo height={40} priority className="mx-auto mb-8 block" />
         <p
           style={{
             fontSize: 11,

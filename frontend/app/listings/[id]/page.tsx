@@ -23,6 +23,7 @@ import { ImageGallery } from './image-gallery';
 import { PageReveal } from '@/components/page-reveal';
 import { HelpTip } from '@/components/help-tip';
 import { ClickableAvatar } from '@/components/avatar-lightbox';
+import { SellerVerificationRing } from '@/components/seller-verification-ring';
 import { HelpText } from '@/components/help-text';
 import { WishlistButton } from '@/components/wishlist-button';
 import { UserBadges } from '@/components/user-badges';
@@ -34,7 +35,6 @@ import { CrossSellRow } from '@/components/cross-sell-row';
 import { RecordVisit } from '@/components/record-visit';
 import { UrgencyChip } from '@/components/urgency-chip';
 import { SellerRating } from '@/components/seller-rating';
-import { TrustBullets } from '@/components/trust-bullets';
 import { ListingDescription } from '@/components/listing-description';
 import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 import {
@@ -391,14 +391,14 @@ export default async function ListingDetailPage({
         <div className="gg-twopane-main">
           <ImageGallery images={allImages} title={listing.title} />
 
-          {/* ⚠️ THE READING COLUMN — these three blocks were moved out of the
-              buy column on 2026-08-27, and moving them back would undo the
-              point of the layout. The right pane is 408px wide and fixed to
-              the viewport; a description, a spec table and a Q&A thread in
-              there scroll for a thousand pixels inside a column the width of
-              a phone, while this pane sits empty. Reading content goes here,
-              beside the photographs it describes; the buy column keeps only
-              what answers "should I buy this, and how". */}
+          {/* ⚠️ THE READING COLUMN — the description and spec table live here,
+              moved out of the buy column on 2026-08-27. The right pane is
+              408px wide and fixed to the viewport; long-form reading there
+              scrolls inside a column the width of a phone while this pane
+              sits empty. Reading content goes here, beside the photographs it
+              describes; the buy column keeps only what answers "should I buy
+              this, and how" — plus the Q&A thread, which sits under the CTA
+              at the operator's request (2026-09-25). */}
           <div className="gg-reading lg:mt-6">
           {/* Description — moved 2026-05-26 to sit right under the CTA
               so the buyer reads what they're actually buying before the
@@ -466,12 +466,6 @@ export default async function ListingDetailPage({
             </div>
           )}
 
-          {/* Q&A — Claude-moderated, product-only. Replaces buyer-seller
-              messaging entirely; sellers reply from /dashboard. */}
-          <QuestionsPanel
-            listingId={listing.id}
-            sellerId={sellerUserId}
-          />
           </div>
         </div>
 
@@ -924,12 +918,13 @@ export default async function ListingDetailPage({
             )}
           </div>
 
-          {/* UX-1d — trust bullets under the CTA, on every listing type.
-              Point-of-decision reassurance; house-rule-safe copy (never
-              "escrow"). Firearm listings get the dealer-transfer bullet. */}
-          <div className="mb-4">
-            <TrustBullets isFirearm={listing.isFirearm} />
-          </div>
+          {/* Q&A — Claude-moderated, product-only. Replaces buyer-seller
+              messaging entirely; sellers reply from /dashboard. Sits directly
+              below the bid/buy controls, at the point of decision. */}
+          <QuestionsPanel
+            listingId={listing.id}
+            sellerId={sellerUserId}
+          />
 
           {/* Quick-actions row — Wishlist (save for later) + Share
               (Web Share API → clipboard fallback). Sits directly under
@@ -974,159 +969,7 @@ export default async function ListingDetailPage({
               (homepage rail, wishlist empty-state rail) pick it up. */}
           <RecordVisit listingId={listing.id} />
 
-          {/* Shipping + payment protection explainer — kept compact so
-              it doesn't dominate the buy panel area, but visible
-              BEFORE checkout so buyers (especially first-time buyers
-              on firearm listings) understand:
-                • Firearms always route through a SAPS-licensed dealer
-                  (no courier, no locker, no meet-up). This is the
-                  default and there's no opt-out.
-                • Non-firearms ship by courier with
-                  payment held until delivery is confirmed.
-                • PRIVATE_ARRANGE exists as an explicit opt-out at
-                  checkout (firearm-only) — the buyer waives payment
-                  protection and the seller is paid directly. The copy
-                  branches on listing.isFirearm + shippingMethods so
-                  non-firearm listings don't see the opt-out paragraph
-                  at all. */}
-          {listing.status === 'ACTIVE' && (
-            <div
-              className="rounded-[6px] p-3 mb-4 text-xs"
-              style={{
-                background: 'var(--bg-card)',
-                border: '0.5px solid var(--border)',
-                color: 'var(--text-secondary)',
-                lineHeight: 1.55,
-              }}
-            >
-              <p
-                className="uppercase mb-2"
-                style={{
-                  color: 'var(--text-tertiary)',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Shipping & payment
-              </p>
-              {/* Widened from `listing.collectionOnly` alone: a listing can
-                  carry COLLECTION as its only method while the snapshot flag
-                  is false (older DG-battery payloads — see
-                  transactions.service.ts). Those buyers were being shown the
-                  courier paragraph, which quotes a courier rate that does
-                  not exist for them. COLLECTION is only ever accepted for
-                  collection-only items, so this can't mis-fire the other way. */}
-              {listing.collectionOnly ||
-              listing.shippingMethods?.includes('COLLECTION') ? (
-                <>
-                  <p className="mb-1.5">
-                    <strong style={{ color: 'var(--text-primary)' }}>
-                      Collection only
-                    </strong>{' '}
-                    — no courier is quoted for this item. The seller is only
-                    paid once you confirm you have it. After you pay, we share
-                    contact details so you can arrange a time.
-                  </p>
-                  {/* Big-4 copy interim. The hard "same city only" wall this
-                      removes is imaginary: the buyer never has to be the
-                      person who arrives, and the hold releases on THEIR
-                      confirmation either way. Deliberately worded as the
-                      buyer's own arrangement — ALL Outdoor quotes, books and
-                      insures nothing on that leg, and there is no freight
-                      shipping method to sell them. */}
-                  {collectionMode === 'FREIGHT_OK' && (
-                    <p className="mb-1.5">
-                      <strong style={{ color: 'var(--text-primary)' }}>
-                        You don&apos;t have to drive:
-                      </strong>{' '}
-                      collect in person, or send your own transporter or
-                      freight company to fetch it — the seller just hands it
-                      over. Your payment stays held either way until you
-                      confirm the item is with you. ALL Outdoor doesn&apos;t
-                      arrange, quote or insure that transport; it&apos;s
-                      between you and whoever you hire.
-                    </p>
-                  )}
-                  {/* Dangerous goods (loose lithium >100 Wh, UN3480). Here
-                      "collection only" really does mean in person — saying
-                      otherwise would point the buyer at a shipment no
-                      carrier may legally accept. */}
-                  {collectionMode === 'IN_PERSON_ONLY' && (
-                    <p className="mb-1.5">
-                      This item must be collected in person — dangerous-goods
-                      rules mean no courier or transporter may carry it.
-                    </p>
-                  )}
-                  {listing.requiresPapers && (
-                    <p>
-                      The seller will hand over the registration and
-                      roadworthy papers at collection.
-                      {/* Practical consequence of the line above: NaTIS
-                          papers handed to a hired driver are the one thing
-                          that actually differs when you don't fetch it
-                          yourself, so say it rather than let it surprise
-                          someone at the gate. */}
-                      {collectionMode === 'FREIGHT_OK' &&
-                        ' If you send a transporter, agree with the seller up front how those papers get to you.'}
-                    </p>
-                  )}
-                </>
-              ) : listing.isFirearm ? (
-                <>
-                  <p className="mb-1.5">
-                    <strong style={{ color: 'var(--text-primary)' }}>
-                      The seller is only paid
-                    </strong>{' '}
-                    once the firearm is stocked at a licensed dealer
-                    and verified — payment goes through automatically
-                    when verification passes. Neither side can pull out
-                    unilaterally before then.
-                  </p>
-                  <p>
-                    <strong style={{ color: 'var(--text-primary)' }}>
-                      Dealer-stocked transfer:
-                    </strong>{' '}
-                    seller drops the firearm at their nearest
-                    SAPS-licensed dealer. We verify the SAPS 534 +
-                    stock-in document + photos, pay the seller, and
-                    send you the dealer&apos;s contact details. You
-                    collect from the same dealer with your own licence.
-                  </p>
-                  {listing.shippingMethods.includes('PRIVATE_ARRANGE') && (
-                    <p
-                      className="mt-1.5"
-                      style={{ color: 'var(--text-tertiary)' }}
-                    >
-                      <strong>Private arrangement</strong> is also
-                      offered — you and the seller pick a dealer
-                      together and do the licence transfer in person.
-                      You waive ALL Outdoor&apos;s payment protection
-                      (the seller is paid immediately; no dispute or
-                      refund via us). Use only if you know the seller.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <>
-                  <p className="mb-1.5">
-                    <strong style={{ color: 'var(--text-primary)' }}>
-                      The seller is only paid
-                    </strong>{' '}
-                    once you confirm the item arrived. If anything goes
-                    wrong before delivery you are refunded, not the
-                    seller paid — and neither side can pull out
-                    unilaterally.
-                  </p>
-                  <p>
-                    <strong style={{ color: 'var(--text-primary)' }}>
-                      Shipping:
-                    </strong>{' '}
-                    courier delivery to your door, or to a pickup point
-                    near you — the price is quoted at checkout.
-                  </p>
-                </>
-              )}
-            </div>
-          )}
+
 
           {/* Province */}
           <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
@@ -1183,11 +1026,15 @@ export default async function ListingDetailPage({
           <div className="flex items-center gap-3">
           {/* Seller avatar — click to enlarge (site-wide lightbox). Sits
               OUTSIDE the seller Link so its button click doesn't navigate. */}
-          <ClickableAvatar
-            src={listing.seller.avatarUrl}
-            name={listing.seller.username}
-            size={44}
-          />
+          <SellerVerificationRing
+            verification={listing.seller.verification}
+          >
+            <ClickableAvatar
+              src={listing.seller.avatarUrl}
+              name={listing.seller.username}
+              size={44}
+            />
+          </SellerVerificationRing>
           <Link
             href={`/sellers/${sellerUserId}`}
             className="block flex-1 min-w-0 rounded-[6px] p-3 text-sm"

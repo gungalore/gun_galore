@@ -1,6 +1,6 @@
 ﻿import { Suspense } from 'react';
 import Link from 'next/link';
-import { av } from '@/lib/asset-version';
+import { Logo } from '@/components/brand/Logo';
 import { VerifyEmailForm } from './verify-email-form';
 
 export const metadata = { title: 'Verify your email' };
@@ -12,11 +12,7 @@ export default function VerifyEmailPage() {
       style={{ background: 'var(--bg-deep)' }}
     >
       <Link href="/" aria-label="ALL Outdoor">
-        <img
-          src="/brand/logo-horizontal-dark-transparent.svg"
-          alt="ALL Outdoor"
-          style={{ height: 44, width: 'auto' }}
-        />
+        <Logo height={44} priority />
       </Link>
       <Suspense fallback={null}>
         <VerifyEmailForm />

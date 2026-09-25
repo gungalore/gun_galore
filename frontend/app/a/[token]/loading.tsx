@@ -1,3 +1,5 @@
+import { Logo } from '@/components/brand/Logo';
+
 export default function LoadingActionToken() {
   return (
     <main
@@ -12,14 +14,7 @@ export default function LoadingActionToken() {
       aria-live="polite"
     >
       <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/emblem-dark-transparent.svg"
-          alt="ALL Outdoor"
-          width={64}
-          height={64}
-          style={{ display: 'block', margin: '0 auto 18px' }}
-        />
+        <Logo variant="emblem" height={64} className="mx-auto mb-4 block" />
         <p style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>
           Just a moment…
         </p>

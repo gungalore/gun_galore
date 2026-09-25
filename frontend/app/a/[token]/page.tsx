@@ -1,4 +1,5 @@
 ﻿import { redirect } from 'next/navigation';
+import { Logo } from '@/components/brand/Logo';
 import { av } from '@/lib/asset-version';
 import { apiFetch } from '@/lib/api';
 import { withDiagnostics } from '@/lib/scan/diag-flag';
@@ -204,12 +205,7 @@ function MobileShell({ children }: { children: React.ReactNode }) {
 function LogoHeader() {
   return (
     <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/brand/emblem-dark-transparent.svg"
-        alt="ALL Outdoor"
-        style={{ width: 56, height: 56, display: 'inline-block' }}
-      />
+      <Logo variant="emblem" height={56} />
     </div>
   );
 }

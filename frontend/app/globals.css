@@ -6,6 +6,10 @@
    Canonical source: CLAUDE.md. Every name here is load-bearing: components
    read these vars, so the theme changes by editing VALUES, never names. */
 :root {
+  /* Native form controls (autofill, caret, scrollbars, date pickers) follow
+     the active theme. The [data-theme="dark"] block flips this to `dark`. */
+  color-scheme: light;
+
   /* ── Page width ────────────────────────────────────────────────────────
      THE single source of truth for how wide the site's content runs. Every
      page container references it as `max-w-[var(--page-max)]` (Tailwind) or
@@ -337,6 +341,8 @@
    deliberately-dark surfaces (hero, admin) that do NOT invert with the
    theme. See the comment on line 173. */
 [data-theme="dark"] {
+   color-scheme: dark;
+
    /* Surfaces. Warm near-black, never pure black. */
    --bg:          #131110;
    --bg-deep:     #0F0D0C;
@@ -375,6 +381,20 @@
    /* Red text/icons on dark surfaces: brand red fails contrast on near-black;
       use red-400 (#ff4d57) instead, 5.8:1 on #111. DESIGN.md §3 rule. */
    --accent-text: var(--red-400);
+}
+
+/* ── Theme-following brand logo ──────────────────────────────────────
+   components/brand/Logo.tsx server-renders BOTH artworks and these rules
+   hide the wrong one off the pre-paint `data-theme` attribute. That keeps
+   the correct lockup in the first frame — no flash, and no hydration
+   mismatch from selecting the artwork in JS (React does not patch
+   attribute mismatches during hydration). When the attribute is absent
+   (e.g. scripting disabled) the light artwork wins. */
+html:not([data-theme="dark"]) .aos-logo-on-dark {
+   display: none;
+}
+html[data-theme="dark"] .aos-logo-on-light {
+   display: none;
 }
 
 /* ── .surface-dark scope — deliberately dark sections that DO NOT invert ─
@@ -631,6 +651,22 @@ html[data-standalone='true'] {
   select {
     font-size: 16px !important;
   }
+}
+
+/* Chrome / Safari autofill repaints the field with its own light background
+   (and dark text), ignoring our `background`. Force the themed surface and
+   text so autofilled boxes stay black-on-light in dark mode and
+   white-on-dark in light mode. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--text-primary);
+  caret-color: var(--text-primary);
+  -webkit-box-shadow: 0 0 0 1000px var(--bg) inset;
+  box-shadow: 0 0 0 1000px var(--bg) inset;
+  transition: background-color 9999s ease-in-out 0s;
 }
 
 /* In browser mode (not standalone), reserve room at the bottom of the
@@ -1865,4 +1901,67 @@ canvas,
 .surface-dark .chip { background: rgb(255 255 255 / 0.06); border-color: rgb(255 255 255 / 0.12); }
 .surface-dark .chip__pill { background: #fff; }
 .surface-dark .chip[data-active="true"] { color: var(--stone-900); }
+
+/* ── Seller verification glow (listing detail) ───────────────────────
+   components/seller-verification-ring.tsx. Fully-verified sellers get a
+   full-circle glow around the avatar: dark at the inner edge, fading out.
+   It pulses brighter/darker — no rotation. Honours reduced-motion. */
+.gg-verify-glow {
+  position: absolute;
+  /* Avatar is 44px (r=22); the ring is 7px thick, so the box is r=29. */
+  inset: -7px;
+  border-radius: 50%;
+  /* Touches the avatar edge and fades outward: 70% at r=22 (75.86% of 29),
+     10% at r=29. Green = verified. */
+  background: radial-gradient(
+    circle,
+    rgba(31, 122, 80, 0.7) 75.86%,
+    rgba(31, 122, 80, 0.1) 100%
+  );
+  /* Slight softening of the exact pixel ramp. */
+  filter: blur(2.5px);
+  /* auto (not none) so the glow annulus is part of the hover/dwell area. */
+  pointer-events: auto;
+}
+@keyframes gg-verify-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.ao-verify-pulse { animation: gg-verify-pulse 2.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .ao-verify-pulse { animation: none; opacity: 0.9; }
+}
+
+/* Dwell tooltip — appears next to the cursor after it holds still on the
+   avatar/glow for 0.75s. */
+@keyframes gg-verify-tip-in {
+  from { opacity: 0; transform: translateY(2px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.gg-verify-tip {
+  position: fixed;
+  z-index: 400;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 0.5px solid var(--success-line);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  animation: gg-verify-tip-in 120ms ease-out;
+}
+.gg-verify-tip::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
 

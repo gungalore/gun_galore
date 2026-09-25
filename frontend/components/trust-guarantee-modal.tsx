@@ -1,10 +1,9 @@
 ﻿'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { BRAND_NAME } from '@/lib/brand';
-import { av } from '@/lib/asset-version';
+import { Logo } from '@/components/brand/Logo';
 
 interface TrustGuaranteeModalProps {
   /** Optional manual trigger control if used as a controlled dialog */
@@ -170,14 +169,7 @@ function TrustGuaranteeModalInner({
 
             {/* Header */}
             <div className="relative pt-6 px-7 pb-4">
-              <Image
-                src="/brand/logo-horizontal-dark-transparent.svg"
-                alt={BRAND_NAME}
-                width={264}
-                height={44}
-                priority
-                className="h-7 w-auto object-contain mb-4"
-              />
+              <Logo on="light" height={28} priority className="mb-4" />
 
               <h2 id="trust-modal-title" className="text-2xl sm:text-[26px] font-extrabold text-[#141414] tracking-tight leading-tight">
                 How buying &amp; selling works on {BRAND_NAME}.

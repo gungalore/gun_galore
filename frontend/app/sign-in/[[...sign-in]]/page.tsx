@@ -1,6 +1,6 @@
 ﻿import { Suspense } from 'react';
-import { av } from '@/lib/asset-version';
 import Link from 'next/link';
+import { Logo } from '@/components/brand/Logo';
 import { SignInForm } from './sign-in-form';
 
 export const metadata = { title: 'Sign in' };
@@ -12,11 +12,7 @@ export default function SignInPage() {
       style={{ background: 'var(--bg-deep)' }}
     >
       <Link href="/" aria-label="ALL Outdoor">
-        <img
-          src="/brand/logo-horizontal-dark-transparent.svg"
-          alt="ALL Outdoor"
-          style={{ height: 44, width: 'auto' }}
-        />
+        <Logo height={44} priority />
       </Link>
       {/* useSearchParams needs a Suspense boundary in the App Router. */}
       <Suspense fallback={null}>
