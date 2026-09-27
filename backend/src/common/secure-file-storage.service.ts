@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'node:crypto';
+import type { Dirent } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -77,6 +78,14 @@ export interface StoredFile {
   byteSize: number;
 }
 
+/** A key found on disk, for reconciling the tree against the database. */
+export interface StoredFileMeta {
+  /** The key, in the exact shape a row would carry. */
+  key: string;
+  /** File mtime, epoch ms — the sweep's only defence against racing a write. */
+  modifiedMs: number;
+}
+
 @Injectable()
 export class SecureFileStorageService {
   private readonly logger = new Logger(SecureFileStorageService.name);
@@ -151,6 +160,75 @@ export class SecureFileStorageService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Every key in the tree, for reconciling disk against the database.
+   *
+   * ⚠️ THIS IS THE ONLY THING THAT CAN FIND AN ORPHAN. Everything else here is
+   * reached THROUGH a row: a file is written by a row and removed by a row.
+   * When the row is gone — a cascade on account deletion, a `deleteMany` that
+   * took a soft-deleted upload with it — nothing points at the bytes any more
+   * and no row-driven sweep can ever see them again. A file nobody can see is
+   * a file nobody deletes, and these are photographs of ID books.
+   *
+   * ⚠️ IT IS A SCAN, NOT AN INDEX, AND THAT IS DELIBERATE. It walks the tree
+   * a few directories deep — three levels, by the key shape — rather than
+   * asking the filesystem for every file underneath. `withFileTypes` on a
+   * bounded walk keeps it cheap, and the shape check means a stray file that
+   * is not one of ours (`foo.txt`, a half-written temp) is simply not
+   * returned and so can never be deleted by a sweep keying off this list.
+   *
+   * ⚠️ MALFORMED AND OUT-OF-NAMESPACE FILES ARE SKIPPED, NOT RETURNED. The
+   * caller deletes what it is given, and `resolve()` would throw on anything
+   * that did not match — so a returned key is always safe to remove.
+   */
+  async list(): Promise<StoredFileMeta[]> {
+    const out: StoredFileMeta[] = [];
+    for (const namespace of NAMESPACES) {
+      const yearsDir = path.join(this.root, namespace);
+      let years: Dirent[];
+      try {
+        years = await fs.readdir(yearsDir, { withFileTypes: true });
+      } catch {
+        // Namespace never written to. Not an error.
+        continue;
+      }
+      for (const year of years) {
+        if (!year.isDirectory() || !/^\d{4}$/.test(year.name)) continue;
+        const monthsDir = path.join(yearsDir, year.name);
+        let months: Dirent[];
+        try {
+          months = await fs.readdir(monthsDir, { withFileTypes: true });
+        } catch {
+          continue;
+        }
+        for (const month of months) {
+          if (!month.isDirectory() || !/^\d{2}$/.test(month.name)) continue;
+          const filesDir = path.join(monthsDir, month.name);
+          let entries: Dirent[];
+          try {
+            entries = await fs.readdir(filesDir, { withFileTypes: true });
+          } catch {
+            continue;
+          }
+          for (const entry of entries) {
+            if (!entry.isFile()) continue;
+            const key = `${namespace}/${year.name}/${month.name}/${entry.name}`;
+            // Only our own key shape is ever returned: a stray file cannot be
+            // deleted by mistake, because it is not in this list.
+            if (!KEY_PATTERN.test(key)) continue;
+            try {
+              const stat = await fs.stat(path.join(filesDir, entry.name));
+              out.push({ key, modifiedMs: stat.mtimeMs });
+            } catch {
+              // Vanished between readdir and stat. Nothing to report.
+            }
+          }
+        }
+      }
+    }
+    return out;
   }
 
   /**

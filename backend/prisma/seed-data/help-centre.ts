@@ -192,8 +192,8 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   },
   {
     sourceKey: 'ship-handling-fee',
-    title: 'What is the R15 shipping handling fee?',
-    question: 'Why is there a R15 handling fee on my order?',
+    title: 'What is the shipping handling fee?',
+    question: 'Why is there a handling fee on my delivery?',
     answer:
       'Delivery carries a handling margin of 10% of the courier’s rate, folded into the single delivery figure you are quoted at checkout — it covers arranging the courier, the label, tracking and delivery support. Multiple items consolidated into one parcel produce one waybill. It never applies where no parcel is booked: firearm dealer transfers and in-person collection carry no delivery charge.',
     tags: ['shipping', 'fees', 'handling'],
@@ -414,7 +414,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'Can I buy several items in one order?',
     question: 'How do I buy multiple items at once and combine shipping?',
     answer:
-      'Yes — you can add several items from the same seller to your cart and check out in one go. Shipping is consolidated per parcel, so the flat R15 handling fee applies per courier parcel rather than per item. A cart is single-seller: to buy from more than one seller you check out with each separately, and your payment is protected on every order. Your cart is at [Cart](/cart).',
+      'Yes — you can add several items from the same seller to your cart and check out in one go. Shipping is consolidated per parcel, so delivery handling is charged once per courier parcel rather than per item. A cart is single-seller: to buy from more than one seller you check out with each separately, and your payment is protected on every order. Your cart is at [Cart](/cart).',
     tags: ['cart', 'buying', 'shipping'],
   },
 

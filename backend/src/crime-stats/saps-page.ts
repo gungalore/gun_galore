@@ -29,13 +29,15 @@ export const SAPS_SERVICES_BASE = 'https://www.saps.gov.za/services/';
 export const SAPS_CRIME_STATS_PAGE = PAGE_URL;
 
 /**
- * ⚠️ A BROWSER-ISH User-Agent IS NOT OPTIONAL. saps.gov.za sits behind a
- * filter that answers a bare node fetch with a block page rather than the
- * file, and a block page saved to disk is a 1 KB "xlsx" that only fails when
- * exceljs tries to unzip it.
+ * The browser-ish User-Agent both SAPS page fetchers send.
+ *
+ * ⚠️ RE-EXPORTED, NOT DEFINED HERE ANY MORE. It moved to common/saps-http.ts
+ * on 2026-09-25 when the SAPS application tracker landed and turned out to
+ * need the same header; neither feature owns "how we talk to saps.gov.za".
+ * The crime-stats importer still reads it from this path, so nothing had to
+ * move with it. See common/saps-http.ts for why the header is not optional.
  */
-export const SAPS_USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+export { SAPS_USER_AGENT } from '../common/saps-http';
 
 const ORDINALS: Record<string, number> = {
   '1': 1,

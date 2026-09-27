@@ -393,7 +393,9 @@ export interface SchemeColours {
 export const SCHEMES: Record<Scheme, SchemeColours> = {
   // ⚠️ THE HOUSE SCHEME, AND THE DEFAULT SINCE 2026-08-24. Operator: "make
   // them match the website branding." It carries the site's ink (#141414) and
-  // the site's red (#C8102E), and the ink is what prints on paper.
+  // the site's red (#E30613 — Brand Pack v1.2, 2026-09-23; it was #C8102E
+  // before that and this line moved with the site), and the ink is what
+  // prints on paper.
   //
   // ⚠️ ITS BANNER WAS NEAR-BLACK, MATCHING A SITE THAT NO LONGER EXISTS. The
   // note here said "the site is a #0f0f0f ground" and it was true on the day
@@ -861,6 +863,17 @@ export interface MotivationPdfInput {
    */
   pressClippings?: PressClippingPage[];
   /**
+   * The applicant's own activity photographs, printed on one "My Activities /
+   * Evidence" page in the body.
+   *
+   * ⚠️ ARGUMENT, NOT AN ANNEXURE. Operator, 2026-09-26: an activity photograph
+   * — a hunt, a range session, a reloading bench — is argument in the body,
+   * while a printed document (a permission letter, an affidavit) gets its own
+   * annexure page. This is the body half; the lettered half arrives through
+   * `annexureImages`.
+   */
+  evidencePages?: EvidencePage[];
+  /**
    * The SAPS quarterly figures for the precincts the motivation cites, printed
    * at the head of the press-clippings annexure.
    *
@@ -1285,6 +1298,12 @@ export interface AnnexureImagePage {
    * letter after it.
    */
   safe?: boolean;
+  /**
+   * True for an evidence annexure — a printed document given its own full
+   * page, sharing a sheet with nothing. Set from the container's placement,
+   * never from the label.
+   */
+  solo?: boolean;
 }
 
 const CLIPPING_MONTHS = [
@@ -1349,6 +1368,39 @@ export interface PressClippingPage {
    * The lead picture, already bounded and re-encoded by NewsService — this
    * renderer only measures and draws it. Absent means no picture and no
    * placeholder box, never a broken-image icon.
+   */
+  image?: { bytes: Buffer; width: number; height: number };
+}
+
+/**
+ * One activity photograph, ready to print on the "My Activities / Evidence"
+ * page in the body.
+ *
+ * ⚠️ NOT AN AnnexureImagePage, BECAUSE IT TAKES NO LETTER. A photograph of a
+ * hunt is argument — the applicant holds no original of it that a DFO asks to
+ * see — so it belongs in the body beside the argument it supports, the same
+ * place the press clippings print. The lettered evidence items are the printed
+ * documents, and those go through the annexure planner instead. See
+ * evidence-taxonomy.ts `placement`.
+ *
+ * The caption is the member's own words about the picture, falling back to the
+ * container's label — see `description` below.
+ */
+export interface EvidencePage {
+  /** 1-based position among the photographs actually printed. */
+  index: number;
+  total: number;
+  /** The container's label, used when the member wrote no description. */
+  label: string;
+  /**
+   * The member's own caption, decrypted for this render. Null when they said
+   * nothing — and then the label carries the caption, never a blank line.
+   */
+  description: string | null;
+  /**
+   * The picture itself. Absent means nothing prints for this item — there is
+   * NO placeholder box, the same rule as the press clippings: a box would
+   * assert a photograph the applicant cannot point a DFO at.
    */
   image?: { bytes: Buffer; width: number; height: number };
 }
@@ -2233,6 +2285,90 @@ export class MotivationPdfService {
     };
 
     /**
+     * The member's own activity photographs — "My Activities / Evidence".
+     *
+     * ⚠️ IN THE BODY BECAUSE IT IS ARGUMENT, not a reprint of a document the
+     * applicant holds. Operator, 2026-09-26: an activity photograph is argument
+     * in the body; a printed permission letter gets its own annexure page. The
+     * member wrote a line about each one, and that line is the caption.
+     *
+     * ⚠️ NO IMAGE, NO BOX. A photograph whose bytes are gone prints nothing —
+     * never a placeholder, which would assert a picture the applicant cannot
+     * point a DFO at. The same rule the press clippings follow.
+     */
+    let evidenceDrawn = false;
+
+    const drawEvidence = () => {
+      if (evidenceDrawn) return;
+      const pages = input.evidencePages ?? [];
+      if (!pages.length) return;
+      evidenceDrawn = true;
+      if (doc.y > K.BODY_BOTTOM - K.mm(60)) doc.addPage();
+
+      const ew = contentWidth - K.SECTION_INDENT;
+      const x0 = MARGIN + K.SECTION_INDENT;
+      // Two columns of pictures. Four photographs land as a 2x2 block the way
+      // the safe sheet does, so the page reads as one set rather than a column.
+      const gap = K.mm(6);
+      const cellW = (ew - gap) / 2;
+      const maxH = K.mm(58);
+
+      // ⚠️ AN EXPLICIT ROW LOOP, NOT A CURSOR WALK. pdfkit's image() draws at
+      // absolute coordinates without necessarily advancing doc.y, so a
+      // cursor-walking version would stack every picture on one line. Each row
+      // is measured from its top, and the cursor moves to the deeper of the
+      // two captions once both columns are drawn.
+      for (let row = 0; row < pages.length; row += 2) {
+        if (doc.y > K.BODY_BOTTOM - (maxH + K.mm(16))) doc.addPage();
+        const rowTop = doc.y;
+        let rowBottom = rowTop;
+        for (let col = 0; col < 2 && row + col < pages.length; col++) {
+          const page = pages[row + col];
+          const img = page.image;
+          const cellX = x0 + col * (cellW + gap);
+          let captionY = rowTop;
+          if (img && img.width > 0 && img.height > 0) {
+            const ratio = img.height / img.width;
+            let w = cellW;
+            let h = w * ratio;
+            if (h > maxH) {
+              h = maxH;
+              w = ratio > 0 ? h / ratio : w;
+            }
+            try {
+              doc.image(img.bytes, cellX + (cellW - w) / 2, rowTop, {
+                width: w,
+                height: h,
+              });
+              captionY = rowTop + h + K.mm(2);
+            } catch {
+              // pdfkit refused the bytes. Drop the picture, never the words —
+              // the caption still prints below where it would have sat.
+            }
+          }
+          // ⚠️ THE CAPTION PRINTS EVEN WITH NO PICTURE. The description is the
+          // member's own fact and the label is the container's; an unreadable
+          // file must thin the page, not silently delete the item. This is the
+          // press-clipping rule — drop the picture, never the cutting.
+          const words = page.description?.trim() || page.label;
+          if (words) {
+            doc
+              .font(B.bodyItalic)
+              .fontSize(K.px(9.5))
+              .fillColor(C.ink)
+              .text(words, cellX, captionY, { width: cellW, lineGap: K.px(1) });
+            rowBottom = Math.max(rowBottom, doc.y);
+          }
+        }
+        doc.x = MARGIN;
+        // Always advance, even for a row of captions with no pictures — the
+        // next row anchors on doc.y and would otherwise redraw over it.
+        doc.y = rowBottom + K.mm(5);
+      }
+      doc.y += PARA_GAP;
+    };
+
+    /**
      * The battery table — every firearm already licensed to the applicant.
      *
      * ⚠️ THIS TABLE IS EVIDENCE, NOT DECORATION. Section 13 caps a
@@ -2906,6 +3042,18 @@ export class MotivationPdfService {
           doc.addPage();
         renderHeading(cartridgeHeading);
         drawCartridge();
+      }
+
+      /**
+       * ⚠️ THE MEMBER'S OWN ACTIVITY PHOTOGRAPHS. They have no heading in the
+       * plan, so they close the body as argument rather than sitting under a
+       * section they do not belong to. Drawn before the declaration, with the
+       * rest of the deferred content.
+       */
+      if ((input.evidencePages?.length ?? 0) > 0 && !evidenceDrawn) {
+        if (doc.y > K.BODY_BOTTOM - K.mm(60)) doc.addPage();
+        renderHeading('My activities and evidence');
+        drawEvidence();
       }
 
       /**
@@ -3832,6 +3980,7 @@ export class MotivationPdfService {
         width: a2.width,
         height: a2.height,
         safe: a2.safe ?? false,
+        solo: a2.solo ?? false,
         // ⚠️ PHOTOGRAPHS OF THE SAFE ARE ORIGINALS, NOT COPIES. Nothing
         // certifies a photograph of your own safe against an original
         // photograph, so the stamp strip is not reserved for them even though

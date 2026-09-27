@@ -16,6 +16,13 @@ import { documentLabel } from './motivation-documents';
 import { mayArmReadExpiry } from '../licence-centre/credential-auto-date';
 import { recomputeDerivedCompetencies } from '../licence-centre/credential-derive-recompute';
 import { parseIsoDate } from '../licence-centre/licence-dates';
+// ⚠️ THE SAME DETECTOR THE CENTRE USES, IMPORTED — NEVER REIMPLEMENTED. A
+// document photographed on an application and saved to the vault has to be
+// flagged as a copy of an earlier scan by exactly the rule the Centre's own
+// upload path applies, or the two disagree about which row is the original and
+// the copy gets offered for reuse. Pure functions, so no module edge: see the
+// header on why a SERVICE from the Licence Centre cannot be injected here.
+import { duplicateNote, findDuplicate } from '../licence-centre/credential-duplicates';
 import { isPhotograph, settledByNature } from '../licence-centre/credential-kinds';
 
 // ────────────────────────────────────────────────────────────────────
@@ -472,13 +479,88 @@ export class VaultAdoptionService {
     // years later, with nothing in the Centre's own code to explain it.
     const stored = await this.files.write('credentials', bytes, new Date());
 
-    const dates = this.datesFor(vaultKindFor(u.kind), u.extractionEncrypted);
+    const adoptedKind = vaultKindFor(u.kind);
+    const dates = this.datesFor(adoptedKind, u.extractionEncrypted);
+
+    /**
+     * IS THE VAULT ALREADY HOLDING A COPY OF THIS?
+     *
+     * ⚠️ A DOCUMENT PHOTOGRAPHED ON AN APPLICATION ARRIVES HERE UNFLAGGED, AND
+     * THAT IS THE HOLE THE OPERATOR NAMED. Operator, 2026-09-26: "First file in
+     * the vault gets preference to go into a motivation. Duplicates can never
+     * be used inside a motivation. Even if uploaded from the motivation
+     * uploader or scanner." A scan that was kept from an application is a NEW
+     * row in the vault like any other, and until now nothing compared it to
+     * what was already there — so a member who scanned their pack twice had two
+     * competency certificates in the Centre, both offered to the next
+     * application.
+     *
+     * ⚠️ THE ORDER OF THE ROWS IS THE WHOLE ANSWER. The Centre's own detector
+     * names the EARLIEST row as the original; the row being created here is by
+     * definition the latest, because the earlier one already existed when the
+     * member scanned. So whatever it matches is what it is a copy of, and
+     * flagging it is the entire job — the original stays clean and stays the
+     * one that goes on an application.
+     *
+     * ⚠️ FAIL-SOFT, LIKE EVERYTHING ELSE ON THIS PATH. A detector that cannot
+     * run costs the flag, never the adoption: the document is kept either way,
+     * and `attention: ['duplicate']` is a "look at this", not a refusal — see
+     * credential-duplicates.ts.
+     */
+    let duplicateOf: { id: string; title: string; createdAt: Date } | null =
+      null;
+    try {
+      const details = this.readDetails(u.extractionEncrypted);
+      const issuedOn = parseIsoDate(
+        details.issued_on ?? details.issue_date ?? null,
+      );
+      const others = await this.prisma.credential.findMany({
+        where: { userId, kind: adoptedKind, purgedAt: null },
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          issuedOn: true,
+          detailsEncrypted: true,
+        },
+      });
+      const match = findDuplicate(
+        {
+          kind: adoptedKind,
+          details,
+          issuedOn: issuedOn ? issuedOn.toISOString().slice(0, 10) : null,
+        },
+        others.map((o) => ({
+          id: o.id,
+          title: o.title,
+          createdAt: o.createdAt,
+          kind: adoptedKind,
+          details: this.readDetails(o.detailsEncrypted),
+          issuedOn: o.issuedOn ? o.issuedOn.toISOString().slice(0, 10) : null,
+        })),
+      );
+      if (match)
+        duplicateOf = {
+          id: match.id,
+          title: match.title,
+          createdAt: match.createdAt,
+        };
+    } catch (err) {
+      this.logger.warn(
+        `Adopted ${adoptedKind}: could not run the duplicate check: ${(err as Error).message}`,
+      );
+    }
 
     try {
       await this.prisma.credential.create({
         data: {
           userId,
-          kind: vaultKindFor(u.kind),
+          kind: adoptedKind,
+          // ⚠️ THE FLAG RIDES ON THE ROW, SO THE CENTRE CANNOT OFFER IT. The
+          // original is the earlier scan and carries none of this — see below.
+          duplicateOfId: duplicateOf?.id ?? null,
+          attention: duplicateOf ? ['duplicate'] : [],
+          readNotes: duplicateOf ? [duplicateNote(duplicateOf)] : [],
           // Which association document it really is — see DISCIPLINE_TYPE.
           disciplineType: DISCIPLINE_TYPE[u.kind] ?? null,
           // ⚠️ THE TITLE STILL COMES FROM THE ORIGINAL KIND. The row is filed

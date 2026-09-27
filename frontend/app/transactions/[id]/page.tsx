@@ -524,7 +524,10 @@ export default async function TransactionPage({
                   <span style={{ color: 'var(--text-primary)' }}>
                     {isCollection && tx.shippingStatus === 'PENDING'
                       ? 'Awaiting collection'
-                      : SHIPPING_STATUS_LABEL[tx.shippingStatus]}
+                      : isFirearmDealerTransfer &&
+                          tx.shippingStatus === 'COLLECTED'
+                        ? 'Transferred to dealer'
+                        : SHIPPING_STATUS_LABEL[tx.shippingStatus]}
                   </span>
                 </div>
               )}

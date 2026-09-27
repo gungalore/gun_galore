@@ -298,6 +298,80 @@ describe('duplicates', () => {
         .groups.flatMap((g) => g.rows.map((n) => n.row.id)),
     ).toEqual([copy.id]);
   });
+
+  it('counts the stray files, not the documents they fold into', () => {
+    const orig = row({ category: 'handgun' });
+    const copy = row({
+      category: 'handgun',
+      duplicateOf: { id: orig.id, title: null },
+    });
+    // ⚠️ A COPY IS NOT A DOCUMENT OF ITS OWN, so counting documents here
+    // would always read 0 — the count is of files the member must clear.
+    expect(chipCounts([orig, copy], {}).duplicates).toBe(1);
+    expect(chipCounts([orig], {}).duplicates).toBe(0);
+  });
+
+  it('⚠️ the duplicates chip shows the copy, not an empty list', () => {
+    // The copy folds under its original, and the original is not a copy — so
+    // without keeping the parent for the copy's sake the member taps the count
+    // and the section empties.
+    const orig = row({ category: 'handgun' });
+    const copy = row({
+      category: 'handgun',
+      duplicateOf: { id: orig.id, title: null },
+    });
+    const v = buildSections({
+      rows: [orig, copy, row({ category: 'handgun' })],
+      chips: ['duplicates'],
+    }).find((s) => s.section.id === 'firearms')!;
+    const nodes = v.groups.flatMap((g) => g.rows);
+    expect(nodes.map((n) => n.row.id)).toEqual([orig.id]);
+    expect(nodes[0].copies.map((c) => c.id)).toEqual([copy.id]);
+    // It is not counted as a document, so the section says one.
+    expect(v.count).toBe(1);
+  });
+
+  it('a duplicates search matches through the copy it folds', () => {
+    const orig = row({ category: 'handgun', title: 'Tikka' });
+    const copy = row({
+      category: 'handgun',
+      title: 'Howa',
+      duplicateOf: { id: orig.id, title: null },
+    });
+    const nodes = buildSections({
+      rows: [orig, copy],
+      chips: ['duplicates'],
+      query: 'howa',
+    })
+      .find((s) => s.section.id === 'firearms')!
+      .groups.flatMap((g) => g.rows);
+    // The copy names itself, so it survives the query and stands alone; the
+    // original does not match and is not kept for a copy that is no longer
+    // folded under it.
+    expect(nodes.map((n) => n.row.id)).toEqual([copy.id]);
+  });
+
+  it('opens a section holding only a stray copy', () => {
+    const orig = row({ category: 'handgun' });
+    const copy = row({
+      category: 'handgun',
+      duplicateOf: { id: orig.id, title: null },
+    });
+    expect(defaultOpenSections(view([orig, copy]))).toContain('firearms');
+  });
+
+  it('⚠️ OPENS A SECTION THAT IS NOT OPEN ON ITS OWN', () => {
+    // Your firearms and Competency open regardless, so the test above proves
+    // nothing: a copy filed under a section that opens only for attention must
+    // still open it, or the extra file sits behind a shut heading with no chip
+    // and no fold to lead anyone to it.
+    const orig = row({ kind: 'IDENTITY_DOCUMENT' });
+    const copy = row({
+      kind: 'IDENTITY_DOCUMENT',
+      duplicateOf: { id: orig.id, title: null },
+    });
+    expect(defaultOpenSections(view([orig, copy]))).toContain('about-you');
+  });
 });
 
 describe('the safe', () => {
@@ -329,6 +403,7 @@ describe('the chips', () => {
       renewals: 1,
       dates: 1,
       motivations: 1,
+      duplicates: 0,
     });
   });
 

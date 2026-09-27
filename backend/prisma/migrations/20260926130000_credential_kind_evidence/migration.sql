@@ -1,0 +1,18 @@
+-- EVIDENCE AS A VAULT KIND — A HUNTING PHOTOGRAPH, A SCORE SHEET, A FARMER'S
+-- PERMISSION LETTER.
+--
+-- Operator, 2026-09-26: members strengthen a section 15/16 motivation with
+-- things that have no document kind at all. The vault is where the master copy
+-- lives, because vault retention is the member's own — see the header on
+-- licence-centre-retention.service.ts — so an evidence item is never deleted
+-- while the member still wants it. The copies picked into a motivation are
+-- ordinary MotivationUpload rows and are purged on that motivation's clock.
+--
+-- ⚠️ THIS FILE ADDS THE VALUE AND NOTHING ELSE. Postgres will not let a new
+-- enum value be USED in the same transaction that adds it, and Prisma runs
+-- each migration file in one transaction. The columns that hold a container
+-- id are added in 20260926150000_evidence_columns; do not merge these.
+--
+-- Safe against production: ADD VALUE on an enum is metadata-only and cannot
+-- rewrite or invalidate existing rows. IF NOT EXISTS makes the replay a no-op.
+ALTER TYPE "CredentialKind" ADD VALUE IF NOT EXISTS 'EVIDENCE';

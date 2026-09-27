@@ -653,6 +653,33 @@ html[data-standalone='true'] {
   }
 }
 
+/* ⚠️ THE OPEN <select> IS A WHITE BOX IN DARK MODE, AND THIS IS WHY.
+   The option list is drawn by the browser, not by us: Chrome gives an
+   <option> a TRANSPARENT background and paints its own light backdrop
+   behind the popup, while `color` still inherits from our select. So in the
+   dark theme the list came out near-white text (#F4F1ED) on a white popup —
+   the second and third options were unreadable.
+
+   Setting the background explicitly is what stops the UA backdrop showing
+   through. Both values are tokens, so the light theme is unchanged — its
+   --bg-card is white on near-black ink, which is what the UA drew anyway.
+
+   ⚠️ THE DESK HAD THE SAME BUG. `app/admin/admin.css` never redefines
+   --bg-card, so it inherits the shop pair; and `.adm-select` colours its
+   select `--adm-ink`, a LIGHT value, which the options then inherited over
+   the UA's own light popup. The one rule below fixes both: the Desk gets a
+   light popup with dark ink, which is the readable combination there and
+   is what the browser drew anyway.
+
+   ⚠️ Do NOT drop this as redundant because `[data-theme="dark"]` already
+   sets `color-scheme: dark` — that fixes the popup's scrollbar and form
+   controls but leaves the option row's own background transparent. */
+select option,
+select optgroup {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+}
+
 /* Chrome / Safari autofill repaints the field with its own light background
    (and dark text), ignoring our `background`. Force the themed surface and
    text so autofilled boxes stay black-on-light in dark mode and
@@ -1393,6 +1420,76 @@ html:has([data-desk]) {
   position: relative;
   z-index: 50;
   flex-shrink: 0;
+}
+
+/* ── The shop-mode bar (components/shop-mode-tiles.tsx) ─────────────────
+   The Buy Now / Auctions / Armory fork, mounted once in the shell so it sits
+   directly under the top nav on every shop surface. It scrolls away with the
+   page — it is deliberately NOT sticky, unlike the header above it — so the
+   band is a translucent veil over the page ground rather than a pinned row.
+
+   ⚠️ NO GRADIENT. "Cloudy" here is a fill plus a filter, never a ramp: the
+   standing rule is no gradients. The tiles themselves are transparent so the
+   band reads *through* them, and the band is what the eye takes for the
+   surface underneath.
+
+   ⚠️ backdrop-filter IS THE WHOLE EFFECT and it degrades to the veil alone
+   on an engine without it — which is still a readable band, not a broken one,
+   so it is safe to lean on rather than feature-detect. */
+[data-shop-mode-bar] {
+  position: relative;
+  /* Below the header (50) so the header's search dropdown still stacks over
+     it, and below the modal layer (60). */
+  z-index: 40;
+  /* Fixed height in the installed app's locked flex column — the shell must
+     not be able to squeeze the band to fit the pane. Same reason
+     [data-shell-header] carries it. */
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  backdrop-filter: blur(14px) saturate(1.1);
+  border-bottom: 0.5px solid var(--border);
+}
+
+/* ⚠️ ON MOBILE AND IN THE INSTALLED APP THE BAR IS A SHOP-SURFACE THING.
+   Operator decision: it "does not need to be always visible on all pages on
+   mobile and PWA". The component stamps data-shop-scope='tabs-only' on every
+   route that is not a shop surface, and this is the ONLY place a width or a
+   display mode is consulted — the markup is identical at every viewport and
+   in both modes, which is what keeps the server HTML width-independent (the
+   property the whole .gg-shell block above is written to protect). */
+@media (max-width: 767px) {
+  [data-shop-mode-bar][data-shop-scope='tabs-only'] {
+    display: none;
+  }
+}
+html[data-standalone='true'] [data-shop-mode-bar][data-shop-scope='tabs-only'] {
+  display: none;
+}
+
+/* The Armory cascade — four sub-tiles drop in one after another, each
+   blurring into focus. The delay is inline (index * 200ms) and the duration
+   is 380ms, so the rollout finishes just inside the second the operator
+   asked for.
+
+   ⚠️ `backwards`, NEVER `both` OR `forwards`. A forwards fill keeps the
+   animation's final `transform` applied forever, and an ANIMATION beats a
+   transition in the cascade — so the tile's hover lift would never fire
+   again after the cascade once. `backwards` holds the from-state through the
+   delay and releases the element at the end, back to its own styles, which
+   are exactly the to-state. */
+@keyframes gg-drop-in {
+  from { opacity: 0; transform: translateY(-14px); filter: blur(10px); }
+  to   { opacity: 1; transform: translateY(0);     filter: blur(0); }
+}
+.gg-armory-sub {
+  animation: gg-drop-in 380ms var(--ease-out) backwards;
+}
+/* A member who asked for no motion gets the panel, in place, immediately. */
+@media (prefers-reduced-motion: reduce) {
+  .gg-armory-sub {
+    animation: none;
+  }
 }
 
 /* Fixed to the viewport on mobile web; a plain flex sibling in the installed

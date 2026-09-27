@@ -88,6 +88,13 @@ const PUSH_TITLES: Array<[string, string]> = [
   // menu both call this "Motivations", and a header that still said
   // "Applications" would be a different name for the screen you just tapped.
   ['/licence-centre/applications', 'Motivations'],
+  // ⚠️ A SIBLING OF `/licence-centre/applications`, NOT A CHILD OF IT, and the
+  // longest-prefix rule is what keeps them apart. This row covers the whole
+  // tracking subtree (list and a single application both), which is the
+  // opposite of the index-only rule above and right for this screen: every
+  // tracker belongs to the same member, and "Application Tracker" is what they
+  // tapped to get here.
+  ['/licence-centre/tracking', 'Application Tracker'],
   ['/notifications', 'Notifications'],
   ['/my/offers', 'Offers'],
   ['/my/bids', 'Bids'],

@@ -1128,13 +1128,26 @@ export class MotivationsService {
   // motivations.controller.ts: prefill is automatic now, with provenance, and
   // a confirm step guarding a value we already hold is work we invented.
 
+  /** @see MotivationDocumentsService.identify */
+  identify(
+    userId: string,
+    id: string,
+    files: { buffer: Buffer; mimetype: string; description?: string }[],
+  ) {
+    return this.documents.identify(userId, id, files);
+  }
+
   /** @see MotivationDocumentsService.addUpload */
   addUpload(
     userId: string,
     id: string,
     kind: MotivationUploadKind | null,
     file: { buffer: Buffer; mimetype: string },
-    opts: { skipExtraction?: boolean } = {},
+    opts: {
+      skipExtraction?: boolean;
+      identifyId?: string;
+      description?: string;
+    } = {},
   ) {
     return this.documents.addUpload(userId, id, kind, file, opts);
   }

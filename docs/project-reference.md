@@ -839,9 +839,11 @@ both retired.
   `--text-tertiary` #7A7267 (4.5:1), `--text-faint` #9C948A (3.0:1 — large text
   and disabled states only, never body copy).
 - **Brand red `--red` #E30613** (hover #C7050F) — prices, primary CTAs, active
-  states, live badges. ⚠️ **The logo's red is a different value, #E30613**, and
-  stays that on every ground. Do not "fix" either to match the other, and never
-  recolour a logo path to `var(--red)`.
+  states, live badges. ⚠️ **The logo road now carries the SAME value**, #E30613 —
+  it was #E01B24 until the brand pack landed on 2026-09-23 (`globals.css`, where
+  the two were previously inconsistent). Never recolour a logo path to
+  `var(--red)`: the shared value is a coincidence of the pack, not a licence to
+  wire the mark to the token.
 - Borders 0.5px; radii: xs 6px, sm 10px, md 14px, lg 20px, xl 28px, pill 999px; League Spartan (display) + Montserrat (body), self-hosted; weights 400 and 500
   only; mobile-first ~390px; content max-width 1280px.
 - **Tiles opt into depth** via `.gg-tile` (+ `.gg-tile-lift` on hover), using

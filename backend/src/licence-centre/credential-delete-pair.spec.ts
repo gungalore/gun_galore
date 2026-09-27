@@ -54,6 +54,7 @@ function build(row: Record<string, unknown>, other?: Record<string, unknown>) {
     { resolveByEntity: jest.fn(async () => undefined) } as never,
     { assertEnabled: jest.fn(async () => undefined) } as never,
     { classify: jest.fn(), read: jest.fn() } as never,
+    { classifyEvidence: jest.fn(async () => null) } as never,
     {
       rearmAutolinkFor: jest.fn(async () => 0),
       removeCredentialFromEditableDrafts: jest.fn(async () => ({
@@ -62,6 +63,8 @@ function build(row: Record<string, unknown>, other?: Record<string, unknown>) {
       })),
     } as never,
     { note: () => undefined } as never,
+    // The identify store, injected but unused here.
+    { findBySha: jest.fn(async () => null), put: jest.fn(async () => undefined), take: jest.fn(async () => null) } as never,
   );
   return { svc, prisma, files, deleted };
 }

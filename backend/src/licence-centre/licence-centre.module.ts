@@ -13,6 +13,11 @@ import { LicenceCentreRetentionService } from './licence-centre-retention.servic
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { VaultLogService } from '../common/vault-log.service';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
+// ⚠️ IMPORTS MotivationsModule, WHICH IS ALSO WHERE DocumentIdentifyService
+// COMES FROM. That service is a provider and an export of MotivationsModule
+// (see its exports block) so services here can inject it through this one-way
+// edge without a second registration — and without closing the cycle the
+// module specs assert against.
 import { MotivationsModule } from '../motivations/motivations.module';
 
 // ⚠️ JwtModule.register({}) + AdminJwtGuard in providers are BOTH required

@@ -1,7 +1,7 @@
 'use client';
 
 import ScanButton from '@/components/scan/scan-button';
-import FilePickerButton from '@/components/file-picker-button';
+import DocumentEnhancer from '@/components/scan-upload/document-enhancer';
 import type { AddedUpload } from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
@@ -86,9 +86,16 @@ export default function AddPanel({
       */
       onHandoffArrived={onHandoffArrived}
       fallback={
-        <FilePickerButton accept={ACCEPT} multiple disabled={busy} onFiles={take}>
+        <DocumentEnhancer
+          accept={ACCEPT}
+          multiple
+          disabled={busy}
+          onFiles={take}
+          title="Photograph your document"
+          shape="a4"
+        >
           Choose files instead
-        </FilePickerButton>
+        </DocumentEnhancer>
       }
     />
   );

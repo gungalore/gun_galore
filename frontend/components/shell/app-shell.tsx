@@ -21,6 +21,7 @@
 import { Suspense, useRef, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
+import { ShopModeBar } from '@/components/shop-mode-tiles';
 import { ShellHeader } from '@/components/shell/shell-header';
 import { ShellScrollProvider } from '@/components/shell/shell-scroll';
 import { ShellStepProvider } from '@/components/shell/shell-step';
@@ -46,6 +47,24 @@ export function AppShell({ children }: { children: ReactNode }) {
             be behind a boundary: one would make it absent from the prerendered
             HTML of every static route and pop in after hydration. */}
         <ShellHeader />
+
+        {/* The shop-mode bar — the Buy Now / Auctions / Armory fork, directly
+            under the nav. It slots in AFTER the header and BEFORE the pane so
+            the order is header → bar → content in both modes: on mobile the
+            shell is a real flex column and the bar is the second row; on
+            desktop the shell is `display: contents`, so the bar lands in
+            normal flow after the sticky <Nav> (components/nav.tsx) and is
+            simply the first thing on the page.
+
+            ⚠️ THE BAR IS NOT STICKY, unlike the nav above it — an operator
+            decision, and the reason it lives inside the flow rather than in a
+            fixed layer. See the [data-shop-mode-bar] block in globals.css.
+
+            It self-gates (fine print, /checkout, and the mobile shop-surface
+            allowlist), so nothing here has to know those rules. AppShell's own
+            early return above keeps it off admin / sign-in / sign-up / offline
+            / witness / consent for free. */}
+        <ShopModeBar />
 
         <div ref={paneRef} className="gg-shell-pane" data-shell-pane>
           {children}

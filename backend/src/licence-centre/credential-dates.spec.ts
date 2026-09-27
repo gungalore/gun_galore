@@ -74,6 +74,13 @@ describe('which documents are worth a vision call', () => {
         'SAFE_PHOTO_AJAR',
         'SAFE_PHOTO_BOLTS',
         'SAFE_PHOTO_CLOSED',
+        // Evidence, for a different reason than the photographs beside it.
+        // There is no fixed set of fields to read off an evidence item, so a
+        // field extraction would come back empty on every one of them and flag
+        // them amber. ⚠️ This governs FIELD EXTRACTION ONLY. Evidence is still
+        // LOOKED AT — classifyEvidence() sends it to vision and asks which
+        // container it belongs to. See credential-kinds.ts.
+        'EVIDENCE',
       ].sort(),
     );
   });

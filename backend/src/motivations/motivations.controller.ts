@@ -15,12 +15,14 @@ import {
   Post,
   Res,
   StreamableFile,
+  UploadedFiles,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { COVER_MAX_BYTES } from './motivation-cover-photo';
+import { MAX_IDENTIFY_FILES } from '../common/document-identify.service';
 import { memoryStorage } from 'multer';
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import type { Response } from 'express';
@@ -630,6 +632,48 @@ export class MotivationsController {
   // ── uploads ───────────────────────────────────────────────────────
 
   /**
+   * Sort a picked batch BEFORE any of it is stored.
+   *
+   * The picker hands over the files it just grabbed — from the phone or the
+   * scanner — and gets back one verdict per file, each under a server-minted
+   * id. Nothing is stored here: the member polishes the documents (never the
+   * evidence) and uploads each file with its id, and `addUpload` reads the
+   * verdict back out of the identify record rather than out of the request.
+   *
+   * The batch is small and each file costs a model call, so it is throttled
+   * like the upload beneath it.
+   */
+  @Post(':id/identify')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseInterceptors(
+    FilesInterceptor('files', MAX_IDENTIFY_FILES, {
+      storage: memoryStorage(),
+      limits: { fileSize: UPLOAD_INTERCEPTOR_MAX },
+    }),
+  )
+  identify(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body('descriptions') descriptions?: string | string[],
+  ) {
+    const words = Array.isArray(descriptions)
+      ? descriptions
+      : descriptions
+        ? [descriptions]
+        : [];
+    return this.motivations.identify(
+      userId,
+      id,
+      (files ?? []).map((file, i) => ({
+        buffer: file.buffer,
+        mimetype: file.mimetype,
+        description: words[i],
+      })),
+    );
+  }
+
+  /**
    * Add a supporting document.
    *
    * Bytes go to our own encrypted store, NOT to Cloudinary, so there is no
@@ -651,6 +695,8 @@ export class MotivationsController {
     @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body('kind') kind: string,
+    @Body('identifyId') identifyId: string,
+    @Body('description') description: string,
     @UploadedFile(
       new ParseFilePipe({
         validators: [
@@ -661,12 +707,24 @@ export class MotivationsController {
     )
     file: Express.Multer.File,
   ) {
+    // ⚠️ THE IDENTIFY ID IS A SEPARATE FIELD FROM `kind`, DELIBERATELY. `kind`
+    // is the member's own choice and still overrides everything below; the id
+    // names a verdict the SERVER reached during /identify, and the service
+    // reads the classification out of its own record rather than this request.
+    // Two fields, so an explicit pick can never be confused with a forged
+    // classifier answer.
+    const fromIdentify = (identifyId ?? '').trim();
+    const opts = {
+      identifyId: fromIdentify || undefined,
+      description: (description ?? '').trim() || undefined,
+    };
+
     // NO KIND MEANS "SORT IT FOR ME" — the batch path, where a member picks a
     // whole pack at once and cannot label files that do not exist yet. The
     // service names the document from its contents.
     const wanted = (kind ?? '').trim();
     if (!wanted) {
-      return this.motivations.addUpload(userId, id, null, file);
+      return this.motivations.addUpload(userId, id, null, file, opts);
     }
 
     // Validated HERE, by hand. The global ValidationPipe has no
@@ -704,6 +762,7 @@ export class MotivationsController {
       id,
       wanted as MotivationUploadKind,
       file,
+      opts,
     );
   }
 

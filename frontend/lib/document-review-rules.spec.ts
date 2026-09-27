@@ -9,6 +9,7 @@ import {
   refileNeedsPanel,
   settleableInBulk,
   FiledRow,
+  evidenceNeedsWords,
   filedUnsure,
   needsDateCheck,
   needsFilingCheck,
@@ -391,5 +392,46 @@ describe('what a stored document still owes the member', () => {
     expect(needsDateCheck(r)).toBe(false);
     expect(needsFilingCheck(r)).toBe(false);
     expect(needsReview(r)).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// AN EVIDENCE ITEM WE COULD NOT PLACE IS NOT A MISFILED DOCUMENT.
+//
+// Every evidence row is `autoFiled: true`, and one we could not decide is
+// `namedConfident: false`, so it arrives from needsReview shaped exactly like
+// a licence filed in the wrong box. Acting on that reading is what these pin
+// against: the review sheet's only control for a doubtful row is a document
+// type menu, and confirming through it posts the kind the row already has plus
+// the "Never expires" tick the server pre-set — stamping an evidence item
+// confirmed with its container still null, and taking it off the one surface
+// that can repair it.
+// ────────────────────────────────────────────────────────────────────
+
+describe('an evidence row we could not place', () => {
+  it('⚠️ is the same SHAPE as a misfiled document, and must not be read as one', () => {
+    const r = filed({
+      namedConfident: false,
+      dateSource: 'none',
+      neverExpires: true,
+      evidence: { container: null },
+    });
+    // The shape that would otherwise reach a document type menu...
+    expect(needsFilingCheck(r)).toBe(true);
+    expect(needsReview(r)).toBe(true);
+    // ...and the separate fact the surfaces must branch on instead.
+    expect(evidenceNeedsWords(r)).toBe(true);
+  });
+
+  it('is not evidenceNeedsWords once a container is decided', () => {
+    const r = filed({ evidence: { container: 'HUNTING_PHOTO' } });
+    expect(evidenceNeedsWords(r)).toBe(false);
+  });
+
+  it('says nothing about a row with no evidence field at all', () => {
+    // An ordinary document: the key is absent, not null, and absence must
+    // never read as "an evidence item we could not sort".
+    expect(evidenceNeedsWords(filed())).toBe(false);
+    expect(evidenceNeedsWords(filed({ evidence: null }))).toBe(false);
   });
 });

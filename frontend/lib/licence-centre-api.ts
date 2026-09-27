@@ -61,7 +61,18 @@ export type CredentialKind =
   | 'SAFE_PHOTO_AJAR'
   | 'SAFE_PHOTO_BOLTS'
   | 'SAFE_INSTALLATION'
-  | 'SHOOTING_ACTIVITY_LOG';
+  | 'SHOOTING_ACTIVITY_LOG'
+  /**
+   * Evidence for a motivation: a hunting photograph, a reloading bench, a
+   * farmer's permission letter. Added 2026-09-26.
+   *
+   * ⚠️ ITS CONTAINER IS NOT ITS KIND. One enum value covers ~79 containers,
+   * and which one a file is sits in `evidenceType` — free text, not an enum,
+   * because the taxonomy is expected to be revised and Postgres cannot remove
+   * an enum value. So `KIND_LABELS.EVIDENCE` is a fallback line and the real
+   * name comes from `row.evidence.label`; see CredentialRow.evidence.
+   */
+  | 'EVIDENCE';
 
 /**
  * ⚠️ 'no-expiry' IS A REAL STATE, NOT A MISSING DATE. A photograph of a gun
@@ -224,6 +235,34 @@ export interface CredentialRow {
   follows?: { id: string; title: string } | null;
   /** The unit standards a proficiency certificate names. */
   unitStandards?: { code: string; title: string }[];
+
+  /**
+   * What the classifier made of an EVIDENCE row. Null on every other kind.
+   *
+   * ⚠️ `container: null` IS THE WHOLE MECHANISM OF "WE COULD NOT DECIDE". A
+   * low-confidence read stores NO container rather than a probable one, because
+   * the container decides whether the file takes an annexure page or prints in
+   * the body, and whether it ticks a DFO's checklist row. A wrong container is
+   * worse than none, so `null` is the single meaning of "unknown" and `ask`
+   * carries the sentence to put in front of the member.
+   *
+   * `placement` is served rather than derived from `container` here: the
+   * registry that maps one to the other lives on the server, and duplicating it
+   * client-side is how the two drift apart.
+   */
+  evidence?: {
+    container: string | null;
+    /** The member-facing container name, or null when we could not decide. */
+    label: string | null;
+    group?: string | null;
+    /** 'annexure' = its own full page; 'body' = the Activities page; null = unknown. */
+    placement?: 'annexure' | 'body' | null;
+    confident: boolean;
+    /** The member's own words about the file, decrypted for them. */
+    description?: string | null;
+    /** Our "tell us a bit more" line, when we could not place it. */
+    ask?: string | null;
+  } | null;
 }
 
 /** What came back from adding one document. */
@@ -262,6 +301,15 @@ export interface AddedCredential {
    * File in hand either way and can fall back to its own `type`.
    */
   mimeType?: string;
+  /**
+   * What the classifier made of this file, on the create response only.
+   *
+   * ⚠️ THE SAME SHAPE AS CredentialRow.evidence, so the panel that adds a file
+   * can render the verdict without a second round-trip and without a second
+   * reader that could disagree with the vault's. The list endpoint returns it
+   * too, so a refresh shows the same thing.
+   */
+  evidence?: CredentialRow['evidence'];
   proposed: CredentialProposal;
 }
 
@@ -338,12 +386,25 @@ async function request<T>(
 
 export const licenceCentreApi = {
   status: (t: TokenGetter) =>
-    request<{ enabled: boolean; reminders: boolean; maxCredentials: number }>(
-      t,
-      '/status',
-      {},
-      { enabled: false, reminders: false, maxCredentials: 0 },
-    ),
+    request<{
+      enabled: boolean;
+      reminders: boolean;
+      maxCredentials: number;
+      /**
+       * The evidence sub-cap, as the server enforces it.
+       *
+       * ⚠️ 0 MEANS "WE WERE NOT TOLD", NEVER "THE CAP IS ZERO" — the same
+       * reading `maxCredentials` gets on the page. The panel renders no
+       * remaining-items line while it is 0 rather than telling a member with
+       * room for thirty that they may keep none.
+       */
+      maxEvidence: number;
+    }>(t, '/status', {}, {
+      enabled: false,
+      reminders: false,
+      maxCredentials: 0,
+      maxEvidence: 0,
+    }),
 
   /**
    * Where every stored document already appears, keyed by credential id.
@@ -438,12 +499,51 @@ export const licenceCentreApi = {
    * document from its contents and the confirm step shows the member what it
    * made of it. That is how a whole folder goes in at once.
    */
-  create: (t: TokenGetter, kind: string, title: string, file: File) => {
+  create: (
+    t: TokenGetter,
+    kind: string,
+    title: string,
+    file: File,
+    opts: { identifyId?: string; description?: string } = {},
+  ) => {
     const form = new FormData();
     form.append('kind', kind);
     form.append('title', title);
+    // ⚠️ THE ID IS A SEPARATE FIELD FROM `kind`, DELIBERATELY. `kind` is the
+    // member's own choice and still overrides everything; the id names a
+    // verdict the SERVER reached during identify(), and the service reads the
+    // classification out of its own record rather than out of this request. Two
+    // fields, so an explicit pick can never be confused with a forged answer.
+    if (opts.identifyId) form.append('identifyId', opts.identifyId);
+    if (opts.description) form.append('description', opts.description);
     form.append('file', file);
     return request<AddedCredential>(t, '', { method: 'POST', body: form });
+  },
+
+  /**
+   * Show the server a whole batch and get one verdict per file.
+   *
+   * ⚠️ THE IDS COME BACK FROM THE SERVER; the client does not send them. Each
+   * file travels RAW — the polish happens afterwards, per file, and only for
+   * the ones that come back as documents. A hunting photograph must reach the
+   * model exactly as it was taken; cropping it to a page first would hand the
+   * classifier a doctored image and ruin the picture at the same time.
+   *
+   * `descriptions[i]` is the member's words about `files[i]`, and only matters
+   * for the second pass on an item that came back unresolved.
+   */
+  identify: (
+    t: TokenGetter,
+    files: File[],
+    descriptions: string[] = [],
+  ): Promise<IdentifyVerdict[]> => {
+    const form = new FormData();
+    for (const f of files) form.append('files', f);
+    for (const d of descriptions) form.append('descriptions', d ?? '');
+    return request<IdentifyVerdict[]>(t, '/identify', {
+      method: 'POST',
+      body: form,
+    });
   },
 
   /**
@@ -515,6 +615,20 @@ export const licenceCentreApi = {
     ),
 
   /**
+   * Keep this version instead of the one it was flagged as a copy of.
+   *
+   * ⚠️ IT DELETES THE ORIGINAL. The row this is called on becomes the
+   * document; the one it stood in for is erased, bytes included. The server
+   * refuses by name if the row is not flagged as a copy.
+   */
+  replace: (t: TokenGetter, id: string) =>
+    request<{ replaced: boolean; originalId: string | null }>(
+      t,
+      `/${id}/replace`,
+      { method: 'POST' },
+    ),
+
+  /**
    * Start a section 24 renewal pack from this document.
    *
    * Returns the new motivation, which the caller navigates to. The backend
@@ -545,7 +659,45 @@ export const licenceCentreApi = {
     }
     return URL.createObjectURL(await r.blob());
   },
+
+  /**
+   * Sort the same file again against a better description.
+   *
+   * ⚠️ A PATCH. The bytes are unchanged — only the member's words about them
+   * are — and a second POST would collide with the uniqueness on
+   * (userId, sha256) and tell them their own file is already stored.
+   *
+   * The container flow reaches this for a file that was filed as evidence with
+   * no container: the card asks for a few more words and resends them here.
+   *
+   * The server answers 410 when the bytes have since been purged: there is
+   * nothing left to re-read, and the honest answer is to ask for a re-upload
+   * rather than to sort a file that is not there.
+   */
+  redescribeEvidence: (t: TokenGetter, id: string, description: string) =>
+    request<{ id: string; title: string; evidence: CredentialRow['evidence'] }>(
+      t,
+      `/${id}/evidence`,
+      { method: 'PATCH', body: JSON.stringify({ description }) },
+    ),
 };
+
+/** One file's verdict from identify(), named by a server-minted id. */
+export interface IdentifyVerdict {
+  /** ⚠️ THE SERVER MINTED THIS. It is the marriage key for the upload. */
+  id: string;
+  role: 'document' | 'evidence';
+  /**
+   * The document kind, when `role` is 'document' — the answer space of the
+   * caller's classifier. Null for evidence, which is sorted by container.
+   */
+  kind: string | null;
+  /** The evidence container, when the classifier placed it. Null = ask. */
+  container: string | null;
+  confident: boolean;
+  /** How many characters of OCR the server took. Advisory; never the client's. */
+  ocrChars: number | null;
+}
 
 /**
  * One application a stored document already appears in.
@@ -602,6 +754,15 @@ export const KIND_LABELS: Record<CredentialKind, string> = {
   SAFE_PHOTO_BOLTS: 'Safe, open with bolts showing',
   SAFE_INSTALLATION: 'How the safe is installed',
   SHOOTING_ACTIVITY_LOG: 'Record of hunts and shoots',
+  /**
+   * ⚠️ A FALLBACK, NOT THE ROW'S NAME. Every evidence file is named by its
+   * container (a hunting photograph, a permission letter), which is served on
+   * `row.evidence.label`. This renders only when that is missing — a server
+   * too old to send it, or a container that has been retired from the registry
+   * since the file was filed. "Evidence" is the honest thing to say when we
+   * cannot say what it is.
+   */
+  EVIDENCE: 'Evidence',
 };
 
 /**

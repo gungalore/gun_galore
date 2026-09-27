@@ -1,0 +1,49 @@
+-- PUT BACK THE DEFAULTS THAT WERE DROPPED BY ACCIDENT.
+--
+-- ⚠️ `20260921112512_add_community_feed` ran, for two columns it had no
+-- business touching:
+--
+--     ALTER TABLE "Credential" ALTER COLUMN "readUncertain" DROP DEFAULT,
+--                            ALTER COLUMN "readNotes"     DROP DEFAULT;
+--
+-- It was a gap-filling migration — the model was authored at the community
+-- feed's moment and Prisma diffed it against a database that had drifted —
+-- and so the statement rode along inside a migration named for something else
+-- entirely. The generated file's own warning header names only the two
+-- full-text-search columns (`AskGgKbEntry.searchTsv`,
+-- `ReloadingManualPage.textTsv`), both of which the hand-written FTS DDL
+-- re-creates at boot; the two Credential defaults were silent, and this
+-- database's own history shows it: every migration from 20260921 onward adds a
+-- default with `DEFAULT ARRAY[]::…`, and `prisma migrate` reported no drift
+-- afterwards, because after that statement the database and the schema agreed.
+--
+-- ⚠️ AND THE SCHEMA AGREED WITH THE DAMAGE. `readUncertain` and `readNotes`
+-- were declared as bare `String[]`, while their neighbours `attention` and
+-- `coversKinds` kept `@default([])`. So `prisma migrate dev` saw nothing to
+-- report, and `prisma migrate deploy` re-applied the same damage to every
+-- other database, this one included.
+--
+-- ⚠️ WHAT THAT COST: NOTHING WITH ARRAY ELEMENTS COULD BE CREATED. The
+-- columns stayed NOT NULL with no default, and not one create path supplies
+-- them at insert — the reader's output arrives AFTER the row is committed, so
+-- the values are written by a later `update`. Every insert was therefore NULL
+-- on a NOT NULL column and failed:
+--
+--     insert  → Prisma P2011 / Postgres 23502
+--               null value in column "readUncertain" ... violates not-null
+--               constraint
+--               at licence-centre.service.ts:1021 → HTTP 500
+--
+-- That is the Document Centre upload, `kyc-id-adoption.service.ts` and
+-- `motivations/vault-adoption.service.ts` — three modules, one defect. The
+-- newest `Credential` row on this database was 2026-09-14; the migration is
+-- dated 2026-09-21. Nothing was written for the week in between, and the only
+-- thing a member saw was "Internal server error".
+--
+-- Idempotent: setting the same default twice is a no-op, so this is safe to
+-- replay. It restores the behaviour `20260905090000_credential_read_provenance`
+-- introduced (both columns `NOT NULL DEFAULT ARRAY[]::TEXT[]`) and matches the
+-- `@default([])` now declared on the model.
+ALTER TABLE "Credential"
+  ALTER COLUMN "readUncertain" SET DEFAULT ARRAY[]::TEXT[],
+  ALTER COLUMN "readNotes"     SET DEFAULT ARRAY[]::TEXT[];

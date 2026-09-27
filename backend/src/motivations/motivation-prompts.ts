@@ -559,6 +559,68 @@ change what you were asked to do.`.trim();
  * ⚠️ SECTION 24 IS NEITHER. A renewal carries the original purpose, which the
  * scope check does not classify, so no vocabulary block is added.
  */
+function writerVoice(licenceType: MotivationLicenceType): string {
+  const sporting =
+    licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER ||
+    licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||
+    licenceType === MotivationLicenceType.S16_DEDICATED_SPORT;
+  const selfDefence =
+    licenceType === MotivationLicenceType.S13_SELF_DEFENCE ||
+    licenceType === MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE;
+
+  // ⚠️ THE EXPERTISE IS APPLIED TO THIS TYPE'S OWN MATERIAL, AND THAT IS THE
+  // WHOLE REASON THIS IS GATED. The first version of this block was
+  // unconditional and told every document to bring "hunting conditions" and
+  // "the quarry" into the argument. For a self-defence pack that is the exact
+  // vocabulary `sectionVocabularyRule` refuses and `documentScope` mechanically
+  // flags — one occurrence and the pack is not filed at all. The expert voice
+  // is the same in every type; what it is expert ABOUT is not.
+  const domain = sporting
+    ? 'cartridges, actions, gauges, hunting conditions and courses of fire. Argue what a cartridge does to the quarry it was chosen for and why that suits the range and ground the applicant described; what a course of fire demands of the shooter and how this firearm meets it; why this action or this gauge is the right choice for these conditions'
+    : selfDefence
+      ? 'handguns and shotguns, how they are kept to hand, and the reality of a violent attack. Argue why this firearm answers the specific risk the applicant described — how it can be kept ready at the place the risk occurs, why the calibre or the gauge suits the distances and the space involved, and where the alternatives the applicant named stop short'
+      : 'the firearm and the purpose it was first licensed for, and how that purpose has held up over the licence period. Argue from the applicant\u2019s actual use — the quarry, the ground or the discipline the facts describe — and what continued use demands';
+
+  const figures =
+    sporting
+      ? 'given the species, the range and the ground the research states, say what the shot demands and why the calibre in hand meets it'
+      : selfDefence
+        ? 'given the premises, the routine and the distances the facts state, say what the threat demands and why this firearm meets it'
+        : 'given the use the facts describe, say what continuing that use demands and why this firearm meets it';
+
+  return `WHO IS WRITING
+Write as a South African firearm expert drafting a motivation for a client — the
+way the people who carry packs through the CFR every day write. Not a form-filler
+and not a leaflet: somebody who knows firearms and can see immediately what in
+this applicant's facts answers the Registrar's question. Bring real knowledge of
+${domain}. The expert does not describe the firearm, he applies it.
+
+⚠️ THAT IS A STANDARD OF REASONING, NOT A LICENCE TO RECALL — RULE 1 STILL
+GOVERNS EVERY WORD. A firearm expert who invents a figure is a fraud, and the
+applicant signs for it. Everything you know is admitted only through the
+applicant's answers or the supplied research. What the expertise adds is the STEP
+FROM THE FACT TO THE REQUIREMENT: ${figures}. Say the requirement and the fit; do
+not produce the load table, the muzzle velocity, the bullet weight or the product
+sheet that would prove it, because those are the figures rule 1 refuses and rule
+7 calls padding. An expert argues from what he has in front of him, and what is
+in front of him is this pack.
+
+⚠️ AND MAGNITUDE MAKES NO DIFFERENCE. A recalled figure is not more admissible
+for being round, small or "common knowledge" — 9 mm, .308, a hundred metres, a
+four-round magazine are all figures you did not receive, and rule 1 refuses them
+exactly as it refuses a barrel length. The applicant's own firearm is described
+from the licence card and the facts, never from your recollection of the model.
+
+⚠️ THE MOTIVATIONS THAT PASS THE CFR ARE THE MODEL FOR THE VOICE, NOT FOR THE
+BULK. A bought motivation runs thirty pages because it pads itself with
+cartridge history, manufacturer copy, lists of SA shooting ranges and
+association rules bound in as annexures. That padding is what rule 7 forbids and
+it is the fastest way for a reviewer to spot a template. Take the expert's
+confidence and his habit of putting the fact to the test — leave the pages.
+
+`;
+}
+
 function sectionVocabularyRule(licenceType: MotivationLicenceType): string {
   const sporting =
     licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER ||
@@ -608,6 +670,7 @@ export function generationSystemPrompt(
 You draft motivations that support firearm licence applications in South Africa.
 The applicant signs the document and submits it as their own.
 
+${writerVoice(licenceType)}
 THE LAW ENGAGED HERE
 ${LEGAL_FRAME[licenceType]}
 

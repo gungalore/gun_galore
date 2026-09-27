@@ -31,8 +31,11 @@ interface OrderDetail {
   orderReference: string | null;
   itemsSubtotal: number;
   shippingSubtotal: number;
-  // P6.4 — per-waybill handling, billed apart from shipping. The backend
-  // GET /orders/:id spreads the whole Order row, so this is always present.
+  // Our delivery handling margin, 10% of the carrier rate. It is kept apart
+  // from shipping server-side (carrier remittance and our margin are different
+  // payout obligations) but folded into ONE Delivery figure in the UI. The
+  // backend GET /orders/:id spreads the whole Order row, so this is always
+  // present.
   handlingSubtotal: number;
   processingFee: number;
   buyerTotal: number;

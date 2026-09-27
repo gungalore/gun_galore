@@ -7,6 +7,10 @@ import {
 // documentStatus. Two surfaces disagreeing about it is how a member gets a
 // green tick on one screen and an amber row on the next.
 import { SAFE_PHOTO_MIN } from './motivation-documents';
+// ⚠️ THE CONTAINER REGISTRY IS THE SOURCE OF AN EVIDENCE ANNEXURE'S TITLE.
+// `evidenceType` and this registry hold the same ids, so the two modules walk
+// the same list and cannot drift into two spellings of one container.
+import { containerById, isAnnexureEvidence } from './evidence-taxonomy';
 // COMPETENCY_RENEWS_KEY is the one spelling of the key the Licence Centre
 // writes its 517(g) finding to. FIREARM_SOURCE_KEY / SOURCE_DEALER /
 // SOURCE_PRIVATE are read by saps271FormNote below, to say which half of
@@ -105,6 +109,18 @@ export interface ChecklistContext {
    * top it is not exhaustive, not a wrong instruction about a form.
    */
   answers?: Record<string, string>;
+  /**
+   * The annexure-placed evidence items on this pack, in the order they were
+   * filed — the containers alone, because the sheet letters them and the
+   * lettering lives in buildAnnexures.
+   *
+   * ⚠️ THE CALLER CAPPED AND FILTERED THESE. buildChecklist is pure and holds
+   * no upload rows, so it cannot decide which evidence is annexure-placed; the
+   * caller passes the set already resolved (see EvidenceAnnexure). Omitted
+   * means "no evidence", which is what every call site predating the feature
+   * means.
+   */
+  evidenceAnnexures?: EvidenceAnnexure[];
 }
 
 export interface ChecklistItem {
@@ -209,6 +225,12 @@ export const UPLOAD_KIND_LABELS: Record<MotivationUploadKind, string> = {
   INCIDENT_REPORT: 'Incident report / SAPS case number',
   PREVIOUS_MOTIVATION: 'Previous motivation',
   OTHER: 'Supporting document',
+  // ⚠️ A FLOOR, NOT THE REAL NAME. An evidence row is titled from its
+  // CONTAINER (`containerById(evidenceType).label`), which is what the pack
+  // index and the file list should say. This generic label is only what a row
+  // with no container — the classifier was unsure, or the id no longer
+  // resolves — falls back to, and it must never be blank.
+  EVIDENCE: 'Evidence',
 };
 
 // SAFE_PHOTO_SHOTS lived here: the three shots as SUB-ITEMS hanging off one
@@ -542,6 +564,23 @@ export const CERTIFICATION: Record<AnnexureKind, CertificationLevel> = {
   SAFE_INSTALLATION: 'none',
 
   OTHER: 'none',
+
+  /**
+   * ⚠️ 'none' IS THE FLOOR HERE, AND IT IS REACHED ONLY IF SOMEBODY ASKS.
+   *
+   * This map is keyed by AnnexureKind, so it can only see the KIND — it cannot
+   * see which container an evidence row belongs to, and certification is a
+   * property of the container (a certified copy wants a stamp; a hunting
+   * photograph does not). The call sites that consult this already fall back to
+   * 'none' for an evidence kind, so nothing prints a stamp block from this
+   * entry.
+   *
+   * ⚠️ DO NOT PROMOTE IT TO 'required'. That would tell every member with a
+   * hunting photograph to queue at a police station for a certification
+   * nobody wants — the exact mistake the ADDRESS_CONFIRMATION note above
+   * records making once already.
+   */
+  EVIDENCE: 'none',
 };
 
 /**
@@ -571,6 +610,14 @@ export function annexureByKind(
   const out = new Map<MotivationUploadKind, AnnexureEntry>();
   for (const entry of entries) {
     if (entry.generated) continue;
+    /**
+     * ⚠️ EVIDENCE IS SKIPPED, because it is many entries under one kind. Two
+     * evidence annexures would both claim `EVIDENCE` in this map and the
+     * second would win, so one page would print under the other's letter.
+     * Evidence resolves its letter by CONTAINER instead — see
+     * annexureByContainer and the renderer.
+     */
+    if (entry.kind === 'EVIDENCE') continue;
     const kind = entry.kind as MotivationUploadKind;
     const group = LETTER_GROUPS[kind];
     if (!group) {
@@ -600,6 +647,46 @@ export function isSafeAnnexureKind(kind: MotivationUploadKind): boolean {
   return LETTER_GROUPS[kind]?.id === 'safe';
 }
 
+/**
+ * The annexure entry an evidence CONTAINER is lettered under.
+ *
+ * ⚠️ EVIDENCE CANNOT USE annexureByKind, WHICH IS KEYED BY KIND. Every evidence
+ * annexure shares the single upload kind `EVIDENCE`, so a kind-keyed map has
+ * two entries competing for one key and whichever came last wins — printing
+ * both pages under one letter, and losing the other from the index. The
+ * container id is the thing that distinguishes them.
+ */
+export function annexureByContainer(
+  entries: AnnexureEntry[],
+): Map<string, AnnexureEntry> {
+  const out = new Map<string, AnnexureEntry>();
+  for (const entry of entries) {
+    if (entry.kind === 'EVIDENCE' && entry.container) {
+      out.set(entry.container, entry);
+    }
+  }
+  return out;
+}
+
+/**
+ * Whether an evidence upload prints as its own annexure letter and page.
+ *
+ * ⚠️ A BODY-PLACED ITEM ANSWERS FALSE, and that is the point: an activity
+ * photograph is argument on the "My Activities / Evidence" page and takes no
+ * letter, while a permission letter is a reprint of a document the applicant
+ * possesses and does. See evidence-taxonomy.ts `placement`.
+ */
+export function isEvidenceAnnexureKind(
+  kind: MotivationUploadKind,
+  container: string | null | undefined,
+): boolean {
+  return (
+    kind === 'EVIDENCE' &&
+    !!container &&
+    isAnnexureEvidence(container)
+  );
+}
+
 export interface AnnexureEntry {
   letter: string;
   kind: AnnexureKind;
@@ -609,6 +696,30 @@ export interface AnnexureEntry {
   certification: CertificationLevel;
   /** True for documents we produce rather than ones the applicant uploaded. */
   generated?: true;
+  /**
+   * ⚠️ EVIDENCE'S CONTAINER, AND THE ONLY WAY TO TELL TWO EVIDENCE ENTRIES
+   * APART. Every evidence annexure shares the single kind `EVIDENCE`, so a map
+   * keyed by kind would let the second entry overwrite the first and print
+   * both pages under one letter. The container id (see evidence-taxonomy.ts)
+   * is what the letter is resolved by. Set only on `kind: 'EVIDENCE'`.
+   */
+  container?: string;
+}
+
+/**
+ * One annexure-placed evidence item, ready to be lettered.
+ *
+ * ⚠️ ONLY THE ANNEXURE-PLACED ONES COME HERE. A body-placed evidence item — an
+ * activity photograph on the "My Activities / Evidence" page — is argument
+ * rather than a reprint of possession, so it takes no letter at all. The
+ * caller decides which is which with `isAnnexureEvidence` and passes the
+ * annexure set only.
+ */
+export interface EvidenceAnnexure {
+  /** The container id, written to AnnexureEntry.container. */
+  container: string;
+  /** The container's label, as the annexure index prints it. */
+  label: string;
 }
 
 /**
@@ -646,6 +757,29 @@ export function annexureTitle(kind: MotivationUploadKind): string {
   return ANNEXURE_TITLES[kind] ?? UPLOAD_KIND_LABELS[kind];
 }
 
+/**
+ * How an annexure is titled when its kind alone is not enough.
+ *
+ * ⚠️ EVIDENCE IS ONE KIND AND MANY DOCUMENTS, so `annexureTitle(kind)` would
+ * title a permission letter and a score sheet identically as "Evidence". The
+ * container's label is the membership-facing name for the thing, and it is
+ * also what the index holds, so the two surfaces agree by construction.
+ *
+ * ⚠️ AN UNKNOWN CONTAINER FALLS BACK TO "Evidence", never to the raw id. A
+ * container retired since an upload was filed must read as generic evidence —
+ * `containerById` returning null is "we do not know what this is", which is a
+ * display concern, not an error.
+ */
+export function annexureTitleFor(
+  kind: MotivationUploadKind,
+  container?: string | null,
+): string {
+  if (kind === 'EVIDENCE' && container) {
+    return containerById(container)?.label ?? UPLOAD_KIND_LABELS.EVIDENCE;
+  }
+  return annexureTitle(kind);
+}
+
 export function buildAnnexures(
   kinds: MotivationUploadKind[],
   /**
@@ -657,6 +791,23 @@ export function buildAnnexures(
    * would go looking for.
    */
   generated: GeneratedAnnexureId[] = [],
+  /**
+   * Annexure-placed evidence, already capped and ordered by the caller.
+   *
+   * ⚠️ EACH TAKES A LETTER OF ITS OWN. Evidence is filed under one kind, so
+   * there is no group to collapse them onto and the "(n of m)" caption that
+   * handles two copies of an ID does not apply — a permission letter and an
+   * affidavit are two different documents that happen to share an enum. Two
+   * evidence letters is the cap (see evidence-taxonomy.ts), so this is at most
+   * two extra letters between J and K.
+   *
+   * ⚠️ INSERTED BY ANCHOR, NOT INDEX. They sit after the shooting-activities
+   * record and before the incident report, which is where a DFO's reference
+   * pack puts the member's own argument. Doing that by index would reorder
+   * itself the day an annexure kind is added ahead of it — the same fault
+   * s24Bring avoids.
+   */
+  evidence: EvidenceAnnexure[] = [],
 ): AnnexureEntry[] {
   const counts = new Map<MotivationUploadKind, number>();
   for (const k of kinds) counts.set(k, (counts.get(k) ?? 0) + 1);
@@ -666,8 +817,33 @@ export function buildAnnexures(
   let i = 0;
   /** Letters already spent, so a grouped kind reuses its group's letter. */
   const groupLetter = new Map<string, string>();
+  /**
+   * ⚠️ THE ANCHOR IS A KIND, NOT A POSITION. Evidence letters go in when the
+   * loop reaches INCIDENT_REPORT — the letter AFTER the shooting-activities
+   * record — so the insert holds whether or not that record was uploaded. An
+   * index would move the day somebody inserts a document kind ahead of it.
+   */
+  let evidencePlaced = false;
+  const placeEvidence = () => {
+    if (evidencePlaced) return;
+    evidencePlaced = true;
+    for (const item of evidence) {
+      out.push({
+        letter: String.fromCharCode(65 + i),
+        kind: 'EVIDENCE',
+        label: item.label,
+        count: 1,
+        // A property of the container, which this map cannot see — see
+        // CERTIFICATION.EVIDENCE. Nothing prints a stamp off this entry.
+        certification: 'none',
+        container: item.container,
+      });
+      i++;
+    }
+  };
 
   for (const kind of ANNEXURE_ORDER) {
+    if (kind === 'INCIDENT_REPORT') placeEvidence();
     const isGenerated = kind in GENERATED_ANNEXURE_LABELS;
     if (isGenerated) {
       if (!made.has(kind as GeneratedAnnexureId)) continue;
@@ -1403,7 +1579,11 @@ export function buildChecklist(
   const stateOf = (key: string, done: boolean): ChecklistState =>
     done ? 'done' : waitingOn[key] ? 'waiting-on-someone' : 'not-started';
 
-  const annexures = buildAnnexures(haveKinds);
+  const annexures = buildAnnexures(
+    haveKinds,
+    [],
+    context.evidenceAnnexures ?? [],
+  );
   const counts = new Map<MotivationUploadKind, number>();
   for (const k of haveKinds) counts.set(k, (counts.get(k) ?? 0) + 1);
   const enough = (kind: MotivationUploadKind) =>

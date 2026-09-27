@@ -1,13 +1,25 @@
-// 'use client' — the Armory disclosure needs useState to hold its
-// open/closed state. Safe to add: this file otherwise only imports
-// next/link and account-menu-data (data + presentational icons, no
-// server-only imports) and takes primitive props, so nothing here depends
-// on running on the server.
+// 'use client' — the Armory disclosure needs useState, the bar reads the
+// session and fetches its own counts, and it reads the pathname to gate
+// itself. Safe to add: the file otherwise only imports next/link and
+// account-menu-data (data + presentational icons, no server-only imports).
 'use client';
 
-import { useState, type FC } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FC,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { findAccountItem } from '@/lib/account-menu-data';
+import { useUser } from '@/lib/auth';
+import { useViewerFetch, viewerCacheKey } from '@/lib/use-viewer-fetch';
+import { isFinePrintRoute } from '@/lib/fine-print-routes';
+import { isTabRoute } from '@/lib/shell-routes';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 /**
  * "Shop by mode" — the two ways to buy, as the design pack's paired tiles.
@@ -244,7 +256,13 @@ function TileBody({ mode, open }: { mode: Mode; open?: boolean }) {
 }
 
 // The two commerce tiles (Buy Now, Auctions) — plain links, TileBody inside.
-function ModeTile({ mode }: { mode: Mode }) {
+//
+// `dropIndex` is set only by the Armory panel, and it is what turns a tile
+// into one link of the cascade: the class comes from globals.css and the
+// delay is the index, so the four sub-tiles land one after another instead of
+// together. Undefined for every other tile, which is why the row above and
+// the two commerce tiles are untouched by it.
+function ModeTile({ mode, dropIndex }: { mode: Mode; dropIndex?: number }) {
   const { href, accent } = mode;
   return (
     <Link
@@ -258,9 +276,23 @@ function ModeTile({ mode }: { mode: Mode }) {
       // items-center centers the column horizontally on mobile and the row
       // vertically at sm+, and a single `gap` value covers row-gap/column-gap
       // for whichever axis is active.
-      className="gg-mode-tile gg-tile gg-tile-lift gg-press flex flex-col items-center text-center gap-[14px] sm:flex-row sm:text-left min-w-0 w-full"
+      //
+      // ⚠️ THE CASCADE CLASS AND DELAY ARE ADDED, NEVER SWAPPED, and only
+      // when dropIndex is set — which is only ever inside the Armory panel.
+      // The row above and the two commerce tiles pass no index and render
+      // byte-for-byte as they always have.
+      className={
+        'gg-mode-tile gg-tile gg-tile-lift gg-press flex flex-col items-center text-center gap-[14px] sm:flex-row sm:text-left min-w-0 w-full' +
+        (dropIndex === undefined ? '' : ' gg-armory-sub')
+      }
       style={{
-        background: 'var(--bg-card)',
+        ...(dropIndex === undefined
+          ? {}
+          : { animationDelay: `${dropIndex * 200}ms` }),
+        // ⚠️ TRANSPARENT ON PURPOSE — the tile is a KEYLINE, and the frosted
+        // band behind it is the surface. A fill here would cover the blur
+        // this whole treatment exists to show.
+        background: 'transparent',
         border: `1px solid color-mix(in srgb, ${accent} 42%, transparent)`,
         borderRadius: 'var(--r-md)',
         padding: '15px 18px',
@@ -294,7 +326,8 @@ function ArmoryTile({
       onClick={onToggle}
       className="gg-mode-tile gg-tile gg-tile-lift gg-press flex flex-col items-center text-center gap-[14px] sm:flex-row sm:text-left min-w-0 w-full col-span-2 sm:col-span-1"
       style={{
-        background: 'var(--bg-card)',
+        // Transparent, like ModeTile above — see the note there.
+        background: 'transparent',
         border: `1px solid color-mix(in srgb, ${accent} 42%, transparent)`,
         borderRadius: 'var(--r-md)',
         padding: '15px 18px',
@@ -310,11 +343,17 @@ function ArmoryTile({
   );
 }
 
-// The panel's three sub-tiles read label/Icon/href from ACCOUNT_GROUPS via
+// The panel's four sub-tiles read label/Icon/href from ACCOUNT_GROUPS via
 // findAccountItem — the single source of truth also used by the /account
 // hub — so only the blurb (short enough to survive a ~400px column, see the
 // truncate comment on TileBody's blurb span) is local to this file. Built
 // once at module level, not per render, since ACCOUNT_GROUPS is static.
+//
+// ⚠️ THE ORDER HERE IS DELIBERATELY NOT THE ORDER IN ACCOUNT_GROUPS. The
+// account menu runs Vault / Motivations / Reloading / Tracker; this panel
+// runs Motivations first and the Vault second, because the panel is a sales
+// surface — the thing we do for you leads. Adding a fourth was not a reason to
+// reshuffle the three that already convert.
 const ARMORY_PANEL_SOURCE: { href: string; blurb: string }[] = [
   {
     href: '/licence-centre/applications',
@@ -325,6 +364,14 @@ const ARMORY_PANEL_SOURCE: { href: string; blurb: string }[] = [
     blurb: 'Licences and ID kept safe, renewals tracked.',
   },
   { href: '/bench', blurb: 'What you can load from what is on your shelf.' },
+  {
+    href: '/licence-centre/tracking',
+    // Shorter than the neighbours above on purpose: this blurb shares a row of
+    // four on desktop and sits as the last full-width card on a phone, and it
+    // must not read as a promise about the outcome. It says what the screen
+    // does — watch the enquiry — and nothing about what SAPS will answer.
+    blurb: 'Watch your SAPS application status.',
+  },
 ];
 
 const ARMORY_SUB_TILES: Mode[] = ARMORY_PANEL_SOURCE.flatMap(
@@ -349,16 +396,136 @@ const ARMORY_SUB_TILES: Mode[] = ARMORY_PANEL_SOURCE.flatMap(
   },
 );
 
-export function ShopModeTiles({
-  buyNowCount,
-  auctionCount,
-  signedIn,
-}: {
-  buyNowCount: number | null;
-  auctionCount: number | null;
-  signedIn: boolean;
-}) {
+// ─── Counts ──────────────────────────────────────────────────────────
+//
+// The bar is mounted once, in the shell, so it renders on EVERY route — which
+// is two listing calls per navigation if nothing stops them. This is the
+// something: one promise per viewer bucket, kept for the life of the document.
+// A member browsing ten pages fires these twice in total, and a sign-out
+// switches buckets and fires them once more rather than reusing the member's
+// answer for an anonymous visitor (the reason the key is the bucket and not
+// the URL — see use-viewer-fetch.ts).
+//
+// ⚠️ THE FAILURE STATE IS `null`, NOT 0, and the two must not be conflated:
+// TileBody prints nothing for null and nothing for 0, but only null means "we
+// could not ask". A future reader adding a retry wants to key off null.
+
+type ModeCounts = { buyNow: number | null; auction: number | null };
+
+const countRequests: Partial<Record<'member' | 'anon', Promise<ModeCounts>>> =
+  {};
+
+function requestModeCounts(
+  bucket: 'member' | 'anon',
+  viewerFetch: (url: string, init?: Omit<RequestInit, 'cache'>) => Promise<Response>,
+): Promise<ModeCounts> {
+  let pending = countRequests[bucket];
+  if (!pending) {
+    const total = (path: string) =>
+      viewerFetch(`${API_URL}${path}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((b: { total?: number } | null) => b?.total ?? null)
+        .catch(() => null);
+    pending = Promise.all([
+      total('/listings?limit=1&listingType=BUY_NOW'),
+      total('/listings?limit=1&listingType=AUCTION'),
+    ]).then(([buyNow, auction]) => ({ buyNow, auction }));
+    countRequests[bucket] = pending;
+  }
+  return pending;
+}
+
+/** How far the panel must be dragged before letting go dismisses it. */
+const DISMISS_DRAG_PX = 90;
+
+/**
+ * The shop-mode bar — the site-wide fork between the two buying modes and
+ * (signed in) the Armory tools. Mounted once in components/shell/app-shell.tsx,
+ * directly under the top nav.
+ *
+ * It is SELF-GATING, deliberately. Every other piece of chrome that must not
+ * appear somewhere lives in a route predicate, but the reasons the bar is
+ * absent are not all shell-level: /admin and the chromeless statutory routes
+ * are already excluded by AppShell, while the fine-print pages and /checkout
+ * keep the shell and merely want no storefront fork over them. Putting that
+ * here keeps the rule next to the thing it describes — the same reason
+ * public-chrome.tsx returns null on /admin rather than that living in a list
+ * somewhere else.
+ */
+export function ShopModeBar() {
+  const pathname = usePathname();
+  const { isLoaded, isSignedIn } = useUser();
+  const { viewerFetch } = useViewerFetch();
   const [open, setOpen] = useState(false);
+
+  // A document, or a focused secure flow — not a shop surface. See
+  // lib/fine-print-routes.ts for why the policy pages are enumerated.
+  //
+  // ⚠️ /checkout MATCHES ON PATH SEGMENTS, NOT ON THE RAW PREFIX. A bare
+  // `startsWith('/checkout')` also swallows a future `/checkouts` or
+  // `/checkout-help`, and the bar vanishing from an unrelated page is the
+  // kind of bug that reads as "the tiles randomly don't show up". The
+  // trailing slash is what makes it a child route rather than a longer word.
+  const path = pathname ?? '';
+  const hidden =
+    isFinePrintRoute(pathname) ||
+    path === '/checkout' ||
+    path.startsWith('/checkout/');
+
+  const bucket = viewerCacheKey(isSignedIn);
+  const [counts, setCounts] = useState<ModeCounts>(
+    () => ({ buyNow: null, auction: null }),
+  );
+
+  useEffect(() => {
+    // Wait for the session to settle. Fetching before it does would ask as an
+    // anonymous visitor and then again as a member — the second request is the
+    // one whose bucket we keep, so the first is pure waste.
+    if (!isLoaded || hidden) return;
+    let cancelled = false;
+    requestModeCounts(bucket, viewerFetch).then((next) => {
+      if (!cancelled) setCounts(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bucket, isLoaded, hidden, viewerFetch]);
+
+  // ── Drag-to-dismiss (phones only) ──────────────────────────────────
+  // The panel expands to four tiles on a phone and there is no other way to
+  // put it away without tapping the Armory tile again. The handle at the top
+  // of the panel takes a downward drag; released past DISMISS_DRAG_PX the
+  // panel closes, otherwise it springs back. Upward drag is damped, because
+  // there is nothing up there to reveal.
+  //
+  // The CSS gates the HANDLE to below sm (the `.sm:hidden` class below); the
+  // handlers are inert at every width but simply never fire on desktop, where
+  // there is no handle to grab.
+  const drag = useRef({ active: false, startY: 0, dy: 0 });
+  const [dragY, setDragY] = useState(0);
+
+  function onHandleDown(e: ReactPointerEvent<HTMLDivElement>) {
+    drag.current = { active: true, startY: e.clientY, dy: 0 };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  }
+  function onHandleMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!drag.current.active) return;
+    const raw = e.clientY - drag.current.startY;
+    const dy = raw > 0 ? raw : raw * 0.2;
+    drag.current.dy = dy;
+    setDragY(dy);
+  }
+  function onHandleUp(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!drag.current.active) return;
+    drag.current.active = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    if (drag.current.dy > DISMISS_DRAG_PX) setOpen(false);
+    drag.current.dy = 0;
+    setDragY(0);
+  }
+
+  if (hidden) return null;
+
   const modes: Mode[] = [
     {
       href: '/?listingType=BUY_NOW',
@@ -372,7 +539,7 @@ export function ShopModeTiles({
       // does not exist on the thing it describes.
       // Neither line advertises funds-holding, and neither says escrow.
       blurb: 'Fixed prices — pay the listed price and it is yours.',
-      count: buyNowCount,
+      count: counts.buyNow,
       noun: 'listing',
       accent: 'var(--red)',
       ink: 'var(--link)',
@@ -382,7 +549,7 @@ export function ShopModeTiles({
       href: '/?listingType=AUCTION',
       title: 'Auctions',
       blurb: 'Live bidding in R50 steps — auctions close daily.',
-      count: auctionCount,
+      count: counts.auction,
       noun: 'auction',
       accent: 'var(--gold)',
       ink: 'var(--gold)',
@@ -408,12 +575,23 @@ export function ShopModeTiles({
   };
 
   return (
-    <>
+    // ⚠️ `data-shop-scope` IS THE MOBILE GATE, AND IT IS CSS-ONLY. On desktop
+    // the band shows on every surface the shell renders; on a phone and in the
+    // installed app it is a shop-surface thing ('tabs-only'), so the selector
+    // in globals.css can hide it on /bench, a listing, the Centres and so on.
+    // Stamping the scope here rather than branching on a width keeps the markup
+    // identical at every viewport — the server can render it without guessing
+    // which audience it is for, which is the property the whole shell is built
+    // around. isTabRoute is the same allowlist the bottom tab bar uses.
+    <div
+      data-shop-mode-bar
+      data-shop-scope={isTabRoute(pathname) ? 'tabs' : 'tabs-only'}
+    >
       <nav
         // The row is no longer only ways to BUY once Armory joins it, and a
         // landmark whose name lies about its contents is worse than a
         // generic one.
-        aria-label={signedIn ? 'Shop and member tools' : 'Ways to buy'}
+        aria-label={isSignedIn ? 'Shop and member tools' : 'Ways to buy'}
         // Row at EVERY width, not just sm+ — flex-col here was the mobile
         // bug: the board draws Buy Now / Auctions side by side even at
         // 390px (11px gap, each tile flex:1). Stacking them full-width was
@@ -433,7 +611,7 @@ export function ShopModeTiles({
         // unconditionally when Armory isn't rendered, so nothing shifts for
         // them.
         className={
-          signedIn
+          isSignedIn
             ? 'max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px] grid grid-cols-2 sm:grid-cols-3 gap-[11px] sm:gap-[14px]'
             : 'max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px] grid grid-cols-2 gap-[11px] sm:gap-[14px]'
         }
@@ -441,25 +619,70 @@ export function ShopModeTiles({
         {modes.map((m) => (
           <ModeTile key={m.title} mode={m} />
         ))}
-        {signedIn && (
+        {isSignedIn && (
           <ArmoryTile
             mode={armoryMode}
             open={open}
+            // Re-opening must replay the cascade from the top. The sub-tiles
+            // are remounted rather than re-animated (the whole panel is
+            // conditional), so closing and opening again restarts it for free
+            // — no animation-name juggling, no key churn.
             onToggle={() => setOpen((o) => !o)}
           />
         )}
       </nav>
 
       {/* The disclosure panel — same width/padding as the nav above, so the
-          three sub-tiles line up with the row they expand from. */}
-      {signedIn && open && (
-        <div className="max-w-[var(--page-max)] mx-auto px-4 sm:px-6">
+          sub-tiles line up with the row they expand from.
+          ⚠️ THE COLUMN COUNT TRACKS THE NUMBER OF SUB-TILES, and it is not the
+          nav row's `sm:grid-cols-3`. Four tiles in a three-column grid leaves
+          one wrapped alone on a second row at a different height — the exact
+          "reads as an oversight" the group-of-one comment above warns about.
+          `sm:grid-cols-2` keeps a 2×2 block on a tablet, where four columns
+          would squeeze each tile below the ~180px its internal layout has
+          already broken at once (see the nav row's comment). */}
+      {isSignedIn && open && (
+        <div
+          className="max-w-[var(--page-max)] mx-auto px-4 sm:px-6"
+          // The finger follows the panel while it is being dragged; at rest
+          // this is 0 and the transition is what returns it when a short drag
+          // is released short of the threshold.
+          style={{
+            transform: dragY ? `translateY(${dragY}px)` : undefined,
+            transition: drag.current.active ? 'none' : 'transform var(--dur-fast) var(--ease-out)',
+            touchAction: dragY ? 'none' : undefined,
+          }}
+        >
+          {/* The grab handle — the phone's only way to dismiss the panel
+              without tapping Armory again. Hidden from sm up (the panel is a
+              one-row disclosure there and drag-to-dismiss is not needed). */}
+          <div
+            className="sm:hidden flex justify-center pt-[11px]"
+            style={{ cursor: 'grab', touchAction: 'none' }}
+            onPointerDown={onHandleDown}
+            onPointerMove={onHandleMove}
+            onPointerUp={onHandleUp}
+            onPointerCancel={onHandleUp}
+            aria-hidden
+          >
+            <span
+              style={{
+                width: 38,
+                height: 4,
+                borderRadius: 999,
+                background: 'var(--border-hover)',
+              }}
+            />
+          </div>
           <div
             id="armory-panel"
-            className="grid grid-cols-1 sm:grid-cols-3 gap-[11px] sm:gap-[14px] pt-[11px]"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-[11px] sm:gap-[14px] pt-[11px]"
           >
-            {ARMORY_SUB_TILES.map((m) => (
-              <ModeTile key={m.href} mode={m} />
+            {ARMORY_SUB_TILES.map((m, i) => (
+              // Each sub-tile navigates away, so the panel does not have to be
+              // collapsed on selection — the next page renders with `open`
+              // false. `dropIndex` is what staggers the cascade; see ModeTile.
+              <ModeTile key={m.href} mode={m} dropIndex={i} />
             ))}
           </div>
         </div>
@@ -474,9 +697,16 @@ export function ShopModeTiles({
               background-color var(--dur-fast) var(--ease-standard),
               border-color var(--dur-fast) var(--ease-standard);
           }
-          .gg-mode-tile:hover { background: var(--bg-card-hover); }
+          /* ⚠️ A TRANSLUCENT tint, not var(--bg-card-hover). That token is an
+             opaque near-white; on a tile whose whole point is that the frosted
+             band shows through it, filling the tile solid on hover would kill
+             the blur under the pointer — the one place the eye is looking.
+             color-mix keeps the highlight and keeps the pane of glass. */
+          .gg-mode-tile:hover {
+            background: color-mix(in srgb, var(--bg-card-hover) 70%, transparent);
+          }
         }
       `}</style>
-    </>
+    </div>
   );
 }

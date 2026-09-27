@@ -180,4 +180,64 @@ describe('pairing the two sides', () => {
     const late = { ...back, issuedOn: '2022-06-01' };
     expect(findOtherSide(front, [late])).toBeNull();
   });
+
+  /**
+   * ⚠️ THE PROVIDER PRINTS ITS NUMBER ONE WAY AND THE PFTC PRINTS IT ANOTHER.
+   *
+   * Operator's own NSN handgun pair, read off their vault 2026-09-26: the
+   * certificate prints `TRG 11897`, the statement of results behind it prints
+   * `TRG11897 - 26124778`. The short form is a PREFIX of the long one, so an
+   * exact-match test never joins them — and this pair carries no ID number and
+   * no issue date, so the code+date fallback cannot reach it either. Both sat
+   * flagged "needs its other side" with the member's two documents apart.
+   */
+  describe('a number the two sides print differently', () => {
+    const NSN_FRONT: Extracted = {
+      details: {
+        holder_name: 'GERHARD JOHAN PETRUS FOURIE',
+        certificate_number: 'TRG 11897',
+        unit_standard: '117705, 119649',
+        document_side: 'front',
+      },
+      issuedOn: null,
+    };
+    const NSN_BACK: Extracted = {
+      details: {
+        issuer: 'NSN Shooting Academy',
+        certificate_number: 'TRG11897 - 26124778',
+        unit_standard: '117705, 119649',
+        document_side: 'back',
+      },
+      issuedOn: null,
+    };
+
+    it('joins on the shared prefix when the unit standards agree', () => {
+      expect(
+        findOtherSide(subject(NSN_FRONT), [row('back', NSN_BACK)])?.id,
+      ).toBe('back');
+      // …and from the other side.
+      expect(
+        findOtherSide(subject(NSN_BACK), [row('front', NSN_FRONT)])?.id,
+      ).toBe('front');
+    });
+
+    it('⚠️ never joins a prefix across DIFFERENT unit standards', () => {
+      // The prefix is only ever consulted AFTER the codes have been required
+      // to match, so a different course whose number happens to extend this
+      // one's cannot be paired on that alone.
+      const otherCourse = {
+        ...NSN_BACK,
+        details: { ...NSN_BACK.details, unit_standard: '119650' },
+      };
+      expect(findOtherSide(subject(NSN_FRONT), [row('x', otherCourse)])).toBeNull();
+    });
+
+    it('ignores a shared run shorter than the floor', () => {
+      const tiny = {
+        ...NSN_BACK,
+        details: { ...NSN_BACK.details, certificate_number: 'TRG1' },
+      };
+      expect(findOtherSide(subject(NSN_FRONT), [row('x', tiny)])).toBeNull();
+    });
+  });
 });

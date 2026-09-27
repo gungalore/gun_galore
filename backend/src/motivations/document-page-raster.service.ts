@@ -115,6 +115,39 @@ export class DocumentPageRasterService {
     }
   }
 
+  /**
+   * Forget every page image rasterised from any of these documents.
+   *
+   * ⚠️ THE RETENTION SWEEP'S DOOR. See the note on
+   * DocumentReadCacheService.forgetMany: the sweep nulls rows in a batch and
+   * had no sha256 to give `forget`, so the page images — which ARE the
+   * document, not a note about it — outlived the bytes they came from. An
+   * erasure had the same hole.
+   */
+  async forgetMany(fileSha256s: readonly string[]): Promise<number> {
+    const sha = fileSha256s.filter(Boolean);
+    if (!sha.length) return 0;
+    try {
+      const rows = await this.prisma.documentPageImage.findMany({
+        where: { fileSha256: { in: sha as string[] } },
+        select: { storageKey: true },
+      });
+      if (!rows.length) return 0;
+      await this.prisma.documentPageImage.deleteMany({
+        where: { fileSha256: { in: sha as string[] } },
+      });
+      for (const row of rows) {
+        await this.files.remove(row.storageKey).catch(() => undefined);
+      }
+      return rows.length;
+    } catch (err) {
+      this.logger.warn(
+        `Page image purge failed for ${sha.length} document(s): ${(err as Error).message}`,
+      );
+      return 0;
+    }
+  }
+
   /** Drop what has expired, bytes and all. Called by the retention sweep. */
   async purgeExpired(): Promise<number> {
     try {

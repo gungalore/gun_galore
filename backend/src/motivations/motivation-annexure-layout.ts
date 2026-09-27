@@ -44,6 +44,18 @@ export interface AnnexureImage {
    * being drawn over it afterwards and hoping.
    */
   stamp?: boolean;
+  /**
+   * This copy takes a page of its own, however small it is.
+   *
+   * ⚠️ SET FOR AN EVIDENCE ANNEXURE, AND ONLY THERE. The operator's decision
+   * is that an evidence item placed in the annexures — a farmer's permission
+   * letter, an affidavit, a score sheet — "gets its own full page". A small
+   * permission letter would otherwise share a sheet with whatever follows it,
+   * and a page holding two different annexures is one a DFO cannot hand to a
+   * commissioner of oaths as a single document. Ordinary copies keep the
+   * pack-as-many-as-fit rule.
+   */
+  solo?: boolean;
 }
 
 export interface PlacedImage extends AnnexureImage {
@@ -107,6 +119,13 @@ export function planAnnexurePages(
 
     const need = CAPTION_H + h + stampH;
     const used = cursor - box.y;
+    // ⚠️ A SOLO COPY ALWAYS STARTS A FRESH SHEET. Its own full page means it
+    // shares with neither what came before nor what follows.
+    if (img.solo && page.length > 0) {
+      pages.push(page);
+      page = [];
+      cursor = box.y;
+    }
     // ⚠️ THE FIRST IMAGE NEVER BREAKS. Without this a single image taller
     // than the box would loop forever pushing itself to a fresh page.
     if (page.length > 0 && used + GAP + need > box.height) {
@@ -128,6 +147,12 @@ export function planAnnexurePages(
       ...(img.stamp ? { stampY: cursor + CAPTION_H + h + 8 } : {}),
     });
     cursor += need;
+    // …and nothing follows it onto that sheet either.
+    if (img.solo) {
+      pages.push(page);
+      page = [];
+      cursor = box.y;
+    }
   }
 
   if (page.length > 0) pages.push(page);

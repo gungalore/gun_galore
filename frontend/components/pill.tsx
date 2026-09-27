@@ -13,6 +13,7 @@ import { clickPulse } from '@/lib/anim';
 
 export function Pill({
   label,
+  sublabel,
   selected,
   onClick,
   size = 'md',
@@ -20,6 +21,10 @@ export function Pill({
   fullWidth = false,
 }: {
   label: React.ReactNode;
+  /** A second, smaller line under the label (e.g. a hard minimum that
+   * applies to this choice). Undefined for most pills, which render
+   * exactly as they always have — single line, centred. */
+  sublabel?: React.ReactNode;
   selected: boolean;
   onClick: () => void;
   size?: 'sm' | 'md';
@@ -62,7 +67,24 @@ export function Pill({
         willChange: 'transform',
       }}
     >
-      {label}
+      {/* flex-col so a sublabel stacks under the label; a pill without one
+          renders a single line and is visually unchanged. */}
+      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+        <span>{label}</span>
+        {sublabel !== undefined && (
+          <span
+            style={{
+              fontSize: Math.max(fontSize - 2, 10),
+              fontWeight: 400,
+              opacity: 0.75,
+              lineHeight: 1.15,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {sublabel}
+          </span>
+        )}
+      </span>
     </button>
   );
 }
@@ -84,7 +106,7 @@ export function PillGroup<T extends string>({
   size = 'md',
   equalCols = false,
 }: {
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; sublabel?: React.ReactNode }[];
   value: T | null;
   onChange: (next: T) => void;
   size?: 'sm' | 'md';
@@ -103,6 +125,7 @@ export function PillGroup<T extends string>({
           <Pill
             key={opt.value}
             label={opt.label}
+            sublabel={opt.sublabel}
             selected={value === opt.value}
             onClick={() => onChange(opt.value)}
             size={size}
@@ -118,6 +141,7 @@ export function PillGroup<T extends string>({
         <Pill
           key={opt.value}
           label={opt.label}
+          sublabel={opt.sublabel}
           selected={value === opt.value}
           onClick={() => onChange(opt.value)}
           size={size}

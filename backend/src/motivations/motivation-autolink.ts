@@ -164,6 +164,21 @@ export const NEVER_AUTOLINK: Partial<Record<MotivationUploadKind, string>> = {
     'must be current and specific to this application (routing spec §5.1: DIRECT)',
   PREVIOUS_MOTIVATION: 'is a past document, not evidence for this one',
   OTHER: 'is whatever the member decided it was; we cannot know where it goes',
+  /**
+   * ⚠️ EVIDENCE IS THE ARGUMENT, AND THE ARGUMENT IS THE MEMBER'S TO MAKE.
+   * Operator, 2026-09-26: evidence is "argument in the body" — photographs of
+   * a hunt, a reloading bench, a range session. Which of them make the case,
+   * and where in the prose each one belongs, is the single most personal
+   * decision in the pack; a photograph attached unasked is us writing their
+   * motivation for them. It is also capped at four on the Activities page, so
+   * a silent attach would spend a slot they had picked for something else.
+   *
+   * ⚠️ AND `OTHER`'S REASON IS NOT THIS ONE. An OTHER we cannot sort; an
+   * evidence item we can sort perfectly and still must not place, because the
+   * container is not the question — the member's own words are.
+   */
+  EVIDENCE:
+    'is the applicant\u2019s argument; which photographs make the case is theirs to choose',
 };
 
 /** How much validity a document needs before it is attached unasked. */
@@ -190,6 +205,22 @@ export interface AutolinkCandidate {
   /** The paired page of a two-sided proficiency document, when known. */
   otherSideId?: string | null;
   documentSide?: 'front' | 'back' | null;
+  /**
+   * This vault row is a copy of an EARLIER one — `Credential.duplicateOfId`.
+   *
+   * ⚠️ THE FIRST FILE IN THE VAULT IS THE ONE THAT GOES ON THE APPLICATION.
+   * Operator, 2026-09-26: "First file in the vault gets preference to go into a
+   * motivation. Duplicates can never be used inside a motivation." The
+   * duplicate detector already picks the earliest row as the original and
+   * flags the later one, so this is the flag the original does NOT carry — and
+   * a candidate carrying it is refused outright, whatever else is true of it.
+   *
+   * ⚠️ REFUSED, NOT OFFERED AS A CHOICE. Everywhere else in this module a
+   * refusal is a question the member can answer; here it is not, because the
+   * OTHER row is already the answer. Two annexures of one document in front of
+   * a DFO is the exact fault the duplicate flag exists to prevent.
+   */
+  isDuplicate?: boolean;
 }
 
 export type SkipReason =
@@ -208,7 +239,12 @@ export type SkipReason =
    * proficiency needs to be added with the competency from the same category.
    * One cant be without the other."
    */
-  | 'needs-its-pair';
+  | 'needs-its-pair'
+  /**
+   * A copy of a document already in the vault. The ORIGINAL goes on the
+   * application, never this — see AutolinkCandidate.isDuplicate.
+   */
+  | 'duplicate';
 
 export interface AutolinkDecision {
   attach: AutolinkCandidate[];
@@ -420,6 +456,16 @@ export function decideAutolink(
   const byKind = new Map<MotivationUploadKind, AutolinkCandidate[]>();
   for (const c of candidates) {
     if (!wantedSet.has(c.kind)) continue;
+    // ⚠️ A COPY IS REFUSED BEFORE IT IS EVER GROUPED, AND THAT ORDER MATTERS.
+    // Removing it here rather than filtering later means the duplicate cannot
+    // count toward the several-candidates rule — a member with one competency
+    // and a re-scan of it would otherwise have TWO candidates and be refused
+    // BOTH, when the answer is simply the original. See
+    // AutolinkCandidate.isDuplicate.
+    if (c.isDuplicate) {
+      skipped.push({ candidate: c, why: 'duplicate' });
+      continue;
+    }
     (byKind.get(c.kind) ?? byKind.set(c.kind, []).get(c.kind)!).push(c);
   }
 

@@ -395,7 +395,8 @@ export class TransactionsService {
       pickupPointSnapshot = quote.pickupPointSnapshot ?? null;
     }
 
-    // P6.4 — flat R15 handling margin charged ONCE per waybill GG creates.
+    // P6.4 — handling margin (10% of the carrier rate) charged ONCE per
+    // waybill GG creates.
     // A line produces its own waybill iff it's a courier line that is
     // NOT a zero-cost consolidated sibling (siblings ship free inside the
     // carrier's single parcel). Firearm DEALER_TRANSFER / PRIVATE_ARRANGE and
@@ -534,7 +535,7 @@ export class TransactionsService {
         commissionZar,
         processingFee,
         shippingCost,
-        shippingHandlingCents, // P6.4 — R15/waybill GG margin (0 for firearm/collection/sibling)
+        shippingHandlingCents, // P6.4 — 10%-of-carrier-rate GG margin (0 for firearm/collection/sibling)
         shippingServiceCode,
         shippingProviderSlug,
         shippingServiceLevelCode,
@@ -1000,7 +1001,7 @@ export class TransactionsService {
             quantity: core.quantity,
             listingPrice: core.listingPrice,
             shippingCost: core.shippingCost,
-            shippingHandlingCents: core.shippingHandlingCents, // P6.4 — R15/waybill margin
+            shippingHandlingCents: core.shippingHandlingCents, // P6.4 — 10%-of-carrier-rate margin
             // BUYER-PAID processing fee only (0 when the seller absorbs it), so
             // the Order snapshot identity items + shipping + handling +
             // processingFee == buyerTotal always holds. Handling is subtracted
@@ -1109,7 +1110,7 @@ export class TransactionsService {
         breakdown: {
           listingPrice: totals.itemsSubtotal,
           shippingCost: totals.shippingSubtotal,
-          shippingHandlingCents: totals.handlingSubtotal, // P6.4 — R15/waybill GG margin
+          shippingHandlingCents: totals.handlingSubtotal, // P6.4 — 10%-of-carrier-rate GG margin
           commissionZar: created.reduce((s, c) => s + c.commissionZar, 0),
           processingFee: totals.processingFee,
           buyerTotal: totals.buyerTotal,
@@ -2980,15 +2981,31 @@ export class TransactionsService {
       },
       data: { dispatchedAt, estimatedDeliveryAt, shippingStatus: 'COLLECTED' },
     });
-    // INTERNAL timeline entry — fires immediately so the buyer sees
-    // "Seller dispatched" before any carrier event lands.
-    void this.tracking.recordInternal(transactionId, 'SELLER_DISPATCHED');
+    // Firearm DEALER_TRANSFER is not a parcel movement: the seller hands the
+    // firearm to their SAPS-licensed dealer and the release is driven by the
+    // dealer stock-in verification, not a buyer confirm-delivery. The
+    // courier-oriented "parcel on its way / confirm delivery to release
+    // payment" timeline event + notification are therefore FALSE on this
+    // path, so both are swapped for their dealer-transfer equivalents below.
+    const isDealerTransfer = tx.shippingMethod === 'DEALER_TRANSFER';
+    // INTERNAL timeline entry — fires immediately so the buyer sees the
+    // dispatch (courier) or the hand-over (dealer transfer) before any
+    // carrier event lands.
+    void this.tracking.recordInternal(
+      transactionId,
+      isDealerTransfer ? 'DEALER_HANDOVER_STARTED' : 'SELLER_DISPATCHED',
+    );
+    // sendDispatchedNotification is DT-aware: it sends itemDispatched on a
+    // courier sale and firearmHandedToDealerBuyer on DEALER_TRANSFER, so the
+    // firearm buyer is never told a courier is carrying it.
     void this.sendDispatchedNotification(transactionId);
     // Inbox: seller just dispatched → clear their "new sale" +
-    // "dispatch reminder" rows for this tx. Buyer's new
-    // "order_dispatched" row that fires inside sendDispatchedNotification
-    // is action-required (must confirm delivery) and resolves later
-    // via confirmDelivery.
+    // "dispatch reminder" rows for this tx. On a courier sale the buyer's new
+    // "order_dispatched" row (fired inside sendDispatchedNotification) is
+    // action-required — it resolves later via confirmDelivery. On
+    // DEALER_TRANSFER the buyer gets an informational hand-over email/SMS with
+    // no action-required row, because the seller uploads the SAPS 534 stock-in
+    // next and that verification's approval is the terminal buyer event.
     void this.notifications.resolveByEntity('transaction', transactionId);
     return updated;
   }
@@ -4229,6 +4246,23 @@ export class TransactionsService {
         include: { listing: true, buyer: true },
       });
       if (!tx) return;
+      // Firearm DEALER_TRANSFER has no courier and no buyer confirm-delivery —
+      // the courier "your order is on its way / confirm delivery so payment can
+      // be released" copy is false for it. confirmDispatch only calls this for
+      // non-DT, but the guard is kept here too so a future caller cannot
+      // reintroduce courier copy on a firearm transfer.
+      if (tx.shippingMethod === 'DEALER_TRANSFER') {
+        await this.notifications.firearmHandedToDealerBuyer({
+          listingTitle: tx.listing.title,
+          transactionId: txId,
+          buyerEmail: tx.buyer.email,
+          buyerName: [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') || 'Buyer',
+          buyerPhone: tx.buyer.phone,
+          trackingReference: tx.trackingReference,
+          shippingMethod: tx.shippingMethod,
+        });
+        return;
+      }
       await this.notifications.itemDispatched({
         listingTitle: tx.listing.title,
         transactionId: txId,

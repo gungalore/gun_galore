@@ -44,6 +44,7 @@ import { ComplaintsModule } from './complaints/complaints.module';
 import { BenchModule } from './bench/bench.module';
 import { MotivationsModule } from './motivations/motivations.module';
 import { LicenceCentreModule } from './licence-centre/licence-centre.module';
+import { LicenceTrackerModule } from './licence-tracker/licence-tracker.module';
 import { ActivityModule } from './activity/activity.module';
 import { PushModule } from './push/push.module';
 import { AskGgModule } from './ask-gg/ask-gg.module';
@@ -118,6 +119,7 @@ import { FeedModule } from './feed/feed.module';
     BenchModule,
     MotivationsModule,
     LicenceCentreModule,
+    LicenceTrackerModule,
     ActivityModule,
     WhatsappModule,
     FeedModule,

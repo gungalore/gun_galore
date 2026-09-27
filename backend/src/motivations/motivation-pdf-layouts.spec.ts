@@ -376,9 +376,11 @@ describe('the house scheme', () => {
   });
 
   it('carries the site\u2019s own ink and the site\u2019s own red', () => {
-    // globals.css: --bg #0f0f0f, --red #C8102E.
+    // globals.css: --bg #0f0f0f, --red #E30613. The red was #C8102E until
+    // 2026-09-23, when the site and the logo road both moved to the brand
+    // pack's value and this scheme was repainted in the same commit.
     expect(SCHEMES.alloutdoor.deep2).toBe('#0f0f0f');
-    expect(SCHEMES.alloutdoor.accent).toBe('#C8102E');
+    expect(SCHEMES.alloutdoor.accent).toBe('#E30613');
   });
 
   it('\u26a0\ufe0f leaves the PAGE white — a dark site is not a dark document', () => {

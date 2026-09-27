@@ -5,7 +5,142 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-09-23**.
+Last updated: **2026-09-25**.
+
+## 2026-09-25 — THE SAPS APPLICATION TRACKER (local, uncommitted)
+
+**NOTHING DEPLOYED.** Branch `feat/takealot-ux-parity`, working tree only. The
+whole feature exists — backend, migration, frontend, tests, docs — and no
+command has been run against the box.
+
+Members applying for a competency or a licence had no way to see where the
+application stands short of phoning their DFO. SAPS publishes the answer on a
+public web enquiry; the tracker saves a reference, polls that enquiry, keeps
+every observation it makes, and notifies on a change. It is the **fourth
+Armory sub-tile**, at `/licence-centre/tracking`.
+
+**The enquiry is a CSRF-protected form, so reading it is three requests, not
+one:** `GET` the page, take `csrf_token` off the `set-cookie`, then `POST`
+form-encoded — and the field name is **`csrf_token`**, not `csrf` (which
+answers HTTP 400). A `COMPETENCY` sends `fsref` alone; a licence or renewal
+sends `fsref` + `fserial`.
+
+- **Backend** — `backend/src/licence-tracker/`: a regex parser
+  (`saps-enquiry-page.ts`) with four sanitised fixtures, the service, the
+  member controller (`/api/licence-centre/tracking`), an admin controller
+  (`/api/admin/licence-tracker`, health + an on-demand `check-all`), the weekly
+  sweep (`@Cron('40 4 * * 0')`) and a module boot spec.
+- **`backend/src/common/saps-http.ts`** — the SAPS HTTPS client moved out of
+  `crime-stats/` (its only importer was `crime-stats-fetch.service.ts`), and
+  gained `sapsPostForm`, `extractCookie` and `node:zlib` gzip/deflate/br
+  decode. No new dependency.
+- **Schema** — `TrackedApplication` + `TrackedApplicationEvent`, additive, in
+  `20260926000000_tracked_applications`. The reference and the serial are
+  **encrypted at rest** (`common/blob-crypto`) with a `referenceHash` for the
+  `@@unique([userId, referenceHash])` dedupe. Events go on `onDelete: Cascade`.
+- **Four flags**, in **both** registries: `licence_tracker_enabled`,
+  `licence_tracker_sweep_enabled`, `licence_tracker_check_cooldown_hours` (6),
+  `licence_tracker_sweep_max` (50).
+- **Frontend** — `lib/licence-tracker-api.ts` (sibling of
+  `licence-centre-api.ts`, same four load-bearing properties), the list and
+  detail pages, and `components/licence-tracker/` (card, timeline, status
+  badge, add form).
+
+**Seven decisions worth knowing before you touch it.**
+
+1. ⚠️ **`licence_tracker_enabled` DEFAULTS TO `true` IN THIS BUILD** — the
+   operator asked for it on so the feature can be exercised and debugged
+   locally. It is a real `Setting` row, so `/admin` turns it off without a
+   deploy, and **it is the one value to flip before a production deploy.**
+2. **A status, an outcome and a "we are blind" are three different facts and
+   the UI keeps them apart.** `lastOutcome` is what our last poll did
+   (`row` / `no_records` / `error`), never what SAPS decided. A failed poll
+   **never** writes or overwrites `status`, and the empty state reads **"SAPS
+   has no record yet"** — never "no records", which is a claim we cannot make.
+3. **`sapsUpdatedOn` is not `lastCheckedAt`.** The first is when SAPS
+   refreshed its own records, the second is when *we* last asked. A card that
+   could only say "APPROVED" and never "SAPS said APPROVED three weeks ago"
+   could not tell a live status from a stale one.
+4. **The cooldown is an answer, not a failure.** It returns **429** carrying
+   `retryAfter` as an ISO instant, and `TrackerCooldownError` / `retryMessage`
+   name that moment — "in 6 hours" read at 09:00 and re-read at 15:00 has
+   already expired. Hourly, not per-minute: repeated enquiries get a block page.
+5. ⚠️ **`formatDay` renders in UTC, always, including for a full ISO instant.**
+   The server stores a SAPS date as `Date.UTC(y, m-1, d)`; read back in the
+   viewer's zone that is the **previous day** anywhere west of Greenwich.
+6. ⚠️ **THE FIRST ENQUIRY RUNS THE MOMENT THE ROW EXISTS, AND THE FORM FIRES
+   IT — NOT THE POST.** `create` writes the row and nothing else, so a card
+   that sat unread read as "we asked SAPS and it had no record", and the
+   member reached for Check now to fix a problem that was really a missing
+   step. `create` in `frontend/app/licence-centre/tracking/page.tsx` therefore
+   calls `void check(created.id)` after the row lands, `TrackerStatusBadge`
+   gained an `asking` state ("Asking SAPS…") that sits **below** the two real
+   outcomes so a re-ask never erases an answer we already hold, and
+   `AddTrackerForm` clears on success so a second tap cannot hit the 409. It
+   is deliberately **not** folded into `POST` — the handshake is two legs with
+   a 20s timeout each, so a synchronous create would hold "Start tracking" for
+   up to forty seconds.
+7. ⚠️ **THE JOURNEY IS A READING AID, AND EVERY FIGURE ON IT SAYS WHAT IT WAS
+   MEASURED FROM.** `daysSince()` is arithmetic on the member's own lodge date;
+   with no date, `DaysCounter` prints a quiet prompt rather than counting from
+   our `createdAt`, which would put "1 067 days since you lodged it" over a row
+   made last week. `SAPS_STAGES` is the order those statuses *usually* arrive
+   in — a rung is marked "seen before" only when one of the member's own rows
+   actually carries that status, an unrecognised status gets a sentence naming
+   the raw text **instead of** a rung, and a refusal or a cancellation is lifted
+   out of the ladder entirely, because a position on it is itself a claim about
+   where the file is. `journey()` measures each step on SAPS's own status dates
+   wherever both rows carry one and falls back to our observation stamps only
+   when they do not (a weekly sweep notices on Sunday what moved on Tuesday),
+   and `elapsedWord()` names **which of the two clocks** the number came off.
+   ⚠️ **"In SAPS's own words" filters on `source === 'SAPS'`** — the milestone
+   form has a "what happens next" box, so a member row can carry a `nextStep`
+   and a search across every row would quote them back to themselves under the
+   Service's name.
+   **"View history"** sits below Check now on the card as a **sibling of the
+   link, never inside it**, and opens `TrackerHistorySheet`: a bottom sheet in a
+   browser, the whole screen in an installed PWA, with a drag banner that says
+   in words what dragging does and a **110px** threshold so a thumb that twitches
+   mid-scroll cannot close the history. The detail route renders the same
+   `TrackerJourney` **inline** and deliberately has no second copy in a window —
+   the list opens the sheet because a summary row carries no events, and this
+   route already has the full detail.
+
+**Retention and erasure (POPIA, Phase 4).** A deactivated tracker is hard-deleted
+after `TRACKER_RETENTION_DAYS = 365` inside the existing
+`licence-centre-retention.service.ts` sweep — it is a `deleteMany` on
+`updatedAt < cutoff` and `active: false`, so its events go by cascade.
+`purgeForUser` deletes a departing member's trackers **explicitly** rather than
+trusting the cascade: the account-closure path has a fallback branch that keeps
+the `User` row, under which no cascade runs.
+
+**Verified:** backend `npx tsc --noEmit` CLEAN; `npm test` **4941 pass** (2
+pre-existing unrelated failures in `motivations/` — `motivation-pdf-layouts
+.spec.ts:381` expects `#C8102E` where the committed service sets `#E30613`, and
+`motivation-consent-pack.spec.ts:100`, which was already listed here);
+`licence-tracker` 50/50, `saps-enquiry-page` 16/16,
+`licence-centre-retention.spec.ts` 7/7. Frontend `npx tsc --noEmit` CLEAN;
+`npm test` **1568 pass / 1 skipped** across 120 files (the journey added
+`TrackerCard.spec.tsx` 13, `TrackerJourney.spec.tsx` 12,
+`TrackerHistorySheet.spec.tsx` 15, and 5 more in
+`licence-tracker-api.spec.ts` / `TrackerTimeline.spec.tsx`); `npm run build` 0,
+with `/licence-centre/tracking` and `/licence-centre/tracking/[id]` in
+`app-path-routes-manifest.json`.
+
+⚠️ **Nothing polls on a schedule in this build, and that is the flag, not a
+bug.** The sweep is `@Cron('40 4 * * 0')` and gated on
+`licence_tracker_sweep_enabled`, which ships **`false`** — so `licence_tracker%`
+has **no** `Setting` rows, the runtime defaults apply, and the only enquiries
+that happen are the automatic first read on add and a manual **Check now**.
+Turn the flag on in `/admin` to have it start polling weekly.
+
+**Not done, deliberately:** no SMS in v1 (in-app + push + email only); the
+crowd statistics, escalation letters and outcome-capture loop in
+`LICENCE-SERVICES-AND-FEED.md` §Phase 2 remain unbuilt, and that section's false
+premise ("SAPS application status cannot be read programmatically") is now
+corrected in place. ⚠️ **Nothing has been checked against the live SAPS host
+from this worktree** — the parser is built to fixtures, and the first real call
+must be watched.
 
 ## 2026-09-23 — THE WARDEN DAEMON IS WIRED (local, uncommitted)
 

@@ -75,6 +75,38 @@ describe('buildLibrary', () => {
     expect(items).toHaveLength(1);
   });
 
+  it('⚠️ NEVER OFFERS A COPY — the original is the one that goes on', () => {
+    // Operator, 2026-09-26: "First file in the vault gets preference to go
+    // into a motivation. Duplicates can never be used inside a motivation."
+    // A copy is not a choice the member should be offered: picking it puts a
+    // second photograph of the same document in front of a DFO. The row is
+    // asked whether it is a copy (`duplicateOfId`) rather than guessed from
+    // `createdAt`, because the folder it sits in is the vault's own record.
+    const items = buildLibrary(
+      [
+        credential({ id: 'original', sha256: 'same' }),
+        credential({ id: 'copy', sha256: 'same', duplicateOfId: 'original' }),
+      ],
+      [],
+      'current',
+      label,
+    );
+    expect(items.map((i) => i.sourceId)).toEqual(['original']);
+  });
+
+  it('⚠️ a copy ahead of the original in the list still never displaces it', () => {
+    const items = buildLibrary(
+      [
+        credential({ id: 'copy', sha256: 'same', duplicateOfId: 'original' }),
+        credential({ id: 'original', sha256: 'same' }),
+      ],
+      [],
+      'current',
+      label,
+    );
+    expect(items.map((i) => i.sourceId)).toEqual(['original']);
+  });
+
   it('⚠️ MARKS WHAT IS ALREADY ON THIS MOTIVATION, by content', () => {
     // The copy attached here has a different row id from the library entry it
     // came from. Matching on id would show it as an unused choice and invite

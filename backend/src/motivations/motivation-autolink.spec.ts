@@ -364,6 +364,66 @@ describe('what it attaches', () => {
   });
 });
 
+describe('a copy never goes on the application', () => {
+  // ⚠️ Operator, 2026-09-26: "First file in the vault gets preference to go
+  // into a motivation. Duplicates can never be used inside a motivation."
+  // The ORIGINAL is the row with no `duplicateOfId`; a copy is refused before
+  // it is ever grouped, so it cannot win a slot the original should have taken
+  // and it can never be the "one candidate" that resolves an ambiguity.
+  it('attaches the original and skips the copy', () => {
+    const out = decideAutolink(
+      [
+        cand(MotivationUploadKind.IDENTITY_DOCUMENT, { sourceId: 'original' }),
+        cand(MotivationUploadKind.IDENTITY_DOCUMENT, {
+          sourceId: 'copy',
+          isDuplicate: true,
+        }),
+      ],
+      [MotivationUploadKind.IDENTITY_DOCUMENT],
+      [],
+      TODAY,
+    );
+    expect(out.attach.map((a) => a.sourceId)).toEqual(['original']);
+    expect(out.skipped.map((s) => s.why)).toEqual(['duplicate']);
+    expect(out.skipped[0].candidate.sourceId).toBe('copy');
+  });
+
+  it('⚠️ a copy does not manufacture a two-candidate refusal', () => {
+    // The copy is removed first, so the ambiguity never arises: the original
+    // is attached rather than nothing being attached because the vault happens
+    // to hold a second copy of the same document.
+    const out = decideAutolink(
+      [
+        cand(MotivationUploadKind.COMPETENCY_CERTIFICATE, {
+          sourceId: 'original',
+        }),
+        cand(MotivationUploadKind.COMPETENCY_CERTIFICATE, {
+          sourceId: 'copy',
+          isDuplicate: true,
+        }),
+      ],
+      [MotivationUploadKind.COMPETENCY_CERTIFICATE],
+      [],
+      TODAY,
+    );
+    expect(out.attach.map((a) => a.sourceId)).toEqual(['original']);
+    expect(out.skipped.every((s) => s.why === 'duplicate')).toBe(true);
+  });
+
+  it('⚠️ an absent flag is NOT a copy', () => {
+    // Every credential row selected before this existed omits the field. Read
+    // as `!== null`, `undefined` would mark the whole vault as copies and
+    // attach nothing — silently, and on every application.
+    const out = decideAutolink(
+      [cand(MotivationUploadKind.IDENTITY_DOCUMENT)],
+      [MotivationUploadKind.IDENTITY_DOCUMENT],
+      [],
+      TODAY,
+    );
+    expect(out.attach).toHaveLength(1);
+  });
+});
+
 describe('the freshness rule', () => {
   it(`⚠️ refuses anything with under ${AUTOLINK_MIN_DAYS} days left`, () => {
     // SAPS takes months. A letter of good standing with three weeks on it is

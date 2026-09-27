@@ -7,7 +7,7 @@ import { tmpdir } from 'os';
 import * as path from 'path';
 import { pipeline } from 'stream/promises';
 import { PrismaService } from '../prisma/prisma.service';
-import { readText, sapsGet } from './saps-http';
+import { readText, sapsGet } from '../common/saps-http';
 import { readRawDataSheet } from './crime-stats-workbook';
 import { parseRawData, type ParseRawDataResult } from './parse-raw-data';
 import {

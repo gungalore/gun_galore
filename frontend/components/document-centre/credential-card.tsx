@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import ConfirmPanel from '@/components/document-centre/confirm-panel';
 import { KINDS } from '@/components/document-centre/kinds';
-import { filedUnsure } from '@/lib/document-review-rules';
+import { evidenceNeedsWords, filedUnsure } from '@/lib/document-review-rules';
 import {
   CredentialRow,
   CredentialUsage,
@@ -22,12 +22,22 @@ import {
 
 export default function CredentialCard({
   row,
+  copies = [],
   usedIn,
   token,
   onChanged,
   onError,
 }: {
   row: CredentialRow;
+  /**
+   * Later files the server flagged as copies of THIS one.
+   *
+   * ⚠️ THEY ARE NOT SEPARATE DOCUMENTS, SO THEY HAVE NO CARD OF THEIR OWN.
+   * The list folds them under this row; this box is where the member decides
+   * which version to keep, because that decision belongs beside the document
+   * it is about. Empty for the common case, and for a copy itself.
+   */
+  copies?: CredentialRow[];
   /** Applications this document already appears in. Empty is the normal case. */
   usedIn: CredentialUsage[];
   token: () => Promise<string | null>;
@@ -65,6 +75,17 @@ export default function CredentialCard({
    * nothing is missing there, the news is simply bad, and "to turn this green,
    * renew it" would be glib.
    */
+  /**
+   * Is this an evidence item the classifier could not place?
+   *
+   * ⚠️ THE WHOLE POINT OF NAMING IT IS TO SAY THE RIGHT NEXT STEP. Evidence is
+   * the one kind whose "we are not sure" is not about the TYPE at all — every
+   * evidence row is filed as Evidence, correctly — but about the container
+   * inside it, which is corrected by describing the file again in the row's
+   * own words box. See evidenceNeedsWords.
+   */
+  const wordsNeeded = evidenceNeedsWords(row) && !row.confirmed;
+
   const nextStep: string | null = (() => {
     // ⚠️ A KEPT-ON-FILE DOCUMENT NEVER GOES GREEN, so there is nothing to
     // promise about turning it green. This branch used to be unreachable only
@@ -72,8 +93,14 @@ export default function CredentialCard({
     // 'unknown' and was told, in as many words, to "add the expiry date
     // printed on it". There is no date printed on a gun safe.
     if (row.state === 'no-expiry') {
-      return row.confirmed
-        ? null
+      if (row.confirmed) return null;
+      // ⚠️ AN EVIDENCE ITEM HAS NO TYPE TO CHECK, SO IT IS NOT SENT TO ONE.
+      // Every evidence row IS "Evidence" — the box is certain and the
+      // container is what we guessed at, and the container is corrected by
+      // describing the file again, not by choosing a document kind. Saying
+      // "check the type" here names an errand with no answer.
+      return wordsNeeded
+        ? 'We could not tell what this shows. Say in a few words what it is and we will file it.'
         : 'Nothing on this one expires. Check that we have filed it as the right type.';
     }
     if (row.state !== 'unknown') return null;
@@ -209,15 +236,26 @@ export default function CredentialCard({
             was our low-confidence guess. In passing and correctable, per
             "Automate It": we filled it in, they change it if we are wrong.
             Not a task, and never a red button. */}
-        {filedUnsure(row) && !row.confirmed && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="mt-1.5 text-left text-[11px] font-semibold text-[var(--warning)] underline decoration-dotted underline-offset-2"
-          >
-            Filed as {KIND_LABELS[row.kind] ?? row.kind} — not sure, tap to
-            change
-          </button>
+        {wordsNeeded ? (
+          /* ⚠️ NOT "Filed as Evidence — not sure, tap to change". That names
+             the one box that is right, and the tap it offers opens a type menu
+             with no answer for an evidence item — the type is Evidence and
+             always was. What we are unsure about is what it SHOWS. */
+          <p className="mt-1.5 text-[11px] font-semibold text-[var(--warning)]">
+            We could not tell what this shows
+          </p>
+        ) : (
+          filedUnsure(row) &&
+          !row.confirmed && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="mt-1.5 text-left text-[11px] font-semibold text-[var(--warning)] underline decoration-dotted underline-offset-2"
+            >
+              Filed as {KIND_LABELS[row.kind] ?? row.kind} — not sure, tap to
+              change
+            </button>
+          )
         )}
       </div>
 
@@ -288,6 +326,93 @@ export default function CredentialCard({
               </p>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── THE OTHER VERSIONS OF THIS DOCUMENT ──────────────────────────
+          ⚠️ ONE DOCUMENT, SEVERAL FILES. The server compares what each row
+          SAYS about itself, not the file, so re-scanning a licence card on a
+          second day makes a second row — two different photographs of one
+          card. They fold into one line in the list; the decision about which
+          to KEEP lives here, beside the document it is about. Delete removes
+          the extra file; Keep this one promotes it and erases the original,
+          because a member who re-scanned a card deliberately has a better
+          photograph and the vault should store the one they chose. */}
+      {copies.length > 0 && (
+        <div className="mt-4 rounded-[10px] border border-[var(--border)] bg-[var(--bg-inset)] p-3.5">
+          <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+            {copies.length === 1
+              ? 'Another file of this document'
+              : `${copies.length} other files of this document`}
+          </p>
+          <div className="flex flex-col gap-2.5">
+            {copies.map((c) => (
+              <div key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <span className="text-[12.5px] text-[var(--text-secondary)]">
+                  Added {formatDate(c.createdAt.slice(0, 10))}
+                </span>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="text-[12.5px] underline disabled:opacity-50"
+                  onClick={async () => {
+                    const ok = window.confirm(
+                      `Keep this version instead?\n\n“${c.title}” will become the document, and “${row.title}” added on ${formatDate(row.createdAt.slice(0, 10))} will be removed for good.`,
+                    );
+                    if (!ok) return;
+                    setBusy(true);
+                    onError(null);
+                    try {
+                      await licenceCentreApi.replace(token, c.id);
+                      await onChanged();
+                    } catch (e) {
+                      onError(
+                        e instanceof LicenceApiError
+                          ? e.message
+                          : 'We could not swap those versions just now.',
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  Keep this version
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="text-[12.5px] text-[var(--red)] underline disabled:opacity-50"
+                  onClick={async () => {
+                    const ok = window.confirm(
+                      `Delete this copy?\n\nThe file added on ${formatDate(c.createdAt.slice(0, 10))} is removed for good. “${row.title}” stays.`,
+                    );
+                    if (!ok) return;
+                    setBusy(true);
+                    onError(null);
+                    try {
+                      await licenceCentreApi.remove(token, c.id);
+                      await onChanged();
+                    } catch (e) {
+                      onError(
+                        e instanceof LicenceApiError && e.status === 429
+                          ? e.message
+                          : 'We could not delete that copy just now.',
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+            Two files of one document list as one line here, but only one can be
+            used on an application. Anything else is a second copy in front of a
+            DFO.
+          </p>
         </div>
       )}
 
@@ -486,8 +611,21 @@ export default function CredentialCard({
             cancelLabel="Cancel"
             /* THE WAY BACK. Somebody who tapped "I will do this later" on a
                batch-sorted document has no other route to correcting the type
-               we chose for it. */
-            kinds={KINDS}
+               we chose for it.
+
+               ⚠️ NOT FOR EVIDENCE, WHICH HAS NO OTHER TYPE. Omitting `kinds`
+               is what turns the type control off (see showKind), and that
+               control is the one route that could break an evidence row: its
+               menu is document kinds, so choosing any of them posts a refile.
+               ⚠️ THIS OMISSION IS THE ONLY GUARD. `confirmExpiry` does NOT
+               refuse a document-kind refile of an EVIDENCE row — it normalises
+               and writes the posted kind like any other — so a member would be
+               confirmed under a document kind with no date, the SAFE_PHOTOGRAPHS
+               failure class. If this control is ever re-enabled for evidence,
+               add that server guard FIRST. The title is still theirs, through
+               the pen beside the name; the container is still theirs, through
+               the description in the Evidence panel. */
+            kinds={row.kind === 'EVIDENCE' ? undefined : KINDS}
             currentKind={row.kind}
             defaultTitle={row.title}
             // The stored answers, so re-opening shows what the member already
@@ -542,7 +680,17 @@ export default function CredentialCard({
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-        {!editing && (
+        {/* ⚠️ NO PRIMARY BUTTON ON AN EVIDENCE ITEM WE COULD NOT PLACE. Its only
+            action was the confirm panel, which controls a document TYPE, an
+            EXPIRY and a NAME — and on this row all three are already right or
+            beside the point: the type is Evidence, there is no date to check,
+            and the name is the pen's job. It is exactly the control with no
+            answer that the marker above refuses to offer, and it is worse than
+            useless here because confirming stamps the row as checked while its
+            container is still null — quietly retiring an item no screen would
+            then ask about again. The way in is the description, written in the
+            Evidence panel on this page. */}
+        {!editing && !wordsNeeded && (
           /* ⚠️ A RED "Check the date" BUTTON ON A PHOTOGRAPH OF A SAFE. Red is
              this page's "you must do something" colour, and STATE_TONE keeps
              the kept-on-file rows neutral rather than amber precisely because

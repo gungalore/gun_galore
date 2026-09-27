@@ -54,6 +54,23 @@ export const PHOTOGRAPH_KINDS: readonly CredentialKind[] = [
   CredentialKind.SAFE_PHOTO_AJAR,
   CredentialKind.SAFE_PHOTO_BOLTS,
   CredentialKind.SAFE_INSTALLATION,
+  // ⚠️ EVIDENCE IS HERE, AND `isPhotograph` MEANS SOMETHING NARROWER FOR IT
+  // THAN ITS NAME SUGGESTS.
+  //
+  // There is no fixed set of fields to read off an evidence item, so no field
+  // extraction should run on one and this list is the right home for it —
+  // WANTED.EVIDENCE is empty for the same reason, and asking for fields would
+  // spend a vision call to come back with nothing and then flag the row amber.
+  //
+  // ⚠️ THIS GOVERNS FIELD EXTRACTION. IT DOES NOT MEAN EVIDENCE IS NEVER
+  // LOOKED AT. Classifying an evidence item into a container is a SEPARATE
+  // request with its own purpose ('motivation.evidence.classify'), made by
+  // motivation-extract.service.ts classifyEvidence(), and it DOES use vision.
+  // A reader who routes evidence through the no-vision path on the strength of
+  // this entry alone will silently skip the classifier and leave every
+  // evidence item without a container — which then reads as "we could not
+  // decide" and asks the member for a description that changes nothing.
+  CredentialKind.EVIDENCE,
 ];
 
 const PHOTOGRAPHS: ReadonlySet<CredentialKind> = new Set(PHOTOGRAPH_KINDS);
@@ -166,6 +183,19 @@ export function settledByNature(kind: CredentialKind): {
         'A photograph has no expiry date on it, so we have marked this one as never expiring. Change it if you want a reminder about it.',
     };
   }
+  // ⚠️ EVIDENCE IS COVERED BY THE isPhotograph BRANCH ABOVE, and that is the
+  // correct branch rather than a convenient one. An evidence item is kept to
+  // argue a motivation, not to be renewed: a hunting photograph from 2019 is
+  // evidence of a life, and arming a reminder to replace it would be the
+  // Centre inventing a chore.
+  //
+  // ⚠️ AND THE COST OF THAT IS REAL, SO KNOW IT. Because no field extraction
+  // runs on evidence, `issuedOn` is NEVER written for one — including for the
+  // containers that plainly carry a date, a hunting permit or a protection
+  // order. The date is still the member's to type on the card, and nothing
+  // here blocks it. What is refused is only US reading it: the alternative is
+  // a field extractor running over every hunting photograph to ask for an
+  // issue date that is not there.
   if (kind === CredentialKind.PROFICIENCY) {
     return {
       neverExpires: true,

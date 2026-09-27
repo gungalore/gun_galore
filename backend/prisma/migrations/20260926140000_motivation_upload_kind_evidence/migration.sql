@@ -1,0 +1,17 @@
+-- THE EVIDENCE UPLOAD KIND — ONE KIND, MANY CONTAINERS.
+--
+-- ⚠️ THE CONTAINER IS NOT AN ENUM VALUE. It is a registry id written to
+-- `evidenceType` (see motivations/evidence-taxonomy.ts): the taxonomy is
+-- expected to grow and be revised as members bring things we did not
+-- anticipate, and Postgres has no ALTER TYPE ... DROP VALUE, so an enum would
+-- make every correction a permanent scar. The kind records only that this row
+-- IS evidence; `placement` on its container decides whether it takes its own
+-- annexure letter and full page, or prints in the body on the "My Activities /
+-- Evidence" page.
+--
+-- ⚠️ THIS FILE ADDS THE VALUE AND NOTHING ELSE, for the reason in
+-- 20260926130000_credential_kind_evidence — see there.
+--
+-- Safe against production: ADD VALUE on an enum is metadata-only and cannot
+-- rewrite or invalidate existing rows. IF NOT EXISTS makes the replay a no-op.
+ALTER TYPE "MotivationUploadKind" ADD VALUE IF NOT EXISTS 'EVIDENCE';

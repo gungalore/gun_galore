@@ -1,5 +1,15 @@
+import { randomUUID, createHash } from 'node:crypto';
 import { DocumentReadCacheService } from './document-read-cache.service';
 import { DocumentPageRasterService } from './document-page-raster.service';
+// The identify pass's memory. NOT @Global — provided and exported by
+// MotivationsModule (this very module), so it is injected here directly rather
+// than through another module's edge. See document-identify.service.ts.
+import {
+  DocumentIdentifyService,
+  MAX_IDENTIFY_DESCRIPTION,
+  MAX_IDENTIFY_FILES,
+  type IdentifyRecord,
+} from '../common/document-identify.service';
 import {
   BadRequestException,
   GoneException,
@@ -10,6 +20,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CredentialKind,
   MotivationLicenceType,
   MotivationStatus,
   MotivationUploadKind,
@@ -18,7 +29,12 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { VaultLogService } from '../common/vault-log.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
-import { encryptJson, decryptJson } from '../common/blob-crypto';
+import {
+  encryptJson,
+  decryptJson,
+  tryDecryptText,
+  encryptText,
+} from '../common/blob-crypto';
 import { parseProvenance, stamp } from '../common/answer-provenance';
 // "NONE" on a licence card is the card saying there is nothing in that row —
 // never an answer on a form somebody signs. The readers and the vault keep the
@@ -39,6 +55,16 @@ import { buildLibrary, leadsPair, NEVER_REUSABLE } from './motivation-library';
 import { VaultAdoptionService } from './vault-adoption.service';
 import { VaultConsentService } from '../users/vault-consent.service';
 import { buildAnnexures, UPLOAD_KIND_LABELS } from './motivation-checklist';
+// ⚠️ THE THREE EVIDENCE CAPS ARE DISTINCT AND ALL THREE LIVE IN THE REGISTRY.
+// annexure (2) and body (4) are the operator's numbers; EVIDENCE is one upload
+// kind whose PLACEMENT — not its kind — decides which cap it counts against.
+import {
+  EVIDENCE_ANNEXURE_MAX,
+  EVIDENCE_BODY_MAX,
+  containerById,
+  evidenceRow,
+  isAnnexureEvidence,
+} from './evidence-taxonomy';
 import {
   FIELD_REGISTRY_VERSION,
   fieldsFor,
@@ -93,6 +119,22 @@ const AUTOLINK_CONCURRENCY = 3;
  */
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOADS = 16;
+
+/**
+ * One file's verdict, as the picker's status card needs it.
+ *
+ * Shape-identical to the vault's IdentifyVerdict — same picker, same cards —
+ * so a change to one is a change to the other. `ocrChars`, never the text: the
+ * OCR itself stays on the server and is married to the row by id.
+ */
+export interface IdentifyVerdict {
+  id: string;
+  role: 'document' | 'evidence';
+  kind: string | null;
+  container: string | null;
+  confident: boolean;
+  ocrChars: number | null;
+}
 
 /**
  * One application, opened once for a run of attachments.
@@ -150,6 +192,14 @@ export class MotivationDocumentsService {
      */
     private readonly readCache: DocumentReadCacheService,
     private readonly pageRaster: DocumentPageRasterService,
+    /**
+     * The identify pass's verdict store.
+     *
+     * ⚠️ REQUIRED, AND BEFORE `prefill` FOR THAT REASON — a required parameter
+     * cannot follow an optional one. Supplied by this module's providers block,
+     * which is also where it is exported from for the Licence Centre.
+     */
+    private readonly identifyStore: DocumentIdentifyService,
     private readonly prefill?: MotivationPrefillService,
   ) {}
 
@@ -232,6 +282,15 @@ export class MotivationDocumentsService {
           // WHICH page it is, for the fold's lead rule. Read below, only for a
           // row that actually has a partner — see readSide.
           detailsEncrypted: true,
+          // ⚠️ A COPY IS NOT OFFERED — THE ORIGINAL IS. The first file in the
+          // vault goes on the application; a re-scan of it stands down.
+          // Operator, 2026-09-26. See buildLibrary's takeCredential.
+          duplicateOfId: true,
+          // An evidence item's container. Every evidence row is
+          // `kind: 'EVIDENCE'`, so without this the picker can only call them
+          // all "Evidence" and the member cannot tell their hunt photo from
+          // their permission letter. See motivation-library's offerSlot.
+          evidenceType: true,
         },
       }),
       this.prisma.motivationUpload.findMany({
@@ -264,12 +323,17 @@ export class MotivationDocumentsService {
           // application were two pages of ONE proficiency and listed both.
           // Anyone who has filed a single application before is in that state.
           sourceCredentialId: true,
+          // ⚠️ THE COPY'S OWN CONTAINER. A copy outlives its vault master —
+          // deleting the credential nulls `sourceCredentialId` but leaves the
+          // container — so this is the only column that still says what the
+          // item is on the commonest path. See motivation-library.
+          evidenceType: true,
         },
       }),
     ]);
 
     const now = new Date();
-    const items = buildLibrary(
+    const found = buildLibrary(
       // ⚠️ THE BLOB STAYS HERE. motivation-library promises "rows in, list
       // out, no Prisma, no decryption", so the side is read on this side of
       // the boundary and handed over already resolved — and only for a page
@@ -284,6 +348,29 @@ export class MotivationDocumentsService {
       documentLabel,
       now,
     );
+
+    /**
+     * ⚠️ THE PLACEMENT IS RESOLVED HERE, NOT IN THE PICKER.
+     *
+     * The page has to say "1 of 2 own-page items chosen" BEFORE anything is
+     * attached, and the only thing that decides which counter an item takes is
+     * its container's placement. Fetching the container registry from the
+     * client to work it out would put a second copy of the taxonomy in the
+     * frontend and let it go stale the first time a container moved between
+     * pages — the exact drift `motivation-library` hands the id over to avoid.
+     *
+     * An item we could not place counts as a body item, because that is where
+     * an unplaced item prints — see placementOf.
+     */
+    const items = found.map((i) => ({
+      ...i,
+      evidencePlacement:
+        i.kind === MotivationUploadKind.EVIDENCE
+          ? isAnnexureEvidence(i.evidenceType)
+            ? ('annexure' as const)
+            : ('body' as const)
+          : null,
+    }));
 
     // ── what a section 16 pack could be handed automatically ─────────
     //
@@ -481,6 +568,17 @@ export class MotivationDocumentsService {
           extractionOk: true,
           // The other half of a two-sided proficiency, attached with it.
           otherSideId: true,
+          // ⚠️ WHETHER THIS ROW IS A COPY OF AN EARLIER ONE. The first file in
+          // the vault is the one that goes on the application; a copy is
+          // refused outright. Operator, 2026-09-26. See AutolinkCandidate
+          // .isDuplicate.
+          duplicateOfId: true,
+          // ⚠️ FOR THE ONE DOUBLE THE OTHER COLUMNS CANNOT SEE. A file
+          // photographed STRAIGHT onto this application carries no
+          // sourceCredentialId, so `refuse` never names the vault original it
+          // duplicates — and both would land in the pack. The plaintext hash
+          // joins them: it is the same file, so it is the same document.
+          sha256: true,
         },
       }),
       this.prisma.motivationUpload.findMany({
@@ -553,6 +651,24 @@ export class MotivationDocumentsService {
         .filter((x): x is string => x !== null),
     ]);
 
+    /**
+     * ⚠️ THE ONE DOUBLE `refuse` CANNOT SEE. Operator, 2026-09-26: "Duplicates
+     * can never be used inside a motivation. Even if uploaded from the
+     * motivation uploader or scanner."
+     *
+     * A file photographed straight onto THIS application is a MotivationUpload
+     * with no sourceCredentialId — nothing records which vault row it copies,
+     * because it never came from one. If the same bytes are also in the vault
+     * (the member kept them, or scanned the page on the application and on the
+     * Centre), the auto-link run would attach the vault row on top and the DFO
+     * would get the same page twice under two annexure letters.
+     *
+     * The plaintext hash is the join: same bytes, same document. What is
+     * already on this application by content is never carried on by the run —
+     * the same rule buildLibrary's `here` set already applies to the picker.
+     */
+    const hereSha = new Set(uploads.map((u) => u.sha256));
+
     const needed = requiredEndorsement(answersNow);
 
     // ⚠️ A TWO-SIDED PROFICIENCY IS ONE CANDIDATE, NOT TWO. The certificate
@@ -588,7 +704,13 @@ export class MotivationDocumentsService {
     };
 
     const candidates = credentials
-      .filter((c) => !refuse.has(c.id) && standsForPair(c))
+      .filter(
+        (c) =>
+          !refuse.has(c.id) &&
+          standsForPair(c) &&
+          // Already on this application by content — never offered twice.
+          !(c.sha256 !== null && hereSha.has(c.sha256)),
+      )
       .map((c) => {
         // The slot it actually belongs in — disciplineType beats the primary
         // kind, so a sworn good standing letter is not offered as a card.
@@ -614,6 +736,11 @@ export class MotivationDocumentsService {
               covers: [covers, pairedCovers].filter(Boolean).join(' '),
               otherSideId: c.otherSideId,
               documentSide: this.readSide(c.detailsEncrypted),
+              // ⚠️ A COPY NEVER GOES ON. The original carries no flag and is
+              // what gets attached; this row is only ever a second annexure of
+              // the same document in front of a DFO. Truthy, not `!== null`:
+              // an unselected or absent field must read as "not a copy".
+              isDuplicate: !!c.duplicateOfId,
             }
           : null;
       })
@@ -1190,7 +1317,7 @@ export class MotivationDocumentsService {
     otherCredentialId: string,
   ): Promise<boolean> {
     const motivationId = ctx.row.id;
-    const [pages, count] = await Promise.all([
+    const [pages, held] = await Promise.all([
       this.prisma.credential.findMany({
         // Ownership is a WHERE clause here as it is everywhere else in this
         // module: `firstCredentialId` can be a client-supplied id.
@@ -1200,8 +1327,13 @@ export class MotivationDocumentsService {
         },
         select: { sha256: true },
       }),
-      this.prisma.motivationUpload.count({ where: { motivationId } }),
+      // ⚠️ DOCUMENTS ONLY. Room is being measured for a two-page DOCUMENT, and
+      // an evidence item occupies none of the sixteen slots it is measuring —
+      // see capacityFor. Counting every row would refuse a proficiency at
+      // fourteen documents and two photographs, which is a pack with room.
+      this.capacityFor(motivationId),
     ]);
+    const count = held.documents;
     const shas = pages.map((x) => x.sha256).filter((x): x is string => !!x);
     // No hashes to compare — a vault row that predates the column, or a
     // partner we could not read. Ask for two slots, which is the safe way to
@@ -1248,6 +1380,12 @@ export class MotivationDocumentsService {
         userId,
         storageKey: { not: null },
         purgedAt: null,
+        // ⚠️ A COPY NEVER RIDES ALONG EITHER. A paired page is not a duplicate
+        // of its partner — findDuplicate excludes opposite sides by design —
+        // but a page that was RE-SCANNED carries duplicateOfId pointing at the
+        // earlier scan of the same side, and folding that into the pack would
+        // be the second annexure again. Operator, 2026-09-26.
+        duplicateOfId: null,
       },
       select: { id: true },
     });
@@ -1283,6 +1421,69 @@ export class MotivationDocumentsService {
   }
 
   /**
+   * What this application already holds, split the way the caps are drawn.
+   *
+   * ⚠️ ONE QUERY, THREE NUMBERS, AND THEY ARE NOT ADDITIVE. A document counts
+   * against MAX_UPLOADS; an evidence item counts against ONE of the two
+   * evidence caps, chosen by where its container prints. `held.documents`
+   * therefore EXCLUDES evidence, or four photographs would eat four of the
+   * sixteen slots the paperwork needs.
+   */
+  private async capacityFor(motivationId: string) {
+    const rows = await this.prisma.motivationUpload.findMany({
+      where: { motivationId },
+      select: { kind: true, evidenceType: true },
+    });
+    let documents = 0;
+    let annexure = 0;
+    let body = 0;
+    for (const r of rows) {
+      if (r.kind !== MotivationUploadKind.EVIDENCE) {
+        documents += 1;
+      } else if (isAnnexureEvidence(r.evidenceType)) {
+        annexure += 1;
+      } else {
+        body += 1;
+      }
+    }
+    return { documents, annexure, body };
+  }
+
+  /**
+   * Where the thing about to be attached will print, if it is evidence.
+   *
+   * ⚠️ RESOLVED FROM THE SOURCE, BEFORE ANY BYTES MOVE. The container is on
+   * the vault credential (or on the upload being reused), not on anything this
+   * application holds yet — so the cap has to be checked against the source's
+   * placement, and a low-confidence item with no container is a body
+   * photograph, because that is where an unplaced item prints.
+   */
+  private async placementOf(
+    source: 'credential' | 'upload',
+    sourceId: string,
+    userId: string,
+  ): Promise<'EVIDENCE_ANNEXURE' | 'EVIDENCE_BODY' | null> {
+    if (source === 'credential') {
+      const c = await this.prisma.credential.findFirst({
+        where: { id: sourceId, userId },
+        select: { kind: true, evidenceType: true },
+      });
+      if (c?.kind !== CredentialKind.EVIDENCE) return null;
+      return isAnnexureEvidence(c.evidenceType)
+        ? 'EVIDENCE_ANNEXURE'
+        : 'EVIDENCE_BODY';
+    }
+    const u = await this.prisma.motivationUpload.findFirst({
+      where: { id: sourceId, motivation: { userId } },
+      select: { kind: true, evidenceType: true },
+    });
+    if (u?.kind !== MotivationUploadKind.EVIDENCE) return null;
+    return isAnnexureEvidence(u.evidenceType)
+      ? 'EVIDENCE_ANNEXURE'
+      : 'EVIDENCE_BODY';
+  }
+
+  /**
    * Copy ONE library document onto an already-opened application.
    *
    * ⚠️ THE CEILING IS CHECKED HERE, NOT BY THE CALLER, and it is deliberately
@@ -1299,10 +1500,28 @@ export class MotivationDocumentsService {
     const user = { id: ctx.userId };
     const row = ctx.row;
 
-    const count = await this.prisma.motivationUpload.count({
-      where: { motivationId: row.id },
-    });
-    if (count >= MAX_UPLOADS) {
+    // ⚠️ EVIDENCE DOES NOT COUNT AGAINST THE DOCUMENT CEILING, AND THE THREE
+    // CAPS ARE DISTINCT ON PURPOSE. The operator's numbers: 16 documents, then
+    // 2 evidence items that take an annexure letter and 4 that print on the
+    // Activities page. Folding evidence into MAX_UPLOADS would let four
+    // photographs crowd out the paperwork SAPS actually processes; counting
+    // all evidence as one bucket would let somebody put six annexure letters
+    // in a pack with room for two.
+    const held = await this.capacityFor(row.id);
+    const wanted = await this.placementOf(source, sourceId, user.id);
+    if (wanted === 'EVIDENCE_ANNEXURE') {
+      if (held.annexure >= EVIDENCE_ANNEXURE_MAX) {
+        throw new ConflictException(
+          `A motivation can carry ${EVIDENCE_ANNEXURE_MAX} evidence documents with their own page. Remove one before adding another.`,
+        );
+      }
+    } else if (wanted === 'EVIDENCE_BODY') {
+      if (held.body >= EVIDENCE_BODY_MAX) {
+        throw new ConflictException(
+          `A motivation can carry ${EVIDENCE_BODY_MAX} activity photographs. Remove one before adding another.`,
+        );
+      }
+    } else if (held.documents >= MAX_UPLOADS) {
       throw new ConflictException(
         `An application can carry ${MAX_UPLOADS} documents. Remove one before adding another.`,
       );
@@ -1333,6 +1552,20 @@ export class MotivationDocumentsService {
       fields: [],
       blob: null,
     };
+    /**
+     * An evidence item's container, and the member's own words about it.
+     *
+     * ⚠️ CARRIED ACROSS SO THE COPY PRINTS THE WAY THE MASTER DOES. The
+     * container decides annexure-vs-body and supplies the tick in
+     * `coversKinds`; the encrypted description is what captions the picture on
+     * the Activities page. All three are null for every other kind, and for an
+     * evidence item the classifier could not place.
+     */
+    let evidence: {
+      type: string | null;
+      confidence: string | null;
+      descriptionEncrypted: string | null;
+    } | null = null;
 
     if (source === 'credential') {
       const c = await this.prisma.credential.findFirst({
@@ -1345,25 +1578,65 @@ export class MotivationDocumentsService {
           detailsEncrypted: true,
           extractionOk: true,
           expiresOn: true,
+          duplicateOfId: true,
+          evidenceType: true,
+          evidenceConfidence: true,
+          evidenceDescriptionEncrypted: true,
         },
       });
       if (!c) throw new NotFoundException('Document not found');
-      sourceCredentialId = sourceId;
-      // ⚠️ THE GOOD-STANDING ROLE IS DATE-GATED (2026-09-14). A dedicated
-      // certificate only answers the letter-of-good-standing row while its
-      // date window is still valid — see effectiveUploadKinds.
-      const mapped = effectiveUploadKinds(
-        {
-          kind: c.kind,
-          expiresOn: c.expiresOn ? toIsoDay(c.expiresOn) : null,
-        },
-        new Date(),
-      );
-      if (!mapped.length) {
+      // ⚠️ THE BOUNDARY IS HERE, NOT IN THE PICKER. buildLibrary and
+      // decideAutolink both keep a copy out of their lists, but this route is
+      // directly callable and a stale client holds yesterday's list. Operator,
+      // 2026-09-26: "Duplicates can never be used inside a motivation." The
+      // original is the document; this row is a second copy of it, and two
+      // annexures of one document is the failure the flag exists to prevent.
+      if (c.duplicateOfId) {
         throw new BadRequestException(
-          'That document does not answer anything on this application.',
+          'This is a copy of another document in your Licence Centre. Attach the original instead.',
         );
       }
+      sourceCredentialId = sourceId;
+      // ⚠️ EVIDENCE IS PLACED BY ITS CONTAINER, NOT BY CREDENTIAL_TO_UPLOAD.
+      // That map is the document-slot table, and evidence answers no document
+      // slot — its `[]` entry would have read as "does not answer anything"
+      // and refused the attach. The container supplies both the placement and,
+      // through `satisfies`, any DFO row this evidence genuinely ticks.
+      if (c.kind === CredentialKind.EVIDENCE) {
+        kind = MotivationUploadKind.EVIDENCE;
+        evidence = {
+          type: c.evidenceType,
+          confidence: c.evidenceConfidence,
+          descriptionEncrypted: c.evidenceDescriptionEncrypted,
+        };
+        // A container we cannot resolve — a retired id, or an item the
+        // classifier never placed — is still a valid photograph; it just
+        // prints as generic evidence, and it ticks nothing.
+        const container = containerById(c.evidenceType);
+        alsoSatisfies = container?.satisfies ? [container.satisfies] : [];
+        storageKey = c.storageKey;
+        mimeType = c.mimeType;
+        purgedAt = c.purgedAt;
+        // No vision reading either way: evidence was classified on the way
+        // into the vault, and there is no field to extract from a photograph
+        // of a hunt. The amber "we could not read it" must not fire on it.
+        extraction = { ok: c.extractionOk, fields: [], blob: null };
+      } else {
+        // ⚠️ THE GOOD-STANDING ROLE IS DATE-GATED (2026-09-14). A dedicated
+        // certificate only answers the letter-of-good-standing row while its
+        // date window is still valid — see effectiveUploadKinds.
+        const mapped = effectiveUploadKinds(
+          {
+            kind: c.kind,
+            expiresOn: c.expiresOn ? toIsoDay(c.expiresOn) : null,
+          },
+          new Date(),
+        );
+        if (!mapped.length) {
+          throw new BadRequestException(
+            'That document does not answer anything on this application.',
+          );
+        }
       // ⚠️ FILED AS THE FIRST, COUNTING FOR ALL OF THEM. A membership
       // certificate is both the association card and the letter of good
       // standing; a second row for the same bytes would collide with the
@@ -1463,6 +1736,7 @@ export class MotivationDocumentsService {
           // An unreadable blob costs the autofill, not the attachment.
         }
       }
+      }
     } else {
       // ⚠️ THE SAME NARROWING, ON THE ROUTE THAT CAN BE CALLED DIRECTLY. A
       // list the frontend never renders is not a boundary.
@@ -1483,6 +1757,9 @@ export class MotivationDocumentsService {
           extractionOk: true,
           extractedFields: true,
           extractionEncrypted: true,
+          evidenceType: true,
+          evidenceConfidence: true,
+          evidenceDescriptionEncrypted: true,
         },
       });
       if (!u) throw new NotFoundException('Document not found');
@@ -1497,6 +1774,16 @@ export class MotivationDocumentsService {
         );
       }
       kind = u.kind;
+      // ⚠️ AN EVIDENCE COPY CARRIES ITS PLACEMENT, like every other kind
+      // carries its slot. Picking an annexure letter off another application
+      // must still count against the two-letter cap on THIS one.
+      if (u.kind === MotivationUploadKind.EVIDENCE) {
+        evidence = {
+          type: u.evidenceType,
+          confidence: u.evidenceConfidence,
+          descriptionEncrypted: u.evidenceDescriptionEncrypted,
+        };
+      }
       storageKey = u.storageKey;
       mimeType = u.mimeType;
       purgedAt = u.purgedAt;
@@ -1651,6 +1938,14 @@ export class MotivationDocumentsService {
           extractionEncrypted: extraction.blob,
           // Which Centre document this page is a copy of. See the declaration.
           sourceCredentialId,
+          // ⚠️ EVIDENCE'S THREE COLUMNS, LEFT ALONE FOR EVERY OTHER KIND. The
+          // container is what the renderer reads to decide annexure-vs-body,
+          // and the description is what captions the photograph. Carried, not
+          // recomputed: the model already answered, and asking it again on
+          // every pick would spend a call to learn the same container.
+          evidenceType: evidence?.type ?? null,
+          evidenceConfidence: evidence?.confidence ?? null,
+          evidenceDescriptionEncrypted: evidence?.descriptionEncrypted ?? null,
         },
         select: { id: true, kind: true, byteSize: true },
       });
@@ -1737,6 +2032,19 @@ export class MotivationDocumentsService {
       // worse than one that was amber from the start.
       suspect:
         MotivationExtractService.canExtract(created.kind) && !extraction.ok,
+      /**
+       * ⚠️ THE COUNTER THE PICKER IS ABOUT TO MOVE, SENT WITH THE ROW THAT
+       * MOVED IT. The panel says "1 of 2 own-page items chosen" from this and
+       * from the list it already holds; leaving the newly-added one out would
+       * show the count a pick behind. `wanted` is what the cap was checked
+       * against a few lines up, so the two cannot disagree.
+       */
+      evidencePlacement:
+        wanted === 'EVIDENCE_ANNEXURE'
+          ? ('annexure' as const)
+          : wanted === 'EVIDENCE_BODY'
+            ? ('body' as const)
+            : null,
     };
   }
 
@@ -1863,6 +2171,161 @@ export class MotivationDocumentsService {
   }
 
   // ────────────────────────────────────────────────────────────────
+  // IDENTIFY — sort the picked files BEFORE any of them is stored
+  // ────────────────────────────────────────────────────────────────
+
+  /**
+   * Sort a batch of picked files and hand the ids back to the picker.
+   *
+   * THE MEMBER PICKS, THE SERVER SORTS, THE CLIENT POLISHES. Nothing is stored
+   * here: each file comes back with an id the SERVER minted and a verdict
+   * under it — document or evidence, which kind, which container — and the
+   * OCR text the server read. The picker polishes the documents (never the
+   * evidence: a hunting photograph is not a page to be cropped and
+   * deshadowed), uploads each file with its id, and addUpload() reads the
+   * verdict back out of the record rather than out of the request.
+   *
+   * The vault's twin is LicenceCentreService.identify(); the shape and the
+   * rules are deliberately the same, because it is the same picker.
+   */
+  async identify(
+    userId: string,
+    id: string,
+    files: { buffer: Buffer; mimetype: string; description?: string }[],
+  ): Promise<IdentifyVerdict[]> {
+    await this.quota.assertEnabled();
+    const user = await this.shared.requireUser(userId);
+
+    // ⚠️ THE APPLICATION IS CHECKED BEFORE ANY MODEL CALL. Identifying a batch
+    // against an application that does not exist would spend the calls and
+    // then refuse the uploads that were supposed to carry the verdicts.
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, status: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (!EDITABLE.includes(row.status)) {
+      throw new ConflictException(
+        'This application can no longer be edited, so documents cannot be added.',
+      );
+    }
+
+    if (!files?.length) {
+      throw new BadRequestException('Choose at least one file.');
+    }
+    if (files.length > MAX_IDENTIFY_FILES) {
+      throw new BadRequestException(
+        `Please send up to ${MAX_IDENTIFY_FILES} files at a time.`,
+      );
+    }
+
+    const out: IdentifyVerdict[] = [];
+    for (const file of files) {
+      if (!file?.buffer?.length) {
+        throw new BadRequestException('One of those files appears to be empty.');
+      }
+      if (file.buffer.length > MAX_UPLOAD_BYTES) {
+        throw new BadRequestException('One of those files is larger than 10 MB.');
+      }
+      out.push(await this.identifyOne(user.id, file));
+    }
+    return out;
+  }
+
+  /** One file of an identify batch. See identify(). */
+  private async identifyOne(
+    ownerId: string,
+    file: { buffer: Buffer; mimetype: string; description?: string },
+  ): Promise<IdentifyVerdict> {
+    const id = randomUUID();
+    const hash = createHash('sha256').update(file.buffer).digest('hex');
+
+    // A browser refresh, a file picked twice, or a whole folder re-dropped
+    // must not pay a model call to rediscover the same verdict. The cached
+    // record carries no id of its own — a fresh one is minted each time — but
+    // it carries the OCR text, which is the expensive part to re-read.
+    const seen = await this.identifyStore.findBySha({ ownerId, sha256: hash });
+    if (seen) {
+      await this.identifyStore.put({ ...seen, id, ownerId, sha256: hash });
+      return {
+        id,
+        role: seen.role,
+        kind: seen.kind,
+        container: seen.container,
+        confident: seen.confident,
+        ocrChars: seen.ocrText === null ? null : seen.ocrText.length,
+      };
+    }
+
+    // ⚠️ THE PAGE IS READ ONCE, HERE, AND TRAVELS WITH THE ID. The stored row
+    // later takes the server's OCR, never a client's.
+    const ocrText = await this.extract
+      .ocr(file.buffer, file.mimetype)
+      .catch(() => null);
+
+    const guess = await this.extract
+      .classify({ bytes: file.buffer, mimeType: file.mimetype, ocrText })
+      .catch(() => null);
+
+    let role: IdentifyRecord['role'] = 'evidence';
+    let kind: string | null = null;
+    let alsoCovers: string[] = [];
+    let container: string | null = null;
+    let confident = false;
+
+    if (guess && guess.role === 'document') {
+      role = 'document';
+      kind = guess.kind;
+      confident = guess.confident;
+    } else if (guess && guess.role === 'evidence') {
+      // The container is a SECOND call, made only for evidence, against the
+      // member's own words. An ordinary document still costs one call.
+      confident = guess.confident;
+      const words = (file.description ?? '')
+        .trim()
+        .slice(0, MAX_IDENTIFY_DESCRIPTION);
+      const sorted = await this.extract.classifyEvidence({
+        bytes: file.buffer,
+        mimeType: file.mimetype,
+        description: words || null,
+        ocrText,
+      });
+      container =
+        sorted && sorted.confident
+          ? containerById(sorted.container)?.id ?? null
+          : null;
+    } else {
+      // ⚠️ A NULL VERDICT (an outage, an unparseable reply) READS AS UNRESOLVED
+      // EVIDENCE, NOT AS A DOCUMENT. Filing a licence as OTHER on the strength
+      // of a failed call is the wrong filing the role answer exists to prevent;
+      // unresolved evidence is a card in front of the member asking them to
+      // describe it.
+      confident = false;
+    }
+
+    await this.identifyStore.put({
+      id,
+      ownerId,
+      sha256: hash,
+      role,
+      kind,
+      alsoCovers,
+      container,
+      confident,
+      ocrText,
+    });
+
+    return {
+      id,
+      role,
+      kind,
+      container,
+      confident,
+      ocrChars: ocrText === null ? null : ocrText.length,
+    };
+  }
+
+  // ────────────────────────────────────────────────────────────────
   // UPLOADS — the annexures, and the only writer to the encrypted store
   // ────────────────────────────────────────────────────────────────
 
@@ -1897,8 +2360,24 @@ export class MotivationDocumentsService {
      * Set by the Licence Centre's renewal one-tap, which is copying a document
      * it has ALREADY read and whose values it has already seeded. Reading it a
      * second time would spend a model call to learn what we just wrote.
+     *
+     * ⚠️ identifyId IS A SEPARATE FIELD FROM `kind`, DELIBERATELY. `kind` is
+     * the member's own explicit choice from the picker and is honoured as one.
+     * `identifyId` names a verdict the SERVER reached earlier and is read back
+     * here from DocumentIdentify under the caller's own id — never from the
+     * request. Keeping them apart is what stops a client-asserted kind being
+     * confused with a classifier answer.
+     *
+     * ⚠️ IDENTITY IS CHECKED BY ownerId IN take(). An id belonging to another
+     * member resolves to null, and a missing or expired id falls back to
+     * classifying the bytes just received — so nothing is ever blocked and
+     * nothing is ever filed on a client's assertion.
      */
-    opts: { skipExtraction?: boolean } = {},
+    opts: {
+      skipExtraction?: boolean;
+      identifyId?: string;
+      description?: string;
+    } = {},
   ) {
     await this.quota.assertEnabled();
     const user = await this.shared.requireUser(userId);
@@ -1926,10 +2405,18 @@ export class MotivationDocumentsService {
       throw new BadRequestException('That file is larger than 10 MB.');
     }
 
-    const count = await this.prisma.motivationUpload.count({
-      where: { motivationId: row.id },
-    });
-    if (count >= MAX_UPLOADS) {
+    // ⚠️ THE SAME SPLIT THE LIBRARY ROUTE USES. A pack that ALREADY holds
+    // evidence must not have its photographs counted against the sixteen
+    // document slots, or a member with two activity photos and fourteen
+    // documents is refused the fifteenth paper.
+    //
+    // ⚠️ AN AUTO-FILED UPLOAD CAN NOW BE EVIDENCE. classify() answers a
+    // `role` before a kind (see MotivationClassifyAnswer), so an unrecognised
+    // photograph or a permission letter files as EVIDENCE with no container —
+    // which is why the gate above counts DOCUMENTS only, and the evidence cap
+    // is enforced where evidence is stored.
+    const held = await this.capacityFor(row.id);
+    if (held.documents >= MAX_UPLOADS) {
       throw new ConflictException(
         `An application can carry ${MAX_UPLOADS} documents. Remove one before adding another.`,
       );
@@ -1957,17 +2444,58 @@ export class MotivationDocumentsService {
     // NAME IT, if they did not. Before the row, because the kind is a column
     // on it — and fail-soft: an unsortable document becomes OTHER, which reads
     // as unsorted rather than as a satisfied requirement.
+    //
+    // ⚠️ THE IDENTIFY VERDICT IS CONSUMED FIRST, when the picker supplied one.
+    // The server reached it before the file was ever polished, so the answer
+    // reported on the card is the answer that files the row — the same words,
+    // taken from the record rather than re-decided here. take() deletes it, so
+    // one id files one row and a replayed id falls through to classifying the
+    // bytes it was handed.
     let resolved: MotivationUploadKind = kind ?? 'OTHER';
     let autoFiled = false;
     let confident = false;
+    /** The container, for an evidence row the classifier could place. */
+    let evidenceContainer: string | null = null;
+    /** The member's own words about an evidence item. From the identify card. */
+    let evidenceWords: string | null = null;
+
+    const verdict = opts.identifyId
+      ? await this.identifyStore
+          .take({ id: opts.identifyId, ownerId: user.id })
+          .catch(() => null)
+      : null;
+
     if (!kind) {
-      const guess = await this.extract
-        .classify({ bytes: file.buffer, mimeType: file.mimetype, ocrText })
-        .catch(() => null);
       autoFiled = true;
-      if (guess) {
-        resolved = guess.kind;
-        confident = guess.confident;
+      if (verdict) {
+        // ⚠️ THE SERVER'S OWN VERDICT, NOT A REASSERTION OF IT. This is the
+        // marriage the identify pass exists for: same kind, same container,
+        // same confidence the card already showed.
+        if (verdict.role === 'evidence') {
+          resolved = 'EVIDENCE';
+          evidenceContainer = verdict.container;
+        } else if (verdict.kind) {
+          resolved = verdict.kind as MotivationUploadKind;
+        }
+        confident = verdict.confident;
+        evidenceWords = (opts.description ?? '').trim() || null;
+      } else {
+        // No id, an expired one, or one belonging to somebody else: fall back
+        // to reading the bytes we were actually handed. Nothing is blocked,
+        // and nothing is filed on an assertion the client made.
+        const guess = await this.extract
+          .classify({ bytes: file.buffer, mimeType: file.mimetype, ocrText })
+          .catch(() => null);
+        if (guess) {
+          // ⚠️ AN EVIDENCE VERDICT FILES AS EVIDENCE, NOT AS A DOCUMENT KIND —
+          // the classifier's role is the first question it answers (see
+          // MotivationClassifyAnswer). It carries no kind; the container is
+          // decided separately by classifyEvidence(), from the member's own
+          // description.
+          resolved = guess.role === 'evidence' ? 'EVIDENCE' : guess.kind;
+          confident = guess.confident;
+        }
+        if (resolved === 'EVIDENCE') evidenceWords = (opts.description ?? '').trim() || null;
       }
     }
 
@@ -2039,6 +2567,18 @@ export class MotivationDocumentsService {
           // separates "read, and the page was blank" from "not read".
           ocrTextEncrypted: ocrText ? encryptJson({ text: ocrText }) : null,
           ocrChars: ocrText === null ? null : ocrText.length,
+          // ⚠️ EVIDENCE'S THREE COLUMNS, LEFT ALONE FOR EVERY OTHER KIND. The
+          // container is what the renderer reads to decide annexure-vs-body,
+          // and the description captions the photograph. Both come from the
+          // identify record when the picker supplied one, or from the
+          // fallback classify() when it did not.
+          evidenceType: resolved === 'EVIDENCE' ? evidenceContainer : null,
+          evidenceConfidence:
+            resolved === 'EVIDENCE' ? (confident ? 'high' : 'low') : null,
+          evidenceDescriptionEncrypted:
+            resolved === 'EVIDENCE' && evidenceWords
+              ? encryptText(evidenceWords)
+              : null,
         },
         select: { id: true, kind: true, byteSize: true, createdAt: true },
       });
@@ -2463,6 +3003,13 @@ export class MotivationDocumentsService {
             extractionEncrypted: true,
             sourceCredential: { select: { expiresOn: true } },
             sourceRemovedAt: true,
+            // ⚠️ EVIDENCE'S THREE COLUMNS, SO THE ROW CAN SAY WHAT IT IS.
+            // Null on every ordinary document, which is why the frontend keys
+            // on `evidence` rather than on `kind === 'EVIDENCE'` in one place
+            // and the kind in another.
+            evidenceType: true,
+            evidenceConfidence: true,
+            evidenceDescriptionEncrypted: true,
           },
         },
       },
@@ -2506,6 +3053,31 @@ export class MotivationDocumentsService {
        * pack.
        */
       suspect: MotivationExtractService.canExtract(u.kind) && !u.extractionOk,
+      /**
+       * WHERE THIS EVIDENCE PRINTS, AND WHAT THE MEMBER CALLED IT.
+       *
+       * ⚠️ `evidence.container === null` IS THE ONE FLAG, not `confident`. A
+       * low-confidence answer stored no container at all, so an unplaced item
+       * reads the same however it got here — a model that could not decide, or
+       * a container id retired since. Both are "tell us more".
+       *
+       * ⚠️ AND IT IS NOT `suspect`. `suspect` is about a vision read that
+       * failed, and an evidence item is never read for fields; the two badges
+       * must not be conflated or every photograph goes amber.
+       */
+      evidence:
+        u.kind === MotivationUploadKind.EVIDENCE
+          ? {
+              ...evidenceRow(u.evidenceType, u.evidenceConfidence === 'high'),
+              /**
+               * ⚠️ DECRYPTED HERE, NOT IN THE BUILDER. evidence-taxonomy is a
+               * pure module with no crypto in it, so the member's own words are
+               * spread on by the caller that can open the blob. Fail-soft: a
+               * blob that will not open costs the prefill, never the row.
+               */
+              description: tryDecryptText(u.evidenceDescriptionEncrypted),
+            }
+          : null,
       ...this.shared.expiryFor(u, now),
     }));
 

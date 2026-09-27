@@ -3,6 +3,7 @@ import { MotivationsModule } from './motivations.module';
 import { MotivationRetentionService } from './motivation-retention.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { UsersModule } from '../users/users.module';
+import { MotivationExtractService } from './motivation-extract.service';
 
 // Nest resolves modules at RUNTIME. A provider that is used but not exported,
 // or a module that is depended on but not imported, type-checks perfectly and
@@ -50,5 +51,20 @@ describe('module wiring', () => {
   it('does not depend on UsersModule, so there is no cycle', () => {
     // UsersModule -> MotivationsModule is safe only while it stays one-way.
     expect(meta(MotivationsModule, 'imports')).not.toContain(UsersModule);
+  });
+
+  it('exports the extract service, for the Centre\'s evidence classifier', () => {
+    // ⚠️ THE EDGE RUNS LicenceCentreModule -> MotivationsModule AND THAT IS
+    // THE ONLY DIRECTION ALLOWED, so the evidence upload in the Centre has to
+    // reach the classifier through this export. It CANNOT be served by a route
+    // in motivations/: an evidence item's master copy is a vault Credential,
+    // which lives on the other side of the one-way edge.
+    expect(meta(MotivationsModule, 'exports')).toContain(
+      MotivationExtractService,
+    );
+    // Exporting something a module does not provide is a boot-time failure.
+    expect(meta(MotivationsModule, 'providers')).toContain(
+      MotivationExtractService,
+    );
   });
 });

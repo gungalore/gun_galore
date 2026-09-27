@@ -106,6 +106,11 @@ export const STATUS_LABEL: Record<string, string> = {
   PAYMENT_RECEIVED: 'Payment received — funds held by All Outdoor',
   AWAITING_SELLER_DISPATCH: 'Awaiting seller dispatch',
   SELLER_DISPATCHED: 'Seller marked the parcel as dispatched',
+  // Firearm DEALER_TRANSFER. There is no parcel and no courier — the seller
+  // physically hands the firearm to their SAPS-licensed dealer. Kept distinct
+  // from SELLER_DISPATCHED so the buyer's timeline never claims a courier is
+  // carrying a firearm.
+  DEALER_HANDOVER_STARTED: 'Seller transferred the firearm to the dealer',
   BUYER_CONFIRMED_DELIVERY: 'Buyer confirmed delivery',
   PAYOUT_RELEASED: 'Funds released to seller',
   // Movement

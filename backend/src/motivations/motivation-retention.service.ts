@@ -75,6 +75,41 @@ const ORPHAN_RETENTION_DAYS = 365;
 const BATCH = 200;
 const MAX_BATCHES = 50;
 
+// ────────────────────────────────────────────────────────────────────
+// ⚠️ DERIVED ARTIFACTS OUTLIVE THEIR DOCUMENT UNLESS SOMETHING SAYS SO.
+//
+// Operator, 2026-09-26: "If a file is deleted it must be gone completely."
+//
+// A document leaves three things behind, not one:
+//   1. the encrypted bytes at storageKey — the sweep always removed these;
+//   2. a rasterised page image (DocumentPageImage), keyed by the plaintext
+//      sha256 — a faithful copy of the licence, held thirty days;
+//   3. a cached transcription (DocumentReadCache), also keyed by sha256 —
+//      the holder's name, identity number and every serial, held thirty days.
+//
+// The PER-UPLOAD delete calls forget(sha256) on both, so a member removing a
+// file from a pack was covered. THE RETENTION SWEEP AND THE ERASURE WERE NOT:
+// they remove bytes and rows in a batch and never had a sha256 to hand
+// either service. So a document that aged out, or that was erased with its
+// account, kept a picture of itself and a transcript of everything printed on
+// it for another thirty days — and if the same file was re-uploaded, the
+// stale reading was served as a cache hit rather than re-read.
+//
+// Both artifacts are keyed by sha256 ALONE, with no source-existence check, so
+// this is not self-healing: nothing notices the source is gone. It has to be
+// done here, deliberately, whenever bytes are removed by a batch path.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * ⚠️ A FILE WRITTEN BUT NOT YET REFERENCED IS NOT AN ORPHAN.
+ *
+ * Every writer does `files.write()` and then a row create, and the two are not
+ * one transaction — so between them the file is on disk with nothing pointing
+ * at it. The reconciliation sweep must not delete it. A file younger than this
+ * is left alone; an orphan that never got its row simply waits a day.
+ */
+const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class MotivationRetentionService {
   private readonly logger = new Logger(MotivationRetentionService.name);
@@ -112,9 +147,16 @@ export class MotivationRetentionService {
        * — thirty days, swept nightly, bytes and all.
        */
       const pages = await this.pageRaster.purgeExpired();
-      if (due + orphaned + reads + pages > 0) {
+      /**
+       * ⚠️ ANYTHING ON DISK NO ROW POINTS AT. The last line of defence, and
+       * the only one that can find a file whose row was taken by a cascade —
+       * see the note on sweepOrphanedFiles. Runs last so a file whose row this
+       * very sweep just purged is already reflected in the reference set.
+       */
+      const swept = await this.sweepOrphanedFiles();
+      if (due + orphaned + reads + pages + swept > 0) {
         this.logger.log(
-          `Motivation retention: purged ${due} document(s) past their retention date, ${orphaned} from applications that were never completed, ${reads} expired document reading(s) and ${pages} expired page image(s)`,
+          `Motivation retention: purged ${due} document(s) past their retention date, ${orphaned} from applications that were never completed, ${reads} expired document reading(s), ${pages} expired page image(s) and ${swept} file(s) no row pointed at`,
         );
       }
     } catch (err) {
@@ -157,12 +199,19 @@ export class MotivationRetentionService {
     let filesFailed = 0;
     let motivations = 0;
 
+    // ⚠️ COLLECTED BEFORE THE ROWS GO, BECAUSE AFTER THEM THERE IS NOTHING TO
+    // COLLECT. A reading or a page image is keyed by the plaintext sha256 of
+    // the source document, and that hash lives on the upload row — which the
+    // cascade below removes. Gathered here, forgotten after the files are
+    // gone, so an erasure does not leave a transcript of the ID it erased.
+    const sha256s: string[] = [];
+
     try {
       const rows = await this.prisma.motivation.findMany({
         where: { userId },
         select: {
           id: true,
-          uploads: { select: { id: true, storageKey: true } },
+          uploads: { select: { id: true, storageKey: true, sha256: true } },
           // ⚠️ SIGNATURES WERE BEING LEFT ON DISK FOREVER, INCLUDING THROUGH AN
           // ERASURE REQUEST. This service walked `uploads` and nothing else,
           // so a witness's drawn signature — and now a seller's — survived the
@@ -180,6 +229,9 @@ export class MotivationRetentionService {
       if (!rows.length) return { filesRemoved, filesFailed, motivations };
 
       for (const row of rows) {
+        for (const up of row.uploads) {
+          if (up.sha256) sha256s.push(up.sha256);
+        }
         // Uploads, plus the signatures that hang off the same application.
         const keyed: { id: string; storageKey: string | null }[] = [
           ...row.uploads,
@@ -217,6 +269,17 @@ export class MotivationRetentionService {
       // the motivation text carries the ID number, the home address and the
       // applicant's account of their own security circumstances.
       await this.prisma.motivation.deleteMany({ where: { userId } });
+
+      // ⚠️ AND THE DERIVED ARTIFACTS GO WITH THEM. These rows are keyed by
+      // sha256, so the cascade cannot reach them and nothing else will: the
+      // document is gone, so there is no per-upload delete left to call
+      // forget(). Without this a member who asked to be erased keeps a page
+      // image of their licence and a cached transcription of its serial
+      // numbers for the rest of the month.
+      if (sha256s.length) {
+        await this.readCache.forgetMany(sha256s);
+        await this.pageRaster.forgetMany(sha256s);
+      }
     } catch (err) {
       this.logger.error(
         `Account deletion: motivation purge for user ${userId} failed: ${(err as Error).message}`,
@@ -284,11 +347,16 @@ export class MotivationRetentionService {
     where: Record<string, unknown>,
   ): Promise<number> {
     let purged = 0;
+    // ⚠️ THE HASHES OF THE DOCUMENTS WE PURGED, so their page images and
+    // cached readings can be forgotten once the batch is done. `sha256` is
+    // selected for exactly this: it is the only key the two derived services
+    // know, and it is not otherwise used on this path.
+    const purgedSha256s: string[] = [];
 
     for (let pass = 0; pass < MAX_BATCHES; pass++) {
       const batch = await this.prisma.motivationUpload.findMany({
         where: where as never,
-        select: { id: true, storageKey: true, motivationId: true },
+        select: { id: true, storageKey: true, motivationId: true, sha256: true },
         take: BATCH,
         orderBy: { createdAt: 'asc' },
       });
@@ -321,8 +389,17 @@ export class MotivationRetentionService {
             // this document had in fact been read, which purgedAt alone does
             // not say. Same reasoning as extractedFields beside it.
             ocrTextEncrypted: null,
+            // ⚠️ THE MEMBER'S OWN WORDS GO WITH THE PHOTOGRAPH. For an
+            // evidence item the description IS the content — "me and my son
+            // on a hunt in Limpopo" is POPIA data about a private photograph,
+            // and it is the only text on the row. Leaving it behind would
+            // keep the sentence that describes a deleted image. The container
+            // (evidenceType) stays: an id is not content, and without it the
+            // row would read as unplaceable rather than as purged.
+            evidenceDescriptionEncrypted: null,
           },
         });
+        if (up.sha256) purgedSha256s.push(up.sha256);
         purged++;
         progressed = true;
       }
@@ -334,7 +411,182 @@ export class MotivationRetentionService {
       if (batch.length < BATCH) break;
     }
 
+    // ⚠️ THE DERIVED ARTIFACTS GO WITH THE BYTES. This is the hole the whole
+    // note at the top of this file is about: the bytes are gone and the row is
+    // marked, so from every angle the purge looks complete — while a page
+    // image of the licence and a transcript of its serial numbers sit in the
+    // tree for another thirty days, and the next upload of the same file is
+    // served the stale reading as a cache hit. Keyed by sha256, so nothing else
+    // will ever notice.
+    if (purgedSha256s.length) {
+      await this.readCache.forgetMany(purgedSha256s);
+      await this.pageRaster.forgetMany(purgedSha256s);
+    }
+
     return purged;
+  }
+
+  /**
+   * Delete files on disk that no row points at.
+   *
+   * ⚠️ THIS IS THE ONLY SWEEP THAT CAN SEE A CASCADE'S LEFTOVERS. Every other
+   * path to a file goes through a row: `purgeWhere` finds files through
+   * upload rows, `purgeForUser` through a user's rows. When the ROW is gone —
+   * a hard cascade, a `deleteMany` that took a soft-deleted upload with it, a
+   * crash between `write()` and the create that would have referenced it —
+   * nothing points at the bytes and no row-driven sweep can ever reach them
+   * again. They sit in the encrypted tree forever, photographs of ID books
+   * nobody can find.
+   *
+   * It works the other way round: list the disk, then ask which of those keys
+   * the database still references. What is left is garbage by construction.
+   *
+   * ⚠️ THE REFERENCE SET IS EVERY STORAGE KEY IN THE SCHEMA, NOT JUST THE
+   * MOTIVATION ONES. A sweep that knew only about MotivationUpload would
+   * delete every vault credential, every KYC document and every seller
+   * signature — the single most destructive thing this file could do. The one
+   * that must be maintained when a column is added is this list; a missing
+   * column here does not fail, it silently deletes live files.
+   *
+   * ⚠️ AND IT IS AGE-GUARDED. A writer does `files.write()` and THEN the row
+   * create, in that order and not in one transaction — so a file with no row
+   * is the normal state for a moment on every single upload. A file younger
+   * than ORPHAN_GRACE_MS is never touched, which is what keeps a race from
+   * turning a member's document into a deleted one.
+   *
+   * ⚠️ AND IT DOES NOT RUN WHEN THE PROBLEM IS OURS TO FIX BY HAND. If the
+   * reference query throws, the sweep returns 0 and deletes nothing — an
+   * empty reference set would look exactly like "every file is an orphan".
+   */
+  private async sweepOrphanedFiles(): Promise<number> {
+    let referenced: Set<string>;
+    try {
+      referenced = await this.referencedStorageKeys();
+    } catch (err) {
+      this.logger.error(
+        `Retention: could not build the storage-key reference set, so no disk file will be swept this run: ${(err as Error).message}`,
+      );
+      return 0;
+    }
+
+    let files: Awaited<ReturnType<SecureFileStorageService['list']>>;
+    try {
+      files = await this.files.list();
+    } catch (err) {
+      this.logger.error(
+        `Retention: could not read the storage tree: ${(err as Error).message}`,
+      );
+      return 0;
+    }
+
+    const cutoff = Date.now() - ORPHAN_GRACE_MS;
+    let swept = 0;
+    for (const file of files) {
+      if (referenced.has(file.key)) continue;
+      // A file written moments ago whose row has not landed yet. Not an
+      // orphan — the normal middle of an upload.
+      if (file.modifiedMs > cutoff) continue;
+      try {
+        await this.files.remove(file.key);
+        swept++;
+      } catch (err) {
+        this.logger.error(
+          `Retention: could not remove orphaned file ${file.key}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    if (swept > 0) {
+      // ⚠️ A NAMED FILE IN THE LOG, SO IT IS NOT A SILENT DELETE. A sweep
+      // that removes bytes with no row behind them is exactly the kind of
+      // thing that must be diagnosable after the fact, and these keys name
+      // nothing sensitive — an opaque random id under a namespace.
+      this.logger.warn(
+        `Retention: removed ${swept} file(s) with no row pointing at them`,
+      );
+    }
+    return swept;
+  }
+
+  /**
+   * Every storage key currently referenced by a row, across the whole schema.
+   *
+   * ⚠️ ELEVEN COLUMNS, AND EVERY WRITER OF SecureFileStorageService HAS ONE.
+   * A column left out here is not a missing feature — it is a live document
+   * the sweep would delete the first night after its grace period lapsed.
+   * The writers, for the next person adding one:
+   *   · motivation-documents.service  → MotivationUpload.storageKey
+   *   · licence-centre.service        → Credential.storageKey
+   *   · vault-adoption / kyc-id-adoption → Credential.storageKey
+   *   · motivation-witness.service    → MotivationWitness.signatureKey
+   *   · motivation-seller-consent      → .signatureKey, .licenceFrontKey,
+   *                                      .licenceBackKey, and a
+   *                                      MotivationSellerConsentDocument.storageKey
+   *   · motivation-render.service      → Motivation.coverPhotoKey
+   *   · kyc.service                    → User.kycIdStorageKey, kycSelfieStorageKey
+   *   · document-page-raster.service   → DocumentPageImage.storageKey
+   */
+  private async referencedStorageKeys(): Promise<Set<string>> {
+    const keys = new Set<string>();
+    const add = (rows: { key: string | null }[]) => {
+      for (const r of rows) if (r.key) keys.add(r.key);
+    };
+
+    const [
+      uploads,
+      credentials,
+      pageImages,
+      witnessSigs,
+      consentSigs,
+      consentDocs,
+      coverPhotos,
+      kyc,
+    ] = await Promise.all([
+      this.prisma.motivationUpload.findMany({
+        where: { storageKey: { not: null } },
+        select: { storageKey: true },
+      }),
+      this.prisma.credential.findMany({
+        where: { storageKey: { not: null } },
+        select: { storageKey: true },
+      }),
+      this.prisma.documentPageImage.findMany({
+        select: { storageKey: true },
+      }),
+      this.prisma.motivationWitness.findMany({
+        where: { signatureKey: { not: null } },
+        select: { signatureKey: true },
+      }),
+      this.prisma.motivationSellerConsent.findMany({
+        select: { signatureKey: true, licenceFrontKey: true, licenceBackKey: true },
+      }),
+      this.prisma.motivationSellerConsentDocument.findMany({
+        where: { storageKey: { not: null } },
+        select: { storageKey: true },
+      }),
+      this.prisma.motivation.findMany({
+        where: { coverPhotoKey: { not: null } },
+        select: { coverPhotoKey: true },
+      }),
+      this.prisma.user.findMany({
+        select: { kycIdStorageKey: true, kycSelfieStorageKey: true },
+      }),
+    ]);
+
+    add(uploads.map((r) => ({ key: r.storageKey })));
+    add(credentials.map((r) => ({ key: r.storageKey })));
+    add(pageImages.map((r) => ({ key: r.storageKey })));
+    add(witnessSigs.map((r) => ({ key: r.signatureKey })));
+    for (const r of consentSigs) {
+      add([{ key: r.signatureKey }, { key: r.licenceFrontKey }, { key: r.licenceBackKey }]);
+    }
+    add(consentDocs.map((r) => ({ key: r.storageKey })));
+    add(coverPhotos.map((r) => ({ key: r.coverPhotoKey })));
+    for (const r of kyc) {
+      add([{ key: r.kycIdStorageKey }, { key: r.kycSelfieStorageKey }]);
+    }
+
+    return keys;
   }
 
   /**

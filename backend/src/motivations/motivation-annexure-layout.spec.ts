@@ -104,6 +104,37 @@ describe('planAnnexurePages', () => {
     expect(pages).toHaveLength(2);
   });
 
+  it('⚠️ GIVES AN EVIDENCE ANNEXURE A PAGE TO ITSELF, EVEN A SMALL CARD', () => {
+    // The operator's decision: a printed document picked as evidence — a
+    // permission letter, an affidavit, a score sheet — gets "its own full
+    // page". These are small cards, which would normally share a sheet two-up
+    // (the test above), so without `solo` the two letters would land on one
+    // page and a DFO could not hand either to a commissioner of oaths as a
+    // single document.
+    const pages = planAnnexurePages(
+      [card({ letter: 'J', solo: true }), card({ letter: 'K', solo: true })],
+      BOX,
+    );
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toHaveLength(1);
+    expect(pages[1]).toHaveLength(1);
+    expect(pages[0][0].letter).toBe('J');
+    expect(pages[1][0].letter).toBe('K');
+  });
+
+  it('⚠️ A SOLO COPY ALSO ENDS ITS SHEET, so nothing follows it', () => {
+    // The card is small enough that an ordinary copy behind it would have fit
+    // on the same sheet. A solo copy must close the page rather than merely
+    // open one, or the evidence letter is still sharing its sheet.
+    const pages = planAnnexurePages(
+      [card({ letter: 'J', solo: true }), card({ letter: 'K' })],
+      BOX,
+    );
+    expect(pages).toHaveLength(2);
+    expect(pages[0].map((p) => p.letter)).toEqual(['J']);
+    expect(pages[1].map((p) => p.letter)).toEqual(['K']);
+  });
+
   it('handles an empty list and a degenerate size', () => {
     expect(planAnnexurePages([], BOX)).toEqual([]);
     const [page] = planAnnexurePages([img({ width: 0, height: 0 })], BOX);

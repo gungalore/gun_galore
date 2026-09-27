@@ -152,6 +152,37 @@ export interface SheetDocument {
    * saved INTO the Centre; a `vault` one is already there.
    */
   origin: 'vault' | 'member';
+  /**
+   * What the classifier made of an evidence item. Null on every other kind.
+   *
+   * ⚠️ THE SAME SHAPE AS CredentialRow.evidence, because it is the same
+   * builder on the server. The shelf counts its own annexure and body items
+   * from here rather than trusting a number the page would have to keep in
+   * step with the list — and `container: null` is the "we could not decide"
+   * flag (not `confident`), exactly as in the vault.
+   */
+  evidence?: EvidenceBlock | null;
+}
+
+/**
+ * One evidence item as a served row, wherever it is served.
+ *
+ * ⚠️ MIRRORS evidenceRow in backend/src/motivations/evidence-taxonomy.ts, which
+ * is the ONE place the server builds it. Same rule as everything else here:
+ * the server owns the shape.
+ */
+export interface EvidenceBlock {
+  container: string | null;
+  /** The member-facing container name, or null when we could not decide. */
+  label: string | null;
+  group?: string | null;
+  /** 'annexure' = its own full page; 'body' = the Activities page; null = unknown. */
+  placement?: 'annexure' | 'body' | null;
+  confident: boolean;
+  /** The member's own words about the file, decrypted for them. */
+  description?: string | null;
+  /** Our "tell us a bit more" line, when we could not place it. */
+  ask?: string | null;
 }
 
 /**

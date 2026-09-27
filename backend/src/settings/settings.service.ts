@@ -390,6 +390,58 @@ export const FLAGS = {
     },
   } as FlagDefinition<number>,
 
+  // ─── SAPS Application Tracker ────────────────────────────────────
+  // ⚠️ ALSO IN admin-settings.service.ts — both registries, or neither.
+  //
+  // ⚠️ THIS ONE DEFAULTS TO TRUE, WHICH IS THE OPPOSITE OF EVERY OTHER KEY
+  // IN THIS SECTION, AND IT IS AN OPERATOR DECISION TAKEN ON 2026-09-25. The
+  // source spec called for `false`; the operator asked for it ON so the
+  // tracker could be exercised and debugged locally. ⚠️ THIS IS THE SINGLE
+  // VALUE TO FLIP BACK TO `false` BEFORE A PRODUCTION DEPLOY. It is a real
+  // Setting row, so /admin can turn it off without a deploy either way.
+  licenceTrackerEnabled: {
+    key: 'licence_tracker_enabled',
+    default: true,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+
+  // The weekly sweep. OFF by default, deliberately: it is the only thing in
+  // the module that talks to SAPS with nobody waiting on the answer, and a
+  // sweep that runs unattended is a sweep that can get the box rate-limited.
+  licenceTrackerSweepEnabled: {
+    key: 'licence_tracker_sweep_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+
+  // The floor between two manual checks of the SAME tracker. SAPS answers
+  // repeated enquiries with its validation line or a block page rather than a
+  // record, so this protects the member's own next check as much as it
+  // protects SAPS. A number, not a boolean, because 6 hours was chosen against
+  // how often SAPS actually refreshes — not against how often a member taps.
+  licenceTrackerCheckCooldownHours: {
+    key: 'licence_tracker_check_cooldown_hours',
+    default: 6,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      if (!Number.isFinite(n) || n < 1) return 6;
+      return Math.min(168, n);
+    },
+  } as FlagDefinition<number>,
+
+  // How many distinct references one sweep will poll. This is a ceiling on an
+  // outbound request loop against a third party that has not agreed to one,
+  // not a pagination limit — the sweep reports how many it skipped.
+  licenceTrackerSweepMax: {
+    key: 'licence_tracker_sweep_max',
+    default: 50,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      if (!Number.isFinite(n) || n < 1) return 50;
+      return Math.min(500, n);
+    },
+  } as FlagDefinition<number>,
+
   // ─── WhatsApp comms (W0) ─────────────────────────────────────────
   // ⚠️ Also in admin-settings.service.ts — both registries, or neither.
   //

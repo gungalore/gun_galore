@@ -201,6 +201,27 @@ const PRICELESS_LISTING_TYPES = new Set<ListingType>([
   ListingType.TAKE_A_SHOT,
 ]);
 
+// ─── Auction length ↔ minimum item value ───────────────────────────────
+// A longer run costs the platform more in exposure and carries more risk
+// (a stale listing, a withdrawn item), so the value the auction advertises
+// has to justify the days. Mirrored in the sell form
+// (frontend/app/listings/new/page.tsx, AUCTION_MIN_VALUE_CENTS) so the
+// seller sees the floor before they hit Publish — the check here is the
+// one that actually holds, because the price fields are client-supplied.
+//
+// ⚠️ THE FLOOR IS ON THE RESERVE, NOT ON THE STARTING BID. The starting
+// bid is DERIVED at 30% under the reserve — applying the minimum to it
+// would fight the rule that produces it, and for a 14-day run it would
+// imply a reserve above R14,285. Only when there is no reserve does the
+// seller's typed starting bid stand in as the committed value and take
+// the floor.
+export const AUCTION_MIN_VALUE_CENTS: Record<number, number> = {
+  3: 100_000, // R1,000
+  5: 250_000, // R2,500
+  7: 600_000, // R6,000
+  14: 1_000_000, // R10,000
+};
+
 // P4.3a — attribute keys are snake_case and stable (matches the DB check
 // on CategoryAttribute.key). Used both when flattening values into the
 // Meili doc (`attr_<key>`) and when sanitizing client-supplied attr filters
@@ -1434,6 +1455,22 @@ export class ListingsService {
       //      enforced server-side and can't be tampered with via the
       //      payload.
       //   2) No reserve → seller's typed `price` is the starting bid.
+      //
+      // ⚠️ THE DURATION'S MINIMUM-VALUE FLOOR IS CHECKED HERE, BEFORE THE
+      // 30%-UNDER DERIVATION, so it reads the RESERVE when one is set and the
+      // seller's typed starting bid when there isn't — never the derived
+      // figure. See AUCTION_MIN_VALUE_CENTS.
+      const minValueCents = AUCTION_MIN_VALUE_CENTS[dto.durationDays];
+      const committedValueCents = dto.reservePrice ?? dto.price ?? 0;
+      if (minValueCents && committedValueCents < minValueCents) {
+        const what = dto.reservePrice ? 'reserve' : 'starting bid';
+        const floorRand = Math.round(minValueCents / 100)
+          .toString()
+          .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        throw new BadRequestException(
+          `A ${dto.durationDays}-day auction needs a ${what} of at least R${floorRand}.`,
+        );
+      }
       if (dto.reservePrice) {
         // Pre-derive the starting bid from the reserve before the row
         // insert below reads `dto.price`. Mutating the DTO is the

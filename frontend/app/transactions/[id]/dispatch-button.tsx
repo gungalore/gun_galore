@@ -105,6 +105,13 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
   // A real shipment has been booked by the platform → show the booked panel.
   const booked = Boolean(tx.shipmentBookedAt && tx.trackingReference);
 
+  // Firearm DEALER_TRANSFER is not a courier parcel: the seller physically
+  // hands the firearm to their SAPS-licensed dealer, and payout releases when
+  // the dealer stock-in verification passes — not on a buyer confirm-delivery.
+  // Every courier phrase below (handed to the courier, 7-day delivery clock,
+  // tracking reference) is therefore wrong on this path.
+  const isDealerTransfer = tx.shippingMethod === 'DEALER_TRANSFER';
+
   // What the seller actually has to do, worded the same way the booking
   // notification words it. Bob Go collects from the seller's address.
   const handoverCopy =
@@ -293,8 +300,9 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
         className="rounded-[6px] px-4 py-3 text-sm"
         style={{ background: 'rgba(0,160,60,0.10)', color: 'var(--success)', border: '0.5px solid rgba(0,160,60,0.2)' }}
       >
-        Marked as handed over. The buyer has been notified and tracking will
-        update automatically.
+        {isDealerTransfer
+          ? 'Marked as transferred. The buyer has been notified — now upload the SAPS 534 + stock-in photos so we can verify the dealer stock-in and release your payout.'
+          : 'Marked as handed over. The buyer has been notified and tracking will update automatically.'}
       </div>
     );
   }
@@ -458,6 +466,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
           <ConfirmModal
             loading={loading}
             trackingRef={tx.trackingReference ?? ''}
+            isDealerTransfer={isDealerTransfer}
             onCancel={() => setConfirmOpen(false)}
             onConfirm={handleSubmit}
           />
@@ -476,7 +485,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
           className="w-full py-2.5 rounded-[6px] text-sm"
           style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 500 }}
         >
-          Confirm dispatch
+          {isDealerTransfer ? 'Confirm transfer to dealer' : 'Confirm dispatch'}
         </button>
       </div>
     );
@@ -486,8 +495,9 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
     <div className="space-y-3">
       {failureNotice}
       <p className="text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-        Automatic booking isn&apos;t available for this order — enter the
-        tracking reference from your own courier booking below.
+        {isDealerTransfer
+          ? 'Confirm that you have physically transferred the firearm to the receiving dealer.'
+          : 'Automatic booking isn\u2019t available for this order \u2014 enter the tracking reference from your own courier booking below.'}
       </p>
       {error && (
         <div
@@ -498,33 +508,36 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
         </div>
       )}
 
-      {/* No locker drop-off anywhere — Bob Go collects from the address. */}
-
-      <div>
-        <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
-          Tracking reference {requiresTracking ? '(required)' : '(optional)'}
-        </label>
-        <input
-          type="text"
-          value={trackingRef}
-          onChange={(e) => setTrackingRef(e.target.value)}
-          placeholder={trackingPlaceholder}
-          style={{
-            ...inputStyle,
-            border: `0.5px solid ${
-              requiresTracking && trackingRef.length > 0 && !trackingOk
-                ? 'var(--red)'
-                : 'var(--border)'
-            }`,
-          }}
-        />
-        {requiresTracking && (
-          <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-            The buyer uses this to track their parcel — required for courier
-            dispatch.
-          </p>
-        )}
-      </div>
+      {/* No locker drop-off anywhere — Bob Go collects from the address.
+          A firearm DEALER_TRANSFER has no tracking reference: the seller hands
+          the firearm to the dealer, so the field is hidden entirely. */}
+      {!isDealerTransfer && (
+        <div>
+          <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
+            Tracking reference {requiresTracking ? '(required)' : '(optional)'}
+          </label>
+          <input
+            type="text"
+            value={trackingRef}
+            onChange={(e) => setTrackingRef(e.target.value)}
+            placeholder={trackingPlaceholder}
+            style={{
+              ...inputStyle,
+              border: `0.5px solid ${
+                requiresTracking && trackingRef.length > 0 && !trackingOk
+                  ? 'var(--red)'
+                  : 'var(--border)'
+              }`,
+            }}
+          />
+          {requiresTracking && (
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+              The buyer uses this to track their parcel — required for courier
+              dispatch.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-2">
         <button
@@ -540,7 +553,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
           }}
           title={!trackingOk ? 'Enter the tracking reference first' : undefined}
         >
-          Confirm dispatch
+          {isDealerTransfer ? 'Confirm transfer to dealer' : 'Confirm dispatch'}
         </button>
         <button
           onClick={() => setOpen(false)}
@@ -555,6 +568,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
         <ConfirmModal
           loading={loading}
           trackingRef={trackingRef.trim()}
+          isDealerTransfer={isDealerTransfer}
           onCancel={() => setConfirmOpen(false)}
           onConfirm={handleSubmit}
         />
@@ -565,15 +579,19 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
 
 // Shared confirmation modal — the consequence of dispatch (clock starts,
 // buyer notified, SLA strike if the parcel doesn't move) is the thing
-// sellers most often misunderstand, so we state it plainly.
+// sellers most often misunderstand, so we state it plainly. On a firearm
+// DEALER_TRANSFER none of that is true: the release is driven by the dealer
+// stock-in verification, so the modal says so instead.
 function ConfirmModal({
   loading,
   trackingRef,
+  isDealerTransfer,
   onCancel,
   onConfirm,
 }: {
   loading: boolean;
   trackingRef: string;
+  isDealerTransfer?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -606,26 +624,28 @@ function ConfirmModal({
           Confirm hand-over — this can&apos;t be undone
         </p>
         <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}>
-          The buyer&apos;s 7-day delivery clock starts now and they&apos;ll be
-          notified the parcel is on its way. Only confirm once you&apos;ve
-          actually handed it to the courier.
+          {isDealerTransfer
+            ? 'This tells the buyer the firearm has been transferred to the dealer. Only confirm once you have actually handed it to the SAPS-licensed dealer — you then upload the SAPS 534 + stock-in photos so we can verify the stock-in and release your payout.'
+            : "The buyer's 7-day delivery clock starts now and they'll be notified the parcel is on its way. Only confirm once you've actually handed it to the courier."}
         </p>
-        <div
-          style={{
-            background: 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
-            borderRadius: 6,
-            padding: 12,
-            marginBottom: 16,
-            fontSize: 13,
-            color: 'var(--text-secondary)',
-          }}
-        >
-          <p>
-            <strong style={{ color: 'var(--text-primary)' }}>Tracking ref:</strong>{' '}
-            <code style={{ fontFamily: 'monospace' }}>{trackingRef || '(none)'}</code>
-          </p>
-        </div>
+        {!isDealerTransfer && (
+          <div
+            style={{
+              background: 'var(--bg-inset)',
+              border: '0.5px solid var(--border)',
+              borderRadius: 6,
+              padding: 12,
+              marginBottom: 16,
+              fontSize: 13,
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <p>
+              <strong style={{ color: 'var(--text-primary)' }}>Tracking ref:</strong>{' '}
+              <code style={{ fontFamily: 'monospace' }}>{trackingRef || '(none)'}</code>
+            </p>
+          </div>
+        )}
 
         <div className="flex gap-2">
           <button
@@ -654,7 +674,11 @@ function ConfirmModal({
               cursor: loading ? 'not-allowed' : 'pointer',
             }}
           >
-            {loading ? 'Confirming…' : 'Yes, handed over'}
+            {loading
+              ? 'Confirming…'
+              : isDealerTransfer
+                ? 'Yes, transferred'
+                : 'Yes, handed over'}
           </button>
         </div>
       </div>

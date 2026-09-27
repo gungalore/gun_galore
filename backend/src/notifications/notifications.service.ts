@@ -35,7 +35,12 @@ export type NotificationLinkedType =
   | 'motivation'
   // Community feed — a post or comment the member was notified about.
   | 'post'
-  | 'comment';
+  | 'comment'
+  // SAPS application tracker — linkedId is the TrackedApplication id. Nothing
+  // resolves these (the rows are dismissible); the link is carried for the
+  // push TAG, so a later status on the same application replaces the earlier
+  // alert rather than stacking a second one on the phone.
+  | 'tracked_application';
 
 interface PersistOpts {
   userId: string;
@@ -1713,6 +1718,40 @@ export class NotificationsService {
           vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
         },
       },
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Buyer: firearm DEALER_TRANSFER hand-over (the DT counterpart of
+  // itemDispatched above). A firearm never travels by courier and the
+  // buyer has no confirm-delivery step — payment releases when the
+  // seller's dealer stock-in verification passes. Tells the buyer the
+  // seller has transferred the firearm to their licensed dealer and
+  // what happens next. Informational (no action required yet), so it
+  // is email + SMS with no action-required inbox row.
+  // ---------------------------------------------------------------
+  async firearmHandedToDealerBuyer(d: DispatchDetails) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const html = this.email({
+      status: { tone: 'pending', label: 'Dealer transfer' },
+      headline: 'Your firearm has been transferred to the dealer',
+      body: `Hi ${b(d.buyerName)}, the seller of ${b(d.listingTitle)} has transferred the firearm to their SAPS-licensed dealer. The seller now uploads the SAPS 534 + dealer stock-in paperwork, and once we've verified the firearm is booked into the dealer's stock, the funds are released to the seller. You'll get the dealer's contact details at that point so you can arrange the inter-dealer transfer to your own dealer.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Hand-over', value: 'Dealer transfer' },
+      ],
+      cta: { label: 'View order', url: txUrl },
+      preheader: `Firearm transferred to the dealer — ${d.listingTitle}`,
+    });
+    await this.send(
+      d.buyerEmail,
+      'Firearm transferred to the dealer: ' + d.listingTitle,
+      html,
+    );
+    await this.sendSms(
+      d.buyerPhone,
+      `ALL Outdoor: ${truncate(d.listingTitle, 30)} has been transferred to the seller's licensed dealer. We'll verify the stock-in, then release the funds and send you the dealer's details: ${txUrl}`,
+      `dt-handover-${d.transactionId}`,
     );
   }
 
@@ -4788,6 +4827,79 @@ export class NotificationsService {
       });
       await this.send(d.email, headline, html);
     }
+  }
+
+  // ---------------------------------------------------------------
+  // The SAPS application tracker read a status it had not seen before.
+  //
+  // ⚠️ NEUTRAL WORDING IS THE WHOLE COPY BRIEF. We are reading a PUBLIC
+  // SAPS page on the member's behalf and noticing that it changed; SAPS
+  // did not tell us, and we decided nothing. No sentence here may suggest
+  // the outcome is ours, that we are connected to SAPS, or that a status
+  // is final — an email from us saying "your licence was approved" is a
+  // representation we have no standing to make. It quotes the page, dates
+  // it, and names the DFO as the person to ask.
+  //
+  // ⚠️ NO SMS IN v1 and that is deliberate. A status change is worth an
+  // inbox row and a push; it is not worth a charged SMS on a figure that
+  // SAPS may revise tomorrow.
+  // ---------------------------------------------------------------
+  async trackedApplicationChanged(d: {
+    userId: string;
+    email: string;
+    name: string;
+    /** The TrackedApplication id — the push tag and the deep link. */
+    trackedId: string;
+    /** Member-typed label, or the application number. Escaped in HTML. */
+    label: string;
+    previousStatus: string | null;
+    status: string | null;
+    statusDate: Date | null;
+    emailEnabled: boolean;
+  }) {
+    const url = `${this.appUrl}/licence-centre/tracking/${d.trackedId}`;
+    const shown = d.status ?? 'a new status';
+    const on = d.statusDate ? d.statusDate.toISOString().slice(0, 10) : null;
+
+    await this.persist({
+      userId: d.userId,
+      category: 'ACCOUNT',
+      type: 'tracked_application_changed',
+      title: 'Your application moved',
+      // Plain text — no escaping here, and it never claims an outcome.
+      body:
+        `${d.label} now reads "${shown}" on the SAPS enquiry` +
+        (on ? `, as at ${on}` : '') +
+        (d.previousStatus ? ` — previously "${d.previousStatus}".` : '.') +
+        ' We read this from the public SAPS enquiry on your behalf; we are not affiliated with SAPS.',
+      url: `/licence-centre/tracking/${d.trackedId}`,
+      iconKey: 'kyc',
+      linkedType: 'tracked_application',
+      linkedId: d.trackedId,
+      dismissible: true,
+    });
+
+    if (!d.emailEnabled) return;
+
+    // b() escapes: label is member-typed, status/date come off the page.
+    const html = this.email({
+      status: { tone: 'pending', label: 'Updated' },
+      headline: 'There is a new status on your application',
+      rows: [
+        { label: 'Now reads', value: b(shown) },
+        ...(on ? [{ label: 'Dated', value: b(on) }] : []),
+        ...(d.previousStatus
+          ? [{ label: 'Previously', value: b(d.previousStatus) }]
+          : []),
+      ],
+      body:
+        `Hi ${b(d.name)}, the SAPS firearm status enquiry changed for ${b(d.label)}. ` +
+        'We read the public enquiry for you and kept what it now says; nothing here is a decision by us. ' +
+        'SAPS is the only authority on your application — if anything looks wrong or has not moved as expected, your DFO is the person to ask.',
+      cta: { label: 'Open your tracker', url },
+      preheader: `${d.label}: the SAPS enquiry now reads ${shown}`,
+    });
+    await this.send(d.email, 'Your application moved', html);
   }
 
   private async sendSms(

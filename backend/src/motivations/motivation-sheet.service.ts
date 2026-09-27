@@ -21,6 +21,8 @@ import {
 } from './motivation-fields';
 import { ServedField, expandFields } from './motivation-field-options';
 import { UPLOAD_KIND_LABELS, buildAnnexures } from './motivation-checklist';
+import { evidenceRow } from './evidence-taxonomy';
+import { tryDecryptText } from '../common/blob-crypto';
 import { documentStatus } from './motivation-documents';
 import { requiredEndorsement } from './motivation-eligibility';
 import {
@@ -539,6 +541,17 @@ export class MotivationSheetService {
             // Which Document Centre credential this page is a copy of, or null
             // when the member added it here. It is the whole of `origin`.
             sourceCredentialId: true,
+            /**
+             * ⚠️ WHAT AN EVIDENCE ITEM IS, SO THE PANEL CAN COUNT THE CAPS.
+             * The shelf only counts what is ON the application, and the
+             * "2 own-page items" cap has to be counted from this list. The
+             * shape is assembled below to match the uploads endpoint exactly —
+             * two mappings of one row is how the same photograph reads
+             * "Activities page" here and "annexure K" in the pack.
+             */
+            evidenceType: true,
+            evidenceConfidence: true,
+            evidenceDescriptionEncrypted: true,
           },
         },
       },
@@ -716,6 +729,24 @@ export class MotivationSheetService {
         origin: u.sourceCredentialId
           ? ('vault' as const)
           : ('member' as const),
+        /**
+         * ⚠️ WHAT THE SHELF NEEDS TO COUNT THE CAPS AND NAME THE ITEM. Comes
+         * from the ONE builder every surface uses (evidence-taxonomy.ts), not
+         * from a second mapping here: this shelf and the motivation page's
+         * upload list are two views of one row, and a photo that reads
+         * "on its own page" on one and "Activities" on the other is how a
+         * member comes to pick a third annexure item the server will refuse.
+         *
+         * The description is decrypted here because the builder is pure — see
+         * its own note.
+         */
+        evidence:
+          u.kind === 'EVIDENCE'
+            ? {
+                ...evidenceRow(u.evidenceType, u.evidenceConfidence === 'high'),
+                description: tryDecryptText(u.evidenceDescriptionEncrypted),
+              }
+            : null,
       })),
       needs: documentStatus(
         row.licenceType,

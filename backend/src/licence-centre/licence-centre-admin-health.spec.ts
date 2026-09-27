@@ -34,6 +34,8 @@ function makeService(groups: { kind: CredentialKind; count: number }[]) {
     },
   };
   const stub = null as never;
+  // files, settings, notifications, quota, extract, evidence classifier,
+  // motivations — this suite exercises the vault's counts, not any of them.
   const service = new LicenceCentreService(
     prisma as unknown as PrismaService,
     stub,
@@ -42,8 +44,11 @@ function makeService(groups: { kind: CredentialKind; count: number }[]) {
     stub,
     stub,
     stub,
+    stub,
     // The decision ledger, silenced: these tests are about what the vault does, not what it writes down.
     { note: () => undefined } as never,
+    // The identify store, injected but unused here.
+    { findBySha: jest.fn(async () => null), put: jest.fn(async () => undefined), take: jest.fn(async () => null) } as never,
   );
   return { service, calls };
 }

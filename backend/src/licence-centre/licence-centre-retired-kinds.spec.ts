@@ -98,9 +98,13 @@ function build() {
     notifications as never,
     quota as never,
     extract as never,
+    // The evidence classifier, injected but unused here.
+    { classifyEvidence: jest.fn(async () => null) } as never,
     motivations as never,
     // The decision ledger, silenced: these tests are about what the vault does, not what it writes down.
     { note: () => undefined } as never,
+    // The identify store, injected but unused here.
+    { findBySha: jest.fn(async () => null), put: jest.fn(async () => undefined), take: jest.fn(async () => null) } as never,
   );
   return { svc, create, update, extract, rearm };
 }

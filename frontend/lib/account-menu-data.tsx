@@ -167,6 +167,18 @@ const CartridgeIcon: IconC = () => (
   </Svg>
 );
 
+// The SAPS Application Tracker. A magnifier over a document, NOT a shield or a
+// cartridge: this screen does not hold paperwork and does not load rounds, it
+// asks somebody else a question and shows you the answer — which is the one
+// thing that distinguishes it from its three neighbours in the group.
+const TrackerIcon: IconC = () => (
+  <Svg>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4" />
+    <path d="M14 3v5h5M4 20l3.5-3.5" />
+    <circle cx="16.5" cy="15.5" r="4" />
+  </Svg>
+);
+
 // ── Structure ────────────────────────────────────────────────────────
 export interface AccountMenuItem {
   href: string;
@@ -241,6 +253,12 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
       { href: '/documents', label: 'Paper Work Vault', Icon: ShieldDocIcon },
       { href: '/licence-centre/applications', label: 'Motivations', Icon: DocIcon },
       { href: '/bench', label: 'Reloading Tool', Icon: CartridgeIcon },
+      // ⚠️ LAST, AND THE ORDER IS THE POINT. The three above are things we do
+      // FOR the member; this one reports on what SAPS is doing with the
+      // application those three produced, so it reads after them. It is also
+      // not a substitute for the DFO — see the empty state's copy — and
+      // nothing here may imply SAPS affiliation.
+      { href: '/licence-centre/tracking', label: 'Application Tracker', Icon: TrackerIcon },
     ],
   },
   {

@@ -1,7 +1,10 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import {
   ChecklistProgress,
+  UPLOAD_KIND_LABELS,
+  annexureByContainer,
   annexureByKind,
+  annexureTitleFor,
   buildAnnexures,
   buildChecklist,
 } from './motivation-checklist';
@@ -123,6 +126,129 @@ describe('annexure lettering', () => {
 
   it('returns nothing when nothing was uploaded', () => {
     expect(buildAnnexures([])).toEqual([]);
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // EVIDENCE ANNEXURES. Evidence is ONE kind (`EVIDENCE`) carrying its
+  // container in `evidenceType`, and a printed-document container earns its
+  // own letter and its own page. Two things follow that a kind-keyed test
+  // would miss: two EVIDENCE rows must take TWO letters, and the insert must
+  // land by ANCHOR (after the shooting record, before the incident report),
+  // not at a hard-coded index that drifts the day an annexure kind is added.
+  // ──────────────────────────────────────────────────────────────────
+
+  it('⚠️ TAKES TWO LETTERS FOR TWO EVIDENCE CONTAINERS, SIDE BY SIDE', () => {
+    // `annexureByKind` is kind-keyed, and every evidence annexure shares the
+    // kind EVIDENCE — so a kind-keyed lookup would let the second overwrite
+    // the first, and one of the two pages would lose its letter.
+    const a = buildAnnexures(
+      [MotivationUploadKind.SHOOTING_ACTIVITY_LOG],
+      [],
+      [
+        { container: 'FARM_PERMISSION_LETTER', label: 'Farmer’s permission' },
+        { container: 'AFFIDAVIT', label: 'Affidavit' },
+      ],
+    );
+    const evidence = a.filter((x) => x.kind === 'EVIDENCE');
+    expect(evidence).toHaveLength(2);
+    expect(evidence.every((x) => x.count === 1)).toBe(true);
+    // Distinct letters, and each carries its own container so the renderer can
+    // title the page from the registry rather than from a shared kind label.
+    expect(evidence[0].letter).not.toBe(evidence[1].letter);
+    expect(evidence.map((x) => x.container)).toEqual([
+      'FARM_PERMISSION_LETTER',
+      'AFFIDAVIT',
+    ]);
+  });
+
+  it('⚠️ SITS AFTER THE SHOOTING RECORD AND BEFORE THE INCIDENT REPORT', () => {
+    // The operator's decision: evidence letters land near J — after "Record of
+    // shooting activities", before the incident report. This is by ANCHOR
+    // (the INCIDENT_REPORT case), not by index, so it survives a future
+    // insertion in ANNEXURE_ORDER without silently moving.
+    const a = buildAnnexures(
+      [
+        MotivationUploadKind.IDENTITY_DOCUMENT,
+        MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
+        MotivationUploadKind.INCIDENT_REPORT,
+      ],
+      [],
+      [{ container: 'FARM_PERMISSION_LETTER', label: 'Farmer’s permission' }],
+    );
+    expect(a.map((x) => x.kind)).toEqual([
+      MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
+      'EVIDENCE',
+      MotivationUploadKind.INCIDENT_REPORT,
+    ]);
+  });
+
+  it('⚠️ PUTS THE EVIDENCE AFTER THE LAST ANCHOR-KIND, NOT MID-GROUP', () => {
+    // Two evidence items still land as a block, not one either side of the
+    // incident report — the insert is guarded so `placeEvidence` runs once.
+    const a = buildAnnexures(
+      [MotivationUploadKind.SHOOTING_ACTIVITY_LOG, MotivationUploadKind.INCIDENT_REPORT],
+      [],
+      [
+        { container: 'FARM_PERMISSION_LETTER', label: 'Farmer’s permission' },
+        { container: 'SCORE_SHEET', label: 'Score sheet' },
+      ],
+    );
+    expect(a.map((x) => x.kind)).toEqual([
+      MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
+      'EVIDENCE',
+      'EVIDENCE',
+      MotivationUploadKind.INCIDENT_REPORT,
+    ]);
+  });
+
+  it('⚠️ LEAVES THE EXISTING LETTERS UNCHANGED WHEN THERE IS NO EVIDENCE', () => {
+    // The letters a pack already has must not move for the packs that carry
+    // no evidence — the overwhelmingly common case. Every kind here is one
+    // that letters on its own or in a group; the comparison is between the
+    // two-arg and three-arg call.
+    const kinds = [
+      MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
+      MotivationUploadKind.INCIDENT_REPORT,
+      MotivationUploadKind.FIREARM_SOURCE_PROOF,
+      MotivationUploadKind.CHARACTER_REFERENCE,
+    ];
+    expect(buildAnnexures(kinds, [], [])).toEqual(buildAnnexures(kinds));
+  });
+});
+
+describe('evidence annexure titles and lookup', () => {
+  it('titles an evidence page from its container, not from "Evidence"', () => {
+    expect(annexureTitleFor('EVIDENCE', 'FARM_PERMISSION_LETTER')).toBe(
+      "A farmer's permission to hunt on their land",
+    );
+  });
+
+  it('⚠️ FALLS BACK TO THE EVIDENCE LABEL FOR AN UNKNOWN CONTAINER', () => {
+    // `evidenceType` is free text and a container id retired since the row was
+    // written must read as "unknown container", never as an error.
+    expect(annexureTitleFor('EVIDENCE', 'RETIRED_CONTAINER')).toBe(
+      UPLOAD_KIND_LABELS.EVIDENCE,
+    );
+    expect(annexureTitleFor('EVIDENCE', null)).toBe(UPLOAD_KIND_LABELS.EVIDENCE);
+  });
+
+  it('resolves evidence letters by container, not by kind', () => {
+    const entries = buildAnnexures(
+      [],
+      [],
+      [
+        { container: 'FARM_PERMISSION_LETTER', label: 'Farmer’s permission' },
+        { container: 'AFFIDAVIT', label: 'Affidavit' },
+      ],
+    );
+    const byContainer = annexureByContainer(entries);
+    expect(byContainer.get('FARM_PERMISSION_LETTER')!.letter).toBe('A');
+    expect(byContainer.get('AFFIDAVIT')!.letter).toBe('B');
+    // And the kind-keyed map holds NO evidence entry — evidence is container-
+    // addressed, so a kind-keyed lookup could only ever hold one of the two.
+    expect(annexureByKind(entries).has('EVIDENCE')).toBe(false);
   });
 });
 

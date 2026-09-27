@@ -132,7 +132,7 @@ export default function FeesPage() {
       </p>
       <p>
         <strong>A worked example.</strong> A seller wants R1,000.00 for a
-        camp stove:
+        camp stove, and the courier quotes R79.00 to deliver it:
       </p>
       <table style={{ width: '100%', fontSize: 14, borderCollapse: 'collapse', marginBottom: 16 }}>
         <tbody>
@@ -140,7 +140,8 @@ export default function FeesPage() {
             ['Your asking price — what you receive', 'R1,000.00'],
             ['Our commission (10% of the first R5,000)', 'R100.00'],
             ['Listed price — what the buyer sees', 'R1,100.00'],
-            ['Buyer Protection Fee (3.28% + R1.15 on the item)', 'R37.23'],
+            ['Delivery (R79.00 courier rate + 10% handling)', 'R86.90'],
+            ['Buyer Protection Fee (3.28% + R1.15 on the item and the courier rate)', 'R39.82'],
           ].map(([label, amount], i) => (
             <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
               <td style={{ padding: '6px 8px 6px 0' }}>{label}</td>
@@ -149,20 +150,21 @@ export default function FeesPage() {
           ))}
           <tr style={{ borderBottom: '1px solid var(--border)' }}>
             <td style={{ padding: '8px 8px 8px 0' }}>
-              <strong>Buyer pays (plus delivery)</strong>
+              <strong>Buyer pays</strong>
             </td>
             <td style={{ padding: '8px 0', textAlign: 'right' }}>
-              <strong>R1,137.23</strong>
+              <strong>R1,226.72</strong>
             </td>
           </tr>
         </tbody>
       </table>
       <p>
-        The buyer pays R1,137.23 plus delivery. The seller receives{' '}
+        The buyer pays R1,226.72. The seller receives{' '}
         <strong>R1,000.00</strong>. Nothing is deducted from that R1,000.00.
         Delivery is the courier&apos;s live rate for the parcel plus our 10%
         handling margin, and the Buyer Protection Fee is charged on the item
-        and the carrier&apos;s rate together (see section&nbsp;4).
+        and the carrier&apos;s rate together — the R1,100.00 listed price and
+        the R79.00 rate, never on our handling margin (see section&nbsp;4).
       </p>
       <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16 }}>
         Because the R10 minimum commission applies to small sales, a low
@@ -188,9 +190,11 @@ export default function FeesPage() {
         <strong>A worked example.</strong> A fishing reel sells at a
         winning bid of R1,000.00. Commission is R100.00, so the seller
         receives <strong>R900.00</strong>. The buyer pays the R1,000.00
-        bid, delivery, and the Buyer Protection Fee on the two together —
-        R33.95 on the R1,000.00 on its own, a little more once a delivery
-        charge is added.
+        bid, delivery, and the Buyer Protection Fee on the two together.
+        On a R79.00 courier rate that is R86.90 delivery and{' '}
+        <strong>R36.54</strong> fee — the fee is charged on the R1,000.00
+        bid and the courier&apos;s rate together, never on our handling
+        margin (see section&nbsp;4).
       </p>
 
       <h2>4. Buyer Protection Fee</h2>

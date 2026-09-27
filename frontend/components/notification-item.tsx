@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 // One row in the notifications inbox.
 //

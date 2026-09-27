@@ -250,3 +250,10 @@ Claude outputs/
 # repo's deploy already died once blaming "local edits on the box".
 warden-state/
 warden-archive/
+
+# Browser-automation scratch from local flow runs. .chrome-flow/ is a throwaway
+# Chromium profile (hundreds of MB) and .flow-cookies.txt is a live session
+# cookie jar — a credential by any other name, and never version control's.
+.chrome-flow/
+.flow/
+.flow-cookies.txt

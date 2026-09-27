@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
+import { useUploadEnhance } from '@/components/scan-upload/use-upload-enhance';
 import type { CredentialSlot, SheetCredentials } from './contract';
 
 // ────────────────────────────────────────────────────────────────────
@@ -110,6 +111,16 @@ function Slot({
     () => `pair-file-${slot.kind.toLowerCase()}-${Math.random().toString(36).slice(2, 8)}`,
   );
   const have = slot.held.length > 0;
+  /*
+    ⚠️ THIS DOOR OPENS THE OPERATING SYSTEM'S DIALOG FROM THE MEMBER'S OWN
+    TAP — a `label` for a hidden input, exactly like the shelf — so the pick
+    cannot be moved onto the scanner's own button, and the treatment has to be
+    run afterwards. Operator, 2026-09-26: "uploaded a ID card. Successful but
+    no document clean up applied?" A competency certificate photographed on a
+    desk reached the DFO with the desk in frame; it now gets the same
+    detect/crop/straighten/fix-light pass as a scanned page.
+  */
+  const { overlay: enhanceOverlay, enhance } = useUploadEnhance();
 
   return (
     <div className="border-b border-[var(--border-divider)] py-[12px] last:border-b-0">
@@ -169,7 +180,14 @@ function Slot({
             onChange={(e) => {
               const files = Array.from(e.target.files ?? []);
               e.target.value = '';
-              if (files.length) onUpload(files);
+              if (!files.length) return;
+              // ⚠️ THE SCANNER READS THE REAL SHAPE OFF THE OUTLINE, so the
+              // hint is only a fallback for a detector that finds nothing.
+              void enhance(files, {
+                title: `Photograph your ${slot.label.toLowerCase()}`,
+                shape: 'a4',
+                onDone: onUpload,
+              });
             }}
           />
         </div>
@@ -190,6 +208,9 @@ function Slot({
       {picker && picker.kind === slot.kind ? (
         <div className="mt-[8px]">{picker.node}</div>
       ) : null}
+
+      {/* The scanner's review, only ever mounted once a file is picked. */}
+      {enhanceOverlay}
     </div>
   );
 }

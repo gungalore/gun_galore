@@ -1707,6 +1707,22 @@ export const CREDENTIAL_TO_UPLOAD: Record<
   SAFE_PHOTO_BOLTS: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
   SAFE_INSTALLATION: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
   SHOOTING_ACTIVITY_LOG: [MotivationUploadKind.SHOOTING_ACTIVITY_LOG],
+  /**
+   * ⚠️ EVIDENCE ANSWERS NO DOCUMENT SLOT, AND THAT IS NOT A GAP.
+   *
+   * An empty array here means the library picker can still offer the row and
+   * the attach path still files it — `addFromLibrary` writes the credential's
+   * own kind — but nothing in it counts as satisfying a DOCUMENT requirement.
+   * That is exactly right: a hunting photograph is not a competency
+   * certificate, and a permission letter ticks FIREARM_SOURCE_PROOF through
+   * its CONTAINER's `satisfies` (motivation-library), not through this map.
+   *
+   * ⚠️ DO NOT FILL IT WITH A GUESSED SLOT. Listing CURRENT_LICENCE here to
+   * "have something" would let a photograph tick a required document row the
+   * member never supplied, which is the one failure this whole split exists to
+   * prevent.
+   */
+  EVIDENCE: [],
 };
 
 /**

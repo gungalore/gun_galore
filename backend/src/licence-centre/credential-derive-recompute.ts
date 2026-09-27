@@ -69,9 +69,26 @@ export async function recomputeDerivedCompetencies(
         where: {
           userId,
           kind: 'COMPETENCY_CERTIFICATE',
-          // ⚠️ OUR OWN ARITHMETIC ONLY. Never a row the member confirmed, and
-          // never one with no dateSource — that one is still asking them.
-          dateSource: 'derived',
+          /**
+           * ⚠️ NOT-SETTLED ROWS, WHICH IS WIDER THAN "OUR OWN ARITHMETIC".
+           *
+           * The predicate used to be `dateSource: 'derived'` alone, so a
+           * competency that had NEVER been dated was invisible here. That is
+           * exactly the row this function exists to date: the operator's five
+           * certificates all sat `expiresOn = null, dateSource = null`. They
+           * were uploaded before the licences, when there was nothing to
+           * derive from, so only the fallback was available and the fallback
+           * is never armed — leaving `dateSource` null. When the licences
+           * landed the recompute fired and could not see a single one of them,
+           * because a null dateSource is not 'derived'.
+           *
+           * ⚠️ `confirmedAt: null` IS WHAT MAKES THE WIDENING SAFE. A date the
+           * member settled carries a confirmedAt and is excluded; a date we
+           * read carries dateSource 'read' and is excluded by the second arm.
+           * Only an unconfirmed, unread row — one still asking — passes, and
+           * the write below re-checks `mayArmDerivedExpiry` before arming.
+           */
+          OR: [{ dateSource: 'derived' }, { dateSource: null }],
           confirmedAt: null,
           purgedAt: null,
         },

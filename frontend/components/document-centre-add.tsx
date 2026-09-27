@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import ScanButton from '@/components/scan/scan-button';
-import FilePickerButton from '@/components/file-picker-button';
+import DocumentEnhancer from '@/components/scan-upload/document-enhancer';
 import { shapeForKind } from '@/lib/scan/shapes';
 import { CredentialKind, KIND_LABELS } from '@/lib/licence-centre-api';
 
@@ -116,6 +116,22 @@ export default function DocumentCentreAdd({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const pickedKind = useRef<CredentialKind | ''>('');
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  /*
+    ⚠️ THE FILE DIALOG IS OPENED FROM INSIDE THE TAP. `pick()` below opens the
+    operating system's dialog from inside the member's gesture — iOS Safari
+    refuses a programmatic dialog that is not attached to a gesture — so the
+    pick happens here, on this component's own hidden input, rather than inside
+    DocumentEnhancer, which owns its own trigger.
+
+    ⚠️ AND NOTHING IS POLISHED HERE ANY MORE. The scanner treatment used to run
+    from this file, on the way to `onFiles`, before the server had seen the
+    bytes. The role of a file is not known until the model has answered, and an
+    evidence photograph must never be cropped or deshadowed — so the treatment
+    now lives on the page, AFTER identify, and runs only for the files that
+    came back as documents. Moving it back here would silently start turning
+    hunting photographs into photocopies. See components/document-centre/
+    upload-batch.tsx and its spec.
+  */
   const uploadRef = useRef<HTMLButtonElement | null>(null);
   const scanRef = useRef<HTMLButtonElement | null>(null);
 
@@ -311,14 +327,20 @@ export default function DocumentCentreAdd({
       disabled={busy}
       label="Take a photo"
       fallback={
-        <FilePickerButton
+        <DocumentEnhancer
           accept={ACCEPT}
           multiple
           disabled={busy}
           onFiles={(files) => handOff(files, chosen ?? '')}
+          title={
+            chosen
+              ? `Photograph your ${(KIND_LABELS[chosen] ?? chosen).toLowerCase()}`
+              : 'Photograph the document'
+          }
+          shape={chosen ? shapeForKind(chosen) : 'a4'}
         >
           Choose files instead
-        </FilePickerButton>
+        </DocumentEnhancer>
       }
     />
   );
@@ -358,14 +380,20 @@ export default function DocumentCentreAdd({
         {mode === 'scan' ? (
           scanControl(false)
         ) : (
-          <FilePickerButton
+          <DocumentEnhancer
             accept={ACCEPT}
             multiple
             disabled={busy}
             onFiles={(files) => handOff(files, chosen ?? '')}
+            title={
+              chosen
+                ? `Photograph your ${(KIND_LABELS[chosen] ?? chosen).toLowerCase()}`
+                : 'Photograph the document'
+            }
+            shape={chosen ? shapeForKind(chosen) : 'a4'}
           >
             Choose files
-          </FilePickerButton>
+          </DocumentEnhancer>
         )}
       </div>
 
@@ -396,7 +424,8 @@ export default function DocumentCentreAdd({
           // change event otherwise, and the second attempt looks like a dead
           // button.
           e.target.value = '';
-          if (files.length) void onFiles(files, pickedKind.current);
+          if (!files.length) return;
+          handOff(files, pickedKind.current);
         }}
       />
 

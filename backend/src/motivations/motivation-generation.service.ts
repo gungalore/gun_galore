@@ -161,6 +161,7 @@ import {
 import { readSaId } from './sa-id';
 import { overlapFromAnswers } from './motivation-overlap';
 import { documentLabel, documentStatus } from './motivation-documents';
+import { EVIDENCE_ANNEXURE_MAX, containerById } from './evidence-taxonomy';
 import {
   DISCLAIMER_VERSION,
   EDITABLE,
@@ -977,13 +978,26 @@ export class MotivationGenerationService {
       // correctness fix, not just plumbing for press clippings — it makes the
       // comment two lines up ("the SAME function that letters the printed
       // pack") true for the first time.
-      const uploadKinds = (
-        await this.prisma.motivationUpload.findMany({
-          where: { motivationId: row.id },
-          select: { kind: true, coversKinds: true },
-        })
-      ).map((u) => u.kind);
-      const rawAnnexures = buildAnnexures(uploadKinds);
+      /**
+       * ⚠️ EVIDENCE IS READ FOR ITS CONTAINER TOO, and it has to be: evidence
+       * takes a letter when its container is annexure-placed, and the writer
+       * cites that letter. The kind alone cannot tell two evidence containers
+       * apart, so the container is collected alongside and split below — the
+       * same split renderPdf makes before its own buildAnnexures call, so the
+       * writer's citation and the printed pack agree.
+       */
+      const uploadRows = await this.prisma.motivationUpload.findMany({
+        where: { motivationId: row.id },
+        select: { kind: true, coversKinds: true, evidenceType: true },
+      });
+      const uploadKinds = uploadRows.map((u) => u.kind);
+      const evidenceAnnexures = uploadRows
+        .filter((u) => u.kind === 'EVIDENCE' && u.evidenceType)
+        .map((u) => containerById(u.evidenceType!))
+        .filter((c): c is NonNullable<typeof c> => !!c && c.placement === 'annexure')
+        .slice(0, EVIDENCE_ANNEXURE_MAX)
+        .map((c) => ({ container: c.id, label: c.label }));
+      const rawAnnexures = buildAnnexures(uploadKinds, [], evidenceAnnexures);
       const annexures = rawAnnexures.map((a) => ({
         letter: a.letter,
         label: a.label,

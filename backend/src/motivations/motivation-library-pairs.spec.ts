@@ -322,6 +322,8 @@ type FakeCredential = {
   detailsEncrypted: string | null;
   extractionOk: boolean;
   otherSideId: string | null;
+  /** The earlier vault row this one is a copy of, if any. */
+  duplicateOfId?: string | null;
 };
 
 type FakeUpload = {
@@ -521,6 +523,12 @@ function build(
       forget: async () => 0,
       purgeExpired: async () => 0,
     } as never,
+    // The identify store, injected but unused here.
+    {
+      findBySha: jest.fn(async () => null),
+      put: jest.fn(async () => undefined),
+      take: jest.fn(async () => null),
+    } as never,
     prefill as never,
   );
   return { service, prisma, files, created, prefill, answers: () => saved };
@@ -656,6 +664,24 @@ describe('picking a folded document attaches both of its pages', () => {
     expect(created).toHaveLength(1);
     expect(res.alsoAttached).toEqual([]);
     expect(res.alsoFailed).toBeNull();
+  });
+
+  it('⚠️ REFUSES A COPY AT THE PICKER, even though the list never shows one', async () => {
+    // Operator, 2026-09-26: "Duplicates can never be used inside a motivation."
+    // buildLibrary keeps a copy out of the list, but this route is directly
+    // callable and a stale client holds yesterday's list — so the boundary
+    // stands here too. A copy is refused by name; the original is attached.
+    const { service, created } = build([
+      credential({ id: 'original' }),
+      credential({ id: 'copy', duplicateOfId: 'original' }),
+    ]);
+    await expect(
+      service.addFromLibrary('clerk-1', 'mo-1', 'credential', 'copy'),
+    ).rejects.toThrow(/copy of another document/i);
+    expect(created).toHaveLength(0);
+
+    await service.addFromLibrary('clerk-1', 'mo-1', 'credential', 'original');
+    expect(created.map((c) => c.sourceCredentialId)).toEqual(['original']);
   });
 });
 

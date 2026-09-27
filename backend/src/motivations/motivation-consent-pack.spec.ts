@@ -74,9 +74,10 @@ describe('the previous owner’s consent reaches the pack', () => {
      * applicant, which this is not. It is a third party's signed statement
      * about a firearm.
      *
-     * ⚠️ SO IT IS NO LONGER IN THE CONTENTS. If that assertion comes back
-     * somebody has given it two homes, and a reviewer following the index will
-     * be sent to the wrong sheet.
+     * ⚠️ AND THE CONTENTS STILL NAMES IT — which is not the same thing as the
+     * standalone line it used to get. It is lettered in with the uploaded
+     * annexures, so the index lists it beside them. An index that omits a page
+     * the pack prints is the disagreement this test exists to stop.
      */
     const annexures = buildAnnexures(['IDENTITY_DOCUMENT'], ['SELLER_CONSENT']);
     const out = await new MotivationPdfService().render({
@@ -95,9 +96,11 @@ describe('the previous owner’s consent reaches the pack', () => {
     );
     expect(captioned).toBe(true);
 
-    // And gone from the contents.
+    // ⚠️ AND NAMED IN THE CONTENTS. This asserted the opposite until
+    // 2026-09-10 turned the consent into a lettered annexure; left as it was,
+    // the test demanded an index that hides a page the pack prints.
     const contents = pages.find((pg) => /CONTENTS/i.test(pg)) ?? '';
-    expect(contents).not.toMatch(/PREVIOUS OWNER/i);
+    expect(contents).toMatch(/previous owner/i);
   });
 
   it('costs a pack with no consent nothing at all', async () => {

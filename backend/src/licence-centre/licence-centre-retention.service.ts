@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
+// From MotivationsModule, which this module already imports (and exports it
+// from). It is not @Global, so it must be injected through that edge.
+import { DocumentIdentifyService } from '../common/document-identify.service';
 
 // ────────────────────────────────────────────────────────────────────
 // LC0 — RETENTION AND ERASURE.
@@ -24,6 +27,23 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
 
 const BATCH = 200;
 
+// ────────────────────────────────────────────────────────────────────
+// ⚠️ A DEACTIVATED TRACKER IS KEPT FOR A YEAR, THEN HARD-DELETED.
+//
+// Deactivating is member bookkeeping, not erasure — the row keeps the
+// application's whole observed history, and a member who tidied their list
+// in March may want last year's status in September. But the encrypted
+// reference and serial are POPIA-sensitive and nobody has asked for them in
+// a year, so they go. A firearm application runs for months, which is why
+// this window is measured in years rather than weeks.
+//
+// Deactivation stamps `updatedAt` (Prisma's @updatedAt), and nothing else
+// touches a deactivated row — the sweep only polls `active: true` — so
+// `updatedAt` IS the deactivation date. There is no second column to keep
+// honest.
+// ────────────────────────────────────────────────────────────────────
+const TRACKER_RETENTION_DAYS = 365;
+
 @Injectable()
 export class LicenceCentreRetentionService {
   private readonly logger = new Logger(LicenceCentreRetentionService.name);
@@ -31,6 +51,11 @@ export class LicenceCentreRetentionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly files: SecureFileStorageService,
+    // ⚠️ THE IDENTIFY STORE IS SWEPT HERE, NOT IN THE MOTIVATIONS CRON. It is
+    // POPIA data — the OCR text of licences and identity documents — and the
+    // vault's own crons exist for exactly this class of leftover. A member who
+    // identifies ten files and uploads none must leave nothing behind.
+    private readonly identify: DocumentIdentifyService,
   ) {}
 
   /**
@@ -41,6 +66,10 @@ export class LicenceCentreRetentionService {
   async sweep(): Promise<void> {
     try {
       await this.purgeSoftDeleted();
+      await this.purgeDeactivatedTrackers();
+      // Swallows its own failure, like the tracker purge: a stuck identify row
+      // is not a reason to skip the other two POPIA obligations.
+      await this.identify.purgeExpired();
     } catch (err) {
       this.logger.error(
         `Licence Centre retention sweep failed: ${(err as Error).message}`,
@@ -100,6 +129,39 @@ export class LicenceCentreRetentionService {
   }
 
   /**
+   * Trackers the member deactivated more than a year ago.
+   *
+   * ⚠️ SWALLOWS ITS OWN FAILURE, so a database hiccup here cannot stop
+   * `purgeSoftDeleted()` from running (or the reverse). Both are POPIA
+   * obligations and neither is a reason to skip the other.
+   *
+   * ⚠️ HARD DELETE. The events go with it through `onDelete: Cascade`, which
+   * is the point: the reference and serial ciphertext, and every status SAPS
+   * ever printed for it, leave together. Nothing here is soft-deleted twice.
+   */
+  private async purgeDeactivatedTrackers(): Promise<number> {
+    try {
+      const cutoff = new Date(
+        Date.now() - TRACKER_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+      );
+      const { count } = await this.prisma.trackedApplication.deleteMany({
+        where: { active: false, updatedAt: { lt: cutoff } },
+      });
+      if (count > 0) {
+        this.logger.log(
+          `Licence Centre retention: purged ${count} deactivated tracker(s) idle for over ${TRACKER_RETENTION_DAYS} days`,
+        );
+      }
+      return count;
+    } catch (err) {
+      this.logger.error(
+        `Licence Centre retention: tracker purge failed: ${(err as Error).message}`,
+      );
+      return 0;
+    }
+  }
+
+  /**
    * Everything one member has, bytes included.
    *
    * ⚠️ MUST NOT THROW. The caller is the account-deletion path: an
@@ -117,9 +179,23 @@ export class LicenceCentreRetentionService {
     credentials: number;
     filesRemoved: number;
     filesFailed: number;
+    trackers: number;
   }> {
-    const out = { credentials: 0, filesRemoved: 0, filesFailed: 0 };
+    const out = { credentials: 0, filesRemoved: 0, filesFailed: 0, trackers: 0 };
     try {
+      // ⚠️ THE SAPS TRACKER COMES TOO, ACTIVE ONES INCLUDED. It is the same
+      // class of record as everything else this method exists for: POPIA
+      // data about a member's firearms licence, encrypted at rest, with no
+      // home once the member is gone. Deactivated rows are not a loophole —
+      // erasure is erasure. The events cascade with the row.
+      // ⚠️ ORDER DOES NOT MATTER HERE but the credential rows below rely on
+      // this deleting FIRST only in the sense that both are independent
+      // deletes; neither can block the other.
+      const trackers = await this.prisma.trackedApplication.deleteMany({
+        where: { userId },
+      });
+      out.trackers = trackers.count;
+
       const rows = await this.prisma.credential.findMany({
         where: { userId },
         select: { id: true, storageKey: true },

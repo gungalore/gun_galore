@@ -15,7 +15,7 @@ import {
   STATE_TONE,
   formatDate,
 } from '@/lib/licence-centre-api';
-import { filedUnsure } from '@/lib/document-review-rules';
+import { evidenceNeedsWords, filedUnsure } from '@/lib/document-review-rules';
 
 // ────────────────────────────────────────────────────────────────────
 // ONE ROW.
@@ -117,6 +117,14 @@ export default function DocumentRow({
 
   const parts = subline(row, section).filter(Boolean);
 
+  /**
+   * Is this an evidence item the classifier could not place?
+   *
+   * ⚠️ NOT THE SAME QUESTION AS `filedUnsure`. Both are true of this row, and
+   * only one of them has an answer — see evidenceNeedsWords.
+   */
+  const wordsNeeded = evidenceNeedsWords(row) && !row.confirmed;
+
   return (
     <li>
       <button
@@ -153,12 +161,35 @@ export default function DocumentRow({
               member had filed themselves. A wrong box on a firearm licence is
               a renewal nothing will ever remind on. The row IS the way to
               change it: tapping it opens the card, which carries the type
-              control. */}
-          {filedUnsure(row) && !row.confirmed && (
+              control.
+
+              ⚠️ EXCEPT EVIDENCE, WHICH HAS NO TYPE TO CHECK. An evidence item
+              we could not place is `autoFiled` and `namedConfident: false` for
+              the same reasons a misread licence is, so it would otherwise
+              arrive here saying "filed as Evidence — not sure, tap to change"
+              — naming the ONE box that is certainly right, because every
+              evidence item is Evidence, and sending the member to a type menu
+              with no answer for it. What is actually missing is the member's
+              own words, and the fix is the description. See
+              evidenceNeedsWords. */}
+          {wordsNeeded ? (
+            /* ⚠️ A STATEMENT, NOT AN INSTRUCTION, BECAUSE THIS ROW CANNOT
+               CARRY ONE OUT. Its one click target opens the document card,
+               whose controls are a document type, an expiry and a name — none
+               of which is what is missing on an evidence item. The correction
+               is a better description, written in the Evidence panel on the
+               same page, and that is where the call to action belongs. */
             <span className="mt-1 block truncate text-[11px] font-medium text-[var(--warning)]">
-              Filed as {KIND_LABELS[row.kind] ?? row.kind} — not sure, tap to
-              change
+              We could not tell what this shows
             </span>
+          ) : (
+            filedUnsure(row) &&
+            !row.confirmed && (
+              <span className="mt-1 block truncate text-[11px] font-medium text-[var(--warning)]">
+                Filed as {KIND_LABELS[row.kind] ?? row.kind} — not sure, tap to
+                change
+              </span>
+            )
           )}
         </span>
 

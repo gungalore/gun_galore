@@ -968,6 +968,98 @@ describe('the press clippings annexure', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────
+// MY ACTIVITIES / EVIDENCE — the body page.
+//
+// Activity photographs are argument, not paperwork: a hunting photo, a
+// reloading bench, a range session. The operator's decision is that printed
+// DOCUMENTS (a permission letter, an affidavit) take their own annexure
+// letter, and everything photographic prints in the body on one page called
+// "My activities and evidence", capped at four. The page is captioned with
+// the member's own description, falling back to the container's label.
+// ────────────────────────────────────────────────────────────────────
+describe('the activities and evidence body page', () => {
+  const svc = new MotivationPdfService();
+
+  async function tinyJpeg(): Promise<Buffer> {
+    const sharp = (await import('sharp')).default;
+    return sharp({
+      create: {
+        width: 40,
+        height: 30,
+        channels: 3,
+        background: { r: 60, g: 120, b: 60 },
+      },
+    })
+      .jpeg()
+      .toBuffer();
+  }
+
+  const page = (n: number, over: Record<string, unknown> = {}) => ({
+    index: n,
+    total: 4,
+    label: 'A hunting photograph',
+    description: null as string | null,
+    ...over,
+  });
+
+  it('⚠️ PRINTS THE DESCRIPTIONS IN THE BODY, WITH NO ANNEXURE LETTER', async () => {
+    const bytes = await tinyJpeg();
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      evidencePages: [
+        page(1, {
+          description: 'The kudu I took on the farm in August',
+          image: { bytes, width: 40, height: 30 },
+        }),
+        page(2, {
+          description: 'My reloading bench',
+          image: { bytes, width: 40, height: 30 },
+        }),
+      ],
+    } as never);
+
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t).toContain('My activities and evidence');
+    expect(t).toContain('The kudu I took on the farm in August');
+    expect(t).toContain('My reloading bench');
+    // ⚠️ NO ANNEXURE LETTER. That is the whole point of the split: an activity
+    // photograph is argument, and argument goes in the body.
+    expect(t).not.toMatch(/Annexure [A-Z][^a-z]*HUNTING/i);
+    expect(t).not.toMatch(/Annexure [A-Z][^a-z]*RELOADING/i);
+  });
+
+  it('⚠️ FALLS BACK TO THE CONTAINER LABEL WHEN THE MEMBER SAID NOTHING', async () => {
+    const bytes = await tinyJpeg();
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      evidencePages: [
+        page(1, { label: 'A range photograph', image: { bytes, width: 40, height: 30 } }),
+      ],
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t).toContain('A range photograph');
+  });
+
+  it('⚠️ NO IMAGE, NO PLACEHOLDER BOX — the cutting rule', async () => {
+    // An unreadable file must thin the page, never draw an empty frame with a
+    // caption under it. The page still prints, because the label is a fact.
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      evidencePages: [page(1, { label: 'A photograph we could not read' })],
+    } as never);
+    expect(pdf.length).toBeGreaterThan(1000);
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t).toContain('A photograph we could not read');
+  });
+
+  it('draws nothing at all when no evidence was picked', async () => {
+    const { pdf } = await svc.render(makeInput());
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t).not.toContain('My activities and evidence');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
 // THE CARTRIDGE DATASHEET, INSIDE THE MOTIVATION.
 //
 // Operator, 2026-08-23: "it not an annexure. Its part of the motivation itself

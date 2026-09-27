@@ -637,7 +637,7 @@ The writer returns the body only, with the fixed headings on their own lines, no
 
 ### 9.1 Lettering
 
-One letter per document kind, in this fixed order; kinds not present take no letter so the letters stay contiguous. Several copies of one kind share a letter and are captioned "(n of N)".
+One letter per document kind, in this fixed order; kinds not present take no letter so the letters stay contiguous. Several copies of one kind share a letter and are captioned "(n of N)". Evidence is the one group that letter individually: each annexure-placed evidence item is a document in its own right, so it takes its own letter even though the rows share a single upload kind.
 
 | Order | Annexure | Applies to | Certification |
 |---|---|---|---|
@@ -650,7 +650,8 @@ One letter per document kind, in this fixed order; kinds not present take no let
 | G | Association membership certificate or card | s 15 (if member), s 16, s 24 of s 16 | Plain |
 | H | Dedicated status certificate and the chairperson's sworn statement or letter of good standing | s 16, s 24 of s 16 | Original letter as issued |
 | I | Association endorsement for this firearm | s 15 (if issued), s 16 | Original as issued |
-| J | Activity evidence: activity report or verified scores; hunting invitations, farm letters, permits; hunt or match photographs; club membership; competition certificates; exercise rule sheet | s 15, s 16, s 24 of s 15 or s 16 | Plain |
+| J | Activity evidence: activity report or verified scores; club membership; competition certificates; exercise rule sheet | s 15, s 16, s 24 of s 15 or s 16 | Plain |
+| J+ | Evidence the applicant filed as a printed document, lettered one per item immediately after J and before K (max two): hunting invitation, farm permission letter, hunting permit, register entry, game-donation receipt; score sheet, competition result, range register, match programme, range membership; reloading log, ballistic table, chronograph result; gunsmith invoice; safe invoice, safe specification sheet, alarm certificate; employment letter, business or farm ownership, medical letter, retirement or occupation proof; trust deed, inheritance papers, court order, protection order, crime statement or CAS document, insurance schedule, affidavit, certified copy, power of attorney; association letter or chairperson's declaration, club card or dedicated-status certificate, endorsement letter, activity report, federation letter; receipt or invoice; generic certificate | s 15, s 16, s 24, and elsewhere where the applicant filed a printed document | Plain (a certified copy or affidavit may carry its own stamp) |
 | K | Crime evidence: precinct figures table(s); press screenshots; incident report or CAS printout | s 13, s 14, s 24 of s 13 or s 14 | Plain |
 | L | Premises evidence (map, sketch, title deed or lease) | s 14 | Plain |
 | M | Firearm source: dealer invoice and SAPS 350(a) copy; or seller's consent, seller's ID and seller's licence (both sides); or the estate papers | All new applications | Plain (the seller's consent is an original, signed) |
@@ -659,9 +660,15 @@ One letter per document kind, in this fixed order; kinds not present take no let
 
 The PAJA letter is not an annexure; it sits between the motivation and the annexures with its own title. The SAPS form and the dealer's SAPS 350(a) are not annexures; they lead the pack. The applicant's checklist page is not an annexure and is removed at the counter.
 
+A word on the J+ row. Filing evidence is a self-service surface, not a fixed checklist: the applicant uploads what they actually hold, gives a short description, and the file is sorted into one of about eighty named containers — a farm permission letter, an affidavit, a score sheet, a hunting photograph, a reloading bench. Where the sort is unsure the item is flagged, the applicant is asked for a better description, and it is re-sent; an item the classifier cannot place is stored with no container rather than guessed into the wrong one. It matters because it decides how the item prints. A container whose thing is a printed document takes a letter in the J+ position and a full page of its own, up to two per pack. A container whose thing is a photograph is argument, prints in the body under "My activities and evidence" and takes no letter, up to four per pack. The applicant's own evidence set is capped at thirty items in the vault.
+
 ### 9.2 Crime evidence annexure (s 13, s 14)
 
 Page one: a table per precinct cited (home station and up to three stations on the applicant's stated routes): station, category (SAPS wording), count, period, and the release name and date of the SAPS quarterly crime statistics from which the figures come. Following pages: one press item per page as a screenshot of the published page showing the masthead, headline, date and standfirst, with the URL and date accessed printed beneath. Never the article body retyped. Never an item involving sexual offences or children, a court diary, or anything unconnected to the applicant's stated routine.
+
+### 9.2a Activities and evidence page (body)
+
+The counterpart to J+: the applicant's activity photographs, which prove the doing rather than a document about it. One page in the body under the heading "My activities and evidence", holding up to four images in a two-by-two grid, each captioned with the applicant's own description where they gave one and the container's name otherwise. A photograph that cannot be read is dropped and its caption still prints — the caption, not the picture, is the citation.
 
 ### 9.3 Generated pages
 

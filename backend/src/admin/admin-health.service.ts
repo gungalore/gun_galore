@@ -401,6 +401,14 @@ export class AdminHealthService {
       { key: 'stats-rollup', label: 'Nightly stats rollup', schedule: 'daily 02:00', expectedIntervalSec: 86_400 },
       { key: 'event-prune', label: 'User-event prune', schedule: 'weekly', expectedIntervalSec: 7 * 24 * 3600 },
       { key: 'insights-digest', label: 'Weekly insights digest', schedule: 'weekly Mon 06:00', expectedIntervalSec: 7 * 24 * 3600 },
+
+      // Weekly, Sunday 04:40 — the SAPS application tracker's poll of the
+      // public enquiry. Gated on `licence_tracker_sweep_enabled`, which ships
+      // OFF, so a red row here while the flag is off does NOT mean a fault:
+      // an intentionally-gated cron still stamps the heartbeat (the stamp is
+      // deliberately ungated), so what a stale row actually means is the box
+      // or the schedule, not the flag. Watch it once the flag is turned on.
+      { key: 'licence-tracker-sweep', label: 'SAPS application tracker sweep', schedule: 'weekly Sun 04:40', expectedIntervalSec: 7 * 24 * 3600 },
     ];
 
     const rows = await this.prisma.setting.findMany({

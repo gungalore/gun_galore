@@ -102,6 +102,21 @@ export interface LibraryCredentialRow {
    */
   otherSideId?: string | null;
   /**
+   * The earlier vault row this one is a copy of — `Credential.duplicateOfId`.
+   *
+   * ⚠️ A COPY IS NEVER OFFERED FOR REUSE. Operator, 2026-09-26: "First file in
+   * the vault gets preference to go into a motivation. Duplicates can never be
+   * used inside a motivation." The original carries no such id, and it is the
+   * original that is offered — so this column is what tells the two apart in
+   * the picker as well as in the auto-link run.
+   *
+   * ⚠️ AND IT IS ASKED OF THE ROW, NOT GUESSED FROM `createdAt`. Two rows
+   * sharing a fingerprint is precisely what the vault's detector works out, and
+   * re-deriving it here would be a second, weaker copy of that logic — one the
+   * two would eventually disagree about. See credential-duplicates.ts.
+   */
+  duplicateOfId?: string | null;
+  /**
    * Which page this is, as the reader recorded it.
    *
    * ⚠️ DECRYPTED BY THE CALLER. `document_side` lives in the details blob
@@ -109,6 +124,19 @@ export interface LibraryCredentialRow {
    * the service reads it and hands it in already resolved.
    */
   documentSide?: 'front' | 'back' | null;
+  /**
+   * EVIDENCE's container, and the reason `slotFor` cannot answer for it.
+   *
+   * ⚠️ EVIDENCE IS ONE KIND AND MANY DOCUMENTS. Every evidence row shares
+   * `kind: 'EVIDENCE'`, so `primaryUploadKind` has nothing to return —
+   * CREDENTIAL_TO_UPLOAD.EVIDENCE is deliberately empty — and an evidence
+   * credential would be dropped from the picker entirely. The container is
+   * what says what the thing is and where it prints, so it is carried here and
+   * read by `evidenceSlot` below. A null container is an item we could not
+   * place, which still belongs in the list: the member can pick it and it
+   * prints on the Activities page.
+   */
+  evidenceType?: string | null;
   storageKey: string | null;
   purgedAt: Date | null;
   sha256: string | null;
@@ -182,6 +210,17 @@ export interface LibraryUploadRow {
    * answers those: see vaultPageOf.
    */
   sourceCredentialId?: string | null;
+  /**
+   * An evidence copy's container — see LibraryCredentialRow.evidenceType.
+   *
+   * ⚠️ IT LIVES ON THE COPY, NOT ONLY ON THE VAULT MASTER. A row whose source
+   * has since been deleted from the Centre (sourceCredentialId nulled) still
+   * has to render as the thing it is, and the container is the only column that
+   * says so. Optional because rows filed before the column existed carry null,
+   * which reads as "we could not place it" — the same as a low-confidence
+   * answer, and not an error.
+   */
+  evidenceType?: string | null;
 }
 
 /**
@@ -234,6 +273,20 @@ export interface LibraryItem {
   kind: MotivationUploadKind;
   /** The document's own name, in the member's words. */
   title: string;
+  /**
+   * An EVIDENCE item's container, where the row carries one.
+   *
+   * ⚠️ CARRIED SO THE CALLER CAN NAME THE ROW. Every evidence item shares
+   * `kind: 'EVIDENCE'` and the generic label for that kind is "Evidence" — the
+   * container is the only thing that says whether this is a hunt photograph or
+   * a permission letter, and whether it will annex or print in the body. The
+   * registry that turns an id into a member-facing label lives in
+   * evidence-taxonomy.ts; this module stays pure and hands the id over rather
+   * than importing it.
+   *
+   * Null is "we could not place it", not an error — see LibraryCredentialRow.
+   */
+  evidenceType?: string | null;
   addedOn: string;
   /** Already attached to the motivation being filled in. */
   alreadyHere: boolean;
@@ -302,6 +355,35 @@ function slotFor(c: LibraryCredentialRow): MotivationUploadKind | null {
     : (primaryUploadKind(c.kind) ?? null);
 }
 
+/**
+ * The slot an EVIDENCE row is offered in, which is its own kind and nothing
+ * else.
+ *
+ * ⚠️ EVIDENCE NEEDS THIS BECAUSE `slotFor` CANNOT ANSWER FOR IT. Credential
+ * kinds map to upload slots through CREDENTIAL_TO_UPLOAD, and EVIDENCE's entry
+ * is deliberately empty — it answers no DOCUMENT row. That left
+ * `primaryUploadKind('EVIDENCE')` undefined, so every evidence credential was
+ * dropped from the picker before the member ever saw it. EVIDENCE IS ITS OWN
+ * SLOT: `kind` is the upload kind, and the container rides alongside it so the
+ * row can say what it is and where it prints.
+ *
+ * ⚠️ `container` IS NOT FILTERED ON. An item we could not place is still
+ * something the member chose to keep, and the plainest place for it is the
+ * Activities page — see placementOf in motivation-documents.service. Dropping
+ * it here would make the picker's length disagree with the Centre's for no
+ * reason the member could see.
+ */
+function isEvidenceKind(kind: string): boolean {
+  return kind === MotivationUploadKind.EVIDENCE;
+}
+
+/** The slot a vault row is offered in, evidence included. */
+function offerSlot(c: LibraryCredentialRow): MotivationUploadKind | null {
+  return isEvidenceKind(c.kind)
+    ? MotivationUploadKind.EVIDENCE
+    : slotFor(c);
+}
+
 export function buildLibrary(
   credentials: LibraryCredentialRow[],
   uploads: LibraryUploadRow[],
@@ -354,7 +436,7 @@ export function buildLibrary(
    * hand must not fold itself away behind it.
    */
   const offerable = (c: LibraryCredentialRow): boolean =>
-    !!c.storageKey && !c.purgedAt && !!slotFor(c);
+    !!c.storageKey && !c.purgedAt && !!offerSlot(c);
 
   /**
    * The other page of this document, where BOTH pages can still be offered.
@@ -409,6 +491,11 @@ export function buildLibrary(
       sourceId: u.id,
       kind: u.kind,
       title: labelFor(u.kind),
+      // ⚠️ THE COPY'S OWN CONTAINER, WHERE IT CARRIES ONE. A copy whose vault
+      // master has since been deleted keeps its `evidenceType` even though
+      // `sourceCredentialId` was nulled, so this is the only column that still
+      // says what the item is. Null reads as "could not place it".
+      evidenceType: u.evidenceType ?? null,
       addedOn,
       alreadyHere: here.has(u.sha256),
       // ⚠️ NOTHING TO SAY ABOUT ONE THAT IS ALREADY ON THIS APPLICATION. The
@@ -427,6 +514,18 @@ export function buildLibrary(
 
   const takeCredential = (c: LibraryCredentialRow) => {
     if (!c.storageKey || c.purgedAt) return;
+    // ⚠️ A COPY IS NEVER OFFERED — THE ORIGINAL IS. Operator, 2026-09-26:
+    // "First file in the vault gets preference to go into a motivation.
+    // Duplicates can never be used inside a motivation." The original is the
+    // earlier row the detector named, so it carries no `duplicateOfId` and
+    // stays in the list; this copy stands down.
+    //
+    // ⚠️ AND IT CLAIMS NOTHING. Suppressing the copy's hash here would look
+    // tidy and is silently destructive: the copy can appear ahead of its
+    // original in this list, and the `seen` guard below would then drop the
+    // ORIGINAL too — the one document that was supposed to be offered. The
+    // copy is dropped on its own flag and on nothing else.
+    if (c.duplicateOfId) return;
     // ⚠️ ONE LINE PER DOCUMENT, NOT ONE PER PAGE OF IT. Both pages of a
     // proficiency carry the same title and the same day, and their sha256s
     // differ by definition — two photographs of two different pages — so
@@ -440,7 +539,11 @@ export function buildLibrary(
     if (other && !leadsPair(c, other)) return;
     // The row it would be filed as. A document covering several rows is still
     // ONE library entry — the extra roles ride on the stored upload.
-    const kind = slotFor(c);
+    //
+    // ⚠️ offerSlot, NOT slotFor: an EVIDENCE credential answers no DOCUMENT
+    // slot, so slotFor returns null for it and the row would be dropped before
+    // the member could pick it. See isEvidenceKind.
+    const kind = offerSlot(c);
     // A vault document with no motivation slot — a PROFESSIONAL_HUNTER
     // registration, an OTHER — is kept and tracked, and simply has nothing to
     // fill here.
@@ -463,6 +566,12 @@ export function buildLibrary(
       // more use than the generic slot name when they hold four competency
       // certificates.
       title: c.title,
+      // ⚠️ AN EVIDENCE ROW'S CONTAINER TRAVELS WITH IT. Without it the picker
+      // can only call every evidence item "Evidence" and the member has no way
+      // to tell their hunt photo from their permission letter before attaching
+      // it. Null for every non-evidence row, and for evidence we could not
+      // place.
+      evidenceType: c.evidenceType ?? null,
       addedOn,
       // ⚠️ THE WHOLE DOCUMENT, NOT THE PAGE THAT LEADS IT, AND THE DIFFERENCE
       // IS A PACK THE MEMBER CANNOT REPAIR. The picker hides an

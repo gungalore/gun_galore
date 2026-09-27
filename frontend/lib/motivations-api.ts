@@ -450,6 +450,26 @@ export interface LibraryItem {
    * applicant moves house, and nothing on the file says so.
    */
   askPlace: boolean;
+  /**
+   * An EVIDENCE item's container id, where it has one.
+   *
+   * ⚠️ THE ONLY THING THAT NAMES AN EVIDENCE ROW. Every evidence item is
+   * `kind: 'EVIDENCE'`, whose generic label is "Evidence" — the container says
+   * whether this is a hunt photograph or a permission letter, and the group
+   * label the picker shows comes from it. Null is "we could not place it".
+   */
+  evidenceType?: string | null;
+  /**
+   * Where an EVIDENCE item would print, resolved by the server.
+   *
+   * ⚠️ SERVED, NOT DERIVED FROM `evidenceType` HERE. The container registry
+   * lives in backend/src/motivations/evidence-taxonomy.ts and is served by
+   * /licence-centre/evidence/containers; a placement worked out on this side
+   * would mean a second copy of the taxonomy in the frontend, stale the first
+   * time a container moved between the page and the Activities list. Null for
+   * every non-evidence item.
+   */
+  evidencePlacement?: 'annexure' | 'body' | null;
 }
 
 export interface LicenceCentreOffer {
@@ -569,6 +589,29 @@ export interface UploadRow {
    * needs to be told before a DFO is the one who notices.
    */
   sourceRemovedAt?: string | null;
+  /**
+   * What an EVIDENCE item is, and where it will print.
+   *
+   * ⚠️ `container === null` IS THE ONE "WE COULD NOT DECIDE". A low-confidence
+   * answer stores no container at all, so an unplaced item reads the same
+   * however it got here — a model that could not choose, or a container id
+   * retired since. Both mean "tell us more", and both must be offered the
+   * description box again rather than a wrong container.
+   *
+   * ⚠️ NOT THE SAME AS `suspect`. `suspect` is a vision read that failed;
+   * evidence is never read for fields, so the two badges must not be
+   * conflated or every evidence row goes amber.
+   */
+  evidence?: {
+    container: string | null;
+    label: string | null;
+    group?: string | null;
+    placement?: 'annexure' | 'body' | null;
+    confident: boolean;
+    description?: string | null;
+    /** The one line to show when the container is unknown. */
+    ask?: string | null;
+  } | null;
 }
 
 export interface DocumentNeed {

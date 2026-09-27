@@ -349,6 +349,16 @@ function build(
       forget: async () => 0,
       purgeExpired: async () => 0,
     } as never,
+    // The identify store. Every lookup misses and take() returns null, so the
+    // upload path falls through to classifying the bytes it was handed — the
+    // behaviour these tests were written against.
+    {
+      findBySha: async () => null,
+      put: async () => undefined,
+      take: async () => null,
+      get: async () => null,
+      purgeExpired: async () => 0,
+    } as never,
   );
   const generation = new MotivationGenerationService(
     prisma as never,

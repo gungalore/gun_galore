@@ -103,6 +103,7 @@ export type DocSectionId =
   | 'about-you'
   | 'associations'
   | 'safe'
+  | 'evidence'
   | 'other';
 
 /** How a section arranges the rows inside it. */
@@ -228,6 +229,37 @@ export const SECTIONS: readonly DocSection[] = [
     emptyLine:
       'Closed, ajar, bolts, and the installation certificate.',
     addKind: 'SAFE_PHOTOGRAPHS',
+  },
+  {
+    /**
+     * EVIDENCE, WHICH IS NOT A DOCUMENT.
+     *
+     * ⚠️ `addKind: null`, AND THAT IS STILL NOT A GAP — BUT THE REASON HAS
+     * CHANGED. It used to be that evidence had no type to choose and so the
+     * section carried a panel of its own. The AI now decides, on the way in,
+     * whether a file is a document or evidence, and the section's Add link
+     * opens the SAME uploader as everything else: a permission letter handed
+     * to it is filed as whatever the model says it is. That is right, not a
+     * workaround — a member who knows a letter is evidence and a model that
+     * says "document" can only be reconciled by the classifier, and forcing
+     * the choice back on them is the panel this replaces. A document slot
+     * here would instead hand a member a way to file a permission letter as
+     * "Evidence" with no container, which is the unreadable row the whole
+     * classifier exists to avoid.
+     *
+     * ⚠️ AND IT IS A READING SECTION, SO IT STILL PLACES THE KIND. The rows are
+     * EVIDENCE and have to be findable; placeRow falls through to 'other' for
+     * anything unplaced, and an evidence row landing there under "Anything
+     * else" is how a member loses track of their own pack.
+     */
+    id: 'evidence',
+    title: 'Evidence for your motivations',
+    kinds: ['EVIDENCE'],
+    grouping: null,
+    noun: ['item', 'items'],
+    emptyLine:
+      'Photographs and paperwork that support a motivation: a hunt, time at the range, a farmer\u2019s permission letter. Tell us what each one is and we will file it for you.',
+    addKind: null,
   },
   {
     id: 'other',

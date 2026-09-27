@@ -400,6 +400,20 @@ describe('the upload picker', () => {
       for (const p of pickableKinds(t)) expect(p.label).toBeTruthy();
     }
   });
+
+  it('⚠️ NEVER OFFERS EVIDENCE AS A DOCUMENT TO PHOTOGRAPH', () => {
+    // ⚠️ EVIDENCE IS REACHED THROUGH ITS OWN SURFACE, NOT THIS MENU. This menu
+    // is "which of the recognised documents are you adding"; evidence is one
+    // kind with a container behind it, uploaded with the member's own words
+    // and classified on the way in. Offering the raw kind here would let
+    // somebody file a hunting photograph as a document of type "Evidence" —
+    // unclassified, unplaced, and printed as neither an annexure nor an
+    // activity, which is every part of the feature skipped.
+    for (const t of Object.values(MotivationLicenceType)) {
+      const kinds = pickableKinds(t).map((p) => p.kind);
+      expect(kinds).not.toContain(K.EVIDENCE);
+    }
+  });
 });
 
 describe('the posture', () => {

@@ -13,21 +13,31 @@ import {
   Res,
   StreamableFile,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { CredentialKind } from '@prisma/client';
 import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { LicenceCentreService } from './licence-centre.service';
+import {
+  LicenceCentreService,
+  MAX_IDENTIFY_FILES,
+} from './licence-centre.service';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
 import { VaultConsentService } from '../users/vault-consent.service';
 import { KycIdAdoptionService } from './kyc-id-adoption.service';
 import { VaultAdoptionService } from '../motivations/vault-adoption.service';
+import {
+  CONTAINER_VERSION,
+  EVIDENCE_CONTAINERS,
+  EVIDENCE_GROUP_LABELS,
+  EVIDENCE_GROUP_ORDER,
+} from '../motivations/evidence-taxonomy';
 // ⚠️ SHARED, NOT DECLARED HERE. Both doors into the Centre must accept
 // exactly the same files — see upload-limits.ts for why a second copy of these
 // was a silent divergence waiting to happen.
@@ -40,6 +50,29 @@ import {
 // Behind the login, like everything in this area. middleware.ts's isPublicRoute
 // is an allow-list with default deny, so the frontend route is authenticated by
 // having no entry there — nothing to add and nothing to forget to add.
+
+/**
+ * ⚠️ SHARED, NOT DECLARED TWICE, for the reason upload-limits.ts gives about
+ * the limits themselves: every door into the Centre must accept exactly the
+ * same files. Two copies of these messages is a divergence that shows up as
+ * one door accepting a PDF the other refuses.
+ */
+const FILE_PIPE = new ParseFilePipe({
+  // ⚠️ errorMessage on BOTH, or the member is shown the validator's own text —
+  // a JavaScript regular expression under a red heading.
+  validators: [
+    new MaxFileSizeValidator({
+      maxSize: UPLOAD_MAX_BYTES,
+      errorMessage:
+        'That file is larger than 10 MB. A photo taken at a lower resolution will be well under it.',
+    }),
+    new FileTypeValidator({
+      fileType: UPLOAD_MIME,
+      errorMessage:
+        'We can read a JPG, PNG, WebP or PDF. On an iPhone, choose the photo from your library rather than from Files.',
+    }),
+  ],
+});
 
 
 
@@ -194,29 +227,26 @@ export class LicenceCentreController {
     @CurrentUser() userId: string,
     @Body('kind') kind: string,
     @Body('title') title: string,
-    @UploadedFile(
-      new ParseFilePipe({
-        // ⚠️ errorMessage on BOTH, or the member is shown the validator's
-        // own text — a JavaScript regular expression under a red heading.
-        validators: [
-          new MaxFileSizeValidator({
-            maxSize: UPLOAD_MAX_BYTES,
-            errorMessage: 'That file is larger than 10 MB. A photo taken at a lower resolution will be well under it.',
-          }),
-          new FileTypeValidator({
-            fileType: UPLOAD_MIME,
-            errorMessage:
-              'We can read a JPG, PNG, WebP or PDF. On an iPhone, choose the photo from your library rather than from Files.',
-          }),
-        ],
-      }),
-    )
-    file: Express.Multer.File,
+    @Body('identifyId') identifyId: string,
+    @Body('description') description: string,
+    @UploadedFile(FILE_PIPE) file: Express.Multer.File,
   ) {
+    // ⚠️ THE IDENTIFY ID IS A SEPARATE FIELD FROM `kind`, DELIBERATELY. `kind`
+    // is the member's own choice and still overrides everything below; the id
+    // is a token naming a verdict the SERVER reached, and the service reads
+    // the classification from its own record rather than from this request.
+    // Two fields, so a member's explicit pick can never be confused with a
+    // forged classifier answer — see create()'s opts note.
+    const fromIdentify = (identifyId ?? '').trim();
+    const opts = {
+      identifyId: fromIdentify || undefined,
+      description: (description ?? '').trim() || undefined,
+    };
+
     // NO KIND MEANS "SORT IT FOR ME" — the batch path, where a member adds a
     // whole folder at once and names nothing up front.
     const wanted = (kind ?? '').trim();
-    if (!wanted) return this.svc.create(userId, null, title, file);
+    if (!wanted) return this.svc.create(userId, null, title, file, opts);
 
     // Validated HERE, by hand. The global ValidationPipe has no
     // forbidNonWhitelisted and a bare @Body('kind') is not a DTO, so an
@@ -225,6 +255,140 @@ export class LicenceCentreController {
       throw new BadRequestException('Unknown document type.');
     }
     return this.svc.create(userId, wanted as CredentialKind, title, file);
+  }
+
+  /**
+   * THE IDENTIFY PASS — sort a batch BEFORE anything is polished or stored.
+   *
+   * Operator, 2026-09-26: "user selects what they want to upload. as soon as
+   * they are done uploading the server gives them each a unique ID. Send them
+   * all to deepseek, it basicly sorts them... Then only does the document
+   * polish on them and saves it on the server who already has the OCR and
+   * need to marry it by ID to the physical document."
+   *
+   * ⚠️ THIS STORES NOTHING. It reads each file, decides document-or-evidence
+   * and the kind or container, remembers the verdict and the OCR text under an
+   * id it mints itself, and hands the client that list. The client polishes
+   * the DOCUMENTS only (a hunting photograph is not a page), uploads each with
+   * its id, and `create()` files it from our own record.
+   *
+   * ⚠️ DECLARED BEFORE THE ':id' ROUTES, like `usage` and `status` — Nest
+   * matches in declaration order and a bare parameter route would swallow
+   * /identify as an id.
+   *
+   * ⚠️ THE DESCRIPTIONS ARRIVE AS A PARALLEL ARRAY, NOT PER-FILE FIELDS. A
+   * multipart body has no room to hang an object off each part, and the client
+   * sends the files in the same order it sends the descriptions. A missing or
+   * short array simply means "no words yet" for the tail of the batch, which
+   * is the normal first pass — the member types them on the card afterwards.
+   */
+  @Post('identify')
+  // A whole folder identified in one gesture, then re-identified on a refresh;
+  // 60 matches the create door above for the same reason.
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseInterceptors(
+    FilesInterceptor('files', MAX_IDENTIFY_FILES, {
+      storage: memoryStorage(),
+      limits: { fileSize: UPLOAD_INTERCEPTOR_MAX },
+    }),
+  )
+  identify(
+    @CurrentUser() userId: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body('descriptions') descriptions?: string | string[],
+  ) {
+    const words = Array.isArray(descriptions)
+      ? descriptions
+      : descriptions
+        ? [descriptions]
+        : [];
+    return this.svc.identify(
+      userId,
+      (files ?? []).map((file, i) => ({
+        buffer: file.buffer,
+        mimetype: file.mimetype,
+        description: words[i],
+      })),
+    );
+  }
+
+  /**
+   * EVIDENCE, WHICH IS NOT A DOCUMENT.
+   *
+   * ⚠️ ITS OWN ROUTE, AND NOT `kind=EVIDENCE` ON THE ONE ABOVE. A document
+   * arriving here with no kind is SORTED by the document classifier; an
+   * evidence item is sorted by the evidence classifier into a container,
+   * against the member's own description, and stored with the answer. Folding
+   * them together would mean the batch-scan door could file a photograph of a
+   * hunt as OTHER with no container and no way to correct it.
+   *
+   * ⚠️ DECLARED BEFORE THE ':id' ROUTES, like `usage` and `status` above —
+   * Nest matches in declaration order, so a bare parameter route would
+   * swallow /evidence as an id.
+   */
+  /**
+   * Every container the classifier knows, and what each is, grouped.
+   *
+   * ⚠️ SERVED RATHER THAN DUPLICATED IN THE FRONTEND. The taxonomy lives in
+   * evidence-taxonomy.ts and is expected to be revised; a copy on the client
+   * would go stale the first time a container moved between groups or changed
+   * placement, and the member would be offered the old list with no way to see
+   * it disagree with the server. Also declares before the ':id' routes for the
+   * same reason as the others.
+   */
+  @Get('evidence/containers')
+  evidenceContainers() {
+    return {
+      version: CONTAINER_VERSION,
+      groups: EVIDENCE_GROUP_ORDER.map((id) => ({
+        id,
+        label: EVIDENCE_GROUP_LABELS[id],
+      })),
+      // `hint` is deliberately NOT sent: it exists to discriminate for the
+      // model, and it is written as an instruction to a reader that is not the
+      // member — a container's placement tells the member everything they
+      // need about where it will print.
+      containers: EVIDENCE_CONTAINERS.map((c) => ({
+        id: c.id,
+        group: c.group,
+        label: c.label,
+        placement: c.placement,
+      })),
+    };
+  }
+
+  @Post('evidence')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: UPLOAD_INTERCEPTOR_MAX },
+    }),
+  )
+  addEvidence(
+    @CurrentUser() userId: string,
+    @Body('description') description: string,
+    @UploadedFile(FILE_PIPE) file: Express.Multer.File,
+  ) {
+    return this.svc.createEvidence(userId, description ?? '', file);
+  }
+
+  /**
+   * The description loop — sort the same file again against better words.
+   *
+   * ⚠️ A PATCH, NOT A SECOND POST. The bytes have not changed; only what the
+   * member says about them has, and a re-upload would collide with the
+   * unique constraint on (userId, sha256) and tell them their own file is
+   * already in their Document Centre.
+   */
+  @Patch(':id/evidence')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  redescribeEvidence(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body('description') description: string,
+  ) {
+    return this.svc.redescribeEvidence(userId, id, description ?? '');
   }
 
   @Post(':id/confirm')
@@ -330,5 +494,18 @@ export class LicenceCentreController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   remove(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.svc.remove(userId, id);
+  }
+
+  /**
+   * Keep this version instead of the one it was flagged as a copy of.
+   *
+   * ⚠️ POST, NOT PATCH. It destroys the original — file and row — so it is an
+   * act with a consequence, not an edit to this row's fields. Throttled with
+   * the delete path it borrows, because it erases through it.
+   */
+  @Post(':id/replace')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  replace(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.svc.replaceWith(userId, id);
   }
 }

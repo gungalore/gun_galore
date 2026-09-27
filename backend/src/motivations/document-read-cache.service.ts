@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptJson, encryptJson } from '../common/blob-crypto';
 import type { ExtractedField } from './motivation-extract.service';
+import { CONTAINER_VERSION } from './evidence-taxonomy';
 
 // ────────────────────────────────────────────────────────────────────
 // A DOCUMENT WE HAVE ALREADY PAID TO READ.
@@ -168,6 +169,142 @@ export class DocumentReadCacheService {
         `Read cache purge failed for one document: ${(err as Error).message}`,
       );
       return 0;
+    }
+  }
+
+  /**
+   * Forget everything read off any of these documents.
+   *
+   * ⚠️ THE RETENTION SWEEP'S DOOR, AND THE REASON `forget` ALONE WAS NOT
+   * ENOUGH. `forget` is called from the per-upload delete, which knows one
+   * sha256 because it just deleted that one row. The retention sweep nulls a
+   * BATCH of rows at once and had no sha256 to hand it: it removed the bytes
+   * and stamped purgedAt, and the transcript of everything printed on the page
+   * — the holder's name, identity number and every serial — outlived the
+   * photograph by its thirty-day TTL. Erasure has the same shape: the rows go
+   * in a cascade and the readings survived.
+   *
+   * One statement for the whole set, so a batch of two hundred is one round
+   * trip rather than two hundred.
+   */
+  async forgetMany(fileSha256s: readonly string[]): Promise<number> {
+    const sha = fileSha256s.filter(Boolean);
+    if (!sha.length) return 0;
+    try {
+      const { count } = await this.prisma.documentReadCache.deleteMany({
+        where: { fileSha256: { in: sha as string[] } },
+      });
+      return count;
+    } catch (err) {
+      this.logger.warn(
+        `Read cache purge failed for ${sha.length} document(s): ${(err as Error).message}`,
+      );
+      return 0;
+    }
+  }
+
+  /**
+   * The key for one EVIDENCE CLASSIFICATION of one file.
+   *
+   * ⚠️ A PARALLEL PATH, NOT A WIDENING OF `key()`. The document key carries a
+   * `kind` and a `licenceType` because those decide the field list; an evidence
+   * classification asks a different question (which container), is answered by
+   * a different prompt, and stores a different shape. Folding it into the same
+   * method would put two payload shapes behind one `get()` that returns
+   * `ExtractedField[]`.
+   *
+   * ⚠️ THE DESCRIPTION IS IN THE KEY, HASHED. The same photograph described as
+   * "me and my son on a hunt" and as "my reloading bench" may rightly sort
+   * differently, so a cached answer is only valid for the description that
+   * produced it — remember no answer, only the answer TO THESE WORDS. It is
+   * hashed rather than stored raw so the cache key is not itself POPIA data
+   * sitting in a column the retention sweep does not know about.
+   *
+   * ⚠️ CONTAINER_VERSION, NOT READER_VERSION. The answer space is the
+   * taxonomy; revising the containers must invalidate every cached container
+   * the same day, exactly as READER_VERSION does for a field read.
+   */
+  evidenceKey(args: { fileSha256: string; description: string | null }): string {
+    const described = createHash('sha256')
+      .update(args.description ?? '')
+      .digest('hex');
+    return createHash('sha256')
+      .update(
+        [args.fileSha256, 'evidence', CONTAINER_VERSION, described].join('|'),
+      )
+      .digest('hex');
+  }
+
+  /** A previous evidence classification of these exact bytes, or null. */
+  async getEvidence(
+    cacheKey: string,
+  ): Promise<{ container: string; confident: boolean } | null> {
+    try {
+      const row = await this.prisma.documentReadCache.findUnique({
+        where: { cacheKey },
+        select: { payloadEncrypted: true, expiresAt: true },
+      });
+      if (!row || row.expiresAt.getTime() <= Date.now()) return null;
+      const payload = decryptJson<{ container?: unknown; confident?: unknown }>(
+        row.payloadEncrypted,
+      );
+      // ⚠️ A CONTAINERLESS ROW IS NOT A HIT, for the reason get() gives for an
+      // empty read: `null` container is what a low-confidence answer stores,
+      // and that answer is context-specific (see the caller). A cached miss
+      // would pin a file to "we could not decide" for thirty days.
+      if (typeof payload?.container !== 'string' || !payload.container) {
+        return null;
+      }
+      return {
+        container: payload.container,
+        confident: payload.confident === true,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `Evidence cache lookup failed, classifying instead: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Remember an evidence classification.
+   *
+   * ⚠️ ONLY A CONFIDENT ANSWER IS STORED. A low-confidence one is a judgement
+   * about THIS description, and the whole point of the retry loop is that a
+   * better description gets a better answer. Caching the miss would answer the
+   * retry with the miss.
+   */
+  async putEvidence(args: {
+    cacheKey: string;
+    fileSha256: string;
+    container: string;
+  }): Promise<void> {
+    if (!args.container) return;
+    const expiresAt = new Date(Date.now() + TTL_DAYS * 24 * 60 * 60 * 1000);
+    try {
+      await this.prisma.documentReadCache.upsert({
+        where: { cacheKey: args.cacheKey },
+        create: {
+          cacheKey: args.cacheKey,
+          fileSha256: args.fileSha256,
+          payloadEncrypted: encryptJson({
+            container: args.container,
+            confident: true,
+          }),
+          expiresAt,
+        },
+        update: {
+          payloadEncrypted: encryptJson({
+            container: args.container,
+            confident: true,
+          }),
+          readAt: new Date(),
+          expiresAt,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(`Evidence cache write failed: ${(err as Error).message}`);
     }
   }
 

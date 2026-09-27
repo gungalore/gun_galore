@@ -9,9 +9,16 @@ type Upload = {
   id: string;
   storageKey: string | null;
   motivationId: string;
+  sha256?: string;
 };
 
-function build(opts: { pages?: Upload[][]; removeFails?: Set<string> } = {}) {
+function build(
+  opts: {
+    pages?: Upload[][];
+    removeFails?: Set<string>;
+    onDisk?: { key: string; modifiedMs: number }[];
+  } = {},
+) {
   const pages = opts.pages ?? [[]];
   const removeFails = opts.removeFails ?? new Set<string>();
   let call = 0;
@@ -19,18 +26,38 @@ function build(opts: { pages?: Upload[][]; removeFails?: Set<string> } = {}) {
   const updated: { id: string; data: Record<string, unknown> }[] = [];
   const removed: string[] = [];
   const queries: Record<string, unknown>[] = [];
+  const readForgets: string[][] = [];
+  const rasterForgets: string[][] = [];
 
   const prisma = {
     motivationUpload: {
       findMany: jest.fn(async (args: any): Promise<any> => {
-        queries.push(args.where);
-        return pages[call++] ?? [];
+        // ⚠️ TWO CALLERS, ONE TABLE. The purge sweeps pass a `take` (they read
+        // a page of rows to purge); the orphan sweep reads every live key and
+        // passes none. Branching on `take` keeps the paginated queue the
+        // tests drive from being consumed by the reference query.
+        if (args?.take) {
+          queries.push(args.where);
+          return pages[call++] ?? [];
+        }
+        return [];
       }),
       update: jest.fn(async (args: any): Promise<any> => {
         updated.push({ id: args.where.id, data: args.data });
         return {};
       }),
     },
+    // Every other table the orphan sweep reads for live storage keys. Empty
+    // here: these tests are about the motivation uploads and the artifacts.
+    credential: { findMany: jest.fn(async (): Promise<any[]> => []) },
+    documentPageImage: { findMany: jest.fn(async (): Promise<any[]> => []) },
+    motivationWitness: { findMany: jest.fn(async (): Promise<any[]> => []) },
+    motivationSellerConsent: { findMany: jest.fn(async (): Promise<any[]> => []) },
+    motivationSellerConsentDocument: {
+      findMany: jest.fn(async (): Promise<any[]> => []),
+    },
+    motivation: { findMany: jest.fn(async (): Promise<any[]> => []) },
+    user: { findMany: jest.fn(async (): Promise<any[]> => []) },
     setting: {
       upsert: jest.fn(async (_a?: any): Promise<any> => ({})),
     },
@@ -41,21 +68,35 @@ function build(opts: { pages?: Upload[][]; removeFails?: Set<string> } = {}) {
       if (removeFails.has(key)) throw new Error('EACCES');
       removed.push(key);
     }),
+    list: jest.fn(async (): Promise<any[]> => opts.onDisk ?? []),
   };
 
   const svc = new MotivationRetentionService(
     prisma as never,
     files as never,
-    { purgeExpired: async () => 0 } as never,
-    { purgeExpired: async () => 0 } as never,
+    {
+      purgeExpired: async () => 0,
+      forgetMany: async (sha: string[]) => {
+        readForgets.push(sha);
+        return sha.length;
+      },
+    } as never,
+    {
+      purgeExpired: async () => 0,
+      forgetMany: async (sha: string[]) => {
+        rasterForgets.push(sha);
+        return sha.length;
+      },
+    } as never,
   );
-  return { svc, prisma, files, updated, removed, queries };
+  return { svc, prisma, files, updated, removed, queries, readForgets, rasterForgets };
 }
 
 const upload = (n: number): Upload => ({
   id: `up-${n}`,
   storageKey: `motivations/2026/08/key${n}.enc`,
   motivationId: `mo-${n}`,
+  sha256: `sha-${n}`,
 });
 
 describe('what it deletes', () => {
@@ -94,6 +135,21 @@ describe('what it deletes', () => {
       const { svc, updated } = build({ pages: [[upload(1)], []] });
       await svc.purge();
       expect('ocrChars' in (updated[0].data as object)).toBe(false);
+    })();
+  });
+
+  it('⚠️ DELETES THE EVIDENCE DESCRIPTION WITH THE PHOTOGRAPH', () => {
+    // For an evidence item the description is the ONLY text on the row, and
+    // it is the member's own words about a private photograph — "me and my
+    // son on a hunt in Limpopo". It is POPIA data with the same exposure as
+    // an OCR transcript and the same rule: it goes when the bytes go.
+    return (async () => {
+      const { svc, updated } = build({ pages: [[upload(1)], []] });
+      await svc.purge();
+      expect(updated[0].data.evidenceDescriptionEncrypted).toBeNull();
+      // The container is an id, not content, and it stays — without it the
+      // row would read as unplaceable rather than as purged.
+      expect('evidenceType' in (updated[0].data as object)).toBe(false);
     })();
   });
 
@@ -246,6 +302,8 @@ describe('how it behaves as a job', () => {
 describe('erasing an account', () => {
   function buildForUser(row: Record<string, unknown>) {
     const removed: string[] = [];
+    const readForgets: string[][] = [];
+    const rasterForgets: string[][] = [];
     const prisma = {
       motivation: {
         findMany: jest.fn(async (): Promise<any> => [row]),
@@ -262,15 +320,30 @@ describe('erasing an account', () => {
     const svc = new MotivationRetentionService(
       prisma as never,
       files as never,
-      { purgeExpired: async () => 0 } as never,
-      { purgeExpired: async () => 0 } as never,
+      {
+        purgeExpired: async () => 0,
+        forgetMany: async (sha: string[]) => {
+          readForgets.push(sha);
+          return sha.length;
+        },
+      } as never,
+      {
+        purgeExpired: async () => 0,
+        forgetMany: async (sha: string[]) => {
+          rasterForgets.push(sha);
+          return sha.length;
+        },
+      } as never,
     );
-    return { svc, removed, prisma };
+    return { svc, removed, prisma, readForgets, rasterForgets };
   }
 
   const ROW = {
     id: 'mo-1',
-    uploads: [{ id: 'up-1', storageKey: 'motivations/a.enc' }],
+    uploads: [
+      { id: 'up-1', storageKey: 'motivations/a.enc', sha256: 'sha-a' },
+      { id: 'up-2', storageKey: 'motivations/b.enc', sha256: 'sha-b' },
+    ],
     witnesses: [
       { id: 'w-1', signatureKey: 'motivations/w1.enc' },
       { id: 'w-2', signatureKey: 'motivations/w2.enc' },
@@ -283,11 +356,23 @@ describe('erasing an account', () => {
     const out = await svc.purgeForUser('u1');
     expect(removed.sort()).toEqual([
       'motivations/a.enc',
+      'motivations/b.enc',
       'motivations/c1.enc',
       'motivations/w1.enc',
       'motivations/w2.enc',
     ]);
-    expect(out.filesRemoved).toBe(4);
+    expect(out.filesRemoved).toBe(5);
+  });
+
+  it('⚠️ FORGETS THE READINGS AND PAGE IMAGES TOO', async () => {
+    // An erasure that deleted the licence but kept a transcription of its
+    // serial numbers, and a picture of the page, is not an erasure. Both are
+    // keyed by the plaintext sha256 — which lives on the upload row the
+    // cascade is about to remove — so they must be gathered first.
+    const { svc, readForgets, rasterForgets } = buildForUser(ROW);
+    await svc.purgeForUser('u1');
+    expect(readForgets).toEqual([['sha-a', 'sha-b']]);
+    expect(rasterForgets).toEqual([['sha-a', 'sha-b']]);
   });
 
   it('copes with an application that has neither', async () => {
@@ -337,12 +422,115 @@ describe('erasing an account', () => {
     const svc = new MotivationRetentionService(
       prisma as never,
       files as never,
-      { purgeExpired: async () => 0 } as never,
-      { purgeExpired: async () => 0 } as never,
+      { purgeExpired: async () => 0, forgetMany: async () => 0 } as never,
+      { purgeExpired: async () => 0, forgetMany: async () => 0 } as never,
     );
     const out = await svc.purgeForUser('u1');
     expect(out.filesFailed).toBe(1);
-    expect(out.filesRemoved).toBe(3);
+    expect(out.filesRemoved).toBe(4);
     expect(prisma.motivation.deleteMany).toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// ⚠️ THE DERIVED ARTIFACTS, WHICH THE SWEEP USED TO LEAVE BEHIND.
+//
+// Operator, 2026-09-26: "If a file is deleted it must be gone completely."
+// The per-upload delete called forget(sha256) on the read cache and the page
+// rasteriser; the retention sweep and the erasure did not, because they null
+// rows in a batch and had no sha256 to hand either service. A page image IS
+// the document and a reading IS its serial numbers, held thirty days — so the
+// delete was a lie for a month.
+describe('deleted means gone completely', () => {
+  it('⚠️ FORGETS THE PAGE IMAGE AND THE READING WHEN THE BYTES GO', async () => {
+    return (async () => {
+      const { svc, readForgets, rasterForgets } = build({
+        pages: [[upload(1), upload(2)], [], []],
+      });
+      await svc.purge();
+      expect(readForgets).toEqual([['sha-1', 'sha-2']]);
+      expect(rasterForgets).toEqual([['sha-1', 'sha-2']]);
+    })();
+  });
+
+  it('does not forget anything when no bytes were removed', async () => {
+    return (async () => {
+      const { svc, readForgets, rasterForgets } = build({ pages: [[], []] });
+      await svc.purge();
+      expect(readForgets).toEqual([]);
+      expect(rasterForgets).toEqual([]);
+    })();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE LAST LINE OF DEFENCE — bytes on disk that no row points at.
+//
+// Every other path to a file goes through a row, so when the row is taken by
+// a cascade (account deletion, a deleteMany that swept a soft-deleted upload)
+// nothing can ever see the bytes again. Nobody would find them to remove by
+// hand. This sweep works the other way round: list the disk, keep only what
+// the database still references.
+describe('sweeping orphans off the disk', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const old = Date.now() - 2 * DAY;
+
+  it('removes a file no row references', async () => {
+    return (async () => {
+      const { svc, removed } = build({
+        pages: [[], []],
+        onDisk: [{ key: 'motivations/2026/08/orphan.enc', modifiedMs: old }],
+      });
+      await svc.purge();
+      expect(removed).toContain('motivations/2026/08/orphan.enc');
+    })();
+  });
+
+  it('⚠️ NEVER TOUCHES A FILE YOUNGER THAN THE GRACE WINDOW', async () => {
+    // A writer does files.write() and THEN the row create. Between the two the
+    // file is on disk with no row — the normal middle of every upload. A sweep
+    // that deleted it would turn a race into a lost document.
+    return (async () => {
+      const { svc, removed } = build({
+        pages: [[], []],
+        onDisk: [{ key: 'motivations/2026/08/fresh.enc', modifiedMs: Date.now() }],
+      });
+      await svc.purge();
+      expect(removed).toEqual([]);
+    })();
+  });
+
+  it('leaves a file the database still references', async () => {
+    return (async () => {
+      const { svc, removed, prisma } = build({
+        pages: [[], []],
+        onDisk: [{ key: 'motivations/2026/08/live.enc', modifiedMs: old }],
+      });
+      prisma.motivationUpload.findMany.mockImplementation(
+        async (args: any): Promise<any> => {
+          // The paginated purge queue is empty; the reference read (no `take`)
+          // returns the live key, so the sweep must leave it alone.
+          if (args?.take) return [];
+          return [{ storageKey: 'motivations/2026/08/live.enc' }];
+        },
+      );
+      await svc.purge();
+      expect(removed).toEqual([]);
+    })();
+  });
+
+  it('⚠️ DELETES NOTHING IF THE REFERENCE SET CANNOT BE BUILT', async () => {
+    // An empty reference set and a failed one look identical to a naive sweep,
+    // and one of them means "delete every file we hold". A query that throws
+    // must stop the sweep, not clear the tree.
+    return (async () => {
+      const { svc, removed, prisma } = build({
+        pages: [[], []],
+        onDisk: [{ key: 'motivations/2026/08/orphan.enc', modifiedMs: old }],
+      });
+      prisma.credential.findMany.mockRejectedValue(new Error('database down'));
+      await svc.purge();
+      expect(removed).toEqual([]);
+    })();
   });
 });

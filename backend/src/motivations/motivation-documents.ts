@@ -354,6 +354,11 @@ const LABELS: Record<MotivationUploadKind, string> = {
   INCIDENT_REPORT: 'An incident report or SAPS case number',
   PREVIOUS_MOTIVATION: 'A previous motivation',
   OTHER: 'Something else you would like to attach',
+  // ⚠️ THIS LABEL IS ALMOST NEVER WHAT A MEMBER READS. Evidence is named from
+  // its container — a hunting photograph is "A hunting photograph", not
+  // "Evidence" — through containerById(evidenceType).label. This is the floor
+  // for a row the classifier could not place.
+  EVIDENCE: 'Evidence',
 };
 
 /**
@@ -707,6 +712,23 @@ export const RETIRED: MotivationUploadKind[] = [
 ];
 
 /**
+ * Kinds that are real and current, but never offered by the DOCUMENT picker.
+ *
+ * ⚠️ EVIDENCE IS HERE AND IS NOT RETIRED. It is a live kind with a live
+ * surface — the evidence panel, where a file is filed by its container. What
+ * it must never be is an entry in a menu of document types: "Evidence" beside
+ * "A copy of your ID" asks the member to choose between a type and a
+ * container, and a document filed as EVIDENCE would then be classified by
+ * nothing, print by no rule, and satisfy no checklist row.
+ *
+ * ⚠️ THE TWO LISTS ARE NOT THE SAME LIST. RETIRED means "never offered, and
+ * only kept so an old row still has a name". This means "offered, somewhere
+ * else". Merging them would make the evidence surface reachable only through
+ * the code that special-cases RETIRED, which is not what it is.
+ */
+export const NON_PICKABLE: MotivationUploadKind[] = ['EVIDENCE'];
+
+/**
  * What the upload picker should offer, in the order it should offer it.
  *
  * SERVER-DRIVEN ON PURPOSE. The wizard used to carry its own hard-coded list
@@ -744,7 +766,7 @@ export function pickableKinds(
   );
 
   const rest = (Object.keys(LABELS) as MotivationUploadKind[]).filter(
-    (k) => !ranked.has(k) && !RETIRED.includes(k),
+    (k) => !ranked.has(k) && !RETIRED.includes(k) && !NON_PICKABLE.includes(k),
   );
 
   const have = new Set(uploaded);

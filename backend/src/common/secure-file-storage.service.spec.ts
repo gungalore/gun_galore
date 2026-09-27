@@ -105,4 +105,36 @@ describe('SecureFileStorageService', () => {
     process.env.ID_HASH_SECRET = 'a-different-secret';
     await expect(svc.read(storageKey)).rejects.toThrow();
   });
+
+  /**
+   * list() is the only thing that can find a file whose row is gone, so it is
+   * also the only thing that could delete one that should live. It must be
+   * exhaustive over OUR key shape and blind to everything else.
+   */
+  describe('list', () => {
+    it('returns every stored key, across namespaces and shards', async () => {
+      const a = await svc.write('motivations', fakeScan(), WHEN);
+      const b = await svc.write('credentials', fakeScan(), new Date('2026-09-02T00:00:00Z'));
+      const c = await svc.write('kyc', fakeScan(), WHEN);
+      const keys = (await svc.list()).map((f) => f.key).sort();
+      expect(keys).toEqual([a.storageKey, b.storageKey, c.storageKey].sort());
+      for (const f of await svc.list()) {
+        expect(typeof f.modifiedMs).toBe('number');
+      }
+    });
+
+    it('returns nothing for an empty tree rather than throwing', async () => {
+      await expect(svc.list()).resolves.toEqual([]);
+    });
+
+    it('⚠️ IGNORES A FILE THAT IS NOT OUR KEY SHAPE', async () => {
+      // A sweep that deleted whatever list() returned must never be handed a
+      // stray file — notes.txt, a half-written temp — to remove.
+      const mine = await svc.write('motivations', fakeScan(), WHEN);
+      await fs.writeFile(path.join(root, 'motivations', '2026', '08', 'notes.txt'), 'x');
+      await fs.writeFile(path.join(root, 'motivations', 'stray.enc'), 'x');
+      const keys = (await svc.list()).map((f) => f.key);
+      expect(keys).toEqual([mine.storageKey]);
+    });
+  });
 });

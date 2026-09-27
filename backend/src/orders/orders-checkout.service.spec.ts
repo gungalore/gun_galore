@@ -265,13 +265,13 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
     // The firearm was excluded from grouping: with only one courier line left,
     // there is no 2+ group → quoteCombined never runs.
     expect(shipping.quoteCombined).not.toHaveBeenCalled();
-    // Firearm carries no handling; the courier line carries the R15 waybill fee.
+    // Firearm carries no handling; the courier line carries its margin.
     expect(res.breakdown.shippingHandlingCents).toBe(1_500);
     // items 10 000 + 10 000, shipping 0 + 5 000, handling 0 + 1 500 → buyerTotal 26 500
     expect(res.breakdown.buyerTotal).toBe(26_500);
   });
 
-  it('P6.4 — carries the R15 waybill margin into the order handling subtotal', async () => {
+  it('P6.4 — carries the line handling margin into the order handling subtotal', async () => {
     const { service } = makeService();
     jest
       .spyOn(service as never, 'reserveAndCreateLine')
@@ -288,7 +288,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
       'https://x',
     );
 
-    expect(res.breakdown.shippingHandlingCents).toBe(3_000); // R15 × 2 waybills
+    expect(res.breakdown.shippingHandlingCents).toBe(3_000); // 1_500 × 2 lines
     expect(res.breakdown.shippingCost).toBe(10_000); // carrier cost, handling apart
     expect(res.breakdown.buyerTotal).toBe(33_000);
   });

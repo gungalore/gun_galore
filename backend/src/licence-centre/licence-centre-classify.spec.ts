@@ -1,5 +1,9 @@
 import { CredentialKind } from '@prisma/client';
-import { CLASSIFY_USER } from './licence-centre-extract.service';
+import {
+  CLASSIFY_USER,
+  LicenceCentreExtractService,
+} from './licence-centre-extract.service';
+import type { LlmResponse } from '../common/llm/llm.types';
 
 /** Kinds that survive only for rows filed before a consolidation. */
 const RETIRED = new Set<string>([
@@ -15,6 +19,25 @@ const RETIRED = new Set<string>([
   'SAFE_INSTALLATION',
 ]);
 
+/**
+ * NOT RETIRED — A KIND THE VAULT MENU MUST NOT OFFER.
+ *
+ * ⚠️ EVIDENCE IS A `CredentialKind` AND IS NOT A DOCUMENT CATEGORY. The vault's
+ * classifier files photographed documents by TYPE; an evidence item (a hunting
+ * photograph, a permission letter) has no type and is sorted instead into a
+ * container by the evidence classifier — see
+ * MotivationExtractService.classifyEvidence. classify() now answers a `role`
+ * before a kind (see VaultClassifyAnswer), and files an evidence item as
+ * EVIDENCE without a kind; but it is the ROLE that says so, not a member
+ * picking this off a menu.
+ *
+ * Offering EVIDENCE on this menu would invite a member to file a photographed
+ * document as an evidence item by hand, and an evidence row is never offered in
+ * the document picker (NON_PICKABLE) — they would be handed a row with nowhere
+ * to go. Same failure the RETIRED block describes, a different cause.
+ */
+const NOT_A_DOCUMENT = new Set<string>(['EVIDENCE']);
+
 // ⚠️ A CATEGORY THE ENUM KNOWS AND THE PROMPT DOES NOT is a document that
 // files itself as OTHER on every upload — silently, with no error anywhere,
 // and the member correcting us by hand each time. GOOD_STANDING shipped that
@@ -28,7 +51,7 @@ describe('the classifier prompt', () => {
     // here would invite the classifier to file a document outside every query
     // that now looks for the kind that replaced it.
     for (const kind of Object.values(CredentialKind)) {
-      if (RETIRED.has(kind)) {
+      if (RETIRED.has(kind) || NOT_A_DOCUMENT.has(kind)) {
         // The option lines all read "<KIND> - description", so the absence of
         // that exact form is what proves the kind is not on the menu.
         expect(CLASSIFY_USER).not.toContain(`${kind} -`);
@@ -85,5 +108,77 @@ describe('the classifier prompt', () => {
     // A guess dressed as certainty is worse than "unsorted": the member is
     // asked to confirm either way, and only one of the two tells them to look.
     expect(CLASSIFY_USER).toMatch(/OTHER - anything else, or you cannot tell/);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE FIRST QUESTION: IS THIS A DOCUMENT, OR IS IT EVIDENCE?
+//
+// ⚠️ EVIDENCE HAS NO KIND. A hunting photograph or a landowner's permission
+// letter is not one of our document categories, and forcing it into one is how
+// a member is told a requirement is met by something that answers nothing. The
+// role is answered before the kind, and an evidence answer must survive as
+// evidence.
+// ────────────────────────────────────────────────────────────────────
+const fakeLlm = (reply: string | Error, configured = true) => ({
+  complete: jest.fn().mockImplementation((): Promise<LlmResponse> => {
+    if (reply instanceof Error) return Promise.reject(reply);
+    return Promise.resolve({
+      text: reply,
+      parts: [{ type: 'text', text: reply }],
+      toolCalls: [],
+      stopReason: 'end',
+      usage: { inputTokens: 10, outputTokens: 10 },
+      model: 'test-model-2.5',
+      provider: 'gemini',
+      assistantMessage: { role: 'assistant', content: reply },
+    } as LlmResponse);
+  }),
+  stream: jest.fn(),
+  isConfigured: () => configured,
+  isConfiguredFor: () => configured,
+  providerNameFor: () => 'gemini',
+  model: 'test-model-2.5',
+  provider: 'gemini' as const,
+});
+
+const svcWith = (reply: string | Error) =>
+  new LicenceCentreExtractService(fakeLlm(reply) as never);
+
+const png = { bytes: Buffer.from('x'), mimeType: 'image/png' };
+
+describe('the document-or-evidence role', () => {
+  it('returns a document role with its kind', async () => {
+    await expect(
+      svcWith('{"role":"document","kind":"FIREARM_LICENCE","confidence":"high"}')
+        .classify(png),
+    ).resolves.toMatchObject({
+      role: 'document',
+      kind: CredentialKind.FIREARM_LICENCE,
+      confident: true,
+    });
+  });
+
+  it('⚠️ returns evidence as evidence, with no kind', async () => {
+    await expect(
+      svcWith(
+        '{"role":"evidence","kind":"OTHER","confidence":"high"}',
+      ).classify(png),
+    ).resolves.toEqual({ role: 'evidence', confident: true });
+  });
+
+  it('⚠️ reads an unrecognised role as null, never as a document', async () => {
+    // DeepSeek ignores the JSON schema entirely, so a junk role must be
+    // refused in code: a wrong filing is worse than a question.
+    await expect(
+      svcWith('{"role":"banana","kind":"FIREARM_LICENCE","confidence":"high"}')
+        .classify(png),
+    ).resolves.toBeNull();
+  });
+
+  it('reads a kind of EVIDENCE as evidence even with no role', async () => {
+    await expect(
+      svcWith('{"kind":"EVIDENCE","confidence":"high"}').classify(png),
+    ).resolves.toEqual({ role: 'evidence', confident: true });
   });
 });

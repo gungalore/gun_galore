@@ -64,7 +64,12 @@ describe('toShippingStatus (collapsed internal → Prisma)', () => {
   });
 
   it('returns null for internal milestones so shippingStatus is untouched', () => {
-    for (const s of ['PAYMENT_RECEIVED', 'SELLER_DISPATCHED', 'UNKNOWN']) {
+    for (const s of [
+      'PAYMENT_RECEIVED',
+      'SELLER_DISPATCHED',
+      'DEALER_HANDOVER_STARTED',
+      'UNKNOWN',
+    ]) {
       expect(toShippingStatus(s)).toBeNull();
     }
   });
@@ -83,5 +88,21 @@ describe('STATUS_LABEL', () => {
     ]) {
       expect(STATUS_LABEL[s]).toBeDefined();
     }
+  });
+
+  it('labels the firearm dealer hand-over without courier wording', () => {
+    // The DT buyer must never be told a parcel or courier is carrying their
+    // firearm — the DEALER_HANDOVER_STARTED event is the DT counterpart of
+    // SELLER_DISPATCHED and says "dealer", not "parcel"/"courier".
+    expect(STATUS_LABEL.DEALER_HANDOVER_STARTED).toBeDefined();
+    expect(STATUS_LABEL.DEALER_HANDOVER_STARTED.toLowerCase()).toContain(
+      'dealer',
+    );
+    expect(STATUS_LABEL.DEALER_HANDOVER_STARTED.toLowerCase()).not.toContain(
+      'parcel',
+    );
+    expect(STATUS_LABEL.DEALER_HANDOVER_STARTED.toLowerCase()).not.toContain(
+      'courier',
+    );
   });
 });

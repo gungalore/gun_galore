@@ -205,18 +205,48 @@ export function competencySubline(row: CredentialRow): string[] {
 
 // ── the attention chips ─────────────────────────────────────────────
 
-export type ChipId = 'renewals' | 'dates' | 'motivations';
+export type ChipId = 'renewals' | 'dates' | 'motivations' | 'duplicates';
 
 export interface ChipCounts {
   renewals: number;
   dates: number;
   motivations: number;
+  /**
+   * Extra files the server flagged as copies of an earlier row.
+   *
+   * ⚠️ THIS ONE COUNTS ROWS, WHERE THE OTHERS COUNT DOCUMENTS. A copy is not
+   * a document of its own — it folds under the original — so the honest thing
+   * to say is "you have two extra files to clear", not "two documents".
+   */
+  duplicates: number;
 }
 
 export type UsageMap = Record<string, CredentialUsage[]>;
 
 function isRenewal(r: CredentialRow): boolean {
   return r.state === 'expiring' || r.state === 'expired';
+}
+
+/**
+ * Is this row an extra file the server flagged as a copy of an earlier one?
+ *
+ * ⚠️ THE FLAG, NOT THE HASH. Two photographs of one card are two different
+ * files, so `sha256` cannot see them; the server compares what the documents
+ * SAY (see credential-duplicates.ts) and stamps `duplicateOfId`. `duplicateOf`
+ * is that id resolved to a title at read time, and it may be null while the
+ * original still exists — but for "is this a copy" the id alone is enough.
+ */
+export function isCopyWith(r: CredentialRow): boolean {
+  return !!r.duplicateOf?.id && r.duplicateOf.id !== r.id;
+}
+
+/** The originals that have at least one copy among these rows. */
+function copyParents(rows: readonly CredentialRow[]): Set<string> {
+  const parents = new Set<string>();
+  for (const r of rows) {
+    if (isCopyWith(r)) parents.add(r.duplicateOf!.id);
+  }
+  return parents;
 }
 
 /**
@@ -266,6 +296,10 @@ export function chipCounts(
     motivations: docs.filter((d) =>
       docNeeds(d, (r) => (usage[r.id]?.length ?? 0) > 0),
     ).length,
+    // ⚠️ ROWS, NOT DOCUMENTS. Every other count here folds the pages of one
+    // document together; this one is the number of stray FILES, which is what
+    // the member has to act on. Counting documents would always read 0.
+    duplicates: (rows ?? []).filter(isCopyWith).length,
   };
 }
 
@@ -286,7 +320,9 @@ export function rowMatchesChips(
       ? isRenewal(row)
       : c === 'dates'
         ? needsDateCheck(row)
-        : (usage[row.id]?.length ?? 0) > 0,
+        : c === 'duplicates'
+          ? isCopyWith(row)
+          : (usage[row.id]?.length ?? 0) > 0,
   );
 }
 
@@ -456,8 +492,22 @@ export function buildSections({
 
   return SECTIONS.map((section) => {
     const held = placed.get(section.id) ?? [];
+
+    /**
+     * ⚠️ A COPY IS NEVER A ROW, SO THE 'duplicates' CHIP HAS TO REACH ITS
+     * ORIGINAL. The filter below keeps a row that matches a chip; an original
+     * is not a copy, so selecting "Duplicates" would keep nothing and the
+     * copies would have nothing to fold under — the member taps the count and
+     * the list empties. When 'duplicates' is on, an original is kept for the
+     * copy's sake, which is the row the copy actually renders beneath.
+     */
+    const parents = chips.includes('duplicates')
+      ? copyParents(held.filter((r) => matchesQuery(r, query)))
+      : null;
     const kept = held.filter(
-      (r) => rowMatchesChips(r, chips, usage) && matchesQuery(r, query),
+      (r) =>
+        (rowMatchesChips(r, chips, usage) || !!parents?.has(r.id)) &&
+        matchesQuery(r, query),
     );
 
     // ── one document, not two pages ──────────────────────────────
@@ -539,9 +589,17 @@ export function buildSections({
       total: heldDocs.length,
       emptied,
       summary: summaryFor(section, docs, emptied),
+      // ⚠️ 'duplicates' IS IN THE LIST. A copy folds under its original, so a
+      // section holding nothing but a stray extra file would otherwise open
+      // for nobody, and the one screen that offers to clear it would stay shut
+      // behind a chip the member had to notice first.
       attention: heldDocs.filter((d) =>
         docNeeds(d, (r) =>
-          rowMatchesChips(r, ['renewals', 'dates', 'motivations'], usage),
+          rowMatchesChips(
+            r,
+            ['renewals', 'dates', 'motivations', 'duplicates'],
+            usage,
+          ),
         ),
       ).length,
     };

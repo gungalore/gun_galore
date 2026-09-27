@@ -34,6 +34,10 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 
 export class AnthropicProvider implements LlmProviderClient {
   readonly name = 'anthropic' as const;
+
+  /** True — Anthropic reads a document block natively. */
+  readonly acceptsDocuments = true;
+
   private readonly logger = new Logger(AnthropicProvider.name);
   private client: Anthropic | null = null;
 

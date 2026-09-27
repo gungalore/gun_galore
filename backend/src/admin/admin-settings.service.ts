@@ -251,6 +251,46 @@ const FLAGS: SettingFlag[] = [
     default: '60',
   },
 
+  // ─── SAPS Application Tracker ───────────────────────────────────
+  // Mirrors of settings.service.ts FLAGS. Both registries, or neither.
+  {
+    key: 'licence_tracker_enabled',
+    label: 'SAPS application tracker enabled',
+    // ⚠️ The one flag in this module that ships ON, by operator decision on
+    // 2026-09-25 so it could be tested locally. The hint says so plainly
+    // rather than leaving the next operator to infer it from the default.
+    hint: 'Master switch for the member-facing application tracker at /licence-centre/tracking. OFF = the page and every API route 404. ⚠️ This one is ON by default in the current build (a local-testing decision, 2026-09-25) — turn it OFF before the platform carries real members, because it polls a public government page on their behalf.',
+    group: 'Document Centre',
+    type: 'boolean',
+    default: 'true',
+    danger: true,
+  },
+  {
+    key: 'licence_tracker_sweep_enabled',
+    label: 'Weekly SAPS tracker sweep',
+    hint: 'Allows the Sunday 04:40 sweep to poll every active tracker with nobody waiting on the answer. OFF = trackers only move when a member taps Check now. The sweep is the only unattended traffic this module sends to SAPS, so it stays OFF until the manual path has been watched for a while.',
+    group: 'Document Centre',
+    type: 'boolean',
+    default: 'false',
+    danger: true,
+  },
+  {
+    key: 'licence_tracker_check_cooldown_hours',
+    label: 'Tracker check cooldown (hours)',
+    hint: 'The shortest gap between two manual checks of the SAME tracker. SAPS answers repeated enquiries with a validation line or a block page instead of the record, so this protects the member\'s own next check as much as it protects SAPS. Six hours was chosen against how often SAPS actually refreshes its records. Capped at 168 in code.',
+    group: 'Document Centre',
+    type: 'number',
+    default: '6',
+  },
+  {
+    key: 'licence_tracker_sweep_max',
+    label: 'Max trackers per sweep',
+    hint: 'How many distinct application references one sweep will poll before it stops and says how many it skipped. A ceiling on outbound traffic to a third party that never agreed to a request loop, not a pagination limit. Capped at 500 in code.',
+    group: 'Document Centre',
+    type: 'number',
+    default: '50',
+  },
+
   // ─── Comms ────────────────────────────────────────────────────
   // Mirrors of settings.service.ts FLAGS. Both registries, or neither.
   {

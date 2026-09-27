@@ -22,6 +22,22 @@ import type {
 export interface LlmProviderClient {
   readonly name: LlmProvider;
 
+  /**
+   * Can this provider read a `document` part — a PDF sent whole rather than
+   * as an image?
+   *
+   * ⚠️ A CAPABILITY, NOT A SYMMETRIC FACT. DeepSeek's vision path maps text
+   * and images only and throws `unsupported` on anything else
+   * (`deepseek.provider.ts` mapContent), so a PDF routed there fails the
+   * call rather than being read badly. LlmService reads this to send a
+   * document-bearing request to a provider that can take it, whatever the
+   * purpose's env pin says — see `serve()` there.
+   *
+   * It is DECLARED, not optional: an optional flag would default to `false`
+   * by omission and quietly strip a new provider of PDFs.
+   */
+  readonly acceptsDocuments: boolean;
+
   /** A key (and, for Anthropic, a model) is present. */
   isConfigured(): boolean;
 

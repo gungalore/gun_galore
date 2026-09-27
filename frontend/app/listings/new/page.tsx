@@ -6,6 +6,11 @@ import { useAuth } from '../../../lib/auth';
 import { Category, CategoryAttributeDef, Me } from '@/lib/types';
 import { BRAND_NAME } from '@/lib/brand';
 import { CONDITION_LABELS } from '@/lib/utils';
+import {
+  AUCTION_DURATIONS,
+  auctionFloorViolation,
+  formatAuctionFloor,
+} from '@/lib/auction-minimums';
 import { CategoryPicker } from '@/components/category-picker';
 import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
@@ -74,12 +79,13 @@ const TOP_SELLER_DISCOUNT = 0.005;
 const OZOW_RATE = 0.0328;
 const OZOW_FIXED_CENTS = 115; // R1.15 inclusive
 
-// Per-waybill handling margin the buyer pays on top of the courier quote —
-// mirrors SHIPPING_HANDLING_FEE_CENTS in fee.calculator.ts. Only relevant to
-// the "what else gets added at checkout" note; never part of the list price
-// (there is no waybill until there is an address, and a firearm handed over
-// through a dealer never gets one).
-const SHIPPING_HANDLING_FEE_CENTS = 1_500; // R15
+// Our handling margin on delivery, as a share of the courier's rate —
+// mirrors SHIPPING_HANDLING_RATE in fee.calculator.ts. It is folded into the
+// one delivery figure the buyer sees (never a separate line), so it only
+// qualifies the "what gets added at checkout" note here; it is never part of
+// the list price. There is no waybill until there is an address, and a
+// firearm handed over through a dealer never gets one.
+const SHIPPING_HANDLING_RATE = 0.1; // 10% of the carrier rate
 
 // The two ways to list — rendered as descriptive choice cards in Step 3
 // so sellers can compare and know where to list before picking. Take a
@@ -124,6 +130,10 @@ const SHIPPING_METHOD_VALUES: ShippingMethod[] = [
 // default rather than selecting nothing at all.
 const RELISTABLE_DURATIONS = ['3', '5', '7', '14'];
 
+// Auction length ↔ minimum item value lives in lib/auction-minimums.ts, so
+// the day pills, the Continue gate and the backend's refusal all read the
+// same numbers. See that file for why the floor is on the reserve / typed
+// starting bid and never on the derived 30%-under starting bid.
 function calcCommissionCents(priceCents: number, isTopSeller = false): number {
   let commission = 0;
   let remaining = priceCents;
@@ -147,13 +157,6 @@ function calcCommissionCents(priceCents: number, isTopSeller = false): number {
     return Math.min(MIN_COMMISSION_CENTS, priceCents);
   }
   return rounded;
-}
-
-// Buyer Protection Fee on a given base, VAT-inclusive — mirror of
-// FeeCalculator.calculateProcessingFee (paygate mode).
-function calcProcessingFeeCents(baseCents: number): number {
-  if (baseCents <= 0) return 0;
-  return Math.round(baseCents * OZOW_RATE + OZOW_FIXED_CENTS);
 }
 
 // BUY NOW — turn what the seller wants to RECEIVE into the price the buyer
@@ -1636,6 +1639,8 @@ export default function NewListingPage() {
 
     const hasPrice = parseFloat(form.price || '0') > 0;
     const hasReserve = parseFloat(form.reservePrice || '0') > 0;
+    // Cents, for the auction duration ↔ minimum-value floor below.
+    const reserveCents = Math.round(parseFloat(form.reservePrice || '0') * 100);
     // Step 3 — listing type + price. Blocked until the seller picks a listing
     // type AND satisfies that type's price requirement. The empty-string
     // default for listingType (see useState above) means nothing is assumed
@@ -1651,6 +1656,25 @@ export default function NewListingPage() {
         step3.push('A starting bid or a reserve price');
       }
       if (!form.durationDays) step3.push('How long the auction runs');
+      // The days are advertised against a minimum value: a 3-day run only
+      // runs on an item worth R1,000+. The floor is on the RESERVE (or, with
+      // no reserve, the starting bid the seller types) — never on the
+      // derived 30%-under starting bid. See lib/auction-minimums.ts.
+      //
+      // Only fires once there is a figure to compare and a duration to
+      // compare it against; naming the shortfall before the seller has typed
+      // anything would be a grey button over a blank field.
+      const floor = auctionFloorViolation({
+        durationDays: form.durationDays,
+        reserveCents,
+        startingBidCents: hasPrice ? Math.round(parseFloat(form.price) * 100) : 0,
+      });
+      if (floor) {
+        const what = floor.field === 'reserve' ? 'Reserve' : 'Starting bid';
+        step3.push(
+          `${what} of at least ${formatAuctionFloor(floor.minCents)} for a ${form.durationDays}-day auction`,
+        );
+      }
     } else if (form.listingType !== 'TAKE_A_SHOT') {
       // TAKE_A_SHOT needs no price — the buyer names one.
       if (!hasPrice) step3.push('Your price');
@@ -2702,18 +2726,6 @@ export default function NewListingPage() {
           Honest titles and crisp photos sell faster. Required fields marked{' '}
           <span style={{ color: 'var(--red)' }}>*</span>.
         </p>
-        <p
-          className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 rounded-full text-xs"
-          style={{
-            background: 'rgba(47, 158, 107, 0.12)',
-            border: '0.5px solid rgba(47, 158, 107, 0.5)',
-            color: 'var(--success)',
-            fontWeight: 600,
-          }}
-        >
-          ✓ Free to advertise — no upfront fees. We only earn a small
-          commission when your item sells.
-        </p>
       </header>
 
       {/* Draft restored notice — appears when a previous session's
@@ -3544,12 +3556,11 @@ export default function NewListingPage() {
                   <PillGroup
                     value={form.durationDays}
                     onChange={(v) => set('durationDays', v)}
-                    options={[
-                      { value: '3', label: '3 days' },
-                      { value: '5', label: '5 days' },
-                      { value: '7', label: '7 days' },
-                      { value: '14', label: '14 days' },
-                    ]}
+                    options={AUCTION_DURATIONS.map((d) => ({
+                      value: String(d.days),
+                      label: d.label,
+                      sublabel: d.sublabel,
+                    }))}
                   />
                 </Field>
 
@@ -4625,36 +4636,41 @@ export default function NewListingPage() {
                   <strong style={{ color: 'var(--text-primary)' }}>
                     It sells.
                   </strong>{' '}
-                  When the sale closes the order is locked in — neither side
-                  can pull out.
+                  The buyer pays and the money is held for you. Accept the
+                  order within 48 hours — buyers can only cancel before you
+                  dispatch.
                 </li>
                 <li>
                   <strong style={{ color: 'var(--text-primary)' }}>
                     You dispatch.
                   </strong>{' '}
-                  Have the parcel ready within 48 hours — a courier collects it
-                  from your pickup address — or drop at your dealer for firearm
-                  transfers.
+                  Once you accept, you have 5 days to hand the item over —
+                  courier or locker for most goods, in person for a collection,
+                  or to the receiving dealer for a firearm transfer.
                 </li>
                 <li>
                   <strong style={{ color: 'var(--text-primary)' }}>
-                    Buyer confirms delivery.
+                    Delivery is confirmed.
                   </strong>{' '}
-                  Once they accept the item you&apos;re paid — usually
-                  within a day of arrival.
+                  The buyer confirms they received the item — for a firearm
+                  transfer, the receiving dealer&apos;s paperwork is verified
+                  instead — and your payout is released.
                 </li>
                 <li>
                   <strong style={{ color: 'var(--text-primary)' }}>
                     Money in your bank.
                   </strong>{' '}
-                  {/* Buy Now is now a markup, not a deduction — saying "fees
-                      are deducted" here would contradict the breakdown under
-                      the price field and undo the trust it's there to build.
-                      Auctions and offers still deduct, so they keep the old
-                      wording. */}
+                  {/* Buy Now is a markup, not a deduction — saying "fees are
+                      deducted" here would contradict the breakdown under the
+                      price field and undo the trust it's there to build.
+                      Auctions and offers still deduct commission off the
+                      sale, so they keep the deduction wording. Neither is
+                      automatic: release queues the payout and it is paid out
+                      in a batch, hence "queued" and "allow 2-3 business
+                      days". */}
                   {form.listingType === 'BUY_NOW'
-                    ? 'It lands in your bank account within 2-3 business days. You receive your full asking price — our commission and the card fee are built into what the buyer pays, never taken off what you receive.'
-                    : 'It lands in your bank account within 2-3 business days. Our commission and fees are deducted automatically.'}
+                    ? 'Once released it is queued for payout to your bank account — allow 2-3 business days. You receive your full asking price: our commission and the card fee are built into what the buyer pays, never taken off your side. Payouts need a verified account with bank details on file.'
+                    : 'Once released it is queued for payout to your bank account — allow 2-3 business days. Our commission comes off the sale and the buyer covers the card fee. Payouts need a verified account with bank details on file.'}
                 </li>
               </ol>
             </div>
@@ -5023,11 +5039,12 @@ function SellerAskBreakdown({
             shipping. It is not part of your listed price.
           </li>
           <li>
-            Courier shipping (and the R
-            {(SHIPPING_HANDLING_FEE_CENTS / 100).toFixed(0)} waybill handling
-            fee) is added for the buyer at checkout — it can&apos;t be known
-            until there&apos;s a delivery address. A firearm handed over
-            through a dealer has no waybill, so neither applies.
+            Courier shipping is added for the buyer at checkout, quoted at the
+            courier&apos;s live rate — our{' '}
+            {Math.round(SHIPPING_HANDLING_RATE * 100)}% handling is folded into
+            that one figure, so the buyer sees a single delivery charge. It
+            can&apos;t be known until there&apos;s a delivery address. A firearm
+            handed over through a dealer has no waybill, so none applies.
           </li>
         </ul>
       </div>

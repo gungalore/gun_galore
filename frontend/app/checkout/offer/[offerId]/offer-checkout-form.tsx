@@ -452,7 +452,8 @@ export function OfferCheckoutForm({
       {/* What the buyer actually pays. The agreed price is the price — an
           offer discovers it, so nothing is marked up on top of it — and the
           gateway cost sits on the buyer as its own "Buyer Protection Fee" row.
-          P6.4: a courier parcel also carries the flat R15 handling. Shipping
+          Our delivery handling margin is folded into the courier's own quoted
+          figure, never itemised as a row of its own. Shipping
           (and therefore the exact fee, which is charged on item + shipping) is
           only priced server-side at payment, so those rows say so rather than
           show a number we'd have to guess at. */}

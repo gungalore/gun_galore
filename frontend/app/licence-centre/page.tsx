@@ -22,6 +22,7 @@ import { VaultConsentBody, type ConsentState } from '@/components/vault-consent'
 */
 import {
   ReviewItem,
+  evidenceNeedsWords,
   mergeReviewQueue,
   needsDateCheck,
   needsFilingCheck,
@@ -31,8 +32,10 @@ import {
   CredentialKind,
   CredentialRow,
   CredentialUsage,
+  KIND_LABELS,
   LicenceApiError,
   licenceCentreApi,
+  type IdentifyVerdict,
 } from '@/lib/licence-centre-api';
 /*
   ⚠️ THE GROUPING IS PURE AND IT LIVES IN lib/, FOR THE SAME REASON THE REVIEW
@@ -48,12 +51,22 @@ import {
   chipCounts,
   defaultOpenSections,
   pageLabel,
+  pageSide,
+  placeRow,
+  rowName,
 } from '@/lib/document-centre-sections';
 import DocumentSection from '@/components/document-centre/section';
 import DocumentRow from '@/components/document-centre/document-row';
 import { DocThumb } from '@/components/document-centre/doc-thumb';
 import { DocSectionId } from '@/components/document-centre/kinds';
 import CompletedMotivations from '@/components/licence-centre/completed-motivations';
+import UploadBatch, {
+  type BatchCard,
+} from '@/components/document-centre/upload-batch';
+import BatchPreview from '@/components/document-centre/batch-preview';
+import { ImageLightbox } from '@/components/image-lightbox';
+import { useUploadEnhance } from '@/components/scan-upload/use-upload-enhance';
+import { shapeForKind } from '@/lib/scan/shapes';
 import {
   motivationsApi,
   type MotivationSummary,
@@ -114,6 +127,64 @@ const LICENCE_CENTRE_TRAIL: Crumb[] = [
   { label: 'Account', href: '/account' },
   { label: 'Document Centre' },
 ];
+
+/**
+ * What a link in the banner calls a document.
+ *
+ * ⚠️ THE SAME NAME ITS ROW CARRIES, NOT ITS TITLE. Every firearm licence is
+ * titled "Firearm licence", so a list of errands built from titles gives the
+ * member five identical links and no way to tell which one is which. See
+ * `rowName`, which names a licence by its firearm and a certificate by its
+ * unit standards.
+ *
+ * ⚠️ AND THE PAGE IS NAMED WHEN A DOCUMENT HAS TWO. A certificate and its
+ * statement of results are two rows carrying the same unit standards, so the
+ * page word is the only thing separating the two links.
+ */
+function bannerLabel(r: CredentialRow): string {
+  const name = rowName(r, placeRow(r));
+  const page = pageSide(r) ? pageLabel(r) : null;
+  return page && page !== name ? `${page} — ${name}` : name;
+}
+
+/**
+ * The documents a banner paragraph is about, as links that open them.
+ *
+ * ⚠️ THE BANNER NAMED NO DOCUMENT, WHICH MADE IT AN ERRAND WITH NO
+ * DESTINATION. "One document still needs its date checked" told the member
+ * something was wrong and left them to find it by eye in a list that can run
+ * to eighteen rows — the same failure the tappable chips above it were added
+ * to fix. A button rather than an anchor: there is no route per document, the
+ * detail column is where the date is confirmed and the box is corrected, and
+ * `onOpen` is what puts it there.
+ */
+function BannerDocLinks({
+  rows,
+  onOpen,
+}: {
+  rows: CredentialRow[];
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <ul className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+      {rows.map((r) => (
+        <li key={r.id} className="min-w-0">
+          {/* ⚠️ `--link`, NOT `--red`. Brand red on the banner's gold wash is
+              4.4:1 — just under AA at this size. `--link` is the design kit's
+              own anchor colour, deep enough for body-size text on light, and
+              it hovers to `--red-hover` exactly as the kit's `a:hover` does. */}
+          <button
+            type="button"
+            onClick={() => onOpen(r.id)}
+            className="py-0.5 text-left text-[13px] font-medium text-[var(--link)] underline underline-offset-2 hover:text-[var(--red-hover)]"
+          >
+            {bannerLabel(r)}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export default function LicenceCentrePage() {
   const { getToken } = useAuth();
@@ -347,6 +418,26 @@ export default function LicenceCentrePage() {
     }
   }, []);
 
+  /**
+   * A banner link: open that document in the panel.
+   *
+   * ⚠️ THE FILTERS HAVE TO GO FIRST, OR THE LINK DOES NOTHING. `selected` is
+   * resolved against `visible`, which is the *filtered* list, so opening a row
+   * the chips or the search box are hiding sets the selection and then renders
+   * whatever was in the panel before. Clearing only when the row is actually
+   * hidden keeps a filter the member is using for everything else.
+   */
+  const openFromBanner = useCallback(
+    (id: string) => {
+      if (!visible.some((r) => r.id === id)) {
+        setChips([]);
+        setQuery('');
+      }
+      select(id);
+    },
+    [visible, select],
+  );
+
   /** An empty section's Add link. See the note on `addRef`. */
   const openAddFor = useCallback((kind: CredentialKind) => {
     addRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -363,6 +454,28 @@ export default function LicenceCentrePage() {
     () => visible.find((r) => r.id === selectedId) ?? null,
     [visible, selectedId],
   );
+
+  /**
+   * The extra files of the selected document, wherever it is on the page.
+   *
+   * ⚠️ SEARCHED ACROSS EVERY SECTION, NOT JUST THE ONE IT SITS IN. A copy folds
+   * under its original and the fold is per-section; a duplicate chip can also
+   * leave an original standing while its copy sits in a different group. The
+   * list already knows every node, so this reads the same `views` and cannot
+   * disagree with what was drawn.
+   */
+  const selectedCopies = useMemo(() => {
+    if (!selected) return [];
+    for (const v of views) {
+      const nodes = [
+        ...v.groups.flatMap((g) => g.rows),
+        ...v.photos,
+      ];
+      const hit = nodes.find((n) => n.row.id === selected.id);
+      if (hit) return hit.copies;
+    }
+    return [];
+  }, [views, selected]);
 
   /**
    * Land on something rather than on an empty panel.
@@ -521,7 +634,18 @@ export default function LicenceCentrePage() {
    * where both halves live and are tested.
    */
   const needDate = (rows ?? []).filter(needsDateCheck);
-  const needFiling = (rows ?? []).filter(needsFilingCheck);
+  // ⚠️ EVIDENCE IS TAKEN OUT OF THE FILING COUNT, BECAUSE ITS ERRAND IS A
+  // DIFFERENT ONE AND ALREADY ON THIS PAGE. `needsFilingCheck` is true of an
+  // evidence item we could not place — autoFiled, namedConfident false, no date
+  // to read — so it would land in this list under "we were not sure what TYPE
+  // these documents are", which is the one thing that is certainly right about
+  // an evidence row. The type is Evidence; what we could not decide is which
+  // CONTAINER inside it, and the fix for that is a better description — asked
+  // on the upload card when the AI answers, and on the row's own words control
+  // afterwards. See evidenceNeedsWords.
+  const needFiling = (rows ?? []).filter(
+    (r) => needsFilingCheck(r) && !evidenceNeedsWords(r),
+  );
 
   return (
     <main className="mx-auto max-w-[var(--content-max)] px-4 py-8">
@@ -566,29 +690,33 @@ export default function LicenceCentrePage() {
                 We read the date off the photograph, but nothing is scheduled
                 until you have confirmed it is right.
               </p>
+              <BannerDocLinks rows={needDate} onOpen={openFromBanner} />
             </>
           )}
           {needFiling.length > 0 && (
-            <p
-              className={
-                needDate.length > 0
-                  ? 'mt-2 text-[var(--text-secondary)]'
-                  : 'font-medium'
-              }
-            >
-              {/* ⚠️ NOT "kept on file with no expiry date" ANY MORE. This
-                  list now also holds documents we filed WITHOUT BEING SURE
-                  what they were, whatever date they carry — and telling
-                  somebody their dated firearm licence has no expiry date
-                  would be plainly false. The one thing true of every row
-                  here is that the box it sits in is our guess. */}
-              {/* Operator, 2026-09-07: "that doesn't even make sense as the
-                  system filled in all of them." Everything is filed by us;
-                  what sets these apart is that we were not sure of the type. */}
-              {needFiling.length === 1
-                ? 'We were not sure what type one document is. Open it and check it is in the right box.'
-                : `We were not sure what type ${needFiling.length} documents are. Open each and check it is in the right box.`}
-            </p>
+            <>
+              <p
+                className={
+                  needDate.length > 0
+                    ? 'mt-2 text-[var(--text-secondary)]'
+                    : 'font-medium'
+                }
+              >
+                {/* ⚠️ NOT "kept on file with no expiry date" ANY MORE. This
+                    list now also holds documents we filed WITHOUT BEING SURE
+                    what they were, whatever date they carry — and telling
+                    somebody their dated firearm licence has no expiry date
+                    would be plainly false. The one thing true of every row
+                    here is that the box it sits in is our guess. */}
+                {/* Operator, 2026-09-07: "that doesn't even make sense as the
+                    system filled in all of them." Everything is filed by us;
+                    what sets these apart is that we were not sure of the type. */}
+                {needFiling.length === 1
+                  ? 'We were not sure what type one document is. Open it and check it is in the right box.'
+                  : `We were not sure what type ${needFiling.length} documents are. Open each and check it is in the right box.`}
+              </p>
+              <BannerDocLinks rows={needFiling} onOpen={openFromBanner} />
+            </>
           )}
         </div>
       )}
@@ -649,6 +777,22 @@ export default function LicenceCentrePage() {
                 on={chips.includes('motivations')}
                 onToggle={() => toggleChip('motivations')}
               />
+              {/* ⚠️ ONLY WHEN THERE IS ONE. The other three always show,
+                  because "0 renewals due" is a fact a member wants confirmed.
+                  A stray file is not — and a chip that is always visible at 0
+                  teaches people to stop reading the row it sits in. */}
+              {counts.duplicates > 0 && (
+                <Chip
+                  label={
+                    counts.duplicates === 1
+                      ? '1 extra copy'
+                      : counts.duplicates + ' extra copies'
+                  }
+                  on={chips.includes('duplicates')}
+                  warn
+                  onToggle={() => toggleChip('duplicates')}
+                />
+              )}
             </div>
           )}
 
@@ -789,6 +933,7 @@ export default function LicenceCentrePage() {
                   ))}
                 </DocumentSection>
               ))}
+
             </div>
           )}
           {error && <p className="mt-3 text-sm text-[var(--red)]">{error}</p>}
@@ -861,6 +1006,7 @@ export default function LicenceCentrePage() {
                     <CredentialCard
                       key={shown.id}
                       row={shown}
+                      copies={selectedCopies}
                       usedIn={usage[shown.id] ?? []}
                       token={token}
                       onChanged={refresh}
@@ -983,6 +1129,34 @@ function AddPanel({
     total: number;
   } | null>(null);
 
+  // ── ONE UPLOADER, ONE AI SORT ───────────────────────────────────────
+  //
+  // The member picks the files RAW, identify() sorts them and hands back one
+  // id per file, and each file gets a card saying what we made of it. Then,
+  // and only then, the DOCUMENTS are polished and everything is uploaded
+  // under the id the server minted. See components/document-centre/
+  // upload-batch.tsx for why the ordering cannot be the other way round.
+  const [batch, setBatch] = useState<BatchCard[]>([]);
+  /**
+   * True once the batch has been prepared and is waiting on the member's
+   * confirm. The preview replaces the strip for that window; nothing is in the
+   * vault yet. See components/document-centre/batch-preview.tsx.
+   */
+  const [previewing, setPreviewing] = useState(false);
+  /** The picture the strip was asked to open, with the URL it made. */
+  const [batchLightbox, setBatchLightbox] = useState<{ url: string; name: string } | null>(
+    null,
+  );
+  /**
+   * The scanner treatment, reached from HERE rather than from the picker.
+   *
+   * ⚠️ IT RUNS AFTER identify, PER FILE, AND ONLY FOR DOCUMENTS. An evidence
+   * photograph goes up exactly as it was taken; cropping and deshadowing it
+   * would ruin the picture and hand the model a doctored image. See the note
+   * on DocumentCentreAdd and the spec on upload-batch.tsx.
+   */
+  const { overlay: enhanceOverlay, enhance } = useUploadEnhance();
+
   /** Spoken about inside the last three, and enforced at nought. */
   const nearCap = remaining !== null && remaining <= 3;
   const full = remaining === 0;
@@ -1029,7 +1203,18 @@ function AddPanel({
       // whose expiry we read cleanly but whose TYPE we guessed at with low
       // confidence never reached the one screen that asks a human about the
       // type. `needsReview` is the union of both halves; both are tested.
-      const need = rows.filter(needsReview);
+      // ⚠️ EVIDENCE WE COULD NOT PLACE IS NOT THIS QUEUE'S WORK. It comes back
+      // from `needsReview` — autoFiled, low confidence, nothing to date — and
+      // the only control this screen has for a doubtful row is the document
+      // type menu. Confirming an evidence item there would post the kind it
+      // already has plus the "never expires" tick the server pre-set, stamp it
+      // confirmed, and take it off the one control that can actually repair it
+      // (the words box on the row, which is gated on `!confirmed`) while its
+      // container is still null. Silent and permanent, reached through the
+      // screen meant to fix things.
+      const need = rows.filter(
+        (r) => needsReview(r) && !evidenceNeedsWords(r),
+      );
       if (!need.length) return;
       // ⚠️ MERGE, NEVER ASSIGN. This was the last wholesale replace on the
       // page — see mergeReviewQueue for the six licences it cost. A phone
@@ -1107,6 +1292,218 @@ function AddPanel({
    * for exactly this reason. So this merges, always, and de-duplicates by id —
    * the hand-off refresh and this function can legitimately name the same row.
    */
+  // ── THE BATCH, FROM PICK TO FILED ───────────────────────────────────
+  //
+  // ⚠️ IDENTIFY FIRST, THEN POLISH, THEN UPLOAD. The role of a file is not
+  // known until the model has answered, and the polish must not touch a file
+  // that turns out to be evidence — so nothing may be cropped on the way IN.
+  // The order is: pick raw → identify (one id per file) → polish the DOCUMENTS
+  // → upload each with its id. See components/document-centre/upload-batch.tsx.
+
+  /** Replace one card by id, leaving the rest exactly as they were. */
+  function patchCard(id: string, patch: Partial<BatchCard>) {
+    setBatch((cur) => cur.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
+
+  /**
+   * POLISH ONE IDENTIFIED FILE, AND STOP SHORT OF FILING IT.
+   *
+   * ⚠️ THE POLISH HAPPENS HERE, AND ONLY FOR A DOCUMENT. `enhance` hands back
+   * the rectified JPEGs through `onDone` — or the original untouched when the
+   * scanner flag is off or the file is a PDF, which is the pass-through that
+   * keeps a PDF uploadable.
+   *
+   * ⚠️ WHAT COMES BACK IS HELD ON THE CARD, NOT SENT. The member gets to see
+   * the whole batch with what we made of each file before any of it is kept;
+   * `fileCard` is the one that stores. A document whose overlay the member
+   * closed without keeping leaves `prepared` null, and the file step skips
+   * the card rather than uploading raw bytes we never got a look at.
+   */
+  async function prepareCard(card: BatchCard, declared: CredentialKind | '') {
+    patchCard(card.id, { state: 'working' });
+    // ⚠️ WHETHER THE OVERLAY EVER CAME BACK, so a scanner the member closes
+    // without accepting can be told apart from one that returned a page.
+    // Without it the card sits on "Working…" for ever.
+    let handled = false;
+    const ready = (file: File) => {
+      handled = true;
+      const url = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+      patchCard(card.id, { prepared: file, previewUrl: url, state: 'ready' });
+    };
+
+    if (card.verdict.role === 'document') {
+      const kind = declared || (card.verdict.kind as CredentialKind) || '';
+      // ⚠️ AWAITED. The polish overlay is a single slot; starting the next
+      // document before this one has come back through it overwrote the
+      // pending request and left every file after the first unfiled. See the
+      // note on `enhance` in use-upload-enhance.tsx.
+      await enhance([card.file], {
+        title: kind
+          ? `Photograph your ${(KIND_LABELS[kind] ?? kind).toLowerCase()}`
+          : 'Photograph the document',
+        shape: kind ? shapeForKind(kind) : 'a4',
+        onDone: (files) => ready(files[0] ?? card.file),
+      });
+      // ⚠️ RELEASED, NOT LEFT SPINNING. The member can close the scanner
+      // without keeping anything; the card then goes back to waiting, where
+      // its own Remove control sits. The preview skips it.
+      if (!handled) patchCard(card.id, { state: 'waiting' });
+    } else {
+      // ⚠️ NOT POLISHED. An evidence photograph is not a page: its own raw
+      // bytes are what will be uploaded, so `prepared` is the file itself.
+      //
+      // ⚠️ AND IT GETS ITS OWN OBJECT URL, NOT THE STRIP'S. The strip revokes
+      // every `url` it is holding when it unmounts — which is exactly what
+      // happens when the preview replaces it — so pointing the preview at that
+      // same URL would leave every evidence thumbnail dead on arrival. Two
+      // URLs, two lifecycles, and `dropCard` releases both.
+      ready(card.file);
+    }
+  }
+
+  /**
+   * Upload ONE prepared file and file it under its id.
+   *
+   * ⚠️ UPLOAD ONLY. The polish already happened in `prepareCard`; this takes
+   * the bytes the member confirmed in the preview and stores them. Moving the
+   * `enhance` call back in here would crop on the way OUT, after the member
+   * had already approved the page.
+   */
+  async function fileCard(card: BatchCard, declared: CredentialKind | '') {
+    patchCard(card.id, { state: 'working' });
+    const done = async (file: File) => {
+      try {
+        const r = await licenceCentreApi.create(token, declared, '', file, {
+          identifyId: card.id,
+          description: card.description.trim() || undefined,
+        });
+        setQueue((q) =>
+          mergeReviewQueue(q, [
+            {
+              id: r.id,
+              kind: r.kind,
+              title: r.title,
+              mimeType: r.mimeType ?? file.type,
+              autoFiled: r.autoFiled === true,
+              confident: r.confident === true,
+              readUncertain: r.proposed?.lowConfidence ?? [],
+              readNotes: r.readNotes ?? [],
+              attention: r.attention ?? [],
+              neverExpires: r.neverExpires === true,
+              issuedOnUnknown: r.issuedOnUnknown === true,
+              proposed: r.proposed,
+            },
+          ]),
+        );
+        patchCard(card.id, {
+          state: 'done',
+          rowId: r.id,
+          placement: r.evidence?.placement ?? null,
+        });
+      } catch (ex) {
+        patchCard(card.id, {
+          state: 'failed',
+          // ⚠️ "IT DID NOT UPLOAD" IS A LIE ONCE THE ROW EXISTS. `create` can
+          // throw AFTER the insert — the vision read runs behind it and can
+          // outlast the proxy — so a failure here does not mean nothing was
+          // kept. Saying "upload" sends the member to re-pick a file the vault
+          // already holds and will refuse as a duplicate; the honest line is
+          // that we could not confirm what we made of it.
+          err: ex instanceof LicenceApiError ? ex.message : 'We could not file that one.',
+        });
+      }
+    };
+
+    await done(card.prepared ?? card.file);
+  }
+
+  /**
+   * The member confirmed the preview: store every card that has bytes ready.
+   *
+   * ⚠️ NOTHING HAS BEEN UPLOADED UNTIL THIS RUNS. Everything before it —
+   * identify, the polish overlay — happened in memory. A card the member
+   * removed in the preview is already gone from `batch`, so it is never sent.
+   */
+  async function filePrepared() {
+    const ready = batch.filter((c) => c.state === 'ready' && c.prepared);
+    if (!ready.length) {
+      setPreviewing(false);
+      return;
+    }
+    setPreviewing(false);
+    setBusy(true);
+    setProgress({ done: 0, total: ready.length });
+    // ONE AT A TIME. Each upload writes an encrypted file and makes a vision
+    // call; filing eight at once would race the per-minute limit and give no
+    // usable progress.
+    for (const [i, card] of ready.entries()) {
+      await fileCard(card, lastDeclared.current);
+      setProgress({ done: i + 1, total: ready.length });
+    }
+    setBusy(false);
+    setProgress(null);
+    // ⚠️ THE UPLOAD RESPONSE CARRIES THE TICKS ITSELF. `fileCard` takes the
+    // response at face value and merges the row into the review, so the batch
+    // is never re-read to learn something the server just told us.
+    //
+    // And always, not only on failure: a row may have been committed and its
+    // response lost — the vision read runs after the insert and can outlast
+    // the proxy's patience. Without this the document is invisible AND a
+    // retry is refused as a duplicate, which contradicts the error we showed.
+    await onAdded().catch(() => undefined);
+  }
+
+  /**
+   * The member said a little more about an item we could not place.
+   *
+   * ⚠️ THE BYTES DO NOT MOVE. The file is already stored; only the words about
+   * it are new, so this is the describe-again call and not a second upload —
+   * which would collide with the uniqueness on (userId, sha256) and tell them
+   * their own photograph is already kept.
+   */
+  async function describeCard(id: string, description: string) {
+    const card = batch.find((c) => c.id === id);
+    if (!card?.rowId) return;
+    patchCard(id, { state: 'working', err: null });
+    try {
+      const r = await licenceCentreApi.redescribeEvidence(
+        token,
+        card.rowId,
+        description,
+      );
+      // ⚠️ NOT OPTIMISTIC. The server may still decline to place it — a
+      // description no better than the first is allowed to come back
+      // unresolved — so the card shows what came back and nothing else.
+      patchCard(id, {
+        state: 'done',
+        description,
+        verdict: { ...card.verdict, container: r.evidence?.container ?? null },
+      });
+      await onAdded().catch(() => undefined);
+    } catch (ex) {
+      patchCard(id, {
+        state: 'waiting',
+        err:
+          ex instanceof LicenceApiError
+            ? ex.message
+            : 'We could not sort that one just now.',
+      });
+    }
+  }
+
+  /** Drop a card, and release the object URLs it was drawn from. */
+  function dropCard(id: string) {
+    setBatch((cur) => {
+      const hit = cur.find((c) => c.id === id);
+      if (hit?.url) URL.revokeObjectURL(hit.url);
+      // ⚠️ THE PREVIEW URL IS A SECOND, INDEPENDENT OBJECT URL (see
+      // `ready`), so it has to be released here too or the member's own
+      // photograph stays pinned for the life of the tab.
+      if (hit?.previewUrl) URL.revokeObjectURL(hit.previewUrl);
+      return cur.filter((c) => c.id !== id);
+    });
+  }
+
   async function uploadFiles(
     picked: File[],
     declared: CredentialKind | '' = '',
@@ -1152,82 +1549,89 @@ function AddPanel({
 
     setBusy(true);
     setErr(null);
+    if (failed.length) setRejected((prev) => [...prev, ...failed]);
     setProgress({ done: 0, total: files.length });
 
-    // ONE AT A TIME. Each upload writes an encrypted file and makes a
-    // vision call; firing eight at once would race the per-minute
-    // limit and give no usable progress.
-    const added: ReviewItem[] = [];
-    for (const [i, file] of files.entries()) {
-      try {
-        // ONE file keeps the type the member picked. SEVERAL is a
-        // folder, so each is named from its contents and checked in
-        // the queue.
-        // ⚠️ THE TYPE IS SENT ONLY AS AN OVERRIDE. Blank means the server
-        // classifies with Haiku and reads the dates off the page, and the
-        // confirm step then shows what it made of it. A folder was always
-        // handled this way; there was never a reason one file should not be.
-        // ⚠️ THE DECLARED TYPE NOW APPLIES TO THE WHOLE BATCH, where it
-        // used to apply only when exactly one file was picked. That rule
-        // existed because a folder was assumed to be MIXED, so classifying
-        // per file beat forcing one type onto all of them. The member is now
-        // asked what they are adding BEFORE the picker opens, so a batch is a
-        // declared batch — eight photographs of one safe are eight
-        // photographs of one safe, and making the classifier re-derive that
-        // eight times was the old behaviour's real cost. Blank still means
-        // "work it out for me", which is still the default.
-        const r = await licenceCentreApi.create(token, declared, '', file);
-        added.push({
-          id: r.id,
-          kind: r.kind,
-          title: r.title,
-          // The server tells us; the File in hand is the backstop.
-          mimeType: r.mimeType ?? file.type,
-          autoFiled: r.autoFiled === true,
-          confident: r.confident === true,
-          readUncertain: r.proposed?.lowConfidence ?? [],
-          readNotes: r.readNotes ?? [],
-          attention: r.attention ?? [],
-          neverExpires: r.neverExpires === true,
-          issuedOnUnknown: r.issuedOnUnknown === true,
-          proposed: r.proposed,
-        });
-      } catch (ex) {
-        // One bad file must not abandon the rest of the pack — and THIS one
-        // keeps its File, because a failure here is a dropped connection or a
-        // server that was busy, and trying again is exactly right.
-        failed.push({
+    // ── 1. THE SERVER LOOKS AT THEM FIRST, AND MINTS AN ID PER FILE ─────
+    //
+    // ⚠️ THE FILES GO UP RAW, ALL OF THEM, IN ONE CALL. Nothing is cropped
+    // yet: the role is not known until the model has answered and a hunting
+    // photograph must not be polished. The server hands back one verdict —
+    // and one id — per file, in the order we sent them.
+    let verdicts: IdentifyVerdict[];
+    try {
+      verdicts = await licenceCentreApi.identify(token, files);
+    } catch (ex) {
+      setBusy(false);
+      setProgress(null);
+      setErr(
+        ex instanceof LicenceApiError
+          ? ex.message
+          : 'We could not look at those files just now. Please try again.',
+      );
+      return;
+    }
+
+    // A verdict per file, matched by POSITION — the server answers in the
+    // order it was sent. A file with no verdict is one we cannot name, so it
+    // goes back to the member with its File still in hand rather than being
+    // filed blind.
+    const cards: BatchCard[] = [];
+    const unread: RejectedFile[] = [];
+    files.forEach((file, i) => {
+      const v = verdicts[i];
+      if (!v?.id) {
+        unread.push({
           key: nextRejectKey(),
           name: file.name,
-          reason:
-            ex instanceof LicenceApiError ? ex.message : 'It did not upload.',
+          reason: 'We did not get a reading back for this one.',
           file,
         });
+        return;
       }
+      cards.push({
+        id: v.id,
+        file,
+        // ⚠️ THE URL IS THE RAW PICK, drawn beside the card. The polished
+        // bytes are produced later and shown in the PREVIEW — there the member
+        // is checking the crop we made, so the enhanced image is the honest
+        // thing to draw.
+        url: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+        verdict: v,
+        state: 'waiting',
+        err: null,
+        prepared: null,
+        previewUrl: null,
+        description: '',
+        rowId: null,
+        placement: null,
+      });
+    });
+    if (unread.length) setRejected((prev) => [...prev, ...unread]);
+    if (cards.length) setBatch((cur) => [...cur, ...cards]);
+
+    // ── 2. POLISH THE DOCUMENTS — AND NOTHING IS STORED YET ─────────────
+    //
+    // ONE AT A TIME. Each file gets the scanner treatment in turn; the upload
+    // slot is a single one and starting the next document before this one has
+    // come back through it overwrites the pending request.
+    //
+    // ⚠️ THE RESULT IS STORED, NOT FILED. `onDone` puts the polished bytes on
+    // the card as `prepared` and stops there. The member has to look at the
+    // sort and press "File these" before anything reaches the vault — that is
+    // the whole point of the preview. An evidence file or a PDF is not
+    // polished and goes straight to ready with its original bytes.
+    for (const [i, card] of cards.entries()) {
+      await prepareCard(card, declared);
       setProgress({ done: i + 1, total: files.length });
     }
 
     setBusy(false);
     setProgress(null);
-    // ⚠️ CLEARED, NOT SET. The failures are rows in the review now; leaving
-    // them in the toolbar line as well would say the same thing twice, in the
-    // one place that cannot say which file.
     setErr(null);
-    setQueue((q) => mergeReviewQueue(q, added));
-    setRejected((prev) => [...prev, ...failed]);
-    // ⚠️ THE UPLOAD RESPONSE CARRIES THE TICKS ITSELF NOW. It used to
-    // return the proposal and stop, while the same call had already
-    // stamped `neverExpires: true` on a photograph of a safe — so the batch
-    // was re-read after every upload to learn something the server had just
-    // decided. Taking the response at face value was the fix; the round trip
-    // was the workaround. (The second, replacing setQueue(added) that used to
-    // sit here is gone — see the note at the top of this function.)
-    // Always, not only on failure: a row may have been committed and
-    // its response lost — the vision read runs after the insert and
-    // can outlast the proxy's patience. Without this the document is
-    // invisible AND a retry is refused as a duplicate, which
-    // contradicts the error we just showed.
-    await onAdded().catch(() => undefined);
+    // Nothing was uploaded, so there is nothing to refresh yet; the queue is
+    // re-read once the member confirms in the preview.
+    if (cards.length) setPreviewing(true);
   }
 
   // ── TWO BUTTONS, AND THE TYPE ASKED FIRST ────────────────────────────
@@ -1281,7 +1685,17 @@ function AddPanel({
           onChanged={onAdded}
         />
       )}
-      <div className="flex items-center gap-2">
+      {/*
+        ⚠️ THE BUTTONS AND THE STRIP ARE STACKED, NOT FLANKED. AddPanel returns
+        a fragment — the two buttons AND the per-file strip — and this wrapper
+        used to be a bare flex row, so the strip was laid out BESIDE the
+        buttons and the two buttons floated, vertically centred, against the
+        card column. Operator, 2026-09-26, over a five-card batch: "the scan
+        and upload buttons shouldnt be there". Only the buttons belong in the
+        row; the strip goes underneath it.
+      */}
+      <div>
+      <div className="flex flex-wrap items-center gap-2">
       <DocumentCentreAdd
         groups={KIND_GROUPS}
         /* At the cap the two buttons are dead, because every path behind
@@ -1308,6 +1722,47 @@ function AddPanel({
       )}
       {err && <span className="text-xs text-[var(--red)]">{err}</span>}
       </div>
+      </div>
+
+      {/*
+        ⚠️ THE OTHER SURFACE IS NOT A SECTION, IT IS THE UPLOAD ITSELF. Evidence
+        used to have a panel of its own, above the sections, asking a member to
+        say what a photograph showed before anything had looked at it. The AI now
+        decides on the way in — document or evidence — and an item it cannot
+        place waits RIGHT HERE, on its own card, for a few more words. The strip
+        sits under the buttons because it is about what is being added now, not
+        what is already kept. See components/document-centre/upload-batch.tsx.
+      */}
+      {/*
+        ⚠️ THE STRIP STAYS MOUNTED WHILE THE PREVIEW IS UP, HIDDEN, AND THAT IS
+        NOT LAZINESS. The strip revokes every object URL it holds when it
+        UNMOUNTS (its own safety net, for a tab that navigates away mid-batch).
+        Swapping it out for the preview would fire that cleanup and leave the
+        preview — and the strip when it comes back after filing — drawing
+        revoked URLs. Keeping it mounted keeps the URLs alive; `hidden` keeps
+        it out of the way.
+      */}
+      <div className={previewing ? 'hidden' : undefined}>
+        <UploadBatch
+          cards={batch}
+          busy={busy}
+          onDescribe={describeCard}
+          onRemove={dropCard}
+          onDescriptionChange={(cardId, d) =>
+            patchCard(cardId, { description: d })
+          }
+          onOpen={(url, name) => setBatchLightbox({ url, name })}
+        />
+      </div>
+      {previewing ? (
+        <BatchPreview
+          cards={batch}
+          busy={busy}
+          onRemove={dropCard}
+          onConfirm={() => void filePrepared()}
+          onOpen={(url, name) => setBatchLightbox({ url, name })}
+        />
+      ) : null}
 
       {/* \u26a0\ufe0f A BAR, NOT A 12px LINE OF GREY TEXT.
           Each document is uploaded, encrypted and then READ by a vision call
@@ -1364,6 +1819,29 @@ function AddPanel({
             leave this page open &mdash; nothing is lost if you wait.
           </p>
         </div>
+      )}
+
+      {/*
+        ⚠️ THE POLISH OVERLAY LIVES HERE, NOT IN THE ADD BUTTON. The scanner
+        treatment (crop, deskew, deshadow) runs on the picked images on the way
+        to the server, and it must run AFTER the AI has said what each file is —
+        a hunting photograph handed to EnhanceOverlay comes back looking like a
+        photocopy of itself. The button no longer has it; this is its only home
+        on this page. See the note in components/document-centre-add.tsx.
+      */}
+      {enhanceOverlay}
+
+      {/*
+        Evidence cards are the one place a member can open a file they just
+        picked. The bytes are still local (object URL), so the lightbox reads
+        from memory rather than re-fetching the stored copy.
+      */}
+      {batchLightbox && (
+        <ImageLightbox
+          images={[{ id: 'batch', url: batchLightbox.url }]}
+          title={batchLightbox.name}
+          onClose={() => setBatchLightbox(null)}
+        />
       )}
     </>
   );

@@ -197,6 +197,44 @@ export function cleanAlsoCovers(
   ];
 }
 
+/**
+ * What classify() answers.
+ *
+ * ⚠️ `role` IS THE FIRST QUESTION, AND IT IS NOT A KIND. The classifier is
+ * asked "is this one of our documents, or is it evidence?" before "which kind
+ * is it?" — because evidence (a hunting photograph, a landowner's permission
+ * letter) has no document kind at all: it is sorted into a CONTAINER by the
+ * evidence classifier, with the member's own description. A single answer
+ * space could not carry both, and coercing evidence into a kind is how the
+ * member is asked to upload papers they already gave us.
+ *
+ * The `kind` branch is the shape classify() has always returned; the
+ * `evidence` branch deliberately carries no container — that is a second
+ * call, made only for evidence, so an ordinary document still costs one call.
+ */
+export type VaultClassifyAnswer =
+  | {
+      role: 'document';
+      kind: CredentialKind;
+      confident: boolean;
+      /**
+       * Other roles this same document satisfies. Usually empty.
+       *
+       * ⚠️ ABSENT ON THE EVIDENCE BRANCH BELOW — evidence covers no document
+       * role, and a caller that reads it unconditionally must therefore treat
+       * it as possibly undefined.
+       */
+      alsoCovers: CredentialKind[];
+      /** For the ledger: what decided it, and on what. */
+      via?: 'markers' | 'model';
+      markers?: string[];
+      strength?: string;
+    }
+  | {
+      role: 'evidence';
+      confident: boolean;
+    };
+
 /** What each kind of document plausibly carries. Nothing else is accepted. */
 // Exported so library-readability.spec.ts can assert this registry against the
 // motivation one. The two name the same values differently and the gap between
@@ -483,6 +521,24 @@ export const WANTED: Record<CredentialKind, string[]> = {
   SAFE_PHOTO_BOLTS: [],
   SAFE_INSTALLATION: [],
   SHOOTING_ACTIVITY_LOG: [],
+  // ⚠️ EMPTY FOR THE SAME REASON AS THE SAFE PHOTOGRAPHS — but read this
+  // twice, because evidence is the case that looks like it should be the
+  // exception and is not. There is often text on an evidence item (a
+  // permission letter is nothing BUT text) and yet there is no fixed field to
+  // read off it: the question is "which container is this", and that is
+  // answered by the EVIDENCE CLASSIFIER with the member's own description,
+  // not by a field extractor. Asking for fields here would spend a vision
+  // call to come back with nothing, and then flag the row amber for having
+  // found nothing.
+  //
+  // ⚠️ isPhotograph('EVIDENCE') IS TRUE AND THAT IS ONLY ABOUT EXTRACTION. It
+  // puts this kind in NO_VISION_KINDS so `read()` is skipped — it does NOT
+  // mean evidence is never looked at. The classification call is a separate
+  // request with a separate purpose ('motivation.evidence.classify'); a future
+  // reader who routes evidence through the no-vision path on the strength of
+  // isPhotograph alone will silently skip the classifier and leave every item
+  // container-less.
+  EVIDENCE: [],
 };
 
 @Injectable()
@@ -527,16 +583,7 @@ export class LicenceCentreExtractService {
   async classify(args: {
     bytes: Buffer;
     mimeType: string;
-  }): Promise<{
-    kind: CredentialKind;
-    confident: boolean;
-    /** Other roles this same document satisfies. Usually empty. */
-    alsoCovers: CredentialKind[];
-    /** For the ledger: what decided it, and on what. */
-    via?: 'markers' | 'model';
-    markers?: string[];
-    strength?: string;
-  } | null> {
+  }): Promise<VaultClassifyAnswer | null> {
     if (!this.llm.isConfigured()) return null;
 
     let text = '';
@@ -563,6 +610,10 @@ export class LicenceCentreExtractService {
         // below — but a schema cannot enforce that "kind" is the RIGHT
         // answer for this photograph, which is why `known.includes(raw)` and
         // RETIRED_KINDS normalisation still run exactly as they did.
+        //
+        // ⚠️ DEEPSEEK IGNORES THE SCHEMA (it only ever sets
+        // `response_format: {type:'json_object'}`), so `role` is validated in
+        // code below rather than trusted from the envelope.
         json: { schema: CLASSIFY_SCHEMA },
         purpose: 'vault.classify',
       });
@@ -574,15 +625,37 @@ export class LicenceCentreExtractService {
 
     try {
       const parsed = JSON.parse(text) as {
+        role?: string;
         kind?: string;
         confidence?: string;
         also_covers?: unknown;
       };
+      const confident = (parsed.confidence ?? '') === 'high';
+
+      // ⚠️ EVIDENCE IS A ROLE, NOT A KIND, AND IT IS CHECKED FIRST. A kind
+      // lookup on the evidence branch would find whatever the model happened
+      // to volunteer beside it; the role is the answer to the question that
+      // was actually asked. An UNKNOWN role reads as null, NEVER as a
+      // document — a wrong filing is worse than a question.
+      if (parsed.role === 'evidence') {
+        return { role: 'evidence', confident };
+      }
+      if (parsed.role !== undefined && parsed.role !== 'document') {
+        return null;
+      }
+
       const raw = (parsed.kind ?? '').trim() as CredentialKind;
       const known = Object.values(CredentialKind) as string[];
       if (!known.includes(raw)) return null;
       const kind = currentKind(raw);
+      // ⚠️ A KIND OF EVIDENCE IS EVIDENCE, WHATEVER `role` SAID. The enum
+      // value exists, and a model that answers kind=EVIDENCE but omits the
+      // role has still named an evidence item.
+      if (kind === CredentialKind.EVIDENCE) {
+        return { role: 'evidence', confident };
+      }
       return {
+        role: 'document',
         kind,
         // ⚠️ THE SAFE PHOTOGRAPHS USED TO BE PINNED TO LOW CONFIDENCE HERE,
         // unconditionally, because the four kinds were told apart by how far
@@ -976,6 +1049,14 @@ export function userPrompt(
       'a photograph showing how a gun safe is anchored to a wall or floor',
     SHOOTING_ACTIVITY_LOG:
       'a log of hunts or competitive shoots, listing dates, venues and disciplines',
+    // ⚠️ NEVER REACHED, AND STILL SAID PROPERLY. create() spends no vision
+    // call on evidence (NO_VISION_KINDS — see WANTED.EVIDENCE), so no model
+    // ever reads this line. It is here so the map stays exhaustive and the
+    // compiler keeps pointing at this file when a kind is added. The
+    // description is unhelpfully broad on purpose: evidence is classified by
+    // the EVIDENCE classifier, and a prompt here that pretended to sort it
+    // would be a second, worse answer to the same question.
+    EVIDENCE: 'an evidence item attached to a motivation',
   };
   const keys = [...wantedFor(kind, alsoCovers), 'issued_on', 'expires_on'];
   return [
@@ -1152,10 +1233,17 @@ function blockFor(bytes: Buffer, mimeType: string): LlmPart {
  * photograph is a semantic mistake no schema can catch, which is why
  * classify()'s own `known.includes(raw)` check and the RETIRED_KINDS
  * normalisation stay exactly as they were.
+ *
+ * ⚠️ `role` IS REQUIRED AND `kind` IS NOT, because an evidence item has no
+ * kind. A schema that still required `kind` would force the model to invent
+ * one for a hunting photograph. ⚠️ AND DEEPSEEK IGNORES THE SCHEMA ENTIRELY
+ * (it only ever sets `json_object`), so the role is re-validated in code —
+ * an unrecognised role reads as null, never as a document.
  */
 const CLASSIFY_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
+    role: { type: 'string', enum: ['document', 'evidence'] },
     kind: { type: 'string', enum: Object.values(CredentialKind) },
     also_covers: {
       type: 'array',
@@ -1163,16 +1251,35 @@ const CLASSIFY_SCHEMA: Record<string, unknown> = {
     },
     confidence: { type: 'string', enum: ['high', 'low'] },
   },
-  required: ['kind'],
+  required: ['role'],
 };
 
 const CLASSIFY_SYSTEM = `
-You sort a photographed or scanned South African document. You are sorting, not
-reading: you do not need to transcribe anything.
+You sort one file a member has uploaded. You are sorting, not reading: you do
+not need to transcribe anything.
 
-Answer with the category you can actually see evidence for. "OTHER" is a real
-answer and a useful one - a document filed as "something else" is visibly
-unsorted, and the member is asked to confirm it either way.
+FIRST, IS THIS ONE OF OUR DOCUMENTS OR IS IT EVIDENCE?
+
+"document" is a piece of personal paperwork we file by type: an identity
+document, a licence, a competency certificate, an association certificate or
+endorsement, a proficiency, proof of address, an employment letter, a safe
+photograph, a shooting-activity log.
+
+"evidence" is anything else a member sends to SUPPORT a motivation: a
+photograph of hunting, of a range, of reloading or cleaning a firearm, a
+collection; or a supporting paper that is not one of our document types - a
+landowner's permission to hunt, a score sheet, a farm letter, an invoice, an
+affidavit. Evidence is sorted into a container separately, so do NOT name a
+kind for it.
+
+Answer:
+{"role":"evidence","confidence":"high"|"low"}
+for anything that is not one of the document categories below.
+
+If it IS one of ours, answer with the category you can actually see evidence
+for. "OTHER" is a real answer and a useful one - a document filed as
+"something else" is visibly unsorted, and the member is asked to confirm it
+either way.
 
 SOME DOCUMENTS DO MORE THAN ONE JOB, and this is the common case with
 association paperwork rather than an edge case. A membership certificate that
@@ -1189,7 +1296,7 @@ number for DEDICATED_STATUS. Never guess a role from the letterhead alone.
 Leave also_covers empty for the ordinary single-purpose document.
 
 Return STRICT JSON and nothing else:
-{"kind":"<one category>","also_covers":["<category>"],"confidence":"high"|"low"}
+{"role":"document","kind":"<one category>","also_covers":["<category>"],"confidence":"high"|"low"}
 `.trim();
 
 // UNSURE_BY_DEFAULT lived here: a set of kinds classify() forced to low

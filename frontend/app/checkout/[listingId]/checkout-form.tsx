@@ -632,7 +632,6 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   const PAYMENT_MODE =
     process.env.NEXT_PUBLIC_PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
   const MANUAL_RATE = 0.015;
-  const SHIPPING_HANDLING_CENTS = 1500;
   function previewBreakdown(): {
     listing: number;
     shipping: number;

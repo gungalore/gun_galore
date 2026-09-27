@@ -25,6 +25,7 @@ import { MotivationPdfService } from './motivation-pdf.service';
 import { MotivationRetentionService } from './motivation-retention.service';
 import { MotivationExtractService } from './motivation-extract.service';
 import { DocumentReadCacheService } from './document-read-cache.service';
+import { DocumentIdentifyService } from '../common/document-identify.service';
 import { DocumentPageRasterService } from './document-page-raster.service';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
 import { CipSheetService } from './cip-sheet.service';
@@ -106,6 +107,13 @@ import { FirearmUsesService } from './firearm-uses.service';
     MotivationRetentionService,
     MotivationExtractService,
     DocumentReadCacheService,
+    // ⚠️ HERE FOR THE SAME REASON AS MotivationExtractService ABOVE. The
+    // identify store is read by BOTH doors — the vault's create() and the
+    // motivations addUpload() — and the Nest edge runs LicenceCentreModule ->
+    // MotivationsModule, one way. Provided and exported here, the vault side
+    // gets it through the import it already has rather than the other way
+    // round, which would close the cycle a spec asserts against.
+    DocumentIdentifyService,
     DocumentPageRasterService,
     GoogleVisionOcrService,
     CipSheetService,
@@ -136,6 +144,21 @@ import { FirearmUsesService } from './firearm-uses.service';
     MotivationReasonService,
     MotivationQuotaService,
     MotivationRetentionService,
+    /**
+     * ⚠️ THE ONE SUB-SERVICE THAT LEAVES THE MODULE, AND IT IS THE ONLY WAY
+     * THE CENTRE CAN CLASSIFY EVIDENCE. The evidence upload lives in
+     * LicenceCentreModule because a master copy is a vault Credential, and
+     * the Nest edge runs LicenceCentreModule -> MotivationsModule — one way,
+     * enforced by two module specs. It cannot reach the other four by design
+     * ("every caller outside this module still goes through the facade") and
+     * it must not, but classifyEvidence is a model call, not a motivation
+     * operation, so routing it through MotivationsService would put it on the
+     * facade's public API for no reason.
+     */
+    MotivationExtractService,
+    // Exported so the vault's own create() can read its identify verdict back
+    // through the one-way edge this module already shares with the Centre.
+    DocumentIdentifyService,
   ],
 })
 export class MotivationsModule {}

@@ -473,9 +473,9 @@ export class UsersService {
       // erasure request entirely.
       try {
         const lc = await this.licenceCentreRetention.purgeForUser(target.id);
-        if (lc.credentials > 0) {
+        if (lc.credentials > 0 || lc.trackers > 0) {
           this.logger.log(
-            `Erasure for user ${userId}: removed ${lc.credentials} Licence Centre document(s), ${lc.filesRemoved} file(s)` +
+            `Erasure for user ${userId}: removed ${lc.credentials} Licence Centre document(s), ${lc.filesRemoved} file(s), ${lc.trackers} SAPS tracker(s)` +
               (lc.filesFailed > 0
                 ? `; ${lc.filesFailed} file(s) FAILED to delete and need removing by hand`
                 : ''),

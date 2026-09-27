@@ -29,8 +29,8 @@ export interface OrderLineBreakdown {
   /** Line subtotal = unitPrice × quantity (FeeCalculator's listingPrice). */
   listingPrice: number;
   shippingCost: number;
-  /** P6.4 — the R15-per-waybill GG handling margin on this line (0 for
-   *  firearm / collection / consolidated-sibling lines). */
+  /** P6.4 — the GG delivery handling margin on this line, 10% of the
+   *  carrier rate (0 for firearm / collection / consolidated-sibling lines). */
   shippingHandlingCents: number;
   processingFee: number;
   /** What the buyer pays for this line (incl. shipping + handling + any passed fee). */

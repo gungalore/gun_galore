@@ -704,6 +704,9 @@ model User {
   motivations Motivation[] @relation("UserMotivations")
   credentials Credential[] @relation("UserCredentials")
 
+  // SAPS Application Tracker — the applications this member is watching.
+  trackedApplications TrackedApplication[] @relation("UserTrackedApplications")
+
   /// Answers that belong to the PERSON rather than to one application.
   /// At most one row. See the model.
   profileAnswers MemberProfileAnswers?
@@ -1621,7 +1624,8 @@ model Transaction {
   // buyerTotal so we can show the breakdown later + remit to the
   // courier without re-computing.
   shippingCost             Int      @default(0)
-  // P6.4 — flat GG handling margin per waybill created (R15). Buyer-paid,
+  // P6.4 — GG handling margin per waybill created (10% of the carrier rate).
+  // Buyer-paid,
   // GG-RETAINED (never remitted to the carrier), stored SEPARATELY from
   // shippingCost so the carrier remittance stays the pure rate. Zero for
   // firearm (DEALER_TRANSFER / PRIVATE_ARRANGE), collection, and consolidated
@@ -4047,7 +4051,8 @@ model Order {
   // Money snapshot (ZAR cents) = sums across child transactions.
   itemsSubtotal    Int
   shippingSubtotal Int
-  // P6.4 — sum of child shippingHandlingCents (the R15-per-waybill GG margin).
+  // P6.4 — sum of child shippingHandlingCents (the per-waybill GG handling
+  // margin, 10% of each carrier rate).
   // Kept as its own column so the invariant
   //   itemsSubtotal + shippingSubtotal + handlingSubtotal + processingFee == buyerTotal
   // continues to hold once a handling margin is charged.
@@ -4575,6 +4580,20 @@ enum MotivationUploadKind {
   INCIDENT_REPORT
   PREVIOUS_MOTIVATION
   OTHER
+  /// AN EVIDENCE ITEM — a hunting photograph, a reloading bench, a score
+  /// sheet, a farmer's permission letter.
+  ///
+  /// ⚠️ ONE KIND, MANY CONTAINERS. The container lives in `evidenceType` as a
+  /// registry id (evidence-taxonomy.ts), NOT as an enum value here: the list is
+  /// expected to grow and be revised, and Postgres cannot drop an enum value.
+  /// `placement` on the container decides the pack — a printed document takes
+  /// its own annexure letter and page, an activity photograph prints in the
+  /// body on the "My Activities / Evidence" page.
+  ///
+  /// ⚠️ NEVER A DOCUMENT KIND. It is never offered by the document picker and
+  /// never returned by the document classifier — evidence is filed by the
+  /// evidence classifier, which reads the member's own description.
+  EVIDENCE
 }
 
 /// BACKGROUND WE LOOKED UP ONCE, KEPT SO THE NEXT APPLICANT COSTS NOTHING.
@@ -4779,6 +4798,80 @@ model DocumentPageImage {
   @@unique([fileSha256, page, rendererVersion])
   @@index([expiresAt])
   @@index([fileSha256])
+}
+
+/// THE IDENTIFY PASS'S MEMORY, BETWEEN THE PICKER AND THE POLISH.
+///
+/// ⚠️ THE SERVER SORTS THE BATCH AND REMEMBERS ITS OWN VERDICT; THE CLIENT
+/// ONLY CARRIES THE ID BACK. The member picks files, the server mints an id
+/// per file and sends them all to a model, and the model's answer — document
+/// or evidence, which kind, which container, and the OCR text it read — is
+/// held HERE, keyed by the id the server issued. The client polishes and
+/// uploads, and the store handler writes the row from this record rather than
+/// from anything the request asserts. A verdict the client could type is a
+/// verdict the client could forge.
+///
+/// ⚠️ A TABLE, NOT AN IN-MEMORY MAP. The identify pass and the store pass may
+/// land on different PM2 workers, and a restart between them must not lose a
+/// batch the member is mid-way through polishing.
+///
+/// ⚠️ SHORT-LIVED, BECAUSE `ocrText` IS POPIA DATA. It is the full text of a
+/// licence or an identity document. The sweep deletes expired rows, clearing
+/// `ocrText` first, mirroring the evidence retention rule — a member who
+/// identifies ten files and uploads none must leave nothing behind.
+///
+/// ⚠️ `sha256` IS OF THE UNPOLISHED BYTES. Identify reads what the member
+/// picked; the polished file stored later has a different hash and will not
+/// match — and that is correct, because they are different images. The
+/// marriage is by `id`, never by hash.
+model DocumentIdentify {
+  id String @id
+
+  /// The member the id was issued to. The store handler refuses an id whose
+  /// owner is not the caller.
+  ownerId String
+
+  /// sha256 of the PLAINTEXT bytes that were identified — the cache key back
+  /// into DocumentReadCache so a re-upload of the same file costs no model call.
+  sha256 String @db.VarChar(64)
+
+  /// 'document' | 'evidence'.
+  role String @db.VarChar(16)
+
+  /// The kind the classifier read. Null for evidence: an evidence item has no
+  /// document kind, only a container.
+  kind String?
+
+  /// ⚠️ THE OTHER ROLES THIS DOCUMENT FILLS, READ OFF THE SAME ANSWER. The
+  /// classifier has always answered `also_covers` — an association membership
+  /// certificate IS the letter of good standing and the dedicated-status proof
+  /// as well, under one date — and the vault writes it to `coversKinds`. It
+  /// travels in the record because the store handler takes the verdict from
+  /// HERE: leaving it out would silently drop the extra roles the moment the
+  /// batch path replaced the direct classify call.
+  alsoCovers String[]
+
+  /// An evidence container id from evidence-taxonomy.ts. Null when the
+  /// classifier was unsure — a wrong container is worse than none.
+  container String?
+
+  /// Whether the classifier was sure. Drives the "describe it" prompt.
+  confident Boolean @default(false)
+
+  /// ⚠️ POPIA DATA — THE FULL TEXT READ OFF THE PAGE, ENCRYPTED. It holds a
+  /// name, an identity number and every serial on the document. Purged with
+  /// the row and never logged.
+  ocrTextEncrypted String? @db.Text
+
+  /// How many characters were read — safe in the clear, and the difference
+  /// between "unreadable" and "not read yet" without decrypting anything.
+  ocrChars Int?
+
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@index([ownerId])
 }
 
 /// ANSWERS THAT BELONG TO THE PERSON, NOT TO ONE APPLICATION.
@@ -5372,6 +5465,33 @@ model MotivationUpload {
   /// requirement met by `kind` OR by anything in here.
   coversKinds MotivationUploadKind[] @default([])
 
+  /// WHICH EVIDENCE CONTAINER THIS IS — a registry id from
+  /// evidence-taxonomy.ts, only ever set when `kind` is EVIDENCE.
+  ///
+  /// ⚠️ FREE TEXT, NOT AN ENUM, AND NULL IS MEANINGFUL. The registry is
+  /// expected to be revised as members bring things we did not anticipate, and
+  /// Postgres cannot drop an enum value. A row whose id no longer resolves
+  /// reads as "unknown container" — generic evidence — never as an error.
+  ///
+  /// ⚠️ AND NULL IS ALSO THE HONEST ANSWER WHEN THE MODEL WAS NOT SURE. A
+  /// wrong container is worse than none: `placement` moves the page
+  /// (annexure vs body) and `satisfies` ticks a DFO row. Low confidence stores
+  /// no container and asks the member for a better description.
+  evidenceType String?
+
+  /// 'high' | 'low' — how sure the classifier was. NULL for a document row,
+  /// and for an evidence row written before this was recorded.
+  evidenceConfidence String?
+
+  /// THE MEMBER'S OWN WORDS ABOUT THE PHOTOGRAPH, ENCRYPTED.
+  ///
+  /// ⚠️ POPIA DATA, AND THE REASON THIS IS ENCRYPTED. "me and my son on a hunt
+  /// in Limpopo" names a person, a relationship and a place; a description of
+  /// a family or home photograph is more identifying than most documents in
+  /// this table. Encrypted at rest, purged with the bytes, never logged, and
+  /// delimited in the classifier prompt as untrusted data.
+  evidenceDescriptionEncrypted String?
+
   // Opaque key into SecureFileStorageService — `<ns>/<yyyy>/<mm>/<id>.enc`.
   // NEVER a filesystem path and never a URL. Nullable only so a row can outlive
   // its bytes after a retention purge without breaking the audit trail.
@@ -5463,6 +5583,8 @@ model MotivationUpload {
   // already" question, and the delete-propagation sweep's predicate.
   @@index([sourceCredentialId])
   @@index([motivationId])
+  /// Which evidence container the annexure/body split reads by.
+  @@index([evidenceType])
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -5692,6 +5814,21 @@ enum CredentialKind {
   /// what that firearm is licensed FOR — the one fact the owned rows could
   /// never fill from a document.
   ASSOCIATION_ENDORSEMENT
+
+  /// AN EVIDENCE ITEM — a hunting photograph, a reloading bench, a score
+  /// sheet, a farmer's permission letter.
+  ///
+  /// ⚠️ THE MASTER COPY LIVES HERE, AND THAT IS WHY THE 30 CAP IS SAFE. Vault
+  /// retention is the member's own: "a document lives as long as the account
+  /// does" (licence-centre-retention.service.ts). Evidence copied into a
+  /// motivation is an ordinary MotivationUpload and is purged on that
+  /// motivation's clock, but that purge removes a COPY of a surviving master —
+  /// so an evidence item is never deleted while the member still wants it.
+  ///
+  /// ⚠️ THE CONTAINER LIVES IN evidenceType, NOT IN THE ENUM — see the
+  /// EVIDENCE comment on MotivationUploadKind. One kind here and there, so
+  /// CREDENTIAL_TO_UPLOAD stays an identity map.
+  EVIDENCE
 }
 
 /// WHAT A FIREARM OF THIS CLASS IS PLAUSIBLY USED FOR, IN SOUTH AFRICA.
@@ -6022,7 +6159,19 @@ model Credential {
   /// Field KEYS, in the clear, same as `extractedFields` — the values they
   /// name stay in `detailsEncrypted`. Empty means nothing was doubted, which
   /// is not the same as nothing having been read.
-  readUncertain String[]
+  ///
+  /// ⚠️ THE DEFAULT IS LOAD-BEARING AND ITS LOSS WAS A TWO-WEEK OUTAGE.
+  /// `20260921112512_add_community_feed` ran `ALTER COLUMN … DROP DEFAULT` on
+  /// this column and `readNotes` (Prisma's diff against a database that had
+  /// been hand-patched; the generated file's own warning header names only the
+  /// two FTS columns, so nobody saw it). The columns stayed NOT NULL, and no
+  /// create path supplies them at insert — every one of the three
+  /// `credential.create()` sites fails through the later `update` — so from
+  /// 2026-09-21 uploading a document, adopting a KYC identity or adopting a
+  /// motivation's vault all returned a bare 500. The newest Credential row in
+  /// this database was 2026-09-14, the day before. See
+  /// `20260926120000_restore_credential_read_defaults`, which puts them back.
+  readUncertain String[] @default([])
   /// What the reader REPAIRED on the way, in a sentence a person can read.
   ///
   /// A SAPS 524 prints the identity number in boxes and the left border of
@@ -6031,7 +6180,12 @@ model Credential {
   /// arithmetic rather than a guess, but it is still something WE did to the
   /// member's document, and a member looking at their own ID number has the
   /// right to be told we changed it.
-  readNotes     String[]
+  ///
+  /// ⚠️ SEE `readUncertain` ABOVE — this column lost its default in the same
+  /// `20260921112512_add_community_feed` statement, and its loss is what makes
+  /// every credential insert fail. Both are restored together by
+  /// `20260926120000_restore_credential_read_defaults`.
+  readNotes     String[] @default([])
 
   /// One nullable stamp per reminder stage, CAS-claimed before sending.
   /// ⚠️ NOT a String[] of stage names: Postgres cannot express "array does
@@ -6067,6 +6221,25 @@ model Credential {
   /// foreign key would either block that or null this. It is a reference
   /// number printed on a PDF, not a pointer.
   addedForRef String? @db.VarChar(16)
+
+  /// ── EVIDENCE ONLY ─────────────────────────────────────────────────
+  ///
+  /// Set when `kind` is EVIDENCE. Same three fields, same meanings, as their
+  /// MotivationUpload counterparts — a master here and a copy there must read
+  /// identically in the pack, or an item changes page when it is picked into a
+  /// motivation.
+  ///
+  /// ⚠️ A REGISTRY ID, NOT AN ENUM VALUE, AND NULL IS MEANINGFUL. See
+  /// evidence-taxonomy.ts. An id that no longer resolves reads as "unknown
+  /// container" — generic evidence, printed in the body — never as an error.
+  evidenceType String?
+  /// 'high' | 'low'. NULL means nobody has classified this yet, which is a
+  /// different state from 'low' (we tried and were not sure).
+  evidenceConfidence String?
+  /// The member's own words about the item, ENCRYPTED. POPIA data — a
+  /// photograph of a family or a home carries more personal detail than most
+  /// documents in this table. Purged with the bytes.
+  evidenceDescriptionEncrypted String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -7094,4 +7267,118 @@ model OzowPayoutAttempt {
 
   @@index([transactionId, createdAt])
   @@index([terminalAt, lastStatusCheckedAt, createdAt])
+}
+
+// ────────────────────────────────────────────────────────────────────
+// SAPS Application Tracker — the member's own application, watched.
+//
+// A member saves a SAPS reference and we poll the public enquiry on their
+// behalf, keep the last thing SAPS said, and raise an event when it changes.
+//
+// ⚠️ THE REFERENCE IS NOT SECRET BUT IT IS THEIRS. It is the key to the
+// member's own application on a public government page, so it is stored
+// ENCRYPTED (AES-256-GCM, ID_HASH_SECRET) and, separately, as an HMAC
+// (`referenceHash`) — the hash is what we match and dedupe on, because a
+// plain-text index over the reference would put it in every query log and
+// every backup in a form that reads as the number itself. The two are not
+// redundant: the hash cannot be reversed and the ciphertext cannot be indexed.
+//
+// ⚠️ NOTHING WE STORE IS AUTHORITATIVE. Every status column here is a COPY
+// of what the enquiry page said at `lastCheckedAt`. The member's application
+// lives at SAPS; if this table and SAPS disagree, SAPS is right. No copy
+// anywhere may present these figures as an outcome promise.
+//
+// ⚠️ `lastOutcome` AND `status` ARE DIFFERENT THINGS AND MUST STAY THAT WAY.
+// `lastOutcome` is what the last POLL did (row / no_records / error);
+// `status` is the last real thing SAPS said. A poll that errors or returns
+// "no records" must NOT blank `status` — the page drops a record for a minute
+// at a time under load, and a member who saw APPROVED yesterday must not be
+// shown "unknown" because a request timed out.
+// ────────────────────────────────────────────────────────────────────
+
+enum TrackedApplicationKind {
+  COMPETENCY
+  FIREARM_LICENCE
+  RENEWAL
+}
+
+model TrackedApplication {
+  id     String                @id @default(cuid())
+  userId String
+  user   User                  @relation("UserTrackedApplications", fields: [userId], references: [id], onDelete: Cascade)
+  kind   TrackedApplicationKind
+
+  /// AES-256-GCM ciphertext of the SAPS reference. Decrypted only to poll.
+  referenceEncrypted String
+  /// HMAC-SHA256(ID_HASH_SECRET, reference) — what we match and dedupe on.
+  referenceHash      String
+  /// AES-256-GCM ciphertext of the serial, when the member gave one.
+  serialEncrypted    String?
+
+  /// The member's own name for this application ("My first rifle").
+  label       String?
+  submittedOn DateTime?
+
+  // ── The last thing SAPS said. All null until the first successful read. ──
+  applicationType   String?
+  applicationNumber String?
+  calibre           String?
+  make              String?
+  /// The serial as SAPS PRINTS it, which is not necessarily the one typed.
+  serialSeen        String?
+  status            String?
+  statusDate        DateTime?
+  /// The "records were updated on" date SAPS printed — how stale the answer
+  /// itself is. ⚠️ NOT the same as `lastCheckedAt`: one is when SAPS last
+  /// refreshed its own records, the other is when WE last asked. The card
+  /// prints this one, so a member can tell "SAPS says APPROVED" from "SAPS
+  /// said APPROVED three weeks ago".
+  sapsUpdatedOn     DateTime?
+
+  // ── The last POLL, which is not the same thing as the status. ──
+  lastCheckedAt DateTime?
+  /// 'unknown' | 'row' | 'no_records' | 'error'.
+  lastOutcome   String    @default("unknown")
+  lastError     String?
+
+  /// Soft delete. A tracker is deactivated, never removed, so the event
+  /// history the member built up survives them tidying the list.
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events TrackedApplicationEvent[]
+
+  @@unique([userId, referenceHash])
+  @@index([active, lastCheckedAt])
+  @@index([userId])
+}
+
+/// One observed change. Written ONLY when something actually changed, so a
+/// tracker polled for a year has as many rows as it had transitions.
+model TrackedApplicationEvent {
+  id        String             @id @default(cuid())
+  trackedId String
+  tracked   TrackedApplication @relation(fields: [trackedId], references: [id], onDelete: Cascade)
+
+  /// 'SAPS' for a poll, 'MEMBER' for a milestone they recorded themselves.
+  source     String
+  observedAt DateTime @default(now())
+
+  // A copy of the fields at the moment of the change, not a pointer to the
+  // current row — the whole point is to show what it USED to say.
+  status            String?
+  statusDate        DateTime?
+  applicationType   String?
+  applicationNumber String?
+  calibre           String?
+  make              String?
+  serial            String?
+  statusDescription String?
+  nextStep          String?
+
+  /// Digest of the row we read. Lets a re-poll prove it saw the same thing.
+  rowSha256 String?
+
+  @@index([trackedId, observedAt])
 }

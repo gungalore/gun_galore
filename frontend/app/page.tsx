@@ -1,14 +1,12 @@
 ﻿import Link from 'next/link';
 import { BRAND_NAME } from '@/lib/brand';
 import { viewerFetch } from '@/lib/api-viewer';
-import { serverAuth } from '@/lib/auth-server';
 import { BrowseResponse, Category } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { FilterBar } from '@/components/filter-bar';
 import { LiveSearch } from '@/components/live-search';
 import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
-import { ShopModeTiles } from '@/components/shop-mode-tiles';
 import { PageReveal } from '@/components/page-reveal';
 import { HomeInfoPanel } from '@/components/home-info-panel';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
@@ -98,12 +96,11 @@ export default async function HomePage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
-  // The "Shop by mode" row now varies by viewer (Armory renders only for
-  // signed-in members), so this page reads the session cookie and can no
-  // longer be treated as fully static. That's correct here — never cache a
-  // response that varies by viewer; see viewerFetch below for the same rule
-  // applied to the data fetches.
-  const { userId } = await serverAuth();
+  // ⚠️ THIS PAGE NO LONGER READS THE SESSION ITSELF. It used to, for the
+  // "Shop by mode" row's Armory tile — which now lives in the shell
+  // (components/shop-mode-tiles.tsx) and reads the viewer there. The page is
+  // still dynamic regardless, because every fetch below goes through
+  // viewerFetch; never cache a response that varies by viewer.
   // Pick the header copy that matches the current view:
   //   * listingType param → that surface's copy (Marketplace / Auctions / Take a Shot)
   //   * sort param without listingType → ALL_LISTINGS_SURFACE
@@ -164,13 +161,7 @@ export default async function HomePage({
 
   // Multiple independent data fetches for this page — run them in
   // parallel so the slowest doesn't block the others.
-  const [
-    browseRaw,
-    categories,
-    brands,
-    facetData,
-    modeCounts,
-  ] = await Promise.all([
+  const [browseRaw, categories, brands, facetData] = await Promise.all([
     // Sentinel on failure (null) — a backend hiccup must NOT render the
     // genuine-empty "nothing listed yet" copy; the two states get
     // different UI below (retry card vs empty-marketplace nudge).
@@ -192,24 +183,7 @@ export default async function HomePage({
       : Promise.resolve({
           facets: {} as Record<string, Record<string, number>>,
         }),
-    // Counts for the two "Shop by mode" tiles. Two limit=1 calls wanted purely
-    // for their `total`, and only on the bare landing page where the tiles
-    // actually render — every other surface skips them entirely. A failure
-    // resolves null, which the tile reads as "say nothing" rather than "0".
-    showHero
-      ? Promise.all([
-          viewerFetch<BrowseResponse>(
-            '/listings?limit=1&listingType=BUY_NOW',
-          ).catch(() => null),
-          viewerFetch<BrowseResponse>(
-            '/listings?limit=1&listingType=AUCTION',
-          ).catch(() => null),
-        ])
-      : Promise.resolve([null, null] as [null, null]),
   ]);
-
-  const buyNowCount = modeCounts[0]?.total ?? null;
-  const auctionCount = modeCounts[1]?.total ?? null;
 
   // null = the listings API call FAILED (network/backend) — distinct from a
   // legitimately empty result set. Downstream consumers keep the empty shape
@@ -284,15 +258,13 @@ export default async function HomePage({
         <>
               <Hero />
 
-              {/* The storefront's primary fork, and the first thing under the
-                  hero. Until this existed the landing page went hero → "Good to
-                  know" with nothing shopping-shaped in between, which is most
-                  of why it read as a help page with products underneath. */}
-              <ShopModeTiles
-                buyNowCount={buyNowCount}
-                auctionCount={auctionCount}
-                signedIn={Boolean(userId)}
-              />
+              {/* ⚠️ THE SHOP-MODE TILES USED TO RENDER HERE, AND THEY NO
+                  LONGER DO. They are the site-wide fork now — mounted once in
+                  components/shell/app-shell.tsx, directly under the top nav,
+                  so they sit above <Hero /> rather than below it and appear on
+                  every shop surface instead of this page alone. Rendering them
+                  here as well would be the second copy the move was meant to
+                  delete. Their counts travel with them; see ShopModeBar. */}
 
               {/* ─── Bare landing page: no filter, no pagination ───
                   When the user lands on "/" with no filters, the page shows the

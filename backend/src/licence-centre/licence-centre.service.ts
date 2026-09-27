@@ -7,6 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
 import { CredentialKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { VaultLogService, readingShape } from '../common/vault-log.service';
@@ -14,8 +15,19 @@ import { WANTED as WANTED_FIELDS } from './licence-centre-extract.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { decryptJson, encryptJson } from '../common/blob-crypto';
+import {
+  decryptJson,
+  encryptJson,
+  encryptText,
+  tryDecryptText,
+} from '../common/blob-crypto';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
+import {
+  DocumentIdentifyService,
+  MAX_IDENTIFY_DESCRIPTION,
+  MAX_IDENTIFY_FILES,
+  type IdentifyRecord,
+} from '../common/document-identify.service';
 import { dateIsSettled } from './licence-dates';
 import {
   mayArmDerivedExpiry,
@@ -55,6 +67,7 @@ import {
   duplicateNote,
   findDuplicate,
   findOtherSide,
+  isDuplicateNote,
   isPairNote,
   isSideMissingNote,
   otherSideNote,
@@ -67,6 +80,12 @@ import {
 } from './credential-completeness';
 import { assessAddressProof } from './address-proof';
 import { MotivationsService } from '../motivations/motivations.service';
+// ⚠️ FROM MotivationsModule, WHICH EXPORTS IT FOR THIS ONE CALLER. Evidence's
+// master copy is a vault Credential, so the upload lives in this module — but
+// the classifier is a model call over an image, which belongs with the other
+// motivation model calls. The Nest edge runs LicenceCentreModule ->
+// MotivationsModule and must stay one-way; the export is the only way across.
+import { MotivationExtractService } from '../motivations/motivation-extract.service';
 import {
   competencyRenewalSeed,
   REFUSAL_COPY,
@@ -74,6 +93,12 @@ import {
   renewalRefusal,
 } from './licence-renewal';
 import { buildAnnexures } from '../motivations/motivation-checklist';
+import {
+  EVIDENCE_CONTAINERS,
+  EVIDENCE_VAULT_MAX,
+  containerById,
+  evidenceRow,
+} from '../motivations/evidence-taxonomy';
 import {
   expiryState,
   parseIsoDate,
@@ -96,6 +121,31 @@ import {
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_TITLE = 120;
+/**
+ * How long the member's own description of an evidence item may be.
+ *
+ * Long enough for a sentence about a photograph — "me and my son on a hunt in
+ * Limpopo" — and short enough that it stays a description rather than becoming
+ * an essay the classifier then has to weigh. POPIA data: encrypted at rest and
+ * never logged.
+ */
+const MAX_DESCRIPTION = MAX_IDENTIFY_DESCRIPTION;
+
+// ⚠️ MAX_IDENTIFY_FILES NOW LIVES WITH THE STORE, not here — the motivation
+// wizard runs the same batch from the same picker, and a ceiling with two
+// copies is a ceiling that drifts. Re-exported so the controller that already
+// imports it from this module keeps working.
+export { MAX_IDENTIFY_FILES };
+
+/** One file's verdict, as the picker's status card needs it. */
+export interface IdentifyVerdict {
+  id: string;
+  role: 'document' | 'evidence';
+  kind: string | null;
+  container: string | null;
+  confident: boolean;
+  ocrChars: number | null;
+}
 
 /** One application a stored document already appears in. */
 export interface CredentialUsage {
@@ -118,11 +168,23 @@ export class LicenceCentreService {
     private readonly notifications: NotificationsService,
     private readonly quota: LicenceCentreQuotaService,
     private readonly extract: LicenceCentreExtractService,
+    // Exported by MotivationsModule for exactly one caller — the evidence
+    // classifier. Used only by createEvidence/redescribeEvidence.
+    private readonly motivationExtract: MotivationExtractService,
     // The renewal one-tap. One-way dependency: nothing in motivations/ reaches
     // back into the Centre.
     private readonly motivations: MotivationsService,
     // The decision ledger. Last, and fire-and-forget: see vault-log.service.ts.
     private readonly vaultLog: VaultLogService,
+    // The identify pass's memory. Supplied by the module, not @Global — see
+    // document-identify.service.ts for why the verdict lives there and not in
+    // the request body.
+    //
+    // ⚠️ NAMED `identifyStore`, NOT `identify` — the service has an
+    // identify() method of its own (the batch endpoint's). Two things called
+    // identify in one class is a duplicate identifier, and renaming the field
+    // rather than the public method is the smaller change.
+    private readonly identifyStore: DocumentIdentifyService,
   ) {}
 
   /** @CurrentUser() gives the CLERK id; everything here keys on our own. */
@@ -608,6 +670,13 @@ export class LicenceCentreService {
         firearmSelfLoading: true,
         dateSource: true,
         dateSourceNote: true,
+        // ⚠️ THE EVIDENCE TRIO, AND THE DESCRIPTION COMES BACK DECRYPTED.
+        // Without the words on the row, a member correcting a bad sort has to
+        // retype what they already told us — and the retry loop exists to be
+        // an edit, not a fresh start. Only ever set on an EVIDENCE row.
+        evidenceType: true,
+        evidenceConfidence: true,
+        evidenceDescriptionEncrypted: true,
       },
     });
 
@@ -921,6 +990,29 @@ export class LicenceCentreService {
         covers: facets.covers,
         follows: facets.follows,
         unitStandards: facets.unitStandards,
+        /**
+         * ⚠️ WHAT WE MADE OF AN EVIDENCE ITEM, AND WHETHER IT STILL NEEDS
+         * WORDS. Null on every ordinary document, so the frontend keys on
+         * `row.evidence` alone rather than on `kind === 'EVIDENCE'` in one
+         * place and the kind in another.
+         *
+         * `container === null` is the flag: we could not decide, the member
+         * is asked to describe it better, and redescribeEvidence() takes the
+         * answer. See the note on evidenceRow.
+         */
+        evidence:
+          r.kind === 'EVIDENCE'
+            ? {
+                ...evidenceRow(
+                  r.evidenceType,
+                  r.evidenceConfidence === 'high',
+                ),
+                // Decrypted for the card ONLY, so a correction is an edit
+                // rather than a retype. Fail-soft: a blob that will not
+                // open costs the prefill, never the row.
+                description: tryDecryptText(r.evidenceDescriptionEncrypted),
+              }
+            : null,
       };
     });
   }
@@ -935,6 +1027,22 @@ export class LicenceCentreService {
     kind: CredentialKind | null,
     title: string,
     file: { buffer: Buffer; mimetype: string },
+    /**
+     * The identify pass's id, when this upload came from the batch path.
+     *
+     * ⚠️ THE VERDICT IS READ FROM THE RECORD, NEVER FROM THE REQUEST. When
+     * this is present (and the member did not choose a kind themselves), the
+     * classification is taken from DocumentIdentify under this id — the
+     * server's own answer, minted for this owner — and the id is consumed so
+     * a replay cannot file a second row. An id that is unknown, expired, or
+     * another member's falls back to classifying the received bytes, so
+     * nothing is ever blocked and nothing is ever filed on a client's word.
+     *
+     * ⚠️ A SEPARATE FIELD FROM `kind`, DELIBERATELY. `kind` is a member's
+     * explicit choice; this is a classifier's answer the client merely carries
+     * back. Two fields, so the two can never be confused for one another.
+     */
+    opts: { identifyId?: string; description?: string } = {},
   ) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(userId);
@@ -985,16 +1093,67 @@ export class LicenceCentreService {
     // certificate routinely IS the letter of good standing and the dedicated
     // status proof as well, under one date — see coversKinds on the model.
     let alsoCovers: CredentialKind[] = [];
+    /**
+     * The evidence container the identify pass decided, when this row is
+     * evidence.
+     *
+     * ⚠️ CARRIED FROM THE RECORD, LIKE THE KIND IS. An evidence item is sorted
+     * into a container by the second classifier against the member's own
+     * words; the container decides how the row prints and which requirement it
+     * answers, so it is part of the verdict and travels with it. Null means
+     * the classifier was unsure — the card asks for a description. See
+     * redescribeEvidence, which takes the better words.
+     */
+    let evidenceContainer: string | null = null;
     if (!kind) {
-      const guess = await this.extract
-        .classify({ bytes: file.buffer, mimeType: file.mimetype })
-        .catch(() => null);
+      /**
+       * ⚠️ THE IDENTIFY PASS ANSWERED FIRST, IF THERE WAS ONE. The batch path
+       * identified these bytes before they were polished; its verdict is
+       * fetched by the id the server issued, consumed so it cannot file twice,
+       * and read as the classifier's own answer. Any miss — unknown, expired,
+       * or another member's id — falls through to classifying the bytes we
+       * were handed, which is exactly what this did before the pass existed.
+       *
+       * ⚠️ THE OCR TEXT IS THE SERVER'S, NOT THE CLIENT'S. `verify` holds the
+       * decryptable page text the identify pass read; the vault row is written
+       * from it below. A client-supplied ocrText is never accepted.
+       */
+      let verdict: IdentifyRecord | null = null;
+      if (opts.identifyId) {
+        verdict = await this.identifyStore
+          .take({ id: opts.identifyId, ownerId: user.id })
+          .catch(() => null);
+      }
       autoFiled = true;
-      if (guess) {
-        resolved = guess.kind;
-        confident = guess.confident;
-        alsoCovers = guess.alsoCovers;
-        classified = { via: guess.via ?? 'model', markers: guess.markers ?? [], strength: guess.strength ?? null };
+      if (verdict) {
+        // ⚠️ AN EVIDENCE VERDICT FILES AS THE EVIDENCE KIND, NOT AS A DOCUMENT
+        // KIND — the classifier's role is the first question it answers (see
+        // VaultClassifyAnswer). It carries no kind and no alsoCovers; the
+        // container was decided separately by the evidence classifier, from
+        // the member's own description, and travels in the record.
+        if (verdict.role === 'evidence') {
+          resolved = CredentialKind.EVIDENCE;
+          evidenceContainer = verdict.container;
+        } else {
+          resolved = currentKind((verdict.kind ?? 'OTHER') as CredentialKind);
+          alsoCovers = verdict.alsoCovers as CredentialKind[];
+          classified = { via: 'model', markers: [], strength: null };
+        }
+        confident = verdict.confident;
+      } else {
+        const guess = await this.extract
+          .classify({ bytes: file.buffer, mimeType: file.mimetype })
+          .catch(() => null);
+        if (guess) {
+          if (guess.role === 'evidence') {
+            resolved = CredentialKind.EVIDENCE;
+          } else {
+            resolved = guess.kind;
+            alsoCovers = guess.alsoCovers;
+            classified = { via: guess.via ?? 'model', markers: guess.markers ?? [], strength: guess.strength ?? null };
+          }
+          confident = guess.confident;
+        }
       }
     }
 
@@ -1016,13 +1175,21 @@ export class LicenceCentreService {
     }
 
     const clean = (title ?? '').trim().slice(0, MAX_TITLE);
-    let created: { id: string };
+    let created: { id: string; title: string };
     try {
       created = await this.prisma.credential.create({
         data: {
           userId: user.id,
           kind: resolved,
-          title: clean || DEFAULT_TITLE[resolved],
+          // ⚠️ AN EVIDENCE ITEM IS TITLED BY ITS CONTAINER, like createEvidence
+          // always did — the container IS the name. Falls back to the generic
+          // evidence title where the classifier was unsure, and the member may
+          // rename it on the card.
+          title:
+            clean ||
+            (resolved === CredentialKind.EVIDENCE
+              ? evidenceTitle(evidenceContainer)
+              : DEFAULT_TITLE[resolved]),
           coversKinds: alsoCovers,
           storageKey: stored.storageKey,
           mimeType: file.mimetype,
@@ -1033,6 +1200,34 @@ export class LicenceCentreService {
           // survived exactly as long as the page did. See the model.
           autoFiled,
           namedConfident: confident,
+          /**
+           * ⚠️ THE EVIDENCE COLUMNS, WRITTEN FROM THE VERDICT WE CONSUMED.
+           * `resolved === EVIDENCE` here only ever comes from the classifier's
+           * role (or from an identify record), never from a member's menu — the
+           * evidence panel that let a member hand-file one is gone. So the
+           * container, its confidence and the member's own words, if any,
+           * travel with the row that the batch created.
+           *
+           * Written as a spread so an ordinary document writes none of them —
+           * Prisma would otherwise store nulls it does not need, and the
+           * `@@index([evidenceType])` scan is over a column that is only ever
+           * set for evidence.
+           */
+          ...(resolved === CredentialKind.EVIDENCE
+            ? {
+                evidenceType: evidenceContainer,
+                evidenceConfidence: evidenceContainer
+                  ? 'high'
+                  : confident
+                    ? 'high'
+                    : 'low',
+                evidenceDescriptionEncrypted: (opts.description ?? '').trim()
+                  ? encryptText(
+                      (opts.description ?? '').trim().slice(0, MAX_DESCRIPTION),
+                    )
+                  : null,
+              }
+            : {}),
           // ⚠️ PRE-TICKED ONLY WHERE WE NEVER LOOKED. A photograph of a safe
           // has no date on it in any sense, and no vision call is spent on
           // one — so starting the box ticked saves a tap that could only ever
@@ -1055,9 +1250,13 @@ export class LicenceCentreService {
            * covers, and writes nothing at all for the kinds it does not.
            */
           ...(settledByNature(resolved) ?? {}),
+          // ⚠️ AN EVIDENCE ROW ARRIVED AUTOMATICALLY, NOT BY HAND. It is kept
+          // distinct from 'scan' even though both are auto-filed — see the
+          // addedVia comment on the model — but a member MENU is the only
+          // 'member' writer for a document now.
           addedVia: kind ? 'member' : 'scan',
         },
-        select: { id: true },
+        select: { id: true, title: true },
       });
     } catch (err) {
       // The bytes must not outlive the attempt: a file with no row pointing at
@@ -1632,7 +1831,32 @@ export class LicenceCentreService {
       id: created.id,
       kind: resolved,
       coversKinds: alsoCovers,
-      title: clean || derived || DEFAULT_TITLE[resolved],
+      // ⚠️ FOR AN EVIDENCE ROW THE TITLE NAMES THE CONTAINER, NOT THE KIND.
+      // DEFAULT_TITLE['EVIDENCE'] is the word "Evidence", which tells the
+      // member nothing about what we made of their photograph — and this
+      // return is what the upload card renders the moment the file lands.
+      title:
+        resolved === CredentialKind.EVIDENCE
+          ? created.title
+          : clean || derived || DEFAULT_TITLE[resolved],
+      /**
+       * ⚠️ THE EVIDENCE VERDICT, AS THE CARD NEEDS IT. Same shape `list()`
+       * returns and `createEvidence()` already answered with, so a card that
+       * was told "evidence, container null" at identify time gets the same
+       * answer here — and does not have to re-read the whole vault to find
+       * out what we filed. Null on every ordinary document, so the frontend
+       * keys on `row.evidence` alone.
+       */
+      evidence:
+        resolved === CredentialKind.EVIDENCE
+          ? {
+              ...evidenceRow(evidenceContainer, confident),
+              // The words the member typed on the card, echoed back so the
+              // correction is an edit rather than a retype. Never a second
+              // source of truth: the row stored its own encrypted copy.
+              description: (opts.description ?? '').trim() || null,
+            }
+          : null,
       // ⚠️ THE TICKS COME BACK, and leaving them out cost a round trip. This
       // method has already written `neverExpires: defaultsToNeverExpires(...)`
       // above, so a safe photograph arrives pre-ticked — and the confirm step
@@ -1684,6 +1908,402 @@ export class LicenceCentreService {
             : [],
         ),
       },
+    };
+  }
+
+  /**
+   * ⚠️ THE IDENTIFY PASS — SORT THE BATCH BEFORE ANYTHING IS POLISHED OR
+   * STORED, AND REMEMBER OUR OWN VERDICT UNDER AN ID WE MINT.
+   *
+   * Operator, 2026-09-26: "user selects what they want to upload. as soon as
+   * they are done uploading the server gives them each a unique ID. Send them
+   * all to deepseek, it basicly sorts them... The once that does not pass that
+   * gets flagged as evidence. It sends all that info back to the server...
+   * Then only does the document polish on them and saves it on the server who
+   * already has the OCR and need to marry it by ID to the physical document."
+   *
+   * So this method does NOT store a single byte of the member's file. It mints
+   * one id per file, answers "is this one of our documents or is it evidence?"
+   * plus which kind or container, reads the page for the OCR text, and writes
+   * the whole verdict into DocumentIdentify keyed by that id. The client
+   * polishes the DOCUMENTS (never the evidence — a hunting photograph is not a
+   * page to be cropped and deshadowed), uploads each file with its id, and
+   * `create()` reads the verdict back from the record.
+   *
+   * ⚠️ THE ID IS OURS, NOT THE CLIENT'S. Minted here with randomUUID; the
+   * client can only name an id it was issued in this session and for its own
+   * owner, so a verdict the client could type is a verdict it cannot forge.
+   *
+   * ⚠️ THE SHA256 IS OF THE UNPOLISHED BYTES. It is the cache key (findBySha)
+   * so a re-identify of the same photograph costs no model call — and it will
+   * NOT match the polished file stored later, which is correct: the marriage
+   * is by id, never by hash.
+   */
+  async identify(
+    userId: string,
+    files: { buffer: Buffer; mimetype: string; description?: string }[],
+  ): Promise<IdentifyVerdict[]> {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(userId);
+
+    if (!files?.length) {
+      throw new BadRequestException('Choose at least one file.');
+    }
+    if (files.length > MAX_IDENTIFY_FILES) {
+      throw new BadRequestException(
+        `Please send up to ${MAX_IDENTIFY_FILES} files at a time.`,
+      );
+    }
+
+    const out: IdentifyVerdict[] = [];
+    for (const file of files) {
+      if (!file?.buffer?.length) {
+        throw new BadRequestException('One of those files appears to be empty.');
+      }
+      if (file.buffer.length > MAX_UPLOAD_BYTES) {
+        throw new BadRequestException('One of those files is larger than 10 MB.');
+      }
+      out.push(await this.identifyOne(user.id, file));
+    }
+    return out;
+  }
+
+  /** One file of an identify batch. See identify(). */
+  private async identifyOne(
+    ownerId: string,
+    file: { buffer: Buffer; mimetype: string; description?: string },
+  ): Promise<IdentifyVerdict> {
+    const id = randomUUID();
+    const hash = createHash('sha256').update(file.buffer).digest('hex');
+
+    // ⚠️ HAVE WE ALREADY IDENTIFIED THESE EXACT BYTES FOR THIS MEMBER? A
+    // browser refresh, a file picked twice, or a whole folder re-drop must not
+    // pay a model call to rediscover the same answer. The cached record does
+    // not carry the id (a fresh one is minted each time) but it does carry the
+    // OCR text, which is the expensive part to re-read.
+    const seen = await this.identifyStore.findBySha({ ownerId, sha256: hash });
+    if (seen) {
+      await this.identifyStore.put({ ...seen, id, ownerId, sha256: hash });
+      return {
+        id,
+        role: seen.role,
+        kind: seen.kind,
+        container: seen.container,
+        confident: seen.confident,
+        ocrChars: seen.ocrText === null ? null : seen.ocrText.length,
+      };
+    }
+
+    // ⚠️ THE PAGE IS READ ONCE, HERE, AND TRAVELS WITH THE ID. The stored row
+    // later takes the server's OCR, never a client's — see create()'s use of
+    // the record. Null for a PDF (Vision reads images) and for a page with
+    // nothing on it; both consumers already treat null as "nothing to add".
+    const ocrText = await this.motivationExtract
+      .ocr(file.buffer, file.mimetype)
+      .catch(() => null);
+
+    const guess = await this.extract
+      .classify({ bytes: file.buffer, mimeType: file.mimetype })
+      .catch(() => null);
+
+    let role: IdentifyRecord['role'] = 'evidence';
+    let kind: string | null = null;
+    let alsoCovers: string[] = [];
+    let container: string | null = null;
+    let confident = false;
+
+    if (guess && guess.role === 'document') {
+      role = 'document';
+      kind = guess.kind;
+      alsoCovers = guess.alsoCovers;
+      confident = guess.confident;
+    } else if (guess && guess.role === 'evidence') {
+      // ⚠️ THE CONTAINER IS A SECOND CALL, MADE ONLY FOR EVIDENCE, AGAINST
+      // THE MEMBER'S OWN WORDS. An ordinary document still costs one call.
+      confident = guess.confident;
+      const words = (file.description ?? '').trim().slice(0, MAX_DESCRIPTION);
+      const sorted = await this.motivationExtract.classifyEvidence({
+        bytes: file.buffer,
+        mimeType: file.mimetype,
+        description: words || null,
+        ocrText,
+      });
+      container =
+        sorted && sorted.confident ? containerById(sorted.container)?.id ?? null : null;
+    }
+    // ⚠️ A NULL VERDICT (an outage, an unparseable reply) READS AS UNRESOLVED
+    // EVIDENCE, NOT AS A DOCUMENT. Filing a licence as OTHER on the strength
+    // of a failed call is the wrong filing the role answer exists to prevent;
+    // unresolved evidence is a card in front of the member that asks them to
+    // describe it. See the operator's own words: "the once that does not pass
+    // that gets flagged as evidence".
+
+    await this.identifyStore.put({
+      id,
+      ownerId,
+      sha256: hash,
+      role,
+      kind,
+      alsoCovers,
+      container,
+      confident,
+      ocrText,
+    });
+
+    return { id, role, kind, container, confident, ocrChars: ocrText?.length ?? null };
+  }
+
+  /**
+   * ONE EVIDENCE ITEM INTO THE VAULT, SORTED BY ITS CONTAINER.
+   *
+   * Operator, 2026-09-26: upload the evidence, type a short description of
+   * each, and have the model put it in a container — where it cannot decide,
+   * flag it and ask for a better description. This is the vault half of that:
+   * the master copy lives here under the same 30-item sub-cap the documents
+   * use, and a copy is picked into a motivation later.
+   *
+   * ⚠️ A LOW-CONFIDENCE ANSWER STORES NO CONTAINER, AND THAT IS THE WHOLE
+   * POINT OF THE FLAG. The container decides `placement` — its own annexure
+   * page versus one line on the Activities page — and it ticks a DFO row
+   * through `satisfies`. A wrong container is therefore worse than none: it
+   * moves a page and it turns a requirement green on something that does not
+   * answer it. `evidenceType === null` is the single meaning of "we could not
+   * decide", and the member's next description is what replaces it.
+   *
+   * ⚠️ THE DESCRIPTION IS THE MEMBER'S OWN WORDS ABOUT THEIR OWN LIFE — "me
+   * and my son on a hunt in Limpopo" — so it is encrypted at rest, never
+   * logged, and delimited as untrusted data in the prompt. See the taxonomy
+   * header and classifyEvidence.
+   */
+  async createEvidence(
+    userId: string,
+    description: string,
+    file: { buffer: Buffer; mimetype: string },
+  ) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(userId);
+
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('That file appears to be empty.');
+    }
+    if (file.buffer.length > MAX_UPLOAD_BYTES) {
+      throw new BadRequestException('That file is larger than 10 MB.');
+    }
+
+    // ⚠️ TWO CAPS, NOT ONE. The document cap still governs the vault as a
+    // whole — evidence must not be a side door past it — and the 30-item
+    // sub-cap is what the operator asked for on top, so a member cannot fill
+    // the Centre with photographs and lose the room for their paperwork.
+    const cap = await this.settings.get(FLAGS.licenceCentreMaxCredentials);
+    const [heldDocuments, heldEvidence] = await Promise.all([
+      this.prisma.credential.count({ where: { userId: user.id } }),
+      this.prisma.credential.count({
+        where: { userId: user.id, kind: 'EVIDENCE' },
+      }),
+    ]);
+    if (heldDocuments >= cap) {
+      throw new ConflictException(
+        `You can keep ${cap} documents here. Remove one before adding another.`,
+      );
+    }
+    if (heldEvidence >= EVIDENCE_VAULT_MAX) {
+      throw new ConflictException(
+        `You can keep ${EVIDENCE_VAULT_MAX} evidence items here. Remove one before adding another.`,
+      );
+    }
+
+    const words = (description ?? '').trim().slice(0, MAX_DESCRIPTION);
+
+    // Fail-soft in the extract service: a throw, an unparseable reply or an
+    // unconfigured provider all come back as null, which reads as "we could
+    // not decide" rather than failing the upload.
+    const guess = await this.motivationExtract.classifyEvidence({
+      bytes: file.buffer,
+      mimeType: file.mimetype,
+      description: words || null,
+    });
+    const container =
+      guess && guess.confident ? containerById(guess.container) : null;
+
+    // BYTES FIRST, ROW SECOND, for the reason create() gives: the unique
+    // constraint on (userId, sha256) is what spots a duplicate, and reading
+    // first is a race.
+    let stored: { storageKey: string; sha256: string; byteSize: number };
+    try {
+      stored = await this.files.write('credentials', file.buffer, new Date());
+    } catch (err) {
+      this.logger.error(
+        `Evidence upload for ${user.id} could not be stored: ${(err as Error).message}`,
+      );
+      throw new ServiceUnavailableException(
+        'We could not store that file just now. Please try again.',
+      );
+    }
+
+    let created: { id: string };
+    try {
+      created = await this.prisma.credential.create({
+        data: {
+          userId: user.id,
+          kind: 'EVIDENCE',
+          title: evidenceTitle(container?.id ?? null),
+          storageKey: stored.storageKey,
+          mimeType: file.mimetype,
+          byteSize: stored.byteSize,
+          sha256: stored.sha256,
+          // ⚠️ NULL UNLESS THE MODEL WAS SURE. See the header: an undecided
+          // item is described again, not guessed at.
+          evidenceType: container?.id ?? null,
+          evidenceConfidence: guess ? (guess.confident ? 'high' : 'low') : null,
+          evidenceDescriptionEncrypted: words ? encryptText(words) : null,
+          autoFiled: true,
+          namedConfident: guess?.confident ?? false,
+          // Evidence is a photograph-shaped thing: nothing is printed on most
+          // of it and what is printed is not a renewal date. Same settled
+          // columns a safe photograph gets, so the row is never asked for a
+          // date it cannot have — see settledByNature.
+          ...(settledByNature('EVIDENCE') ?? {}),
+          addedVia: 'member',
+        },
+        select: { id: true },
+      });
+    } catch (err) {
+      await this.files.remove(stored.storageKey).catch(() => undefined);
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'That exact file is already in your Document Centre.',
+        );
+      }
+      throw err;
+    }
+
+    this.vaultLog?.note({
+      stage: 'classify',
+      outcome: guess ? (container ? 'ok' : 'fallback') : 'missed',
+      code: !guess
+        ? 'evidence-no-verdict'
+        : container
+          ? 'evidence-sorted'
+          : 'evidence-unsure',
+      userId: user.id,
+      credentialId: created.id,
+      detail: {
+        container: container?.id ?? null,
+        placement: container?.placement ?? null,
+        confident: guess?.confident ?? false,
+      },
+    });
+
+    return {
+      id: created.id,
+      kind: 'EVIDENCE' as const,
+      title: evidenceTitle(container?.id ?? null),
+      evidence: evidenceRow(container?.id ?? null, guess?.confident ?? false),
+    };
+  }
+
+  /**
+   * THE DESCRIPTION LOOP — sort the same file again against better words.
+   *
+   * ⚠️ A PATCH, NOT A SECOND POST, AND THE CONSTRAINT IS WHY. A re-upload
+   * collides with `@@unique([userId, sha256])` in the Centre and with
+   * `@@unique([motivationId, sha256])` on a motivation, so the member would be
+   * told their file "is already in your Document Centre" for trying to help us
+   * sort it. The bytes have not changed; only the words about them have, so
+   * this re-reads the stored file and writes the three evidence columns.
+   *
+   * ⚠️ IT OVERWRITES A CONFIDENT CONTAINER TOO. The member is correcting us
+   * because the first answer was wrong; keeping it would make the correction
+   * do nothing.
+   */
+  async redescribeEvidence(userId: string, id: string, description: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(userId);
+
+    const row = await this.prisma.credential.findFirst({
+      where: { id, userId: user.id, kind: 'EVIDENCE' },
+      select: {
+        id: true,
+        storageKey: true,
+        mimeType: true,
+        title: true,
+        purgedAt: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Evidence item not found');
+
+    // ⚠️ THE BYTES ARE THE WHOLE INPUT, SO A ROW WITHOUT THEM CANNOT BE
+    // RE-SORTED. A purged row keeps its place in the member's list but has no
+    // file left to read; asking them to re-upload is the only honest answer,
+    // and a 410 says exactly that rather than leaving the row looking broken.
+    if (!row.storageKey || row.purgedAt) {
+      throw new GoneException(
+        'The file for this item is no longer stored. Upload it again to describe it.',
+      );
+    }
+
+    const words = (description ?? '').trim().slice(0, MAX_DESCRIPTION);
+    if (!words) {
+      throw new BadRequestException('Tell us a little about this item.');
+    }
+
+    let bytes: Buffer;
+    try {
+      bytes = await this.files.read(row.storageKey);
+    } catch (err) {
+      this.logger.error(
+        `Evidence ${id}: could not read bytes to re-sort: ${(err as Error).message}`,
+      );
+      throw new ServiceUnavailableException('We could not open that file.');
+    }
+
+    const guess = await this.motivationExtract.classifyEvidence({
+      bytes,
+      // A stored row always carries the mimetype it was uploaded with.
+      mimeType: row.mimeType,
+      description: words,
+    });
+    const container =
+      guess && guess.confident ? containerById(guess.container) : null;
+
+    // ⚠️ RENAME ONLY OUR OWN PLACEHOLDER OR THE PREVIOUS CONTAINER'S LABEL.
+    // A name the member typed is theirs and must survive a re-sort; the label
+    // we wrote when we were guessing is ours and should follow the new answer.
+    const wasOurName =
+      row.title === DEFAULT_TITLE.EVIDENCE || isEvidenceLabel(row.title);
+    const nextTitle = wasOurName
+      ? evidenceTitle(container?.id ?? null)
+      : row.title;
+
+    const updated = await this.prisma.credential.update({
+      where: { id: row.id },
+      data: {
+        title: nextTitle,
+        evidenceType: container?.id ?? null,
+        evidenceConfidence: guess ? (guess.confident ? 'high' : 'low') : null,
+        evidenceDescriptionEncrypted: encryptText(words),
+        namedConfident: guess?.confident ?? false,
+      },
+      select: { id: true, title: true },
+    });
+
+    this.vaultLog?.note({
+      stage: 'classify',
+      outcome: guess ? (container ? 'ok' : 'fallback') : 'missed',
+      code: container ? 'evidence-modified' : 'evidence-still-unsure',
+      userId: user.id,
+      credentialId: row.id,
+      detail: { container: container?.id ?? null },
+    });
+
+    return {
+      id: updated.id,
+      kind: 'EVIDENCE' as const,
+      title: updated.title,
+      evidence: evidenceRow(container?.id ?? null, guess?.confident ?? false),
     };
   }
 
@@ -2111,7 +2731,16 @@ export class LicenceCentreService {
   async remove(userId: string, id: string) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(userId);
+    return this.removeOwned(user, id);
+  }
 
+  /**
+   * ⚠️ THE ERASURE ITSELF, WITHOUT THE QUOTA CHECK, SO `replaceWith` CAN
+   * REUSE IT. Promotion deletes the original on the member's behalf; asking
+   * the quota twice for one action, or refusing the promotion because a delete
+   * ceiling was hit, would fail the thing they actually asked for.
+   */
+  private async removeOwned(user: { id: string }, id: string) {
     const row = await this.prisma.credential.findFirst({
       where: { id, userId: user.id },
       // ⚠️ kind AND coversKinds ARE READ FOR THE RE-DATE BELOW, and they must
@@ -2280,6 +2909,98 @@ export class LicenceCentreService {
      */
     await this.rearmAutolink(user.id);
     return { removed: true };
+  }
+
+  /**
+   * WHICH VERSION OF A DOCUMENT DO WE KEEP?
+   *
+   * The second half of the duplicate flag. The row says "looks like a copy of
+   * X" and a member holding two photographs of one licence has only two ways
+   * out: keep the extra file, or make it the one the vault shows. This does
+   * the second — the copy becomes the row, the original it stood in for is
+   * erased.
+   *
+   * ⚠️ THE PROMOTION IS THREE FACTS, AND ALL THREE GO TOGETHER. `duplicateOfId`
+   * comes off, or the survivor keeps a pointer to a row that no longer exists
+   * and the next `buildSections` folds it under nothing — it survives only
+   * because its parent is gone. The 'duplicate' attention code and its
+   * `duplicateNote` come off with it, or the row on the member's screen still
+   * says "looks like a copy of" a document they just deleted. The note is
+   * matched by its opening words, so a row flagged under earlier wording is
+   * cleared too.
+   *
+   * ⚠️ AND THE ROW IS NOT RE-READ. Promoting does not re-extract anything: the
+   * member chose THIS file, and overwriting its reading with a fresh pass is
+   * how a version they preferred becomes a version they did not.
+   */
+  async replaceWith(userId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(userId);
+
+    const row = await this.prisma.credential.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, duplicateOfId: true, readNotes: true, attention: true, title: true },
+    });
+    if (!row) throw new NotFoundException('Document not found');
+    if (!row.duplicateOfId) {
+      // Nothing to promote — this row is already the one the vault shows.
+      throw new BadRequestException('This is not a copy of another document.');
+    }
+
+    const original = await this.prisma.credential.findFirst({
+      where: { id: row.duplicateOfId, userId: user.id },
+      select: { id: true, title: true },
+    });
+    if (!original) {
+      // The original was deleted (or purged) after this row was flagged. The
+      // copy stands on its own and its pointer just needs clearing.
+      await this.detachCopy(user.id, row.id, row.readNotes, row.attention);
+      return { replaced: false, originalId: null as string | null };
+    }
+
+    // Erase the version being replaced first — everything the member asked for
+    // has happened once this returns. `removeOwned` stamps the packs, resolves
+    // the notification, re-dates the competencies and re-arms the auto-link.
+    await this.removeOwned(user, original.id);
+    await this.detachCopy(user.id, row.id, row.readNotes, row.attention);
+
+    this.vaultLog?.note({
+      stage: 'duplicate',
+      outcome: 'corrected',
+      code: 'replaced',
+      userId: user.id,
+      credentialId: row.id,
+      detail: { originalId: original.id },
+    });
+    // ⚠️ A COPY JUST BECAME THE DOCUMENT, so a draft that could not decide
+    // between two rows may now be able to. Same reasoning as the delete path.
+    await this.rearmAutolink(user.id);
+    return { replaced: true, originalId: original.id };
+  }
+
+  /** Take the copy flag off a row and clear the words that said so. */
+  private async detachCopy(
+    userId: string,
+    id: string,
+    readNotes: string[],
+    attention: string[],
+  ): Promise<void> {
+    await this.prisma.credential.update({
+      where: { id },
+      data: {
+        duplicateOfId: null,
+        attention: attention.filter((t) => t !== 'duplicate'),
+        readNotes: readNotes.filter((n) => !isDuplicateNote(n)),
+      },
+    });
+    this.vaultLog?.note({
+      stage: 'duplicate',
+      outcome: 'corrected',
+      code: 'detached',
+      userId,
+      credentialId: id,
+      detail: {},
+    });
   }
 
   /**
@@ -2809,4 +3530,37 @@ const DEFAULT_TITLE: Record<CredentialKind, string> = {
   SAFE_INSTALLATION: 'How the safe is installed',
   SHOOTING_ACTIVITY_LOG: 'Record of hunts and shoots',
   OTHER: 'Supporting document',
+  // ⚠️ THE CONTAINER'S OWN LABEL IS THE REAL TITLE, and the add path uses it
+  // when the classifier resolved one — see evidenceTitle(). This generic name
+  // is only the floor: a row the classifier could not place, or a container id
+  // that no longer resolves, must still have a name on the card rather than a
+  // blank line where a document title should be.
+  EVIDENCE: 'Evidence',
 };
+
+/**
+ * The card's name for an evidence item.
+ *
+ * ⚠️ THE CONTAINER'S LABEL IS THE TITLE, AND IT IS THE SAME EITHER WAY ROUND.
+ * "An invitation to hunt" tells the member what we made of their photograph;
+ * "Evidence" tells them nothing. `evidenceTitle(null)` is the floor for a row
+ * we could not place — and for a container id that has since been retired,
+ * since containerById answers null rather than throwing.
+ */
+function evidenceTitle(containerId: string | null): string {
+  return containerById(containerId)?.label ?? DEFAULT_TITLE.EVIDENCE;
+}
+
+/**
+ * Is this title one of the labels WE would have written for an evidence item?
+ *
+ * ⚠️ THE RE-SORT MUST NOT OVERWRITE A NAME THE MEMBER TYPED. A re-describe
+ * replaces our guess with a better one, and the title we derived from the old
+ * guess has to follow it — but a member who renamed the row to "Dad's .303
+ * hunt, 2019" owns that name and must keep it. Built from the registry, so a
+ * container added to the taxonomy is covered without touching this file.
+ */
+function isEvidenceLabel(title: string): boolean {
+  if (EVIDENCE_CONTAINERS.some((c) => c.label === title)) return true;
+  return title === DEFAULT_TITLE.EVIDENCE;
+}

@@ -50,8 +50,8 @@ describe('order-math.computeOrderTotals', () => {
     });
   });
 
-  it('P6.4 — sums the R15-per-waybill handling into handlingSubtotal, apart from shipping + processing', () => {
-    // Two courier lines each carrying R15 handling; buyerTotal already includes
+  it('P6.4 — sums the per-line handling margin into handlingSubtotal, apart from shipping + processing', () => {
+    // Two courier lines each carrying a 1_500 handling margin; buyerTotal includes
     // it: 16_650 = listing 10_000 + shipping 5_000 + handling 1_500 + processing 150.
     const t = computeOrderTotals([
       line({ shippingHandlingCents: 1_500, buyerTotal: 16_650 }),

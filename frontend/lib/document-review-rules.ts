@@ -47,6 +47,15 @@ export interface ReviewItem {
   readNotes?: string[];
   /** Server-side checks that failed: a copy of another row, a proof of address that is not the member's or not recent. */
   attention?: string[];
+  /**
+   * What we made of an EVIDENCE item, where the server served one.
+   *
+   * ⚠️ ABSENT, NOT NULL, ON EVERY ORDINARY DOCUMENT — the server omits the key
+   * rather than sending `null`, so `evidence === undefined` and
+   * `evidence === { container: null }` are different facts and only the second
+   * is an evidence item we could not sort.
+   */
+  evidence?: { container: string | null; confident: boolean } | null;
 }
 
 /**
@@ -140,6 +149,13 @@ export function settleableInBulk(d: ReviewItem): boolean {
  * expires" already ticked, and the reminder sweep only looks at rows that have
  * an expiry — so a firearm licence that lands in this box can never be
  * reminded about again, and nothing on any screen says so.
+ *
+ * ⚠️ AND EVIDENCE IS A SEPARATE QUESTION WITH A SEPARATE ANSWER. An evidence
+ * item also comes back from here — it is autoFiled and, when the classifier
+ * could not place it, not confident — but "check the type" is wrong for it:
+ * the type is Evidence, certainly. What is missing is the description, and the
+ * surfaces that show a type control must use evidenceNeedsWords instead. See
+ * the note there.
  */
 export function needsALook(d: ReviewItem): boolean {
   // A flagged row asks regardless of how it was filed: a member who declared
@@ -230,6 +246,15 @@ export interface FiledRow {
    */
   dateSource: 'read' | 'derived' | 'none' | null;
   neverExpires: boolean;
+  /**
+   * What the classifier made of an EVIDENCE row, or null on every other kind.
+   *
+   * ⚠️ ONLY `container` IS READ, AND ONLY BY evidenceNeedsWords BELOW. Kept
+   * structural (not the full EvidenceBlock) so anything that already knows a
+   * container satisfies it — the vault list, the motivation shelf — without
+   * every caller having to import a shape it does not otherwise touch.
+   */
+  evidence?: { container: string | null } | null;
 }
 
 /**
@@ -280,6 +305,25 @@ export function needsFilingCheck(r: FiledRow): boolean {
  */
 export function needsReview(r: FiledRow): boolean {
   return needsDateCheck(r) || needsFilingCheck(r);
+}
+
+/**
+ * Is there an evidence item here we could not sort?
+ *
+ * ⚠️ `container === null` IS THE WHOLE TEST, AND IT IS NOT `confident`. A
+ * low-confidence answer stores NO container — a wrong one moves the file onto
+ * a different page of the pack and ticks a DFO's checklist row for something
+ * that does not answer it — so the served pair is redundant by construction
+ * and the container alone is what the member has to act on.
+ *
+ * ⚠️ THE UNION WITH `needsALook`. An evidence item is `autoFiled: true` and,
+ * when we could not place it, `namedConfident: false`, so it would already
+ * come back from `needsReview` — but for the wrong reason. This names the
+ * actual next step: describe it better, not "check the type", which is a
+ * question evidence has no answer to.
+ */
+export function evidenceNeedsWords(r: FiledRow): boolean {
+  return !!r.evidence && !r.evidence.container;
 }
 
 export function mergeReviewQueue<T extends { id: string }>(

@@ -1294,6 +1294,16 @@ export default function LicenceCentreSheetPage() {
           `autoStart` opens. Operator, 2026-09-08: "this is double. two scan
           with phone options."
         */}
+         {/*
+           ⚠️ EVIDENCE HAS NO PANEL ANY MORE, AND THAT IS THE POINT. It used to
+           sit here as its own surface above the shelf, asking a member to type
+           what a photograph showed BEFORE anything had looked at it. The AI now
+           decides on the way in — document or evidence — and an item it cannot
+           place waits on its own upload card in the Document Centre for a few
+           more words. An application draws its evidence from that same shelf, by
+           the placement the server gave each row; this page only reads it.
+         */}
+
          <DocumentShelf
           documents={sheet.documents}
           keeping={keeping}

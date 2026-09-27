@@ -10,7 +10,7 @@
 // ────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react';
-import FilePickerButton from '@/components/file-picker-button';
+import DocumentEnhancer from '@/components/scan-upload/document-enhancer';
 import ScanButton from '@/components/scan/scan-button';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import {
@@ -248,7 +248,7 @@ export default function UploadPanel({
           handoff={{ dest: 'motivation', motivationId }}
           onHandoffArrived={() => void onHandoffArrived()}
           fallback={
-            <FilePickerButton
+            <DocumentEnhancer
               accept="image/jpeg,image/png,image/webp,application/pdf"
               // A PACK GOES UP IN ONE GO. Picking one file at a time and
               // choosing a type for each is the slowest possible way to hand
@@ -257,9 +257,11 @@ export default function UploadPanel({
               disabled={busy}
               variant="primary"
               onFiles={uploadFiles}
+              title="Photograph a document"
+              shape="a4"
             >
               Upload all my documents
-            </FilePickerButton>
+            </DocumentEnhancer>
           }
         />
       </div>

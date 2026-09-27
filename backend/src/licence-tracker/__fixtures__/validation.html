@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head><title>Firearm Status Enquiry</title></head>
+<body>
+
+<!--
+  SANITISED FIXTURE — the validation line.
+
+  ⚠️ THIS IS NOT AN ANSWER AND IT IS NOT "NO RECORDS". Rapid repeats of the
+  real enquiry can return this instead of the record, so a parser that read
+  the page optimistically would either blank a known status or tell a member
+  their application does not exist. It classifies as ERROR, with backoff.
+-->
+<div class="pagSelMed">
+  <table class="table table-bordered">
+    <tr>
+      <td>Please supply a Serial Number</td>
+    </tr>
+  </table>
+</div>
+
+</body>
+</html>

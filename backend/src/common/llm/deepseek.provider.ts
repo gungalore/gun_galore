@@ -38,6 +38,15 @@ const DEFAULT_DEEPSEEK_MODEL = 'deepseek-flash';
 export class DeepSeekProvider implements LlmProviderClient {
   readonly name: LlmProvider = 'deepseek';
 
+  /**
+   * ⚠️ FALSE, AND THAT IS A HARD LIMIT OF THIS PATH, NOT A SETTING. mapContent
+   * below throws `unsupported` on any part that is not text or an image, and
+   * a PDF travels as a `{type:'document'}` part. LlmService reads this and
+   * sends a document-bearing request to Gemini instead of failing here —
+   * which is why the throw stays: it is the backstop, not the routing.
+   */
+  readonly acceptsDocuments = false;
+
   isConfigured(): boolean {
     return Boolean(process.env.DEEPSEEK_API_KEY);
   }

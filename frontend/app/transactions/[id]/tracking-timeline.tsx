@@ -132,7 +132,9 @@ export function TrackingTimeline({ transactionId }: { transactionId: string }) {
   if (data.events.length === 0) {
     return (
       <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-        Tracking events will appear here as the parcel moves.
+        {data.shippingMethod === 'DEALER_TRANSFER'
+          ? 'Updates will appear here as the dealer transfer progresses.'
+          : 'Tracking events will appear here as the parcel moves.'}
       </p>
     );
   }

@@ -52,6 +52,7 @@ describe('naming a document from its contents', () => {
   it('returns the kind it read, with its confidence', async () => {
     const svc = svcWith('{"kind":"ADDRESS_CONFIRMATION","confidence":"high"}');
     await expect(svc.classify(png)).resolves.toEqual({
+      role: 'document',
       kind: 'ADDRESS_CONFIRMATION',
       confident: true,
     });
@@ -62,6 +63,7 @@ describe('naming a document from its contents', () => {
     // the member's eye is the check on ours.
     const svc = svcWith('{"kind":"INCIDENT_REPORT","confidence":"low"}');
     await expect(svc.classify(png)).resolves.toEqual({
+      role: 'document',
       kind: 'INCIDENT_REPORT',
       confident: false,
     });
@@ -130,7 +132,73 @@ describe('naming a document from its contents', () => {
     // impossible rather than merely flagged.
     const svc = svcWith('{"kind":"SAFE_PHOTOGRAPHS","confidence":"high"}');
     await expect(svc.classify(png)).resolves.toEqual({
+      role: 'document',
       kind: 'SAFE_PHOTOGRAPHS' as MotivationUploadKind,
+      confident: true,
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE FIRST QUESTION: IS THIS A DOCUMENT, OR IS IT EVIDENCE?
+//
+// ⚠️ EVIDENCE HAS NO KIND. A hunting photograph is not a document at all, and
+// asking the model to force it into a document kind is how a member ends up
+// told a requirement is met by a photo that answers nothing. The role is
+// answered before the kind, and an evidence answer must survive as evidence
+// rather than being coerced to a kind.
+// ────────────────────────────────────────────────────────────────────
+describe('the document-or-evidence role', () => {
+  it('returns evidence as evidence, with no kind', async () => {
+    // No kind, even if the model offers one beside the role: the container is
+    // decided by the separate evidence classifier, not here.
+    const svc = svcWith(
+      '{"role":"evidence","kind":"OTHER","confidence":"high"}',
+    );
+    await expect(svc.classify(png)).resolves.toEqual({
+      role: 'evidence',
+      confident: true,
+    });
+  });
+
+  it('carries a low evidence confidence through', async () => {
+    const svc = svcWith('{"role":"evidence","confidence":"low"}');
+    await expect(svc.classify(png)).resolves.toEqual({
+      role: 'evidence',
+      confident: false,
+    });
+  });
+
+  it('⚠️ reads an unrecognised role as null, never as a document', async () => {
+    // A malformed role is a question, not a filing. DeepSeek ignores the JSON
+    // schema entirely, so this is the guard that keeps a junk role from
+    // filing something — a confident wrong filing is worse than asking.
+    const svc = svcWith('{"role":"banana","kind":"OTHER","confidence":"high"}');
+    await expect(svc.classify(png)).resolves.toBeNull();
+  });
+
+  it('reads a kind of EVIDENCE as evidence even with no role', async () => {
+    const svc = svcWith('{"kind":"EVIDENCE","confidence":"high"}');
+    await expect(svc.classify(png)).resolves.toEqual({
+      role: 'evidence',
+      confident: true,
+    });
+  });
+
+  it('still files a marker match as a document', async () => {
+    // readMarkers only fires on our own paperwork, so a marker is never
+    // evidence — the role is decided in code and never asked of the model.
+    const vision = {
+      text: jest.fn().mockResolvedValue('SAPS 524 COMPETENCY CERTIFICATE'),
+    };
+    const svc = new MotivationExtractService(
+      fakeLlm('{"role":"evidence","confidence":"high"}') as never,
+      noReadCache(),
+      vision as never,
+    );
+    await expect(svc.classify(png)).resolves.toEqual({
+      role: 'document',
+      kind: 'COMPETENCY_CERTIFICATE',
       confident: true,
     });
   });
@@ -165,6 +233,7 @@ describe('reading the page once', () => {
   it('reads the bytes when nobody has read them yet', async () => {
     const { svc, vision } = withVision('SAPS 524 COMPETENCY CERTIFICATE');
     await expect(svc.classify(png)).resolves.toEqual({
+      role: 'document',
       kind: 'COMPETENCY_CERTIFICATE',
       confident: true,
     });
@@ -175,7 +244,11 @@ describe('reading the page once', () => {
     const { svc, vision } = withVision('SAPS 524 COMPETENCY CERTIFICATE');
     await expect(
       svc.classify({ ...png, ocrText: 'SAPS 524 COMPETENCY CERTIFICATE' }),
-    ).resolves.toEqual({ kind: 'COMPETENCY_CERTIFICATE', confident: true });
+    ).resolves.toEqual({
+      role: 'document',
+      kind: 'COMPETENCY_CERTIFICATE',
+      confident: true,
+    });
     // Not "called with the right thing" — not called AT ALL. That is the
     // saving, and it is invisible in the return value.
     expect(vision.text).not.toHaveBeenCalled();

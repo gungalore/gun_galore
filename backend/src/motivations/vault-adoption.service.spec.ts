@@ -8,6 +8,17 @@ import { encryptJson } from '../common/blob-crypto';
 // yes, not sharing a byte, not resurrecting something the member deleted, and
 // never at the cost of the upload itself.
 
+// The duplicate check decrypts the reading on both rows, so the secret the
+// blob codec derives from must be present for the specs that exercise it.
+const ORIGINAL_SECRET = process.env.ID_HASH_SECRET;
+beforeAll(() => {
+  process.env.ID_HASH_SECRET = 'test-secret-for-vault-adoption-specs';
+});
+afterAll(() => {
+  if (ORIGINAL_SECRET === undefined) delete process.env.ID_HASH_SECRET;
+  else process.env.ID_HASH_SECRET = ORIGINAL_SECRET;
+});
+
 const day = (s: string) => new Date(`${s}T00:00:00Z`);
 
 function build(
@@ -20,6 +31,14 @@ function build(
     createThrows?: unknown;
     user?: Record<string, unknown> | null;
     rows?: { id: string; createdAt: Date; storageKey: string | null; purgedAt: Date | null }[];
+    /** Vault rows the duplicate detector compares the adopted upload against. */
+    existing?: {
+      id: string;
+      title: string;
+      createdAt: Date;
+      issuedOn: Date | null;
+      detailsEncrypted: string | null;
+    }[];
   } = {},
 ) {
   const files = {
@@ -70,6 +89,7 @@ function build(
       count: jest.fn(async (a: any): Promise<number> =>
         a?.where?.sha256 !== undefined ? (o.dupes ?? 0) : (o.held ?? 0),
       ),
+      findMany: jest.fn(async (): Promise<any> => o.existing ?? []),
       create: credentialCreate,
     },
   };
@@ -296,6 +316,80 @@ describe('adopting one upload', () => {
     const { svc, files } = build({ createThrows: new Error('boom') });
     await expect(svc.adoptUpload('u1', 'up1')).rejects.toThrow('boom');
     expect(files.remove).toHaveBeenCalledWith('credentials/2026/08/new.enc');
+  });
+
+  it('⚠️ FLAGS A RE-SCAN AS A COPY, and the original stays untouched', async () => {
+    // Operator, 2026-09-26: "First file in the vault gets preference to go
+    // into a motivation. Duplicates can never be used inside a motivation.
+    // Even if uploaded from the motivation uploader or scanner."
+    //
+    // A photograph taken straight onto an application becomes a vault row only
+    // here, so the flag can only be applied here. The reading carries the same
+    // competency number as a row already in the Centre, so this is the same
+    // document again: it is filed as a COPY of the earlier one, which is the
+    // row that will be offered to a motivation.
+    const detail = encryptJson({ competency_number: 'COMP-4471' });
+    const { svc, credentialCreate } = build({
+      existing: [
+        {
+          id: 'c-original',
+          title: 'Competency — handgun',
+          createdAt: day('2026-01-05'),
+          issuedOn: day('2025-08-01'),
+          detailsEncrypted: detail,
+        },
+      ],
+      upload: {
+        kind: MotivationUploadKind.COMPETENCY_CERTIFICATE,
+        storageKey: 'motivations/2026/08/a.enc',
+        purgedAt: null,
+        mimeType: 'image/jpeg',
+        sha256: 'sha-a',
+        extractionEncrypted: detail,
+        extractionOk: true,
+        extractedFields: ['competency_number'],
+        motivation: { referenceNumber: 'MO000117' },
+      },
+    });
+    await expect(svc.adoptUpload('u1', 'up1')).resolves.toBe(true);
+    const data = credentialCreate.mock.calls[0][0].data;
+    expect(data.duplicateOfId).toBe('c-original');
+    expect(data.attention).toEqual(['duplicate']);
+    expect(data.readNotes[0]).toMatch(/copy of "Competency — handgun"/);
+  });
+
+  it('⚠️ an UNREADABLE document is never called a copy', async () => {
+    // The detector compares only what a document SAYS. No reading, no
+    // fingerprints, no flag — otherwise every failed vision call would land a
+    // member's documents marked as duplicates of each other.
+    const { svc, credentialCreate } = build({
+      existing: [
+        {
+          id: 'c-original',
+          title: 'Competency — handgun',
+          createdAt: day('2026-01-05'),
+          issuedOn: null,
+          detailsEncrypted: null,
+        },
+      ],
+    });
+    await expect(svc.adoptUpload('u1', 'up1')).resolves.toBe(true);
+    const data = credentialCreate.mock.calls[0][0].data;
+    expect(data.duplicateOfId).toBeNull();
+    expect(data.attention).toEqual([]);
+  });
+
+  it('⚠️ a detector failure costs the flag, NEVER the document', async () => {
+    // The whole path is fail-soft: a throw from the comparison must not stop
+    // the member's document being kept. It is filed clean, and the warning is
+    // all anyone sees.
+    const { svc, credentialCreate, prisma } = build();
+    (prisma.credential.findMany as jest.Mock).mockRejectedValueOnce(
+      new Error('db down'),
+    );
+    await expect(svc.adoptUpload('u1', 'up1')).resolves.toBe(true);
+    expect(credentialCreate).toHaveBeenCalledTimes(1);
+    expect(credentialCreate.mock.calls[0][0].data.duplicateOfId).toBeNull();
   });
 });
 

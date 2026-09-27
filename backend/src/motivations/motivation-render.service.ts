@@ -45,9 +45,34 @@ import {
   buildChecklist,
   UPLOAD_KIND_LABELS,
   annexureByKind,
+  annexureByContainer,
   isSafeAnnexureKind,
   type AnnexureEntry,
+  type EvidenceAnnexure,
 } from './motivation-checklist';
+import {
+  EVIDENCE_ANNEXURE_MAX,
+  EVIDENCE_BODY_MAX,
+  containerById,
+} from './evidence-taxonomy';
+import type { EvidencePage } from './motivation-pdf.service';
+
+/**
+ * The shape evidenceForRender and buildEvidenceBody read off an upload.
+ *
+ * ⚠️ A NARROW INTERFACE RATHER THAN THE PRISMA ROW, so both methods can be
+ * exercised on a plain object in a spec without a database or a full upload
+ * select — the same posture as the rest of this renderer's helpers.
+ */
+export interface EvidenceUploadForRender {
+  id: string;
+  kind: MotivationUploadKind;
+  storageKey: string | null;
+  mimeType: string | null;
+  purgedAt: Date | null;
+  evidenceType?: string | null;
+  evidenceDescriptionEncrypted?: string | null;
+}
 import { MotivationSellerConsentService } from './motivation-seller-consent.service';
 import { buildPriorNoticeRequest } from './motivation-prior-notice';
 import { applicationWarnings } from './motivation-warnings';
@@ -547,6 +572,13 @@ export class MotivationRenderService {
         otherSideId: string | null;
         detailsEncrypted: string | null;
       } | null;
+      /**
+       * ⚠️ THE CONTAINER, AND THE ONLY WAY AN EVIDENCE UPLOAD FINDS ITS LETTER.
+       * Every evidence copy shares the kind EVIDENCE, so the kind-keyed map has
+       * nothing to tell two of them apart; the container id does. Null on
+       * everything that is not evidence.
+       */
+      evidenceType?: string | null;
     }[],
     annexures: AnnexureEntry[],
   ): Promise<{
@@ -574,8 +606,19 @@ export class MotivationRenderService {
     // letter finds nothing and prints "Annexure ?" with the raw enum name as
     // its caption. That shipped.
     const byKind = annexureByKind(annexures);
-    // How many printed pages share each kind, so a caption can say "1 of 2".
-    const seen = new Map<MotivationUploadKind, number>();
+    /**
+     * ⚠️ EVIDENCE RESOLVES BY CONTAINER, NOT BY KIND. Every evidence copy
+     * shares the kind EVIDENCE, so annexureByKind has nothing to tell two of
+     * them apart and one letter would capture both. The container id — the
+     * value of `evidenceType` — is the key. Evidence with no entry here is a
+     * body-placed or unplaced item: it prints on the Activities page, not as
+     * an annexure, and is skipped below.
+     */
+    const byContainer = annexureByContainer(annexures);
+    // How many printed pages share each letter's document, so a caption can
+    // say "1 of 2". Keyed by a bucket rather than by kind, because two
+    // evidence containers are two documents under one kind.
+    const seen = new Map<string, number>();
     let safePrinted = 0;
 
     const images: AnnexureImagePage[] = [];
@@ -628,7 +671,11 @@ export class MotivationRenderService {
       annexures.map((entry, index) => [entry.letter, index]),
     );
     const rankOf = (u: (typeof uploads)[number]) => {
-      const letter = byKind.get(u.kind)?.letter;
+      const entry =
+        u.kind === MotivationUploadKind.EVIDENCE && u.evidenceType
+          ? byContainer.get(u.evidenceType)
+          : byKind.get(u.kind);
+      const letter = entry?.letter;
       if (letter === undefined) return Number.MAX_SAFE_INTEGER;
       return letterRank.get(letter) ?? Number.MAX_SAFE_INTEGER;
     };
@@ -673,9 +720,17 @@ export class MotivationRenderService {
      */
     interface Resolved {
       kind: MotivationUploadKind;
+      /**
+       * The caption's page-counter bucket. Kind for every ordinary document;
+       * the container for evidence, because all evidence shares one kind and
+       * each container is a different document.
+       */
+      bucket: string;
       letter: string;
       label: string;
       safe: boolean;
+      /** An evidence annexure: takes its own letter AND its own full page. */
+      solo: boolean;
       certification: AnnexureEntry['certification'];
       pages: { bytes: Buffer; width: number; height: number }[];
     }
@@ -685,7 +740,18 @@ export class MotivationRenderService {
       // The consent form already contains both sides of the current owner's
       // licence. Keep the vault row, but never duplicate it as an annexure.
       if (u.kind === MotivationUploadKind.SELLER_LICENCE) continue;
-      const entry = byKind.get(u.kind);
+      /**
+       * ⚠️ A BODY-PLACED OR UNPLACED EVIDENCE COPY PRINTS ELSEWHERE. It takes
+       * no annexure letter, so it is skipped here rather than landing under
+       * "Annexure ?" with the raw kind for a caption.
+       */
+      const evidenceEntry =
+        u.kind === MotivationUploadKind.EVIDENCE && u.evidenceType
+          ? byContainer.get(u.evidenceType)
+          : undefined;
+      if (u.kind === MotivationUploadKind.EVIDENCE && !evidenceEntry) continue;
+      const entry = evidenceEntry ?? byKind.get(u.kind);
+      const bucket = evidenceEntry ? `EVIDENCE:${u.evidenceType}` : u.kind;
       const letter = entry?.letter ?? '?';
       const label = entry?.label ?? UPLOAD_KIND_LABELS[u.kind] ?? u.kind;
       if (isSafeAnnexureKind(u.kind) && safePrinted >= 4) {
@@ -751,9 +817,14 @@ export class MotivationRenderService {
 
       resolved.push({
         kind: u.kind,
+        bucket,
         letter,
         label,
         safe: isSafeAnnexureKind(u.kind),
+        // ⚠️ EVIDENCE ONLY. An evidence annexure is a printed document that is
+        // reprinting its own possession, so it gets a whole sheet; an ordinary
+        // copy keeps the pack-as-many-as-fit rule.
+        solo: !!evidenceEntry,
         certification: entry?.certification ?? 'none',
         pages,
       });
@@ -762,15 +833,15 @@ export class MotivationRenderService {
 
     // The caption's "(n of m)": m is every PRINTED page under the letter, n is
     // this page's place in that run.
-    const pageTotals = new Map<MotivationUploadKind, number>();
+    const pageTotals = new Map<string, number>();
     for (const r of resolved) {
-      pageTotals.set(r.kind, (pageTotals.get(r.kind) ?? 0) + r.pages.length);
+      pageTotals.set(r.bucket, (pageTotals.get(r.bucket) ?? 0) + r.pages.length);
     }
     for (const r of resolved) {
-      const total = pageTotals.get(r.kind) ?? r.pages.length;
+      const total = pageTotals.get(r.bucket) ?? r.pages.length;
       for (const page of r.pages) {
-        const index = (seen.get(r.kind) ?? 0) + 1;
-        seen.set(r.kind, index);
+        const index = (seen.get(r.bucket) ?? 0) + 1;
+        seen.set(r.bucket, index);
         images.push({
           letter: r.letter,
           label: r.label,
@@ -786,6 +857,95 @@ export class MotivationRenderService {
     }
 
     return { images, notPrinted, pdfs };
+  }
+
+  /**
+   * Split this pack's evidence into what is lettered and what prints in the
+   * body.
+   *
+   * ⚠️ THE CONTAINER DECIDES, NOT THE MEMBER. A printed document — a permission
+   * letter, an affidavit, a score sheet — is a reprint of possession and takes
+   * its own annexure letter and page (`placement: 'annexure'`). An activity
+   * photograph is argument and prints on the one "My Activities / Evidence"
+   * page with no letter at all. An item with no container, or a retired one,
+   * is neither and is left out: `evidenceType === null` is "we could not
+   * decide", and printing nothing beats a page titled from a wrong guess.
+   *
+   * ⚠️ BOTH HALVES ARE CAPPED AGAIN HERE, DEFENSIVELY. The add path enforces
+   * two annexures and four photographs, but the ledger is a live table: a row
+   * brought in by an older route or a direct write must not push a third
+   * letter into the pack or a fifth picture onto a page sized for four.
+   */
+  private evidenceForRender(uploads: EvidenceUploadForRender[]): {
+    annexures: EvidenceAnnexure[];
+    bodyUploads: EvidenceUploadForRender[];
+  } {
+    const annexures: EvidenceAnnexure[] = [];
+    const bodyUploads: EvidenceUploadForRender[] = [];
+
+    for (const u of uploads) {
+      if (u.kind !== MotivationUploadKind.EVIDENCE) continue;
+      const known = u.evidenceType ? containerById(u.evidenceType) : null;
+      if (!known) continue;
+      if (known.placement === 'annexure') {
+        if (annexures.length < EVIDENCE_ANNEXURE_MAX) {
+          annexures.push({ container: known.id, label: known.label });
+        }
+      } else if (bodyUploads.length < EVIDENCE_BODY_MAX) {
+        bodyUploads.push(u);
+      }
+    }
+    return { annexures, bodyUploads };
+  }
+
+  /**
+   * The member's own evidence, as one page of pictures in the body.
+   *
+   * ⚠️ READ AT RENDER TIME, NEVER STORED — the same rule as the press
+   * clippings: the pack is rebuilt from source on every download, so a picture
+   * that fails to read back costs that one picture, never the page or the
+   * pack. A photograph whose bytes are gone simply does not appear; there is
+   * no placeholder box, because a box would assert a picture the member cannot
+   * point a DFO at.
+   *
+   * `undefined` when there is nothing to print, so the caller passes the
+   * result straight through without a second empty check.
+   */
+  private async buildEvidenceBody(
+    uploads: EvidenceUploadForRender[],
+  ): Promise<EvidencePage[] | undefined> {
+    if (!uploads.length) return undefined;
+
+    const pages: EvidencePage[] = [];
+    for (let i = 0; i < uploads.length; i++) {
+      const u = uploads[i];
+      if (!u.storageKey || u.purgedAt) continue;
+      // Only images. Evidence is not a reprint of a document, so a PDF here is
+      // out of scope by the taxonomy's own placement — an activity photograph
+      // is a JPEG or PNG, and anything else is skipped rather than rasterised
+      // into a body page.
+      if (!isEmbeddable(u.mimeType ?? '')) continue;
+      let bytes: Buffer;
+      try {
+        bytes = await this.files.read(u.storageKey);
+      } catch {
+        continue;
+      }
+      const size = imageSize(bytes);
+      if (!size) continue;
+      const container = u.evidenceType ? containerById(u.evidenceType) : null;
+      pages.push({
+        index: pages.length + 1,
+        total: uploads.length,
+        label: container?.label ?? 'Evidence',
+        description: tryDecryptText(u.evidenceDescriptionEncrypted ?? null),
+        image: { bytes, ...size },
+      });
+    }
+    if (!pages.length) return undefined;
+    // The total is what actually printed, not what was offered.
+    for (const p of pages) p.total = pages.length;
+    return pages;
   }
 
   /**
@@ -991,6 +1151,12 @@ export class MotivationRenderService {
             sourceCredential: {
               select: { otherSideId: true, detailsEncrypted: true },
             },
+            // ⚠️ EVIDENCE'S CONTAINER AND THE MEMBER'S WORDS. The container
+            // decides whether a copy takes an annexure letter or prints on the
+            // Activities page, and the description is the caption the member
+            // wrote for it — encrypted at rest, decrypted for this render only.
+            evidenceType: true,
+            evidenceDescriptionEncrypted: true,
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -1118,9 +1284,17 @@ export class MotivationRenderService {
      * Annexure X" the writer is given, and the captions on the pages
      * themselves. It is built above, so its presence is already settled.
      */
+    /**
+     * ⚠️ EVIDENCE IS SPLIT BEFORE THE LETTERING, because the container decides
+     * which half of it takes a letter. The annexure-placed items are lettered
+     * here with everything else; the body-placed photographs take no letter
+     * and are built into the Activities page below. See evidenceForRender.
+     */
+    const evidence = this.evidenceForRender(row.uploads ?? []);
     const annexures = buildAnnexures(
       kinds,
       sellerConsent ? ['SELLER_CONSENT'] : [],
+      evidence.annexures,
     );
     /**
      * ⚠️ THE GAP IS PRINTED, NOT SILENT. Operator, 2026-09-20, on MO000002: the
@@ -1138,6 +1312,7 @@ export class MotivationRenderService {
     ).missingRequired.map((kind) => documentLabel(kind));
     const printable = await this.annexureImages(row.uploads ?? [], annexures);
     const pressClippings = await this.buildPressClippings(pressIncidents);
+    const evidenceBody = await this.buildEvidenceBody(evidence.bodyUploads);
 
     /**
      * ⚠️ ONE LOOKUP, TWO PLACES ON THE PAGE. The drawing is the cover's hero
@@ -1207,6 +1382,12 @@ export class MotivationRenderService {
       missingDocuments,
       priorNotice,
       pressClippings,
+      // ⚠️ THE MEMBER'S OWN EVIDENCE, IN THE BODY. Activity photographs are
+      // argument rather than annexures, so they print on one page beside the
+      // argument they support — the same posture as the press clippings under
+      // the exposure section. Lettered evidence is NOT here; it went into the
+      // annexure images above.
+      evidencePages: evidenceBody,
       // ⚠️ THE FIGURES THE CUTTINGS ARE EXAMPLES OF. The body argues "eleven
       // house robberies in the quarter, and here are three of them", and the
       // annexure carried only the three — so a reviewer checking the claim had

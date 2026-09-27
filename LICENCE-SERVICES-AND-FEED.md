@@ -1,6 +1,8 @@
 # Licence Services + Community Feed — Build Plan
 
-*Planned 2026-08-18 with the operator (16 tickbox decisions). Status: PLANNED, not started.*
+*Planned 2026-08-18 with the operator (16 tickbox decisions). Status: PARTLY BUILT —
+Phase 1 (the writer) and the Licence Centre shipped; the Phase 2 tracker shipped
+2026-09-25. Read the correction under Phase 2 before trusting that section's premise.*
 *Competitive context: Safari Outdoor app teardown 2026-08-18 (25 operator photos, v4.5.8+420) —
 see `memory/project_competitor_safari_outdoor.md`. Their marketplace is dead (16 ads) but their
 feed is alive and their licence utility is the sticky asset. This plan out-builds it.*
@@ -480,9 +482,23 @@ attach to the renewal applications the Centre generates. Feed still ships last.
 
 ## Phase 2 — Application Checker
 
-**Fact that shapes it:** SAPS/CFR has no API. Nobody can query application status
-programmatically — the honest build is self-tracked milestones plus crowd data, which is
-also a unique-data moat nobody in SA publishes.
+⚠️ **CORRECTED 2026-09-25. The premise this section was written on is false.** It read
+"SAPS/CFR has no API. Nobody can query application status programmatically." That is
+true of an **API** and false of the **status** — SAPS publishes a public web enquiry at
+`saps.gov.za/services/firearm_status_enquiry.php` that answers, for one application
+reference, its current status and date. It is a CSRF-protected HTML form returning a
+table, not a service, and it holds only the CURRENT status with no history, which is
+what makes polling and storing the observations the product rather than a workaround.
+
+**What actually shipped (2026-09-25): the SAPS Application Tracker**, at
+`/licence-centre/tracking` — the fourth Armory sub-tile. A member saves a reference (plus
+an optional serial for a licence, not for a competency) and we poll the enquiry, diff
+each observation against the last, keep the history, and alert on a change. The stale
+premise above had one real consequence, and it is the part still unbuilt: because the
+plan assumed the status could not be read, **crowd statistics ("your s16 is at day 62")
+were the centrepiece**. Real per-application status makes those less load-bearing, not
+more — a member's own tracker is a better answer than an average. Crowd stats, the
+follow-up/escalation letters and the outcome-capture loop below remain unbuilt.
 
 - **Milestones** (user-updated, with nudges): submitted at DFO → SAP 523 reference captured
   → CFR acknowledged → in circulation → outcome (approved / refused → appeal window).

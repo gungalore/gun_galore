@@ -2,8 +2,16 @@
 // THE ADAPTER. Every model call on the platform goes through here.
 //
 // Operator, 2026-09-07: "we are switching from claude API to gemini 2.5
-// flash-lite api for everything on the website." Gemini is the provider;
-// LLM_PROVIDER=anthropic is the rollback lever and nothing else.
+// flash-lite api for everything on the website." Then, 2026-09-26: "Deepseek
+// as the default AI and when we get a pdf upload we send it to gemini."
+//
+// ⚠️ SO THE DEFAULT IS NOW WHATEVER `LLM_PROVIDER` SAYS, AND IT IS SET TO
+// deepseek. Three levers sit on top of it, in this order:
+//   1. `LLM_PROVIDER_<PURPOSE>` — pins ONE purpose (see providerFor).
+//   2. `LLM_PROVIDER` — the platform default.
+//   3. The document rescue (see `serve`) — a PDF cannot be read by DeepSeek,
+//      so a document-bearing request goes to Gemini whatever 1 and 2 say.
+// LLM_PROVIDER=gemini or anthropic remains the rollback lever.
 //
 // This class owns three things a provider must not, because a second
 // provider would then have to remember them:
@@ -72,7 +80,16 @@ export class LlmService {
     this.deepseek = deepseek ?? new DeepSeekProvider();
   }
 
-  /** Which provider is live, from LLM_PROVIDER (default 'gemini'). */
+  /**
+   * Which provider is live, from LLM_PROVIDER.
+   *
+   * ⚠️ THE LITERAL BELOW IS THE LAST-RESORT DEFAULT ONLY. Production sets
+   * `LLM_PROVIDER=deepseek`; the `'gemini'` here is what an unset env means,
+   * kept so a box mid-configuration still has a working provider rather than
+   * an empty one. Do not read this line as "the platform runs on Gemini" —
+   * `providerFor` is the routing, and `serve` can override even that for a
+   * PDF.
+   */
   get provider(): LlmProvider {
     return process.env.LLM_PROVIDER === 'anthropic'
       ? 'anthropic'
@@ -84,15 +101,18 @@ export class LlmService {
   /**
    * The provider that serves ONE purpose.
    *
-   * ⚠️ PER-PURPOSE ROUTING IS WHY THIS EXISTS. Feed moderation runs on
-   * DeepSeek while everything else (motivations, KYC reads, image generation)
-   * stays on Gemini. The override is an env var derived from the purpose:
-   * `feed.moderation` → `LLM_PROVIDER_FEED_MODERATION`. Unset falls back to
-   * the global `LLM_PROVIDER`, so the default never changes.
+   * ⚠️ PER-PURPOSE ROUTING IS WHY THIS EXISTS, AND IT NOW CARRIES THE
+   * GEMINI PINS. The platform default is DeepSeek (see the header), which
+   * cannot take PDF/document parts, `tools`, hosted web search or an image
+   * generation, and whose `stream` emits a single event — so every purpose
+   * that needs one of those is pinned back to Gemini here, by env.
    *
-   * To kill-switch feed moderation back to Gemini: set
-   * `LLM_PROVIDER_FEED_MODERATION=gemini` and reload. Same "env + reload, no
-   * deploy" lever as `LLM_PROVIDER=anthropic`.
+   * The override is an env var derived from the purpose:
+   * `kyc.face-match` → `LLM_PROVIDER_KYC_FACE_MATCH`. Unset falls back to the
+   * global `LLM_PROVIDER`, so the default never changes.
+   *
+   * To move a purpose back, set `LLM_PROVIDER_<PURPOSE>=deepseek` and reload.
+   * Same "env + reload, no deploy" lever as `LLM_PROVIDER=anthropic`.
    */
   private providerFor(purpose: string): LlmProviderClient {
     const key = `LLM_PROVIDER_${purpose.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
@@ -133,6 +153,27 @@ export class LlmService {
     return this.providerFor(purpose).isConfigured();
   }
 
+  /**
+   * Which provider serves `purpose` — the public face of `providerFor`.
+   *
+   * ⚠️ THIS EXISTS SO A CALLER CAN BRANCH ON THE PROVIDER WITHOUT CHOOSING ONE.
+   * A purpose may be pinned to DeepSeek by env, or fall back to the platform
+   * default. A call site that must pass a provider-SPECIFIC model argument
+   * asks here first — pinning `deepseek-flash` unconditionally is how a vision
+   * call reaches Gemini and 404s on a model it does not host. Callers still
+   * never construct a client or name the live provider themselves; this is
+   * the routing decision, read back.
+   *
+   * ⚠️ IT REPORTS THE PIN, NOT THE DOCUMENT RESCUE. `serve()` can still send a
+   * document-bearing request to Gemini after this has said `deepseek`, so a
+   * caller must not read a `deepseek` answer as "a PDF will be accepted here".
+   * Pass no document on that road, or let the rescue fire without consulting
+   * this.
+   */
+  providerNameFor(purpose: string): LlmProvider {
+    return this.providerFor(purpose).name;
+  }
+
   private active(): LlmProviderClient {
     return this.provider === 'anthropic'
       ? this.anthropic
@@ -141,11 +182,59 @@ export class LlmService {
         : this.gemini;
   }
 
+  /**
+   * Does this request carry something only a document-reading provider can
+   * take — a `document` part, or a PDF sent as an image part?
+   *
+   * ⚠️ BOTH SHAPES COUNT. A caller that holds a PDF has two ways to send it
+   * (`{type:'document'}` and `{type:'image', mimeType:'application/pdf'}`),
+   * and the callers in this repo use both. Checking only one would let the
+   * other reach DeepSeek and fail as `unsupported`.
+   */
+  private carriesDocument(req: LlmRequest): boolean {
+    for (const m of req.messages) {
+      if (typeof m.content === 'string') continue;
+      for (const part of m.content) {
+        if (part.type === 'document') return true;
+        if (part.type === 'image' && part.mimeType === 'application/pdf') {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * The provider that actually serves this call.
+   *
+   * ⚠️ THE PER-PURPOSE PIN IS THE ROUTING, AND THIS ONLY RESCUES IT. A
+   * purpose pinned (or defaulted) to a provider with no document support
+   * cannot read a PDF at all — DeepSeek throws `unsupported` in mapContent —
+   * so a document-bearing request goes to Gemini instead of failing. That
+   * rescue is deliberately narrow: it fires only when the pin's provider
+   * DECLARES it cannot take a document, so an explicit gemini/anthropic pin
+   * is left exactly where it was put.
+   *
+   * ⚠️ AND IT IS NEVER SILENT. The ledger already names the serving provider
+   * (`record` takes it from the response), but an operator reading a config
+   * file would see `LLM_PROVIDER_X=deepseek` and believe it. The warn below is
+   * what says which calls are not running where they were pointed.
+   */
+  private serve(req: LlmRequest): LlmProviderClient {
+    const wanted = this.providerFor(req.purpose);
+    if (wanted.acceptsDocuments || !this.carriesDocument(req)) return wanted;
+    this.logger.warn(
+      `llm ${req.purpose} carries a PDF but is pinned to ${wanted.name}, ` +
+        `which cannot read one — served by gemini instead`,
+    );
+    return this.gemini;
+  }
+
   // ══════════════════════════════════════════════════════════════════
   // COMPLETE
   // ══════════════════════════════════════════════════════════════════
   async complete(req: LlmRequest): Promise<LlmResponse> {
-    const provider = this.providerFor(req.purpose);
+    const provider = this.serve(req);
     const model = req.model ?? provider.defaultModel();
     const startedAt = Date.now();
 
@@ -172,7 +261,7 @@ export class LlmService {
   // STREAM
   // ══════════════════════════════════════════════════════════════════
   async *stream(req: LlmRequest): AsyncGenerator<LlmStreamEvent> {
-    const provider = this.providerFor(req.purpose);
+    const provider = this.serve(req);
     const model = req.model ?? provider.defaultModel();
     const startedAt = Date.now();
 
@@ -220,7 +309,20 @@ export class LlmService {
    * mapper with a shape error.
    */
   async generateImage(req: LlmImageRequest): Promise<LlmImageResponse> {
-    const provider = this.providerFor(req.purpose);
+    const wanted = this.providerFor(req.purpose);
+    // ⚠️ SAME RESCUE AS A PDF, FOR THE SAME REASON. DeepSeek defines no
+    // generateImage at all, so a purpose that defaults to it throws
+    // `unsupported` rather than drawing. Pinning the purpose is the fix; this
+    // is the backstop for a purpose nobody pinned, and it is announced for
+    // the same reason the document rescue is — a pinned env must not read as
+    // truth in the logs.
+    const provider = wanted.generateImage ? wanted : this.gemini;
+    if (provider !== wanted) {
+      this.logger.warn(
+        `llm ${req.purpose} asks for an image but is pinned to ${wanted.name}, ` +
+          `which has no image model — served by gemini instead`,
+      );
+    }
     const startedAt = Date.now();
     const model =
       req.model ?? provider.defaultImageModel?.() ?? provider.defaultModel();

@@ -199,6 +199,37 @@ function daysApart(a: string | null, b: string | null): number | null {
   return Math.abs(ta - tb) / 86_400_000;
 }
 
+/** Shortest run of digits/letters we will accept as a shared prefix. */
+const MIN_SHARED_PREFIX = 5;
+
+/**
+ * Does a number on one side open a number on the other?
+ *
+ * ⚠️ A TRAINING PROVIDER PRINTS ITS CERTIFICATE NUMBER ONE WAY AND THE PFTC
+ * STATEMENT PRINTS IT ANOTHER, AND THE SHORT ONE IS A PREFIX OF THE LONG ONE.
+ * Operator's own NSN handgun pair, read off their vault 2026-09-26: the
+ * certificate prints `TRG 11897`, the statement behind it prints
+ * `TRG11897 - 26124778` — the same number with the statement's own reference
+ * appended. Normalised they are `TRG11897` and `TRG1189726124778`, which never
+ * compare equal, so the pair sat unpaired with both sides flagged "needs its
+ * other side".
+ *
+ * ⚠️ THE PREFIX IS NEVER ENOUGH ON ITS OWN. It only ever reaches a caller that
+ * has ALREADY required the unit standards to agree, so a different course at
+ * the same provider — whose number happens to extend another's — cannot be
+ * paired on that alone.
+ */
+function sharesNumberPrefix(a: Iterable<string>, b: readonly string[]): boolean {
+  for (const x of a) {
+    for (const y of b) {
+      const short = x.length <= y.length ? x : y;
+      const long = x.length <= y.length ? y : x;
+      if (short.length >= MIN_SHARED_PREFIX && long.startsWith(short)) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * The other side of this proficiency, if the member has already filed it.
  *
@@ -239,6 +270,15 @@ export function findOtherSide(
       if (!myCodes) return false;
       const codes = parseUnitStandards(o.details.unit_standard ?? '').sort().join('+');
       if (codes !== myCodes) return false;
+      /**
+       * ⚠️ THE SAME COURSE, WITH ONE NUMBER PRINTED TWO WAYS. The certificate
+       * carries the short form and the statement the long one — see
+       * sharesNumberPrefix — and the unit standards above have ALREADY been
+       * required to agree, so this is not a bare prefix match. It sits above
+       * the ID/date fallbacks because it is a stronger statement about the
+       * document than either: the provider's own number, opening identically.
+       */
+      if (sharesNumberPrefix(mine, numbers(o.details))) return true;
       const theirId = norm(o.details.id_number);
       const gap = daysApart(subject.issuedOn, o.issuedOn);
       // Both IDs read: they must agree, and the dates must be close or unknown.
@@ -286,6 +326,17 @@ export function isPairNote(note: string): boolean {
 export function otherSideNote(match: { title: string }, side: DocumentSide | null): string {
   const what = side === 'back' ? 'the statement of results' : side === 'front' ? 'the certificate' : 'one page';
   return `Filed with "${match.title}" as ${what} of the pair. The two go onto an application together.`;
+}
+
+/**
+ * Is this note the "looks like a copy" sentence?
+ *
+ * ⚠️ BY OPENING WORDS, like isSideMissingNote. A note written under earlier
+ * wording still has to come off, or a promoted row keeps telling the member it
+ * is a copy of the row that was just deleted on its behalf.
+ */
+export function isDuplicateNote(note: string): boolean {
+  return /^Looks like a copy of /.test(note);
 }
 
 /** The sentence the member sees on the review screen and the card. */

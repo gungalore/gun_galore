@@ -209,6 +209,15 @@ const BLOCKING_FINISH_REASONS = new Set([
 
 export class GeminiProvider implements LlmProviderClient {
   readonly name = 'gemini' as const;
+
+  /**
+   * True — a `document` part maps to `inlineData` like an image does (see
+   * toGeminiPart). This is what makes Gemini the platform's PDF reader, and
+   * what LlmService falls back to when a PDF reaches a purpose pinned to a
+   * provider that cannot take one.
+   */
+  readonly acceptsDocuments = true;
+
   private readonly logger = new Logger(GeminiProvider.name);
   private client: GoogleGenAI | null = null;
 

@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useState } from "react";
+import { useUploadEnhance } from "@/components/scan-upload/use-upload-enhance";
 import type { SheetDocument } from "./contract";
 
 // ────────────────────────────────────────────────────────────────────
@@ -156,6 +157,15 @@ export default function DocumentShelf({
   const empty = documents.length === 0;
   const mine = documents.filter((d) => d.origin === "member");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  /*
+    ⚠️ THE PICKER OPENS THE OPERATING SYSTEM'S DIALOG FROM INSIDE THE TAP, so
+    it cannot be wrapped in DocumentEnhancer (which owns its own trigger and
+    would need the dialog to open from its own button — see the note in
+    use-document-enhance). The photo picked here still gets the scanner's
+    crop, straighten and lighting before it is uploaded; a PDF or a file the
+    browser cannot decode passes straight through.
+  */
+  const { overlay: enhanceOverlay, enhance } = useUploadEnhance();
 
   // A document that has just been saved and re-read comes back as `vault`, so
   // a stale tick would keep pointing at a row that is no longer offered.
@@ -190,7 +200,14 @@ export default function DocumentShelf({
           // Reset first: picking the same file twice in a row fires no change
           // event otherwise, and the second attempt looks like a dead button.
           e.target.value = "";
-          if (files.length) onUpload(files);
+          if (!files.length) return;
+          // ⚠️ THIS DOOR NEVER ASKS WHAT THE DOCUMENT IS (brief §6.1), so the
+          // scanner is titled generically and the server still classifies.
+          void enhance(files, {
+            title: "Photograph the document",
+            shape: "a4",
+            onDone: onUpload,
+          });
         }}
       />
     </label>
@@ -244,6 +261,7 @@ export default function DocumentShelf({
             </span>
           </span>,
         )}
+        {enhanceOverlay}
       </div>
     );
   }
@@ -408,6 +426,14 @@ export default function DocumentShelf({
           </span>
         ) : null}
       </div>
+
+      {/*
+        ⚠️ THE SCANNER'S REVIEW SITS AT THE SHELF'S OWN ROOT, not inside the
+        tile that opened it. The overlay is one dialog for however many files
+        were picked, and the shelf is torn down the moment a document is
+        removed — so this must live where the state lives.
+      */}
+      {enhanceOverlay}
     </div>
   );
 }
