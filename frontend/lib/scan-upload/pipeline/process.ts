@@ -72,6 +72,15 @@ export interface ProcessOptions {
   live?: LiveOutline | null;
   /** Where the still came from, for diagnostics. */
   stillSource?: 'photo' | 'frame' | 'file';
+  /**
+   * An upright rotation the caller already knows, applied instead of the ink
+   * heuristic.
+   *
+   * ⚠️ THE INK CANNOT CHOOSE THE DIRECTION — only that a quarter turn is due.
+   * The classifier, which has looked at the page, says which way; this carries
+   * its answer here. Undefined falls back to chooseRotationPage.
+   */
+  rotate?: Rotation;
 }
 
 let counter = 0;
@@ -107,7 +116,7 @@ export async function processStill(still: ImageData, opts: ProcessOptions): Prom
     refinedEdges = refined.edges.filter((e) => e.refined).length;
   }
 
-  const finished = finishPage(work, quad, opts.shapeHint, workEdge);
+  const finished = finishPage(work, quad, opts.shapeHint, workEdge, opts.rotate);
   return {
     id: `p${Date.now().toString(36)}${(counter++).toString(36)}`,
     ...finished,
@@ -133,7 +142,7 @@ export async function processStill(still: ImageData, opts: ProcessOptions): Prom
 }
 
 /** Crop, normalise, choose a look and grade, from a working image and an outline (or none). */
-function finishPage(work: ImageData, quad: Quad | null, shapeHint: DocShape | undefined, workEdge: number): Pick<ScanPage, 'base' | 'normalized' | 'quad' | 'shape' | 'aspect' | 'autoMode' | 'quality'> {
+function finishPage(work: ImageData, quad: Quad | null, shapeHint: DocShape | undefined, workEdge: number, knownRotate?: Rotation): Pick<ScanPage, 'base' | 'normalized' | 'quad' | 'shape' | 'aspect' | 'autoMode' | 'quality'> {
   let base = work;
   let shape: DocShape = shapeHint ?? 'other';
   let aspect: number | null = null;
@@ -151,8 +160,10 @@ function finishPage(work: ImageData, quad: Quad | null, shapeHint: DocShape | un
     const target = !snap || known === null ? est.ratio : landscape ? SHAPE_RATIOS[known] : 1 / SHAPE_RATIOS[known];
     const { width, height } = outputSizeFor(quad, target, workEdge);
     base = warpQuad(work, quad, width, height);
-    // Cards read landscape; anything the text shows to be upside down is turned over.
-    const rot = chooseRotationPage(base, shape);
+    // Cards read landscape; anything the text shows to be upside down is turned
+    // over. ⚠️ A rotation the caller already knows (the classifier's answer)
+    // wins — the ink can only say a quarter turn is due, not which way.
+    const rot = knownRotate ?? chooseRotationPage(base, shape);
     if (rot !== 0) base = rotateImageData(base, rot);
   }
   const normalized = normalizeIllumination(base);

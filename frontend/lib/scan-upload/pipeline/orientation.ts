@@ -211,8 +211,37 @@ const BLANK_ROW_FLOOR = 0.06;
 /** The reading axis must show at least this share of blank rows; less is no reading. */
 const MIN_BLANK_FRACTION = 0.15;
 
-/** And it must beat the other axis by this factor, or the page is left alone. */
-const AXIS_EDGE = 1.5;
+/**
+ * And it must beat the other axis by this factor, or the page is left alone.
+ *
+ * ⚠️ LOWERED FROM 1.5 TO 1.05 ON 2026-09-28, ON REAL DOCUMENTS. The operator's
+ * own sideways iCloud exports (SAPS 524 competency certificates, 2048x1536, no
+ * EXIF orientation — the main image lies on its side and only the embedded
+ * thumbnail is upright, which is why the OS picker looked correct and the app
+ * did not) measured, on the WARPED page:
+ *
+ *     held 0.369  side 0.486   ratio 1.31   ← 1.5 rejected it, page stayed sideways
+ *     held 0.542  side 0.592   ratio 1.09   ← 1.5 rejected it, and this one is why
+ *                                              the edge sits at 1.05, not 1.15
+ *     held 0.335  side 0.531   ratio 1.59   ← 1.5 accepted it
+ *
+ * The DIRECTION was right in all three (the rotated axis always had more blank
+ * rows); only the 1.5 multiplier rejected two. The 1.5 was tuned on the
+ * synthetic fixtures below, where an upright page has held ~0.5-0.8 against a
+ * sideways ~0.0 — a separation a real dense certificate does not give (its
+ * "sideways" held is ~0.5, not ~0.0, because a sparse page is full of blank
+ * rows in every orientation). The floor still refuses a blank page and a page
+ * with no line structure, and the manual Rotate remains for the cases the ink
+ * genuinely cannot decide (which END is up is still never guessed — 180 is
+ * never applied).
+ *
+ * ⚠️ THE RISK IS THE OPPOSITE ERROR: turning an UPRIGHT page over its side. The
+ * guard is that an upright page measures held > side, so no edge factor at or
+ * below 1.0 can reach it; this only widens the margin needed for the sideways
+ * call. 1.05 is deliberately small because a real certificate can separate its
+ * two axes by as little as 9%.
+ */
+const AXIS_EDGE = 1.05;
 
 /**
  * How strongly a page reads as horizontal text: of the rows the text actually

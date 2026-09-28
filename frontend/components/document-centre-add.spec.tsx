@@ -2,71 +2,60 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import DocumentCentreAdd, { type KindGroupSpec } from './document-centre-add';
-import type { CredentialKind } from '@/lib/licence-centre-api';
+import DocumentCentreAdd from './document-centre-add';
 
 // ────────────────────────────────────────────────────────────────────
-// ONE UPLOADER, AND "WORK IT OUT FOR ME" IS STILL THE FIRST THING IN IT.
+// TWO BUTTONS, AND NO TYPE MENU.
 //
-// The Evidence panel is gone: there is no separate input that asks the member
-// to name a document before anything has looked at it. What remains is this
-// menu — two buttons, one list — and the list's first entry must keep being
-// "Work it out for me", because the classifier is good and the common case
-// must not become slower than it already was.
+// Operator, 2026-09-27: "I want this selection dropdown removed from the
+// upload and Scan with phone. The AI already decides what document it is.
+// Upload button open the file list automatically and the scan button opens
+// the QR code."
 //
-// ⚠️ AND PICKING IT MUST OPEN THE FILE DIALOG IN THE SAME GESTURE. iOS Safari
-// refuses a programmatic file dialog that is not attached to a user gesture,
-// so `pick()` calls the input's click() synchronously inside the button's own
-// onClick. Deferring it — behind a state update or an await — is the bug this
-// test pins shut, and it is invisible on a desktop where the dialog opens
-// anyway.
-//
-// ⚠️ NOTHING IS POLISHED HERE ANY MORE. This component used to run the
-// scanner treatment on the way to `onFiles`, before the server had seen the
-// bytes. It does not now: the role of a file is not known until the model has
-// answered, and an evidence photograph must never be cropped or deshadowed.
-// These tests hand over the very File objects that were picked — the page is
-// responsible for the treatment, after identify, and only for documents.
+// Upload opens the OS dialog IN THE SAME GESTURE (iOS Safari refuses a
+// programmatic dialog that is not attached to a tap) and hands the raw File
+// objects over with no declared kind. Scan mounts ScanButton, which picks the
+// QR or the camera itself.
 // ────────────────────────────────────────────────────────────────────
 
-const GROUPS: KindGroupSpec[] = [
-  {
-    label: 'Your licences',
-    kinds: ['FIREARM_LICENCE', 'COMPETENCY_CERTIFICATE'] as CredentialKind[],
-  },
-];
+// The real ScanButton pulls in next/dynamic and the media-device probe; this
+// stub exists only to prove WHEN it is mounted and with what.
+vi.mock('@/components/scan/scan-button', async () => {
+  const React = await import('react');
+  return {
+    default: (props: { autoStart?: boolean; onClosed?: () => void }) =>
+      React.createElement(
+        'button',
+        {
+          'data-testid': 'scan-button',
+          'data-autostart': String(props.autoStart),
+          onClick: props.onClosed,
+        },
+        'scan',
+      ),
+  };
+});
 
 const noop = () => undefined;
 
 function open(over: Partial<React.ComponentProps<typeof DocumentCentreAdd>> = {}) {
   const props = {
-    groups: GROUPS,
     busy: false,
     onFiles: vi.fn(),
     onHandoffArrived: noop,
     ...over,
   };
   const utils = render(<DocumentCentreAdd {...props} />);
-  const upload = screen.getByRole('button', { name: 'Upload' });
-  fireEvent.click(upload);
-  return { ...utils, props, upload };
+  return { ...utils, props };
 }
 
-describe('the one uploader\u2019s menu', () => {
-  it('\u26a0\ufe0f OFFERS "WORK IT OUT FOR ME" FIRST', () => {
-    open();
-    const panel = screen.getByLabelText('What are you adding?');
-    const buttons = Array.from(panel.querySelectorAll('button'));
-    expect(buttons[0]?.textContent).toContain('Work it out for me');
-  });
-
+describe('the two-button uploader', () => {
   it('\u26a0\ufe0f OPENS THE FILE DIALOG IN THE SAME GESTURE', () => {
     // The click() must happen synchronously inside the React event, before any
     // re-render — that is what "still on the user gesture" means to Safari.
     const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click');
     const { container } = open();
-    clickSpy.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: /Work it out for me/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).toBeTruthy();
     expect(clickSpy).toHaveBeenCalledTimes(1);
@@ -74,10 +63,17 @@ describe('the one uploader\u2019s menu', () => {
     clickSpy.mockRestore();
   });
 
-  it('hands the picked files over to be classified, with no kind chosen', () => {
+  it('\u26a0\ufe0f SHOWS NO TYPE MENU WHEN UPLOAD IS PRESSED', () => {
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+    expect(screen.queryByText(/work it out for me/i)).toBeNull();
+    expect(screen.queryByText(/what are you adding/i)).toBeNull();
+  });
+
+  it('hands the picked files over to be classified, with no kind declared', () => {
     const onFiles = vi.fn();
     const { container } = open({ onFiles });
-    fireEvent.click(screen.getByRole('button', { name: /Work it out for me/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
     const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
     const photo = new File(['x'], 'licence.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [photo] } });
@@ -89,35 +85,27 @@ describe('the one uploader\u2019s menu', () => {
     // into this file, evidence photographs start arriving cropped.
     const onFiles = vi.fn();
     const { container } = open({ onFiles });
-    fireEvent.click(screen.getByRole('button', { name: /Work it out for me/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
     const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
     const hunt = new File(['bytes'], 'hunt.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [hunt] } });
     expect(onFiles.mock.calls[0][0][0]).toBe(hunt);
   });
 
-  it('opens the dialog straight away for an ordinary kind too', () => {
-    const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click');
+  it('\u26a0\ufe0f SCAN MOUNTS THE SCANNER ON AUTO-START — NO MENU FIRST', () => {
     open();
-    clickSpy.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: /Firearm licence/ }));
-    expect(clickSpy).toHaveBeenCalledTimes(1);
-    clickSpy.mockRestore();
+    expect(screen.queryByTestId('scan-button')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Scan with phone' }));
+    const scan = screen.getByTestId('scan-button');
+    expect(scan.getAttribute('data-autostart')).toBe('true');
+    // Closing the scanner takes the buttons back to Upload / Scan.
+    fireEvent.click(scan);
+    expect(screen.queryByTestId('scan-button')).toBeNull();
   });
 
-  it('\u26a0\ufe0f STOPS AT THE ADVICE FOR THE SAFE PHOTOGRAPHS, RATHER THAN THE DIALOG', () => {
-    // "Add several: the safe closed, half open..." is the last screen before
-    // the phone is in the member's hand, and the dialog must not open over it.
-    const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click');
-    open({
-      groups: [
-        { label: 'Your safe', kinds: ['SAFE_PHOTOGRAPHS'] as CredentialKind[] },
-      ],
-    });
-    clickSpy.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: /Photographs of my safe/ }));
-    expect(clickSpy).not.toHaveBeenCalled();
-    expect(screen.getByText(/the safe closed, half open/i)).toBeTruthy();
-    clickSpy.mockRestore();
+  it('disables both buttons while busy', () => {
+    open({ busy: true });
+    expect(screen.getByRole('button', { name: 'Upload' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Scan with phone' })).toBeDisabled();
   });
 });

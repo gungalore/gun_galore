@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import BatchPreview from './batch-preview';
+import BatchReview from './batch-preview';
 import { type BatchCard } from './upload-batch';
 import type { IdentifyVerdict } from '@/lib/licence-centre-api';
 
@@ -12,17 +12,19 @@ beforeAll(() => {
 });
 
 // ────────────────────────────────────────────────────────────────────
-// THE LOOK-BEFORE-IT-IS-KEPT STEP.
+// THE ONE SCREEN — DOCUMENTS SORTED, EVIDENCE SORTED, ONE CONFIRM.
 //
-// Operator's flow: read files, sort documents from evidence, enhance the
-// documents, then "open preview for user to look at documents so they can
-// make sure they have been correctly identified". These tests pin the two
-// things that make that a confirm step and not a decoration:
+// Operator, 2026-09-28: "the next screen they see is documents sorted and
+// evidence sorted, everything is identified and they can just confirm that
+// it's right and it goes into the vault."
 //
-//   1. the ENHANCED image is what is shown — the crop is what is being
-//      approved, so the crop is what must be drawn; and
-//   2. nothing is filed until "File these" — the button is the only path to
-//      the caller's confirm, and a card with no bytes cannot be filed at all.
+// What must hold:
+//   1. the two groups are actually separate, and each row shows what we made
+//      of the file;
+//   2. an evidence item cannot be filed without a description — the words are
+//      what place it, so the confirm is dead until every one has some;
+//   3. the enhanced crop is what is drawn for a document (that is what is
+//      being confirmed), and the magnifier opens it at full size.
 // ────────────────────────────────────────────────────────────────────
 
 const verdictOf = (over: Partial<IdentifyVerdict> = {}): IdentifyVerdict => ({
@@ -52,140 +54,138 @@ const card = (over: Partial<BatchCard> = {}): BatchCard => ({
 
 const noop = () => undefined;
 
-describe('the preview', () => {
+function renderReview(
+  cards: BatchCard[],
+  over: Partial<React.ComponentProps<typeof BatchReview>> = {},
+) {
+  return render(
+    <BatchReview
+      cards={cards}
+      busy={false}
+      onRemove={noop}
+      onDescriptionChange={noop}
+      onConfirm={noop}
+      {...over}
+    />,
+  );
+}
+
+describe('the sorted review', () => {
   it('renders nothing when there is nothing to show', () => {
-    const { container } = render(
-      <BatchPreview cards={[]} busy={false} onRemove={noop} onConfirm={noop} />,
-    );
+    const { container } = renderReview([]);
     expect(container.firstChild).toBeNull();
   });
 
-  it('says what we made of each file, in the member\u2019s words', () => {
-    render(
-      <BatchPreview
-        cards={[card()]}
-        busy={false}
-        onRemove={noop}
-        onConfirm={noop}
-      />,
-    );
+  it('⚠️ SORTS DOCUMENTS FROM EVIDENCE UNDER THEIR OWN LABELS', () => {
+    renderReview([
+      card({ id: 'd1' }),
+      card({
+        id: 'e1',
+        verdict: verdictOf({ role: 'evidence', kind: null, container: 'HUNTING_PHOTO' }),
+        description: 'a hunt',
+      }),
+    ]);
+    expect(screen.getByText('Documents')).toBeTruthy();
+    expect(screen.getByText('Evidence')).toBeTruthy();
     expect(screen.getByText('Filed as Firearm licence.')).toBeTruthy();
+    expect(screen.getByText('Evidence — Hunting photo.')).toBeTruthy();
   });
 
-  it('⚠️ TELLS THEM NOTHING IS SAVED YET', () => {
-    render(
-      <BatchPreview
-        cards={[card()]}
-        busy={false}
-        onRemove={noop}
-        onConfirm={noop}
-      />,
-    );
-    expect(screen.getByText(/Nothing has been saved yet/)).toBeTruthy();
-  });
-
-  it('⚠️ DRAWS THE ENHANCED IMAGE, NOT THE RAW PICK', () => {
-    // The crop is what is being confirmed, so the crop is what is shown.
-    render(
-      <BatchPreview
-        cards={[card({ url: 'blob:raw', previewUrl: 'blob:enhanced' })]}
-        busy={false}
-        onRemove={noop}
-        onConfirm={noop}
-      />,
-    );
+  it('\u26a0\ufe0f DRAWS THE ENHANCED CROP, AND THE MAGNIFIER OPENS IT', () => {
+    const onOpen = vi.fn();
+    renderReview([card({ url: 'blob:raw', previewUrl: 'blob:enhanced' })], {
+      onOpen,
+    });
     expect(screen.getByRole('img', { name: 'photo.jpg' }).getAttribute('src')).toBe(
       'blob:enhanced',
     );
+    fireEvent.click(screen.getByRole('button', { name: 'View photo.jpg' }));
+    expect(onOpen).toHaveBeenCalledWith('blob:enhanced', 'photo.jpg');
   });
 
-  it('files nothing until the member presses the button', () => {
+  it('\u26a0\ufe0f WILL NOT FILE AN UNDESCRIBED EVIDENCE ITEM', () => {
     const onConfirm = vi.fn();
-    render(
-      <BatchPreview
-        cards={[card()]}
-        busy={false}
-        onRemove={noop}
-        onConfirm={onConfirm}
-      />,
+    renderReview(
+      [
+        card({
+          id: 'e1',
+          verdict: verdictOf({ role: 'evidence', kind: null, container: null }),
+          description: '',
+        }),
+      ],
+      { onConfirm },
     );
+    expect(screen.getByRole('button', { name: 'Confirm and file' })).toBeDisabled();
+    expect(screen.getByText(/Describe the photograph below/)).toBeTruthy();
     expect(onConfirm).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'File these' }));
+  });
+
+  it('enables the confirm once every evidence item is described', () => {
+    const onConfirm = vi.fn();
+    renderReview(
+      [
+        card({
+          id: 'e1',
+          verdict: verdictOf({ role: 'evidence', kind: null, container: null }),
+          description: 'me and my son on a hunt',
+        }),
+      ],
+      { onConfirm },
+    );
+    const button = screen.getByRole('button', { name: 'Confirm and file' });
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
-  it('files nothing when no card has bytes ready', () => {
-    const onConfirm = vi.fn();
-    render(
-      <BatchPreview
-        cards={[card({ state: 'waiting', prepared: null, previewUrl: null })]}
-        busy={false}
-        onRemove={noop}
-        onConfirm={onConfirm}
-      />,
+  it('reports edits to an evidence description back to the caller', () => {
+    const onDescriptionChange = vi.fn();
+    renderReview(
+      [
+        card({
+          id: 'e1',
+          verdict: verdictOf({ role: 'evidence', kind: null, container: null }),
+        }),
+      ],
+      { onDescriptionChange },
     );
-    expect(screen.getByRole('button', { name: 'File these' })).toBeDisabled();
-    expect(onConfirm).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'my reloading bench' },
+    });
+    expect(onDescriptionChange).toHaveBeenCalledWith('e1', 'my reloading bench');
   });
 
-  it('⚠️ ADMITS A CARD WITH NOTHING TO FILE RATHER THAN SHOWING A DEAD X', () => {
-    render(
-      <BatchPreview
-        cards={[card({ state: 'waiting', prepared: null, previewUrl: null })]}
-        busy={false}
-        onRemove={noop}
-        onConfirm={noop}
-      />,
-    );
-    expect(screen.getByText(/nothing to file for this one/)).toBeTruthy();
+  it('does not require a description on a document', () => {
+    renderReview([card()]);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Confirm and file' }),
+    ).not.toBeDisabled();
   });
 
-  it('counts only the cards that are actually ready', () => {
-    render(
-      <BatchPreview
-        cards={[card(), card({ id: 'id-2', state: 'waiting', prepared: null })]}
-        busy={false}
-        onRemove={noop}
-        onConfirm={noop}
-      />,
-    );
-    expect(screen.getByText('1 document ready')).toBeTruthy();
-  });
-
-  it('removes a card by id', () => {
+  it('offers Fix crop for a document and Remove for both', () => {
+    const onFix = vi.fn();
     const onRemove = vi.fn();
-    render(
-      <BatchPreview
-        cards={[card()]}
-        busy={false}
-        onRemove={onRemove}
-        onConfirm={noop}
-      />,
+    renderReview(
+      [
+        card({ id: 'd1' }),
+        card({
+          id: 'e1',
+          verdict: verdictOf({ role: 'evidence', kind: null, container: 'RANGE' }),
+          description: 'at the range',
+        }),
+      ],
+      { onFix, onRemove },
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    expect(onRemove).toHaveBeenCalledWith('id-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Fix crop' }));
+    expect(onFix).toHaveBeenCalledWith('d1');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+    expect(onRemove).toHaveBeenCalledWith('d1');
   });
 
-  it('⚠️ STANDS DOWN WHILE THE BATCH IS BEING FILED', () => {
-    render(
-      <BatchPreview cards={[card()]} busy onRemove={noop} onConfirm={noop} />,
-    );
+  it('\u26a0\ufe0f STANDS DOWN WHILE THE BATCH IS BEING FILED', () => {
+    renderReview([card()], { busy: true });
     expect(screen.getByRole('button', { name: 'Filing…' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Remove' })).toBeDisabled();
-  });
-
-  it('opens a picture full size from the enhanced preview URL', () => {
-    const onOpen = vi.fn();
-    render(
-      <BatchPreview
-        cards={[card({ previewUrl: 'blob:enhanced' })]}
-        busy={false}
-        onRemove={noop}
-        onConfirm={noop}
-        onOpen={onOpen}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'View photo.jpg' }));
-    expect(onOpen).toHaveBeenCalledWith('blob:enhanced', 'photo.jpg');
   });
 });

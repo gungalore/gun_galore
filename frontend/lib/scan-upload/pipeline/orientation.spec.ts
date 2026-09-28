@@ -46,6 +46,39 @@ beforeAll(() => {
   (globalThis as unknown as { ImageData: unknown }).ImageData = FakeImageData;
 });
 
+/**
+ * A page of small scattered stamps on a grid — the SAPS 524 certificate's
+ * field boxes. By choosing the horizontal and vertical spacing independently
+ * the two axes' blank-row fractions can be brought arbitrarily close, which is
+ * what a real dense certificate does to this metric (see AXIS_EDGE).
+ */
+function makeStamps(
+  width: number,
+  height: number,
+  mark: number,
+  hx: number,
+  hy: number,
+): ImageData {
+  const img = new FakeImageData(width, height);
+  img.data.fill(PAPER);
+  const top = Math.round(height * 0.08);
+  const left = Math.round(width * 0.08);
+  for (let y = top; y + mark <= height - top; y += hy) {
+    for (let x = left; x + mark <= width - left; x += hx) {
+      for (let r = 0; r < mark; r++) {
+        for (let c = 0; c < mark; c++) {
+          const i = ((y + r) * width + (x + c)) * 4;
+          img.data[i] = INK;
+          img.data[i + 1] = INK;
+          img.data[i + 2] = INK;
+          img.data[i + 3] = 255;
+        }
+      }
+    }
+  }
+  return img as unknown as ImageData;
+}
+
 const PAPER = 240;
 const INK = 30;
 
@@ -127,6 +160,21 @@ describe('chooseRotationPage — the upload fork', () => {
     const upright = makePage();
     const sideways = rotateImageData(upright, 270);
     expect(chooseRotationPage(sideways, 'a4')).toBe(90);
+  });
+
+  it('\u26a0\ufe0f TURNS A SPARSE PAGE WHOSE TWO AXES ARE BARELY APART', () => {
+    // THE REAL-CERTIFICATE CASE. On the operator's own sideways exports of a
+    // SAPS 524 competency certificate the blank-row axes came apart by as
+    // little as 9% (side 0.592 against held 0.542) — under the old 1.5 edge,
+    // so two of three pages stayed sideways. `makeStamps` reproduces that
+    // narrow gap by spacing the field boxes wider horizontally than vertically:
+    // rotating the page gives the reading axis only ~1.1x the blank rows, and
+    // it must still be turned. The transpose is the upright page and must be
+    // left alone, so this pins the DIRECTION as well as the threshold.
+    const sideways = makeStamps(520, 520, 6, 26, 20);
+    expect(chooseRotationPage(sideways, 'a4')).toBe(90);
+    const upright = makeStamps(520, 520, 6, 20, 26);
+    expect(chooseRotationPage(upright, 'a4')).toBe(0);
   });
 
   // ⚠️ THE VERIFIER'S COUNTEREXAMPLE. The previous version ranked candidate

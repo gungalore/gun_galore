@@ -52,6 +52,8 @@ function build(
     classify?: (unknown | null)[];
     /** What the evidence classifier answers. Default null. */
     sorted?: { container: string; confident: boolean } | null;
+    /** What the orientation call answers for a document. Default undefined. */
+    rotate?: 0 | 90 | 180 | 270;
     /** An already-identified record for these bytes, or null. */
     seen?: Record<string, unknown> | null;
     ocr?: string | null;
@@ -69,6 +71,7 @@ function build(
   );
   const classifyEvidence = jest.fn(async () => o.sorted ?? null);
   const ocr = jest.fn(async () => o.ocr ?? null);
+  const orient = jest.fn(async () => o.rotate);
 
   const prisma = {
     user: { findUnique: jest.fn(async () => ({ id: 'u1' })) },
@@ -79,7 +82,7 @@ function build(
     { get: jest.fn(async () => o.cap ?? 60) } as never,
     { resolveByEntity: jest.fn(async () => undefined) } as never,
     { assertEnabled: jest.fn(async () => undefined) } as never,
-    { classify, read: jest.fn(async () => null) } as never,
+    { classify, read: jest.fn(async () => null), orient } as never,
     { classifyEvidence, ocr } as never,
     {
       rearmAutolinkFor: jest.fn(async () => 0),
@@ -91,7 +94,7 @@ function build(
     { note: () => undefined } as never,
     { findBySha, put, take: jest.fn(async () => null) } as never,
   );
-  return { svc, classify, classifyEvidence, ocr, put, findBySha };
+  return { svc, classify, classifyEvidence, ocr, orient, put, findBySha };
 }
 
 describe('identifying a batch', () => {
@@ -108,6 +111,24 @@ describe('identifying a batch', () => {
     expect(out[0].id).toBeTruthy();
     expect(out[1].id).toBeTruthy();
     expect(out[0].id).not.toBe(out[1].id);
+  });
+
+  it('\u26a0\ufe0f ASKS THE ORIENTATION ONLY OF A DOCUMENT, AND CARRIES IT', async () => {
+    // The ink can find the quarter turn but not the direction; a separate,
+    // minimal vision call answers it, and only for a page — evidence is a
+    // photograph the member framed themselves and is stored as taken.
+    const { svc, put, orient } = build({
+      classify: [asDocument('COMPETENCY_CERTIFICATE'), asEvidence()],
+      sorted: { container: 'HUNTING_PHOTO', confident: true },
+      rotate: 270,
+    });
+    const out = await svc.identify('u1', [img('cert'), img('photo')]);
+
+    expect(orient).toHaveBeenCalledTimes(1);
+    expect(out[0].rotate).toBe(270);
+    expect(out[1].rotate).toBeUndefined();
+    // ⚠️ NOT PERSISTED — nothing reads it back; create() files turned bytes.
+    expect(put.mock.calls[0][0]).not.toHaveProperty('rotate');
   });
 
   it('⚠️ STORES NOTHING — it identifies and remembers, it does not file', async () => {
@@ -257,7 +278,7 @@ describe('a failed or unreadable answer', () => {
       { get: jest.fn(async () => 60) } as never,
       { resolveByEntity: jest.fn(async () => undefined) } as never,
       { assertEnabled: jest.fn(async () => undefined) } as never,
-      { classify, read: jest.fn(async () => null) } as never,
+      { classify, read: jest.fn(async () => null), orient: jest.fn(async () => undefined) } as never,
       { classifyEvidence: jest.fn(async () => null), ocr: jest.fn(async () => null) } as never,
       {
         rearmAutolinkFor: jest.fn(async () => 0),
@@ -267,8 +288,18 @@ describe('a failed or unreadable answer', () => {
       { findBySha: jest.fn(async () => null), put: jest.fn(), take: jest.fn() } as never,
     );
     const out = await svc.identify('u1', [img('a'), img('b')]);
-    expect(out[0].role).toBe('evidence');
-    expect(out[1]).toMatchObject({ role: 'document', kind: 'FIREARM_LICENCE' });
+    // ⚠️ ORDER IS NOT ASSERTED. identify() now runs files concurrently (see
+    // IDENTIFY_CONCURRENCY — sequential is what made a five-file batch overrun
+    // the API proxy). The two files' classify calls therefore race, and which
+    // one receives the single rejected answer is not pinned to the file index.
+    // What must hold is the resilient part: one file's throw does not sink the
+    // batch, and each file still gets a verdict in its own position.
+    expect(out).toHaveLength(2);
+    expect(out.map((v) => v.role).sort()).toEqual(['document', 'evidence']);
+    expect(out.find((v) => v.role === 'document')).toMatchObject({
+      role: 'document',
+      kind: 'FIREARM_LICENCE',
+    });
   });
 });
 
@@ -370,7 +401,7 @@ describe('the store handler files from the record, not the request', () => {
       { get: jest.fn(async () => 60) } as never,
       { resolveByEntity: jest.fn(async () => undefined) } as never,
       { assertEnabled: jest.fn(async () => undefined) } as never,
-      { classify, read: jest.fn(async () => null) } as never,
+      { classify, read: jest.fn(async () => null), orient: jest.fn(async () => undefined) } as never,
       { classifyEvidence: jest.fn(async () => null), ocr: jest.fn(async () => null) } as never,
       {
         rearmAutolinkFor: jest.fn(async () => 0),

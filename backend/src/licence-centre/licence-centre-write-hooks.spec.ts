@@ -578,6 +578,26 @@ describe('filing a new document', () => {
       svc.create('user_1', CredentialKind.FIREARM_LICENCE, '', FILE),
     ).resolves.toMatchObject({ id: 'cred-new' });
   });
+
+  it('\u26a0\ufe0f RE-DATES THE COMPETENCIES when a new licence is filed', async () => {
+    // Operator, 2026-09-28: "make sure that the competency will update if a new
+    // rifle is added." A competency's date follows the latest licence it
+    // covers, so filing that licence is the moment the arithmetic changes —
+    // without this, a competency uploaded before the rifle would hold the old
+    // date for ever.
+    const { svc } = buildUpload(READ);
+    await svc.create('user_1', CredentialKind.FIREARM_LICENCE, '', FILE);
+    expect(recompute).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-date for a document no competency could follow', async () => {
+    const { svc } = buildUpload({
+      ...READ,
+      details: {},
+    });
+    await svc.create('user_1', CredentialKind.SAFE_PHOTOGRAPHS, '', FILE);
+    expect(recompute).not.toHaveBeenCalled();
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────

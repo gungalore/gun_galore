@@ -79,6 +79,7 @@ import {
   missingMustRead,
 } from './credential-completeness';
 import { assessAddressProof } from './address-proof';
+import { uprightImageBytes } from './upright-image';
 import { MotivationsService } from '../motivations/motivations.service';
 // ⚠️ FROM MotivationsModule, WHICH EXPORTS IT FOR THIS ONE CALLER. Evidence's
 // master copy is a vault Credential, so the upload lives in this module — but
@@ -131,6 +132,50 @@ const MAX_TITLE = 120;
  */
 const MAX_DESCRIPTION = MAX_IDENTIFY_DESCRIPTION;
 
+/**
+ * How many files `identify()` works on at once.
+ *
+ * ⚠️ WALKING THEM ONE AT A TIME WAS THE BUG. Every file costs a classify call
+ * (~5s) plus, for a document, an orient call (~4s). A five-file batch was
+ * walked strictly in order — 47 seconds of wall clock — and that is longer than
+ * the local API proxy is willing to wait: Next.js aborts a proxied request
+ * after 30 seconds (experimental.proxyTimeout), so the upload surfaced as "it
+ * failed" while the server was still cheerfully classifying file four. A
+ * single document (~9s) was always under the line, which is why one worked and
+ * five did not. Production's edge timeout would bite a full batch the same way.
+ *
+ * Three in flight keeps a five-file batch near 18s and a full twenty under a
+ * minute, while staying well inside what the vision provider accepts at once.
+ * The verdicts still come back in the order the files were sent — each result
+ * is written to its own index, never appended in completion order — because the
+ * client matches verdict to file by position.
+ */
+const IDENTIFY_CONCURRENCY = 3;
+
+/**
+ * Run `task` over `items` with at most `limit` in flight, preserving order.
+ * The first rejection rejects the whole run.
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  task: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await task(items[i], i);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
+  );
+  return out;
+}
+
 // ⚠️ MAX_IDENTIFY_FILES NOW LIVES WITH THE STORE, not here — the motivation
 // wizard runs the same batch from the same picker, and a ceiling with two
 // copies is a ceiling that drifts. Re-exported so the controller that already
@@ -145,6 +190,13 @@ export interface IdentifyVerdict {
   container: string | null;
   confident: boolean;
   ocrChars: number | null;
+  /**
+   * Degrees CLOCKWISE to turn the picture so the page is upright, as the
+   * classifier saw it, or absent when it did not answer (an evidence item, a
+   * cache hit, an outage). ⚠️ NOT PERSISTED — it is consumed by the client's
+   * polish and nothing reads it back; create() files the already-turned bytes.
+   */
+  rotate?: 0 | 90 | 180 | 270;
 }
 
 /** One application a stored document already appears in. */
@@ -155,6 +207,23 @@ export interface CredentialUsage {
   status: string;
   /** Null until the pack has enough attached for this kind to be lettered. */
   annexure: string | null;
+}
+
+/**
+ * The fate of ONE file handed to the batch commit. Per-item, so a single bad
+ * file in a folder of ten does not lose the other nine.
+ */
+export interface CommitResult {
+  ok: boolean;
+  /** The vault row's id, once filed. */
+  id?: string;
+  kind?: string;
+  title?: string;
+  /** True when we also accepted the dates we read. False is not a failure — the
+   *  row is filed, and its dates are simply left for the member to confirm. */
+  confirmed?: boolean;
+  /** What went wrong, in the member's words, for the one that did not file. */
+  error?: string;
 }
 
 @Injectable()
@@ -884,6 +953,23 @@ export class LicenceCentreService {
       }));
 
     const titles = new Map(rows.map((r) => [r.id, renamed.get(r.id) ?? r.title]));
+
+    /**
+     * SELF-HEAL A COPY WHOSE ORIGINAL IS ALREADY GONE.
+     *
+     * ⚠️ THE DELETE-TIME FIX DOES NOT REACH ROWS ALREADY DANGLING. Before
+     * `removeOwned` detached copies, deleting an original left its copies
+     * flagged; that damage is in the data. Here the list notices a
+     * `duplicateOfId` that names no row this member still has and detaches it —
+     * the member immediately stops seeing "looks like a copy of —", and the
+     * write is a fire-and-forget tidy-up, never a reason to fail the read.
+     */
+    const rowIds = new Set(titles.keys());
+    for (const r of rows) {
+      if (r.duplicateOfId && !rowIds.has(r.duplicateOfId)) {
+        void this.detachCopy(user.id, r.id, r.readNotes, r.attention).catch(() => undefined);
+      }
+    }
     return rows.map((r) => {
       /**
        * WHAT THIS DOCUMENT SAYS ABOUT A FIREARM — see credential-firearm-facets.
@@ -961,10 +1047,13 @@ export class LicenceCentreService {
         readNotes: r.readNotes,
         attention: r.attention,
         // The title is resolved now, not stored: the original may have been
-        // renamed since, or deleted, in which case the flag still says "a copy".
-        duplicateOf: r.duplicateOfId
-          ? { id: r.duplicateOfId, title: titles.get(r.duplicateOfId) ?? null }
-          : null,
+        // renamed since, or deleted. ⚠️ A DELETED ORIGINAL READS AS NO COPY AT
+        // ALL — a dangling flag is "duplicates which I already removed", and the
+        // tidy-up above is already clearing the row underneath this read.
+        duplicateOf:
+          r.duplicateOfId && rowIds.has(r.duplicateOfId)
+            ? { id: r.duplicateOfId, title: titles.get(r.duplicateOfId) ?? null }
+            : null,
         otherSide: r.otherSideId
           ? { id: r.otherSideId, title: titles.get(r.otherSideId) ?? null }
           : null,
@@ -1054,6 +1143,14 @@ export class LicenceCentreService {
       throw new BadRequestException('That file is larger than 10 MB.');
     }
 
+    // ⚠️ UPRIGHT ONCE, HERE, BEFORE ANYTHING LOOKS AT IT. An iPhone portrait
+    // photograph arrives as landscape pixels plus an EXIF tag the model may not
+    // apply; baking it in means the classifier, the reader and the stored copy
+    // all see the same upright page. No-op and never throws — see upright-image.
+    const upright = await uprightImageBytes(file.buffer, file.mimetype);
+    const bytes = upright.bytes;
+    const mimeType = upright.mimeType;
+
     const cap = await this.settings.get(FLAGS.licenceCentreMaxCredentials);
     const held = await this.prisma.credential.count({
       where: { userId: user.id },
@@ -1142,7 +1239,7 @@ export class LicenceCentreService {
         confident = verdict.confident;
       } else {
         const guess = await this.extract
-          .classify({ bytes: file.buffer, mimeType: file.mimetype })
+          .classify({ bytes, mimeType })
           .catch(() => null);
         if (guess) {
           if (guess.role === 'evidence') {
@@ -1161,7 +1258,7 @@ export class LicenceCentreService {
     // a duplicate — reading first and writing after is a race.
     let stored: { storageKey: string; sha256: string; byteSize: number };
     try {
-      stored = await this.files.write('credentials', file.buffer, new Date());
+      stored = await this.files.write('credentials', bytes, new Date());
     } catch (err) {
       // SecureFileStorageService throws plain Errors, an unconfigured
       // ID_HASH_SECRET among them. Unwrapped that is a 500 with a stack trace
@@ -1192,7 +1289,7 @@ export class LicenceCentreService {
               : DEFAULT_TITLE[resolved]),
           coversKinds: alsoCovers,
           storageKey: stored.storageKey,
-          mimeType: file.mimetype,
+          mimeType,
           byteSize: stored.byteSize,
           sha256: stored.sha256,
           // ⚠️ STORED, NOT JUST RETURNED. Both of these are in the create
@@ -1291,8 +1388,8 @@ export class LicenceCentreService {
       : await this.extract
           .read({
             kind: resolved,
-            bytes: file.buffer,
-            mimeType: file.mimetype,
+            bytes,
+            mimeType,
             alsoCovers,
           })
           .catch(() => null);
@@ -1875,7 +1972,7 @@ export class LicenceCentreService {
       // It stays a hint, not a verdict: this is the type the BROWSER declared,
       // copied verbatim and never re-checked against the bytes, so the row
       // still falls back to the glyph if the image will not draw.
-      mimeType: file.mimetype,
+      mimeType,
       attention,
       duplicateOf,
       otherSide,
@@ -1955,7 +2052,10 @@ export class LicenceCentreService {
       );
     }
 
-    const out: IdentifyVerdict[] = [];
+    // ⚠️ CHECK EVERY FILE BEFORE STARTING ANY CALL. With the pool below, a bad
+    // file discovered mid-run would reject after its siblings had already spent
+    // model calls. Validating up front costs nothing and keeps a bad batch from
+    // billing for the good ones.
     for (const file of files) {
       if (!file?.buffer?.length) {
         throw new BadRequestException('One of those files appears to be empty.');
@@ -1963,9 +2063,151 @@ export class LicenceCentreService {
       if (file.buffer.length > MAX_UPLOAD_BYTES) {
         throw new BadRequestException('One of those files is larger than 10 MB.');
       }
-      out.push(await this.identifyOne(user.id, file));
     }
-    return out;
+
+    // See IDENTIFY_CONCURRENCY: sequentially here is what made a five-file
+    // batch overrun the proxy. Order is preserved by index, not by completion.
+    return mapWithConcurrency(files, IDENTIFY_CONCURRENCY, (file) =>
+      this.identifyOne(user.id, file),
+    );
+  }
+
+  /**
+   * FILE THE WHOLE BATCH IN ONE REQUEST — the sorted review screen's confirm.
+   *
+   * Operator, 2026-09-28: one screen shows the documents sorted by type and the
+   * evidence sorted by container, and one button files the lot. This is that
+   * button's server half: it takes every polished document and every raw
+   * evidence file with the id identify() minted and the words the member typed
+   * on the screen, and files each one.
+   *
+   * ⚠️ THE IDENTIFY ID IS STILL THE ONLY TRUST ANCHOR. Nothing about a file's
+   * type is taken from this request; create() reads the verdict from the record
+   * that id names, and the id is single-use. The manifest carries only the id
+   * and the member's own description.
+   *
+   * ⚠️ THE DATES ARE ACCEPTED HERE, DELIBERATELY. The operator asked for the
+   * single confirm to mean "this is right", so a filed DOCUMENT's read dates are
+   * confirmed immediately — that is what arms a reminder. Where we read no date
+   * and none can be worked out, confirmExpiry refuses and the row is left
+   * unconfirmed, which is the honest outcome: the member still sees it asking in
+   * the Centre. Never a hard failure.
+   *
+   * ⚠️ EVIDENCE IS PLACED FROM THE IMAGE AND THE WORDS. create() files it under
+   * the container identify guessed; redescribeEvidence then re-reads it against
+   * the member's description, which is the whole reason the screen makes that
+   * description compulsory. A re-sort that fails leaves the identify guess in
+   * place rather than losing the file.
+   *
+   * ⚠️ ONE BAD FILE DOES NOT SINK THE BATCH. Each item is its own try, and the
+   * results come back in order so the client can name the ones that did not go.
+   */
+  async commit(
+    userId: string,
+    items: {
+      buffer: Buffer;
+      mimetype: string;
+      identifyId?: string;
+      description?: string;
+    }[],
+  ): Promise<CommitResult[]> {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(userId);
+
+    if (!items?.length) throw new BadRequestException('There is nothing to file.');
+    if (items.length > MAX_IDENTIFY_FILES) {
+      throw new BadRequestException(
+        `Please send up to ${MAX_IDENTIFY_FILES} files at a time.`,
+      );
+    }
+
+    const results: CommitResult[] = [];
+    for (const item of items) {
+      const identifyId = (item.identifyId ?? '').trim();
+      const description = (item.description ?? '').trim().slice(0, MAX_DESCRIPTION);
+      if (!item?.buffer?.length) {
+        results.push({ ok: false, error: 'That file appears to be empty.' });
+        continue;
+      }
+      if (item.buffer.length > MAX_UPLOAD_BYTES) {
+        results.push({ ok: false, error: 'That file is larger than 10 MB.' });
+        continue;
+      }
+      if (!identifyId) {
+        results.push({
+          ok: false,
+          error: 'We lost track of that one. Remove it and add it again.',
+        });
+        continue;
+      }
+
+      try {
+        const created = await this.create(
+          user.id,
+          null,
+          '',
+          { buffer: item.buffer, mimetype: item.mimetype },
+          { identifyId, description: description || undefined },
+        );
+
+        if (created.kind === CredentialKind.EVIDENCE) {
+          if (description) {
+            await this.redescribeEvidence(user.id, created.id, description).catch(
+              (err: unknown) =>
+                this.logger.warn(
+                  `Evidence ${created.id} was not re-sorted at commit: ${(err as Error).message}`,
+                ),
+            );
+          }
+          results.push({
+            ok: true,
+            id: created.id,
+            kind: created.kind,
+            title: created.title,
+            confirmed: false,
+          });
+          continue;
+        }
+
+        let confirmed = false;
+        if (!isPhotograph(created.kind as CredentialKind)) {
+          try {
+            await this.confirmExpiry(user.id, created.id, {
+              expiresOn: created.proposed.expiresOn ?? '',
+              issuedOn: created.proposed.issuedOn ?? undefined,
+              // The tick the row already carries (identity documents and the
+              // like default to "never expires"); sent so a dateless document
+              // is a complete answer rather than an omitted one.
+              neverExpires: created.neverExpires,
+            });
+            confirmed = true;
+          } catch (err) {
+            // No readable date and none workable — leave it asking rather than
+            // fail the file. The Centre already shows it under "needs you".
+            this.logger.warn(
+              `Filed ${created.id} without confirming its date: ${(err as Error).message}`,
+            );
+          }
+        }
+        results.push({
+          ok: true,
+          id: created.id,
+          kind: created.kind,
+          title: created.title,
+          confirmed,
+        });
+      } catch (err) {
+        results.push({
+          ok: false,
+          error:
+            err instanceof Error && err.message
+              ? err.message
+              : 'We could not file that one.',
+        });
+      }
+    }
+
+    return results;
   }
 
   /** One file of an identify batch. See identify(). */
@@ -1974,7 +2216,13 @@ export class LicenceCentreService {
     file: { buffer: Buffer; mimetype: string; description?: string },
   ): Promise<IdentifyVerdict> {
     const id = randomUUID();
-    const hash = createHash('sha256').update(file.buffer).digest('hex');
+    // ⚠️ UPRIGHT BEFORE THE HASH, SO THE CACHE KEY MATCHES WHAT THE MODEL SAW.
+    // The same raw upload always normalises the same way, so re-identifying a
+    // file still hits the cache; and the page is never classified sideways.
+    const upright = await uprightImageBytes(file.buffer, file.mimetype);
+    const bytes = upright.bytes;
+    const mimeType = upright.mimeType;
+    const hash = createHash('sha256').update(bytes).digest('hex');
 
     // ⚠️ HAVE WE ALREADY IDENTIFIED THESE EXACT BYTES FOR THIS MEMBER? A
     // browser refresh, a file picked twice, or a whole folder re-drop must not
@@ -1999,11 +2247,11 @@ export class LicenceCentreService {
     // the record. Null for a PDF (Vision reads images) and for a page with
     // nothing on it; both consumers already treat null as "nothing to add".
     const ocrText = await this.motivationExtract
-      .ocr(file.buffer, file.mimetype)
+      .ocr(bytes, mimeType)
       .catch(() => null);
 
     const guess = await this.extract
-      .classify({ bytes: file.buffer, mimeType: file.mimetype })
+      .classify({ bytes, mimeType })
       .catch(() => null);
 
     let role: IdentifyRecord['role'] = 'evidence';
@@ -2011,20 +2259,30 @@ export class LicenceCentreService {
     let alsoCovers: string[] = [];
     let container: string | null = null;
     let confident = false;
+    // ⚠️ THE CLASSIFIER'S up/down ANSWER, CARRIED TO THE CLIENT AND NOT STORED.
+    // Only a document's answer is meaningful; evidence is a photograph the
+    // member framed themselves, so it is left exactly as taken.
+    let rotate: 0 | 90 | 180 | 270 | undefined;
 
     if (guess && guess.role === 'document') {
       role = 'document';
       kind = guess.kind;
       alsoCovers = guess.alsoCovers;
       confident = guess.confident;
+      // ⚠️ A SECOND, SEPARATE CALL — see orient(). It is asked ONLY of a page
+      // the classifier called a document, and only because the ink cannot say
+      // which way is up. The kind prompt is left untouched so it cannot drift.
+      rotate = this.extract.orient
+        ? await this.extract.orient({ bytes, mimeType })
+        : undefined;
     } else if (guess && guess.role === 'evidence') {
       // ⚠️ THE CONTAINER IS A SECOND CALL, MADE ONLY FOR EVIDENCE, AGAINST
       // THE MEMBER'S OWN WORDS. An ordinary document still costs one call.
       confident = guess.confident;
       const words = (file.description ?? '').trim().slice(0, MAX_DESCRIPTION);
       const sorted = await this.motivationExtract.classifyEvidence({
-        bytes: file.buffer,
-        mimeType: file.mimetype,
+        bytes,
+        mimeType,
         description: words || null,
         ocrText,
       });
@@ -2050,7 +2308,7 @@ export class LicenceCentreService {
       ocrText,
     });
 
-    return { id, role, kind, container, confident, ocrChars: ocrText?.length ?? null };
+    return { id, role, kind, container, confident, ocrChars: ocrText?.length ?? null, rotate };
   }
 
   /**
@@ -2090,6 +2348,13 @@ export class LicenceCentreService {
       throw new BadRequestException('That file is larger than 10 MB.');
     }
 
+    // ⚠️ UPRIGHT BEFORE THE MODEL SEES IT. An evidence photograph is never
+    // cropped or retouched, but it must still be the right way up for the
+    // classifier — see upright-image; still a no-op unless EXIF says otherwise.
+    const upright = await uprightImageBytes(file.buffer, file.mimetype);
+    const bytes = upright.bytes;
+    const mimeType = upright.mimeType;
+
     // ⚠️ TWO CAPS, NOT ONE. The document cap still governs the vault as a
     // whole — evidence must not be a side door past it — and the 30-item
     // sub-cap is what the operator asked for on top, so a member cannot fill
@@ -2118,8 +2383,8 @@ export class LicenceCentreService {
     // unconfigured provider all come back as null, which reads as "we could
     // not decide" rather than failing the upload.
     const guess = await this.motivationExtract.classifyEvidence({
-      bytes: file.buffer,
-      mimeType: file.mimetype,
+      bytes,
+      mimeType,
       description: words || null,
     });
     const container =
@@ -2130,7 +2395,7 @@ export class LicenceCentreService {
     // first is a race.
     let stored: { storageKey: string; sha256: string; byteSize: number };
     try {
-      stored = await this.files.write('credentials', file.buffer, new Date());
+      stored = await this.files.write('credentials', bytes, new Date());
     } catch (err) {
       this.logger.error(
         `Evidence upload for ${user.id} could not be stored: ${(err as Error).message}`,
@@ -2148,7 +2413,7 @@ export class LicenceCentreService {
           kind: 'EVIDENCE',
           title: evidenceTitle(container?.id ?? null),
           storageKey: stored.storageKey,
-          mimeType: file.mimetype,
+          mimeType,
           byteSize: stored.byteSize,
           sha256: stored.sha256,
           // ⚠️ NULL UNLESS THE MODEL WAS SURE. See the header: an undecided
@@ -2260,10 +2525,12 @@ export class LicenceCentreService {
       throw new ServiceUnavailableException('We could not open that file.');
     }
 
+    // A stored row always carries the mimetype it was uploaded with — and the
+    // upright step is a no-op on a copy stored after the EXIF fix.
+    const uprightRead = await uprightImageBytes(bytes, row.mimeType);
     const guess = await this.motivationExtract.classifyEvidence({
-      bytes,
-      // A stored row always carries the mimetype it was uploaded with.
-      mimeType: row.mimeType,
+      bytes: uprightRead.bytes,
+      mimeType: uprightRead.mimeType,
       description: words,
     });
     const container =
@@ -2863,6 +3130,34 @@ export class LicenceCentreService {
     } catch (err) {
       this.logger.warn(
         `Credential ${id}: could not tidy the other side: ${(err as Error).message}`,
+      );
+    }
+
+    /**
+     * ⚠️ A COPY FLAGGED AGAINST THIS ROW MUST STOP POINTING AT IT.
+     *
+     * The same dangling-pointer trap as `otherSideId` above, one field over, and
+     * it was live: deleting the ORIGINAL left every copy that named it still
+     * flagged, so the member saw "looks like a copy of —" (the title lookup
+     * finding nothing) and the "extra copy" chip counting a document they had
+     * already thrown away. `replaceWith` already knew a copy could outlive its
+     * original (see the not-found branch there); delete simply never tidied up.
+     *
+     * The copy itself is NOT deleted — the member removed one document, not
+     * both — it is detached and its "copy" words are stripped, exactly as a
+     * promotion does.
+     */
+    try {
+      const copies = await this.prisma.credential.findMany({
+        where: { userId: user.id, duplicateOfId: row.id },
+        select: { id: true, readNotes: true, attention: true },
+      });
+      for (const copy of copies) {
+        await this.detachCopy(user.id, copy.id, copy.readNotes, copy.attention);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Credential ${id}: could not detach copies pointing at it: ${(err as Error).message}`,
       );
     }
 

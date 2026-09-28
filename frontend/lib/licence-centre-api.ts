@@ -547,6 +547,33 @@ export const licenceCentreApi = {
   },
 
   /**
+   * File the whole sorted batch in one request — the review screen's confirm.
+   *
+   * ⚠️ THE MANIFEST IS A JSON ARRAY ALIGNED WITH `files` BY INDEX. Each entry
+   * carries only the server-minted identify id and the member's own description
+   * of an evidence item; the type is never sent, because the server reads it
+   * from the record that id names. A length mismatch is refused server-side
+   * rather than guessed, so this must append exactly one file per entry.
+   */
+  commit: (
+    t: TokenGetter,
+    items: { file: File; identifyId: string; description?: string }[],
+  ): Promise<CommitResult[]> => {
+    const form = new FormData();
+    for (const it of items) form.append('files', it.file);
+    form.append(
+      'manifest',
+      JSON.stringify(
+        items.map((it) => ({
+          identifyId: it.identifyId,
+          description: it.description ?? '',
+        })),
+      ),
+    );
+    return request<CommitResult[]>(t, '/commit', { method: 'POST', body: form });
+  },
+
+  /**
    * Confirm what we made of a document: its dates, and — when we did the
    * naming — its type and title too.
    *
@@ -682,6 +709,17 @@ export const licenceCentreApi = {
     ),
 };
 
+/** One file's fate from commit(). Per-item, so one bad file keeps the rest. */
+export interface CommitResult {
+  ok: boolean;
+  id?: string;
+  kind?: string;
+  title?: string;
+  /** True when the read dates were also accepted. False is still filed. */
+  confirmed?: boolean;
+  error?: string;
+}
+
 /** One file's verdict from identify(), named by a server-minted id. */
 export interface IdentifyVerdict {
   /** ⚠️ THE SERVER MINTED THIS. It is the marriage key for the upload. */
@@ -697,6 +735,12 @@ export interface IdentifyVerdict {
   confident: boolean;
   /** How many characters of OCR the server took. Advisory; never the client's. */
   ocrChars: number | null;
+  /**
+   * Degrees CLOCKWISE to turn the picture so the page is upright, as the
+   * classifier saw it. Absent when it did not answer (evidence, a cache hit, an
+   * outage) — the polish then falls back to its own axis guess.
+   */
+  rotate?: 0 | 90 | 180 | 270;
 }
 
 /**

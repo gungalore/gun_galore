@@ -630,6 +630,28 @@ html[data-standalone='true'] {
   }
 }
 
+/* Attention pulse — a soft red wash breathing behind a value WE filled in, so
+   the member's eye lands on it: a competency date worked out from their
+   licences, or a date read off a page. It is ours to check, not theirs.
+   Honours prefers-reduced-motion: reduce → a steady wash, no motion. */
+.gg-attention-pulse {
+  border-radius: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gg-attention-pulse {
+    background: var(--red-wash);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gg-attention-pulse {
+    animation: gg-attention-pulse 2s ease-in-out infinite;
+  }
+  @keyframes gg-attention-pulse {
+    0%, 100% { background-color: transparent; }
+    50%      { background-color: var(--red-wash); }
+  }
+}
+
 /* iOS Safari auto-zooms when a form input is focused if the input's
    computed font-size is < 16px. We use 13-14px text everywhere in the
    UI, so this rule scopes the font-size bump to mobile widths only —

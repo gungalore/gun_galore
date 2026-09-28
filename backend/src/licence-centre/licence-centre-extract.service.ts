@@ -682,6 +682,57 @@ export class LicenceCentreExtractService {
   }
 
   /**
+   * WHICH WAY IS UP — a tiny, separate vision call.
+   *
+   * Answers 0 | 90 | 180 | 270 (degrees CLOCKWISE to stand the page up), or
+   * undefined when it cannot decide. Fail-soft like classify(): an outage, an
+   * unconfigured provider or an unparseable reply all read as "we do not know",
+   * never as a wrong rotation.
+   *
+   * ⚠️ IT NEVER RUNS FOR EVIDENCE. Evidence is a photograph the member framed
+   * themselves and is stored exactly as taken; only a page has an up.
+   */
+  async orient(args: {
+    bytes: Buffer;
+    mimeType: string;
+  }): Promise<0 | 90 | 180 | 270 | undefined> {
+    if (!this.llm.isConfigured()) return undefined;
+
+    let text = '';
+    try {
+      const res = await this.llm.complete({
+        maxTokens: 200,
+        timeoutMs: 30_000,
+        system: ORIENT_SYSTEM,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              blockFor(args.bytes, args.mimeType),
+              { type: 'text', text: ORIENT_USER },
+            ],
+          },
+        ],
+        json: { schema: ORIENT_SCHEMA },
+        purpose: 'vault.orient',
+      });
+      text = res.text.trim();
+    } catch (err) {
+      this.logger.warn(`Orientation read failed: ${(err as Error).message}`);
+      return undefined;
+    }
+
+    try {
+      const m = text.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(m ? m[0] : text) as { side?: unknown };
+      const side = String(parsed.side ?? '').trim().toLowerCase();
+      return ROTATE_FOR_SIDE[side];
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Read the document, and for a proficiency say which side it is.
    *
    * ⚠️ THE SIDE COMES FROM THE MODEL DIRECTLY NOW (2026-09-08, AWS Textract
@@ -1254,6 +1305,52 @@ const CLASSIFY_SCHEMA: Record<string, unknown> = {
   required: ['role'],
 };
 
+/**
+ * The orientation question, kept OUT of the classification prompt.
+ *
+ * ⚠️ A SEPARATE CALL BECAUSE BENDING classify() COST US A REGRESSION. Adding a
+ * "rotate" field to the kind prompt made a phone-scanned competency certificate
+ * come back as EVIDENCE — the kind prompt is tuned, and a second job on it
+ * changes the first. This asks only "where is the top of the page", on its own,
+ * and only for a file classify() already called a document.
+ *
+ * ⚠️ IT ASKS FOR AN EDGE, NOT A NUMBER OF DEGREES. Asked "how many degrees
+ * clockwise must the picture be turned so the page is upright", the model
+ * answered 90 for a page that needs 270 — every version of that question is a
+ * direction trap. Asked instead WHERE THE TOP EDGE IS, it answers right / left /
+ * top / bottom with no rotation to reason about, and the degrees are worked out
+ * here. Verified live on the operator's own sideways export: "right" (→ 270).
+ */
+const ORIENT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    side: { type: 'string', enum: ['top', 'right', 'bottom', 'left'] },
+  },
+  required: ['side'],
+};
+
+const ORIENT_SYSTEM = `
+You are shown one photograph of a document. You answer only where the top of the
+page is.
+`;
+
+export const ORIENT_USER = [
+  'This is a photograph of a page of printed text, and the picture may not be',
+  'upright.',
+  'Where is the TOP of the page — the edge the title and heading sit nearest —',
+  'in THIS picture?',
+  'Answer one of: top, right, bottom, left.',
+  'Return STRICT JSON: {"side":"top"}',
+].join('\n');
+
+/** Which edge the top of the page sits on → how far to turn the picture. */
+const ROTATE_FOR_SIDE: Record<string, 0 | 90 | 180 | 270> = {
+  top: 0,
+  left: 90,
+  bottom: 180,
+  right: 270,
+};
+
 const CLASSIFY_SYSTEM = `
 You sort one file a member has uploaded. You are sorting, not reading: you do
 not need to transcribe anything.
@@ -1410,7 +1507,7 @@ export const CLASSIFY_USER = [
   'The single validity date on such a certificate governs every role it',
   'fills; there is not a separate date per role.',
   '',
-'A competency certificate permits a person to POSSESS firearms; a licence is',
+  'A competency certificate permits a person to POSSESS firearms; a licence is',
   'for ONE specific firearm and names it. If it names a make, calibre or serial',
   'number it is a licence.',
 ].join('\n');

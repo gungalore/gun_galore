@@ -18,22 +18,31 @@ export async function processImage(file: File): Promise<File> {
     return file;
   }
 
-  const bitmap = await createImageBitmap(file).catch(async () => {
+  // ⚠️ `imageOrientation: 'from-image'` IS LOAD-BEARING. An iPhone portrait
+  // photograph is landscape pixels plus an EXIF Orientation tag; without this
+  // the canvas draws it sideways and the re-encode to JPEG DROPS the tag, so
+  // the sideways orientation becomes permanent and nothing downstream can undo
+  // it. The option is not universal, so the fallback keeps the old call for
+  // engines that refuse it — see decode.ts for the same ladder.
+  const drawable = { imageOrientation: 'from-image' } as ImageBitmapOptions;
+  const bitmap = await createImageBitmap(file, drawable).catch(async () => {
     // Fallback for browsers that don't support createImageBitmap on
     // arbitrary blobs (older Safari, some Android variants). Use an
     // Image element via a blob URL.
-    const url = URL.createObjectURL(file);
-    try {
-      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const i = new Image();
-        i.onload = () => resolve(i);
-        i.onerror = () => reject(new Error('Could not decode image'));
-        i.src = url;
-      });
-      return img as unknown as ImageBitmap;
-    } finally {
-      URL.revokeObjectURL(url);
-    }
+    return createImageBitmap(file).catch(async () => {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = () => reject(new Error('Could not decode image'));
+          i.src = url;
+        });
+        return img as unknown as ImageBitmap;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    });
   });
 
   // Downscale to max 1920px on the longest edge. Phone photos are

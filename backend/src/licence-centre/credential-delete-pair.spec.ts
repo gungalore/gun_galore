@@ -40,7 +40,9 @@ function build(row: Record<string, unknown>, other?: Record<string, unknown>) {
           ({ count: 0 }),
       ),
       count: jest.fn(async () => 0),
-      update: jest.fn(async () => ({})),
+      update: jest.fn(
+        async (_a?: { where: { id: string }; data: Record<string, unknown> }) => ({}),
+      ),
     },
     motivationUpload: { updateMany: jest.fn(async () => ({ count: 0 })) },
   };
@@ -127,5 +129,30 @@ describe('deleting a proficiency', () => {
     const { svc, deleted } = build(solo);
     await svc.remove('user_1', 'solo');
     expect(deleted).toEqual(['solo']);
+  });
+
+  it('\u26a0\ufe0f DETACHES A COPY THAT POINTED AT THE DELETED ORIGINAL', async () => {
+    // "It says there are duplicates which I already removed." Deleting the
+    // ORIGINAL left the copy still flagged, pointing at a row that no longer
+    // exists — the same dangling-pointer trap as otherSideId, one field over.
+    const { svc, prisma } = build(front, back);
+    prisma.credential.findMany.mockResolvedValue([
+      {
+        id: 'copy-1',
+        readNotes: ['Looks like a copy of "Front", which you added on 2026-09-01.'],
+        attention: ['duplicate'],
+      },
+    ]);
+    await svc.remove('user_1', 'p-front');
+
+    const updated = prisma.credential.update.mock.calls.find(
+      (c) => c[0]?.where?.id === 'copy-1',
+    );
+    expect(updated?.[0]?.data).toMatchObject({ duplicateOfId: null, attention: [] });
+    expect(updated?.[0]?.data.readNotes).toEqual([]);
+    // And it is NOT deleted — the member removed one document, not both.
+    expect(prisma.credential.delete.mock.calls.map((c) => c[0]?.where?.id)).not.toContain(
+      'copy-1',
+    );
   });
 });

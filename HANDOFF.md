@@ -5,7 +5,47 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-09-25**.
+Last updated: **2026-09-28**.
+
+## 2026-09-28 — "UPLOADED 5 DOCUMENTS AT ONCE AND IT FAILED"
+
+**Working tree only.** The five-file upload never reached `commit`. Root cause
+was a **timeout, not a rejection**: the browser posts to same-origin `/api/*`
+(`NEXT_PUBLIC_API_URL=/api`, `LOCAL_API_PROXY=true`), which Next.js proxies to
+`:3001`. Next's dev proxy **aborts a proxied request after 30s**
+(`proxy-request.js: n || 30_000`). `identify()` walked the batch **one file at
+a time** — one classify (~5s) plus, for a document, an orient call (~4s) — so
+five files took **47s** (log: classify 16:38:17 → orient 16:39:04). The proxy
+cut the request; the backend, never told, finished all five. A single document
+(~9s) was always under the line, which is why one worked and five did not. No
+credential was created (checked the DB), and no `commit` ever ran.
+
+Fixes:
+
+- `backend/src/licence-centre/licence-centre.service.ts` — `identify()` now
+  runs files through a small pool (`IDENTIFY_CONCURRENCY = 3`,
+  `mapWithConcurrency`), **validation hoisted before any call** so a bad file
+  does not bill for its siblings, and **verdicts written by index** so the
+  client still matches verdict to file by position. Five files ≈ 18s; twenty
+  under a minute. This also protects production's edge timeout, not just local.
+- `frontend/next.config.mjs` — `experimental.proxyTimeout: 300_000`, off the
+  30s default. Belt and braces: the pool fixes the common case, the timeout
+  stops any long batch being reported as a failure. Confirmed loaded in the dev
+  log (`Experiments: proxyTimeout: 300000`).
+- `backend/src/licence-centre/identify-batch.spec.ts` — the "one file's call
+  throws" test no longer asserts which **index** receives the single rejected
+  answer (concurrent calls race); it asserts both files get a verdict and the
+  roles are `['document','evidence']`. 5125 backend tests pass.
+
+**Also applied:** the local DB was **missing `DocumentIdentify`** (pending
+migration `20260926160000_document_identify`), so every identify verdict failed
+to persist and `commit()` re-classified each document from scratch. Ran
+`prisma migrate deploy` (the one pending migration; non-destructive). The table
+now exists, so commits reuse the stored verdict instead of paying the model
+again. The noisy `public.DocumentIdentify does not exist` warning is gone.
+
+Servers restarted: backend `node dist/src/main` (owns :3001), frontend
+`npm run dev` (owns :3000).
 
 ## 2026-09-25 — THE SAPS APPLICATION TRACKER (local, uncommitted)
 
@@ -4819,3 +4859,115 @@ migration was written: **0 rows**. Nothing was exported because there was
 nothing to export.
 
 ---
+
+## Upload → sorted review → vault: one screen, one confirm — 2026-09-28
+
+Operator: *"identified documents gets cropped and all the colour and sharpening
+takes place and the next screen they see is documents sorted and evidence sorted
+… they can just confirm that it's right and it goes into the vault."*
+
+The batch tail used to be **three checkpoints**: a per-document interactive
+cropper, a "File these" preview, and a post-upload date review. It is now
+**one**: pick → automatic polish → the sorted review → confirm → vault.
+
+- **Automatic polish.** `frontend/lib/scan-upload/auto.ts` runs the same crop
+  pipeline headlessly (`decode → processStill → seal`) and returns a JPEG. It is
+  NOT gated on `NEXT_PUBLIC_SCANNER_V3` — the flow promises the treatment, so it
+  cannot silently stop cropping where that flag is off. Evidence is never
+  touched. The interactive overlay stays, now only for **Fix crop** from the
+  review screen.
+- **One sorted screen.** `components/document-centre/batch-preview.tsx` is the
+  sorted review: **Documents** by type and **Evidence** by container, a
+  magnifier on both (a thumbnail is too small to check a crop), and a
+  **description box on every evidence item** — compulsory, because the server
+  re-reads the image WITH the words to place it. The confirm is dead until each
+  evidence item has one.
+- **Bulk commit.** `POST /licence-centre/commit` takes the whole batch
+  (`files[]` + an index-aligned `manifest` of `{identifyId, description}`) and
+  files each. Documents get their **read dates accepted** (operator: the single
+  confirm means "this is right", so it arms the reminder); a date that cannot be
+  settled leaves the row filed-but-unconfirmed rather than failing. Evidence is
+  placed by `redescribeEvidence` against the member's words. One bad file does
+  not sink the batch — results come back per item. The identify id remains the
+  only trust anchor; type is never sent.
+
+### ⚠️ Orientation — the real cause, and the fix
+
+The operator's own uploads were landing sideways. The file is an iCloud-for-
+Windows export: **2048×1536 landscape main image with the page on its side, and
+NO EXIF orientation tag.** The embedded EXIF thumbnail is just a landscape copy
+of the same pixels (no orientation signal of its own), so the OS "Open" dialog
+looking upright was a red herring — nothing in the file says which way is up.
+The upload fork's only uprighting is content-based (`chooseRotationPage`).
+
+Measured on three of those pages, on the WARPED rectangle: `held 0.369 / side
+0.486` (ratio 1.31), `0.542 / 0.592` (1.09), `0.335 / 0.531` (1.59). The
+direction was right every time — the rotated axis always had more blank rows —
+but `AXIS_EDGE` in `lib/scan-upload/pipeline/orientation.ts` was **1.5**, tuned
+on synthetic fixtures where an upright page separates from a sideways one by
+~10x, and real dense certificates separate by as little as 9%. Lowered to
+**1.05**; all three now turn, and the existing 11 orientation tests still hold.
+A synthetic "scattered stamps" fixture pins the narrow gap (fails at 1.5, passes
+at 1.05). ⚠️ Two of the five photos still fail: one has a bad detector reading
+(ratio 3.4, not a page), one is genuinely ambiguous (both axes under the blank
+floor). Those are what **Fix crop / Rotate** on the review screen are for.
+
+⚠️ **THE QUARTER-ONLY FIX WAS STILL WRONG: the page came back UPSIDE DOWN.** The
+blank-row metric says a quarter turn is due but can never say WHICH — and the
+direction is not in the ink. Measured on the real pages, `uprightScore` gave
+`0:1 90:3 180:-1 270:-3` and similar — ±4, pure noise — and the embedded
+thumbnail carries no orientation. So the direction comes from the **vision
+model**, which is already looking at the page: a small, SEPARATE call
+(`LicenceCentreExtractService.orient()`, purpose `vault.orient`) asks only
+"WHICH EDGE IS THE TOP OF THE PAGE ON", asked in `identifyOne` **only of a file
+classify() called a document**. The answer rides `IdentifyVerdict.rotate` (NOT
+persisted; `create()` files the already-turned bytes) and `autoPolish` →
+`processStill(rotate)` applies it in place of the ink guess.
+
+⚠️ **ASKING FOR DEGREES WAS ITSELF THE TRAP.** Asked "how many degrees clockwise
+must the picture be turned so the page is upright", the model answered **90 for
+a page that needs 270** — the pipeline then produced exactly the operator's
+"upside down". Asked instead where the TOP EDGE is (top / right / bottom / left),
+it answers correctly and with no rotation to reason about; the degrees are
+mapped in code (`right` → 270). Verified live against the operator's own export:
+`{"side":"right"}`. ⚠️ Also note the schema: an INTEGER `enum` on the first
+draft made Gemini reject the whole request (`bad_request`, `in=0 out=0`) — a
+STRING enum is what it accepts.
+
+⚠️ **IT WAS FIRST FOLDED INTO THE CLASSIFY PROMPT, AND THAT BROKE
+CLASSIFICATION.** Adding a `rotate` field to the kind prompt made a
+phone-scanned competency certificate come back as **EVIDENCE**. The kind prompt
+is tuned and cannot carry a second job; it was reverted untouched, and the
+orientation question is its own call. (The phone SCAN path posts straight to
+`create()`, not through `identify`, so it never gets a rotation — its scanner
+already rectifies the page upright.)
+
+Separately, `lib/process-image.ts` re-encoded through `createImageBitmap(file)`
+without `imageOrientation: 'from-image'`, which bakes the wrong orientation into
+a JPEG that has lost the tag; fixed. And the vault ingest now applies EXIF
+orientation once via `backend/src/licence-centre/upright-image.ts` (identify,
+create, createEvidence, redescribe), so the model, the stored copy and every
+later reader all see upright pixels. It never throws and never resizes.
+
+---
+
+## Deleting a document now detaches the copies that pointed at it — 2026-09-28
+
+Operator: *"It says there are duplicates which I already removed."* Deleting the
+ORIGINAL of a flagged pair left every copy that named it still flagged: the
+member saw "looks like a copy of —" (the title lookup finding nothing) and the
+**extra copy** chip counting a document already thrown away. `replaceWith` had
+always known a copy could outlive its original (its not-found branch detaches
+the pointer), but `removeOwned` never tidied up — the same dangling-pointer trap
+as `otherSideId`, one field over.
+
+Fix: after the delete, `removeOwned` finds rows with `duplicateOfId === row.id`
+and runs the existing `detachCopy` on each (clears the pointer, the `duplicate`
+attention tag and the "Looks like a copy of" note). The copy is **not** deleted —
+the member removed one document, not both. Never fatal: wrapped like the
+`otherSideId` cleanup, because the erasure has already happened.
+
+---
+
+Last commit on this thread is not yet made; working tree only.
+

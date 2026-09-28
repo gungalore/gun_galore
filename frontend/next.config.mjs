@@ -29,6 +29,18 @@ const nextConfig = {
   // just navigates instantly with no animation.
   experimental: {
     viewTransition: true,
+    /**
+     * ⚠️ RAISED OFF THE 30s DEFAULT, AND NOT COSMETIC. When LOCAL_API_PROXY is
+     * on, every browser call to /api/* is proxied to the backend by Next's dev
+     * proxy, which aborts a proxied request after 30 seconds
+     * (proxy-request.js: `n || 30_000`). A five-document identify walks the
+     * vision model file by file and took 47s, so the upload died as "it
+     * failed" — with no error from the backend, which was still working. The
+     * server is also capped at three files in flight now (see
+     * IDENTIFY_CONCURRENCY), but a large batch or a slow provider can still run
+     * long, and a local timeout is never the answer we want to show a member.
+     */
+    proxyTimeout: 300_000,
   },
   /**
    * The retired motivation surfaces.

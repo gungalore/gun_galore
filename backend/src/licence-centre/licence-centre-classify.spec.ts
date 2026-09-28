@@ -182,3 +182,33 @@ describe('the document-or-evidence role', () => {
     ).resolves.toEqual({ role: 'evidence', confident: true });
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE ORIENTATION QUESTION — A SEPARATE CALL, ON PURPOSE.
+//
+// ⚠️ IT MUST NOT LIVE ON classify(). Bending the kind prompt to answer
+// orientation made a phone-scanned competency certificate come back as
+// EVIDENCE; the kind prompt is tuned and cannot carry a second job. So it is
+// asked on its own, only of a page classify() already called a document, and
+// it answers one number: degrees CLOCKWISE to stand the page up.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the orientation question', () => {
+  it('\u26a0\ufe0f MAPS WHICH EDGE THE TOP IS ON TO A QUARTER TURN', async () => {
+    // ⚠️ ASKED AS AN EDGE, NOT DEGREES. Asked "how many degrees clockwise",
+    // the model answered 90 for a page that needs 270; "where is the top edge"
+    // it gets right. right → 270 (turn the picture 270 clockwise = 90 ccw).
+    await expect(svcWith('{"side":"right"}').orient(png)).resolves.toBe(270);
+    await expect(svcWith('{"side":"left"}').orient(png)).resolves.toBe(90);
+    await expect(svcWith('{"side":"top"}').orient(png)).resolves.toBe(0);
+    await expect(svcWith('{"side":"bottom"}').orient(png)).resolves.toBe(180);
+  });
+
+  it('refuses an answer that is not one of the four edges', async () => {
+    await expect(svcWith('{"side":"diagonal"}').orient(png)).resolves.toBeUndefined();
+  });
+
+  it('reads "we do not know" from an outage, never a wrong turn', async () => {
+    await expect(svcWith(new Error('boom')).orient(png)).resolves.toBeUndefined();
+  });
+});

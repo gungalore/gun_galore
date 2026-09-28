@@ -462,45 +462,59 @@ export default function CredentialCard({
           )}
         </div>
         {row.state !== 'no-expiry' && (
-          <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
-            <span className="text-[var(--text-tertiary-on-card)]">
-              Date confirmed
-            </span>
-            {/* ⚠️ THREE STATES, AND THE MIDDLE ONE IS NEW. It was a binary: "By
-                you" or "Not yet". Now the Centre fills dates in and arms the
-                reminder itself, and neither word fits — "By you" would be a
-                false record of who checked it, on a page about firearm
-                licences, and "Not yet" would call a settled row an errand.
-                Amber-neutral, never the green tick: the green tick means a
-                human looked. */}
-            {row.confirmed ? (
-              <span className="flex items-center gap-1.5 text-[var(--success)]">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
-                By you
+          /* ⚠️ A DATE WE FILLED IN BREATHES. Operator, 2026-09-28: "the attached
+             should have a pulsing red background to draw the user's attention".
+             A date we read or worked out is ours to check, and the worked-out
+             competency date can MOVE when a licence changes — so the eye is
+             drawn to it. Steady wash under prefers-reduced-motion; see
+             .gg-attention-pulse in globals.css. */
+          <div
+            className={
+              !row.confirmed && row.dateSource
+                ? 'gg-attention-pulse -mx-2 px-2 py-1'
+                : undefined
+            }
+          >
+            <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
+              <span className="text-[var(--text-tertiary-on-card)]">
+                Date confirmed
               </span>
-            ) : row.dateSource ? (
-              <span className="text-[var(--text-secondary)]">
-                {row.dateSource === 'derived' ? 'Worked out for you' : 'Filled in for you'}
-              </span>
-            ) : (
-              <span className="text-[var(--warning)]">Not yet</span>
+              {/* ⚠️ THREE STATES, AND THE MIDDLE ONE IS NEW. It was a binary: "By
+                  you" or "Not yet". Now the Centre fills dates in and arms the
+                  reminder itself, and neither word fits — "By you" would be a
+                  false record of who checked it, on a page about firearm
+                  licences, and "Not yet" would call a settled row an errand.
+                  Amber-neutral, never the green tick: the green tick means a
+                  human looked. */}
+              {row.confirmed ? (
+                <span className="flex items-center gap-1.5 text-[var(--success)]">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                  By you
+                </span>
+              ) : row.dateSource ? (
+                <span className="text-[var(--text-secondary)]">
+                  {row.dateSource === 'derived' ? 'Worked out for you' : 'Filled in for you'}
+                </span>
+              ) : (
+                <span className="text-[var(--warning)]">Not yet</span>
+              )}
+            </div>
+            {/* ⚠️ WHERE THE DATE CAME FROM, IN THE SENTENCE THE SERVER ALREADY
+                WROTE. `dateSourceNote` has been returned on every row since the
+                Centre started filling dates in and was rendered nowhere, so
+                "Worked out for you" stood alone with no way to ask worked out from
+                WHAT — and a member who cannot see the basis of a date on a firearm
+                licence cannot check it. Muted, under the date, in passing: the
+                house rule is that a value we filled in says so on the row and is
+                never turned into an errand. */}
+            {!row.confirmed && row.dateSource && row.dateSourceNote && (
+              <p className="mt-1 text-[11.5px] leading-snug text-[var(--text-tertiary-on-card)]">
+                {row.dateSourceNote}
+              </p>
             )}
           </div>
-        )}
-        {/* ⚠️ WHERE THE DATE CAME FROM, IN THE SENTENCE THE SERVER ALREADY
-            WROTE. `dateSourceNote` has been returned on every row since the
-            Centre started filling dates in and was rendered nowhere, so
-            "Worked out for you" stood alone with no way to ask worked out from
-            WHAT — and a member who cannot see the basis of a date on a firearm
-            licence cannot check it. Muted, under the date, in passing: the
-            house rule is that a value we filled in says so on the row and is
-            never turned into an errand. */}
-        {!row.confirmed && row.dateSource && row.dateSourceNote && (
-          <p className="-mt-1 text-[11.5px] leading-snug text-[var(--text-tertiary-on-card)]">
-            {row.dateSourceNote}
-          </p>
         )}
         {/* Only where a reminder could exist at all — see the note on the
             switch below. */}

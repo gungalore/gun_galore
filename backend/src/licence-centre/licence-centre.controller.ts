@@ -313,6 +313,62 @@ export class LicenceCentreController {
   }
 
   /**
+   * FILE THE WHOLE SORTED BATCH — one request for the one confirm button.
+   *
+   * ⚠️ THE MANIFEST IS A JSON ARRAY ALIGNED WITH `files` BY INDEX, for the same
+   * reason identify()'s descriptions are: a multipart body cannot hang an object
+   * off each part. Each entry is `{ identifyId, description }` — the server-minted
+   * id create() trusts, and the member's own words about an evidence item.
+   *
+   * ⚠️ A LENGTH MISMATCH IS REFUSED, NOT GUESSED. Filing file N against id N+1
+   * would put one document's verdict on another's bytes; the honest answer is
+   * to make the client resend the batch, not to file something wrong.
+   *
+   * ⚠️ DECLARED BEFORE THE ':id' ROUTES, like identify, usage and status.
+   */
+  @Post('commit')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseInterceptors(
+    FilesInterceptor('files', MAX_IDENTIFY_FILES, {
+      storage: memoryStorage(),
+      limits: { fileSize: UPLOAD_INTERCEPTOR_MAX },
+    }),
+  )
+  commit(
+    @CurrentUser() userId: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body('manifest') manifest?: string,
+  ) {
+    let parsed: unknown = [];
+    try {
+      parsed = manifest ? JSON.parse(manifest) : [];
+    } catch {
+      throw new BadRequestException('We could not read that batch. Please try again.');
+    }
+    const list = files ?? [];
+    if (!Array.isArray(parsed) || parsed.length !== list.length) {
+      throw new BadRequestException(
+        'The batch did not arrive in one piece. Please try again.',
+      );
+    }
+    return this.svc.commit(
+      userId,
+      list.map((file, i) => {
+        const entry = (parsed[i] ?? {}) as {
+          identifyId?: string;
+          description?: string;
+        };
+        return {
+          buffer: file.buffer,
+          mimetype: file.mimetype,
+          identifyId: entry.identifyId,
+          description: entry.description,
+        };
+      }),
+    );
+  }
+
+  /**
    * EVIDENCE, WHICH IS NOT A DOCUMENT.
    *
    * ⚠️ ITS OWN ROUTE, AND NOT `kind=EVIDENCE` ON THE ONE ABOVE. A document
