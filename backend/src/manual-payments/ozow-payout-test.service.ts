@@ -45,7 +45,12 @@ export type OzowMockScenario =
 export function resolveMockConfigKeys(
   config: Record<string, unknown>,
 ): Record<OzowMockScenario, string> & { all: string[] } {
-  const keys = Object.keys(config);
+  // Only boolean flags may be written back. The config object also carries
+  // non-boolean fields (siteCode), and sending `siteCode: false` makes Ozow
+  // reject the whole SetTestConfiguration with a 400.
+  const keys = Object.keys(config).filter(
+    (k) => typeof config[k] === 'boolean',
+  );
   const find = (re: RegExp, fallback: string) =>
     keys.find((k) => re.test(k)) ?? fallback;
   const decryptionFailed = find(

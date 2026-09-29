@@ -65,6 +65,15 @@ describe('resolveMockConfigKeys', () => {
       keyMissing: 'IsAccountDecryptionKeyMissing',
     });
   });
+
+  it('ignores non-boolean fields such as siteCode', () => {
+    const keys = resolveMockConfigKeys({
+      siteCode: null,
+      isNotVerifiedResponse: false,
+    });
+    expect(keys.all).not.toContain('siteCode');
+    expect(keys.notVerified).toBe('isNotVerifiedResponse');
+  });
 });
 
 describe('OzowPayoutTestService guard', () => {
@@ -84,11 +93,12 @@ describe('OzowPayoutTestService guard', () => {
 });
 
 describe('OzowPayoutTestService.setMockScenario', () => {
-  it('arms exactly one flag, in the casing Ozow returned', async () => {
+  it('arms exactly one flag, in the casing Ozow returned, never siteCode', async () => {
+    const withSite = { siteCode: null, ...CAMEL };
     const get = jest
       .fn()
-      .mockResolvedValueOnce(CAMEL)
-      .mockResolvedValueOnce({ ...CAMEL, isNotVerifiedResponse: true });
+      .mockResolvedValueOnce(withSite)
+      .mockResolvedValueOnce({ ...withSite, isNotVerifiedResponse: true });
     const set = jest.fn().mockResolvedValue({});
     const { svc } = makeService({
       getPayoutTestConfiguration: get,
@@ -103,7 +113,7 @@ describe('OzowPayoutTestService.setMockScenario', () => {
         isAccountDecryptionKeyMissing: false,
       });
       expect(get).toHaveBeenCalledTimes(2);
-      expect(out.after).toEqual({ ...CAMEL, isNotVerifiedResponse: true });
+      expect(out.after).toEqual({ ...withSite, isNotVerifiedResponse: true });
     });
   });
 
