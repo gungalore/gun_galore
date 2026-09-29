@@ -92,6 +92,8 @@ export interface OzowPayoutResult {
   status?: number;
   subStatus?: number;
   errorMessage?: string;
+  /** Ozow's raw JSON response, kept for test evidence / diagnostics. */
+  raw?: Record<string, unknown>;
 }
 
 export interface OzowPayoutAttemptMaterial extends WrappedPayoutEncryptionKey {
@@ -733,6 +735,7 @@ export class OzowService {
       status: json.payoutStatus?.status,
       subStatus: json.payoutStatus?.subStatus,
       errorMessage,
+      raw: json as Record<string, unknown>,
     };
   }
 

@@ -82,6 +82,8 @@ export type OzowTestPayoutResult = {
   subStatus?: number;
   errorMessage?: string;
   isMock: boolean;
+  /** Ozow's raw response, captured for test evidence. */
+  raw?: Record<string, unknown>;
 };
 
 @Injectable()
@@ -239,6 +241,7 @@ export class OzowPayoutTestService {
       subStatus: result.subStatus,
       errorMessage: result.errorMessage,
       isMock,
+      raw: result.raw,
     };
   }
 
