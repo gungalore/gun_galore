@@ -7269,6 +7269,47 @@ model OzowPayoutAttempt {
   @@index([terminalAt, lastStatusCheckedAt, createdAt])
 }
 
+// Ozow payout TEST attempts — the same persisted request record the live
+// verification handshake needs, but deliberately NOT anchored to a
+// Transaction. Ozow's mandatory money-out test cases submit arbitrary payouts
+// (amounts, a CDV account) that have no seller sale behind them; persisting
+// those in OzowPayoutAttempt would require fabricating a Transaction and would
+// leak test rows into payouts-due / held-funds / Zoho. This table keeps them
+// isolated. The verify + notification handlers may reconcile a row here, but
+// they never mutate a Transaction because of one.
+model OzowPayoutTestAttempt {
+  id                       String       @id @default(cuid())
+  label                    String?
+  isMock                   Boolean      @default(false)
+  gatewayPayoutId          String?      @unique
+  siteCode                 String
+  merchantReference        String
+  customerBankReference    String
+  amountCents              Int
+  isRtc                    Boolean
+  notifyUrl                String
+  bankGroupId              String
+  encryptedAccountNumber   String
+  branchCode               String
+  encryptionKeyCiphertext  String
+  encryptionKeyIv          String
+  encryptionKeyAuthTag     String
+  requestStatus            Int?
+  requestSubStatus         Int?
+  requestErrorMessage      String?
+  lastStatus               Int?
+  lastSubStatus            Int?
+  lastStatusMessage        String?
+  lastStatusCheckedAt      DateTime?
+  completedAt              DateTime?
+  terminalAt               DateTime?
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+
+  @@index([merchantReference])
+  @@index([terminalAt, lastStatusCheckedAt, createdAt])
+}
+
 // ────────────────────────────────────────────────────────────────────
 // SAPS Application Tracker — the member's own application, watched.
 //

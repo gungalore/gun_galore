@@ -66,6 +66,19 @@ import {
 } from '../common/seller-reject-policy';
 export { PAYMENT_MODE, PAYMENTS_LIVE, assertPaymentsLive };
 
+// Ozow's terminal payout failure sub-statuses, from the Payouts API OpenAPI
+// enum (hub.ozow.com/api-reference/specs/payouts-api.yaml): 100/101
+// PayoutReceived, 202/204/205 Verification, 401/402/404/405
+// PayoutProcessingError, 601 PendingInvestigation, 9001 PayoutReturned, and
+// 9903/9904 (Cancellation_RejectedByBank / Cancellation_
+// AccountNumberValidationFailed — the CDV account-number test lands here, not
+// on 405). 403 (Insufficient_Balance) is deliberately absent: it is terminal
+// as a snapshot but Ozow processes the payout automatically after a top-up, so
+// it must never be held or retried.
+export const OZOW_FINAL_FAILURE_SUBSTATUSES = new Set([
+  100, 101, 202, 204, 205, 401, 402, 404, 405, 601, 9001, 9903, 9904,
+]);
+
 // TOK-7 — accept→dispatch state machine deadlines.
 // Spec (operator-confirmed 2026-05-27):
 //   - 48h from payment for the seller to ACCEPT the transaction
@@ -1414,46 +1427,85 @@ export class TransactionsService {
       };
     }
 
-    let attempt = await this.prisma.ozowPayoutAttempt.findUnique({
+    // Resolve the persisted request record. Live seller payouts live in
+    // OzowPayoutAttempt (anchored to a Transaction); the Ozow test harness
+    // lives in OzowPayoutTestAttempt and must NEVER mutate a Transaction.
+    const materialOf = (row: {
+      transactionId?: string;
+      siteCode: string;
+      merchantReference: string;
+      customerBankReference: string;
+      amountCents: number;
+      isRtc: boolean;
+      notifyUrl: string;
+      bankGroupId: string;
+      encryptedAccountNumber: string;
+      branchCode: string;
+      encryptionKeyCiphertext: string;
+      encryptionKeyIv: string;
+      encryptionKeyAuthTag: string;
+    }) => ({
+      txId: row.transactionId ?? '',
+      siteCode: row.siteCode,
+      merchantReference: row.merchantReference,
+      customerBankReference: row.customerBankReference,
+      amountCents: row.amountCents,
+      isRtc: row.isRtc,
+      notifyUrl: row.notifyUrl,
+      bankGroupId: row.bankGroupId,
+      encryptedAccountNumber: row.encryptedAccountNumber,
+      branchCode: row.branchCode,
+      ciphertext: row.encryptionKeyCiphertext,
+      iv: row.encryptionKeyIv,
+      authTag: row.encryptionKeyAuthTag,
+    });
+
+    let liveAttempt = await this.prisma.ozowPayoutAttempt.findUnique({
       where: { gatewayPayoutId: payoutId },
     });
-    if (!attempt) {
+    let testAttempt = liveAttempt
+      ? null
+      : await this.prisma.ozowPayoutTestAttempt.findUnique({
+          where: { gatewayPayoutId: payoutId },
+        });
+
+    if (!liveAttempt && !testAttempt) {
       // Ozow can begin the verification callback immediately after requestpayout
       // returns. Recover the narrow race where this callback reaches us before
-      // the request thread has persisted the returned payoutId.
+      // the request thread has persisted the returned payoutId — across BOTH
+      // the live and the test tables.
       const merchantReference = String(
         body.merchantReference ?? body.MerchantReference ?? '',
       );
-      const candidates = merchantReference
-        ? await this.prisma.ozowPayoutAttempt.findMany({
-            where: {
-              merchantReference: { equals: merchantReference, mode: 'insensitive' },
-              gatewayPayoutId: null,
-              terminalAt: null,
-            },
-            orderBy: { createdAt: 'desc' },
-            take: 10,
-          })
-        : [];
-      const matching = candidates.filter((candidate) =>
-        this.ozow.matchesPayoutVerification(body, {
-          txId: candidate.transactionId,
-          siteCode: candidate.siteCode,
-          merchantReference: candidate.merchantReference,
-          customerBankReference: candidate.customerBankReference,
-          amountCents: candidate.amountCents,
-          isRtc: candidate.isRtc,
-          notifyUrl: candidate.notifyUrl,
-          bankGroupId: candidate.bankGroupId,
-          encryptedAccountNumber: candidate.encryptedAccountNumber,
-          branchCode: candidate.branchCode,
-          ciphertext: candidate.encryptionKeyCiphertext,
-          iv: candidate.encryptionKeyIv,
-          authTag: candidate.encryptionKeyAuthTag,
-        }),
+      const [liveCandidates, testCandidates] = merchantReference
+        ? await Promise.all([
+            this.prisma.ozowPayoutAttempt.findMany({
+              where: {
+                merchantReference: { equals: merchantReference, mode: 'insensitive' },
+                gatewayPayoutId: null,
+                terminalAt: null,
+              },
+              orderBy: { createdAt: 'desc' },
+              take: 10,
+            }),
+            this.prisma.ozowPayoutTestAttempt.findMany({
+              where: {
+                merchantReference: { equals: merchantReference, mode: 'insensitive' },
+                gatewayPayoutId: null,
+                terminalAt: null,
+              },
+              orderBy: { createdAt: 'desc' },
+              take: 10,
+            }),
+          ])
+        : [[], []];
+      const matchingLive = liveCandidates.filter((candidate) =>
+        this.ozow.matchesPayoutVerification(body, materialOf(candidate)),
       );
-      if (matching.length === 1) attempt = matching[0];
-      else if (matching.length > 1) {
+      const matchingTest = testCandidates.filter((candidate) =>
+        this.ozow.matchesPayoutVerification(body, materialOf(candidate)),
+      );
+      if (matchingLive.length + matchingTest.length > 1) {
         return {
           payoutId,
           isVerified: false,
@@ -1461,8 +1513,13 @@ export class TransactionsService {
           reason: 'Multiple pending payout attempts match this verification request',
         };
       }
+      if (matchingLive.length + matchingTest.length === 1) {
+        liveAttempt = matchingLive[0] ?? null;
+        testAttempt = matchingTest[0] ?? null;
+      }
     }
-    if (!attempt) {
+
+    if (!liveAttempt && !testAttempt) {
       return {
         payoutId,
         isVerified: false,
@@ -1470,21 +1527,9 @@ export class TransactionsService {
         reason: 'Payout not found',
       };
     }
-    if (!this.ozow.matchesPayoutVerification(body, {
-        txId: attempt.transactionId,
-        siteCode: attempt.siteCode,
-        merchantReference: attempt.merchantReference,
-        customerBankReference: attempt.customerBankReference,
-        amountCents: attempt.amountCents,
-        isRtc: attempt.isRtc,
-        notifyUrl: attempt.notifyUrl,
-        bankGroupId: attempt.bankGroupId,
-        encryptedAccountNumber: attempt.encryptedAccountNumber,
-        branchCode: attempt.branchCode,
-        ciphertext: attempt.encryptionKeyCiphertext,
-        iv: attempt.encryptionKeyIv,
-        authTag: attempt.encryptionKeyAuthTag,
-      })) {
+
+    const attempt = (liveAttempt ?? testAttempt)!;
+    if (!this.ozow.matchesPayoutVerification(body, materialOf(attempt))) {
       return {
         payoutId,
         isVerified: false,
@@ -1492,12 +1537,22 @@ export class TransactionsService {
         reason: 'Payout details or hash do not match the recorded request',
       };
     }
-    if (!attempt.gatewayPayoutId) {
+
+    if (testAttempt) {
+      // Test attempt: bind the payoutId inside the isolated test table only.
+      // There is no Transaction behind it, so the ledger is untouched.
+      if (!testAttempt.gatewayPayoutId) {
+        await this.prisma.ozowPayoutTestAttempt.update({
+          where: { id: testAttempt.id },
+          data: { gatewayPayoutId: payoutId },
+        });
+      }
+    } else if (liveAttempt && !liveAttempt.gatewayPayoutId) {
       const boundAt = new Date();
       await this.prisma.$transaction(async (tx) => {
         const payoutBound = await tx.ozowPayoutAttempt.updateMany({
           where: {
-            id: attempt.id,
+            id: liveAttempt.id,
             gatewayPayoutId: null,
             terminalAt: null,
           },
@@ -1508,7 +1563,7 @@ export class TransactionsService {
         }
         const transactionBound = await tx.transaction.updateMany({
           where: {
-            id: attempt.transactionId,
+            id: liveAttempt.transactionId,
             OR: [{ gatewayPayoutId: null }, { gatewayPayoutId: payoutId }],
           },
           data: {
@@ -1744,16 +1799,46 @@ export class TransactionsService {
       },
     });
     if (!attempt) {
-      this.logger.warn(`Ozow payout status: no attempt for ${evt.payoutId}`);
+      // The Ozow test harness records its requests in an isolated table. Its
+      // status is reconciled here for evidence, but it has no Transaction, so
+      // this path never touches the ledger.
+      const testAttempt = await this.prisma.ozowPayoutTestAttempt.findUnique({
+        where: { gatewayPayoutId: evt.payoutId },
+        select: { id: true, terminalAt: true, completedAt: true },
+      });
+      if (!testAttempt) {
+        this.logger.warn(`Ozow payout status: no attempt for ${evt.payoutId}`);
+        return;
+      }
+      if (testAttempt.terminalAt) return;
+      const testedAt = new Date();
+      const testTerminal =
+        evt.status === 4 ||
+        evt.status === 90 ||
+        evt.status === 99 ||
+        OZOW_FINAL_FAILURE_SUBSTATUSES.has(evt.subStatus);
+      await this.prisma.ozowPayoutTestAttempt.update({
+        where: { id: testAttempt.id },
+        data: {
+          lastStatus: evt.status,
+          lastSubStatus: evt.subStatus,
+          lastStatusMessage: evt.errorMessage,
+          lastStatusCheckedAt: testedAt,
+          ...(evt.status === 5 && testAttempt.completedAt === null
+            ? { completedAt: testedAt }
+            : {}),
+          ...(testTerminal ? { terminalAt: testedAt } : {}),
+        },
+      });
+      this.logger.log(
+        `Ozow TEST payout ${evt.status}/${evt.subStatus} recorded (payoutId ${evt.payoutId})`,
+      );
       return;
     }
     if (attempt.terminalAt) return;
 
     const txId = attempt.transactionId;
     const checkedAt = new Date();
-    const FINAL_FAILURE_SUBSTATUSES = new Set([
-      100, 101, 202, 204, 205, 401, 402, 404, 405, 601, 9001, 9903, 9904,
-    ]);
 
     if (evt.status === 5) {
       const firstCompletion = attempt.completedAt === null;
@@ -1812,7 +1897,7 @@ export class TransactionsService {
       evt.status === 4 ||
       evt.status === 90 ||
       evt.status === 99 ||
-      FINAL_FAILURE_SUBSTATUSES.has(evt.subStatus)
+      OZOW_FINAL_FAILURE_SUBSTATUSES.has(evt.subStatus)
     );
     if (!isFinalFailure) {
       await this.prisma.ozowPayoutAttempt.updateMany({

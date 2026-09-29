@@ -122,10 +122,33 @@ export interface OzowPayoutReferenceResult extends OzowPayoutStatus {
   isRtc: boolean;
 }
 
+/**
+ * Mock-scenario switches for the Payouts mock environment. Ozow's money-out
+ * test cases require exactly ONE of these set `true` at a time (all others
+ * false), reset between scenarios.
+ */
+export interface OzowPayoutTestConfiguration {
+  IsAccountDecryptionFailed?: boolean;
+  IsNotVerifiedResponse?: boolean;
+  IsAccountDecryptionKeyMissing?: boolean;
+  [key: string]: unknown;
+}
+
+/** One bank as returned by GET /getavailablebanks. */
+export interface OzowAvailableBank {
+  bankGroupId: string;
+  bankGroupName: string;
+  universalBranchCode: string;
+}
+
 const ONE_API_LIVE = 'https://one.ozow.com/v1';
 const ONE_API_STAGING = 'https://stagingone.ozow.com/v1';
 const PAYOUTS_LIVE = 'https://payoutsapi.ozow.com/v1';
 const PAYOUTS_STAGING = 'https://stagingpayoutsapi.ozow.com/v1';
+// Mock bases simulate payout failure scenarios without touching the float.
+// Never reachable in live mode (see assertPayoutMockAllowed).
+const PAYOUTS_LIVE_MOCK = 'https://payoutsapi.ozow.com/mock/v1';
+const PAYOUTS_STAGING_MOCK = 'https://stagingpayoutsapi.ozow.com/mock/v1';
 
 function webhookText(value: unknown): string | undefined {
   if (typeof value === 'string') return value;
@@ -170,6 +193,13 @@ export class OzowService {
 
   private readonly oneApiHost = this.live ? ONE_API_LIVE : ONE_API_STAGING;
   private readonly payoutsHost = this.live ? PAYOUTS_LIVE : PAYOUTS_STAGING;
+  private readonly payoutsMockHost = this.live
+    ? PAYOUTS_LIVE_MOCK
+    : PAYOUTS_STAGING_MOCK;
+  // Mock payouts are an explicit, non-live-only opt-in: both gates must pass
+  // before the mock host is ever used. There is no accidental path to it.
+  private readonly payoutMockEnabled =
+    !this.live && process.env.OZOW_PAYOUT_MOCK === 'true';
 
   private readonly payInConfigured = !!(
     this.clientId &&
@@ -188,11 +218,14 @@ export class OzowService {
   // Cached bearer token (One API).
   private token: { value: string; expiresAt: number } | null = null;
 
-  // Cached bank list (Payouts API) — branch code → bankGroupId.
+  // Cached bank list (Payouts API) — branch code → bankGroupId, plus the raw
+  // list so the test harness can target a bank Ozow knows but our static seller
+  // list does not (e.g. staging's Ozow Demo Bank).
   private banksCache: {
     fetchedAt: number;
     byBranch: Map<string, string>;
     byName: Map<string, string>;
+    raw: OzowAvailableBank[];
   } | null = null;
 
   constructor() {
@@ -217,6 +250,29 @@ export class OzowService {
 
   isPayoutsConfigured(): boolean {
     return this.payoutsConfigured;
+  }
+
+  isPayoutMockEnabled(): boolean {
+    return this.payoutMockEnabled;
+  }
+
+  private assertPayoutMockAllowed(): void {
+    if (this.live) {
+      throw new Error('Ozow mock payouts are disabled in live mode');
+    }
+    if (!this.payoutMockEnabled) {
+      throw new Error(
+        'Ozow mock payouts require OZOW_PAYOUT_MOCK=true in a non-live environment',
+      );
+    }
+  }
+
+  private payoutsBase(mock: boolean): string {
+    if (mock) {
+      this.assertPayoutMockAllowed();
+      return this.payoutsMockHost;
+    }
+    return this.payoutsHost;
   }
 
   private centsToDecimal(cents: number): number {
@@ -305,6 +361,11 @@ export class OzowService {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${await this.getToken()}`,
+        // The merchant reference is unique per checkout and reused on any retry
+        // of the same payment, which is exactly the idempotency contract Ozow
+        // recommends: a retried POST returns the original payment, never a
+        // second one.
+        'Idempotency-Key': merchantReference,
       },
       body: JSON.stringify(body),
     });
@@ -383,6 +444,9 @@ export class OzowService {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${await this.getToken()}`,
+        // A refund is irreversible: key it on the transaction + amount so a
+        // retried call cannot issue a second refund for the same slice.
+        'Idempotency-Key': `AO-REFUND-${transactionId}-${Math.round(amountZarCents)}`,
       },
       body: JSON.stringify([body]),
     });
@@ -405,6 +469,7 @@ export class OzowService {
   private async availableBanks(): Promise<{
     byBranch: Map<string, string>;
     byName: Map<string, string>;
+    raw: OzowAvailableBank[];
   }> {
     const now = Date.now();
     if (this.banksCache && now - this.banksCache.fetchedAt < 60 * 60 * 1000) {
@@ -412,6 +477,7 @@ export class OzowService {
     }
     const byBranch = new Map<string, string>();
     const byName = new Map<string, string>();
+    const raw: OzowAvailableBank[] = [];
     if (this.payoutsConfigured) {
       try {
         const res = await fetch(`${this.payoutsHost}/getavailablebanks`, {
@@ -428,6 +494,12 @@ export class OzowService {
           }[];
           for (const b of list) {
             if (!b.bankGroupId) continue;
+            const entry: OzowAvailableBank = {
+              bankGroupId: b.bankGroupId,
+              bankGroupName: b.bankGroupName ?? '',
+              universalBranchCode: b.universalBranchCode ?? '',
+            };
+            raw.push(entry);
             if (b.universalBranchCode) byBranch.set(b.universalBranchCode, b.bankGroupId);
             if (b.bankGroupName)
               byName.set(b.bankGroupName.toLowerCase().replace(/[^a-z]/g, ''), b.bankGroupId);
@@ -437,7 +509,7 @@ export class OzowService {
         this.logger.warn(`Ozow getavailablebanks failed: ${(err as Error).message}`);
       }
     }
-    this.banksCache = { fetchedAt: now, byBranch, byName };
+    this.banksCache = { fetchedAt: now, byBranch, byName, raw };
     return this.banksCache;
   }
 
@@ -450,10 +522,54 @@ export class OzowService {
     );
   }
 
+  /** Every bank Ozow lists for the configured payouts site. */
+  async getAvailableBanks(): Promise<OzowAvailableBank[]> {
+    return (await this.availableBanks()).raw;
+  }
+
+  /**
+   * Resolve a payout destination from Ozow's LIVE bank list by bank name or
+   * universal branch code. This lets the test harness pay to a staging bank
+   * Ozow offers but our static seller list does not — notably **Ozow Demo
+   * Bank**, which is the only staging destination that does not move real
+   * money. Real seller payouts keep the static-list gate in createPayout.
+   */
+  async resolvePayoutBank(input: {
+    bankName?: string;
+    branchCode?: string;
+  }): Promise<OzowAvailableBank | null> {
+    const list = await this.getAvailableBanks();
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '');
+    const code = input.branchCode?.trim();
+    if (code) {
+      const hit = list.find((b) => b.universalBranchCode === code);
+      if (hit) return hit;
+    }
+    const name = input.bankName?.trim();
+    if (name) {
+      const key = norm(name);
+      return (
+        list.find((b) => norm(b.bankGroupName) === key) ??
+        list.find((b) => norm(b.bankGroupName).includes(key)) ??
+        list.find((b) => key.includes(norm(b.bankGroupName))) ??
+        null
+      );
+    }
+    return null;
+  }
+
   // ─── Create payout (seller disbursement) ────────────────────────────
+  // `options.mock` routes this ONE request at the mock host (non-live only),
+  // used by the Ozow test-case harness. `options.resolvedBank` lets the harness
+  // pass a bank resolved from Ozow's LIVE list (e.g. Ozow Demo Bank) instead of
+  // the static seller list; the seller-payout runner never sets either.
   async createPayout(
     beneficiary: OzowPayoutBeneficiary,
     persistAttempt: (material: OzowPayoutAttemptMaterial) => Promise<string>,
+    options: {
+      mock?: boolean;
+      resolvedBank?: { bankGroupId: string; branchCode: string };
+    } = {},
   ): Promise<OzowPayoutResult> {
     if (!this.payoutsConfigured) {
       this.logger.warn(
@@ -488,21 +604,29 @@ export class OzowService {
       };
     }
 
-    const bank = bankByBranchCode(beneficiary.branchCode);
-    if (!bank) {
-      return {
-        payoutId: '',
-        accepted: false,
-        errorMessage: `Unrecognised branch code ${beneficiary.branchCode}`,
-      };
-    }
-    const bankGroupId = await this.resolveBankGroupId(bank);
-    if (!bankGroupId) {
-      return {
-        payoutId: '',
-        accepted: false,
-        errorMessage: `No Ozow bank group for ${bank.groupName}`,
-      };
+    let bankGroupId: string;
+    let branchCode = beneficiary.branchCode;
+    if (options.resolvedBank) {
+      bankGroupId = options.resolvedBank.bankGroupId;
+      branchCode = options.resolvedBank.branchCode;
+    } else {
+      const bank = bankByBranchCode(beneficiary.branchCode);
+      if (!bank) {
+        return {
+          payoutId: '',
+          accepted: false,
+          errorMessage: `Unrecognised branch code ${beneficiary.branchCode}`,
+        };
+      }
+      const resolved = await this.resolveBankGroupId(bank);
+      if (!resolved) {
+        return {
+          payoutId: '',
+          accepted: false,
+          errorMessage: `No Ozow bank group for ${bank.groupName}`,
+        };
+      }
+      bankGroupId = resolved;
     }
 
     const payoutEncryptionKey = generatePayoutEncryptionKey();
@@ -530,7 +654,7 @@ export class OzowService {
       notifyUrl: beneficiary.notifyUrl,
       bankGroupId,
       encryptedAccountNumber,
-      branchCode: beneficiary.branchCode,
+      branchCode,
       ...wrappedKey,
     });
 
@@ -543,11 +667,11 @@ export class OzowService {
       notifyUrl: beneficiary.notifyUrl,
       bankGroupId,
       encryptedAccountNumber,
-      branchCode: beneficiary.branchCode,
+      branchCode,
       apiKey: this.payoutApiKey,
     });
 
-    const res = await fetch(`${this.payoutsHost}/requestpayout`, {
+    const res = await fetch(`${this.payoutsBase(options.mock === true)}/requestpayout`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -564,20 +688,31 @@ export class OzowService {
         bankingDetails: {
           bankGroupId,
           accountNumber: encryptedAccountNumber,
-          branchCode: beneficiary.branchCode,
+          branchCode,
         },
         hashCheck,
       }),
     });
 
     if (!res.ok) {
-      const message = await res.text().catch(() => '');
+      // A transport failure (400/403/500) carries Ozow's reason in a flat
+      // `message` field, not in `payoutStatus`. Surface it so the admin hold
+      // reason and the test harness evidence say what actually went wrong.
+      const raw = await res.text().catch(() => '');
+      let providerMessage = '';
+      try {
+        const parsed = JSON.parse(raw) as { message?: unknown };
+        if (typeof parsed.message === 'string') providerMessage = parsed.message;
+      } catch {
+        providerMessage = raw;
+      }
+      const message = providerMessage || `HTTP ${res.status}`;
       this.logger.warn(`Ozow requestpayout ${res.status}: ${message}`);
       return {
         payoutId: '',
         accepted: false,
         attemptId,
-        errorMessage: `HTTP ${res.status}`,
+        errorMessage: message,
       };
     }
 
@@ -681,6 +816,75 @@ export class OzowService {
       subStatus: Number(payout.payoutStatus?.subStatus ?? 0),
       errorMessage: String(payout.payoutStatus?.errorMessage ?? ''),
     }));
+  }
+
+  // ─── Mock / test configuration (Payouts API, non-live only) ─────────
+  // These drive Ozow's mandatory mock test cases (money-out tests 1–3). They
+  // are refused unless OZOW_PAYOUT_MOCK=true AND the environment is not live.
+
+  /** GET /mock/v1/gettestconfiguration — the current mock scenario switches. */
+  async getPayoutTestConfiguration(): Promise<OzowPayoutTestConfiguration> {
+    this.assertPayoutMockAllowed();
+    if (!this.payoutsConfigured) throw new Error('Ozow payouts not configured');
+    const url = new URL(`${this.payoutsMockHost}/gettestconfiguration`);
+    url.searchParams.set('siteCode', this.payoutSiteCode);
+    const res = await fetch(url, {
+      headers: {
+        SiteCode: this.payoutSiteCode,
+        ApiKey: this.payoutApiKey,
+      },
+    });
+    if (!res.ok) {
+      throw new Error(
+        `Ozow gettestconfiguration ${res.status}: ${await res.text()}`,
+      );
+    }
+    return (await res.json()) as OzowPayoutTestConfiguration;
+  }
+
+  /**
+   * POST /mock/v1/settestconfiguration — force ONE mock scenario. Set exactly
+   * one flag true (all others false) and reset between scenarios.
+   */
+  async setPayoutTestConfiguration(
+    config: OzowPayoutTestConfiguration,
+  ): Promise<OzowPayoutTestConfiguration> {
+    this.assertPayoutMockAllowed();
+    if (!this.payoutsConfigured) throw new Error('Ozow payouts not configured');
+    const res = await fetch(`${this.payoutsMockHost}/settestconfiguration`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        SiteCode: this.payoutSiteCode,
+        ApiKey: this.payoutApiKey,
+      },
+      body: JSON.stringify({ siteCode: this.payoutSiteCode, ...config }),
+    });
+    if (!res.ok) {
+      throw new Error(
+        `Ozow settestconfiguration ${res.status}: ${await res.text()}`,
+      );
+    }
+    return (await res.json().catch(() => ({}))) as OzowPayoutTestConfiguration;
+  }
+
+  /** GET /mock/v1/getpayout — the simulated mock payout result. */
+  async getMockPayout(payoutId: string): Promise<Record<string, unknown>> {
+    this.assertPayoutMockAllowed();
+    if (!this.payoutsConfigured) throw new Error('Ozow payouts not configured');
+    const url = new URL(`${this.payoutsMockHost}/getpayout`);
+    url.searchParams.set('payoutId', payoutId);
+    url.searchParams.set('siteCode', this.payoutSiteCode);
+    const res = await fetch(url, {
+      headers: {
+        SiteCode: this.payoutSiteCode,
+        ApiKey: this.payoutApiKey,
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`Ozow getMockPayout ${res.status}: ${await res.text()}`);
+    }
+    return (await res.json()) as Record<string, unknown>;
   }
 
   decryptPayoutEncryptionKey(

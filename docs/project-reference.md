@@ -594,6 +594,26 @@ this repo.**
   to wrap each payout's generated account-decryption key at rest. Rotating it
   while payout attempts are outstanding prevents verification from recovering
   their keys; rewrap outstanding attempts before rotation.
+- **Test harness (staging).** Ozow's mandatory money-out test cases are driven
+  from `OzowPayoutTestService` / `admin/manual-payments/ozow-test` and the CLI
+  `scripts/ozow-payout-test.mjs`. ⚠️ **Refused by default:** the service runs
+  only when `OZOW_PAYOUT_TEST=true` on a non-live box, and mock scenarios
+  additionally need `OZOW_PAYOUT_MOCK=true` and the `…/mock/v1` host.
+  Requests persist to the isolated `OzowPayoutTestAttempt` table — deliberately
+  **not** anchored to a Transaction — so test payouts never appear in
+  payouts-due, held-funds or Zoho. The verify/notification handlers reconcile a
+  test attempt without mutating any ledger row.
+  ⚠️ **Destination is Ozow's own staging Absa test account `4050338500`.**
+  Ozow supplied it for exactly this. The harness resolves the bank from Ozow's
+  live `getavailablebanks` list (`OzowService.resolvePayoutBank`), not our
+  static seller list. The CDV case uses `1234567890`. The destination holder
+  name is never transmitted (no such field in `requestpayout`), so it is
+  cosmetic. Mock flags are written back using the exact key casing Ozow returns
+  from `getTestConfiguration`.
+- **Go-live flip:** `OZOW_ENV=live`, `PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true`,
+  `OZOW_PAYOUT_IS_RTC=true`, live One API + Payouts credentials, and the three
+  webhook URLs on the production domain (the pay-in one registered as a `full`
+  subscription, or the webhook cannot match a transaction). `OZOW_PAYOUT_MOCK=false`.
 
 ### KYC — seller-only
 

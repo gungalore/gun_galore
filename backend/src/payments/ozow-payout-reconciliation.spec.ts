@@ -135,6 +135,70 @@ describe('Ozow payout outcome reconciliation', () => {
     expect(prisma.adminAlert.create).toHaveBeenCalled();
   });
 
+  it('reconciles an isolated test attempt without touching the ledger', async () => {
+    const { prisma, reconcile } = setup();
+    prisma.ozowPayoutAttempt.findUnique = jest
+      .fn()
+      .mockResolvedValue(null) as never;
+    const testUpdates: AttemptUpdate[] = [];
+    (prisma as unknown as Record<string, unknown>).ozowPayoutTestAttempt = {
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({
+          id: 'test-1',
+          terminalAt: null,
+          completedAt: null,
+        }),
+      update: jest.fn((update: AttemptUpdate) => {
+        testUpdates.push(update);
+        return Promise.resolve({ count: 1 });
+      }),
+    };
+
+    await reconcile({
+      payoutId: 'payout-test-1',
+      status: 5,
+      subStatus: 0,
+      errorMessage: 'Complete',
+    });
+
+    expect(testUpdates[0].data.completedAt).toBeInstanceOf(Date);
+    expect(prisma.transaction.updateMany).not.toHaveBeenCalled();
+    expect(prisma.adminAlert.create).not.toHaveBeenCalled();
+  });
+
+  it('marks a final-failure test attempt terminal without a ledger write', async () => {
+    const { prisma, reconcile } = setup();
+    prisma.ozowPayoutAttempt.findUnique = jest
+      .fn()
+      .mockResolvedValue(null) as never;
+    const testUpdates: AttemptUpdate[] = [];
+    (prisma as unknown as Record<string, unknown>).ozowPayoutTestAttempt = {
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({
+          id: 'test-1',
+          terminalAt: null,
+          completedAt: null,
+        }),
+      update: jest.fn((update: AttemptUpdate) => {
+        testUpdates.push(update);
+        return Promise.resolve({ count: 1 });
+      }),
+    };
+
+    await reconcile({
+      payoutId: 'payout-test-1',
+      status: 1,
+      subStatus: 405,
+      errorMessage: 'The account number is invalid',
+    });
+
+    expect(testUpdates[0].data.terminalAt).toBeInstanceOf(Date);
+    expect(prisma.transaction.updateMany).not.toHaveBeenCalled();
+    expect(prisma.adminAlert.create).not.toHaveBeenCalled();
+  });
+
   it('still holds a payout returned after an earlier PayoutComplete', async () => {
     const { prisma, attemptUpdates, reconcile } = setup(new Date());
     await reconcile({

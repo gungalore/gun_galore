@@ -341,6 +341,277 @@ describe('OzowService Payouts API request handling', () => {
   });
 });
 
+describe('OzowService request hardening + mock payouts', () => {
+  const ENV = [
+    'OZOW_ENV',
+    'OZOW_CLIENT_ID',
+    'OZOW_CLIENT_SECRET',
+    'OZOW_SITE_CODE',
+    'OZOW_PAYOUT_API_KEY',
+    'OZOW_PAYOUT_SITE_CODE',
+    'OZOW_PAYOUT_ACCESS_TOKEN',
+    'OZOW_PAYOUT_ENCRYPTION_KEY',
+    'OZOW_PAYOUT_IS_RTC',
+    'OZOW_PAYOUT_MOCK',
+  ] as const;
+
+  function withEnv<T>(
+    values: Partial<Record<(typeof ENV)[number], string>>,
+    fn: () => Promise<T> | T,
+  ): Promise<T> {
+    const original = Object.fromEntries(ENV.map((n) => [n, process.env[n]]));
+    const originalFetch = global.fetch;
+    Object.assign(process.env, values);
+    return Promise.resolve(fn()).finally(() => {
+      for (const n of ENV) {
+        if (original[n] === undefined) delete process.env[n];
+        else process.env[n] = original[n];
+      }
+      global.fetch = originalFetch;
+    });
+  }
+
+  const payoutEnv = {
+    OZOW_ENV: 'staging',
+    OZOW_PAYOUT_API_KEY: 'test-api-key',
+    OZOW_PAYOUT_SITE_CODE: 'test-site',
+    OZOW_PAYOUT_ACCESS_TOKEN: 'test-access-token',
+    OZOW_PAYOUT_ENCRYPTION_KEY:
+      'test-master-wrapping-secret-32-characters-minimum',
+    OZOW_PAYOUT_IS_RTC: 'false',
+  };
+
+  const validBeneficiary = {
+    txId: 'tx-1',
+    merchantReference: 'AOtx1',
+    customerBankReference: 'AO tx1',
+    accountHolder: 'Seller',
+    bankAccountNumber: '123456789',
+    branchCode: '250655',
+    amountCents: 10_000,
+    notifyUrl: 'https://example.test/api/payments/webhook/ozow-payout',
+  };
+
+  it('sends an Idempotency-Key on pay-in and refund requests', async () => {
+    await withEnv(
+      {
+        OZOW_ENV: 'staging',
+        OZOW_CLIENT_ID: 'id',
+        OZOW_CLIENT_SECRET: 'secret',
+        OZOW_SITE_CODE: 'site',
+      },
+      async () => {
+        const fetchMock = mockFetchQueue([
+          { access_token: 'tok', expires_in: '14400' },
+          { id: 'pay-1', redirectUrl: 'https://pay.ozow.com/x' },
+          [{ id: 'refund-1' }],
+        ]);
+        global.fetch = fetchMock.fetchImpl;
+
+        const svc = new OzowService();
+        await svc.createPayment({
+          amountZarCents: 10_000,
+          merchantTransactionId: 'tx1',
+          returnUrl: 'https://x/complete',
+        });
+        await svc.refundPayment('txn-1', 5_000);
+
+        const payHeaders = fetchMock.calls[1].init?.headers as Record<
+          string,
+          string
+        >;
+        const refundHeaders = fetchMock.calls[2].init?.headers as Record<
+          string,
+          string
+        >;
+        expect(payHeaders['Idempotency-Key']).toBeTruthy();
+        expect(refundHeaders['Idempotency-Key']).toBe(
+          'AO-REFUND-txn-1-5000',
+        );
+      },
+    );
+  });
+
+  it("surfaces Ozow's message when a payout request is transport-rejected", async () => {
+    await withEnv(payoutEnv, async () => {
+      const calls: { input: RequestInfo | URL }[] = [];
+      global.fetch = (input) => {
+        calls.push({ input });
+        if (calls.length === 1) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([
+                {
+                  bankGroupId: 'bg',
+                  bankGroupName: 'FNB',
+                  universalBranchCode: '250655',
+                },
+              ]),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              message: 'The SiteCode and ApiKey pair is not accepted',
+            }),
+            { status: 403, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      };
+
+      const svc = new OzowService();
+      const res = await svc.createPayout(validBeneficiary, () =>
+        Promise.resolve('attempt-1'),
+      );
+      expect(res.accepted).toBe(false);
+      expect(res.errorMessage).toBe(
+        'The SiteCode and ApiKey pair is not accepted',
+      );
+    });
+  });
+
+  it('refuses mock payout calls in live mode', async () => {
+    await withEnv(
+      { ...payoutEnv, OZOW_ENV: 'live', OZOW_PAYOUT_MOCK: 'true' },
+      async () => {
+        const svc = new OzowService();
+        expect(svc.isPayoutMockEnabled()).toBe(false);
+        await expect(svc.getPayoutTestConfiguration()).rejects.toThrow(
+          /disabled in live/,
+        );
+      },
+    );
+  });
+
+  it('requires OZOW_PAYOUT_MOCK=true before touching the mock host', async () => {
+    await withEnv({ ...payoutEnv, OZOW_PAYOUT_MOCK: 'false' }, async () => {
+      const svc = new OzowService();
+      await expect(svc.getPayoutTestConfiguration()).rejects.toThrow(
+        /OZOW_PAYOUT_MOCK=true/,
+      );
+    });
+  });
+
+  it('reads test configuration from the mock host when enabled', async () => {
+    await withEnv(
+      { ...payoutEnv, OZOW_PAYOUT_MOCK: 'true' },
+      async () => {
+        const fetchMock = mockFetchQueue([
+          { IsAccountDecryptionFailed: true },
+        ]);
+        global.fetch = fetchMock.fetchImpl;
+        const svc = new OzowService();
+        const cfg = await svc.getPayoutTestConfiguration();
+        expect(cfg).toEqual({ IsAccountDecryptionFailed: true });
+        expect(requestUrl(fetchMock.calls[0].input)).toBe(
+          'https://stagingpayoutsapi.ozow.com/mock/v1/gettestconfiguration?siteCode=test-site',
+        );
+      },
+    );
+  });
+
+  it('routes a mock payout request to the mock requestpayout host', async () => {
+    await withEnv(
+      { ...payoutEnv, OZOW_PAYOUT_MOCK: 'true' },
+      async () => {
+        const fetchMock = mockFetchQueue([
+          [
+            {
+              bankGroupId: 'bank-group',
+              bankGroupName: 'FNB',
+              universalBranchCode: '250655',
+            },
+          ],
+          {
+            payoutId: 'mock-payout-1',
+            payoutStatus: { status: 1, subStatus: 201, errorMessage: '' },
+          },
+        ]);
+        global.fetch = fetchMock.fetchImpl;
+        const svc = new OzowService();
+        const res = await svc.createPayout(
+          validBeneficiary,
+          () => Promise.resolve('attempt-1'),
+          { mock: true },
+        );
+        expect(res.accepted).toBe(true);
+        expect(requestUrl(fetchMock.calls[1].input)).toBe(
+          'https://stagingpayoutsapi.ozow.com/mock/v1/requestpayout',
+        );
+      },
+    );
+  });
+
+  it("resolves Ozow Demo Bank from the live list and pays to it (bypassing the static seller list)", async () => {
+    await withEnv(
+      { ...payoutEnv, OZOW_PAYOUT_MOCK: 'true' },
+      async () => {
+        const fetchMock = mockFetchQueue([
+          [
+            {
+              bankGroupId: 'demo-group',
+              bankGroupName: 'Ozow Demo Bank',
+              universalBranchCode: '999999',
+            },
+          ],
+          {
+            payoutId: 'mock-payout-2',
+            payoutStatus: { status: 1, subStatus: 201, errorMessage: '' },
+          },
+        ]);
+        global.fetch = fetchMock.fetchImpl;
+        const svc = new OzowService();
+
+        const bank = await svc.resolvePayoutBank({
+          bankName: 'ozow demo bank',
+        });
+        expect(bank).toMatchObject({
+          bankGroupId: 'demo-group',
+          universalBranchCode: '999999',
+        });
+
+        const res = await svc.createPayout(
+          { ...validBeneficiary, branchCode: 'not-in-our-static-list' },
+          () => Promise.resolve('attempt-1'),
+          {
+            resolvedBank: {
+              bankGroupId: bank!.bankGroupId,
+              branchCode: bank!.universalBranchCode,
+            },
+          },
+        );
+        expect(res.accepted).toBe(true);
+        const body = JSON.parse(
+          fetchMock.calls[1].init?.body as string,
+        ) as { bankingDetails: { bankGroupId: string; branchCode: string } };
+        expect(body.bankingDetails.bankGroupId).toBe('demo-group');
+        expect(body.bankingDetails.branchCode).toBe('999999');
+      },
+    );
+  });
+
+  it('returns null when no live bank matches the request', async () => {
+    await withEnv(payoutEnv, async () => {
+      const fetchMock = mockFetchQueue([
+        [
+          {
+            bankGroupId: 'demo-group',
+            bankGroupName: 'Ozow Demo Bank',
+            universalBranchCode: '999999',
+          },
+        ],
+      ]);
+      global.fetch = fetchMock.fetchImpl;
+      const svc = new OzowService();
+      await expect(
+        svc.resolvePayoutBank({ bankName: 'Bank of Narnia' }),
+      ).resolves.toBeNull();
+    });
+  });
+});
+
 describe('normaliseOzowBank', () => {
   it('maps friendly frontend names + local spellings onto the Ozow bank', () => {
     expect(normaliseOzowBank('Capitec')?.groupName).toBe('Capitec Bank');

@@ -593,6 +593,11 @@ current production state.
 | `OZOW_PAYOUT_ACCESS_TOKEN` | For live payouts | Static 24-char token Ozow sends in the `AccessToken` header on the payout verification webhook. |
 | `OZOW_PAYOUT_ENCRYPTION_KEY` | For live payouts | 32-char key for AES-256-CBC encryption of destination account numbers. |
 | `OZOW_PAYOUT_IS_RTC` | Optional | `true` → real-time clearing (production); `false` for staging tests. |
+| `OZOW_PAYOUT_MOCK` | Optional | `true` (and not `live`) unlocks Ozow's mock payout host for the test harness. Refused in live mode. |
+| `OZOW_PAYOUT_TEST` | Optional | `true` arms the payout test harness. Refused in live regardless; leave false. |
+| `OZOW_TEST_BANK_NAME` | Optional | Harness destination bank, default `Absa` (staging only). |
+| `OZOW_TEST_ACCOUNT_NUMBER` | Optional | Harness destination, default `4050338500` (Ozow's staging Absa test account). |
+| `OZOW_TEST_BRANCH_CODE` / `_ACCOUNT_HOLDER` | Optional | Defaults for the `scripts/ozow-payout-test.mjs` harness; branch code overrides the bank name (staging only). |
 
 ### `OZOW_WEBHOOK_SECRET`
 The Svix signing secret for One API webhooks. One API signs each delivery with
@@ -611,6 +616,12 @@ Webhook URLs to register with Ozow:
 /api/payments/webhook/ozow-payout        payout notification (SHA-512 hashCheck)
 /api/payments/webhook/ozow-payout-verify payout verification handshake
 ```
+
+⚠️ Register the pay-in webhook (`/ozow`) as a **full** subscription. A `thin`
+delivery carries no `transactionReference`, so the handler cannot match a
+transaction and the order never confirms from the webhook. The two payout URLs
+must be public HTTPS (Ozow cannot reach localhost), so testing locally needs a
+tunnel with `PUBLIC_API_URL` pointed at it.
 
 ### `PAYMENT_MODE` and `PAYMENTS_LIVE`
 The two rail selectors, both **off by default because the site is not trading
