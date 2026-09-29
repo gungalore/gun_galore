@@ -1600,7 +1600,24 @@ export class TransactionsService {
   // ------------------------------------------------------------------
   async handleOzowPayoutNotification(body: Record<string, unknown>) {
     if (!this.ozow.verifyPayoutNotificationHash(body)) {
-      this.logger.warn('Ozow payout notification: invalid hash — dropping');
+      // Log the SHAPE (field names + the signed scalars), never account data, so
+      // a hash mismatch caused by an unexpected field name can be diagnosed
+      // without a packet capture.
+      const rawPs = body.payoutStatus ?? body.PayoutStatus;
+      const ps =
+        typeof rawPs === 'object' && rawPs !== null && !Array.isArray(rawPs)
+          ? (rawPs as Record<string, unknown>)
+          : {};
+      this.logger.warn(
+        `Ozow payout notification: invalid hash — dropping. ` +
+          `keys=[${Object.keys(body).join(',')}] ` +
+          `payoutStatusKeys=[${Object.keys(ps).join(',')}] ` +
+          `siteCode=${String(body.siteCode ?? body.SiteCode ?? '')} ` +
+          `merchantReference=${String(body.merchantReference ?? body.MerchantReference ?? '')} ` +
+          `customerMerchantReference=${String(body.customerMerchantReference ?? body.CustomerMerchantReference ?? '')} ` +
+          `status=${String(ps.status ?? body.status ?? '')} ` +
+          `subStatus=${String(ps.subStatus ?? body.subStatus ?? '')}`,
+      );
       return;
     }
     const evt = this.ozow.parsePayoutNotification(body);
