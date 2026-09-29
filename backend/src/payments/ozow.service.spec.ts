@@ -1,5 +1,6 @@
 import { OzowService, OzowPayoutAttemptMaterial } from './ozow.service';
 import { normaliseOzowBank, bankByBranchCode } from './ozow-banks';
+import { buildPayoutNotificationHash } from './ozow-signature';
 
 function mockFetchQueue(payloads: unknown[]) {
   const calls: { input: RequestInfo | URL; init?: RequestInit }[] = [];
@@ -608,6 +609,36 @@ describe('OzowService request hardening + mock payouts', () => {
       await expect(
         svc.resolvePayoutBank({ bankName: 'Bank of Narnia' }),
       ).resolves.toBeNull();
+    });
+  });
+
+  it('verifies a PascalCase payout notification (nested PayoutStatus.Status/SubStatus)', async () => {
+    await withEnv(payoutEnv, async () => {
+      const svc = new OzowService();
+      const body: Record<string, unknown> = {
+        PayoutId: 'payout-1',
+        SiteCode: 'test-site',
+        MerchantReference: 'AOTEST',
+        CustomerMerchantReference: 'AO valid',
+        EstimatedProcessingTime: '1-2 business days',
+        PayoutStatus: { Status: 5, SubStatus: 0, ErrorMessage: '' },
+        HashCheck: buildPayoutNotificationHash({
+          payoutId: 'payout-1',
+          siteCode: 'test-site',
+          merchantReference: 'AOTEST',
+          customerMerchantReference: 'AO valid',
+          status: 5,
+          subStatus: 0,
+          apiKey: 'test-api-key',
+        }),
+      };
+      expect(svc.verifyPayoutNotificationHash(body)).toBe(true);
+      expect(svc.parsePayoutNotification(body)).toMatchObject({
+        payoutId: 'payout-1',
+        merchantReference: 'AOTEST',
+        status: 5,
+        subStatus: 0,
+      });
     });
   });
 });

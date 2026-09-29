@@ -967,8 +967,12 @@ export class OzowService {
     errorMessage: string;
   } {
     const ps = webhookRecord(body.payoutStatus ?? body.PayoutStatus);
-    const status = webhookNumber(ps.status ?? body.status ?? body.Status) ?? 0;
-    const subStatus = webhookNumber(ps.subStatus ?? body.subStatus ?? body.SubStatus) ?? 0;
+    const status =
+      webhookNumber(ps.status ?? ps.Status ?? body.status ?? body.Status) ?? 0;
+    const subStatus =
+      webhookNumber(
+        ps.subStatus ?? ps.SubStatus ?? body.subStatus ?? body.SubStatus,
+      ) ?? 0;
     return {
       payoutId: webhookText(body.payoutId ?? body.PayoutId) ?? '',
       merchantReference:
@@ -983,8 +987,12 @@ export class OzowService {
   verifyPayoutNotificationHash(body: Record<string, unknown>): boolean {
     if (!this.payoutApiKey) return false;
     const ps = webhookRecord(body.payoutStatus ?? body.PayoutStatus);
-    const status = webhookNumber(ps.status ?? body.status ?? body.Status);
-    const subStatus = webhookNumber(ps.subStatus ?? body.subStatus ?? body.SubStatus);
+    // Ozow posts the payout notification in PascalCase, including the nested
+    // PayoutStatus fields — accept both casings at every level.
+    const status = webhookNumber(ps.status ?? ps.Status ?? body.status ?? body.Status);
+    const subStatus = webhookNumber(
+      ps.subStatus ?? ps.SubStatus ?? body.subStatus ?? body.SubStatus,
+    );
     const payoutId = webhookText(body.payoutId ?? body.PayoutId);
     const merchantReference = webhookText(
       body.merchantReference ?? body.MerchantReference,

@@ -1615,8 +1615,8 @@ export class TransactionsService {
           `siteCode=${String(body.siteCode ?? body.SiteCode ?? '')} ` +
           `merchantReference=${String(body.merchantReference ?? body.MerchantReference ?? '')} ` +
           `customerMerchantReference=${String(body.customerMerchantReference ?? body.CustomerMerchantReference ?? '')} ` +
-          `status=${String(ps.status ?? body.status ?? '')} ` +
-          `subStatus=${String(ps.subStatus ?? body.subStatus ?? '')}`,
+          `status=${String(ps.status ?? ps.Status ?? body.status ?? body.Status ?? '')} ` +
+          `subStatus=${String(ps.subStatus ?? ps.SubStatus ?? body.subStatus ?? body.SubStatus ?? '')}`,
       );
       return;
     }
