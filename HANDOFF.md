@@ -5,7 +5,49 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-09-28**.
+Last updated: **2026-09-30**.
+
+## 2026-09-30 — MOBILE/PWA HOME: ONE-ROW MINI BAR, NO HERO (DEPLOYED)
+
+**Deployed to production** as `cbf8c638` (2 commits: `3defe541` the feature,
+`cbf8c638` a small payout-harness `--amount` flag). Full deploy
+(`bash infra/deploy/deploy.sh`, no side flag — the diff touches `backend/`), all
+gates green first: backend `tsc` + 298 suites / 5145 tests, frontend `tsc` +
+127 files / 1652 tests, frontend prod build (`BUILD_ID` present). Health after:
+`/api/health` twice OK, public site 200 twice, all three pm2 services online.
+
+The operator's complaint: on a phone/PWA the shell's shop-mode bar
+(`frontend/components/shop-mode-tiles.tsx`) was ~340px tall and the hero another
+260px, so the product feed — the thing that sells — started ~815px down.
+
+- **`shop-mode-tiles.tsx`** — below `sm` the bar is now **one row of three mini
+  icon buttons** (Buy Now / Auctions / Armory): 28px chip, 13px label, centred
+  icon-over-label via a new `mini` prop on `TileBody`/`ModeTile`/`ArmoryTile`.
+  Blurb and live count are hidden on mobile; Armory's caret rides the label row
+  (a new `Caret` component now draws both the link chevron and the disclosure
+  caret). Armory lost its `col-span-2`; the nav grid is `grid-cols-3` signed in,
+  `grid-cols-2` signed out. The panel's sub-tiles deliberately do NOT pass
+  `mini`, so they keep full rows **and** their blurbs. `sm+` is byte-identical.
+- **`hero.tsx`** — `.hero-section` is `display:none` below 768px (width-gated,
+  so the server HTML stays identical at every viewport). `layout.tsx`'s hero
+  preload is now `media="(min-width: 768px)"` so phones stop downloading a plate
+  they never show.
+- **`page.tsx`** — landing section `py-10` → `pt-5 pb-10 sm:py-10`, grid wrapper
+  `mt-0 sm:mt-10`, "Latest listings" header `mb-3 sm:mb-5`.
+
+Result measured at 390px: bar 95px, first product row at ~275px. **Caveat for
+the next session:** both the local and production catalogues currently return
+`total: 0`, so the card row could not be eyeballed with stock — the position is
+measured, not seen. Signed-in Armory is covered by spec only (no local session).
+
+⚠️ **RUN `deploy.sh` WITH GIT BASH, NOT `bash`.** `bash` on this box resolves to
+`C:\Windows\System32\bash.exe` (WSL), whose git has `core.autocrlf` unset — it
+sees **401** files as modified, so `deploy.sh`'s `git diff --quiet` gate dies
+with "uncommitted changes". Use
+`& "C:\Program Files\Git\bin\bash.exe" infra/deploy/deploy.sh`.
+Related and pre-existing: `git status` in Windows git lists ~594 phantom `M`
+entries (LF/CRLF stat noise — `git diff` is empty for every one of them), so
+never stage with `git add .` and do not try to "fix" the tree.
 
 ## 2026-09-28 — "UPLOADED 5 DOCUMENTS AT ONCE AND IT FAILED"
 
