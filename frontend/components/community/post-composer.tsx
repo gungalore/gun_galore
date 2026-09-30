@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../lib/auth';
 import {
@@ -10,9 +10,20 @@ import {
   submitPost,
   uploadPostImage,
   uploadPostVideo,
+  type PostDetailPayload,
 } from '../../lib/community-api';
 import { processImage } from '../../lib/process-image';
 import { POST_TYPE_LABELS, POST_TYPE_ORDER, type PostTypeKey } from '../../lib/post-types';
+import {
+  buildDetailPayload,
+  chipLabel,
+  detailFieldsFor,
+  memoryKey,
+  readDetailMemory,
+  writeDetailMemory,
+  type DetailValue,
+  type PostFieldDef,
+} from '../../lib/post-fields';
 import FilePickerButton from '../file-picker-button';
 
 declare global {
@@ -113,6 +124,166 @@ function describePostError(e: unknown): string {
   return 'Something went wrong posting. Please try again.';
 }
 
+const fieldInput = {
+  background: 'var(--bg-inset)',
+  border: '0.5px solid var(--border)',
+  color: 'var(--text-primary)',
+} as const;
+
+/** One optional detail control, rendered by `kind`. */
+function DetailField({
+  field,
+  value,
+  disabled,
+  onChange,
+}: {
+  field: PostFieldDef;
+  value: DetailValue | undefined;
+  disabled: boolean;
+  onChange: (key: string, value: DetailValue) => void;
+}) {
+  const asString = typeof value === 'string' ? value : '';
+  const asNumber =
+    typeof value === 'number' ? value : typeof value === 'string' ? value : '';
+
+  let control: ReactNode = null;
+  if (field.kind === 'chips') {
+    const selected = Array.isArray(value) ? value : [];
+    control = (
+      <div className="flex flex-wrap gap-1.5">
+        {(field.options ?? []).map((opt) => {
+          const on = selected.includes(opt);
+          return (
+            <button
+              key={opt}
+              type="button"
+              disabled={disabled}
+              aria-pressed={on}
+              onClick={() =>
+                onChange(
+                  field.key,
+                  on ? selected.filter((v) => v !== opt) : [...selected, opt].slice(0, 8),
+                )
+              }
+              className="gg-press px-2.5 py-1 rounded-full text-[12px]"
+              style={{
+                background: on ? 'var(--red)' : 'var(--bg-inset)',
+                color: on ? '#fff' : 'var(--text-secondary)',
+                border: '0.5px solid var(--border)',
+              }}
+            >
+              {chipLabel(opt)}
+            </button>
+          );
+        })}
+      </div>
+    );
+  } else if (field.kind === 'single') {
+    control = (
+      <select
+        value={asString}
+        disabled={disabled}
+        onChange={(e) => onChange(field.key, e.target.value)}
+        className="w-full px-2 py-2 rounded-[6px] text-[13px]"
+        style={fieldInput}
+      >
+        <option value="">—</option>
+        {(field.options ?? []).map((opt) => (
+          <option key={opt} value={opt}>
+            {chipLabel(opt)}
+          </option>
+        ))}
+      </select>
+    );
+  } else if (field.kind === 'number') {
+    control = (
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          inputMode="numeric"
+          min={field.min}
+          max={field.max}
+          value={asNumber}
+          disabled={disabled}
+          onChange={(e) =>
+            onChange(field.key, e.target.value === '' ? '' : Number(e.target.value))
+          }
+          className="w-28 px-2 py-2 rounded-[6px] text-[13px]"
+          style={fieldInput}
+        />
+        {field.suffix && (
+          <span className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
+            {field.suffix}
+          </span>
+        )}
+      </div>
+    );
+  } else if (field.kind === 'rating') {
+    control = (
+      <div className="flex items-center gap-1">
+        {[1, 2, 3, 4, 5].map((n) => {
+          const active = typeof value === 'number' && value >= n;
+          return (
+            <button
+              key={n}
+              type="button"
+              disabled={disabled}
+              aria-label={`${n} star${n > 1 ? 's' : ''}`}
+              aria-pressed={typeof value === 'number' && value === n}
+              onClick={() => onChange(field.key, value === n ? '' : n)}
+              className="gg-press"
+              style={{
+                color: active ? 'var(--red)' : 'var(--text-tertiary)',
+                fontSize: 20,
+                lineHeight: 1,
+              }}
+            >
+              ★
+            </button>
+          );
+        })}
+      </div>
+    );
+  } else if (field.kind === 'date') {
+    control = (
+      <input
+        type="date"
+        value={asString}
+        disabled={disabled}
+        onChange={(e) => onChange(field.key, e.target.value)}
+        className="px-2 py-2 rounded-[6px] text-[13px]"
+        style={fieldInput}
+      />
+    );
+  } else {
+    control = (
+      <input
+        value={asString}
+        maxLength={field.max}
+        placeholder={field.placeholder}
+        disabled={disabled}
+        onChange={(e) => onChange(field.key, e.target.value)}
+        className="w-full px-2 py-2 rounded-[6px] text-[13px]"
+        style={fieldInput}
+      />
+    );
+  }
+
+  return (
+    <div>
+      <div className="text-[12px] mb-1" style={{ color: 'var(--text-tertiary)' }}>
+        {field.label}
+      </div>
+      {control}
+      {field.hint && (
+        <p className="text-[11px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+          {field.hint}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function PostComposer({
   onPosted,
   open: openProp,
@@ -150,6 +321,22 @@ export function PostComposer({
   const [location, setLocation] = useState('');
   const [placeId, setPlaceId] = useState('');
   const placeRef = useRef<HTMLInputElement>(null);
+  // Optional per-category details, remembered across posts (keyed
+  // `${type}:${field}`) so the one-tap chips never have to be re-picked.
+  const [details, setDetails] = useState<Record<string, DetailValue>>({});
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  useEffect(() => {
+    setDetails(readDetailMemory());
+  }, []);
+
+  function updateDetail(key: string, value: DetailValue) {
+    setDetails((prev) => {
+      const next = { ...prev, [memoryKey(type, key)]: value };
+      writeDetailMemory(next);
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (!open || !placeRef.current || !window.google?.maps?.places) return;
@@ -242,6 +429,7 @@ export function PostComposer({
         .map((t) => t.trim())
         .filter(Boolean);
 
+      const detailPayload = buildDetailPayload(type, details) as PostDetailPayload;
       const created = await createPost(token, {
         type,
         title: title.trim() || undefined,
@@ -249,6 +437,7 @@ export function PostComposer({
         tags: tagList.length ? tagList : undefined,
         location: location || undefined,
         locationPlaceId: placeId || undefined,
+        ...detailPayload,
       });
       createdId = created.post.id;
 
@@ -412,6 +601,40 @@ export function PostComposer({
           color: 'var(--text-primary)',
         }}
       />
+
+      <div className="mb-3">
+        <button
+          type="button"
+          onClick={() => setDetailsOpen((v) => !v)}
+          disabled={busy}
+          aria-expanded={detailsOpen}
+          className="gg-press px-3 py-1.5 rounded-[6px] text-[12px]"
+          style={{
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--border)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          {detailsOpen ? '− Hide details' : '+ Add details (optional)'}
+        </button>
+        {detailsOpen && (
+          <div className="mt-2 flex flex-col gap-3">
+            <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+              Optional — these help people find, filter and understand your post. Your
+              choices are remembered for next time.
+            </p>
+            {detailFieldsFor(type).map((field) => (
+              <DetailField
+                key={field.key}
+                field={field}
+                value={details[memoryKey(type, field.key)]}
+                disabled={busy}
+                onChange={updateDetail}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="flex gap-3 flex-wrap mb-3">
         <div className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>

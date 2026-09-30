@@ -34,8 +34,10 @@ import {
   FEED_PAGE_DEFAULT,
   FEED_PAGE_MAX,
   isOfficialEmail,
+  looksLikeSerial,
   normaliseMuteList,
   normaliseTags,
+  sanitisePostDetails,
   PUBLIC_AUTHOR_SELECT,
   POST_TYPE_LABELS,
   POST_TYPES,
@@ -165,6 +167,20 @@ export class FeedService {
     return { NOT: conditions };
   }
 
+  /** Filter on the optional per-category detail fields (feed + search). */
+  private detailWhere(q: FeedQueryDto): Prisma.PostWhereInput {
+    const conditions: Prisma.PostWhereInput[] = [];
+    const species = (q.species ?? [])
+      .map((s) => s.trim().toLowerCase().replace(/\s+/g, '-'))
+      .filter(Boolean);
+    if (species.length) conditions.push({ species: { hasSome: species } });
+    if (q.calibre?.trim()) {
+      conditions.push({ calibre: { equals: q.calibre.trim(), mode: 'insensitive' } });
+    }
+    if (q.minRating) conditions.push({ gearRating: { gte: q.minRating } });
+    return conditions.length ? { AND: conditions } : {};
+  }
+
   private isMuted(post: Post, v: ViewerRow): boolean {
     return (
       v.feedMutedPostTypes.includes(post.type) ||
@@ -187,6 +203,26 @@ export class FeedService {
       tags: post.tags,
       location: post.location,
       locationPlaceId: post.locationPlaceId,
+      // Optional per-category details (see feed.types.ts). Always present so
+      // the client has a stable shape; null/empty when the author set none.
+      flair: post.flair ?? [],
+      species: post.species ?? [],
+      occurredAt: post.occurredAt,
+      calibre: post.calibre,
+      firearmType: post.firearmType,
+      firearmModel: post.firearmModel,
+      bulletWeightGr: post.bulletWeightGr,
+      powderChargeGr: post.powderChargeGr,
+      testResult: post.testResult,
+      waterType: post.waterType,
+      sizeCm: post.sizeCm,
+      shotDistanceM: post.shotDistanceM,
+      siteType: post.siteType,
+      tripDays: post.tripDays,
+      gearCategory: post.gearCategory,
+      gearRating: post.gearRating,
+      gearCondition: post.gearCondition,
+      context: post.context,
       graphicTier: post.graphicTier,
       isOfficial: post.isOfficial,
       likeCount: post.likeCount,
@@ -245,6 +281,7 @@ export class FeedService {
         ...(q.type ? { type: q.type } : {}),
         ...(q.before ? { createdAt: { lt: new Date(q.before) } } : {}),
         ...this.filterWhere(v, !!q.includeFiltered),
+        ...this.detailWhere(q),
         // Published posts for everyone, plus the viewer's OWN posts still in
         // moderation or rejected so the author sees "Processing"/"Blocked".
         OR: [
@@ -359,10 +396,14 @@ export class FeedService {
         ...(q.type ? { type: q.type } : {}),
         ...(q.before ? { createdAt: { lt: new Date(q.before) } } : {}),
         ...this.filterWhere(v, !!q.includeFiltered),
+        ...this.detailWhere(q),
         OR: [
           { title: { contains: needle, mode: 'insensitive' } },
           { body: { contains: needle, mode: 'insensitive' } },
           { tags: { hasSome: tagNeedles } },
+          { species: { hasSome: tagNeedles } },
+          { flair: { hasSome: tagNeedles } },
+          { calibre: { contains: needle, mode: 'insensitive' } },
           { author: { username: { contains: needle, mode: 'insensitive' } } },
           { category: { name: { contains: needle, mode: 'insensitive' } } },
           { location: { contains: needle, mode: 'insensitive' } },
@@ -557,6 +598,10 @@ export class FeedService {
     }
 
     const official = isOfficialEmail(v.email);
+    const details = sanitisePostDetails(dto as unknown as Record<string, unknown>, dto.type);
+    if (details.firearmModel && looksLikeSerial(details.firearmModel)) {
+      throw new BadRequestException('Please leave out serial numbers — model name only.');
+    }
     const text = [dto.title, dto.body].filter(Boolean).join('\n');
     await this.assertTextAllowed(text, 'feed-post', userId, official);
 
@@ -582,7 +627,7 @@ export class FeedService {
         title: dto.title?.trim() || null,
         body: dto.body,
         tags: normaliseTags(dto.tags),
-        gear: (dto.gear ?? undefined) as Prisma.InputJsonValue | undefined,
+        ...details,
         listingId: dto.listingId ?? null,
         categoryId: dto.categoryId ?? null,
         location: dto.location ?? null,
@@ -711,6 +756,11 @@ export class FeedService {
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
     if (!post || post.authorId !== userId) throw new NotFoundException();
 
+    const details = sanitisePostDetails(dto as unknown as Record<string, unknown>, post.type);
+    if (details.firearmModel && looksLikeSerial(details.firearmModel)) {
+      throw new BadRequestException('Please leave out serial numbers — model name only.');
+    }
+
     const title = dto.title !== undefined ? dto.title.trim() || null : post.title;
     const body = dto.body ?? post.body;
     const text = [title, body].filter(Boolean).join('\n');
@@ -728,6 +778,7 @@ export class FeedService {
         title,
         body,
         ...(dto.tags !== undefined ? { tags: normaliseTags(dto.tags) } : {}),
+        ...details,
         status: PostStatus.PENDING_MODERATION,
         moderatedAt: null,
         editedAt: new Date(),

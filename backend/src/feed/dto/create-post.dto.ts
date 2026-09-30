@@ -1,14 +1,25 @@
 import { PostType } from '@prisma/client';
+import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
   IsEnum,
+  IsInt,
+  IsISO8601,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
-import { FEED_MAX_BODY, FEED_MAX_TAGS, FEED_MAX_TITLE } from '../feed.types';
+import {
+  FEED_MAX_BODY,
+  FEED_MAX_CHIPS,
+  FEED_MAX_TAGS,
+  FEED_MAX_TITLE,
+  POST_NUMERIC_BOUNDS,
+} from '../feed.types';
 
 export class CreatePostDto {
   @IsEnum(PostType)
@@ -30,9 +41,113 @@ export class CreatePostDto {
   @IsString({ each: true })
   tags?: string[];
 
-  /** Optional structured gear/context fields (free-form for now). */
+  // ── Optional per-category detail fields ──────────────────────────────────
+  // All optional; the service strips any field not valid for `type`. Bounds
+  // and vocabularies live in feed.types.ts.
   @IsOptional()
-  gear?: Record<string, unknown>;
+  @IsArray()
+  @ArrayMaxSize(FEED_MAX_CHIPS)
+  @IsString({ each: true })
+  flair?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(FEED_MAX_CHIPS)
+  @IsString({ each: true })
+  species?: string[];
+
+  /** When the described event happened (trip/report date). */
+  @IsOptional()
+  @IsISO8601()
+  occurredAt?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  calibre?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  firearmType?: string;
+
+  /** Model NAME only — serial numbers are stripped/refused. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  firearmModel?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(POST_NUMERIC_BOUNDS.bulletWeightGr.min)
+  @Max(POST_NUMERIC_BOUNDS.bulletWeightGr.max)
+  bulletWeightGr?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(POST_NUMERIC_BOUNDS.powderChargeGr.min)
+  @Max(POST_NUMERIC_BOUNDS.powderChargeGr.max)
+  powderChargeGr?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  testResult?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  waterType?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(POST_NUMERIC_BOUNDS.sizeCm.min)
+  @Max(POST_NUMERIC_BOUNDS.sizeCm.max)
+  sizeCm?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(POST_NUMERIC_BOUNDS.shotDistanceM.min)
+  @Max(POST_NUMERIC_BOUNDS.shotDistanceM.max)
+  shotDistanceM?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  siteType?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(POST_NUMERIC_BOUNDS.tripDays.min)
+  @Max(POST_NUMERIC_BOUNDS.tripDays.max)
+  tripDays?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  gearCategory?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(POST_NUMERIC_BOUNDS.gearRating.min)
+  @Max(POST_NUMERIC_BOUNDS.gearRating.max)
+  gearRating?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  gearCondition?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  context?: string;
 
   /** Optional link to a marketplace listing the post is about. */
   @IsOptional()

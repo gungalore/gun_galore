@@ -5,6 +5,7 @@ import { useAuth } from '../../lib/auth';
 import { type FeedPost, disputePost } from '../../lib/community-api';
 import { postTypeLabel } from '../../lib/post-types';
 import { ImageLightbox } from '../image-lightbox';
+import PostDetails from './post-details';
 
 interface PostCardProps {
   post: FeedPost;
@@ -389,6 +390,7 @@ export function PostCard({
         >
           {post.body}
         </p>
+        <PostDetails type={post.type} post={post} className="mt-2" />
         {post.tags.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-2">
             {post.tags.map((t) => (

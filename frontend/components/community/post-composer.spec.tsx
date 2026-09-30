@@ -89,6 +89,7 @@ function pickVideoFile(name = 'clip.mp4') {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   mocks.createPost.mockResolvedValue({
     post: { id: 'p1' },
     moderation: { decision: 'PROCESSING', reasons: [] },
@@ -158,6 +159,31 @@ describe('PostComposer', () => {
     );
     expect(await screen.findByText(/too large/i)).toBeTruthy();
     expect(onPosted).not.toHaveBeenCalled();
+  });
+
+  it('sends the chosen per-category details with the post', async () => {
+    openComposer();
+    await userEvent.type(screen.getByPlaceholderText("What's on your mind?"), 'Kudu hunt');
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'HUNTING' } });
+    await userEvent.click(screen.getByRole('button', { name: /Add details/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Kudu' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Warthog' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Post' }));
+
+    await waitFor(() =>
+      expect(mocks.createPost).toHaveBeenCalledWith(
+        't',
+        expect.objectContaining({ type: 'HUNTING', species: ['kudu', 'warthog'] }),
+      ),
+    );
+  });
+
+  it('keeps the details section collapsed until asked', async () => {
+    openComposer();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'HUNTING' } });
+    expect(screen.queryByRole('button', { name: 'Kudu' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /Add details/i }));
+    expect(screen.getByRole('button', { name: 'Kudu' })).toBeTruthy();
   });
 
   it('posts normally when the video upload succeeds', async () => {

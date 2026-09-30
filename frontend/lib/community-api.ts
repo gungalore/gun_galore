@@ -40,6 +40,26 @@ export interface FeedPost {
   location: string | null;
   /** Google Places place_id for `location`, so the tag opens that exact place. */
   locationPlaceId: string | null;
+  // Optional per-category details (see lib/post-fields.ts). Always present;
+  // null / empty when the author set none.
+  flair: string[];
+  species: string[];
+  occurredAt: string | null;
+  calibre: string | null;
+  firearmType: string | null;
+  firearmModel: string | null;
+  bulletWeightGr: number | null;
+  powderChargeGr: number | null;
+  testResult: string | null;
+  waterType: string | null;
+  sizeCm: number | null;
+  shotDistanceM: number | null;
+  siteType: string | null;
+  tripDays: number | null;
+  gearCategory: string | null;
+  gearRating: number | null;
+  gearCondition: string | null;
+  context: string | null;
   graphicTier: GraphicTier;
   isOfficial: boolean;
   likeCount: number;
@@ -191,6 +211,28 @@ export function fetchProfile(
   return jsonFetch(`/community/users/${encodeURIComponent(username)}`, token);
 }
 
+/** Optional per-category detail fields accepted by create/update. */
+export type PostDetailPayload = Partial<{
+  flair: string[];
+  species: string[];
+  occurredAt: string;
+  calibre: string;
+  firearmType: string;
+  firearmModel: string;
+  bulletWeightGr: number;
+  powderChargeGr: number;
+  testResult: string;
+  waterType: string;
+  sizeCm: number;
+  shotDistanceM: number;
+  siteType: string;
+  tripDays: number;
+  gearCategory: string;
+  gearRating: number;
+  gearCondition: string;
+  context: string;
+}>;
+
 export function createPost(
   token: string,
   body: {
@@ -200,7 +242,7 @@ export function createPost(
     tags?: string[];
     location?: string;
     locationPlaceId?: string;
-  },
+  } & PostDetailPayload,
 ): Promise<{ post: FeedPost; moderation: { decision: string; reasons: string[] } }> {
   return jsonFetch('/community/posts', token, {
     method: 'POST',
@@ -222,7 +264,7 @@ export function submitPost(
 export function updatePost(
   token: string,
   id: string,
-  body: { title?: string; body?: string; tags?: string[] },
+  body: { title?: string; body?: string; tags?: string[] } & PostDetailPayload,
 ): Promise<{ post: FeedPost }> {
   return jsonFetch(`/community/posts/${id}`, token, {
     method: 'PATCH',

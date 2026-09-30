@@ -1,15 +1,19 @@
 import { PostType } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
   IsISO8601,
   IsOptional,
+  IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
-import { FEED_PAGE_MAX } from '../feed.types';
+import { FEED_MAX_CHIPS, FEED_PAGE_MAX } from '../feed.types';
 
 const toBool = ({ value }: { value: unknown }) =>
   value === true || value === 'true' || value === '1';
@@ -37,4 +41,25 @@ export class FeedQueryDto {
   @IsOptional()
   @IsEnum(PostType)
   type?: PostType;
+
+  /** Restrict to posts tagged with any of these species (Hunting/Fishing). */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(FEED_MAX_CHIPS)
+  @IsString({ each: true })
+  species?: string[];
+
+  /** Restrict to a calibre / cartridge (Hunting, Firearms, Reloading). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  calibre?: string;
+
+  /** Minimum star rating (Gear & Reviews). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  minRating?: number;
 }

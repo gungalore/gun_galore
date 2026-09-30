@@ -7021,7 +7021,46 @@ model Post {
   /// Topic hashtags (normalised lowercase, no '#'), used by per-user filters.
   /// These are CONTENT tags, not people tags — there is no people tagging.
   tags             String[]     @default([])
-  gear             Json?
+  /// Optional per-category "details" fields (ALL optional). Values are
+  /// validated against the per-PostType vocabularies in feed.types.ts; only
+  /// fields valid for the post's own type are persisted. See
+  /// docs/design/community-feed/spec.md.
+  /// Topic chips (per-category flair: purpose, method, condition, facilities…).
+  flair            String[]     @default([])
+  /// Game / fish species tags (Hunting, Fishing).
+  species          String[]     @default([])
+  /// When the described event happened (trip/report date), distinct from createdAt.
+  occurredAt       DateTime?
+  /// Calibre / cartridge (Hunting, Firearms, Reloading).
+  calibre          String?      @db.VarChar(40)
+  /// Platform class (Firearms: rifle/shotgun/pistol/airgun/other).
+  firearmType      String?      @db.VarChar(20)
+  /// Model NAME only — serial numbers are never collected.
+  firearmModel     String?      @db.VarChar(60)
+  /// Bullet weight in grains (Reloading).
+  bulletWeightGr   Int?
+  /// Tested powder charge in grains (Reloading).
+  powderChargeGr   Int?
+  /// Short performance summary, e.g. group size (Reloading).
+  testResult       String?      @db.VarChar(120)
+  /// River / dam / estuary / nearshore / offshore (Fishing).
+  waterType        String?      @db.VarChar(20)
+  /// Catch length in centimetres (Fishing).
+  sizeCm           Int?
+  /// Shot distance in metres (Hunting).
+  shotDistanceM    Int?
+  /// Campsite / wilderness / caravan / hut / other (Camping).
+  siteType         String?      @db.VarChar(20)
+  /// Trip length in days/nights (Overlanding, Camping).
+  tripDays         Int?
+  /// Gear class (Gear & Reviews).
+  gearCategory     String?      @db.VarChar(20)
+  /// Star rating 1–5 (Gear & Reviews).
+  gearRating       Int?
+  /// New / used / like-new (Gear & Reviews).
+  gearCondition    String?      @db.VarChar(20)
+  /// At range / in field / at home (Questions & Advice).
+  context          String?      @db.VarChar(20)
   listingId        String?
   listing          Listing?     @relation("PostListing", fields: [listingId], references: [id], onDelete: SetNull)
   categoryId       String?
@@ -7062,6 +7101,11 @@ model Post {
   @@index([type, createdAt(sort: Desc)])
   // Tag-based content muting uses `tags hasSome [...]`; GIN is the right index.
   @@index([tags(ops: ArrayOps)], type: Gin)
+  // Category-field filters: array containment needs GIN, scalars a btree.
+  @@index([species(ops: ArrayOps)], type: Gin)
+  @@index([flair(ops: ArrayOps)], type: Gin)
+  @@index([calibre])
+  @@index([gearRating])
 }
 
 /// Thin Cloudinary pointer, mirrors ListingImage.

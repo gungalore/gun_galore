@@ -4,7 +4,7 @@
 **Feature:** A members-only community feed (posts, comments, likes, follows, profiles, per-user content filters) with a public join-gate and Facebook-style share cards.
 **Audience for this document:** an AI coding agent (DeepSeek V4.1) building the feature. You are expected to follow the repository's existing conventions exactly; this spec tells you what to build and where, not how to restructure the app.
 
-**Status:** C0 + C1 built and locally verified (type-checks clean, both suites green). Not deployed; every route is dark behind `feed_enabled` (default false). C2–C4 still to come.
+**Status:** C0 + C1 built and locally verified (type-checks clean, both suites green). Not deployed; every route is dark behind `feed_enabled` (default false). C2–C4 still to come. **Added 2026-09-30:** optional per-category post detail fields — see §19.
 
 ### Implementation status (2026-09-21)
 
@@ -1016,3 +1016,68 @@ exported `postStatusMeta`), `components/community/my-posts-client.tsx`,
 `app/community/me/page.tsx` (wraps the client in `Suspense` for the
 `useSearchParams` deep link), plus `updatePost` / `deletePost` /
 `fetchMyPosts` / `fetchMySummary` in `lib/community-api.ts`.
+
+---
+
+## 19. Optional per-category post details (2026-09-30)
+
+A compact set of **optional** fields per post type, so a member can add a
+little structure (species, calibre, water type, a gear rating) without slowing
+down posting. Operator decisions that scope this build:
+
+- **Location stays Google Places** (no province dropdown; the label stays
+  place + town, the `place_id` link is untouched).
+- **No privacy toggle** — there is no friends/follows graph; posts are
+  member-visible.
+- **Everything is optional** (only the body is required) — fast posting first.
+- **Typed columns, not JSON** — the dead `gear Json?` was written but never
+  read; it was **dropped** and replaced by real columns so the fields are
+  filterable.
+- **Chips + free tags coexist**: chips are the one-tap common values; custom
+  wording still goes in `tags`.
+- Shared extras kept: a **date** (`occurredAt`) and a **1–5 gear rating**.
+  Language and urgency were **not** added.
+
+### Storage & migration
+
+Migration `20260930120000_add_post_structured_fields` adds, on `Post`:
+`flair String[]`, `species String[]`, `occurredAt DateTime?`, `calibre`,
+`firearmType`, `firearmModel`, `bulletWeightGr`, `powderChargeGr`,
+`testResult`, `waterType`, `sizeCm`, `shotDistanceM`, `siteType`, `tripDays`,
+`gearCategory`, `gearRating`, `gearCondition`, `context` (scalars nullable).
+Indexes: GIN on `species`/`flair`, btree on `calibre`/`gearRating`. The
+`gear` JSON column is dropped.
+
+> ⚠️ `prisma migrate dev` cannot be used here: the dev DB has intentional
+> raw-DDL drift (FTS columns absent from `schema.prisma`), so Prisma offers to
+> **reset** the database. Author the migration SQL by hand and apply it with
+> `prisma migrate deploy` + `prisma generate`.
+
+### Validation & vocabulary
+
+The **value sets live in `backend/src/feed/feed.types.ts`**, not as DB enums,
+so a vocabulary can grow without a migration: `POST_CHIP_VOCAB` (flair /
+species), `POST_SINGLE_VOCAB` (firearmType, waterType, siteType, gearCategory,
+gearCondition, context), `POST_NUMERIC_BOUNDS`, and `POST_DETAIL_FIELDS` (which
+fields each type accepts). `sanitisePostDetails(input, type)` is the single
+entry point: it strips any field not valid for the type, drops chip values
+outside the vocabulary, clamps numbers into range, and **omits keys the client
+did not send** (so an edit never wipes an untouched field).
+`looksLikeSerial()` refuses a `firearmModel` containing a 5+ digit run — model
+name only; serial numbers are never collected. DTOs (`create-post.dto.ts`,
+`update-post.dto.ts`) mirror the bounds; `feed-query.dto.ts` gained
+`species[]`, `calibre` and `minRating` filters, applied in `listFeed` and
+`searchFeed` via `detailWhere()`.
+
+### Frontend
+
+`frontend/lib/post-fields.ts` mirrors the backend vocabulary into field
+definitions (`detailFieldsFor(type)`), plus `buildDetailPayload`,
+`describePostDetails`, and a localStorage memory (`gg.community.postDetails`,
+keyed `${type}:${field}`). The composer (`post-composer.tsx`) renders a
+collapsed **"+ Add details (optional)"** section that swaps with the selected
+category — one-tap chips, small numeric inputs, a native date picker, and a
+star rating — and remembers the member's choices between posts.
+`components/community/post-details.tsx` renders the stored details as a compact
+chip row, used by `post-card.tsx` (and therefore the permalink, which renders a
+`PostCard`).
