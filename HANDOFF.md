@@ -5,7 +5,53 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-09-30**.
+Last updated: **2026-10-01**.
+
+## 2026-10-01 — COMMUNITY POST DETAILS: OPTIONAL PER-CATEGORY FIELDS (DEPLOYED)
+
+**Deployed to production** as `23a550b3`. Full deploy (`bash infra/deploy/deploy.sh`,
+no side flag — the diff touches `backend/` and `prisma/`), all gates green first:
+backend `tsc` + 302 suites / 5181 tests, frontend `tsc` + 128 files / 1657 tests,
+frontend prod build. Rollback point: `alloutdoor-20261001-002118.dump`
+(~28.6 MB). Health after: `/api/health` twice OK, public site 200 twice, all
+three pm2 services (`alloutdoor-backend`, `alloutdoor-frontend`, `warden`) online.
+Migration `20260930120000_add_post_structured_fields` applied on the box.
+
+**What it does:** every community post type now has a compact set of **optional**
+fields (Hunting: species/calibre/shot distance; Firearms: type/calibre/model/
+purpose; Reloading: cartridge/bullet weight/charge/result; Fishing: species/
+water/method/size; Overland: condition/trip days; Camping: site type/facilities/
+nights; Gear: category/rating/condition; Questions: topic/context; plus a shared
+date). Chips + free tags coexist; only the body is required. The composer shows a
+collapsed **"+ Add details (optional)"** section that swaps with the category and
+remembers choices in `localStorage` (`gg.community.postDetails`).
+
+### Three traps worth keeping
+
+1. ⚠️ **`prisma migrate dev` CANNOT BE USED IN THIS REPO.** The dev DB carries
+   intentional raw-DDL drift (the Ask GG KB `searchTsv` and reloading
+   `textTsv` columns, plus a pg_trgm index — all absent from `schema.prisma`), so
+   `migrate dev` reports drift and offers to **RESET the database**. The new
+   migration was **hand-written** (`prisma/migrations/20260930120000_.../migration.sql`)
+   and applied with `prisma migrate deploy` + `prisma generate`. Do the same next
+   time.
+2. **The vocabulary is code, not enums.** `backend/src/feed/feed.types.ts` holds
+   `POST_CHIP_VOCAB` / `POST_SINGLE_VOCAB` / `POST_NUMERIC_BOUNDS` /
+   `POST_DETAIL_FIELDS`, and `sanitisePostDetails(input, type)` strips any field
+   not valid for the type, drops unknown chip values and clamps numbers.
+   It **omits keys the client did not send**, so an edit never wipes an untouched
+   field. `looksLikeSerial()` refuses a `firearmModel` with a 5+ digit run —
+   model name only, serials are never collected. The dead `gear Json?` column was
+   dropped. The frontend mirror is `frontend/lib/post-fields.ts`.
+3. **Filters are backend-only for now.** `GET /community/feed` and `/search`
+   accept `species[]`, `calibre` and `minRating`, but no filter UI was built yet.
+
+### ⚠️ CRLF phantom status (not new, but read before panicking)
+
+`core.autocrlf=true` here. `git status` reports ~600 stat-dirty files that are
+**not real edits**; `git diff` (content) shows only the true changes, and
+deploy.sh's `git diff --quiet` gate passes once the real work is committed. Stage
+explicit paths — never `git add .`.
 
 ## 2026-09-30 (later) — GOOGLE KEYS MOVED TO alloutdoor-api + PWA THEME SWITCHER (DEPLOYED)
 
