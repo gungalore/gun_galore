@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 type ThemeValue = 'light' | 'dark' | 'system';
 type ResolvedTheme = 'light' | 'dark';
@@ -29,15 +29,28 @@ function resolveTheme(preference: ThemeValue): ResolvedTheme {
 }
 
 export function useTheme() {
-  // Read theme directly from localStorage on each render to avoid stale state
-  const [theme, setTheme] = useState<ResolvedTheme>(() => {
-    const stored = getStoredTheme();
-    return resolveTheme(stored);
-  });
+  // ⚠️ THE FIRST RENDER IS ALWAYS 'light', AND THAT IS THE FIX FOR A REAL
+  // HYDRATION MISMATCH (found 2026-09-30, once the toggle was mounted in the
+  // PWA's shell header on every page). Computing the initial state from
+  // `window` made the server say "light" (no window → system resolves light)
+  // and the client say "dark" on an OS-dark device, so React threw
+  // "Hydration failed because the server rendered HTML didn't match" and
+  // regenerated the tree. The PRE-PAINT script in layout.tsx has already set
+  // data-theme before React runs, so the page itself never flashes — only this
+  // hook's icon is one render behind, and the effect below corrects it
+  // immediately after mount.
+  const [theme, setTheme] = useState<ResolvedTheme>('light');
 
   const setThemeValue = useCallback((value: ThemeValue) => {
     localStorage.setItem(STORAGE_KEY, value);
     setTheme(resolveTheme(value));
+  }, []);
+
+  // Adopt whatever the pre-paint script decided (stored preference, else the
+  // OS). Runs once on mount — after hydration, so it cannot reintroduce the
+  // mismatch.
+  useEffect(() => {
+    setTheme(resolveTheme(getStoredTheme()));
   }, []);
 
   const toggleTheme = useCallback(() => {
@@ -55,8 +68,17 @@ export function useTheme() {
     setTheme(next);
   }, []);
 
-  // Sync DOM when theme changes
+  // Sync DOM when theme changes — EXCEPT on the very first run. The pre-paint
+  // script has already put the right value on <html>, and this render's
+  // `theme` is the placeholder 'light': writing it here would flip an OS-dark
+  // page to light for one tick before the adopt effect corrects it — a flash
+  // on exactly the devices that had nothing wrong with them.
+  const syncedOnce = useRef(false);
   useEffect(() => {
+    if (!syncedOnce.current) {
+      syncedOnce.current = true;
+      return;
+    }
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 

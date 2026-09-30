@@ -27,6 +27,7 @@ import { useWishlist } from '@/lib/use-wishlist';
 import { pushTitleFor } from '@/lib/shell-routes';
 import { ShellStepRow } from '@/components/shell/shell-step';
 import { ViewModeToggle } from '@/components/view-mode-toggle';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 // Routes that get the ROOT header. Everything else gets PUSH.
 const ROOT_PATHS = new Set(['/', '/account']);
@@ -310,6 +311,11 @@ function PushHeader({ pathname }: { pathname: string }) {
       </span>
       {/* Shop/Community — the always-on view switch (installed PWA). */}
       <ViewModeToggle size="sm" />
+      {/* Theme — the ROOT header has no room for this (8px of slack at
+          390px once the pill, wishlist, cart and avatar are in), so on a
+          push screen it is the header that carries it and /account carries
+          the labelled three-way control. */}
+      <ThemeToggle />
       {/* Trailing slot — cart on every push route now (board review,
           2026-08-27), reusing CartLink from the ROOT header so the icon,
           badge and count logic can't drift between the two archetypes. The

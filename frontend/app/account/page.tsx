@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { AccountSignOut } from '@/components/account-sign-out';
 import { PushToggleRow } from '@/components/push-opt-in-banner';
+import { ThemeChoice } from '@/components/theme-choice';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../lib/auth-server';
 import { Me, SellerTier } from '@/lib/types';
@@ -318,6 +319,13 @@ export default async function AccountPage() {
               here, at the top right of the identity card. */}
           <AccountSignOut />
         </div>
+
+        {/* Appearance — the phone/PWA's ONLY theme control. The nav's icon
+            toggle is desktop-only because the mobile header is full (see
+            components/theme-choice.tsx); this row is what the PWA Account tab
+            gets instead. Sits directly under the identity card so it reads as
+            a personal setting rather than another destination. */}
+        <ThemeChoice />
 
         {/* Grouped account cards — every ACCOUNT_GROUPS destination, one
             flat tier. Motivations, the Paper Work Vault and the Reloading
