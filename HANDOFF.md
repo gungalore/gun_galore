@@ -5063,5 +5063,53 @@ the member removed one document, not both. Never fatal: wrapped like the
 
 ---
 
-Last commit on this thread is not yet made; working tree only.
+---
+
+## The community backend had never been deployed — 2026-09-30
+
+Operator hit *"Something went wrong posting"* on the live feed. The cause was
+not the post: **every `/api/community/*` route was a 404 on production.** The
+deployed frontend was newer than the deployed backend, so the composer's
+`createPost` hit a missing route, and a 404 is not one of the statuses the
+composer names — it fell through to the generic message.
+
+Deployed `54335631` (full deploy) which ships the whole community module for the
+first time, plus the Jev/DeepSeek moderation below. Verified live:
+`/api/community/config` and `/api/community/feed` now answer **401** (auth),
+not 404.
+
+⚠️ **The composer got an honest message for this case** (`post-composer.tsx`):
+a 404 from the community API now reads "Community is temporarily unavailable",
+not the generic "something went wrong", so a half-deployed backend is
+diagnosable from the UI next time.
+
+### Jev + DeepSeek moderation (commits `6a5c476c`, `46dd14d9`)
+
+- **Jev** (TypeSafe System One, `JEV_API_KEY`) is the TEXT moderator on every
+  user-to-user surface: listings, listing Q&A, offer notes, rating
+  comments/replies, and feed posts/comments. A shared six-question contact
+  battery (contact details / social handles / full name / address /
+  off-platform coordination / third-party advertising) plus a directed-abuse
+  question, through one 80/60 ladder: ≥80% block, 60–80% → DeepSeek second
+  opinion → admin on unsure. It reads Afrikaans and obfuscated digits
+  (`nul sewe vier drie`, `zer0*7*f0ur*…`) — both probed live.
+- **DeepSeek Flash** (`deepseek-flash`, vision) screens IMAGES on listings and
+  the feed, and (monitor-only, never blocks) uploaded vault documents. Feed
+  VIDEO stays on Gemini — DeepSeek cannot take video.
+- `LlmService.decide()` is the only door for Jev; prices in `llm.pricing.ts`.
+  Rollback levers: `MOD_ENGINE=legacy` (listings), `FEED_MOD_ENGINE=legacy`
+  (feed). `MOD_ENGINE` absent ⇒ the Jev path is live.
+
+### Two local traps worth keeping
+
+- **`bash infra/deploy/deploy.sh` under WSL fails** — WSL has no `alloutdoor`
+  ssh alias. Run it from **Git Bash**
+  (`& "C:\Program Files\Git\bin\bash.exe" -c "bash infra/deploy/deploy.sh"`),
+  which reads the Windows `~/.ssh/config`.
+- **`git status` shows ~580 files as modified with zero diff** — `core.autocrlf`
+  phantom noise. `git diff --numstat` is empty for them; `deploy.sh`'s
+  `git diff --quiet` passes. Do not stage them.
+- `IDENTIFY_CONCURRENCY` (default 3) now tunes the identify batch's pool; the
+  identify-batch spec pins it to 1 so its positional model mock is
+  deterministic.
 
