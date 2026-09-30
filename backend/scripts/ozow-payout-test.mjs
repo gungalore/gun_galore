@@ -163,7 +163,7 @@ async function mockSuite() {
       const config = await tests.setMockScenario(scenario);
       const submitted = await tests.submitPayout({
         ...defaults,
-        amountCents: 100,
+        amountCents: args.amount ? Number(args.amount) : 100,
         label: name,
         mock: true,
       });
