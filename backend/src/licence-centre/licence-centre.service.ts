@@ -155,6 +155,17 @@ const MAX_DESCRIPTION = MAX_IDENTIFY_DESCRIPTION;
 const IDENTIFY_CONCURRENCY = 3;
 
 /**
+ * How many files of an identify batch are read at once. Defaults to the
+ * constant above; `IDENTIFY_CONCURRENCY=1` forces sequential reads, which a
+ * deterministic unit test needs (a concurrent pool completes in an
+ * unspecified order, so a positional model-mock lands on the wrong file).
+ */
+function identifyConcurrency(): number {
+  const n = Number(process.env.IDENTIFY_CONCURRENCY);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : IDENTIFY_CONCURRENCY;
+}
+
+/**
  * Run `task` over `items` with at most `limit` in flight, preserving order.
  * The first rejection rejects the whole run.
  */
@@ -2138,7 +2149,7 @@ export class LicenceCentreService {
 
     // See IDENTIFY_CONCURRENCY: sequentially here is what made a five-file
     // batch overrun the proxy. Order is preserved by index, not by completion.
-    return mapWithConcurrency(files, IDENTIFY_CONCURRENCY, (file) =>
+    return mapWithConcurrency(files, identifyConcurrency(), (file) =>
       this.identifyOne(user.id, file),
     );
   }

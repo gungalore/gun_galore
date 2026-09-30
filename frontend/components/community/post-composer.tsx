@@ -96,6 +96,12 @@ function describePostError(e: unknown): string {
     if (/expected type|file type/i.test(e.message)) {
       return 'That video format is not supported. Please use MP4, MOV or WebM.';
     }
+    if (e.status === 404) {
+      // The community API is missing on this server — almost always a backend
+      // that has not been deployed yet. Say so honestly instead of the generic
+      // "something went wrong", which reads as a user error.
+      return 'Community is temporarily unavailable — please try again shortly.';
+    }
     if (e.status === 400) {
       return 'That post was blocked by our moderation rules.';
     }

@@ -22,12 +22,20 @@ import { MAX_IDENTIFY_FILES } from '../common/document-identify.service';
 // ────────────────────────────────────────────────────────────────────
 
 const ORIGINAL_ID_SECRET = process.env.ID_HASH_SECRET;
+const ORIGINAL_IDENTIFY_CONCURRENCY = process.env.IDENTIFY_CONCURRENCY;
 beforeAll(() => {
   process.env.ID_HASH_SECRET = 'test-secret-for-identify-batch';
+  // ⚠️ SEQUENTIAL, OR THESE SPECS ARE FLAKY. identify() reads a batch through a
+  // concurrent pool, so the two classifiers below can complete in either order —
+  // and the model mocks are a positional queue, so under load the document
+  // reply lands on the photograph. Forcing one-at-a-time pins the order.
+  process.env.IDENTIFY_CONCURRENCY = '1';
 });
 afterAll(() => {
   if (ORIGINAL_ID_SECRET === undefined) delete process.env.ID_HASH_SECRET;
   else process.env.ID_HASH_SECRET = ORIGINAL_ID_SECRET;
+  if (ORIGINAL_IDENTIFY_CONCURRENCY === undefined) delete process.env.IDENTIFY_CONCURRENCY;
+  else process.env.IDENTIFY_CONCURRENCY = ORIGINAL_IDENTIFY_CONCURRENCY;
 });
 
 const img = (name: string, mime = 'image/jpeg') => ({
