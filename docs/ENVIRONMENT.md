@@ -747,8 +747,17 @@ backend by being written down in both — see the comment in `middleware.ts`.
 
 ## Maps
 
+⚠️ **Both Maps keys live in the Google Cloud project `alloutdoor-api`** (the
+only project with billing attached — see the 2026-09-30 migration note at the
+end of this section). Keys from any other project are rejected with
+`BillingNotEnabledMapError`, and that failure is not cosmetic: a firearm
+listing cannot be published without a gunshop picked **from Google Places**
+(`frontend/app/listings/new/page.tsx`, the planned-dealer guard).
+
 ### `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
-**Optional.** Browser key for address autocomplete.
+**Optional.** Browser key — `alloutdoor-frontend-web` in `alloutdoor-api`.
+HTTP-referrer restricted (localhost:3000, `alloutdoor.co.za`,
+`*.alloutdoor.co.za`, `*.trycloudflare.com`).
 
 The key needs **three** APIs enabled in Google Cloud: Maps JavaScript,
 **Places**, and **Geocoding**. Geocoding is the one people forget, and its
@@ -758,6 +767,27 @@ location" silently fails.
 Unset, or the literal string `placeholder`, disables autocomplete and the
 component degrades to a plain text address field. That is a supported state, so
 local development does not need a real key.
+
+### `GOOGLE_MAPS_API_KEY` (backend)
+**Required for crime stats, news geocoding and motivation routes.** Server key —
+`alloutdoor-backend-server` in `alloutdoor-api`. **IP-restricted** to the
+production box and the operator's IP, because the Web Service APIs (Places
+nearby-search, Geocode, Routes) reject referrer-restricted keys outright — a
+browser key returns *"API keys with referer restrictions cannot be used with
+this API"* from a server. Hence two keys, same project.
+
+Read at `backend/src/crime-stats/crime-stats.service.ts` (Places nearby +
+Geocode), `backend/src/news/news-geo.ts` (Geocode) and
+`backend/src/motivations/motivation-generation.service.ts` (Routes
+`computeRoutes`).
+
+**2026-09-30 migration:** the site previously ran on a key from
+`gun-galore-dealer-scans` — a *different* Google account — whose billing Google
+kept refusing. Both `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and
+`GOOGLE_MAPS_API_KEY` on the box were swapped to the `alloutdoor-api` keys and
+the frontend rebuilt (`NEXT_PUBLIC_*` is baked at build time, so changing the
+env alone does nothing until `npm run build`). `GOOGLE_VISION_API_KEY`
+(`All Outdoor - Vision OCR (server)`) was already on `alloutdoor-api`.
 
 ## The coming-soon gate
 
@@ -881,7 +911,6 @@ person comparing server to repo knows they are dead rather than missing.
 | Variable | Why it is dead |
 | --- | --- |
 | `BACKEND_URL` | Superseded by `PUBLIC_API_URL` |
-| `GOOGLE_MAPS_API_KEY` | Maps are frontend-only (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`) |
 | `STITCH_CLIENT_ID`, `STITCH_CLIENT_SECRET` | Stitch was replaced by Peach, then Ozow. Only `scripts/stitch-redirect-setup.cjs`, a one-off setup script, still references them |
 | `FNB_ACCOUNT_SUFFIX` | The FNB payout-batch rail was stripped in July 2026 |
 | `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD` | No IMAP client exists in the codebase |
