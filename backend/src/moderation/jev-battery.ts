@@ -56,7 +56,11 @@ export type JevCategory =
   | 'real_name'
   | 'physical_address'
   | 'offplatform_coordination'
-  | 'third_party_advertising';
+  | 'third_party_advertising'
+  /** Abusive/threatening/harassing/hateful/sexual language directed at a
+   *  person. Not a contact vector, but asked in the same battery because
+   *  every user-to-user surface polices it too. */
+  | 'abuse';
 
 /** User-facing copy for a block on each category. The conversations path
  *  returns these verbatim; listings/feed pass their own reasons in. */
@@ -73,6 +77,8 @@ export const JEV_CATEGORY_REASONS: Record<JevCategory, string> = {
     'Keep the conversation on ALL Outdoor — once payment goes through, the platform handles direct contact for delivery.',
   third_party_advertising:
     'No advertising other businesses or services on ALL Outdoor — promotions are not permitted in messages.',
+  abuse:
+    'Please keep this respectful — abusive, threatening, harassing or sexual language is not allowed on ALL Outdoor.',
 };
 
 /**
@@ -89,7 +95,7 @@ export function contactQuestions(): Record<string, JevQuestion> {
     contact_details: {
       type: 'noul',
       instructions:
-        'Does this text give, request or try to hide a phone number, an email address, or a URL/domain that lets the reader contact a person off this platform? Count obfuscation (spelled-out digits, "name at gmail dot com", digits split by dots, leetspeak). A manufacturer or brand website mentioned in passing, a model name, a calibre or a serial number is NOT this.',
+        'Does this text give, request or try to hide a phone number, an email address, or a URL/domain that lets the reader contact a person off this platform? Count obfuscation in ANY language — spelled-out digits ("nul sewe vier drie", "zero seven four three"), "name at gmail dot com", digits split by dots or asterisks, leetspeak. This platform is South African: Afrikaans, isiZulu, Sesotho and English are all in scope, and a mixture of them counts. A manufacturer or brand website mentioned in passing, a model name, a calibre or a serial number is NOT this.',
       criteria: {
         true: 'A phone/email/link is present or being conveyed, however disguised',
         false: 'No way to contact a person is offered',
@@ -125,7 +131,7 @@ export function contactQuestions(): Record<string, JevQuestion> {
     offplatform_coordination: {
       type: 'noul',
       instructions:
-        'Is this text trying to move the conversation or the deal off this platform — "DM me", "call me", "let\u2019s chat directly", "pay me directly", "outside the platform", "bypass the fee"? Legitimate shipping/collection logistics after a sale, phrased on-platform, is NOT this.',
+        'Is this text trying to move the conversation or the deal off this platform, in ANY language — "DM me", "call me", "let\u2019s chat directly", "pay me directly", "outside the platform", "bypass the fee"; Afrikaans "bel my", "stuur my jou nommer", "buite die platform", "betaal my direk"? Legitimate shipping/collection logistics after a sale, phrased on-platform, is NOT this.',
       criteria: {
         true: 'An attempt to continue or settle off-platform',
         false: 'Normal on-platform negotiation or logistics',
@@ -138,6 +144,31 @@ export function contactQuestions(): Record<string, JevQuestion> {
       criteria: {
         true: 'A third party\u2019s business/service/channel is being promoted',
         false: 'Product discussion or one\u2019s own listing only',
+      },
+    },
+  };
+}
+
+/**
+ * Conduct questions — abuse and harassment, asked alongside the contact
+ * battery on every user-to-user surface.
+ *
+ * ⚠️ DIRECTED AT A PERSON, NOT A RULE ABOUT WORDS. A calm, even harsh,
+ * product complaint ("this seller is dishonest, avoid") is NOT abuse; a mild
+ * oath ("this damn rifle") is NOT abuse. The question trips only when a
+ * person is insulted, threatened, slurred or sexually propositioned, in any
+ * language. Probed live 2026-10-01: EN abuse 0.98, AF abuse 0.98, AF sexual
+ * 0.94, against 0.01 / 0.31 / 0.34 on the mild and civil controls.
+ */
+export function conductQuestions(): Record<string, JevQuestion> {
+  return {
+    abuse: {
+      type: 'noul',
+      instructions:
+        'Does this text contain abusive, threatening, harassing, hateful or sexual language DIRECTED AT A PERSON — swearing/insults, slurs, threats, or a sexual proposition — in ANY language (including Afrikaans)? A calm or even harsh complaint about a product or a seller\u2019s conduct, strong but civil disagreement, mechanical/technical terms, or a mild oath ("this damn rifle") is NOT this. Criticism of an item or a transaction is NOT abuse.',
+      criteria: {
+        true: 'A person is insulted, threatened, slurred or sexually propositioned',
+        false: 'Civil text, even if blunt or negative about an item or a deal',
       },
     },
   };

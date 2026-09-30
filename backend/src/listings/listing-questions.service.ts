@@ -10,6 +10,7 @@ import { LlmService } from '../common/llm/llm.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import {
+  conductQuestions,
   contactQuestions,
   JEV_CATEGORY_REASONS,
   jevLadder,
@@ -480,7 +481,7 @@ export class ListingQuestionsService {
   private async contactBattery(text: string): Promise<ModerationResult> {
     const verdict = await jevLadder(this.llm, {
       state: text,
-      questions: contactQuestions(),
+      questions: { ...contactQuestions(), ...conductQuestions() },
       reasons: JEV_CATEGORY_REASONS,
       purpose: 'listing.question-contact',
       onError: 'pass',

@@ -2,6 +2,7 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 import {
+  conductQuestions,
   contactQuestions,
   JEV_CATEGORY_REASONS,
   jevLadder,
@@ -44,9 +45,10 @@ import {
  *      immediately, no LLM call.
  *
  *   2. **Jev battery** — only runs if regex passed. Jev (TypeSafe System One)
- *      answers six atomic questions at once (contact details, social handles,
+ *      answers the atomic questions at once (contact details, social handles,
  *      real name, physical address, off-platform coordination, third-party
- *      advertising) and the shared ladder in jev-battery.ts decides: >=80 %
+ *      advertising, plus abuse directed at a person) and the shared ladder in
+ *      jev-battery.ts decides: >=80 %
  *      block, 60–80 % ask DeepSeek then admin, else pass. Catches what regex
  *      cannot: spelled-out digits ("zero eight two..."), leetspeak, a number
  *      split across non-digit characters, novel platform names, a shared
@@ -209,7 +211,7 @@ export class ContactDetailFilterService {
     // model error (the regex layer already cleared the obvious cases).
     const verdict = await jevLadder(this.llm, {
       state: text,
-      questions: contactQuestions(),
+      questions: { ...contactQuestions(), ...conductQuestions() },
       reasons: JEV_CATEGORY_REASONS,
       purpose: 'moderation.contact-filter',
       onError: 'pass',
@@ -358,6 +360,7 @@ function asRejectCategory(category: string | null): RejectCategory {
     'physical_address',
     'offplatform_coordination',
     'third_party_advertising',
+    'abuse',
   ];
   if (category && (known as string[]).includes(category)) {
     return category as JevCategory;

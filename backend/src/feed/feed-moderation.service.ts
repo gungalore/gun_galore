@@ -26,6 +26,7 @@ import { boundedImageUrl, boundedVideoUrl, IMAGE_EDGE, VIDEO_MODEL_EDGE } from '
 import { LlmService } from '../common/llm/llm.service';
 import { LlmError, type JevQuestion, type LlmPart } from '../common/llm/llm.types';
 import {
+  conductQuestions,
   contactQuestions,
   JEV_CATEGORY_REASONS,
   jevLadder,
@@ -282,6 +283,7 @@ export class FeedModerationService {
   }> {
     const questions: Record<string, JevQuestion> = {
       ...contactQuestions(),
+      ...conductQuestions(),
       promotional: {
         type: 'noul',
         instructions:
@@ -340,6 +342,7 @@ export class FeedModerationService {
       'physical_address',
       'offplatform_coordination',
       'third_party_advertising',
+      'abuse',
     ];
     const blockedContact = contactCats.some((c) => (s[c] ?? 0) >= 0.8);
     return {
