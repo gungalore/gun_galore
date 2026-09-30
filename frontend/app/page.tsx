@@ -271,7 +271,7 @@ export default async function HomePage({
                   "Good to know" panel, the recently-viewed rail, then the 24
                   newest listings — intentionally curated, not a filtered
                   browse. */}
-              <section className="max-w-[var(--page-max)] mx-auto px-4 py-10">
+              <section className="max-w-[var(--page-max)] mx-auto px-4 pt-5 pb-10 sm:py-10">
           {/* "Shop by category" curtain REMOVED (operator, 2026-08-15).
               It was the fallback breadth entry, but the category tree
               already lives in the nav's Categories flyout and the mobile
@@ -306,8 +306,11 @@ export default async function HomePage({
             </div>
           )}
           {browse.listings.length > 0 && (
-            <div className="mt-10">
-              <div className="flex items-end justify-between mb-5 gap-4 flex-wrap">
+            /* mt-0 below sm: the hero is gone on phones (see hero.tsx), so the
+               section's own pt-5 is the whole gap — a 40px mt-10 on top of it
+               would waste a third of the space the change reclaimed. */
+            <div className="mt-0 sm:mt-10">
+              <div className="flex items-end justify-between mb-3 sm:mb-5 gap-4 flex-wrap">
                 <h2
                   className="m-0"
                   style={{

@@ -113,6 +113,21 @@ export function Hero() {
             radial-gradient(circle at 0% 100%, rgba(227,6,19,0.10) 0%, transparent 45%);
         }
         @media (max-width: 767.98px) {
+          /* ⚠️ NO HERO ON PHONES OR THE PHONE PWA (operator, 2026-09-30).
+             A 260px band sat above the product feed on the one surface whose
+             whole job is to sell — with the mode bar above it, the first
+             product started around 800px down. The landing page now opens on
+             the Latest listings grid, whose real entry points (the Buy Now /
+             Auctions tiles) are directly above it in the shell.
+
+             Width-gated, not display-mode-gated: a phone PWA is already under
+             768px, and gating on width keeps the server HTML identical at
+             every viewport — the property the whole .gg-shell block is built
+             to protect. The rules below are left in place on purpose, so the
+             band returns by deleting this one rule. */
+          .hero-section {
+            display: none;
+          }
           .hero-bg {
             /* A 4:3 window shows only 44% of a 3:1 plate's width, so WHICH
                44% is a real composition decision, not a default. 80% keeps

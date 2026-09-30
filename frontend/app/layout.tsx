@@ -283,12 +283,16 @@ export default function RootLayout({
               the cache for the inevitable hero-page visit. */}
           {/* Preload the hero LCP image (the outdoor golden-hour photo).
               WebP is what modern browsers fetch via the .hero-bg image-set;
-              keep this href in sync with that url(). */}
+              keep this href in sync with that url().
+              ⚠️ media-gated since 2026-09-30: the hero is only rendered from
+             768px up (components/hero.tsx), so phones and the phone PWA were
+             downloading a plate they never show — and counting it as LCP. */}
           <link
             rel="preload"
             as="image"
             href={av('/hero-outdoor.webp')}
             type="image/webp"
+            media="(min-width: 768px)"
           />
           {/* iOS apple-touch-startup-image splash screens. iOS picks
               the right image via the media-attribute device match

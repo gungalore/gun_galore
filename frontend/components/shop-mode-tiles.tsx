@@ -121,22 +121,65 @@ function Chevron({ colour }: { colour: string }) {
   );
 }
 
-// The shared tile interior — icon chip, title/count/blurb, chevron. Both the
-// two link tiles (Buy Now, Auctions), the Armory disclosure button and its
-// three sub-tiles render this SAME markup, which is how "all looking the
-// same" (the operator's requirement) stays true without four copies to keep
-// in sync. `open` only means something for the Armory button — it's
-// undefined for every Link tile, which renders exactly as it always has.
-function TileBody({ mode, open }: { mode: Mode; open?: boolean }) {
+// The disclosure caret — a link tile's chevron, or a disclosure's down/up
+// caret. Drawn in two places on a phone: inline after the title on a mini
+// tile (which has no room for a trailing column) and always as the trailing
+// element from sm up. `open` is undefined for a link tile, which is what
+// makes it a right-pointing chevron rather than a caret.
+function Caret({ open, colour }: { open?: boolean; colour: string }) {
+  return (
+    <span
+      className="inline-block"
+      style={{
+        transform:
+          open === undefined
+            ? 'none'
+            : open
+              ? 'rotate(-90deg)'
+              : 'rotate(90deg)',
+        transition: `transform var(--dur-fast) var(--ease-standard)`,
+      }}
+    >
+      <Chevron colour={colour} />
+    </span>
+  );
+}
+
+/**
+ * The shared tile interior — icon chip, title/count/blurb, caret. The two
+ * link tiles (Buy Now, Auctions), the Armory disclosure button and its four
+ * sub-tiles all render this SAME markup, which is how "all looking the same"
+ * (the operator's requirement) stays true without four copies to keep in
+ * sync.
+ *
+ * `mini` is the phone's treatment for the NAV ROW ONLY (operator, 2026-09-30:
+ * "minimize it into one row as mini icon buttons"): centred icon-over-label
+ * with no blurb and no count, and the caret inline after the label. From sm
+ * up a mini tile is the ordinary tile again — chip left, copy right, trailing
+ * caret. The Armory panel's sub-tiles never pass it, so they keep the
+ * left-aligned row and their blurbs at every width.
+ */
+function TileBody({
+  mode,
+  open,
+  mini,
+}: {
+  mode: Mode;
+  open?: boolean;
+  mini?: boolean;
+}) {
   const { title, blurb, count, noun, accent, ink, Icon } = mode;
   return (
     <>
       <span
         aria-hidden
-        className="flex items-center justify-center shrink-0"
+        className={
+          'flex items-center justify-center shrink-0 ' +
+          (mini
+            ? 'h-[28px] w-[28px] sm:h-[46px] sm:w-[46px]'
+            : 'h-[34px] w-[34px] sm:h-[46px] sm:w-[46px]')
+        }
         style={{
-          width: 46,
-          height: 46,
           borderRadius: 'var(--r-md)',
           background: `color-mix(in srgb, ${accent} 13%, transparent)`,
           // The account-menu icons (used by the Armory sub-tiles) are drawn
@@ -150,41 +193,60 @@ function TileBody({ mode, open }: { mode: Mode; open?: boolean }) {
         <Icon colour={ink} />
       </span>
 
-      {/* w-full so blurb's `truncate` has a bound to ellipsize against on the
-          stacked mobile layout (a flex item with no flex-grow shrinks to
-          content width, which defeats truncate); sm:flex-1/sm:w-auto hand
-          growth back to the row layout once icon + text + chevron sit
-          side by side. */}
-      <span className="w-full min-w-0 flex flex-col items-center sm:items-start sm:flex-1 sm:w-auto gap-[3px]">
-        {/* ⚠️ WRAPS AS TWO WHOLE PHRASES, NEVER MID-PHRASE. With the blurb's
-            overflow fixed, this row became the next thing too wide for a
-            170px tile: "Buy Now" and "1 live listing" together need about
-            150px of a 146px box, so each broke INSIDE itself — "Buy" over
-            "Now", "1 live" over "listing" — while "Auctions" happened to fit
-            and stayed on one line. Two tiles side by side, one broken and one
-            not, which is what "text on tiles looks off" looks like.
+      {/* ⚠️ THE MINI BLURB AND COUNT ARE HIDDEN, NOT SHRUNK. A 115px
+          three-across button has room for a label and nothing else, and a
+          clipped count reads as broken rather than absent. Both return at sm+
+          with the full tile, and the panel's sub-tiles never hide them. */}
+      <span
+        className={
+          'min-w-0 flex flex-col gap-[3px] ' +
+          (mini
+            ? 'items-center sm:items-start sm:flex-1'
+            : 'items-start flex-1')
+        }
+      >
+        {/* ⚠️ WRAPS AS TWO WHOLE PHRASES, NEVER MID-PHRASE. "Buy Now" and
+            "1 live listing" together need about 150px of a 146px box, so each
+            broke INSIDE itself — "Buy" over "Now", "1 live" over "listing" —
+            while "Auctions" happened to fit and stayed on one line. Two tiles
+            side by side, one broken and one not, which is what "text on tiles
+            looks off" looks like.
 
             flex-wrap lets the count drop to its own line as a unit, and
             nowrap on both parts stops either being split down the middle. */}
-        <span className="flex flex-wrap items-baseline justify-center sm:justify-start gap-x-[10px]">
+        <span
+          className={
+            'flex flex-wrap items-baseline gap-x-[10px] ' +
+            (mini ? 'justify-center sm:justify-start' : 'justify-start')
+          }
+        >
           <span
-            className="whitespace-nowrap"
+            className={
+              'whitespace-nowrap ' +
+              (mini ? 'text-[13px] sm:text-[16.5px]' : 'text-[16.5px]')
+            }
             style={{
               fontFamily: 'var(--font-head)',
               fontWeight: 700,
-              fontSize: '16.5px',
               color: 'var(--text-primary)',
             }}
           >
             {title}
           </span>
+          {/* The mini disclosure's caret rides the label row — there is no
+              trailing column to put it in at 115px wide (see Caret). */}
+          {mini && open !== undefined && (
+            <span className="sm:hidden">
+              <Caret open={open} colour={ink} />
+            </span>
+          )}
           {/* Suppressed entirely at zero rather than printing "0 live
               listings" — which is the state this storefront is actually in
               today, and an empty shelf that says so twice is worse than one
               that simply doesn't mention it. */}
           {count !== null && count > 0 && (
             <span
-              className="whitespace-nowrap"
+              className="hidden sm:inline whitespace-nowrap"
               style={{ fontSize: 12, color: 'var(--text-faint)' }}
             >
               {count.toLocaleString('en-ZA')} live {noun}
@@ -201,55 +263,28 @@ function TileBody({ mode, open }: { mode: Mode; open?: boolean }) {
             unwrapped sentence, and `overflow:hidden` clips nothing because the
             span IS the oversized box.
 
-            The parent is `flex flex-col items-center` on mobile. `items-center`
-            is not `items-stretch`, so a child with no width of its own is
-            sized to its content rather than to the parent's 100% — the
-            parent's `w-full` never reaches it. On a 390px phone both blurbs
-            rendered at full sentence width and hung out of their cards, one off
-            the left edge of the screen and one off the right, which also made
-            the whole page pannable sideways. */}
+            The parent is `items-center` on a mini tile. `items-center` is not
+            `items-stretch`, so a child with no width of its own is sized to
+            its content rather than to the parent's 100% — the parent's
+            `w-full` never reaches it. On a 390px phone both blurbs rendered at
+            full sentence width and hung out of their cards, one off the left
+            edge of the screen and one off the right, which also made the whole
+            page pannable sideways. */}
         <span
-          className="truncate w-full"
+          className={
+            (mini ? 'hidden sm:block ' : '') + 'truncate w-full'
+          }
           style={{ fontSize: '12.5px', color: 'var(--text-tertiary)' }}
         >
           {blurb}
         </span>
       </span>
 
-      {/* Board's mobile tile is three stacked rows (icon / title+count /
-          blurb) with no chevron drawn — there's no fourth row for it in that
-          layout. It returns once the tile is wide enough to lay out
-          horizontally (sm+).
-
-          ⚠️ THE DISCLOSURE IS THE EXCEPTION, AND IT HAS TO BE. A link tile
-          losing its chevron on a phone costs nothing — the whole tile is
-          still obviously tappable and it goes somewhere. Armory does NOT go
-          somewhere: the chevron is the only thing on the tile saying it
-          expands, and hiding it below sm left the phone — the primary
-          audience — with a tile that looks like a dead link. So the
-          disclosure draws its chevron at every width, as a caret: pointing
-          down when closed, up when open. `open` is undefined for every Link
-          tile, which is how this tells the two apart and why those render
-          exactly as they did before TileBody existed. */}
-      <span
-        className={
-          open === undefined ? 'hidden sm:block shrink-0' : 'block shrink-0'
-        }
-      >
-        <span
-          className="inline-block"
-          style={{
-            transform:
-              open === undefined
-                ? 'none'
-                : open
-                  ? 'rotate(-90deg)'
-                  : 'rotate(90deg)',
-            transition: `transform var(--dur-fast) var(--ease-standard)`,
-          }}
-        >
-          <Chevron colour={ink} />
-        </span>
+      {/* The trailing mark at sm+ — a link tile's chevron, or the disclosure's
+          caret. Hidden on a phone: the mini layout has no column for it, and
+          the disclosure draws its own inline in the label row above. */}
+      <span className="hidden sm:block shrink-0">
+        <Caret open={open} colour={ink} />
       </span>
     </>
   );
@@ -262,27 +297,35 @@ function TileBody({ mode, open }: { mode: Mode; open?: boolean }) {
 // delay is the index, so the four sub-tiles land one after another instead of
 // together. Undefined for every other tile, which is why the row above and
 // the two commerce tiles are untouched by it.
-function ModeTile({ mode, dropIndex }: { mode: Mode; dropIndex?: number }) {
+function ModeTile({
+  mode,
+  dropIndex,
+  mini,
+}: {
+  mode: Mode;
+  dropIndex?: number;
+  mini?: boolean;
+}) {
   const { href, accent } = mode;
   return (
     <Link
       href={href}
-      // Row at every width (see the nav below), but the INTERNAL layout still
-      // has to flip: icon-left/text-right only has room once the tile is
-      // wide enough for icon + text + chevron side by side (sm+). Below that
-      // the board stacks icon chip, then title+count, then blurb — so this
-      // is flex-col until sm, not flex-row throughout. `items-center` and
-      // `gap-[14px]` are unprefixed because they're correct for BOTH axes:
-      // items-center centers the column horizontally on mobile and the row
-      // vertically at sm+, and a single `gap` value covers row-gap/column-gap
-      // for whichever axis is active.
+      // ⚠️ THE PHONE LAYOUT IS A MINI BUTTON — icon over label, centred, no
+      // copy (operator, 2026-09-30: "minimize it into one row as mini icon
+      // buttons"). sm+ is the ordinary tile: chip left, title/count/blurb
+      // right, trailing caret. `mini` is only ever passed by the nav row —
+      // the Armory panel's sub-tiles are full-width rows and keep the
+      // left-aligned layout with their blurbs (see TileBody).
       //
       // ⚠️ THE CASCADE CLASS AND DELAY ARE ADDED, NEVER SWAPPED, and only
       // when dropIndex is set — which is only ever inside the Armory panel.
       // The row above and the two commerce tiles pass no index and render
       // byte-for-byte as they always have.
       className={
-        'gg-mode-tile gg-tile gg-tile-lift gg-press flex flex-col items-center text-center gap-[14px] sm:flex-row sm:text-left min-w-0 w-full' +
+        'gg-mode-tile gg-tile gg-tile-lift gg-press min-w-0 w-full ' +
+        (mini
+          ? 'flex flex-col items-center text-center gap-[6px] px-[8px] py-[10px] sm:flex-row sm:items-center sm:text-left sm:gap-[14px] sm:px-[18px] sm:py-[15px]'
+          : 'flex flex-row items-center text-left gap-[10px] sm:gap-[14px] px-[14px] py-[10px] sm:px-[18px] sm:py-[15px]') +
         (dropIndex === undefined ? '' : ' gg-armory-sub')
       }
       style={{
@@ -295,27 +338,28 @@ function ModeTile({ mode, dropIndex }: { mode: Mode; dropIndex?: number }) {
         background: 'transparent',
         border: `1px solid color-mix(in srgb, ${accent} 42%, transparent)`,
         borderRadius: 'var(--r-md)',
-        padding: '15px 18px',
         textDecoration: 'none',
       }}
     >
-      <TileBody mode={mode} />
+      <TileBody mode={mode} mini={mini} />
     </Link>
   );
 }
 
-// The Armory row itself — a disclosure button, not a link: it navigates
-// nowhere, it opens the panel below. Same classes/style as ModeTile plus the
-// bits that undo UA <button> defaults (full-width block, left-aligned text,
-// inherited font, pointer cursor) so it reads identically to its siblings.
+// The Armory tile — a disclosure button, not a link: it navigates nowhere, it
+// opens the panel below. Same classes/style as ModeTile plus the bits that
+// undo UA <button> defaults (full-width block, left-aligned text, inherited
+// font, pointer cursor) so it reads identically to its siblings.
 function ArmoryTile({
   mode,
   open,
   onToggle,
+  mini,
 }: {
   mode: Mode;
   open: boolean;
   onToggle: () => void;
+  mini?: boolean;
 }) {
   const { accent } = mode;
   return (
@@ -324,13 +368,19 @@ function ArmoryTile({
       aria-expanded={open}
       aria-controls="armory-panel"
       onClick={onToggle}
-      className="gg-mode-tile gg-tile gg-tile-lift gg-press flex flex-col items-center text-center gap-[14px] sm:flex-row sm:text-left min-w-0 w-full col-span-2 sm:col-span-1"
+      // No col-span anymore — Armory is the third MINI button in the same
+      // phone row as Buy Now and Auctions, not a full-width row beneath them.
+      className={
+        'gg-mode-tile gg-tile gg-tile-lift gg-press min-w-0 w-full ' +
+        (mini
+          ? 'flex flex-col items-center text-center gap-[6px] px-[8px] py-[10px] sm:flex-row sm:items-center sm:text-left sm:gap-[14px] sm:px-[18px] sm:py-[15px]'
+          : 'flex flex-row items-center text-left gap-[10px] sm:gap-[14px] px-[14px] py-[10px] sm:px-[18px] sm:py-[15px]')
+      }
       style={{
         // Transparent, like ModeTile above — see the note there.
         background: 'transparent',
         border: `1px solid color-mix(in srgb, ${accent} 42%, transparent)`,
         borderRadius: 'var(--r-md)',
-        padding: '15px 18px',
         textDecoration: 'none',
         width: '100%',
         textAlign: 'left',
@@ -338,7 +388,7 @@ function ArmoryTile({
         cursor: 'pointer',
       }}
     >
-      <TileBody mode={mode} open={open} />
+      <TileBody mode={mode} open={open} mini={mini} />
     </button>
   );
 }
@@ -592,37 +642,30 @@ export function ShopModeBar() {
         // landmark whose name lies about its contents is worse than a
         // generic one.
         aria-label={isSignedIn ? 'Shop and member tools' : 'Ways to buy'}
-        // Row at EVERY width, not just sm+ — flex-col here was the mobile
-        // bug: the board draws Buy Now / Auctions side by side even at
-        // 390px (11px gap, each tile flex:1). Stacking them full-width was
-        // never the design; it just went unnoticed because the tile's own
-        // internal layout (see ModeTile) hadn't been built to survive a
-        // ~180px-wide tile either, so the fix is both changes together.
+        // ⚠️ THREE MINI BUTTONS IN ONE PHONE ROW (operator, 2026-09-30).
+        // grid-cols-3 below sm gives ~115px each — enough for a 28px chip and
+        // a 13px label, which is exactly what the mini treatment draws and why
+        // the copy and the count are not rendered there (see TileBody). The
+        // sm+ layout is the three-column tile row it has always been, so
+        // desktop is untouched.
         //
-        // flex -> grid so a third tile (Armory) can span both mobile columns
-        // while Buy Now/Auctions keep their existing side-by-side sizing:
-        // three tiles across a 390px phone gives ~118px each, and the tile's
-        // own internal layout has already produced one bug at ~180px (see
-        // the comments inside TileBody above). Buy Now and Auctions stay
-        // exactly as they are today; Armory sits full-width beneath them and
-        // only joins the row at sm+.
-        //
-        // Signed-out visitors get NO third column at any width — grid-cols-2
-        // unconditionally when Armory isn't rendered, so nothing shifts for
-        // them.
+        // Signed-out visitors have only two buttons, so they keep
+        // grid-cols-2 at every width rather than leaving a hole in a
+        // three-column row.
         className={
           isSignedIn
-            ? 'max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px] grid grid-cols-2 sm:grid-cols-3 gap-[11px] sm:gap-[14px]'
+            ? 'max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px] grid grid-cols-3 gap-[11px] sm:gap-[14px]'
             : 'max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px] grid grid-cols-2 gap-[11px] sm:gap-[14px]'
         }
       >
         {modes.map((m) => (
-          <ModeTile key={m.title} mode={m} />
+          <ModeTile key={m.title} mode={m} mini />
         ))}
         {isSignedIn && (
           <ArmoryTile
             mode={armoryMode}
             open={open}
+            mini
             // Re-opening must replay the cascade from the top. The sub-tiles
             // are remounted rather than re-animated (the whole panel is
             // conditional), so closing and opening again restarts it for free

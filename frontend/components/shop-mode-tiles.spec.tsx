@@ -99,6 +99,34 @@ describe('ShopModeBar — the mobile scope stamp', () => {
   });
 });
 
+describe('ShopModeBar — the mini phone row', () => {
+  // Operator, 2026-09-30: the bar occupied the whole first screen and the
+  // product feed is what sells, so on a phone the three controls are now mini
+  // icon buttons in ONE row — icon over label, no copy, no count. The hiding
+  // and the single row are what the compact layout depends on, so both are
+  // asserted here rather than left to the stylesheet.
+  it('hides the tile blurb and count below sm', () => {
+    render(<ShopModeBar />);
+    const blurb = screen.getByText(/Fixed prices/);
+    expect(blurb.className).toContain('hidden');
+    expect(blurb.className).toContain('sm:block');
+  });
+
+  it('lays the phone row out as three mini buttons', () => {
+    auth.isSignedIn = true;
+    const { container } = render(<ShopModeBar />);
+    const nav = container.querySelector('nav');
+    expect(nav?.className).toContain('grid-cols-3');
+
+    // Armory is a mini button in the same row, not the full-width row beneath
+    // it that it was — the col-span is what would put it on its own line.
+    const armory = screen.getByRole('button', { name: /armory/i });
+    expect(armory.className).not.toContain('col-span');
+    expect(armory.className).toContain('flex-col');
+    expect(armory.className).toContain('sm:flex-row');
+  });
+});
+
 describe('ShopModeBar — the Armory disclosure', () => {
   it('offers no Armory tile when signed out', () => {
     render(<ShopModeBar />);
