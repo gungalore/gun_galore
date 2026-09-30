@@ -25,6 +25,16 @@ function build(opts: Parameters<typeof fakeLlm>[0]) {
 const input = { text: 'hello', imageUrls: [], authorIsOfficial: false };
 
 describe('FeedModerationService', () => {
+  // This suite pins the SINGLE-CALL moderator's parse/decide behaviour. The
+  // live path is now the Jev-text / DeepSeek-images split; FEED_MOD_ENGINE
+  // keeps the legacy lever under test.
+  beforeAll(() => {
+    process.env.FEED_MOD_ENGINE = 'legacy';
+  });
+  afterAll(() => {
+    delete process.env.FEED_MOD_ENGINE;
+  });
+
   it('fails closed when the provider is not configured', async () => {
     const v = await build({ configured: false }).moderate(input);
     expect(v.decision).toBe('PENDING_MODERATION');

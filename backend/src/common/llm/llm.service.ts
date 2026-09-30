@@ -29,6 +29,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AnthropicProvider } from './anthropic.provider';
 import { DeepSeekProvider } from './deepseek.provider';
 import { GeminiProvider } from './gemini.provider';
+import { JevClient } from './jev.client';
 import { costUsdMicros } from './llm.pricing';
 import type { LlmProviderClient } from './provider.interface';
 import {
@@ -41,6 +42,8 @@ import {
   type LlmResponse,
   type LlmStreamEvent,
   type LlmUsage,
+  type JevDecideRequest,
+  type JevDecideResponse,
 } from './llm.types';
 
 // ⚠️ 3.5, NOT 2.5. The operator asked for 2.5-flash-lite; Google refused it to
@@ -58,6 +61,7 @@ const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
 export const LLM_GEMINI_PROVIDER = Symbol('LLM_GEMINI_PROVIDER');
 export const LLM_ANTHROPIC_PROVIDER = Symbol('LLM_ANTHROPIC_PROVIDER');
 export const LLM_DEEPSEEK_PROVIDER = Symbol('LLM_DEEPSEEK_PROVIDER');
+export const LLM_JEV_CLIENT = Symbol('LLM_JEV_CLIENT');
 
 @Injectable()
 export class LlmService {
@@ -65,6 +69,7 @@ export class LlmService {
   private readonly gemini: LlmProviderClient;
   private readonly anthropic: LlmProviderClient;
   private readonly deepseek: LlmProviderClient;
+  private readonly jev: JevClient;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -74,10 +79,12 @@ export class LlmService {
     @Optional() @Inject(LLM_GEMINI_PROVIDER) gemini?: LlmProviderClient,
     @Optional() @Inject(LLM_ANTHROPIC_PROVIDER) anthropic?: LlmProviderClient,
     @Optional() @Inject(LLM_DEEPSEEK_PROVIDER) deepseek?: LlmProviderClient,
+    @Optional() @Inject(LLM_JEV_CLIENT) jev?: JevClient,
   ) {
     this.gemini = gemini ?? new GeminiProvider();
     this.anthropic = anthropic ?? new AnthropicProvider();
     this.deepseek = deepseek ?? new DeepSeekProvider();
+    this.jev = jev ?? new JevClient();
   }
 
   /**
@@ -125,6 +132,15 @@ export class LlmService {
     // because a global LLM_PROVIDER switch is set. An explicit per-purpose env
     // var still wins, above.
     if (purpose === 'feed.moderation.video') return this.gemini;
+    // ⚠️ IMAGE SCREENING AND THE ESCALATION SECOND OPINION ARE DEEPSEEK-ONLY.
+    // Operator decision 2026-10-01: every image (listing, feed, uploaded
+    // document page) is screened by DeepSeek Flash, and the 60–80 % ladder
+    // escalates to it. `deepseek-flash` is the only DeepSeek model with
+    // vision. Pinned here rather than left to LLM_PROVIDER because a box with
+    // no LLM_PROVIDER set would otherwise send these to Gemini — the exact
+    // opposite of the decision. An explicit per-purpose env var still wins.
+    if (purpose === 'moderation.escalation') return this.deepseek;
+    if (purpose.endsWith('.images')) return this.deepseek;
     const name = process.env.LLM_PROVIDER ?? 'gemini';
     if (name === 'anthropic') return this.anthropic;
     if (name === 'deepseek') return this.deepseek;
@@ -351,6 +367,52 @@ export class LlmService {
       return res;
     } catch (err) {
       this.record(req, provider.name, model, startedAt, undefined, err);
+      throw err;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // DECIDE — a typed question to Jev (TypeSafe System One)
+  // ══════════════════════════════════════════════════════════════════
+  /**
+   * Ask Jev a map of typed questions and return the typed answers.
+   *
+   * ⚠️ THIS IS THE DOOR, NOT THE CLIENT. Call sites never construct a
+   * JevClient (repo rule: every model call routes through LlmService), so the
+   * ledger row, the log line and the model default all happen here exactly as
+   * they do for a chat call. The summary line carries purpose/model/tokens/ms
+   * ONLY — never the `state`, which for moderation is user text and may carry
+   * a name or a number.
+   *
+   * ⚠️ THROWS ON EVERY FAILURE. `not_configured` with no key, and whatever
+   * the client raises otherwise. The caller owns the fail-closed vs fail-open
+   * decision; this method only books the call and rethrows.
+   */
+  async decide(req: JevDecideRequest): Promise<JevDecideResponse> {
+    const startedAt = Date.now();
+    const model = req.model ?? process.env.JEV_MODEL ?? 'jev-latest';
+
+    if (!this.jev.isConfigured()) {
+      const err = new LlmError(
+        'not_configured',
+        'typesafe is not configured — no JEV_API_KEY',
+      );
+      this.record({ purpose: req.purpose }, 'typesafe', model, startedAt, undefined, err);
+      throw err;
+    }
+
+    try {
+      const res = await this.jev.decide(req);
+      this.record(
+        { purpose: req.purpose },
+        'typesafe',
+        res.model,
+        startedAt,
+        res.usage,
+      );
+      return res;
+    } catch (err) {
+      this.record({ purpose: req.purpose }, 'typesafe', model, startedAt, undefined, err);
       throw err;
     }
   }

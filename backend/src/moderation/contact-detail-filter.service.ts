@@ -1,6 +1,12 @@
 ﻿import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
+import {
+  contactQuestions,
+  JEV_CATEGORY_REASONS,
+  jevLadder,
+  type JevCategory,
+} from './jev-battery';
 
 /**
  * Two-layer contact-detail filter for ANY user-to-user freeform text.
@@ -37,36 +43,20 @@ import { LlmService } from '../common/llm/llm.service';
  *      phrases ("meet me at", "DM me"). If this trips we block
  *      immediately, no LLM call.
  *
- *   2. **Model fallback** — only runs if regex passed. Catches
- *      evasion: spelled-out digits ("zero eight two..."), leetspeak,
- *      splitting a number across non-digit characters, novel platform
- *      names. Fail-OPEN — if the API is down we don't block legit
- *      messages (the regex layer is the hard guarantee).
+ *   2. **Jev battery** — only runs if regex passed. Jev (TypeSafe System One)
+ *      answers six atomic questions at once (contact details, social handles,
+ *      real name, physical address, off-platform coordination, third-party
+ *      advertising) and the shared ladder in jev-battery.ts decides: >=80 %
+ *      block, 60–80 % ask DeepSeek then admin, else pass. Catches what regex
+ *      cannot: spelled-out digits ("zero eight two..."), leetspeak, a number
+ *      split across non-digit characters, novel platform names, a shared
+ *      full name. Fail-OPEN on error — the regex layer is the hard guarantee,
+ *      and a conversation channel has no hold state to park a message in.
  *
  * Layer 1 alone catches the vast majority of cases. Layer 2 is the
  * adversarial-evasion catcher. Both layers run cheaply enough to add to
  * every freeform write without UX cost.
  */
-
-const FILTER_PROMPT = `You decide whether a short message from one ALL Outdoor user to another is trying to share off-platform contact details or coordinate a deal outside the platform.
-
-REJECT if the message contains, or is trying to obscure:
-- a phone number (any form — digits, spelled-out words, split with dots/spaces/dashes/non-digit characters, "oh-eight-two...", "treble-five", etc.)
-- an email address (even obfuscated like "name at gmail dot com")
-- a URL or domain pointing to the user's own shop / channel / social
-- a social-media handle (WhatsApp, Telegram, Signal, Instagram, Facebook, TikTok, Snapchat, X/Twitter, YouTube, etc.) — platform names alone (even without a handle) are a strong signal
-- an attempt to move the conversation off-platform ("DM me", "let's chat directly", "WhatsApp me", "meet me at...", "call me", "I'll give you my number", "send me your details", "outside the platform")
-- a street address that identifies where to physically meet the user
-
-APPROVE everything else — product questions, polite haggling, shipping arrangements (locker codes, suburb-level location for collection), thanks, condition notes, etc.
-
-Brand names, model names, manufacturer websites mentioned in passing (glock.com, vortexoptics.com), serial numbers and calibre stamps are NOT contact details.
-
-Respond with valid JSON ONLY:
-{ "decision": "APPROVE" | "REJECT",
-  "category": "<one of: phone, email, url, social-platform, off-platform-coordination, address — only when REJECT>" }
-
-First character of your response MUST be "{". No preamble, no markdown fences.`;
 
 // ---------- Regex patterns ----------------------------------------------------
 //
@@ -141,13 +131,16 @@ export type RejectCategory =
   | 'url'
   | 'social-platform'
   | 'off-platform-coordination'
-  | 'address';
+  | 'address'
+  /** The Jev battery's categories — the model layer reports these. */
+  | JevCategory;
 
 export type FilterResult =
   | { allowed: true }
   | { allowed: false; category: RejectCategory; reason: string };
 
 const PUBLIC_REASONS: Record<RejectCategory, string> = {
+  ...JEV_CATEGORY_REASONS,
   phone:
     'No phone numbers in messages — keep negotiation on ALL Outdoor. Once payment goes through, the platform handles handoff.',
   email:
@@ -212,20 +205,43 @@ export class ContactDetailFilterService {
       };
     }
 
-    // Layer 2 — the model. Fail open (if the API errors, the regex layer
-    // already cleared the obvious cases; we'd rather let an edge case
-    // through than block legit messages on infra problems).
-    const llmHit = await this.llmCheck(text);
-    if (llmHit) {
+    // Layer 2 — the Jev battery + shared confidence ladder. Fail open on a
+    // model error (the regex layer already cleared the obvious cases).
+    const verdict = await jevLadder(this.llm, {
+      state: text,
+      questions: contactQuestions(),
+      reasons: JEV_CATEGORY_REASONS,
+      purpose: 'moderation.contact-filter',
+      onError: 'pass',
+    });
+
+    if (verdict.decision === 'BLOCK') {
+      const category = asRejectCategory(verdict.category);
       this.logger.log(
-        `Contact-detail filter blocked ${origin} via LLM layer (${llmHit})`,
+        `Contact-detail filter blocked ${origin} via Jev (${category}, ${verdict.source})`,
       );
-      void this.persistRejection(text, origin, llmHit, userId);
+      void this.persistRejection(text, origin, category, userId);
       return {
         allowed: false,
-        category: llmHit,
-        reason: PUBLIC_REASONS[llmHit],
+        category,
+        reason: verdict.reason ?? PUBLIC_REASONS[category],
       };
+    }
+
+    if (verdict.decision === 'REVIEW') {
+      // A conversation has no hold state, so the message passes (regex was
+      // the hard guarantee) but the uncertainty is parked in the T&S queue
+      // for a human, exactly as the operator's "send it to admin" asks.
+      this.logger.log(
+        `Contact-detail filter parked ${origin} for review (${verdict.category ?? 'unknown'})`,
+      );
+      void this.persistRejection(
+        text,
+        origin,
+        `review:${verdict.category ?? 'unknown'}`,
+        userId,
+      );
+      return { allowed: true };
     }
 
     return { allowed: true };
@@ -326,55 +342,25 @@ export class ContactDetailFilterService {
     return null;
   }
 
-  // ─── Layer 2 — the model ──────────────────────────────────────────
+  // ─── Layer 2 — the Jev battery ────────────────────────────────────
+}
 
-  private async llmCheck(text: string): Promise<RejectCategory | null> {
-    // Fail OPEN, unchanged: no key means no second layer, and layer 1 is
-    // the hard guarantee.
-    if (!this.llm.isConfigured()) return null;
-    try {
-      const msg = await this.llm.complete({
-        system: FILTER_PROMPT,
-        messages: [{ role: 'user', content: text }],
-        maxTokens: 80,
-        json: {},
-        thinking: { budgetTokens: 0 },
-        purpose: 'moderation.contact-filter',
-      });
-
-      const raw = msg.text;
-      if (!raw) return null;
-
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (!match) return null;
-
-      const json = JSON.parse(match[0]) as {
-        decision?: string;
-        category?: string;
-      };
-      if (json.decision !== 'REJECT') return null;
-
-      const cat = (json.category ?? '').toLowerCase();
-      if (
-        cat === 'phone' ||
-        cat === 'email' ||
-        cat === 'url' ||
-        cat === 'social-platform' ||
-        cat === 'off-platform-coordination' ||
-        cat === 'address'
-      ) {
-        return cat;
-      }
-      // Unknown category — treat as off-platform-coordination (the
-      // catch-all bucket) so the user still sees a useful reason.
-      return 'off-platform-coordination';
-    } catch (err) {
-      // Every LlmError code lands here, a 'safety' block included — a refusal
-      // to answer is not a finding, and layer 1 has already run.
-      this.logger.warn(
-        `Contact-detail LLM check failed (open-fail): ${(err as Error).message}`,
-      );
-      return null;
-    }
+/**
+ * A Jev battery category is already a valid RejectCategory for the six the
+ * battery asks; an unexpected one (or the ladder's `moderation_unavailable`)
+ * falls back to the off-platform bucket so the user still sees a reason.
+ */
+function asRejectCategory(category: string | null): RejectCategory {
+  const known: JevCategory[] = [
+    'contact_details',
+    'social_handles',
+    'real_name',
+    'physical_address',
+    'offplatform_coordination',
+    'third_party_advertising',
+  ];
+  if (category && (known as string[]).includes(category)) {
+    return category as JevCategory;
   }
+  return 'off-platform-coordination';
 }

@@ -9,6 +9,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
+import {
+  contactQuestions,
+  JEV_CATEGORY_REASONS,
+  jevLadder,
+} from '../moderation/jev-battery';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 
 // ⚠️ The two-model split (a cheap lane for the yes/no moderation pass, a
@@ -467,7 +472,38 @@ export class ListingQuestionsService {
       : { decision: 'APPROVE' };
   }
 
+  /**
+   * The Jev contact gate shared by every conversation surface. Fail-open on a
+   * model error: the existing product/politeness prompt and the regex floor
+   * still run underneath, so an outage does not blanket-approve.
+   */
+  private async contactBattery(text: string): Promise<ModerationResult> {
+    const verdict = await jevLadder(this.llm, {
+      state: text,
+      questions: contactQuestions(),
+      reasons: JEV_CATEGORY_REASONS,
+      purpose: 'listing.question-contact',
+      onError: 'pass',
+    });
+    if (verdict.decision === 'BLOCK' || verdict.decision === 'REVIEW') {
+      return {
+        decision: 'REJECT',
+        reason:
+          verdict.reason ??
+          'Contact details or off-platform coordination are not allowed in public Q&A.',
+      };
+    }
+    return { decision: 'APPROVE' };
+  }
+
   private async runModeration(text: string): Promise<ModerationResult> {
+    // Jev contact battery FIRST — the shared conversation gate (same six
+    // questions every user-to-user surface asks). A BLOCK, or the uncertain
+    // 60–80 % band that DeepSeek could not clear, rejects: Q&A keeps the
+    // rejected row for audit and the buyer can rephrase and resubmit.
+    const battery = await this.contactBattery(text);
+    if (battery.decision === 'REJECT') return battery;
+
     if (!this.llm.isConfigured()) return this.regexFallback(text);
     try {
       const msg = await this.llm.complete({

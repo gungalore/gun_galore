@@ -216,6 +216,16 @@ describe('the prompt forbids the claims we must never make', () => {
 // which means there is now a way for the photos to go missing that the old
 // code could not produce. These pin the direction of every such failure.
 describe('moderate fails closed, never open, when it cannot see', () => {
+  // These pin the SINGLE-CALL moderator's failure directions. The live path is
+  // now the Jev/DeepSeek split; MOD_ENGINE=legacy keeps this behaviour under
+  // test as the rollback lever it still is.
+  beforeAll(() => {
+    process.env.MOD_ENGINE = 'legacy';
+  });
+  afterAll(() => {
+    delete process.env.MOD_ENGINE;
+  });
+
   function moderationInput(overrides: Record<string, unknown> = {}) {
     return {
       title: 'Bergara B14 HMR',

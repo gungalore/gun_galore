@@ -5,7 +5,11 @@ import * as path from 'node:path';
 import sharp from 'sharp';
 import { PrismaService } from '../prisma/prisma.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
-import { ANNEXURE_PAGE_SCALE, rasterisePdfToDir } from './pdf-raster';
+import {
+  ANNEXURE_PAGE_SCALE,
+  PRINT_PAGE_SCALE,
+  rasterisePdfToDir,
+} from './pdf-raster';
 
 // ────────────────────────────────────────────────────────────────────
 // AN UPLOADED PDF, AS IMAGES.
@@ -41,11 +45,34 @@ import { ANNEXURE_PAGE_SCALE, rasterisePdfToDir } from './pdf-raster';
  */
 export const PAGE_RASTER_VERSION = '2026-09-15';
 
+/**
+ * The PRINT-and-OCR variant's cache version. Distinct from the annexure
+ * version because the two render the same bytes at different scales and
+ * qualities — sharing a version would let one overwrite the other in cache.
+ */
+export const PRINT_PAGE_RASTER_VERSION = '2026-10-01';
+
 /** Thirty days, matching DocumentReadCache: this is the document itself. */
 const TTL_DAYS = 30;
 
 /** JPEG quality for a stored page. High enough to read a serial number. */
 const PAGE_JPEG_QUALITY = 82;
+
+/** Print-grade JPEG quality — see PRINT_PAGE_SCALE in pdf-raster.ts. */
+const PRINT_JPEG_QUALITY = 90;
+
+/** Which render a caller wants: the size-minded annexure, or print fidelity. */
+export type PageRender = 'annexure' | 'print';
+
+function renderConfig(render: PageRender): {
+  scale: number;
+  quality: number;
+  version: string;
+} {
+  return render === 'print'
+    ? { scale: PRINT_PAGE_SCALE, quality: PRINT_JPEG_QUALITY, version: PRINT_PAGE_RASTER_VERSION }
+    : { scale: ANNEXURE_PAGE_SCALE, quality: PAGE_JPEG_QUALITY, version: PAGE_RASTER_VERSION };
+}
 
 export interface RasteredPage {
   /** 1-based page number in the source document. */
@@ -74,11 +101,14 @@ export class DocumentPageRasterService {
   async pagesFor(input: {
     bytes: Buffer;
     sha256: string;
+    /** Defaults to the annexure render; 'print' is 300 dpi / q90. */
+    render?: PageRender;
   }): Promise<RasteredPage[]> {
-    const cached = await this.readCache(input.sha256);
+    const cfg = renderConfig(input.render ?? 'annexure');
+    const cached = await this.readCache(input.sha256, cfg.version);
     if (cached) return cached;
     try {
-      return await this.rasteriseAndStore(input);
+      return await this.rasteriseAndStore(input, cfg);
     } catch (err) {
       this.logger.warn(
         `Rasterising a PDF annexure failed: ${(err as Error).message}`,
@@ -179,12 +209,15 @@ export class DocumentPageRasterService {
    * missing, and nobody would know which. Anything wrong here falls through to
    * a fresh rasterisation.
    */
-  private async readCache(fileSha256: string): Promise<RasteredPage[] | null> {
+  private async readCache(
+    fileSha256: string,
+    rendererVersion: string,
+  ): Promise<RasteredPage[] | null> {
     try {
       const rows = await this.prisma.documentPageImage.findMany({
         where: {
           fileSha256,
-          rendererVersion: PAGE_RASTER_VERSION,
+          rendererVersion,
           expiresAt: { gt: new Date() },
         },
         orderBy: { page: 'asc' },
@@ -211,22 +244,25 @@ export class DocumentPageRasterService {
   }
 
   /** Rasterise every page in the child process, then store and remember them. */
-  private async rasteriseAndStore(input: {
-    bytes: Buffer;
-    sha256: string;
-  }): Promise<RasteredPage[]> {
+  private async rasteriseAndStore(
+    input: {
+      bytes: Buffer;
+      sha256: string;
+    },
+    cfg: { scale: number; quality: number; version: string },
+  ): Promise<RasteredPage[]> {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'doc-pages-'));
     try {
       const inPath = path.join(dir, 'document.pdf');
       await writeFile(inPath, input.bytes);
-      const count = await rasterisePdfToDir(inPath, dir, ANNEXURE_PAGE_SCALE);
+      const count = await rasterisePdfToDir(inPath, dir, cfg.scale);
 
       const pages: RasteredPage[] = [];
       const expiresAt = new Date(Date.now() + TTL_DAYS * 24 * 60 * 60 * 1000);
       for (let page = 1; page <= count; page++) {
         const raw = await readFile(path.join(dir, `page-${page}.png`));
         const jpeg = await sharp(raw)
-          .jpeg({ quality: PAGE_JPEG_QUALITY })
+          .jpeg({ quality: cfg.quality })
           .toBuffer();
         const { width, height } = await sharp(jpeg).metadata();
         if (!width || !height) continue;
@@ -250,13 +286,13 @@ export class DocumentPageRasterService {
             fileSha256_page_rendererVersion: {
               fileSha256: input.sha256,
               page: page.page,
-              rendererVersion: PAGE_RASTER_VERSION,
+              rendererVersion: cfg.version,
             },
           },
           create: {
             fileSha256: input.sha256,
             page: page.page,
-            rendererVersion: PAGE_RASTER_VERSION,
+            rendererVersion: cfg.version,
             storageKey: stored.storageKey,
             mimeType: 'image/jpeg',
             width: page.width,

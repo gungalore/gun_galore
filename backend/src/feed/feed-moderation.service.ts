@@ -24,7 +24,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { GraphicTier, PostType } from '@prisma/client';
 import { boundedImageUrl, boundedVideoUrl, IMAGE_EDGE, VIDEO_MODEL_EDGE } from '../common/image-url';
 import { LlmService } from '../common/llm/llm.service';
-import { LlmError, type LlmPart } from '../common/llm/llm.types';
+import { LlmError, type JevQuestion, type LlmPart } from '../common/llm/llm.types';
+import {
+  contactQuestions,
+  JEV_CATEGORY_REASONS,
+  jevLadder,
+} from '../moderation/jev-battery';
 import { FEED_MAX_IMAGES, POST_TYPE_LABELS } from './feed.types';
 
 export const FEED_MODERATION_PURPOSE = 'feed.moderation';
@@ -108,6 +113,33 @@ const RESPONSE_SCHEMA = {
   ],
 } as const;
 
+// ─── Image axis (DeepSeek Flash) ────────────────────────────────────
+//
+// ⚠️ JEV CANNOT SEE, so the photo side of a post is a separate DeepSeek
+// call. It carries the same categories as the text battery PLUS the graphic
+// tier, which is a purely visual judgement. Its JSON is not schema-enforced
+// either, and moderateFeedImages fails closed to PENDING on any doubt.
+const FEED_IMAGE_SYSTEM = `You are the photo screener for the ALL Outdoor community feed, a South African outdoor and firearms community. You see the attached photos and return json. Judge INTENT, not pixels alone: incidental manufacturer branding or a business number printed on a vehicle/equipment is normal and NOT a violation.
+
+Return exactly these fields:
+{"promoDetected":bool,"illegalDetected":bool,"otherViolation":bool,"graphicTier":"NONE"|"FIELD"|"EXTREME","unsure":bool,"reasons":["..."]}
+
+- promoDetected: the photos advertise, sell or self-promote a shop/channel/service (a price offered, a sale pitch, "DM me" text burned into the image). Incidental branding is NOT this.
+- illegalDetected: live ammunition/primers/propellant offered for sale, threats, doxxing, animal cruelty, anything unlawful.
+- otherViolation: contact details in the image (phone/email/handle/URL/QR code) or a street address / storefront that identifies a person.
+- graphicTier: NONE = ordinary content; FIELD = normal hunting/fishing field content (blood on a carcass/hide, field dressing) which is allowed behind a content warning; EXTREME = exposed viscera/guts, dismemberment, or a severely damaged body, which is held for a human.
+Set unsure=true if you genuinely cannot tell. No prose, no markdown.`;
+
+/** The more severe of two graphic tiers. */
+function maxGraphicTier(a: GraphicTier, b: GraphicTier): GraphicTier {
+  const rank: Record<GraphicTier, number> = {
+    [GraphicTier.NONE]: 0,
+    [GraphicTier.FIELD]: 1,
+    [GraphicTier.EXTREME]: 2,
+  };
+  return rank[b] > rank[a] ? b : a;
+}
+
 @Injectable()
 export class FeedModerationService {
   private readonly logger = new Logger(FeedModerationService.name);
@@ -125,9 +157,18 @@ export class FeedModerationService {
     });
 
     const { parts, videoAttached } = await this.buildParts(input);
-    const purpose = videoAttached
-      ? FEED_VIDEO_MODERATION_PURPOSE
-      : FEED_MODERATION_PURPOSE;
+
+    // ⚠️ TEXT + IMAGES NOW SPLIT: Jev reads the text, DeepSeek Flash reads the
+    // photos (operator decision 2026-10-01). VIDEO KEEPS THE SINGLE GEMINI
+    // CALL — DeepSeek cannot take video and Jev cannot see anything, so a
+    // clip-bearing post has no split to make and is moderated whole.
+    // FEED_MOD_ENGINE=legacy restores the single-call moderator (rollback
+    // lever, matching MOD_ENGINE on the listing side).
+    if (!videoAttached && process.env.FEED_MOD_ENGINE !== 'legacy') {
+      return this.moderateSplit(input, parts);
+    }
+
+    const purpose = FEED_VIDEO_MODERATION_PURPOSE;
 
     if (!this.llm.isConfiguredFor(purpose)) {
       // Fail closed: no key means a human must look, not that it publishes.
@@ -177,6 +218,228 @@ export class FeedModerationService {
     }
 
     return this.decide(verdict, input.authorIsOfficial);
+  }
+
+  // ─── The split path: Jev text + DeepSeek images ────────────────────
+
+  private async moderateSplit(
+    input: FeedModerationInput,
+    parts: LlmPart[],
+  ): Promise<FeedModerationVerdict> {
+    const pendingVerdict = (reasons: string[]): FeedModerationVerdict => ({
+      decision: 'PENDING_MODERATION',
+      graphicTier: GraphicTier.NONE,
+      promoDetected: false,
+      illegalDetected: false,
+      otherViolation: false,
+      reasons,
+    });
+
+    const imageParts = parts.filter((p): p is Extract<LlmPart, { type: 'image' }> => p.type === 'image');
+    // ⚠️ A VIDEO THAT COULD NOT BE READ AND HAS NO POSTER ARRIVES HERE AS NO
+    // PARTS AT ALL — `videoAttached` is false, but the post still expected
+    // media. Hold it rather than screening the text alone and publishing.
+    const mediaExpected = input.imageUrls.length > 0 || !!input.video;
+    if (mediaExpected && imageParts.length === 0) {
+      return pendingVerdict(['images_unreadable']);
+    }
+    if (!process.env.JEV_API_KEY) {
+      return pendingVerdict(['moderation_unavailable']);
+    }
+
+    const [text, images] = await Promise.all([
+      this.moderateFeedText(input),
+      this.moderateFeedImages(imageParts, input),
+    ]);
+
+    const promoDetected = text.promoDetected || images.promoDetected;
+    const illegalDetected = text.illegalDetected || images.illegalDetected;
+    const otherViolation = text.otherViolation || images.otherViolation;
+    const graphicTier = maxGraphicTier(text.graphicTier, images.graphicTier);
+    const reasons = [...text.reasons, ...images.reasons].slice(0, 10);
+    const uncertain = text.uncertain || images.uncertain;
+
+    const verdict = this.decide(
+      { promoDetected, illegalDetected, otherViolation, graphicTier, reasons },
+      input.authorIsOfficial,
+    );
+    // A confident REJECT stands. Otherwise, any uncertainty on either axis
+    // holds for a human rather than publishing.
+    if (verdict.decision !== 'REJECT' && uncertain) {
+      return pendingVerdict([...reasons, 'moderation_unsure']);
+    }
+    return verdict;
+  }
+
+  /** Text axis — the Jev battery (contact) plus the feed policy nouls. */
+  private async moderateFeedText(input: FeedModerationInput): Promise<{
+    promoDetected: boolean;
+    illegalDetected: boolean;
+    otherViolation: boolean;
+    graphicTier: GraphicTier;
+    reasons: string[];
+    uncertain: boolean;
+  }> {
+    const questions: Record<string, JevQuestion> = {
+      ...contactQuestions(),
+      promotional: {
+        type: 'noul',
+        instructions:
+          'Is this post advertising, selling or self-promoting — a shop/website/channel link, "DM me", "visit my store", "link in bio", a price offered for sale, or the author promoting their own ALL Outdoor listing? Incidental branding on equipment in the text (a brand name, a model) is NOT this.',
+        criteria: {
+          true: 'The post is itself a promotion or solicitation',
+          false: 'Ordinary discussion or a product mention',
+        },
+      },
+      illegal: {
+        type: 'noul',
+        instructions:
+          'Does this post offer to sell live ammunition, primers or propellant; threaten or harass someone; publish someone else\u2019s private details (doxxing); depict animal cruelty; or otherwise describe something unlawful under South African law?',
+        criteria: {
+          true: 'Unlawful offer, threat, doxxing or cruelty is present',
+          false: 'Nothing unlawful is described',
+        },
+      },
+      other_violation: {
+        type: 'noul',
+        instructions:
+          'Does this post break the community rules in some other way — hate speech, sexual content, or content that is plainly not allowed on a family-oriented outdoor community? Keep this narrow: disagreement, strong opinion and hunting content are NOT this.',
+        criteria: {
+          true: 'A clear additional community-rules violation',
+          false: 'No other violation',
+        },
+      },
+    };
+
+    const reasons: Record<string, string> = {
+      ...JEV_CATEGORY_REASONS,
+      promotional:
+        'Advertising is not allowed in the community feed — including your own ALL Outdoor listings.',
+      illegal:
+        'This post breaks the community rules (unlawful offer, threat or similar) and cannot be published.',
+      other_violation:
+        'This post breaks the community rules and cannot be published.',
+    };
+
+    const verdict = await jevLadder(this.llm, {
+      state:
+        `Post type: ${input.postType ? POST_TYPE_LABELS[input.postType] : 'General'}\n` +
+        `Author type: ${input.authorIsOfficial ? 'Official staff account' : 'Member'}\n\n` +
+        input.text,
+      questions,
+      reasons,
+      purpose: 'moderation.feed.text',
+      onError: 'review',
+    });
+
+    const s = verdict.scores;
+    const contactCats = [
+      'contact_details',
+      'social_handles',
+      'real_name',
+      'physical_address',
+      'offplatform_coordination',
+      'third_party_advertising',
+    ];
+    const blockedContact = contactCats.some((c) => (s[c] ?? 0) >= 0.8);
+    return {
+      promoDetected:
+        (s.promotional ?? 0) >= 0.8 ||
+        (verdict.category === 'promotional' && verdict.decision === 'BLOCK'),
+      illegalDetected:
+        (s.illegal ?? 0) >= 0.8 ||
+        (verdict.category === 'illegal' && verdict.decision === 'BLOCK'),
+      otherViolation:
+        (s.other_violation ?? 0) >= 0.8 ||
+        blockedContact ||
+        (verdict.decision === 'BLOCK' &&
+          verdict.category !== null &&
+          verdict.category !== 'promotional' &&
+          verdict.category !== 'illegal'),
+      graphicTier: GraphicTier.NONE,
+      reasons: verdict.reason ? [verdict.reason] : [],
+      uncertain: verdict.decision === 'REVIEW',
+    };
+  }
+
+  /** Image axis — DeepSeek Flash reads the photos. */
+  private async moderateFeedImages(
+    imageParts: Extract<LlmPart, { type: 'image' }>[],
+    input: FeedModerationInput,
+  ): Promise<{
+    promoDetected: boolean;
+    illegalDetected: boolean;
+    otherViolation: boolean;
+    graphicTier: GraphicTier;
+    reasons: string[];
+    uncertain: boolean;
+  }> {
+    const clean = {
+      promoDetected: false,
+      illegalDetected: false,
+      otherViolation: false,
+      graphicTier: GraphicTier.NONE,
+      reasons: [] as string[],
+      uncertain: false,
+    };
+    if (imageParts.length === 0) return clean;
+
+    const content: LlmPart[] = [
+      { type: 'text', text: 'Screen the attached photos. Return the JSON verdict only.' },
+      ...imageParts,
+    ];
+
+    let raw = '';
+    try {
+      const msg = await this.llm.complete({
+        system: FEED_IMAGE_SYSTEM,
+        messages: [{ role: 'user', content }],
+        maxTokens: 500,
+        temperature: 0,
+        json: {},
+        thinking: { budgetTokens: 0 },
+        purpose: 'moderation.feed.images',
+        model: 'deepseek-flash',
+        timeoutMs: 30_000,
+      });
+      raw = msg.text;
+    } catch {
+      // No image verdict = no publish decision. Fail closed.
+      return { ...clean, uncertain: true, reasons: ['images_unreadable'] };
+    }
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(this.extractJson(raw)) as Record<string, unknown>;
+    } catch {
+      return { ...clean, uncertain: true, reasons: ['moderation_shape_invalid'] };
+    }
+
+    const tier =
+      parsed.graphicTier === 'FIELD'
+        ? GraphicTier.FIELD
+        : parsed.graphicTier === 'EXTREME'
+          ? GraphicTier.EXTREME
+          : GraphicTier.NONE;
+    return {
+      promoDetected: parsed.promoDetected === true,
+      illegalDetected: parsed.illegalDetected === true,
+      otherViolation: parsed.otherViolation === true,
+      graphicTier: tier,
+      reasons: Array.isArray(parsed.reasons)
+        ? parsed.reasons.filter((r): r is string => typeof r === 'string').slice(0, 8)
+        : [],
+      uncertain: parsed.unsure === true,
+    };
+  }
+
+  /** Slice a balanced JSON object out of a reply that may carry prose. */
+  private extractJson(text: string): string {
+    const trimmed = (text ?? '').trim();
+    const first = trimmed.indexOf('{');
+    const last = trimmed.lastIndexOf('}');
+    if (first >= 0 && last > first) return trimmed.slice(first, last + 1);
+    return trimmed;
   }
 
   /**

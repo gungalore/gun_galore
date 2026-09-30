@@ -91,6 +91,26 @@ const PRICES: Record<string, ModelPrice> = {
     outputPerMillion: 1.2,
     cachedInputPerMillion: 0.006,
   },
+  /**
+   * Jev 1.13 (TypeSafe System One) — text moderation decisions.
+   *
+   * ⚠️ READ FROM https://docs.typesafe.ai/models.md ON 2026-10-01: $42 per
+   * Btok input, which is $0.042 per Mtok. OUTPUT IS FREE — hence the zero
+   * below; Jev returns typed answers, not generated prose. The aliases
+   * (`jev-latest`, `jev-preview`) and the versioned id (`jev-1.13.0`) are
+   * all priced, because the response reports the VERSIONED id while a caller
+   * may name an alias.
+   */
+  'jev-latest': {
+    inputPerMillion: 0.042,
+    outputPerMillion: 0,
+    cachedInputPerMillion: 0.042,
+  },
+  'jev-1.13.0': {
+    inputPerMillion: 0.042,
+    outputPerMillion: 0,
+    cachedInputPerMillion: 0.042,
+  },
 };
 
 /**

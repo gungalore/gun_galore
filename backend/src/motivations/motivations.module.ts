@@ -27,6 +27,7 @@ import { MotivationExtractService } from './motivation-extract.service';
 import { DocumentReadCacheService } from './document-read-cache.service';
 import { DocumentIdentifyService } from '../common/document-identify.service';
 import { DocumentPageRasterService } from './document-page-raster.service';
+import { DocumentScreeningService } from './document-screening.service';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
 import { CipSheetService } from './cip-sheet.service';
 import { QuarryPlateService } from './quarry-plate.service';
@@ -115,6 +116,10 @@ import { FirearmUsesService } from './firearm-uses.service';
     // round, which would close the cycle a spec asserts against.
     DocumentIdentifyService,
     DocumentPageRasterService,
+    // ⚠️ MONITORING, NOT A GATE. Screens an uploaded document's rasterised
+    // pages with DeepSeek Flash and writes a finding to the T&S queue; it never
+    // blocks an upload. Exported so the vault's upload path can fire it.
+    DocumentScreeningService,
     GoogleVisionOcrService,
     CipSheetService,
     QuarryPlateService,
@@ -159,6 +164,12 @@ import { FirearmUsesService } from './firearm-uses.service';
     // Exported so the vault's own create() can read its identify verdict back
     // through the one-way edge this module already shares with the Centre.
     DocumentIdentifyService,
+    // Exported so the vault can rasterise an uploaded PDF to a print-grade
+    // JPEG before the vision paths (OCR/classify/orient) read it — the same
+    // one-way edge. See LicenceCentreService.uprightForVision.
+    DocumentPageRasterService,
+    // Exported so the vault's upload path can fire the monitoring screen.
+    DocumentScreeningService,
   ],
 })
 export class MotivationsModule {}

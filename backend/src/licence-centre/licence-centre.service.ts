@@ -87,6 +87,8 @@ import { MotivationsService } from '../motivations/motivations.service';
 // motivation model calls. The Nest edge runs LicenceCentreModule ->
 // MotivationsModule and must stay one-way; the export is the only way across.
 import { MotivationExtractService } from '../motivations/motivation-extract.service';
+import { DocumentPageRasterService } from '../motivations/document-page-raster.service';
+import { DocumentScreeningService } from '../motivations/document-screening.service';
 import {
   competencyRenewalSeed,
   REFUSAL_COPY,
@@ -254,7 +256,75 @@ export class LicenceCentreService {
     // identify in one class is a duplicate identifier, and renaming the field
     // rather than the public method is the smaller change.
     private readonly identifyStore: DocumentIdentifyService,
+    // Print-grade PDF rasteriser (exported by MotivationsModule). A PDF is
+    // converted to a ~300 dpi JPEG here so the vision paths — OCR, classify,
+    // orient — can actually read it; they accept images, and before this a PDF
+    // reached them as bytes nothing on the image path could open.
+    // Optional so the existing unit specs, which build the service by hand
+    // with positional fakes, keep compiling; Nest still injects the real one.
+    private readonly pageRaster?: DocumentPageRasterService,
+    // Background monitoring of an uploaded document's pages. Optional for the
+    // same reason as pageRaster; fire-and-forget so it never delays an upload
+    // and never fails one.
+    private readonly documentScreening?: DocumentScreeningService,
   ) {}
+
+  /**
+   * Turn an uploaded file into something the vision paths can read.
+   *
+   * ⚠️ A PDF BECOMES A JPEG, AN IMAGE IS JUST MADE UPRIGHT. Operator ask,
+   * 2026-10-01: "convert any pdf that uploaded on the server on to jpeg image
+   * that good enough for printing and OCR." The print render (scale 4 ≈ 300
+   * dpi, JPEG q90) is cached on the source bytes, so the same document is only
+   * rasterised once. Fail-soft: if the rasteriser cannot produce a page the
+   * original bytes are returned unchanged, exactly as before — a PDF we cannot
+   * read costs one document, never the upload.
+   *
+   * ⚠️ PAGE ONE. A multi-page PDF is filed as a single credential, and the
+   * identify/classify/OCR path reads one page. Every page IS rasterised and
+   * cached by pagesFor() for a caller that needs the whole document later; this
+   * path takes the first page so the existing one-page flow keeps working.
+   */
+  private async uprightForVision(
+    buffer: Buffer,
+    mimeType: string,
+  ): Promise<{ bytes: Buffer; mimeType: string; rotated: boolean }> {
+    if (mimeType !== 'application/pdf' || !this.pageRaster) {
+      return uprightImageBytes(buffer, mimeType);
+    }
+    try {
+      const sha256 = createHash('sha256').update(buffer).digest('hex');
+      const pages = await this.pageRaster.pagesFor({
+        bytes: buffer,
+        sha256,
+        render: 'print',
+      });
+      const first = pages[0];
+      if (first) {
+        return { bytes: first.bytes, mimeType: 'image/jpeg', rotated: false };
+      }
+    } catch {
+      // fall through to the raw bytes
+    }
+    return { bytes: buffer, mimeType, rotated: false };
+  }
+
+  /**
+   * Fire the background document screen. Never awaited, never throws into the
+   * caller: a monitoring signal may not delay or fail an upload.
+   */
+  private screenDocument(
+    bytes: Buffer,
+    mimeType: string,
+    ownerId: string,
+    label?: string,
+  ): void {
+    if (!this.documentScreening) return;
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    void this.documentScreening
+      .screen({ bytes, mimeType, sha256, ownerId, label: label || undefined })
+      .catch(() => undefined);
+  }
 
   /** @CurrentUser() gives the CLERK id; everything here keys on our own. */
   private async requireUser(userId: string): Promise<{ id: string }> {
@@ -1147,9 +1217,10 @@ export class LicenceCentreService {
     // photograph arrives as landscape pixels plus an EXIF tag the model may not
     // apply; baking it in means the classifier, the reader and the stored copy
     // all see the same upright page. No-op and never throws — see upright-image.
-    const upright = await uprightImageBytes(file.buffer, file.mimetype);
+    const upright = await this.uprightForVision(file.buffer, file.mimetype);
     const bytes = upright.bytes;
     const mimeType = upright.mimeType;
+    this.screenDocument(bytes, mimeType, user.id, title);
 
     const cap = await this.settings.get(FLAGS.licenceCentreMaxCredentials);
     const held = await this.prisma.credential.count({
@@ -2219,9 +2290,11 @@ export class LicenceCentreService {
     // ⚠️ UPRIGHT BEFORE THE HASH, SO THE CACHE KEY MATCHES WHAT THE MODEL SAW.
     // The same raw upload always normalises the same way, so re-identifying a
     // file still hits the cache; and the page is never classified sideways.
-    const upright = await uprightImageBytes(file.buffer, file.mimetype);
+    const upright = await this.uprightForVision(file.buffer, file.mimetype);
     const bytes = upright.bytes;
     const mimeType = upright.mimeType;
+    // Monitoring only — fire-and-forget, so the identify pass never waits on it.
+    this.screenDocument(bytes, mimeType, ownerId, file.description);
     const hash = createHash('sha256').update(bytes).digest('hex');
 
     // ⚠️ HAVE WE ALREADY IDENTIFIED THESE EXACT BYTES FOR THIS MEMBER? A
@@ -2351,9 +2424,10 @@ export class LicenceCentreService {
     // ⚠️ UPRIGHT BEFORE THE MODEL SEES IT. An evidence photograph is never
     // cropped or retouched, but it must still be the right way up for the
     // classifier — see upright-image; still a no-op unless EXIF says otherwise.
-    const upright = await uprightImageBytes(file.buffer, file.mimetype);
+    const upright = await this.uprightForVision(file.buffer, file.mimetype);
     const bytes = upright.bytes;
     const mimeType = upright.mimeType;
+    this.screenDocument(bytes, mimeType, user.id, description);
 
     // ⚠️ TWO CAPS, NOT ONE. The document cap still governs the vault as a
     // whole — evidence must not be a side door past it — and the 30-item

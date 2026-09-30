@@ -16,7 +16,7 @@
 // when a caller needs to, never speculatively.
 // ────────────────────────────────────────────────────────────────────
 
-export type LlmProvider = 'gemini' | 'anthropic' | 'deepseek';
+export type LlmProvider = 'gemini' | 'anthropic' | 'deepseek' | 'typesafe';
 
 /** Base64 bytes with their type. Both providers take exactly this. */
 export interface LlmBlob {
@@ -307,4 +307,98 @@ export interface LlmImageResponse {
   model: string;
   provider: LlmProvider;
   usage: LlmUsage;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// ASKING JEV A TYPED QUESTION (TypeSafe System One).
+//
+// ⚠️ THIS IS A DIFFERENT PRIMITIVE, NOT A CHAT COMPLETION. Jev takes a
+// `state` (the content to judge) and a map of TYPED questions, evaluates
+// every question in parallel against that one state, and returns one typed
+// ANSWER per question. There is no prose to parse, no tool loop, no
+// streaming — so it gets its own shape rather than half-filling LlmRequest.
+//
+// ⚠️ THE ANSWER TYPES ARE THE POINT. A `noul` answer is a probability (0–1)
+// that the statement is true; Choice and Score also carry a `confidence`.
+// The caller reads those numbers and branches in code — see the confidence
+// ladder in `moderation/jev-battery.ts`. Do not collapse them to a boolean
+// here: the whole reason Jev is used for moderation is that the number
+// survives to the caller.
+//
+// Operator decision, 2026-10-01: "use Jev to monitor the listings and
+// conversations between users for contact details, name and surname
+// sharing, social handle sharing, third party advertising, anything users
+// can use to make direct contact."
+// ────────────────────────────────────────────────────────────────────
+
+/** The `state` Jev ingests. Text only — never an image or a file. */
+export type JevState = string | Record<string, unknown> | unknown[];
+
+/**
+ * A question's `instructions` or a criterion description. The API accepts a
+ * plain string, or structured data where one field is the question and the
+ * others are named data it refers to in backticks.
+ */
+export type JevInstructions = string | Record<string, unknown> | unknown[];
+
+export type JevQuestion =
+  /** Is this statement true? Returns the probability the answer is yes. */
+  | {
+      type: 'noul';
+      instructions: JevInstructions;
+      criteria?: { true?: JevInstructions; false?: JevInstructions };
+    }
+  /** Pick one option from a set you define. */
+  | {
+      type: 'choice';
+      instructions: JevInstructions;
+      criteria: Record<string, JevInstructions | null>;
+    }
+  /** Rate the state along an ordered rubric. */
+  | {
+      type: 'score';
+      instructions: JevInstructions;
+      criteria: JevInstructions[];
+    };
+
+export interface JevNoulAnswer {
+  type: 'noul';
+  /** 0 = no, 1 = yes. */
+  noul: number;
+}
+
+export interface JevChoiceAnswer {
+  type: 'choice';
+  choice: string;
+  probabilities: Record<string, number>;
+  confidence: number;
+}
+
+export interface JevScoreAnswer {
+  type: 'score';
+  score: number;
+  legend: Record<string, string>;
+  probabilities: Record<string, number>;
+  confidence: number;
+}
+
+export type JevAnswer = JevNoulAnswer | JevChoiceAnswer | JevScoreAnswer;
+
+export interface JevDecideRequest {
+  state: JevState;
+  /** One entry per question. An answer comes back under the same key. */
+  questions: Record<string, JevQuestion>;
+  /** Ledger and log label, like every other call. */
+  purpose: string;
+  /** Overrides JEV_MODEL / the default alias. */
+  model?: string;
+  timeoutMs?: number;
+}
+
+export interface JevDecideResponse {
+  /** The versioned model id that answered (e.g. `jev-1.13.0`). */
+  model: string;
+  answers: Record<string, JevAnswer>;
+  usage: LlmUsage;
+  provider: 'typesafe';
 }

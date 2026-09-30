@@ -39,6 +39,19 @@ export const CIP_INSET_SCALE = 4;
 export const ANNEXURE_PAGE_SCALE = 3;
 
 /**
+ * How hard an uploaded PDF page is rasterised for PRINT and OCR.
+ *
+ * ⚠️ OPERATOR ASK, 2026-10-01: "convert any pdf that uploaded on the server on
+ * to jpeg image that good enough for printing and OCR." Scale 4 puts an A4 page
+ * at about 2 450 px wide — roughly 300 dpi, the print standard — against the
+ * annexure's ~150 dpi, which is chosen for pack size rather than fidelity. This
+ * is the scale the vault/licence documents use, where the page IS the record
+ * and may need reprinting or machine reading. Paired with JPEG q90 in the
+ * page-raster service, not the q82 the annexure cache uses.
+ */
+export const PRINT_PAGE_SCALE = 4;
+
+/**
  * Rasterise every page of a PDF into `outDir` as `page-1.png` … and return how
  * many were written.
  *
