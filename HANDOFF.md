@@ -7,6 +7,58 @@ overwritten.
 
 Last updated: **2026-09-30**.
 
+## 2026-09-30 (later) — GOOGLE KEYS MOVED TO alloutdoor-api + PWA THEME SWITCHER (DEPLOYED)
+
+**Deployed to production** as `6741e594` (2 commits: `b3a7da14` the theme switcher,
+`6741e594` the env-doc correction), `--frontend-only` (the diff touched only
+`frontend/` and `docs/`). Gates first: backend tsc + 298 suites / 5145 tests,
+frontend tsc + 128 files / 1655 tests, frontend prod build (`BUILD_ID` present).
+Health after: `/api/health` twice OK, public site 200 twice, all three pm2
+services online.
+
+### The Google outage had TWO causes, and only the second one was real
+
+1. **Wrong project.** Production's browser key (`…qF_tME`) belonged to
+   **`gun-galore-dealer-scans`** — a *different Google account* (the console's
+   `authuser=0`). Billing was enabled on `alloutdoor-api`, which owned none of
+   the site's keys, so nothing changed. Confirmed by reading the key value out
+   of the console's Show-key dialog.
+2. **Then the migration fixed it.** Box env swapped to the `alloutdoor-api`
+   keys and the frontend rebuilt (`NEXT_PUBLIC_*` is baked at build time — an
+   env edit alone does nothing):
+   - `frontend/.env.production` → `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` = `…LDDR0g`
+     (`alloutdoor-frontend-web`, referrer-restricted).
+   - `backend/.env` → `GOOGLE_MAPS_API_KEY` = `…3N7234`
+     (`alloutdoor-backend-server`, IP-restricted — the Web Service APIs reject
+     referrer-restricted keys, hence two keys in one project).
+   - `GOOGLE_VISION_API_KEY` (`All Outdoor - Vision OCR (server)`) was already
+     on `alloutdoor-api`.
+   Backups: `backend/.env.bak-gmaps-migrate-*`, `frontend/.env.production.bak-gmaps-*`.
+
+**Verified live, not assumed:** box → Google Geocoding `OK` and Routes
+`computeRoutes` 50,378 m Cape Town→Stellenbosch; browser on production serving
+`…LDDR0g` → Places `OK`, Geocoder `OK`, Place Details `OK` (name + lat + 9
+components) — which is exactly what the firearm planned-dealer guard needs, so
+**firearm listings can be published again**.
+
+⚠️ **The old key in `gun-galore-dealer-scans` is now unused** — worth disabling
+there, and it lives under your other Google login. `GEMINI_API_KEY` is a Google
+AI Studio key (`AQ.…`), not a GCP project key, so it is not part of this.
+
+### Theme switcher on the phone / PWA
+
+The nav's toggle is `hidden md:flex` because the mobile ROOT header has **8px of
+slack at 390px** (measured) — so the PWA had no theme control at all. It now
+lives in the **PUSH header** (every inner screen) and as a labelled
+**System / Light / Dark** row on **/account** (`components/theme-choice.tsx`).
+
+Mounting it shell-wide exposed a real **hydration mismatch**: `useTheme`
+computed its initial state from `window`, so on an OS-dark device the server
+rendered light and the client dark and React threw *"Hydration failed"*. The
+hook now renders SSR-safe and adopts the stored/OS theme after mount, skipping
+the first DOM sync so the pre-paint script's value is never clobbered. Console
+is clean in production after the fix.
+
 ## 2026-09-30 — MOBILE/PWA HOME: ONE-ROW MINI BAR, NO HERO (DEPLOYED)
 
 **Deployed to production** as `cbf8c638` (2 commits: `3defe541` the feature,
