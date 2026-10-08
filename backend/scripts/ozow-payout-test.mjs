@@ -106,6 +106,19 @@ async function pollAttempt(attemptId) {
   return tests.getAttempt(attemptId);
 }
 
+// A mock payout is accepted as 201, then settles to the simulated error a few
+// seconds later. Poll until it leaves the initial state so the evidence shows
+// the forced error (e.g. status 99 / subStatus 205) rather than 201.
+async function waitForMockPayout(payoutId) {
+  for (let i = 0; i < 10; i++) {
+    const gp = await tests.getMockPayout(payoutId);
+    const status = gp?.payoutStatus?.status;
+    if (status !== 1) return gp;
+    await sleep(3000);
+  }
+  return tests.getMockPayout(payoutId);
+}
+
 // ── Standard API test cases (staging /v1) ────────────────────────────────
 async function standardSuite() {
   // Test 1 — below the R1 minimum (must be rejected by Ozow).
@@ -169,7 +182,7 @@ async function mockSuite() {
       });
       let mockPayout = null;
       if (submitted.payoutId) {
-        mockPayout = await tests.getMockPayout(submitted.payoutId);
+        mockPayout = await waitForMockPayout(submitted.payoutId);
       }
       // Reset before the next scenario.
       const reset = await tests.setMockScenario(null);
