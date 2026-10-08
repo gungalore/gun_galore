@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useState, useEffect, useMemo, useRef, FormEvent } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../lib/auth';
 import { Category, CategoryAttributeDef, Me } from '@/lib/types';
@@ -2529,6 +2530,31 @@ export default function NewListingPage() {
         // ignore
       }
 
+      // If this listing came from a Value My Item valuation, record the
+      // outcome for the data moat (best-effort; never blocks the redirect).
+      try {
+        const pendingValuation = localStorage.getItem('gg-valuation-pending');
+        if (pendingValuation) {
+          localStorage.removeItem('gg-valuation-pending');
+          void getToken()
+            .then((t) =>
+              t
+                ? fetch(`${API_URL}/valuations/${pendingValuation}/outcome`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${t}`,
+                    },
+                    body: JSON.stringify({ listingId: listing.id }),
+                  })
+                : undefined,
+            )
+            .catch(() => {});
+        }
+      } catch {
+        // ignore
+      }
+
       // Gate: if the seller still owes us the post-publish profile
       // (banking + ID + name), show the modal BEFORE we redirect.
       // BUT respect the 24h "Finish later" suppression flag — if the
@@ -2726,6 +2752,13 @@ export default function NewListingPage() {
           Honest titles and crisp photos sell faster. Required fields marked{' '}
           <span style={{ color: 'var(--red)' }}>*</span>.
         </p>
+        <Link
+          href="/value"
+          className="inline-block mt-3 text-sm font-medium"
+          style={{ color: 'var(--red)', textDecoration: 'none' }}
+        >
+          Not sure what it&apos;s worth? Value it first →
+        </Link>
       </header>
 
       {/* Draft restored notice — appears when a previous session's

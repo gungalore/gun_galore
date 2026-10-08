@@ -523,6 +523,7 @@ model User {
   sellingBannedAt     DateTime?
 
   listings                Listing[]
+  valuations              Valuation[]
   buyerTransactions       Transaction[]            @relation("BuyerTransactions")
   sellerTransactions      Transaction[]            @relation("SellerTransactions")
   ratingsGiven            Rating[]                 @relation("RatingsGiven")
@@ -1339,6 +1340,7 @@ model Listing {
   isDealListing Boolean @default(false)
 
   images               ListingImage[]
+  valuationOutcome     ValuationOutcome?
   transactions         Transaction[]
   orderLineItems       OrderLineItem[]
   offers               Offer[]
@@ -7466,4 +7468,189 @@ model TrackedApplicationEvent {
   rowSha256 String?
 
   @@index([trackedId, observedAt])
+}
+
+// =====================================================================
+// VALUE MY ITEM (valuation module)
+// =====================================================================
+// A member's valuation request: photos in, clarifying questions, a research
+// pass over live SA listings, then a result with a ready-to-post ad. The
+// engine is category-neutral; all category knowledge lives in config files
+// under backend/src/valuation/config (spec: docs/valuation-spec.md).
+//
+// No payment, pricing or credit concepts exist here by design.
+
+enum ValuationStatus {
+  INTAKE        // created, photos arriving
+  IDENTIFIED    // identify step done, questions issued
+  ANSWERING     // user working through questions
+  RESEARCHING   // research loop running
+  COMPLETED
+  FAILED        // model/tool failure after retries
+  ABANDONED     // user deleted or 14 days stale in a pre-research state
+}
+
+enum ValuationConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model Valuation {
+  id          String          @id @default(cuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      ValuationStatus @default(INTAKE)
+
+  description String?         // user free text from intake (untrusted input)
+  categorySlug String?        // confirmed top-level category slug in identify
+  strategy    String?         // COMP_MATCHED | RETAIL_ANCHOR | UNIT_COMMODITY | VALUE_EQUIPMENT
+
+  identifyJson Json?          // sanitised step-1 output (spec 5.1)
+  questionsJson Json?         // questions actually served (post-sanitiser, max 8)
+  answersJson  Json?          // [{ questionId, selected, custom, unsure }]
+  resultJson   Json?          // final result (spec 5.2) plus meta
+  rawFailureJson String?      // raw model output on validation failure; purged with photos
+
+  identifyPromptVersion String?
+  researchPromptVersion String?
+
+  confidence  ValuationConfidence?
+  lowPriceCents  Int?
+  midPriceCents  Int?
+  highPriceCents Int?
+  askingPriceCents       Int?
+  expectedSalePriceCents Int?
+  retailAnchorCents      Int?
+
+  cacheKey  String?
+  cacheHit  Boolean @default(false)
+
+  errorCode    String?
+  errorMessage String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  images  ValuationImage[]
+  comps   ValuationComp[]
+  captureSessions ValuationCaptureSession[]
+  outcome ValuationOutcome?
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+model ValuationImage {
+  id          String     @id @default(cuid())
+  valuationId String
+  valuation   Valuation  @relation(fields: [valuationId], references: [id], onDelete: Cascade)
+  publicId    String     // Cloudinary public id
+  url         String
+  viewTag     String?    // checklist tag from the active config
+  source      String     // 'DESKTOP' | 'PHONE'
+  width       Int?
+  height      Int?
+  bytes       Int?
+  exifStrippedAt DateTime? // set only after sharp re-encode succeeded; upload fails closed
+  createdAt   DateTime   @default(now())
+
+  @@index([valuationId])
+}
+
+// QR phone-capture session. One active session per valuation; creating a new
+// one closes the old. Token is the capability; the phone never authenticates.
+model ValuationCaptureSession {
+  id          String    @id @default(cuid())
+  token       String    @unique // base64url(16 random bytes), ~22 chars
+  valuationId String
+  valuation   Valuation @relation(fields: [valuationId], references: [id], onDelete: Cascade)
+  userId      String    // the logged-in desktop user who created it
+  status      String    @default("OPEN") // OPEN | CLOSED | EXPIRED
+  expiresAt   DateTime
+  firstUsedAt DateTime?
+  closedAt    DateTime?
+  invalidAttempts Int   @default(0) // >= 5 permanently kills the token
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// One row per candidate comparable. Third-party data reduced to price, model,
+// date and URL only. Never their description text or photos.
+model ValuationComp {
+  id          String    @id @default(cuid())
+  valuationId String
+  valuation   Valuation @relation(fields: [valuationId], references: [id], onDelete: Cascade)
+  kind        String    @default("USED_COMP") // USED_COMP | RETAIL_ANCHOR | ACCESSORY
+  sourceSite  String
+  url         String
+  model       String?
+  condition   String?
+  priceCents  Int
+  listedDate  DateTime?
+  pageOpened  Boolean   @default(false)
+  excluded    Boolean   @default(false)
+  excludeReason String? // NOT_ZAR | PRE_2025 | NO_PRICE | INTERNATIONAL | SELF_LISTING | SNIPPET_ONLY | OUTLIER
+  // How closely this comp matches the item: EXACT_MODEL | SAME_MODEL_DIFF_SPEC | SAME_BRAND_CLASS
+  matchTier   String?
+  // The differing dimensions and values, e.g. [{ dimension: "calibre", compValue: ".30-06" }]
+  specDiffs   Json?
+  createdAt   DateTime  @default(now())
+
+  @@index([valuationId])
+  @@index([sourceSite, listedDate])
+}
+
+// Cache by normalised spec: sha256(JSON({categorySlug, make, model, keySpec, conditionBand}))
+model ValuationCache {
+  id          String   @id @default(cuid())
+  cacheKey    String   @unique
+  categorySlug String
+  resultJson  Json     // full result, served with meta.fromCache true
+  midPriceCents Int?
+  compCount   Int
+  confidence  ValuationConfidence
+  hits        Int      @default(0)
+  expiresAt   DateTime // createdAt + VALUATION_CACHE_TTL_DAYS
+  createdAt   DateTime @default(now())
+
+  @@index([categorySlug, expiresAt])
+}
+
+// Known SOLD prices: our own completed sales and dealer-provided lists. This
+// is the highest-accuracy source (sold beats asking) and the core of the data
+// moat. Seeded by the outcome capture and the dealer CSV import.
+model SoldComp {
+  id             String   @id @default(cuid())
+  categorySlug   String
+  make           String?
+  model          String?
+  keySpec        String?
+  condition      String?
+  soldPriceCents Int
+  soldAt         DateTime
+  source         String   @default("own") // 'own' | 'dealer'
+  createdAt      DateTime @default(now())
+
+  @@index([categorySlug, make, model])
+  @@index([soldAt])
+}
+
+// The data moat: what actually happened after a valuation.
+model ValuationOutcome {
+  id          String     @id @default(cuid())
+  valuationId String     @unique
+  valuation   Valuation  @relation(fields: [valuationId], references: [id], onDelete: Cascade)
+  listingId   String?   @unique
+  listing     Listing?  @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  askingPriceCents Int?
+  soldPriceCents   Int?
+  soldAt      DateTime?
+  daysToList  Int?
+  createdAt   DateTime   @default(now())
+
+  @@index([soldAt])
 }

@@ -16,7 +16,13 @@
 // when a caller needs to, never speculatively.
 // ────────────────────────────────────────────────────────────────────
 
-export type LlmProvider = 'gemini' | 'anthropic' | 'deepseek' | 'typesafe';
+export type LlmProvider =
+  | 'gemini'
+  | 'anthropic'
+  | 'deepseek'
+  | 'typesafe'
+  /** Qwen Cloud (qwen3.8-flash) — the Value My Item valuation engine. */
+  | 'qwen';
 
 /** Base64 bytes with their type. Both providers take exactly this. */
 export interface LlmBlob {

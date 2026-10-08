@@ -1,0 +1,30 @@
+{
+  "categorySlug": null,
+  "strategy": "COMP_MATCHED",
+  "strategyPrompt": "Valuation strategy: COMP-MATCHED (generic). Match make, model and key specification to live South African listings of the same make and type. Condition and included extras move the price within the comp spread. Find the current new SA retail price as an anchor when one exists, and value included accessories separately. If the exact model has no comps, widen to the same brand and class and say so in unverified.",
+  "photoChecklist": [
+    { "tag": "WHOLE_ITEM",     "label": "The whole item",          "priority": 1, "required": true,  "hint": "One clear shot of everything in the sale" },
+    { "tag": "LABEL_OR_STAMP", "label": "Any label, stamp or tag", "priority": 2, "required": true,  "hint": "Brand and model markings, close and legible" },
+    { "tag": "CONDITION",      "label": "Close-up of condition",   "priority": 3, "required": false, "hint": "Wear, damage or repair spots" },
+    { "tag": "INCLUDED",       "label": "Anything included",       "priority": 4, "required": false, "hint": "Accessories, packaging, papers" }
+  ],
+  "seedQuestions": [
+    { "id": "q1", "kind": "CONFIRM_KEY_IDENTIFIERS", "text": "Confirm the exact make and model, plus the size, capacity or specification that matters", "type": "single", "options": [], "allow_custom": true, "allow_unsure": false, "required": true },
+    { "id": "qs_age", "kind": "AGE", "text": "How old is it?", "type": "single", "options": ["Under 1 year", "1-3 years", "3-7 years", "7+ years"], "allow_custom": true, "allow_unsure": true, "required": true },
+    { "id": "qs_cond", "kind": "CONDITION", "text": "Overall condition?", "type": "single", "options": ["New or as-new", "Well used, fully working", "Visible wear, works", "Needs repair"], "allow_custom": true, "allow_unsure": true, "required": true },
+    { "id": "qs_extras", "kind": "ACCESSORIES", "text": "What is included in the sale?", "type": "multi", "options": ["Original box", "Papers or receipts", "Accessories shown", "Nothing else"], "allow_custom": true, "allow_unsure": true, "required": false }
+  ],
+  "valueDrivers": ["make", "model", "keySpec", "age", "condition", "usage", "missingParts", "includedExtras", "packaging"],
+  "bannedTopicPatterns": ["licen[cs]e", "permit", "\\bFCA\\b", "section\\s*\\d", "transfer\\s+(permit|status|legal)", "legal\\s+(status|right)", "\\bstor(e|ing|age|ed)\\b", "gun\\s*safe", "cleaning habit", "serial"],
+  "bannedItemPatterns": ["live\\s+(ammunition|ammo)", "\\bprimers?\\b", "gun\\s*?powder", "\\bpropellant\\b", "\\bloaded\\s+rounds?\\b"],
+  "searchSources": ["bidorbuy.co.za", "facebook marketplace south africa", "gumtree south africa", "carbonads", "SA dealer and retailer stores"],
+  "retailAnchor": true,
+  "minComps": 3,
+  "depreciation": null,
+  "unitCommodity": null,
+  "legalFlags": [],
+  "matchDimensions": [],
+  "matchWeights": { "EXACT_MODEL": 1, "SAME_MODEL_DIFF_SPEC": 0.6, "SAME_BRAND_CLASS": 0.3 },
+  "matchConfidenceCap": { "DIFF_SPEC": "MEDIUM", "BRAND_CLASS": "LOW" },
+  "listingConstraints": { "shippingMethods": ["COURIER", "LOCKER", "DEALER_TRANSFER", "PRIVATE_ARRANGE"], "requiresDealerTransferOffer": false }
+}

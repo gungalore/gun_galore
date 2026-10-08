@@ -84,13 +84,22 @@ export default async function DashboardPage() {
             facing list pages are /my/orders + /my/sales. Link to
             /my/orders by default since the dashboard's CTA reads
             "View orders". */}
-        <Link
-          href="/my/orders"
-          className="text-sm"
-          style={{ color: 'var(--text-tertiary)', textDecoration: 'none', paddingTop: 4 }}
-        >
-          View orders →
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/value"
+            className="text-sm font-medium"
+            style={{ color: 'var(--red)', textDecoration: 'none', paddingTop: 4 }}
+          >
+            Value My Item →
+          </Link>
+          <Link
+            href="/my/orders"
+            className="text-sm"
+            style={{ color: 'var(--text-tertiary)', textDecoration: 'none', paddingTop: 4 }}
+          >
+            View orders →
+          </Link>
+        </div>
       </div>
 
       {!data ? (

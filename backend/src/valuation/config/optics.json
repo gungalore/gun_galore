@@ -1,0 +1,44 @@
+{
+  "categorySlug": "optics",
+  "strategy": "RETAIL_ANCHOR",
+  "strategyPrompt": "Valuation strategy: RETAIL ANCHOR WITH DEPRECIATION. 1) Find the current new SA retail price of this exact optic model (SA dealers and distributors; lowest current in-stock ZAR price is the anchor). 2) Find at least 2 used comps of the same model or, failing that, the same brand and class. 3) The backend applies the depreciation table for the brand tier and condition; your job is the anchor, the comps and splitting accessories (rings, mounts, caps, warranty card, box) into ACCESSORY entries. Lens scratches, fungus and tracking failure belong in condition and unverified.",
+  "photoChecklist": [
+    { "tag": "FULL_UNIT",   "label": "Whole optic, side view",     "priority": 1, "required": true,  "hint": "Tube, turrets, any damage" },
+    { "tag": "MODEL_STAMP", "label": "Model and brand stamp",      "priority": 2, "required": true,  "hint": "Usually on the tube or bell" },
+    { "tag": "LENS_FRONT",  "label": "Front lens",                 "priority": 3, "required": false, "hint": "Scratches, coating, fungus" },
+    { "tag": "LENS_REAR",   "label": "Rear lens and eyepiece",     "priority": 4, "required": false, "hint": "Include the magnification ring" },
+    { "tag": "TURRETS",     "label": "Turrets",                    "priority": 5, "required": false, "hint": "Clicks, markings, caps" },
+    { "tag": "ACCESSORIES", "label": "Rings, mounts, box, papers", "priority": 6, "required": false, "hint": "Everything included" }
+  ],
+  "seedQuestions": [
+    { "id": "q1", "kind": "CONFIRM_KEY_IDENTIFIERS", "text": "Confirm the exact model and magnification range", "type": "single", "options": [], "allow_custom": true, "allow_unsure": false, "required": true },
+    { "id": "qo_age", "kind": "AGE", "text": "How old is it?", "type": "single", "options": ["Under 1 year", "1-3 years", "3-7 years", "7+ years"], "allow_custom": true, "allow_unsure": true, "required": true },
+    { "id": "qo_glass", "kind": "CONDITION", "text": "Any marks on the lenses?", "type": "single", "options": ["None", "Light marks, view clear", "Scratches or fungus in the view", "Not sure"], "allow_custom": true, "allow_unsure": true, "required": true },
+    { "id": "qo_track", "kind": "USAGE", "text": "Do the turrets track and return to zero?", "type": "single", "options": ["Yes, verified", "Never checked", "No, they drift"], "allow_custom": true, "allow_unsure": true, "required": false },
+    { "id": "qo_mounts", "kind": "ACCESSORIES", "text": "Included with rings or a mount?", "type": "multi", "options": ["Rings", "Mount", "Caps", "Box and papers", "Optic only"], "allow_custom": true, "allow_unsure": true, "required": false }
+  ],
+  "valueDrivers": ["model", "magnification", "tubeSize", "reticle", "age", "lensCondition", "tracking", "warranty", "includedMounts"],
+  "bannedTopicPatterns": [],
+  "bannedItemPatterns": [],
+  "searchSources": ["gunsammo.co.za", "gunafrica.com", "bidorbuy.co.za", "hunting optics south africa dealers"],
+  "retailAnchor": true,
+  "minComps": 3,
+  "depreciation": {
+    "brandTiers": {
+      "PREMIUM": { "brands": ["Nightforce", "Schmidt & Bender", "Swarovski", "Zeiss", "Leica", "US Optics"], "pctByConditionAndAge": { "NEW_OR_LT1YR": 0.85, "EXCELLENT_1_3YR": 0.75, "GOOD_3_7YR": 0.62, "FAIR_OR_7YR_PLUS": 0.45, "POOR": 0.30 } },
+      "MID":     { "brands": ["Vortex", "Leupold", "Nikon", "Bushnell Elite", "Burris", "Hawke"], "pctByConditionAndAge": { "NEW_OR_LT1YR": 0.78, "EXCELLENT_1_3YR": 0.65, "GOOD_3_7YR": 0.52, "FAIR_OR_7YR_PLUS": 0.38, "POOR": 0.25 } },
+      "ENTRY":   { "brands": ["Bushnell", "Yukon", "Barska", "no-name"], "pctByConditionAndAge": { "NEW_OR_LT1YR": 0.70, "EXCELLENT_1_3YR": 0.55, "GOOD_3_7YR": 0.42, "FAIR_OR_7YR_PLUS": 0.30, "POOR": 0.18 } }
+    },
+    "compOverride": "If 3 or more filtered used comps exist for the exact model, the comp median wins over the depreciation formula; the formula is the fallback and a result more than 25% away from it drops confidence one notch."
+  },
+  "unitCommodity": null,
+  "legalFlags": [],
+  "matchDimensions": [
+    { "key": "magnification", "label": "Magnification", "kind": "categorical", "critical": true },
+    { "key": "tubeSize", "label": "Tube size", "kind": "categorical", "critical": false },
+    { "key": "reticle", "label": "Reticle", "kind": "categorical", "critical": false }
+  ],
+  "matchWeights": { "EXACT_MODEL": 1, "SAME_MODEL_DIFF_SPEC": 0.6, "SAME_BRAND_CLASS": 0.3 },
+  "matchConfidenceCap": { "DIFF_SPEC": "MEDIUM", "BRAND_CLASS": "LOW" },
+  "listingConstraints": { "shippingMethods": ["COURIER", "LOCKER", "DEALER_TRANSFER", "PRIVATE_ARRANGE"], "requiresDealerTransferOffer": false }
+}

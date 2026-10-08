@@ -111,6 +111,19 @@ const PRICES: Record<string, ModelPrice> = {
     outputPerMillion: 0,
     cachedInputPerMillion: 0.042,
   },
+  /**
+   * Qwen3.8-Flash — the Value My Item valuation engine.
+   *
+   * ⚠️ PLACEHOLDER RATES. The operator must confirm these against the Qwen
+   * Cloud pricing page before trusting the spend chart; a wrong number here
+   * under- or over-reports valuation spend only, and the ledger still records
+   * every token. Kept non-zero so a valuation call is never booked as free.
+   */
+  'qwen3.8-flash': {
+    inputPerMillion: 0.15,
+    outputPerMillion: 0.6,
+    cachedInputPerMillion: 0.03,
+  },
 };
 
 /**

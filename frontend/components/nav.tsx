@@ -183,6 +183,7 @@ export function Nav() {
   const SHOP_LINKS = [
     { href: '/?listingType=BUY_NOW', label: 'Buy Now' },
     { href: '/?listingType=AUCTION', label: 'Auctions' },
+    { href: '/value', label: 'Value' },
   ];
 
   // Account menu items now live in lib/account-menu.tsx (ACCOUNT_GROUPS) so the

@@ -1,0 +1,39 @@
+{
+  "categorySlug": "firearms",
+  "strategy": "COMP_MATCHED",
+  "strategyPrompt": "Valuation strategy: COMP-MATCHED (serialised gun). Match make, model, variant and caliber to live South African listings of the same model. Condition and round count move the price within the comp spread; accuracy answers (group size at distance) support the upper half of the spread. Value fitted or included accessories separately (scope, moderator, bipod, sling, dies, case) as ACCESSORY entries. Always find the current new SA retail price as an anchor even though used comps lead. If the variant is unconfirmed, widen the range rather than picking a variant.",
+  "photoChecklist": [
+    { "tag": "SIDE_PROFILE", "label": "Full side profile",        "priority": 1, "required": true,  "hint": "Whole firearm, left side" },
+    { "tag": "BARREL_STAMP", "label": "Barrel or caliber stamp",  "priority": 2, "required": true,  "hint": "Close-up of the stamped markings" },
+    { "tag": "RECEIVER",     "label": "Receiver and action",      "priority": 3, "required": false, "hint": "Bolt open if possible" },
+    { "tag": "OPTIC",        "label": "Scope or sights",          "priority": 4, "required": false, "hint": "Include the magnification ring if fitted" },
+    { "tag": "MUZZLE",       "label": "Muzzle end",               "priority": 5, "required": false, "hint": "Shows brakes or moderators" }
+  ],
+  "seedQuestions": [
+    { "id": "q1", "kind": "CONFIRM_KEY_IDENTIFIERS", "text": "Confirm the exact model and caliber", "type": "single", "options": [], "allow_custom": true, "allow_unsure": false, "required": true },
+    { "id": "qf_action", "kind": "ACTION_TYPE", "text": "What action does it use?", "type": "single", "options": ["Bolt-action", "Lever-action", "Pump-action", "Semi-automatic", "Break-action (side-by-side)", "Break-action (over-under)", "Single-shot"], "allow_custom": true, "allow_unsure": true, "required": false },
+    { "id": "qf_rounds", "kind": "USAGE", "text": "Approximate round count?", "type": "single", "options": ["Under 100", "100-500", "500-2000", "2000+"], "allow_custom": true, "allow_unsure": true, "required": true },
+    { "id": "qf_shoots", "kind": "ACCURACY", "text": "How does it shoot?", "type": "single", "options": ["Sub-MOA", "1-2 MOA (typical hunting)", "2-3 MOA", "Never benched"], "allow_custom": true, "allow_unsure": true, "required": false },
+    { "id": "qf_mods", "kind": "CONDITION", "text": "Any modifications or repairs?", "type": "multi", "options": ["Trigger job", "Bedded stock", "Threaded muzzle", "Refinished", "None"], "allow_custom": true, "allow_unsure": true, "required": false },
+    { "id": "qf_extras", "kind": "ACCESSORIES", "text": "What is included?", "type": "multi", "options": ["Scope fitted", "Moderator", "Sling", "Case", "Box and papers", "Firearm only"], "allow_custom": true, "allow_unsure": true, "required": false }
+  ],
+  "valueDrivers": ["variant", "caliber", "condition", "roundCount", "modifications", "accuracy", "includedExtras", "packaging"],
+  "bannedTopicPatterns": [],
+  "bannedItemPatterns": ["full\\s*auto"],
+  "searchSources": ["gunafrica.com", "gunsammo.co.za", "bidorbuy.co.za", "SA dealer stores"],
+  "retailAnchor": true,
+  "minComps": 3,
+  "depreciation": null,
+  "unitCommodity": null,
+  "legalFlags": [
+    { "flag": "FIREARM_TRANSFER", "message": "This is a firearm. Sales use dealer transfer or private arrangement. Make sure the transfer requirements are in order before publishing the ad." }
+  ],
+  "matchDimensions": [
+    { "key": "calibre", "label": "Calibre", "kind": "categorical", "critical": true },
+    { "key": "action", "label": "Action", "kind": "categorical", "critical": true },
+    { "key": "variant", "label": "Variant", "kind": "categorical", "critical": false }
+  ],
+  "matchWeights": { "EXACT_MODEL": 1, "SAME_MODEL_DIFF_SPEC": 0.6, "SAME_BRAND_CLASS": 0.3 },
+  "matchConfidenceCap": { "DIFF_SPEC": "MEDIUM", "BRAND_CLASS": "LOW" },
+  "listingConstraints": { "shippingMethods": ["DEALER_TRANSFER", "PRIVATE_ARRANGE"], "requiresDealerTransferOffer": true }
+}

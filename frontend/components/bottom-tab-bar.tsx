@@ -627,6 +627,14 @@ export function BottomTabBar() {
       // No `action` — this is a real Link, not a sheet.
     },
     {
+      // Value My Item: the AI valuation surface. Sits beside the commerce
+      // tabs; opens the /value flow (member-gated inside the page).
+      key: 'value',
+      label: 'Value',
+      href: '/value',
+      isActive: (p) => p.startsWith('/value'),
+    },
+    {
       // ⚠️ "Account", NOT "More" — and a route, not a sheet. "More" is a name
       // for a place with no idea what is in it. The sheet it opened rendered
       // ACCOUNT_GROUPS from lib/account-menu-data; /account renders the same
@@ -647,6 +655,8 @@ export function BottomTabBar() {
         return <IconSearch />;
       case 'orders':
         return <IconBox />;
+      case 'value':
+        return <IconSparkles />;
       case 'account':
         // The badge, NOT the bell, is the thing that had to survive the tab
         // rename: it only renders when alertsCount > 0, polls via active-count,

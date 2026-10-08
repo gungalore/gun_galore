@@ -53,6 +53,7 @@ import { ManualPaymentsModule } from './manual-payments/manual-payments.module';
 import { MyShipmentsModule } from './my-shipments/my-shipments.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { FeedModule } from './feed/feed.module';
+import { ValuationModule } from './valuation/valuation.module';
 
 @Module({
   imports: [
@@ -123,6 +124,7 @@ import { FeedModule } from './feed/feed.module';
     ActivityModule,
     WhatsappModule,
     FeedModule,
+    ValuationModule,
   ],
   controllers: [AppController],
   providers: [

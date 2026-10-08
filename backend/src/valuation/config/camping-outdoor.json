@@ -1,0 +1,45 @@
+{
+  "categorySlug": "camping-outdoor",
+  "strategy": "RETAIL_ANCHOR",
+  "strategyPrompt": "Valuation strategy: RETAIL ANCHOR WITH DEPRECIATION. 1) Find the current new South African retail price of this exact model (Cape Union Mart, Outdoor Warehouse, Camp Cover, Takealot listings from SA sellers, brand distributor sites; take the lowest current in-stock ZAR price as the anchor). 2) Find used comps of the same model or, failing that, the same brand and class. 3) The backend applies the depreciation table for the brand tier and condition; your job is the anchor, the comps, and splitting out included extras (footprint, inner tent, repair kit, stuff sack) as ACCESSORY entries. Missing poles, broken zips or delaminated coating belong in the condition assessment and unverified list.",
+  "photoChecklist": [
+    { "tag": "PITCHED",      "label": "Pitched or fully unfolded view", "priority": 1, "required": true,  "hint": "Shows shape, size and overall condition" },
+    { "tag": "LABEL_OR_TAG", "label": "Brand label or tag",             "priority": 2, "required": true,  "hint": "Model name, capacity, materials" },
+    { "tag": "FLOOR_SEAMS",  "label": "Floor and seams",                "priority": 3, "required": false, "hint": "Wear, tape condition, waterproofing" },
+    { "tag": "POLES_ZIPS",   "label": "Poles, zips and hardware",       "priority": 4, "required": false, "hint": "Bends, rust, missing parts" },
+    { "tag": "PACKED",       "label": "Packed in its bag",              "priority": 5, "required": false, "hint": "Shows packed size and bag condition" },
+    { "tag": "INCLUDED",     "label": "Extras included",                "priority": 6, "required": false, "hint": "Footprint, pegs, guy lines, repair kit" }
+  ],
+  "seedQuestions": [
+    { "id": "q1", "kind": "CONFIRM_KEY_IDENTIFIERS", "text": "Confirm the exact make and model, and how many people it sleeps", "type": "single", "options": [], "allow_custom": true, "allow_unsure": false, "required": true },
+    { "id": "qc_seasons", "kind": "SIZE", "text": "Seasons rating (if marked)?", "type": "single", "options": ["2-season", "3-season", "4-season", "Not marked"], "allow_custom": true, "allow_unsure": true, "required": false },
+    { "id": "qc_water", "kind": "CONDITION", "text": "Any waterproofing problems?", "type": "single", "options": ["None, still dry", "Seam tape lifting", "Leaks in rain", "Never tested"], "allow_custom": true, "allow_unsure": true, "required": true },
+    { "id": "qc_missing", "kind": "ACCESSORIES", "text": "Anything missing?", "type": "multi", "options": ["Poles", "Pegs", "Inner tent", "Footprint", "Stuff sack", "All complete"], "allow_custom": true, "allow_unsure": true, "required": true },
+    { "id": "qc_uses", "kind": "USAGE", "text": "How much was it used?", "type": "single", "options": ["Never used", "Under 10 nights", "10-50 nights", "Heavy use"], "allow_custom": true, "allow_unsure": true, "required": false },
+    { "id": "qc_age", "kind": "AGE", "text": "How old is it?", "type": "single", "options": ["Under 1 year", "1-3 years", "3-7 years", "7+ years"], "allow_custom": true, "allow_unsure": true, "required": false }
+  ],
+  "valueDrivers": ["model", "capacity", "seasonsRating", "waterproofing", "missingParts", "usage", "includedExtras"],
+  "bannedTopicPatterns": [],
+  "bannedItemPatterns": [],
+  "searchSources": ["bidorbuy.co.za", "facebook marketplace south africa", "cape union mart", "outdoor warehouse", "camp cover", "takealot (SA sellers)"],
+  "retailAnchor": true,
+  "minComps": 3,
+  "depreciation": {
+    "brandTiers": {
+      "PREMIUM": { "brands": ["MSR", "Hilleberg", "Big Agnes", "Nemo", "Sea to Summit", "Snow Peak"], "pctByConditionAndAge": { "NEW_OR_LT1YR": 0.80, "EXCELLENT_1_3YR": 0.68, "GOOD_3_7YR": 0.55, "FAIR_OR_7YR_PLUS": 0.40, "POOR": 0.25 } },
+      "MID":     { "brands": ["Kovea", "Ferrino", "Coleman", "Vango", "Oztent", "Eco", "Howler"], "pctByConditionAndAge": { "NEW_OR_LT1YR": 0.72, "EXCELLENT_1_3YR": 0.60, "GOOD_3_7YR": 0.47, "FAIR_OR_7YR_PLUS": 0.33, "POOR": 0.20 } },
+      "ENTRY":   { "brands": ["no-name", "house brands", "unbranded"], "pctByConditionAndAge": { "NEW_OR_LT1YR": 0.62, "EXCELLENT_1_3YR": 0.50, "GOOD_3_7YR": 0.38, "FAIR_OR_7YR_PLUS": 0.25, "POOR": 0.15 } }
+    },
+    "compOverride": "If 3 or more filtered used comps exist for the exact model, the comp median wins over the depreciation formula; the formula is the fallback and a result more than 25% away from it drops confidence one notch."
+  },
+  "unitCommodity": null,
+  "legalFlags": [],
+  "matchDimensions": [
+    { "key": "capacity", "label": "Capacity", "kind": "numeric", "unit": "L", "tolerancePct": 20, "critical": true },
+    { "key": "persons", "label": "Sleeps", "kind": "numeric", "tolerancePct": 0, "critical": true },
+    { "key": "seasons", "label": "Seasons rating", "kind": "categorical", "critical": false }
+  ],
+  "matchWeights": { "EXACT_MODEL": 1, "SAME_MODEL_DIFF_SPEC": 0.6, "SAME_BRAND_CLASS": 0.3 },
+  "matchConfidenceCap": { "DIFF_SPEC": "MEDIUM", "BRAND_CLASS": "LOW" },
+  "listingConstraints": { "shippingMethods": ["COURIER", "LOCKER"], "requiresDealerTransferOffer": false }
+}

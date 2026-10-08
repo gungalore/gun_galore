@@ -30,6 +30,7 @@ import { AnthropicProvider } from './anthropic.provider';
 import { DeepSeekProvider } from './deepseek.provider';
 import { GeminiProvider } from './gemini.provider';
 import { JevClient } from './jev.client';
+import { QwenProvider } from './qwen.provider';
 import { costUsdMicros } from './llm.pricing';
 import type { LlmProviderClient } from './provider.interface';
 import {
@@ -62,6 +63,7 @@ export const LLM_GEMINI_PROVIDER = Symbol('LLM_GEMINI_PROVIDER');
 export const LLM_ANTHROPIC_PROVIDER = Symbol('LLM_ANTHROPIC_PROVIDER');
 export const LLM_DEEPSEEK_PROVIDER = Symbol('LLM_DEEPSEEK_PROVIDER');
 export const LLM_JEV_CLIENT = Symbol('LLM_JEV_CLIENT');
+export const LLM_QWEN_PROVIDER = Symbol('LLM_QWEN_PROVIDER');
 
 @Injectable()
 export class LlmService {
@@ -69,6 +71,7 @@ export class LlmService {
   private readonly gemini: LlmProviderClient;
   private readonly anthropic: LlmProviderClient;
   private readonly deepseek: LlmProviderClient;
+  private readonly qwen: LlmProviderClient;
   private readonly jev: JevClient;
 
   constructor(
@@ -79,11 +82,13 @@ export class LlmService {
     @Optional() @Inject(LLM_GEMINI_PROVIDER) gemini?: LlmProviderClient,
     @Optional() @Inject(LLM_ANTHROPIC_PROVIDER) anthropic?: LlmProviderClient,
     @Optional() @Inject(LLM_DEEPSEEK_PROVIDER) deepseek?: LlmProviderClient,
+    @Optional() @Inject(LLM_QWEN_PROVIDER) qwen?: LlmProviderClient,
     @Optional() @Inject(LLM_JEV_CLIENT) jev?: JevClient,
   ) {
     this.gemini = gemini ?? new GeminiProvider();
     this.anthropic = anthropic ?? new AnthropicProvider();
     this.deepseek = deepseek ?? new DeepSeekProvider();
+    this.qwen = qwen ?? new QwenProvider();
     this.jev = jev ?? new JevClient();
   }
 
@@ -127,6 +132,7 @@ export class LlmService {
     if (explicit === 'anthropic') return this.anthropic;
     if (explicit === 'deepseek') return this.deepseek;
     if (explicit === 'gemini') return this.gemini;
+    if (explicit === 'qwen') return this.qwen;
     // ⚠️ VIDEO IS GEMINI-ONLY ON THIS PLATFORM. A video moderation call must
     // not fall through to DeepSeek (whose vision path rejects video) just
     // because a global LLM_PROVIDER switch is set. An explicit per-purpose env
@@ -141,6 +147,11 @@ export class LlmService {
     // opposite of the decision. An explicit per-purpose env var still wins.
     if (purpose === 'moderation.escalation') return this.deepseek;
     if (purpose.endsWith('.images')) return this.deepseek;
+    // ⚠️ VALUATION PURPOSES RUN ON QWEN. The Value My Item engine needs
+    // JSON-schema output with a multi-turn backend tool loop; a platform-wide
+    // LLM_PROVIDER switch must not move it. An explicit per-purpose env var
+    // still wins, above.
+    if (purpose.startsWith('valuation.')) return this.qwen;
     const name = process.env.LLM_PROVIDER ?? 'gemini';
     if (name === 'anthropic') return this.anthropic;
     if (name === 'deepseek') return this.deepseek;

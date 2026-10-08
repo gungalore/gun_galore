@@ -1,0 +1,36 @@
+{
+  "categorySlug": "overlanding",
+  "strategy": "VALUE_EQUIPMENT",
+  "strategyPrompt": "Valuation strategy: EQUIPMENT THAT HOLDS VALUE. Match make and model to live South African listings (off-road caravans, trailers, roof racks, awnings, fridges, 12V systems, recovery gear). Compatibility and fitment drive demand: for a caravan or trailer, the exact make and model matter, and included extras (tent, awning, fridge slide, solar, water tanks, brakes) are worth real money and are valued separately as ACCESSORY entries. Age lowers value but is not a spec difference, so do not tag a year difference as a spec diff. Find the current new or last-known retail price as an anchor when the model is still sold. Prefer the most recent listings.",
+  "photoChecklist": [
+    { "tag": "WHOLE_UNIT",      "label": "Whole unit, side view",   "priority": 1, "required": true,  "hint": "Full trailer or caravan from the side" },
+    { "tag": "LABEL_OR_PLATE",  "label": "Make and model plate",    "priority": 2, "required": true,  "hint": "Brand and model markings, and the serial plate" },
+    { "tag": "TENT_AWNING",     "label": "Tent and awning",         "priority": 3, "required": false, "hint": "Canvas, poles, sides, storm straps" },
+    { "tag": "ELECTRICAL",      "label": "Electrical and battery",  "priority": 4, "required": false, "hint": "12V/230V, solar, inverter, plugs" },
+    { "tag": "WHEELS_BRAKES",   "label": "Wheels and brakes",       "priority": 5, "required": false, "hint": "Tyres, rims, braking system, jockey wheel" },
+    { "tag": "INCLUDED",        "label": "Included extras",         "priority": 6, "required": false, "hint": "Fridge slide, groundsheet, water tanks, spare wheel" }
+  ],
+  "seedQuestions": [
+    { "id": "q1", "kind": "CONFIRM_KEY_IDENTIFIERS", "text": "Confirm the exact make and model, and the year", "type": "single", "options": [], "allow_custom": true, "allow_unsure": false, "required": true },
+    { "id": "qo_age", "kind": "AGE", "text": "What year was it built?", "type": "single", "options": ["Under 1 year", "1-3 years", "3-7 years", "7+ years"], "allow_custom": true, "allow_unsure": true, "required": false },
+    { "id": "qo_cond", "kind": "CONDITION", "text": "Overall condition?", "type": "single", "options": ["New or as-new", "Excellent", "Good - minor wear", "Fair - needs work"], "allow_custom": true, "allow_unsure": true, "required": false },
+    { "id": "qo_extras", "kind": "ACCESSORIES", "text": "What is included?", "type": "multi", "options": ["Tent and awning", "Fridge or slide", "Solar and battery", "Water tanks", "Groundsheet", "Nothing else"], "allow_custom": true, "allow_unsure": true, "required": false }
+  ],
+  "valueDrivers": ["make", "model", "year", "condition", "includedExtras", "fitment", "capacity"],
+  "bannedTopicPatterns": [],
+  "bannedItemPatterns": [],
+  "searchSources": ["bidorbuy.co.za", "gumtree south africa", "facebook marketplace south africa", "caravan and trailer dealers south africa", "campworld"],
+  "retailAnchor": true,
+  "minComps": 3,
+  "depreciation": null,
+  "unitCommodity": null,
+  "legalFlags": [],
+  "matchDimensions": [
+    { "key": "make", "label": "Make", "kind": "categorical", "critical": true },
+    { "key": "model", "label": "Model", "kind": "categorical", "critical": true },
+    { "key": "variant", "label": "Variant or configuration", "kind": "categorical", "critical": false }
+  ],
+  "matchWeights": { "EXACT_MODEL": 1, "SAME_MODEL_DIFF_SPEC": 0.6, "SAME_BRAND_CLASS": 0.3 },
+  "matchConfidenceCap": { "DIFF_SPEC": "MEDIUM", "BRAND_CLASS": "LOW" },
+  "listingConstraints": { "shippingMethods": ["COURIER", "LOCKER"], "requiresDealerTransferOffer": false }
+}

@@ -1,0 +1,38 @@
+{
+  "categorySlug": "knives",
+  "strategy": "COMP_MATCHED",
+  "strategyPrompt": "Valuation strategy: COMP-MATCHED. Match maker, model, blade length and steel to live South African listings of the same knife. Handmade or limited runs often have few comps: widen to the same maker and similar size, and say so in unverified. Condition drivers: edge chips, rust spots, handle damage, sharpening history (a heavily resharpened blade is worth less; ask). Value the sheath or box separately when it is a maker original. Find the current new SA price from knife retailers as an anchor.",
+  "photoChecklist": [
+    { "tag": "SIDE_A",     "label": "Full blade, one side",   "priority": 1, "required": true,  "hint": "Shows profile, maker mark and finish" },
+    { "tag": "SIDE_B",     "label": "Full blade, other side", "priority": 2, "required": false, "hint": "Locks, stamps, unique engraving if any" },
+    { "tag": "EDGE",       "label": "Blade edge close-up",    "priority": 3, "required": true,  "hint": "Chips, rust, sharpening wear" },
+    { "tag": "MAKER_MARK", "label": "Maker mark or stamp",    "priority": 4, "required": true,  "hint": "Legible brand and model text" },
+    { "tag": "HANDLE",     "label": "Handle and scales",      "priority": 5, "required": false, "hint": "Material, cracks, play" },
+    { "tag": "SHEATH",     "label": "Sheath or box",          "priority": 6, "required": false, "hint": "Everything included in the sale" }
+  ],
+  "seedQuestions": [
+    { "id": "q1", "kind": "CONFIRM_KEY_IDENTIFIERS", "text": "Confirm the maker and model, plus blade length and steel if known", "type": "single", "options": [], "allow_custom": true, "allow_unsure": false, "required": true },
+    { "id": "qk_steel", "kind": "SIZE", "text": "Blade steel (if marked or known)?", "type": "single", "options": ["Stainless (marked)", "Carbon steel", "Unknown"], "allow_custom": true, "allow_unsure": true, "required": false },
+    { "id": "qk_edge", "kind": "CONDITION", "text": "Edge condition?", "type": "single", "options": ["Factory sharp", "Sharpened, no damage", "Chips or rolled edge", "Rust present"], "allow_custom": true, "allow_unsure": true, "required": true },
+    { "id": "qk_sheath", "kind": "ACCESSORIES", "text": "Original sheath or box included?", "type": "single", "options": ["Both", "Sheath only", "Box only", "Neither"], "allow_custom": true, "allow_unsure": true, "required": false },
+    { "id": "qk_custom", "kind": "USAGE", "text": "Is it a custom, limited run or shop knife?", "type": "single", "options": ["Shop production", "Limited run", "Custom or handmade", "Not sure"], "allow_custom": true, "allow_unsure": true, "required": false }
+  ],
+  "valueDrivers": ["maker", "model", "bladeLength", "steel", "edgeCondition", "handleCondition", "sheath", "limitedRun"],
+  "bannedTopicPatterns": ["carry\\s+(legal|law)", "self.?defence\\s+(legal|permit)"],
+  "bannedItemPatterns": ["switchblade", "automatic\\s+knife", "flick\\s*knife", "knuckle"],
+  "searchSources": ["bidorbuy.co.za", "facebook marketplace south africa", "knife maker south africa", "SA knife retailers", "bladesmiths forum classifieds (SA sellers only)"],
+  "retailAnchor": true,
+  "minComps": 3,
+  "depreciation": null,
+  "unitCommodity": null,
+  "legalFlags": [
+    { "flag": "KNIFE_LEGAL_CHECK", "message": "Check that this type of knife can be lawfully carried and sold where you are before publishing the ad." }
+  ],
+  "matchDimensions": [
+    { "key": "bladeLength", "label": "Blade length", "kind": "numeric", "unit": "in", "tolerancePct": 15, "critical": true },
+    { "key": "steel", "label": "Steel", "kind": "categorical", "critical": false }
+  ],
+  "matchWeights": { "EXACT_MODEL": 1, "SAME_MODEL_DIFF_SPEC": 0.6, "SAME_BRAND_CLASS": 0.3 },
+  "matchConfidenceCap": { "DIFF_SPEC": "MEDIUM", "BRAND_CLASS": "LOW" },
+  "listingConstraints": { "shippingMethods": ["COURIER", "LOCKER"], "requiresDealerTransferOffer": false }
+}
