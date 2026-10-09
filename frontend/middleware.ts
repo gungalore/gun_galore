@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 // never call. We verify a JWS; this is the only entry point we need.
 import { jwtVerify } from 'jose/jwt/verify';
 import { routeMatcher } from './lib/route-matcher';
+import { isSessionFreeKycLanding } from './lib/kyc-return';
 
 // ⚠️ The matcher lives in lib/route-matcher.ts WITH A SPEC, not inline here.
 // It decides which pages a signed-out visitor can see, and the failure that
@@ -259,10 +260,15 @@ export default async function middleware(request: NextRequest) {
     // post-payment verification for any buyer without the preview
     // cookie. The page itself is harmless — it only calls the public,
     // amount-bound verify-result API.
+    //
+    // /kyc/verify?returned=1 is the identity equivalent: Didit returns the
+    // member here from its hosted page, in a browser context that may hold no
+    // session at all (an installed PWA opens Didit in Safari, which does not
+    // share the app's cookies). See the matching Clerk exemption below.
     const isTokenAuthedPage =
       url.pathname === '/checkout/complete' ||
+      isSessionFreeKycLanding(url.pathname, url.searchParams) ||
       ((url.pathname.startsWith('/checkout/') ||
-        url.pathname === '/kyc/verify' ||
         // ⚠️ THE HANDOFF NEEDS BOTH LISTS. Public-route alone gets the phone
         // past Clerk and then straight into a rewrite to /coming-soon, which
         // reads as the QR code being broken. Same trap the KYC verify page
@@ -304,10 +310,20 @@ export default async function middleware(request: NextRequest) {
   // can land in a separate browser context). Bouncing them to sign-in
   // would skip payment verification entirely. The page only calls the
   // public verify-result API, which binds on txId + amount server-side.
+  // ⚠️ /kyc/verify?returned=1 JOINS /checkout/complete IN BYPASSING CLERK
+  // UNCONDITIONALLY, for the same reason: Didit returns the member from its
+  // hosted page in whatever browser context opened it, and on an installed PWA
+  // that is Safari — a separate cookie store with no session. Bouncing them to
+  // sign-in there dead-ends the identity verification they just completed. The
+  // page reads no members data while signed out (see the landed-return branch
+  // in app/kyc/verify/page.tsx); every API behind it still enforces auth.
   if (
     request.nextUrl.pathname === '/checkout/complete' ||
-    ((request.nextUrl.pathname.startsWith('/checkout/') ||
-      request.nextUrl.pathname === '/kyc/verify') &&
+    isSessionFreeKycLanding(
+      request.nextUrl.pathname,
+      request.nextUrl.searchParams,
+    ) ||
+    (request.nextUrl.pathname.startsWith('/checkout/') &&
       request.nextUrl.searchParams.has('t'))
   ) {
     return;

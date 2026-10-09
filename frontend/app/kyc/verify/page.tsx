@@ -41,6 +41,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../lib/auth';
 import { useStandalone } from '@/lib/use-standalone';
+import { KYC_RETURN_KEY, safeReturnPath } from '@/lib/kyc-return';
 import { StepRail, type StepRailStep } from '@/components/step-rail';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -107,6 +108,34 @@ export default function KycVerifyPage() {
   // the whole point is that the phone is not signed in.
   const actionToken = params.get('t');
   const returnTo = params.get('returnTo');
+  // ⚠️ DIDIT'S CALLBACK DROPS OUR QUERY STRING. It returns the member to
+  // `/kyc/verify?returned=1&verificationSessionId=…&status=…`, so `returnTo`
+  // is gone by the time they are back. It is parked in localStorage the moment
+  // we first see it and read again on the callback, so the round-trip still
+  // lands where they started.
+  // Didit appends `returned=1` to the callback, on top of its own
+  // verificationSessionId/status. It is our only marker that this load is the
+  // return from the hosted page rather than an ordinary visit.
+  const returned = params.get('returned') === '1';
+  const explicitReturn = safeReturnPath(returnTo);
+  const [dest, setDest] = useState<string | null>(explicitReturn);
+
+  useEffect(() => {
+    if (explicitReturn) {
+      try {
+        localStorage.setItem(KYC_RETURN_KEY, explicitReturn);
+      } catch {
+        // Private mode / storage disabled — falls back to the profile.
+      }
+      return;
+    }
+    try {
+      const stored = safeReturnPath(localStorage.getItem(KYC_RETURN_KEY));
+      if (stored) setDest(stored);
+    } catch {
+      // Ignore — dest stays null and the target defaults to the profile.
+    }
+  }, [explicitReturn]);
 
   const [status, setStatus] = useState<KycStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -179,12 +208,31 @@ export default function KycVerifyPage() {
     return () => clearTimeout(t);
   }, [smsCooldown]);
 
-  // Success bounces back where they came from, after a beat to read it.
+  // ⚠️ A VERIFIED MEMBER BELONGS ON THEIR PROFILE, NOT HERE. The Didit round
+  // trip lands them back on this page with no query of ours, so `dest` is only
+  // set when they started from a real `returnTo`. Otherwise the profile is the
+  // right home — it is where the verification status lives and where the member
+  // was headed when they began. `/` would strand them on the shop front.
+  const target = dest ?? '/profile';
+
+  // Leave the wizard for good.
+  const finish = useCallback(() => {
+    try {
+      localStorage.removeItem(KYC_RETURN_KEY);
+    } catch {
+      // Non-fatal.
+    }
+    router.push(target);
+  }, [target, router]);
+
+  // A finished verification always bounces onward after a beat to read it —
+  // whether the member came back from Didit or opened the wizard directly
+  // while already verified. The explicit button does the same immediately.
   useEffect(() => {
-    if (status?.nextStep !== 'done' || !returnTo) return;
-    const t = setTimeout(() => router.push(returnTo), 3000);
+    if (status?.nextStep !== 'done') return;
+    const t = setTimeout(finish, 3000);
     return () => clearTimeout(t);
-  }, [status?.nextStep, returnTo, router]);
+  }, [status?.nextStep, finish]);
 
   async function post(path: string, body?: object) {
     setBusy(true);
@@ -253,6 +301,45 @@ export default function KycVerifyPage() {
   // the mobile row. A zero here makes that undefined and the whole rail
   // silently renders nothing on a phone, which is the surface it matters on.
   const railIndex = step === 'consent' ? 1 : step === 'details' ? 2 : 3;
+
+  // ⚠️ THE SEPARATE-BROWSER RETURN. On an installed PWA, Didit opens in Safari,
+  // which does not share the PWA's session — so this landing has no session to
+  // poll with (the middleware exempts `returned=1` for exactly this, rather
+  // than bouncing it to sign-in). It cannot read the verdict, so it must not
+  // claim one; it only hands the member back to the app. No member data is
+  // fetched or shown on this branch.
+  if (returned && !actionToken && isLoaded && !isSignedIn) {
+    return (
+      <main className="mx-auto w-full max-w-lg px-4 py-8">
+        <h1
+          className="text-xl mb-1"
+          style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+        >
+          Verify your identity
+        </h1>
+        <section style={card} className="p-4 mt-6 flex flex-col gap-3">
+          <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+            Verification finished.
+          </p>
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            This page opened in a separate browser, so your sign-in did not
+            come with it. Head back to the ALL Outdoor app to continue.
+          </p>
+          <a
+            href={target}
+            style={{
+              ...primary,
+              display: 'block',
+              textAlign: 'center',
+              textDecoration: 'none',
+            }}
+          >
+            Return to ALL Outdoor
+          </a>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto w-full max-w-lg px-4 py-8">
@@ -444,13 +531,25 @@ export default function KycVerifyPage() {
       )}
 
       {status && step === 'done' && (
-        <section style={card} className="p-4 mt-6">
-          <p className="text-sm mb-2" style={{ color: 'var(--text-primary)' }}>
+        <section style={card} className="p-4 mt-6 flex flex-col gap-3">
+          <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
             ✓ You are verified.
           </p>
           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-            {returnTo ? 'Taking you back…' : 'You can sell on ALL Outdoor.'}
+            {target === '/profile'
+              ? 'Taking you to your profile…'
+              : 'Taking you back…'}
           </p>
+          {/*
+            ⚠️ THE ROUND-TRIP NEEDS A DOOR. Didit's hosted page ends on its own
+            "Continue", which returns the member HERE, not to the app — and the
+            callback carries none of our query, so the old auto-bounce (gated on
+            `returnTo`) never fired. Without this button the member is stranded
+            on a dead-end "you are verified" card with no way onward.
+          */}
+          <button type="button" onClick={finish} style={primary}>
+            {target === '/profile' ? 'Go to my profile' : 'Continue to ALL Outdoor'}
+          </button>
         </section>
       )}
 
