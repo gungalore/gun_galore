@@ -7,7 +7,7 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
-## 2026-10-09 — KYC: RESTARTABLE UNFINISHED SESSIONS (LOCAL, NOT DEPLOYED)
+## 2026-10-09 — KYC: RESTARTABLE UNFINISHED SESSIONS (DEPLOYED)
 
 **Why.** A new member (`ruandadb97@gmail.com` / `ruanda`) registered, gave
 consent and details, and created a Didit session at 19:17:58 — which stayed
@@ -27,9 +27,13 @@ same unfinished session (Didit idempotent while open) or mints a fresh one.
 `In Review` and unrecognised statuses still park in `UNDER_REVIEW` as before.
 Frontend unchanged: the existing `verify` step already renders Start / QR / SMS.
 
-**Verified locally:** backend `tsc` clean; `kyc.service.spec.ts` 31/31 (spec now
-splits the "parks in UNDER_REVIEW" case from a new "restartable" case, and adds a
-`getStatus` matrix row per restartable status). NOT committed, NOT deployed.
+**Verified + deployed.** `8464da9d` (`fix(kyc): restart unfinished Didit
+sessions instead of stranding them`). Gates: backend `tsc` clean + 314 suites /
+5288 tests; frontend `tsc` clean + 134 files / 1683 tests; frontend prod build
+exit 0. Full `infra/deploy/deploy.sh` (backend + frontend): rollback point
+`alloutdoor-20261009-215255.dump`, both health checks OK, public 200 ×2, pm2
+`alloutdoor-backend` / `alloutdoor-frontend` / `warden` online; server HEAD at
+`8464da9d`.
 
 **Follow-ups.** (1) No live browser pass of the restart path. (2) Existing
 production rows already in the stuck state are corrected on next `GET /kyc/status`
