@@ -132,6 +132,30 @@ const CARD_SCHEMA: Record<string, unknown> = {
   required: [...CARD_FIELDS, 'holder_id_number', 'holder_name'],
 };
 
+/**
+ * ⚠️ THE ID GETS ITS OWN SECOND PASS.
+ *
+ * The full card read is asked for fourteen fields at once, and the identity
+ * number is the one that matters most: it goes onto the consent the seller
+ * signs, and a miss leaves a box a stranger has to find and fill by hand. A
+ * single read occasionally returns every field but drops the ID — the number
+ * is small, and it is one of many things the model is transcribing. Asking
+ * again for that ONE field, on its own, is cheap and reliably recovers it.
+ *
+ * Only issued when the first read came back without an ID, so the common case
+ * still costs one call.
+ */
+const ID_ONLY_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: { holder_id_number: { type: 'string' } },
+  required: ['holder_id_number'],
+};
+
+const ID_ONLY_USER = `Return ONLY the holder's 13-digit South African identity number,
+digits only, exactly as printed on this licence card. If it is not visible or
+not legible, return an empty string. Do not guess and do not return any other
+field.`;
+
 @Injectable()
 export class LicenceCardOcrService {
   private readonly logger = new Logger(LicenceCardOcrService.name);
@@ -209,13 +233,60 @@ export class LicenceCardOcrService {
       );
     }
 
+    // ⚠️ THE ID FALLS BACK TO ITS OWN FOCUSED READ. See ID_ONLY_SCHEMA: the
+    // full read occasionally drops the smallest field on the card, and the ID
+    // is the one the seller must not be left to type by hand.
+    let holderIdNumber = readId(parsed.holder_id_number);
+    if (!holderIdNumber) {
+      holderIdNumber = await this.readIdOnly(bytes, mimeType);
+    }
+    if (!holderIdNumber) {
+      this.logger.warn(
+        'Licence-card read returned no holder ID (13 digits) from either pass',
+      );
+    }
+
     return {
       fields,
-      holderIdNumber: readId(parsed.holder_id_number),
+      holderIdNumber,
       holderNameOnCard: asText(parsed.holder_name) || undefined,
       rawText: text,
       ok: true,
     };
+  }
+
+  /** A second, focused read for the holder's ID alone. See ID_ONLY_SCHEMA. */
+  private async readIdOnly(
+    bytes: Buffer,
+    mimeType: string,
+  ): Promise<string | undefined> {
+    try {
+      const res = await this.llm.complete({
+        maxTokens: 40,
+        timeoutMs: 30_000,
+        system:
+          'You transcribe ONE field from a photograph of a South African SAPS firearm licence card.',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              blockFor(bytes, mimeType),
+              { type: 'text', text: ID_ONLY_USER },
+            ],
+          },
+        ],
+        thinking: { budgetTokens: 0 },
+        json: { schema: ID_ONLY_SCHEMA },
+        purpose: 'licence.card.read.id',
+      });
+      const parsed = JSON.parse(res.text) as Record<string, unknown>;
+      return readId(parsed.holder_id_number);
+    } catch (err) {
+      this.logger.warn(
+        `Licence-card ID re-read failed: ${(err as Error).message}`,
+      );
+      return undefined;
+    }
   }
 }
 
@@ -245,6 +316,15 @@ function asText(value: unknown): string {
 
 /** The holder's 13-digit identity number, or undefined. */
 function readId(value: unknown): string | undefined {
-  const digits = asText(value).replace(/\D/g, '');
+  // ⚠️ A NUMBER IS COERCED, NOT DROPPED. The schema asks for a string, but a
+  // model that returns the digits as a JSON number would otherwise be read as
+  // "no ID" — a silent miss on the one field the seller must not type himself.
+  const s =
+    typeof value === 'string'
+      ? value
+      : typeof value === 'number' && Number.isFinite(value)
+        ? String(value)
+        : '';
+  const digits = s.replace(/\D/g, '');
   return digits.length === 13 ? digits : undefined;
 }

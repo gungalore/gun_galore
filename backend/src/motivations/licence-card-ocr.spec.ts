@@ -140,6 +140,28 @@ describe('LicenceCardOcrService', () => {
     expect(spaced.holderIdNumber).toBe('8001015009087');
   });
 
+  it('⚠️ RE-READS THE ID ON ITS OWN WHEN THE FULL READ MISSES IT', async () => {
+    const complete = jest
+      .fn()
+      .mockResolvedValueOnce({
+        text: JSON.stringify({ ...GLOCK, holder_id_number: '' }),
+      })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({ holder_id_number: '8001015009087' }),
+      });
+    const r = await make(complete).read(Buffer.from('x'), 'image/jpeg');
+    expect(r.holderIdNumber).toBe('8001015009087');
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1][0].purpose).toBe('licence.card.read.id');
+  });
+
+  it('coerces an ID returned as a JSON number', async () => {
+    const r = await make(
+      reply({ ...GLOCK, holder_id_number: 8001015009087 }),
+    ).read(Buffer.from('x'), 'image/jpeg');
+    expect(r.holderIdNumber).toBe('8001015009087');
+  });
+
   it('asks the model with the image, a schema and its own purpose', async () => {
     const complete = reply(GLOCK);
     await make(complete).read(Buffer.from('abc'), 'image/png');

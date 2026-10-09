@@ -167,6 +167,25 @@ describe('LlmService', () => {
     expect(svc.model).toBe('');
   });
 
+  // ⚠️ The consent link's licence-card OCR must stay on Gemini 3.5 Flash-Lite
+  // whatever LLM_PROVIDER says. See the licence.card.* pin in providerFor.
+  it('⚠️ PINS THE LICENCE-CARD OCR TO GEMINI UNDER LLM_PROVIDER=deepseek', async () => {
+    process.env.LLM_PROVIDER = 'deepseek';
+    const { svc, gemini, deepseek } = build();
+    await svc.complete({
+      messages: [],
+      maxTokens: 10,
+      purpose: 'licence.card.read',
+    });
+    await svc.complete({
+      messages: [],
+      maxTokens: 10,
+      purpose: 'licence.card.read.id',
+    });
+    expect(gemini.calls).toHaveLength(2);
+    expect(deepseek.calls).toHaveLength(0);
+  });
+
   it('passes the resolved model down to the provider', async () => {
     process.env.LLM_MODEL = 'gemini-2.5-flash-lite';
     const { svc, gemini } = build();

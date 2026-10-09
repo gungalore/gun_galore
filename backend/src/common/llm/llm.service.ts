@@ -147,6 +147,14 @@ export class LlmService {
     // opposite of the decision. An explicit per-purpose env var still wins.
     if (purpose === 'moderation.escalation') return this.deepseek;
     if (purpose.endsWith('.images')) return this.deepseek;
+    // ⚠️ THE LICENCE-CARD OCR IS GEMINI-ONLY. Operator decision 2026-10-09:
+    // the seller's consent link reads the licence card on Gemini 3.5
+    // Flash-Lite, and that must not move. It is a vision call, so a global
+    // LLM_PROVIDER switch (or a DeepSeek default) pointed at a non-vision
+    // model would silently break the one field the seller must not type by
+    // hand — the 13-digit ID. Pinned for the same reason as video above. An
+    // explicit per-purpose env var still wins, above.
+    if (purpose.startsWith('licence.card.')) return this.gemini;
     // ⚠️ VALUATION PURPOSES RUN ON QWEN. The Value My Item engine needs
     // JSON-schema output with a multi-turn backend tool loop; a platform-wide
     // LLM_PROVIDER switch must not move it. An explicit per-purpose env var
