@@ -1029,12 +1029,15 @@ down posting. Operator decisions that scope this build:
   place + town, the `place_id` link is untouched).
 - **No privacy toggle** — there is no friends/follows graph; posts are
   member-visible.
-- **Everything is optional** (only the body is required) — fast posting first.
+- **Everything is optional** — and a post needs only ONE of text, a photo or
+  a video (2026-10-09). `submitPost` enforces the "at least one of three" rule;
+  a media-only post stores `body = ''`.
 - **Typed columns, not JSON** — the dead `gear Json?` was written but never
   read; it was **dropped** and replaced by real columns so the fields are
   filterable.
-- **Chips + free tags coexist**: chips are the one-tap common values; custom
-  wording still goes in `tags`.
+- **Detail fields accept free text** (2026-10-09): the vocabularies are
+  autocomplete *suggestions*, not gates. Custom wording can go in a detail
+  field directly as well as in `tags`.
 - Shared extras kept: a **date** (`occurredAt`) and a **1–5 gear rating**.
   Language and urgency were **not** added.
 
@@ -1059,15 +1062,19 @@ The **value sets live in `backend/src/feed/feed.types.ts`**, not as DB enums,
 so a vocabulary can grow without a migration: `POST_CHIP_VOCAB` (flair /
 species), `POST_SINGLE_VOCAB` (firearmType, waterType, siteType, gearCategory,
 gearCondition, context), `POST_NUMERIC_BOUNDS`, and `POST_DETAIL_FIELDS` (which
-fields each type accepts). `sanitisePostDetails(input, type)` is the single
-entry point: it strips any field not valid for the type, drops chip values
-outside the vocabulary, clamps numbers into range, and **omits keys the client
-did not send** (so an edit never wipes an untouched field).
-`looksLikeSerial()` refuses a `firearmModel` containing a 5+ digit run — model
-name only; serial numbers are never collected. DTOs (`create-post.dto.ts`,
-`update-post.dto.ts`) mirror the bounds; `feed-query.dto.ts` gained
-`species[]`, `calibre` and `minRating` filters, applied in `listFeed` and
-`searchFeed` via `detailWhere()`.
+fields each type accepts). ⚠️ **Since 2026-10-09 these vocabularies are
+suggestion seeds, not gates** (operator decision): `sanitisePostDetails(input,
+type)` still strips any field not valid for the type and clamps numbers into
+range, but `normaliseChipList`/`normaliseSingleValue` now accept **free text** —
+lowercased, spaces to hyphens, deduped, capped by count (`FEED_MAX_CHIPS`) and
+length (`FEED_MAX_CHIP_LENGTH` 32; `FEED_MAX_SINGLE_LENGTH` 32). A value is
+never dropped for being outside a vocabulary. The six single-select columns are
+`VarChar(32)` (migration `20261009130000_widen_post_single_columns`) so free text
+cannot overflow. `looksLikeSerial()` still refuses a `firearmModel` containing a
+5+ digit run — model name only; serial numbers are never collected. DTOs
+(`create-post.dto.ts`, `update-post.dto.ts`) mirror the bounds and make `body`
+optional; `feed-query.dto.ts` gained `species[]`, `calibre` and `minRating`
+filters, applied in `listFeed` and `searchFeed` via `detailWhere()`.
 
 ### Frontend
 
@@ -1081,3 +1088,46 @@ star rating — and remembers the member's choices between posts.
 `components/community/post-details.tsx` renders the stored details as a compact
 chip row, used by `post-card.tsx` (and therefore the permalink, which renders a
 `PostCard`).
+
+---
+
+## 20. Autocomplete detail fields + one-of-three posts (2026-10-09)
+
+Operator decisions that reshaped §19:
+
+1. **A post needs only ONE of text, a photo or a video.** The composer enables
+   Post when any one is present (`post-composer.tsx` `canPost`); `createPost`
+   accepts an empty body and `submitPost` (and `updatePost`) enforce the rule
+   server-side. `Post.body` stays NOT NULL — a media-only post stores `''`. The
+   moderation sweep (`tasks.service.ts`) never moderates a content-less post and
+   deletes never-submitted empty orphans after 24 h, so an abandoned create
+   cannot publish a blank card. The Jev **text** axis is skipped when there is
+   no text (`feed-moderation.service.ts`).
+2. **Free text everywhere.** The vocabularies are suggestions; see §19. A member
+   can type any word into any list-bearing field.
+3. **Every list-bearing field is a type-to-search box.** No more pill walls and
+   no more dropdowns. `frontend/components/community/vocab-combobox.tsx` is the
+   one control (`multiple` for species/flair, single otherwise; `storeMode`
+   `'slug'` for normalised fields, `'label'` for `calibre`/`testResult`).
+   Nothing renders until the member types; the placeholder is the only hint.
+
+### Vocabulary source and matching
+
+`frontend/lib/post-vocab.ts` holds the suggestion lists (species-hunting,
+species-fishing, the six flair lists, firearm-type, water-type, site-type,
+gear-category, gear-condition, context, test-result) with Afrikaans/colloquial
+**aliases**. Cartridges come from `frontend/lib/post-vocab-cartridges.ts`,
+generated from `backend/prisma/seed-data/grt-caliber.csv` (578 CIP names) by
+`backend/scripts/build-post-vocab-cartridges.ts`. Permit-huntable dangerous game
+is listed; legally protected species (rhino, African wild dog, pangolin) are
+not. Matching reuses the Bench's proven `fold()` (now in
+`frontend/lib/fold-text.ts`): lowercase, `×`→`x`, strip non-alphanumeric; rank
+exact → starts-with → word-start → substring; ties keep data-file order; 12
+shown.
+
+### What is NOT autocompleted
+
+Numeric fields (bullet weight, charge, size, distance, trip days), the star
+rating, the date, and `firearmModel` (no reliable list — free text). Charge
+weights are deliberately not suggested: a load-data-shaped number in a social
+post is not the Bench.

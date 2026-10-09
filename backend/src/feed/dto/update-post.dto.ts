@@ -9,11 +9,11 @@ import {
   Max,
   MaxLength,
   Min,
-  MinLength,
 } from 'class-validator';
 import {
   FEED_MAX_BODY,
   FEED_MAX_CHIPS,
+  FEED_MAX_SINGLE_LENGTH,
   FEED_MAX_TAGS,
   FEED_MAX_TITLE,
   POST_NUMERIC_BOUNDS,
@@ -25,9 +25,9 @@ export class UpdatePostDto {
   @MaxLength(FEED_MAX_TITLE)
   title?: string;
 
+  /** May be cleared ('' is valid) when the post still has a photo or video. */
   @IsOptional()
   @IsString()
-  @MinLength(1)
   @MaxLength(FEED_MAX_BODY)
   body?: string;
 
@@ -61,7 +61,7 @@ export class UpdatePostDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(20)
+  @MaxLength(FEED_MAX_SINGLE_LENGTH)
   firearmType?: string;
 
   @IsOptional()
@@ -90,7 +90,7 @@ export class UpdatePostDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(20)
+  @MaxLength(FEED_MAX_SINGLE_LENGTH)
   waterType?: string;
 
   @IsOptional()
@@ -109,7 +109,7 @@ export class UpdatePostDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(20)
+  @MaxLength(FEED_MAX_SINGLE_LENGTH)
   siteType?: string;
 
   @IsOptional()
@@ -121,7 +121,7 @@ export class UpdatePostDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(20)
+  @MaxLength(FEED_MAX_SINGLE_LENGTH)
   gearCategory?: string;
 
   @IsOptional()
@@ -133,11 +133,11 @@ export class UpdatePostDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(20)
+  @MaxLength(FEED_MAX_SINGLE_LENGTH)
   gearCondition?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(20)
+  @MaxLength(FEED_MAX_SINGLE_LENGTH)
   context?: string;
 }

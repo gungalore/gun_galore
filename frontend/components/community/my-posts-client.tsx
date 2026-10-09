@@ -455,7 +455,10 @@ export function MyPostsClient() {
               <button
                 type="button"
                 onClick={saveEdit}
-                disabled={saving || !editBody.trim()}
+                disabled={
+                  saving ||
+                  (!editBody.trim() && editing.images.length === 0 && !editing.video)
+                }
                 className="gg-press px-4 py-2 rounded-[6px] text-[13px] font-medium"
                 style={{ background: 'var(--red)', color: '#fff' }}
               >

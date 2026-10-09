@@ -46,9 +46,20 @@ export const POST_TYPES = Object.keys(POST_TYPE_LABELS) as PostType[];
 // ───────────────────────────────────────────────────────────────────────────
 
 export const FEED_MAX_CHIPS = 8;
-export const FEED_MAX_CHIP_LENGTH = 24;
+/** Max length of one chip value (species/flair). Arrays have no DB cap. */
+export const FEED_MAX_CHIP_LENGTH = 32;
+/** Max length of a single-select value. The six DB columns are VarChar(32). */
+export const FEED_MAX_SINGLE_LENGTH = 32;
 
-/** Multi-select chip values allowed per post type. */
+/**
+ * Multi-select chip values per post type.
+ *
+ * ⚠️ SUGGESTION SEEDS ONLY (operator decision 2026-10-09). The member may type
+ * any word; `normaliseChipList` normalises and caps, it does NOT drop values
+ * that are missing here. The composer's autocomplete draws from the richer
+ * frontend list in `frontend/lib/post-vocab.ts`; this seed is kept as the
+ * backend's record of the canonical slugs and for existing tests.
+ */
 export const POST_CHIP_VOCAB: Partial<
   Record<PostType, { flair?: readonly string[]; species?: readonly string[] }>
 > = {
@@ -114,7 +125,13 @@ export const POST_CHIP_VOCAB: Partial<
   },
 };
 
-/** Single-select fixed-vocabulary fields allowed per post type. */
+/**
+ * Single-select fixed-vocabulary fields per post type.
+ *
+ * ⚠️ SUGGESTION SEEDS ONLY (operator decision 2026-10-09) — see
+ * `POST_CHIP_VOCAB` above. Kept as the canonical slug record; no longer
+ * enforced on write.
+ */
 export const POST_SINGLE_VOCAB: Partial<
   Record<PostType, Partial<Record<PostSingleField, readonly string[]>>>
 > = {
@@ -178,25 +195,50 @@ export const POST_DETAIL_FIELDS: Record<PostType, readonly string[]> = {
   QUESTIONS_ADVICE: ['flair', 'context', 'occurredAt'],
 };
 
-/** Normalise a chip list to the allowed vocabulary (lowercase/hyphen), capped. */
-export function normaliseChipList(input: unknown, allowed: readonly string[]): string[] {
+/**
+ * Normalise a chip list (species/flair). Free text is accepted: values are
+ * lowercased, spaced to hyphens, deduped and capped by count and length. A
+ * value is never dropped for being outside a vocabulary — see POST_CHIP_VOCAB.
+ */
+export function normaliseChipList(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
   const out: string[] = [];
   for (const raw of input) {
     if (typeof raw !== 'string') continue;
-    const v = raw.trim().toLowerCase().replace(/\s+/g, '-');
-    if (!allowed.includes(v)) continue;
+    const v = raw
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .slice(0, FEED_MAX_CHIP_LENGTH);
+    if (!v) continue;
     if (!out.includes(v)) out.push(v);
     if (out.length >= FEED_MAX_CHIPS) break;
   }
   return out;
 }
 
-/** Keep a single-select value only when it is in the allowed vocabulary. */
-export function normaliseSingleValue(input: unknown, allowed: readonly string[]): string | null {
+/** The single-select detail columns, used by `sanitisePostDetails`. */
+export const POST_SINGLE_FIELDS: readonly PostSingleField[] = [
+  'firearmType',
+  'waterType',
+  'siteType',
+  'gearCategory',
+  'gearCondition',
+  'context',
+];
+
+/**
+ * Normalise a single-select value. Free text is accepted: lowercased, spaced to
+ * hyphens, capped at the column width. A value outside a vocabulary is kept.
+ */
+export function normaliseSingleValue(input: unknown): string | null {
   if (typeof input !== 'string') return null;
-  const v = input.trim().toLowerCase().replace(/\s+/g, '-');
-  return allowed.includes(v) ? v : null;
+  const v = input
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .slice(0, FEED_MAX_SINGLE_LENGTH);
+  return v || null;
 }
 
 /** Clamp a numeric detail field into its bound, or drop it when not a number. */
@@ -263,21 +305,17 @@ export function sanitisePostDetails(
   // a field the client did not send.
   const given = (k: string) => input[k] !== undefined;
 
-  const chips = POST_CHIP_VOCAB[type] ?? {};
-  if (allowed.has('flair') && chips.flair && given('flair')) {
-    out.flair = normaliseChipList(input.flair, chips.flair);
+  // Chips + singles accept free text now; only the field/type gate is enforced.
+  if (allowed.has('flair') && given('flair')) {
+    out.flair = normaliseChipList(input.flair);
   }
-  if (allowed.has('species') && chips.species && given('species')) {
-    out.species = normaliseChipList(input.species, chips.species);
+  if (allowed.has('species') && given('species')) {
+    out.species = normaliseChipList(input.species);
   }
 
-  const singles = POST_SINGLE_VOCAB[type] ?? {};
-  for (const [field, vocab] of Object.entries(singles)) {
-    if (!allowed.has(field) || !vocab || !given(field)) continue;
-    (out as Record<string, unknown>)[field] = normaliseSingleValue(
-      input[field],
-      vocab as readonly string[],
-    );
+  for (const field of POST_SINGLE_FIELDS) {
+    if (!allowed.has(field) || !given(field)) continue;
+    (out as Record<string, unknown>)[field] = normaliseSingleValue(input[field]);
   }
 
   const numerics: PostNumericField[] = [

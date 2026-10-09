@@ -248,8 +248,20 @@ export class FeedModerationService {
       return pendingVerdict(['moderation_unavailable']);
     }
 
+    // A photo-only post has no text to screen — don't spend a Jev call on an
+    // empty string (operator decision 2026-10-09: media-only posts are valid).
+    const textHasContent = (input.text ?? '').trim().length > 0;
     const [text, images] = await Promise.all([
-      this.moderateFeedText(input),
+      textHasContent
+        ? this.moderateFeedText(input)
+        : Promise.resolve({
+            promoDetected: false,
+            illegalDetected: false,
+            otherViolation: false,
+            graphicTier: GraphicTier.NONE,
+            reasons: [] as string[],
+            uncertain: false,
+          }),
       this.moderateFeedImages(imageParts, input),
     ]);
 

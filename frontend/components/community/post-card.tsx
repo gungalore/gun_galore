@@ -384,12 +384,14 @@ export function PostCard({
             {post.title}
           </h2>
         )}
-        <p
-          className="text-[14px] leading-relaxed whitespace-pre-wrap"
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          {post.body}
-        </p>
+        {post.body ? (
+          <p
+            className="text-[14px] leading-relaxed whitespace-pre-wrap"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            {post.body}
+          </p>
+        ) : null}
         <PostDetails type={post.type} post={post} className="mt-2" />
         {post.tags.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-2">

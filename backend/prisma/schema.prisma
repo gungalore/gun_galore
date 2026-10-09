@@ -7036,7 +7036,7 @@ model Post {
   /// Calibre / cartridge (Hunting, Firearms, Reloading).
   calibre          String?      @db.VarChar(40)
   /// Platform class (Firearms: rifle/shotgun/pistol/airgun/other).
-  firearmType      String?      @db.VarChar(20)
+  firearmType      String?      @db.VarChar(32)
   /// Model NAME only — serial numbers are never collected.
   firearmModel     String?      @db.VarChar(60)
   /// Bullet weight in grains (Reloading).
@@ -7046,23 +7046,23 @@ model Post {
   /// Short performance summary, e.g. group size (Reloading).
   testResult       String?      @db.VarChar(120)
   /// River / dam / estuary / nearshore / offshore (Fishing).
-  waterType        String?      @db.VarChar(20)
+  waterType        String?      @db.VarChar(32)
   /// Catch length in centimetres (Fishing).
   sizeCm           Int?
   /// Shot distance in metres (Hunting).
   shotDistanceM    Int?
   /// Campsite / wilderness / caravan / hut / other (Camping).
-  siteType         String?      @db.VarChar(20)
+  siteType         String?      @db.VarChar(32)
   /// Trip length in days/nights (Overlanding, Camping).
   tripDays         Int?
   /// Gear class (Gear & Reviews).
-  gearCategory     String?      @db.VarChar(20)
+  gearCategory     String?      @db.VarChar(32)
   /// Star rating 1–5 (Gear & Reviews).
   gearRating       Int?
   /// New / used / like-new (Gear & Reviews).
-  gearCondition    String?      @db.VarChar(20)
+  gearCondition    String?      @db.VarChar(32)
   /// At range / in field / at home (Questions & Advice).
-  context          String?      @db.VarChar(20)
+  context          String?      @db.VarChar(32)
   listingId        String?
   listing          Listing?     @relation("PostListing", fields: [listingId], references: [id], onDelete: SetNull)
   categoryId       String?

@@ -632,7 +632,7 @@ export class FeedService {
         authorId: userId,
         type: dto.type,
         title: dto.title?.trim() || null,
-        body: dto.body,
+        body: dto.body?.trim() ?? '',
         tags: normaliseTags(dto.tags),
         ...details,
         listingId: dto.listingId ?? null,
@@ -668,6 +668,14 @@ export class FeedService {
     if (!post || post.authorId !== userId) throw new NotFoundException();
     if (post.status === PostStatus.REJECTED) {
       throw new BadRequestException('This post was rejected.');
+    }
+
+    // A post must carry SOMETHING: text, a photo or a video. Media is attached
+    // after create (create → upload → submit), so this is the first point the
+    // full picture is known. Without it an abandoned empty create would publish
+    // as a blank post on the feed.
+    if (!post.body.trim() && post.images.length === 0 && !post.video) {
+      throw new BadRequestException('Add some text, a photo or a video first.');
     }
 
     // ⚠️ BACKGROUND MODERATION. Queue the post and return at once — the member
@@ -760,7 +768,10 @@ export class FeedService {
   async updatePost(userId: string, postId: string, dto: UpdatePostDto) {
     await this.assertEnabled();
     const v = await this.viewer(userId);
-    const post = await this.prisma.post.findUnique({ where: { id: postId } });
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      include: { images: true, video: true },
+    });
     if (!post || post.authorId !== userId) throw new NotFoundException();
 
     const details = sanitisePostDetails(dto as unknown as Record<string, unknown>, post.type);
@@ -771,6 +782,10 @@ export class FeedService {
     const title = dto.title !== undefined ? dto.title.trim() || null : post.title;
     const body = dto.body ?? post.body;
     const text = [title, body].filter(Boolean).join('\n');
+    // Same invariant as submitPost: an edit must not leave the post empty.
+    if (!text.trim() && post.images.length === 0 && !post.video) {
+      throw new BadRequestException('Add some text, a photo or a video first.');
+    }
     // The hard keyword block stays synchronous — it is cheap and the UI shows
     // the 400 inline. The judgement call (is this still allowed?) is queued.
     await this.assertTextAllowed(text, 'feed-post-edit', userId, post.isOfficial);

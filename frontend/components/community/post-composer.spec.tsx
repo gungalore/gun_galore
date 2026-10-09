@@ -164,10 +164,17 @@ describe('PostComposer', () => {
   it('sends the chosen per-category details with the post', async () => {
     openComposer();
     await userEvent.type(screen.getByPlaceholderText("What's on your mind?"), 'Kudu hunt');
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'HUNTING' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Post category' }), {
+      target: { value: 'HUNTING' },
+    });
     await userEvent.click(screen.getByRole('button', { name: /Add details/i }));
-    await userEvent.click(screen.getByRole('button', { name: 'Kudu' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Warthog' }));
+
+    const species = screen.getByRole('combobox', { name: 'Species' });
+    await userEvent.type(species, 'kudu');
+    await userEvent.keyboard('{Enter}');
+    await userEvent.type(species, 'warthog');
+    await userEvent.keyboard('{Enter}');
+
     await userEvent.click(screen.getByRole('button', { name: 'Post' }));
 
     await waitFor(() =>
@@ -180,10 +187,29 @@ describe('PostComposer', () => {
 
   it('keeps the details section collapsed until asked', async () => {
     openComposer();
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'HUNTING' } });
-    expect(screen.queryByRole('button', { name: 'Kudu' })).toBeNull();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Post category' }), {
+      target: { value: 'HUNTING' },
+    });
+    expect(screen.queryByRole('combobox', { name: 'Species' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: /Add details/i }));
-    expect(screen.getByRole('button', { name: 'Kudu' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Species' })).toBeTruthy();
+  });
+
+  it('enables Post when ANY one of text, photo or video is present', async () => {
+    openComposer();
+    const post = () => screen.getByRole('button', { name: 'Post' }) as HTMLButtonElement;
+
+    // Nothing yet — disabled.
+    expect(post().disabled).toBe(true);
+
+    // A photo alone is enough.
+    const photoInput = document.querySelector(
+      'input[type="file"][accept^="image"]',
+    ) as HTMLInputElement;
+    fireEvent.change(photoInput, {
+      target: { files: [new File(['x'], 'a.jpg', { type: 'image/jpeg' })] },
+    });
+    expect(post().disabled).toBe(false);
   });
 
   it('posts normally when the video upload succeeds', async () => {

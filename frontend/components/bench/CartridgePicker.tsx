@@ -33,6 +33,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { BenchCartridgeOption, CartridgePickerProps } from './contract';
 import { IconX, OverlayShell, usePhone } from './primitives';
+import { fold } from '../../lib/fold-text';
 
 /**
  * ~165 cartridges is short enough to filter in the browser and long enough
@@ -84,15 +85,10 @@ const SEARCH_DEBOUNCE_MS = 160;
  * is narrow, and closing it changes matching for every row. Pinned in
  * CartridgePicker.spec.tsx so it stays a choice.
  */
-export function fold(s: string): string {
-  return s
-    .toLowerCase()
-    // × is ×, written as an escape rather than as itself: a regex whose
-    // behaviour depends on one non-ASCII byte surviving every editor and
-    // re-encoding this file meets is a regex that silently matches nothing.
-    .replace(/\u00d7/g, 'x')
-    .replace(/[^a-z0-9]/g, '');
-}
+// Lifted to lib/fold-text.ts so the community composer's vocab picker shares
+// the exact normaliser. Re-exported here because CartridgePicker.spec.tsx pins
+// its three spellings against `fold` and imports it from this module.
+export { fold };
 
 /**
  * The one string a cartridge is matched against.

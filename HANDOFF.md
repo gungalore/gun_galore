@@ -7,7 +7,59 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
-## 2026-10-09 (latest) — COMMUNITY FEED ENABLED FROM CODE (DEPLOYED)
+## 2026-10-09 (latest) — COMPOSER: ONE-OF-THREE POSTS + AUTOCOMPLETE DETAILS (BUILT, NOT DEPLOYED)
+
+**Built and verified locally, not deployed.** Gates: backend `tsc` clean + 314
+suites / 5283 tests; frontend `tsc` clean + 134 files / 1683 tests. Production
+build not yet run for this change.
+
+**Operator decisions (all 8 answered).**
+1. A post needs only ONE of text ("What's on your mind?"), a photo, or a video.
+2. Free text is accepted in every detail field — the vocabularies are
+   suggestions, not gates.
+3. Permit-huntable dangerous game is included (buffalo, elephant, lion, leopard,
+   cheetah, hippo, crocodile); protected species are not (rhino, wild dog,
+   pangolin).
+4. `firearmModel` stays free text — no list.
+5. Fishing species expanded like hunting.
+6. Numerics stay free text (no suggestions).
+7. `testResult` gets a small phrase list + free text.
+8. Chip cap stays 8.
+
+**Backend.** `body` is now optional (`create-post.dto.ts`) and stored as `''`
+for media-only posts. `submitPost` AND `updatePost` enforce "at least one of
+text/photo/video" (`feed.service.ts`) — create-time cannot, because media is
+attached after create. The moderation sweep (`tasks.service.ts`) skips
+content-less posts and deletes never-submitted empty orphans older than 24 h, so
+an abandoned create can never publish a blank card. The Jev text axis is skipped
+when there is no text (`feed-moderation.service.ts`). `normaliseChipList` /
+`normaliseSingleValue` (`feed.types.ts`) accept free text (lowercase,
+spaces→hyphens, deduped, capped: chips 32, singles 32); `POST_CHIP_VOCAB` /
+`POST_SINGLE_VOCAB` are now **seeds, not gates**. Migration
+`20261009130000_widen_post_single_columns` widens the six single-select columns
+`VarChar(20) → VarChar(32)` (metadata-only in Postgres). New spec
+`post-content-gate.spec.ts`; `feed.types.spec.ts` updated.
+
+**Frontend.** One new control `components/community/vocab-combobox.tsx`
+(type-to-search; nothing shows until you type; free text committed on Enter;
+multi-select renders removable tokens) replaces every pill wall and every
+dropdown in "+ Add details", for all nine categories. Data in
+`lib/post-vocab.ts` (species, flair, singles, test-result, with Afrikaans
+aliases) + generated `lib/post-vocab-cartridges.ts` (578 CIP cartridges from
+`backend/prisma/seed-data/grt-caliber.csv`, via new
+`backend/scripts/build-post-vocab-cartridges.ts`). `fold()` was lifted to
+`lib/fold-text.ts` and re-exported from `BenchCartridgePicker` so the Bench spec
+is untouched. Post button now enables on any one of the three
+(`post-composer.tsx`); the type `<select>` gained `aria-label="Post category"`.
+`post-card.tsx` hides an empty body. `my-posts-client.tsx` lets an edit clear
+the body when media exists. New specs: `lib/post-vocab.spec.ts`,
+`components/community/vocab-combobox.spec.tsx`; the two pill tests in
+`post-composer.spec.tsx` were rewritten to drive the combobox.
+
+**Not done, if it matters next time:** no live browser pass; no production
+build for this change; not deployed.
+
+## 2026-10-09 — COMMUNITY FEED ENABLED FROM CODE (DEPLOYED)
 
 **Deployed to production** as `9e6e9747` (one commit). Full deploy
 (`& "C:\Program Files\Git\bin\bash.exe" infra/deploy/deploy.sh`, no side flag —

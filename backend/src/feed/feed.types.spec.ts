@@ -8,24 +8,24 @@ import {
 
 describe('feed detail-field helpers', () => {
   describe('normaliseChipList', () => {
-    it('keeps only allowed values, lowercased and hyphenated, deduped and capped', () => {
-      const allowed = ['bass', 'carp', 'blue-wildebeest'];
+    it('accepts free text: lowercased, hyphenated, deduped and capped', () => {
       expect(
-        normaliseChipList([' Bass ', 'BASS', 'Carp', 'shark', 'Blue Wildebeest'], allowed),
-      ).toEqual(['bass', 'carp', 'blue-wildebeest']);
+        normaliseChipList([' Bass ', 'BASS', 'Carp', 'shark', 'Blue Wildebeest']),
+      ).toEqual(['bass', 'carp', 'shark', 'blue-wildebeest']);
     });
 
     it('returns [] for non-arrays', () => {
-      expect(normaliseChipList('bass', ['bass'])).toEqual([]);
-      expect(normaliseChipList(undefined, ['bass'])).toEqual([]);
+      expect(normaliseChipList('bass')).toEqual([]);
+      expect(normaliseChipList(undefined)).toEqual([]);
     });
   });
 
   describe('normaliseSingleValue', () => {
-    it('accepts only known values', () => {
-      expect(normaliseSingleValue(' Rifle ', ['rifle', 'shotgun'])).toBe('rifle');
-      expect(normaliseSingleValue('bazooka', ['rifle'])).toBeNull();
-      expect(normaliseSingleValue(42, ['rifle'])).toBeNull();
+    it('accepts free text (lowercased/hyphenated) and rejects non-strings', () => {
+      expect(normaliseSingleValue(' Rifle ')).toBe('rifle');
+      expect(normaliseSingleValue('bazooka')).toBe('bazooka');
+      expect(normaliseSingleValue('  ')).toBeNull();
+      expect(normaliseSingleValue(42)).toBeNull();
     });
   });
 
@@ -72,9 +72,9 @@ describe('feed detail-field helpers', () => {
       expect('gearRating' in out).toBe(false);
     });
 
-    it('drops chip values outside the vocabulary', () => {
+    it('keeps free-text chip values (vocabulary is suggestions, not a gate)', () => {
       const out = sanitisePostDetails({ species: ['kudu', 'unicorn'] }, 'HUNTING');
-      expect(out.species).toEqual(['kudu']);
+      expect(out.species).toEqual(['kudu', 'unicorn']);
     });
 
     it('omits keys the client did not send (so edits cannot wipe fields)', () => {

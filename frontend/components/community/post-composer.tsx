@@ -16,14 +16,16 @@ import { processImage } from '../../lib/process-image';
 import { POST_TYPE_LABELS, POST_TYPE_ORDER, type PostTypeKey } from '../../lib/post-types';
 import {
   buildDetailPayload,
-  chipLabel,
   detailFieldsFor,
   memoryKey,
   readDetailMemory,
+  storeMode,
+  suggestionsFor,
   writeDetailMemory,
   type DetailValue,
   type PostFieldDef,
 } from '../../lib/post-fields';
+import { VocabCombobox } from './vocab-combobox';
 import FilePickerButton from '../file-picker-button';
 
 declare global {
@@ -114,6 +116,10 @@ function describePostError(e: unknown): string {
       return 'Community is temporarily unavailable — please try again shortly.';
     }
     if (e.status === 400) {
+      // The "at least one of text/photo/video" gate, not a moderation block.
+      if (/add some text|a photo or a video/i.test(e.message)) {
+        return 'Add some text, a photo or a video before posting.';
+      }
       return 'That post was blocked by our moderation rules.';
     }
     if (e.status >= 500) {
@@ -147,53 +153,21 @@ function DetailField({
     typeof value === 'number' ? value : typeof value === 'string' ? value : '';
 
   let control: ReactNode = null;
-  if (field.kind === 'chips') {
-    const selected = Array.isArray(value) ? value : [];
+  if (field.vocab) {
+    // Type-to-search for every list-bearing field. Nothing renders until the
+    // member types; free text is accepted (operator, 2026-10-09).
     control = (
-      <div className="flex flex-wrap gap-1.5">
-        {(field.options ?? []).map((opt) => {
-          const on = selected.includes(opt);
-          return (
-            <button
-              key={opt}
-              type="button"
-              disabled={disabled}
-              aria-pressed={on}
-              onClick={() =>
-                onChange(
-                  field.key,
-                  on ? selected.filter((v) => v !== opt) : [...selected, opt].slice(0, 8),
-                )
-              }
-              className="gg-press px-2.5 py-1 rounded-full text-[12px]"
-              style={{
-                background: on ? 'var(--red)' : 'var(--bg-inset)',
-                color: on ? '#fff' : 'var(--text-secondary)',
-                border: '0.5px solid var(--border)',
-              }}
-            >
-              {chipLabel(opt)}
-            </button>
-          );
-        })}
-      </div>
-    );
-  } else if (field.kind === 'single') {
-    control = (
-      <select
-        value={asString}
+      <VocabCombobox
+        ariaLabel={field.label}
+        entries={suggestionsFor(field)}
+        value={value}
+        onChange={(v) => onChange(field.key, v)}
+        multiple={field.kind === 'chips'}
+        storeMode={storeMode(field)}
+        placeholder={field.placeholder ?? 'Start typing…'}
         disabled={disabled}
-        onChange={(e) => onChange(field.key, e.target.value)}
-        className="w-full px-2 py-2 rounded-[6px] text-[13px]"
-        style={fieldInput}
-      >
-        <option value="">—</option>
-        {(field.options ?? []).map((opt) => (
-          <option key={opt} value={opt}>
-            {chipLabel(opt)}
-          </option>
-        ))}
-      </select>
+        maxLength={field.max ?? 32}
+      />
     );
   } else if (field.kind === 'number') {
     control = (
@@ -412,7 +386,8 @@ export function PostComposer({
   }
 
   async function submit() {
-    if (!body.trim() || busy) return;
+    // Any ONE of text / photo / video is enough (operator, 2026-10-09).
+    if (busy || !(body.trim() || images.length || video)) return;
     setBusy(true);
     setMessage(null);
     setPhase(null);
@@ -519,6 +494,9 @@ export function PostComposer({
     );
   }
 
+  // Any ONE of text / photo / video enables Post (operator, 2026-10-09).
+  const canPost = !busy && (body.trim().length > 0 || images.length > 0 || !!video);
+
   return (
     <div
       className="gg-tile rounded-[8px] p-4"
@@ -530,6 +508,7 @@ export function PostComposer({
       <div className="flex gap-2 mb-3 flex-wrap">
         <select
           value={type}
+          aria-label="Post category"
           onChange={(e) => setType(e.target.value as PostTypeKey)}
           className="px-2 py-2 rounded-[6px] text-[13px]"
           style={{
@@ -753,12 +732,12 @@ export function PostComposer({
         <button
           type="button"
           onClick={submit}
-          disabled={busy || !body.trim()}
+          disabled={!canPost}
           className="gg-press px-4 py-2 rounded-[6px] text-[13px] font-medium"
           style={{
             background: 'var(--red)',
             color: '#fff',
-            opacity: busy || !body.trim() ? 0.6 : 1,
+            opacity: !canPost ? 0.6 : 1,
           }}
         >
           {busy ? 'Posting…' : 'Post'}

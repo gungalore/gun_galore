@@ -89,6 +89,14 @@ export class TasksService {
           status: PostStatus.PENDING_MODERATION,
           moderatedAt: null,
           createdAt: { lt: cutoff },
+          // A post may now be text-less (a photo or video alone). Never publish
+          // a genuinely empty one — an abandoned create (dialog closed before
+          // submit) has no text and no media. See the delete below.
+          OR: [
+            { body: { not: '' } },
+            { images: { some: {} } },
+            { video: { isNot: null } },
+          ],
         },
         select: { id: true },
         orderBy: { createdAt: 'asc' },
@@ -99,6 +107,24 @@ export class TasksService {
       }
       if (stuck.length > 0) {
         this.logger.log(`feed moderation sweep: processed ${stuck.length}`);
+      }
+      // Contentless, never-submitted posts sit invisible in the author's "My
+      // posts" forever otherwise. 24h is far past any real upload (a 64 MB clip
+      // is minutes). Deleting here — not in the 2-minute window above — avoids
+      // racing a slow upload that has not attached its media yet.
+      const orphans = await this.prisma.post.deleteMany({
+        where: {
+          status: PostStatus.PENDING_MODERATION,
+          moderatedAt: null,
+          publishedAt: null,
+          body: '',
+          images: { none: {} },
+          video: { is: null },
+          createdAt: { lt: new Date(Date.now() - 24 * 60 * 60_000) },
+        },
+      });
+      if (orphans.count > 0) {
+        this.logger.log(`feed moderation sweep: removed ${orphans.count} empty post(s)`);
       }
     } catch (e) {
       this.logger.warn(

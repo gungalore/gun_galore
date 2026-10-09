@@ -1,11 +1,13 @@
 // Optional per-category "details" fields for the community composer.
 //
-// Mirror of backend/src/feed/feed.types.ts (POST_DETAIL_FIELDS /
-// POST_CHIP_VOCAB / POST_SINGLE_VOCAB / POST_NUMERIC_BOUNDS). The backend is
-// the source of truth and strips anything invalid, so this file only drives
-// the UI. Keep the value strings in step with the backend vocabularies.
+// Values in `species`/`flair`/the single-select fields are stored as normalised
+// slugs (backend `normaliseChipList`/`normaliseSingleValue`); `calibre` and
+// `testResult` store the verbatim label (`textOrNull`). The `vocab` key in a
+// field definition points at the suggestion list in `frontend/lib/post-vocab.ts`
+// — suggestions only, free text is always accepted.
 
 import type { PostTypeKey } from './post-types';
+import { entriesFor, labelFor, type VocabKey } from './post-vocab';
 
 export type DetailValue = string | number | string[];
 
@@ -16,8 +18,8 @@ export interface PostFieldDef {
   key: string;
   label: string;
   kind: PostFieldKind;
-  /** Allowed values for `chips` / `single` (value strings are the stored form). */
-  options?: string[];
+  /** Autocomplete suggestion list; absent leaves the control free-form. */
+  vocab?: VocabKey;
   placeholder?: string;
   /** Numeric bounds + unit label for `number`. */
   min?: number;
@@ -32,6 +34,16 @@ export function chipLabel(value: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Suggestions for a field, or [] when it has none. */
+export function suggestionsFor(field: PostFieldDef) {
+  return field.vocab ? entriesFor(field.vocab) : [];
+}
+
+/** `slug` values are normalised by the backend; `label` values are verbatim. */
+export function storeMode(field: PostFieldDef): 'slug' | 'label' {
+  return field.kind === 'text' ? 'label' : 'slug';
+}
+
 const FLAIR_LABELS: Partial<Record<PostTypeKey, string>> = {
   GENERAL: 'Topic',
   FIREARMS_SHOOTING: 'Purpose',
@@ -44,50 +56,30 @@ const FLAIR_LABELS: Partial<Record<PostTypeKey, string>> = {
 /** Category-specific fields, in display order. */
 const SPECIFIC_FIELDS: Record<PostTypeKey, PostFieldDef[]> = {
   GENERAL: [
-    {
-      key: 'flair',
-      label: FLAIR_LABELS.GENERAL as string,
-      kind: 'chips',
-      options: ['meetup', 'announcement', 'photo', 'news', 'discussion'],
-    },
+    { key: 'flair', label: FLAIR_LABELS.GENERAL as string, kind: 'chips', vocab: 'flair-general' },
   ],
   HUNTING: [
+    { key: 'species', label: 'Species', kind: 'chips', vocab: 'species-hunting' },
     {
-      key: 'species',
-      label: 'Species',
-      kind: 'chips',
-      options: [
-        'blesbok',
-        'springbok',
-        'impala',
-        'kudu',
-        'warthog',
-        'gemsbok',
-        'blue-wildebeest',
-        'black-wildebeest',
-        'zebra',
-        'bushbuck',
-        'eland',
-        'common-duiker',
-        'steenbok',
-        'nyala',
-        'sable',
-        'reedbuck',
-        'waterbuck',
-        'buffalo',
-      ],
+      key: 'calibre',
+      label: 'Calibre',
+      kind: 'text',
+      vocab: 'cartridge',
+      placeholder: 'Start typing… e.g. .308 Win',
+      max: 40,
     },
-    { key: 'calibre', label: 'Calibre', kind: 'text', placeholder: 'e.g. .308 Win', max: 40 },
     { key: 'shotDistanceM', label: 'Shot distance', kind: 'number', min: 1, max: 5000, suffix: 'm' },
   ],
   FIREARMS_SHOOTING: [
+    { key: 'firearmType', label: 'Type', kind: 'single', vocab: 'firearm-type' },
     {
-      key: 'firearmType',
-      label: 'Type',
-      kind: 'single',
-      options: ['rifle', 'shotgun', 'pistol', 'airgun', 'other'],
+      key: 'calibre',
+      label: 'Calibre',
+      kind: 'text',
+      vocab: 'cartridge',
+      placeholder: 'Start typing… e.g. 6.5 Creedmoor',
+      max: 40,
     },
-    { key: 'calibre', label: 'Calibre', kind: 'text', placeholder: 'e.g. 6.5 Creedmoor', max: 40 },
     {
       key: 'firearmModel',
       label: 'Model',
@@ -96,15 +88,17 @@ const SPECIFIC_FIELDS: Record<PostTypeKey, PostFieldDef[]> = {
       max: 60,
       hint: 'Model name only — never a serial number.',
     },
-    {
-      key: 'flair',
-      label: FLAIR_LABELS.FIREARMS_SHOOTING as string,
-      kind: 'chips',
-      options: ['range', 'hunting', 'competition', 'maintenance'],
-    },
+    { key: 'flair', label: FLAIR_LABELS.FIREARMS_SHOOTING as string, kind: 'chips', vocab: 'flair-firearms' },
   ],
   RELOADING: [
-    { key: 'calibre', label: 'Cartridge', kind: 'text', placeholder: 'e.g. .30-06', max: 40 },
+    {
+      key: 'calibre',
+      label: 'Cartridge',
+      kind: 'text',
+      vocab: 'cartridge',
+      placeholder: 'Start typing… e.g. .30-06',
+      max: 40,
+    },
     {
       key: 'bulletWeightGr',
       label: 'Bullet weight',
@@ -125,102 +119,34 @@ const SPECIFIC_FIELDS: Record<PostTypeKey, PostFieldDef[]> = {
       key: 'testResult',
       label: 'Test result',
       kind: 'text',
-      placeholder: 'e.g. 1.5 MOA, 3-shot group',
+      vocab: 'test-result',
+      placeholder: 'Start typing… e.g. 1.5 MOA',
       max: 120,
     },
   ],
   FISHING: [
-    {
-      key: 'species',
-      label: 'Species',
-      kind: 'chips',
-      options: [
-        'bass',
-        'carp',
-        'trout',
-        'tilapia',
-        'yellowfish',
-        'kurper',
-        'barbel',
-        'bream',
-        'snoek',
-        'yellowtail',
-        'kob',
-        'grunter',
-        'tuna',
-        'kingfish',
-        'amberjack',
-        'grouper',
-        'sunfish',
-        'dorado',
-      ],
-    },
-    {
-      key: 'waterType',
-      label: 'Water type',
-      kind: 'single',
-      options: ['river', 'dam', 'estuary', 'nearshore', 'offshore'],
-    },
-    {
-      key: 'flair',
-      label: FLAIR_LABELS.FISHING as string,
-      kind: 'chips',
-      options: ['lure', 'bait', 'fly', 'trolling', 'bottom'],
-    },
+    { key: 'species', label: 'Species', kind: 'chips', vocab: 'species-fishing' },
+    { key: 'waterType', label: 'Water type', kind: 'single', vocab: 'water-type' },
+    { key: 'flair', label: FLAIR_LABELS.FISHING as string, kind: 'chips', vocab: 'flair-fishing' },
     { key: 'sizeCm', label: 'Size', kind: 'number', min: 1, max: 2000, suffix: 'cm' },
   ],
   OVERLANDING_4X4: [
-    {
-      key: 'flair',
-      label: FLAIR_LABELS.OVERLANDING_4X4 as string,
-      kind: 'chips',
-      options: ['trail-report', 'recovery', 'passable', 'closed', 'fuel'],
-    },
+    { key: 'flair', label: FLAIR_LABELS.OVERLANDING_4X4 as string, kind: 'chips', vocab: 'flair-overlanding' },
     { key: 'tripDays', label: 'Trip length', kind: 'number', min: 1, max: 365, suffix: 'days' },
   ],
   CAMPING_BUSHCRAFT: [
-    {
-      key: 'siteType',
-      label: 'Site type',
-      kind: 'single',
-      options: ['campsite', 'wilderness', 'caravan', 'hut', 'other'],
-    },
-    {
-      key: 'flair',
-      label: FLAIR_LABELS.CAMPING_BUSHCRAFT as string,
-      kind: 'chips',
-      options: ['water', 'toilets', 'firepit', 'none'],
-    },
+    { key: 'siteType', label: 'Site type', kind: 'single', vocab: 'site-type' },
+    { key: 'flair', label: FLAIR_LABELS.CAMPING_BUSHCRAFT as string, kind: 'chips', vocab: 'flair-camping' },
     { key: 'tripDays', label: 'Nights', kind: 'number', min: 1, max: 365, suffix: 'nights' },
   ],
   GEAR_REVIEWS: [
-    {
-      key: 'gearCategory',
-      label: 'Category',
-      kind: 'single',
-      options: ['firearm', 'optic', 'ammo', 'camping', 'fishing', 'vehicle', 'other'],
-    },
+    { key: 'gearCategory', label: 'Category', kind: 'single', vocab: 'gear-category' },
     { key: 'gearRating', label: 'Rating', kind: 'rating' },
-    {
-      key: 'gearCondition',
-      label: 'Condition',
-      kind: 'single',
-      options: ['new', 'used', 'like-new'],
-    },
+    { key: 'gearCondition', label: 'Condition', kind: 'single', vocab: 'gear-condition' },
   ],
   QUESTIONS_ADVICE: [
-    {
-      key: 'flair',
-      label: FLAIR_LABELS.QUESTIONS_ADVICE as string,
-      kind: 'chips',
-      options: ['setup', 'troubleshooting', 'legal', 'safety', 'local-advice'],
-    },
-    {
-      key: 'context',
-      label: 'Context',
-      kind: 'single',
-      options: ['at-range', 'in-field', 'at-home'],
-    },
+    { key: 'flair', label: FLAIR_LABELS.QUESTIONS_ADVICE as string, kind: 'chips', vocab: 'flair-questions' },
+    { key: 'context', label: 'Context', kind: 'single', vocab: 'context' },
   ],
 };
 
@@ -323,6 +249,11 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/** Display text for a slug-mode value: the vocab label if known, else chipLabel. */
+function displaySlug(field: PostFieldDef, value: string): string {
+  return (field.vocab ? labelFor(field.vocab, value) : undefined) ?? chipLabel(value);
+}
+
 /**
  * Turn a post's stored detail columns into display-ready entries for the
  * category, skipping anything unset. Arrays come back as `items` so the caller
@@ -335,7 +266,14 @@ export function describePostDetails(type: PostTypeKey, post: PostDetailSource): 
     const raw = src[field.key];
     if (raw === undefined || raw === null || raw === '') continue;
     if (Array.isArray(raw)) {
-      if (raw.length) out.push({ key: field.key, label: field.label, text: '', items: raw.map(chipLabel) });
+      if (raw.length) {
+        out.push({
+          key: field.key,
+          label: field.label,
+          text: '',
+          items: raw.map((v) => displaySlug(field, String(v))),
+        });
+      }
       continue;
     }
     if (field.kind === 'rating') {
@@ -356,7 +294,7 @@ export function describePostDetails(type: PostTypeKey, post: PostDetailSource): 
       continue;
     }
     if (field.kind === 'single') {
-      out.push({ key: field.key, label: field.label, text: chipLabel(String(raw)) });
+      out.push({ key: field.key, label: field.label, text: displaySlug(field, String(raw)) });
       continue;
     }
     out.push({ key: field.key, label: field.label, text: String(raw) });
