@@ -1137,27 +1137,14 @@ export class MotivationDocumentsService {
        * The only vault rows a partner may be taken from, where the caller has
        * already gated its own candidates.
        *
-       * ⚠️ THIS IS THE SETTLED-DATE GATE, RESTORED. autolink()'s candidate
-       * query admits a credential only on `confirmedAt` OR `dateSource` — "a
-       * date somebody stands behind" — and the comment above that query says
-       * why: the freshness rule needs one, and "answering it anyway is how a
-       * stale document gets attached silently". The ride-along looked its
-       * partner up from the whole vault and walked straight past it. Handing
-       * the gated set down restores the `present.has(p.other)` test the local
-       * pair rule used to make, without writing the predicate down twice.
-       *
-       * ⚠️ THE PICKER PASSES NOTHING, DELIBERATELY, and it is the same
-       * distinction `refuse` already draws: there the member is doing the
-       * asking, has the document in front of them, and the freshness note is
-       * printed beside it.
-       *
-       * ⚠️ AND THE GATE COSTS SOMETHING THE OPERATOR SHOULD KNOW ABOUT.
-       * PROFICIENCY is not in ARMABLE_KINDS (credential-auto-date.ts), so a
-       * proficiency row carries `dateSource: null` until somebody confirms it,
-       * and confirmExpiry stamps ONE row rather than both sides. So inside an
-       * auto-link run the second page rides along only where both pages have
-       * been confirmed. The picker — where the fold actually lives, and where
-       * the member can see what they picked — is unaffected.
+       * ⚠️ IT GATES THE PICK, NOT THE PARTNER. A two-sided document is ONE
+       * document: the lead already passed this gate, and asking the partner to
+       * pass it again on its own row drops a page the member holds. Operator,
+       * 2026-10-09: "if it has two sides add it, if it has only one side just
+       * add the one side — it shouldn't be a blocker." The partner is found
+       * from `otherSideId`, so what rides along is this member's own other page
+       * of the same document, never a second candidate. `refuse` still applies:
+       * a page the member removed must not ride back in.
        */
       only?: ReadonlySet<string>;
     } = {},
@@ -1179,8 +1166,13 @@ export class MotivationDocumentsService {
       source === 'credential'
         ? sourceId
         : await this.vaultPageBehind(ctx.userId, sourceId);
+    // ⚠️ THE PARTNER RIDES WITH ITS LEAD; THE CALLER'S CANDIDATE GATE IS NOT
+    // RE-ASKED OF IT. A two-sided proficiency is one document and the lead is
+    // what passed the gate — gating the partner on its own row is what dropped
+    // the certificate while keeping the statement of results. `refuse` still
+    // applies, so a page the member deleted here cannot ride back in.
     const other = anchor
-      ? await this.otherSideOf(ctx.userId, anchor, opts)
+      ? await this.otherSideOf(ctx.userId, anchor, { refuse: opts.refuse })
       : null;
 
     const alsoAttached: {

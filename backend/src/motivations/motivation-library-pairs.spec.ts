@@ -918,20 +918,24 @@ describe('auto-link carries the other page, under its own rules', () => {
     expect(prof!.pages).toBe(2);
   });
 
-  it('⚠️ LEAVES A PARTNER THAT NEVER CLEARED THE GATE, rather than attaching it unasked', async () => {
-    // The freshness rule needs a date somebody stands behind — "answering it
-    // anyway is how a stale document gets attached silently", says the comment
-    // above the candidate query. The ride-along looked its partner up from the
-    // whole vault and walked straight past that. The front is a real row with
-    // real bytes here; what it does not have is a settled date, so it is not
-    // in the gated set and does not ride along.
+  it('⚠️ RIDES THE PARTNER ALONG EVEN WHEN IT NEVER CLEARED THE GATE', async () => {
+    // ⚠️ A TWO-SIDED DOCUMENT IS ONE DOCUMENT. The lead is what cleared the
+    // settled-date gate; the partner is the SAME document's other page, found
+    // by otherSideId, and it rides with the lead rather than being gated again
+    // on its own row. Operator, 2026-10-09: "if it has two sides add it, if it
+    // has only one side just add the one side — it shouldn't be a blocker."
+    // Gating the partner on its own row is what dropped the certificate while
+    // keeping the statement of results.
     const { service, created } = build(bothSides(), {
       candidates: [candidate(), competency()],
     });
-    await service.autolink('clerk-1', 'mo-1');
+    const out = await service.autolink('clerk-1', 'mo-1');
     const ids = created.map((c) => c.sourceCredentialId);
     expect(ids).toContain('back');
-    expect(ids).not.toContain('front');
+    expect(ids).toContain('front');
+    const attached = out.attached as { title: string; pages?: number }[];
+    const prof = attached.find((a) => a.title === 'Proficiency — Handgun');
+    expect(prof?.pages).toBe(2);
   });
 
   it('⚠️ THE PICKER IS NOT GATED, because there the member is doing the asking', async () => {
