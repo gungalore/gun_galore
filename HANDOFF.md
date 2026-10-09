@@ -7,6 +7,46 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
+## 2026-10-09 (latest) — COMMUNITY FEED ENABLED FROM CODE (DEPLOYED)
+
+**Deployed to production** as `9e6e9747` (one commit). Full deploy
+(`& "C:\Program Files\Git\bin\bash.exe" infra/deploy/deploy.sh`, no side flag —
+the diff touches `backend/`). Gates first: backend `tsc` + 313 suites / 5279
+tests (1 suite / 8 tests skipped), frontend `tsc` + 132 files / 1668 tests
+(1 skipped), frontend prod build exit 0 (`BUILD_ID` present). Rollback point:
+`alloutdoor-20261009-204150.dump` (~29.8 MB). Health after: `/api/health` twice
+OK, public 200 twice, all three pm2 services online. No migration ("No pending
+migrations to apply").
+
+**Symptom.** Posting to the community showed *"Community is temporarily
+unavailable"*. That copy is the composer's hard-coded handler for an HTTP **404**
+from the community API (`frontend/components/community/post-composer.tsx:110-114`),
+which it originally meant "route not deployed". Routes ARE deployed — anonymous
+`/api/community/*` returns **401** (the `AuthGuard` runs before the handler). For
+a signed-in member the request passes auth and then hit `assertEnabled()` →
+`NotFoundException()` because the `feed_enabled` master flag was false.
+
+**Why it could not be flipped from the UI.** The admin PWA no longer exposes a
+settings/flags editor (the flags table was deliberately removed from Insights),
+so there was no admin surface to turn `feed_enabled` on. `admin-settings.service.ts`
+still carries the registry entry but nothing renders it.
+
+**What changed (3 files).**
+1. `backend/src/feed/feed.service.ts` — `assertEnabled()` no longer reads
+   `FLAGS.feedEnabled`; it is hardcoded ON, so a stale `feed_enabled=false`
+   Setting row can no longer 404 the whole feed. Kept named/async so the 30+
+   callsites still read as a gate and a future kill switch has one place to land.
+2. `backend/src/settings/settings.service.ts` — `FLAGS.feedEnabled.default`
+   flipped `false` → `true` (runtime registry).
+3. `backend/src/admin/admin-settings.service.ts` — mirror default `'false'` → `'true'`.
+
+**Note for the next session.** `feed_enabled` no longer gates anything; enabling
+the community is now a code fact, not a DB setting. `npm run feed:flags -- off`
+writes the `Setting` row but `assertEnabled()` ignores it — do not expect it to
+turn the feed off. If a real kill switch is wanted again, re-wire `assertEnabled()`
+to read the flag. True end-to-end verification of posting needs a signed-in
+session (anonymous requests are 401 regardless of the flag).
+
 ## 2026-10-09 (late) — PARGO PICKUP SURFACED + PUDO/TCG SWEEP (DEPLOYED)
 
 **Deployed to production** as `076d7e69` (one commit). Full deploy
