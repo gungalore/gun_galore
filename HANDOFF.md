@@ -7,6 +7,54 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
+## 2026-10-09 (late) — PARGO PICKUP SURFACED + PUDO/TCG SWEEP (DEPLOYED)
+
+**Deployed to production** as `076d7e69` (one commit). Full deploy
+(`& "C:\Program Files\Git\bin\bash.exe" infra/deploy/deploy.sh`, no side flag —
+the diff touches `backend/`). Gates first: backend `tsc` + 313 suites / 5279
+tests (1 suite / 8 tests skipped), frontend `tsc` + 132 files / 1668 tests
+(1 skipped), frontend prod build (`BUILD_ID` present). Rollback point:
+`alloutdoor-20261009-183116.dump` (~29.8 MB). Health after: `/api/health` twice
+OK, public 200 twice, all three pm2 services (`alloutdoor-backend`,
+`alloutdoor-frontend`, `warden`) online. No migration ("No pending migrations to
+apply").
+
+**Context.** The operator asked to add Pargo pickup to BOB GO, but the rails are
+already built: door-to-door vs Pargo pickup is the existing
+`DeliveryOption { DOOR_CHEAPEST, DOOR_FASTEST, STORE_PICKUP }` in the checkout /
+cart pickers, the nearest-5 Pargo counters by buyer-address distance already
+come from Bob Go's `/rates-at-checkout` (`shipping.service.ts` `menuFromRates`,
+capped at 5, sorted by `pickupPointDistanceKm`), the courier always collects from
+the seller, and firearms/barrels are already locked to
+`DEALER_TRANSFER`/`PRIVATE_ARRANGE`. What was missing was the **Pargo status leg**
+and the last user-visible Pudo/Courier-Guy copy.
+
+**What changed (17 files).**
+1. **`READY_FOR_PICKUP` was invisible to the frontend.** Added it to the
+   `ShippingStatus` union (`frontend/lib/types.ts`), a label + hint in
+   `status-labels.ts`, a case in `/my/orders`, the `SHIPPING_STATUS_LABEL`
+   record on the transaction page, and a 3-step pickup timeline
+   (`COLLECTED → IN_TRANSIT → READY_FOR_PICKUP`) on `/shipping` — the `steps`
+   array had to be typed `readonly string[]` or TS narrowed `indexOf`'s arg to
+   the array intersection. A Pargo parcel waiting at the counter used to render
+   as "Awaiting collection by the courier".
+2. **Sell form (operator call 2026-10-09).** Removed the non-firearm
+   door-delivery info box entirely; the Pickup address field is now the only
+   seller input. The `Delivery` Field renders for firearms only.
+3. **Pudo/Courier-Guy sweep.** Help-centre FAQ copy (RAG KB, `AskGgKbEntry`)
+   rewritten onto Bob Go door + Pargo pickup and the `pudo`/`courier guy` tags
+   dropped; deleted the stale `backend/prisma/dev-test-webhooks.ts` (posted to
+   the removed `/shipping/webhook/tcg|pudo`); `dummy-run-setup.ts` neutralises
+   `BOBGO_*` not `PUDO_*`; cleared the invalid `LOCKER` value from the valuation
+   configs + `docs/valuation-spec.md`; `docs/INDEX.md` glossary and the admin
+   mockup word swept. **`PUDO`/`TCG` enum placeholders stay** (historical rows)
+   and the accurate "retired" notes in `project-reference.md` /
+   `ARCHITECTURE.md` / `ENVIRONMENT.md` stay.
+
+**One thing left for you.** The help-centre FAQ is seeded into the DB; run
+`npm run seed:help` (backend) against the box to refresh the live KB rows — the
+code deploy alone does not rewrite them.
+
 ## 2026-10-09 (night) — TWO-SIDED DOCUMENTS RIDE WHOLE (DEPLOYED)
 
 **Deployed to production** as `342cc214` (one commit). Full deploy. Gates:
