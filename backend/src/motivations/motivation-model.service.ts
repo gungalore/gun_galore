@@ -245,8 +245,9 @@ export class MotivationModelService {
       //
       // Two mistakes, both mine, both in this call:
       //
-      // 1. 8 000 WAS NEVER ENOUGH. The target is 2 500-4 500 words of prose,
-      //    which is 3 500-6 500 tokens BEFORE any thinking. The old note
+      // 1. 8 000 WAS NEVER ENOUGH. The target is 1 200-1 800 words of prose
+      //    (see PROSE_TARGET), which is a few thousand tokens BEFORE any
+      //    thinking. The old note
       //    reasoned the ceiling down from an 85s synchronous request — but
       //    generation moved to a detached background run (startGeneration) and
       //    the ceiling never moved with it. Nothing is billed for headroom:

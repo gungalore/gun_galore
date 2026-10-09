@@ -2,6 +2,9 @@ import { MotivationStatus } from '@prisma/client';
 import {
   REGENERABLE,
   STALE_GENERATION_MS,
+  answersFingerprint,
+  advisoryIssues,
+  gateFeedbackIssues,
   reasonNeeded,
 } from './motivation-generation.service';
 
@@ -77,5 +80,55 @@ describe('the automatic reason', () => {
     expect(
       reasonNeeded({ firearm_fit_reason: 'The low recoil suits my practice.' }),
     ).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE GATE'S FINDINGS REACH THE NEXT WRITER RUN.
+// ────────────────────────────────────────────────────────────────────
+describe('gate feedback', () => {
+  it('reads the verdict issues, defensively', () => {
+    expect(gateFeedbackIssues({ issues: ['a', '', 'b'] })).toEqual(['a', 'b']);
+    expect(gateFeedbackIssues(null)).toEqual([]);
+    expect(gateFeedbackIssues({})).toEqual([]);
+    expect(gateFeedbackIssues({ issues: 'nope' })).toEqual([]);
+  });
+
+  it('caps the list so a chatty verdict cannot flood the retry', () => {
+    const many = Array.from({ length: 20 }, (_, i) => `issue ${i}`);
+    expect(gateFeedbackIssues({ issues: many })).toHaveLength(8);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE CYCLE RESET KEY, AND THE ADVISORY REPETITION NOTES.
+// ────────────────────────────────────────────────────────────────────
+describe('answers fingerprint', () => {
+  it('is stable and order-independent, and moves when an answer does', () => {
+    const a = { a: '1', b: '2' };
+    const b = { b: '2', a: '1' };
+    expect(answersFingerprint(a)).toBe(answersFingerprint(b));
+    expect(answersFingerprint({ ...a, a: '9' })).not.toBe(
+      answersFingerprint(a),
+    );
+  });
+});
+
+describe('advisory issues', () => {
+  it('never fails a clean document', () => {
+    expect(
+      advisoryIssues(
+        'I hunt impala at 150 m in the Karoo.\n\nMy competency is at Annexure C.',
+        'S16_DEDICATED_HUNTER' as never,
+      ),
+    ).toEqual([]);
+  });
+
+  it('names repeated sentences as advice, not a refusal', () => {
+    const repeated =
+      'The species I target include impala, kudu and blesbok in the bushveld. ' +
+      'The species I target include impala, kudu and blesbok in the bushveld.';
+    const out = advisoryIssues(repeated, 'S16_DEDICATED_HUNTER' as never);
+    expect(out.join(' ')).toContain('repeats');
   });
 });

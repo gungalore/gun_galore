@@ -1,6 +1,8 @@
 import { answerValue } from '../common/card-placeholder';
 import type { CandidateUses } from './firearm-uses.service';
 import { OWNED_ROWS, ownedFirearmSerial, ownedRowTaken } from './motivation-fields';
+import { displayCalibre } from './saps-vocabulary';
+import { spelledDate } from './motivation-prompts';
 
 // ────────────────────────────────────────────────────────────────────
 // THE FIREARMS THE APPLICANT ALREADY HOLDS, AS ROWS THE WRITER MAY NAME.
@@ -205,7 +207,14 @@ export function arsenalRows(
       make: a('make'),
       model: a('model'),
       type: a('type'),
-      calibre: a('calibre'),
+      /**
+       * ⚠️ THE SAME TIDYING THE APPLIED-FOR CALIBRE GETS. The card prints
+       * "9MM PAR ( 9X19MM )" and "6.35MM BROWNING"; the writer is handed the
+       * applied-for calibre normalised by `displayCalibre`, so a held calibre
+       * left raw was rendered a second way in the same document. One form,
+       * everywhere the calibre is named.
+       */
+      calibre: displayCalibre(a('calibre')),
       serial: ownedFirearmSerial(answers, n),
       /**
        * ⚠️ THE MEMBER'S ANSWER BEATS THE VAULT LOOKUP, AND THE ORDER MATTERS.
@@ -230,7 +239,13 @@ export function arsenalRows(
        */
       licensedFor: a('use') || a('primary_use'),
       candidateUses: uses[n],
-      expires: a('expiry'),
+      /**
+       * ⚠️ A DATE PRINTED AS WORDS, LIKE EVERY OTHER DATE WE HAND THE WRITER.
+       * "2034-10-28" is a database row, not a sentence; the other date fields
+       * already go through `spelledDate`, and a held firearm's expiry left raw
+       * was the one that could still reach the prose as ISO digits.
+       */
+      expires: spelledDate(a('expiry')),
     };
     // A row with nothing nameable on it is not evidence of a firearm.
     if (!row.make && !row.calibre && !row.serial) continue;

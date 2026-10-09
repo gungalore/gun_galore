@@ -6,6 +6,7 @@ import {
   generationSystemPrompt,
   generationUserPrompt,
 } from './motivation-prompts';
+import { OUTCOME_PHRASES, SLOP_PHRASES } from './motivation-scope';
 import { planFor } from './motivation-structure';
 
 // ────────────────────────────────────────────────────────────────────
@@ -124,5 +125,60 @@ describe('motivation prompts — a spec, not a changelog', () => {
       expect(p).toContain('<arsenal>');
       expect(p).toContain('96008993');
     }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE PROMPT MUST NOT PLANT A PHRASE ITS OWN GATE REFUSES.
+// ────────────────────────────────────────────────────────────────────
+describe('the writer prompt and the gate agree on their vocabulary', () => {
+  it('⚠️ NEVER USES "high-volume" IN THE ADVOCACY EXAMPLE', () => {
+    // Rule 9's example and the gate's rationale both used the phrase, while
+    // PRODUCT_PAGE_WORDS refuses it — the prompt planted the exact words the
+    // writer would then be refused for.
+    for (const t of TYPES) {
+      expect(generationSystemPrompt(t)).not.toMatch(/high[-\s]volume/i);
+    }
+    expect(gateSystemPrompt()).not.toMatch(/high[-\s]volume/i);
+  });
+
+  it('publishes every filler and outcome phrase the scope check refuses', () => {
+    // A word list cannot be copied into prose, so the writer is told it.
+    const prompt = generationSystemPrompt(MotivationLicenceType.S13_SELF_DEFENCE);
+    for (const phrase of SLOP_PHRASES) {
+      expect(prompt).toContain(phrase);
+    }
+    for (const phrase of OUTCOME_PHRASES) {
+      expect(prompt).toContain(phrase);
+    }
+  });
+
+  it('⚠️ NAMES THE COMPARISON CARVE-OUT IN BOTH FIREARM BRIEFS', () => {
+    // The briefs used to declare the ballistics words REFUSED outright while
+    // the scope check permits them in a comparison — a self-contradiction in
+    // the one paragraph that argues the strongest case.
+    const prompt = generationUserPrompt(
+      pack(MotivationLicenceType.S16_DEDICATED_HUNTER),
+      planFor(MotivationLicenceType.S16_DEDICATED_HUNTER, 7),
+    );
+    expect(prompt).toContain('ALLOWED IN ONE PLACE ONLY');
+    expect(prompt).toContain('what it falls short of');
+  });
+
+  it('⚠️ DELIVERS A DRAFTED REASON AS OURS, NOT INSIDE <applicant-facts>', () => {
+    // A paragraph we wrote for the applicant must not arrive as their own
+    // stated fact; it travels in its own block with its provenance attached.
+    const withReason: FactPack = {
+      ...pack(MotivationLicenceType.S16_DEDICATED_SPORT),
+      draftedReason: 'The .30-06 is my plains-game rifle.',
+    };
+    const user = generationUserPrompt(
+      withReason,
+      planFor(MotivationLicenceType.S16_DEDICATED_SPORT, 7),
+    );
+    expect(user).toContain('<drafted-reason>');
+    expect(user).toContain('Treat the ROLES it assigns as');
+    const gate = gateUserPrompt(withReason, 'Draft body.');
+    expect(gate).toContain('<drafted-reason>');
   });
 });

@@ -1,5 +1,9 @@
 import { QUARRY } from './motivation-quarry';
-import { CATALOGUE_PHRASES } from './motivation-scope';
+import {
+  CATALOGUE_PHRASES,
+  COMPARING,
+  COMPARISON_TERMS,
+} from './motivation-scope';
 
 // ────────────────────────────────────────────────────────────────────
 // MEASURING A MOTIVATION, SO "RICHER" IS A NUMBER RATHER THAN A FEELING.
@@ -130,7 +134,6 @@ const SPECIES = speciesSpellings();
 export function scoreMotivation(body: string): MotivationQuality {
   const text = body ?? '';
   const sentences = sentencesOf(text);
-  const lower = text.toLowerCase();
 
   const words = text.split(/\s+/).filter(Boolean).length;
   const paragraphs = text
@@ -164,9 +167,28 @@ export function scoreMotivation(body: string): MotivationQuality {
     ...new Set([...text.matchAll(/\bAnnexure\s+([A-Z])\b/g)].map((m) => m[1])),
   ].sort();
 
+  /**
+   * ⚠️ THE SAME PER-SENTENCE CARVE-OUT documentScope APPLIES. A capability
+   * term — stopping power, terminal ballistics — is refused everywhere EXCEPT
+   * in a sentence that is actually comparing one firearm with another. A
+   * whole-text substring search here flagged comparisons the gate permits,
+   * so the scorecard and the gate disagreed about the same document.
+   */
   const banned = [
     ...new Set(
-      CATALOGUE_PHRASES.filter((p) => lower.includes(p)).map((p) => String(p)),
+      CATALOGUE_PHRASES.filter((p) => {
+        const phrase = String(p);
+        const carrying = sentences.filter((s) =>
+          s.toLowerCase().includes(phrase),
+        );
+        if (!carrying.length) return false;
+        if ((COMPARISON_TERMS as readonly string[]).includes(phrase)) {
+          return !carrying.every((s) =>
+            COMPARING.some((w) => s.toLowerCase().includes(w)),
+          );
+        }
+        return true;
+      }).map((p) => String(p)),
     ),
   ];
 

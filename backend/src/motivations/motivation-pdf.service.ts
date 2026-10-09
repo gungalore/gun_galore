@@ -6,7 +6,6 @@ import {
   captionFor,
   planAnnexurePages,
   planSafePhotoPages,
-  imageSize,
 } from './motivation-annexure-layout';
 import {
   appendPdfAnnexures,
@@ -273,21 +272,25 @@ const MARGIN_RIGHT = K.PAD_X;
  */
 /** Room for the footer strip, plus air. */
 const MARGIN_BOTTOM = K.PAGE_H - K.BODY_BOTTOM;
-/** Where the body starts: under the running banner, plus 9 mm. */
-const MARGIN_TOP = K.BODY_TOP;
+// ⚠️ THE TOP MARGIN IS LAYOUT-AWARE NOW, so it is computed inside render().
+// K.BODY_TOP reserves the 16 mm running banner on EVERY layout, but only
+// Banner draws one; the quieter four paid a 25 mm empty band at the head of
+// every page for a banner that was never there. See `bodyTop` in render().
 
-// ⚠️ PURE BLACK, NOT A SOFT BLACK. Every one of the 62,295 coloured body
-// characters in their Barrett pack is (0,0,0). #111111 is a screen habit; on
-// a printed submission handed across a counter it reads as a photocopy of
-// something, rather than as the document itself.
-const BLACK = '#000000';
-const GREY = '#555555';
-const RULE = '#999999';
+// ⚠️ THE HARD-CODED NEUTRALS ARE GONE. BLACK/GREY/RULE (#000000/#555555/
+// #999999) were the one part of the renderer that ignored the chosen scheme:
+// the table cells, the annexure captions and the certification frame stayed
+// the same three greys in all ten colourways. Every use is now the scheme's own
+// ink/hair/mut, which on the default scheme are the same values and on a tinted
+// scheme are the ones the rest of the page already uses.
 
-const FONT = 'Helvetica';
-const FONT_BOLD = 'Helvetica-Bold';
-const FONT_ITALIC = 'Helvetica-Oblique';
-const FONT_BOLD_ITALIC = 'Helvetica-BoldOblique';
+// ⚠️ THE STANDARD-14 FACE CONSTANTS ARE GONE. The document used Helvetica for
+// the precinct and battery table cells, the spec sheet, the annexure captions
+// and the certification frame, and the embedded Archivo everywhere else, so
+// those blocks were a different typeface from their own headings and rendered
+// "Česká zbrojovka" through WinAnsi as mojibake. Every one of them now draws in
+// the registered faces via F (see faces()), which degrades to the standard 14
+// only when the assets are missing.
 
 const BODY_SIZE = K.BODY_SIZE;
 /**
@@ -299,11 +302,66 @@ const BODY_SIZE = K.BODY_SIZE;
 const BODY_LEADING = K.BODY_LEADING;
 /** Their paragraph-to-paragraph step is 24.6pt — one clear blank line. */
 const PARA_GAP = K.PARA_GAP;
-/** Section headings: 49pt of air above, 24.8 below. */
-const HEADING_ABOVE = 49;
-const HEADING_BELOW = 25;
-/** Quoted statute runs italic with a 28pt hanging indent. */
-const QUOTE_INDENT = 28;
+/**
+ * M9 — ONE HEADER TREATMENT FOR THE BODY'S DATA TABLES.
+ *
+ * MOTIVATION-GUIDE-BOOK 7.4: "Light horizontal rules, header row bold" — with
+ * the later superseding clause allowing the scheme's neutral `band`/`wash`
+ * fills. The battery and precinct tables had drifted into two near-copies (a
+ * 20pt and a 17pt band, different cell padding) and the spec sheet had a third
+ * treatment again, so this is that treatment once: a scheme `band` header row,
+ * uppercase semi-bold heads on one padding scale, and a single hair rule.
+ *
+ * The DATA tables (battery, precinct, spec sheet) call it. The annexure index
+ * keeps its own larger caption row — it is a reference list set at 13pt, not a
+ * data table, and collapsing it into this 8.5pt scale would be a regression
+ * rather than a unification.
+ */
+const BODY_TABLE = {
+  headSize: 7.5,
+  headPadX: 5,
+  headPadY: 6,
+  headBandH: 18,
+  bodySize: 8.5,
+  cellPadX: 5,
+  cellPadY: 5,
+  rule: 0.5,
+} as const;
+
+/**
+ * Draw a data table's header row: an optional continuation caption, then the
+ * tinted band of uppercase heads. Leaves `doc.y` at the foot of the band.
+ */
+function tableHead(
+  chrome: K.Chrome,
+  cols: { head: string; w: number }[],
+  x: number,
+  width: number,
+  continued?: string,
+): void {
+  const { doc, c, f } = chrome;
+  if (continued) {
+    K.label(chrome, continued, x, doc.y, width);
+    doc.y += K.px(8.5) * 1.2 + K.mm(2);
+  }
+  const top = doc.y;
+  doc.rect(x, top, width, BODY_TABLE.headBandH).fill(c.band);
+  let hx = x + BODY_TABLE.headPadX;
+  for (const col of cols) {
+    doc
+      .font(f.sansBold)
+      .fontSize(BODY_TABLE.headSize)
+      .fillColor(c.ink)
+      .text(col.head.toUpperCase(), hx, top + BODY_TABLE.headPadY, {
+        width: col.w - BODY_TABLE.headPadX * 2,
+        characterSpacing: 0.3,
+        lineBreak: false,
+      });
+    hx += col.w;
+  }
+  doc.y = top + BODY_TABLE.headBandH;
+  doc.x = x;
+}
 
 /**
  * THE TEN COLOUR SCHEMES, from the operator's design handoff (2026-08-21).
@@ -651,6 +709,7 @@ export const FORMAT_KEYS: TemplateFormat[] = ['comprehensive'];
  * somebody clicking "get my PDF" gets a PDF.
  */
 export function asFormat(_v: string | null | undefined): TemplateFormat {
+  void _v;
   return 'comprehensive';
 }
 
@@ -1427,7 +1486,7 @@ export class MotivationPdfService {
       // against these, so leaving them at the old values would have flowed
       // body text underneath the banner on every page after the first.
       margins: {
-        top: MARGIN_TOP,
+        top: K.BODY_TOP,
         bottom: MARGIN_BOTTOM,
         left: MARGIN,
         right: MARGIN_RIGHT,
@@ -1458,6 +1517,24 @@ export class MotivationPdfService {
     const C = SCHEMES[asScheme(input.colourway)];
     const L = LAYOUTS[asLayout(input.layout)];
 
+    /**
+     * Where a body page's content starts.
+     *
+     * ⚠️ THE RUNNING BANNER IS 16 mm AND ONLY BANNER DRAWS ONE. Every other
+     * layout was laid out from bodyTop anyway, so Plate, Report, Ledger and
+     * Classic opened each page under a banner-sized void — top-heavy in a way
+     * that reads as a mistake rather than as air. Layouts without a banner
+     * start at the ordinary top padding instead. The footer/watermark pass sets
+     * the margins to zero regardless, so this only moves the body.
+     */
+    const bodyTop = L.runningBanner ? K.BODY_TOP : K.PAD_TOP;
+    // ⚠️ BOTH THE CURRENT PAGE AND THE DOCUMENT OPTIONS. pdfkit builds every
+    // later page's margins from `doc.options.margins`, so setting only the
+    // first page would leave a banner-less layout's second and later pages
+    // reserving the banner band again.
+    doc.page.margins.top = bodyTop;
+    if (doc.options.margins) doc.options.margins.top = bodyTop;
+
     // \u26a0\ufe0f A MISSING FONT MUST NOT FAIL A DOWNLOAD. registerFonts returns
     // false when the assets did not ship \u2014 see the path-resolution note in
     // motivation-pdf-chrome \u2014 and the document then renders in the standard
@@ -1465,6 +1542,24 @@ export class MotivationPdfService {
     const realFonts = K.registerFonts(doc);
     const F = K.faces(realFonts);
     const chrome: K.Chrome = { doc, c: C, f: F };
+
+    /**
+     * M1 — the hanging hairline down the left of a section's body.
+     *
+     * ⚠️ ONLY WHERE THE LAYOUT ASKS FOR IT, AND IT EARNS THE 7 mm INDENT.
+     * Banner and Ledger carry `hangingRule`; Plate, Report and Classic do not.
+     * On the layouts that do, every numbered body paragraph is indented under a
+     * hairline that runs from the heading to the end of that section. On the
+     * layouts that do not, the rule is absent and the paragraph is set flush to
+     * MARGIN, so the indent is always justified by the rule beside it rather
+     * than being a 7 mm gap with nothing in it.
+     *
+     * The closure is page-break aware — the body lets pdfkit break a paragraph
+     * itself (see `sectionRule`).
+     */
+    const bodyRule = L.hangingRule
+      ? K.sectionRule(chrome, bodyTop, K.BODY_BOTTOM)
+      : null;
 
     // ── the running face ────────────────────────────────────────
     //
@@ -1890,7 +1985,7 @@ export class MotivationPdfService {
     if (doc.y + gridHeight > K.BODY_BOTTOM) {
       doc.addPage();
       doc.x = MARGIN;
-      doc.y = K.BODY_TOP;
+      doc.y = bodyTop;
     }
 
     doc
@@ -1914,7 +2009,7 @@ export class MotivationPdfService {
       if (doc.y + need > K.BODY_BOTTOM) {
         doc.addPage();
         doc.x = MARGIN;
-        doc.y = K.BODY_TOP;
+        doc.y = bodyTop;
       }
 
       const y = doc.y;
@@ -2060,11 +2155,15 @@ export class MotivationPdfService {
     /** Which of the book's twelve numbers the body actually printed. */
     const printedNumbers = new Set<string>();
     const renderHeading = (heading: string) => {
+      // ⚠️ THE PREVIOUS SECTION'S RULE ENDS HERE, BEFORE THE HEADING'S OWN AIR
+      // IS ADDED. Closing after the gap would run the old section's hairline up
+      // beside the next heading.
+      bodyRule?.close(doc.y);
       // Keep a heading with at least a couple of lines of its section: if we
       // are near the foot of the page, start the next one now rather than
       // orphan it above the footer strip.
       if (doc.y > K.BODY_BOTTOM - mmGap(34)) doc.addPage();
-      if (doc.y > MARGIN_TOP + 1) doc.y += mmGap(9);
+      if (doc.y > bodyTop + 1) doc.y += mmGap(9);
 
       toc.push({ heading, page: doc.bufferedPageRange().count });
 
@@ -2092,6 +2191,9 @@ export class MotivationPdfService {
       // below are the ones that bite: the SIGNATURE BLOCK three sections later
       // once rendered at x=617 with the disclaimer running off the page.
       doc.x = MARGIN;
+
+      // M1 — the hanging rule opens under this heading and runs to the next.
+      bodyRule?.start(doc.y);
     };
 
     /**
@@ -2141,42 +2243,55 @@ export class MotivationPdfService {
         ];
         cols[2].w = tw - cols[0].w - cols[1].w;
 
-        const headTop = doc.y;
-        doc.rect(MARGIN + K.SECTION_INDENT, headTop, tw, 17).fill(C.band);
-        let hx = MARGIN + K.SECTION_INDENT + 5;
-        for (const c of cols) {
-          doc
-            .font(FONT_BOLD)
-            .fontSize(7.5)
-            .fillColor(C.ink)
-            .text(c.head.toUpperCase(), hx, headTop + 6, {
-              width: c.w - 8,
-              characterSpacing: 0.3,
-              lineBreak: false,
-            });
-          hx += c.w;
-        }
-        doc.y = headTop + 17;
+        const drawPrecinctHead = (continued: boolean) =>
+          tableHead(
+            chrome,
+            cols,
+            MARGIN + K.SECTION_INDENT,
+            tw,
+            continued ? `${t.station} (continued)` : undefined,
+          );
+        drawPrecinctHead(false);
 
         for (const r of t.rows) {
-          if (doc.y > K.BODY_BOTTOM - 26) doc.addPage();
-          const top = doc.y + 4;
+          // ⚠️ MEASURE THE ROW, DO NOT GUESS IT. A fixed 26pt guard let a
+          // wrapped cell cross the page boundary and split mid-row, which reads
+          // as a broken table. Measure the tallest cell and page-break before
+          // the row if it will not fit, redrawing the head on the new sheet.
+          doc.font(F.sans).fontSize(BODY_TABLE.bodySize);
+          const rowNeed =
+            BODY_TABLE.cellPadY +
+            Math.max(
+              ...[r.category, r.latest, r.trend].map((v, i) =>
+                doc.heightOfString(v || '—', {
+                  width: cols[i].w - BODY_TABLE.cellPadX * 2,
+                }),
+              ),
+            ) +
+            BODY_TABLE.cellPadY;
+          if (doc.y + rowNeed > K.BODY_BOTTOM) {
+            doc.addPage();
+            drawPrecinctHead(true);
+          }
+          const top = doc.y + BODY_TABLE.cellPadY;
           let bottom = top;
-          let cx = MARGIN + K.SECTION_INDENT + 5;
+          let cx = MARGIN + K.SECTION_INDENT + BODY_TABLE.cellPadX;
           for (const [i, v] of [r.category, r.latest, r.trend].entries()) {
             doc
-              .font(FONT)
-              .fontSize(8.5)
-              .fillColor(BLACK)
-              .text(v || '—', cx, top, { width: cols[i].w - 8 });
+              .font(F.sans)
+              .fontSize(BODY_TABLE.bodySize)
+              .fillColor(C.ink)
+              .text(v || '—', cx, top, {
+                width: cols[i].w - BODY_TABLE.cellPadX * 2,
+              });
             bottom = Math.max(bottom, doc.y);
             cx += cols[i].w;
           }
-          const ruleY = bottom + 4;
+          const ruleY = bottom + BODY_TABLE.cellPadY;
           doc
             .moveTo(MARGIN + K.SECTION_INDENT, ruleY)
             .lineTo(MARGIN + contentWidth, ruleY)
-            .lineWidth(0.5)
+            .lineWidth(BODY_TABLE.rule)
             .strokeColor(C.hair)
             .stroke();
           doc.y = ruleY;
@@ -2407,8 +2522,9 @@ export class MotivationPdfService {
       }
 
       /**
-       * Widths sum to contentWidth (451.28) by construction; a column that
-       * overflows would silently overprint its neighbour rather than wrap.
+       * Widths sum to contentWidth — currently about 515.9pt — by construction;
+       * a column that overflows would silently overprint its neighbour rather
+       * than wrap.
        *
        * ⚠️ SEVEN COLUMNS IN THE SPACE OF FOUR, SO THE TYPE DROPS TO 8.5 pt AND
        * THE HEADS SHORTEN. "Date of expiry" becomes "Expires" because the
@@ -2424,18 +2540,27 @@ export class MotivationPdfService {
        * is worse than no column; the data policy ("say nothing where nothing was
        * stated") is not changed by dropping the space that would have said it.
        *
-       * Widths still sum to contentWidth by construction — the last column takes
-       * whatever the fixed ones leave.
+       * Widths sum by construction — 'Make and model' takes whatever the fixed
+       * columns leave, so the table always fits the column.
        */
-      const hasPurpose = owned.some((f) =>
-        String(f.status ?? '').trim(),
-      );
+      // ⚠️ '—' IS ALSO "NOT STATED". heldStatus() emitted an em dash for a
+      // purpose nothing supplied, which made this always true and printed a
+      // Purpose column of dashes on every battery — the exact "failed lookup"
+      // the column exists to avoid. The field is now blank upstream, and a
+      // legacy '—' is treated as blank here too.
+      const hasPurpose = owned.some((f) => {
+        const s = String(f.status ?? '').trim();
+        return s !== '' && s !== '—';
+      });
+      const EXPIRES_W = 55;
       const cols: {
         head: string;
         w: number;
         key: keyof (typeof owned)[0];
       }[] = [
-        { head: 'Make and model', w: 104, key: 'make' },
+        // 'Make and model' is the flexible column — it takes the slack the
+        // others leave, so the model name has room rather than Expires.
+        { head: 'Make and model', w: 0, key: 'make' },
         { head: 'Type', w: 44, key: 'type' },
         { head: 'Calibre', w: 68, key: 'calibre' },
         { head: 'Serial', w: 74, key: 'serial' },
@@ -2443,50 +2568,65 @@ export class MotivationPdfService {
         ...(hasPurpose
           ? [{ head: 'Purpose', w: 62, key: 'status' as const }]
           : []),
-        // Width assigned below from the room the fixed columns leave.
-        { head: 'Expires', w: 0, key: 'expiry' },
+        // ⚠️ A DATE IS TEN CHARACTERS. Left as the remainder Expires claimed
+        // up to 180pt of a 516pt column and squeezed the make and model into
+        // three. Capped here, and the slack goes to the first column instead.
+        { head: 'Expires', w: EXPIRES_W, key: 'expiry' },
       ];
       const fixedWidth = cols
-        .slice(0, -1)
+        .slice(1)
         .reduce((sum, col) => sum + col.w, 0);
-      cols[cols.length - 1].w = contentWidth - fixedWidth;
+      cols[0].w = Math.max(96, contentWidth - fixedWidth);
 
-      const headTop = doc.y;
-      doc.rect(MARGIN, headTop, contentWidth, 20).fill(C.band);
-      let x = MARGIN + 5;
-      for (const col of cols) {
-        doc
-          .font(FONT_BOLD)
-          .fontSize(7.5)
-          .fillColor(C.ink)
-          .text(col.head.toUpperCase(), x, headTop + 7, {
-            width: col.w - 8,
-            characterSpacing: 0.3,
-            lineBreak: false,
-          });
-        x += col.w;
-      }
-      doc.y = headTop + 20;
+      const drawBatteryHead = (continued: boolean) =>
+        tableHead(
+          chrome,
+          cols,
+          MARGIN,
+          contentWidth,
+          continued ? 'FIREARMS ALREADY LICENSED TO ME (CONTINUED)' : undefined,
+        );
+      drawBatteryHead(false);
 
       for (const f of owned) {
-        if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 30) doc.addPage();
-        const rowTop = doc.y + 5;
+        // ⚠️ MEASURE THE ROW, DO NOT GUESS IT. The fixed 30pt guard let a
+        // wrapped make/model or calibre split mid-row across a page boundary;
+        // measuring the tallest cell and breaking before the row keeps every
+        // row whole, and the header redraws on the new sheet.
+        doc.font(F.sans).fontSize(BODY_TABLE.bodySize);
+        const rowNeed =
+          BODY_TABLE.cellPadY +
+          Math.max(
+            ...cols.map((col) =>
+              doc.heightOfString(String(f[col.key] ?? ''), {
+                width: col.w - BODY_TABLE.cellPadX * 2,
+              }),
+            ),
+          ) +
+          BODY_TABLE.cellPadY;
+        if (doc.y + rowNeed > K.BODY_BOTTOM) {
+          doc.addPage();
+          drawBatteryHead(true);
+        }
+        const rowTop = doc.y + BODY_TABLE.cellPadY;
         let bottom = rowTop;
-        let cx = MARGIN + 5;
+        let cx = MARGIN + BODY_TABLE.cellPadX;
         for (const col of cols) {
           doc
-            .font(FONT)
-            .fontSize(8.5)
-            .fillColor(BLACK)
-            .text(String(f[col.key] ?? '—'), cx, rowTop, { width: col.w - 8 });
+            .font(F.sans)
+            .fontSize(BODY_TABLE.bodySize)
+            .fillColor(C.ink)
+            .text(String(f[col.key] ?? ''), cx, rowTop, {
+              width: col.w - BODY_TABLE.cellPadX * 2,
+            });
           bottom = Math.max(bottom, doc.y);
           cx += col.w;
         }
-        const ruleY = bottom + 5;
+        const ruleY = bottom + BODY_TABLE.cellPadY;
         doc
           .moveTo(MARGIN, ruleY)
           .lineTo(MARGIN + contentWidth, ruleY)
-          .lineWidth(0.5)
+          .lineWidth(BODY_TABLE.rule)
           .strokeColor(C.hair)
           .stroke();
         doc.y = ruleY;
@@ -2635,12 +2775,11 @@ export class MotivationPdfService {
        * ⚠️ THE FEATURE IS INDENTED WITH THE BODY, NOT FLUSH TO THE MARGIN.
        * Operator, 2026-09-15: "the cartridge, all the paragraphs does not line
        * up on the left side of the paper." Body paragraphs start at
-       * MARGIN + SECTION_INDENT — the 7 mm under the section rule — and the
-       * columns were starting at MARGIN, so the whole spread jutted 7 mm to the
-       * left of every other paragraph. Both columns and the photograph now
-       * share the body's left edge.
+       * MARGIN + SECTION_INDENT wherever the layout draws its hanging rule, and
+       * flush to MARGIN where it does not — the columns and the photograph
+       * share the body's left edge either way. See `bodyRule`.
        */
-      const indent = K.SECTION_INDENT;
+      const indent = L.hangingRule ? K.SECTION_INDENT : 0;
       const usable = contentWidth - indent;
       const leftX = MARGIN + indent;
       const GUTTER = K.mm(6);
@@ -2904,7 +3043,7 @@ export class MotivationPdfService {
       if (spill.length) {
         doc.addPage();
         doc.x = MARGIN;
-        doc.y = K.BODY_TOP;
+        doc.y = bodyTop;
         for (const group of spill) {
           for (const raw of group) {
             const sub = subheadingOf(raw);
@@ -2968,7 +3107,7 @@ export class MotivationPdfService {
       if (!hasCartridgeBlock || cartridgeDrawn || !input.cartridgeDrawing)
         return;
       // The feature takes a sheet of its own — same rule as the deferred path.
-      if (article && doc.y > K.BODY_TOP + K.mm(1)) doc.addPage();
+      if (article && doc.y > bodyTop + K.mm(1)) doc.addPage();
       else if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20))
         doc.addPage();
       renderHeading(cartridgeHeading);
@@ -3037,7 +3176,7 @@ export class MotivationPdfService {
        */
       if (hasCartridgeBlock && input.cartridgeDrawing && !cartridgeDrawn) {
         // The feature takes a page of its own here too — see the body loop.
-        if (article && doc.y > K.BODY_TOP + K.mm(1)) doc.addPage();
+        if (article && doc.y > bodyTop + K.mm(1)) doc.addPage();
         else if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20))
           doc.addPage();
         renderHeading(cartridgeHeading);
@@ -3173,8 +3312,8 @@ export class MotivationPdfService {
           drawDeferredBody();
           // The feature's own page break is satisfied by the declaration's.
           featureBreakPending = false;
-          if (doc.y > K.BODY_TOP + K.mm(1)) doc.addPage();
-        } else if (wantsCartridge && article && doc.y > K.BODY_TOP + K.mm(1)) {
+          if (doc.y > bodyTop + K.mm(1)) doc.addPage();
+        } else if (wantsCartridge && article && doc.y > bodyTop + K.mm(1)) {
           doc.addPage();
         } else if (
           headingWouldOrphan({
@@ -3228,14 +3367,19 @@ export class MotivationPdfService {
         // Part 7.5 — see isQuotedSubsection.
         const isStatute = isQuotedSubsection(block, inStatutorySection);
         // ⚠️ THE BODY IS SET IN THE SERIF, INDENTED UNDER THE SECTION RULE.
-        // The handoff runs a 1 px hairline down the left of every section's
-        // body at a 7 mm indent, which is what separates the argument from
-        // the furniture. Annexure cross-references are set italic in `deep`,
+        // The handoff runs a 1 px hairline down the left of a section's body
+        // at a 7 mm indent, which is what separates the argument from the
+        // furniture. Annexure cross-references are set italic in `deep`,
         // as inline <em> in the reference.
         // 10.5 pt against an 11 pt body, and a further 6 mm of indent: enough
         // that a reviewer can see at a glance which words are the Act's and
         // which are the applicant's, without the quote reading as a footnote.
         const statuteIndent = isStatute ? K.mm(6) : 0;
+
+        // ⚠️ THE 7 mm INDENT ONLY WHERE THE HANGING RULE IS DRAWN. A layout
+        // without one (Plate, Report, Classic) sets the paragraph flush to
+        // MARGIN, so the indent is never an unexplained gap. See `bodyRule`.
+        const bodyIndent = L.hangingRule ? K.SECTION_INDENT : 0;
 
         /**
          * ⚠️ A PARAGRAPH MAY BREAK ACROSS A PAGE. Operator, 2026-09-20:
@@ -3255,8 +3399,8 @@ export class MotivationPdfService {
           .font(isRef ? B.bodyItalic : B.body)
           .fontSize(isStatute ? BODY_SIZE * (10.5 / 11) : BODY_SIZE)
           .fillColor(isRef ? C.deep : isStatute ? C.sub : C.ink)
-          .text(block, MARGIN + K.SECTION_INDENT + statuteIndent, doc.y, {
-            width: contentWidth - K.SECTION_INDENT - statuteIndent,
+          .text(block, MARGIN + bodyIndent + statuteIndent, doc.y, {
+            width: contentWidth - bodyIndent - statuteIndent,
             /**
              * ⚠️ RAGGED RIGHT, NEVER JUSTIFIED. MOTIVATION-GUIDE-BOOK Part
              * 7.1. Justification in pdfkit is word-spacing only — there is no
@@ -3271,6 +3415,8 @@ export class MotivationPdfService {
           });
         doc.x = MARGIN;
         doc.y += PARA_GAP;
+        // M1 — extend this section's hanging rule to the paragraph's foot.
+        bodyRule?.close(doc.y);
       }
     }
 
@@ -3287,31 +3433,35 @@ export class MotivationPdfService {
       if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 170) doc.addPage();
       renderHeading('The firearm I am applying for');
 
-      const labelW = 190;
+      // M9 — the label column is a PROPORTION of the content width, not the
+      // hard-coded 190pt that silently stopped fitting when MARGIN changed.
+      const labelW = Math.round(contentWidth * 0.37);
       for (const spec of input.firearmSpec) {
         if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 24) doc.addPage();
         const y = doc.y;
         doc
-          .font(FONT_BOLD)
-          .fontSize(10)
-          .fillColor(BLACK)
-          .text(spec.label, MARGIN + 6, y, { width: labelW - 12 });
+          .font(F.sansBold)
+          .fontSize(BODY_TABLE.bodySize)
+          .fillColor(C.ink)
+          .text(spec.label, MARGIN + BODY_TABLE.cellPadX, y, {
+            width: labelW - BODY_TABLE.cellPadX * 2,
+          });
         const afterLabel = doc.y;
         doc
-          .font(FONT)
-          .fontSize(10)
-          .fillColor(BLACK)
+          .font(F.sans)
+          .fontSize(BODY_TABLE.bodySize)
+          .fillColor(C.ink)
           .text(spec.value, MARGIN + labelW, y, {
-            width: contentWidth - labelW - 6,
+            width: contentWidth - labelW - BODY_TABLE.cellPadX,
           });
-        const rowBottom = Math.max(afterLabel, doc.y) + 5;
+        const rowBottom = Math.max(afterLabel, doc.y) + BODY_TABLE.cellPadY;
         doc
           .moveTo(MARGIN, rowBottom)
           .lineTo(MARGIN + contentWidth, rowBottom)
-          .lineWidth(0.5)
+          .lineWidth(BODY_TABLE.rule)
           .strokeColor(C.hair)
           .stroke();
-        doc.y = rowBottom + 5;
+        doc.y = rowBottom + BODY_TABLE.cellPadY;
       }
       doc.x = MARGIN;
       doc.y += PARA_GAP;
@@ -3346,6 +3496,10 @@ export class MotivationPdfService {
      */
     drawDeferredBody();
 
+    // M1 — the last section's hanging rule ends with the body, above the
+    // signature block and the disclaimer.
+    bodyRule?.close(doc.y);
+
     // ── Signature block ───────────────────────────────────────────────
     // The applicant signs this as their own motivation — that is what the
     // declaration in the app commits them to, and the document has to carry a
@@ -3356,9 +3510,26 @@ export class MotivationPdfService {
     // old sans at the old greys — and they sit at the FOOT of the argument,
     // directly under the serif they were meant to close. On the page they
     // read as a different document's footer glued to the bottom.
-    if (doc.y > K.BODY_BOTTOM - K.mm(46)) doc.addPage();
+    if (doc.y > K.BODY_BOTTOM - K.mm(64)) doc.addPage();
     doc.x = MARGIN;
     doc.y += K.mm(10);
+    // ⚠️ THE THREE RULES THE SPEC ASKS FOR. MOTIVATION-GUIDE-BOOK 7.6 and
+    // MOTIVATION-LAYOUT-SPEC §5 want the place and date the document was signed
+    // at, a signature line, and the signer's identity — not just a hairline and
+    // the word "signature". Without the place/date line a DFO cannot tell where
+    // or when the declaration was made, which is the first thing the signature
+    // exists to establish.
+    doc
+      .font(B.body)
+      .fontSize(K.px(12))
+      .fillColor(C.ink)
+      .text(
+        'Signed at ________________________ on ______ / ______ / 20______',
+        MARGIN,
+        doc.y,
+        { width: contentWidth, lineBreak: false },
+      );
+    doc.y += K.mm(11);
     const sigW = K.mm(78);
     const sigY = doc.y + K.mm(9);
     doc
@@ -3367,13 +3538,22 @@ export class MotivationPdfService {
       .lineWidth(0.7)
       .strokeColor(C.hair)
       .stroke();
-    doc.y = sigY + K.mm(2);
+    K.label(chrome, 'Signature', MARGIN, sigY + K.mm(1.5), sigW);
+    doc.y = sigY + K.mm(5.5);
     doc
       .font(B.body)
       .fontSize(K.px(13))
       .fillColor(C.ink)
-      .text(input.applicantName, MARGIN, doc.y, { width: sigW });
-    K.label(chrome, 'Signature and date', MARGIN, doc.y + 1, sigW);
+      .text(input.applicantName, MARGIN, doc.y, { width: contentWidth });
+    if (input.idNumber) {
+      doc
+        .font(B.body)
+        .fontSize(K.px(11))
+        .fillColor(C.sub)
+        .text(`Identity number: ${input.idNumber}`, MARGIN, doc.y + K.px(2), {
+          width: contentWidth,
+        });
+    }
     doc.x = MARGIN;
 
     // ── Disclaimer ────────────────────────────────────────────────────
@@ -3425,7 +3605,7 @@ export class MotivationPdfService {
       // rather than a note from us.
       doc.addPage();
       doc.x = MARGIN;
-      doc.y = K.BODY_TOP;
+      doc.y = bodyTop;
       /**
        * ⚠️ NO ANNEXURE LETTER. The PAJA request is its own lodged document and
        * sits BETWEEN the motivation and the annexures — it is not a copy of
@@ -3486,7 +3666,7 @@ export class MotivationPdfService {
       doc.y += K.mm(6);
 
       // The hanging hairline down the left of the body, as the sections use.
-      const pnRule = K.sectionRule(chrome);
+      const pnRule = K.sectionRule(chrome, bodyTop, K.BODY_BOTTOM);
       pnRule.start(doc.y);
       const bodyX = MARGIN + K.SECTION_INDENT;
       const bodyW = contentWidth - K.SECTION_INDENT;
@@ -3510,7 +3690,7 @@ export class MotivationPdfService {
         if (doc.y + need > K.BODY_BOTTOM) {
           pnRule.close(K.BODY_BOTTOM);
           doc.addPage();
-          doc.y = K.BODY_TOP;
+          doc.y = bodyTop;
           pnRule.start(doc.y);
         }
 
@@ -3540,17 +3720,30 @@ export class MotivationPdfService {
       // of 90 threw the signature onto a page of its own with seventy points
       // of clear space above it — a one-line page seven that reads as a
       // printing accident on a document somebody is handing to an official.
-      const sigNeed = K.mm(4) + K.mm(9) + K.px(13) * 2.4;
+      // The place/date line, the signature rule and the identity number, the
+      // same three any official request from the applicant carries.
+      const sigNeed = K.mm(4) + K.mm(11) + K.mm(9) + K.px(13) * 2.4;
       if (doc.y + sigNeed > K.BODY_BOTTOM) {
         pnRule.close(K.BODY_BOTTOM);
         doc.addPage();
-        doc.y = K.BODY_TOP;
+        doc.y = bodyTop;
         pnRule.start(doc.y);
       }
       pnRule.close(doc.y);
 
       doc.x = MARGIN;
       doc.y += K.mm(4);
+      doc
+        .font(B.body)
+        .fontSize(K.px(12))
+        .fillColor(C.ink)
+        .text(
+          'Signed at ____________________ on ______ / ______ / 20______',
+          MARGIN,
+          doc.y,
+          { width: contentWidth, lineBreak: false },
+        );
+      doc.y += K.mm(11);
       const pnSigY = doc.y + K.mm(9);
       doc
         .moveTo(MARGIN, pnSigY)
@@ -3558,13 +3751,25 @@ export class MotivationPdfService {
         .lineWidth(0.7)
         .strokeColor(C.hair)
         .stroke();
-      doc.y = pnSigY + K.mm(2);
+      K.label(chrome, 'Signature', MARGIN, pnSigY + K.mm(1.5), K.mm(72));
+      doc.y = pnSigY + K.mm(5.5);
       doc
         .font(B.body)
         .fontSize(K.px(13))
         .fillColor(C.ink)
-        .text(input.applicantName, MARGIN, doc.y, { width: K.mm(72) });
-      K.label(chrome, 'Signature and date', MARGIN, doc.y + 1, K.mm(72));
+        .text(input.applicantName, MARGIN, doc.y, { width: contentWidth });
+      if (input.idNumber) {
+        doc
+          .font(B.body)
+          .fontSize(K.px(11))
+          .fillColor(C.sub)
+          .text(
+            `Identity number: ${input.idNumber}`,
+            MARGIN,
+            doc.y + K.px(2),
+            { width: contentWidth },
+          );
+      }
       doc.x = MARGIN;
     }
 
@@ -3641,7 +3846,7 @@ export class MotivationPdfService {
     if (input.annexures?.length) {
       doc.addPage();
       doc.x = MARGIN;
-      doc.y = K.BODY_TOP;
+      doc.y = bodyTop;
       const annexureIndexPage = doc.bufferedPageRange().count;
       toc.push({ heading: 'ANNEXURES', page: annexureIndexPage });
       for (const annexure of input.annexures) {
@@ -3741,7 +3946,7 @@ export class MotivationPdfService {
           K.mm(6);
         if (doc.y + need > K.BODY_BOTTOM) {
           doc.addPage();
-          doc.y = K.BODY_TOP;
+          doc.y = bodyTop;
           drawTableHead(true);
         }
 
@@ -3829,7 +4034,7 @@ export class MotivationPdfService {
             K.mm(6);
           if (doc.y + need > K.BODY_BOTTOM) {
             doc.addPage();
-            doc.y = K.BODY_TOP;
+            doc.y = bodyTop;
             drawTableHead(true);
           }
           const y = doc.y;
@@ -3914,17 +4119,17 @@ export class MotivationPdfService {
       if (input.annexuresNotPrinted?.length) {
         doc.moveDown(0.6);
         doc
-          .font(FONT_ITALIC)
+          .font(F.sans)
           .fontSize(9.5)
-          .fillColor(GREY)
-          .text('Bring your own copy of these — we could not reprint them:', {
+          .fillColor(C.mut)
+          .text('Bring your own copy of these — they could not be reprinted:', {
             width: contentWidth,
           });
         for (const n of input.annexuresNotPrinted) {
           doc
-            .font(FONT)
+            .font(F.sans)
             .fontSize(9.5)
-            .fillColor(GREY)
+            .fillColor(C.mut)
             .text(`Annexure ${n.letter} — ${n.label} (${n.why})`, {
               width: contentWidth,
               indent: 12,
@@ -3967,9 +4172,9 @@ export class MotivationPdfService {
         // the line that tells the reader which annexure they are looking at.
         // The banner is stamped last, in the bufferPages pass, so nothing here
         // could see the collision coming.
-        y: K.BODY_TOP,
+        y: bodyTop,
         width: contentWidth,
-        height: K.BODY_BOTTOM - K.BODY_TOP,
+        height: K.BODY_BOTTOM - bodyTop,
       };
       const plannedImages = input.annexureImages.map((a2) => ({
         bytes: a2.bytes,
@@ -4021,36 +4226,122 @@ export class MotivationPdfService {
        * contents points at the sheet the annexure opens on; the letter is
        * assigned once.
        */
+      /**
+       * M8 — a lettered divider before each annexure group, with an edge tab.
+       *
+       * MOTIVATION-LAYOUT-SPEC §5 and MOTIVATION-GUIDE-BOOK 7.7 both ask for a
+       * divider sheet opening each annexure: the letter large, what it is, and
+       * a small solid tab at the page edge the reader can thumb to.
+       *
+       * ⚠️ ONE PER LETTER, AT THE FIRST SHEET THAT LETTER OPENS ON. The
+       * contents entry is re-pointed at the divider, so "Annexure B" in the
+       * index lands on the sheet that names it rather than the first copy
+       * behind it. A page that merely continues an earlier letter takes no
+       * divider; a letter whose first copy shares a sheet with the tail of the
+       * previous one does not get its own (the packing puts several short
+       * documents on one sheet, and splitting it would reflow the planner).
+       */
+      const annexureByLetter = new Map(
+        (input.annexures ?? []).map((a) => [a.letter, a] as const),
+      );
+      const drawAnnexureDivider = (letter: string) => {
+        const entry = annexureByLetter.get(letter);
+        const tabW = K.mm(14);
+        const tabH = K.mm(34);
+        const tabY = PAGE_HEIGHT / 2 - tabH / 2;
+        doc.rect(PAGE_WIDTH - tabW, tabY, tabW, tabH).fill(C.bannerFrom);
+        doc
+          .font(F.sansBold)
+          .fontSize(K.mm(13))
+          .fillColor('#ffffff')
+          .text(letter, PAGE_WIDTH - tabW, tabY + tabH / 2 - K.mm(4.5), {
+            width: tabW,
+            align: 'center',
+            lineBreak: false,
+          });
+
+        doc
+          .font(F.sansBold)
+          .fontSize(K.mm(46))
+          .fillColor(C.deep)
+          .text(letter, MARGIN, K.mm(78), {
+            width: contentWidth,
+            align: 'center',
+            lineBreak: false,
+          });
+        doc
+          .font(F.sans)
+          .fontSize(K.px(18))
+          .fillColor(C.deep)
+          .text(`Annexure ${letter}`, MARGIN, K.mm(142), {
+            width: contentWidth,
+            align: 'center',
+          });
+        if (entry) {
+          doc
+            .font(F.sansSemi)
+            .fontSize(K.px(12))
+            .fillColor(C.mut)
+            .text(entry.label, MARGIN, K.mm(152), {
+              width: contentWidth,
+              align: 'center',
+            });
+          doc
+            .font(F.sans)
+            .fontSize(K.px(9.5))
+            .fillColor(C.mut)
+            .text(
+              `${entry.count} ${entry.count === 1 ? 'item' : 'items'} · ` +
+                certificationPhrase(entry.certification),
+              MARGIN,
+              K.mm(159),
+              { width: contentWidth, align: 'center' },
+            );
+        }
+        doc.x = MARGIN;
+        doc.y = K.BODY_BOTTOM;
+      };
+
+      /**
+       * Point a letter's contents entry at the page it now opens on, creating
+       * the entry when the index did not already push one.
+       */
+      const assignTocPage = (letter: string, page: number) => {
+        const tocEntry = toc.find((entry) =>
+          entry.heading.startsWith(`Annexure ${letter} `),
+        );
+        if (tocEntry) {
+          tocEntry.page = page;
+          return;
+        }
+        const annexure = annexureByLetter.get(letter);
+        if (annexure) {
+          toc.push({ heading: annexureContentsHeading(annexure), page });
+        }
+      };
+
       const placedLetters = new Set<string>();
       for (const page of pages) {
+        const opening = page[0]?.letter;
+        if (opening && !placedLetters.has(opening)) {
+          doc.addPage();
+          drawAnnexureDivider(opening);
+          assignTocPage(opening, doc.bufferedPageRange().count);
+          placedLetters.add(opening);
+        }
         doc.addPage();
         for (const place of page) {
           if (placedLetters.has(place.letter)) continue;
           placedLetters.add(place.letter);
-          const tocEntry = toc.find((entry) =>
-            entry.heading.startsWith(`Annexure ${place.letter} `),
-          );
-          if (tocEntry) {
-            tocEntry.page = doc.bufferedPageRange().count;
-          } else {
-            const annexure = input.annexures?.find(
-              (a) => a.letter === place.letter,
-            );
-            if (annexure) {
-              toc.push({
-                heading: annexureContentsHeading(annexure),
-                page: doc.bufferedPageRange().count,
-              });
-            }
-          }
+          assignTocPage(place.letter, doc.bufferedPageRange().count);
         }
         for (const place of page) {
           const src = sourceByBytes.get(place.bytes!);
           if (!src) continue;
           doc
-            .font(FONT_BOLD)
+            .font(F.sansBold)
             .fontSize(9.5)
-            .fillColor(BLACK)
+            .fillColor(C.ink)
             .text(captionFor(place), MARGIN, place.captionY, {
               width: contentWidth,
               lineBreak: false,
@@ -4066,9 +4357,9 @@ export class MotivationPdfService {
             // one — the member gets the rest of their pack and a line saying
             // which copy to bring, instead of a download that 500s.
             doc
-              .font(FONT_ITALIC)
+              .font(F.sans)
               .fontSize(9.5)
-              .fillColor(GREY)
+              .fillColor(C.mut)
               .text(
                 'This copy could not be printed — bring your own.',
                 MARGIN,
@@ -4113,7 +4404,7 @@ export class MotivationPdfService {
 
             const required = src.certification === 'required';
             doc
-              .font(FONT_BOLD)
+              .font(F.sansBold)
               .fontSize(7.5)
               .fillColor(C.ink)
               .text(
@@ -4133,13 +4424,13 @@ export class MotivationPdfService {
               .rect(zoneX, place.stampY + 20, zoneW, bh - 28)
               .lineWidth(0.5)
               .dash(2, { space: 2 })
-              .strokeColor('#BBBBBB')
+              .strokeColor(C.hair)
               .stroke()
               .undash();
             doc
-              .font(FONT_ITALIC)
+              .font(F.sans)
               .fontSize(7)
-              .fillColor('#999999')
+              .fillColor(C.mut)
               .text('Stamp', zoneX, place.stampY + bh / 2, {
                 width: zoneW,
                 align: 'center',
@@ -4162,12 +4453,12 @@ export class MotivationPdfService {
                 .moveTo(bx + 8, fy + 8)
                 .lineTo(bx + 8 + fieldW, fy + 8)
                 .lineWidth(0.4)
-                .strokeColor('#BBBBBB')
+                .strokeColor(C.hair)
                 .stroke();
               doc
-                .font(FONT)
+                .font(F.sans)
                 .fontSize(6.5)
-                .fillColor('#999999')
+                .fillColor(C.mut)
                 .text(label, bx + 8, fy + 10, {
                   width: fieldW,
                   lineBreak: false,
@@ -4184,7 +4475,7 @@ export class MotivationPdfService {
               .moveTo(MARGIN, ruleY)
               .lineTo(PAGE_WIDTH - MARGIN, ruleY)
               .lineWidth(0.5)
-              .strokeColor(RULE)
+              .strokeColor(C.hair)
               .stroke();
           }
         }
@@ -4230,13 +4521,13 @@ export class MotivationPdfService {
         const range = doc.bufferedPageRange();
         doc.switchToPage(startedOn - 1 + range.start);
         doc
-          .font(FONT_BOLD)
+          .font(F.sansBold)
           .fontSize(9.5)
-          .fillColor(BLACK)
+          .fillColor(C.ink)
           .text(
             `Annexure ${entry.letter} ${String.fromCharCode(8212)} ${entry.label}`,
             MARGIN,
-            K.BODY_TOP - K.mm(6),
+            bodyTop - K.mm(6),
             { width: contentWidth, lineBreak: false },
           );
         doc.switchToPage(range.start + range.count - 1);
@@ -4258,7 +4549,7 @@ export class MotivationPdfService {
     if (input.takeWithYou?.length) {
       doc.addPage();
       doc.x = MARGIN;
-      doc.y = K.BODY_TOP;
+      doc.y = bodyTop;
 
       // ⚠️ IN THE RUNNING HEAD, NOT IN THE CONTENTS. The two are separate
       // lists for exactly this page: the banner label is filled forward from
@@ -4280,6 +4571,29 @@ export class MotivationPdfService {
       // show a reader which of them they are holding.
       K.label(chrome, 'BEFORE YOU GO', MARGIN, doc.y, contentWidth);
       doc.y += K.px(8.5) * 1.2 + K.mm(3);
+
+      // ⚠️ THE TITLE COMES FIRST. It used to be drawn AFTER the warning boxes,
+      // and a warning that tripped its own page guard stranded the heading on
+      // a page of its own — "TAKE THESE WITH YOU" alone above the footer, the
+      // one line that tells the applicant what the sheet is. The title and its
+      // rule are drawn with the masthead, so the page always opens by naming
+      // itself, and the warnings follow inside it.
+      doc
+        .font(F.sans)
+        .fontSize(K.px(22))
+        .fillColor(C.deep)
+        .text('TAKE THESE WITH YOU', MARGIN, doc.y, {
+          width: contentWidth,
+          characterSpacing: K.px(22) * 0.06,
+        });
+      doc.y += K.mm(3);
+      doc
+        .moveTo(MARGIN, doc.y)
+        .lineTo(MARGIN + contentWidth, doc.y)
+        .lineWidth(2)
+        .strokeColor(C.deep)
+        .stroke();
+      doc.y += K.mm(5);
 
       /**
        * ⚠️ THE ONE PLACE OUR REFERENCE IS PRINTED, AND IT IS THE PAGE
@@ -4337,22 +4651,6 @@ export class MotivationPdfService {
         doc.x = MARGIN;
         doc.y += K.mm(4);
       }
-      doc
-        .font(F.sans)
-        .fontSize(K.px(22))
-        .fillColor(C.deep)
-        .text('TAKE THESE WITH YOU', MARGIN, doc.y, {
-          width: contentWidth,
-          characterSpacing: K.px(22) * 0.06,
-        });
-      doc.y += K.mm(3);
-      doc
-        .moveTo(MARGIN, doc.y)
-        .lineTo(MARGIN + contentWidth, doc.y)
-        .lineWidth(2)
-        .strokeColor(C.deep)
-        .stroke();
-      doc.y += K.mm(5);
 
       {
         // The preamble, in the margin-bar treatment the forms use for
@@ -4418,7 +4716,7 @@ export class MotivationPdfService {
         need += K.mm(3);
         if (doc.y + need > K.BODY_BOTTOM) {
           doc.addPage();
-          doc.y = K.BODY_TOP;
+          doc.y = bodyTop;
         }
 
         // An empty box to tick with a pen. The applicant is standing at a
@@ -4455,7 +4753,7 @@ export class MotivationPdfService {
       // banner and had its ascenders shaved off — on page two of every pack.
       // It survived because this page is written last, in the bufferPages
       // pass, long after the code that established where a page begins.
-      doc.y = K.BODY_TOP;
+      doc.y = bodyTop;
       doc.x = MARGIN;
 
       K.label(chrome, 'IN THIS PACK', MARGIN, doc.y, contentWidth);
@@ -4485,7 +4783,7 @@ export class MotivationPdfService {
         ) {
           contentsPage++;
           doc.switchToPage(tocPageIndexes[contentsPage]);
-          doc.y = K.BODY_TOP;
+          doc.y = bodyTop;
           doc.x = MARGIN;
           K.label(
             chrome,
@@ -4609,14 +4907,7 @@ export class MotivationPdfService {
     // pack "page 5 of 12", and a DFO counting sheets would think three were
     // missing.
     const merged = await loadPdfAnnexures(input.annexurePdfs ?? []);
-    // The running title, as theirs reads: who, what firearm, which section.
-    const runningTitle = [
-      `Motivation for ${input.applicantName}`,
-      input.firearmLine ? `for a ${input.firearmLine}` : '',
-      `— ${input.licenceTypeLabel}`,
-    ]
-      .filter(Boolean)
-      .join(' ');
+
     // "Gerhard Johan Petrus Fourie" -> "Gerhard J P Fourie", as the handoff's
     // banner and footer both set it. A full name at 8 pt with 0.28em tracking
     // does not fit the strip beside the reference and the firearm.
@@ -4628,6 +4919,34 @@ export class MotivationPdfService {
     // FORWARD, so a section running over three pages labels all three, and a
     // page before the first heading (the contents) labels itself.
     const range = doc.bufferedPageRange();
+
+    /**
+     * ⚠️ A PDF ANNEXURE'S CONTENTS ENTRY POINTS AT THE INDEX PAGE, because the
+     * index is where its entry was pushed and only image annexures are
+     * re-pointed by the layout pass. These pages are spliced in after the body
+     * is closed, so their final number is arithmetic: the insertion point, plus
+     * every extracted page before them, plus whatever earlier blocks displaced.
+     * Handled like the C.I.P. sheet — a `final` entry carries its answer.
+     */
+    if (merged.loaded.length) {
+      const insertAt0 =
+        takeWithYouAt === null ? range.count : takeWithYouAt - 1;
+      let cumulative = 0;
+      for (const a of merged.loaded) {
+        // The merged run sits contiguously from one point, in load order.
+        const page =
+          insertAt0 + 1 + cumulative + shiftFor(insertAt0 + cumulative);
+        const entry = toc.find((t) =>
+          t.heading.startsWith(`Annexure ${a.letter} `),
+        );
+        if (entry) {
+          entry.page = page;
+          entry.final = true;
+        }
+        cumulative += a.pageCount;
+      }
+    }
+
     const pageLabels: string[] = [];
     {
       let current = 'Contents';
@@ -4698,9 +5017,9 @@ export class MotivationPdfService {
         // "under the footer". Found by rendering a fixture and looking at it.
         if (i === 0) {
           doc
-            .font(FONT_ITALIC)
+            .font(F.sans)
             .fontSize(9)
-            .fillColor(GREY)
+            .fillColor(C.mut)
             .text(
               'Preview copy — not for use and not for filing. ' +
                 'The final document is issued without this mark.',
@@ -4850,6 +5169,7 @@ export class MotivationPdfService {
       templateVersion: input.templateVersion,
       bodyPageCount: range.count,
       // 0-based: the take-with-you sheets step aside for these.
+      watermark: input.watermark,
     });
     return { pdf, filename: `motivation-${input.referenceNumber}.pdf` };
   }

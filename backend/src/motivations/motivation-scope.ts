@@ -77,7 +77,7 @@ export const CATALOGUE_PHRASES = [
  * of mind" and "in case" are the two reasons section 13(2) exists to refuse.
  * MOTIVATION-GUIDE-BOOK Part 8.3.
  */
-const SLOP_PHRASES = [
+export const SLOP_PHRASES = [
   'in today',
   'it is important to note',
   'it goes without saying',
@@ -96,7 +96,14 @@ const SLOP_PHRASES = [
   'demonstrating my commitment',
   'showcase',
   'leverage',
-  'utilise',
+  /**
+   * ⚠️ "utilise" IS DELIBERATELY ABSENT. `southAfricanise` folds American
+   * "utiliz" → "utilis", which manufactured the very word this list refused:
+   * an Americanism the fold fixed became a fatal slop phrase, and a document
+   * could fail for a word the spelling pass had just written. The Americanism
+   * is still caught by AMERICANISMS before the fold, and "utilise" is now
+   * ordinary South African English.
+   */
   'in order to',
   'a wide range of',
   'the realities of',
@@ -130,7 +137,7 @@ const RECORD_CLAIMS = [
 ] as const;
 
 /** Predictions and pressure. Rule 3, enforced. */
-const OUTCOME_PHRASES = [
+export const OUTCOME_PHRASES = [
   'should succeed',
   'likely to be approved',
   'meets the threshold',
@@ -327,7 +334,7 @@ export function phraseIn(issue: string): string | null {
   * newline inside a regex is exactly the character a heredoc eats.
   */
 const PARA_BREAK = new RegExp(
-  String.fromCharCode(10) + '\s*' + String.fromCharCode(10),
+  String.fromCharCode(10) + '\\s*' + String.fromCharCode(10),
 );
 
 /** The sentences carrying a phrase, verbatim, for a targeted rewrite. */
@@ -382,7 +389,7 @@ export function withoutRefusedCopy(payload: string): string {
     .trim();
 }
 
-const COMPARISON_TERMS = [
+export const COMPARISON_TERMS = [
   'terminal ballistic',
   'stopping power',
   'muzzle energy',
@@ -401,7 +408,7 @@ const COMPARISON_TERMS = [
  * names a held firearm and is pure catalogue copy. A comparison says one thing
  * falls short of another, so the sentence has to carry that shape as well.
  */
-const COMPARING = [
+export const COMPARING = [
   'cannot',
   'can not',
   'does not',
@@ -480,6 +487,130 @@ export interface ScopeContext {
 }
 
 /**
+ * M14 — FIGURES MEASURE, WORDS ARGUE.
+ *
+ * ⚠️ THE WRITER PROMPT MANDATES IT AND NOTHING ENFORCED IT. The house rule is
+ * that a measurement is written in figures ("at 600 m", "9 mm", ".308"), and
+ * the writer was told so in the system prompt — but a prompt is a request, and
+ * this is the one register slip the writer can make with its own hand. Worse,
+ * our OWN code-owned uses-generator shipped a spelled-out exemplar into the
+ * fact pack, so the model copied the example it was handed: "It is suited to
+ * kudu in thornveld at two hundred metres."
+ *
+ * ⚠️ CONSERVATIVE ON PURPOSE. This fires only on a SPELLED NUMBER WORD sitting
+ * directly before a unit — the unit must be adjacent (space or hyphen), the
+ * number must be a word, and the compound ("two hundred", "one hundred and
+ * twenty-five", "two thousand two hundred") is matched as a unit. A numeral
+ * ("200 m") is not a number word, so a well-formed measurement passes; "600 m"
+ * passes. The message is deliberately in documentScope's plain register and,
+ * like the markdown and exclamation complaints, names nothing parseable.
+ */
+const NUMBER_WORDS = [
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+  'eleven',
+  'twelve',
+  'thirteen',
+  'fourteen',
+  'fifteen',
+  'sixteen',
+  'seventeen',
+  'eighteen',
+  'nineteen',
+  'twenty',
+  'thirty',
+  'forty',
+  'fifty',
+  'sixty',
+  'seventy',
+  'eighty',
+  'ninety',
+  'hundred',
+  'thousand',
+] as const;
+
+/**
+ * The unit words a spelled number may precede.
+ *
+ * ⚠️ "bar", "degree" AND "pound" ARE THE AMBIGUOUS ONES AND THEY STAY. A bar is
+ * a pressure and a pub, a degree is an angle and a crime, a pound is a weight
+ * and a currency — and requiring a NUMBER WORD in front, directly touching, is
+ * what keeps the check honest: "one bar", "two degrees" and "three hundred
+ * pounds" are how the measurements are written out, and the nouns that are not
+ * measurements rarely carry a spelled number hard against them.
+ */
+const MEASURE_UNITS = [
+  'metre',
+  'metres',
+  'meter',
+  'meters',
+  'kilometre',
+  'kilometres',
+  'kilometer',
+  'kilometers',
+  'centimetre',
+  'centimetres',
+  'centimeter',
+  'centimeters',
+  'millimetre',
+  'millimetres',
+  'millimeter',
+  'millimeters',
+  'gram',
+  'grams',
+  'kilogram',
+  'kilograms',
+  'pound',
+  'pounds',
+  'foot',
+  'feet',
+  'inch',
+  'inches',
+  'yard',
+  'yards',
+  'mile',
+  'miles',
+  'bar',
+  'bars',
+  'degree',
+  'degrees',
+  'grain',
+  'grains',
+] as const;
+
+/** Longest first, so "metres" is tried before "metre". */
+const longestFirst = (words: readonly string[]): string =>
+  [...words].sort((a, b) => b.length - a.length).join('|');
+
+const NUMBER_ALT = longestFirst(NUMBER_WORDS);
+const UNIT_ALT = longestFirst(MEASURE_UNITS);
+
+/**
+ * A spelled number word, a compound of them, then a unit, all adjacent.
+ * "four kilometres", "two hundred metres", "one hundred and twenty-five
+ * metres", "two thousand two hundred yards". A numeral never matches.
+ */
+export const SPELLED_MEASUREMENT = new RegExp(
+  `\\b(?:${NUMBER_ALT})` +
+    `(?:[\\s-]+(?:and[\\s-]+)?(?:${NUMBER_ALT}))*` +
+    `[\\s-]+(?:${UNIT_ALT})\\b`,
+  'i',
+);
+
+/** True when the text spells out a measurement instead of writing it in figures. */
+export function spellsOutMeasurement(text: string): boolean {
+  return SPELLED_MEASUREMENT.test(text);
+}
+
+/**
  * Everything the document says that the pack does not support.
  *
  * Returns one plain sentence per fault, naming the offending words, for an
@@ -510,6 +641,23 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
   const flag = (msg: string) => {
     if (!issues.includes(msg)) issues.push(msg);
   };
+
+  /**
+   * ⚠️ "DEDICATED" ON A SECTION 15 IS A CLAIM AGAINST THE SECTION. The Act
+   * defines an occasional hunter and an occasional sports person as somebody
+   * who is NOT a member of an accredited association; the brief already forbids
+   * the word on a section 15, and until now only the prompt said so. A section
+   * 15 document that describes the applicant as dedicated has argued them out
+   * of the section they are applying under.
+   */
+  if (
+    ctx.licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER &&
+    /\bdedicated\b/i.test(text)
+  ) {
+    flag(
+      'a section 15 document says "dedicated"; section 15 is for an occasional hunter or sports person, and a claim of dedicated status argues the applicant out of the section they are applying under',
+    );
+  }
 
   /**
    * ⚠️ THE CAPABILITY TERMS ARE JUDGED PER SENTENCE, NOT OVER THE WHOLE TEXT.
@@ -566,6 +714,16 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
   }
   if (/(^|\n)\s*[-*•]\s+/.test(text) || /\*\*|^#{1,6}\s/m.test(text)) {
     flag('the document contains markdown or a bulleted list');
+  }
+  /**
+   * ⚠️ FIGURES MEASURE, WORDS ARGUE. See SPELLED_MEASUREMENT: a spelled-out
+   * number against a unit is the register slip the house rule forbids, and it
+   * is the one the writer copies from our own uses exemplars if we ever ship
+   * one. The complaint names nothing parseable, exactly as the markdown one
+   * does — there is no word to repair, the sentence must be rewritten.
+   */
+  if (spellsOutMeasurement(text)) {
+    flag('the document spells out a measurement; write it in figures');
   }
 
   /**
@@ -781,10 +939,43 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
  * the budget holds once those shrink and the exposure section grows. Reported
  * rather than failed: a document 40 words short is not a document a DFO
  * rejects, and failing the run would cost the applicant a pack over a
- * paragraph break.
+ * paragraph break. The generation service counts the prose and records it in
+ * `qualityFindings.wordCount` against `wordBandFor`, so the number is visible
+ * without ever failing a pack on length.
  */
 export const S13_MIN_WORDS = 900;
 export const S13_MAX_WORDS = 1400;
+
+/**
+ * The prose word band per licence type.
+ *
+ * ⚠️ THESE MIRROR `PROSE_TARGET` IN motivation-prompts.ts, which is the prose
+ * the writer is asked for. That block is a sentence; this is the number the
+ * generation service reports in `qualityFindings`, and the two must agree.
+ * Reported, never fatal on its own — see the note above.
+ */
+export const PROSE_WORD_BANDS: Record<
+  MotivationLicenceType,
+  { min: number; max: number }
+> = {
+  [MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE]: { min: 1100, max: 1600 },
+  [MotivationLicenceType.S13_SELF_DEFENCE]: {
+    min: S13_MIN_WORDS,
+    max: S13_MAX_WORDS,
+  },
+  [MotivationLicenceType.S15_OCCASIONAL_HUNTER]: { min: 1200, max: 1800 },
+  [MotivationLicenceType.S16_DEDICATED_HUNTER]: { min: 1200, max: 1800 },
+  [MotivationLicenceType.S16_DEDICATED_SPORT]: { min: 1200, max: 1800 },
+  [MotivationLicenceType.S24_RENEWAL]: { min: 600, max: 900 },
+};
+
+/** The band for one licence type, or a zero band for an unknown one. */
+export function wordBandFor(t: MotivationLicenceType): {
+  min: number;
+  max: number;
+} {
+  return PROSE_WORD_BANDS[t] ?? { min: 0, max: 0 };
+}
 
 /**
  * Fold the Americanisms the writer sometimes reaches for into the spellings
@@ -815,6 +1006,16 @@ const SPELLING: readonly (readonly [RegExp, string])[] = [
   [/\bdefense\b/gi, 'defence'],
   [/\boffense\b/gi, 'offence'],
   [/meters\b/gi, 'metres'],
+  /**
+   * ⚠️ THE SPELLINGS NOBODY FOLDED, AND THE AUTHORISED FIRMS WERE OURS.
+   * "maneuverability" and "center-fire" are American spellings of words this
+   * document is supposed to file in South African English, and neither AMERICANISMS
+   * nor this fold carried them — so the reason paragraph could fail on
+   * "maneuver" while the document scope only caught it by luck. The stem
+   * carries every inflection.
+   */
+  [/\bmaneuver/gi, 'manoeuvr'],
+  [/\bcenter[-\s]?fire/gi, 'centre-fire'],
   [/authoriz/gi, 'authoris'],
   [/utiliz/gi, 'utilis'],
   [/recogniz/gi, 'recognis'],

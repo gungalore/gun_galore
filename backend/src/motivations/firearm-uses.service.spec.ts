@@ -743,8 +743,8 @@ describe('resolving a row', () => {
         reply({
           occasional_hunter: [
             'I hunt giraffe on vast bushveld farms during culling contracts.',
-            'My rifle takes kudu at two hundred metres.',
-            'It is suited to kudu in thornveld at two hundred metres.',
+            'My rifle takes kudu at 200 m.',
+            'It is suited to kudu in thornveld at 200 m.',
           ],
         }),
       ),
@@ -752,7 +752,7 @@ describe('resolving a row', () => {
     await expect(svc.forClass(RIFLE)).resolves.toEqual([
       {
         label: 'occasional hunting',
-        uses: ['It is suited to kudu in thornveld at two hundred metres.'],
+        uses: ['It is suited to kudu in thornveld at 200 m.'],
       },
       { label: 'occasional sport shooting', uses: [SPORT] },
     ]);
@@ -794,6 +794,29 @@ describe('resolving a row', () => {
       ),
     });
     await expect(svc.forClass(RIFLE)).resolves.toEqual([
+      { label: 'occasional sport shooting', uses: [SPORT] },
+    ]);
+  });
+
+  it('⚠️ DROPS A SPELLED-OUT MEASUREMENT AND KEEPS THE FIGURES', async () => {
+    // M14: the exemplar this service ships into the fact pack must not be the
+    // one the writer copies. A spelled number against a unit is refused by
+    // documentScope, so it is screened here before it can reach the document.
+    const { svc } = build({
+      complete: jest.fn(async () =>
+        reply({
+          occasional_hunter: [
+            'It is suited to kudu in thornveld at two hundred metres.',
+            'It is suited to kudu in thornveld at 200 m.',
+          ],
+        }),
+      ),
+    });
+    await expect(svc.forClass(RIFLE)).resolves.toEqual([
+      {
+        label: 'occasional hunting',
+        uses: ['It is suited to kudu in thornveld at 200 m.'],
+      },
       { label: 'occasional sport shooting', uses: [SPORT] },
     ]);
   });

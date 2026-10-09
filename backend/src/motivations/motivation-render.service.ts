@@ -234,7 +234,13 @@ function heldStatus(answers: Record<string, string>, i: number): string {
   return (
     (answers[`${p}use`] ?? '').trim() ||
     OWN_USE_WORDS[(answers[`${p}primary_use`] ?? '').trim()] ||
-    '—'
+    // ⚠️ EMPTY, NOT AN EM DASH. The battery table drops its whole Purpose
+    // column when nothing was stated, and an em dash is a non-empty string —
+    // so returning one here made every battery print a column of dashes. The
+    // section column keeps its dash (a wrong section is worse than a gap); a
+    // purpose is only ever the member's own word, so nothing stated prints
+    // nothing.
+    ''
   );
 }
 
@@ -287,7 +293,7 @@ export function existingFirearms(
   for (let i = 1; i <= OWNED_ROWS; i++) {
     const make = (answers[`existing_firearm_${i}_make`] ?? '').trim();
     const model = (answers[`existing_firearm_${i}_model`] ?? '').trim();
-    const calibre = (answers[`existing_firearm_${i}_calibre`] ?? '').trim();
+    const calibre = displayCalibre(answers[`existing_firearm_${i}_calibre`]);
     const serial = ownedFirearmSerial(answers, i);
     const expiry = (answers[`existing_firearm_${i}_expiry`] ?? '').trim();
     if (!make && !calibre) continue;
@@ -370,15 +376,16 @@ function cartridgeArticle(
  * action and the serial are rows in the particulars grid further down the same
  * page, where a DFO transcribes them onto the 271 one at a time.
  *
- * ⚠️ AND THE CALIBRE IS THE APPLICANT'S OWN, NOT THE CARTRIDGE'S STANDARDISED
- * NAME. The drawing is of "6,5 Creedmoor" because that is what the figures
- * were found under; the card says "6.5MM CREEDMOOR", and the card is what the
- * DFO is checking the application against. Printing the standardised spelling
- * on the cover would read as a discrepancy on the first page.
+ * ⚠️ AND THE CALIBRE IS NORMALISED WITH `displayCalibre`, THE SAME AS EVERY
+ * OTHER SURFACE OF THE PACK. The drawing is of "6,5 Creedmoor" because that is
+ * what the figures were found under; the card says "6.5MM CREEDMOOR". Printing
+ * the card's raw shouting on the cover while the particulars grid below — and
+ * the body, and the battery table — set the tidied form would read as a
+ * discrepancy on the first page the DFO sees.
  */
 function heroSubtitle(answers: Record<string, string>): string | undefined {
   const make = (answers.firearm_make ?? '').trim();
-  const calibre = (answers.firearm_calibre ?? '').trim();
+  const calibre = displayCalibre(answers.firearm_calibre);
   if (!calibre) return undefined;
   return make ? `${make} · ${calibre}` : calibre;
 }

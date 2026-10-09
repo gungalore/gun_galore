@@ -12,7 +12,7 @@
   splitHeading,
   titleCase,
 } from './motivation-pdf.service';
-import { WATERMARK_TEXT } from './motivation-pdf-chrome';
+import { sectionRule, WATERMARK_TEXT } from './motivation-pdf-chrome';
 import { buildAnnexures } from './motivation-checklist';
 import { MotivationUploadKind } from '@prisma/client';
 import sharp from 'sharp';
@@ -282,6 +282,67 @@ describe('MotivationPdfService', () => {
     expect(pageCount).toBeGreaterThan(2);
   });
 
+  describe('M1 — the hanging hairline and the 7 mm body indent', () => {
+    it('splits a run that crosses a page break into one segment per page', () => {
+      // ⚠️ THE BODY LETS pdfkit BREAK ITSELF, so unlike the prior-notice page
+      // the rule cannot be closed before an explicit addPage. `sectionRule`
+      // detects the change and draws the old page's segment to the foot, the
+      // new page's from the top. Exercised against a mock so the geometry is
+      // asserted instead of a whole render.
+      const strokes: { page: number; from: number; to: number }[] = [];
+      const state = { page: 0, count: 1 };
+      let current: { page: number; from: number; to: number } | null = null;
+      const doc = {
+        bufferedPageRange: () => ({ start: 0, count: state.count }),
+        switchToPage: (p: number) => {
+          state.page = p;
+          return undefined;
+        },
+        moveTo: (_x: number, y: number) => {
+          current = { page: state.page, from: y, to: y };
+          return doc;
+        },
+        lineTo: (_x: number, y: number) => {
+          if (current) current.to = y;
+          return doc;
+        },
+        lineWidth: () => doc,
+        strokeColor: () => doc,
+        stroke: () => {
+          if (current) strokes.push(current);
+          current = null;
+          return doc;
+        },
+      };
+      const rule = sectionRule({ doc, c: { hair: '#ccc' } } as never, 100, 700);
+      rule.start(150); // page 0
+      state.count = 2;
+      state.page = 1; // pdfkit appended a page mid-paragraph
+      rule.close(200);
+
+      expect(strokes).toEqual([
+        { page: 0, from: 150, to: 700 },
+        { page: 1, from: 100, to: 200 },
+      ]);
+    });
+
+    it('still sets the body in both a hanging-rule layout and a flush one', async () => {
+      for (const layout of ['banner', 'classic'] as const) {
+        const { pdf } = await svc.render({
+          ...makeInput(),
+          layout,
+          colourway: 'sage',
+        });
+        const t = squash((await readPdfAsync(pdf)).text);
+        expect(t).toContain(
+          squash(
+            'I have been a member of a recognised hunting association since 2019',
+          ),
+        );
+      }
+    });
+  });
+
   it('is deterministic — same input, same bytes', async () => {
     // generatedAt is injected rather than read from the clock precisely so a
     // re-render of a stored document is reproducible. Nothing is stored, so
@@ -495,11 +556,52 @@ describe('the annexure index', () => {
     const cited = /Annexure A\s*-\s*Copy[^)]*\)\s*(\d+)/.exec(contents);
     expect(cited).not.toBeNull();
 
-    // The page the first copy's caption actually lands on.
+    // The first copy's caption page. M8 puts a lettered DIVIDER immediately
+    // before it, and the contents is pointed at that divider — the annexure's
+    // first sheet — so the cited number is one behind the caption page.
     const firstSheet = pages.findIndex((p) =>
       /Annexure A\s*\u2014\s*Copy/.test(p),
     );
-    expect(firstSheet + 1).toBe(Number(cited![1]));
+    expect(firstSheet).toBeGreaterThan(0);
+    expect(Number(cited![1])).toBe(firstSheet);
+  });
+
+  it('opens an annexure with a lettered divider sheet (M8)', async () => {
+    // MOTIVATION-LAYOUT-SPEC §5 / GUIDE-BOOK 7.7: a divider naming the letter
+    // stands before the copies, and the contents points at it. Asserted as
+    // page order — the divider is a page of its own before the first caption.
+    const png = await sharp({
+      create: { width: 4, height: 3, channels: 3, background: '#ffffff' },
+    })
+      .png()
+      .toBuffer();
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      annexures: buildAnnexures([MotivationUploadKind.IDENTITY_DOCUMENT]),
+      annexureImages: [1, 2].map((index) => ({
+        letter: 'A',
+        label: 'Copy of the applicant’s identity document',
+        index,
+        total: 2,
+        bytes: png,
+        width: 4,
+        height: 3,
+        certification: 'required' as const,
+      })),
+    });
+    const pages = await pageTexts(pdf);
+    const dividerAt = pages.findIndex(
+      (p) =>
+        /Annexure A/.test(p) &&
+        /Copy of the applicant/i.test(p) &&
+        !/Annexure A\s*\u2014/.test(p),
+    );
+    const captionAt = pages.findIndex((p) =>
+      /Annexure A\s*\u2014\s*Copy/.test(p),
+    );
+    expect(dividerAt).toBeGreaterThan(-1);
+    expect(captionAt).toBeGreaterThan(-1);
+    expect(dividerAt).toBeLessThan(captionAt);
   });
 
   it('prints the safe sheet in letter order, not after the last annexure', async () => {
@@ -751,6 +853,47 @@ describe('template choice', () => {
     // this reader cannot decode it. See the note above.
     expect(t).toContain(squash('Firearms already licensed to me'));
     expect(t).toContain(squash('This is a first application'));
+  });
+
+  it('drops the Purpose column when no held firearm states one', async () => {
+    // ⚠️ A COLUMN OF EM DASHES READS AS A FAILED LOOKUP. heldStatus() returned
+    // an em dash for a purpose nothing supplied, which made the hasPurpose
+    // check always true and printed the column on every battery. The field is
+    // blank upstream now, and a legacy dash is treated as blank here too.
+    const { pdf } = await svc.render(
+      withTables({
+        ownedFirearms: [
+          {
+            make: 'CZ 452',
+            calibre: '.22 LR',
+            serial: 'B742119',
+            expiry: '30/04/2031',
+            status: '',
+          },
+        ],
+      }),
+    );
+    const t = squash((await readPdfAsync(pdf)).text);
+    expect(t).toContain(squash('CZ 452'));
+    expect(t).not.toContain(squash('Range practice'));
+  });
+
+  it('prints the Purpose column when a held firearm states one', async () => {
+    const { pdf } = await svc.render(
+      withTables({
+        ownedFirearms: [
+          {
+            make: 'CZ 452',
+            calibre: '.22 LR',
+            serial: 'B742119',
+            expiry: '30/04/2031',
+            status: 'Range practice',
+          },
+        ],
+      }),
+    );
+    const t = squash((await readPdfAsync(pdf)).text);
+    expect(t).toContain(squash('Range practice'));
   });
 
   it('puts the identification block on the cover', async () => {

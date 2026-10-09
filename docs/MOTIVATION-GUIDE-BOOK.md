@@ -543,11 +543,13 @@ The three photographs are cited once: "Photographs of the safe closed, half open
 
 ## Part 7. Layout and visual structure
 
+> **Reconciliation note, 2026-10-08.** The paragraphs in this Part (§7.1 to §7.8) were written on 2026-09-09 before the renderer shipped the operator's later design handoffs of 2026-08-21 and 2026-08-24. The shipped CODE is authoritative for the current geometry, colour and typography. Read `backend/src/motivations/motivation-pdf-chrome.ts`, `motivation-pdf-cover.ts`, `motivation-pdf-layouts.ts` and `motivation-pdf.service.ts` as the source of truth. Where this Part conflicts with the code the code wins and the paragraph is corrected inline below; where the old text is kept for its historical rationale it is marked **[SUPERSEDED]**. The four facts that changed since 2026-09-09: side margins are **14 mm** (not 25 mm); the document is **colour-scheme driven** (thirteen schemes, one fixed brand-red accent), not strictly black on white; body and heading type is the embedded **Archivo** (sans) and **Source Serif 4** (serif) pair, not a generic 11 pt serif; and the cover carries the **wordmark logo** and a photograph of the firearm.
+
 The lodged motivation is read on paper by a police official with a pile of them. It must look like the professionally prepared packs a DFO already knows (the Engala and association-template packs), not like a printout of a chat. These rules are house rules built from those packs.
 
 ### 7.1 Page and type
 
-- A4 portrait, 25 mm margins, single column, left-aligned (ragged right, never justified), 11 pt serif body with 1.3 line spacing, 14 pt bold headings, 10 pt footer. Black on white. No colour except in photographs and tables' light rules.
+- A4 portrait, 14 mm left and right margins (`PAD_X`) with 9 mm below the running banner (`PAD_TOP`), single column, left-aligned (ragged right, never justified). Body type is the embedded Source Serif 4 at about 10.9 pt (`BODY_SIZE`, `px(14.5)`); headings are the embedded Archivo, and the Report layout sets a sans body throughout (see `motivation-pdf-layouts.ts`). Page furniture is colour-scheme driven: thirteen schemes with one brand-red accent (`#E01B24`) fixed across all of them. **[SUPERSEDED]** the pre-handoff target of "25 mm margins, 11 pt serif, black on white, no colour except in photographs and tables' light rules".
 - Running footer on every body page: applicant's full names, ID number, "Motivation: [make] [model] [calibre], serial [serial], section N", and "Page n of N". A signature line ("Initial: ______") in the footer of every page of the motivation so the applicant initials each page, as the Engala packs do.
 - Running header: none on the cover; on body pages the short title "Motivation for a section N licence".
 - Headings printed as headings: numbered, on their own line, bold, with a blank line before. Never inline, never with a trailing colon, never varied in wording between documents.
@@ -557,7 +559,7 @@ The lodged motivation is read on paper by a police official with a pile of them.
 
 ### 7.2 Cover page
 
-Centred, in this order: the addressee ("The Registrar of Firearms, Central Firearms Register, South African Police Service, Pretoria, through the Designated Firearms Officer, [station]"); the title in caps ("MOTIVATION IN SUPPORT OF AN APPLICATION FOR A LICENCE TO POSSESS A FIREARM IN TERMS OF SECTION 16 OF THE FIREARMS CONTROL ACT 60 OF 2000"); the purpose line ("Dedicated hunting"); a particulars table (Applicant, Identity number, Firearm type and action, Make, Model, Calibre, Serial number(s), Section applied under, Date); a photograph of the firearm applied for (the dealer's or seller's photograph, or the applicant's), 90 mm wide, captioned with make, model, calibre and serial. Nothing else. No logo, no service name.
+Centred, in this order: the addressee ("The Registrar of Firearms, Central Firearms Register, South African Police Service, Pretoria, through the Designated Firearms Officer, [station]"); the title in caps ("MOTIVATION IN SUPPORT OF AN APPLICATION FOR A LICENCE TO POSSESS A FIREARM IN TERMS OF SECTION 16 OF THE FIREARMS CONTROL ACT 60 OF 2000"); the purpose line ("Dedicated hunting"); a particulars table (Applicant, Identity number, Firearm type and action, Make, Model, Calibre, Serial number(s), Section applied under, Date); a photograph of the firearm applied for (the dealer's or seller's photograph, or the applicant's), 90 mm wide, captioned with make, model, calibre and serial. The cover also carries the wordmark logo in the masthead of every one of the five cover styles (`motivation-pdf-cover.ts`). The service name is never written anywhere in the pack. **[SUPERSEDED]** the earlier closing rule "Nothing else. No logo, no service name." — the no-logo clause was superseded when the rebrand put the mark back on the cover; the no-service-name clause stands.
 
 ### 7.3 Contents page
 
@@ -565,7 +567,7 @@ Two blocks. "Contents": the twelve body headings that appear, with page numbers.
 
 ### 7.4 Tables in the body
 
-Three tables only: the battery table (Part 6.5), the competency table (certificate number, date of issue, endorsements, unit standards, provider) and, for s 13 and s 14, the precinct figures table (station, category, count, period, release). Light horizontal rules, header row bold, 10 pt, never shaded, never coloured.
+Three tables only: the battery table (Part 6.5), the competency table (certificate number, date of issue, endorsements, unit standards, provider) and, for s 13 and s 14, the precinct figures table (station, category, count, period, release). Light horizontal rules, header row bold, 10 pt. **[SUPERSEDED]** the closing "never shaded, never coloured": the colour schemes carry `band`/`wash` fills for table, panel and footer furniture (`SchemeColours`, `motivation-pdf.service.ts`), so table surfaces may take the scheme's neutral `band`/`wash`; the rules and body text remain the scheme's own values.
 
 ### 7.5 The statutory block
 

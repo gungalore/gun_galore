@@ -31,6 +31,8 @@ import { MotivationPrefillService } from './motivation-prefill.service';
 import { credentialOffer } from './motivation-credentials';
 
 import { MotivationModelService } from './motivation-model.service';
+import { scoreMotivation } from './motivation-quality';
+import { parseProvenance } from '../common/answer-provenance';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -58,7 +60,11 @@ import {
 import { areasOnRoute, decodePolyline } from './motivation-route';
 import { cartridgeFacts, findCartridge } from './motivation-cartridge';
 import { arsenalRows, type ArsenalRow } from './motivation-arsenal';
-import { documentScope, southAfricanise } from './motivation-scope';
+import {
+  documentScope,
+  southAfricanise,
+  wordBandFor,
+} from './motivation-scope';
 import {
   hasDeclaredRecord,
   holdsFirearms,
@@ -284,6 +290,76 @@ export function reasonNeeded(answers: Record<string, string>): boolean {
   return !(answers.firearm_fit_reason ?? '').trim();
 }
 
+/**
+ * The previous gate verdict's issues, as feedback for the next writer run.
+ *
+ * ⚠️ OUR OWN WORDS ABOUT THE PREVIOUS DRAFT, never a fact about the applicant.
+ * That is what makes them safe to hand back through `renderRetry`, which is
+ * the only reason a regeneration is allowed to carry anything the facts did
+ * not. Reads the stored verdict defensively: the column is Json and may
+ * predate the feature.
+ */
+export function gateFeedbackIssues(findings: unknown): string[] {
+  if (!findings || typeof findings !== 'object') return [];
+  const issues = (findings as Record<string, unknown>).issues;
+  if (!Array.isArray(issues)) return [];
+  return issues
+    .filter((i): i is string => typeof i === 'string' && !!i.trim())
+    .slice(0, 8);
+}
+
+/** A stable hash of the answers, for the gate-cycle reset check. */
+export function answersFingerprint(answers: Record<string, string>): string {
+  const canonical = Object.keys(answers)
+    .sort()
+    .map((k) => `${k}=${answers[k] ?? ''}`)
+    .join(String.fromCharCode(10));
+  return crypto
+    .createHash('sha256')
+    .update(canonical)
+    .digest('hex')
+    .slice(0, 32);
+}
+
+/** The prose word count, the same measure the licence type's band uses. */
+export function proseWordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * Repetition and length notes for a retry, ADVISORY and never fatal.
+ *
+ * ⚠️ THESE DO NOT FAIL A RUN. They are appended to the feedback of a retry the
+ * mechanical checks have already triggered, so a near-miss improves and a
+ * clean document is never knocked back for repeating a phrase. `scoreMotivation`
+ * already measures both; this is the wire from the measurement to the writer.
+ */
+export function advisoryIssues(
+  text: string,
+  licenceType: MotivationLicenceType,
+): string[] {
+  const out: string[] = [];
+  const quality = scoreMotivation(text);
+  if (quality.duplicateSentences > 0) {
+    out.push(
+      `the previous draft repeats ${quality.duplicateSentences} sentence(s) verbatim; say each thing once, in the section it belongs to`,
+    );
+  }
+  if (quality.repeatedPhrases.length) {
+    out.push(
+      `the previous draft repeats the phrase "${quality.repeatedPhrases[0]}"; vary it or drop it`,
+    );
+  }
+  const band = wordBandFor(licenceType);
+  const words = proseWordCount(text);
+  if (band.max && words > band.max) {
+    out.push(
+      `the previous draft ran ${words} words, over the ~${band.max} the section calls for; cut padding rather than adding`,
+    );
+  }
+  return out;
+}
+
 @Injectable()
 export class MotivationGenerationService {
   private readonly logger = new Logger(MotivationGenerationService.name);
@@ -387,6 +463,13 @@ export class MotivationGenerationService {
         variantSeed: true,
         gateCycles: true,
         betaSeatNo: true,
+        // The gate's findings from the previous run, so a member who fixes the
+        // fields it named is regenerated with those findings in front of the
+        // writer rather than blind — see gateFeedbackIssues.
+        qualityFindings: true,
+        // Whether `firearm_fit_reason` is the applicant's own or a paragraph we
+        // drafted — see the note on `draftedReason` in the fact pack.
+        answerProvenance: true,
         // Needed so the sameness corpus can exclude this applicant's own
         // earlier documents — see recentFingerprints.
         userId: true,
@@ -460,6 +543,46 @@ export class MotivationGenerationService {
     if (added) {
       this.logger.log(
         `Motivation ${row.id}: filled ${added} owned-firearm value(s) from the vault`,
+      );
+    }
+
+    /**
+     * ⚠️ A MEMBER WHO MATERIALLY CHANGES THEIR ANSWERS GETS A FRESH GATE
+     * BUDGET. `gateCycles` exists to stop a thin document looping back to the
+     * applicant forever, and it is incremented on every gate knock-back. But
+     * the member who ACTS on the feedback — fills the fields the gate named,
+     * rewrites a circumstance it found thin — was still spending a budget they
+     * had already earned: one more knock-back after a fix exhausted a ceiling
+     * of two and failed the pack outright, which is the opposite of what the
+     * counter is for.
+     *
+     * The fingerprint of the answers the gate last saw is stored beside its
+     * findings in `qualityFindings`; comparing it here is the safest reset
+     * point available in the flow, and it sits in a Json column that already
+     * exists. A regeneration with unchanged answers keeps its budget, so the
+     * guard still stops a loop; a changed answer set starts fresh.
+     */
+    const storedFindings = row.qualityFindings as
+      | Record<string, unknown>
+      | null;
+    const storedAnswerFingerprint =
+      storedFindings && typeof storedFindings.answersFingerprint === 'string'
+        ? storedFindings.answersFingerprint
+        : undefined;
+    if (
+      storedAnswerFingerprint &&
+      storedAnswerFingerprint !== answersFingerprint(answers) &&
+      row.gateCycles > 0
+    ) {
+      await this.prisma.motivation.update({
+        where: { id: row.id },
+        data: { gateCycles: 0 },
+      });
+      // The CAS below and runGeneration read the in-memory row; keep them
+      // agreeing with the database.
+      row.gateCycles = 0;
+      this.logger.log(
+        `Motivation ${row.id}: answers changed since the last gate run — gate cycle budget reset`,
       );
     }
 
@@ -1081,13 +1204,26 @@ export class MotivationGenerationService {
        * whatever evidence is on file — and folded into the facts the writer
        * receives. Failure is not fatal: the writer falls back to composing the
        * comparison from <arsenal> and the overlap note.
+       *
+       * ⚠️ IT IS DELIVERED AS OURS, NOT AS AN APPLICANT ANSWER. Persisted to
+       * `firearm_fit_reason` it arrives inside <applicant-facts> on the next
+       * run, where the writer and the gate both treat it as a grounded fact
+       * about the applicant — which is exactly what rule 12's inferred roles
+       * are not. It travels in its own block with its provenance attached; see
+       * `draftedReason` on the fact pack.
        */
-      let packAnswers = answers;
+      let draftedReason: string | undefined;
+      const provenance = parseProvenance(row.answerProvenance);
+      const storedReason = (answers.firearm_fit_reason ?? '').trim();
+      const storedReasonIsOurs =
+        !!storedReason &&
+        !!provenance.firearm_fit_reason?.source &&
+        provenance.firearm_fit_reason.source !== 'MEMBER';
       if (reasonNeeded(answers)) {
         try {
           const reason = await this.reason.writeFor(row.userId, row.id);
           if (reason.written && reason.paragraph) {
-            packAnswers = { ...answers, firearm_fit_reason: reason.paragraph };
+            draftedReason = reason.paragraph;
             this.logger.log(
               `Motivation ${row.id}: reason generated automatically (${reason.angle})`,
             );
@@ -1099,8 +1235,21 @@ export class MotivationGenerationService {
             }`,
           );
         }
+      } else if (storedReasonIsOurs) {
+        draftedReason = storedReason;
       }
 
+      /**
+       * ⚠️ A DRAFTED REASON IS STRIPPED FROM THE ANSWERS. Left in, it renders
+       * inside <applicant-facts> and both readers mistake our inferred role
+       * for the applicant's own statement. Only OUR paragraph is moved; a
+       * reason the member wrote stays exactly where it was.
+       */
+      const packAnswers = draftedReason
+        ? Object.fromEntries(
+            Object.entries(answers).filter(([k]) => k !== 'firearm_fit_reason'),
+          )
+        : answers;
       const pack: FactPack = {
         licenceType: row.licenceType,
         /**
@@ -1121,7 +1270,18 @@ export class MotivationGenerationService {
         },
         arsenal,
         intendedUses,
-        derived: this.deriveFacts(answers),
+        draftedReason,
+        /**
+         * ⚠️ `calibre_fact_sheet` IS THE ONLY BASIS FOR THE S13 "COMMON
+         * SERVICE CALIBRE" CLAIM. The brief may assert readily available
+         * ammunition ONLY where we actually hold a dimension sheet for this
+         * calibre; for a scarce calibre (6.35mm, .32 S&W) the claim is false,
+         * and the fact tells the writer which case it is in.
+         */
+        derived: {
+          ...this.deriveFacts(answers),
+          ...(cartridge ? { calibre_fact_sheet: 'held' } : {}),
+        },
         // Only when there is genuinely an overlap. Passing a note otherwise
         // would have the document argue against a problem it does not have.
         overlapNote: overlap.writerNote ?? undefined,
@@ -1191,7 +1351,20 @@ export class MotivationGenerationService {
         const r = await this.model.generate(pack, plan, retryIssues);
         return { ...r, text: southAfricanise(r.text) };
       };
-      let attempt = await write();
+      /**
+       * ⚠️ A RE-GENERATION IS NOT BLIND TO THE GATE'S OWN FINDINGS ANY MORE.
+       * When the gate sent this motivation back for more, its issues sat in
+       * `qualityFindings` and the next run wrote a fresh draft with no sight of
+       * them — so the same faults recurred and the member's extra answers
+       * bought nothing. The issues are our own words about the previous draft
+       * and name no applicant fact, so they are safe to hand back; see
+       * renderRetry. A run that is not coming back from the gate starts clean.
+       */
+      const gateFeedback =
+        row.status === MotivationStatus.NEEDS_MORE_INFO
+          ? gateFeedbackIssues(row.qualityFindings)
+          : [];
+      let attempt = await write(gateFeedback.length ? gateFeedback : undefined);
       let tokensIn = attempt.usage.promptTokens + researchIn;
       let tokensOut = attempt.usage.completionTokens + researchOut;
 
@@ -1316,9 +1489,15 @@ export class MotivationGenerationService {
          * avoid the mistake it had just made — MO000074 was refused twice for
          * the same two Americanisms. `mechanics` is our own words about the
          * previous draft and names nothing about the applicant, so it can add
-         * no fact; see renderRetry.
+         * no fact; see renderRetry. The repetition and length notes are
+         * ADVISORY — they ride along on a retry the mechanical checks already
+         * triggered, and never by themselves fail a run. See advisoryIssues.
          */
-        attempt = await write(mechanics);
+        const retry = [
+          ...mechanics,
+          ...advisoryIssues(attempt.text, row.licenceType),
+        ];
+        attempt = await write(retry);
         tokensIn += attempt.usage.promptTokens;
         tokensOut += attempt.usage.completionTokens;
         structureOk = followsPlan(attempt.text, plan).ok;
@@ -1384,7 +1563,9 @@ export class MotivationGenerationService {
       if (targets) {
         const fixed = await this.model.repairSentences(targets);
         if (fixed) {
-          const mended = applyRepairs(best.text, fixed.sentences);
+          const mended = southAfricanise(
+            applyRepairs(best.text, fixed.sentences),
+          );
           const after = [
             ...packConsistency(mended, answers, annexures),
             ...scopeOf(mended),
@@ -1456,6 +1637,28 @@ export class MotivationGenerationService {
       const maxCycles = await this.settings.get(FLAGS.motivationMaxGateCycles);
       const nextCycles = row.gateCycles + 1;
 
+      /**
+       * ⚠️ THE CODE-SIDE MEASUREMENTS, STORED, NOT A SECOND GATE. The gate
+       * schema has no length or repetition dimension, so the prose word count
+       * (against the licence type's band) and the within-document repetition
+       * `scoreMotivation` already measures are recorded beside the verdict for
+       * the operator. Repetition is ADVISORY to a retry and fatal to nothing —
+       * a measurement that also refuses is a measurement nobody will run.
+       */
+      const proseQuality = scoreMotivation(attempt.text);
+      const qualityFindings = {
+        ...(graded.verdict as unknown as Record<string, unknown>),
+        wordCount: proseWordCount(attempt.text),
+        wordBand: wordBandFor(row.licenceType),
+        duplicateSentences: proseQuality.duplicateSentences,
+        repeatedPhrases: proseQuality.repeatedPhrases,
+        // ⚠️ THE RESET CHECK. Kept in this Json column rather than a schema
+        // change: prepareGeneration compares it with the answers it is about to
+        // generate from, and gives the member a fresh cycle budget when they
+        // have materially changed them after a gate knock-back.
+        answersFingerprint: answersFingerprint(answers),
+      };
+
       const common = {
         variantSeed: seed,
         structurePlan: plan as unknown as object,
@@ -1474,7 +1677,7 @@ export class MotivationGenerationService {
         // a document to file.
         documentTextEncrypted: encryptText(attempt.text),
         qualityScore: graded.verdict.overall,
-        qualityFindings: graded.verdict as unknown as object,
+        qualityFindings: qualityFindings as unknown as object,
         thinFields: graded.verdict.thinFields,
         modelUsed: attempt.usage.model,
         promptTokens: (row.promptTokens ?? 0) + tokensIn,
@@ -1520,10 +1723,20 @@ export class MotivationGenerationService {
           data: {
             ...common,
             qualityFindings: {
-              ...(graded.verdict as unknown as Record<string, unknown>),
+              ...qualityFindings,
               ...(verification ? { verification } : {}),
             } as unknown as object,
             status: MotivationStatus.COMPLETED,
+            /**
+             * ⚠️ THE CYCLE COUNT RESETS ON A PASS. It was incremented on every
+             * gate failure and never cleared, so a document that passed on a
+             * later attempt kept the old count — and the next time the member
+             * regenerated a finished document, one knock-back was enough to
+             * exhaust a ceiling of two and fail it outright. A pass ends the
+             * run and the count with it; the answers-change reset lives in
+             * prepareGeneration.
+             */
+            gateCycles: 0,
             /**
              * ⚠️ CLEARED, NOT LEFT TO GO STALE. A document that failed once and
              * passed on a later regeneration used to keep the old `failureReason`

@@ -1,5 +1,7 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import type { PDFFont, RGB } from 'pdf-lib';
+import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
+import type { PDFFont, PDFImage, RGB } from 'pdf-lib';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 // ────────────────────────────────────────────────────────────────────
 // PDF ANNEXURES, PRINTED INTO THE PACK.
@@ -90,7 +92,10 @@ export async function loadPdfAnnexures(
       failed.push({
         letter: a.letter,
         label: a.label,
-        why: 'we could not open it',
+        // ⚠️ NO "WE" — GUIDE-BOOK Part 1 keeps the first person plural out of
+        // the lodged pack, and this string is printed on the annexure index
+        // beside the member's own copies.
+        why: 'could not open it',
       });
     }
   }
@@ -100,6 +105,42 @@ export async function loadPdfAnnexures(
 /** Total pages the merge will add — what the footer's "of M" must include. */
 export function extraPageCount(loaded: LoadedPdfAnnexure[]): number {
   return loaded.reduce((n, a) => n + a.pageCount, 0);
+}
+
+/**
+ * The "NOT FOR USE" words asset, shared with motivation-pdf-chrome.
+ *
+ * ⚠️ AN IMAGE, NOT TEXT. GUIDE-BOOK Part 14 forbids a text-layer watermark: a
+ * DFO copying a line out of the PDF would read "NOT FOR USE" interleaved into
+ * the applicant's prose. The merged pages are drawn with pdf-lib rather than
+ * pdfkit, so the asset is resolved here too and drawn as a PNG.
+ */
+const WATERMARK_WORDS_FILE = 'all-outdoor-watermark-words.png';
+const WATERMARK_WORDS_ASPECT = 2104 / 268;
+const WATERMARK_OPACITY = 0.07;
+
+let resolvedWatermark: Buffer | null | undefined;
+
+function watermarkWords(): Buffer | null {
+  if (resolvedWatermark !== undefined) return resolvedWatermark;
+  const candidates = [
+    path.join(process.cwd(), 'assets', WATERMARK_WORDS_FILE),
+    path.join(process.cwd(), 'backend', 'assets', WATERMARK_WORDS_FILE),
+    path.join(__dirname, '..', '..', 'assets', WATERMARK_WORDS_FILE),
+    path.join(__dirname, '..', '..', '..', 'assets', WATERMARK_WORDS_FILE),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        resolvedWatermark = fs.readFileSync(candidate);
+        return resolvedWatermark;
+      }
+    } catch {
+      /* unreadable candidate — try the next */
+    }
+  }
+  resolvedWatermark = null;
+  return null;
 }
 
 /**
@@ -157,6 +198,15 @@ export async function appendPdfAnnexures(
     referenceNumber: string;
     templateVersion: string;
     bodyPageCount: number;
+    /**
+     * Stamp the unpaid mark on the merged pages too.
+     *
+     * ⚠️ THE MERGE RUNS AFTER THE WATERMARK PASS, so an unpaid pack's PDF
+     * annexures used to arrive clean — the one part of a preview pack a member
+     * could print and file. The words image is embedded once here and drawn on
+     * every merged page.
+     */
+    watermark?: boolean;
   },
 ): Promise<Buffer> {
   const loaded = blocks.flatMap((b) => b.items);
@@ -174,6 +224,20 @@ export async function appendPdfAnnexures(
   const font = await out.embedFont(StandardFonts.Helvetica);
   const grey = rgb(0.42, 0.42, 0.42);
   const total = opts.bodyPageCount + extraPageCount(loaded);
+
+  let words: PDFImage | null = null;
+  if (opts.watermark) {
+    const bytes = watermarkWords();
+    if (bytes) {
+      try {
+        words = await out.embedPng(bytes);
+      } catch {
+        // A missing or unreadable asset must not cost the pack its annexures;
+        // the body pages already carry the mark.
+        words = null;
+      }
+    }
+  }
 
   // ⚠️ DESCENDING BY POSITION, AND THAT IS THE WHOLE TRICK. Inserting at index
   // 12 shifts everything at 12 and beyond, so a later insertion at index 30
@@ -198,6 +262,7 @@ export async function appendPdfAnnexures(
       total,
       font,
       grey,
+      words,
       // The page number a merged page ends up with is its insertion index plus
       // however many pages earlier blocks put in front of it. Earlier blocks
       // are the ones with a LOWER index, which — going descending — are the
@@ -222,6 +287,7 @@ async function insertBlock(
     before: number;
     font: PDFFont;
     grey: RGB;
+    words: PDFImage | null;
   },
 ): Promise<void> {
   const { font, grey } = opts;
@@ -285,6 +351,31 @@ async function insertBlock(
       } catch {
         // A page whose content stream will not take a stamp is still worth
         // including uncaptioned — the index names it either way.
+      }
+
+      // The unpaid mark, on the page's own diagonal, matching the body pages.
+      if (opts.words) {
+        try {
+          const imgW = width * 0.62;
+          const imgH = imgW / WATERMARK_WORDS_ASPECT;
+          const theta = (-55 * Math.PI) / 180;
+          // pdf-lib rotates about the image's bottom-left origin, so the
+          // origin is offset to put the image's CENTRE on the page's centre.
+          const offX =
+            (imgW / 2) * Math.cos(theta) - (imgH / 2) * Math.sin(theta);
+          const offY =
+            (imgW / 2) * Math.sin(theta) + (imgH / 2) * Math.cos(theta);
+          page.drawImage(opts.words, {
+            x: width / 2 - offX,
+            y: height / 2 - offY,
+            width: imgW,
+            height: imgH,
+            rotate: degrees(-55),
+            opacity: WATERMARK_OPACITY,
+          });
+        } catch {
+          // A page that will not take the mark is still worth including.
+        }
       }
       // Referenced so the linter cannot call `width` unused; also the honest
       // place to note we do NOT rescale: a page of a different size prints at

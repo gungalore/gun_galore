@@ -4,18 +4,12 @@ import {
   disciplinesInScope,
 } from './shooting-disciplines';
 import {
-  HUNT_GAME_CLASS,
-  HUNT_REASONS,
-  HUNT_TERRAIN,
   FIREARM_USE_KIND,
-  HUNT_WHERE,
   OWNED_SECTION_HELD,
   PRIMARY_USE,
   S13_CARRY_STYLE,
   S13_MOVEMENTS,
   S13_REASONS,
-  SPORT_FORMATS,
-  SPORT_REASONS,
 } from './motivation-cards';
 import { ENDORSEMENT_LABELS } from '../common/sa-competency';
 import { answerValue } from '../common/card-placeholder';
@@ -1013,8 +1007,8 @@ const RETIRED_FIELDS: readonly MotivationField[] = [
    * firearm-uses.service.ts generates, per firearm CLASS and per kind of
    * shooter, the disciplines that class is genuinely shot in — with their
    * positions, distances and target types — and the writer picks from that.
-   * "It is a standard chambering for F-Class prone shooting at six hundred
-   * metres" is the sentence this box was asking the member to compose.
+   * "It is a standard chambering for F-Class prone shooting at 600 m" is the
+   * sentence this box was asking the member to compose.
    *
    * ⚠️ WHICH IS THE STANDING RULE, NOT A NEW ONE. "Automate it — do not ask":
    * a confirm step guarding a value we already hold is work we invented for
@@ -3015,9 +3009,8 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
  * short, and the member on the short one is asked less about the harder
  * application.
  */
-(TYPE_FIELDS as Record<MotivationLicenceType, readonly MotivationField[]>)[
-  MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE
-] = TYPE_FIELDS[MotivationLicenceType.S13_SELF_DEFENCE];
+TYPE_FIELDS[MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE] =
+  TYPE_FIELDS[MotivationLicenceType.S13_SELF_DEFENCE];
 
 /**
  * The two sections that are about self-defence.

@@ -268,12 +268,20 @@ export function banner(
   // no such glyph — it came out as a .notdef box in the banner of every page,
   // which is the most-seen element in the document. A rotated 3 pt square is
   // the same mark, in the same place, and cannot go missing.
+  // ⚠️ THE LEFT LABEL IS CLAMPED TO THE LEFT HALF. The right label starts at
+  // PAD_X + CONTENT_W / 2, so a long S14/S15 licence label on the left used to
+  // run straight under it — two running heads overprinted on every body page.
+  // The left label is shortened to stop short of that midpoint, exactly as the
+  // right label is shortened to its own half.
+  const rHalf = CONTENT_W / 2;
+  const leftLimit = PAD_X + rHalf - px(6);
   const [lead, tail] = splitOnDiamond(leftLabel.toUpperCase());
   doc.font(f.sans).fontSize(size).fillColor(onBanner(c));
-  doc.text(lead, PAD_X, y, { characterSpacing: tracking, lineBreak: false });
+  const leadText = ellipsise(doc, lead, leftLimit - PAD_X, tracking);
+  doc.text(leadText, PAD_X, y, { characterSpacing: tracking, lineBreak: false });
 
   if (tail !== null) {
-    const leadW = doc.widthOfString(lead, { characterSpacing: tracking });
+    const leadW = doc.widthOfString(leadText, { characterSpacing: tracking });
     const gap = size * 0.9;
     const cx = PAD_X + leadW + gap;
     const cy = y + size * 0.42;
@@ -283,14 +291,21 @@ export function banner(
     doc.rect(-r, -r, r * 2, r * 2).fillOpacity(0.85).fill(onBanner(c));
     doc.fillOpacity(1);
     doc.restore();
-    doc
-      .fillColor(onBanner(c))
-      .text(tail, cx + gap, y, { characterSpacing: tracking, lineBreak: false });
+    // The tail has whatever room is left before the right label's half begins.
+    const tailRoom = leftLimit - (cx + gap);
+    const tailText = tailRoom > 0 ? ellipsise(doc, tail, tailRoom, tracking) : '';
+    if (tailText) {
+      doc
+        .fillColor(onBanner(c))
+        .text(tailText, cx + gap, y, {
+          characterSpacing: tracking,
+          lineBreak: false,
+        });
+    }
   }
   // The right label is set right-aligned in its own half, SHORTENED TO FIT.
   // See ellipsise: a two-line running head hangs below the gradient.
   const rTracking = px(9) * 0.28;
-  const rHalf = CONTENT_W / 2;
   doc.font(f.sans).fontSize(size);
   doc
     .fillColor(onBanner(c))
@@ -338,6 +353,44 @@ export function ellipsise(
     else hi = mid - 1;
   }
   return lo > 0 ? `${text.slice(0, lo).trimEnd()}…` : '';
+}
+
+/**
+ * Fit a heading to a single line, STEPPING THE SIZE DOWN and then ellipsising.
+ *
+ * ⚠️ EVERY HEADING STYLE USED `lineBreak: false`, WHICH DOES NOT SHRINK. A
+ * heading longer than the band or the column simply overflowed the margin,
+ * because there was no width fit anywhere in the five styles — and a heading is
+ * the one place in the document where an overrun is read as a printing fault
+ * rather than as prose that ran long.
+ *
+ * The size steps down to `minSize` first, because a slightly smaller heading
+ * reads as a deliberate rank rather than as a truncated one; only a heading
+ * that still does not fit at the floor is ellipsised, so it never wraps and
+ * never crosses the trim.
+ *
+ * `doc` is left at the returned size; the caller draws at exactly that size.
+ */
+export function fitText(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  width: number,
+  baseSize: number,
+  minSize: number,
+  spacingFactor: number,
+): { size: number; text: string } {
+  const spacing = (s: number) => s * spacingFactor;
+  let size = baseSize;
+  doc.fontSize(size);
+  while (
+    size > minSize &&
+    doc.widthOfString(text, { characterSpacing: spacing(size) }) > width
+  ) {
+    size = Math.max(minSize, size - px(0.5));
+    doc.fontSize(size);
+  }
+  const shown = ellipsise(doc, text, width, spacing(size));
+  return { size, text: shown };
 }
 
 /**
@@ -799,10 +852,11 @@ function alternateHeader(
 
   if (style === 'underline') {
     // Centred small caps over a hairline the full width of the column.
-    const size = px(12);
+    doc.font(f.sansSemi);
+    const { size, text } = fitText(doc, upper, CONTENT_W, px(12), px(9.5), 0.26);
     const tracking = size * 0.26;
-    doc.font(f.sansSemi).fontSize(size).fillColor(c.deep);
-    doc.text(upper, PAD_X, y, {
+    doc.fillColor(c.deep);
+    doc.text(text, PAD_X, y, {
       width: CONTENT_W,
       align: 'center',
       characterSpacing: tracking,
@@ -826,13 +880,21 @@ function alternateHeader(
     doc.text(number, PAD_X, y, { lineBreak: false });
     const numW = doc.widthOfString(number);
     const tx = PAD_X + numW + px(10);
+    doc.font(f.sansBold);
+    const title = fitText(
+      doc,
+      upper,
+      CONTENT_W - (tx - PAD_X),
+      titleSize,
+      px(10),
+      0.2,
+    );
     doc
-      .font(f.sansBold)
-      .fontSize(titleSize)
+      .fontSize(title.size)
       .fillColor(c.deep)
-      .text(upper, tx, y + numSize * 0.45, {
+      .text(title.text, tx, y + numSize * 0.45, {
         width: CONTENT_W - (tx - PAD_X),
-        characterSpacing: titleSize * 0.2,
+        characterSpacing: title.size * 0.2,
         lineBreak: false,
       });
     if (drawMark) {
@@ -850,13 +912,21 @@ function alternateHeader(
     const barH = size * 0.9;
     doc.rect(PAD_X, y + size * 0.15, barW, barH).fill(c.deep);
     const tx = PAD_X + barW + px(9);
+    doc.font(f.sansBold);
+    const title = fitText(
+      doc,
+      `${lead('  ')}${upper}`,
+      CONTENT_W - (tx - PAD_X),
+      size,
+      px(10),
+      0.2,
+    );
     doc
-      .font(f.sansBold)
-      .fontSize(size)
+      .fontSize(title.size)
       .fillColor(c.deep)
-      .text(`${lead('  ')}${upper}`, tx, y, {
+      .text(title.text, tx, y, {
         width: CONTENT_W - (tx - PAD_X),
-        characterSpacing: size * 0.2,
+        characterSpacing: title.size * 0.2,
         lineBreak: false,
       });
     if (drawMark) {
@@ -869,18 +939,24 @@ function alternateHeader(
 
   // 'caps' — letterspaced small caps, generous air, no rule and no fill. The
   // quietest of the five: nothing on the page but type.
-  const size = px(11.5);
-  const tracking = size * 0.42;
+  doc.font(f.sansSemi);
+  const caps = fitText(
+    doc,
+    `${lead(' — ')}${upper}`,
+    CONTENT_W,
+    px(11.5),
+    px(9),
+    0.42,
+  );
   doc
-    .font(f.sansSemi)
-    .fontSize(size)
+    .fontSize(caps.size)
     .fillColor(c.mut)
-    .text(`${lead(' — ')}${upper}`, PAD_X, y, {
+    .text(caps.text, PAD_X, y, {
       width: CONTENT_W,
-      characterSpacing: tracking,
+      characterSpacing: caps.size * 0.42,
       lineBreak: false,
     });
-  return y + size * 1.4 + mm(6);
+  return y + caps.size * 1.4 + mm(6);
 }
 
 export function sectionHeader(
@@ -940,15 +1016,24 @@ export function sectionHeader(
     .fillAndStroke('#ffffff', c.accent);
 
   const bandX = PAD_X + px(9) + px(10);
-  doc.font(f.sansBold).fontSize(size);
-  const textW =
-    doc.widthOfString(label, { characterSpacing: size * 0.22 }) + padX * 2;
-  const bandW = Math.min(textW, CONTENT_W - (bandX - PAD_X));
+  const bandMaxW = CONTENT_W - (bandX - PAD_X);
+  // ⚠️ THE BAND IS SIZED TO ITS LABEL, BUT THE LABEL IS FITTED TO THE BAND'S
+  // CEILING. A heading longer than the column used to set a full-width band and
+  // then draw its own text straight past the right margin, because the band was
+  // capped and the run was not. The band height stays on the original size so
+  // the "returns where the body starts" contract does not move.
+  doc.font(f.sansBold);
+  const fitted = fitText(doc, label, bandMaxW - padX * 2, size, px(9), 0.22);
+  const textW = doc.widthOfString(fitted.text, {
+    characterSpacing: fitted.size * 0.22,
+  });
+  const bandW = Math.min(textW + padX * 2, bandMaxW);
   doc.rect(bandX, y, bandW, bandH).fill(c.band);
   doc
+    .fontSize(fitted.size)
     .fillColor(c.deep2)
-    .text(label, bandX + padX, y + padY, {
-      characterSpacing: size * 0.22,
+    .text(fitted.text, bandX + padX, y + padY, {
+      characterSpacing: fitted.size * 0.22,
       lineBreak: false,
     });
 
@@ -977,24 +1062,65 @@ export function sectionHeader(
  * Returned as a closure because the rule's LENGTH is not known until the body
  * has been laid out — and on a page break it has to stop at the bottom of one
  * page and restart on the next.
+ *
+ * ⚠️ PAGE-BREAK AWARE, BECAUSE THE BODY LETS pdfkit BREAK ITSELF. The
+ * prior-notice page measures each block and breaks by hand, so its rule never
+ * straddles a page. The numbered body does not — a paragraph flows and splits
+ * wherever it reaches the foot of the page — so a run started on one page and
+ * closed on the next must be split into two segments rather than drawn as one
+ * line from a high y to a low one. `close()` detects the change and draws the
+ * old page's segment to `bodyBottom`, the new page's from `bodyTop`.
  */
-export function sectionRule({ doc, c }: Chrome) {
+export function sectionRule(
+  { doc, c }: Chrome,
+  /**
+   * The top of a body column and its foot, so a restart lands where the body
+   * actually starts. They differ per layout (`bodyTop` is PAD_TOP on the
+   * banner-less layouts and BODY_TOP under a running banner), so they are
+   * passed in rather than assumed.
+   */
+  bodyTop: number = BODY_TOP,
+  bodyBottom: number = BODY_BOTTOM,
+) {
   let from = 0;
+  let fromPage = 0;
+  const pageNow = () =>
+    doc.bufferedPageRange().start + doc.bufferedPageRange().count - 1;
+  /** Draw one segment on `page`, restoring the current page afterwards. */
+  const segment = (page: number, top: number, bottom: number) => {
+    if (bottom <= top + 1) return;
+    const here = pageNow();
+    if (page !== here) doc.switchToPage(page);
+    doc
+      .moveTo(PAD_X, top)
+      .lineTo(PAD_X, bottom)
+      .lineWidth(0.7)
+      .strokeColor(c.hair)
+      .stroke();
+    if (page !== here) doc.switchToPage(here);
+  };
   return {
     start(y: number) {
       from = y;
+      fromPage = pageNow();
     },
     /** Draw what has accumulated, and forget it. */
     close(toY: number) {
-      if (toY > from + 1) {
-        doc
-          .moveTo(PAD_X, from)
-          .lineTo(PAD_X, toY)
-          .lineWidth(0.7)
-          .strokeColor(c.hair)
-          .stroke();
+      const now = pageNow();
+      if (now === fromPage) {
+        segment(fromPage, from, toY);
+      } else {
+        // A page break fell inside the run: the old page runs to its foot,
+        // any whole page in between carries a full run, and the new page
+        // starts at its top.
+        segment(fromPage, from, bodyBottom);
+        for (let p = fromPage + 1; p < now; p += 1) {
+          segment(p, bodyTop, bodyBottom);
+        }
+        segment(now, bodyTop, toY);
       }
       from = toY;
+      fromPage = now;
     },
   };
 }

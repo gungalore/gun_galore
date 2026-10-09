@@ -414,7 +414,36 @@ describe('filler, claims and pressure', () => {
   it('leaves an ordinary sentence alone', () => {
     expect(
       documentScope(
-        'My shift ends at 22:00 and I drive home alone on the R101; the last four kilometres has no street lighting.',
+        'My shift ends at 22:00 and I drive home alone on the R101; the last 4 km has no street lighting.',
+        s13,
+      ),
+    ).toEqual([]);
+  });
+
+  it('⚠️ CATCHES A SPELLED-OUT MEASUREMENT, so the example we ship cannot become the example it copies', () => {
+    // FIGURES MEASURE, WORDS ARGUE. The uses-generator once shipped "at two
+    // hundred metres" into the fact pack and the writer copied it verbatim.
+    // A numeral passes; a spelled number against a unit does not.
+    const out = documentScope(
+      'My shift ends at 22:00 and I drive home alone on the R101; the last four kilometres has no street lighting.',
+      s13,
+    );
+    expect(out.join(' ')).toContain('spells out a measurement');
+    expect(
+      documentScope(
+        'It is suited to kudu in thornveld at two hundred metres.',
+        s13,
+      ).join(' '),
+    ).toContain('spells out a measurement');
+    expect(
+      documentScope(
+        'It is suited to kudu in thornveld at 200 m.',
+        s13,
+      ),
+    ).toEqual([]);
+    expect(
+      documentScope(
+        'It is a standard chambering for F-Class prone shooting at 600 m.',
         s13,
       ),
     ).toEqual([]);
@@ -771,4 +800,64 @@ describe('⚠️ the research is held to the same standard as the document', () 
     expect(withoutRefusedCopy(payload)).toBe('Recoil is mild.');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE SPELLING FOLD AND THE REFUSE LIST MUST AGREE.
+//
+// `utiliz → utilis` manufactured "utilise", which SLOP_PHRASES itself
+// refused — a document could fail for a word the spelling pass had just
+// written. The Americanism is still caught before the fold, and the folded
+// spelling is now ordinary South African English.
+// ────────────────────────────────────────────────────────────────────
+describe('the spelling fold does not write a refused word', () => {
+  it('folds "utilized" to a spelling the scope check accepts for filler', () => {
+    const after = southAfricanise('I utilized the practice range.');
+    expect(after).toContain('utilised');
+    const filler = documentScope(after, { licenceType: S13, arsenal: [] }).filter(
+      (i) => /filler/.test(i),
+    );
+    expect(filler).toEqual([]);
+  });
+
+  it('still refuses the Americanism itself, before the fold', () => {
+    // validateReason reads the raw paragraph without folding, so the
+    // Americanism has to remain on its own list.
+    expect(
+      documentScope('I utilized the practice range.', {
+        licenceType: S13,
+        arsenal: [],
+      }).join(' '),
+    ).toContain('South African English');
+  });
+
+  it('folds maneuver and center-fire into South African spelling', () => {
+    expect(southAfricanise('its maneuverability')).toBe('its manoeuvrability');
+    expect(southAfricanise('a center-fire rifle')).toBe('a centre-fire rifle');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// "DEDICATED" ON A SECTION 15 ARGUES AGAINST THE SECTION.
+// ────────────────────────────────────────────────────────────────────
+describe('the occasional-sections vocabulary', () => {
+  it('refuses "dedicated" anywhere in a section 15 document', () => {
+    const out = documentScope(
+      'I have dedicated status and shoot every month.',
+      {
+        licenceType: MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+        arsenal: [],
+      },
+    );
+    expect(out.join(' ')).toContain('section 15 document says "dedicated"');
+  });
+
+  it('leaves a section 16 document alone, where dedicated is the point', () => {
+    const out = documentScope('I have dedicated status and shoot every month.', {
+      licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      arsenal: [],
+    });
+    expect(out.join(' ')).not.toContain('section 15 document says');
+  });
+});
+
 

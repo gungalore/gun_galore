@@ -41,6 +41,19 @@ describe('measuring a motivation', () => {
     );
   });
 
+  it('⚠️ APPLIES THE SAME COMPARISON CARVE-OUT THE GATE DOES', () => {
+    // "stopping power" is a capability term: the gate permits it in a sentence
+    // that is comparing one firearm with another, and the scorecard must agree
+    // rather than flag comparisons the gate lets through.
+    const comparing = scoreMotivation(
+      'My .300 cannot match the stopping power of the rifle applied for.',
+    );
+    expect(comparing.banned).not.toContain('stopping power');
+    // A product-page sentence is still flagged.
+    const admiring = scoreMotivation('The pistol offers excellent stopping power.');
+    expect(admiring.banned).toContain('stopping power');
+  });
+
   it('⚠️ REWARDS SPECIFICS AND PUNISHES PADDING, at the same word count', () => {
     // The same length. One names animals, distances and a citation; the other
     // says nothing checkable. This is the whole reason the metric exists.

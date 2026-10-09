@@ -261,6 +261,22 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * does not appear here at all: this identity is the user message, and the system
  * prompt is sent separately.
  */
+/**
+ * ⚠️ RE-BASELINED ON 2026-10-08 — the content-quality pass.
+ *
+ * Three user-message briefs changed and every line count held
+ * (117/118/118/118/118/112), the signature of a rewording inside existing
+ * lines rather than an added or dropped block:
+ *   - `the_firearm` and `held_firearms` gained the comparison carve-out — the
+ *     capability words are allowed in one clause saying what a held firearm
+ *     falls short of, which is the paragraph those briefs describe.
+ *   - `the_firearm`'s S13 override made the "common service calibre" claim
+ *     conditional on the derived `calibre_fact_sheet` fact.
+ *   - `storage_safety` lost its copyable townhouse exemplar, and `conclusion`
+ *     its duplicated request template — both replaced by description.
+ * The system-prompt edits (the published filler / outcome lists) do not appear
+ * here at all: this identity is the user message.
+ */
 const BEFORE_THE_REORDER: Record<
   MotivationLicenceType,
   { lines: number; sha: string }
@@ -290,27 +306,27 @@ const BEFORE_THE_REORDER: Record<
    */
   S14_RESTRICTED_SELF_DEFENCE: {
     lines: 117,
-    sha: 'cfa57983b9af2186a4e6064a194b680c013ef2fd6ebbebef56637fc9c9227407',
+    sha: '64de96970384949988dff0e4cc86649ab573412863c36f22a9b4d7661ac01c11',
   },
   S13_SELF_DEFENCE: {
     lines: 118,
-    sha: 'b9dc337677378cba6c2aa972999beb97ad5c9c062e14d3c1e45c6def2063dfcd',
+    sha: 'e4f859b73a9fde1d852091be423bd01e93b48631fa864b906898daf114dbd79d',
   },
   S15_OCCASIONAL_HUNTER: {
     lines: 118,
-    sha: '1888243577c748dfdbc78f27530a26a129cd2a991a3e05d83e67bb768fe6564d',
+    sha: '386c8df7b6080550316434d5ed8044005b3195594a19aec80408a269586724f9',
   },
   S16_DEDICATED_HUNTER: {
     lines: 118,
-    sha: 'f8d08d0cc672b1e701ffe79bd2d35e4bf11f1f57a923d16a13e1ef70ebe158a8',
+    sha: 'a5ff9c8e1be3175811568aa4aa493f794248865c5428b48f4ac15ebd66ffb32a',
   },
   S16_DEDICATED_SPORT: {
     lines: 118,
-    sha: '93768594e9f77638b8d36460b75f0a98f1f8ee8a7adf0f5cae47c8e55196d263',
+    sha: 'bfca3c86f10f2cec14dccd125c4f6d4c075179ad5c25e2808a09d11846c07498',
   },
   S24_RENEWAL: {
     lines: 112,
-    sha: '7492a75586d581b8873ef2a225ba7def0f6d5eccc633f9c5bacf1aa9913510d8',
+    sha: 'b59360ee5bbc3aa0ea0b3a93f3dd23015502d6e796edaf4be218af4ec9786ef0',
   },
 };
 

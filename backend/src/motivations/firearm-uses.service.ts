@@ -473,7 +473,7 @@ Walk the axes, and take a use from each:
   hunting-rifle exercises shot standing off sticks, sitting, kneeling and
   prone; postal shoots; club league rounds. "It is used in competitions" is a
   wasted sentence. "It is a standard chambering for F-Class prone shooting at
-  six hundred metres" is a use.
+  600 m" is a use.
 - PREPARATION. Zeroing, load development, practice that keeps the skill and
   the shot placement honest — these are real uses of the firearm.
 
@@ -797,7 +797,7 @@ export class FirearmUsesService {
           s,
           this.clean(raw[SLICE_KEY[s]], s, c, PER_SLICE, 'applying'),
         ]),
-      ) as Partial<Record<UseSlice, string[]>>;
+      );
     } catch (err) {
       this.logger.warn(
         `Use profile restatement failed for ${c.calibre}/${c.type}: ${(err as Error).message}`,
