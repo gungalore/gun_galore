@@ -7,6 +7,43 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
+## 2026-10-09 (evening) — WRITER PERSONA + PRINTER TEST FLAKE FIX (DEPLOYED)
+
+**Deployed to production** as `420e9de1` (2 commits: `251b8c12` the persona,
+`420e9de1` the test fix). Full deploy (`bash infra/deploy/deploy.sh`, no side
+flag — the diff touches `backend/`). Gates first: backend `tsc` + 313 suites /
+5279 tests (1 suite / 8 tests skipped), frontend `tsc` + 132 files / 1668 tests
+(1 skipped), frontend prod build (`BUILD_ID` present). Health after:
+`/api/health` twice OK, public site 200 twice, all three pm2 services online.
+No migration.
+
+**Commit `251b8c12` — the writer now carries a persona.** Operator complaint:
+the generated content reads generic. `writerVoice` in `motivation-prompts.ts`
+was rewritten from a lone "firearm expert" into a seasoned South African
+motivation writer who is also, for the document in hand, a specialist in the
+firearms it is about, with the specialism gated to the licence type
+(self-defence vs hunting/sport vs renewal). Two new emphases: RICH AND SPECIFIC
+(write from THIS applicant's facts, name the actual thing, depth from one real
+fact) and MUST NOT READ AS MACHINE-WRITTEN (no hedged both-sides phrasing,
+stacked triads or throat-clearing). The rule 1 recall guard is preserved: the
+expertise is the step from fact to requirement, never a licence to invent a
+figure. Two discipline-spec tests lock the persona and the type gating.
+
+**Commit `420e9de1` — printer smoke test no longer flaky.** The
+`chromium-pdf.service` integration test spawns a real browser; under the full
+suite the cold start competed for CPU and could miss the 30s timeout, failing a
+test that passes in isolation. Raised the printer timeout to 60s and gave the
+test one retry with a 120s budget.
+
+**Note for the next person.** The persona is a prompt change, so its real effect
+is only visible on a freshly generated pack. If you want to see it, regenerate a
+licence centre sheet and compare the body prose against MO000083 (the pre-persona
+sample in `~/Downloads`). The pack review of MO000083 also lists other open
+items (half-empty pages from forced breaks, contents lists 13 before 12, a safe
+photo captioned only "2/3 and 3/3", a trend cell carrying a provenance
+paragraph, raw card-case calibres in the held-firearm prose) — none of those are
+addressed by this change.
+
 ## 2026-10-09 (later) — CONSENT LICENCE-CARD OCR PINNED TO GEMINI + ID RE-READ (DEPLOYED)
 
 **Deployed to production** as `94534952` (one commit). Full deploy
