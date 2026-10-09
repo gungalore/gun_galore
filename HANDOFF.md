@@ -7,6 +7,40 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
+## 2026-10-09 — KYC: RETURN TO PROFILE AFTER VERIFICATION (DEPLOYED)
+
+**Why.** After verifying, the Didit hosted page returns the member to
+`/kyc/verify?returned=1&verificationSessionId=…&status=…` — it carries none of
+our query, so `returnTo` is lost. The done card had no onward action and the old
+auto-bounce was gated on `returnTo`, so a verified member was stranded on a
+dead-end "you are verified" screen instead of their profile.
+
+**Fix (frontend only).** `app/kyc/verify/page.tsx`: the `done` state always
+returns (after 3s) with a **Go to my profile** button; destination is `returnTo`
+when present, otherwise `/profile`. Opening the wizard while already verified
+bounces to the profile too. Origin survives the round-trip in `localStorage`;
+new `lib/kyc-return.ts` holds `safeReturnPath` (open-redirect guard) and
+`isSessionFreeKycLanding`, both tested.
+
+**No-session / installed-PWA path (the "option b").** On an installed PWA the
+Didit page opens in Safari, whose cookie store the app does not share, so the
+return lands with no session. `middleware.ts` now exempts
+`/kyc/verify?returned=1` from the auth wall — narrowly, via
+`isSessionFreeKycLanding` (exact path + `t` or `returned=1` only) — and the page
+renders a neutral, data-free "Return to ALL Outdoor" landing rather than hanging
+on "Loading…" or bouncing to sign-in.
+
+**Deployed** as `656668e9` (frontend-only deploy). Gates: backend `tsc` clean +
+314 suites / 5288 tests; frontend `tsc` clean + 135 files / 1689 tests; prod
+build exit 0. Health ×2 OK, public 200 ×2. Live check: `/kyc/verify?returned=1`
+→ **200** (was 307 to sign-in), bare `/kyc/verify` → still 307, `/kyc/verify?t=`
+→ still 200.
+
+**Follow-ups.** (1) No live browser pass on a phone. (2) On iOS a link from
+Safari cannot re-open the installed PWA programmatically; the landing asks the
+member to switch back. (3) `steps.verification` still reports `true` for any
+session, including `Not Started` — see the note in the entry below.
+
 ## 2026-10-09 — KYC: RESTARTABLE UNFINISHED SESSIONS (DEPLOYED)
 
 **Why.** A new member (`ruandadb97@gmail.com` / `ruanda`) registered, gave
