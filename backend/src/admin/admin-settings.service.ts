@@ -313,7 +313,7 @@ const FLAGS: SettingFlag[] = [
     hint: 'Master switch for /community. OFF = every feed endpoint 404s and the frontend shows nothing. The whole feature ships dark and is switched on here. Moderation spend begins the moment this is ON.',
     group: 'Community Feed',
     type: 'boolean',
-    default: 'false',
+    default: 'true',
     danger: true,
   },
   {

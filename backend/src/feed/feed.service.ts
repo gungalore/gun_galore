@@ -95,10 +95,17 @@ export class FeedService {
   // Guards / helpers
   // ─────────────────────────────────────────────────────────────────
 
-  /** Every feed route is inert while the flag is off (dark deploy). */
+  /**
+   * The community feed master switch.
+   *
+   * ⚠️ Hardcoded ON (operator, 2026-10-09). The admin PWA no longer exposes a
+   * settings/flags editor, so a stale `feed_enabled=false` Setting row could
+   * otherwise 404 every route with no way to flip it back from the UI. The
+   * gate is kept (async + named) so the 30+ callsites still read as a gate,
+   * and so a future kill switch has one place to land.
+   */
   private async assertEnabled(): Promise<void> {
-    const enabled = await this.settings.get(FLAGS.feedEnabled);
-    if (!enabled) throw new NotFoundException();
+    // Intentionally ignores FLAGS.feedEnabled — see the note above.
   }
 
   private async viewer(userId: string): Promise<ViewerRow> {

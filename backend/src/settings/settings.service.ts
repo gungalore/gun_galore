@@ -463,9 +463,12 @@ export const FLAGS = {
   // The master kill switch. OFF = every /community endpoint returns 404 and
   // the frontend shows nothing. The whole feed is dark-deployable: ship the
   // code with this false, flip it in Settings when the content is ready.
+  // ⚠️ Default ON since 2026-10-09 (operator): the admin PWA no longer exposes
+  // a settings/flags editor, so the community is enabled from code. The switch
+  // still works when an explicit Setting row exists (npm run feed:flags -- off).
   feedEnabled: {
     key: 'feed_enabled',
-    default: false,
+    default: true,
     parse: (s) => s === 'true' || s === '1',
   } as FlagDefinition<boolean>,
   // The public join gate ("sign in to see what members are sharing"). On by
