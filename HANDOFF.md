@@ -7,6 +7,48 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
+## 2026-10-09 (later) — CONSENT LICENCE-CARD OCR PINNED TO GEMINI + ID RE-READ (DEPLOYED)
+
+**Deployed to production** as `94534952` (one commit). Full deploy
+(`bash infra/deploy/deploy.sh`, no side flag — the diff touches `backend/`).
+Gates first: backend `tsc` + 313 suites / 5277 tests (1 suite / 8 tests
+skipped), frontend `tsc` + 132 files / 1668 tests (1 skipped, one
+`no-self-recursive-callbacks` flake on the first run that passed on rerun and
+in isolation), frontend prod build (`BUILD_ID` present). Health after:
+`/api/health` twice OK, public site 200 twice, all three pm2 services online.
+No migration. Rollback point: the pre-deploy dump taken by `deploy.sh`.
+
+**What changed.** The seller consent link reads the previous owner's licence
+card (`LicenceCardOcrService`) and proposes the fields, including the
+13-digit ID the seller must not type by hand.
+
+1. **The OCR purpose is pinned to Gemini.** `LlmService.providerFor` now
+   returns `gemini` for any `licence.card.*` purpose, so the reader stays on
+   **Gemini 3.5 Flash-Lite** and a global `LLM_PROVIDER` switch (or a
+   stated DeepSeek default) cannot move a vision call onto a non-vision model.
+   This matches the operator decision 2026-10-09: "keep it at gemini 3.5 flash
+   lite as the OCR reader." See the `licence.card.*` pin next to the video and
+   image pins in `backend/src/common/llm/llm.service.ts`.
+2. **A missed ID is re-read on its own.** When the full 14-field read returns
+   without a valid 13-digit ID, the service makes one focused second call for
+   the ID alone (`purpose: licence.card.read.id`, 40 tokens). `readId` also
+   coerces an ID returned as a JSON number. Regression tests in
+   `licence-card-ocr.spec.ts` (re-read, numeric coercion) and
+   `llm.service.spec.ts` (pin under `LLM_PROVIDER=deepseek`).
+
+**The investigation, for the next person.** The reported symptom ("does not
+pick up ID number") was NOT reproducible in code: the model read the ID from
+every real fixture in `scan-fixtures/real` (raw camera JPEGs and the scanner's
+dewarped `out/*.quad.jpg`) through the full `LlmService` path, and even from a
+PNG mislabelled as JPEG. The pipeline, schema, prompt and model are all sound.
+The miss is situational (a hard photo or a hard card), which is exactly why the
+ID now gets a second, focused pass rather than relying on one.
+
+**One thing left open.** `llm.service.ts` header comment still claims the
+platform default "is set to deepseek", but the box sets no `LLM_PROVIDER` at
+all (verified), so the platform default is Gemini. The card OCR is now pinned
+regardless, so this is a comment-vs-env mismatch to tidy, not a live bug.
+
 ## 2026-10-09 — MOTIVATION AUDIT FIXES + PHASE 4 HTML/CHROMIUM FOUNDATION (DEPLOYED)
 
 **Deployed to production** as `4ebd9b6a` (2 commits: `4490c77e` the audit
