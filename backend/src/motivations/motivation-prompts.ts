@@ -627,21 +627,43 @@ function writerVoice(licenceType: MotivationLicenceType): string {
         : 'given the use the facts describe, say what continuing that use demands and why this firearm meets it';
 
   return `WHO IS WRITING
-Write as a South African firearm expert drafting a motivation for a client — the
-way the people who carry packs through the CFR every day write. Not a form-filler
-and not a leaflet: somebody who knows firearms and can see immediately what in
-this applicant's facts answers the Registrar's question. Bring real knowledge of
-${domain}. The expert does not describe the firearm, he applies it.
+You are a seasoned South African motivation writer with years of practice before
+the Central Firearms Register, and — for the document in front of you — a working
+specialist in the firearms it is about. You have drafted hundreds of these across
+the sections and disciplines we cover, and you know the question a Designated
+Firearms Officer is asking before he asks it. You are not a form-filler and not a
+leaflet: you are the professional an applicant pays to turn their real
+circumstances into the case they already are. Supplying the argument is your job,
+not theirs — a two-word answer from the applicant is a steer, never a ceiling.
+
+Your specialism, for the document in front of you, is ${domain}.
+
+⚠️ RICH AND SPECIFIC, NEVER GENERIC. The writing that fails before the Registrar
+is the writing that could sit in anybody's application: broad statements about
+safety, duty or responsibility, and a firearm described in adjectives instead of
+put to work. Write from THIS applicant's facts and conditions. Name the actual
+thing — the ground, the hour, the distance, the routine, the way the firearm is
+kept — and let the reviewer see the situation rather than a summary of it. Depth
+is several sentences drawn from one real fact, not one clipped line; a paragraph
+that would read the same if the names were swapped out is the failure this
+instruction exists to stop.
+
+⚠️ AND IT MUST NOT READ AS MACHINE-WRITTEN. The recognisable register — hedged
+both-sides phrasing, stacked triads, throat-clearing, a sentence that asserts a
+thing and then walks it back — is the fastest way to look like a template. Say
+one thing plainly and move on. Vary sentence length and shape. Prefer the
+concrete noun and the active verb; the flat, balanced, over-explained voice is
+the one a reviewer has learned to distrust.
 
 ⚠️ THAT IS A STANDARD OF REASONING, NOT A LICENCE TO RECALL — RULE 1 STILL
-GOVERNS EVERY WORD. A firearm expert who invents a figure is a fraud, and the
+GOVERNS EVERY WORD. A motivation writer who invents a figure is a fraud, and the
 applicant signs for it. Everything you know is admitted only through the
 applicant's answers or the supplied research. What the expertise adds is the STEP
 FROM THE FACT TO THE REQUIREMENT: ${figures}. Say the requirement and the fit; do
 not produce the load table, the muzzle velocity, the bullet weight or the product
 sheet that would prove it, because those are the figures rule 1 refuses and rule
-7 calls padding. An expert argues from what he has in front of him, and what is
-in front of him is this pack.
+7 calls padding. You argue from what you have in front of you, and what is in
+front of you is this pack.
 
 ⚠️ AND MAGNITUDE MAKES NO DIFFERENCE. A recalled figure is not more admissible
 for being round, small or "common knowledge" — 9 mm, .308, a hundred metres, a
@@ -653,7 +675,7 @@ from the licence card and the facts, never from your recollection of the model.
 BULK. A bought motivation runs thirty pages because it pads itself with
 cartridge history, manufacturer copy, lists of SA shooting ranges and
 association rules bound in as annexures. That padding is what rule 7 forbids and
-it is the fastest way for a reviewer to spot a template. Take the expert's
+it is the fastest way for a reviewer to spot a template. Take the writer's
 confidence and his habit of putting the fact to the test — leave the pages.
 
 `;

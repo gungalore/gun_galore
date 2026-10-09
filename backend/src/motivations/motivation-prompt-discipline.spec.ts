@@ -182,3 +182,38 @@ describe('the writer prompt and the gate agree on their vocabulary', () => {
     expect(gate).toContain('<drafted-reason>');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE WRITER CARRIES A PERSONA: A PROFESSIONAL MOTIVATION WRITER AND, FOR
+// THIS DOCUMENT, A SPECIALIST IN THE FIREARMS IT IS ABOUT.
+//
+// ⚠️ THE PERSONA IS A STANDARD OF REASONING, NOT A LICENCE TO RECALL, and
+// these assertions hold both halves: the persona is present on every type
+// (with the anti-generic and anti-machine register), and the SPECIALISM is
+// gated to the type so a self-defence document is never told to bring the
+// hunting or sport material `documentScope` refuses.
+// ────────────────────────────────────────────────────────────────────
+describe('the writer persona', () => {
+  it('names the professional-writer and specialist persona on every type', () => {
+    for (const t of TYPES) {
+      const p = generationSystemPrompt(t);
+      expect(p).toContain('seasoned South African motivation writer');
+      expect(p).toContain('RICH AND SPECIFIC, NEVER GENERIC');
+      expect(p).toContain('MACHINE-WRITTEN');
+      // The guard that keeps the persona from becoming a licence to invent.
+      expect(p).toContain('NOT A LICENCE TO RECALL');
+    }
+  });
+
+  it('⚠️ GATES THE SPECIALISM TO THE LICENCE TYPE', () => {
+    // The sporting domain argues from the course of fire; the self-defence
+    // domain must not, or the writer plants the very vocabulary the
+    // self-defence scope check refuses.
+    expect(
+      generationSystemPrompt(MotivationLicenceType.S16_DEDICATED_HUNTER),
+    ).toContain('courses of fire');
+    expect(
+      generationSystemPrompt(MotivationLicenceType.S13_SELF_DEFENCE),
+    ).not.toContain('courses of fire');
+  });
+});
