@@ -7,6 +7,33 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
+## 2026-10-09 (night) — TWO-SIDED DOCUMENTS RIDE WHOLE (DEPLOYED)
+
+**Deployed to production** as `342cc214` (one commit). Full deploy. Gates:
+backend `tsc` + 106 suites / 2358 tests, frontend `tsc` + 132 files / 1668
+tests, frontend prod build. Health after: `/api/health` twice OK, public 200
+twice, three pm2 services online. No migration.
+
+**What it fixes.** Auto-link gated the SECOND page of a two-sided proficiency
+on its OWN settled-date row, so a certificate could ride without its statement
+of results (or the reverse) even though the two are ONE document — the lead
+passed the gate, the partner did not, and the pack carried a half document.
+`attachWithOtherSide` now resolves the partner by `otherSideId` and rides it
+along regardless of the caller's candidate gate; the delete-refusal gate still
+applies. A one-sided document is unchanged: it attaches its one side and is
+never blocked. Operator, 2026-10-09: "if it has two sides add it, if it has
+only one side just add the one side — it shouldn't be a blocker."
+
+**⚠️ What this does NOT do.** MO000083 (the operator's S13 handgun pack) still
+shows only the Statement of Results under Annexure C, because the handgun
+proficiency in the vault is a SINGLE side: `cmtzq08e5…` has `document_side =
+back` and `otherSideId = null`, and there is no front row anywhere in the vault
+(verified by dumping all 21 credentials). The rifle and shotgun proficiencies
+are proper front+back pairs; handgun is not. The pack is faithful to the vault.
+To get both pages into the pack for MO000083, the handgun proficiency
+certificate (the front) must be added to the Document Centre. No code change
+can supply a document that was never uploaded.
+
 ## 2026-10-09 (evening) — WRITER PERSONA + PRINTER TEST FLAKE FIX (DEPLOYED)
 
 **Deployed to production** as `420e9de1` (2 commits: `251b8c12` the persona,
