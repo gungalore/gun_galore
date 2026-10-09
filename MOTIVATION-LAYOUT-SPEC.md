@@ -29,6 +29,13 @@ packs make obvious.
 
 ## 3. Page geometry
 
+> **NOTE (2026-10-08, verified against code).** The numbers in this section are
+> the TARGET from the mock, not the shipped page. The current pdfkit renderer
+> uses 14 mm side padding and 9 mm below the running banner
+> (`PAD_X`/`PAD_TOP` in `motivation-pdf-chrome.ts`); it does not use the 22 mm
+> margins below. Treat §3 to §6 as target geometry/type, not as current
+> behaviour — see §8.
+
 - A4 portrait, margins 22 mm left and right, 22 mm top, 20 mm bottom. Text column 166 mm.
 - Running header at 10 mm from top: left "Motivation · G J P Fourie · 890512 5220 089",
   right "Section 13 · Glock 9mm · ZABA01892" (on annexure pages the right side reads
@@ -39,6 +46,12 @@ packs make obvious.
   own content layer so it is not extracted as text. The final issue has none.
 
 ## 4. Type
+
+> **NOTE (2026-10-08, verified against code).** Shipped type differs from this
+> target: the embedded faces are **Archivo** (sans, used for headings and page
+> furniture) and **Source Serif 4** (serif body, about 10.9 pt), registered in
+> `motivation-pdf-chrome.ts`. The `Inter / Helvetica` and `10.5pt` figures below
+> are the mock's target, not the current renderer — see §8.
 
 - Body: a serif (Source Serif 4 or the pdf-lib embedded equivalent), 10.5pt, 1.5 leading,
   left aligned, 3 mm after each paragraph.
@@ -118,6 +131,41 @@ italic disclaimer line on the cover (it belongs on the take-with-you sheet); the
 FIREARMS ALREADY LICENSED TO ME" red-dot section marker style; justification.
 
 ## 8. Why it looks the way it does, and the fix
+
+> **STATUS: FOUNDATION LANDED, NOT YET WIRED (updated 2026-10-08).** The
+> renderer swap described in this section has started but is NOT complete. The
+> **pdfkit renderer is still authoritative** for the served download; do not
+> treat any statement below as shipped geometry, type or behaviour.
+>
+> What has landed (all add-only, the live path is unchanged):
+> - `backend/src/motivations/motivation-html.service.ts` — a pure
+>   `renderMotivationHtml(input)` that turns the existing `MotivationPdfInput`
+>   into a self-contained HTML/CSS document (cover, contents, flowing body,
+>   owned-firearms table, firearm spec, take-with-you, annexure index,
+>   declaration), using the scheme/layout colours. Numbered headings are parsed
+>   with the SAME rules as the pdf renderer (`isHeading`/`splitHeading`).
+> - `backend/src/motivations/chromium-pdf.service.ts` — a dependency-free
+>   headless-Chromium printer (`chrome --headless=new --print-to-pdf`) that
+>   turns that HTML into a PDF. It resolves the Chromium executable from
+>   `CHROMIUM_EXECUTABLE` or the Playwright browser cache; no new npm
+>   dependency was added.
+> - `backend/scripts/motivation-html-sample.ts` — a dev utility that renders a
+>   sample pack end to end.
+>
+> Deliberately NOT done yet, and the reason the swap is not wired:
+> - Graphical/raster and merge pages still live in pdfkit/pdf-lib: the cover
+>   photograph, the cartridge drawing, the C.I.P. sheet, press clippings,
+>   activity photographs, the witness/seller-consent forms, the SAPS 271 form,
+>   the scanned annexure sheets and the merged annexure PDFs. Switching now
+>   would drop content from a legal document.
+> - Per-page section labels and "page N of M" need the CDP/Playwright
+>   header-footer templates (a fixed top header collides with flow content in
+>   Chromium print, so only the footer is fixed today).
+> - The motivation test suite asserts on pdfkit draw calls; it moves to
+>   rendered-output snapshots when the swap completes.
+>
+> The mock at `docs/design/motivation-layout-mock.html` remains the target look.
+> Read the rest of this section as the design intent for the remaining work.
 
 `motivation-pdf.service.ts` draws the whole document with pdfkit, placing every line by
 hand from constants in `motivation-pdf-chrome.ts` (`PAD_X`, `SECTION_INDENT`, banner
