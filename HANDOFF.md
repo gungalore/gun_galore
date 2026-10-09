@@ -5,7 +5,66 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-01**.
+Last updated: **2026-10-09**.
+
+## 2026-10-09 — MOTIVATION AUDIT FIXES + PHASE 4 HTML/CHROMIUM FOUNDATION (DEPLOYED)
+
+**Deployed to production** as `4ebd9b6a` (2 commits: `4490c77e` the audit
+fixes, `4ebd9b6a` the renderer foundation). Full deploy (`bash
+infra/deploy/deploy.sh`, no side flag — the diff touches `backend/`). Gates
+first: backend `tsc` + 313 suites / 5274 tests (1 suite / 8 tests skipped),
+frontend `tsc` + 132 files / 1668 tests (1 skipped), frontend prod build
+(`BUILD_ID` present). Health after: `/api/health` twice OK, public site 200
+twice, all three pm2 services (`alloutdoor-backend`, `alloutdoor-frontend`,
+`warden`) online. No migration in this change set.
+
+**Commit `4490c77e` — motivation layout, content and gate fixes.** Layout:
+ellipsised running banner and fitted every heading style; one embedded type
+system (the 15 Helvetica draw sites are gone); table headers repeat on
+continuation pages; the em-dash Purpose column drops when nothing is stated;
+layout-aware top margin; merged annexure PDFs are watermarked; merged-annexure
+contents page numbers corrected; spec-compliant signature block; sane battery
+column widths; rows measured before a page break; scheme-pure neutrals;
+annexure divider pages with edge tabs; the hanging rule drawn with a
+conditional indent. Content: the prompt's self-banned exemplar removed; the
+comparison carve-out added to the firearm briefs; the slop/outcome lists
+published; the spelling fold no longer manufactures "utilise"; drafted reasons
+carry a provenance block; gate findings feed the retry; `gateCycles` resets
+when answers change; the gate sees the intended-uses and overlap blocks; the
+S13 ammo claim is conditional; quotable template sentences removed; arsenal
+calibres and dates tidied; word bands and repetition wired as advisory
+feedback; "dedicated" banned on S15; repaired text re-folded; spelled-out
+measurements detected.
+
+**Commit `4ebd9b6a` — Phase 4 foundation, ADD-ONLY, NOT WIRED.**
+`backend/src/motivations/motivation-html.service.ts` (pure `MotivationPdfInput`
+-> HTML/CSS, headings parsed with the same `isHeading`/`splitHeading` rules as
+pdfkit) and `chromium-pdf.service.ts` (dependency-free headless-Chromium
+printer via `chrome --headless=new --print-to-pdf`; no new npm package). Plus
+`backend/scripts/motivation-html-sample.ts`. **The pdfkit renderer is still
+authoritative**; nothing in the served download path references the new
+services.
+
+### Traps worth keeping
+
+1. **Chromium repeats `position: fixed`, but a fixed TOP header collides with
+   flow content on continuation pages** (it lands at the content edge, not the
+   margin band). Only the footer is fixed in the HTML renderer; the running head
+   is a one-time masthead. Page numbers and per-page section labels still need
+   the CDP/Playwright header-footer templates. See `MOTIVATION-LAYOUT-SPEC.md`
+   §8, which now records the true status.
+2. **A `\s` inside a normal string literal is just `s`.** `motivation-scope.ts`
+   built `PARA_BREAK` as `String.fromCharCode(10) + '\s*' + ...`, so paragraph
+   splitting never matched a blank line. Fixed to `'\\s*'`. Watch for the same
+   trap in any hand-built regex.
+3. **The HTML generator must mirror `isHeading`/`splitHeading` from
+   `motivation-pdf.service.ts`.** The old colon-only heading test dropped every
+   numbered heading ("1. Application") into the body and produced 19 sparse
+   pages; the fixed parser flows the document to 5.
+4. Untracked and intentionally NOT committed: `COMPLIANCE-RULES.md`,
+   `backend/.ozow-test-evidence/`, and the dev artifact
+   `motivation-html-sample.pdf` (repo root). `deploy.sh`'s `git diff --quiet`
+   gate ignores untracked files.
 
 ## 2026-10-01 — COMMUNITY POST DETAILS: OPTIONAL PER-CATEGORY FIELDS (DEPLOYED)
 
