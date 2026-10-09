@@ -23,7 +23,11 @@ import * as path from 'node:path';
 // ────────────────────────────────────────────────────────────────────
 
 const PDF_MAGIC = Buffer.from('%PDF');
-const DEFAULT_TIMEOUT_MS = 30_000;
+// ⚠️ A COLD CHROMIUM START IS SLOW, AND SLOWER UNDER LOAD. 30s was too tight:
+// the first launch on a busy machine (or in a full test run) can exceed it and
+// fail a print that would succeed a second later. 60s is a ceiling, not a
+// target — a warm print returns in a couple of seconds.
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 export interface ChromiumResolver {
   env: NodeJS.ProcessEnv;

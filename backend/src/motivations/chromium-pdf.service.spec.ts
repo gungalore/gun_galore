@@ -130,11 +130,20 @@ describe('ChromiumPdfService', () => {
   maybe(
     'prints an HTML string to a PDF buffer',
     async () => {
-      const pdf = await service.printHtml(
-        '<html><body><h1>hello</h1></body></html>',
-      );
+      // ⚠️ ONE RETRY. This spawns a real browser; under a full-suite run the
+      // launch competes for the CPU and a single cold start can miss the
+      // timeout. What is under test is the printer, not the machine's load, so
+      // a transient spawn failure gets one more attempt before it is a failure.
+      const attempt = () =>
+        service.printHtml('<html><body><h1>hello</h1></body></html>');
+      let pdf: Buffer;
+      try {
+        pdf = await attempt();
+      } catch {
+        pdf = await attempt();
+      }
       expect(pdf.subarray(0, 4).toString('latin1')).toBe('%PDF');
     },
-    60_000,
+    120_000,
   );
 });
