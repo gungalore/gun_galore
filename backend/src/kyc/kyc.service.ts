@@ -44,6 +44,13 @@ function hashSaIdNumber(idNumber: string): string {
  *
  * ⚠️ Anything unrecognised parks in UNDER_REVIEW too. A status we have never
  * seen is not evidence of a pass.
+ *
+ * ⚠️ "Not Started", "Abandoned", "Expired" and "Kyc Expired" are PENDING, NOT
+ * UNDER_REVIEW. They are not verdicts at all — they mean the member never
+ * finished the hosted flow, usually because they simply walked away. Parking
+ * them for human review queues an abandoned tab behind a real fraud review and
+ * fires an urgent alert for nothing; the only correct response is to let them
+ * start again. See `isSessionInFlight` for the other half of this.
  */
 type Verdict = 'VERIFIED' | 'REJECTED' | 'UNDER_REVIEW' | 'PENDING';
 
@@ -57,12 +64,36 @@ function verdictFor(status: string): Verdict {
     case 'In Progress':
     case 'Resubmitted':
     case 'Awaiting User':
+    case 'Abandoned':
+    case 'Expired':
+    case 'Kyc Expired':
       return 'PENDING';
     default:
-      // "In Review", "Abandoned", "Expired", "Kyc Expired", and anything
-      // Didit adds later.
+      // "In Review", and anything Didit adds later.
       return 'UNDER_REVIEW';
   }
+}
+
+/**
+ * Is the member genuinely mid-flow on Didit's page, so the wizard should hold
+ * on "waiting" for a verdict?
+ *
+ * ⚠️ "Not Started" IS NOT IN FLIGHT, EVEN THOUGH IT MAPS TO PENDING. Didit
+ * leaves a session there from creation until the member submits the first
+ * document, so treating it as waiting strands a member who created a session
+ * and then closed the page: they see "Checking your documents…" forever, the
+ * poll never resolves, and there is no button to resume. Only the statuses
+ * where Didit is actually working on a submission count as in flight; anything
+ * else falls through to `verify`, where `POST /kyc/session` hands the same
+ * unfinished session back (Didit is idempotent while it is open) or mints a
+ * fresh one.
+ */
+function isSessionInFlight(status: string): boolean {
+  return (
+    status === 'In Progress' ||
+    status === 'Resubmitted' ||
+    status === 'Awaiting User'
+  );
 }
 
 // PORTED from the old project's kyc.service.ts with two adaptations:
@@ -208,7 +239,7 @@ export class KycService {
       nextStep = 'failed';
     else if (!steps.consent) nextStep = 'consent';
     else if (!steps.details) nextStep = 'details';
-    else if (session && verdictFor(session.status) === 'PENDING')
+    else if (session && isSessionInFlight(session.status))
       nextStep = 'waiting';
     else nextStep = 'verify';
 

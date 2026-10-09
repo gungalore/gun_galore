@@ -7,7 +7,38 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
-## 2026-10-09 (latest) — COMPOSER: ONE-OF-THREE POSTS + AUTOCOMPLETE DETAILS (DEPLOYED)
+## 2026-10-09 — KYC: RESTARTABLE UNFINISHED SESSIONS (LOCAL, NOT DEPLOYED)
+
+**Why.** A new member (`ruandadb97@gmail.com` / `ruanda`) registered, gave
+consent and details, and created a Didit session at 19:17:58 — which stayed
+`Not Started`. Their iPhone loaded Didit's hosted page at 19:18:00 (Didit's own
+`ip_analyses` records the device) but they never submitted a document. Because
+`verdictFor('Not Started')` returned `PENDING`, `GET /kyc/status` drove
+`nextStep = 'waiting'`, so the wizard rendered "Checking your documents…" and
+polled forever. On a fresh load `hostedUrl` is null, so there was no Start / QR /
+SMS control at all — a dead end for a session that was never actually in flight.
+
+**Fix (backend only).** `kyc.service.ts`: `verdictFor` now maps `Not Started`,
+`Abandoned`, `Expired` and `Kyc Expired` to `PENDING` (they are not verdicts and
+must not strike or park a member); new `isSessionInFlight()` gates the `waiting`
+state, and only `In Progress` / `Resubmitted` / `Awaiting User` qualify.
+Everything else falls through to `verify`, where `POST /kyc/session` returns the
+same unfinished session (Didit idempotent while open) or mints a fresh one.
+`In Review` and unrecognised statuses still park in `UNDER_REVIEW` as before.
+Frontend unchanged: the existing `verify` step already renders Start / QR / SMS.
+
+**Verified locally:** backend `tsc` clean; `kyc.service.spec.ts` 31/31 (spec now
+splits the "parks in UNDER_REVIEW" case from a new "restartable" case, and adds a
+`getStatus` matrix row per restartable status). NOT committed, NOT deployed.
+
+**Follow-ups.** (1) No live browser pass of the restart path. (2) Existing
+production rows already in the stuck state are corrected on next `GET /kyc/status`
+with no data migration needed (the verdict is derived from the session row).
+(3) `steps.verification` still reports `true` for any session, including
+`Not Started` — harmless for `nextStep` but worth revisiting if the step rail is
+ever driven off it.
+
+## 2026-10-09 — COMPOSER: ONE-OF-THREE POSTS + AUTOCOMPLETE DETAILS (DEPLOYED)
 
 **Deployed to production** as `37424e65` (one commit, full deploy — backend +
 migration + frontend). Gates: backend `tsc` clean + 314 suites / 5283 tests;

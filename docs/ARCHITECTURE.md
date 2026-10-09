@@ -827,6 +827,21 @@ route is public and HMAC-SHA256 verified; a bad signature returns **200** with
 the handler skipped, never a 401 — the same convention the Ozow webhooks use.
 Outcomes land in the `DiditVerification` model.
 
+⚠️ **Only two Didit statuses are in flight, and everything unfinished is
+restartable.** `In Progress`, `Resubmitted` and `Awaiting User` are the states
+where Didit is actually working on a submission, so `GET /kyc/status` returns
+`waiting` and the wizard polls. **`Not Started` is not one of them**, even
+though it maps to `PENDING`: Didit leaves a session there from creation until
+the member submits the first document, so treating it as in flight strands a
+member who started a session and closed the tab on a "checking your documents"
+screen with no button to resume. `Not Started`, `Abandoned`, `Expired` and
+`Kyc Expired` are therefore **not verdicts and not strikes** — they fall back to
+`verify`, and `POST /kyc/session` hands the same unfinished session back (Didit
+is idempotent while it is open) or mints a fresh one. Parking an abandoned tab
+in `UNDER_REVIEW` queues it behind real fraud review and fires an urgent alert
+for nothing. Only `In Review` (and any status Didit adds later that we have not
+classified) parks in `UNDER_REVIEW`.
+
 ⚠️ **Didit delivers from the single static IP `18.203.201.92`** (`User-Agent:
 DiditWebhook/2.0`), so **Cloudflare's WAF must allow it** — otherwise every
 delivery is dropped at the edge with nothing in any application log, and a

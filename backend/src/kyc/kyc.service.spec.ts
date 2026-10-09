@@ -256,7 +256,7 @@ describe('applyDecision', () => {
   // "In Review" is Didit saying a human has not decided. Collapsing it either
   // way is the difference between paying an unverified seller and refusing a
   // real one.
-  it.each(['In Review', 'Abandoned', 'Expired', 'Kyc Expired', 'Something New'])(
+  it.each(['In Review', 'Something New'])(
     'parks %s in UNDER_REVIEW rather than guessing',
     async (status) => {
       const { service, updateMany } = makeService({ session });
@@ -266,6 +266,22 @@ describe('applyDecision', () => {
       );
       expect(res.status).toBe('UNDER_REVIEW');
       expect(updateMany.mock.calls[0][0].data.kycStatus).toBe('UNDER_REVIEW');
+    },
+  );
+
+  // An abandoned or expired attempt is not a verdict and not a strike. Parking
+  // it for human review would queue a closed tab behind real fraud and alert
+  // urgently for nothing; the member must be free to start again.
+  it.each(['Not Started', 'Abandoned', 'Expired', 'Kyc Expired'])(
+    'does not strike or park a %s session — it is restartable',
+    async (status) => {
+      const { service, updateMany } = makeService({ session });
+      const res = await service.applyDecision(
+        'sess-1',
+        decision({ status: status as DiditDecision['status'] }),
+      );
+      expect(res.applied).toBe(false);
+      expect(updateMany).not.toHaveBeenCalled();
     },
   );
 
@@ -314,6 +330,18 @@ describe('getStatus nextStep matrix', () => {
     });
     expect((await service.getStatus('u1'))!.nextStep).toBe('waiting');
   });
+
+  // A session Didit never advanced is not being worked on. Showing "we are
+  // checking your documents" for one is a screen with no way out.
+  it.each(['Not Started', 'Abandoned', 'Expired', 'Kyc Expired'])(
+    'sends a member with a %s session back to verify, not waiting',
+    async (status) => {
+      const { service } = makeService({
+        session: { diditSessionId: 'sess-1', status },
+      });
+      expect((await service.getStatus('u1'))!.nextStep).toBe('verify');
+    },
+  );
 
   it('reports done / review / failed from the stored status', async () => {
     const done = makeService({ user: { kycStatus: 'VERIFIED' } });
