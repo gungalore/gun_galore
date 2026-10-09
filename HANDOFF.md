@@ -7,11 +7,15 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
-## 2026-10-09 (latest) — COMPOSER: ONE-OF-THREE POSTS + AUTOCOMPLETE DETAILS (BUILT, NOT DEPLOYED)
+## 2026-10-09 (latest) — COMPOSER: ONE-OF-THREE POSTS + AUTOCOMPLETE DETAILS (DEPLOYED)
 
-**Built and verified locally, not deployed.** Gates: backend `tsc` clean + 314
-suites / 5283 tests; frontend `tsc` clean + 134 files / 1683 tests. Production
-build not yet run for this change.
+**Deployed to production** as `37424e65` (one commit, full deploy — backend +
+migration + frontend). Gates: backend `tsc` clean + 314 suites / 5283 tests;
+frontend `tsc` clean + 134 files / 1683 tests; frontend prod build exit 0.
+Rollback point `alloutdoor-20261009-214136.dump`. Migration
+`20261009130000_widen_post_single_columns` applied (`prisma migrate status`:
+"Database schema is up to date!", 110 migrations). Health after: `/api/health`
+twice OK, public 200 twice, all three pm2 services online.
 
 **Operator decisions (all 8 answered).**
 1. A post needs only ONE of text ("What's on your mind?"), a photo, or a video.
@@ -56,8 +60,8 @@ the body when media exists. New specs: `lib/post-vocab.spec.ts`,
 `components/community/vocab-combobox.spec.tsx`; the two pill tests in
 `post-composer.spec.tsx` were rewritten to drive the combobox.
 
-**Not done, if it matters next time:** no live browser pass; no production
-build for this change; not deployed.
+**Not done, if it matters next time:** no live browser pass of the new composer
+post-deploy.
 
 ## 2026-10-09 — COMMUNITY FEED ENABLED FROM CODE (DEPLOYED)
 
