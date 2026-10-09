@@ -7,6 +7,36 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
+## 2026-10-09 (hotfix) — POSTING 500: MISSING `Post.location` COLUMN (DEPLOYED)
+
+**Symptom.** Posting showed "The server had a problem posting." Backend error log:
+`P2022 — column "location" of relation "Post" does not exist`, thrown by
+`FeedService.createPost` (`prisma.post.create`).
+
+**Cause — pre-existing schema drift, not the composer feature.** `schema.prisma`
+has both `Post.location` and `Post.locationPlaceId`, but the 2026-09-23 migration
+(`20260923130000_post_location_place_id`) adds **only** `locationPlaceId`. No
+migration ever created `location`; it existed on the box from an earlier hand run
+and was missing again. A full-column audit of prod `Post` found `location` as the
+**only** absent column. `prisma migrate status` says "up to date" because it
+tracks the migration table, not drift.
+
+**Fix.** Migration `20261009140000_add_post_location_column`
+(`ALTER TABLE "Post" ADD COLUMN IF NOT EXISTS "location" TEXT;`, idempotent),
+shipped in `3f14f060` (full deploy). Verified on prod: `location` column present,
+and a throwaway `prisma.post.create({ location: 'Malena Lodge', ... })` returned
+`CREATED_OK` then `DELETED_OK`. Health ×2 OK, public 200 ×2, three pm2 services
+online.
+
+**Also fixed.** The composer used Google's literal `"unnamed road"` as the
+location label when a place resolved to an unnamed way. `placeLabel()` now treats
+that as "no name" and falls back to the town, the member's selected text, or the
+first line of the formatted address.
+
+⚠️ **Watch for more drift.** The location migration was recorded applied without
+its DDL. Other columns added by a similarly reconciled migration could be
+missing too — `prisma migrate diff` / a column audit is the way to find them.
+
 ## 2026-10-09 — KYC: RETURN TO PROFILE AFTER VERIFICATION (DEPLOYED)
 
 **Why.** After verifying, the Didit hosted page returns the member to
