@@ -7,6 +7,37 @@ overwritten.
 
 Last updated: **2026-10-09**.
 
+## 2026-10-09 — FEED POSTS STUCK "IN REVIEW": JEV + DEEPSEEK KEYS MISSING IN PROD (FIXED)
+
+**Symptom.** Posting showed *"In review — a moderator will take a look and follow
+up."* (the `IN_REVIEW` state: `status = PENDING_MODERATION` **with** `moderatedAt`
+set). The DB `moderationReason` was **`moderation_unavailable`**.
+
+**Cause.** The feed's text/image moderation engine is **Jev (text) + DeepSeek
+Flash (images)**, and production's backend `.env` had neither key:
+`JEV_API_KEY` and `DEEPSEEK_API_KEY` were absent (`GEMINI_API_KEY` present,
+`FEED_MOD_ENGINE` unset → the split path). `feed-moderation.service.ts` fails
+**closed**: no Jev key → `moderation_unavailable` → held for a human. So **every
+non-video post** was being held; only video posts published, because video takes
+the single Gemini call.
+
+**Fix (ops, no code change).** Copied `JEV_API_KEY` + `DEEPSEEK_API_KEY` from the
+local `backend/.env` into the prod `backend/.env` and `pm2 reload
+alloutdoor-backend --update-env`. Verified from the box: Jev `POST
+api.typesafe.ai/v1/systemone` → **200 / jev-1.13.0**; DeepSeek `/models` 200 and
+`/chat/completions` 200 on `deepseek-flash`. Health 200 ×2.
+
+**Backlog cleared.** One post held with `moderation_unavailable`; its
+`moderatedAt` was reset and the 5-minute sweep re-moderated it →
+**PUBLISHED** (graphicTier FIELD, behind the content warning), ledger shows
+`moderation.feed.images` via `deepseek/deepseek-flash` ok.
+
+⚠️ **If this recurs:** the inline copy says "a moderator will look", but the
+member card never shows `moderationReason`. Check `AiUsage` (purpose
+`moderation.feed.*`) and the backend `.env` keys before assuming a content hold.
+Rollback lever `FEED_MOD_ENGINE=legacy` routes non-video posts through Gemini,
+but loses the Jev contact/promo text battery.
+
 ## 2026-10-09 (hotfix) — POSTING 500: MISSING `Post.location` COLUMN (DEPLOYED)
 
 **Symptom.** Posting showed "The server had a problem posting." Backend error log:
