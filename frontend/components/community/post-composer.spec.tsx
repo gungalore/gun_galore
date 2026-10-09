@@ -70,6 +70,22 @@ describe('placeLabel', () => {
       }),
     ).toBe('North West');
   });
+
+  it('never uses Google\'s "unnamed road" as a label', () => {
+    expect(
+      placeLabel({
+        name: 'unnamed road',
+        formatted_address: 'Malena Lodge, Northam, South Africa',
+        address_components: [comp('Northam', 'locality')],
+      }),
+    ).toBe('Northam');
+  });
+
+  it('falls back to the formatted address when there is no name or town', () => {
+    expect(
+      placeLabel({ name: 'Unnamed Road', formatted_address: 'Malena, Limpopo' }),
+    ).toBe('Malena');
+  });
 });
 
 function openComposer() {

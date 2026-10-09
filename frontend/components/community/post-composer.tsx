@@ -64,15 +64,23 @@ interface Picked {
  * The label stored on the post: the place name plus its town, and nothing more
  * ("Hunting Lodge, Swartruggens") — no street, postal code or country. Falls
  * back down the address hierarchy when a place has no name (a bare area pick).
+ *
+ * ⚠️ Google returns the literal "unnamed road" as the `name` for a way with no
+ * name; that is never a useful post label, so it is treated as no name at all
+ * and the town (or the first line of the formatted address) is used instead.
  */
+const UNUSABLE_PLACE_NAME = /^unnamed(\s+(road|street|place))?$/i;
+
 export function placeLabel(place: {
   name?: string;
+  formatted_address?: string;
   address_components?: Array<{ long_name: string; types: string[] }>;
 }): string {
   const comps = place.address_components ?? [];
   const part = (type: string) =>
     comps.find((c) => c.types.includes(type))?.long_name?.trim() ?? '';
-  const name = (place.name ?? '').trim();
+  const rawName = (place.name ?? '').trim();
+  const name = UNUSABLE_PLACE_NAME.test(rawName) ? '' : rawName;
   const town =
     part('locality') ||
     part('postal_town') ||
@@ -82,7 +90,9 @@ export function placeLabel(place: {
   if (name && town && name.toLowerCase() !== town.toLowerCase()) {
     return `${name}, ${town}`;
   }
-  return name || town;
+  if (name || town) return name || town;
+  // Nothing usable — fall back to the first line of the formatted address.
+  return (place.formatted_address ?? '').split(',')[0]?.trim() ?? '';
 }
 
 const MAX_IMAGES = 6;
@@ -323,9 +333,12 @@ export function PostComposer({
     });
     autocomplete.addListener('place_changed', () => {
       const selected = autocomplete.getPlace();
+      // What the member actually selected in the dropdown. If Google's resolved
+      // place name is junk ("unnamed road"), this is the good fallback.
+      const typed = (placeRef.current?.value ?? '').trim();
       const full = (selected.formatted_address ?? '').trim();
-      const short = placeLabel(selected) || full;
-      setPlace(full || short);
+      const short = placeLabel(selected) || typed || full;
+      setPlace(typed || full || short);
       setLocation(short);
       setPlaceId(selected.place_id ?? '');
     });
