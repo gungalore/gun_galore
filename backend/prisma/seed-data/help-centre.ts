@@ -187,8 +187,8 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How are items delivered?',
     question: 'Which couriers does All Outdoor use?',
     answer:
-      'Non-firearm gear ships with our courier partners — Pudo locker-to-locker or The Courier Guy door-to-door — with live rate quotes at checkout and tracking on your order page. Sellers can also offer in-person collection. Firearms are never couriered to a buyer: they always route through a SAPS-licensed dealer instead.',
-    tags: ['shipping', 'pudo', 'courier guy'],
+      'Non-firearm gear ships through Bob Go, our courier partner — choose door-to-door delivery or collect from one of the nearest Pargo pickup points to your address, with live rate quotes at checkout and tracking on your order page. Either way the courier collects the parcel straight from the seller. Sellers can also offer in-person collection. Firearms are never couriered to a buyer: they always route through a SAPS-licensed dealer instead.',
+    tags: ['shipping', 'bob go', 'pargo'],
   },
   {
     sourceKey: 'ship-handling-fee',
@@ -211,7 +211,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What if the seller never ships?',
     question: 'What happens if my order is never dispatched?',
     answer:
-      'For courier orders (Pudo / The Courier Guy), if the seller has not dispatched within 5 days of accepting, the system automatically refunds you in full and notifies both parties. The seller receives a strike, and repeat offenders are reviewed for suspension. Firearm dealer-transfer and collection orders are not auto-refunded — their logistics run differently, so our team monitors and chases those; contact [support](/support) if yours looks stuck.',
+      'For courier orders (door delivery or Pargo pickup), if the seller has not dispatched within 5 days of accepting, the system automatically refunds you in full and notifies both parties. The seller receives a strike, and repeat offenders are reviewed for suspension. Firearm dealer-transfer and collection orders are not auto-refunded — their logistics run differently, so our team monitors and chases those; contact [support](/support) if yours looks stuck.',
     tags: ['shipping', 'refunds', 'dispatch'],
   },
   {

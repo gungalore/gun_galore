@@ -32,5 +32,5 @@
   ],
   "matchWeights": { "EXACT_MODEL": 1, "SAME_MODEL_DIFF_SPEC": 0.6, "SAME_BRAND_CLASS": 0.3 },
   "matchConfidenceCap": { "DIFF_SPEC": "MEDIUM", "BRAND_CLASS": "LOW" },
-  "listingConstraints": { "shippingMethods": ["COURIER", "LOCKER"], "requiresDealerTransferOffer": false }
+  "listingConstraints": { "shippingMethods": ["COURIER"], "requiresDealerTransferOffer": false }
 }

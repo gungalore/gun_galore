@@ -409,7 +409,7 @@ Category-neutral prefill for ANY of the 17 categories. The `attributes` object u
   "price": 4200,
   "listingType": "BUY_NOW",
   "attributes": { "brand": "MSR", "capacity_persons": "2", "condition_note": "Used twice, seams sealed" },
-  "shippingMethods": ["COURIER", "LOCKER"]
+  "shippingMethods": ["COURIER"]
 }
 ```
 Attribute mapping: `valuation.service` loads `CategoryAttribute` rows for the category and maps result `attributes` keys onto them; unmatched keys are appended to the description as bullets, never dropped silently. Firearm-category drafts always include `DEALER_TRANSFER` and set `requiresDealerTransferOffer` semantics (AGENTS.md rule; this is a listing constraint, not a valuation rule).
@@ -699,7 +699,7 @@ Phase 1 ships: `default.json` + complete `camping-outdoor.json`, `knives.json`, 
   "depreciation": null,
   "unitCommodity": null,
   "legalFlags": [],
-  "listingConstraints": { "shippingMethods": ["COURIER", "LOCKER", "DEALER_TRANSFER", "PRIVATE_ARRANGE"], "requiresDealerTransferOffer": false }
+  "listingConstraints": { "shippingMethods": ["COURIER", "DEALER_TRANSFER", "PRIVATE_ARRANGE"], "requiresDealerTransferOffer": false }
 }
 ```
 
@@ -743,7 +743,7 @@ The generic checklist (section 4.1 `POST /valuations` response) is `default.json
   },
   "unitCommodity": null,
   "legalFlags": [],
-  "listingConstraints": { "shippingMethods": ["COURIER", "LOCKER"], "requiresDealerTransferOffer": false }
+  "listingConstraints": { "shippingMethods": ["COURIER"], "requiresDealerTransferOffer": false }
 }
 ```
 
@@ -780,7 +780,7 @@ The generic checklist (section 4.1 `POST /valuations` response) is `default.json
   "legalFlags": [
     { "flag": "KNIFE_LEGAL_CHECK", "message": "Check that this type of knife can be lawfully carried and sold where you are before publishing the ad." }
   ],
-  "listingConstraints": { "shippingMethods": ["COURIER", "LOCKER"], "requiresDealerTransferOffer": false }
+  "listingConstraints": { "shippingMethods": ["COURIER"], "requiresDealerTransferOffer": false }
 }
 ```
 
@@ -822,7 +822,7 @@ The generic checklist (section 4.1 `POST /valuations` response) is `default.json
   },
   "unitCommodity": null,
   "legalFlags": [],
-  "listingConstraints": { "shippingMethods": ["COURIER", "LOCKER", "DEALER_TRANSFER", "PRIVATE_ARRANGE"] }
+  "listingConstraints": { "shippingMethods": ["COURIER", "DEALER_TRANSFER", "PRIVATE_ARRANGE"] }
 }
 ```
 

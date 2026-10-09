@@ -4014,31 +4014,26 @@ export default function NewListingPage() {
               </div>
             )}
 
-            {!effectiveCollectionOnly && (
+            {/* Door courier is the single non-firearm rail — there is no
+                method choice to present and no info box to show. The pickup
+                address field below is the only seller input. This block now
+                renders the firearm hand-over choice only. */}
+            {!effectiveCollectionOnly && isFirearm && (
             <Field
-              label={isFirearm ? 'Delivery options' : 'Delivery'}
-              required={isFirearm}
-              tipTitle={isFirearm ? 'Delivery options' : 'Delivery'}
+              label="Delivery options"
+              required
+              tipTitle="Delivery options"
               tip={
-                isFirearm ? (
-                  <>
-                    <strong>Dealer-stocked transfer:</strong> you drop the
-                    firearm at your registered dealer, the buyer collects
-                    from theirs. Both must be SAPS-licensed. <br />
-                    <strong>Arrange privately:</strong> you and the buyer
-                    meet at a dealer to do the licence transfer in person.
-                    Use this for local sales.
-                  </>
-                ) : (
-                  <>
-                    Bob Go collects the parcel from your pickup address between
-                    08:00 and 17:00 and delivers it to the buyer&apos;s door.
-                    The buyer pays one delivery charge, quoted at checkout.
-                  </>
-                )
+                <>
+                  <strong>Dealer-stocked transfer:</strong> you drop the
+                  firearm at your registered dealer, the buyer collects
+                  from theirs. Both must be SAPS-licensed. <br />
+                  <strong>Arrange privately:</strong> you and the buyer
+                  meet at a dealer to do the licence transfer in person.
+                  Use this for local sales.
+                </>
               }
             >
-              {isFirearm ? (
               <>
               <MultiSelectPillGroup<ShippingMethod>
                 value={shippingMethods}
@@ -4075,34 +4070,6 @@ export default function NewListingPage() {
                 ]}
               />
               </>
-              ) : (
-                <div
-                  className="rounded-[6px] p-4 text-sm"
-                  style={{
-                    background: 'var(--bg-card)',
-                    border: '0.5px solid var(--border)',
-                    color: 'var(--text-primary)',
-                    lineHeight: 1.55,
-                  }}
-                >
-                  <p
-                    className="text-xs uppercase"
-                    style={{
-                      color: 'var(--text-tertiary)',
-                      letterSpacing: '0.05em',
-                      fontWeight: 600,
-                    }}
-                  >
-                    Door delivery
-                  </p>
-                  <p style={{ color: 'var(--text-secondary)' }}>
-                    A courier collects the parcel from your pickup address
-                    between 08:00 and 17:00 — have it packed and ready. It is
-                    delivered to the buyer&apos;s door, and they pay one
-                    delivery charge quoted at checkout.
-                  </p>
-                </div>
-              )}
               {/* PRIVATE_ARRANGE contact-sharing consent — REQUIRED to offer
                   the option. When ticked, the buyer of a private-arrangement
                   sale sees the seller's phone + email to coordinate the meet. */}

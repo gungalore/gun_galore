@@ -61,6 +61,7 @@ const SHIPPING_STATUS_LABEL: Record<ShippingStatus, string> = {
   COLLECTED: 'Collected',
   IN_TRANSIT: 'In transit',
   OUT_FOR_DELIVERY: 'Out for delivery',
+  READY_FOR_PICKUP: 'Ready for collection',
   DELIVERED: 'Delivered',
   DELIVERY_FAILED: 'Delivery failed',
   RETURNED: 'Returned',

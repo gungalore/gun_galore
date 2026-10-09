@@ -152,6 +152,7 @@ export const SHIPPING_STATUS: Record<string, StatusEntry> = {
   COLLECTED: { label: 'Collected', tone: 'info' },
   IN_TRANSIT: { label: 'In transit', tone: 'info' },
   OUT_FOR_DELIVERY: { label: 'Out for delivery', tone: 'info' },
+  READY_FOR_PICKUP: { label: 'Ready for collection', tone: 'info', hint: 'The parcel is waiting at your chosen Pargo pickup point.' },
   DELIVERED: { label: 'Delivered', tone: 'success' },
   DELIVERY_FAILED: {
     label: 'Delivery failed',

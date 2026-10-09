@@ -425,7 +425,7 @@ export type ShippingMethod =
   | 'ON_SITE_SERVICE';  // Hunting Packages / Experiences — future-dated on-site
                         // service. No courier, no parcel; the buyer attends on
                         // the event date. Invisible to every courier sweep.
-export type ShippingStatus = 'PENDING' | 'COLLECTED' | 'IN_TRANSIT' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'DELIVERY_FAILED' | 'RETURNED';
+export type ShippingStatus = 'PENDING' | 'COLLECTED' | 'IN_TRANSIT' | 'OUT_FOR_DELIVERY' | 'READY_FOR_PICKUP' | 'DELIVERED' | 'DELIVERY_FAILED' | 'RETURNED';
 
 /** One rendered money row. Cents; the label is server-chosen. */
 export interface MoneyLine {

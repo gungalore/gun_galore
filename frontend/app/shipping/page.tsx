@@ -56,12 +56,16 @@ const METHOD_LABEL: Record<Shipment['method'], string> = {
   COLLECTION: 'Collection in person',
 };
 
-// Courier status timeline steps in order.
+// Courier status timeline steps in order. A Pargo pickup parcel ends its
+// journey at the counter ("Ready for collection") rather than at the door, so
+// it uses its own last step instead of OUT_FOR_DELIVERY/DELIVERED.
 const COURIER_STEPS = ['COLLECTED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED'] as const;
+const PICKUP_STEPS = ['COLLECTED', 'IN_TRANSIT', 'READY_FOR_PICKUP'] as const;
 const STEP_LABEL: Record<string, string> = {
   COLLECTED: 'Collected',
   IN_TRANSIT: 'In transit',
   OUT_FOR_DELIVERY: 'Out for delivery',
+  READY_FOR_PICKUP: 'Ready for collection',
   DELIVERED: 'Delivered',
 };
 
@@ -269,16 +273,17 @@ function CourierTimeline({
       </div>
     );
   }
-  const activeIdx = status ? COURIER_STEPS.indexOf(status as (typeof COURIER_STEPS)[number]) : -1;
+  const steps: readonly string[] = status === 'READY_FOR_PICKUP' ? PICKUP_STEPS : COURIER_STEPS;
+  const activeIdx = status ? steps.indexOf(status) : -1;
   return (
     <div className="mt-3">
       <div className="flex items-center">
-        {COURIER_STEPS.map((step, i) => {
+        {steps.map((step, i) => {
           const done = i <= activeIdx;
           return (
-            <div key={step} className="flex items-center" style={{ flex: i < COURIER_STEPS.length - 1 ? 1 : '0 0 auto' }}>
+            <div key={step} className="flex items-center" style={{ flex: i < steps.length - 1 ? 1 : '0 0 auto' }}>
               <div style={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0, background: done ? 'var(--red)' : 'var(--bg-inset)', border: `1.5px solid ${done ? 'var(--red)' : 'var(--border-hover)'}` }} />
-              {i < COURIER_STEPS.length - 1 && (
+              {i < steps.length - 1 && (
                 <div style={{ flex: 1, height: 2, background: i < activeIdx ? 'var(--red)' : 'var(--border)' }} />
               )}
             </div>
@@ -286,8 +291,8 @@ function CourierTimeline({
         })}
       </div>
       <div className="flex justify-between mt-1.5">
-        {COURIER_STEPS.map((step, i) => (
-          <span key={step} className="text-[10px]" style={{ color: i <= activeIdx ? 'var(--text-secondary)' : 'var(--text-tertiary)', flex: 1, textAlign: i === 0 ? 'left' : i === COURIER_STEPS.length - 1 ? 'right' : 'center' }}>
+        {steps.map((step, i) => (
+          <span key={step} className="text-[10px]" style={{ color: i <= activeIdx ? 'var(--text-secondary)' : 'var(--text-tertiary)', flex: 1, textAlign: i === 0 ? 'left' : i === steps.length - 1 ? 'right' : 'center' }}>
             {STEP_LABEL[step]}
           </span>
         ))}

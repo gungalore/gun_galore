@@ -202,6 +202,8 @@ function nextActionCue(tx: Transaction, now: number): OrderCue | null {
       };
     case 'OUT_FOR_DELIVERY':
       return { text: 'Out for delivery', tone: 'info' };
+    case 'READY_FOR_PICKUP':
+      return { text: 'Ready for collection at the pickup point', tone: 'info' };
     default:
       return { text: 'In transit — tap to track', tone: 'info' };
   }
