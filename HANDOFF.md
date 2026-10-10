@@ -7,6 +7,58 @@ overwritten.
 
 Last updated: **2026-10-10**.
 
+## 2026-10-10 — SALES-CYCLE HARDENING (BUY-NOW + AUCTIONS) DEPLOYED
+
+**Scope.** Full audit of the buy-now and auction cycle from product select →
+checkout → Ozow payment. Fixes for the flaws found, then committed and deployed.
+
+**Deployed.** Commit **`8e1e1dcf`** `fix(payments): harden the buy-now + auction
+sales cycle` (23 files). Full deploy via `bash infra/deploy/deploy.sh` (Git
+Bash): rollback point **`alloutdoor-20261010-161434.dump`** (29M),
+box HEAD matches local, backend + frontend health ×2 OK, warden online, public
+200 ×2, all three pm2 services online. Gates: backend tsc clean + **319
+suites/5321 tests**; frontend tsc clean + **135 files/1691 tests** + prod build.
+
+**What shipped (highest value first).**
+- **Auction-win Ozow failure no longer resurrects the ended auction as an
+  `ACTIVE` zombie** — the failure rollback restores `PAYMENT_PENDING` + the
+  original pay window (`transactions.service.ts`), so the winner can retry and
+  `sweepUnpaidWins` still applies. Previously every failed auction-win checkout
+  during the Ozow outage left an unbuyable/unbiddable listing needing DB surgery.
+- **Abandoned gateway checkouts are now reclaimed** by a new 10-min sweep
+  `reconcileStaleGatewayCheckouts()` (`tasks.service.ts`): after the 24h Ozow
+  link TTL it re-polls unpaid gateway txs — recovering a lost-webhook PAID order
+  via `markPaid`, else releasing the reservation + deleting the dead tx;
+  abandoned auction wins are handed back to the unpaid-winner lifecycle
+  (EXPIRED + strike + runner-up). Previously nothing freed them (orphan reclaim
+  excludes gateway txs).
+- **`ListingsService.cancel()`** rejects `PAYMENT_PENDING`/`SOLD` and is atomic —
+  a seller can no longer cancel a listing mid-checkout or after it sold.
+- **Ozow webhook handler failures return 500** so the gateway re-delivers (was
+  swallowed to 200, consuming the only notification); **chargeback/dispute**
+  deliveries now route to the money-safety handler instead of being dropped.
+- **Cart checkout gated off** via `CART_CHECKOUT_LIVE` (`payment-mode.ts`): it
+  reserved every line + created an `AWAITING_PAYMENT` Order but never created a
+  payment or frontend hand-off. Env var is unset in prod → cart stays off.
+- Auction correctness: runner-up promotion moves `Bid.isWinner` to the actual
+  buyer (same tx); `cancelProxy` CAS on `currentBid`/leader (+`bidCount`) so a
+  concurrent opposing bid can't regress the visible bid; `id desc` tiebreaks.
+- Inventory Model A everywhere: `sellable = quantityAvailable` (already nets
+  reservations). Fixed the double-count in `inventory.ts` + 4 frontend callers.
+- CHECKOUT action token is now **single-use** (consumed after a successful
+  create); verify-result amount mismatch raises an urgent admin alert;
+  `getPaymentStatus` prefers the successful attempt, not `results[0]`.
+
+**Tests.** New specs: `auction-win-rollback`, `gateway-checkout-reconcile`,
+`ozow-webhook-dispatch`, `payments-webhook.controller`,
+`transactions.controller`; extended `auctions.service`, `inventory`,
+`ozow.service`, `listings.service`, `automation-reminders`.
+
+**Still open (unchanged).** The Ozow site `ALL-ALL-035` **max transaction
+amount = R0.01** blocker below — until Ozow sets real min/max, no pay-in can be
+created, so the new reconcile sweep simply releases every attempt. Payout float
+still R0.00. Deferred (LOW): a bidder can still lower their own proxy ceiling.
+
 ## 2026-10-10 — CHECKOUT FAILS AT OZOW: SITE MAX TXN AMOUNT = R0.01 (OZOW-SIDE; LOG IMPROVED)
 
 **Symptom.** Buyer "Ruanda" got *"Payment processing failed — please try again."*
