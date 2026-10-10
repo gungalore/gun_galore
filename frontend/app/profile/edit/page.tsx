@@ -291,6 +291,22 @@ export default function EditProfilePage() {
     };
   }, [isLoaded, isSignedIn, getToken]);
 
+  // Re-read /users/me after any save so the completeness sidebar, the step
+  // statuses and the nav ring always agree. The PATCH responses return a
+  // partial user WITHOUT `profileCompleteness` (see users.service.ts
+  // updateProfile/updateBankDetails), so merging one into `me` blanked the
+  // percent to 0 — one profile, one completeness, computed server-side.
+  async function refreshMe() {
+    const token = await getToken();
+    const res = await fetch(`${API_URL}/users/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) return;
+    const fresh = await safeJson<Me | null>(res, null);
+    if (fresh) setMe(fresh);
+  }
+
   // ── Save personal info ───────────────────────────────────────────
   async function handleSavePersonal(e: FormEvent) {
     e.preventDefault();
@@ -313,7 +329,7 @@ export default function EditProfilePage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = await safeJson<any>(res, {});
       if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
-      if (data?.id) setMe(data);
+      await refreshMe();
       setPersonalStatus({ tone: 'success', msg: 'Saved.' });
     } catch (err) {
       setPersonalStatus({
@@ -353,7 +369,7 @@ export default function EditProfilePage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = await safeJson<any>(res, {});
       if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
-      if (data?.id) setMe(data);
+      await refreshMe();
       setAddressStatus({ tone: 'success', msg: 'Address saved.' });
     } catch (err) {
       setAddressStatus({
@@ -389,7 +405,7 @@ export default function EditProfilePage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = await safeJson<any>(res, {});
       if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
-      if (data?.id) setMe(data);
+      await refreshMe();
       setBankStatus({ tone: 'success', msg: 'Banking details saved.' });
     } catch (err) {
       setBankStatus({
