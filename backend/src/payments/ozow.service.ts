@@ -324,6 +324,23 @@ export class OzowService {
     return `AO${t}${tail}`.slice(0, 20);
   }
 
+  // Public /api origin for the pay-in notifyUrl (PUBLIC_API_URL, else
+  // FRONTEND_URL + '/api'). The full `transaction.complete` webhook
+  // subscription is the primary delivery path; this field is the
+  // per-request pairing Ozow support asks for. Ozow 403-rejects a
+  // localhost/plain-http notifyUrl, so only a public https URL is sent —
+  // otherwise the field is omitted (local dev relies on the tunnel).
+  private payInNotifyUrl(): string | undefined {
+    const base = process.env.PUBLIC_API_URL
+      ? process.env.PUBLIC_API_URL.replace(/\/$/, '')
+      : process.env.FRONTEND_URL
+        ? `${process.env.FRONTEND_URL.replace(/\/$/, '')}/api`
+        : undefined;
+    if (!base) return undefined;
+    const url = `${base}/payments/webhook/ozow`;
+    return /^https:\/\//i.test(url) ? url : undefined;
+  }
+
   // ─── Create payment (pay-in) ────────────────────────────────────────
   async createPayment(params: {
     amountZarCents: number;
@@ -346,6 +363,7 @@ export class OzowService {
       Date.now() + (params.expirySeconds ?? 24 * 60 * 60) * 1000,
     ).toISOString();
 
+    const notifyUrl = this.payInNotifyUrl();
     const body = {
       siteCode: this.siteCode,
       amount: {
@@ -356,6 +374,7 @@ export class OzowService {
       beneficiaryReference: 'ALLOUTDOOR',
       expireAt,
       returnUrl: params.returnUrl,
+      ...(notifyUrl ? { notifyUrl } : {}),
     };
 
     const res = await fetch(`${this.oneApiHost}/payments`, {

@@ -354,6 +354,8 @@ describe('OzowService request hardening + mock payouts', () => {
     'OZOW_PAYOUT_ENCRYPTION_KEY',
     'OZOW_PAYOUT_IS_RTC',
     'OZOW_PAYOUT_MOCK',
+    'PUBLIC_API_URL',
+    'FRONTEND_URL',
   ] as const;
 
   function withEnv<T>(
@@ -429,6 +431,70 @@ describe('OzowService request hardening + mock payouts', () => {
         expect(refundHeaders['Idempotency-Key']).toBe(
           'AO-REFUND-txn-1-5000',
         );
+      },
+    );
+  });
+
+  it('includes the public notifyUrl on the pay-in payload when configured', async () => {
+    await withEnv(
+      {
+        OZOW_ENV: 'staging',
+        OZOW_CLIENT_ID: 'id',
+        OZOW_CLIENT_SECRET: 'secret',
+        OZOW_SITE_CODE: 'site',
+        PUBLIC_API_URL: 'https://alloutdoor.co.za/api/',
+      },
+      async () => {
+        const fetchMock = mockFetchQueue([
+          { access_token: 'tok', expires_in: '14400' },
+          { id: 'pay-1', redirectUrl: 'https://pay.ozow.com/x' },
+        ]);
+        global.fetch = fetchMock.fetchImpl;
+
+        const svc = new OzowService();
+        await svc.createPayment({
+          amountZarCents: 10_000,
+          merchantTransactionId: 'tx1',
+          returnUrl: 'https://x/complete',
+        });
+
+        const payBody = JSON.parse(
+          fetchMock.calls[1].init?.body as string,
+        ) as { notifyUrl?: string };
+        expect(payBody.notifyUrl).toBe(
+          'https://alloutdoor.co.za/api/payments/webhook/ozow',
+        );
+      },
+    );
+  });
+
+  it('omits notifyUrl when only a localhost base is available (Ozow 403s it)', async () => {
+    await withEnv(
+      {
+        OZOW_ENV: 'staging',
+        OZOW_CLIENT_ID: 'id',
+        OZOW_CLIENT_SECRET: 'secret',
+        OZOW_SITE_CODE: 'site',
+        FRONTEND_URL: 'http://localhost:3000',
+      },
+      async () => {
+        const fetchMock = mockFetchQueue([
+          { access_token: 'tok', expires_in: '14400' },
+          { id: 'pay-1', redirectUrl: 'https://pay.ozow.com/x' },
+        ]);
+        global.fetch = fetchMock.fetchImpl;
+
+        const svc = new OzowService();
+        await svc.createPayment({
+          amountZarCents: 10_000,
+          merchantTransactionId: 'tx1',
+          returnUrl: 'https://x/complete',
+        });
+
+        const payBody = JSON.parse(
+          fetchMock.calls[1].init?.body as string,
+        ) as { notifyUrl?: string };
+        expect(payBody.notifyUrl).toBeUndefined();
       },
     );
   });
