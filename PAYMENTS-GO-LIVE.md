@@ -65,7 +65,10 @@ prettier drift, untouched files included) and is **not** a deploy gate.
 ## 2. Blocked on Ozow (their support items 3 & 4)
 
 - **Payout verification URL** and whether the **24-char AccessToken** is issued by Ozow or
-  self-configured. Site **Payout Settings** is blank for `Payouts Api Key / Notify Url / Webhook`.
+  self-configured. Site **Payout Settings** (verified 2026-10-10) reads: Payout Merchant Name +
+  Payout Site Name populated, but `Payouts Api Key / Notify Url / Webhook` all **blank** (no
+  edit control on the page). The merchant-level **Payouts API Key** *is* present and working
+  (`Merchant → Edit Details`; `getavailablebanks` → HTTP 200).
   Payout *notifications* are fine — our code sends `notifyUrl` per `requestpayout` request.
 - Until answered: put the payout creds on the box **armed** (no disbursement runs without a manual
   admin batch anyway) and keep `PAYMENTS_LIVE` able to hold; checkout can go live before payouts.
@@ -105,10 +108,22 @@ Production float is **R 0.00** — no payout succeeds until funded.
 
 ## 5. Cleanup
 
-- Rotate the production **Private Key + API Key** (exposed in a session transcript 2026-10-10).
-- **Delete `OZOW production keys.txt`** from the repo root — untracked and NOT gitignored.
-- Update `docs/project-reference.md` §Go-live flip and `docs/ENVIRONMENT.md` (site code, "current
-  production state" lines) to the live values/state.
+- **DONE 2026-10-10:** deleted `OZOW production keys.txt` from the repo root; `.gitignore` now
+  covers `backend/.ozow-test-evidence/` (harness scratch) and Ozow key-handoff files
+  (`commit c75a4519`).
+- **DONE 2026-10-10:** `docs/project-reference.md`, `docs/ENVIRONMENT.md`, `docs/ARCHITECTURE.md`
+  and `docs/INDEX.md` updated to the live state.
+- **Key rotation — NOT self-service (verified in the dashboard 2026-10-10).** No rotate control
+  exists for any of the three credentials:
+  - **One API client** `AllOutdoor Web` (`One API → Clients`): actions are only **Disable** and
+    **Manage Webhooks**. No regenerate. Replacement = *Add Client* (all 6 scopes) + re-register
+    the webhook subscription under it (new `whsec`), then update `OZOW_CLIENT_ID` /
+    `OZOW_CLIENT_SECRET` / `OZOW_WEBHOOK_SECRET` on the box and reload.
+  - **Merchant Private Key / API Key / Payouts API Key** (`Merchants → Edit Details`): read-only
+    fields, no rotate action.
+  → **Open an Ozow support ticket** to rotate the credentials exposed on 2026-10-10, or approve
+    the client-replacement path. Note the keys are visible read-only in the portal, so treat them
+    as account-level identifiers rather than typeable secrets.
 
 ---
 
