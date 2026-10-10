@@ -3975,6 +3975,95 @@ export class NotificationsService {
   // off + the item is back on the marketplace. NO strike — a buyer
   // changing their mind is not the seller's fault.
   // ---------------------------------------------------------------
+  // ---------------------------------------------------------------
+  // Cancellation REQUEST (Phase 4 rework). The buyer has asked to cancel a
+  // paid, undispatched order. Nothing is refunded yet — the order is FROZEN
+  // and support resolves it. Tell the seller to stand down (no accept / no
+  // dispatch) and confirm to the buyer that we've got it.
+  // ---------------------------------------------------------------
+  async orderCancellationRequested(d: {
+    listingTitle: string;
+    transactionId: string;
+    buyerTotal: number;
+    reason: string;
+    buyer: { email: string; firstName: string | null; phone: string | null };
+    seller: { email: string; firstName: string | null; phone: string | null };
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const buyerName = d.buyer.firstName ?? 'there';
+    const sellerName = d.seller.firstName ?? 'Seller';
+
+    // Buyer — in-app + email confirmation that the request is in and the
+    // order is frozen (no money moved yet).
+    await this.persistByEmail(d.buyer.email, {
+      category: 'BUYER',
+      type: 'cancellation_requested_buyer',
+      title: 'Cancellation requested — order frozen',
+      body: `${d.listingTitle} — we've frozen your order and notified the seller. Support will review your cancellation.`,
+      url: txUrl,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
+    const buyerHtml = this.email({
+      status: { tone: 'pending', label: 'Frozen — under review' },
+      headline: 'Cancellation requested',
+      body: `Hi ${b(buyerName)}, we've frozen your order for ${b(d.listingTitle)} and told the seller not to dispatch. Our support team will review your request and process any refund due. You'll hear from us shortly.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Order total', value: formatRand(d.buyerTotal) },
+      ],
+      cta: { label: 'Open order', url: txUrl },
+      preheader: `Cancellation requested for ${d.listingTitle}`,
+    });
+    await this.send(d.buyer.email, 'Cancellation requested: ' + d.listingTitle, buyerHtml);
+
+    // Seller — email + SMS: stand down, the order is frozen.
+    const sellerHtml = this.email({
+      status: { tone: 'pending', label: 'Cancellation requested' },
+      headline: 'Buyer requested a cancellation — do not dispatch',
+      body: `Hi ${b(sellerName)}, the buyer has requested to cancel ${b(d.listingTitle)}. The order is frozen and our support team is reviewing it — please DO NOT accept or dispatch while it is frozen. If the order is not cancelled, we'll let you know.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Buyer reason', value: truncate(d.reason, 120) },
+      ],
+      cta: { label: 'Open order', url: txUrl },
+      preheader: `${d.listingTitle} — buyer requested cancellation, order frozen`,
+    });
+    await this.send(d.seller.email, 'Cancellation requested: ' + d.listingTitle, sellerHtml);
+    await this.sendSms(
+      d.seller.phone,
+      `ALL Outdoor: buyer requested to cancel ${truncate(d.listingTitle, 30)}. Order frozen — DO NOT dispatch. Support is reviewing.`,
+      `cancel-request-seller-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // New buyer↔seller message (Phase 4 W4 conversations). In-app + email —
+  // deliberately NOT SMS (message traffic is high-frequency and low-stakes).
+  // ---------------------------------------------------------------
+  async newMessage(d: {
+    recipientEmail: string;
+    recipientName: string;
+    listingTitle: string;
+    transactionId: string;
+    senderIsBuyer: boolean;
+  }) {
+    const sender = d.senderIsBuyer ? 'Buyer' : 'Seller';
+    await this.persistByEmail(d.recipientEmail, {
+      category: d.senderIsBuyer ? 'SELLER' : 'BUYER',
+      type: 'new_message',
+      title: 'New message',
+      body: `${sender} sent you a message about ${d.listingTitle}.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+    });
+  }
+
   async orderCancelledByBuyer(d: {
     listingTitle: string;
     transactionId: string;
@@ -4090,6 +4179,143 @@ export class NotificationsService {
       d.sellerPhone,
       `ALL Outdoor: the order for ${truncate(d.listingTitle, 30)} was refunded by support. It's back on the marketplace. No strike.`,
       `admin-refund-seller-${d.transactionId}`,
+    );
+  }
+
+  // Seller: a Private Arrangement sale is paid — arrange the handover and tap
+  // "Item delivered" when done. Funds are held until the buyer confirms.
+  async privateArrangeSellerHandover(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone: string | null;
+    listingTitle: string;
+    transactionId: string;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'private_arrange_handover',
+      title: 'Arrange the handover',
+      body: `${d.listingTitle} is paid — arrange the handover and mark it delivered. Your payment releases when the buyer confirms receipt.`,
+      url: txUrl,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+    });
+    await this.send(
+      d.sellerEmail,
+      'Arrange the handover: ' + d.listingTitle,
+      this.email({
+        status: { tone: 'pending', label: 'Action needed' },
+        headline: 'Arrange the handover',
+        body: `Hi ${b(d.sellerName)}, ${b(d.listingTitle)} is paid for. Arrange the handover with the buyer and mark it delivered when done. Your payment releases when the buyer confirms receipt, or 5 days after payment.`,
+        rows: [{ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() }],
+        cta: { label: 'Open order', url: txUrl },
+        preheader: `Arrange the handover for ${d.listingTitle}`,
+      }),
+    );
+    await this.sendSms(
+      d.sellerPhone,
+      `ALL Outdoor: ${truncate(d.listingTitle, 30)} is paid. Arrange the handover and mark it delivered. Payment releases when the buyer confirms.`,
+      `pa-handover-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'private_arrange_seller_handover',
+          vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+        },
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // PRIVATE_ARRANGE held-funds handover (Phase 4 W2). The seller tapped
+  // "Item delivered" — nudge the buyer to confirm receipt (WhatsApp + email +
+  // SMS + in-app). Confirming releases the payout to the seller.
+  // ---------------------------------------------------------------
+  async privateArrangeDeliveredNotify(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone: string | null;
+    listingTitle: string;
+    transactionId: string;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'private_arrange_delivered',
+      title: 'Confirm you received your item',
+      body: `${d.listingTitle} — the seller marked it delivered. Confirm receipt to release the seller's payment.`,
+      url: txUrl,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Did you receive your item?',
+      body: `Hi ${b(d.buyerName)}, the seller marked ${b(d.listingTitle)} as delivered. If you've received it, please confirm on the order page — that releases the seller's payment. If something's wrong, raise a dispute instead and we'll hold the funds while we help.`,
+      rows: [{ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() }],
+      cta: { label: 'Confirm receipt', url: txUrl },
+      preheader: `Confirm receipt of ${d.listingTitle}`,
+    });
+    await this.send(d.buyerEmail, 'Confirm you received: ' + d.listingTitle, html);
+    await this.sendSms(
+      d.buyerPhone,
+      `ALL Outdoor: seller marked ${truncate(d.listingTitle, 30)} delivered. Confirm receipt in the app to release payment, or raise a dispute.`,
+      `pa-delivered-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'private_arrange_buyer_confirm',
+          vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+        },
+      },
+    );
+  }
+
+  // 24h follow-up when the buyer hasn't confirmed after the seller's tap.
+  async privateArrangeBuyerReminder(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone: string | null;
+    listingTitle: string;
+    transactionId: string;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'private_arrange_reminder',
+      title: 'Still need to confirm receipt',
+      body: `${d.listingTitle} — please confirm you received it, or raise a dispute. Funds auto-release to the seller 5 days after payment.`,
+      url: txUrl,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
+    await this.send(
+      d.buyerEmail,
+      'Confirm receipt: ' + d.listingTitle,
+      this.email({
+        status: { tone: 'pending', label: 'Reminder' },
+        headline: 'Please confirm you received your item',
+        body: `Hi ${b(d.buyerName)}, we haven't heard from you about ${b(d.listingTitle)}. Please confirm receipt (or raise a dispute) — the payment auto-releases to the seller 5 days after you paid.`,
+        rows: [{ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() }],
+        cta: { label: 'Open order', url: txUrl },
+        preheader: `Reminder: confirm receipt of ${d.listingTitle}`,
+      }),
+    );
+    await this.sendSms(
+      d.buyerPhone,
+      `ALL Outdoor: please confirm you received ${truncate(d.listingTitle, 30)} (or dispute). Payment auto-releases to the seller 5 days after payment.`,
+      `pa-reminder-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'private_arrange_buyer_reminder',
+          vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+        },
+      },
     );
   }
 

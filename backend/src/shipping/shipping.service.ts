@@ -914,12 +914,15 @@ export class ShippingService {
       return null;
     }
 
-    // Atomic claim — only the first caller past this point books.
+    // Atomic claim — only the first caller past this point books. A row frozen
+    // for a buyer cancellation request is excluded: never book/bill a courier
+    // against an order support is about to refund.
     const claim = await this.prisma.transaction.updateMany({
       where: {
         id: transactionId,
         shipmentBookingStartedAt: null,
         shipmentBookedAt: null,
+        cancellationRequestedAt: null,
       },
       data: { shipmentBookingStartedAt: new Date() },
     });

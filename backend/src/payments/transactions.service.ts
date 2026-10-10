@@ -2244,6 +2244,13 @@ export class TransactionsService {
       // Idempotent — already-accepted is a successful no-op.
       return tx;
     }
+    // A buyer cancellation REQUEST freezes the order: the seller must not be
+    // able to accept/clear it while support is resolving the cancellation.
+    if (tx.cancellationRequestedAt) {
+      throw new BadRequestException(
+        'The buyer has requested a cancellation and this order is frozen while support reviews it. You cannot accept it right now.',
+      );
+    }
 
     let schedule = opts;
     if (tx.shippingMethod === 'COURIER') {
@@ -2333,6 +2340,9 @@ export class TransactionsService {
         acceptedAt: null,
         rejectedAt: null,
         paymentStatus: 'HELD',
+        // Frozen rows (buyer cancellation under review) must never be
+        // accepted/booked — atomic backstop for the guard in acceptTransaction.
+        cancellationRequestedAt: null,
       },
       data: {
         acceptedAt,
@@ -2622,6 +2632,134 @@ export class TransactionsService {
     });
   }
 
+  // ------------------------------------------------------------------
+  // Buyer-initiated cancellation REQUEST (Phase 4 rework, 2026-10-10)
+  // ------------------------------------------------------------------
+  // Buyers can no longer self-refund. A request FREEZES the order — no
+  // accept, no courier booking, no dispatch, no payout — notifies the seller
+  // and raises an admin alert. Nothing is refunded here; support resolves it
+  // with a fee-retained refund (see AdminService.resolveCancellationRequest).
+  // The freeze is the `cancellationRequestedAt` timestamp; the row stays
+  // HELD so the money is untouched until an admin acts.
+  async requestCancellation(
+    transactionId: string,
+    buyerId: string,
+    reason: string,
+  ) {
+    const trimmedReason = (reason ?? '').trim();
+    if (trimmedReason.length < 3) {
+      throw new BadRequestException('Reason is required (min 3 characters)');
+    }
+    if (trimmedReason.length > 500) {
+      throw new BadRequestException('Reason is too long (max 500 characters)');
+    }
+
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        listing: { select: { id: true, title: true } },
+        buyer: {
+          select: { id: true, email: true, firstName: true, phone: true },
+        },
+        seller: {
+          select: { email: true, firstName: true, phone: true },
+        },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.buyerId !== buyerId) throw new ForbiddenException('Not authorised');
+
+    // Idempotent — an already-requested order is a successful no-op.
+    if (tx.cancellationRequestedAt) return tx;
+
+    if (!tx.paidAt) {
+      throw new BadRequestException('Payment not confirmed yet — nothing to cancel.');
+    }
+    if (tx.cancelledByBuyerAt) {
+      throw new BadRequestException('This order has already been cancelled.');
+    }
+    if (tx.rejectedAt) {
+      throw new BadRequestException('This order was already cancelled by the seller.');
+    }
+    if (tx.dispatchedAt) {
+      throw new BadRequestException(
+        'Already dispatched — it can no longer be cancelled. If there is a problem, raise a dispute instead.',
+      );
+    }
+    if (tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException(
+        `Order is no longer cancellable (status: ${tx.paymentStatus}).`,
+      );
+    }
+
+    // Atomic freeze: the guards make this the lock against a simultaneous
+    // seller accept/dispatch. Only flips cancellationRequestedAt; no money.
+    const claim = await this.prisma.transaction.updateMany({
+      where: {
+        id: transactionId,
+        buyerId,
+        paidAt: { not: null },
+        dispatchedAt: null,
+        rejectedAt: null,
+        cancelledByBuyerAt: null,
+        cancellationRequestedAt: null,
+        paymentStatus: 'HELD',
+      },
+      data: {
+        cancellationRequestedAt: new Date(),
+        cancellationRequestReason: trimmedReason,
+      },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException(
+        'Order could not be frozen — its state just changed (it may have been accepted or dispatched). Reload and try again.',
+      );
+    }
+
+    void this.notifications.orderCancellationRequested({
+      listingTitle: tx.listing.title,
+      transactionId: tx.id,
+      buyerTotal: tx.buyerTotal,
+      reason: trimmedReason,
+      buyer: {
+        email: tx.buyer.email,
+        firstName: tx.buyer.firstName,
+        phone: tx.buyer.phone,
+      },
+      seller: {
+        email: tx.seller.email,
+        firstName: tx.seller.firstName,
+        phone: tx.seller.phone,
+      },
+    });
+
+    await this.prisma.adminAlert
+      .create({
+        data: {
+          type: 'CANCELLATION_REQUESTED',
+          referenceId: tx.id,
+          urgent: false,
+          context: `Buyer requested cancellation of ${tx.id} (${tx.listing.title}). Order frozen, funds HELD, no refund issued. Reason: ${trimmedReason.slice(0, 200)}`,
+        },
+      })
+      .catch(() => undefined);
+
+    this.logger.log(
+      `Transaction ${transactionId} CANCELLATION REQUESTED by buyer ${buyerId} (reason: ${trimmedReason.slice(0, 80)})`,
+    );
+    return this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // ⚠️ DEPRECATED / UNREACHABLE (Phase 4 rework, 2026-10-10).
+  // Buyers can no longer self-refund. The buyer-facing route is now
+  // `requestCancellation` above (POST /transactions/:id/cancel-request) and
+  // support resolves it via AdminService.resolveCancellationRequest. Nothing
+  // calls this method any more; it is kept only until its spec is removed.
+  // Do NOT re-wire it — a full self-refund contradicts the cancellation
+  // policy (Buyer Protection Fee is never refunded on a buyer's choice).
   // ------------------------------------------------------------------
   // Buyer-initiated cancellation (Phase 4 P4.2)
   // ------------------------------------------------------------------
@@ -3121,6 +3259,13 @@ export class TransactionsService {
         'This sale was rejected and refunded — cannot dispatch.',
       );
     }
+    // Frozen for a buyer cancellation request — no dispatch while support
+    // reviews it.
+    if (tx.cancellationRequestedAt) {
+      throw new BadRequestException(
+        'The buyer has requested a cancellation and this order is frozen while support reviews it. You cannot mark it dispatched right now.',
+      );
+    }
     // TOK-7 Phase 2 — accept is now a HARD gate. The Phase 1 soft
     // warning is gone; sellers must tap Accept (one-tap from SMS link
     // OR the Accept button on the transaction page) before they can
@@ -3450,6 +3595,13 @@ export class TransactionsService {
     if (tx.buyer.id !== buyerId) throw new ForbiddenException('Only the buyer can confirm delivery');
     if (tx.paymentStatus !== 'HELD') throw new BadRequestException('Payment is not in HELD state');
     if (tx.confirmedDeliveryAt) throw new BadRequestException('Delivery already confirmed');
+    // Frozen for a buyer cancellation request — no release while support
+    // reviews it.
+    if (tx.cancellationRequestedAt) {
+      throw new BadRequestException(
+        'A cancellation request on this order is being reviewed. Payment cannot be released until it is resolved.',
+      );
+    }
 
     // Firearm DEALER_TRANSFER gates payout on the SAPS 534 verification
     // having been APPROVED (either automatically by Claude vision or
@@ -3477,7 +3629,12 @@ export class TransactionsService {
     // roll the whole interactive transaction back (seller increment too).
     await this.prisma.$transaction(async (txc) => {
       const guard = await txc.transaction.updateMany({
-        where: { id: transactionId, paymentStatus: 'HELD', confirmedDeliveryAt: null },
+        where: {
+          id: transactionId,
+          paymentStatus: 'HELD',
+          confirmedDeliveryAt: null,
+          cancellationRequestedAt: null,
+        },
         data: {
           paymentStatus: 'RELEASED',
           releasedAt: now,
@@ -3930,14 +4087,11 @@ export class TransactionsService {
     // separate lookup on the tx's offerId if present.
     void this.resolveBuyerPaymentNotifications(txId, listing.id);
 
-    // PRIVATE_ARRANGE — buyer explicitly waived payment protection at
-    // checkout (privateArrangeAcceptedAt is set). Release funds
-    // immediately + reveal contact details to both parties so they
-    // can coordinate the SAPS dealer meet. We re-read the row here
-    // because the txn above was a single statement that hasn't
-    // returned values into local scope, and we need shippingMethod +
-    // consent stamp to decide.
-    void this.maybeImmediatePayout(txId);
+    // PRIVATE_ARRANGE — buyer waived payment protection at checkout. Funds now
+    // stay HELD: we reveal contact details so the parties can meet, and the
+    // payout releases when the buyer confirms receipt (or auto-releases 5 days
+    // after payment). See onPrivateArrangePaid / releasePrivateArrange.
+    void this.onPrivateArrangePaid(txId);
 
     // Fire-and-forget notifications
     void this.sendSaleNotifications(txId);
@@ -4028,7 +4182,7 @@ export class TransactionsService {
     let recovered = 0;
     for (const t of stranded) {
       try {
-        await this.maybeImmediatePayout(t.id);
+        await this.onPrivateArrangePaid(t.id);
         recovered += 1;
       } catch (err) {
         this.logger.warn(
@@ -4038,7 +4192,7 @@ export class TransactionsService {
     }
     if (recovered > 0) {
       this.logger.log(
-        `reconcileStrandedPrivateArrange re-drove ${recovered} PA payout(s)`,
+        `reconcileStrandedPrivateArrange re-drove ${recovered} PA handover reveal(s)`,
       );
     }
     return { recovered };
@@ -4195,7 +4349,13 @@ export class TransactionsService {
     return { recovered, released };
   }
 
-  private async maybeImmediatePayout(txId: string) {
+  // ------------------------------------------------------------------
+  // PRIVATE_ARRANGE — funds stay HELD (Phase 4 W2). After payment we reveal
+  // contact details so the parties can meet, but the payout releases only
+  // when the buyer confirms receipt, or automatically 5 days after payment
+  // if nothing disputes. Idempotent.
+  // ------------------------------------------------------------------
+  private async onPrivateArrangePaid(txId: string) {
     try {
       const tx = await this.prisma.transaction.findUnique({
         where: { id: txId },
@@ -4204,66 +4364,268 @@ export class TransactionsService {
           shippingMethod: true,
           paymentStatus: true,
           privateArrangeAcceptedAt: true,
-          sellerId: true,
         },
       });
       if (!tx) return;
       if (tx.shippingMethod !== 'PRIVATE_ARRANGE') return;
       if (!tx.privateArrangeAcceptedAt) {
         this.logger.warn(
-          `Transaction ${txId} is PRIVATE_ARRANGE but missing consent stamp — not auto-releasing`,
+          `Transaction ${txId} is PRIVATE_ARRANGE but missing consent stamp — not revealing contacts`,
         );
         return;
       }
       if (tx.paymentStatus !== 'HELD') return; // already moved
 
-      const now = new Date();
-      await this.prisma.$transaction([
-        this.prisma.transaction.update({
-          where: { id: txId },
-          data: {
-            paymentStatus: 'RELEASED',
-            releasedAt: now,
-          },
-        }),
-        this.prisma.user.update({
-          where: { id: tx.sellerId },
-          data: { totalSales: { increment: 1 } },
-        }),
-      ]);
-
       this.logger.log(
-        `Transaction ${txId} PRIVATE_ARRANGE — payment released immediately, contact details revealed`,
+        `Transaction ${txId} PRIVATE_ARRANGE — contacts revealed, funds HELD pending handover confirmation`,
       );
-
-      // FLOW-F4 (H21) — PA is a release point like confirm-delivery and admin
-      // release, so it must raise the commission invoice too. Previously the
-      // only PA-reachable hooks (confirmDelivery / dealer-verify) never fire
-      // for PRIVATE_ARRANGE (funds already released here), so every PA
-      // commission went uninvoiced. Idempotent + never throws; the FNB payout
-      // batch marks it paid when the settlement lands, exactly like a courier
-      // sale.
-      void this.zohoBooks.createCommissionInvoice(txId);
-      void this.zohoBooks.createBuyerInvoice(txId);
-
-      // Two timeline rows so the buyer/seller order page shows the
-      // waiver + payout chain rather than just an unexplained jump.
-      void this.tracking.recordInternal(txId, 'PRIVATE_ARRANGE_WAIVER', {
-        occurredAt: now,
-        message:
-          'Buyer waived payment protection — payment released to seller immediately',
-      });
-      void this.tracking.recordInternal(txId, 'PAYOUT_RELEASED', {
-        occurredAt: new Date(now.getTime() + 1),
-      });
-
-      // Notify both parties with each other's contact details. Two
-      // separate emails (buyer → gets seller's; seller → gets
-      // buyer's) so we never leak each other's PII via reply-all.
       void this.sendPrivateArrangeContactReveal(txId);
+      void this.sendPrivateArrangeSellerHandover(txId);
+      void this.tracking.recordInternal(txId, 'PRIVATE_ARRANGE_HANDOVER', {
+        message:
+          'Buyer paid — arrange the handover. Funds are held until the buyer confirms receipt (or 5 days after payment).',
+      });
     } catch (err) {
       this.logger.error(
-        `maybeImmediatePayout failed for ${txId}: ${(err as Error).message}`,
+        `onPrivateArrangePaid failed for ${txId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // Release a HELD PRIVATE_ARRANGE payout. Atomic HELD→RELEASED + totalSales,
+  // then invoices/timeline/notification. Returns whether it released.
+  private async releasePrivateArrange(
+    txId: string,
+    reason: 'buyer_received' | 'auto_5d' | 'admin',
+  ): Promise<boolean> {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: txId },
+      include: { seller: true, listing: { select: { title: true } } },
+    });
+    if (!tx) return false;
+    if (tx.shippingMethod !== 'PRIVATE_ARRANGE') return false;
+
+    const now = new Date();
+    const claim = await this.prisma.transaction.updateMany({
+      where: {
+        id: txId,
+        paymentStatus: 'HELD',
+        // A dispute (DISPUTED) blocks release; the HELD guard already excludes it.
+      },
+      data: { paymentStatus: 'RELEASED', releasedAt: now },
+    });
+    if (claim.count === 0) return false;
+
+    await this.prisma.user
+      .update({
+        where: { id: tx.sellerId },
+        data: { totalSales: { increment: 1 } },
+      })
+      .catch(() => undefined);
+
+    this.logger.log(
+      `Transaction ${txId} PRIVATE_ARRANGE released (${reason}) — payout to seller`,
+    );
+
+    // FLOW-F4 (H21) — release is the commission-invoice point.
+    void this.zohoBooks.createCommissionInvoice(txId);
+    void this.zohoBooks.createBuyerInvoice(txId);
+    void this.tracking.recordInternal(txId, 'PAYOUT_RELEASED', { occurredAt: now });
+    void this.notifications.paymentReleasedSeller({
+      sellerEmail: tx.seller.email,
+      sellerName: tx.seller.firstName ?? tx.seller.username ?? 'Seller',
+      sellerPhone: tx.seller.phone,
+      listingTitle: tx.listing.title,
+      sellerPayout: tx.sellerPayout,
+      transactionId: txId,
+    });
+    return true;
+  }
+
+  // Seller taps "Item delivered". Stamps the delivered time and nudges the
+  // buyer to confirm receipt.
+  async markPrivateArrangeDelivered(transactionId: string, sellerId: string) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: { buyer: true, listing: { select: { title: true } } },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.sellerId !== sellerId) throw new ForbiddenException('Not authorised');
+    if (tx.shippingMethod !== 'PRIVATE_ARRANGE') {
+      throw new BadRequestException('Not a Private Arrangement order.');
+    }
+    if (tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException('This order is no longer awaiting handover.');
+    }
+    if (tx.privateArrangeDeliveredAt) {
+      return tx; // idempotent
+    }
+    await this.prisma.transaction.update({
+      where: { id: transactionId },
+      data: { privateArrangeDeliveredAt: new Date() },
+    });
+    void this.notifications.privateArrangeDeliveredNotify({
+      buyerEmail: tx.buyer.email,
+      buyerName: tx.buyer.firstName ?? 'there',
+      buyerPhone: tx.buyer.phone,
+      listingTitle: tx.listing.title,
+      transactionId,
+    });
+    return this.prisma.transaction.findUnique({ where: { id: transactionId } });
+  }
+
+  // Buyer taps "Item received" → releases the payout to the seller.
+  async confirmPrivateArrangeReceived(transactionId: string, buyerId: string) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.buyerId !== buyerId) throw new ForbiddenException('Only the buyer can confirm receipt');
+    if (tx.shippingMethod !== 'PRIVATE_ARRANGE') {
+      throw new BadRequestException('Not a Private Arrangement order.');
+    }
+    if (tx.paymentStatus === 'RELEASED') {
+      return { released: true, alreadyReleased: true };
+    }
+    if (tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException(
+        `This order cannot be confirmed right now (status: ${tx.paymentStatus}).`,
+      );
+    }
+    await this.prisma.transaction.update({
+      where: { id: transactionId },
+      data: { privateArrangeReceivedAt: new Date() },
+    });
+    const released = await this.releasePrivateArrange(transactionId, 'buyer_received');
+    return { released };
+  }
+
+  // Either party can dispute a private-arrange handover (from WhatsApp or the
+  // order page) → freeze as DISPUTED + alert an admin. No money moves.
+  async disputePrivateArrange(
+    transactionId: string,
+    userId: string,
+    reason: string,
+  ) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.buyerId !== userId && tx.sellerId !== userId) {
+      throw new ForbiddenException('Not authorised');
+    }
+    if (tx.shippingMethod !== 'PRIVATE_ARRANGE') {
+      throw new BadRequestException('Not a Private Arrangement order.');
+    }
+    const claim = await this.prisma.transaction.updateMany({
+      where: { id: transactionId, paymentStatus: 'HELD' },
+      data: { paymentStatus: 'DISPUTED' },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException(
+        'This order can no longer be disputed (it may already be released or disputed).',
+      );
+    }
+    await this.prisma.adminAlert
+      .create({
+        data: {
+          type: 'PRIVATE_ARRANGE_DISPUTED',
+          referenceId: transactionId,
+          urgent: true,
+          context: `Private Arrangement ${transactionId} disputed by ${userId === tx.buyerId ? 'buyer' : 'seller'}. Funds held. Reason: ${(reason ?? '').slice(0, 200)}`,
+        },
+      })
+      .catch(() => undefined);
+    void this.notifications.resolveByEntity('transaction', transactionId);
+    this.logger.warn(`Transaction ${transactionId} PRIVATE_ARRANGE → DISPUTED`);
+    return this.prisma.transaction.findUnique({ where: { id: transactionId } });
+  }
+
+  // Cron sweep: (a) 24h follow-up to a silent buyer after the seller's
+  // "delivered" tap; (b) 5-day auto-release to the seller from payment. Both
+  // atomic-guarded so a concurrent buyer-received/dispute wins.
+  async sweepPrivateArrange(): Promise<{ reminded: number; released: number }> {
+    const now = new Date();
+    let reminded = 0;
+    let released = 0;
+
+    // (a) 24h reminder.
+    const dueReminder = await this.prisma.transaction.findMany({
+      where: {
+        shippingMethod: 'PRIVATE_ARRANGE',
+        paymentStatus: 'HELD',
+        privateArrangeDeliveredAt: { not: null, lt: new Date(now.getTime() - 24 * 3600_000) },
+        privateArrangeReceivedAt: null,
+        privateArrangeRemindedAt: null,
+      },
+      select: { id: true },
+      take: 50,
+    });
+    for (const r of dueReminder) {
+      const claim = await this.prisma.transaction.updateMany({
+        where: { id: r.id, privateArrangeRemindedAt: null, paymentStatus: 'HELD' },
+        data: { privateArrangeRemindedAt: now },
+      });
+      if (claim.count === 0) continue;
+      reminded += 1;
+      void this.sendPrivateArrangeBuyerReminder(r.id);
+    }
+
+    // (b) 5-day auto-release from payment.
+    const dueRelease = await this.prisma.transaction.findMany({
+      where: {
+        shippingMethod: 'PRIVATE_ARRANGE',
+        paymentStatus: 'HELD',
+        paidAt: { not: null, lt: new Date(now.getTime() - 5 * 86400_000) },
+      },
+      select: { id: true },
+      take: 50,
+    });
+    for (const r of dueRelease) {
+      if (await this.releasePrivateArrange(r.id, 'auto_5d')) released += 1;
+    }
+
+    return { reminded, released };
+  }
+
+  private async sendPrivateArrangeBuyerReminder(txId: string) {
+    try {
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: txId },
+        include: { buyer: true, listing: { select: { title: true } } },
+      });
+      if (!tx) return;
+      await this.notifications.privateArrangeBuyerReminder({
+        buyerEmail: tx.buyer.email,
+        buyerName: tx.buyer.firstName ?? 'there',
+        buyerPhone: tx.buyer.phone,
+        listingTitle: tx.listing.title,
+        transactionId: txId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `privateArrangeBuyerReminder failed for ${txId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async sendPrivateArrangeSellerHandover(txId: string) {
+    try {
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: txId },
+        include: { seller: true, listing: { select: { title: true } } },
+      });
+      if (!tx) return;
+      await this.notifications.privateArrangeSellerHandover({
+        sellerEmail: tx.seller.email,
+        sellerName: tx.seller.firstName ?? tx.seller.username ?? 'Seller',
+        sellerPhone: tx.seller.phone,
+        listingTitle: tx.listing.title,
+        transactionId: txId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `sendPrivateArrangeSellerHandover failed for ${txId}: ${(err as Error).message}`,
       );
     }
   }
@@ -4678,10 +5040,11 @@ export class TransactionsService {
     }
     // 1. Legal class — firearms can only use dealer transfer OR a private
     //    arrangement (which still requires both parties to visit a dealer
-    //    in person, just without a pre-picked one). Non-firearms can't
-    //    touch either of those.
+    //    in person, just without a pre-picked one). Phase 4 W2: PRIVATE_ARRANGE
+    //    is now available on EVERY listing class (a peer handover), so it is
+    //    legal for non-firearms too.
     const firearmLegal: ShippingMethod[] = ['DEALER_TRANSFER', 'PRIVATE_ARRANGE'];
-    const nonFirearmLegal: ShippingMethod[] = ['COURIER'];
+    const nonFirearmLegal: ShippingMethod[] = ['COURIER', 'PRIVATE_ARRANGE'];
     if (isFirearm && !firearmLegal.includes(chosen)) {
       throw new BadRequestException(
         'Firearms must ship via DEALER_TRANSFER or PRIVATE_ARRANGE',
@@ -4689,7 +5052,7 @@ export class TransactionsService {
     }
     if (!isFirearm && !nonFirearmLegal.includes(chosen)) {
       throw new BadRequestException(
-        'Non-firearms ship via COURIER only',
+        'Non-firearms ship via COURIER or PRIVATE_ARRANGE',
       );
     }
     // 2. Seller's offered subset — if the seller didn't pick this method

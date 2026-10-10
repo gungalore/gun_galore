@@ -148,6 +148,15 @@ export function BuyerTermsAck({
             </li>
           ))
         )}
+        {/* Cancellation disclosure. Kept short and in plain language (CPA s49):
+            the fee is only enforceable if drawn to attention before payment. */}
+        <li style={{ listStyle: 'disc' }}>
+          <strong>Changed your mind after paying?</strong> You can{' '}
+          <strong>request a cancellation</strong> before dispatch. If it&rsquo;s
+          approved we refund you, less the payment-processing fee we&rsquo;ve
+          already paid (not refundable) and the delivery cost once the parcel is
+          on its way.
+        </li>
         {/* Always last, and never omitted. The acknowledgement narrows ONE
             ground; saying so plainly is what keeps it a disclosure rather than
             a blanket waiver — and a blanket waiver would not survive CPA s51

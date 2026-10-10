@@ -432,19 +432,57 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
-  // Buyer cancels their own paid-but-undispatched courier order
-  // (Phase 4 P4.2). Reason required; full-refunds + reactivates the
-  // listing + notifies both parties. Self-service only for courier orders.
+  // Buyer REQUESTs a cancellation of a paid-but-undispatched order
+  // (Phase 4 rework). Reason required. This FREEZES the order (no accept,
+  // booking, dispatch or payout), notifies the seller and raises an admin
+  // alert — no money moves. Support resolves it with a fee-retained refund.
+  // Available on every HELD rail.
   // ---------------------------------------------------------------
-  @Post(':id/cancel')
+  @Post(':id/cancel-request')
   @UseGuards(AuthGuard)
   @HttpCode(200)
-  cancel(
+  requestCancellation(
     @Param('id') id: string,
     @CurrentUser() userId: string,
     @Body() body: { reason?: string },
   ) {
-    return this.txService.cancelByBuyer(id, userId, body?.reason ?? '');
+    return this.txService.requestCancellation(id, userId, body?.reason ?? '');
+  }
+
+  // ---------------------------------------------------------------
+  // Private Arrangement handover (Phase 4 W2). Funds stay HELD: the seller
+  // marks "delivered", the buyer confirms "received" (releases the payout),
+  // or either party disputes (freezes + admin). All in-app + WhatsApp.
+  // ---------------------------------------------------------------
+  @Post(':id/private-arrange/delivered')
+  @UseGuards(AuthGuard)
+  @HttpCode(200)
+  privateArrangeDelivered(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+  ) {
+    return this.txService.markPrivateArrangeDelivered(id, userId);
+  }
+
+  @Post(':id/private-arrange/received')
+  @UseGuards(AuthGuard)
+  @HttpCode(200)
+  privateArrangeReceived(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+  ) {
+    return this.txService.confirmPrivateArrangeReceived(id, userId);
+  }
+
+  @Post(':id/private-arrange/dispute')
+  @UseGuards(AuthGuard)
+  @HttpCode(200)
+  privateArrangeDispute(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.txService.disputePrivateArrange(id, userId, body?.reason ?? '');
   }
 
   // ---------------------------------------------------------------

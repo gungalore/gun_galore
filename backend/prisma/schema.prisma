@@ -1742,6 +1742,26 @@ model Transaction {
   cancelledByBuyerAt DateTime?
   cancelledReason    String?
 
+  // Cancellation-REQUEST freeze (Phase 4 rework). A buyer can no longer
+  // self-refund: they request a cancellation, which FREEZES the order (no
+  // accept / booking / dispatch / payout) and notifies the seller + admin.
+  // Support then executes a fee-retained refund (the gateway fee is always
+  // kept; delivery cost only when the parcel is committed). While set (and
+  // paymentStatus still HELD) the row renders as "Frozen — cancellation
+  // requested". Cleared when the request is resolved or refused.
+  cancellationRequestedAt    DateTime?
+  cancellationRequestReason  String?
+
+  // PRIVATE_ARRANGE handover + held-funds payout (Phase 4 W2, 2026-10-10).
+  // Funds stay HELD after payment; the seller taps "Item delivered" and the
+  // buyer taps "Item received" — the buyer's tap releases the payout. If the
+  // buyer never confirms, a follow-up fires 24h after the seller's tap
+  // (privateArrangeRemindedAt = one-shot guard) and the funds auto-release to
+  // the seller 5 days after payment. Either party can dispute → DISPUTED.
+  privateArrangeDeliveredAt DateTime?
+  privateArrangeReceivedAt  DateTime?
+  privateArrangeRemindedAt  DateTime?
+
   // Payment
   paymentStatus     PaymentStatus @default(HELD)
   gatewayCheckoutId String?

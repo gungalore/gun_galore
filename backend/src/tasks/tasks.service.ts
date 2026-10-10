@@ -578,6 +578,30 @@ export class TasksService {
     }
   }
 
+  // ─── PRIVATE_ARRANGE handover sweep (Phase 4 W2) ─────────────────
+  // Funds stay HELD after a private-arrange payment. This sweep (hourly):
+  // (a) nudges a silent buyer 24h after the seller marked "delivered";
+  // (b) auto-releases the payout to the seller 5 days after payment if nothing
+  // disputed. Both guarded so a concurrent buyer-received/dispute wins.
+  @Cron(CronExpression.EVERY_HOUR)
+  async sweepPrivateArrange() {
+    try {
+      const r = await this.transactions.sweepPrivateArrange();
+      if (r.reminded > 0 || r.released > 0) {
+        this.logger.log(
+          `sweepPrivateArrange: reminded=${r.reminded} released=${r.released}`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `sweepPrivateArrange failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('private-arrange-sweep');
+    }
+  }
+
   // ─── FLOW-F3 — Order.status rollup ───────────────────────────────
   // Order.status previously froze at PAID forever. This sweep advances a
   // PAID order to its terminal state once EVERY line (child transaction,

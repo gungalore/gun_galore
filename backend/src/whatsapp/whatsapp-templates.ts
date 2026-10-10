@@ -47,6 +47,13 @@ export interface WhatsappTemplateDef {
   linkVars: readonly string[];
   /** The URL-button suffix appended to `https://alloutdoor.co.za/t/`. */
   linkCode: (v: Record<string, string>) => string;
+  /**
+   * 'url' (default) → a URL button component is sent, filling `linkCode`.
+   * 'quick_reply' → the buttons are baked into the approved Meta template
+   * (e.g. the Private Arrangement "Item delivered / Item received / Dispute"
+   * pair); NO button component is sent and `linkVars`/`linkCode` are unused.
+   */
+  buttonType?: 'url' | 'quick_reply';
   /** The exact approved body, for the Desk preview and for specs. */
   render: (v: Record<string, string>) => string;
 }
@@ -216,6 +223,44 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     linkCode: (v) => `t${v.txId}`,
     render: (v) =>
       `Order ${v.ref} is ready for collection at your chosen dealer. Bring your identity document and your licence paperwork.`,
+  },
+
+  // ── Private Arrangement handover (quick-reply buttons) ──────────────
+  // Funds are HELD after payment. The button TAPS are handled by
+  // WhatsappWebhookController (message.button.text) → the private-arrange
+  // endpoints. Bodies carry only the order reference, never a title.
+  private_arrange_seller_handover: {
+    key: 'private_arrange_seller_handover',
+    metaName: 'private_arrange_seller_handover',
+    lang: 'en',
+    requiredVars: ['ref'],
+    linkVars: [],
+    buttonType: 'quick_reply',
+    linkCode: () => '',
+    render: (v) =>
+      `Order ${v.ref}. If you've handed the item to the buyer, tap Item delivered. If there's a problem, tap Dispute.`,
+  },
+  private_arrange_buyer_confirm: {
+    key: 'private_arrange_buyer_confirm',
+    metaName: 'private_arrange_buyer_confirm',
+    lang: 'en',
+    requiredVars: ['ref'],
+    linkVars: [],
+    buttonType: 'quick_reply',
+    linkCode: () => '',
+    render: (v) =>
+      `Order ${v.ref}. Once you've received your item, tap Item received to release the seller's payment. If there's a problem, tap Dispute.`,
+  },
+  private_arrange_buyer_reminder: {
+    key: 'private_arrange_buyer_reminder',
+    metaName: 'private_arrange_buyer_reminder',
+    lang: 'en',
+    requiredVars: ['ref'],
+    linkVars: [],
+    buttonType: 'quick_reply',
+    linkCode: () => '',
+    render: (v) =>
+      `Reminder for order ${v.ref}. Please confirm you received your item, or tap Dispute. Payment auto-releases to the seller 5 days after payment.`,
   },
 
   // ── Welcome ─────────────────────────────────────────────────────────

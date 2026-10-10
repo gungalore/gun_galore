@@ -344,6 +344,46 @@ export class ContactDetailFilterService {
     return null;
   }
 
+  // ─── Auto-strip (W4 buyer↔seller conversations) ───────────────────
+  // The conversation channel STRIPS rather than blocks: the operator's rule is
+  // that a message still sends, with the off-platform vector removed. Returns
+  // the redacted text + the categories that were removed. The unreduced digits
+  // or novel spellings the model layer alone can catch are handled by the
+  // caller (park the message for T&S review), because a precise strip of a
+  // model-only hit is not possible without leaking the original.
+  redact(text: string): { text: string; categories: RejectCategory[] } {
+    const categories = new Set<RejectCategory>();
+    let out = text;
+    const strip = (
+      source: RegExp,
+      cat: RejectCategory,
+      keep?: (match: string) => boolean,
+    ) => {
+      const flags = source.flags.includes('g') ? source.flags : source.flags + 'g';
+      const re = new RegExp(source.source, flags);
+      out = out.replace(re, (m) => {
+        if (keep && keep(m)) return m;
+        categories.add(cat);
+        return '[removed]';
+      });
+    };
+    strip(EMAIL_REGEX, 'email');
+    strip(EMAIL_OBFUSCATED_REGEX, 'email');
+    strip(URL_REGEX, 'url', (m) => {
+      const bare = m
+        .toLowerCase()
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '')
+        .replace(/\/.*$/, '');
+      return BRAND_DOMAIN_ALLOWLIST.has(bare);
+    });
+    strip(PHONE_REGEX, 'phone');
+    strip(SOCIAL_REGEX, 'social-platform');
+    strip(OFFPLATFORM_REGEX, 'off-platform-coordination');
+    strip(ADDRESS_REGEX, 'address');
+    return { text: out, categories: [...categories] };
+  }
+
   // ─── Layer 2 — the Jev battery ────────────────────────────────────
 }
 

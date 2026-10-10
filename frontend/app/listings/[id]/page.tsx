@@ -14,6 +14,7 @@ import {
   discountPercent,
 } from '@/lib/utils';
 import { vicinityLabel } from '@/lib/vicinity';
+import ListingDistance from '@/components/listing-distance';
 import SellerControls from './seller-controls';
 import OfferPanel from './offer-panel';
 import AuctionPanel from './auction-panel';
@@ -975,6 +976,11 @@ export default async function ListingDetailPage({
           <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
             {vicinityLabel(listing)}
           </p>
+
+          {/* Coarse distance from the viewer (device location, saved-address
+              fallback). 5 km-snapped; seller coordinates never reach the
+              browser. */}
+          <ListingDistance listingId={listing.id} />
 
           {/* Seller-nominated stock-in gunshop. Distance is viewer-specific,
               calculated server-side from the signed-in buyer's saved address;

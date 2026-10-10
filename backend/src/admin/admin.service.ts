@@ -27,6 +27,10 @@ import { OzowService } from '../payments/ozow.service';
 import { SmsService } from '../sms/sms.service';
 import { TransactionsService, PAYMENT_MODE } from '../payments/transactions.service';
 import { reversalListingData } from '../payments/inventory';
+import {
+  cancellationRefundableCents,
+  isShipmentCommitted,
+} from '../payments/cancellation';
 import { ListingReviewDto, ReviewAction } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 // UsersModule is @Global, so this needs no AdminModule import — only the
@@ -2570,12 +2574,56 @@ export class AdminService {
   // buyerTotal — a partial refund leaves the order in its current state
   // (HELD/DISPUTED) so the remaining balance can still be released or
   // refunded later.
+  // Resolve a buyer's cancellation REQUEST: refund the order minus the
+  // irrecoverable costs (Buyer Protection Fee always; carrier cost only when a
+  // waybill exists), relist the item, and tell both parties. The maths lives in
+  // cancellationRefundableCents; the money/relist/notify flow is the shared
+  // terminal-refund path via `refundTransaction(..., { resolveCancellation })`.
+  async resolveCancellationRequest(txId: string, adminId: string, note?: string) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: txId },
+      select: {
+        id: true,
+        cancellationRequestedAt: true,
+        paymentStatus: true,
+        buyerTotal: true,
+        processingFee: true,
+        shippingCost: true,
+        carrierShipmentId: true,
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (!tx.cancellationRequestedAt) {
+      throw new BadRequestException('This order has no pending cancellation request.');
+    }
+    if (tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException(
+        `Order is not frozen for cancellation (status: ${tx.paymentStatus}).`,
+      );
+    }
+    const { refundableCents } = cancellationRefundableCents({
+      buyerTotal: tx.buyerTotal,
+      processingFee: tx.processingFee,
+      shippingCost: tx.shippingCost,
+      shipmentCommitted: isShipmentCommitted(tx),
+    });
+    return this.refundTransaction(
+      txId,
+      adminId,
+      note?.trim() || 'Cancellation request resolved',
+      refundableCents,
+      { resolveCancellation: true },
+    );
+  }
+
   async refundTransaction(
     txId: string,
     adminId: string,
     note?: string,
     amountZarCents?: number,
+    opts?: { resolveCancellation?: boolean },
   ) {
+    const resolveCancellation = opts?.resolveCancellation === true;
     const tx = await this.prisma.transaction.findUnique({
       where: { id: txId },
       include: { listing: true, buyer: true, seller: true },
@@ -2599,7 +2647,7 @@ export class AdminService {
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('Refund amount must be a positive number of cents.');
     }
-    if (amount < 100) {
+    if (amount < 100 && !resolveCancellation) {
       throw new BadRequestException('Minimum refund is R1.00 (100 cents).');
     }
     if (amount > remaining) {
@@ -2608,13 +2656,17 @@ export class AdminService {
       );
     }
     const willBeFullyRefunded = tx.refundedAmount + amount >= tx.buyerTotal;
+    // resolveCancellation is a TERMINAL partial: the buyer keeps the fee but
+    // the order is over — it must relist + notify the seller just like a full
+    // refund, even though refundedAmount < buyerTotal.
+    const terminal = willBeFullyRefunded || resolveCancellation;
 
     // P6.2 — a FULL refund of a consolidated CARRIER line cancels the shared
     // parcel, which would orphan its still-HELD siblings (their shipment is
     // gone + they'd point at a refunded carrier). Refund the other items in
     // the parcel first. A sibling is always refundable (it has no siblings of
     // its own); a partial refund leaves the parcel intact, so both are allowed.
-    if (willBeFullyRefunded) {
+    if (terminal) {
       const liveSiblings = await this.prisma.transaction.count({
         where: { shipsWithId: txId, paymentStatus: 'HELD' },
       });
@@ -2673,11 +2725,11 @@ export class AdminService {
           select: { refundedAmount: true },
         });
         const cumulative = live?.refundedAmount ?? tx.refundedAmount + amount;
-        const full = cumulative >= tx.buyerTotal;
+        const full = resolveCancellation || cumulative >= tx.buyerTotal;
         if (full) {
           await txc.transaction.updateMany({
             where: { id: txId, paymentStatus: { in: ['HELD', 'DISPUTED'] } },
-            data: { paymentStatus: 'REFUNDED' },
+            data: { paymentStatus: 'REFUNDED', cancellationRequestedAt: null },
           });
         }
         await txc.transaction.create({
@@ -2716,7 +2768,9 @@ export class AdminService {
           adminNote: note ?? null,
           adminReviewedById: adminId,
           adminReviewedAt: new Date(),
-          ...(willBeFullyRefunded ? { paymentStatus: 'REFUNDED' as const } : {}),
+          ...(willBeFullyRefunded || resolveCancellation
+            ? { paymentStatus: 'REFUNDED' as const, cancellationRequestedAt: null }
+            : {}),
         },
       });
       claimCount = claim.count;
@@ -2770,12 +2824,13 @@ export class AdminService {
       where: { id: txId },
     });
 
-    // Only a FULL/final refund clears the dispute alert + inbox, since a
-    // partial leaves the order live.
-    if (fullyRefunded) {
+    // Only a terminal refund (full, or a resolved cancellation) clears the
+    // dispute alert + inbox and reverses the listing, since a partial leaves
+    // the order live.
+    if (terminal) {
       void this.prisma.adminAlert.updateMany({
         where: {
-          type: 'BUYER_DISPUTE_RAISED',
+          type: { in: ['BUYER_DISPUTE_RAISED', 'CANCELLATION_REQUESTED'] },
           referenceId: txId,
           resolved: false,
         },
@@ -2818,15 +2873,21 @@ export class AdminService {
 
     // Audit row — refunds change real money state; the operator
     // must explain why (handed in via the dossier's confirm-modal).
-    if (note && note.trim()) {
+    if ((note && note.trim()) || resolveCancellation) {
       await this.audit.record({
         adminUserId: adminId,
-        action: fullyRefunded ? 'TRANSACTION_REFUND' : 'TRANSACTION_REFUND_PARTIAL',
+        action: resolveCancellation
+          ? 'TRANSACTION_CANCEL_RESOLVED'
+          : willBeFullyRefunded
+            ? 'TRANSACTION_REFUND'
+            : 'TRANSACTION_REFUND_PARTIAL',
         resourceType: 'Transaction',
         resourceId: txId,
         oldValue: `${tx.paymentStatus} (refunded ${tx.refundedAmount}c)`,
-        newValue: `${fullyRefunded ? 'REFUNDED' : tx.paymentStatus} (refunded ${tx.refundedAmount + amount}c of ${tx.buyerTotal}c)`,
-        reason: note.trim(),
+        newValue: `${terminal ? 'REFUNDED' : tx.paymentStatus} (refunded ${tx.refundedAmount + amount}c of ${tx.buyerTotal}c)`,
+        reason:
+          note?.trim() ||
+          (resolveCancellation ? 'Cancellation request resolved' : 'Refund'),
       });
     }
 

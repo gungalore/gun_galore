@@ -120,6 +120,11 @@ describe('WHATSAPP_TEMPLATES — the hard rule', () => {
   it.each(Object.entries(WHATSAPP_TEMPLATES))(
     '%s: every variable linkCode actually reads is declared in linkVars',
     (_key, def) => {
+      // A quick-reply template has no URL button — linkCode/linkVars are unused.
+      if (def.buttonType === 'quick_reply') {
+        expect(def.linkVars.length).toBe(0);
+        return;
+      }
       const suffix = def.linkCode(
         Object.fromEntries(def.linkVars.map((k) => [k, 'SENTINEL'])),
       );

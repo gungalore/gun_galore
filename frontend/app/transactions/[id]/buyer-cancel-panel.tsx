@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useAuth } from '../../../lib/auth';
 import { useRouter } from 'next/navigation';
-import { REFUND_ETA_COPY } from '@/lib/status-labels';
 
 const API_URL =
   process.env.INTERNAL_API_URL ??
@@ -18,17 +17,13 @@ const REASONS: { value: string; label: string }[] = [
   { value: 'other', label: 'Other (explain)' },
 ];
 
-// Buyer-initiated cancellation of a paid-but-undispatched courier order
-// (Phase 4 P4.2). Reason required; POSTs to /transactions/:id/cancel which
-// full-refunds + reactivates the listing. Only rendered when the order is
-// actually cancellable (gates computed by the parent page).
-export default function BuyerCancelPanel({
-  txId,
-  buyerTotalRand,
-}: {
-  txId: string;
-  buyerTotalRand: string;
-}) {
+// Buyer-initiated cancellation REQUEST (Phase 4 rework). Buyers can no longer
+// self-refund: this POSTs to /transactions/:id/cancel-request, which FREEZES
+// the order (no accept/dispatch/payout), notifies the seller, and hands it to
+// support. The Buyer Protection Fee (payment cost already incurred) is
+// non-refundable; delivery is non-refundable once the parcel is committed.
+// Only rendered when the order is actually requestable (gates on the parent).
+export default function BuyerCancelPanel({ txId }: { txId: string }) {
   const { getToken } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -46,7 +41,7 @@ export default function BuyerCancelPanel({
     setError(null);
     try {
       const token = await getToken();
-      const res = await fetch(`${API_URL}/transactions/${txId}/cancel`, {
+      const res = await fetch(`${API_URL}/transactions/${txId}/cancel-request`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -61,7 +56,7 @@ export default function BuyerCancelPanel({
       setOpen(false);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Cancellation failed');
+      setError(err instanceof Error ? err.message : 'Request failed');
     } finally {
       setBusy(false);
     }
@@ -74,15 +69,15 @@ export default function BuyerCancelPanel({
           Need to cancel?
         </p>
         <p className="text-xs text-[var(--text-tertiary)] mb-3">
-          This item hasn&apos;t been dispatched yet. You can cancel now for a
-          full refund of {buyerTotalRand} ({REFUND_ETA_COPY} back to your card).
+          This item hasn&apos;t been dispatched yet. Request a cancellation and
+          our team will review it — the order is frozen while we do.
         </p>
         <button
           type="button"
           onClick={() => setOpen(true)}
           className="text-sm px-3 py-1.5 rounded-md border border-[var(--red)] text-[var(--red)] hover:bg-[var(--red)]/10"
         >
-          Cancel order &amp; request refund
+          Request cancellation
         </button>
       </div>
     );
@@ -91,11 +86,13 @@ export default function BuyerCancelPanel({
   return (
     <div className="rounded-lg border border-[var(--red)] p-4">
       <p className="text-sm font-medium text-[var(--text-primary)] mb-2">
-        Cancel this order?
+        Request a cancellation?
       </p>
       <p className="text-xs text-[var(--text-tertiary)] mb-3">
-        We&apos;ll refund {buyerTotalRand} to your card and put the item back on
-        the marketplace. Tell us why:
+        We&apos;ll freeze the order and review your request. Any refund is
+        processed by our team — the payment processing fee we&apos;ve already
+        paid is not refundable, and neither is delivery once the parcel is on
+        its way. Tell us why:
       </p>
       <div className="space-y-1.5 mb-3">
         {REASONS.map((r) => (
@@ -140,7 +137,7 @@ export default function BuyerCancelPanel({
           className="flex-1 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
           style={{ background: 'var(--red)' }}
         >
-          {busy ? 'Cancelling…' : 'Confirm cancellation'}
+          {busy ? 'Requesting…' : 'Request cancellation'}
         </button>
       </div>
     </div>

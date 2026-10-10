@@ -296,6 +296,64 @@ describe('ListingsService — findById projection & owner-awareness', () => {
  * winner's checkout with no sweep/strike/runner-up path, and a live Ozow
  * payment could still land and flip CANCELLED→SOLD.
  */
+describe('ListingsService — distanceToBuyer (W3)', () => {
+  function make(select: Record<string, unknown> | null) {
+    const prisma = { listing: { findUnique: jest.fn().mockResolvedValue(select) } };
+    const service = new ListingsService(
+      prisma as never,
+      { isConnected: false } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { record: jest.fn() } as never,
+      new FeeCalculator(),
+    );
+    return { service, prisma };
+  }
+
+  it('returns a 5 km-snapped distance from the pickup point', async () => {
+    // ~11 km apart → snaps to 10.
+    const { service } = make({
+      isFirearm: false,
+      pickupLat: -33.8,
+      pickupLng: 18.4,
+      plannedDealerLat: null,
+      plannedDealerLng: null,
+    });
+    const r = await service.distanceToBuyer('L1', -33.9, 18.4);
+    expect(r.distanceKm).toBe(10);
+  });
+
+  it('uses the planned dealer location for a firearm', async () => {
+    const { service } = make({
+      isFirearm: true,
+      pickupLat: -33.9,
+      pickupLng: 18.4,
+      plannedDealerLat: -26.2041,
+      plannedDealerLng: 28.0473,
+    });
+    const r = await service.distanceToBuyer('L1', -33.9249, 18.4241);
+    expect(r.distanceKm).toBeGreaterThan(1200);
+  });
+
+  it('returns null when coordinates are missing (never leaks them)', async () => {
+    const { service } = make({
+      isFirearm: false,
+      pickupLat: null,
+      pickupLng: null,
+      plannedDealerLat: null,
+      plannedDealerLng: null,
+    });
+    expect(await service.distanceToBuyer('L1', -33.9, 18.4)).toEqual({
+      distanceKm: null,
+    });
+  });
+});
+
 describe('ListingsService — cancel status guard', () => {
   let prisma: {
     user: { findUnique: jest.Mock };

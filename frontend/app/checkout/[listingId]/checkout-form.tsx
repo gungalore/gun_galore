@@ -134,28 +134,27 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // Allowed methods = intersection of (legal for this listing class) and
   // (what the seller offered in the Sell form). Legacy listings with an
   // empty shippingMethods array fall back to the full legal set so old
-  // rows don't break.
+  // rows don't break. Phase 4 W2 — PRIVATE_ARRANGE (a peer handover) is now
+  // legal for non-firearms too.
   const legalForClass: ShippingMethod[] = listing.isFirearm
     ? ['DEALER_TRANSFER', 'PRIVATE_ARRANGE']
-    : ['COURIER'];
+    : ['COURIER', 'PRIVATE_ARRANGE'];
   const allowedMethods: ShippingMethod[] =
     listing.shippingMethods && listing.shippingMethods.length > 0
       ? legalForClass.filter((m) => listing.shippingMethods.includes(m))
       : legalForClass;
 
-  // Non-firearm goods have one courier rail: Bob Go door-to-door. The delivery
-  // address is captured first, then we price the single door rate for this
-  // parcel and show it as one "Shipping" line. There is no method to choose.
-  //
-  // Firearms are untouched — their hand-over is a dealer route, not a courier
-  // one — and so are collection-only items, which have no courier leg at all.
-  const usesDeliveryPicker = !isCollection && !listing.isFirearm;
-
+  // Non-firearm goods default to the courier rail (Bob Go door-to-door); when
+  // the seller also offers PRIVATE_ARRANGE the buyer can pick it and skip the
+  // courier picker. Collection-only items have no courier leg at all.
   const [method, setMethod] = useState<ShippingMethod>(
     isCollection
       ? 'COLLECTION'
       : allowedMethods[0] ?? (listing.isFirearm ? 'DEALER_TRANSFER' : 'COURIER'),
   );
+  // The delivery picker only applies to the COURIER rail; a PRIVATE_ARRANGE
+  // choice skips it entirely.
+  const usesDeliveryPicker = !isCollection && method === 'COURIER';
   // The single door option the picker priced for this parcel + address.
   const [deliveryOption, setDeliveryOption] = useState<DeliveryOption | null>(
     null,
@@ -851,9 +850,11 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       {/* Firearm hand-over — the two dealer routes, as option cards. Goods
           don't come through here any more: their courier options are the
           buyer's to choose from the priced picker below. */}
-      {listing.isFirearm && allowedMethods.length > 0 && (
+      {allowedMethods.length > 1 && (
         // UX-8 — option cards; onSelect is the SAME setMethod, so state +
-        // payload are unchanged.
+        // payload are unchanged. Phase 4 W2: shown whenever more than one
+        // method is legal (firearm dealer/arrange, or courier/arrange for a
+        // non-firearm the seller offers both for).
         <DeliveryMethodCards
           methods={allowedMethods}
           selected={method}

@@ -156,6 +156,31 @@ export class ListingsController {
     return this.listingsService.findMine(userId);
   }
 
+  // Coarse buyer-distance to a listing (W3). PUBLIC, but returns only a 5 km-
+  // snapped distance — never the seller/dealer coordinates. MUST stay above
+  // @Get(':id') so 'distance' isn't captured as an id.
+  @Get(':id/distance')
+  @SkipThrottle()
+  distance(
+    @Param('id') id: string,
+    @Query('lat') lat?: string,
+    @Query('lng') lng?: string,
+  ) {
+    const la = Number(lat);
+    const ln = Number(lng);
+    if (
+      !Number.isFinite(la) ||
+      !Number.isFinite(ln) ||
+      la < -90 ||
+      la > 90 ||
+      ln < -180 ||
+      ln > 180
+    ) {
+      return { distanceKm: null };
+    }
+    return this.listingsService.distanceToBuyer(id, la, ln);
+  }
+
   // Public listing detail. OptionalAuthGuard makes this owner-aware without
   // rejecting anonymous callers: if the seller's the identity provider token is present,
   // @CurrentUser() resolves their id and findById adds the owner-only fields

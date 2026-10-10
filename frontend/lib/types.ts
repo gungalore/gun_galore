@@ -523,12 +523,24 @@ export interface Transaction {
   rejectedAt: string | null;
   rejectedReason: string | null;
   acceptEscalatedAt: string | null;
+  // Cancellation REQUEST (Phase 4 rework) — set when the buyer asks to cancel
+  // a paid, undispatched order. The order is FROZEN (no accept/dispatch/payout)
+  // until support resolves it with a fee-retained refund. While set (and
+  // paymentStatus still HELD) the order renders as "Frozen — cancellation
+  // requested".
+  cancellationRequestedAt: string | null;
+  cancellationRequestReason: string | null;
   dealerId: string | null;
   confirmedDeliveryAt: string | null;
   // PRIVATE_ARRANGE — set when the buyer accepted the hard-consent
   // screen at checkout. Used by the order page to gate the
   // contact-reveal card.
   privateArrangeAcceptedAt: string | null;
+  // Private-arrange held-funds handover (Phase 4 W2): seller marks delivered,
+  // buyer confirms received (releases the payout); auto-releases 5 days after
+  // payment if nothing disputes.
+  privateArrangeDeliveredAt: string | null;
+  privateArrangeReceivedAt: string | null;
   // Dealer stock-in verification (firearm DEALER_TRANSFER only).
   // See backend/src/payments/dealer-verification.service.ts for the
   // lifecycle. Null on every other shipping method.

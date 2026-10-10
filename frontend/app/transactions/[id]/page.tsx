@@ -14,6 +14,8 @@ import { RatingWidget } from './rating-widget';
 import { TrackingTimeline } from './tracking-timeline';
 import { AcceptRejectPanel } from './accept-reject-panel';
 import BuyerCancelPanel from './buyer-cancel-panel';
+import MessageThread from './message-thread';
+import PrivateArrangePanel from './private-arrange-panel';
 import PodProofSection from './pod-proof-section';
 import AwaitingAcceptChip from './awaiting-accept-chip';
 
@@ -128,7 +130,11 @@ export default async function TransactionPage({
     !!tx.paidAt && !tx.acceptedAt && !tx.rejectedAt && !tx.dispatchedAt;
   const isRejected = !!tx.rejectedAt;
   const canAccept =
-    isSeller && isPaidAwaitingAccept && !isPrivateArrange && !isOnSiteBooking;
+    isSeller &&
+    isPaidAwaitingAccept &&
+    !isPrivateArrange &&
+    !isOnSiteBooking &&
+    !tx.cancellationRequestedAt;
   const canDispatch =
     !isPrivateArrange &&
     !isCollection && // collection has no dispatch step
@@ -138,7 +144,8 @@ export default async function TransactionPage({
     !isRejected &&
     tx.paymentStatus === 'HELD' &&
     tx.shippingStatus === 'PENDING' &&
-    !tx.dispatchedAt;
+    !tx.dispatchedAt &&
+    !tx.cancellationRequestedAt;
 
   // For firearm DEALER_TRANSFER, payout no longer depends on the
   // buyer pressing "Confirm delivery" — funds auto-release when the
@@ -168,16 +175,19 @@ export default async function TransactionPage({
     !!tx.acceptedAt &&
     !tx.confirmedDeliveryAt;
 
-  // Phase 4 P4.2 — buyer can self-cancel a paid courier order that hasn't
-  // shipped yet (full refund). Self-service only for COURIER; firearm
-  // dealer-transfer + PRIVATE_ARRANGE route through dispute/support.
-  const canCancel =
+  // Phase 4 rework — the buyer REQUESTS a cancellation (support resolves it
+  // with a fee-retained refund); they can no longer self-refund. Available on
+  // any paid, undispatched HELD order (all rails); the order freezes while
+  // support reviews it.
+  const isCancellationRequested =
+    tx.paymentStatus === 'HELD' && !!tx.cancellationRequestedAt;
+  const canRequestCancel =
     isBuyer &&
     tx.paymentStatus === 'HELD' &&
     !!tx.paidAt &&
     !tx.dispatchedAt &&
     !tx.rejectedAt &&
-    tx.shippingMethod === 'COURIER';
+    !tx.cancellationRequestedAt;
 
   const txRating = (
     tx as unknown as {
@@ -696,10 +706,49 @@ export default async function TransactionPage({
             </div>
           )}
 
-          {/* Buyer: cancel a paid-but-undispatched courier order for a
-              full refund (Phase 4 P4.2). */}
-          {canCancel && (
-            <BuyerCancelPanel txId={tx.id} buyerTotalRand={formatPrice(tx.buyerTotal)} />
+          {/* Frozen — buyer requested a cancellation; support is reviewing.
+              Shown to both parties. No accept/dispatch/payout until resolved. */}
+          {isCancellationRequested && (
+            <div
+              className="rounded-lg p-4 mb-4"
+              style={{
+                background: 'var(--bg-card)',
+                border: '1px solid var(--warning)',
+              }}
+            >
+              <p className="text-sm font-medium text-[var(--text-primary)] mb-1">
+                Cancellation requested — order frozen
+              </p>
+              <p className="text-xs text-[var(--text-tertiary)]">
+                {isBuyer
+                  ? 'Your request is with our support team. The order is frozen and no payment will be released until it is resolved. We will be in touch shortly.'
+                  : 'The buyer has asked to cancel this order. It is frozen while we review — please do not dispatch. If the order is not cancelled, we will let you know.'}
+              </p>
+            </div>
+          )}
+
+          {/* Buyer: request a cancellation of a paid-but-undispatched order
+              (Phase 4 rework). Freezes the order; support resolves it. */}
+          {canRequestCancel && <BuyerCancelPanel txId={tx.id} />}
+
+          {/* Private Arrangement (Phase 4 W2) — held-funds handover. */}
+          {isPrivateArrange && tx.paymentStatus === 'HELD' && (
+            <PrivateArrangePanel
+              txId={tx.id}
+              isBuyer={isBuyer}
+              isSeller={isSeller}
+              delivered={tx.privateArrangeDeliveredAt}
+              received={tx.privateArrangeReceivedAt}
+            />
+          )}
+
+          {/* Buyer ↔ seller messages (Jev-moderated). Once the order is paid. */}
+          {(isBuyer || isSeller) && !!tx.paidAt && (
+            <MessageThread
+              transactionId={tx.id}
+              viewerId={userId}
+              buyerId={tx.buyerId}
+            />
           )}
 
           {/* Buyer: standalone dispute panel if we're past confirm

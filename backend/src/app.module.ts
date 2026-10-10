@@ -22,10 +22,10 @@ import { ListingsModule } from './listings/listings.module';
 import { ShippingModule } from './shipping/shipping.module';
 import { PaymentsModule } from './payments/payments.module';
 import { OrdersModule } from './orders/orders.module';
-// MessagesModule removed — buyer/seller chat replaced by Q&A
-// (ListingQuestionsService in ListingsModule) + PRIVATE_ARRANGE
-// contact reveal. Prisma `Message` model retained dormantly to
-// preserve historical rows for any future audit.
+// MessagesModule — buyer/seller chat on a transaction, Jev-moderated
+// (contact details auto-stripped, abuse blocked). Re-enables the dormant
+// Prisma `Message` model for live conversation (Phase 4 W4).
+import { MessagesModule } from './messages/messages.module';
 import { RatingsModule } from './ratings/ratings.module';
 import { AdminModule } from './admin/admin.module';
 import { OffersModule } from './offers/offers.module';
@@ -94,6 +94,7 @@ import { ValuationModule } from './valuation/valuation.module';
     ShippingModule,
     PaymentsModule,
     OrdersModule,
+    MessagesModule,
     RatingsModule,
     AdminModule,
     OffersModule,

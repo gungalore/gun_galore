@@ -610,6 +610,9 @@ export class DealerVerificationService {
           paymentStatus: 'HELD',
           paidAt: { not: null },
           manualCancelledAt: null,
+          // A buyer cancellation request freezes the order: no release while
+          // support is reviewing it (atomic backstop for the freeze).
+          cancellationRequestedAt: null,
         },
         data: {
           paymentStatus: 'RELEASED',

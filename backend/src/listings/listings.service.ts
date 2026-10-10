@@ -22,6 +22,7 @@ import {
 import { PreviewListingDto } from './dto/preview-listing.dto';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
+import { haversineKm, roundKm } from '../common/geo';
 import { assertAccountNotClosed } from '../common/account-standing';
 import { FirearmLicenceService } from './firearm-licence.service';
 import { inventoryEligible } from '../payments/inventory';
@@ -3550,6 +3551,39 @@ export class ListingsService {
       }
     }
     return { canEdit: true, reason: null, code: null };
+  }
+
+  /**
+   * Coarse distance (km) from a buyer-supplied point to the listing's
+   * meaningful location. Firearms/dealer-stocked items use the planned dealer;
+   * everything else uses the seller's pickup. Returns null when we have no
+   * coordinates — the coordinates themselves are NEVER returned, and the result
+   * is snapped to 5 km so a caller cannot triangulate the exact spot (W3).
+   */
+  async distanceToBuyer(
+    listingId: string,
+    lat: number,
+    lng: number,
+  ): Promise<{ distanceKm: number | null }> {
+    const l = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+      select: {
+        isFirearm: true,
+        pickupLat: true,
+        pickupLng: true,
+        plannedDealerLat: true,
+        plannedDealerLng: true,
+      },
+    });
+    if (!l) return { distanceKm: null };
+    const useDealer =
+      l.isFirearm && l.plannedDealerLat != null && l.plannedDealerLng != null;
+    const tLat = useDealer ? l.plannedDealerLat : l.pickupLat;
+    const tLng = useDealer ? l.plannedDealerLng : l.pickupLng;
+    if (tLat == null || tLng == null) return { distanceKm: null };
+    return {
+      distanceKm: roundKm(haversineKm({ lat, lng }, { lat: tLat, lng: tLng })),
+    };
   }
 
   private async assertOwner(listingId: string, userId: string) {

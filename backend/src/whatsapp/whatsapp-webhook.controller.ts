@@ -11,9 +11,20 @@ import {
   Optional,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { verifyMetaSignature } from './whatsapp-signature';
 import { WhatsappService } from './whatsapp.service';
+import { TransactionsService } from '../payments/transactions.service';
+
+// The three Private Arrangement handover templates whose quick replies map to
+// order actions. Body/button text only carries the ref; the ACTION is resolved
+// from the tapped message's templateKey + its vars.txId.
+const PRIVATE_ARRANGE_TEMPLATES = new Set([
+  'private_arrange_seller_handover',
+  'private_arrange_buyer_confirm',
+  'private_arrange_buyer_reminder',
+]);
 
 const WINDOW_MS = 24 * 60 * 60 * 1000; // Meta's customer-service window
 
@@ -68,6 +79,7 @@ export class WhatsappWebhookController {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly whatsapp?: WhatsappService,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
   // Meta's one-time subscription handshake. Echo the challenge ONLY when
@@ -204,6 +216,89 @@ export class WhatsappWebhookController {
       messageText.trim().toLocaleLowerCase() === 'decline'
     ) {
       await this.handleCourierSaleDecline(phone, message.context.id);
+    }
+
+    // Private Arrangement quick replies: "Item delivered" / "Item received" /
+    // "Dispute". Resolved from the tapped message's templateKey + vars.txId.
+    if (message.context?.id) {
+      await this.handlePrivateArrangeButton(
+        phone,
+        messageText.trim().toLowerCase(),
+        message.context.id,
+      );
+    }
+  }
+
+  /**
+   * A Private Arrangement handover quick reply. The button text only carries
+   * the action; we resolve the exact order from the tapped message (Meta
+   * context.id → our log row), verify the sender is the intended recipient,
+   * then run the action. Never throws — the webhook must always 200.
+   */
+  private async handlePrivateArrangeButton(
+    senderPhone: string,
+    buttonText: string,
+    repliedToMessageId: string,
+  ): Promise<void> {
+    const action =
+      buttonText === 'item delivered'
+        ? 'delivered'
+        : buttonText === 'item received'
+          ? 'received'
+          : buttonText === 'dispute'
+            ? 'dispute'
+            : null;
+    if (!action) return;
+
+    try {
+      const sent = await this.prisma.whatsappMessageLog.findFirst({
+        where: { messageId: repliedToMessageId },
+        select: { to: true, templateKey: true, vars: true },
+      });
+      if (!sent || !PRIVATE_ARRANGE_TEMPLATES.has(sent.templateKey)) return;
+      // The tap must come from the phone we sent THIS message to.
+      if (normalisePhone(sent.to) !== normalisePhone(senderPhone)) return;
+
+      const vars = sent.vars as Record<string, unknown> | null;
+      const txId = typeof vars?.txId === 'string' ? vars.txId : null;
+      if (!txId) return;
+
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: txId },
+        select: { buyerId: true, sellerId: true, shippingMethod: true },
+      });
+      if (!tx || tx.shippingMethod !== 'PRIVATE_ARRANGE') return;
+
+      // Resolved lazily: PaymentsModule (TransactionsService) is not a static
+      // import of this module, so an isolated boot spec stays green.
+      let transactions: TransactionsService;
+      try {
+        if (!this.moduleRef) return;
+        transactions = this.moduleRef.get(TransactionsService, { strict: false });
+      } catch {
+        return;
+      }
+      if (!transactions) return;
+
+      const fromSeller = sent.templateKey === 'private_arrange_seller_handover';
+      if (action === 'delivered') {
+        if (!fromSeller) return;
+        await transactions.markPrivateArrangeDelivered(txId, tx.sellerId);
+      } else if (action === 'received') {
+        if (fromSeller) return; // buyer-only action
+        await transactions.confirmPrivateArrangeReceived(txId, tx.buyerId);
+      } else if (action === 'dispute') {
+        const userId = fromSeller ? tx.sellerId : tx.buyerId;
+        await transactions.disputePrivateArrange(
+          txId,
+          userId,
+          'Raised via WhatsApp',
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `private-arrange WhatsApp button action failed (${buttonText}): ${(err as Error).message}`,
+      );
     }
   }
 

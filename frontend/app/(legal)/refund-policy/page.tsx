@@ -162,9 +162,38 @@ export default function RefundPolicyPage() {
         or poorly packed we resolve it in line with sections&nbsp;2 and&nbsp;3.
       </p>
 
-      <h2>5. What is not refundable</h2>
+      <h2>5. Cancelling an order, and what is not refundable</h2>
+      <p>
+        You cannot self-cancel a paid order. To cancel, use{' '}
+        <strong>Request cancellation</strong> on the order page (or email{' '}
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
+        </a>
+        ). This <strong>freezes the order</strong> — the seller is told not to
+        dispatch and no payment is released while our team reviews it. If the
+        cancellation is approved, we refund you, less the costs below.
+      </p>
       <ul>
-        <li><strong>Shipping costs on cancelled orders</strong> where the cancellation is the buyer's choice and the parcel has already been collected by the courier.</li>
+        <li>
+          <strong>The Buyer Protection Fee is not refundable.</strong> It covers
+          the payment-processing cost of taking and reversing your payment, which
+          our payment provider keeps — so it is money already spent, on every
+          order.
+        </li>
+        <li>
+          <strong>Delivery is not refundable once the parcel is on its way.</strong>{' '}
+          If the courier has been booked or has already collected the parcel, the
+          delivery cost stands. Delivery is fully refunded if it hadn&rsquo;t
+          started.
+        </li>
+        <li>
+          <strong>This does not apply when the cancellation is the seller&rsquo;s
+          fault.</strong> If the seller declines the sale, never dispatches (our
+          automatic refund), or the item never arrives, arrives damaged or is not
+          what was listed, you are refunded{' '}
+          <strong>in full — including the fee</strong> — through the dispute route
+          in sections&nbsp;2 and&nbsp;3.
+        </li>
         <li>
           <strong>Where the item is, or how far you have to travel to it.</strong>{' '}
           Every listing shows the town and province the item is in before you

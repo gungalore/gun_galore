@@ -906,6 +906,19 @@ export class AdminTransactionsController {
     return this.adminService.refundTransaction(id, admin.sub, note, amountZarCents);
   }
 
+  // Resolve a buyer's cancellation REQUEST: refund minus the irrecoverable
+  // costs (Buyer Protection Fee always; carrier cost only when a waybill
+  // exists), relist the item, notify both parties. Body: { note? }.
+  @Post(':id/resolve-cancellation')
+  @HttpCode(200)
+  resolveCancellation(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body('note') note?: string,
+  ) {
+    return this.adminService.resolveCancellationRequest(id, admin.sub, note);
+  }
+
   // Resolve a DISPUTED transaction in favour of the seller — force
   // release the payout. Body: { reason }. For refunds use the
   // refund endpoint above; the dossier UI presents both as a "Resolve

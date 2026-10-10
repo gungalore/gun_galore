@@ -111,14 +111,17 @@ export class WhatsappService {
       });
     }
     // One URL button maximum, one variable in its suffix (Meta's grammar
-    // rule) — sub_type "url", index "0" is the only button slot every
-    // template in the registry uses.
-    components.push({
-      type: 'button',
-      sub_type: 'url',
-      index: '0',
-      parameters: [{ type: 'text', text: def.linkCode(vars) }],
-    });
+    // rule) — sub_type "url", index "0" is the only button slot the URL
+    // templates use. A quick-reply template (private_arrange_*) bakes its
+    // buttons into the approved Meta template, so NO button component is sent.
+    if ((def.buttonType ?? 'url') === 'url') {
+      components.push({
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: def.linkCode(vars) }],
+      });
+    }
 
     try {
       const res = await fetch(url, {
