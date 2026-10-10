@@ -659,6 +659,9 @@ Example json output:
 `feed.controller.ts` (member reads, `@Controller('community') @UseGuards(AuthGuard)`, `@Throttle({ default: { limit: 120, ttl: 60_000 } })` on reads):
 - `GET /community/feed` → `listFeed`
 - `GET /community/posts/:id` → `getPost`
+- `GET /community/posts/:id/likes` → `listPostLikes` (members who liked a post,
+  newest first, cursor-paged via `?before`; visible to any signed-in member —
+  operator 2026-10-10. Exposes username + privacy-gated avatar only.)
 - `GET /community/search` → `searchFeed`
 - `GET /community/users/:username` → profile + posts
 - `GET /community/preferences` → `getPreferences`
@@ -769,6 +772,9 @@ A designed card: headline, short value copy, a **blurred sample post** (CSS blur
 
 - `components/community/post-card.tsx` — `.gg-tile gg-tile-lift`, author line (`username ?? 'Anonymous'`), type chip, tags, images (`next/image`, Cloudinary only), graphic blur overlay with tap-to-reveal, action row (like/comment/share/mute).
 - `components/community/comment-thread.tsx`
+- `components/community/liked-by-sheet.tsx` — the "Liked by" list opened from the
+  like count on any post (operator 2026-10-10). Bottom-sheet on mobile, centred
+  card on desktop; rows link to `/community/u/[username]`; cursor-paged.
 - `components/community/feed-filters.tsx` — inline hide/mute menu.
 - `components/community/post-composer.tsx` — type picker, tags, image upload via `FormData` to `/community/posts/:id/images` (downscale with `lib/process-image.ts`, picker `components/photo-dropzone.tsx`).
 - `components/community/follow-button.tsx`, `share-button.tsx`.

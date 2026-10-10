@@ -118,6 +118,17 @@ export class FeedController {
     return this.feed.getPost(userId, id);
   }
 
+  // Who liked a post. Visible to any signed-in member (operator 2026-10-10).
+  @Get('posts/:id/likes')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  postLikes(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Query('before') before?: string,
+  ) {
+    return this.feed.listPostLikes(userId, id, before);
+  }
+
   // ── Writes ───────────────────────────────────────────────────────
 
   @Post('posts')

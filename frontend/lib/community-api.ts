@@ -187,6 +187,24 @@ export function fetchPost(
   return jsonFetch(`/community/posts/${id}`, token);
 }
 
+export interface FeedLiker {
+  id: string;
+  username: string;
+  avatarUrl: string | null;
+  sellerTier: string | null;
+  isVerifiedExpert: boolean;
+}
+
+/** Members who liked a post, newest first. Cursor-paged via `before`. */
+export function fetchPostLikes(
+  token: string,
+  id: string,
+  before?: string,
+): Promise<{ likers: FeedLiker[]; nextBefore: string | null }> {
+  const q = before ? `?before=${encodeURIComponent(before)}` : '';
+  return jsonFetch(`/community/posts/${id}/likes${q}`, token);
+}
+
 export function fetchProfile(
   token: string,
   username: string,

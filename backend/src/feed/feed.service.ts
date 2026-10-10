@@ -449,6 +449,53 @@ export class FeedService {
     return { post: this.shapePost(post, v, false), comments };
   }
 
+  /**
+   * Members who liked a post, newest like first. Visible to any signed-in
+   * member (operator decision 2026-10-10): the list is public to the member
+   * base, exactly like the like count on the card. Only username + the
+   * privacy-gated avatar are ever exposed — never a real name.
+   */
+  async listPostLikes(userId: string, postId: string, before?: string) {
+    await this.assertEnabled();
+    await this.viewer(userId);
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: { id: true, status: true },
+    });
+    // 404, never 403 — do not confirm the existence of a non-published post.
+    if (!post || post.status !== PostStatus.PUBLISHED) {
+      throw new NotFoundException();
+    }
+    const limit = FEED_PAGE_MAX;
+    const likes = await this.prisma.postLike.findMany({
+      where: {
+        postId,
+        ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1,
+      select: {
+        createdAt: true,
+        user: { select: { id: true, ...PUBLIC_AUTHOR_SELECT } },
+      },
+    });
+    const hasMore = likes.length > limit;
+    const page = hasMore ? likes.slice(0, limit) : likes;
+    return {
+      likers: page.map((l) => ({
+        id: l.user.id,
+        username: authorName(l.user),
+        // Withheld when the member turned their profile picture off.
+        avatarUrl: l.user.feedShowAvatar === false ? null : (l.user.avatarUrl ?? null),
+        sellerTier: l.user.sellerTier,
+        isVerifiedExpert: l.user.isVerifiedExpert,
+      })),
+      nextBefore: hasMore
+        ? page[page.length - 1].createdAt.toISOString()
+        : null,
+    };
+  }
+
   private async listComments(postId: string, userId: string) {
     const comments = await this.prisma.comment.findMany({
       where: { postId, status: PostStatus.PUBLISHED },
