@@ -5,7 +5,29 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-09**.
+Last updated: **2026-10-10**.
+
+## 2026-10-10 — FIREARM "BUY NOW" 404 (FIXED, FRONTEND-ONLY DEPLOY)
+
+**Symptom.** Buyer clicked **Buy Now** on a listing and got the 404 page.
+
+**Cause.** Firearm listings are members-only (`publicVisible=false`; migration
+`20260811180000_public_visibility` sets `isFirearm` categories non-public). The
+listing detail page forwards the viewer's session token when it fetches
+`/listings/:id`, but the **checkout page did not** — its SSR fetch was anonymous,
+so the backend 404'd the members-only row (`listings.service.ts:2752`,
+`!userId && !listing.publicVisible`) and the page called `notFound()`
+(`checkout/[listingId]/page.tsx`). Gap dated to the members-only gating commit
+`25ca612c`; the checkout page was never updated.
+
+**Fix.** `frontend/app/checkout/[listingId]/page.tsx` now forwards the buyer's
+token on both the `generateMetadata` and the page fetch, mirroring
+`listings/[id]/page.tsx`. Commit `efaf11db`, deployed `--frontend-only`.
+
+**State.** tsc clean (both), backend 314 suites/5290, frontend 135 files/1691,
+frontend prod build OK. Rollback point `alloutdoor-20261010-144051.dump`.
+Frontend health ×2 OK, public 200 ×2, three pm2 services online. No live browser
+pass of a real firearm Buy Now was performed post-deploy.
 
 ## 2026-10-09 — FEED POSTS STUCK "IN REVIEW": JEV + DEEPSEEK KEYS MISSING IN PROD (FIXED)
 
