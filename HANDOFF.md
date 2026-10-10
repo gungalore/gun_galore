@@ -7,6 +7,34 @@ overwritten.
 
 Last updated: **2026-10-10**.
 
+## 2026-10-10 — CHECKOUT FAILS AT OZOW: SITE MAX TXN AMOUNT = R0.01 (OZOW-SIDE; LOG IMPROVED)
+
+**Symptom.** Buyer "Ruanda" got *"Payment processing failed — please try again."*
+on checkout.
+
+**Cause — Ozow-side config, not our code.** `POST one.ozow.com/v1/payments`
+returned **400 BadRequest**:
+`Error occurred creating merchant request (Parameter 'Merchant has a maximum transaction amount of 0.01')`.
+Production site `ALL-ALL-035` has its **maximum transaction amount set to R0.01**,
+so every real amount is refused at creation. Our code rolled back correctly
+(released the listing hold, deleted the tx row — hence no row in `Transaction`),
+then threw the generic message (`transactions.service.ts:735`). One occurrence
+only, 2026-10-10 14:44:14 SAST, tx `cmv2dys6y000vi5vnmnwdnvfe`. Zero Ozow pay-ins
+have ever succeeded (0 rows with `gatewayCheckoutId`). Env is correct
+(`OZOW_ENV=live`, site `ALL-ALL-035`, `PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true`).
+This surfaced *after* the checkout-404 fix above — i.e. the fix worked.
+
+**Operator action (open).** Have Ozow set the site's min/max transaction amount
+to production values (suggest min R1.00, max R250,000). Draft ticket text is in
+the session log. Separately, the pay-out float is still R0.00 → money-out blocked.
+
+**Code (this deploy).** `ozow.service.ts` gained exported `ozowErrorDetail()`
+(extracts Ozow's ProblemDetails `title`/`detail`); the failure log in
+`transactions.service.ts` now prints the attempted amount + that reason instead of
+only the raw body. 3 new tests. Commit `ef25480a`, full deploy: rollback point
+`alloutdoor-20261010-145536.dump`; backend + frontend health ×2 OK, warden online,
+public 200 ×2. Backend 314 suites/5293, frontend 135 files/1691, both tsc clean.
+
 ## 2026-10-10 — FIREARM "BUY NOW" 404 (FIXED, FRONTEND-ONLY DEPLOY)
 
 **Symptom.** Buyer clicked **Buy Now** on a listing and got the 404 page.
