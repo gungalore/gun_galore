@@ -170,6 +170,32 @@ function webhookRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+/**
+ * Pull Ozow's human-readable reason out of a createPayment failure message.
+ *
+ * `createPayment` throws `Ozow createPayment <status>: <body>`, where `<body>`
+ * is the provider's ProblemDetails JSON. Its `detail` (and `title`) name the
+ * real cause — e.g. "Merchant has a maximum transaction amount of 0.01" — so
+ * extracting them turns a generic "Payment processing failed" into a
+ * diagnosable log line. Falls back to the raw message when there is no
+ * parseable JSON body (transport errors carry a plain-text reason instead).
+ */
+export function ozowErrorDetail(message: string): string {
+  const start = message.indexOf('{');
+  if (start === -1) return message;
+  try {
+    const body = JSON.parse(message.slice(start)) as {
+      title?: unknown;
+      detail?: unknown;
+    };
+    const title = typeof body.title === 'string' ? body.title : '';
+    const detail = typeof body.detail === 'string' ? body.detail : '';
+    return [title, detail].filter(Boolean).join(': ') || message;
+  } catch {
+    return message;
+  }
+}
+
 @Injectable()
 export class OzowService {
   private readonly logger = new Logger(OzowService.name);

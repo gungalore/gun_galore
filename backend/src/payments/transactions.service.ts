@@ -17,7 +17,7 @@ import {
   feeModelFor,
   sellerBreakdown,
 } from './fee-presentation';
-import { OzowService, OzowPaymentResult } from './ozow.service';
+import { OzowService, OzowPaymentResult, ozowErrorDetail } from './ozow.service';
 import { FraudRiskService } from './fraud-risk.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { estimateDeliveryDate } from '../shipping/delivery-estimate';
@@ -729,7 +729,11 @@ export class TransactionsService {
       });
       await this.prisma.transaction.delete({ where: { id: tx.id } });
       this.logger.error(
-        `Ozow createPayment failed for tx ${tx.id}: ${(err as Error).message}`,
+        `Ozow createPayment failed for tx ${tx.id} (amount R${(
+          buyerTotal / 100
+        ).toFixed(2)} / ${buyerTotal}c): ${ozowErrorDetail(
+          (err as Error).message,
+        )}`,
         (err as Error).stack,
       );
       throw new BadRequestException(

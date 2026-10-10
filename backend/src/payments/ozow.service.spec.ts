@@ -1,4 +1,8 @@
-import { OzowService, OzowPayoutAttemptMaterial } from './ozow.service';
+import {
+  OzowService,
+  OzowPayoutAttemptMaterial,
+  ozowErrorDetail,
+} from './ozow.service';
 import { normaliseOzowBank, bankByBranchCode } from './ozow-banks';
 import { buildPayoutNotificationHash } from './ozow-signature';
 
@@ -706,6 +710,29 @@ describe('OzowService request hardening + mock payouts', () => {
         subStatus: 0,
       });
     });
+  });
+});
+
+describe('ozowErrorDetail', () => {
+  it('extracts title + detail from a createPayment ProblemDetails body', () => {
+    const message =
+      'Ozow createPayment 400: {"code":"BadRequest","title":"Bad Request",' +
+      '"detail":"Error occurred creating merchant request (Parameter \'Merchant has a maximum transaction amount of 0.01\')"}';
+    expect(ozowErrorDetail(message)).toBe(
+      "Bad Request: Error occurred creating merchant request (Parameter 'Merchant has a maximum transaction amount of 0.01')",
+    );
+  });
+
+  it('falls back to the raw message when the body is not JSON', () => {
+    expect(ozowErrorDetail('Ozow createPayment 502: Bad Gateway')).toBe(
+      'Ozow createPayment 502: Bad Gateway',
+    );
+  });
+
+  it('returns the detail alone when no title is present', () => {
+    expect(ozowErrorDetail('Ozow createPayment 403: {"detail":"Nope"}')).toBe(
+      'Nope',
+    );
   });
 });
 
