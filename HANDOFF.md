@@ -7,6 +7,30 @@ overwritten.
 
 Last updated: **2026-10-10**.
 
+## 2026-10-10 - COMMUNITY: "LIKED BY" LIST (FULL DEPLOY)
+
+Commit **`0f45114c`** (8 files), full deploy via `infra/deploy/deploy.sh`
+(Git Bash). Rollback point **`alloutdoor-20261010-225237.dump`** (29,949,105
+bytes); no pending migrations. Backend + frontend health x2 OK, warden online,
+public 200 x2, three pm2 services online. Gates: backend tsc clean + **328
+suites/5382 tests**; frontend tsc clean + **136 files/1695 tests** + prod build.
+
+**What shipped.** Any signed-in member can now see who liked a post.
+- Backend: `FeedService.listPostLikes` + `GET /community/posts/:id/likes`
+  (throttled 60/min). Newest like first, cursor-paged via `?before` (50/page),
+  404 for a missing/non-published post. Exposes username + privacy-gated avatar
+  (`feedShowAvatar`) only - never a real name.
+- Frontend: `components/community/liked-by-sheet.tsx` (bottom-sheet on mobile,
+  centred card on desktop; rows link to `/community/u/[username]`), opened by
+  tapping the like count on `post-card.tsx` (the heart still toggles the like).
+  `lib/community-api.ts` gained `FeedLiker` + `fetchPostLikes`.
+- Specs: `feed-post-likes.spec.ts` (5), `liked-by-sheet.spec.tsx` (4).
+
+Operator decision: the list is visible to the whole member base, not just the
+author. Note: the frontend full-suite run had one flaky timeout in
+`components/licence-centre/design-picker.spec.tsx` (canvas draw under parallel
+load); it passes in isolation and on the rerun - unrelated to this change.
+
 ## 2026-10-10 — T&Cs / PRIVACY UPDATED FOR THE TRADE CHANGES (FRONTEND-ONLY DEPLOY)
 
 Commit **`aa245641`**, deployed `--frontend-only` (health ×2 OK, public 200 ×2,
