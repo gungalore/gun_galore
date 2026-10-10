@@ -927,18 +927,17 @@ These are now in `backend/.env.example`. Several are also absent from the live
 server, meaning the feature is running on its coded default:
 
 `ANTHROPIC_ADMIN_API_KEY`, all ten remaining
-`ANTHROPIC_MODEL_*`, `HB_RANGE_OPUS_THRESHOLD`, `OZOW_ENV`,
-`OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`, `OZOW_WEBHOOK_SECRET`,
-`PAYMENTS_LIVE`, `PUBLIC_API_URL`, `BOBGO_BASE_URL`, `BOBGO_WEBHOOK_SECRET`,
+`ANTHROPIC_MODEL_*`, `HB_RANGE_OPUS_THRESHOLD`, `PUBLIC_API_URL`,
+`BOBGO_BASE_URL`, `BOBGO_WEBHOOK_SECRET`,
 `SMSPORTAL_API_KEY`, `SMSPORTAL_BASE_URL`,
 `LOW_CREDIT_THRESHOLD`, `SUPPORT_EMAIL`, `EMAIL_LOGO_URL`, `OCR_CHUNK_PAGES`,
 `HEALTH_PING_SECRET`.
 
-Worth flagging: no Ozow credential is set on the live server yet, so checkout
-is in mock mode and no money moves. The variables currently set for the old
-Peach rail are the wrong ones. When the operator wires the real credentials,
-they need the `OZOW_*` names in this document, not the `PEACH_*` ones on the
-server.
+Worth flagging: Ozow went **live for money-in on 2026-10-10** — `OZOW_ENV=live`,
+`PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true` and the live One API credentials are
+set on the production server, so checkout is open. Money-*out* (payouts) is armed
+but gated on the float balance and Ozow's payout-verification token. Any legacy
+`PEACH_*` names on a box are dead — the code only reads `OZOW_*`.
 
 ## Frontend
 

@@ -407,7 +407,7 @@ evaluation. `ODOO_*`, `PUDO_*` and `TCG_*` are gone.
   session. Reads still use `json: { schema }` so the provider enforces shape.
 - **Shipping:** **Bob Go** — the only courier rail. The buyer picks Cheapest
   Door, Fastest Door, or Pargo Store Pickup from one quote. See Shipping.
-- **Payments:** Ozow — built, **inert**. See Money.
+- **Payments:** Ozow — **live for money-in** (2026-10-10); money-out gated on the float. See Money.
 - **Accounting:** Zoho Books (live). Odoo was the earlier plan and is archived —
   do not build against it.
 - **AI:** Gemini 3.5 Flash-Lite through the Google Gen AI API.
@@ -465,8 +465,8 @@ the Licence Centre / Document Centre, the Motivations builder, The Bench, crime
 stats, news clippings, complaints, the reloading corpus, Warden.
 
 **Built but INERT, behind a switch:**
-- **Payments (Ozow).** `PAYMENT_MODE` and `PAYMENTS_LIVE` are both unset, so
-  every checkout returns **503**. Going live = credentials + both flags.
+- **None right now** — Ozow payments went live for money-in on 2026-10-10
+  (`PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true`); money-*out* waits on the float.
 - **No automated bank verification.** Ozow has no BANV product, so an admin
   reviews the bank-holder name against the KYC identity by hand before the first
   payout (an invalid account then fails the payout itself). **Do not claim
@@ -549,7 +549,7 @@ remittance, `shippingHandlingCents` = ours) because they are different obligatio
 at payout. The gateway fee is charged on the item plus the **carrier** rate, never
 on our own delivery margin.
 
-### Payments (Ozow) — deployed, inert
+### Payments (Ozow) — live for money-in
 
 One API (pay-in + refunds) + Payouts API (seller disbursement). Peach was the
 prior rail and was replaced by Ozow in 2026-09. **There is no Stitch code in
@@ -610,7 +610,8 @@ this repo.**
   name is never transmitted (no such field in `requestpayout`), so it is
   cosmetic. Mock flags are written back using the exact key casing Ozow returns
   from `getTestConfiguration`.
-- **Go-live flip:** `OZOW_ENV=live`, `PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true`,
+- **Go-live flip — EXECUTED 2026-10-10** (money-in live; payouts armed but gated
+  on the float and Ozow's payout-verification token): `OZOW_ENV=live`, `PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true`,
   `OZOW_PAYOUT_IS_RTC=true`, live One API + Payouts credentials, and the three
   webhook URLs on the production domain (the pay-in one registered as a `full`
   subscription, or the webhook cannot match a transaction). `OZOW_PAYOUT_MOCK=false`.

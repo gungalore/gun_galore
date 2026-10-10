@@ -257,3 +257,15 @@ warden-archive/
 .chrome-flow/
 .flow/
 .flow-cookies.txt
+
+# ── Ozow payout test-harness scratch ────────────────────────────────
+#
+# The staging payout test harness (OzowPayoutTestService /
+# scripts/ozow-payout-test.mjs) writes timestamped request/response evidence
+# here. Runtime scratch — never version control.
+backend/.ozow-test-evidence/
+
+# Ozow credential handoff files dropped at the repo root. Fold the values into
+# the box .env, then delete the file; never commit it.
+OZOW production keys.txt
+OZOW*keys*.txt

@@ -573,9 +573,10 @@ rollup.
 
 ## 5. Money flow
 
-**Payments are not live.** `PAYMENTS_LIVE` is `false`, so every checkout entry
-point returns *"Card payments are launching soon"*. The whole money state
-machine below is built, tested and deployed — it just has no rail attached yet.
+**Payments are live for money-in** (2026-10-10): `PAYMENTS_LIVE=true` and
+`PAYMENT_MODE=paygate`, so checkout is open and the Ozow One API rail is attached.
+Money-*out* (seller disbursement) is armed but gated on the float balance and
+Ozow's payout-verification token.
 
 ### Two gates, in `backend/src/payments/payment-mode.ts`
 
@@ -780,7 +781,7 @@ a loud error for each missing integration secret.
 | Service | Used for | Key env | Behaviour when missing |
 |---|---|---|---|
 | **Didit** | Seller identity verification (hosted session) **only** — ⚠️ the e-mail and phone one-time codes moved back in-house 2026-09-11 (Resend / SMSPortal) | `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`, `DIDIT_MODE`, `DIDIT_BASE_URL` | **In production, a missing key or a non-`live` mode HARD-THROWS at boot.** Elsewhere: codes and KYC sessions report "not configured". See §8.1. |
-| **Ozow** | The payment gateway: One API pay-in (Pay by Bank / instant EFT) + refunds, Payouts API seller disbursement. No automated bank-verification product. | `OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`, `OZOW_WEBHOOK_SECRET`, `OZOW_ENV` (+ the `OZOW_PAYOUT_*` set) | Runs in **mock mode**. Webhooks are rejected (fail-closed) without `OZOW_WEBHOOK_SECRET`. |
+| **Ozow** | The payment gateway: One API pay-in (Pay by Bank / instant EFT) + refunds, Payouts API seller disbursement. No automated bank-verification product. | `OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`, `OZOW_WEBHOOK_SECRET`, `OZOW_ENV` (+ the `OZOW_PAYOUT_*` set) | Runs **live** for money-in; payouts gated on the float + verification token. Webhooks are rejected (fail-closed) without `OZOW_WEBHOOK_SECRET`. |
 | **Cloudinary** | All user-uploaded images (listing photos, KYC documents, complaint photos) | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Uploads fail. |
 | **Meilisearch** | Listing / cartridge search | `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY` | Search disabled, app still boots. |
 | **Anthropic (Claude)** | Listing moderation, Q&A moderation, firearm-licence and dealer-document verification, swap proof-of-possession, Ask Boet, listing-quality scoring, weekly insights digest | `ANTHROPIC_API_KEY`, plus per-task `ANTHROPIC_MODEL_*` overrides | **Everything AI degrades to manual-review or blocked.** |
