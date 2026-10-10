@@ -7,6 +7,23 @@ overwritten.
 
 Last updated: **2026-10-10**.
 
+## 2026-10-10 — T&Cs / PRIVACY UPDATED FOR THE TRADE CHANGES (FRONTEND-ONLY DEPLOY)
+
+Commit **`aa245641`**, deployed `--frontend-only` (health ×2 OK, public 200 ×2,
+three pm2 services online). Brought the legal copy in line with W1–W4:
+- **Terms** — new "Cancelling an order" clause (request → freeze → fee-retained
+  refund); private-arrangement rewritten to **held funds** (buyer-receipt /
+  5-day auto-release, disputes hold); messaging-monitoring clause (contact
+  details auto-stripped); WhatsApp added to §17 notices as an opt-in channel.
+- **Privacy** — buyer↔seller message moderation/retention paragraph added.
+- **Buyer-protection** — dropped the "private arrangement has no protection"
+  exclusion.
+- **Regulated-items** — private arrangement now funds-held, not immediate
+  payout (paragraphs 11, 13, 15).
+Verified live: `/terms` 200 (contains "Cancelling an order"), `/privacy` 200.
+WhatsApp templates are approved and the app is published (operator), so the
+`whatsapp_enabled=true` flip from the previous entry is now effective end-to-end.
+
 ## 2026-10-10 — TRADE HARDENING W1–W4 + WHATSAPP HANDOVER; WHATSAPP FLIPPED LIVE
 
 **Deployed.** Commit **`0da075cc`** (43 files) — full deploy via
