@@ -13,7 +13,13 @@ export async function generateMetadata({
   params: Promise<{ listingId: string }>;
 }) {
   const { listingId } = await params;
-  const listing = await apiFetch<Listing>(`/listings/${listingId}`, { cache: 'no-store' }).catch(() => null);
+  // Forward the buyer's session token — members-only stock (firearms) is
+  // 404'd to anonymous callers, and this SSR fetch carries no cookie jar.
+  const { token } = await auth();
+  const listing = await apiFetch<Listing>(`/listings/${listingId}`, {
+    cache: 'no-store',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  }).catch(() => null);
   if (!listing) return { title: 'Checkout — ALL Outdoor' };
   return { title: `Buy ${listing.title} — ALL Outdoor` };
 }
@@ -25,9 +31,14 @@ export default async function CheckoutPage({
 }) {
   const { listingId } = await params;
 
-  const listing = await apiFetch<Listing>(`/listings/${listingId}`, { cache: 'no-store' }).catch(
-    () => null,
-  );
+  // Members-only stock (firearms, publicVisible=false) 404s for anonymous
+  // callers, so the buyer's session token MUST be forwarded or every firearm
+  // Buy Now dead-ends on a 404 here. Mirrors the listing detail fetch.
+  const { userId, token } = await auth();
+  const listing = await apiFetch<Listing>(`/listings/${listingId}`, {
+    cache: 'no-store',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  }).catch(() => null);
 
   if (!listing) return notFound();
   // P0.2 — auction winners land here from the "you won" SMS/token link.
@@ -45,7 +56,6 @@ export default async function CheckoutPage({
   // Self-buy guard. Backend rejects with 400 anyway, but landing
   // here at all is confusing — kick them back to the listing detail
   // so they see the "this is your own listing" chip instead.
-  const { userId } = await auth();
   if (userId && userId === listing.seller.userId) {
     redirect(`/listings/${listing.id}`);
   }
