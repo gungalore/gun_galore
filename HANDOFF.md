@@ -7,6 +7,51 @@ overwritten.
 
 Last updated: **2026-10-10**.
 
+## 2026-10-10 — TRADE HARDENING W1–W4 + WHATSAPP HANDOVER; WHATSAPP FLIPPED LIVE
+
+**Deployed.** Commit **`0da075cc`** (43 files) — full deploy via
+`infra/deploy/deploy.sh` (Git Bash). Rollback point
+**`alloutdoor-20261010-202100.dump`**; `prisma migrate status` up to date
+(113 migrations, incl. the two new ones). Backend + frontend health ×2 OK,
+warden online, public 200 ×2, three pm2 services online. Gates: backend tsc +
+**327 suites/5377 tests**; frontend tsc + **135 files/1691 tests** + prod build.
+
+**What shipped (four workstreams).**
+- **W1 cancellation:** buyers can no longer self-refund — `POST
+  /transactions/:id/cancel-request` FREEZES the order (no accept/booking/
+  dispatch/payout), notifies the seller; support resolves via a fee-retained
+  refund (Buyer Protection Fee always kept; carrier cost only when a waybill
+  exists). `Transaction.cancellationRequestedAt/Reason`.
+- **W2 private-arrange held funds:** funds stay HELD after payment; seller
+  "Item delivered", buyer "Item received" releases the payout, either disputes;
+  24h buyer follow-up + 5-day auto-release cron; PRIVATE_ARRANGE now legal for
+  non-firearms. `privateArrangeDelivered/Received/RemindedAt`.
+- **W3 distance:** coarse 5 km-snapped `GET /listings/:id/distance` + listing
+  chip (device geolocation, saved-address fallback); seller coords never leave
+  the server.
+- **W4 messaging:** new `MessagesModule` (buyer↔seller on a transaction), Jev
+  auto-strips contact details (blocks abuse).
+
+**WhatsApp handover + flipped LIVE.**
+- Three quick-reply templates created at Meta (via
+  `backend/scripts/whatsapp-create-private-arrange-templates.mjs`):
+  `private_arrange_seller_handover`, `private_arrange_buyer_confirm`,
+  `private_arrange_buyer_reminder` — all **PENDING approval**.
+- Registry gained `buttonType: 'quick_reply'`; send path skips the URL button
+  for them; the webhook routes "Item delivered / Item received / Dispute" taps
+  (`context.id` → log row → `vars.txId`) to `TransactionsService` via ModuleRef.
+- **`whatsapp_enabled` flipped to `true`** in the production `Setting` table
+  (was unset; no cache — effective immediately). ⚠️ Real delivery still needs
+  Meta **publish + payment method**, and the three templates to be **approved**;
+  any send failure falls back to **SMS** (safe), and a failed run raises a
+  `WHATSAPP_OUTAGE` alert. Unset the flag to switch back.
+
+**Still open (W2 follow-ups).** >50 km Arrange-Private popup; non-firearm
+PrivateArrangeConsent copy is still SAPS/dealer-worded; Sell form does not yet
+offer PRIVATE_ARRANGE for non-firearms (legacy empty-`shippingMethods` listings
+do). Ozow site `ALL-ALL-035` max-amount R0.01 blocker + support ticket still
+open (unrelated to this deploy).
+
 ## 2026-10-10 — SALES-CYCLE HARDENING (BUY-NOW + AUCTIONS) DEPLOYED
 
 **Scope.** Full audit of the buy-now and auction cycle from product select →
