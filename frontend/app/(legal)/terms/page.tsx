@@ -37,7 +37,7 @@ export const metadata = {
 export default function TermsPage() {
   return (
     <>
-      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 19 September 2026" />
+      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 10 October 2026" />
 
       <h2>1. About us</h2>
       <p>
@@ -180,6 +180,17 @@ export default function TermsPage() {
         bypass these controls may result in suspension or permanent
         ban.
       </p>
+      <p>
+        <strong>Messages between Buyers and Sellers.</strong> Where we provide
+        an on-platform messaging feature for a transaction, those messages are
+        monitored by automated systems for content that attempts to move a deal
+        off the Store, share contact details, or is otherwise prohibited.
+        Prohibited contact details are removed from the message before it is
+        delivered, and the original is retained for audit. Do not share phone
+        numbers, email addresses, social handles, physical addresses or payment
+        details in messages. Repeated or deliberate attempts to bypass this
+        monitoring may result in suspension or a permanent ban.
+      </p>
 
       <h2>7. Payments and settlement</h2>
       {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
@@ -216,19 +227,22 @@ export default function TermsPage() {
       </p>
       <p>
         Where a Buyer and Seller elect to use the{' '}
-        <strong>"private arrangement"</strong> handover option offered
-        on certain restricted categories (where both parties travel to
-        an authorised third party and complete the handover
-        themselves), the Buyer explicitly consents that payment is
-        captured and paid over to the Seller immediately upon
-        successful payment, and that deferred settlement does not
-        apply to that transaction. The categories on which this option is
-        available, and the conditions attached to it, are set out in
-        the{' '}
+        <strong>"private arrangement"</strong> handover option (the parties
+        arrange and complete the handover themselves rather than through a
+        courier or an authorised third party), the Buyer's payment is still
+        collected at checkout and <strong>held</strong>. For a private-arrangement
+        order, settlement to the Seller is released when the{' '}
+        <strong>Buyer confirms receipt</strong> of the item, or{' '}
+        <strong>automatically five (5) days after payment</strong> if the order
+        is not disputed before then. Either party may raise a dispute before
+        release, which holds the payment for review by the admin team. The
+        private-arrangement option is available on any listing the Seller makes
+        it available for; where an item requires a licence or permit, the
+        additional handover conditions in the{' '}
         <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
           Regulated Items Annex
-        </a>
-        .
+        </a>{' '}
+        apply.
       </p>
 
       <h2>8. Fees, commission and payouts</h2>
@@ -283,8 +297,9 @@ export default function TermsPage() {
         courier delivery — to the Buyer's door or to a pickup point,
         quoted live at checkout — <strong>authorised-agent
         transfer</strong> (for items that require a licence or permit) and{' '}
-        <strong>private arrangement</strong> (for those restricted
-        categories only — see paragraph 7). Shipping costs are quoted
+        <strong>private arrangement</strong> (the parties arrange the handover
+        themselves — see paragraph 7, where the payment is held until the Buyer
+        confirms receipt). Shipping costs are quoted
         live at checkout and paid by the Buyer.
       </p>
       <p>
@@ -368,6 +383,25 @@ export default function TermsPage() {
         rights you have under the Consumer Protection Act, in
         particular Section 56 (which gives Buyers a 6-month right to
         return defective goods).
+      </p>
+      <p>
+        <strong>Cancelling an order.</strong> A Buyer may not cancel a paid
+        order themselves. To cancel, a Buyer must use the{' '}
+        <strong>Request cancellation</strong> action on the order, or email{' '}
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
+        </a>
+        . Requesting a cancellation <strong>freezes</strong> the order — the
+        Seller is told not to dispatch and no payment is released while the
+        request is reviewed. If the cancellation is approved, we refund the Buyer
+        less (i) the <strong>Buyer Protection Fee</strong>, which covers the
+        non-refundable payment-processing cost of taking and reversing the
+        payment, and (ii) any <strong>delivery cost already incurred</strong>{' '}
+        where the parcel has been booked with, or collected by, the courier.
+        Where the order ends because of the Seller's failure — a declined sale,
+        a failure to dispatch, or the item never arriving — the Buyer is refunded
+        in full, including the Buyer Protection Fee. This paragraph does not
+        limit the Buyer's statutory rights.
       </p>
 
       <h2>12. Suspension and termination</h2>
@@ -456,7 +490,13 @@ export default function TermsPage() {
       <p>
         Notices to you will be sent to the email address registered on
         your account and, where appropriate, by SMS to your verified
-        phone number. Notices to ALL Outdoor must be sent to{' '}
+        phone number. Where you have <strong>opted in and verified</strong> your
+        phone number, we may also send order, delivery and account notices over{' '}
+        <strong>WhatsApp</strong>. WhatsApp is an optional channel: you can
+        withdraw your consent at any time in your notification settings, after
+        which notices revert to SMS and email. No notice you are entitled to
+        receive is sent <em>only</em> by WhatsApp. Notices to ALL Outdoor must be
+        sent to{' '}
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
           {SUPPORT_EMAIL}
         </a>{' '}

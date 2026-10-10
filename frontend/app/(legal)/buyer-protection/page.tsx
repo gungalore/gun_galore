@@ -23,7 +23,7 @@ export default function BuyerProtectionPage() {
     <>
       <LegalDocHeader
         title="Buyer Protection"
-        lastUpdated="Effective 19 September 2026"
+        lastUpdated="Effective 10 October 2026"
       />
 
       <h2>What it is</h2>
@@ -71,11 +71,6 @@ export default function BuyerProtectionPage() {
         <li>
           an item you inspected and accepted, where the fault was apparent at
           the time;
-        </li>
-        <li>
-          a hand-over the parties arrange privately outside our managed
-          delivery (a &ldquo;private arrangement&rdquo; sale), where payment
-          protection does not apply; or
         </li>
         <li>
           losses caused by something outside our control after a correct

@@ -43,7 +43,7 @@ export default function RegulatedItemsAnnexPage() {
     <>
       <LegalDocHeader
         title="Regulated Items Annex"
-        lastUpdated="Effective 15 August 2026"
+        lastUpdated="Effective 10 October 2026"
       />
 
       <h2>1. About this Annex</h2>
@@ -120,7 +120,7 @@ export default function RegulatedItemsAnnexPage() {
       <ul>
         <li>verifying the Seller&apos;s identity via Home Affairs lookup and selfie face-match before any payout is released;</li>
         <li>maintaining the directory of SAPS-licensed dealers members may choose from at checkout;</li>
-        <li>holding the buyer&apos;s payment until the transfer is verified (other than on Private Arrangement — see paragraph 11);</li>
+        <li>holding the buyer&apos;s payment until the transfer is verified — on a Private Arrangement, until the Buyer confirms receipt or five days pass (paragraph 11);</li>
         <li>recording the transaction for audit and providing those records to SAPS or another competent authority where compelled by valid legal process.</li>
       </ul>
       <p>
@@ -396,8 +396,7 @@ export default function RegulatedItemsAnnexPage() {
         advance</strong> to that option being shown on the listing.
       </p>
       <ul>
-        <li>Payment is captured and released immediately to the Seller upon successful payment. The funds-held mechanism does not apply to that transaction, and the Buyer explicitly consents to this at checkout via a two-checkbox and typed-confirmation gate.</li>
-        <li>Because ALL Outdoor has no delivery event to verify in a private arrangement, <strong>no buyer-protection hold, delivery-confirmation window or dispute window is available</strong> on such a transaction. Buyers who want the funds-held protection must choose the licensed-dealer transfer option instead.</li>
+        <li>Payment is captured at checkout and <strong>held</strong>. The funds-held mechanism applies: the Seller is paid when the Buyer confirms receipt of the item, or automatically five (5) days after payment if the order is not disputed before then. Both parties may raise a dispute before release, which holds the payment for review — see paragraph 13.</li>
         <li>The parties&apos; contact details are revealed to each other on payment so the meet can be coordinated. That sharing happens only with the Seller&apos;s recorded consent — see paragraph 21.</li>
       </ul>
       <p>
@@ -445,9 +444,9 @@ export default function RegulatedItemsAnnexPage() {
       <p>
         For a firearm, therefore, confirmation of delivery is not the
         payout trigger; verification of the completed dealer transfer
-        is. The only exception is Private Arrangement, where the Buyer
-        has waived the hold and payment releases immediately on
-        successful payment (paragraph 11).
+        is. On a Private Arrangement, the payment is held until the
+        Buyer confirms receipt (or five days after payment if not
+        disputed) — paragraph 11.
       </p>
 
       <h2>14. Fees and charges on regulated transactions</h2>
@@ -488,15 +487,14 @@ export default function RegulatedItemsAnnexPage() {
       <h2>15. Refunds, disputes and cancellations</h2>
       <ul>
         <li>
-          <strong>Private Arrangement — no funds-held protection.</strong>{' '}
+          <strong>Private Arrangement — funds held.</strong>{' '}
           Where a transaction uses the Private Arrangement transfer
-          option for a firearm, payment captures and releases
-          immediately at the point of payment. The funds-held mechanism
-          does not apply, because the buyer expressly waives it at
-          checkout and physical possession happens face-to-face, and
-          with it goes the practical ability to raise a held-payment
-          dispute. See paragraph 11 above and paragraph 7 of the Terms
-          of Service for the binding text.
+          option, payment is captured at checkout and held: the Seller
+          is paid when the Buyer confirms receipt of the item, or five
+          (5) days after payment if the order is not disputed before
+          then. Either party may raise a dispute before release, which
+          holds the payment for review. See paragraph 11 above and
+          paragraph 7 of the Terms of Service for the binding text.
         </li>
         <li>
           <strong>Dispatch-SLA auto-refund does not apply to

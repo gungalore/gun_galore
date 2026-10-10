@@ -27,7 +27,7 @@ export const metadata = {
 export default function PrivacyPage() {
   return (
     <>
-      <LegalDocHeader title="Privacy Policy" lastUpdated="Effective 22 July 2026 · Updated 19 September 2026" />
+      <LegalDocHeader title="Privacy Policy" lastUpdated="Effective 22 July 2026 · Updated 10 October 2026" />
 
       <h2>1. Who we are</h2>
       <p>
@@ -171,6 +171,17 @@ export default function PrivacyPage() {
         paragraph 7). You can turn WhatsApp messages off at any time in your
         notification preferences, or by replying STOP; transactional email and
         SMS remain as described in paragraph 12.
+      </p>
+      <p>
+        <strong>Buyer ↔ Seller messages.</strong> Where we provide an on-platform
+        messaging feature for a transaction, we process the messages sent through
+        it. Every message is screened by an automated moderation system for
+        prohibited content — in particular contact details or attempts to move
+        the deal off the platform. Prohibited contact details are removed from
+        the delivered message, and the original message is retained (with a
+        moderation flag) for audit and safety. Do not send personal contact
+        details, payment details or anything you do not want processed for this
+        purpose.
       </p>
 
       <h2>4. How we collect this information</h2>
