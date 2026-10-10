@@ -56,8 +56,10 @@ suites/5321 tests**; frontend tsc clean + **135 files/1691 tests** + prod build.
 
 **Still open (unchanged).** The Ozow site `ALL-ALL-035` **max transaction
 amount = R0.01** blocker below — until Ozow sets real min/max, no pay-in can be
-created, so the new reconcile sweep simply releases every attempt. Payout float
-still R0.00. Deferred (LOW): a bidder can still lower their own proxy ceiling.
+created, so the new reconcile sweep simply releases every attempt. Paygate
+itself is already ON (`PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true`,
+`OZOW_ENV=live`); the pay-out float was topped up to **R100** on 2026-10-10.
+Deferred (LOW): a bidder can still lower their own proxy ceiling.
 
 ## 2026-10-10 — CHECKOUT FAILS AT OZOW: SITE MAX TXN AMOUNT = R0.01 (OZOW-SIDE; LOG IMPROVED)
 
@@ -77,8 +79,8 @@ have ever succeeded (0 rows with `gatewayCheckoutId`). Env is correct
 This surfaced *after* the checkout-404 fix above — i.e. the fix worked.
 
 **Operator action (open).** Have Ozow set the site's min/max transaction amount
-to production values (suggest min R1.00, max R250,000). Draft ticket text is in
-the session log. Separately, the pay-out float is still R0.00 → money-out blocked.
+to production values (suggest min R1.00, max R250,000). Separately, the pay-out
+float was topped up to R100 on 2026-10-10 (see the section above).
 
 **Code (this deploy).** `ozow.service.ts` gained exported `ozowErrorDetail()`
 (extracts Ozow's ProblemDetails `title`/`detail`); the failure log in
