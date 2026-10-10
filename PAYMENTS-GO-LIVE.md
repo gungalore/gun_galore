@@ -1,7 +1,21 @@
 # Payments go-live runbook (Ozow pay-in + pay-out)
 
-**Status:** IN PROGRESS — code ready, dashboard configured, deploy pending.
+**Status:** LIVE for money-in as of 2026-10-10 (checkout open). Money-out pending the
+float top-up + Ozow's payout-verification confirmation.
 **Last updated:** 2026-10-10.
+
+## Progress log
+
+- **2026-10-10 — deployed `7209ec02`.** Gates green (backend 314 suites / 5290 tests,
+  frontend 135 files / 1691 tests, prod build OK). `deploy.sh` run: rollback dump
+  `alloutdoor-20261010-093439.dump` (29.9 MB), no pending migrations, backend+frontend
+  health OK ×2, warden online, public 200 ×2.
+- Prod `backend/.env` flipped to live (backup `backend/.env.bak-golive-20261010093412`):
+  `OZOW_ENV=live`, `PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true`, `OZOW_PAYOUT_IS_RTC=true`,
+  `OZOW_PAYOUT_TEST=false`, `OZOW_PAYOUT_MOCK=false`, prod client id/secret, `OZOW_SITE_CODE=ALL-ALL-035`,
+  live `whsec`, prod payout key. Frontend `.env.production` `NEXT_PUBLIC_PAYMENT_MODE=paygate`.
+- Boot verified: no `Ozow One API not configured` / `OZOW_WEBHOOK_SECRET is not set` warnings.
+- `npm run seed:help` run on the box (54 rows refreshed).
 **Owner:** operator (Gerhard Fourie). Executor: agent, except the banking steps.
 **Rail:** Ozow One API (pay-in + refunds) and Ozow Payouts API (seller disbursement).
 
@@ -35,7 +49,7 @@ must be removed from the repo root — see Phase 5).
 
 ---
 
-## 1. Code — DONE (local, uncommitted)
+## 1. Code — DONE (committed `7209ec02`, deployed 2026-10-10)
 
 Pay-in `notifyUrl` added to the One API `POST /payments` payload
 (`backend/src/payments/ozow.service.ts`), derived from `PUBLIC_API_URL` else `FRONTEND_URL + /api`,
@@ -58,7 +72,7 @@ prettier drift, untouched files included) and is **not** a deploy gate.
 
 ---
 
-## 3. Server flip + deploy
+## 3. Server flip + deploy — DONE 2026-10-10 (see progress log)
 
 1. Box `.env`: handoff-file creds + `OZOW_SITE_CODE=ALL-ALL-035`,
    `OZOW_PAYOUT_SITE_CODE=ALL-ALL-035`, a fresh self-generated `OZOW_PAYOUT_ENCRYPTION_KEY`
