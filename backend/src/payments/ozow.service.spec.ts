@@ -756,3 +756,99 @@ describe('normaliseOzowBank', () => {
     expect(bankByBranchCode('nope')).toBeNull();
   });
 });
+
+describe('OzowService.getPaymentStatus — resolves the right attempt', () => {
+  const ENV = [
+    'OZOW_ENV',
+    'OZOW_CLIENT_ID',
+    'OZOW_CLIENT_SECRET',
+    'OZOW_SITE_CODE',
+  ] as const;
+
+  async function withLiveEnv<T>(fn: () => Promise<T>): Promise<T> {
+    const original = Object.fromEntries(ENV.map((n) => [n, process.env[n]]));
+    const originalFetch = global.fetch;
+    process.env.OZOW_ENV = 'staging';
+    process.env.OZOW_CLIENT_ID = 'id';
+    process.env.OZOW_CLIENT_SECRET = 'secret';
+    process.env.OZOW_SITE_CODE = 'site';
+    try {
+      return await fn();
+    } finally {
+      for (const n of ENV) {
+        if (original[n] === undefined) delete process.env[n];
+        else process.env[n] = original[n];
+      }
+      global.fetch = originalFetch;
+    }
+  }
+
+  it('returns the SUCCESSFUL row, not results[0]', async () => {
+    await withLiveEnv(async () => {
+      const fetchMock = mockFetchQueue([
+        { access_token: 'tok', expires_in: '14400' },
+        {
+          results: [
+            {
+              id: 'fail-1',
+              status: 'Error',
+              amount: { value: '100.00' },
+              merchantReference: 'r1',
+            },
+            {
+              id: 'ok-2',
+              status: 'Successful',
+              amount: { value: '150.00' },
+              merchantReference: 'r2',
+            },
+          ],
+        },
+      ]);
+      global.fetch = fetchMock.fetchImpl;
+
+      const svc = new OzowService();
+      const status = await svc.getPaymentStatus('pay-1');
+
+      expect(status?.transactionId).toBe('ok-2');
+      expect(status?.amountCents).toBe(15_000);
+      expect(status?.isSuccess).toBe(true);
+    });
+  });
+
+  it('falls back to the first row when none is successful yet', async () => {
+    await withLiveEnv(async () => {
+      const fetchMock = mockFetchQueue([
+        { access_token: 'tok', expires_in: '14400' },
+        {
+          results: [
+            {
+              id: 'a',
+              status: 'Incomplete',
+              amount: { value: '10.00' },
+            },
+          ],
+        },
+      ]);
+      global.fetch = fetchMock.fetchImpl;
+
+      const svc = new OzowService();
+      const status = await svc.getPaymentStatus('pay-1');
+
+      expect(status?.transactionId).toBe('a');
+      expect(status?.isSuccess).toBe(false);
+    });
+  });
+
+  it('returns null on an empty result list', async () => {
+    await withLiveEnv(async () => {
+      const fetchMock = mockFetchQueue([
+        { access_token: 'tok', expires_in: '14400' },
+        { results: [] },
+      ]);
+      global.fetch = fetchMock.fetchImpl;
+
+      const svc = new OzowService();
+      expect(await svc.getPaymentStatus('pay-1')).toBeNull();
+    });
+  });
+});

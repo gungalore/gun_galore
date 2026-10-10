@@ -23,6 +23,7 @@ function makeMocks() {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({}),
       update: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
   };
   const prisma = {
@@ -418,5 +419,94 @@ describe('endStale / finalizeAuction — CAS-guarded finalization', () => {
     );
     await service.endStale();
     expect(tx.listing.updateMany.mock.calls[0][0].data.status).toBe('EXPIRED');
+  });
+});
+
+describe('cancelProxy — CAS guard against a concurrent opposing bid', () => {
+  const liveProxy = () =>
+    activeListing({ currentBid: 100_000, currentBidderId: 'B1', bidCount: 1 });
+
+  it('writes the cancel row when the listing still matches the read', async () => {
+    const { service, tx } = makeMocks();
+    tx.listing.findUnique.mockResolvedValue(liveProxy());
+    tx.bid.findFirst.mockResolvedValue({ maxAmount: 500_000 }); // headroom
+    tx.listing.updateMany.mockResolvedValue({ count: 1 });
+
+    const res = await service.cancelProxy('B1', 'L1');
+
+    expect(res).toEqual({ cancelled: true, currentBid: 100_000 });
+    expect(tx.listing.updateMany.mock.calls[0][0].data).toEqual({
+      bidCount: { increment: 1 },
+    });
+    expect(tx.bid.create).toHaveBeenCalledWith({
+      data: { listingId: 'L1', bidderId: 'B1', amount: 100_000, maxAmount: 100_000 },
+    });
+  });
+
+  it('refuses when currentBid moved (stale snapshot would regress the auction)', async () => {
+    const { service, tx } = makeMocks();
+    tx.listing.findUnique.mockResolvedValue(liveProxy());
+    tx.bid.findFirst.mockResolvedValue({ maxAmount: 500_000 });
+    tx.listing.updateMany.mockResolvedValue({ count: 0 }); // moved under us
+
+    await expect(service.cancelProxy('B1', 'L1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(tx.bid.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('offerToRunnerUp — moves the isWinner flag with the promotion', () => {
+  it('clears the defaulted winner and flags the runner-up bid', async () => {
+    const { service, prisma, tx } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue({
+      id: 'L1',
+      status: 'EXPIRED',
+      sellerId: 'S1',
+    });
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'U2',
+      isBanned: false,
+      accountClosedAt: null,
+      auctionStrikes: 0,
+    });
+    tx.listing.updateMany.mockResolvedValue({ count: 1 });
+    tx.bid.updateMany.mockResolvedValue({ count: 1 });
+    tx.bid.findFirst.mockResolvedValue({ id: 'BID2' });
+    tx.bid.update.mockResolvedValue({});
+
+    const res = await service.offerToRunnerUp('L1', 'S1', 'U2', 90_000);
+
+    expect(res).toEqual({ offered: true });
+    expect(tx.bid.updateMany).toHaveBeenCalledWith({
+      where: { listingId: 'L1', isWinner: true },
+      data: { isWinner: false },
+    });
+    expect(tx.bid.update).toHaveBeenCalledWith({
+      where: { id: 'BID2' },
+      data: { isWinner: true },
+    });
+  });
+
+  it('does nothing extra when the promotion CAS loses', async () => {
+    const { service, prisma, tx } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue({
+      id: 'L1',
+      status: 'EXPIRED',
+      sellerId: 'S1',
+    });
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'U2',
+      isBanned: false,
+      accountClosedAt: null,
+      auctionStrikes: 0,
+    });
+    tx.listing.updateMany.mockResolvedValue({ count: 0 });
+
+    const res = await service.offerToRunnerUp('L1', 'S1', 'U2', 90_000);
+
+    expect(res.offered).toBe(false);
+    expect(tx.bid.updateMany).not.toHaveBeenCalled();
+    expect(tx.bid.update).not.toHaveBeenCalled();
   });
 });

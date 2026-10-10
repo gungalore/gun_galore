@@ -179,14 +179,13 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
 
   // P8a — units to buy. Only inventory-tracked BUY_NOW listings honour
   // quantity server-side (create-transaction.dto quantity, resolved to 1
-  // for everything else). Cap at the seller-side `sellable` count so the
-  // buyer can't request more than is in stock; the backend re-checks the
-  // counter atomically on POST /transactions anyway.
+  // for everything else). Cap at the sellable count so the buyer can't request
+  // more than is in stock; the backend re-checks the counter atomically on
+  // POST /transactions anyway. Model A: quantityAvailable already nets out
+  // in-flight reservations, so it IS sellable — do not subtract
+  // quantityReserved again (that double-counts and under-sells).
   const maxQty = listing.trackInventory
-    ? Math.max(
-        1,
-        (listing.quantityAvailable ?? 1) - (listing.quantityReserved ?? 0),
-      )
+    ? Math.max(1, listing.quantityAvailable ?? 1)
     : 1;
   const [quantity, setQuantity] = useState(1);
 

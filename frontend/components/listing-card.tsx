@@ -152,9 +152,10 @@ export function ListingCard({ listing }: { listing: Listing }) {
               threshold guard keeps it honest (no fake scarcity). */}
           {listing.trackInventory &&
             (() => {
-              const sellable =
-                (listing.quantityAvailable ?? 0) -
-                (listing.quantityReserved ?? 0);
+              // Model A — quantityAvailable already nets out in-flight
+              // reservations, so it IS sellable; subtracting quantityReserved
+              // again would double-count.
+              const sellable = listing.quantityAvailable ?? 0;
               return sellable >= 1 && sellable <= 5 ? (
                 <UrgencyChip
                   left={sellable}

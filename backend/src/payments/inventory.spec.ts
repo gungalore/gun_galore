@@ -19,18 +19,27 @@ describe('inventory helpers (P8a)', () => {
         resolvePurchaseQuantity({ requested: 5, trackInventory: false, quantityAvailable: 1, quantityReserved: 0 }),
       ).toEqual({ quantity: 1 });
     });
-    it('tracked: accepts a quantity within sellable stock', () => {
+    it('tracked: accepts a quantity within sellable stock (Model A)', () => {
+      // Model A — quantityAvailable already nets reservations, so it is the
+      // sellable count; quantityReserved is NOT subtracted again.
       expect(
-        resolvePurchaseQuantity({ requested: 3, trackInventory: true, quantityAvailable: 5, quantityReserved: 1 }),
-      ).toEqual({ quantity: 3 }); // sellable = 4
+        resolvePurchaseQuantity({ requested: 3, trackInventory: true, quantityAvailable: 4, quantityReserved: 1 }),
+      ).toEqual({ quantity: 3 });
     });
     it('tracked: rejects more than sellable', () => {
-      const r = resolvePurchaseQuantity({ requested: 5, trackInventory: true, quantityAvailable: 5, quantityReserved: 2 });
+      const r = resolvePurchaseQuantity({ requested: 5, trackInventory: true, quantityAvailable: 3, quantityReserved: 2 });
       expect('error' in r && r.error).toMatch(/Only 3 left/);
     });
     it('tracked: sold out', () => {
-      const r = resolvePurchaseQuantity({ requested: 1, trackInventory: true, quantityAvailable: 2, quantityReserved: 2 });
+      const r = resolvePurchaseQuantity({ requested: 1, trackInventory: true, quantityAvailable: 0, quantityReserved: 2 });
       expect('error' in r && r.error).toMatch(/sold out/i);
+    });
+    it('tracked: ignores quantityReserved (no double-count)', () => {
+      // Stock 5 with 2 in flight leaves quantityAvailable=3; a buyer may still
+      // take up to 3, not 3−2=1.
+      expect(
+        resolvePurchaseQuantity({ requested: 3, trackInventory: true, quantityAvailable: 3, quantityReserved: 2 }),
+      ).toEqual({ quantity: 3 });
     });
     it('tracked: rejects zero / negative / fractional', () => {
       expect('error' in resolvePurchaseQuantity({ requested: 0, trackInventory: true, quantityAvailable: 5, quantityReserved: 0 })).toBe(true);

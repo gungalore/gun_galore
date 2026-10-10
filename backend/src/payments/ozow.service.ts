@@ -452,8 +452,17 @@ export class OzowService {
       }[];
     };
     // An id that matches no payment answers 200 with an empty result list.
-    const tx = (json.results ?? [])[0];
-    if (!tx) return null;
+    const results = json.results ?? [];
+    if (results.length === 0) return null;
+    // A payment can accrue more than one transaction row (a failed attempt then
+    // a success, or ordering quirks). markPaid binds the amount and the
+    // refundable gatewayPaymentId from this row, so taking results[0] blindly
+    // could lock onto the wrong (failed) attempt. Prefer the SUCCESSFUL row;
+    // fall back to the first when none is successful yet.
+    const tx =
+      results.find(
+        (r) => String(r.status ?? '').toLowerCase() === 'successful',
+      ) ?? results[0];
     const amount =
       typeof tx.amount === 'object' ? tx.amount?.value : tx.amount;
     const status = String(tx.status ?? 'Incomplete');

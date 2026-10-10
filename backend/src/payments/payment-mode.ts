@@ -33,3 +33,21 @@ export function assertPaymentsLive(): void {
     );
   }
 }
+
+// ── Cart-checkout switch (separate from PAYMENTS_LIVE) ─────────────────
+// createOrderCheckout reserves EVERY line and creates an AWAITING_PAYMENT
+// Order, but no Ozow payment is ever created for an order and the frontend
+// does nothing on a successful response. With PAYMENTS_LIVE=true (production)
+// the old single-item gate no longer fires, so a cart checkout would leak N
+// reserved listings + a dead Order on every attempt. Until the cart paygate is
+// actually wired (payment created + frontend hand-off), this is a hard
+// off-switch. Flip CART_CHECKOUT_LIVE=true only when that lands.
+export const CART_CHECKOUT_LIVE = process.env.CART_CHECKOUT_LIVE === 'true';
+
+export function assertCartCheckoutLive(): void {
+  if (!CART_CHECKOUT_LIVE) {
+    throw new ServiceUnavailableException(
+      'Cart checkout is coming soon — please buy items one at a time for now.',
+    );
+  }
+}

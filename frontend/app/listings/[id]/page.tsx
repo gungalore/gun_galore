@@ -194,7 +194,7 @@ export default async function ListingDetailPage({
   // otherwise so the chip never renders for single-item / firearm / auction
   // listings.
   const trackedSellable = listing.trackInventory
-    ? (listing.quantityAvailable ?? 0) - (listing.quantityReserved ?? 0)
+    ? (listing.quantityAvailable ?? 0)
     : null;
   const showUrgencyChip =
     trackedSellable !== null && trackedSellable >= 1 && trackedSellable <= 5;

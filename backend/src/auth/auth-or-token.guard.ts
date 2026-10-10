@@ -23,15 +23,16 @@ import { extractAccessToken } from './extract-token';
  * Sets the same `request.userId` the `@CurrentUser()` decorator reads, so no
  * handler needs to know which door the caller came through.
  *
- * Also stamps `request.viaActionToken` so downstream handlers can apply extra
- * checks specific to token-auth requests (e.g. POST /transactions verifies
- * body.listingId matches the token's targetId — otherwise the token holder
- * could pay for a different listing than the SMS pointed at).
+ * Also stamps `request.viaActionToken` + `request.actionToken` so downstream
+ * handlers can apply extra checks specific to token-auth requests (e.g. POST
+ * /transactions verifies body.listingId matches the token's targetId —
+ * otherwise the token holder could pay for a different listing than the SMS
+ * pointed at) and CONSUME the token once the checkout is committed.
  *
  * Does NOT consume the token here — consumption is the action's
- * responsibility, since a CHECKOUT token spans multiple requests (load user,
- * update address, create transaction) and consuming on first read would break
- * the flow.
+ * responsibility. A CHECKOUT token spans multiple requests (load user, update
+ * address, create transaction) and consuming on first read would break the
+ * flow, so the create handler consumes it only AFTER a successful checkout.
  */
 @Injectable()
 export class AuthOrTokenGuard implements CanActivate {
@@ -48,6 +49,7 @@ export class AuthOrTokenGuard implements CanActivate {
         userId?: string;
         sessionId?: string;
         viaActionToken?: boolean;
+        actionToken?: string;
         actionTokenTargetId?: string;
       }
     >();
@@ -86,6 +88,7 @@ export class AuthOrTokenGuard implements CanActivate {
         // proof the user still exists.
         request.userId = resolved.authorisedUserId;
         request.viaActionToken = true;
+        request.actionToken = tokenStr;
         request.actionTokenTargetId = resolved.targetId;
         return true;
       } catch (err) {

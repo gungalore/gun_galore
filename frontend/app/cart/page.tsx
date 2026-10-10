@@ -162,11 +162,9 @@ export default function CartPage() {
                 // items are" against nothing.
                 vicinity: vicinityLabel(l),
                 sellerAvatarUrl: l?.seller?.avatarUrl ?? null,
+                // Model A — quantityAvailable already nets reservations.
                 sellable: trackInventory
-                  ? Math.max(
-                      0,
-                      (l.quantityAvailable ?? 0) - (l.quantityReserved ?? 0),
-                    )
+                  ? Math.max(0, l.quantityAvailable ?? 0)
                   : 1,
               },
             ] as const;

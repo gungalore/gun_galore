@@ -11,6 +11,7 @@ import {
   UploadedFiles,
   UploadedFile,
   BadRequestException,
+  InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
@@ -25,6 +26,7 @@ import { TrackingService } from '../shipping/tracking.service';
 import { parseAcceptSchedule } from '../shipping/pickup-dates';
 import { DealerVerificationService } from './dealer-verification.service';
 import { ReceiptService } from './receipt.service';
+import { ActionTokensService } from '../actions/action-tokens.service';
 import { StreamableFile } from '@nestjs/common';
 import type { Response } from 'express';
 import { Res } from '@nestjs/common';
@@ -40,6 +42,7 @@ export class TransactionsController {
     private readonly tracking: TrackingService,
     private readonly dealerVerification: DealerVerificationService,
     private readonly receipts: ReceiptService,
+    private readonly tokens: ActionTokensService,
   ) {}
 
   // Public — exposes the platform fee schedule for the Sell form
@@ -68,17 +71,25 @@ export class TransactionsController {
   // token could be used to buy a DIFFERENT listing than the SMS
   // intended (would be a high-value leak otherwise).
   //
-  // The token is NOT consumed here. A CHECKOUT token spans several
-  // requests (load user, save address, this call) and we want it to
-  // stay valid through the whole flow. Consumption is a follow-up
-  // task; for v1 the token just naturally expires at its 24h TTL.
+  // The token is consumed HERE, AFTER a successful checkout create — the
+  // same token legitimately spans the earlier "load user" / "save address"
+  // requests, so it can't be consumed on first read. Once the transaction is
+  // committed the flow is done (the return leg is the unauthenticated
+  // verify-result), so a leaked SMS link is single-use. Consume is best-effort:
+  // the reservation CAS is the real double-buy guard, and a lost consume race
+  // must not fail an already-created order.
   // ---------------------------------------------------------------
   @Post()
   @UseGuards(AuthOrTokenGuard)
   async create(
     @CurrentUser() userId: string,
     @Body() dto: CreateTransactionDto,
-    @Req() req: Request & { viaActionToken?: boolean; actionTokenTargetId?: string },
+    @Req()
+    req: Request & {
+      viaActionToken?: boolean;
+      actionToken?: string;
+      actionTokenTargetId?: string;
+    },
   ) {
     // Token-auth safety check — the token authorises checkout on
     // ONE specific listing. Refuse if the body's listingId doesn't
@@ -90,7 +101,17 @@ export class TransactionsController {
     }
     const frontendUrl =
       process.env.FRONTEND_URL ?? `${req.protocol}://${req.get('host') ?? 'localhost:3000'}`;
-    return this.txService.create(userId, dto, frontendUrl);
+    const result = await this.txService.create(userId, dto, frontendUrl);
+    if (req.viaActionToken && req.actionToken) {
+      await this.tokens
+        .consume(req.actionToken, req.ip, req.get('user-agent') ?? undefined)
+        .catch((err) =>
+          this.logger.warn(
+            `CHECKOUT token consume failed after successful create: ${(err as Error).message}`,
+          ),
+        );
+    }
+    return result;
   }
 
   // ---------------------------------------------------------------
@@ -460,8 +481,10 @@ export class PaymentsWebhookController {
   // One API signs each webhook with Svix headers (svix-id, svix-timestamp,
   // svix-signature) over `${id}.${timestamp}.${rawBody}`. NestFactory is
   // created with { rawBody: true } (main.ts) so req.rawBody is the exact
-  // bytes signed — re-serialising would reorder keys and never match. The
-  // controller ALWAYS returns 200; a bad-signature drop is logged + alerted.
+  // bytes signed — re-serialising would reorder keys and never match. A
+  // bad-signature drop is logged + alerted and returns 200 (retrying a
+  // forged delivery is pointless). A handler FAILURE returns 500 so Ozow
+  // re-delivers — there is no poll fallback for a missed notification.
   // Verification fails closed in production.
   @Post('webhook/ozow')
   @HttpCode(200)
@@ -487,10 +510,17 @@ export class PaymentsWebhookController {
     try {
       await this.txService.handleOzowWebhook(body);
     } catch (err) {
+      // Re-throw as a 500 so Ozow RETRIES the delivery. Swallowing this with a
+      // 200 consumed the one notification on any transient failure (DB, OAuth)
+      // and, with no poll/reconcile fallback, stranded a paid order forever.
+      // Genuine "cannot process" cases (bad amount on markPaid, unmatched ref,
+      // non-success status) are handled inside handleOzowWebhook and return
+      // normally — only unexpected errors reach here, and those are retryable.
       this.logger.error(
         `Ozow webhook handler failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
+      throw new InternalServerErrorException('Webhook processing failed');
     }
     return { received: true };
   }

@@ -549,6 +549,35 @@ export class TasksService {
     }
   }
 
+  // ─── Stale gateway-checkout reconcile (Phase 2) ──────────────────
+  // The poll half of the webhook+poll pattern for Ozow hosted checkout. A
+  // buyer who reaches the Ozow page and abandons strands the reserved listing
+  // and an unpaid HELD tx, and no other sweep can see it (gateway txs are
+  // excluded from orphan reclaim; the manual-EFT freeze sweep is gone; an
+  // auction claim nulls expiresAt so sweepUnpaidWins can't fire). Runs after
+  // the 24h Ozow link TTL: re-fetch authoritative status (recover a lost
+  // webhook → markPaid) or release the reservation + delete the dead tx. An
+  // abandoned auction win is handed back with a lapsed window so the
+  // every-minute endAuctions sweep owns the strike/runner-up lifecycle.
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async reconcileStaleGatewayCheckouts() {
+    try {
+      const r = await this.transactions.reconcileStaleGatewayCheckouts();
+      if (r.recovered > 0 || r.released > 0) {
+        this.logger.log(
+          `reconcileStaleGatewayCheckouts: recovered=${r.recovered} released=${r.released}`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `reconcileStaleGatewayCheckouts failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('gateway-checkout-reconcile');
+    }
+  }
+
   // ─── FLOW-F3 — Order.status rollup ───────────────────────────────
   // Order.status previously froze at PAID forever. This sweep advances a
   // PAID order to its terminal state once EVERY line (child transaction,

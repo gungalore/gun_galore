@@ -6,12 +6,20 @@
 // inventory-tracked listings, and they are pure so the stock arithmetic is
 // unit-testable without the Nest container or a DB.
 //
-// Invariants for a tracked listing:
-//   sellable        = quantityAvailable − quantityReserved
-//   reserve(q)      requires sellable ≥ q          → quantityReserved += q
-//   confirmSale(q)  → quantityAvailable −= q, quantityReserved −= q; SOLD at 0
+// Invariants for a tracked listing (MODEL A — the model the service actually
+// writes): `quantityAvailable` ALREADY excludes in-flight reservations, so
+// sellable == quantityAvailable. The reserve is a single-column compare-and-set
+// (`quantityAvailable >= q` → decrement), which is only sound under Model A;
+// subtracting quantityReserved again would double-count and under-sell. This is
+// the model the service implements — see the reserve CAS + markPaid in
+// transactions.service.ts.
+//   sellable        = quantityAvailable
+//   reserve(q)      requires quantityAvailable ≥ q → quantityAvailable −= q,
+//                                                        quantityReserved += q
+//   confirmSale(q)  → quantityReserved −= q (available already decreased); SOLD at 0
 //   releaseSold(q)  (refund/cancel/reject AFTER pay) → quantityAvailable += q, ACTIVE
-//   releaseReserve(q) (gateway failed BEFORE pay)    → quantityReserved −= q
+//   releaseReserve(q) (gateway failed BEFORE pay)    → quantityAvailable += q,
+//                                                        quantityReserved −= q
 
 export type ListingTypeLike = 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT' | 'SWOP';
 
@@ -38,14 +46,17 @@ export function resolvePurchaseQuantity(opts: {
   quantityAvailable: number;
   quantityReserved: number;
 }): { quantity: number } | { error: string } {
-  const { trackInventory, quantityAvailable, quantityReserved } = opts;
+  const { trackInventory, quantityAvailable } = opts;
   if (!trackInventory) return { quantity: 1 };
 
   const q = Math.floor(Number(opts.requested ?? 1));
   if (!Number.isFinite(q) || q < 1) {
     return { error: 'Quantity must be a whole number of 1 or more.' };
   }
-  const sellable = quantityAvailable - quantityReserved;
+  // Model A: quantityAvailable already nets out in-flight reservations, so it
+  // IS the sellable count (see the file header). quantityReserved is accepted
+  // for interface compatibility but must NOT be subtracted again.
+  const sellable = quantityAvailable;
   if (q > sellable) {
     return {
       error:

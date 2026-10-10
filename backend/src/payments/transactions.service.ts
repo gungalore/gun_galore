@@ -55,7 +55,12 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 // whole transactions → shipping → search graph. Imported for this module's
 // own internal use AND re-exported so every existing
 // `from '.../transactions.service'` importer keeps working.
-import { PAYMENT_MODE, PAYMENTS_LIVE, assertPaymentsLive } from './payment-mode';
+import {
+  PAYMENT_MODE,
+  PAYMENTS_LIVE,
+  assertPaymentsLive,
+  assertCartCheckoutLive,
+} from './payment-mode';
 import { REFUND_TERMS_VERSION } from './refund-terms-version';
 import { vicinityLabel } from '../common/province-labels';
 import { assertAccountNotClosed } from '../common/account-standing';
@@ -654,6 +659,7 @@ export class TransactionsService {
       offerRecord,
       buyer,
       quantity,
+      auctionWin,
       listingPrice,
       shippingCost,
       shippingHandlingCents,
@@ -683,6 +689,7 @@ export class TransactionsService {
       offerRecord,
       buyer,
       quantity,
+      auctionWin,
       listingPrice,
       shippingCost,
       shippingHandlingCents,
@@ -715,17 +722,29 @@ export class TransactionsService {
       });
     } catch (err) {
       // Roll back the listing reservation if the gateway call fails.
+      // AUCTION WIN: the listing is already PAYMENT_PENDING for this winner
+      // (finalizeAuction flipped it) and the reserve step CAS-nulled
+      // expiresAt. Restore PAYMENT_PENDING + the original 24h pay window so
+      // the winner can retry and the unpaid-winner sweep still fires — NEVER
+      // flip it ACTIVE: an ended auction can never re-finalize (needs
+      // endedAt=null) nor be bid on (endTime past), so ACTIVE is a permanent
+      // unbuyable zombie. This mirrors reversalListingData's auction rule.
       // Tracked listing: give the units back (quantityAvailable += qty,
       // quantityReserved -= qty) + re-activate. Legacy: flip back to ACTIVE.
       await this.prisma.listing.update({
         where: { id: listing.id },
-        data: listing.trackInventory
+        data: auctionWin
           ? {
-              status: ListingStatus.ACTIVE,
-              quantityAvailable: { increment: quantity },
-              quantityReserved: { decrement: quantity },
+              status: ListingStatus.PAYMENT_PENDING,
+              expiresAt: listing.expiresAt ?? undefined,
             }
-          : { status: ListingStatus.ACTIVE },
+          : listing.trackInventory
+            ? {
+                status: ListingStatus.ACTIVE,
+                quantityAvailable: { increment: quantity },
+                quantityReserved: { decrement: quantity },
+              }
+            : { status: ListingStatus.ACTIVE },
       });
       await this.prisma.transaction.delete({ where: { id: tx.id } });
       this.logger.error(
@@ -787,10 +806,12 @@ export class TransactionsService {
     dto: CreateOrderDto,
     _frontendUrl: string,
   ) {
-    // Phase 1 — manual EFT retired; card paygate not live yet. Gate BEFORE any
-    // reservation. The Order/reservation logic below is rail-agnostic and is
-    // reused by the paygate cart when it lands.
-    assertPaymentsLive();
+    // Phase 1 — manual EFT retired. The cart paygate is NOT wired: this path
+    // reserves every line + creates an AWAITING_PAYMENT Order but never creates
+    // an Ozow payment, and the frontend does nothing on success. Gated off so
+    // production (PAYMENTS_LIVE=true) can't leak reserved listings. Flip
+    // CART_CHECKOUT_LIVE when the order payment + frontend hand-off land.
+    assertCartCheckoutLive();
     const lines = dto.lines ?? [];
     if (lines.length === 0) throw new BadRequestException('Your cart is empty');
     assertNoDuplicateListings(lines.map((l) => l.listingId));
@@ -1201,8 +1222,9 @@ export class TransactionsService {
   // payment OBJECT only exists once captured, so a "not found yet"
   // simply means the buyer hasn't finished (or an EFT/PayShap is still
   // settling); reverting could double-sell a still-settling order.
-  // Abandoned PAYMENT_PENDING listings are freed by the webhook/reconcile
-  // path (deferred) after the 24h payment-link expiry.
+  // Abandoned PAYMENT_PENDING listings are freed by the webhook and, failing
+  // that, by reconcileStaleGatewayCheckouts() after the 24h payment-link
+  // expiry.
   async verifyResult(transactionId: string, _resourcePath?: string) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -1234,7 +1256,31 @@ export class TransactionsService {
           merchantTransactionId: tx.id,
           isSuccess: true,
         };
-        await this.markPaid(tx.id, result, tx.listing, tx.buyerTotal);
+        // markPaid binds tx-id + exact amount. A rejection here means money is
+        // sitting at Ozow that doesn't match the order (over/under/partial pay,
+        // or a mismatched merchant ref). The webhook path already raises an
+        // urgent alert for this; do the same here so the verify path can't
+        // swallow it as a generic 400 with nobody paged.
+        try {
+          await this.markPaid(tx.id, result, tx.listing, tx.buyerTotal);
+        } catch (err) {
+          this.logger.error(
+            `Ozow verify markPaid rejected for ${tx.id}: ${(err as Error).message}`,
+          );
+          await this.prisma.adminAlert
+            .create({
+              data: {
+                type: 'OZOW_VERIFY_MARKPAID_REJECTED',
+                referenceId: tx.id,
+                urgent: true,
+                context: `Verify-result success for ${tx.id} but markPaid rejected: ${(err as Error).message}. Paid amount=${status.amountCents}c, expected=${tx.buyerTotal}c.`,
+              },
+            })
+            .catch(() => undefined);
+          throw new BadRequestException(
+            'Payment could not be confirmed for this order — support has been notified.',
+          );
+        }
         return { success: true };
       }
       // Not captured (yet) — leave the listing reserved; do not revert.
@@ -1307,6 +1353,35 @@ export class TransactionsService {
   // ------------------------------------------------------------------
   async handleOzowWebhook(envelope: Record<string, unknown>) {
     const type = String(envelope.type ?? '');
+
+    // Chargeback / dispute deliveries. Ozow's One API does not document a
+    // dedicated event today, so this is defensive wiring: IF such a delivery
+    // ever arrives it must reach the money-safety handler (hold payout →
+    // DISPUTED, alert) instead of being dropped. Match on the event-type
+    // substring so any casing/naming variant routes; an unknown non-chargeback
+    // type still falls through to the ignore below.
+    const lowerType = type.toLowerCase();
+    if (lowerType.includes('chargeback') || lowerType.includes('dispute')) {
+      const data = (envelope.data ?? {}) as Record<string, unknown>;
+      const pick = (...keys: string[]): string | undefined => {
+        for (const k of keys) {
+          const v = data[k];
+          if (v !== undefined && v !== null && String(v) !== '') return String(v);
+        }
+        return undefined;
+      };
+      await this.handleChargebackEvent({
+        paymentId: pick('PaymentId', 'paymentId'),
+        merchantReference: pick(
+          'TransactionReference',
+          'MerchantReference',
+          'merchantReference',
+        ),
+        type,
+      });
+      return;
+    }
+
     if (type !== 'transaction.complete') {
       this.logger.warn(`Ozow webhook: ignoring event type "${type}"`);
       return;
@@ -1985,12 +2060,14 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
-  // Chargeback / dispute / reversal (Phase 4 P4.3). Ozow's One API has no
-  // dedicated dispute webhook event, so this money-safety path is kept ready
-  // but currently unreached. A chargeback means the buyer's bank is clawing
-  // the money back — it is itself the reversal, so we MUST NOT also refund
-  // (that double-pays the buyer). We hold the payout (→ DISPUTED) and raise
-  // an urgent admin alert to investigate + contest or concede.
+  // Chargeback / dispute / reversal (Phase 4 P4.3). Ozow's One API documents
+  // no dedicated dispute webhook event, so this path may never fire; it is
+  // wired defensively from handleOzowWebhook (event-type contains
+  // "chargeback"/"dispute") so a delivery is never silently dropped. A
+  // chargeback means the buyer's bank is clawing the money back — it is itself
+  // the reversal, so we MUST NOT also refund (that double-pays the buyer). We
+  // hold the payout (→ DISPUTED) and raise an urgent admin alert to investigate
+  // + contest or concede.
   // ------------------------------------------------------------------
   private async handleChargebackEvent(evt: {
     paymentId?: string;
@@ -3965,6 +4042,157 @@ export class TransactionsService {
       );
     }
     return { recovered };
+  }
+
+  // ─── Phase 2 — stale gateway-checkout reconcile ──────────────────────
+  // A buyer who reaches the Ozow hosted page and then closes the tab strands
+  // the listing (PAYMENT_PENDING / reserved units) and an unpaid HELD tx, and
+  // NOTHING freed it: reclaimOrphanReservations excludes gateway txs
+  // (gatewayCheckoutId not null), the manual-EFT freeze sweep is gone, and an
+  // auction claim CAS-nulled expiresAt so sweepUnpaidWins couldn't see it
+  // either. Every abandoned checkout leaked one listing until manual DB
+  // surgery. This is the poll half of the webhook+poll pattern.
+  //
+  // After the Ozow pay-in link TTL (24h, see ozow.createPayment) plus slack,
+  // for each still-unpaid gateway tx: (a) re-fetch authoritative status and,
+  // if the money actually landed, markPaid (recovering a lost webhook); else
+  // (b) release the reservation + delete the dead tx. An auction win is handed
+  // back with a LAPSED expiresAt so the every-minute sweepUnpaidWins applies
+  // the full unpaid-winner lifecycle (EXPIRED + strike + runner-up) rather than
+  // reimplementing it here. A status-lookup failure NEVER releases — we must
+  // not free a possibly-paid order on a transient error.
+  async reconcileStaleGatewayCheckouts(): Promise<{
+    recovered: number;
+    released: number;
+  }> {
+    const linkTtlMs = 25 * 60 * 60 * 1000; // 24h Ozow link + 1h slack
+    const cutoff = new Date(Date.now() - linkTtlMs);
+    const stale = await this.prisma.transaction.findMany({
+      where: {
+        paidAt: null,
+        gatewayCheckoutId: { not: null },
+        // Order children (cart) carry an orderId and must never be released
+        // line-by-line — their lifecycle is the Order's. Mirrors the orphan
+        // reclaim filter; today a cart line never gets a gatewayCheckoutId.
+        orderId: null,
+        swapId: null,
+        createdAt: { lt: cutoff },
+      },
+      select: {
+        id: true,
+        buyerTotal: true,
+        gatewayCheckoutId: true,
+        quantity: true,
+        listingId: true,
+        buyerId: true,
+        listing: {
+          select: {
+            id: true,
+            sellerId: true,
+            listingType: true,
+            trackInventory: true,
+            status: true,
+          },
+        },
+      },
+      take: 50,
+    });
+
+    let recovered = 0;
+    let released = 0;
+    for (const s of stale) {
+      const checkoutId = s.gatewayCheckoutId;
+      if (!checkoutId) continue;
+
+      let status: OzowPaymentResult | null;
+      try {
+        status = await this.ozow.getPaymentStatus(checkoutId);
+      } catch (err) {
+        this.logger.warn(
+          `reconcileStaleGatewayCheckouts: status fetch failed for ${s.id}: ${(err as Error).message}`,
+        );
+        continue;
+      }
+
+      if (status?.isSuccess) {
+        // Lost-webhook recovery: the money is in — confirm the order.
+        try {
+          await this.markPaid(
+            s.id,
+            {
+              paymentId: status.transactionId,
+              resultCode: status.status,
+              amount: status.amountCents,
+              currency: 'ZAR',
+              merchantTransactionId: s.id,
+              isSuccess: true,
+            },
+            { id: s.listing.id, sellerId: s.listing.sellerId },
+            s.buyerTotal,
+          );
+          recovered += 1;
+          this.logger.warn(
+            `reconcileStaleGatewayCheckouts: recovered PAID order ${s.id} (webhook was lost)`,
+          );
+        } catch (err) {
+          this.logger.error(
+            `reconcileStaleGatewayCheckouts: markPaid rejected for ${s.id}: ${(err as Error).message}`,
+          );
+        }
+        continue;
+      }
+
+      // Not paid and the link has expired — release the reservation.
+      try {
+        if (s.listing.listingType === 'AUCTION') {
+          // Hand back to the auction lifecycle with a LAPSED window; the
+          // every-minute sweepUnpaidWins flips EXPIRED + strikes + runner-up.
+          // Never ACTIVE (ended-auction zombie).
+          await this.prisma.$transaction([
+            this.prisma.listing.updateMany({
+              where: { id: s.listingId, status: 'PAYMENT_PENDING' },
+              data: { expiresAt: new Date(Date.now() - 1000) },
+            }),
+            this.prisma.transaction.delete({ where: { id: s.id } }),
+          ]);
+        } else if (s.listing.trackInventory) {
+          await this.prisma.$transaction([
+            this.prisma.listing.update({
+              where: { id: s.listingId },
+              data: {
+                status: 'ACTIVE',
+                quantityAvailable: { increment: s.quantity },
+                quantityReserved: { decrement: s.quantity },
+              },
+            }),
+            this.prisma.transaction.delete({ where: { id: s.id } }),
+          ]);
+        } else {
+          await this.prisma.$transaction([
+            this.prisma.listing.updateMany({
+              where: { id: s.listingId, status: 'PAYMENT_PENDING' },
+              data: { status: 'ACTIVE' },
+            }),
+            this.prisma.transaction.delete({ where: { id: s.id } }),
+          ]);
+        }
+        released += 1;
+        this.logger.warn(
+          `reconcileStaleGatewayCheckouts: released abandoned checkout ${s.id} — listing ${s.listingId} re-sellable`,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `reconcileStaleGatewayCheckouts: release failed for ${s.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    if (recovered > 0 || released > 0) {
+      this.logger.log(
+        `reconcileStaleGatewayCheckouts: recovered=${recovered} released=${released}`,
+      );
+    }
+    return { recovered, released };
   }
 
   private async maybeImmediatePayout(txId: string) {

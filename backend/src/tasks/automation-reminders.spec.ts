@@ -532,6 +532,21 @@ describe('AuctionsService.offerToRunnerUp', () => {
     bidder?: Record<string, unknown> | null;
     claimCount?: number;
   } = {}) {
+    // offerToRunnerUp now flips the listing AND the isWinner bid flag in one
+    // interactive transaction, so the mock needs a $transaction that runs the
+    // callback with a tx client. The listing.updateMany mock is SHARED with tx
+    // so the existing call-arg assertions keep working.
+    const listingUpdateMany = jest
+      .fn()
+      .mockResolvedValue({ count: over.claimCount ?? 1 });
+    const tx = {
+      listing: { updateMany: listingUpdateMany },
+      bid: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    };
     const prisma = {
       listing: {
         findUnique: jest.fn().mockResolvedValue(
@@ -539,9 +554,7 @@ describe('AuctionsService.offerToRunnerUp', () => {
             ? { id: 'L1', status: 'EXPIRED', sellerId: 'S1' }
             : over.listing,
         ),
-        updateMany: jest
-          .fn()
-          .mockResolvedValue({ count: over.claimCount ?? 1 }),
+        updateMany: listingUpdateMany,
       },
       user: {
         findUnique: jest.fn().mockResolvedValue(
@@ -551,6 +564,7 @@ describe('AuctionsService.offerToRunnerUp', () => {
         ),
       },
       bid: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     };
     const service = new AuctionsService(
       prisma as never,

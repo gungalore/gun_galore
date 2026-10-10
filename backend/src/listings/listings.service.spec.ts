@@ -2,7 +2,7 @@
 // in transitively) only needs the symbol to exist for these unit tests.
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { FeeCalculator } from '../payments/fee.calculator';
 import { ListingsService, PUBLIC_LISTING_SELECT } from './listings.service';
 
@@ -288,3 +288,92 @@ describe('ListingsService — findById projection & owner-awareness', () => {
     );
   });
 });
+
+/**
+ * Guard for the cancel-side of the money-in-flight bug: a seller must NOT be
+ * able to cancel a listing that a buyer is paying for (PAYMENT_PENDING) or one
+ * that has already sold. Cancelling a PAYMENT_PENDING auction killed the
+ * winner's checkout with no sweep/strike/runner-up path, and a live Ozow
+ * payment could still land and flip CANCELLED→SOLD.
+ */
+describe('ListingsService — cancel status guard', () => {
+  let prisma: {
+    user: { findUnique: jest.Mock };
+    listing: {
+      findUnique: jest.Mock;
+      updateMany: jest.Mock;
+      findUniqueOrThrow: jest.Mock;
+    };
+  };
+  let search: { deleteDocument: jest.Mock };
+  let service: ListingsService;
+
+  beforeEach(() => {
+    prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue({ id: 'u1' }) },
+      listing: {
+        findUnique: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'l1' }),
+      },
+    };
+    search = { deleteDocument: jest.fn() };
+    service = new ListingsService(
+      prisma as never,
+      search as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { record: jest.fn() } as never,
+      new FeeCalculator(),
+    );
+  });
+
+  const owned = (status: string) => prisma.listing.findUnique.mockResolvedValue({
+    id: 'l1',
+    sellerId: 'u1',
+    status,
+  });
+
+  it('rejects cancelling a PAYMENT_PENDING listing', async () => {
+    owned('PAYMENT_PENDING');
+    await expect(service.cancel('l1', 'u1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects cancelling a SOLD listing', async () => {
+    owned('SOLD');
+    await expect(service.cancel('l1', 'u1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('cancels an ACTIVE listing atomically, guarded against a mid-flight reserve', async () => {
+    owned('ACTIVE');
+    await service.cancel('l1', 'u1');
+
+    const arg = prisma.listing.updateMany.mock.calls[0][0];
+    expect(arg.data).toEqual({ status: 'CANCELLED' });
+    expect(arg.where.status).toEqual({
+      notIn: ['PAYMENT_PENDING', 'SOLD'],
+    });
+    expect(search.deleteDocument).toHaveBeenCalled();
+  });
+
+  it('surfaces a conflict when the atomic guard loses (buyer reserved first)', async () => {
+    owned('ACTIVE');
+    prisma.listing.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.cancel('l1', 'u1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(search.deleteDocument).not.toHaveBeenCalled();
+  });
+});
+

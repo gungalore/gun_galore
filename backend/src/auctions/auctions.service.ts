@@ -253,11 +253,33 @@ export class AuctionsService {
       // proxy is already cancelled — no-op.
       const latest = await tx.bid.findFirst({
         where: { listingId, bidderId: buyer.id },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         select: { maxAmount: true },
       });
       if (!latest || latest.maxAmount <= visible) {
         return { cancelled: false, alreadyCancelled: true, currentBid: visible };
+      }
+
+      // CAS the listing on the exact state we read BEFORE writing the cancel
+      // row. Without this, an opposing bid committing between our read and our
+      // write leaves a cancel row carrying maxAmount = the OLD visible bid —
+      // BELOW the now-currentBid. The next duel then resolves off that stale
+      // ceiling and can REGRESS currentBid backwards. Incrementing bidCount
+      // also keeps the cancel row counted (history vs count drift). A zero-row
+      // result means the auction moved — refuse rather than write a stale row.
+      const claim = await tx.listing.updateMany({
+        where: {
+          id: listingId,
+          status: 'ACTIVE',
+          currentBid: visible,
+          currentBidderId: buyer.id,
+        },
+        data: { bidCount: { increment: 1 } },
+      });
+      if (claim.count === 0) {
+        throw new ConflictException(
+          'The auction moved while cancelling your proxy — please try again.',
+        );
       }
 
       // Post the cancellation as a new Bid row — keeps the audit trail
@@ -292,7 +314,7 @@ export class AuctionsService {
     // ignored; each new bid overwrites the effective max.)
     const latest = await this.prisma.bid.findFirst({
       where: { listingId, bidderId: buyer.id },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: { id: true, maxAmount: true, amount: true },
     });
     if (!latest) {
@@ -462,7 +484,7 @@ export class AuctionsService {
       if (listing.currentBidderId) {
         const prev = await tx.bid.findFirst({
           where: { listingId, bidderId: listing.currentBidderId },
-          orderBy: { createdAt: 'desc' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           select: { maxAmount: true },
         });
         prevHighMax = prev?.maxAmount ?? 0;
@@ -1019,7 +1041,7 @@ export class AuctionsService {
         // Mark the winning bid
         const winningBid = await tx.bid.findFirst({
           where: { listingId, bidderId: listing.currentBidderId },
-          orderBy: { createdAt: 'desc' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           select: { id: true },
         });
         if (winningBid) {
@@ -1336,21 +1358,46 @@ export class AuctionsService {
     }
 
     const now = new Date();
-    const claim = await this.prisma.listing.updateMany({
-      // CAS on EXPIRED: two taps of the same SMS link, or a relist racing the
-      // accept, can only ever produce ONE promotion.
-      where: { id: listingId, status: 'EXPIRED' },
-      data: {
-        status: 'PAYMENT_PENDING',
-        currentBidderId: runnerUpBidderId,
-        currentBid: amount,
-        expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-        // Fresh window ⇒ fresh reminder eligibility (the pay-window nudge
-        // guard is one-shot per stamp).
-        winnerRemindedAt: null,
-      },
+    const promoted = await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.listing.updateMany({
+        // CAS on EXPIRED: two taps of the same SMS link, or a relist racing the
+        // accept, can only ever produce ONE promotion.
+        where: { id: listingId, status: 'EXPIRED' },
+        data: {
+          status: 'PAYMENT_PENDING',
+          currentBidderId: runnerUpBidderId,
+          currentBid: amount,
+          expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+          // Fresh window ⇒ fresh reminder eligibility (the pay-window nudge
+          // guard is one-shot per stamp).
+          winnerRemindedAt: null,
+        },
+      });
+      if (claim.count === 0) return false;
+      // Move the isWinner flag with the promotion. Without this the DEFAULTED
+      // winner kept Bid.isWinner=true (so /my/bids still showed them "You won —
+      // pay now", which then 403s), and the actual buyer got no won card at
+      // all. Clear every flag on this listing, then flag the runner-up's
+      // highest bid — same transaction as the listing flip, so the two can
+      // never diverge.
+      await tx.bid.updateMany({
+        where: { listingId, isWinner: true },
+        data: { isWinner: false },
+      });
+      const winningBid = await tx.bid.findFirst({
+        where: { listingId, bidderId: runnerUpBidderId },
+        orderBy: [{ amount: 'desc' }, { id: 'desc' }],
+        select: { id: true },
+      });
+      if (winningBid) {
+        await tx.bid.update({
+          where: { id: winningBid.id },
+          data: { isWinner: true },
+        });
+      }
+      return true;
     });
-    if (claim.count === 0) {
+    if (!promoted) {
       return { offered: false, reason: 'This auction has already moved on' };
     }
 

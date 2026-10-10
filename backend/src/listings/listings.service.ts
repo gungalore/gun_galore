@@ -3283,13 +3283,43 @@ export class ListingsService {
   }
 
   async cancel(id: string, userId: string) {
-    await this.assertOwner(id, userId);
+    const listing = await this.assertOwner(id, userId);
 
-    const updated = await this.prisma.listing.update({
-      where: { id },
+    // A listing with money in flight (a buyer mid-checkout, or a won auction
+    // awaiting payment) or already sold must NOT be cancellable. Cancelling a
+    // PAYMENT_PENDING auction killed the winner's checkout dead-end with no
+    // sweep/strike/runner-up path, and a live Ozow payment could still land
+    // and flip CANCELLED→SOLD with no status guard in markPaid.
+    if (
+      listing.status === ListingStatus.PAYMENT_PENDING ||
+      listing.status === ListingStatus.SOLD
+    ) {
+      throw new BadRequestException(
+        listing.status === ListingStatus.SOLD
+          ? 'This listing has sold and can no longer be cancelled.'
+          : 'A buyer is completing payment for this listing — it cannot be cancelled right now. If the sale falls through it will become available again.',
+      );
+    }
+
+    // Atomic guard: cancel only while the listing is still in a cancellable
+    // state, so a buyer reserving between assertOwner and this write can't be
+    // raced into a cancelled-but-paid sale.
+    const result = await this.prisma.listing.updateMany({
+      where: {
+        id,
+        status: { notIn: [ListingStatus.PAYMENT_PENDING, ListingStatus.SOLD] },
+      },
       data: { status: ListingStatus.CANCELLED },
     });
+    if (result.count === 0) {
+      throw new BadRequestException(
+        'This listing can no longer be cancelled — a buyer may be completing payment, or it has sold.',
+      );
+    }
 
+    const updated = await this.prisma.listing.findUniqueOrThrow({
+      where: { id },
+    });
     await this.search.deleteDocument(INDEXES.LISTINGS, id);
     return updated;
   }
