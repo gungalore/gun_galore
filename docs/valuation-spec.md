@@ -114,6 +114,7 @@ model Valuation {
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   status      ValuationStatus @default(INTAKE)
 
+  itemName    String?         // what the member calls the item (mandatory at identify, section 4.2)
   description String?         // user free text from intake (untrusted input, section 6.3)
   categorySlug String?        // confirmed top-level category slug (identify step; user can correct)
   strategy    String?         // COMP_MATCHED | RETAIL_ANCHOR | UNIT_COMMODITY | VALUE_EQUIPMENT
@@ -316,7 +317,7 @@ All `/valuations*` routes: `@UseGuards(AuthGuard)`, `@CurrentUser() userId: stri
 ### 4.1 Valuation lifecycle
 
 `POST /valuations`
-Request: `{ "description": "3-person tent, used twice, footprint included" }` (optional, max 2000 chars, control chars stripped)
+Request: `{ "itemName": "MSR Hubba Hubba NX2", "description": "3-person tent, used twice, footprint included" }` (`itemName` optional here, max 120 chars; `description` optional, max 2000 chars; control chars stripped). The row is created on the first photo upload, which can happen before either is typed, so `itemName` is enforced at the identify step instead. Both are re-sent on identify and persisted there.
 Response `201`: `{ "id": "val_...", "status": "INTAKE", "maxPhotos": 8, "photoChecklist": [ ...generic checklist, section 7.2... ] }`
 
 `POST /valuations/:id/photos` (multipart)
@@ -331,7 +332,7 @@ Errors: `400` bad type/size, `409` `{ "message": "Photo limit reached", "photoCo
 Full state for resume and as the polling fallback:
 ```json
 {
-  "id": "...", "status": "ANSWERING", "description": "...",
+  "id": "...", "status": "ANSWERING", "itemName": "MSR Hubba Hubba NX2", "description": "...",
   "categorySlug": "camping-outdoor",
   "photoChecklist": [ ... ],
   "images": [{ "id", "url", "viewTag", "source" }],
@@ -348,9 +349,9 @@ Full state for resume and as the polling fallback:
 ### 4.2 Identify and questions
 
 `POST /valuations/:id/identify`
-Request: `{}` (server pulls photos + description). Requires ≥ 1 photo. Runs `image-select.service`, the step 1 model call with `json.schema`, category detection + banned-item check (8.1), `question.service` sanitising.
+Request: `{ "itemName": "MSR Hubba Hubba NX2", "description": "3-person tent, used twice" }` (`itemName` required, 2 to 120 chars; `description` optional). The server persists both, pulls the photos, and refuses with `400 ITEM_NAME_REQUIRED` before any model call when the name is missing or blank. The name is the `MEMBER-SPECIFIED ITEM` line in the step-1 prompt, so the model anchors on the item the member named rather than a prop in frame (section 6.4). Requires ≥ 1 photo. Runs `image-select.service`, the step 1 model call with `json.schema`, category detection + banned-item check (8.1), `question.service` sanitising.
 Response `200`: `{ "identify": { ...5.1... }, "questions": [ ... ], "photoChecklist": [ ...category checklist now that the category is known... ] }`
-Errors: `422` `{ "errorCode": "OUT_OF_SCOPE", "message": "This item is outside All Outdoor's categories" }`; `422` `{ "errorCode": "BANNED_ITEM", "message": "Live ammunition, primers and propellant cannot be listed or valued on All Outdoor" }`; `422 NO_PHOTOS`; `502 MODEL_ERROR` (retry allowed, state untouched); `502 SCHEMA_VALIDATION_FAILED` after 3 validation retries (8.7).
+Errors: `400` `{ "errorCode": "ITEM_NAME_REQUIRED", "message": "Enter the name of the item before valuing it" }`; `422` `{ "errorCode": "OUT_OF_SCOPE", "message": "This item is outside All Outdoor's categories" }`; `422` `{ "errorCode": "BANNED_ITEM", "message": "Live ammunition, primers and propellant cannot be listed or valued on All Outdoor" }`; `422 NO_PHOTOS`; `502 MODEL_ERROR` (retry allowed, state untouched); `502 SCHEMA_VALIDATION_FAILED` after 3 validation retries (8.7).
 
 `POST /valuations/:id/answers` (incremental, saved as the user goes)
 Request: `{ "answers": [{ "questionId": "q1", "selected": [], "custom": "MSR Hubba Hubba NX2 2-person", "unsure": false }] }`

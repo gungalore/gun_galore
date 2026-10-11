@@ -7,6 +7,7 @@ function build() {
     valuation: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      update: jest.fn(),
       delete: jest.fn(),
     },
     valuationImage: {
@@ -54,7 +55,57 @@ describe('ValuationService', () => {
     expect(out.maxPhotos).toBe(8);
     expect(out.photoChecklist.map((c) => c.tag)).toContain('LABEL_OR_STAMP');
     expect(prisma.valuation.create).toHaveBeenCalledWith({
-      data: { userId: 'u1', description: 'a tent' },
+      data: { userId: 'u1', description: 'a tent', itemName: null },
+    });
+  });
+
+  it('persists the item name given at creation', async () => {
+    const { service, prisma } = build();
+    prisma.valuation.create.mockResolvedValue({ id: 'v1', status: 'INTAKE' });
+
+    await service.create('u1', undefined, '  Sako L61 Finnbear  ');
+
+    expect(prisma.valuation.create).toHaveBeenCalledWith({
+      data: { userId: 'u1', description: null, itemName: 'Sako L61 Finnbear' },
+    });
+  });
+
+  it('refuses to identify a valuation with no item name, before any model call', async () => {
+    const { service, prisma } = build();
+    prisma.valuation.findUnique.mockResolvedValue({
+      id: 'v1',
+      userId: 'u1',
+      status: 'INTAKE',
+      itemName: null,
+      description: null,
+    });
+
+    await expect(service.identify('v1', 'u1')).rejects.toMatchObject({
+      response: { errorCode: 'ITEM_NAME_REQUIRED' },
+    });
+    expect(prisma.valuationImage.findMany).not.toHaveBeenCalled();
+  });
+
+  it('persists a supplied item name and lets identify continue past the gate', async () => {
+    const { service, prisma } = build();
+    prisma.valuation.findUnique.mockResolvedValue({
+      id: 'v1',
+      userId: 'u1',
+      status: 'INTAKE',
+      itemName: null,
+      description: null,
+      categorySlug: null,
+    });
+    prisma.valuationImage.findMany.mockResolvedValue([]);
+
+    // No photos: the gate on the item name passes, so the next failure is the
+    // photo check, which proves the name was accepted.
+    await expect(service.identify('v1', 'u1', undefined, 'Howa 1500')).rejects.toMatchObject({
+      response: { errorCode: 'NO_PHOTOS' },
+    });
+    expect(prisma.valuation.update).toHaveBeenCalledWith({
+      where: { id: 'v1' },
+      data: { itemName: 'Howa 1500' },
     });
   });
 

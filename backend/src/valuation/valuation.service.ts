@@ -67,9 +67,13 @@ export class ValuationService {
 
   // ── Lifecycle ──────────────────────────────────────────────────────
 
-  async create(userId: string, description?: string) {
+  async create(userId: string, description?: string, itemName?: string) {
     const valuation = await this.prisma.valuation.create({
-      data: { userId, description: description ?? null },
+      data: {
+        userId,
+        description: description ?? null,
+        itemName: itemName?.trim() || null,
+      },
     });
     return {
       id: valuation.id,
@@ -88,6 +92,7 @@ export class ValuationService {
     return {
       id: valuation.id,
       status: valuation.status,
+      itemName: valuation.itemName,
       description: valuation.description,
       categorySlug: valuation.categorySlug,
       photoChecklist: this.checklistFor(valuation.categorySlug),
@@ -319,17 +324,41 @@ export class ValuationService {
 
   // ── Identify and questions ─────────────────────────────────────────
 
-  async identify(id: string, userId: string, description?: string) {
+  async identify(
+    id: string,
+    userId: string,
+    description?: string,
+    itemName?: string,
+  ) {
     const valuation = await this.assertOwner(id, userId);
     // The valuation is created on the first photo upload, so a description
     // typed afterwards was being lost. Persist it here before anything reads
     // it, so what the member wrote ("2013 BushLapa Boskriek ...") is used.
+    const patch: { description?: string | null; itemName?: string | null } = {};
     if (description !== undefined) {
       const next = description.trim() || null;
       if (next !== (valuation.description ?? null)) {
-        await this.prisma.valuation.update({ where: { id }, data: { description: next } });
+        patch.description = next;
         valuation.description = next;
       }
+    }
+    if (itemName !== undefined) {
+      const next = itemName.trim() || null;
+      if (next !== (valuation.itemName ?? null)) {
+        patch.itemName = next;
+        valuation.itemName = next;
+      }
+    }
+    if (Object.keys(patch).length > 0) {
+      await this.prisma.valuation.update({ where: { id }, data: patch });
+    }
+    // The item name is what tells the model which object in the photos is for
+    // sale, so no model call is spent without one.
+    if (!valuation.itemName) {
+      throw new BadRequestException({
+        errorCode: 'ITEM_NAME_REQUIRED',
+        message: 'Enter the name of the item before valuing it',
+      });
     }
     const images = await this.prisma.valuationImage.findMany({
       where: { valuationId: id },
@@ -376,6 +405,7 @@ export class ValuationService {
       identify = await this.identifyService.identify({
         imageUrls: selected.map((i) => i.url),
         description: valuation.description,
+        itemName: valuation.itemName,
         config,
       });
     } catch (err) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../lib/auth';
 import {
@@ -53,6 +53,7 @@ export function ValuationFlow() {
   const [valuationId, setValuationId] = useState<string | null>(null);
   const [checklist, setChecklist] = useState<PhotoChecklistItem[]>([]);
   const [images, setImages] = useState<ValuationImageView[]>([]);
+  const [itemName, setItemName] = useState('');
   const [description, setDescription] = useState('');
   const [tagForNew, setTagForNew] = useState('');
   const [questions, setQuestions] = useState<ServedQuestion[]>([]);
@@ -69,11 +70,15 @@ export function ValuationFlow() {
     if (valuationId) return valuationId;
     const token = await getToken();
     if (!token) throw new Error('Please sign in to continue');
-    const created = await createValuation(token, description.trim() || undefined);
+    const created = await createValuation(
+      token,
+      description.trim() || undefined,
+      itemName.trim() || undefined,
+    );
     setValuationId(created.id);
     setChecklist(created.photoChecklist);
     return created.id;
-  }, [valuationId, description, getToken]);
+  }, [valuationId, description, itemName, getToken]);
 
   async function handleFiles(files: File[]) {
     setError(null);
@@ -162,12 +167,21 @@ export function ValuationFlow() {
   async function handleEvaluate() {
     setError(null);
     setFatal(null);
+    if (!itemName.trim()) {
+      setError('Enter the name of the item before evaluating it.');
+      return;
+    }
     setBusy(true);
     try {
       const id = await ensureValuation();
       const token = await getToken();
       if (!token) throw new Error('Please sign in to continue');
-      const res = await identifyValuation(token, id, description.trim() || undefined);
+      const res = await identifyValuation(
+        token,
+        id,
+        itemName.trim(),
+        description.trim() || undefined,
+      );
       setQuestions(res.questions);
       if (res.photoChecklist?.length) setChecklist(res.photoChecklist);
       setStage('questions');
@@ -209,8 +223,15 @@ export function ValuationFlow() {
       if (!token) throw new Error('Please sign in to continue');
       const draft = await listingDraft(token, valuationId);
       const existing = localStorage.getItem('gg-listing-new-draft');
-      if (existing) {
-        // Do not clobber a draft the seller was already working on.
+      if (
+        existing &&
+        typeof window !== 'undefined' &&
+        !window.confirm(
+          'You have an unfinished listing on this device. Replace it with this valuation\u2019s details?',
+        )
+      ) {
+        setCreatingListing(false);
+        return;
       }
       localStorage.setItem(
         'gg-listing-new-draft',
@@ -280,6 +301,7 @@ export function ValuationFlow() {
           setQuestions([]);
           setResult(null);
           setCapture(null);
+          setItemName('');
           setDescription('');
         }}
         creatingListing={creatingListing}
@@ -308,6 +330,26 @@ export function ValuationFlow() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex flex-col gap-4 order-2 lg:order-1">
           <div>
+            <label htmlFor="valuation-item-name" className="block text-sm mb-1.5" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+              Item name <span style={{ color: 'var(--red)' }} aria-hidden="true">*</span>
+            </label>
+            <input
+              id="valuation-item-name"
+              type="text"
+              value={itemName}
+              onChange={(e) => setItemName(e.target.value)}
+              maxLength={120}
+              required
+              placeholder="e.g. Sako L61 Finnbear .30-06 rifle"
+              className="w-full rounded-[8px] px-3 py-2.5 text-sm"
+              style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
+            />
+            <p className="mt-1.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Name the one item you are selling. Clear photos plus a descriptive name give the most accurate valuation.
+            </p>
+          </div>
+
+          <div>
             <label htmlFor="valuation-description" className="block text-sm mb-1.5" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
               Anything you already know
             </label>
@@ -316,11 +358,14 @@ export function ValuationFlow() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={2000}
-              rows={3}
-              placeholder="Model, size, age, what's included"
+              rows={4}
+              placeholder="Model and model number, year, size or capacity, what is included (scope, magazines, case, tools, spare parts). Describe every mark, scratch, dent, rust, crack or repair, and say what works and what does not."
               className="w-full rounded-[8px] px-3 py-2.5 text-sm resize-y"
               style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
             />
+            <p className="mt-1.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Please mention every wear mark and defect, even small ones. The more honest the detail, the better we can estimate the value of your item.
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -352,13 +397,22 @@ export function ValuationFlow() {
           <button
             type="button"
             onClick={handleEvaluate}
-            disabled={images.length === 0 || busy}
+            disabled={images.length === 0 || itemName.trim().length < 2 || busy}
             className="rounded-[8px] px-5 py-3 text-sm font-semibold self-start"
             style={{
-              background: images.length === 0 || busy ? 'var(--bg-inset)' : 'var(--red)',
-              color: images.length === 0 || busy ? 'var(--text-tertiary)' : '#fff',
+              background:
+                images.length === 0 || itemName.trim().length < 2 || busy
+                  ? 'var(--bg-inset)'
+                  : 'var(--red)',
+              color:
+                images.length === 0 || itemName.trim().length < 2 || busy
+                  ? 'var(--text-tertiary)'
+                  : '#fff',
               border: 'none',
-              cursor: images.length === 0 || busy ? 'not-allowed' : 'pointer',
+              cursor:
+                images.length === 0 || itemName.trim().length < 2 || busy
+                  ? 'not-allowed'
+                  : 'pointer',
             }}
           >
             {busy ? 'Uploading...' : 'Evaluate'}

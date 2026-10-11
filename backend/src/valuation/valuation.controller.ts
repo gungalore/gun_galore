@@ -22,6 +22,7 @@ import { map } from 'rxjs/operators';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { CreateValuationDto } from './dto/create-valuation.dto';
+import { IdentifyValuationDto } from './dto/identify-valuation.dto';
 import { RecordOutcomeDto } from './dto/record-outcome.dto';
 import { SaveAnswersDto } from './dto/save-answers.dto';
 import { UploadPhotoDto } from './dto/upload-photo.dto';
@@ -41,7 +42,7 @@ export class ValuationController {
 
   @Post()
   create(@CurrentUser() userId: string, @Body() dto: CreateValuationDto) {
-    return this.valuations.create(userId, dto.description);
+    return this.valuations.create(userId, dto.description, dto.itemName);
   }
 
   @Get(':id')
@@ -91,9 +92,9 @@ export class ValuationController {
   identify(
     @Param('id') id: string,
     @CurrentUser() userId: string,
-    @Body() dto: CreateValuationDto,
+    @Body() dto: IdentifyValuationDto,
   ) {
-    return this.valuations.identify(id, userId, dto.description);
+    return this.valuations.identify(id, userId, dto.description, dto.itemName);
   }
 
   @Post(':id/answers')

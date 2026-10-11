@@ -39,6 +39,7 @@ export interface ValuationCreateResponse {
 export interface ValuationState {
   id: string;
   status: string;
+  itemName: string | null;
   description: string | null;
   categorySlug: string | null;
   photoChecklist: PhotoChecklistItem[];
@@ -82,10 +83,14 @@ async function jsonFetch<T>(
 export function createValuation(
   token: string,
   description?: string,
+  itemName?: string,
 ): Promise<ValuationCreateResponse> {
   return jsonFetch('/valuations', token, {
     method: 'POST',
-    body: JSON.stringify({ description: description || undefined }),
+    body: JSON.stringify({
+      description: description || undefined,
+      itemName: itemName || undefined,
+    }),
   });
 }
 
@@ -236,11 +241,15 @@ export interface ValuationResult {
 export function identifyValuation(
   token: string,
   id: string,
+  itemName: string,
   description?: string,
 ): Promise<IdentifyResult> {
   return jsonFetch(`/valuations/${id}/identify`, token, {
     method: 'POST',
-    body: JSON.stringify({ description: description || undefined }),
+    body: JSON.stringify({
+      itemName,
+      description: description || undefined,
+    }),
   });
 }
 

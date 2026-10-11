@@ -7522,6 +7522,7 @@ model Valuation {
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   status      ValuationStatus @default(INTAKE)
 
+  itemName    String?         // what the member calls the item; mandatory at identify
   description String?         // user free text from intake (untrusted input)
   categorySlug String?        // confirmed top-level category slug in identify
   strategy    String?         // COMP_MATCHED | RETAIL_ANCHOR | UNIT_COMMODITY | VALUE_EQUIPMENT

@@ -82,6 +82,7 @@ export interface ValuationImageView {
 export interface ValuationState {
   id: string;
   status: ValuationStatus;
+  itemName: string | null;
   description: string | null;
   categorySlug: string | null;
   photoChecklist: PhotoChecklistItem[];
