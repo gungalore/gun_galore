@@ -1143,34 +1143,51 @@ export class ValuationService {
 
     const q1 = byId.get('q1');
     const q1Text = q1 && !q1.unsure && q1.custom?.trim() ? q1.custom.trim() : null;
+    const itemName = valuation?.itemName?.trim() || null;
 
-    // The member's own typed name is authoritative: if nothing answered the
-    // maker/brand question and the photos read no make, take the leading
-    // word of their name (or their q1 answer) as the make. Without this a
-    // member who types "sako .270" gets make=null because the maker stamp was
-    // unreadable, and every comp runs brand-less.
+    // The member's own typed name is authoritative, but a name like "sako .270"
+    // is a make + a calibre with NO model, so it must never be used verbatim as
+    // the model (that polluted model/keySpec with the whole string). Split the
+    // name: leading word = make, a calibre-like token = keySpec, and whatever
+    // remains is the model - nothing, if the name is only make + calibre.
+    const toks = (s: string | null): string[] =>
+      (s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+    const STOP = new Set(['other', 'none', 'unknown', 'unsure', 'na', 'n', 'a', 'not', 'sure', 'n/a', 'yes', 'no']);
+    // Common cartridge/gauge designations a member may type as the "calibre".
+    const CALIBRE = new Set([
+      '17', '22', '204', '220', '222', '223', '224', '243', '25-06', '6mm', '260', '264', '270', '280', '284',
+      '30-06', '300', '303', '30-30', '308', '338', '348', '35', '358', '375', '416', '44', '444', '45', '450', '458',
+      '6.5', '6.5mm', '7mm', '7-08', '7x57', '7x64', '9.3', '9mm', '10mm', '38', '357', '40', '12', '16', '20', '28', '410',
+    ]);
     const nameMake = (s: string | null): string | null => {
-      const first = (s ?? '').trim().split(/\s+/)[0] ?? '';
-      return first.length > 1 && /[a-z]/i.test(first) && !/\d/.test(first) && !/^[.&]+$/.test(first)
-        ? first
-        : null;
+      const f = toks(s)[0];
+      return f && f.length > 1 && /[a-z]/i.test(f) && !/\d/.test(f) && !STOP.has(f) ? f : null;
     };
+    const nameModel = (s: string | null): string | null => {
+      const make = nameMake(s);
+      const rest = toks(s).filter((t) => t !== make && !STOP.has(t) && !CALIBRE.has(t));
+      return rest.length ? rest.join(' ') : null;
+    };
+    const nameSpec = (s: string | null): string | null => toks(s).find((t) => CALIBRE.has(t)) ?? null;
 
     return {
       make:
         pick(/maker|brand|manufactur/i) ??
         identify?.identification?.make ??
         nameMake(q1Text) ??
-        nameMake(valuation?.itemName ?? null) ??
+        nameMake(itemName) ??
         null,
       model:
         pick(/^\s*what is the model|exact model|\bmodel\b/i) ??
-        q1Text ??
+        nameModel(q1Text) ??
+        nameModel(itemName) ??
         identify?.identification?.model ??
         null,
       keySpec:
         pick(/caliber|calibre|gauge|magnification|capacity|\bsize\b|blade|weight|specification/i) ??
         identify?.identification?.keySpec ??
+        nameSpec(q1Text) ??
+        nameSpec(itemName) ??
         null,
     };
   }

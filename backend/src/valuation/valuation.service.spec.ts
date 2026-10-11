@@ -91,6 +91,41 @@ describe('ValuationService', () => {
     expect(spec.keySpec).toBe('.270');
   });
 
+  it('does not smear a make+calibre name into the model', async () => {
+    const { service, prisma } = build();
+    prisma.valuation.findUnique.mockResolvedValue({
+      itemName: 'sako 270',
+      questionsJson: [
+        { id: 'q2', text: 'What is the exact model name or number?', type: 'single', options: [] },
+      ],
+      answersJson: [
+        { questionId: 'q1', custom: 'sako 270', selected: [], unsure: false },
+        { questionId: 'q2', custom: null, selected: ['Other'], unsure: false },
+      ],
+      identifyJson: { identification: { make: 'Sako', model: 'L61 IV', keySpec: null } },
+    });
+
+    const spec = await (service as unknown as { deriveConfirmedSpec: (id: string) => Promise<{ make: string | null; model: string | null; keySpec: string | null }> }).deriveConfirmedSpec('v1');
+
+    expect(spec.make).toBe('Sako');
+    expect(spec.model).toBe('L61 IV');
+    expect(spec.keySpec).toBe('270');
+  });
+
+  it('uses a real model the member typed, over the photo reading', async () => {
+    const { service, prisma } = build();
+    prisma.valuation.findUnique.mockResolvedValue({
+      itemName: 'sako 85 varminter',
+      questionsJson: [],
+      answersJson: [{ questionId: 'q1', custom: 'sako 85 varminter', selected: [], unsure: false }],
+      identifyJson: { identification: { make: 'Sako', model: 'L61 IV', keySpec: null } },
+    });
+
+    const spec = await (service as unknown as { deriveConfirmedSpec: (id: string) => Promise<{ model: string | null }> }).deriveConfirmedSpec('v1');
+
+    expect(spec.model).toBe('85 varminter');
+  });
+
   it('refuses to identify a valuation with no item name, before any model call', async () => {
     const { service, prisma } = build();
     prisma.valuation.findUnique.mockResolvedValue({
