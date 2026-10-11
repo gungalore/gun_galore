@@ -22,6 +22,7 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 const WOO = 'WOO';
+const SHOPIFY = 'SHOPIFY';
 const MARKETPLACE = 'MARKETPLACE';
 const SITEMAP_HTML = 'SITEMAP_HTML';
 
@@ -54,6 +55,9 @@ const SOURCES = [
   { domain: 'jaracal.com', label: 'Jaracal', platform: MARKETPLACE, roles: ['USED'], categories: ['firearms', 'optics', 'reloading-equipment', 'reloading-components', 'shooting-accessories', 'knives', 'hunting', 'air-rifles', 'paintball', 'archery', 'outdoor-clothing-footwear', 'camping-outdoor', 'fishing', 'self-defence'] },
   // SA precision/chassis maker on Shopify (readable now).
   { domain: 'aimengineering.co.za', label: 'AIM Engineering', platform: SHOPIFY, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics', 'reloading-equipment', 'hunting'] },
+  // SA precision parts makers on WooCommerce (Store API readable).
+  { domain: 'axisprecisionworx.com', label: 'Axis Precision Worx', platform: WOO, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics'] },
+  { domain: 'impactproshop.net', label: 'Impact Pro Shop', platform: WOO, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics', 'hunting'] },
   // Wix/JS storefronts: only readable through Apify (lane closed) so left disabled.
   { domain: 'gunwarrior.co.za', label: 'Gun Warrior', platform: MARKETPLACE, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics'], needsApify: true },
   { domain: 'musgraverifles.co.za', label: 'Musgrave Rifles', platform: MARKETPLACE, roles: ['ANCHOR'], categories: ['firearms'], needsApify: true },
