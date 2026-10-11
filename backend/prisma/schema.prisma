@@ -7675,3 +7675,31 @@ model ValuationOutcome {
 
   @@index([soldAt])
 }
+
+// Curated registry of external price sources for the valuation research engine.
+// Config only: which domains we read, how (platform) and for what (roles). We
+// consume prices and specs from these sources but never persist their URLs.
+model ValuationSource {
+  id           String    @id @default(cuid())
+  domain       String    @unique
+  label        String
+  // SHOPIFY | WOO | SITEMAP_HTML | MARKETPLACE | AUCTION | OWN | EXCLUDED
+  platform     String
+  // ANCHOR (new/retail price) | USED (asking) | SOLD (closed/auction)
+  roles        String[]
+  // category slugs this source is trusted for; ["*"] means any category
+  categories   String[]
+  saVerified   Boolean   @default(true)
+  enabled      Boolean   @default(false)
+  needsApify   Boolean   @default(false)
+  // which structured fields the source reliably returns (brand, model, price...)
+  specFields   Json?
+  pricedHits   Int       @default(0)
+  totalHits    Int       @default(0)
+  lastCheckAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([enabled])
+  @@index([platform])
+}

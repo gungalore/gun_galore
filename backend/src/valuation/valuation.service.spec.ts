@@ -38,6 +38,7 @@ function build() {
     {} as any, // CacheService
     {} as any, // ValuationEvents
     {} as any, // SoldCompsService
+    {} as any, // ExternalSourceService
   );
   return { service, prisma, cloudinary, exif };
 }

@@ -160,20 +160,6 @@ export function ResultView({
         </section>
       )}
 
-      {result.retailAnchorSource && (
-        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          New-price reference:{' '}
-          <a
-            href={result.retailAnchorSource.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'var(--red)' }}
-          >
-            {result.retailAnchorSource.site}
-          </a>
-        </p>
-      )}
-
       <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
         <span className="font-medium">Demand:</span> {result.demandNote}
       </p>

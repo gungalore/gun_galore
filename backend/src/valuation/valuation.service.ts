@@ -18,6 +18,7 @@ import { ImageSelectService } from './image-select.service';
 import { QuestionService, ServedQuestion } from './question.service';
 import { ResearchService } from './research.service';
 import { SoldCompsService } from './sold-comps.service';
+import { ExternalSourceService } from './sources/external-source.service';
 import { ResultOutput } from './schemas';
 import {
   IDENTIFY_PROMPT_VERSION,
@@ -63,6 +64,7 @@ export class ValuationService {
     private readonly cache: CacheService,
     private readonly events: ValuationEvents,
     private readonly soldComps: SoldCompsService,
+    private readonly external: ExternalSourceService,
   ) {}
 
   // ── Lifecycle ──────────────────────────────────────────────────────
@@ -601,13 +603,25 @@ export class ValuationService {
     const selfUrls = await this.selfListingUrls(id);
     // Own/dealer SOLD prices (highest-accuracy) are prepended as comps.
     const soldComps = await this.soldComps.find(categorySlug, confirmed.make, confirmed.model);
+    // External retail/used comps (Shopify/Woo marketplaces) are add-only: they
+    // join the pricing pool like own-sold comps and never touch any prompt.
+    // Inert unless VALUATION_EXTERNAL_ENABLED=true and registry rows are on.
+    const externalComps = await this.external
+      .collect(
+        categorySlug,
+        { make: confirmed.make, model: confirmed.model, keySpec: confirmed.keySpec },
+        result.itemSummary.conditionBand || 'GOOD',
+      )
+      .catch(() => [] as never[]);
     // Comp window: the last 5 years. Older information is not excluded up to
     // five years back, but it lowers confidence (see recencyDowngrades).
     const minYear =
       Number(process.env.VALUATION_COMP_MIN_YEAR ?? 0) || new Date().getFullYear() - 4;
-    const { kept, excluded } = this.comps.filterComps([...soldComps, ...result.comps], {
-      selfUrls,
-      minYear,
+    const { kept, excluded } = this.comps.filterComps(
+      [...soldComps, ...externalComps, ...result.comps],
+      {
+        selfUrls,
+        minYear,
       matchDimensions: config.matchDimensions,
     });
 
@@ -734,15 +748,11 @@ export class ValuationService {
       ad: this.sanitiseAd(result.ad),
     };
 
-    // The member must never see WHERE the secondhand comparables came from:
-    // they could simply go list there instead. We strip every URL and every
-    // known secondhand site name from all client-facing text. The NEW-price
-    // retail anchor source is allowed and provided on its own.
-    const retailAnchorComp = kept.find((c) => c.kind === 'RETAIL_ANCHOR');
-    const retailAnchorSource = retailAnchorComp
-      ? { url: retailAnchorComp.url, site: retailAnchorComp.sourceSite }
-      : null;
-
+    // The member must never see WHERE any comparable came from, new or
+    // secondhand: this is an estimate to list HERE, not a pointer to a shop.
+    // stripSources() below removes every URL and known site name from the
+    // client-facing text, and no source object is sent to the client at all.
+    //
     // Three listing tiers by urgency. Only when we actually have a price.
     const priceScale =
       priced && pkgMid != null
@@ -798,8 +808,7 @@ export class ValuationService {
       },
       unverified: finalResult.unverified.map(stripSources),
       priceScale,
-      retailAnchorSource,
-      // comps intentionally NOT included: secondhand sources stay internal.
+      // comps and every source (retail or secondhand) stay internal.
     };
 
     const meta = {

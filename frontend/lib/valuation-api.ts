@@ -233,8 +233,6 @@ export interface ValuationResult {
   unverified: string[];
   /** Three listing tiers by urgency. Empty when there is no firm price. */
   priceScale?: Array<{ key: string; label: string; priceZar: number | null; note: string }>;
-  /** The NEW-price retail source (allowed to show). Secondhand sources never are. */
-  retailAnchorSource?: { url: string; site: string } | null;
   meta?: Record<string, unknown>;
 }
 
