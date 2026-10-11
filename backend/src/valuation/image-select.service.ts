@@ -13,9 +13,10 @@ export interface SelectableImage {
 
 /**
  * Picks the best subset of photos to send the model, capped at
- * VALUATION_MAX_MODEL_IMAGES (the real API limit is unverified, so it is a
- * config value). Order: required checklist tags by priority, then other
- * tagged photos, then untagged by upload order; near-duplicates are skipped.
+ * VALUATION_MAX_MODEL_IMAGES (default 8, matching the upload cap; the provider
+ * accepts multiple images, but the limit is config so a provider change needs
+ * no code edit). Order: required checklist tags by priority, then other tagged
+ * photos, then untagged by upload order; near-duplicates are skipped.
  */
 @Injectable()
 export class ImageSelectService {
@@ -23,7 +24,7 @@ export class ImageSelectService {
     images: SelectableImage[],
     checklist: PhotoChecklistItem[],
   ): SelectableImage[] {
-    const max = Number(process.env.VALUATION_MAX_MODEL_IMAGES ?? 4);
+    const max = Number(process.env.VALUATION_MAX_MODEL_IMAGES ?? 8);
     const byTag = new Map<string, SelectableImage>();
     for (const img of images) {
       if (img.viewTag && !byTag.has(img.viewTag)) byTag.set(img.viewTag, img);
