@@ -18,6 +18,7 @@ import dotenv from 'dotenv';
 dotenv.config({ quiet: true });
 
 import { ExternalSourceService } from '../src/valuation/sources/external-source.service';
+import { JevMatchService } from '../src/valuation/sources/jev-match';
 import { ApifyClient } from '../src/valuation/sources/apify-client';
 import { ApifyMarketplaceAdapter } from '../src/valuation/sources/adapters/apify-marketplace.adapter';
 import { SitemapJsonLdAdapter } from '../src/valuation/sources/adapters/sitemap-jsonld.adapter';
@@ -56,6 +57,7 @@ async function main(): Promise<void> {
       new ApifyMarketplaceAdapter(new ApifyClient()),
       new SitemapJsonLdAdapter(),
       new MagentoAdapter(),
+      new JevMatchService(),
     );
 
     const perSource = new Map<string, { items: number; comps: number; samplePrices: number[] }>();

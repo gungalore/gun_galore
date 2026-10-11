@@ -14,7 +14,8 @@ function build(rows: unknown[], shopifySearch = jest.fn()) {
   const apify = { platform: 'MARKETPLACE', domains: ['gumtree.co.za', 'facebook.com'], search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
   const ow = { platform: 'SITEMAP_HTML', domains: ['outdoorwarehouse.co.za'], search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
   const magento = { platform: 'MAGENTO', domains: ['futurama.co.za'], search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
-  const service = new ExternalSourceService(prisma, shopify as any, woo as any, gunAfrica as any, apify as any, ow as any, magento as any);
+  const jevMatch = { mode: () => 'off', judge: jest.fn(async (_i: unknown, h: unknown[]) => h) };
+  const service = new ExternalSourceService(prisma, shopify as any, woo as any, gunAfrica as any, apify as any, ow as any, magento as any, jevMatch as any);
   return { service, prisma, shopifySearch };
 }
 

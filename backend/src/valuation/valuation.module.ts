@@ -21,6 +21,7 @@ import { SitemapJsonLdAdapter } from './sources/adapters/sitemap-jsonld.adapter'
 import { ShopifyAdapter } from './sources/adapters/shopify.adapter';
 import { WooAdapter } from './sources/adapters/woo.adapter';
 import { ExternalSourceService } from './sources/external-source.service';
+import { JevMatchService } from './sources/jev-match';
 import { SoldCompsService } from './sold-comps.service';
 import { ValuationController } from './valuation.controller';
 import { ValuationService } from './valuation.service';
@@ -55,6 +56,7 @@ import { WebToolsService } from './web-tools.service';
     SitemapJsonLdAdapter,
     MagentoAdapter,
     ExternalSourceService,
+    JevMatchService,
     ValuationRetentionService,
     AuthGuard,
   ],

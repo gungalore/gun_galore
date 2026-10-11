@@ -7,6 +7,7 @@ import { MagentoAdapter } from './adapters/magento.adapter';
 import { SitemapJsonLdAdapter } from './adapters/sitemap-jsonld.adapter';
 import { ShopifyAdapter } from './adapters/shopify.adapter';
 import { WooAdapter } from './adapters/woo.adapter';
+import { JevMatchService } from './jev-match';
 import { withTimeout } from './http';
 import { toRawComp } from './to-raw-comp';
 import { ItemSpec, SourceAdapter, SourceQuery, SourceRole } from './types';
@@ -35,6 +36,7 @@ export class ExternalSourceService {
     apifyMarketplace: ApifyMarketplaceAdapter,
     sitemapJsonLd: SitemapJsonLdAdapter,
     magento: MagentoAdapter,
+    private readonly jevMatch: JevMatchService,
   ) {
     this.adapters = [shopify, woo, gunAfrica, apifyMarketplace, sitemapJsonLd, magento];
   }
@@ -140,7 +142,9 @@ export class ExternalSourceService {
   ): Promise<{ domain: string; rawHits: number; comps: RawComp[] }> {
     try {
       const hits = await withTimeout(adapter.search(domain, query), timeoutMs);
-      const comps = hits.map((h) => toRawComp(h, roles, item)).filter((c) => c.priceZar > 0);
+      // Regex already pre-filtered inside the adapter; JEV makes the final call.
+      const judged = await this.jevMatch.judge(item, hits);
+      const comps = judged.map((h) => toRawComp(h, roles, item)).filter((c) => c.priceZar > 0);
       return { domain, rawHits: hits.length, comps };
     } catch (e) {
       this.logger.warn(`external source ${domain} failed: ${(e as Error).message}`);
