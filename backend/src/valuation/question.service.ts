@@ -57,7 +57,11 @@ const GAUGE_LEGIBLE = /\b(12|16|20|28)\s*(ga|gauge)\b|\.410/i;
  */
 @Injectable()
 export class QuestionService {
-  sanitise(identify: IdentifyOutput, config: CategoryConfig): ServedQuestion[] {
+  sanitise(
+    identify: IdentifyOutput,
+    config: CategoryConfig,
+    itemName?: string | null,
+  ): ServedQuestion[] {
     const banned = [...GLOBAL_BANNED_TOPICS, ...config.bannedTopicPatterns].map((p) =>
       safeRegex(p),
     );
@@ -82,7 +86,7 @@ export class QuestionService {
     const gaugeLegible = GAUGE_LEGIBLE.test(readableText);
     const dropShotgunQuestions = rifleSignal || (claimsShotgun && !gaugeLegible);
 
-    const served: ServedQuestion[] = [this.keyIdentifierQuestion(identify, config)];
+    const served: ServedQuestion[] = [this.keyIdentifierQuestion(identify, config, itemName)];
 
     const modelQuestions = (identify.questions ?? [])
       .filter((q) => this.isUsable(q, banned))
@@ -125,11 +129,12 @@ export class QuestionService {
   private keyIdentifierQuestion(
     identify: IdentifyOutput,
     config: CategoryConfig,
+    itemName?: string | null,
   ): ServedQuestion {
     const seed = config.seedQuestions.find((s) => s.kind === 'CONFIRM_KEY_IDENTIFIERS');
     // Never echo a mechanical-action guess or a hedge back to the member; the
     // hint shows only what was actually read.
-    const reading = [
+    const photoReading = [
       identify.identification.make,
       identify.identification.model,
       identify.identification.keySpec,
@@ -143,6 +148,10 @@ export class QuestionService {
       )
       .replace(/\s{2,}/g, ' ')
       .trim();
+    // The member already named the item on intake. That name is authoritative,
+    // so it pre-fills q1 even when the photos read nothing; the photo reading
+    // (if any) is offered as a hint instead.
+    const memberName = (itemName ?? '').trim();
     return {
       id: 'q1',
       text: seed?.text ?? 'Confirm the exact make and model, plus the key specification',
@@ -151,10 +160,10 @@ export class QuestionService {
       allow_custom: true,
       allow_unsure: false,
       required: true,
-      hint: reading ? `From the photos: ${reading}` : undefined,
-      // Pre-fill with what we already know (typed description or photos) so
-      // the member confirms instead of being asked for it a second time.
-      default: reading || undefined,
+      hint: photoReading ? `From the photos: ${photoReading}` : undefined,
+      // Pre-fill with what we already know (the member's own name, else the
+      // photos) so the member confirms instead of being asked twice.
+      default: memberName || photoReading || undefined,
     };
   }
 

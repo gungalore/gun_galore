@@ -31,6 +31,21 @@ describe('QuestionService', () => {
     expect(served[0].required).toBe(true);
   });
 
+  it('pre-fills q1 from the member-typed name even when the photos read nothing', () => {
+    const served = svc.sanitise(
+      identify({ make: null, model: null, keySpec: null }),
+      configs.forCategory('knives'),
+      'sako .270',
+    );
+    expect(served[0].default).toBe('sako .270');
+    expect(served[0].hint).toBeUndefined();
+  });
+
+  it('falls back to the photo reading for the q1 pre-fill when no name is given', () => {
+    const served = svc.sanitise(identify({ make: 'Kershaw', model: 'Blur' }), configs.forCategory('knives'));
+    expect(served[0].default).toBe('Kershaw Blur');
+  });
+
   it('strips banned-topic questions for every category', () => {
     const served = svc.sanitise(
       identify({}, [

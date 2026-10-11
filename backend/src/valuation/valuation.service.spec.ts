@@ -71,6 +71,26 @@ describe('ValuationService', () => {
     });
   });
 
+  it('derives the make from the member-typed name when the photos read none', async () => {
+    const { service, prisma } = build();
+    prisma.valuation.findUnique.mockResolvedValue({
+      itemName: 'sako .270',
+      questionsJson: [
+        { id: 'q2', text: 'What is the exact model name or number?', type: 'single', options: [] },
+      ],
+      answersJson: [
+        { questionId: 'q1', custom: '.270', selected: [], unsure: false },
+        { questionId: 'q2', custom: null, selected: ['Other'], unsure: false },
+      ],
+      identifyJson: { identification: { make: null, model: null, keySpec: '.270' } },
+    });
+
+    const spec = await (service as unknown as { deriveConfirmedSpec: (id: string) => Promise<{ make: string | null; keySpec: string | null }> }).deriveConfirmedSpec('v1');
+
+    expect(spec.make).toBe('sako');
+    expect(spec.keySpec).toBe('.270');
+  });
+
   it('refuses to identify a valuation with no item name, before any model call', async () => {
     const { service, prisma } = build();
     prisma.valuation.findUnique.mockResolvedValue({

@@ -442,7 +442,7 @@ export class ValuationService {
 
     const categorySlug = this.normaliseCategory(identify.identification.categorySlug);
     const activeConfig = this.configs.forCategory(categorySlug);
-    const questions: ServedQuestion[] = this.questions.sanitise(identify, activeConfig);
+    const questions: ServedQuestion[] = this.questions.sanitise(identify, activeConfig, valuation.itemName);
 
     await this.prisma.valuation.update({
       where: { id },
@@ -1144,8 +1144,25 @@ export class ValuationService {
     const q1 = byId.get('q1');
     const q1Text = q1 && !q1.unsure && q1.custom?.trim() ? q1.custom.trim() : null;
 
+    // The member's own typed name is authoritative: if nothing answered the
+    // maker/brand question and the photos read no make, take the leading
+    // word of their name (or their q1 answer) as the make. Without this a
+    // member who types "sako .270" gets make=null because the maker stamp was
+    // unreadable, and every comp runs brand-less.
+    const nameMake = (s: string | null): string | null => {
+      const first = (s ?? '').trim().split(/\s+/)[0] ?? '';
+      return first.length > 1 && /[a-z]/i.test(first) && !/\d/.test(first) && !/^[.&]+$/.test(first)
+        ? first
+        : null;
+    };
+
     return {
-      make: pick(/maker|brand|manufactur/i) ?? identify?.identification?.make ?? null,
+      make:
+        pick(/maker|brand|manufactur/i) ??
+        identify?.identification?.make ??
+        nameMake(q1Text) ??
+        nameMake(valuation?.itemName ?? null) ??
+        null,
       model:
         pick(/^\s*what is the model|exact model|\bmodel\b/i) ??
         q1Text ??
