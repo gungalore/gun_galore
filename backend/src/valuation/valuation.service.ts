@@ -800,11 +800,13 @@ export class ValuationService {
           label: stripSources(row.label),
           value: stripSources(row.value),
         })),
-        attributes: finalResult.itemSummary.attributes ?? {},
-        accessories: (finalResult.itemSummary.accessories ?? []).map((a) => ({
-          ...a,
-          note: a.note ? stripSources(a.note) : a.note,
-        })),
+        attributes: Object.fromEntries(
+          Object.entries(finalResult.itemSummary.attributes ?? {}).map(([k, v]) => [
+            k,
+            stripSources(String(v)),
+          ]),
+        ),
+        accessories: sanitiseAccessories(finalResult.itemSummary.accessories),
       },
       pricing: {
         ...finalResult.pricing,
@@ -1191,6 +1193,28 @@ const SECONDHAND_SITES =
   /(bidorbuy|bid\s*or\s*buy|gumtree|gunafrica|gunsammo|carbonads|classic\s*arms|facebook\s*marketplace|marketplace\s*item|classifieds?)/gi;
 
 /**
+ * Sanitise the accessories list for the client. The model sometimes emits an
+ * extra free-text key (e.g. "basis") beside `note`; spreading it would let a
+ * source name bypass stripSources(), so we keep ONLY name/valueCents/note and
+ * fold any extra text into the (sanitised) note.
+ */
+export function sanitiseAccessories(
+  list: ResultOutput['itemSummary']['accessories'] | undefined,
+): Array<{ name: string; valueCents: number | null; note: string | null }> {
+  return (list ?? []).map((a) => {
+    const rec = a as unknown as Record<string, unknown>;
+    const extra = [a.note, rec.basis, rec.detail, rec.source, rec.note2].find(
+      (v) => typeof v === 'string' && v.trim().length > 0,
+    ) as string | undefined;
+    return {
+      name: stripSources(a.name),
+      valueCents: a.valueCents ?? null,
+      note: extra ? stripSources(extra) : null,
+    };
+  });
+}
+
+/**
  * Remove every secondhand source from client-facing text: URLs and known
  * secondhand site names. The operator's rule: a seller must not learn where we
  * found the comparables, or they will go list there instead.
@@ -1198,6 +1222,9 @@ const SECONDHAND_SITES =
 function stripSources(text: string): string {
   return text
     .replace(/https?:\/\/[^\s)]+/gi, '')
+    // Bare domains (theglockshop.co.za) and emails, which are not full URLs.
+    .replace(/\b(?:[a-z0-9-]+\.)+(?:co\.za|com|net|org|africa|online|shop|store|za)\b/gi, 'a listing site')
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '')
     .replace(SECONDHAND_SITES, 'a listing site')
     // Collapse repeats the model produces when several site names were named
     // ("a listing site, a listing site, or ...").

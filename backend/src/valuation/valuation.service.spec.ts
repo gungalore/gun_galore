@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { ValuationService, roundTo100c } from './valuation.service';
+import { ValuationService, roundTo100c, sanitiseAccessories } from './valuation.service';
 import { CategoryConfigs } from './config/category-configs';
 
 function build() {
@@ -186,5 +186,24 @@ describe('roundTo100c', () => {
     expect(roundTo100c(7_686_000)).toBe(7_690_000);
     expect(roundTo100c(7_100_400)).toBe(7_100_000);
     expect(roundTo100c(1_230_000)).toBe(1_230_000);
+  });
+});
+
+describe('sanitiseAccessories', () => {
+  it('drops unknown keys and strips source names from the folded text', () => {
+    const out = sanitiseAccessories([
+      {
+        name: 'Shield Arms S15 magazine',
+        valueCents: 90000,
+        basis: 'corroborated by theglockshop.co.za and a used Facebook Marketplace listing',
+      } as never,
+    ]);
+    expect(Object.keys(out[0])).toEqual(['name', 'valueCents', 'note']);
+    expect(out[0].note ?? '').not.toMatch(/theglockshop|Facebook|\.co\.za/i);
+  });
+
+  it('keeps a normal note', () => {
+    const out = sanitiseAccessories([{ name: 'Sling', valueCents: 250, note: 'basic sling' }]);
+    expect(out[0].note).toBe('basic sling');
   });
 });
