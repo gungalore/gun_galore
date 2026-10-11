@@ -53,6 +53,7 @@ interface ViewerRow {
   feedMutedAuthorIds: string[];
   feedMutedTags: string[];
   feedShowAvatar: boolean;
+  feedShowGraphic: boolean;
   avatarUrl: string | null;
   username: string;
 }
@@ -120,6 +121,7 @@ export class FeedService {
         feedMutedAuthorIds: true,
         feedMutedTags: true,
         feedShowAvatar: true,
+        feedShowGraphic: true,
         avatarUrl: true,
         username: true,
       },
@@ -594,6 +596,7 @@ export class FeedService {
       feedMutedAuthorIds: v.feedMutedAuthorIds,
       feedMutedTags: v.feedMutedTags,
       feedShowAvatar: v.feedShowAvatar,
+      feedShowGraphic: v.feedShowGraphic,
     };
   }
 
@@ -627,6 +630,9 @@ export class FeedService {
     if (dto.feedShowAvatar !== undefined) {
       data.feedShowAvatar = dto.feedShowAvatar;
     }
+    if (dto.feedShowGraphic !== undefined) {
+      data.feedShowGraphic = dto.feedShowGraphic;
+    }
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data,
@@ -635,6 +641,7 @@ export class FeedService {
         feedMutedAuthorIds: true,
         feedMutedTags: true,
         feedShowAvatar: true,
+        feedShowGraphic: true,
       },
     });
     return updated;

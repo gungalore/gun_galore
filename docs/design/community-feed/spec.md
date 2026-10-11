@@ -664,7 +664,11 @@ Example json output:
   operator 2026-10-10. Exposes username + privacy-gated avatar only.)
 - `GET /community/search` → `searchFeed`
 - `GET /community/users/:username` → profile + posts
-- `GET /community/preferences` → `getPreferences`
+- `GET /community/preferences` → `getPreferences` (returns `feedMutedPostTypes`,
+  `feedMutedAuthorIds`, `feedMutedTags`, `feedShowAvatar` and **`feedShowGraphic`**;
+  the matching PUT accepts the same booleans via `FeedPreferencesDto`. Fixed
+  2026-10-11 — `feedShowGraphic` was previously absent from the DTO, the
+  viewer select, the response and the write, so the setting never persisted.)
 
 `feed-member.controller.ts` (`@Controller('community') @UseGuards(AuthGuard)`, writes throttled 10–20/min):
 - `POST /community/posts`

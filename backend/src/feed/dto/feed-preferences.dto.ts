@@ -32,4 +32,9 @@ export class FeedPreferencesDto {
   @IsOptional()
   @IsBoolean()
   feedShowAvatar?: boolean;
+
+  /** Show graphic content (hunting, fishing, etc.) in the feed. Default on. */
+  @IsOptional()
+  @IsBoolean()
+  feedShowGraphic?: boolean;
 }
