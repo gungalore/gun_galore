@@ -7,6 +7,29 @@ overwritten.
 
 Last updated: **2026-10-11**.
 
+## 2026-10-11 - GRAPHIC-CONTENT PREFERENCE NOW PERSISTS (FULL DEPLOY)
+
+Commit **`0001f127`** (4 files), full deploy via `infra/deploy/deploy.sh`.
+Rollback point **`alloutdoor-20261011-074017.dump`** (30,026,454 bytes); no
+pending migrations. Backend + frontend health x2 OK, warden online, public 200
+x2, three pm2 services online. Gates: backend tsc clean + **329 suites/5385
+tests**; frontend tsc clean + **136 files/1698 tests** + prod build.
+
+**Second, deeper bug (found by driving Chrome).** The feed-settings
+"Graphic content" toggle never persisted even after the render fix (`c70f9117`):
+`FeedPreferencesDto` had no `feedShowGraphic` field, so the global
+`ValidationPipe({ whitelist: true })` **stripped it from every PUT**; and
+`viewer()`, `getPreferences` and `setPreferences` all omitted it. So
+`GET /community/preferences` never returned `feedShowGraphic`, the client got
+`undefined` and always rendered "Off", and nothing was ever written.
+Fixed end to end: DTO field (`@IsOptional() @IsBoolean()`), `ViewerRow` +
+`viewer()` select, `getPreferences` response, `setPreferences` write + update
+`select`. Spec: `feed-preferences.spec.ts` (3).
+
+Verified live in Chrome as `turbosnail`: toggle Off -> persists across reload
+(`feedShowGraphic:false`) and the Hunting post shows the blur + "Tap to reveal";
+toggle On -> persists and the post is ungated. DB left at the default (`true`).
+
 ## 2026-10-11 - COMMUNITY GRAPHIC-CONTENT TOGGLE FIXED (FRONTEND-ONLY DEPLOY)
 
 Commit **`c70f9117`** (3 files), deployed `--frontend-only` (backend untouched).
