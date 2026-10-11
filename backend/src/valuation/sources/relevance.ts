@@ -47,33 +47,44 @@ export function searchTerms(q: SourceQuery): string[] {
 }
 
 /**
+ * Can this query identify a specific product, or is it only a brand? A brand
+ * alone is too weak: "redding" matches every Redding die set, brush and pin.
+ * A model token is preferred; keySpec is accepted as a fallback.
+ */
+function productTokens(q: SourceQuery): string[] {
+  const model = distinctiveTokens(q.model);
+  return model.length ? model : distinctiveTokens(q.keySpec);
+}
+
+/**
  * Is this product title plausibly the item? Requires the make as a PHRASE
- * ("blue marlin", so "BOURBON Cap Blue Marlin" is not a Blue Marlin rod) AND at
- * least one distinctive model token as a WHOLE WORD ("g3", not "magnet3").
- * Strict by design: a loose match let unrelated products become comparables.
+ * ("blue marlin") AND a model (or keySpec) token as a WHOLE WORD. A brand with
+ * no model/keySpec is rejected outright, because otherwise every product from
+ * that brand becomes a comparable.
  */
 export function isRelevant(title: string, q: SourceQuery): boolean {
   const t = normalize(title);
   const make = normalize(q.make);
-  const model = distinctiveTokens(q.model);
+  const product = productTokens(q);
 
   if (make) {
     if (!t.includes(make)) return false;
-    if (model.length && !model.some((tk) => hasWord(t, tk))) return false;
-    return true;
+    return product.length > 0 && product.some((tk) => hasWord(t, tk));
   }
-  if (model.length) return model.some((tk) => hasWord(t, tk));
-  const ks = distinctiveTokens(q.keySpec);
-  return ks.length > 0 && ks.some((tk) => hasWord(t, tk));
+  if (product.length) return product.some((tk) => hasWord(t, tk));
+  return false;
 }
 
 /**
  * Looser variant for sources whose search is ALREADY scoped server-side (a
  * `?combine=` classifieds query). Accepts any distinctive token as a word, but
- * still ignores stopwords so a colour word cannot pull in the whole catalog.
+ * still ignores stopwords and still requires a model/keySpec so a brand word
+ * cannot pull in the whole catalogue.
  */
 export function isRelevantAny(title: string, q: SourceQuery): boolean {
   const t = normalize(title);
-  const terms = searchTerms(q);
-  return terms.length > 0 && terms.some((tk) => hasWord(t, tk));
+  const product = productTokens(q);
+  if (product.length === 0) return false;
+  const terms = [...new Set([...distinctiveTokens(q.make), ...product])];
+  return terms.some((tk) => hasWord(t, tk));
 }

@@ -83,4 +83,10 @@ describe('relevance', () => {
     expect(isRelevant('BOURBON Cap Blue Marlin', query)).toBe(false);
     expect(isRelevant('Blue Marlin G3 Series 4.20m multi-tip fishing rod', query)).toBe(true);
   });
+
+  it('rejects a brand-only match when there is no model', () => {
+    const query = q({ make: 'Redding', model: null, keySpec: null });
+    expect(isRelevant('REDDING 308 WIN DELUXE DIE SET', query)).toBe(false);
+    expect(isRelevant('REDDING NECK BRUSH 7/16', query)).toBe(false);
+  });
 });
