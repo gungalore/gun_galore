@@ -49,11 +49,14 @@ export function searchTerms(q: SourceQuery): string[] {
 /**
  * Can this query identify a specific product, or is it only a brand? A brand
  * alone is too weak: "redding" matches every Redding die set, brush and pin.
- * A model token is preferred; keySpec is accepted as a fallback.
+ * Make tokens are REMOVED from the result, because a model like "Redding Boss"
+ * carries the maker word and would otherwise match the whole brand again.
  */
 function productTokens(q: SourceQuery): string[] {
-  const model = distinctiveTokens(q.model);
-  return model.length ? model : distinctiveTokens(q.keySpec);
+  const make = new Set(distinctiveTokens(q.make));
+  const model = distinctiveTokens(q.model).filter((t) => !make.has(t));
+  if (model.length) return model;
+  return distinctiveTokens(q.keySpec).filter((t) => !make.has(t));
 }
 
 /**

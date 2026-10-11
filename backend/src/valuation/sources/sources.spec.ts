@@ -89,4 +89,11 @@ describe('relevance', () => {
     expect(isRelevant('REDDING 308 WIN DELUXE DIE SET', query)).toBe(false);
     expect(isRelevant('REDDING NECK BRUSH 7/16', query)).toBe(false);
   });
+
+  it('ignores the make word inside the model', () => {
+    const query = q({ make: 'Redding', model: 'Redding Boss', keySpec: null });
+    expect(isRelevant('REDDING 308 WIN DELUXE DIE SET', query)).toBe(false);
+    expect(isRelevant('Redding Boss Press', query)).toBe(true);
+    expect(isRelevant('Redding Big Boss Press', query)).toBe(true);
+  });
 });
