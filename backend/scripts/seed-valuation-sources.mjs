@@ -23,10 +23,13 @@ const prisma = new PrismaClient({ adapter });
 
 const WOO = 'WOO';
 const MARKETPLACE = 'MARKETPLACE';
+const SITEMAP_HTML = 'SITEMAP_HTML';
 
 // Verified: WooCommerce Store API returns a keyless JSON product array.
 const SOURCES = [
   { domain: 'habitatafrica.co.za', label: 'Habitat Africa', platform: WOO, roles: ['ANCHOR'], categories: ['*'] },
+  { domain: 'outdoorwarehouse.co.za', label: 'Outdoor Warehouse', platform: SITEMAP_HTML, roles: ['ANCHOR'], categories: ['camping-outdoor', 'overlanding', 'hunting', 'fishing', 'outdoor-clothing-footwear'] },
+  { domain: '4x4megaworldonline.com', label: '4x4 Mega World', platform: WOO, roles: ['ANCHOR'], categories: ['overlanding', 'camping-outdoor', 'hunting', 'shooting-accessories'] },
   { domain: 'cityguns.co.za', label: 'City Guns', platform: WOO, roles: ['ANCHOR'], categories: ['*'] },
   { domain: 'kloppers.co.za', label: 'Kloppers', platform: WOO, roles: ['ANCHOR'], categories: ['*'] },
   { domain: 'campandclimb.co.za', label: 'Camp & Climb', platform: WOO, roles: ['ANCHOR'], categories: ['*'] },
@@ -48,7 +51,7 @@ const SOURCES = [
 ];
 
 // Domains previously seeded with an unverified platform; remove them.
-const STALE = ['outdoorwarehouse.co.za', 'sportsmanswarehouse.co.za', 'frontrunner.co.za', 'bobshop.co.za'];
+const STALE = ['sportsmanswarehouse.co.za', 'frontrunner.co.za', 'bobshop.co.za'];
 
 let created = 0;
 let updated = 0;

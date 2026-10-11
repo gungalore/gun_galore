@@ -3,6 +3,7 @@ import { RawComp } from '../schemas';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GunAfricaAdapter } from './adapters/gunafrica.adapter';
 import { ApifyMarketplaceAdapter } from './adapters/apify-marketplace.adapter';
+import { OutdoorWarehouseAdapter } from './adapters/outdoorwarehouse.adapter';
 import { ShopifyAdapter } from './adapters/shopify.adapter';
 import { WooAdapter } from './adapters/woo.adapter';
 import { withTimeout } from './http';
@@ -31,8 +32,9 @@ export class ExternalSourceService {
     woo: WooAdapter,
     gunAfrica: GunAfricaAdapter,
     apifyMarketplace: ApifyMarketplaceAdapter,
+    outdoorWarehouse: OutdoorWarehouseAdapter,
   ) {
-    this.adapters = [shopify, woo, gunAfrica, apifyMarketplace];
+    this.adapters = [shopify, woo, gunAfrica, apifyMarketplace, outdoorWarehouse];
   }
 
   private adapterFor(platform: string, domain: string): SourceAdapter | undefined {
@@ -101,7 +103,11 @@ export class ExternalSourceService {
       return [this.runOne(adapter, row.domain, row.roles as SourceRole[], query, item, timeoutMs)];
     });
 
-    const settled = await Promise.allSettled(jobs);
+    const settled: Array<PromiseSettledResult<{ domain: string; rawHits: number; comps: RawComp[] }>> = [];
+    const concurrency = Math.max(1, Number(process.env.VALUATION_EXTERNAL_CONCURRENCY ?? 8));
+    for (let i = 0; i < jobs.length; i += concurrency) {
+      settled.push(...(await Promise.allSettled(jobs.slice(i, i + concurrency))));
+    }
     const out: RawComp[] = [];
     const stats: Array<{ domain: string; hits: number; priced: number }> = [];
     for (const s of settled) {

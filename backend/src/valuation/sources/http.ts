@@ -80,3 +80,26 @@ export function stripTags(html: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/** Fetch any text response (HTML, XML, plain) with the shared UA + timeout. */
+export async function getText(url: string, timeoutMs = 10_000): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml,text/plain,*/*',
+        'Accept-Language': 'en-ZA,en;q=0.9',
+      },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
