@@ -11,6 +11,7 @@ import {
   deletePost,
   fetchConfig,
   fetchFeed,
+  fetchPostCounts,
   fetchPreferences,
   likePost,
   reportPost,
@@ -31,23 +32,92 @@ const FEED_FILTERS: Chip[] = [
   ...POST_TYPE_ORDER.map((t) => ({ value: t, label: POST_TYPE_LABELS[t] as string })),
 ];
 
+/** Poll interval for like/comment counts (ms). */
+const COUNTS_POLL_MS = 20_000;
+/** How many extra pages a resume may load to reach the saved position. */
+const RESUME_MAX_PAGES = 5;
+
+/**
+ * The member's place in the feed, kept in sessionStorage so leaving and
+ * returning drops them back where they were (category, sort, search, scroll
+ * position), and not shared across tabs.
+ */
+interface FeedState {
+  filterType: string;
+  sortBy: string;
+  searchText: string;
+  scrollY: number;
+  anchorId: string | null;
+  loadedCount: number;
+}
+
+const FEED_STATE_KEY = 'gg.community.feedState';
+
+function readFeedState(): FeedState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(FEED_STATE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<FeedState>;
+    return {
+      filterType: typeof parsed.filterType === 'string' ? parsed.filterType : '',
+      sortBy: typeof parsed.sortBy === 'string' ? parsed.sortBy : 'latest',
+      searchText: typeof parsed.searchText === 'string' ? parsed.searchText : '',
+      scrollY: typeof parsed.scrollY === 'number' ? parsed.scrollY : 0,
+      anchorId: typeof parsed.anchorId === 'string' ? parsed.anchorId : null,
+      loadedCount:
+        typeof parsed.loadedCount === 'number' ? parsed.loadedCount : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeFeedState(state: FeedState): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(FEED_STATE_KEY, JSON.stringify(state));
+  } catch {
+    /* storage unavailable — resume is best-effort */
+  }
+}
+
+/** The id of the topmost post still visible in the viewport. */
+function topAnchorId(): string | null {
+  const els = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-post-id]'),
+  );
+  for (const el of els) {
+    if (el.getBoundingClientRect().bottom > 0) {
+      return el.dataset.postId ?? null;
+    }
+  }
+  return null;
+}
+
 export function FeedClient() {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useUser();
   const { getToken } = useAuth();
 
+  // Restore the member's place in the feed (filter/sort/search) exactly once,
+  // read synchronously so the very first fetch already uses it.
+  const [saved] = useState(() => readFeedState());
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [disabled, setDisabled] = useState(false);
   const [includeFiltered] = useState(false);
-  const [filterType, setFilterType] = useState('');
-  const [searchText, setSearchText] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState(saved?.filterType ?? '');
+  const [searchText, setSearchText] = useState(saved?.searchText ?? '');
+  const [searchQuery, setSearchQuery] = useState(
+    (saved?.searchText ?? '').trim(),
+  );
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [forceBlur, setForceBlur] = useState(false);
-  const [sortBy, setSortBy] = useState('latest');
+  const [sortBy, setSortBy] = useState(saved?.sortBy ?? 'latest');
   const [ads, setAds] = useState<FeedAd[]>([]);
   const [prefs, setPrefs] = useState<FeedPreferences>({
     feedMutedPostTypes: [],
@@ -152,6 +222,129 @@ export function FeedClient() {
     return () => clearInterval(id);
   }, [hasPending, loadFirst]);
 
+  // Keep like/comment counts fresh for OTHER members' activity. Polls only while
+  // the tab is visible and merges counts in place — it never reorders posts or
+  // moves the scroll, which a full feed refetch would.
+  const postIdsRef = useRef<string[]>([]);
+  postIdsRef.current = posts.map((p) => p.id);
+  useEffect(() => {
+    let cancelled = false;
+    async function tick() {
+      if (document.visibilityState !== 'visible') return;
+      const ids = postIdsRef.current;
+      if (!ids.length) return;
+      const token = await getToken();
+      if (!token) return;
+      try {
+        const { counts } = await fetchPostCounts(token, ids);
+        if (cancelled || !counts.length) return;
+        const byId = new Map(counts.map((c) => [c.id, c]));
+        setPosts((prev) =>
+          prev.map((p) => {
+            const c = byId.get(p.id);
+            if (!c) return p;
+            if (
+              c.likeCount === p.likeCount &&
+              c.commentCount === p.commentCount
+            ) {
+              return p;
+            }
+            return {
+              ...p,
+              likeCount: c.likeCount,
+              commentCount: c.commentCount,
+            };
+          }),
+        );
+      } catch {
+        /* next tick tries again */
+      }
+    }
+    const id = setInterval(tick, COUNTS_POLL_MS);
+    function onVisible() {
+      if (document.visibilityState === 'visible') void tick();
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [getToken]);
+
+  // Restore the member's scroll position once the first page is on screen,
+  // topping up any extra pages they had loaded so the position is reachable.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current || loading || !posts.length) return;
+    restoredRef.current = true;
+    if (!saved) return;
+    void (async () => {
+      let before = nextBefore;
+      let have = posts.length;
+      let pages = 0;
+      while (saved.loadedCount > have && before && pages < RESUME_MAX_PAGES) {
+        const token = await getToken();
+        if (!token) break;
+        try {
+          const query = {
+            before,
+            type: filterType || undefined,
+            includeFiltered,
+          };
+          const page = searchQuery
+            ? await searchFeed(token, { ...query, q: searchQuery })
+            : await fetchFeed(token, query);
+          if (!page.posts.length) break;
+          have += page.posts.length;
+          before = page.nextBefore;
+          setPosts((prev) => [...prev, ...page.posts]);
+          setNextBefore(before);
+          pages += 1;
+        } catch {
+          break;
+        }
+      }
+      requestAnimationFrame(() => {
+        const anchor = saved.anchorId
+          ? document.querySelector<HTMLElement>(
+              `[data-post-id="${CSS.escape(saved.anchorId)}"]`,
+            )
+          : null;
+        if (anchor) anchor.scrollIntoView({ block: 'start' });
+        else if (saved.scrollY > 0) window.scrollTo(0, saved.scrollY);
+      });
+    })();
+    // Runs once, guarded by restoredRef.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, posts.length]);
+
+  // Remember the place on scroll (throttled to a frame) and on unmount.
+  useEffect(() => {
+    let scheduled = false;
+    function persist() {
+      scheduled = false;
+      writeFeedState({
+        filterType,
+        sortBy,
+        searchText,
+        scrollY: window.scrollY,
+        anchorId: topAnchorId(),
+        loadedCount: posts.length,
+      });
+    }
+    function onScroll() {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(persist);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      persist();
+    };
+  }, [filterType, sortBy, searchText, posts.length]);
+
   async function loadMore() {
     if (!nextBefore || loadingMore) return;
     const currentRequest = requestId.current;
@@ -174,6 +367,19 @@ export function FeedClient() {
       /* keep what we have */
     } finally {
       setLoadingMore(false);
+    }
+  }
+
+  // Manual refresh: re-pull the first page with the spinner, then return to the
+  // top of the feed.
+  async function refresh() {
+    if (loading || refreshing) return;
+    setRefreshing(true);
+    try {
+      await loadFirst();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -261,21 +467,22 @@ export function FeedClient() {
   const feedItems: ReactNode[] = [];
   posts.forEach((post, index) => {
     feedItems.push(
-      <PostCard
-        key={post.id}
-        post={post}
-        showMuted={includeFiltered}
-        forceBlur={forceBlur}
-        showGraphic={prefs.feedShowGraphic}
-        onToggleLike={toggleLike}
-        onHideType={hideType}
-        onMuteAuthor={muteAuthor}
-        onMuteTag={muteTag}
-        onReport={report}
-        onEditPost={(p) => router.push(`/community/me?edit=${p.id}`)}
-        onDeletePost={deleteOwnPost}
-        onOpen={(p) => router.push(`/community/p/${p.id}`)}
-      />,
+      <div key={post.id} data-post-id={post.id}>
+        <PostCard
+          post={post}
+          showMuted={includeFiltered}
+          forceBlur={forceBlur}
+          showGraphic={prefs.feedShowGraphic}
+          onToggleLike={toggleLike}
+          onHideType={hideType}
+          onMuteAuthor={muteAuthor}
+          onMuteTag={muteTag}
+          onReport={report}
+          onEditPost={(p) => router.push(`/community/me?edit=${p.id}`)}
+          onDeletePost={deleteOwnPost}
+          onOpen={(p) => router.push(`/community/p/${p.id}`)}
+        />
+      </div>,
     );
     const slot = (index + 1) / AD_EVERY;
     if ((index + 1) % AD_EVERY === 0 && slot - 1 < ads.length) {
@@ -326,7 +533,22 @@ export function FeedClient() {
       </label>
 
       <div className="flex items-center justify-between mt-2">
-        <div />
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          disabled={loading || refreshing}
+          aria-label="Refresh the feed"
+          className="gg-press inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-medium"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            color: 'var(--text-secondary)',
+            opacity: loading || refreshing ? 0.6 : 1,
+          }}
+        >
+          <span aria-hidden="true">↻</span>
+          {refreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}

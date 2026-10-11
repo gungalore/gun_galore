@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   fetchFeed: vi.fn(),
   searchFeed: vi.fn(),
   fetchConfig: vi.fn(),
+  fetchPostCounts: vi.fn(),
   fetchPreferences: vi.fn(),
   deletePost: vi.fn(),
   likePost: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('../../lib/community-api', () => ({
   deletePost: mocks.deletePost,
   fetchConfig: mocks.fetchConfig,
   fetchFeed: mocks.fetchFeed,
+  fetchPostCounts: mocks.fetchPostCounts,
   fetchPreferences: mocks.fetchPreferences,
   likePost: mocks.likePost,
   reportPost: mocks.reportPost,
@@ -86,9 +88,11 @@ const post = {
 describe('Community feed search', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
     mocks.fetchFeed.mockResolvedValue({ posts: [], ads: [], nextBefore: null });
     mocks.searchFeed.mockResolvedValue({ posts: [post], nextBefore: null });
     mocks.fetchConfig.mockResolvedValue({ graphicBlurForced: false });
+    mocks.fetchPostCounts.mockResolvedValue({ counts: [] });
     mocks.fetchPreferences.mockResolvedValue({
       feedMutedPostTypes: [],
       feedMutedAuthorIds: [],
@@ -111,5 +115,38 @@ describe('Community feed search', () => {
       });
     });
     expect(await screen.findByText('Search result post')).toBeTruthy();
+  });
+
+  it('re-fetches the first page when Refresh is clicked', async () => {
+    mocks.fetchFeed.mockResolvedValue({
+      posts: [post],
+      ads: [],
+      nextBefore: null,
+    });
+    render(<FeedClient />);
+    await screen.findByText('Search result post');
+    mocks.fetchFeed.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh the feed' }));
+
+    await waitFor(() => expect(mocks.fetchFeed).toHaveBeenCalled());
+  });
+
+  it('polls like/comment counts for the posts on screen', async () => {
+    mocks.fetchFeed.mockResolvedValue({
+      posts: [post],
+      ads: [],
+      nextBefore: null,
+    });
+    render(<FeedClient />);
+    await screen.findByText('Search result post');
+
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await waitFor(() =>
+      expect(mocks.fetchPostCounts).toHaveBeenCalledWith('test-token', [
+        'post-1',
+      ]),
+    );
   });
 });

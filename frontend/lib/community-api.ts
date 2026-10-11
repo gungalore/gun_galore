@@ -390,6 +390,21 @@ export function removePostVideo(
   });
 }
 
+export interface FeedPostCount {
+  id: string;
+  likeCount: number;
+  commentCount: number;
+}
+
+/** Fresh like/comment counts for a set of posts (polled by the feed). */
+export function fetchPostCounts(
+  token: string,
+  ids: string[],
+): Promise<{ counts: FeedPostCount[] }> {
+  const q = encodeURIComponent(ids.join(','));
+  return jsonFetch(`/community/counts?ids=${q}`, token);
+}
+
 export function likePost(token: string, id: string): Promise<{ liked: boolean }> {
   return jsonFetch(`/community/posts/${id}/like`, token, { method: 'POST' });
 }

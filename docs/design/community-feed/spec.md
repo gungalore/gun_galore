@@ -659,6 +659,9 @@ Example json output:
 `feed.controller.ts` (member reads, `@Controller('community') @UseGuards(AuthGuard)`, `@Throttle({ default: { limit: 120, ttl: 60_000 } })` on reads):
 - `GET /community/feed` → `listFeed`
 - `GET /community/posts/:id` → `getPost`
+- `GET /community/counts?ids=a,b,c` → `postCounts` (like/comment counts for up
+  to 100 PUBLISHED posts; the feed polls it every 20s while visible to keep
+  counts fresh without re-fetching/re-ordering the feed. Added 2026-10-11.)
 - `GET /community/posts/:id/likes` → `listPostLikes` (members who liked a post,
   newest first, cursor-paged via `?before`; visible to any signed-in member —
   operator 2026-10-10. Exposes username + privacy-gated avatar only.)
@@ -776,6 +779,13 @@ A designed card: headline, short value copy, a **blurred sample post** (CSS blur
 
 - `components/community/post-card.tsx` — `.gg-tile gg-tile-lift`, author line (`username ?? 'Anonymous'`), type chip, tags, images (`next/image`, Cloudinary only), graphic blur overlay with tap-to-reveal, action row (like/comment/share/mute). **Graphic gate resolution:** the gate is shown when the member turned graphic content off (`showGraphic=false`) or for EXTREME content the operator has forced shut (`forceBlur`); a member who chose "always show graphic content" **skips the gate** entirely (their preference), except that forced EXTREME stays hidden with no reveal. Fix 2026-10-11 — the `showGraphic` prop was previously never read, so the toggle had no effect.
 - `components/community/comment-thread.tsx`
+- `components/community/feed-client.tsx` — also: **resume place** (filter/sort/
+  search + scroll position persisted in `sessionStorage` under
+  `gg.community.feedState`, anchored to the topmost visible `[data-post-id]`,
+  restored once on mount, topping up loaded pages to reach it); a **Refresh**
+  button in the header row; and a **20s counts poll** while the tab is visible
+  that merges `likeCount`/`commentCount` in place (never reorders or moves
+  scroll). Added 2026-10-11.
 - `components/community/liked-by-sheet.tsx` — the "Liked by" list opened from the
   like count on any post (operator 2026-10-10). Bottom-sheet on mobile, centred
   card on desktop; rows link to `/community/u/[username]`; cursor-paged.

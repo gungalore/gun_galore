@@ -498,6 +498,25 @@ export class FeedService {
     };
   }
 
+  /**
+   * Lightweight like/comment counts for a set of posts, so the client can keep
+   * counts fresh on a poll without re-fetching (and re-ordering) the feed.
+   * Only PUBLISHED posts are returned; unknown/non-published ids are dropped.
+   */
+  async postCounts(userId: string, ids: string[]) {
+    await this.assertEnabled();
+    await this.viewer(userId);
+    const capped = Array.from(
+      new Set(ids.map((id) => id.trim()).filter(Boolean)),
+    ).slice(0, 100);
+    if (!capped.length) return { counts: [] };
+    const counts = await this.prisma.post.findMany({
+      where: { id: { in: capped }, status: PostStatus.PUBLISHED },
+      select: { id: true, likeCount: true, commentCount: true },
+    });
+    return { counts };
+  }
+
   private async listComments(postId: string, userId: string) {
     const comments = await this.prisma.comment.findMany({
       where: { postId, status: PostStatus.PUBLISHED },

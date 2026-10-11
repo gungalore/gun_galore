@@ -67,6 +67,14 @@ export class FeedController {
     return this.feed.searchFeed(userId, q);
   }
 
+  // Like/comment counts for a comma-separated set of post ids, polled by the
+  // feed so other members' likes/comments appear without a full refresh.
+  @Get('counts')
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  counts(@CurrentUser() userId: string, @Query('ids') ids?: string) {
+    return this.feed.postCounts(userId, (ids ?? '').split(','));
+  }
+
   @Get('preferences')
   preferences(@CurrentUser() userId: string) {
     return this.feed.getPreferences(userId);
