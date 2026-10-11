@@ -52,6 +52,11 @@ const SOURCES = [
   { domain: 'junkmail.co.za', label: 'Junk Mail', platform: MARKETPLACE, roles: ['USED'], categories: ['*'], needsApify: true },
   // Used classifieds forum reachable by plain GET (bounded recent-listings crawl).
   { domain: 'jaracal.com', label: 'Jaracal', platform: MARKETPLACE, roles: ['USED'], categories: ['firearms', 'optics', 'reloading-equipment', 'reloading-components', 'shooting-accessories', 'knives', 'hunting', 'air-rifles', 'paintball', 'archery', 'outdoor-clothing-footwear', 'camping-outdoor', 'fishing', 'self-defence'] },
+  // SA precision/chassis maker on Shopify (readable now).
+  { domain: 'aimengineering.co.za', label: 'AIM Engineering', platform: SHOPIFY, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics', 'reloading-equipment', 'hunting'] },
+  // Wix/JS storefronts: only readable through Apify (lane closed) so left disabled.
+  { domain: 'gunwarrior.co.za', label: 'Gun Warrior', platform: MARKETPLACE, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics'], needsApify: true },
+  { domain: 'musgraverifles.co.za', label: 'Musgrave Rifles', platform: MARKETPLACE, roles: ['ANCHOR'], categories: ['firearms'], needsApify: true },
   // Cloudflare-blocked Magento retailers: read via Apify once the lane is live.
   { domain: 'futurama.co.za', label: 'Futurama', platform: MARKETPLACE, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'air-rifles', 'reloading-equipment', 'reloading-components', 'shooting-accessories', 'knives', 'hunting', 'paintball'], needsApify: true },
 ];
