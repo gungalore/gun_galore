@@ -26,6 +26,7 @@ import { MagentoAdapter } from '../src/valuation/sources/adapters/magento.adapte
 import { ShopifyAdapter } from '../src/valuation/sources/adapters/shopify.adapter';
 import { WooAdapter } from '../src/valuation/sources/adapters/woo.adapter';
 import { GunAfricaAdapter } from '../src/valuation/sources/adapters/gunafrica.adapter';
+import { JaracalAdapter } from '../src/valuation/sources/adapters/jaracal.adapter';
 
 interface Fixture {
   id: number;
@@ -54,6 +55,7 @@ async function main(): Promise<void> {
       new ShopifyAdapter(),
       new WooAdapter(),
       new GunAfricaAdapter(),
+      new JaracalAdapter(),
       new ApifyMarketplaceAdapter(new ApifyClient()),
       new SitemapJsonLdAdapter(),
       new MagentoAdapter(),

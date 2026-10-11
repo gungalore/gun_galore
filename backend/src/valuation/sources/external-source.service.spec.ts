@@ -11,11 +11,12 @@ function build(rows: unknown[], shopifySearch = jest.fn()) {
   const shopify = { platform: 'SHOPIFY', search: shopifySearch } as unknown as SourceAdapter;
   const woo = { platform: 'WOO', search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
   const gunAfrica = { platform: 'MARKETPLACE', domains: ['gunafrica.co.za'], search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
+  const jaracal = { platform: 'MARKETPLACE', domains: ['jaracal.com'], search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
   const apify = { platform: 'MARKETPLACE', domains: ['gumtree.co.za', 'facebook.com'], search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
   const ow = { platform: 'SITEMAP_HTML', domains: ['outdoorwarehouse.co.za'], search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
   const magento = { platform: 'MAGENTO', domains: ['futurama.co.za'], search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
   const jevMatch = { mode: () => 'off', judge: jest.fn(async (_i: unknown, h: unknown[]) => h) };
-  const service = new ExternalSourceService(prisma, shopify as any, woo as any, gunAfrica as any, apify as any, ow as any, magento as any, jevMatch as any);
+  const service = new ExternalSourceService(prisma, shopify as any, woo as any, gunAfrica as any, jaracal as any, apify as any, ow as any, magento as any, jevMatch as any);
   return { service, prisma, shopifySearch };
 }
 

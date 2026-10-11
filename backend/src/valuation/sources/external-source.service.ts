@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { RawComp } from '../schemas';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GunAfricaAdapter } from './adapters/gunafrica.adapter';
+import { JaracalAdapter } from './adapters/jaracal.adapter';
 import { ApifyMarketplaceAdapter } from './adapters/apify-marketplace.adapter';
 import { MagentoAdapter } from './adapters/magento.adapter';
 import { SitemapJsonLdAdapter } from './adapters/sitemap-jsonld.adapter';
@@ -33,12 +34,13 @@ export class ExternalSourceService {
     shopify: ShopifyAdapter,
     woo: WooAdapter,
     gunAfrica: GunAfricaAdapter,
+    jaracal: JaracalAdapter,
     apifyMarketplace: ApifyMarketplaceAdapter,
     sitemapJsonLd: SitemapJsonLdAdapter,
     magento: MagentoAdapter,
     private readonly jevMatch: JevMatchService,
   ) {
-    this.adapters = [shopify, woo, gunAfrica, apifyMarketplace, sitemapJsonLd, magento];
+    this.adapters = [shopify, woo, gunAfrica, jaracal, apifyMarketplace, sitemapJsonLd, magento];
   }
 
   private adapterFor(platform: string, domain: string): SourceAdapter | undefined {
