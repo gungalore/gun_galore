@@ -7,6 +7,29 @@ overwritten.
 
 Last updated: **2026-10-11**.
 
+## 2026-10-11 - FEED RESUME + REFRESH + LIVE COUNTS (FULL DEPLOY)
+
+Commit **`6798540f`** (7 files), full deploy via `infra/deploy/deploy.sh`.
+Rollback point **`alloutdoor-20261011-075803.dump`** (30,026,584 bytes); no
+pending migrations. Backend + frontend health x2 OK, warden online, public 200
+x2, three pm2 services online. Gates: backend tsc clean + **330 suites/5388
+tests**; frontend tsc clean + **136 files/1700 tests** + prod build.
+
+**Three asks shipped.**
+- **Resume place.** `feed-client.tsx` persists filter/sort/search + scroll
+  position to `sessionStorage` (`gg.community.feedState`), anchored to the
+  topmost visible `[data-post-id]`, on scroll (rAF-throttled) and on unmount.
+  On mount it restores the controls, tops up loaded pages (cap 5) so the
+  position is reachable, then scrolls the anchor into view.
+- **Refresh button.** Header row; non-silent reload (spinner) then scroll to top.
+- **Live counts.** New `GET /community/counts?ids=` (`FeedService.postCounts`,
+  throttled 120/min, <=100 ids, PUBLISHED only) + `fetchPostCounts`; the feed
+  polls every 20s **only while the tab is visible** (and on visibilitychange
+  back), merging like/comment counts in place - never reorders or moves scroll.
+
+Verified live: Refresh button renders; `/api/community/counts` 200 with live
+counts for the feed's post.
+
 ## 2026-10-11 - GRAPHIC-CONTENT PREFERENCE NOW PERSISTS (FULL DEPLOY)
 
 Commit **`0001f127`** (4 files), full deploy via `infra/deploy/deploy.sh`.
