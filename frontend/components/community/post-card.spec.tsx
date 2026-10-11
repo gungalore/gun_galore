@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -80,6 +81,56 @@ describe('PostCard — the ⋯ menu is never clipped by its own tile', () => {
     expect(screen.getByText('Report post')).toBeTruthy();
     // Above the following card's stacking context (gg-tile-lift is z-index 0).
     expect(article.style.zIndex).toBe('30');
+  });
+});
+
+const graphicPost: FeedPost = {
+  ...post,
+  graphicTier: 'FIELD',
+  images: [{ id: 'i1', url: 'https://img/1', order: 0 }],
+};
+
+function renderGraphic(
+  overrides: Partial<ComponentProps<typeof PostCard>>,
+) {
+  render(
+    <PostCard
+      post={graphicPost}
+      onToggleLike={vi.fn()}
+      onHideType={vi.fn()}
+      onMuteAuthor={vi.fn()}
+      onMuteTag={vi.fn()}
+      {...overrides}
+    />,
+  );
+}
+
+describe('PostCard — the graphic-content gate follows the member preference', () => {
+  it('skips the gate when the member chose to always show graphic content', () => {
+    renderGraphic({ showGraphic: true });
+    expect(screen.queryByText('Graphic content')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Tap to reveal' }),
+    ).toBeNull();
+  });
+
+  it('gates graphic content when the member turned it off, and reveals on tap', async () => {
+    renderGraphic({ showGraphic: false });
+    expect(screen.getByText('Graphic content')).toBeTruthy();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Tap to reveal' }),
+    );
+    expect(screen.queryByText('Graphic content')).toBeNull();
+  });
+
+  it('force-hides extreme content with no reveal button', () => {
+    renderGraphic({
+      post: { ...graphicPost, graphicTier: 'EXTREME' },
+      forceBlur: true,
+      showGraphic: true,
+    });
+    expect(screen.getByText('Graphic content')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Show image' })).toBeNull();
   });
 });
 

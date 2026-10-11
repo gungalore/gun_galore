@@ -770,7 +770,7 @@ A designed card: headline, short value copy, a **blurred sample post** (CSS blur
 
 ### 11.4 Components
 
-- `components/community/post-card.tsx` — `.gg-tile gg-tile-lift`, author line (`username ?? 'Anonymous'`), type chip, tags, images (`next/image`, Cloudinary only), graphic blur overlay with tap-to-reveal, action row (like/comment/share/mute).
+- `components/community/post-card.tsx` — `.gg-tile gg-tile-lift`, author line (`username ?? 'Anonymous'`), type chip, tags, images (`next/image`, Cloudinary only), graphic blur overlay with tap-to-reveal, action row (like/comment/share/mute). **Graphic gate resolution:** the gate is shown when the member turned graphic content off (`showGraphic=false`) or for EXTREME content the operator has forced shut (`forceBlur`); a member who chose "always show graphic content" **skips the gate** entirely (their preference), except that forced EXTREME stays hidden with no reveal. Fix 2026-10-11 — the `showGraphic` prop was previously never read, so the toggle had no effect.
 - `components/community/comment-thread.tsx`
 - `components/community/liked-by-sheet.tsx` — the "Liked by" list opened from the
   like count on any post (operator 2026-10-10). Bottom-sheet on mobile, centred

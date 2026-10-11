@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../../lib/auth';
 import { type FeedPost, disputePost } from '../../lib/community-api';
 import { postTypeLabel } from '../../lib/post-types';
@@ -93,23 +93,17 @@ export function PostCard({
   }
 
   const graphic = post.graphicTier !== 'NONE';
-  // Only EXTREME content is force-hidden. FIELD (normal hunting/fishing field
-  // photos) is blurred with a tap-to-reveal, per the tiered policy — forceBlur
-  // must not make an ordinary field photo permanently invisible.
-  // showGraphic false (member preference) blurs all graphic content.
-  const hiddenForever =
-    graphic && post.graphicTier === 'EXTREME' && (!!forceBlur || !showGraphic);
-
-  // The content-warning badge. Big and red on purpose — members kept tapping
-  // past a small, low-contrast hint.
-  const overlayBoxStyle: CSSProperties = {
-    background: 'color-mix(in srgb, var(--red) 60%, transparent)',
-    borderRadius: 16,
-    padding: '20px 28px',
-    color: '#fff',
-    maxWidth: '92%',
-    textAlign: 'center',
-  };
+  const isExtreme = post.graphicTier === 'EXTREME';
+  // Only EXTREME content is ever force-hidden: the operator's policy flag, or a
+  // member who turned graphic content off. FIELD (normal hunting/fishing field
+  // photos) is only ever tap-to-reveal — forceBlur must not make an ordinary
+  // field photo permanently invisible.
+  const hiddenForever = graphic && isExtreme && (!!forceBlur || !showGraphic);
+  // The gate is shown for graphic media UNLESS the member chose "always show
+  // graphic content" (their preference skips it entirely), except for extreme
+  // content the operator has forced shut. See brand-pack DESIGN.md ("A per-user
+  // setting skips the gate").
+  const gated = graphic && (!showGraphic || (isExtreme && !!forceBlur));
 
   async function share() {
     const url = `${window.location.origin}/community/p/${post.id}`;
@@ -442,7 +436,7 @@ export function PostCard({
             <div
               className="flex flex-col gap-1"
               style={{
-                filter: graphic && !revealed ? 'blur(28px)' : 'none',
+                filter: gated && !revealed ? 'blur(28px)' : 'none',
               }}
             >
               {post.video && (
@@ -494,7 +488,7 @@ export function PostCard({
                 </button>
               ))}
             </div>
-            {graphic && !revealed && (
+            {gated && !revealed && (
               <div
                 className="absolute inset-0 flex items-center justify-center text-center px-4"
                 style={{
@@ -513,13 +507,15 @@ export function PostCard({
                   <span className="text-white/80 text-sm">
                     {post.graphicTier === 'EXTREME' ? 'This post shows a harvested animal.' : 'Tap to reveal'}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setRevealed(true)}
-                    className="bg-white text-[var(--stone-900)] px-4 py-2 rounded-full text-sm font-medium"
-                  >
-                    {post.graphicTier === 'EXTREME' ? 'Show image' : 'Tap to reveal'}
-                  </button>
+                  {!hiddenForever && (
+                    <button
+                      type="button"
+                      onClick={() => setRevealed(true)}
+                      className="bg-white text-[var(--stone-900)] px-4 py-2 rounded-full text-sm font-medium"
+                    >
+                      {post.graphicTier === 'EXTREME' ? 'Show image' : 'Tap to reveal'}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
