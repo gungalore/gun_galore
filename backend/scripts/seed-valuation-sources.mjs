@@ -29,6 +29,7 @@ const SITEMAP_HTML = 'SITEMAP_HTML';
 const SOURCES = [
   { domain: 'habitatafrica.co.za', label: 'Habitat Africa', platform: WOO, roles: ['ANCHOR'], categories: ['*'] },
   { domain: 'outdoorwarehouse.co.za', label: 'Outdoor Warehouse', platform: SITEMAP_HTML, roles: ['ANCHOR'], categories: ['camping-outdoor', 'overlanding', 'hunting', 'fishing', 'outdoor-clothing-footwear'] },
+  { domain: 'safarioutdoor.co.za', label: 'Safari Outdoor', platform: SITEMAP_HTML, roles: ['ANCHOR'], categories: ['firearms', 'air-rifles', 'optics', 'reloading-equipment', 'reloading-components', 'knives', 'hunting', 'camping-outdoor', 'fishing', 'outdoor-clothing-footwear', 'archery-bowhunting'] },
   { domain: '4x4megaworldonline.com', label: '4x4 Mega World', platform: WOO, roles: ['ANCHOR'], categories: ['overlanding', 'camping-outdoor', 'hunting', 'shooting-accessories'] },
   { domain: 'cityguns.co.za', label: 'City Guns', platform: WOO, roles: ['ANCHOR'], categories: ['*'] },
   { domain: 'kloppers.co.za', label: 'Kloppers', platform: WOO, roles: ['ANCHOR'], categories: ['*'] },

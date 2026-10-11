@@ -20,7 +20,7 @@ dotenv.config({ quiet: true });
 import { ExternalSourceService } from '../src/valuation/sources/external-source.service';
 import { ApifyClient } from '../src/valuation/sources/apify-client';
 import { ApifyMarketplaceAdapter } from '../src/valuation/sources/adapters/apify-marketplace.adapter';
-import { OutdoorWarehouseAdapter } from '../src/valuation/sources/adapters/outdoorwarehouse.adapter';
+import { SitemapJsonLdAdapter } from '../src/valuation/sources/adapters/sitemap-jsonld.adapter';
 import { ShopifyAdapter } from '../src/valuation/sources/adapters/shopify.adapter';
 import { WooAdapter } from '../src/valuation/sources/adapters/woo.adapter';
 import { GunAfricaAdapter } from '../src/valuation/sources/adapters/gunafrica.adapter';
@@ -53,7 +53,7 @@ async function main(): Promise<void> {
       new WooAdapter(),
       new GunAfricaAdapter(),
       new ApifyMarketplaceAdapter(new ApifyClient()),
-      new OutdoorWarehouseAdapter(),
+      new SitemapJsonLdAdapter(),
     );
 
     const perSource = new Map<string, { items: number; comps: number; samplePrices: number[] }>();
