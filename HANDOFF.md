@@ -5,7 +5,31 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-10**.
+Last updated: **2026-10-11**.
+
+## 2026-10-11 - COMMUNITY GRAPHIC-CONTENT TOGGLE FIXED (FRONTEND-ONLY DEPLOY)
+
+Commit **`c70f9117`** (3 files), deployed `--frontend-only` (backend untouched).
+Rollback point **`alloutdoor-20261011-072956.dump`** (30,026,365 bytes). Health
+x2 OK, public 200 x2, three pm2 services online. Gates: backend tsc clean +
+**328 suites/5382 tests**; frontend tsc clean + **136 files/1698 tests** + prod
+build.
+
+**Bug.** `post-card.tsx` computed `hiddenForever` but never used it - the gate
+rendered on `graphic && !revealed`, ignoring the `showGraphic` prop. So the
+feed-settings "Graphic content" On/Off switch changed nothing, and `forceBlur`
+could not suppress the reveal button.
+
+**Fix.** `gated = graphic && (!showGraphic || (isExtreme && !!forceBlur))` now
+drives both the blur and the overlay; the reveal button is hidden when
+`hiddenForever` (EXTREME + forceBlur, or member off). Removed the dead
+`overlayBoxStyle`/`CSSProperties`. Behaviour matches brand-pack
+`DESIGN.md` ("a per-user setting [Always show hunting images] skips the gate"):
+- On (default): FIELD media shown ungated; EXTREME still gated (operator
+  `feedGraphicBlurForced` default true -> hidden, no reveal).
+- Off: all graphic media gated - FIELD tap-to-reveal, EXTREME hidden.
+Adds 3 gate cases to `post-card.spec.tsx`. Note the default-behaviour change:
+FIELD gore now shows unblurred when the setting is On (previously always gated).
 
 ## 2026-10-10 - COMMUNITY: "LIKED BY" LIST (FULL DEPLOY)
 
