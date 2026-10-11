@@ -19,7 +19,7 @@ import { QuestionService, ServedQuestion } from './question.service';
 import { ResearchService } from './research.service';
 import { SoldCompsService } from './sold-comps.service';
 import { ExternalSourceService } from './sources/external-source.service';
-import { ResultOutput } from './schemas';
+import { RawComp, ResultOutput } from './schemas';
 import {
   IDENTIFY_PROMPT_VERSION,
   MEMBER_INPUT_HEADER,
@@ -603,25 +603,31 @@ export class ValuationService {
     const selfUrls = await this.selfListingUrls(id);
     // Own/dealer SOLD prices (highest-accuracy) are prepended as comps.
     const soldComps = await this.soldComps.find(categorySlug, confirmed.make, confirmed.model);
-    // External retail/used comps (Shopify/Woo marketplaces) are add-only: they
-    // join the pricing pool like own-sold comps and never touch any prompt.
-    // Inert unless VALUATION_EXTERNAL_ENABLED=true and registry rows are on.
-    const externalComps = await this.external
-      .collect(
-        categorySlug,
-        { make: confirmed.make, model: confirmed.model, keySpec: confirmed.keySpec },
-        result.itemSummary.conditionBand || 'GOOD',
-      )
-      .catch(() => [] as never[]);
+    // External retail/used comps (Woo/Shopify/GunAfrica) are add-only. In mode
+    // 'live' they join the pricing pool; in mode 'shadow' the delta is logged
+    // and the member's result is left untouched; 'off' does nothing.
+    const externalMode = this.external.mode();
+    const externalComps: RawComp[] =
+      externalMode === 'off'
+        ? []
+        : await this.external
+            .collect(
+              categorySlug,
+              { make: confirmed.make, model: confirmed.model, keySpec: confirmed.keySpec },
+              result.itemSummary.conditionBand || 'GOOD',
+            )
+            .catch(() => [] as RawComp[]);
+    const pooledComps =
+      externalMode === 'live'
+        ? [...soldComps, ...externalComps, ...result.comps]
+        : [...soldComps, ...result.comps];
     // Comp window: the last 5 years. Older information is not excluded up to
     // five years back, but it lowers confidence (see recencyDowngrades).
     const minYear =
       Number(process.env.VALUATION_COMP_MIN_YEAR ?? 0) || new Date().getFullYear() - 4;
-    const { kept, excluded } = this.comps.filterComps(
-      [...soldComps, ...externalComps, ...result.comps],
-      {
-        selfUrls,
-        minYear,
+    const { kept, excluded } = this.comps.filterComps(pooledComps, {
+      selfUrls,
+      minYear,
       matchDimensions: config.matchDimensions,
     });
 
@@ -642,6 +648,14 @@ export class ValuationService {
       conditionBand,
       ageBand,
     });
+
+    if (externalMode === 'shadow' && externalComps.length > 0) {
+      const prices = externalComps.map((c) => c.priceZar * 100).sort((a, b) => a - b);
+      const extMedian = prices[Math.floor(prices.length / 2)];
+      this.logger.log(
+        `valuation ${id} shadow: liveMid=${pricing.mid ?? 'none'} externalMedian=${extMedian} externalComps=${externalComps.length}`,
+      );
+    }
 
     const unsureCount = await this.countUnsure(id);
     const recency = this.comps.recencyDowngrades(kept, new Date());
@@ -829,6 +843,8 @@ export class ValuationService {
       confidenceDowngrades: downgrades,
       identifyPromptVersion: IDENTIFY_PROMPT_VERSION,
       researchPromptVersion: RESEARCH_PROMPT_VERSION,
+      externalMode,
+      externalComps: externalComps.length,
     };
 
     await this.prisma.$transaction(async (tx) => {

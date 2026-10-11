@@ -14,6 +14,7 @@ import { ResearchService } from './research.service';
 import { ValuationRetentionService } from './retention.service';
 import { SerperClient } from './sources/serper.client';
 import { ApifyClient } from './sources/apify-client';
+import { ApifyMarketplaceAdapter } from './sources/adapters/apify-marketplace.adapter';
 import { GunAfricaAdapter } from './sources/adapters/gunafrica.adapter';
 import { ShopifyAdapter } from './sources/adapters/shopify.adapter';
 import { WooAdapter } from './sources/adapters/woo.adapter';
@@ -48,6 +49,7 @@ import { WebToolsService } from './web-tools.service';
     ShopifyAdapter,
     WooAdapter,
     GunAfricaAdapter,
+    ApifyMarketplaceAdapter,
     ExternalSourceService,
     ValuationRetentionService,
     AuthGuard,

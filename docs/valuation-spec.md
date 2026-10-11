@@ -306,6 +306,14 @@ VALUATION_STALE_ABANDON_DAYS=14
 QWEN_BASE_URL=https://maas.qwencloudapi.com/compatible-mode/v1
 QWEN_API_KEY=                       # .env only
 VALUATION_MODEL=qwen3.8-flash
+VALUATION_EXTERNAL_MODE=off         # off | shadow | live (see 8.9)
+VALUATION_EXTERNAL_ENABLED=false    # synonym for 'live'
+VALUATION_EXTERNAL_LIMIT=25         # max external comps per valuation
+VALUATION_EXTERNAL_PER_SOURCE=20
+VALUATION_EXTERNAL_TIMEOUT_MS=12000
+VALUATION_APIFY_ENABLED=false       # Gumtree/Facebook lane (needs a paid Apify plan)
+APIFY_TOKEN=                        # .env only
+APIFY_ACTOR_CONTENT_CRAWLER=apify/website-content-crawler
 ```
 
 ---
@@ -953,6 +961,44 @@ Input: up to 8 `ValuationImage` rows + the active checklist. Output ≤ `VALUATI
 4. Near-duplicate skip: a photo whose width/height/bytes are within 2% of an already-selected one is skipped (cheap heuristic; perceptual hash is post-pilot).
 
 Untagged phone uploads may receive an inferred tag after identify maps `views.received` to slots (best effort; user-set tags always win).
+
+### 8.9 External research sources (add-only)
+
+Beyond Qwen's own agentic search, the engine can pull prices from curated SA
+sources. They are **add-only**: they join the pricing pool in `finalise()`
+exactly like own-sold comps and are **never injected into any prompt** (injecting
+fetched evidence regressed results; see `research.service.ts`). The member is
+never told where a price came from, and no source URL is ever stored (external
+comp URLs are synthetic `src://<domain>/<refId>`).
+
+Registry (`ValuationSource` table, seeded by `scripts/seed-valuation-sources.mjs`):
+`domain`, `platform` (SHOPIFY|WOO|MARKETPLACE|AUCTION|OWN|EXCLUDED), `roles`
+(ANCHOR|USED|SOLD), `categories`, `enabled`, `needsApify`, and hit counters
+(`pricedHits`, `totalHits`, `lastCheckAt`) updated after every run.
+
+Adapters (`backend/src/valuation/sources/adapters/`):
+- `woo.adapter.ts` — WooCommerce Store API (`/wp-json/wc/store/products`), the
+  dominant SA platform. Uses a short query ladder because the API's `search` is
+  an AND keyword match (`MSR Hubba` hits, `MSR Hubba Hubba NX2` does not).
+- `shopify.adapter.ts` — `/products.json`, shape-validated (an SPA 200 shell is
+  rejected). Kept for when a real Shopify SA store is found; SA retail is not
+  Shopify-heavy.
+- `gunafrica.adapter.ts` — server-rendered classifieds; parses the listing
+  anchor `title="Item, R price, Make, Model, Condition, ..."`. Used comps.
+- `apify-marketplace.adapter.ts` — Gumtree/Facebook via Apify's content crawler
+  (residential proxies). Inert until the Apify lane is enabled.
+
+Mode (`VALUATION_EXTERNAL_MODE`): `off` (default) | `shadow` (collect and log
+the delta, never change the member result) | `live` (add to the pricing pool).
+`VALUATION_EXTERNAL_ENABLED=true` is a synonym for `live`.
+
+Signals: `scripts/valuation-sources-report.ts` (per-source coverage over the
+accuracy fixtures) and `scripts/export-valuation-fixtures.ts` (ground-truth
+fixtures from real `SoldComp`).
+
+**Known limits:** used comps for non-firearm categories still rely on Qwen
+(Gumtree/Facebook need the paid Apify plan); archery has no retail anchor
+source; the accuracy gate (`expectedSoldZar`) needs production sold data.
 
 ---
 

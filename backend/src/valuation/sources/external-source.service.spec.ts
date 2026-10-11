@@ -2,11 +2,17 @@ import { ExternalSourceService } from './external-source.service';
 import { SourceAdapter } from './types';
 
 function build(rows: unknown[], shopifySearch = jest.fn()) {
-  const prisma = { valuationSource: { findMany: jest.fn().mockResolvedValue(rows) } } as any;
+  const prisma = {
+    valuationSource: {
+      findMany: jest.fn().mockResolvedValue(rows),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+  } as any;
   const shopify = { platform: 'SHOPIFY', search: shopifySearch } as unknown as SourceAdapter;
   const woo = { platform: 'WOO', search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
   const gunAfrica = { platform: 'MARKETPLACE', domains: ['gunafrica.co.za'], search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
-  const service = new ExternalSourceService(prisma, shopify as any, woo as any, gunAfrica as any);
+  const apify = { platform: 'MARKETPLACE', domains: ['gumtree.co.za', 'facebook.com'], search: jest.fn().mockResolvedValue([]) } as unknown as SourceAdapter;
+  const service = new ExternalSourceService(prisma, shopify as any, woo as any, gunAfrica as any, apify as any);
   return { service, prisma, shopifySearch };
 }
 
@@ -14,8 +20,25 @@ const item = { make: 'MSR', model: 'Hubba Hubba NX2', keySpec: null };
 
 describe('ExternalSourceService', () => {
   const original = process.env.VALUATION_EXTERNAL_ENABLED;
+  const originalMode = process.env.VALUATION_EXTERNAL_MODE;
   afterEach(() => {
     process.env.VALUATION_EXTERNAL_ENABLED = original;
+    if (originalMode === undefined) delete process.env.VALUATION_EXTERNAL_MODE;
+    else process.env.VALUATION_EXTERNAL_MODE = originalMode;
+  });
+
+  it('resolves the lane mode off | shadow | live', () => {
+    const { service } = build([]);
+    process.env.VALUATION_EXTERNAL_ENABLED = 'false';
+    delete process.env.VALUATION_EXTERNAL_MODE;
+    expect(service.mode()).toBe('off');
+    process.env.VALUATION_EXTERNAL_MODE = 'shadow';
+    expect(service.mode()).toBe('shadow');
+    process.env.VALUATION_EXTERNAL_MODE = 'live';
+    expect(service.mode()).toBe('live');
+    delete process.env.VALUATION_EXTERNAL_MODE;
+    process.env.VALUATION_EXTERNAL_ENABLED = 'true';
+    expect(service.mode()).toBe('live');
   });
 
   it('is inert when the feature flag is off', async () => {
@@ -57,5 +80,23 @@ describe('ExternalSourceService', () => {
     ]);
     expect(await service.collect('camping-outdoor', item, 'GOOD')).toEqual([]);
     expect(shopifySearch).not.toHaveBeenCalled();
+  });
+
+  it('records per-source hit counters (learning loop)', async () => {
+    process.env.VALUATION_EXTERNAL_ENABLED = 'true';
+    const search = jest.fn().mockResolvedValue([
+      { refId: 'h1', title: 'MSR Hubba Hubba NX2', priceZar: 4200, domain: 'shop.example', brand: 'MSR', model: 'Hubba Hubba NX2', isNew: true },
+      { refId: 'h2', title: 'MSR Hubba NX', priceZar: 3000, domain: 'shop.example', brand: 'MSR', model: 'Hubba NX', isNew: true },
+    ]);
+    const { service, prisma } = build(
+      [{ domain: 'shop.example', platform: 'SHOPIFY', roles: ['ANCHOR'], categories: ['*'] }],
+      search,
+    );
+    await service.collect('camping-outdoor', item, 'GOOD');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(prisma.valuationSource.updateMany).toHaveBeenCalledWith({
+      where: { domain: 'shop.example' },
+      data: { totalHits: { increment: 2 }, pricedHits: { increment: 2 }, lastCheckAt: expect.any(Date) },
+    });
   });
 });

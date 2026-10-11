@@ -18,6 +18,8 @@ import dotenv from 'dotenv';
 dotenv.config({ quiet: true });
 
 import { ExternalSourceService } from '../src/valuation/sources/external-source.service';
+import { ApifyClient } from '../src/valuation/sources/apify-client';
+import { ApifyMarketplaceAdapter } from '../src/valuation/sources/adapters/apify-marketplace.adapter';
 import { ShopifyAdapter } from '../src/valuation/sources/adapters/shopify.adapter';
 import { WooAdapter } from '../src/valuation/sources/adapters/woo.adapter';
 import { GunAfricaAdapter } from '../src/valuation/sources/adapters/gunafrica.adapter';
@@ -49,6 +51,7 @@ async function main(): Promise<void> {
       new ShopifyAdapter(),
       new WooAdapter(),
       new GunAfricaAdapter(),
+      new ApifyMarketplaceAdapter(new ApifyClient()),
     );
 
     const perSource = new Map<string, { items: number; comps: number; samplePrices: number[] }>();

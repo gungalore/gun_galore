@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { RawComp } from '../schemas';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GunAfricaAdapter } from './adapters/gunafrica.adapter';
+import { ApifyMarketplaceAdapter } from './adapters/apify-marketplace.adapter';
 import { ShopifyAdapter } from './adapters/shopify.adapter';
 import { WooAdapter } from './adapters/woo.adapter';
 import { withTimeout } from './http';
@@ -29,8 +30,9 @@ export class ExternalSourceService {
     shopify: ShopifyAdapter,
     woo: WooAdapter,
     gunAfrica: GunAfricaAdapter,
+    apifyMarketplace: ApifyMarketplaceAdapter,
   ) {
-    this.adapters = [shopify, woo, gunAfrica];
+    this.adapters = [shopify, woo, gunAfrica, apifyMarketplace];
   }
 
   private adapterFor(platform: string, domain: string): SourceAdapter | undefined {
@@ -39,12 +41,25 @@ export class ExternalSourceService {
     );
   }
 
+  /**
+   * off    - the lane does nothing (default).
+   * shadow - collect and log what external sources WOULD contribute, but do
+   *          not change the member's result.
+   * live   - external comps join the pricing pool.
+   * VALUATION_EXTERNAL_ENABLED=true is kept as a synonym for 'live'.
+   */
+  mode(): 'off' | 'shadow' | 'live' {
+    const m = (process.env.VALUATION_EXTERNAL_MODE ?? '').toLowerCase();
+    if (m === 'shadow' || m === 'live') return m;
+    return process.env.VALUATION_EXTERNAL_ENABLED === 'true' ? 'live' : 'off';
+  }
+
   enabled(): boolean {
-    return process.env.VALUATION_EXTERNAL_ENABLED === 'true';
+    return this.mode() !== 'off';
   }
 
   async collect(categorySlug: string, item: ItemSpec, conditionBand: string): Promise<RawComp[]> {
-    if (!this.enabled()) return [];
+    if (this.mode() === 'off') return [];
 
     let rows: Array<{
       domain: string;
@@ -88,10 +103,18 @@ export class ExternalSourceService {
 
     const settled = await Promise.allSettled(jobs);
     const out: RawComp[] = [];
+    const stats: Array<{ domain: string; hits: number; priced: number }> = [];
     for (const s of settled) {
-      if (s.status === 'fulfilled') out.push(...s.value);
-      else this.logger.warn(`external source errored: ${String(s.reason).slice(0, 160)}`);
+      if (s.status === 'fulfilled') {
+        out.push(...s.value.comps);
+        stats.push({ domain: s.value.domain, hits: s.value.rawHits, priced: s.value.comps.length });
+      } else {
+        this.logger.warn(`external source errored: ${String(s.reason).slice(0, 160)}`);
+      }
     }
+    // Learning loop: remember which sources actually produce priced hits so the
+    // registry can rank them (best-effort, never blocks the valuation).
+    void this.recordStats(stats);
 
     const seen = new Set<string>();
     return out
@@ -106,15 +129,37 @@ export class ExternalSourceService {
     query: SourceQuery,
     item: ItemSpec,
     timeoutMs: number,
-  ): Promise<RawComp[]> {
+  ): Promise<{ domain: string; rawHits: number; comps: RawComp[] }> {
     try {
       const hits = await withTimeout(adapter.search(domain, query), timeoutMs);
-      return hits
-        .map((h) => toRawComp(h, roles, item))
-        .filter((c) => c.priceZar > 0);
+      const comps = hits.map((h) => toRawComp(h, roles, item)).filter((c) => c.priceZar > 0);
+      return { domain, rawHits: hits.length, comps };
     } catch (e) {
       this.logger.warn(`external source ${domain} failed: ${(e as Error).message}`);
-      return [];
+      return { domain, rawHits: 0, comps: [] };
+    }
+  }
+
+  /** Increment the registry's hit counters. Best-effort: failures are logged only. */
+  private async recordStats(
+    stats: Array<{ domain: string; hits: number; priced: number }>,
+  ): Promise<void> {
+    if (stats.length === 0) return;
+    try {
+      await Promise.all(
+        stats.map((s) =>
+          this.prisma.valuationSource.updateMany({
+            where: { domain: s.domain },
+            data: {
+              totalHits: { increment: s.hits },
+              pricedHits: { increment: s.priced },
+              lastCheckAt: new Date(),
+            },
+          }),
+        ),
+      );
+    } catch (e) {
+      this.logger.warn(`source stats update failed: ${(e as Error).message}`);
     }
   }
 }

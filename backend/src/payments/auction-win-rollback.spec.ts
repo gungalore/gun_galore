@@ -21,7 +21,10 @@ import { TransactionsService } from './transactions.service';
 import { FeeCalculator } from './fee.calculator';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 
-const EXPIRES = new Date('2026-10-11T12:00:00.000Z');
+// A future pay window. Relative to now, not a fixed date: a hardcoded date
+// lapsed with the calendar and made the listing look expired to the service
+// under test, turning this suite into a time bomb.
+const EXPIRES = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
 function auctionListing(over: Record<string, unknown> = {}) {
   return {
