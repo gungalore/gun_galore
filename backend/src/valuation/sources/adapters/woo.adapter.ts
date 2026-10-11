@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { getJson } from '../http';
-import { isRelevant } from '../relevance';
+import { distinctiveTokens, isRelevant } from '../relevance';
 import { ProductHit, SourceAdapter, SourcePlatform, SourceQuery } from '../types';
 
 interface WooProduct {
@@ -42,10 +42,12 @@ export class WooAdapter implements SourceAdapter {
   }
 
   private attempts(q: SourceQuery): string[] {
-    const make = (q.make ?? '').trim();
-    const model = (q.model ?? '').trim();
-    const firstModelToken = model.split(/\s+/)[0] ?? '';
-    const all = [make && model ? `${make} ${model}` : '', make, model, firstModelToken];
+    // Distinctive tokens only: searching "Blue Marlin G3 Series" verbatim pulls
+    // in every blue product; "marlin g3" does not.
+    const make = distinctiveTokens(q.make).join(' ');
+    const model = distinctiveTokens(q.model).join(' ');
+    const firstModel = distinctiveTokens(q.model)[0] ?? '';
+    const all = [make && model ? `${make} ${model}` : '', make, model, firstModel];
     return [...new Set(all.filter((t) => t.length >= 2))];
   }
 

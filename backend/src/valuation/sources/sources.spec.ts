@@ -63,12 +63,20 @@ describe('relevance', () => {
     expect(isRelevant('MSR Hubba Hubba NX2 Tent', q())).toBe(true);
     expect(isRelevant('Generic 2 Person Tent', q())).toBe(false);
   });
-  it('falls back to spec terms when no model is known', () => {
-    const query = q({ model: null, keySpec: '10x42' });
+  it('falls back to spec terms when neither make nor model is known', () => {
+    const query = q({ make: null, model: null, keySpec: '10x42' });
     expect(isRelevant('Vortex Diamondback 10x42 Binoculars', query)).toBe(true);
     expect(isRelevant('Random scope', query)).toBe(false);
   });
   it('extracts terms', () => {
     expect(searchTerms(q())).toEqual(expect.arrayContaining(['msr', 'hubba']));
+  });
+
+  it('rejects catalogue junk that only shares a colour word', () => {
+    const query = q({ make: 'Blue Marlin', model: 'G3 Series', keySpec: '4.20m / 6-8oz' });
+    expect(isRelevant('BLUE TARPAULIN POLYETHYLENE 5m x 6m', query)).toBe(false);
+    expect(isRelevant('PVC NAVY BLUE RUBBERDUCK 1.5m (M)', query)).toBe(false);
+    expect(isRelevant('STEERING WHEEL 320mm WITH HUB', query)).toBe(false);
+    expect(isRelevant('Blue Marlin G3 Series 4.20m multi-tip fishing rod', query)).toBe(true);
   });
 });
