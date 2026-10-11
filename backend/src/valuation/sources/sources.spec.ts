@@ -77,6 +77,10 @@ describe('relevance', () => {
     expect(isRelevant('BLUE TARPAULIN POLYETHYLENE 5m x 6m', query)).toBe(false);
     expect(isRelevant('PVC NAVY BLUE RUBBERDUCK 1.5m (M)', query)).toBe(false);
     expect(isRelevant('STEERING WHEEL 320mm WITH HUB', query)).toBe(false);
+    // 'marlin' present but not the "blue marlin" phrase
+    expect(isRelevant('PULSATOR Marlin Magnet3 10/0 CG 607/007', query)).toBe(false);
+    // "blue marlin" present but no whole-word 'g3'
+    expect(isRelevant('BOURBON Cap Blue Marlin', query)).toBe(false);
     expect(isRelevant('Blue Marlin G3 Series 4.20m multi-tip fishing rod', query)).toBe(true);
   });
 });
