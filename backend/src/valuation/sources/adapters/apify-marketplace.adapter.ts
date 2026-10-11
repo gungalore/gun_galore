@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ApifyClient } from '../apify-client';
-import { isRelevantAny, searchTerms } from '../relevance';
+import { isRelevant, isRelevantAny, searchTerms } from '../relevance';
+import { parseProductJsonLd } from '../sitemap-jsonld';
+import { parseMagentoPrice, parseTitle } from './magento.adapter';
 import { ProductHit, SourceAdapter, SourcePlatform, SourceQuery } from '../types';
 
 /** Search-URL builders per marketplace. */
@@ -64,7 +66,6 @@ function hash(s: string): string {
 @Injectable()
 export class ApifyMarketplaceAdapter implements SourceAdapter {
   readonly platform: SourcePlatform = 'MARKETPLACE';
-  readonly domains = ['gumtree.co.za', 'facebook.com', 'www.facebook.com'];
 
   constructor(private readonly apify: ApifyClient) {}
 
@@ -73,12 +74,14 @@ export class ApifyMarketplaceAdapter implements SourceAdapter {
     const terms = searchTerms(query);
     if (terms.length === 0) return [];
     const key = domain.replace(/^www\./, '');
+    // Known marketplaces get a purpose-built search URL; any other WAF-blocked
+    // retailer is crawled at its homepage and its rendered HTML is parsed.
     const build = SEARCH_URL[key];
-    if (!build) return [];
+    const url = build ? build(terms.join(' ')) : `https://www.${key}/`;
 
     const actor = process.env.APIFY_ACTOR_CONTENT_CRAWLER ?? 'apify/website-content-crawler';
     const items = await this.apify.runActor(actor, {
-      startUrls: [{ url: build(terms.join(' ')) }],
+      startUrls: [{ url }],
       maxCrawlPages: 1,
       crawlerType: 'playwright:chrome',
     });
@@ -90,6 +93,33 @@ export class ApifyMarketplaceAdapter implements SourceAdapter {
       })
       .join('\n');
     if (!text) return [];
+
+    // A retailer page: read a structured price if present, else fall back to the
+    // generic (title, R price) extractor.
+    const structured = extractStructuredListing(text, key, query);
+    if (structured) return [structured];
     return extractRenderedListings(text, domain, query).slice(0, query.limit);
   }
+}
+
+/** Reads a Magento/JSON-LD price from the rendered HTML, if present. */
+function extractStructuredListing(html: string, domain: string, query: SourceQuery): ProductHit | null {
+  const ld = parseProductJsonLd(html);
+  const priceZar = ld?.priceZar ?? parseMagentoPrice(html);
+  const title = ld?.name ?? parseTitle(html);
+  if (!priceZar || priceZar <= 0 || !title) return null;
+  if (!isRelevant(title, query)) return null;
+  return {
+    refId: 'apify:' + title.slice(0, 40),
+    title,
+    priceZar,
+    domain,
+    brand: ld?.brand ?? null,
+    model: null,
+    productType: null,
+    condition: 'NEW',
+    available: ld?.available ? /instock/i.test(ld.available) : true,
+    listedDate: null,
+    isNew: true,
+  };
 }

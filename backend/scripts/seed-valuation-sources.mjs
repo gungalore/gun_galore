@@ -49,6 +49,8 @@ const SOURCES = [
   // Blocked/JS: need Apify + residential proxies (off until that plan is live).
   { domain: 'gumtree.co.za', label: 'Gumtree', platform: MARKETPLACE, roles: ['USED'], categories: ['*'], needsApify: true },
   { domain: 'facebook.com/marketplace', label: 'Facebook Marketplace', platform: MARKETPLACE, roles: ['USED'], categories: ['*'], needsApify: true },
+  // Cloudflare-blocked Magento retailers: read via Apify once the lane is live.
+  { domain: 'futurama.co.za', label: 'Futurama', platform: MARKETPLACE, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'air-rifles', 'reloading-equipment', 'reloading-components', 'shooting-accessories', 'knives', 'hunting', 'paintball'], needsApify: true },
 ];
 
 // Domains previously seeded with an unverified platform; remove them.

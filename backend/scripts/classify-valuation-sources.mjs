@@ -56,6 +56,20 @@ async function fetchText(url, accept) {
   }
 }
 
+// Returns the body even on a 403 so a WAF/challenge block can be detected.
+async function fetchPage(url) {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), 10000);
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'text/html' }, signal: c.signal });
+    return { status: res.status, body: await res.text() };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function fetchJson(url) {
   const r = await fetchText(url, 'application/json');
   if (!r || !r.ct.includes('json')) return null;
@@ -96,10 +110,27 @@ async function resolve(name) {
 
 async function classify(domain) {
   const woo = await fetchJson(`https://${domain}/wp-json/wc/store/products?per_page=1`);
-  if (Array.isArray(woo)) return 'WOO';
+  if (Array.isArray(woo)) return { platform: 'WOO', needsApify: false };
   const shop = await fetchJson(`https://${domain}/products.json?limit=1`);
-  if (shop && Array.isArray(shop.products)) return 'SHOPIFY';
-  return '';
+  if (shop && Array.isArray(shop.products)) return { platform: 'SHOPIFY', needsApify: false };
+
+  // No API. Inspect the homepage: a WAF challenge means it can only be read
+  // through Apify; a plain Magento page is read by the lightweight adapter.
+  const page = await fetchPage(`https://${domain}/`);
+  if (page) {
+    const body = page.body || '';
+    if (
+      page.status === 403 ||
+      page.status === 503 ||
+      /just a moment|cf-challenge|challenge-platform|enable javascript and cookies|attention required/i.test(body)
+    ) {
+      return { platform: 'MARKETPLACE', needsApify: true };
+    }
+    if (/magento|\/static\/version|\/skin\/frontend/i.test(body)) {
+      return { platform: 'MAGENTO', needsApify: false };
+    }
+  }
+  return null;
 }
 
 async function nameMatches(label, domain) {
@@ -124,16 +155,17 @@ async function main() {
       if (!domain) { noDomain++; await new Promise((r) => setTimeout(r, 100)); continue; }
       if (seen.has(domain) || existing.has(domain)) { dup++; continue; }
       seen.add(domain);
-      const platform = await classify(domain);
-      if (!platform) { noFeed++; await new Promise((r) => setTimeout(r, 100)); continue; }
-      if (!(await nameMatches(name, domain))) { nameFail++; console.log(`SKIP ${domain} (name mismatch: ${name})`); continue; }
+      const cls = await classify(domain);
+      if (!cls) { noFeed++; await new Promise((r) => setTimeout(r, 100)); continue; }
+      // A WAF-blocked page cannot be title-checked; trust the resolver for it.
+      if (!cls.needsApify && !(await nameMatches(name, domain))) { nameFail++; console.log(`SKIP ${domain} (name mismatch: ${name})`); continue; }
       await prisma.valuationSource.upsert({
         where: { domain },
-        create: { domain, label: name, platform, roles: ['ANCHOR'], categories: ['*'], enabled: false, needsApify: false, saVerified: domain.endsWith('.co.za'), specFields: {} },
-        update: { platform },
+        create: { domain, label: name, platform: cls.platform, roles: ['ANCHOR'], categories: ['*'], enabled: false, needsApify: cls.needsApify, saVerified: domain.endsWith('.co.za'), specFields: {} },
+        update: { platform: cls.platform, needsApify: cls.needsApify },
       });
       added++;
-      console.log(`ADD  ${platform.padEnd(8)} ${domain}  (${name})`);
+      console.log(`ADD  ${cls.platform.padEnd(11)} apify=${cls.needsApify ? 'y' : 'n'}  ${domain}  (${name})`);
       await new Promise((r) => setTimeout(r, 100));
     }
   } finally {

@@ -3,6 +3,7 @@ import { RawComp } from '../schemas';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GunAfricaAdapter } from './adapters/gunafrica.adapter';
 import { ApifyMarketplaceAdapter } from './adapters/apify-marketplace.adapter';
+import { MagentoAdapter } from './adapters/magento.adapter';
 import { SitemapJsonLdAdapter } from './adapters/sitemap-jsonld.adapter';
 import { ShopifyAdapter } from './adapters/shopify.adapter';
 import { WooAdapter } from './adapters/woo.adapter';
@@ -33,8 +34,9 @@ export class ExternalSourceService {
     gunAfrica: GunAfricaAdapter,
     apifyMarketplace: ApifyMarketplaceAdapter,
     sitemapJsonLd: SitemapJsonLdAdapter,
+    magento: MagentoAdapter,
   ) {
-    this.adapters = [shopify, woo, gunAfrica, apifyMarketplace, sitemapJsonLd];
+    this.adapters = [shopify, woo, gunAfrica, apifyMarketplace, sitemapJsonLd, magento];
   }
 
   private adapterFor(platform: string, domain: string): SourceAdapter | undefined {

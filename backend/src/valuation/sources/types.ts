@@ -7,6 +7,7 @@ export type SourcePlatform =
   | 'SHOPIFY'
   | 'WOO'
   | 'SITEMAP_HTML'
+  | 'MAGENTO'
   | 'MARKETPLACE'
   | 'AUCTION'
   | 'OWN'
