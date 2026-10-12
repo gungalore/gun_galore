@@ -79,7 +79,7 @@ const SOURCES = [
 ];
 
 // Domains previously seeded with an unverified platform; remove them.
-const STALE = ['sportsmanswarehouse.co.za', 'frontrunner.co.za', 'bobshop.co.za'];
+const STALE = ['frontrunner.co.za', 'bobshop.co.za'];
 
 let created = 0;
 let updated = 0;
