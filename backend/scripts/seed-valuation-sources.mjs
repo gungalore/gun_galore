@@ -51,7 +51,6 @@ const SOURCES = [
   { domain: 'gunafrica.co.za', label: 'Gun Africa', platform: MARKETPLACE, roles: ['USED'], categories: ['firearms', 'air-rifles', 'optics', 'knives', 'archery-bowhunting', 'reloading-equipment', 'reloading-components', 'shooting-accessories', 'gun-smithing-parts'] },
   // Blocked/JS/SPA retailers: read via the Scrapewise render lane.
   { domain: 'gumtree.co.za', label: 'Gumtree', platform: SCRAPEWISE, roles: ['USED'], categories: ['*'] },
-  { domain: 'facebook.com/marketplace', label: 'Facebook Marketplace', platform: SCRAPEWISE, roles: ['USED'], categories: ['*'] },
   { domain: '247hunter.co.za', label: '247 Hunter', platform: SCRAPEWISE, roles: ['USED'], categories: ['firearms', 'optics', 'hunting', 'knives', 'shooting-accessories'] },
   { domain: 'bluewatergear.co.za', label: 'Blue Water Gear', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['fishing'] },
   { domain: 'davesheer.com', label: 'Dave Sheer Firearms', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'shooting-accessories', 'reloading-equipment'] },
@@ -60,7 +59,7 @@ const SOURCES = [
   { domain: 'terraintamer.com', label: 'Terrain Tamer South Africa', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['overlanding'] },
   // Big retailers that JS/Cloudflare-block our own fetch.
   { domain: 'capeunionmart.co.za', label: 'Cape Union Mart', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['*'] },
-  { domain: 'takealot.com', label: 'Takealot', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['*'] },
+  { domain: 'gunsbows.co.za', label: 'Guns & Bows', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'air-rifles', 'optics', 'shooting-accessories', 'archery-bowhunting', 'knives', 'hunting'] },
   { domain: 'makro.co.za', label: 'Makro', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['*'] },
   { domain: 'frontrunneroutfitters.com', label: 'Front Runner', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['overlanding', 'camping-outdoor'] },
   // Used classifieds forum reachable by plain GET (bounded recent-listings crawl).
@@ -90,7 +89,7 @@ const SOURCES = [
 ];
 
 // Domains previously seeded with an unverified platform; remove them.
-const STALE = ['frontrunner.co.za', 'bobshop.co.za', 'junkmail.co.za'];
+const STALE = ['frontrunner.co.za', 'bobshop.co.za', 'junkmail.co.za', 'facebook.com/marketplace', 'takealot.com'];
 
 let created = 0;
 let updated = 0;
