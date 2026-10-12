@@ -20,6 +20,8 @@ import { HtmlCatalogAdapter } from './sources/adapters/html-catalog.adapter';
 import { JaracalAdapter } from './sources/adapters/jaracal.adapter';
 import { MagentoAdapter } from './sources/adapters/magento.adapter';
 import { SitemapJsonLdAdapter } from './sources/adapters/sitemap-jsonld.adapter';
+import { ScrapewiseAdapter } from './sources/adapters/scrapewise.adapter';
+import { ScrapewiseClient } from './sources/scrapewise-client';
 import { ShopifyAdapter } from './sources/adapters/shopify.adapter';
 import { WooAdapter } from './sources/adapters/woo.adapter';
 import { ExternalSourceService } from './sources/external-source.service';
@@ -58,6 +60,8 @@ import { WebToolsService } from './web-tools.service';
     HtmlCatalogAdapter,
     ApifyMarketplaceAdapter,
     SitemapJsonLdAdapter,
+    ScrapewiseClient,
+    ScrapewiseAdapter,
     MagentoAdapter,
     ExternalSourceService,
     JevMatchService,

@@ -26,6 +26,7 @@ const SHOPIFY = 'SHOPIFY';
 const MARKETPLACE = 'MARKETPLACE';
 const SITEMAP_HTML = 'SITEMAP_HTML';
 const HTML = 'HTML';
+const SCRAPEWISE = 'SCRAPEWISE';
 
 // Verified: WooCommerce Store API returns a keyless JSON product array.
 const SOURCES = [
@@ -61,21 +62,21 @@ const SOURCES = [
   { domain: 'impactproshop.net', label: 'Impact Pro Shop', platform: WOO, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics', 'hunting'] },
   // Big retailer on Shopify (readable now).
   { domain: 'quenets.com', label: 'Quenets', platform: SHOPIFY, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'shooting-accessories', 'air-rifles', 'knives', 'hunting', 'reloading-equipment'] },
-  // Custom/no-feed retailers read by the generic HTML catalog adapter.
-  { domain: 'sportsmanswarehouse.co.za', label: 'Sportsmans Warehouse', platform: HTML, roles: ['ANCHOR'], categories: ['*'] },
-  { domain: 'camdix.co.za', label: 'Camdix', platform: HTML, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'reloading-equipment', 'shooting-accessories', 'knives', 'hunting'] },
-  { domain: 'kingsfirearms.co.za', label: 'Kings Firearms', platform: HTML, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'shooting-accessories', 'reloading-equipment'] },
-  { domain: 'chsguns.co.za', label: 'CHS Guns', platform: HTML, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'reloading-components', 'shooting-accessories'] },
-  { domain: 'gunsammo.co.za', label: 'Guns & Ammo', platform: HTML, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'shooting-accessories'] },
-  { domain: 'nationalluna.com', label: 'National Luna', platform: HTML, roles: ['ANCHOR'], categories: ['overlanding', 'camping-outdoor'] },
-  { domain: 'frontierbullets.co.za', label: 'Frontier Bullets', platform: HTML, roles: ['ANCHOR'], categories: ['reloading-components'] },
-  { domain: 'impalabullets.co.za', label: 'Impala Bullets', platform: HTML, roles: ['ANCHOR'], categories: ['reloading-components'] },
-  { domain: 'stewartbullets.co.za', label: 'Stewart Bullets', platform: HTML, roles: ['ANCHOR'], categories: ['reloading-components'] },
-  // Wix/JS storefronts: only readable through Apify (lane closed) so left disabled.
-  { domain: 'gunwarrior.co.za', label: 'Gun Warrior', platform: MARKETPLACE, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics'], needsApify: true },
-  { domain: 'musgraverifles.co.za', label: 'Musgrave Rifles', platform: MARKETPLACE, roles: ['ANCHOR'], categories: ['firearms'], needsApify: true },
-  // Cloudflare-blocked Magento retailers: read via Apify once the lane is live.
-  { domain: 'futurama.co.za', label: 'Futurama', platform: MARKETPLACE, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'air-rifles', 'reloading-equipment', 'reloading-components', 'shooting-accessories', 'knives', 'hunting', 'paintball'], needsApify: true },
+  // Custom/no-feed retailers read by the Scrapewise render lane (JS/anti-bot).
+  { domain: 'sportsmanswarehouse.co.za', label: 'Sportsmans Warehouse', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['*'] },
+  { domain: 'camdix.co.za', label: 'Camdix', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'reloading-equipment', 'shooting-accessories', 'knives', 'hunting'] },
+  { domain: 'kingsfirearms.co.za', label: 'Kings Firearms', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'shooting-accessories', 'reloading-equipment'] },
+  { domain: 'chsguns.co.za', label: 'CHS Guns', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'reloading-components', 'shooting-accessories'] },
+  { domain: 'gunsammo.co.za', label: 'Guns & Ammo', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'shooting-accessories'] },
+  { domain: 'nationalluna.com', label: 'National Luna', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['overlanding', 'camping-outdoor'] },
+  { domain: 'frontierbullets.co.za', label: 'Frontier Bullets', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['reloading-components'] },
+  { domain: 'impalabullets.co.za', label: 'Impala Bullets', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['reloading-components'] },
+  { domain: 'stewartbullets.co.za', label: 'Stewart Bullets', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['reloading-components'] },
+  // Wix/JS storefronts: read via the Scrapewise render lane.
+  { domain: 'gunwarrior.co.za', label: 'Gun Warrior', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics'] },
+  { domain: 'musgraverifles.co.za', label: 'Musgrave Rifles', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms'] },
+  // Cloudflare-blocked Magento retailer: read via the Scrapewise render lane.
+  { domain: 'futurama.co.za', label: 'Futurama', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'air-rifles', 'reloading-equipment', 'reloading-components', 'shooting-accessories', 'knives', 'hunting', 'paintball'] },
 ];
 
 // Domains previously seeded with an unverified platform; remove them.

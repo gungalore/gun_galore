@@ -9,6 +9,7 @@ export type SourcePlatform =
   | 'SITEMAP_HTML'
   | 'MAGENTO'
   | 'HTML'
+  | 'SCRAPEWISE'
   | 'MARKETPLACE'
   | 'AUCTION'
   | 'OWN'

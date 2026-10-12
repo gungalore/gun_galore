@@ -7,6 +7,7 @@ import { JaracalAdapter } from './adapters/jaracal.adapter';
 import { ApifyMarketplaceAdapter } from './adapters/apify-marketplace.adapter';
 import { MagentoAdapter } from './adapters/magento.adapter';
 import { SitemapJsonLdAdapter } from './adapters/sitemap-jsonld.adapter';
+import { ScrapewiseAdapter } from './adapters/scrapewise.adapter';
 import { ShopifyAdapter } from './adapters/shopify.adapter';
 import { WooAdapter } from './adapters/woo.adapter';
 import { JevMatchService } from './jev-match';
@@ -40,9 +41,10 @@ export class ExternalSourceService {
     sitemapJsonLd: SitemapJsonLdAdapter,
     magento: MagentoAdapter,
     htmlCatalog: HtmlCatalogAdapter,
+    scrapewise: ScrapewiseAdapter,
     private readonly jevMatch: JevMatchService,
   ) {
-    this.adapters = [shopify, woo, gunAfrica, jaracal, apifyMarketplace, sitemapJsonLd, magento, htmlCatalog];
+    this.adapters = [shopify, woo, gunAfrica, jaracal, apifyMarketplace, sitemapJsonLd, magento, htmlCatalog, scrapewise];
   }
 
   private adapterFor(platform: string, domain: string): SourceAdapter | undefined {

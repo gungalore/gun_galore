@@ -24,6 +24,8 @@ import { ApifyMarketplaceAdapter } from '../src/valuation/sources/adapters/apify
 import { SitemapJsonLdAdapter } from '../src/valuation/sources/adapters/sitemap-jsonld.adapter';
 import { MagentoAdapter } from '../src/valuation/sources/adapters/magento.adapter';
 import { HtmlCatalogAdapter } from '../src/valuation/sources/adapters/html-catalog.adapter';
+import { ScrapewiseAdapter } from '../src/valuation/sources/adapters/scrapewise.adapter';
+import { ScrapewiseClient } from '../src/valuation/sources/scrapewise-client';
 import { ShopifyAdapter } from '../src/valuation/sources/adapters/shopify.adapter';
 import { WooAdapter } from '../src/valuation/sources/adapters/woo.adapter';
 import { GunAfricaAdapter } from '../src/valuation/sources/adapters/gunafrica.adapter';
@@ -61,6 +63,7 @@ async function main(): Promise<void> {
       new SitemapJsonLdAdapter(),
       new MagentoAdapter(),
       new HtmlCatalogAdapter(),
+      new ScrapewiseAdapter(new ScrapewiseClient()),
       new JevMatchService(),
     );
 
