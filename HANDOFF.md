@@ -7,6 +7,24 @@ overwritten.
 
 Last updated: **2026-10-12**.
 
+## 2026-10-12 — DOCUMENT CENTRE: EVERY SECTION OPENS COLLAPSED (FRONTEND DEPLOY)
+
+Commit **`f6cecd47`** (`feat(document-centre): open every section collapsed`),
+frontend-only deploy via `infra/deploy/deploy.sh --frontend-only` (Git Bash).
+Rollback point `alloutdoor-20261012-205747.dump` (~30.1 MB). Health x2 OK, public
+200 x2, three pm2 services online. Deployed HEAD `f6cecd47`.
+
+Gates before deploy: backend `tsc` clean + **346 suites/5488 tests**; frontend
+`tsc` clean + **136 files/1700 tests** + production build.
+
+**What shipped.** `/licence-centre` now opens with every section folded, every
+time. Removed the two-defaults-open set (`Your firearms` + `Competency` via
+`defaultOpenSections`) and the per-browser persistence (`document-centre:open-sections`
+in `localStorage`) in `frontend/app/licence-centre/page.tsx`. `openSections` is
+now a session-only map starting empty; `isOpen` returns false unless toggled. No
+change to the grouping lib — `defaultOpenSections` is still exported and covered
+by `lib/document-centre-sections.spec.ts`, just no longer called from the page.
+
 ## 2026-10-12 — RETIRED-FEATURE PURGE (DOCS + CODE) (FULL DEPLOY)
 
 Commit **`22d23b11`** (92 files), full deploy via `infra/deploy/deploy.sh`
