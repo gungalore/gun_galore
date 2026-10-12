@@ -53,6 +53,7 @@ import { MotivationReasonService } from './motivation-reason.service';
 // class and shared by every member who holds one. Not exported: the writer is
 // its only caller and the table is not a public lookup.
 import { FirearmUsesService } from './firearm-uses.service';
+import { DocumentFilingModule } from '../common/document-filing/document-filing.module';
 
 /**
  * Firearm-licence motivation writer (Phase 1 — LICENCE-SERVICES-AND-FEED.md).
@@ -77,6 +78,8 @@ import { FirearmUsesService } from './firearm-uses.service';
  * writing user files into the encrypted store without a deliberate decision.
  */
 @Module({
+  // Jev document filing (Gemini reads, Jev files the folder).
+  imports: [DocumentFilingModule],
   controllers: [MotivationsController, MotivationsScanController,
     MotivationsWitnessController,
     WitnessPublicController,

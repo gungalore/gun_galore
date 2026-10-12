@@ -4,14 +4,22 @@
 // Operator, 2026-09-07: "we are switching from claude API to gemini 2.5
 // flash-lite api for everything on the website." Then, 2026-09-26: "Deepseek
 // as the default AI and when we get a pdf upload we send it to gemini."
+// Then, 2026-10-12: "everything moves to gemini. valuation and OCR uses 3.8
+// flash and listings and community use 3.1 flash lite."
 //
-// ⚠️ SO THE DEFAULT IS NOW WHATEVER `LLM_PROVIDER` SAYS, AND IT IS SET TO
-// deepseek. Three levers sit on top of it, in this order:
-//   1. `LLM_PROVIDER_<PURPOSE>` — pins ONE purpose (see providerFor).
-//   2. `LLM_PROVIDER` — the platform default.
-//   3. The document rescue (see `serve`) — a PDF cannot be read by DeepSeek,
-//      so a document-bearing request goes to Gemini whatever 1 and 2 say.
-// LLM_PROVIDER=gemini or anthropic remains the rollback lever.
+// ⚠️ THE PLATFORM DEFAULT IS GEMINI (see the `provider` getter: unset
+// `LLM_PROVIDER` falls through to gemini). The earlier note here claimed
+// DeepSeek was the default; that was never true of this code, only of one
+// box's env, and it misled a reader for weeks. Four levers sit on top of the
+// provider choice, in this order:
+//   1. `LLM_PROVIDER_<PURPOSE>` — pins ONE purpose to a provider (providerFor).
+//   2. The code pins in `providerFor` — video, moderation images/escalation,
+//      licence-card OCR and valuation, each for a reason commented there.
+//   3. `LLM_MODEL_<PURPOSE>` then the `modelFor` code backstop, then the
+//      provider default — the MODEL, chosen the same way.
+//   4. `LLM_PROVIDER` — the platform default (gemini unless set).
+// The document rescue (see `serve`) sends a PDF to Gemini when the pinned
+// provider cannot read one. `LLM_PROVIDER=anthropic` remains the rollback rail.
 //
 // This class owns three things a provider must not, because a second
 // provider would then have to remember them:
@@ -47,11 +55,15 @@ import {
   type JevDecideResponse,
 } from './llm.types';
 
-// ⚠️ 3.5, NOT 2.5. The operator asked for 2.5-flash-lite; Google refused it to
-// every key created on 2026-09-07 ("no longer available to new users") and
-// pointed at 3.5-flash-lite, which passed every probe. Operator: "use 3.5
-// flash-lite". A default no new key can reach is a trap for the next person.
-const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
+// ⚠️ 3.8-FLASH IS THE PLATFORM DEFAULT FROM 2026-10-12. Operator: "everything
+// moves to gemini. valuation and OCR uses 3.8 flash and listings and community
+// use 3.1 flash lite." Moderation pins back down to 3.1-flash-lite in
+// `modelFor` below. Probed live on this platform's key before this change:
+// `gemini-3.8-flash` and `gemini-3.1-flash-lite` both answered 200.
+const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+
+/** The cheap flash-lite the moderation path is pinned to (images, escalation). */
+const MODERATION_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
 // ⚠️ DI tokens for the two providers, deliberately NOT registered anywhere.
 // A constructor parameter typed as an interface emits `Object` as its design
@@ -95,12 +107,10 @@ export class LlmService {
   /**
    * Which provider is live, from LLM_PROVIDER.
    *
-   * ⚠️ THE LITERAL BELOW IS THE LAST-RESORT DEFAULT ONLY. Production sets
-   * `LLM_PROVIDER=deepseek`; the `'gemini'` here is what an unset env means,
-   * kept so a box mid-configuration still has a working provider rather than
-   * an empty one. Do not read this line as "the platform runs on Gemini" —
-   * `providerFor` is the routing, and `serve` can override even that for a
-   * PDF.
+   * ⚠️ THE LITERAL BELOW IS THE LAST-RESORT DEFAULT ONLY. An unset
+   * `LLM_PROVIDER` means gemini; a box mid-configuration therefore still has a
+   * working provider rather than an empty one. `providerFor` is the routing,
+   * and `serve` can override even that for a PDF.
    */
   get provider(): LlmProvider {
     return process.env.LLM_PROVIDER === 'anthropic'
@@ -113,18 +123,18 @@ export class LlmService {
   /**
    * The provider that serves ONE purpose.
    *
-   * ⚠️ PER-PURPOSE ROUTING IS WHY THIS EXISTS, AND IT NOW CARRIES THE
-   * GEMINI PINS. The platform default is DeepSeek (see the header), which
-   * cannot take PDF/document parts, `tools`, hosted web search or an image
-   * generation, and whose `stream` emits a single event — so every purpose
-   * that needs one of those is pinned back to Gemini here, by env.
+   * ⚠️ PER-PURPOSE ROUTING IS WHY THIS EXISTS. The platform default is Gemini;
+   * the code pins below keep a few safety and feature calls exactly where they
+   * belong when a global `LLM_PROVIDER` switch is flipped. DeepSeek and Qwen
+   * are retired from routing as of 2026-10-12 but the providers stay wired as
+   * rollback levers.
    *
    * The override is an env var derived from the purpose:
    * `kyc.face-match` → `LLM_PROVIDER_KYC_FACE_MATCH`. Unset falls back to the
    * global `LLM_PROVIDER`, so the default never changes.
    *
-   * To move a purpose back, set `LLM_PROVIDER_<PURPOSE>=deepseek` and reload.
-   * Same "env + reload, no deploy" lever as `LLM_PROVIDER=anthropic`.
+   * To move a purpose, set `LLM_PROVIDER_<PURPOSE>=gemini|anthropic|deepseek|qwen`
+   * and reload. Same "env + reload, no deploy" lever as `LLM_PROVIDER=anthropic`.
    */
   private providerFor(purpose: string): LlmProviderClient {
     const key = `LLM_PROVIDER_${purpose.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
@@ -138,28 +148,29 @@ export class LlmService {
     // because a global LLM_PROVIDER switch is set. An explicit per-purpose env
     // var still wins, above.
     if (purpose === 'feed.moderation.video') return this.gemini;
-    // ⚠️ IMAGE SCREENING AND THE ESCALATION SECOND OPINION ARE DEEPSEEK-ONLY.
-    // Operator decision 2026-10-01: every image (listing, feed, uploaded
-    // document page) is screened by DeepSeek Flash, and the 60–80 % ladder
-    // escalates to it. `deepseek-flash` is the only DeepSeek model with
-    // vision. Pinned here rather than left to LLM_PROVIDER because a box with
-    // no LLM_PROVIDER set would otherwise send these to Gemini — the exact
-    // opposite of the decision. An explicit per-purpose env var still wins.
-    if (purpose === 'moderation.escalation') return this.deepseek;
-    if (purpose.endsWith('.images')) return this.deepseek;
-    // ⚠️ THE LICENCE-CARD OCR IS GEMINI-ONLY. Operator decision 2026-10-09:
-    // the seller's consent link reads the licence card on Gemini 3.5
-    // Flash-Lite, and that must not move. It is a vision call, so a global
-    // LLM_PROVIDER switch (or a DeepSeek default) pointed at a non-vision
-    // model would silently break the one field the seller must not type by
-    // hand — the 13-digit ID. Pinned for the same reason as video above. An
-    // explicit per-purpose env var still wins, above.
-    if (purpose.startsWith('licence.card.')) return this.gemini;
-    // ⚠️ VALUATION PURPOSES RUN ON QWEN. The Value My Item engine needs
-    // JSON-schema output with a multi-turn backend tool loop; a platform-wide
-    // LLM_PROVIDER switch must not move it. An explicit per-purpose env var
+    // ⚠️ IMAGE SCREENING AND THE ESCALATION SECOND OPINION ARE GEMINI-ONLY.
+    // Operator decision 2026-10-12: moderation moved off DeepSeek. Every image
+    // (listing, feed, uploaded document page) and the 60–80 % escalation are
+    // served by Gemini at `gemini-3.1-flash-lite` — the model backstop lives in
+    // modelFor below. Pinned here so a global LLM_PROVIDER switch cannot move a
+    // safety call onto the wrong provider. An explicit per-purpose env var
     // still wins, above.
-    if (purpose.startsWith('valuation.')) return this.qwen;
+    if (purpose === 'moderation.escalation') return this.gemini;
+    if (purpose.endsWith('.images')) return this.gemini;
+    // ⚠️ THE LICENCE-CARD OCR IS GEMINI-ONLY. Operator decision 2026-10-09:
+    // the seller's consent link reads the licence card on Gemini, and that must
+    // not move. It is a vision call, so a global LLM_PROVIDER switch (or a
+    // DeepSeek default) pointed at a non-vision model would silently break the
+    // one field the seller must not type by hand — the 13-digit ID. The model
+    // is the platform default (gemini-3.8-flash as of 2026-10-12). Pinned for
+    // the same reason as video above. An explicit per-purpose env var still
+    // wins, above.
+    if (purpose.startsWith('licence.card.')) return this.gemini;
+    // ⚠️ VALUATION PURPOSES RUN ON GEMINI. Operator decision 2026-10-12:
+    // "everything moves to gemini", retiring the Qwen valuation engine and its
+    // Qwen-specific degenerate-`[]` retry. Pinned so a global LLM_PROVIDER
+    // switch cannot move it. An explicit per-purpose env var still wins, above.
+    if (purpose.startsWith('valuation.')) return this.gemini;
     const name = process.env.LLM_PROVIDER ?? 'gemini';
     if (name === 'anthropic') return this.anthropic;
     if (name === 'deepseek') return this.deepseek;
@@ -219,7 +230,16 @@ export class LlmService {
    */
   private modelFor(purpose: string): string | undefined {
     const key = `LLM_MODEL_${purpose.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
-    return process.env[key];
+    const explicit = process.env[key];
+    if (explicit) return explicit;
+    // ⚠️ THE CODE BACKSTOP THE DOCSTRING ABOVE PROMISES. Moderation is pinned
+    // to Gemini in providerFor; the MODEL has to pin with it, or a global
+    // LLM_MODEL of gemini-3.8-flash would drag the safety pass onto the bigger
+    // model. `feed.moderation.video` names its own model and never reaches here.
+    if (purpose === 'moderation.escalation' || purpose.endsWith('.images')) {
+      return MODERATION_GEMINI_MODEL;
+    }
+    return undefined;
   }
 
   private active(): LlmProviderClient {

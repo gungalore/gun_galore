@@ -3,7 +3,8 @@ import {
   CLASSIFY_USER,
   LicenceCentreExtractService,
 } from './licence-centre-extract.service';
-import type { LlmResponse } from '../common/llm/llm.types';
+import { DocumentFilingService } from '../common/document-filing/document-filing.service';
+import type { JevAnswer, LlmResponse } from '../common/llm/llm.types';
 
 /** Kinds that survive only for rows filed before a consolidation. */
 const RETIRED = new Set<string>([
@@ -192,6 +193,103 @@ describe('the document-or-evidence role', () => {
 // asked on its own, only of a page classify() already called a document, and
 // it answers one number: degrees CLOCKWISE to stand the page up.
 // ────────────────────────────────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────────────────
+// THE JEV FILING PATH — GEMINI READS EVERYTHING, JEV FILES IT.
+//
+// Operator decision, 2026-10-12. A photographed DOCUMENT has printed text:
+// Gemini transcribes it and Jev picks the folder. A photograph of a scene has
+// no text and falls through to the vision classifier above.
+// ────────────────────────────────────────────────────────────────────
+describe('the Jev filing path', () => {
+  const prevKey = process.env.JEV_API_KEY;
+  beforeEach(() => {
+    process.env.JEV_API_KEY = 'test-key';
+  });
+  afterAll(() => {
+    if (prevKey === undefined) delete process.env.JEV_API_KEY;
+    else process.env.JEV_API_KEY = prevKey;
+  });
+
+  const choice = (c: string, confidence = 0.9): JevAnswer => ({
+    type: 'choice',
+    choice: c,
+    probabilities: { [c]: confidence },
+    confidence,
+  });
+
+  const svcJev = (args: {
+    transcription: string;
+    answers?: Record<string, JevAnswer>;
+  }) => {
+    const llm = {
+      complete: jest.fn(async (req: { system?: string }) => {
+        const isTranscribe = (req.system ?? '').includes(
+          'transcribe the printed text',
+        );
+        const text = isTranscribe ? args.transcription : '';
+        return {
+          text,
+          parts: [{ type: 'text', text }],
+          toolCalls: [],
+          stopReason: 'end',
+          usage: { inputTokens: 1, outputTokens: 1 },
+          model: 'test-model',
+          provider: 'gemini',
+          assistantMessage: { role: 'assistant', content: text },
+        } as LlmResponse;
+      }),
+      decide: jest.fn(async () => ({
+        model: 'jev-1.13.0',
+        answers: args.answers ?? {},
+        usage: { inputTokens: 1, outputTokens: 0 },
+      })),
+      isConfigured: () => true,
+      isConfiguredFor: () => true,
+      providerNameFor: () => 'gemini',
+      model: 'test-model',
+      provider: 'gemini' as const,
+    };
+    const filing = new DocumentFilingService(llm as never);
+    return new LicenceCentreExtractService(llm as never, filing);
+  };
+
+  it('files a photographed document: Gemini transcribes, Jev names the kind', async () => {
+    const svc = svcJev({
+      transcription:
+        'LICENCE TO POSSESS A FIREARM\nSerial Number: ZA2226548\n...',
+      answers: {
+        role: choice('document'),
+        kind: choice('FIREARM_LICENCE'),
+      },
+    });
+    await expect(svc.classify(png)).resolves.toMatchObject({
+      role: 'document',
+      kind: CredentialKind.FIREARM_LICENCE,
+      confident: true,
+    });
+  });
+
+  it('reads an evidence answer from Jev as evidence, with no kind', async () => {
+    const svc = svcJev({
+      transcription: 'Permission to hunt on the farm...',
+      answers: { role: choice('evidence') },
+    });
+    await expect(svc.classify(png)).resolves.toEqual({
+      role: 'evidence',
+      confident: true,
+    });
+  });
+
+  it('⚠️ falls back to the vision classifier when the page has no text', async () => {
+    // A photograph of a scene transcribes to nothing. classify must NOT ask
+    // Jev to guess from an empty page; it hands the file to the vision path,
+    // whose own (empty here) reply reads as unresolved rather than a wrong
+    // filing.
+    const svc = svcJev({ transcription: '   ', answers: {} });
+    await expect(svc.classify(png)).resolves.toBeNull();
+  });
+});
 
 describe('the orientation question', () => {
   it('\u26a0\ufe0f MAPS WHICH EDGE THE TOP IS ON TO A QUARTER TURN', async () => {

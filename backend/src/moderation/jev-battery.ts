@@ -14,8 +14,8 @@
 //
 // ⚠️ THE LADDER IS THE OPERATOR'S, VERBATIM (2026-10-01):
 //   - Jev ≥ 80 % sure  -> BLOCK and notify the user with a reason.
-//   - 60–80 %          -> appeal to admin, but first ask DeepSeek for a
-//                         second opinion; DeepSeek sure -> follow it, DeepSeek
+//   - 60–80 %          -> appeal to admin, but first ask Gemini for a
+//                         second opinion; Gemini sure -> follow it, Gemini
 //                         unsure -> admin review.
 //   - < 60 %           -> pass.
 // "Admin review" is the surface's own holding state (listing HUMAN_REVIEW,
@@ -44,10 +44,11 @@ export function reviewThreshold(): number {
   return Number.isFinite(raw) && raw >= 0 && raw < 1 ? raw : 0.6;
 }
 
-/** The model that answers the second opinion. `deepseek-flash` is the only
- *  vision-capable DeepSeek id and is pinned per-purpose in LlmService; named
- *  explicitly here so a global LLM_MODEL cannot redirect it. */
-export const ESCALATION_MODEL = 'deepseek-flash';
+/** The model that answers the second opinion. Operator decision 2026-10-12:
+ *  moderation moved off DeepSeek; the second opinion is Gemini at the cheap
+ *  flash-lite. Named explicitly so a global LLM_MODEL cannot redirect it, and
+ *  matched by the modelFor backstop in LlmService. */
+export const ESCALATION_MODEL = 'gemini-3.1-flash-lite';
 export const ESCALATION_PURPOSE = 'moderation.escalation';
 
 export type JevCategory =
@@ -184,10 +185,10 @@ export interface JevTextVerdict {
   reason: string | null;
   /** Per-category probability Jev returned, for the audit trail. */
   scores: Record<string, number>;
-  /** True when the 60–80 % band sent the text to DeepSeek. */
+  /** True when the 60–80 % band sent the text for a second opinion. */
   escalated: boolean;
   /** Which model produced the deciding answer. */
-  source: 'jev' | 'deepseek' | 'none';
+  source: 'jev' | 'gemini' | 'none';
 }
 
 export interface JevLadderInput {
@@ -282,8 +283,8 @@ export async function jevLadder(
   }
 
   if (topId && topProb >= review) {
-    // 60–80 %: ask DeepSeek before troubling an admin.
-    const second = await deepseekOpinion(llm, input.state, topId).catch(
+    // 60–80 %: ask for a second opinion before troubling an admin.
+    const second = await secondOpinion(llm, input.state, topId).catch(
       () => 'UNSURE' as const,
     );
     if (second === 'VIOLATION') {
@@ -295,11 +296,11 @@ export async function jevLadder(
         ] ?? 'This message is not allowed on ALL Outdoor.',
         scores,
         escalated: true,
-        source: 'deepseek',
+        source: 'gemini',
       };
     }
     if (second === 'CLEAN') {
-      return { decision: 'PASS', category: null, reason: null, scores, escalated: true, source: 'deepseek' };
+      return { decision: 'PASS', category: null, reason: null, scores, escalated: true, source: 'gemini' };
     }
     // UNSURE (or the call failed) -> admin.
     return {
@@ -308,7 +309,7 @@ export async function jevLadder(
       reason: null,
       scores,
       escalated: true,
-      source: 'deepseek',
+      source: 'gemini',
     };
   }
 
@@ -328,7 +329,7 @@ export async function jevLadder(
  * answer — "we could not tell" routes to a human, never to a block or a
  * pass). Throws only on a transport error; the caller maps that to UNSURE.
  */
-async function deepseekOpinion(
+async function secondOpinion(
   llm: LlmService,
   state: string,
   category: string,

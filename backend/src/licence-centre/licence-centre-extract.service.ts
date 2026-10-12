@@ -1,7 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 
 import { LlmService } from '../common/llm/llm.service';
 import type { LlmPart } from '../common/llm/llm.types';
+import { DocumentFilingService } from '../common/document-filing/document-filing.service';
+import {
+  VAULT_COVER_OPTIONS,
+  VAULT_KIND_OPTIONS,
+} from '../common/document-filing/vault-kind-options';
 import { CredentialKind } from '@prisma/client';
 import { parseIsoDate } from './licence-dates';
 
@@ -553,7 +558,110 @@ export class LicenceCentreExtractService {
     // timeout travels with each call now (timeoutMs); the retry is the
     // adapter's business. `isConfigured()` replaces the null check exactly.
     private readonly llm: LlmService,
+    // ⚠️ OPTIONAL, AND THAT IS THE FALLBACK. When Jev is not configured (or the
+    // module does not provide it in a unit test), classify() uses the vision
+    // classifier exactly as before. In production DocumentFilingModule
+    // provides it, so a document goes through Gemini-reads / Jev-files.
+    @Optional() private readonly filing?: DocumentFilingService,
   ) {}
+
+  /**
+   * NAME THE DOCUMENT — Gemini reads it, Jev files it.
+   *
+   * Operator decision, 2026-10-12: "gemini to read everything on a document,
+   * send it raw to jev and jev arranges it and puts it in the correct
+   * container."
+   *
+   * ⚠️ PHOTOGRAPHS ARE NOT THIS PATH. Jev cannot see, so a page with no printed
+   * text (a photograph of a scene or object) falls through to classifyVision,
+   * the tuned vision classifier, exactly as before. A photographed DOCUMENT has
+   * text and is filed by Jev.
+   *
+   * ⚠️ FAIL-SOFT TO THE VISION CLASSIFIER. No Jev key, an unreadable page, a
+   * Jev error or an answer outside the vocabulary all fall back to
+   * classifyVision rather than leaving the document unfiled.
+   */
+  async classify(args: {
+    bytes: Buffer;
+    mimeType: string;
+  }): Promise<VaultClassifyAnswer | null> {
+    if (!this.llm.isConfigured()) return null;
+
+    if (this.filing?.isConfigured()) {
+      const text = await this.transcribe(args.bytes, args.mimeType);
+      // ⚠️ A PHOTOGRAPH HAS NO TEXT. Below the floor it is the vision
+      // classifier's job; Jev would be guessing from an empty page.
+      if (text && text.trim().length >= MIN_TRANSCRIPTION_CHARS) {
+        const filed = await this.filing.fileVault({
+          text,
+          kindOptions: VAULT_KIND_OPTIONS,
+          coverOptions: VAULT_COVER_OPTIONS,
+        });
+        if (filed) {
+          if (filed.role === 'evidence') {
+            return { role: 'evidence', confident: filed.confident };
+          }
+          const known = Object.values(CredentialKind) as string[];
+          if (!known.includes(filed.folder)) return this.classifyVision(args);
+          const kind = currentKind(filed.folder as CredentialKind);
+          // ⚠️ A KIND OF EVIDENCE IS EVIDENCE, whatever `role` said.
+          if (kind === CredentialKind.EVIDENCE) {
+            return { role: 'evidence', confident: filed.confident };
+          }
+          return {
+            role: 'document',
+            kind,
+            confident: filed.confident,
+            via: 'model',
+            alsoCovers: cleanAlsoCovers(
+              kind,
+              filed.alsoCovers.map((k) =>
+                currentKind(String(k ?? '').trim() as CredentialKind),
+              ),
+            ),
+          };
+        }
+      }
+    }
+
+    return this.classifyVision(args);
+  }
+
+  /**
+   * READ THE WHOLE PAGE — Gemini transcribes; it does not classify.
+   *
+   * The raw text this returns is the only input Jev files from. Returns null on
+   * any failure, so classify() falls back to the vision classifier.
+   */
+  private async transcribe(
+    bytes: Buffer,
+    mimeType: string,
+  ): Promise<string | null> {
+    try {
+      const res = await this.llm.complete({
+        maxTokens: 2000,
+        // A transcription is not a reasoning task; a thinking budget would eat
+        // the allowance and truncate the page.
+        thinking: { budgetTokens: 0 },
+        system: TRANSCRIBE_SYSTEM,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              blockFor(bytes, mimeType),
+              { type: 'text', text: TRANSCRIBE_USER },
+            ],
+          },
+        ],
+        purpose: 'vault.transcribe',
+        timeoutMs: 60_000,
+      });
+      return res.text;
+    } catch (err) {
+      this.logger.warn(`Vault transcription failed: ${(err as Error).message}`);
+      return null;
+    }
+  }
 
   /**
    * NAME THE DOCUMENT.
@@ -580,7 +688,7 @@ export class LicenceCentreExtractService {
    * flagged separately rather than deleted, since deciding its fate is a
    * judgement call outside removing Textract.
    */
-  async classify(args: {
+  async classifyVision(args: {
     bytes: Buffer;
     mimeType: string;
   }): Promise<VaultClassifyAnswer | null> {
@@ -1350,6 +1458,36 @@ const ROTATE_FOR_SIDE: Record<string, 0 | 90 | 180 | 270> = {
   bottom: 180,
   right: 270,
 };
+
+/**
+ * ⚠️ THE FLOOR THAT SPLITS A DOCUMENT FROM A PHOTOGRAPH. A photographed page
+ * carries hundreds of characters; a photograph of a scene or object carries
+ * almost none. Below this, classify() hands the file to the vision classifier
+ * rather than letting Jev guess from an empty page.
+ */
+const MIN_TRANSCRIPTION_CHARS = 15;
+
+/**
+ * The transcribe prompt. It READS the page; it does not sort it.
+ *
+ * ⚠️ IT MUST NOT CLASSIFY. The sort is Jev's job now (DocumentFilingService),
+ * and a prompt that both transcribes and names a kind would be two sources of
+ * truth for the folder.
+ */
+const TRANSCRIBE_SYSTEM = `
+You transcribe the printed text on one page of a South African document,
+completely and exactly, in reading order.
+
+Output ONLY the text you can read. Do NOT summarise, translate, classify,
+describe photographs or objects, or add any commentary.
+If the page has no printed text at all — a photograph of a scene or an object
+rather than a document — output an empty response.
+`.trim();
+
+export const TRANSCRIBE_USER = [
+  'Transcribe every word and number printed on this page.',
+  'Return the text only.',
+].join('\n');
 
 const CLASSIFY_SYSTEM = `
 You sort one file a member has uploaded. You are sorting, not reading: you do

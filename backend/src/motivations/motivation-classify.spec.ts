@@ -1,5 +1,6 @@
 import { MotivationUploadKind } from '@prisma/client';
 import { MotivationExtractService } from './motivation-extract.service';
+import { DocumentFilingService } from '../common/document-filing/document-filing.service';
 import { RETIRED } from './motivation-documents';
 import type { LlmResponse } from '../common/llm/llm.types';
 
@@ -282,3 +283,100 @@ describe('reading the page once', () => {
     await expect(svc.ocr(Buffer.from('x'), 'image/png')).resolves.toBeNull();
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE JEV FILING PATH — GEMINI READS EVERYTHING, JEV FILES IT.
+//
+// Operator decision, 2026-10-12. A photographed DOCUMENT has printed text:
+// Gemini transcribes it and Jev names the folder. A photograph of a scene has
+// none and keeps the vision classifier above.
+// ────────────────────────────────────────────────────────────────────
+describe('naming a document by Jev filing', () => {
+  const prevKey = process.env.JEV_API_KEY;
+  beforeEach(() => {
+    process.env.JEV_API_KEY = 'test-key';
+  });
+  afterAll(() => {
+    if (prevKey === undefined) delete process.env.JEV_API_KEY;
+    else process.env.JEV_API_KEY = prevKey;
+  });
+
+  const choice = (c: string, confidence = 0.9) => ({
+    type: 'choice' as const,
+    choice: c,
+    probabilities: { [c]: confidence },
+    confidence,
+  });
+
+  const svcJev = (args: {
+    transcription: string;
+    answers?: Record<string, unknown>;
+  }) => {
+    const llm = {
+      complete: jest.fn(
+        async (req: { system?: string }): Promise<LlmResponse> => {
+          const isTranscribe = (req.system ?? '').includes(
+            'transcribe the printed text',
+          );
+          const text = isTranscribe ? args.transcription : '';
+          return {
+            text,
+            parts: [{ type: 'text', text }],
+            toolCalls: [],
+            stopReason: 'end',
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: 'test-model',
+            provider: 'gemini',
+            assistantMessage: { role: 'assistant', content: text },
+          } as LlmResponse;
+        },
+      ),
+      decide: jest.fn(async () => ({
+        model: 'jev-1.13.0',
+        answers: args.answers ?? {},
+        usage: { inputTokens: 1, outputTokens: 0 },
+      })),
+      isConfigured: () => true,
+      model: 'test-model',
+      provider: 'gemini' as const,
+    };
+    const filing = new DocumentFilingService(llm as never);
+    return new MotivationExtractService(
+      llm as never,
+      noReadCache(),
+      undefined,
+      filing,
+    );
+  };
+
+  it('files a photographed document: Gemini transcribes, Jev names the kind', async () => {
+    const svc = svcJev({
+      transcription: 'SAPS 524 COMPETENCY CERTIFICATE ... ',
+      answers: { role: choice('document'), kind: choice('COMPETENCY_CERTIFICATE') },
+    });
+    await expect(svc.classify(png)).resolves.toEqual({
+      role: 'document',
+      kind: MotivationUploadKind.COMPETENCY_CERTIFICATE,
+      confident: true,
+    });
+  });
+
+  it('reads an evidence answer from Jev as evidence, with no kind', async () => {
+    const svc = svcJev({
+      transcription: 'Permission to hunt on the farm...',
+      answers: { role: choice('evidence') },
+    });
+    await expect(svc.classify(png)).resolves.toEqual({
+      role: 'evidence',
+      confident: true,
+    });
+  });
+
+  it('⚠️ keeps a photograph on the vision path when there is no text', async () => {
+    const svc = svcJev({ transcription: '   ', answers: {} });
+    // No transcription -> fell to the vision classifier, whose (empty here)
+    // reply reads as unresolved rather than a wrong filing.
+    await expect(svc.classify(png)).resolves.toBeNull();
+  });
+});
+

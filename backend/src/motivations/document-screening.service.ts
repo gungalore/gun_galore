@@ -139,8 +139,9 @@ export class DocumentScreeningService {
       json: {},
       thinking: { budgetTokens: 0 },
       purpose: SCREEN_PURPOSE,
-      // deepseek-flash is the only vision-capable DeepSeek id.
-      model: 'deepseek-flash',
+      // ⚠️ No explicit model. `moderation.document.images` is pinned to
+      // gemini-3.1-flash-lite in LlmService (providerFor + modelFor backstop),
+      // so a global LLM_MODEL cannot redirect this vision call.
       timeoutMs: 30_000,
     });
     return msg.text;

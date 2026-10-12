@@ -1,9 +1,14 @@
 import { createHash } from 'node:crypto';
 import { DocumentReadCacheService } from './document-read-cache.service';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import { LlmService } from '../common/llm/llm.service';
 import { LlmError, type LlmPart } from '../common/llm/llm.types';
+import {
+  DocumentFilingService,
+  type FilingOption,
+} from '../common/document-filing/document-filing.service';
+import { MOTIVATION_KIND_OPTIONS } from '../common/document-filing/motivation-kind-options';
 import { fieldsFor, nextOwnedRow } from './motivation-fields';
 import { readSaId } from './sa-id';
 import { endorsementSpec, parseEndorsements } from '../common/sa-competency';
@@ -17,8 +22,14 @@ import {
 import { answerValue } from '../common/card-placeholder';
 import {
   EVIDENCE_CONTAINER_LIST,
+  EVIDENCE_CONTAINERS,
   isContainerId,
 } from './evidence-taxonomy';
+
+/** The evidence containers, as Jev filing options. Built once at load. */
+const EVIDENCE_FILING_OPTIONS: readonly FilingOption[] = EVIDENCE_CONTAINERS.map(
+  (c) => ({ id: c.id, label: c.label, hint: c.hint }),
+);
 
 // ────────────────────────────────────────────────────────────────────
 // READING WHAT THE APPLICANT ALREADY HAS.
@@ -354,6 +365,10 @@ export class MotivationExtractService {
     private readonly llm: LlmService,
     private readonly cache: DocumentReadCacheService,
     private readonly vision?: GoogleVisionOcrService,
+    // ⚠️ OPTIONAL, AND THAT IS THE FALLBACK. No Jev key (or a unit test that
+    // does not provide it) means the tuned vision classifiers run exactly as
+    // before. DocumentFilingModule provides it in production.
+    @Optional() private readonly filing?: DocumentFilingService,
   ) {}
 
   /** What a failure looked like, for a log line. Codes, never a provider class. */
@@ -405,6 +420,44 @@ export class MotivationExtractService {
   async ocr(bytes: Buffer, mimeType: string): Promise<string | null> {
     if (!this.vision || !mimeType.startsWith('image/')) return null;
     return this.vision.text(bytes).catch(() => null);
+  }
+
+  /**
+   * READ THE WHOLE PAGE — Gemini transcribes; it does not classify.
+   *
+   * ⚠️ THE SAME FLOOR AS THE VAULT. A photographed document carries hundreds
+   * of characters; a photograph of a scene carries almost none. Below the
+   * floor the caller hands the file to the vision classifier rather than
+   * letting Jev guess from an empty page.
+   *
+   * Returns null on any failure, so classify() falls back to the vision path.
+   */
+  private async transcribe(
+    bytes: Buffer,
+    mimeType: string,
+  ): Promise<string | null> {
+    try {
+      const res = await this.llm.complete({
+        maxTokens: 2000,
+        thinking: { budgetTokens: 0 },
+        system: MOTIVATION_TRANSCRIBE_SYSTEM,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              contentBlock(bytes, mimeType),
+              { type: 'text', text: MOTIVATION_TRANSCRIBE_USER },
+            ],
+          },
+        ],
+        purpose: 'motivation.transcribe',
+        timeoutMs: 60_000,
+      });
+      return res.text;
+    } catch (err) {
+      this.logger.warn(`Motivation transcription failed: ${(err as Error).message}`);
+      return null;
+    }
   }
 
   async extract(args: {
@@ -827,6 +880,34 @@ export class MotivationExtractService {
 
     if (!this.llm.isConfigured()) return null;
 
+    // ── GEMINI READS, JEV FILES ───────────────────────────────────────
+    //
+    // Operator decision, 2026-10-12. A photographed DOCUMENT has printed text:
+    // Gemini transcribes it and Jev names the folder. A photograph of a scene
+    // has none, and falls through to the vision classifier below.
+    if (this.filing?.isConfigured()) {
+      const text =
+        ocr && ocr.trim().length >= MOTIVATION_MIN_TRANSCRIPTION_CHARS
+          ? ocr
+          : await this.transcribe(args.bytes, args.mimeType);
+      if (text && text.trim().length >= MOTIVATION_MIN_TRANSCRIPTION_CHARS) {
+        const filed = await this.filing.fileVault({
+          text,
+          kindOptions: MOTIVATION_KIND_OPTIONS,
+          purpose: 'motivation.classify.file',
+        });
+        if (filed) {
+          if (filed.role === 'evidence') {
+            return { role: 'evidence', confident: filed.confident };
+          }
+          const kind = filed.folder as MotivationUploadKind;
+          // ⚠️ AN ID OFF THE MENU IS REFUSED, not invented into the enum.
+          if (!CLASSIFIABLE.includes(kind)) return null;
+          return { role: 'document', kind, confident: filed.confident };
+        }
+      }
+    }
+
     const block = contentBlock(args.bytes, args.mimeType);
 
     let text = '';
@@ -945,6 +1026,39 @@ export class MotivationExtractService {
       args.ocrText !== undefined
         ? args.ocrText
         : await this.ocr(args.bytes, args.mimeType);
+
+    // ── GEMINI READS, JEV FILES THE CONTAINER ─────────────────────────
+    //
+    // Operator decision, 2026-10-12. A photographed DOCUMENT has printed text:
+    // Gemini transcribes it and Jev picks the container. A photograph of a
+    // scene has no printed text, so it keeps the vision classifier below — the
+    // member's own description does not move a photograph off that path.
+    if (this.filing?.isConfigured()) {
+      const pageText =
+        ocr && ocr.trim().length >= MOTIVATION_MIN_TRANSCRIPTION_CHARS
+          ? ocr
+          : await this.transcribe(args.bytes, args.mimeType);
+      if (pageText && pageText.trim().length >= MOTIVATION_MIN_TRANSCRIPTION_CHARS) {
+        const filed = await this.filing.fileEvidence({
+          text: pageText,
+          description,
+          options: EVIDENCE_FILING_OPTIONS,
+        });
+        if (filed && isContainerId(filed.folder)) {
+          // ⚠️ ONLY A CONFIDENT ANSWER IS CACHED, same rule as the vision path:
+          // a low one is a judgement about THIS description and the retry loop
+          // exists to replace it.
+          if (filed.confident) {
+            await this.cache.putEvidence({
+              cacheKey,
+              fileSha256: fileSha,
+              container: filed.folder,
+            });
+          }
+          return { container: filed.folder, confident: filed.confident };
+        }
+      }
+    }
 
     // ── THE IMAGE PART, AND WHY A PDF GETS NONE ────────────────────────
     //
@@ -1369,6 +1483,33 @@ function contentBlock(bytes: Buffer, mimeType: string): LlmPart {
     data: bytes.toString('base64'),
   };
 }
+
+/**
+ * ⚠️ THE FLOOR THAT SPLITS A DOCUMENT FROM A PHOTOGRAPH, mirrored from the
+ * vault's classifier. Below it, classify() hands the file to the vision
+ * classifier rather than letting Jev guess from an empty page.
+ */
+const MOTIVATION_MIN_TRANSCRIPTION_CHARS = 15;
+
+/**
+ * The transcribe prompt. It READS the page; it does not sort it.
+ *
+ * ⚠️ IT MUST NOT CLASSIFY. The sort is Jev's job now (DocumentFilingService).
+ */
+const MOTIVATION_TRANSCRIBE_SYSTEM = `
+You transcribe the printed text on one page of a South African document that
+supports a firearm licence motivation, completely and exactly, in reading order.
+
+Output ONLY the text you can read. Do NOT summarise, translate, classify,
+describe photographs or objects, or add any commentary.
+If the page has no printed text at all — a photograph of a scene or an object
+rather than a document — output an empty response.
+`.trim();
+
+const MOTIVATION_TRANSCRIBE_USER = [
+  'Transcribe every word and number printed on this page.',
+  'Return the text only.',
+].join('\n');
 
 const CLASSIFY_SYSTEM = `
 You sort one file a member has uploaded for a South African firearm licence

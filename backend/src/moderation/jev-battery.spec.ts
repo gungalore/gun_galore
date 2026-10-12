@@ -78,7 +78,7 @@ describe('jevLadder', () => {
     });
     expect(v.decision).toBe('BLOCK');
     expect(v.escalated).toBe(true);
-    expect(v.source).toBe('deepseek');
+    expect(v.source).toBe('gemini');
   });
 
   it('escalates the 60–80 band and passes on a DeepSeek CLEAN', async () => {

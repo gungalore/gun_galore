@@ -19,6 +19,7 @@ import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 // edge without a second registration — and without closing the cycle the
 // module specs assert against.
 import { MotivationsModule } from '../motivations/motivations.module';
+import { DocumentFilingModule } from '../common/document-filing/document-filing.module';
 
 // ⚠️ JwtModule.register({}) + AdminJwtGuard in providers are BOTH required
 // because this module hosts an AdminJwtGuard controller. Omit either and the
@@ -36,7 +37,7 @@ import { MotivationsModule } from '../motivations/motivations.module';
   // MotivationsModule for the renewal one-tap. One-way: nothing in
   // motivations/ reaches back here, so there is no cycle — and a spec asserts
   // it stays that way.
-  imports: [JwtModule.register({}), MotivationsModule],
+  imports: [JwtModule.register({}), MotivationsModule, DocumentFilingModule],
   controllers: [
     LicenceCentreController,
     LicenceCentreScanController,

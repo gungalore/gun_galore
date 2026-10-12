@@ -414,7 +414,9 @@ export class FeedModerationService {
         json: {},
         thinking: { budgetTokens: 0 },
         purpose: 'moderation.feed.images',
-        model: 'deepseek-flash',
+        // ⚠️ No explicit model. The purpose is pinned to gemini-3.1-flash-lite
+        // in LlmService (providerFor + the modelFor backstop), so a global
+        // LLM_MODEL cannot redirect this vision call.
         timeoutMs: 30_000,
       });
       raw = msg.text;

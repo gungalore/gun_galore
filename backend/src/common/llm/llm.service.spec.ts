@@ -131,20 +131,26 @@ describe('LlmService', () => {
     // either, which the image-rescue tests are built on.
     const deepseek = new FakeProvider('deepseek', false, false);
     deepseek.response = { ...deepseek.response, model: 'deepseek-flash' };
+    // ⚠️ Retired from routing on 2026-10-12, but present so a test can prove a
+    // purpose is NOT landing on it. It accepts documents and draws images, so
+    // it is never confused with the pinned deepseek fake above.
+    const qwen = new FakeProvider('qwen');
+    qwen.response = { ...qwen.response, model: 'qwen3.8-flash' };
     return {
-      svc: new LlmService(prisma, gemini, anthropic, deepseek),
+      svc: new LlmService(prisma, gemini, anthropic, deepseek, qwen),
       gemini,
       anthropic,
       deepseek,
+      qwen,
       create,
     };
   };
 
   // ── provider + model selection ────────────────────────────────────
-  it('defaults to gemini and flash-lite', () => {
+  it('defaults to gemini and gemini-3.8-flash', () => {
     const { svc } = build();
     expect(svc.provider).toBe('gemini');
-    expect(svc.model).toBe('gemini-3.5-flash-lite');
+    expect(svc.model).toBe('gemini-3.8-flash');
   });
 
   it('switches to anthropic on LLM_PROVIDER, the rollback lever', async () => {
@@ -167,8 +173,8 @@ describe('LlmService', () => {
     expect(svc.model).toBe('');
   });
 
-  // ⚠️ The consent link's licence-card OCR must stay on Gemini 3.5 Flash-Lite
-  // whatever LLM_PROVIDER says. See the licence.card.* pin in providerFor.
+  // ⚠️ The consent link's licence-card OCR must stay on Gemini whatever
+  // LLM_PROVIDER says. See the licence.card.* pin in providerFor.
   it('⚠️ PINS THE LICENCE-CARD OCR TO GEMINI UNDER LLM_PROVIDER=deepseek', async () => {
     process.env.LLM_PROVIDER = 'deepseek';
     const { svc, gemini, deepseek } = build();
@@ -184,6 +190,43 @@ describe('LlmService', () => {
     });
     expect(gemini.calls).toHaveLength(2);
     expect(deepseek.calls).toHaveLength(0);
+  });
+
+  // ⚠️ MODERATION IS PINNED TO GEMINI AT 3.1-FLASH-LITE. Operator decision
+  // 2026-10-12: moderation moved off DeepSeek, but stays on the cheap
+  // flash-lite rather than the platform-wide 3.8-flash. Pinned in providerFor
+  // and pinned again by the modelFor backstop below.
+  it('⚠️ PINS IMAGE SCREENING AND ESCALATION TO GEMINI AT 3.1-FLASH-LITE UNDER LLM_PROVIDER=deepseek', async () => {
+    process.env.LLM_PROVIDER = 'deepseek';
+    const { svc, gemini, deepseek } = build();
+    await svc.complete({
+      messages: [],
+      maxTokens: 10,
+      purpose: 'moderation.listing.images',
+    });
+    await svc.complete({
+      messages: [],
+      maxTokens: 10,
+      purpose: 'moderation.escalation',
+    });
+    expect(gemini.calls).toHaveLength(2);
+    expect(deepseek.calls).toHaveLength(0);
+    expect(gemini.calls[0].model).toBe('gemini-3.1-flash-lite');
+    expect(gemini.calls[1].model).toBe('gemini-3.1-flash-lite');
+  });
+
+  // ⚠️ VALUATION IS PINNED TO GEMINI NOW, retiring Qwen.
+  it('⚠️ PINS VALUATION TO GEMINI, NOT QWEN, UNDER LLM_PROVIDER=deepseek', async () => {
+    process.env.LLM_PROVIDER = 'deepseek';
+    const { svc, gemini, deepseek, qwen } = build();
+    await svc.complete({
+      messages: [],
+      maxTokens: 10,
+      purpose: 'valuation.research',
+    });
+    expect(qwen.calls).toHaveLength(0);
+    expect(deepseek.calls).toHaveLength(0);
+    expect(gemini.calls).toHaveLength(1);
   });
 
   // The env lever that re-points ONE purpose and its model without a deploy:
@@ -355,7 +398,7 @@ describe('LlmService', () => {
 
     expect(result.ok).toBe(true);
     expect(result.provider).toBe('gemini');
-    expect(result.model).toBe('gemini-3.5-flash-lite');
+    expect(result.model).toBe('gemini-3.8-flash');
     expect(gemini.calls[0]).toMatchObject({
       maxTokens: 1,
       purpose: 'health.ping',

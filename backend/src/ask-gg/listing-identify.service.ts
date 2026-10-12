@@ -168,6 +168,10 @@ export function parseIdentifyProposal(rawText: string): IdentifyProposal | null 
 const PRICES_PER_MTOK_USD: Record<string, { input: number; output: number }> = {
   'gemini-2.5-flash-lite': { input: 0.1, output: 0.4 },
   'gemini-3.5-flash-lite': { input: 0.3, output: 2.5 },
+  // ⚠️ PLACEHOLDER, mirrors llm.pricing.ts. Confirm against the Google rate
+  // card before trusting AskGgUsage.costUsdCents.
+  'gemini-3.8-flash': { input: 0.3, output: 2.5 },
+  'gemini-3.1-flash-lite': { input: 0.1, output: 0.4 },
   'gemini-2.5-flash': { input: 0.3, output: 2.5 },
   'gemini-2.5-pro': { input: 1.25, output: 10 },
 };

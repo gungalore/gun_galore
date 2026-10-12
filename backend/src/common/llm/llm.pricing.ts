@@ -57,6 +57,31 @@ const PRICES: Record<string, ModelPrice> = {
     cachedInputPerMillion: 0.03,
   },
   /**
+   * gemini-3.8-flash — the platform default from 2026-10-12.
+   *
+   * ⚠️ PLACEHOLDER RATES. The operator must confirm these against
+   * https://ai.google.dev/gemini-api/docs/pricing before trusting /admin/
+   * credits. Copied from the flash-lite row so a call is priced at all rather
+   * than booked as free; a wrong number under- or over-reports spend only.
+   */
+  'gemini-3.8-flash': {
+    inputPerMillion: 0.3,
+    outputPerMillion: 2.5,
+    cachedInputPerMillion: 0.03,
+  },
+  /**
+   * gemini-3.1-flash-lite — the moderation model (images, escalation, video).
+   *
+   * ⚠️ PLACEHOLDER RATES, same caveat as the row above. The `-image` sibling
+   * already carries a read rate card; the text rate is not separately
+   * published in this repo. Confirm before relying on the spend chart.
+   */
+  'gemini-3.1-flash-lite': {
+    inputPerMillion: 0.1,
+    outputPerMillion: 0.4,
+    cachedInputPerMillion: 0.01,
+  },
+  /**
    * Nano Banana 2 Lite — the quarry plates.
    *
    * ⚠️ READ FROM THE SAME PRICING PAGE ON 2026-09-10: input $0.25/1M, text
