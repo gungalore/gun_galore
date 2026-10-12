@@ -46,6 +46,15 @@ describe('QuestionService', () => {
     expect(served[0].default).toBe('Kershaw Blur');
   });
 
+  it('pre-fills q1 with the photo reading in preference to the member-typed name', () => {
+    const served = svc.sanitise(
+      identify({ make: 'Sako', model: 'IV', keySpec: '.270 Win' }),
+      configs.forCategory('knives'),
+      'sako 270',
+    );
+    expect(served[0].default).toBe('Sako IV .270 Win');
+  });
+
   it('strips banned-topic questions for every category', () => {
     const served = svc.sanitise(
       identify({}, [

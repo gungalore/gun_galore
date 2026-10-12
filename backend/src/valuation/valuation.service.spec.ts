@@ -126,6 +126,25 @@ describe('ValuationService', () => {
     expect(spec.model).toBe('85 varminter');
   });
 
+  it('takes the model from a dedicated model question, never the q1 confirm answer', async () => {
+    const { service, prisma } = build();
+    prisma.valuation.findUnique.mockResolvedValue({
+      itemName: 'sako 270',
+      questionsJson: [
+        { id: 'q2', text: 'Which Sako model is it?', type: 'single', options: ['Sako 75 (Action IV)'] },
+      ],
+      answersJson: [
+        { questionId: 'q1', custom: 'sako 270', selected: [], unsure: false },
+        { questionId: 'q2', custom: null, selected: ['Sako 75 (Action IV)'], unsure: false },
+      ],
+      identifyJson: { identification: { make: 'Sako', model: 'IV', keySpec: '.270 Win' } },
+    });
+
+    const spec = await (service as unknown as { deriveConfirmedSpec: (id: string) => Promise<{ model: string | null }> }).deriveConfirmedSpec('v1');
+
+    expect(spec.model).toBe('Sako 75 (Action IV)');
+  });
+
   it('refuses to identify a valuation with no item name, before any model call', async () => {
     const { service, prisma } = build();
     prisma.valuation.findUnique.mockResolvedValue({

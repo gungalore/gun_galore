@@ -148,10 +148,11 @@ export class QuestionService {
       )
       .replace(/\s{2,}/g, ' ')
       .trim();
-    // The member already named the item on intake. That name is authoritative,
-    // so it pre-fills q1 even when the photos read nothing; the photo reading
-    // (if any) is offered as a hint instead.
+    // Pre-fill q1 with what the model READ from the photos (make/model/spec) so
+    // the member confirms the machine's reading and corrects it if wrong; only
+    // when the photos read nothing do we fall back to the member's typed name.
     const memberName = (itemName ?? '').trim();
+    const prefill = photoReading || memberName;
     return {
       id: 'q1',
       text: seed?.text ?? 'Confirm the exact make and model, plus the key specification',
@@ -160,10 +161,9 @@ export class QuestionService {
       allow_custom: true,
       allow_unsure: false,
       required: true,
-      hint: photoReading ? `From the photos: ${photoReading}` : undefined,
-      // Pre-fill with what we already know (the member's own name, else the
-      // photos) so the member confirms instead of being asked twice.
-      default: memberName || photoReading || undefined,
+      // The reading the field is pre-filled with IS the machine's read, so no
+      // separate hint is needed.
+      default: prefill || undefined,
     };
   }
 

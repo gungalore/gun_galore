@@ -1178,7 +1178,10 @@ export class ValuationService {
         nameMake(itemName) ??
         null,
       model:
-        pick(/^\s*what is the model|exact model|\bmodel\b/i) ??
+        // skipQ1: q1 is the "confirm make AND model" question, whose answer is
+        // the member's whole name ("sako 270"); taking it as the model is the
+        // pollution bug. Only a dedicated model question counts.
+        pick(/^\s*what is the model|exact model|\bmodel\b/i, true) ??
         nameModel(q1Text) ??
         nameModel(itemName) ??
         identify?.identification?.model ??
