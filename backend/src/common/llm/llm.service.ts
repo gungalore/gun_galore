@@ -53,6 +53,13 @@ import {
 // flash-lite". A default no new key can reach is a trap for the next person.
 const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
 
+// ⚠️ VALUATION IDENTIFY RUNS ON GEMINI 3.5 FLASH (NOT flash-lite). Operator
+// decision: the vision identify step must read fine engraving (maker stamps,
+// model nameplates) and decode maker conventions (e.g. Sako's Roman-numeral
+// action codes). Flash-lite/Qwen garbled them ("SAKO IV" → a made-up model).
+// The rest of the valuation pipeline stays on Qwen.
+const VALUATION_IDENTIFY_MODEL = 'gemini-3.5-flash';
+
 // ⚠️ DI tokens for the two providers, deliberately NOT registered anywhere.
 // A constructor parameter typed as an interface emits `Object` as its design
 // type, and Nest would try to resolve a provider called Object and fail to
@@ -155,6 +162,11 @@ export class LlmService {
     // hand — the 13-digit ID. Pinned for the same reason as video above. An
     // explicit per-purpose env var still wins, above.
     if (purpose.startsWith('licence.card.')) return this.gemini;
+    // ⚠️ THE VALUATION IDENTIFY STEP IS GEMINI-ONLY. Reading fine engraving
+    // (maker stamps, model nameplates) and decoding maker conventions is a
+    // vision task the Qwen flash tier got wrong; the rest of the valuation
+    // (research, ad) stays on Qwen. An explicit per-purpose env var still wins.
+    if (purpose === 'valuation.identify') return this.gemini;
     // ⚠️ VALUATION PURPOSES RUN ON QWEN. The Value My Item engine needs
     // JSON-schema output with a multi-turn backend tool loop; a platform-wide
     // LLM_PROVIDER switch must not move it. An explicit per-purpose env var
@@ -207,6 +219,21 @@ export class LlmService {
    */
   providerNameFor(purpose: string): LlmProvider {
     return this.providerFor(purpose).name;
+  }
+
+  /**
+   * The model a purpose takes, before the provider default.
+   *
+   * ⚠️ ENV FIRST, CODE PIN AS BACKSTOP. An explicit `LLM_MODEL_<PURPOSE>` env
+   * var wins (same env + reload, no deploy lever as `LLM_PROVIDER_<PURPOSE>`); a
+   * purpose that must not silently regress carries a code pin here. Returns
+   * undefined when neither applies, so the provider default stands.
+   */
+  private modelFor(purpose: string): string | undefined {
+    const key = `LLM_MODEL_${purpose.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+    if (process.env[key]) return process.env[key];
+    if (purpose === 'valuation.identify') return VALUATION_IDENTIFY_MODEL;
+    return undefined;
   }
 
   private active(): LlmProviderClient {
@@ -270,7 +297,7 @@ export class LlmService {
   // ══════════════════════════════════════════════════════════════════
   async complete(req: LlmRequest): Promise<LlmResponse> {
     const provider = this.serve(req);
-    const model = req.model ?? provider.defaultModel();
+    const model = req.model ?? this.modelFor(req.purpose) ?? provider.defaultModel();
     const startedAt = Date.now();
 
     if (!provider.isConfigured()) {
@@ -297,7 +324,7 @@ export class LlmService {
   // ══════════════════════════════════════════════════════════════════
   async *stream(req: LlmRequest): AsyncGenerator<LlmStreamEvent> {
     const provider = this.serve(req);
-    const model = req.model ?? provider.defaultModel();
+    const model = req.model ?? this.modelFor(req.purpose) ?? provider.defaultModel();
     const startedAt = Date.now();
 
     if (!provider.isConfigured()) {

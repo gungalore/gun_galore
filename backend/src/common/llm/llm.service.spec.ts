@@ -186,6 +186,24 @@ describe('LlmService', () => {
     expect(deepseek.calls).toHaveLength(0);
   });
 
+  // ⚠️ The valuation identify step (vision) must stay on Gemini 3.5 Flash (not
+  // flash-lite, not Qwen) whatever LLM_PROVIDER says. See the valuation.identify
+  // pin in providerFor + modelFor.
+  it('⚠️ PINS THE VALUATION IDENTIFY STEP TO GEMINI 3.5 FLASH', async () => {
+    process.env.LLM_PROVIDER = 'deepseek';
+    const { svc, gemini } = build();
+    await svc.complete({ messages: [], maxTokens: 10, purpose: 'valuation.identify' });
+    expect(gemini.calls).toHaveLength(1);
+    expect(gemini.calls[0].model).toBe('gemini-3.5-flash');
+  });
+
+  it('lets LLM_MODEL_<PURPOSE> override the pinned identify model', async () => {
+    process.env.LLM_MODEL_VALUATION_IDENTIFY = 'gemini-3.5-flash-preview';
+    const { svc, gemini } = build();
+    await svc.complete({ messages: [], maxTokens: 10, purpose: 'valuation.identify' });
+    expect(gemini.calls[0].model).toBe('gemini-3.5-flash-preview');
+  });
+
   it('passes the resolved model down to the provider', async () => {
     process.env.LLM_MODEL = 'gemini-2.5-flash-lite';
     const { svc, gemini } = build();
