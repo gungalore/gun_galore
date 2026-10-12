@@ -52,7 +52,6 @@ const SOURCES = [
   // Blocked/JS/SPA retailers: read via the Scrapewise render lane.
   { domain: 'gumtree.co.za', label: 'Gumtree', platform: SCRAPEWISE, roles: ['USED'], categories: ['*'] },
   { domain: 'facebook.com/marketplace', label: 'Facebook Marketplace', platform: SCRAPEWISE, roles: ['USED'], categories: ['*'] },
-  { domain: 'junkmail.co.za', label: 'Junk Mail', platform: SCRAPEWISE, roles: ['USED'], categories: ['*'] },
   { domain: '247hunter.co.za', label: '247 Hunter', platform: SCRAPEWISE, roles: ['USED'], categories: ['firearms', 'optics', 'hunting', 'knives', 'shooting-accessories'] },
   { domain: 'bluewatergear.co.za', label: 'Blue Water Gear', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['fishing'] },
   { domain: 'davesheer.com', label: 'Dave Sheer Firearms', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'shooting-accessories', 'reloading-equipment'] },
@@ -91,7 +90,7 @@ const SOURCES = [
 ];
 
 // Domains previously seeded with an unverified platform; remove them.
-const STALE = ['frontrunner.co.za', 'bobshop.co.za'];
+const STALE = ['frontrunner.co.za', 'bobshop.co.za', 'junkmail.co.za'];
 
 let created = 0;
 let updated = 0;
