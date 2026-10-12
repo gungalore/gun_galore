@@ -8,12 +8,6 @@ function zar(n: number | null): string {
   return n == null ? '-' : `R${n.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
 }
 
-const CONFIDENCE_COLOR: Record<string, string> = {
-  HIGH: 'var(--red)',
-  MEDIUM: '#b26a00',
-  LOW: 'var(--text-tertiary)',
-};
-
 export function ResultView({
   result,
   legalFlags,
@@ -27,7 +21,7 @@ export function ResultView({
   onStartAnother: () => void;
   creatingListing: boolean;
 }) {
-  const { itemSummary, pricing, confidence } = result;
+  const { itemSummary, pricing } = result;
   const noFirmPrice = pricing.midZar == null;
 
   return (
@@ -42,12 +36,6 @@ export function ResultView({
             style={{ background: 'var(--bg-inset)', color: 'var(--text-secondary)' }}
           >
             {itemSummary.conditionBand}
-          </span>
-          <span
-            className="px-2 py-0.5 rounded-full text-xs font-medium"
-            style={{ background: 'var(--bg-inset)', color: CONFIDENCE_COLOR[confidence.level] }}
-          >
-            {confidence.level} confidence
           </span>
         </div>
       </div>
@@ -90,22 +78,6 @@ export function ResultView({
             </div>
           </div>
         </div>
-      )}
-
-      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-        <span className="font-medium">Confidence:</span> {confidence.reason}
-      </p>
-
-      {String(result.meta?.basis ?? '') === 'DEPRECIATED_ANCHOR' && (
-        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          Based on the current new South African price less depreciation for its
-          age and condition, because no used comparables were found.
-        </p>
-      )}
-      {String(result.meta?.basis ?? '') === 'BLEND' && (
-        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          Blended from the few comparables found and the depreciated new price.
-        </p>
       )}
 
       <section>
@@ -160,27 +132,12 @@ export function ResultView({
         </section>
       )}
 
-      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-        <span className="font-medium">Demand:</span> {result.demandNote}
-      </p>
-
       <LegalFlagsCard flags={legalFlags} />
 
       <section>
         <h2 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Ready-to-post ad</h2>
         <AdPreviewCard ad={result.ad} />
       </section>
-
-      {result.unverified.length > 0 && (
-        <section>
-          <h2 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Could not verify</h2>
-          <ul className="flex flex-col gap-1 text-sm" style={{ margin: 0, paddingLeft: 18, color: 'var(--text-secondary)' }}>
-            {result.unverified.map((u, i) => (
-              <li key={i}>{u}</li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
         This is an estimate based on public South African listings at the time of research.
