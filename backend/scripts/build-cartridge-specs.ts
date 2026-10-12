@@ -23,7 +23,7 @@
  *
  * Build the CartridgeSpec seed from our GRT-extracted caliber data
  * (prisma/seed-data/grt-caliber.csv — our own Frida extraction of Gordon's
- * Reloading Tool) matched against Load Lab's canonical cartridgeKeys.
+ * Reloading Tool) matched against the reloading tool's canonical cartridgeKeys.
  *
  * The match uses the SAME cartridgeKey() the load-data query uses, plus a
  * fuzzy + alias fallback for spelling drift between the Somchem-sourced
@@ -32,7 +32,7 @@
  * COAL, Pmax=4360bar) and is adversarially re-verified before deploy.
  *
  * Output: prisma/seed-data/cartridge-specs.json — one row per MATCHED
- * Load Lab cartridge, upserted into CartridgeSpec by the seed loader.
+ * reloading cartridge, upserted into CartridgeSpec by the seed loader.
  *
  *   npx ts-node scripts/build-cartridge-specs.ts [cartridgeKeysFile]
  *
@@ -66,11 +66,11 @@ const num = (s: string): number | null => {
 };
 
 // Manual overrides from the adversarial verification pass (43-agent, 3-opinion
-// recheck). The fuzzy matcher pointed these Load Lab cartridges at the WRONG
+// recheck). The fuzzy matcher pointed these reloading cartridges at the WRONG
 // GRT row (unanimous expert agreement) — most dangerously bare "308" → .308
 // Marlin Express and "45-70" → a Belgian magnum. Each is re-pointed at the
 // exact correct GRT cipname the reviewers named, or dropped where no safe
-// target exists in GRT. Key = Load Lab cartridgeKey; value = exact GRT
+// target exists in GRT. Key = reloading cartridgeKey; value = exact GRT
 // cipname to force, or '__DROP__' to exclude entirely.
 const OVERRIDES: Record<string, string> = {
   '308': '.308 Win.', // was .308 Marlin Express
@@ -346,7 +346,7 @@ DELETE FROM "CartridgeSpec" WHERE "cartridgeKey" NOT IN (${keyList});
   );
   const byStd: Record<string, number> = {};
   for (const s of specs) byStd[String(s.standard)] = (byStd[String(s.standard)] || 0) + 1;
-  console.log(`Load Lab cartridges: ${keys.length}`);
+  console.log(`Reloading cartridges: ${keys.length}`);
   console.log(`Matched specs written: ${specs.length}`, byStd);
   console.log(`With official datasheet: ${specs.filter((s) => s.officialPdfUrl).length}`);
   console.log(`Unmatched: ${unmatched.length}`);

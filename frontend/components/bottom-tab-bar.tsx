@@ -32,13 +32,11 @@
 //                 All `/my/*` destinations + /dashboard + /profile
 //                 live in here.
 //
-// ⚠️ ASK BOET IS NOT A TAB, DELIBERATELY. It held slot 4, which pushed the
+// ⚠️ NO PAID-ASSISTANT TAB HERE. It once held slot 4, which pushed the
 // wishlist up into the top bar and left the primary navigation with no CART —
 // so an installed member could fill a basket and then, on any route where the
-// top bar is hidden, have no way back to it. A paid assistant does not outrank
-// the basket. Ask Boet is now the floating launcher it already was in browser
-// mode (components/ask-gg/ask-gg-host.tsx), which reaches every shopping
-// screen rather than one tab in five. Do not put it back in here.
+// top bar is hidden, have no way back to it. The basket always outranks a paid
+// extra. Keep this bar to the shop surfaces.
 //
 // Active-route highlighting via usePathname() + a search-aware match
 // helper (so /?listingType=AUCTION lights up the Shop tab even

@@ -1,9 +1,6 @@
 /**
  * Carrier-neutral shipping shapes, shared by the Bob Go client, the adapter and
- * the orchestrator.
- *
- * Moved out of the retired pudo.service.ts (2026-09-24) — Pudo and The Courier
- * Guy are gone and Bob Go (door-to-door) is the only courier rail.
+ * the orchestrator. Bob Go (door-to-door) is the only courier rail.
  */
 
 export interface ParcelDims {

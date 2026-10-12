@@ -273,7 +273,7 @@ export class PriceEstimateService {
         refundOfId: null,
         listing: {
           status: 'SOLD',
-          isDealListing: false, // deep house-deal sales must not skew comps
+          isDealListing: false, // deep first-party-deal sales must not skew comps
           category: categoryFilter,
           make: { equals: make, mode: 'insensitive' },
           ...(model ? { model: { equals: model, mode: 'insensitive' } } : {}),
@@ -294,7 +294,7 @@ export class PriceEstimateService {
     const rows = await this.prisma.listing.findMany({
       where: {
         status: 'ACTIVE',
-        isDealListing: false, // exclude first-party Daily Deals from comps
+        isDealListing: false, // exclude first-party deal listings from comps
         price: { not: null },
         category: categoryFilter,
         make: { equals: make, mode: 'insensitive' },
@@ -322,7 +322,7 @@ export class PriceEstimateService {
         refundOfId: null,
         listing: {
           status: 'SOLD',
-          isDealListing: false, // deep house-deal sales must not skew comps
+          isDealListing: false, // deep first-party-deal sales must not skew comps
           category: categoryFilter,
           title: { contains: phrase, mode: 'insensitive' },
         },
@@ -341,7 +341,7 @@ export class PriceEstimateService {
     const rows = await this.prisma.listing.findMany({
       where: {
         status: 'ACTIVE',
-        isDealListing: false, // exclude first-party Daily Deals from comps
+        isDealListing: false, // exclude first-party deal listings from comps
         price: { not: null },
         category: categoryFilter,
         title: { contains: phrase, mode: 'insensitive' },

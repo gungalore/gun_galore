@@ -225,9 +225,8 @@ export default function VaultConsentModal({
   return (
     <div
       // ⚠️ z-[60] AND data-blocking-overlay, both load-bearing. The bottom tab
-      // bar is z-55 and would otherwise sit over this; Boet's dock is z-60 too
-      // and, being last in <body>, wins the tie on DOM order — the attribute
-      // stands him down for the overlay's lifetime.
+      // bar is z-55 and would otherwise sit over this; the attribute suppresses
+      // any other fixed chrome for the overlay's lifetime.
       className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
       data-blocking-overlay="true"
       onClick={(e) => {

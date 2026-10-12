@@ -254,13 +254,13 @@ export class TasksService {
   // only by an explicit renew/relist) NOT updatedAt — updatedAt is touched by
   // unrelated writes (offer counters, moderation edits) which would silently
   // keep dead listings alive forever. AUCTIONS are excluded (they have their own
-  // endTime lifecycle), as are house deal listings.
+  // endTime lifecycle), as are first-party deal listings.
   //
-  // The `isDealListing: false` predicates below are KEPT on purpose. Daily
-  // Deals is gone, but Listing.isDealListing is still a column (the Prisma
-  // models were left orphaned) and dropping the predicate would widen what
-  // these sweeps expire and de-index. This is a live listing-lifecycle path;
-  // the removal is not allowed to change it. Same for photolessListingSweep.
+  // The `isDealListing: false` predicates below are KEPT on purpose.
+  // Listing.isDealListing is still a column (a live public-discovery filter)
+  // and dropping the predicate would widen what these sweeps expire and
+  // de-index. This is a live listing-lifecycle path; the removal is not
+  // allowed to change it. Same for photolessListingSweep.
   @Cron('0 4 * * *')
   async staleListingSweep() {
     const NUDGE_DAYS = 75;
@@ -448,10 +448,7 @@ export class TasksService {
 
   // Recover PRIVATE_ARRANGE sales stranded paid+HELD (crash between markPaid
   // and the immediate-payout fire-and-forget). Small, idempotent, cheap.
-  // This cron used to run a SECOND pass — the DD-2 Daily Deals house-deal
-  // auto-accept re-drive — which went with the feature. Only the deal half was
-  // taken: the PRIVATE_ARRANGE pass, its catch, and the
-  // 'pa-payout-reconcile' heartbeat behave exactly as before.
+  // The 'pa-payout-reconcile' heartbeat behaves as before.
   @Cron(CronExpression.EVERY_5_MINUTES)
   async reconcileStrandedPrivateArrange() {
     this.logger.debug('Running PRIVATE_ARRANGE reconcile');
@@ -905,13 +902,6 @@ export class TasksService {
     }
   }
 
-  // The two DD-F hourly sweeps that lived here — the deal purchase-order retry
-  // ('deal-po-retry') and the stock-ready supplier-collection re-book
-  // ('deal-collection-sweep') — went with Daily Deals. Both were deal-only:
-  // one queried DealPurchaseOrder, the other re-drove DealsService bookings.
-  // The Zoho revenue-doc retry above is the ordinary-order equivalent and is
-  // untouched.
-
   // P5.1 — Saved-search alerts. Every 10 min: for each enabled SavedSearch,
   // find ACTIVE listings published since its notify cursor and alert the
   // owner (in-app + push), then advance the cursor. Thin delegator; the
@@ -973,11 +963,6 @@ export class TasksService {
   // this platform uses sit inside a free monthly tier, so there is no
   // per-check credit to run out of mid-sale. If /admin/health still lists a
   // 'verifynow-balance' cron, that row is the stale one — not a missed run.
-
-  // ⚠️ THE PUDO TRACKING POLL IS GONE (2026-09-24). It asked Pudo every 10
-  // minutes for each active locker shipment's tracking events. Pudo was
-  // retired; Bob Go's tracking now arrives by webhook and the pending-booking
-  // resolver below. There is no poll to run.
 
   // Resolve Bob Go bookings the courier had not yet accepted.
   //

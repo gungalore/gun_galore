@@ -524,7 +524,7 @@ turn the feed off. If a real kill switch is wanted again, re-wire `assertEnabled
 to read the flag. True end-to-end verification of posting needs a signed-in
 session (anonymous requests are 401 regardless of the flag).
 
-## 2026-10-09 (late) — PARGO PICKUP SURFACED + PUDO/TCG SWEEP (DEPLOYED)
+## 2026-10-09 (late) — PARGO PICKUP SURFACED + RETIRED-COURIER SWEEP (DEPLOYED)
 
 **Deployed to production** as `076d7e69` (one commit). Full deploy
 (`& "C:\Program Files\Git\bin\bash.exe" infra/deploy/deploy.sh`, no side flag —
@@ -544,7 +544,7 @@ come from Bob Go's `/rates-at-checkout` (`shipping.service.ts` `menuFromRates`,
 capped at 5, sorted by `pickupPointDistanceKm`), the courier always collects from
 the seller, and firearms/barrels are already locked to
 `DEALER_TRANSFER`/`PRIVATE_ARRANGE`. What was missing was the **Pargo status leg**
-and the last user-visible Pudo/Courier-Guy copy.
+and the last user-visible retired-carrier copy.
 
 **What changed (17 files).**
 1. **`READY_FOR_PICKUP` was invisible to the frontend.** Added it to the
@@ -558,13 +558,12 @@ and the last user-visible Pudo/Courier-Guy copy.
 2. **Sell form (operator call 2026-10-09).** Removed the non-firearm
    door-delivery info box entirely; the Pickup address field is now the only
    seller input. The `Delivery` Field renders for firearms only.
-3. **Pudo/Courier-Guy sweep.** Help-centre FAQ copy (RAG KB, `AskGgKbEntry`)
-   rewritten onto Bob Go door + Pargo pickup and the `pudo`/`courier guy` tags
+3. **Retired-carrier sweep.** Help-centre FAQ copy (RAG KB, `AskGgKbEntry`)
+   rewritten onto Bob Go door + Pargo pickup and the stale carrier tags
    dropped; deleted the stale `backend/prisma/dev-test-webhooks.ts` (posted to
-   the removed `/shipping/webhook/tcg|pudo`); `dummy-run-setup.ts` neutralises
-   `BOBGO_*` not `PUDO_*`; cleared the invalid `LOCKER` value from the valuation
+   the removed legacy webhook route); cleared the invalid `LOCKER` value from the valuation
    configs + `docs/valuation-spec.md`; `docs/INDEX.md` glossary and the admin
-   mockup word swept. **`PUDO`/`TCG` enum placeholders stay** (historical rows)
+   mockup word swept. **Legacy enum placeholders stay** (historical rows)
    and the accurate "retired" notes in `project-reference.md` /
    `ARCHITECTURE.md` / `ENVIRONMENT.md` stay.
 
@@ -1145,9 +1144,9 @@ Didit on demand. Corrected in `frontend/app/(legal)/privacy/page.tsx` (§3.2, §
 §9), plus the liveness video is now named. Two further corrections found while
 editing: **Didit's country was wrong** — their own docs state EU-by-default
 processing on AWS, so `Israel` became `European Union` in the provider table and
-§8; and **stale Clerk disclosures were removed** — the provider table still
-listed Clerk as a recipient, §8 still named it, and §3.1/§3.6 still said email
-was "verified via Clerk" and session data was "handled by Clerk". Clerk was
+§8; and **stale identity-provider disclosures were removed** — the provider table still
+listed the retired provider as a recipient, §8 still named it, and §3.1/§3.6 still said
+email was "verified via" it and session data was "handled by" it. It was
 removed from the codebase on 2026-09-10.
 
 ### Reveal ID / selfie now pulls from Didit (view-only, nothing stored)
@@ -1560,7 +1559,7 @@ titles follow (`Paper Work Vault`, `Reloading Tool`, `Motivations`); the
 in-page `<h1>`s were deliberately left alone.
 
 `/account` lost its three-tier structure with this: the gold Motivation hero,
-both `ServiceCard`s, `TILE_GROUPS`, `PROMOTED_HREFS` and a stale "Load Lab"
+both `ServiceCard`s, `TILE_GROUPS`, `PROMOTED_HREFS` and a stale retired-tool
 comment are gone, and the page is now one flat tier of grouped cards.
 
 **Things worth knowing if you touch this again:**
@@ -1636,7 +1635,7 @@ regression — worth a second look if it recurs, since the timeout budget is
 tight for a PDF-rendering test.
 
 **Also this session (no deploy needed — pure data, not code):** the
-"Hunting Packages & Experiences" category was still `isActive: true` in
+"the retired on-site-services" category was still `isActive: true` in
 production (never deactivated when the feature's code was removed
 2026-08-26 — only the seed *source* was updated, and `prisma/seed.ts` is
 unsafe to run against prod, so the live row never got the memo). Flipped
@@ -1644,7 +1643,7 @@ unsafe to run against prod, so the live row never got the memo). Flipped
 (row `cmspt3aie000i2jvnhipoybqi`, 0 listings under it, fully reversible).
 Confirmed gone from `/api/categories/with-counts` for both anonymous and
 member callers. The operator was shown what a real build-out would require
-(deposit-only payment model + legal opinion per `docs/HUNTING-PILOT-PREP.md`,
+(deposit-only payment model, a legal opinion,
 an unenforced 5-part legal attestation gate, an unused outfitter-vetting
 pipeline) and chose not to build any of it right now.
 
@@ -1783,7 +1782,7 @@ services online: `alloutdoor-backend`, `alloutdoor-frontend`, `warden`.
 
 **Rollback point: `alloutdoor-20260911-210151.dump`** (the pre-deploy backup
 deploy.sh took). Worth keeping the name to hand — the first migration below
-**drops `User.clerkId` and is not reversible**, so a restore is the only way
+**drops the identity-provider column and is not reversible**, so a restore is the only way
 back past it.
 
 Four migrations applied: `20260910200000_self_hosted_auth`,
@@ -1814,8 +1813,8 @@ TOTP routes mapped, and the only ERROR lines are the known Peach "runs in MOCK
 mode" pair, which is payments being deliberately inert.
 
 ⚠️ The dead `VERIFYNOW_*` keys are still in `backend/.env` (lines 32-34), as
-are the Clerk and AWS ones. Inert, but **AWS should be rotated, not merely
-deleted.**
+are the retired identity-provider and AWS ones. Inert, but **AWS should be
+rotated, not merely deleted.**
 
 ### Still outstanding, in this order
 
@@ -1846,7 +1845,7 @@ three trees, both production builds exit 0, and both artefacts present
 (`backend/dist/src/main.js`, `frontend/.next/BUILD_ID`).
 
 🚨 **DO NOT RUN deploy.sh YET. THE BOX WOULD CRASH-LOOP AT BOOT.** Its `.env`
-is still the pre-Clerk world, and this deploy contains two guards that HARD
+is still the pre-self-hosted-auth world, and this deploy contains two guards that HARD
 THROW in production. `pm2 reload` runs `instances: 1`, so it is a restart: the
 old process is already gone when the new one refuses to start. That is an
 outage, not a failed deploy.
@@ -1871,7 +1870,7 @@ identity on canned data.
 - `DIDIT_MODE=live`, `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`,
   `DIDIT_WEBHOOK_SECRET` (and `DIDIT_BASE_URL` if not defaulted)
 - the workflow to use is `b792ee05-948a-410a-8fa4-ca3d89511259` — see the KYC
-  section of CLAUDE.md for why every other one the key reaches is wrong
+  section of `docs/project-reference.md` for why every other one the key reaches is wrong
 - 🚨 **the current Didit API key was pasted into a chat and must be ROTATED
   before it goes on the box.**
 - ⚠️ Cloudflare's WAF must allow **18.203.201.92** or every webhook is dropped
@@ -1888,10 +1887,10 @@ for local edits on the box". Clear it on the box first.
   `20260910200000_self_hosted_auth`, `20260911030000_local_email_phone_otp`,
   `20260911120000_admin_auth_hardening`,
   `20260911150000_admin_totp_replay_and_session_amr`.
-  ⚠️ The first **drops `User.clerkId`** and is not reversible. `deploy.sh`
+  ⚠️ The first **drops the identity-provider column** and is not reversible. `deploy.sh`
   takes a pre-deploy `pg_dump` and prints the name — that is the rollback
   point, and it is worth reading the name out loud before continuing.
-- Clerk, VerifyNow and AWS keys on the box become dead afterwards. They are
+- The retired identity-provider, VerifyNow and AWS keys on the box become dead afterwards. They are
   inert, not harmful — but AWS should be **rotated, not merely deleted**.
 
 ### After a green deploy, in this order
@@ -2328,19 +2327,18 @@ local database only**, to drive the Desk during verification. Production is
 untouched.
 
 
-## 2026-09-10 (latest) — CLERK IS OUT; AUTH IS OURS, VERIFICATION IS DIDIT
+## 2026-09-10 (latest) — SELF-HOSTED AUTH; VERIFICATION IS DIDIT
 
 **NOT DEPLOYED.** On `feat/self-hosted-auth`, four commits, off
 `feat/takealot-ux-parity`. Nothing has touched the box.
 
-**The rules are in CLAUDE.md**; where each piece of the old behaviour went is in
-`docs/history/CLERK-REMOVAL.md`. This is state and the pick-up list.
+**The rules are in `docs/project-reference.md`.** This is state and the pick-up list.
 
 ### What is done
 
 Backend, frontend and peripherals are complete and green: backend `tsc` clean
 with 4,554 tests passing, frontend `tsc` clean with 1,680 passing, and
-`npm run build` exits 0. `User.clerkId` is gone — `User.id` is the only user
+`npm run build` exits 0. The identity-provider column is gone — `User.id` is the only user
 identifier and `@CurrentUser()` returns it. Sessions are ours (httpOnly
 cookies, rotating refresh, bearer fallback for the app shells). **Seller KYC
 goes through Didit; the e-mail and phone codes do NOT** — they are minted and
@@ -2383,16 +2381,16 @@ reloading corpus and the Bench reference data survive. **Take a backup first**
 4. **Allow `18.203.201.92` in Cloudflare's WAF.** Didit delivers from that
    single IP; without the rule every verification outcome is dropped at the
    edge and nothing in any application log will say so.
-5. Rebuild the frontend after removing the Clerk vars from
+5. Rebuild the frontend after removing the retired identity-provider vars from
    `.env.production` — `NEXT_PUBLIC_*` is inlined at build time, so the old
    key stays in the served bundle until you do.
 
 ### Left for the operator, not for code
 
 - **Rotate, do not just delete.** `frontend/.env.local` and
-  `frontend/.env.local.bak-20260825-214941` both hold a live `sk_live_` Clerk
-  secret in plaintext; the AWS access key was live on the box. Deleting the
-  lines revokes nothing — kill the Clerk key in its dashboard and the IAM user
+  `frontend/.env.local.bak-20260825-214941` both hold a live `sk_live_`
+  retired-provider secret in plaintext; the AWS access key was live on the box. Deleting the
+  lines revokes nothing — kill the provider key in its dashboard and the IAM user
   in the AWS console.
 - **A decision, not a bug: there is no Home Affairs check any more.** VerifyNow
   gave us the applicant's official name and date of birth, which is what let
@@ -2403,7 +2401,7 @@ reloading corpus and the Bench reference data survive. **Take a backup first**
   \$1.10 each. **Until then no user-facing copy may claim a Home Affairs
   verification.**
 - **Google sign-in and 2FA are gone** and were not rebuilt — both lived in
-  Clerk's hosted surfaces. Settings now says plainly that 2FA is unavailable.
+  the retired provider's hosted surfaces. Settings now says plainly that 2FA is unavailable.
 - Didit is on the **free tier** (500/month each of ID verification, passive
   liveness, face match, IP analysis; \$10 balance, currently 1 of each used).
   Email codes cost \$0.03 and ZA SMS about \$0.105 — the operator accepted
@@ -2413,7 +2411,7 @@ reloading corpus and the Bench reference data survive. **Take a backup first**
 
 ### Worth knowing
 
-The `gungalore.co.za` → `alloutdoor.co.za` rename was **blocked** by Clerk's
+The `gungalore.co.za` → `alloutdoor.co.za` rename was **blocked** by the retired provider's
 FAPI domain (`infra/nginx/alloutdoor.conf:30-31`). That blocker is gone.
 
 `docs/ARCHITECTURE.md` had been claiming an `api.gungalore.co.za` vhost and
@@ -4306,7 +4304,7 @@ motivation intact.
 | `/licence-services/new` | 308 → `/licence-centre/applications` |
 | `/motivations/:id` | 308 → `/licence-centre/:id` |
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
-| `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
+| `/licence-centre` | 307 (session auth wall) — **still the Document Centre** |
 
 ### The mockup's two asks — 2026-09-08, `391e921c` + `91663c2d`
 

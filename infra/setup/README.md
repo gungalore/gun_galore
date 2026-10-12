@@ -193,7 +193,7 @@ staging use, strip the `?schema=public` query parameter from the URL first —
 `pg_dump` treats it as part of the database name and fails with a confusing
 "database does not exist".
 
-**Schema drift you must know about.** Three services (Ask Boet's knowledge
+**Schema drift you must know about.** Three services (Ask GG's knowledge
 base, the reloading-manual full-text search, and listings full-text search) add
 `tsvector GENERATED` columns and GIN indexes at boot via raw DDL. Those columns
 are **not** in `schema.prisma`. They appear on first backend boot. Two
@@ -263,7 +263,7 @@ Index population is not automatic on a new box. After the backend is up, run
 the admin reindex from `/admin` (or the corresponding cron will pick it up).
 `publicVisible` must be present in the index's filterable attributes or the
 anonymous catalogue query fails outright — see the "Public vs Members" section
-of `CLAUDE.md`.
+of `docs/project-reference.md`.
 
 ---
 

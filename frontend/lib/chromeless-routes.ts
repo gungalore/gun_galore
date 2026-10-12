@@ -3,8 +3,8 @@
 //
 // ⚠️ ONE LIST, BECAUSE THE PER-COMPONENT COPIES DRIFTED. This rule used to
 // live as a hand-written `pathname.startsWith('/witness')` inside PublicNav,
-// PublicFooter and the Ask Boet host — three copies, and the two components
-// that also needed it never got one. The result was a complaint from a
+// PublicFooter and one more host component — three copies, and the two
+// components that also needed it never got one. The result was a complaint from a
 // witness on Android: a marketplace SEARCH BAR, a wishlist heart and a
 // SHOPPING CART sitting across the top of a statutory statement, because
 // MobileSearchBar rendered on every phone and nobody testing on a desktop ever

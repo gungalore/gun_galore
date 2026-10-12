@@ -196,7 +196,7 @@ Add: provider name, training date, certificate number. `PROFICIENCY_CERTIFICATE`
 **Effect: document, moderate.** One checkable sentence that makes an already-annexed, currently-uncited tab land.
 
 ### C3. Reloading — one yes/no plus one revealed line
-`yesno` + a short "since when / for which calibres" revealed on Yes, plus an optional bench photograph as a conditional upload kind. A non-reloader answers one tap and sees nothing else. Feasible to *default* rather than ask: the site already sells components and runs Load Lab.
+`yesno` + a short "since when / for which calibres" revealed on Yes, plus an optional bench photograph as a conditional upload kind. A non-reloader answers one tap and sees nothing else. Feasible to *default* rather than ask: the site already sells components and runs the reloading reference.
 
 ### C4. Free wins that need no question at all
 - **Un-hide three competency fields.** `competency_issued`, `competency_expiry` and `competency_for` are `formOnly: true` (`motivation-fields.ts:389–407`), so the writer never sees them — we **hold** the issue date and the covered types and cannot write "I was declared competent to possess handguns, rifles and shotguns on [date], certificate number X", the exact sentence in all six corpus documents. Deleting flags, zero applicant impact. `competency_number` is already visible, so the asymmetry is accidental rather than designed.

@@ -1,17 +1,16 @@
-// Shared shapes for booking a real shipment with a carrier. Since 2026-09-24
-// the only courier rail is Bob Go (door-to-door); Pudo L2L and TCG D2D were
-// retired. Kept carrier-neutral so the booking orchestrator doesn't branch on
-// carrier internals.
+// Shared shapes for booking a real shipment with a carrier. The only courier
+// rail is Bob Go (door-to-door). Kept carrier-neutral so the booking
+// orchestrator doesn't branch on carrier internals.
 
 /**
- * A street address in the shape every ShipLogic-family carrier expects.
+ * A street address in the shape the ShipLogic-family API expects.
  *
- * Rescued out of tcg.service.ts when The Courier Guy integration was retired
- * (operator 2026-09-04). Despite living there and being called
- * TcgResidentialAddress, it was never TCG-specific: Bob Go quoting and booking
- * use it just as much, because both run on ShipLogic and want the same
- * long-form province. Deleting tcg.service.ts with the type still inside it
- * would have taken the live rail's address shape with it.
+ * Rescued out of the retired carrier client when that integration was removed
+ * (operator 2026-09-04). Despite living there and being named for that carrier,
+ * it was never specific to it: Bob Go quoting and booking use it just as much,
+ * because both run on ShipLogic and want the same long-form province. Deleting
+ * the old client with the type still inside it would have taken the live rail's
+ * address shape with it.
  */
 export interface CarrierAddress {
   /** Street + number; required. */

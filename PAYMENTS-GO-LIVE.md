@@ -85,9 +85,9 @@ prettier drift, untouched files included) and is **not** a deploy gate.
 2. Frontend `NEXT_PUBLIC_PAYMENT_MODE=paygate` (build-baked) + production build.
 3. Full deploy runbook: type-checks, both test suites, foreground frontend build, deliberate
    staging, PM2 reload — from `feat/takealot-ux-parity` only.
-4. **Post-deploy: `npm run seed:help` on the box** — refreshes live Help-Centre/Ask-GG rows still
-   showing the retired "Pudo locker-to-locker / The Courier Guy" wording (carry-over from the
-   2026-10-09 Pargo deploy `076d7e69`; the seed file is deployed, the DB rows are not).
+4. **Post-deploy: `npm run seed:help` on the box** — refreshes live Help-Centre rows still
+   showing stale carrier wording (carry-over from the 2026-10-09 Pargo deploy `076d7e69`; the
+   seed file is deployed, the DB rows are not).
 5. Verify: boot-time `main.ts` payment warnings gone, `/api/health` OK, FAQ renders
    "Bob Go door / Pargo pickup".
 

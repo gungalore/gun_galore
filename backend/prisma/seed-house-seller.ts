@@ -2,12 +2,10 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
-// ─── Daily Deals house-seller seeder (DD-1) ──────────────────────────
-// First-party "OneDayOnly-style" Daily Deals are all filed under a single
-// system User row — the "house seller". Every Deal listing has this row as
-// its sellerId so the existing seller/transaction/payout machinery keeps
-// working unchanged, while `isDealListing = true` keeps the listing out of
-// every public marketplace surface.
+// ─── House-seller (system account) seeder ────────────────────────────
+// The first-party system User row, the "house seller". Any first-party
+// listing has this row as its sellerId so the existing seller / transaction /
+// payout machinery keeps working unchanged.
 //
 //   npm run seed:house
 //

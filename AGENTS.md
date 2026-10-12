@@ -9,6 +9,16 @@
 - Do not undo or modify unrelated worktree changes.
 - Use `apply_patch` for manual edits. Do not use destructive commands such as `git reset --hard` or `git checkout --`.
 - Do not commit, amend, push, or create a PR unless explicitly requested.
+- `docs/project-reference.md` replaced the former `CLAUDE.md`; there is no `CLAUDE.md` in the repo. Treat any `CLAUDE.md` reference or file as stale.
+
+## Retired Features (do not rebuild)
+
+These were removed from the product. Do not reintroduce them, document them as live, or resurrect their routes, models, flags or copy. The live product is Marketplace (Buy Now + offers), Auctions and Motivations, with Item Valuation paid per item.
+
+- **Selling modes:** `SWOP` / Swop-Trade; `TAKE_A_SHOT` as a listing type (offers remain a feature on `BUY_NOW` / `AUCTION` listings); Hunting Packages / Experiences.
+- **Modules:** swaps / swap proposals, featured homepage slots, Daily Deals / suppliers, AO PRO membership purchase, the prize draw / raffle, Ask Boet / Ask GG chat assistant, Load Lab (internal-ballistics calculator), hunt-ballistics, Wanted, Competitions, manual EFT.
+- **Vendors:** Clerk (identity), Stitch, Peach, KoraPay, Ivori (payments), The Courier Guy (TCG), Pudo, lockers (shipping).
+- **Rails today:** Ozow (payments), Bob Go door-to-door only (delivery), in-house session auth (identity), Didit (the one KYC session adapter).
 
 ## Product And Privacy
 
@@ -22,7 +32,7 @@
 
 ## Regulated Goods
 
-- Firearms and barrels may use only `DEALER_TRANSFER` or `PRIVATE_ARRANGE`; never courier or locker shipment.
+- Firearms and barrels may use only `DEALER_TRANSFER` or `PRIVATE_ARRANGE`; never ship them by courier.
 - Every firearm listing must offer `DEALER_TRANSFER`; `PRIVATE_ARRANGE` requires the existing consent flow.
 - Air rifles are not firearms and use the `air-rifles` category.
 - Live ammunition, primers, and propellant are banned. Empty or once-fired brass and projectiles are allowed.

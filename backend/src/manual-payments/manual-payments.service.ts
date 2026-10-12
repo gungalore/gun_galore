@@ -390,8 +390,7 @@ export class ManualPaymentsService {
           },
         }),
       ]);
-    // The Daily Deals purchase-order arm of this radar (failed supplier POs)
-    // went with the feature; the DealPurchaseOrder table stays orphaned.
+    // The first-party purchase-order arm of this radar went with the feature.
     return {
       transactions,
       subscriptionCharges,

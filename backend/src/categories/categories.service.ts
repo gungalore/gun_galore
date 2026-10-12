@@ -48,7 +48,7 @@ export class CategoriesService {
       }),
       this.prisma.listing.groupBy({
         by: ['categoryId'],
-        // Exclude Daily Deals so house deals don't inflate the public
+        // Exclude first-party deal listings so they don't inflate the public
         // per-category counts on the homepage tiles + filter facets.
         // …and members-only stock for signed-out callers, so a public tile
         // can never advertise a count the public grid refuses to show.

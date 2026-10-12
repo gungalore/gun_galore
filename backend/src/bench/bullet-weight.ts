@@ -25,7 +25,7 @@
 /**
  * How far either side of a stated bullet weight still counts as that bullet.
  *
- * ⚠️ FIVE GRAINS IS INHERITED, NOT INVENTED. The retired Load Lab's
+ * ⚠️ FIVE GRAINS IS INHERITED, NOT INVENTED. The earlier
  * recommend(cartridge, bulletWeightGr, toleranceGr = 5) used the same figure,
  * and the reloading-manual search auto-broadens by ±5 grains for the same
  * reason. Keeping it means a member who used the old tool sees the same breadth

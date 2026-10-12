@@ -2,10 +2,10 @@
 
 > ⚠️ **RE-DERIVED AFTER THE AUTH REWRITE (2026-09-10).** This plan was written against a
 > third-party identity provider, and roughly a third of it was about the handshake with
-> that provider rather than about closing an account. Clerk is gone: sessions, passwords
-> and sign-up are ours, `User.clerkId` no longer exists and `User.id` is the only user
-> identifier. **Steps 3–5 of §4 collapsed into one call, `sessions.revokeAllForUser`,**
-> and the `clerkId` tombstone was replaced by a **username rename**. Findings that were
+> that provider rather than about closing an account. That provider is gone: sessions,
+> passwords and sign-up are ours, and `User.id` is the only user identifier.
+> **Steps 3–5 of §4 collapsed into one call, `sessions.revokeAllForUser`,**
+> and the old tombstone was replaced by a **username rename**. Findings that were
 > about the handshake (H5, H10, H18, and half of H23) are marked *resolved by removal*
 > rather than deleted, because a reader who remembers them needs to know where they went.
 > Everything about *what a closure means* is unchanged.
@@ -16,7 +16,7 @@
 
 ## 0. THE ONE-LINE DIAGNOSIS
 
-Today's only erasure path — `UsersService.deleteById` (`backend/src/users/users.service.ts:448`; it was `deleteByClerkId`, and it was reached by a `user.deleted` webhook that no longer exists) — gets all three requirements backwards:
+Today's only erasure path — `UsersService.deleteById` (`backend/src/users/users.service.ts:448`) — gets all three requirements backwards:
 
 | Requirement | Today |
 |---|---|
@@ -68,11 +68,11 @@ model AccountClosure {
   closedAt        DateTime @default(now())
   /// 'MEMBER' | 'ADMIN' — how the closure was triggered.
   ///
-  /// ⚠️ There was a third value, 'CLERK_WEBHOOK', for a closure that reached us
-  /// because somebody deleted the member in the identity provider's own
-  /// dashboard. There is no such dashboard now — we are the identity provider —
-  /// so a closure can only start from the member or from an admin, and the
-  /// union is closed.
+  /// ⚠️ There was once a third value for a closure that reached us because
+  /// somebody deleted the member in an external identity provider's own
+  /// dashboard. There is no external provider now — we are the identity
+  /// provider — so a closure can only start from the member or from an admin,
+  /// and the union is closed.
   closedBy        String
   /// AdminUser.id when closedBy = 'ADMIN'. Null for a self-service close.
   closedByAdminId String?
@@ -143,13 +143,12 @@ And on `User`:
 | `phone` | app-code only, `users.service.ts:1131-1140` | **RELEASED — `null`**, plus `phoneVerified: false`, `phoneOtpHash: null`, `phoneOtpExpiresAt: null` | `AccountClosure.closedPhone` | Re-signup dies at the OTP step with *"That phone number is already linked to another All Outdoor account."* Note `phoneVerified` must be reset too — today's scrub nulls `phone` at `:728` and leaves `phoneVerified` true (`schema.prisma:232`). |
 | `bankVerificationId` | `schema.prisma:431` `@unique` | **RELEASED — `null`** | not retained | Latent `P2002` with no friendly handler. |
 | `gatewayCustomerId` | `schema.prisma` `@unique` | **RELEASED — `null`** | not retained | Latent. Dormant today (nothing in `src/` writes it). |
-| ~~`clerkId`~~ | — | **RESOLVED BY REMOVAL. The column is gone and so is the tombstone.** | — | This row used to carry the trickiest ordering constraint in the whole plan: hold the identity-provider subject through steps 1–3, then overwrite it with `closed_<userId>` in step 4, because tombstoning it any earlier made the webhook's own lookup miss and turned the handler into a silent no-op. `User.id` is the only user identifier now, it is a primary key, and it is never rewritten. **Nothing replaced the tombstone because nothing needed to** — it existed solely to stop the provider re-creating a closed account, and the username, email and phone releases below are the whole of what "the claims go back into the namespace" ever meant. |
 | `kycIdHash` | `schema.prisma:288` `@unique` | **HELD — and the block becomes a relink.** See below. | copy in `AccountClosure.kycIdHashArchived` | This is the whole ban-evasion question. |
 | `idNumberEncrypted` | not unique | **HELD** | stays on `User` | SAP 534 Section C. |
 
 ### 2.1 ⚠️ THE BAN-EVASION QUESTION — resolved
 
-Retaining `kycIdHash` is, by accident, **the only identity-anchored enforcement barrier in the entire codebase.** Every other flag is a `@default` column that resets on a new row. There is no blocklist table keyed on a person: `FeaturedSlotBidderBan.userId` has no FK and is keyed on the old `User.id`; `AdminAlert.referenceId` and `AdminAuditEvent.resourceId` are bare strings.
+Retaining `kycIdHash` is, by accident, **the only identity-anchored enforcement barrier in the entire codebase.** Every other flag is a `@default` column that resets on a new row. There is no blocklist table keyed on a person: `AdminAlert.referenceId` and `AdminAuditEvent.resourceId` are bare strings.
 
 So the naive reading of requirement C — "release the hash" — hands every banned seller a clean slate. That is not acceptable and it is not necessary.
 
@@ -200,11 +199,9 @@ Option A keeps the hash and keeps duplicate registration prevented in the sense 
 | 6 | Reviews they **wrote** on other sellers | Row kept (deleting it would silently lower another seller's review count and re-trigger `recalcSeller`). `rater.username` is now null. | `ratings.service.ts:237` |
 | 7 | Public Q&A they **asked** | Row kept (the seller's answer is the seller's content). `asker.username` null. Frontend needs a fallback — the backend select returns it raw. | `listings/listing-questions.service.ts:133-158` |
 | 8 | Auction bid history | Rows kept — the bid history is how a price was reached, and `auctions.service.ts` picks a runner-up from it on non-payment. **Degrades for free:** `'Anonymous'` at `auctions.service.ts:162`, `'Anonymous bidder'` at `:139`. | — |
-| 9 | Prize-draw winners | **Degrades for free:** `?? 'a member'` at `raffle/raffle.service.ts:104` and `:111`. | — |
-| 10 | Featured slot | Release it via the existing CAS-guarded expire path in `featured/featured.service.ts`. Never hand-roll. | — |
-| 11 | Cart snapshot | `sellerUsername: string` is non-null in the type (`frontend/lib/cart-store.ts:21`) and rendered raw **and used as a React key** at `frontend/app/cart/page.tsx:424, :447, :456`. Two closed sellers in one cart collide on `key={null}`. Make it nullable + fallback. | — |
-| 12 | Sitemap | Self-heals — `sitemapEntries` filters `status: 'ACTIVE'`. Nothing to do. | `listings.service.ts:2132-2143` |
-| 13 | Ask Boet tools | Read through the same listing queries. Verify after, do not patch separately. | — |
+| 9 | Cart snapshot | `sellerUsername: string` is non-null in the type (`frontend/lib/cart-store.ts:21`) and rendered raw **and used as a React key** at `frontend/app/cart/page.tsx:424, :447, :456`. Two closed sellers in one cart collide on `key={null}`. Make it nullable + fallback. | — |
+| 10 | Sitemap | Self-heals — `sitemapEntries` filters `status: 'ACTIVE'`. Nothing to do. | `listings.service.ts:2132-2143` |
+| 11 | Assistant query tools | Read through the same listing queries. Verify after, do not patch separately. | — |
 
 ### 3.2 Accepted residuals — state these, do not pretend to fix them
 
@@ -256,8 +253,8 @@ Nothing surprising happens, **because none of it is allowed to be open.** §6 re
 
 The old step 4 handled the `user.deleted` webhook coming back from the identity provider, and the old step 5 was three "resurrection guards" stopping a late `user.updated` from writing the real email and handle back onto a closed row. Both existed only because a second system also believed it owned the member. It does not exist any more:
 
-- There is no `POST /webhooks/clerk`, no `svix` signature to verify, and no `user.deleted` event.
-- `upsertFromClerk`, `resolveUsernameConflict` and the relink-by-email branch went with it. **Nothing syncs a member's identity columns from an outside system any more.** Sign-up writes them once, against a username and email it has already proved are free; the only other writer is a deliberate admin support edit.
+- There is no identity-provider webhook to verify and no `user.deleted` event.
+- The old provider-sync upsert, the username-conflict resolver and the relink-by-email branch went with it. **Nothing syncs a member's identity columns from an outside system any more.** Sign-up writes them once, against a username and email it has already proved are free; the only other writer is a deliberate admin support edit.
 - **The one line that mattered most is still deleted.** `await this.prisma.user.deleteMany(...)` was the only way `Complaint` (`schema.prisma:3667`), `ComplaintPhoto` (`:3705`), `SupportTicket`, `Subscription`, `LoginEvent` and `AskGgConversation` could ever be destroyed, and the only way `ContactDetailRejection.userId` could be orphaned. `deleteById` now always takes the preserve-and-scrub path; keep it that way.
 
 ### 4.1 What each failure costs
@@ -421,7 +418,7 @@ Active `Subscription` (`status = ACTIVE`, `schema.prisma:3032`). There is no aut
 - **H2 — the hard delete at `users.service.ts:714` runs first.** Everything else is a `catch`. The member with the *cleanest* trading record gets the *most thorough* evidence wipe. Deleted entirely in Phase 0.
 - **H3 — `Complaint` (`schema.prisma:3667`) and `ComplaintPhoto` (`:3705`) are `onDelete: Cascade`.** The CPA/TPPP register, its case numbers and its private evidence rows go with the member. `SupportTicket`, `Subscription`, `AskGgConversation`, `LoginEvent`, `Address`, `ActionToken`, `Notification` likewise (confirmed against `prisma/migrations/20260812000000_baseline/migration.sql`). `ContactDetailRejection.userId` is `ON DELETE SET NULL` — the off-platform-coordination log survives with its actor removed.
 - **H4 — `kycIdHash` is currently the only ban-evasion barrier.** Releasing it, as the obvious reading of requirement C suggests, resets every enforcement column. §2.1.
-- **~~H5~~ — RESOLVED BY REMOVAL, not fixed.** The hazard was that tombstoning `clerkId` before the identity-provider delete made the webhook a *total* no-op: the handler looked the row up by `clerkId`, and `deleteMany` on a miss deletes 0 rows **without throwing**, so even the `catch` never ran. It forced the counter-intuitive ordering in §4 (tombstone *after* the webhook, not before). There is no `clerkId`, no tombstone and no webhook, so the constraint that shaped the whole ordering section is simply gone. **Nothing in the current flow depends on a lookup by anything but `User.id`.**
+- **~~H5~~ — RESOLVED BY REMOVAL, not fixed.** The hazard was that tombstoning the identity-provider subject before the provider delete made the webhook a *total* no-op: the handler looked the row up by that subject, and `deleteMany` on a miss deletes 0 rows **without throwing**, so even the `catch` never ran. It forced the counter-intuitive ordering in §4 (tombstone *after* the webhook, not before). There is no such subject, no tombstone and no webhook, so the constraint that shaped the whole ordering section is simply gone. **Nothing in the current flow depends on a lookup by anything but `User.id`.**
 - **H6 — `ActionToken` is an auth rail that owes nothing to the session. STILL LIVE, and now the *only* thing of its kind.** `auth/kyc-or-token.guard.ts:76` resolves by `authorisedUserId` with no session token in the request. Cascade only fires on a hard delete. Closure must delete these explicitly (Step 1.4) or an outstanding SMS link lets a closed account still bid or complete a checkout. ⚠️ **Revoking sessions (§4 step 3) does not touch them** — the two rails are independent by design, because the person opening a `WITNESS_STATEMENT` or `SELLER_CONSENT` link is usually not the member. Note `/a/(.*)` is a public route in `frontend/middleware.ts`.
 - **H7 — nulling the bank quartet strands in-flight money.** `hasBank()` (`manual-payments.service.ts:601-605`) is the payout readiness gate; refunds read the same fields. §6 blocks closure while any payout or refund is due, which is the only safe way to do this.
 
@@ -445,7 +442,7 @@ Active `Subscription` (`status = ACTIVE`, `schema.prisma:3032`). There is no aut
 - **H20 — cart `sellerUsername` is typed non-null and used as a React key.** `frontend/lib/cart-store.ts:21`, rendered at `frontend/app/cart/page.tsx:424, :447, :456`.
 - **H21 — reserved-handle list does not reserve the de-identification fallbacks.** `users-public.controller.ts` `RESERVED` contains `'anonymous'` but not `'seller'` or `'a_member'`. Low risk with our null-fallback approach, but add them.
 - **H22 — two existing tests assert the hard delete and will fail on Phase 0.** `src/users/users.service.spec.ts:307` (`expect(prisma.user.deleteMany).toHaveBeenCalled()`), `:308`, `:320`, `:334` (`expect(order).toContain('user.delete')`). They must be **rewritten to assert the opposite**, not deleted.
-- **H23 — `UserEvent` has no FK** (`userId`, `deviceId`, `sessionId` all bare optional strings, `schema.prisma:3966-3970`) and survives everything, orphaned, until the 12-month prune. The `clerkId` column this finding also named is gone; the finding itself is not, because the analytics trail still outlives the account either way. Out of scope; note it.
+- **H23 — `UserEvent` has no FK** (`userId`, `deviceId`, `sessionId` all bare optional strings, `schema.prisma:3966-3970`) and survives everything, orphaned, until the 12-month prune. The identity-provider column this finding also named is gone; the finding itself is not, because the analytics trail still outlives the account either way. Out of scope; note it.
 
 ---
 
@@ -469,9 +466,9 @@ Nothing here depends on any decision above, and every day it is not shipped is a
 1. Migration: `User.accountClosedAt`, `AccountClosure`.
 2. `AccountClosureService.close(userId, { closedBy, closedByAdminId?, reason })` — steps 1–3 of §4.
 3. `canClose(userId)` — the whole §6 predicate set, returning structured blockers.
-4. `deleteById` becomes closure-aware — an already-closed row is logged and left alone, never re-scrubbed. ~~…including the `clerkId` tombstone.~~ **Resolved by removal.**
-5. ~~Resurrection guards in `upsertFromClerk`, `resolveUsernameConflict`, the relink-by-email branch.~~ **Resolved by removal** — all three paths are deleted. §4.
-6. Add `accountClosedAt` to every existing `isBanned` write-gate (`listings.service.ts:813, 838, 915, 1174`; `offers.service.ts:63`; `auctions.service.ts:303`; `payments/transactions.service.ts:158-160`; `swaps/swap-proposals.service.ts:126`; `featured.service.ts:490, 648`; `subscriptions.service.ts:145`) with a distinct message — *"This account has been closed"*, never *"suspended"*.
+4. `deleteById` becomes closure-aware — an already-closed row is logged and left alone, never re-scrubbed.
+5. ~~Resurrection guards.~~ **Resolved by removal** — the old sync paths are deleted. §4.
+6. Add `accountClosedAt` to every existing `isBanned` write-gate (`listings.service.ts:813, 838, 915, 1174`; `offers.service.ts:63`; `auctions.service.ts:303`; `payments/transactions.service.ts:158-160`) with a distinct message — *"This account has been closed"*, never *"suspended"*.
 7. Admin: a **Close account** action distinct from Ban; an `accountClosedAt != null` chip in the user list that is **not** the red BANNED chip; and a `'closed'` filter. ~~Make `username` clearable at `admin.service.ts:501` (H11).~~ **Dropped — see H11:** the closure rename releases the handle on its own, so the admin path keeps refusing an empty username and carries `usernameLower` on every rename instead.
 
 **Tests:** each §6 blocker independently refuses; `canClose` and the in-transaction guard agree; a banned user is refused; closure is atomic (a forced failure at step 1.5 rolls back the `AccountClosure` row); closure is idempotent (second call is a no-op); the enforcement snapshot is complete; `deleteById` on a closed row is a no-op; the scrubbed row's `username` and `usernameLower` are both the `closed-…` form and the original handle is claimable again; **`sessions.revokeAllForUser` is called after the commit, and a throw from it does not fail the closure**; every money gate rejects a closed user with the closed-not-banned message.
@@ -480,10 +477,9 @@ Nothing here depends on any decision above, and every day it is not shipped is a
 
 1. `accountClosedAt: null` on `sellers-public.controller.ts:36-38`.
 2. Cancel + `reindexById` per listing in the closure transaction's follow-up.
-3. Release the featured slot via the existing CAS path.
-4. Frontend null-fallbacks: Q&A asker (`questions-panel`), cart `sellerUsername` (`cart-store.ts:21` → nullable, plus `cart/page.tsx:447` key fix).
-5. A reindex retry sweep reading `AccountClosure.cancelledListingIds`.
-6. Add `'seller'`, `'a_member'` to `RESERVED`.
+3. Frontend null-fallbacks: Q&A asker (`questions-panel`), cart `sellerUsername` (`cart-store.ts:21` → nullable, plus `cart/page.tsx:447` key fix).
+4. A reindex retry sweep reading `AccountClosure.cancelledListingIds`.
+5. Add `'seller'`, `'a_member'` to `RESERVED`.
 
 **Tests:** integration — close a seller with one ACTIVE, one SOLD and one EXPIRED listing, then assert: profile 404s, the ACTIVE listing is absent from `browseViaPrisma` **and** from `browseViaSearch`, the SOLD PDP still loads with a null seller username, the review they wrote still renders on the other seller's profile without a handle, bid history renders `'Anonymous'`, the sitemap no longer contains the cancelled listing.
 

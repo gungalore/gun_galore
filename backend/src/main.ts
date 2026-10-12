@@ -91,10 +91,10 @@ function assertProductionConfig() {
     );
   }
   // WARN (audit fix 2026-07-20; repointed at Gemini 2026-09-07): the model
-  // key powers Ask Boet, KYC vision, listing/Q&A moderation, licence +
-  // dealer + swap verification. Missing/empty = all of them silently degrade
-  // to manual-review/blocked paths. The file-top comment always called this
-  // out; the boot gate actually checks it.
+  // key powers KYC vision, listing/Q&A moderation, licence + dealer
+  // verification and document transcription. Missing/empty = all of them
+  // silently degrade to manual-review/blocked paths. The file-top comment
+  // always called this out; the boot gate actually checks it.
   //
   // ⚠️ The gate follows LLM_PROVIDER, because warning about the key of a
   // provider that is not running is worse than not warning at all — it
@@ -104,7 +104,7 @@ function assertProductionConfig() {
   if (process.env.LLM_PROVIDER === 'anthropic') {
     if (!process.env.ANTHROPIC_API_KEY) {
       log.error(
-        '⚠️  LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set — ALL AI features (Ask Boet, KYC, moderation, firearm-licence/dealer/swap verification) are degraded to manual-review or blocked paths.',
+        '⚠️  LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set — ALL AI features (KYC, moderation, firearm-licence/dealer verification, document transcription) are degraded to manual-review or blocked paths.',
       );
     }
     if (!process.env.LLM_MODEL) {
@@ -114,7 +114,7 @@ function assertProductionConfig() {
     }
   } else if (!process.env.GEMINI_API_KEY) {
     log.error(
-      '⚠️  GEMINI_API_KEY is not set — ALL AI features (Ask Boet, KYC, moderation, firearm-licence/dealer/swap verification) are degraded to manual-review or blocked paths.',
+      '⚠️  GEMINI_API_KEY is not set — ALL AI features (KYC, moderation, firearm-licence/dealer verification, document transcription) are degraded to manual-review or blocked paths.',
     );
   }
   // WARN: ID_HASH_SECRET keys BOTH sensitive-data paths, and they fail in
@@ -247,7 +247,7 @@ async function bootstrap() {
       const allowLocalInProd = process.env.ALLOW_LOCAL_ORIGINS === 'true';
       const allowed = [
         process.env.FRONTEND_URL,
-        // Capacitor (Hunt Ballistics iOS app + future Android). Each
+        // Capacitor app shells (iOS + Android). Each
         // platform serves the bundled web app under a custom scheme:
         //   iOS:     capacitor://localhost
         //   Android: https://localhost (or capacitor:// in newer Cap)

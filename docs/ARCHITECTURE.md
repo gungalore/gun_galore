@@ -8,12 +8,11 @@ app is usually wired. Where a claim matters, the file that proves it is named.
 If you find a contradiction between this document and the code, the code wins —
 and please fix the document in place rather than appending a correction.
 
-> **A note on the other markdown files.** The 20-odd `*.md` files at the repo
-> root are point-in-time audit reports and plans. They were true on the day
-> they were written and many no longer are. `CLAUDE.md` is the closest thing to
-> a rulebook and is mostly current, but it has known drift — see
-> [Documentation drift](#documentation-drift) at the end. This file, the
-> Prisma schema, and the code comments are the reliable sources.
+> **A note on the other markdown files.** The `*.md` files under `docs/history/`
+> are point-in-time audit reports and plans. They were true on the day they were
+> written and many no longer are. `docs/project-reference.md` holds the standing
+> rules and decisions; this file, the Prisma schema, and the code comments are
+> the reliable description of the system.
 
 ---
 
@@ -124,7 +123,7 @@ it first. A few are infrastructure that everything else assumes:
 | `SearchModule` | Meilisearch client, index configuration, reindex helpers. |
 
 The rest are domain modules and map onto the URL space fairly directly
-(`ListingsModule`, `OffersModule`, `AuctionsModule`, `SwapsModule`,
+(`ListingsModule`, `OffersModule`, `AuctionsModule`,
 `PaymentsModule`, `OrdersModule`, `KycModule`, `ShippingModule`,
 `ComplaintsModule`, …).
 
@@ -139,9 +138,8 @@ There are **two entirely separate auth systems**, and one auxiliary one.
 Auth is **self-hosted**. There is no identity provider: `backend/src/auth/` owns
 sign-up, e-mail verification, sign-in, password reset and sessions, and
 **`User.id` is the one and only user identifier** — it is what `@CurrentUser()`
-returns. Clerk was removed on 2026-09-10 and `User.clerkId` was *dropped*, not
-orphaned, so a reference to a `clerkId` anywhere is stale code rather than a
-compatibility shim.
+returns. There is no external identity provider and no `clerkId` column; a
+reference to `clerkId` anywhere is stale code rather than a compatibility shim.
 
 **A session is a pair of tokens** (`session.service.ts`):
 
@@ -203,18 +201,13 @@ renders, every API call 401s, and the public/members split is enforced
 server-side regardless.
 
 On the frontend, `frontend/lib/auth.tsx` (client) and
-`frontend/lib/auth-server.ts` (server) replace `@clerk/nextjs`, and
+`frontend/lib/auth-server.ts` (server) hold the session client, and
 `frontend/lib/route-matcher.ts` (with a spec beside it) holds the middleware's
 public-route matcher. The hook names — `useAuth()`, `useUser()`, `useSession()`
-— are deliberate drop-ins so the call sites did not have to change; `useClerk()`
-survives as a shim exposing `signOut` only, and `openUserProfile` is **absent
-rather than stubbed**, so a call site that opened Clerk's hosted profile modal
-fails the build instead of leaving a button that silently does nothing. New
-routes: `/verify-email`, `/forgot-password`, `/reset-password`. `/sso-callback`
-is gone, and `app/sellers/[clerkId]` is now `app/sellers/[id]`.
+— are the call sites' API; `useClerk()` survives as a shim exposing `signOut`
+only. New routes: `/verify-email`, `/forgot-password`, `/reset-password`.
 
-**Google sign-in and 2FA are gone.** Both lived in Clerk's hosted surfaces and
-neither was rebuilt.
+**Google sign-in and 2FA are not offered** on the self-hosted rail.
 
 ### 2.2 The five guards
 
@@ -298,10 +291,10 @@ the guard and the application **crashes at boot** and pm2 restarts it in a loop.
 `tsc --noEmit` passes cleanly. The type system knows nothing about DI graphs.
 You will not find out until the process is dead in production.
 
-Thirteen modules currently do this correctly (`admin`, `ask-gg`, `complaints`,
-`deals`, `featured`, `manual-payments`, `marketing`, `orders`, `raffle`,
-`ratings`, `reloading`, `suppliers`, `support`). `complaints.module.ts` is the
-clearest example, with the reason written in a comment. Copy that pattern.
+The modules doing this today include `admin`, `ask-gg`, `complaints`,
+`manual-payments`, `marketing`, `orders`, `ratings`, `reloading` and `support`.
+`complaints.module.ts` is the clearest example, with the reason written in a
+comment. Copy that pattern.
 
 ```ts
 @Module({
@@ -388,9 +381,8 @@ private publicOnly(userId?: string): { publicVisible?: true } {
 ```
 
 Grep `publicOnly(` before adding a read path. The non-obvious sites are the
-ones that bite: the **featured rail** (renders on every page), **seller reviews**
-(they embed listing titles), the **sitemap**, **brand rollups**, and the
-**Ask Boet guide** resolver.
+ones that bite: **seller reviews** (they embed listing titles), the **sitemap**
+and the **brand rollups**.
 
 `findById` returns **404**, not 403 and not a "sign in to view" interstitial.
 403 confirms the item exists, which is exactly the disclosure the wall prevents.
@@ -452,26 +444,20 @@ rebuild, so a deploy would prerender the sitemap from a pre-deploy snapshot.
 signed-out visitor may load at all. Everything else redirects to `/sign-in`.
 
 The pattern matching behind it lives in `frontend/lib/route-matcher.ts`, **with
-a spec**, rather than inline. It reproduces Clerk's `createRouteMatcher`
-semantics exactly, because every one of the ~90 patterns was authored against
-it: `(.*)` is the only wildcard and every other character is literal, so `.`
-matches a dot — without that, `/sw.js` would also publish `/swXjs`. A pattern
-matching too *little* 307s a public page and someone notices within the hour;
-a pattern matching too *much* makes a members-only page public and nobody
-notices at all.
+a spec**, rather than inline: `(.*)` is the only wildcard and every other
+character is literal, so `.` matches a dot — without that, `/sw.js` would also
+publish `/swXjs`. A pattern matching too *little* 307s a public page and someone
+notices within the hour; a pattern matching too *much* makes a members-only page
+public and nobody notices at all.
 
-**Any new public page must be added there**, or it 307s to sign-in. Note the
-inverse case too: several entries exist purely so *removed* features serve a
-clean 404 instead of a redirect to sign-in (`/wanted`, `/competitions`).
+**Any new public page must be added there**, or it 307s to sign-in.
 
 Two implementation details in that file are load-bearing and commented as such:
 
 - The redirect uses `NextResponse.redirect`, **not** the Web-API
-  `Response.redirect`. The original reason — the latter returns immutable
-  headers, and the wrapping `clerkMiddleware` threw `TypeError: immutable`
-  trying to decorate it — no longer applies now that there is no wrapper. Keep
-  it anyway: `NextResponse` is what the rest of the file returns, and mixing the
-  two is how the trap gets re-set by whoever adds a header next.
+  `Response.redirect`. The latter returns immutable headers, and decorating them
+  throws `TypeError: immutable`. Use `NextResponse` throughout — mixing the two
+  is how that trap gets re-set by whoever adds a header next.
 - The redirect base is pinned to `NEXT_PUBLIC_APP_URL`, never the inbound
   `Host` header, so a spoofed Host cannot turn the sign-in bounce into an open
   redirect.
@@ -482,11 +468,12 @@ token-authed pages.
 
 ---
 
-## 4. The four selling modes
+## 4. Listing types and offers
 
-A `Listing` carries a `ListingType`: `BUY_NOW`, `AUCTION`, `TAKE_A_SHOT`,
-`SWOP`. They share one listing record, one moderation pipeline, one shipping
-system and one money flow — they differ only in how a price is agreed.
+A `Listing` carries a `ListingType`: `BUY_NOW` or `AUCTION`. They share one
+listing record, one moderation pipeline, one shipping system and one money flow —
+they differ only in how a price is agreed. Offers (below) are a feature layered
+on either type, not a third type.
 
 ### Buy Now
 
@@ -516,7 +503,7 @@ finalisation are both CAS-guarded (conditional `updateMany` with the expected
 prior state in the `WHERE`, checking `count`) against concurrent bids. Those
 guards are the correctness of the module — preserve them on any edit.
 
-### Take a Shot — confidential offers
+### Offers (Take a Shot) — confidential
 
 The South African "make me an offer" flow, but the offer amount is private
 between the two parties. A buyer submits an offer; the seller accepts, rejects
@@ -536,39 +523,6 @@ mapping live in `backend/src/common/seller-reject-policy.ts`. The frontend
 reason list must mirror `OFFER_REJECT_REASONS` — they are two lists that have
 drifted before.
 
-### Swop / Trade
-
-Item-for-item. A member proposes trading their listing for someone else's,
-optionally with cash on one side. Both sides ship (or hand over), and the
-platform charges a **swap fee** based on `declaredValueCents` — 1.5%, minimum
-R50 for a courier leg or R100 for a firearm leg, capped at R750, less 25% for
-PRO members. Constants are the `SWAP_*` exports in
-`backend/src/payments/fee.calculator.ts`.
-
-Notable mechanics:
-
-- `declaredValueCents` is deliberately **public**, unlike reserve and
-  auto-accept thresholds. It is the negotiation anchor and the dispute ceiling,
-  so the counterparty has to see it.
-- Non-PRO members may have one open proposal at a time.
-- **Proof of possession**: each leg gets a 6-character code (`GG-XXXXXX`,
-  alphabet excludes `0/O/1/I/L`) that the member must photograph next to the
-  item. Claude vision reads it back. `crypto.randomInt`, not `Math.random`,
-  because the code is the anti-replay anchor.
-
-Logic: `backend/src/swaps/` — `swap-proposals.service.ts` (negotiation),
-`swap-proof.service.ts` (possession), `swap-funding.service.ts` (fee).
-
-> Watch out: `swap-funding.service.ts`'s `confirmSwapFunding` currently has no
-> caller — it was orphaned when the manual-EFT rail was stripped. It is dead
-> code today and will need rewiring when payments go live.
-
-A swap leg is **not** settled through the ordinary confirm-delivery path.
-`confirmDelivery()` explicitly rejects any transaction with a `swapId`, because
-releasing per-leg would set `RELEASED` out of band, double-count `totalSales`,
-and fire a phantom payout notice. Swaps settle through the `Swap` parent's
-rollup.
-
 ---
 
 ## 5. Money flow
@@ -585,9 +539,8 @@ Ozow's payout-verification token.
 | `PAYMENTS_LIVE` | `PAYMENTS_LIVE=true` | Master switch. `assertPaymentsLive()` throws 503 at every checkout entry point while false. |
 | `PAYMENT_MODE` | `PAYMENT_MODE=paygate` | Selects fee maths and the refund arm: `'paygate'` = card rate + reverse-on-card; `'manual'` (the default) = flat fee, and the platform owes the money out of its own account. |
 
-That file is deliberately dependency-free so lightweight consumers (e.g. the
-featured-slot service) can read the rail without dragging in the whole
-transactions → shipping → search module graph.
+That file is deliberately dependency-free so lightweight consumers can read the
+rail without dragging in the whole transactions → shipping → search module graph.
 
 ### The pipeline
 
@@ -621,8 +574,8 @@ REFUNDED`.
 Note the distinction between `RELEASED` and `paidOutAt`. `RELEASED` means the
 platform *owes* the seller. `paidOutAt` means it has *paid*. A row is "due"
 while `paidOutAt` is null — see `getPayoutsDue()` in
-`backend/src/manual-payments/manual-payments.service.ts`, which stayed
-rail-agnostic when the FNB batch rail was removed.
+`backend/src/manual-payments/manual-payments.service.ts`, which is
+rail-agnostic.
 
 ### Branches that skip the normal release
 
@@ -635,10 +588,6 @@ rail-agnostic when the FNB batch rail was removed.
   enough. `dealerVerificationStatus` must be `APPROVED` — the SAPS 534 form,
   stock register page and firearm photos must have passed, either via Claude
   vision or an admin override.
-- **`ON_SITE_SERVICE`** (hunting packages, range days): a future-dated service,
-  not a parcel. It has its own post-event completion step gated on the event
-  date, and `confirmDelivery()` refuses it explicitly so funds can never be
-  released before the event happens.
 
 ### Admin levers
 
@@ -683,7 +632,7 @@ Meilisearch, one client, configured in `backend/src/search/search.service.ts`
 | Index | Primary key | Contents |
 |---|---|---|
 | `listings` | `id` | Every active listing. |
-| `cartridges` | `id` | Distinct cartridges from `ManualLoad`, for the Load Lab typeahead. |
+| `cartridges` | `id` | Distinct cartridges from the reloading reference data, for the Bench. |
 
 If `MEILISEARCH_HOST` is unset, search is disabled with a warning and the app
 still boots. Same if the health check fails at startup — the client is set to
@@ -737,21 +686,16 @@ Two consequences of "in-process":
   restart) rather than scaling out.
 - **Long jobs can overlap themselves.** `@Cron(EVERY_MINUTE)` fires on the tick
   regardless of whether the previous run finished. Jobs that can run long carry
-  an explicit boolean re-entrancy guard (`dealDropRunning`, `dealPoRetryRunning`,
-  `dealCollectionSweepRunning`, `statsRollupRunning`). Add one if you write a
-  slow job.
+  an explicit boolean re-entrancy guard. Add one if you write a slow job.
 
 The ones that move money or state, roughly grouped:
 
 | Job | Cadence | What it does |
 |---|---|---|
 | `endAuctions` | 1 min | Closes auctions past `endTime`, resolves winner, mints checkout token. |
-| `featuredTick` | 1 min | Advances the featured-slot auction/bind/occupy state machine. |
-| `dailyDealDrops` | 1 min | Flips scheduled Daily Deals live. |
 | `expireOffers` | 10 min | Expires 48h offers and 24h counters. |
-| `expireSwapProposals` | 10 min | Same for swap proposals. |
 | `checkFirearmLicenceExpiry` | daily 06:00 | Delists firearm listings whose licence expires within 30 days; warns at 31–90 days. |
-| `staleListingSweep` | daily 04:00 | Expires listings past the 60-day life (Buy Now / Take a Shot only; auctions are exempt). |
+| `staleListingSweep` | daily 04:00 | Expires listings past the 60-day life (auctions are exempt). |
 | `dispatchSlaSweep` | hourly | 48h-no-accept escalation and 5-day-no-dispatch auto-refund + strike. |
 | `stuckHeldFundsSweep` | hourly | Finds money stuck in `HELD` that should have moved. |
 | `dealerVerificationAgeingSweep` | hourly | Chases outstanding SAPS 534 paperwork. |
@@ -759,7 +703,7 @@ The ones that move money or state, roughly grouped:
 | `orderStatusRollupSweep` | 30 min | Recomputes multi-line `Order.status` from its child transactions. |
 | `resolvePendingBobGoBookings` | 5 min | Finishes Bob Go bookings the courier had not yet accepted. Tracking itself arrives by webhook — there is no carrier poll. |
 | `retryOutboxEmails` / `retryFailedSms` | 10 min | Redelivery for the notification outboxes. |
-| `retryRevenueDocs`, `retrySwapFeeReceipts`, `retryDealPurchaseOrders` | hourly | Self-healing Zoho Books document creation. |
+| `retryRevenueDocs` | hourly | Self-healing Zoho Books document creation. |
 | `refreshTrustScores` | daily 03:00 | Recomputes the private 0–100 seller trust score. |
 | `savedSearchMatchSweep` | 10 min | Fires saved-search alerts. |
 | `pollCreditBalances` | 15 min | Polls every monitored vendor's balance, alerts the operator below threshold (6h dedup so it does not spam). |
@@ -784,12 +728,12 @@ a loud error for each missing integration secret.
 | **Ozow** | The payment gateway: One API pay-in (Pay by Bank / instant EFT) + refunds, Payouts API seller disbursement. No automated bank-verification product. | `OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`, `OZOW_WEBHOOK_SECRET`, `OZOW_ENV` (+ the `OZOW_PAYOUT_*` set) | Runs **live** for money-in; payouts gated on the float + verification token. Webhooks are rejected (fail-closed) without `OZOW_WEBHOOK_SECRET`. |
 | **Cloudinary** | All user-uploaded images (listing photos, KYC documents, complaint photos) | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Uploads fail. |
 | **Meilisearch** | Listing / cartridge search | `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY` | Search disabled, app still boots. |
-| **Anthropic (Claude)** | Listing moderation, Q&A moderation, firearm-licence and dealer-document verification, swap proof-of-possession, Ask Boet, listing-quality scoring, weekly insights digest | `ANTHROPIC_API_KEY`, plus per-task `ANTHROPIC_MODEL_*` overrides | **Everything AI degrades to manual-review or blocked.** |
+| **AI (via `LlmService`)** | Listing moderation, Q&A moderation, firearm-licence and dealer-document verification, document transcription and filing, listing-quality scoring, weekly insights digest | provider keys + model config | **Everything AI degrades to manual-review or blocked.** |
 | Anthropic Admin API | AI spend monitoring on `/admin/credits` | `ANTHROPIC_ADMIN_API_KEY` | No spend alerts. (Note: a regular key is not an admin key.) |
 | **SMSPortal** | Every outbound SMS — notifications, action links, waybill PINs | `SMSPORTAL_CLIENT_ID`, `SMSPORTAL_API_KEY`, `SMSPORTAL_API_SECRET`, `SMSPORTAL_BASE_URL` | SMS silently queues/fails; retry cron picks it up. |
 | **Resend** | Every outbound email | `RESEND_API_KEY`, `EMAIL_LOGO_URL` | Fails open — email is fire-and-forget and never blocks a flow. |
-| **Bob Go** | Door-to-door courier — the **only** courier rail; every non-firearm parcel is booked at the cheapest Bob Go door rate. Lockers/pickup points are retired. | `BOBGO_API_KEY`, `BOBGO_BASE_URL`, `BOBGO_WEBHOOK_SECRET` | No key → service **inert** (rates and bookings skipped). Webhooks rejected in production without the secret (fail-closed). ⚠️ `BOBGO_BASE_URL` defaults to the **sandbox**. |
-| **Zoho Books** | Accounting — commission invoices, deal receipts, subscription documents | `ZOHO_BOOKS_*` (client id/secret, refresh token, org id, domains, `ZOHO_BOOKS_ENABLED`) | Documents are not raised; hourly retry crons self-heal once restored. |
+| **Bob Go** | Door-to-door courier — the **only** courier rail; every non-firearm parcel is booked at the cheapest Bob Go door rate. | `BOBGO_API_KEY`, `BOBGO_BASE_URL`, `BOBGO_WEBHOOK_SECRET` | No key → service **inert** (rates and bookings skipped). Webhooks rejected in production without the secret (fail-closed). ⚠️ `BOBGO_BASE_URL` defaults to the **sandbox**. |
+| **Zoho Books** | Accounting — commission invoices | `ZOHO_BOOKS_*` (client id/secret, refresh token, org id, domains, `ZOHO_BOOKS_ENABLED`) | Documents are not raised; hourly retry crons self-heal once restored. |
 | **Google Maps** | Address autocomplete and "use my location" — **frontend only** | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (frontend `.env.local`) | Autocomplete degrades to a plain text field. The key needs **Maps JavaScript + Places + Geocoding** all enabled; missing Geocoding is what broke "use my location" before. |
 | **Web Push (VAPID)** | PWA push notifications | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | No push. Note the IPv4-first workaround in `main.ts` — this VPS has no global IPv6 and Apple's push endpoint advertises AAAA, which hung silently. |
 | **Cloudflare** | DNS, TLS, HSTS (set at the edge, deliberately not in `next.config.mjs`) | — | — |
@@ -879,7 +823,7 @@ people who are not standing in front of a dealer. The seller books the firearm
 *into* a licensed dealer's stock register; the buyer collects it from a dealer
 against their own licence. In this codebase it is `ShippingMethod.DEALER_TRANSFER`
 and it is **forced by the backend** for anything `isFirearm` — no courier, no
-locker, no meet-up, regardless of what the UI sends.
+meet-up, regardless of what the UI sends.
 
 **SAP 534** — the SAPS form recording a firearm entering or leaving a dealer's
 stock register. The platform requires a photo of the completed 534 plus the
@@ -904,8 +848,7 @@ they are not ammunition — see `categorizeReason()`.
 
 **Bob Go** — a door-to-door courier aggregator, and the platform's **only**
 courier rail. Every non-firearm parcel is booked at the **cheapest Bob Go door
-rate** for the parcel and route. The legacy `PUDO` and `TCG` `ShippingMethod`
-values are deprecated and never written; locker/pickup-point delivery is gone.
+rate** for the parcel and route.
 
 **Bakkie** — a pickup truck. Ubiquitous here; it appears in brand copy and in
 the logo mark. Relevant to freight framing (an oversized item is a "bakkie job",
@@ -923,15 +866,11 @@ access-to-information manual free to *any* requester. That is why
 `/regulated-categories` and `/paia` must be reachable signed-out even though
 everything else regulated is behind the wall (they carry `noindex` instead).
 **ECT Act § 43** — mandates specific supplier disclosures in the footer; that is
-why `GunGalore (Pty) Ltd` appears verbatim there while the trading name is
+why `ALLOUTDOOR (PTY) LTD` appears verbatim there while the trading name is
 "All Outdoor".
 
 **TPPP** — Third Party Payment Provider. The regulatory status required to hold
-and disburse other people's money in South Africa. The reason payments are not
-live yet.
-
-**AO PRO** — the single paid membership tier, R99/month. Free accounts get a
-demo of every PRO feature.
+and disburse other people's money in South Africa.
 
 ---
 
@@ -988,10 +927,8 @@ Things that look like tidying and are not.
 17. **New modals must be `z-index >= 60`** — the mobile bottom tab bar sits at
     `zIndex: 55`/`56` (`frontend/components/bottom-tab-bar.tsx`) and will
     occlude anything below it.
-18. **Feature flags stay `false` until the feature is genuinely ready.** Several
-    complete modules (Daily Deals, prize draw, Experiences, Featured Buy Now)
-    are deployed and **inert** behind flags in the `Setting` table. Do not flip
-    one to see what happens.
+18. **Feature flags stay `false` until the feature is genuinely ready.** Do not
+    flip one to see what happens.
 19. **Never gate a pm2 restart on a shared `/tmp` marker file.** A stale marker
     triggers a restart mid-build and serves 500s. Wait on the build process
     (`pgrep`) plus a unique per-deploy log, then `curl` twice.
@@ -1021,40 +958,12 @@ In this order:
    decisions you will not find anywhere else.
 5. `backend/src/payments/transactions.service.ts` — long, but it is where the
    money actually moves.
-6. `CLAUDE.md` — the rulebook. Read it as decisions and constraints, not as a
-   description of the current system.
+6. `docs/project-reference.md` — the standing rules. Read it as decisions and
+   constraints, not as a description of the current system.
 
 ---
 
 ## Documentation drift
 
-Known places where existing documentation contradicts the code. Trust the code.
-
-- **`CLAUDE.md` says the payment provider is "Stitch Express only … do NOT
-  reintroduce Peach".** Both are out of date. The code integrates **Ozow** —
-  `OzowModule` in `app.module.ts`, `ozow.service.ts`, `ozow-signature.ts`,
-  `Transaction.gatewayCheckoutId` / `gatewayPaymentId` / `gatewayPayoutId` /
-  `gatewayMerchantRef`, `OZOW_*` env vars, and the Ozow warnings in `main.ts`.
-  A few stale comments still name Stitch or Peach (`transactions.service.ts`
-  line ~65 says "the gateway is now Stitch"). Ozow is the current rail, still
-  inert.
-- **`CLAUDE.md`'s environment-variable list is incomplete** and includes
-  variables that no longer exist (`ODOO_*`, `STITCH_*`). The reliable list is
-  what the code reads: grep `process.env.` under `backend/src/`, cross-checked
-  against `backend/.env.example`.
-- **`CLAUDE.md` says "no automated AVS".** That is correct again: Ozow has no
-  automated bank-verification product, so the destination account is validated
-  by the payout itself (an invalid account fails with payout subStatus 405).
-  Manual admin review of the seller's bank details is the live gate, so the
-  *user-facing* claim in the legal pages remains correct — do not claim an
-  automated check.
-- **`CLAUDE.md` lists `MessagesModule`-era buyer/seller chat.** Removed. The
-  only sanctioned pre-sale dialogue is Claude-moderated Q&A on the listing
-  (`ListingQuestionsService`). The Prisma `Message` model is retained dormant
-  to preserve historical rows.
-- **The root-level `*.md` audit reports are historical.** `AUDIT-2026-06-10.md`,
-  `DUMMY-RUN-REPORT.md`, `TAKEALOT-UX-PARITY-REPORT.md`, `LAUNCH_AUDIT.md`,
-  `KORAPAY-INTEGRATION.md` and the rest describe states of the world on the day
-  they were written. Several describe features that were subsequently removed
-  (Wanted, Competitions, manual EFT, the FNB payout batch). Do not treat any of
-  them as a specification.
+No known drift. If you find a contradiction between a document and the code,
+trust the code and fix the document in place rather than appending a correction.

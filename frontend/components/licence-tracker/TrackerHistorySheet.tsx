@@ -101,9 +101,8 @@ export default function TrackerHistorySheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="gg-tracker-journey-title"
-        // Stands the Ask Boet dock down: he is z-60 too and, being last in
-        // <body>, wins the tie on DOM order. Same reason listing-preview-modal
-        // carries it.
+        // data-blocking-overlay suppresses competing fixed chrome for this
+        // overlay's lifetime — same reason listing-preview-modal carries it.
         data-blocking-overlay="true"
         className={
           'flex w-full flex-col overflow-hidden border border-[var(--border)] bg-[var(--bg-card)] ' +

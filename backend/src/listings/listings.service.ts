@@ -88,9 +88,9 @@ export const PUBLIC_LISTING_SELECT = {
   // expose: by the time a caller holds this object they are either signed in
   // or looking at a publicly-visible listing anyway.
   publicVisible: true,
-  // DD-3 — non-sensitive boolean flag. A first-party Daily Deal listing is
+  // Non-sensitive boolean flag. A first-party deal listing is
   // reachable by id on the generic PDP endpoint once ACTIVE; the frontend PDP
-  // reads this to redirect to the deal-chrome /deals/:id page (canonical). Safe
+  // reads this to route to the deal chrome. Safe
   // to expose (it reveals nothing about cost/margin/reserve).
   isDealListing: true,
   collectionOnly: true,
@@ -1951,7 +1951,7 @@ export class ListingsService {
       where: {
         paymentStatus: { in: ['HELD', 'RELEASED'] },
         refundOfId: null,
-        // Exclude first-party Daily Deals — deep house-deal discounts must not
+        // Exclude first-party deal listings — their discounts must not
         // drag the public comp range down.
         listing: {
           status: 'SOLD',
@@ -2299,8 +2299,8 @@ export class ListingsService {
       maxPrice,
     } = dto;
 
-    // isDealListing = false — first-party Daily Deals never appear in public
-    // search/facets (they live only on /deals). Requires 'isDealListing' in
+    // isDealListing = false — first-party deal listings never appear in
+    // public search/facets. Requires 'isDealListing' in
     // STATIC_LISTING_FILTERABLE_ATTRIBUTES (search.service.ts) + on the Meili doc.
     const filterParts: string[] = ['status = "ACTIVE"', 'isDealListing = false'];
     // Signed-out search must not reach members-only stock. `calibre` and
@@ -3631,7 +3631,7 @@ export class ListingsService {
   // re-running just overwrites each doc with the same shape.
   async reindexAllActiveListings(): Promise<{ reindexed: number }> {
     const rows = await this.prisma.listing.findMany({
-      // Daily Deals are never indexed for search (see indexListing skip).
+      // First-party deal listings are never indexed for search (see indexListing).
       where: { status: 'ACTIVE', isDealListing: false },
       include: { category: true },
     });
@@ -3658,9 +3658,9 @@ export class ListingsService {
       category: { slug: string; name: string; parentId: string | null } | null;
     },
   ) {
-    // Daily Deals never enter the search index — they live only on /deals.
-    // Actively evict any stale doc (defensive; the create path already skips
-    // indexing house deals). Every doc that IS indexed therefore carries
+    // First-party deal listings never enter the search index. Actively evict
+    // any stale doc (defensive; the create path already skips indexing them).
+    // Every doc that IS indexed therefore carries
     // isDealListing:false, so the browse/facets filter `isDealListing = false`
     // matches the whole index (the clause needs the attribute to exist).
     if (listing.isDealListing) {

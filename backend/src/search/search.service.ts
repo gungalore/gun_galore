@@ -25,9 +25,8 @@ const STATIC_LISTING_FILTERABLE_ATTRIBUTES = [
   'sellerId',
   'priceRange',
   'make',
-  // Daily Deals — public browse/facets filter `isDealListing = false` so
-  // first-party house deals never appear in search. Must be filterable or
-  // Meili rejects the clause.
+  // Legacy first-party-deal filter — public browse/facets filter
+  // `isDealListing = false`. Must be filterable or Meili rejects the clause.
   'isDealListing',
   // Signed-out search filters `publicVisible = true` so members-only stock
   // (firearms, gun parts, reloading, air rifles, self-defence, shooting
@@ -96,8 +95,8 @@ export class SearchService implements OnModuleInit {
       'categoryName',
     ]);
 
-    // Cartridge index — powers the Load Lab burn-chart typeahead. Populated
-    // from the distinct ManualLoad cartridges by BurnChartService on first use.
+    // Cartridge index — powers the reloading/Bench cartridge typeahead.
+    // Populated from the distinct ManualLoad cartridges on first use.
     await this.client
       .createIndex(INDEXES.CARTRIDGES, { primaryKey: 'id' })
       .catch(() => null);

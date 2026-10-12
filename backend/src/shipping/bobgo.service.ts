@@ -11,13 +11,11 @@ import {
 } from './bobgo.types';
 
 /**
- * Bob Go — the single courier rail, replacing BOTH Pudo and TCG.
+ * Bob Go — the single courier rail.
  *
- * Why one service where there were two: Bob Go is an aggregator. A single
- * POST /rates-at-checkout returns door-to-door rates AND priced, distance-
- * ranked pickup-point rates in the same response, so the old "quote TCG for
- * door, quote Pudo for lockers, merge" dance collapsed into one call with
- * one wallet, one waybill format and one tracking vocabulary.
+ * It is an aggregator. A single POST /rates-at-checkout returns door-to-door
+ * rates AND priced, distance-ranked pickup-point rates in the same response,
+ * with one wallet, one waybill format and one tracking vocabulary.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * THE ONE THING TO KNOW BEFORE USING THIS CLASS
@@ -30,9 +28,9 @@ import {
  * buyer, print a waybill or mark the order shipped on anything other than
  * `'SUBMITTED'`.
  *
- * Both Pudo and TCG returned booked-or-threw, so every existing caller in
- * shipping.service.ts assumes success-on-return. That assumption is the
- * main thing the port has to unpick.
+ * The older carrier clients returned booked-or-threw, so every existing caller
+ * in shipping.service.ts assumed success-on-return. That assumption is the
+ * main thing the port had to unpick.
  * ─────────────────────────────────────────────────────────────────────────
  *
  * Config (backend/.env):

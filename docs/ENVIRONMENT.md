@@ -82,8 +82,7 @@ Names in here that will not mean anything until you know the domain:
   under **POPIA** (the SA data-protection act). Hence the encryption.
 - **Bob Go** — the door-to-door courier aggregator. The platform's **only**
   courier rail; every non-firearm parcel is booked door-to-door at the cheapest
-  Bob Go rate for the parcel and route. Pudo (lockers) and The Courier Guy (TCG)
-  are retired — there is no locker or pickup-point delivery any more.
+  Bob Go rate for the parcel and route.
 - **Ozow** — the SA payment gateway. Pay by Bank (instant EFT) pay-in through
   One API, refunds, and payouts to seller bank accounts through the Payouts API.
   There is no automated bank-account name verification product; the destination
@@ -93,8 +92,6 @@ Names in here that will not mean anything until you know the domain:
   back in-house on 2026-09-11 and now go out over Resend and SMSPortal.
 - **SMSPortal** — the SA bulk-SMS provider. Load matters here: a lot of users
   transact from an SMS link on a phone with no data.
-- **Ask Boet** — the site-wide AI assistant. "Boet" is Afrikaans/SA slang for
-  "brother/mate".
 - **Zoho Books** — the accounting system invoices and receipts are pushed to.
 
 ---
@@ -360,10 +357,10 @@ uses a different auth scheme entirely (`Authorization: Bearer`, not
 ### `ANTHROPIC_API_KEY`
 **Effectively required in production. Degrades, does not crash.**
 
-Powers Ask Boet, listing moderation, the Q&A contact-detail filter,
-firearm-licence verification, dealer verification, swap proof-of-possession,
-price estimates and reloading load-data extraction. **Not identity documents** —
-Didit reads those as part of its own session.
+Powers listing moderation, the Q&A contact-detail filter, firearm-licence
+verification, dealer verification, price estimates and reloading load-data
+extraction. **Not identity documents** — Didit reads those as part of its own
+session.
 
 Missing, and every one of those degrades to a manual or blocked path:
 
@@ -372,7 +369,6 @@ Missing, and every one of those degrades to a manual or blocked path:
 - The contact-detail filter falls back to its regex layer only, so buyers and
   sellers can leak phone numbers past it more easily.
 - Description enhancement returns the text unchanged.
-- Ask Boet goes quiet.
 
 `main.ts` logs a WARN at boot. Local: optional; the app is fully usable without
 it, you just see the degraded paths.
@@ -394,16 +390,10 @@ stops working right after someone "tidied the env", check these first.
 | Variable | Default | Used for |
 | --- | --- | --- |
 | `ANTHROPIC_MODEL_SIMPLE` | `claude-haiku-4-5-20251001` | Cheap first pass: listing moderation, Q&A, contact filter |
-| `ANTHROPIC_MODEL_JUDGE` | `claude-sonnet-4-6` | Escalated pass: firearm-licence / dealer / swap-proof vision, OCR backfill |
+| `ANTHROPIC_MODEL_JUDGE` | `claude-sonnet-4-6` | Escalated pass: firearm-licence / dealer vision, OCR backfill |
 | `ANTHROPIC_MODEL_PRICE_ESTIMATE` | `claude-haiku-4-5-20251001` | Suggested listing price |
 | `ANTHROPIC_MODEL_LOADDATA` | `claude-sonnet-4-6` | Reloading-manual data extraction |
 | `ANTHROPIC_MODEL_INSIGHTS_DIGEST` | `claude-sonnet-4-6` | Weekly analytics digest |
-| `ANTHROPIC_MODEL_ASK_GG_LANE` | `claude-haiku-4-5-20251001` | Ask Boet intent router |
-| `ANTHROPIC_MODEL_ASK_GG_DEFAULT` | `claude-sonnet-4-6` | Ask Boet normal answers |
-| `ANTHROPIC_MODEL_ASK_GG_ESCALATED` | `claude-opus-4-8` | Ask Boet hard questions |
-| `ANTHROPIC_MODEL_HB_RANGE_DEFAULT` | `claude-sonnet-4-6` | Hunt Ballistics range estimator |
-| `ANTHROPIC_MODEL_HB_RANGE_FALLBACK` | `claude-opus-4-8` | Range estimator escalation |
-| `HB_RANGE_OPUS_THRESHOLD` | `0.7` | Confidence below which the estimator escalates to Opus. Opus is ~5× the cost, so this is a money dial. |
 
 ## Images — Cloudinary
 
@@ -549,9 +539,8 @@ identifying us to the Apple and Google push gateways.
 
 ## Shipping — Bob Go (door-to-door)
 
-Bob Go is the **only** courier rail; Pudo (lockers) and The Courier Guy (TCG)
-are retired. Every non-firearm parcel is booked door-to-door at the **cheapest
-Bob Go door rate**. There is no locker or pickup-point delivery any more.
+Bob Go is the **only** courier rail. Every non-firearm parcel is booked
+door-to-door at the **cheapest Bob Go door rate**.
 
 ### `BOBGO_API_KEY`, `BOBGO_BASE_URL`
 `BOBGO_API_KEY` is the Bearer token. Without it the service is **inert** — Bob Go
@@ -867,41 +856,6 @@ page bounces anyway.
 
 # Reconciliation notes, 2026-08-12
 
-> **Addendum, 2026-09-10 — the auth and KYC cut-over.** Clerk, VerifyNow and
-> AWS Rekognition were all removed on the same day, so a further **ten** names
-> joined the dead list below and must be **deleted from the live `.env`**:
->
-> | Dead name | Rotate? |
-> |---|---|
-> | `CLERK_SECRET_KEY` | 🔑 **yes** |
-> | `CLERK_WEBHOOK_SECRET` | 🔑 **yes** |
-> | `CLERK_AUTHORIZED_PARTIES` | no — not a secret |
-> | `VERIFYNOW_API_KEY` | 🔑 **yes** |
-> | `VERIFYNOW_BASE_URL` | no |
-> | `VERIFYNOW_MODE` | no |
-> | `VERIFYNOW_BASIC_REPORT_TYPE` | no |
-> | `AWS_ACCESS_KEY_ID` | 🔑 **yes** — delete the IAM user |
-> | `AWS_SECRET_ACCESS_KEY` | 🔑 **yes** — delete the IAM user |
-> | `AWS_REGION` | no |
-> | `AWS_KYC_LIVENESS_ROLE_ARN` | no — an ARN, not a credential |
->
-> ⚠️ **Rotating is not the same as deleting, and only rotating actually does
-> anything.** Every 🔑 above is a live credential that has been sitting in a
-> file on disk; removing the line from `.env` leaves it working for anybody
-> who already has it. Kill each one at its provider.
->
-> ⚠️ **`AWS_REGION` and `AWS_ACCESS_KEY_ID` were missing from this list until
-> 2026-09-10.** Only `AWS_KYC_LIVENESS_ROLE_ARN` was named, which reads as
-> though the AWS *credentials* were still in use — they are not. Nothing under
-> `backend/src/` reads any `AWS_*` name; `aws-kyc.service.ts` and `infra/aws/`
-> are deleted. `backend/.env.example` carries the same list under its
-> `─── RETIRED ───` section; the two are meant to stay in step.
->
-> Two names went the other way and **must be set before the next production
-> boot, or the process refuses to start**: `JWT_MEMBER_SECRET` (on **both**
-> processes, same value, different from `JWT_ADMIN_SECRET`) and the `DIDIT_*`
-> set with `DIDIT_MODE=live`.
-
 ## Backend: variables on the live server that no code reads
 
 Verified by grep across `backend/`, `frontend/` and `scripts/`. These are
@@ -911,23 +865,19 @@ person comparing server to repo knows they are dead rather than missing.
 | Variable | Why it is dead |
 | --- | --- |
 | `BACKEND_URL` | Superseded by `PUBLIC_API_URL` |
-| `STITCH_CLIENT_ID`, `STITCH_CLIENT_SECRET` | Stitch was replaced by Peach, then Ozow. Only `scripts/stitch-redirect-setup.cjs`, a one-off setup script, still references them |
-| `FNB_ACCOUNT_SUFFIX` | The FNB payout-batch rail was stripped in July 2026 |
 | `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD` | No IMAP client exists in the codebase |
-| `PEACH_ACCESS_TOKEN`, `PEACH_BASE_URL`, `PEACH_CLIENT_ID`, `PEACH_CLIENT_SECRET`, `PEACH_MERCHANT_ID`, `PEACH_ENTITY_ID`, `PEACH_SECRET`, `PEACH_ENV` | Peach was replaced by Ozow in September 2026; no code reads any `PEACH_*` variable |
-| `ODOO_URL`, `ODOO_DB`, `ODOO_API_KEY` | Odoo was replaced by Zoho Books. These were in the old `.env.example` too and have been removed from it |
 
-**Operator action:** when you delete these from the server, *rotate*
-`STITCH_CLIENT_SECRET` and the IMAP password rather than simply removing them.
-They were real credentials and have been sitting in a file on disk.
+**Operator action:** when you delete these from the server, *rotate* the IMAP
+password rather than simply removing it. It was a real credential and has been
+sitting in a file on disk.
 
 ## Backend: variables the code reads that were undocumented
 
 These are now in `backend/.env.example`. Several are also absent from the live
 server, meaning the feature is running on its coded default:
 
-`ANTHROPIC_ADMIN_API_KEY`, all ten remaining
-`ANTHROPIC_MODEL_*`, `HB_RANGE_OPUS_THRESHOLD`, `PUBLIC_API_URL`,
+`ANTHROPIC_ADMIN_API_KEY`, the remaining
+`ANTHROPIC_MODEL_*`, `PUBLIC_API_URL`,
 `BOBGO_BASE_URL`, `BOBGO_WEBHOOK_SECRET`,
 `SMSPORTAL_API_KEY`, `SMSPORTAL_BASE_URL`,
 `LOW_CREDIT_THRESHOLD`, `SUPPORT_EMAIL`, `EMAIL_LOGO_URL`, `OCR_CHUNK_PAGES`,
@@ -936,8 +886,7 @@ server, meaning the feature is running on its coded default:
 Worth flagging: Ozow went **live for money-in on 2026-10-10** — `OZOW_ENV=live`,
 `PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true` and the live One API credentials are
 set on the production server, so checkout is open. Money-*out* (payouts) is armed
-but gated on the float balance and Ozow's payout-verification token. Any legacy
-`PEACH_*` names on a box are dead — the code only reads `OZOW_*`.
+but gated on the float balance and Ozow's payout-verification token.
 
 ## Frontend
 

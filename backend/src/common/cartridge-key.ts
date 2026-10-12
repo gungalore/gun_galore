@@ -1,9 +1,8 @@
 /**
  * The canonical cartridge key.
  *
- * Moved here from the Load Lab when that module was removed. It is shared by
- * the Bench, the C.I.P. sheet lookup and the reloading extractor, none of
- * which should have to depend on a retired feature to spell a cartridge.
+ * Shared by the Bench, the C.I.P. sheet lookup and the reloading extractor,
+ * none of which should depend on a retired feature to spell a cartridge.
  *
  * 🚨 THE OUTPUT OF THIS FUNCTION IS PERSISTED DATA, NOT A RUNTIME DETAIL. It
  * is `CartridgeSpec`'s primary key and the `cartridgeKey` column on 50,789

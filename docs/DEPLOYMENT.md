@@ -140,7 +140,7 @@ endpoints 404 against a running old build that looks perfectly healthy. That is
 what happened on the address-book deploy: 17 type errors, all masked, nobody
 noticed until the feature did not work.
 
-**Never run `npx prisma db push`.** Three services — the Ask Boet knowledge
+**Never run `npx prisma db push`.** Three services — the Ask GG knowledge
 base, reloading-manual full-text search, and listings full-text search — create
 `tsvector GENERATED` columns and GIN indexes at boot with raw DDL. Those
 columns are not in `schema.prisma`, so `db push --accept-data-loss` drops them

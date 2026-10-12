@@ -544,8 +544,8 @@ export default function DatePickerSheet({
         onMouseDown={(e) => {
           if (e.target === e.currentTarget) e.preventDefault();
         }}
-        // Stands the Ask Boet dock down while the sheet is up — otherwise it
-        // floats in the bottom-right corner over the day grid.
+        // Suppresses competing fixed chrome while the sheet is up — otherwise
+        // a floating dock would sit over the day grid.
         data-blocking-overlay="true"
         onKeyDown={(e) => {
           onTrapKey(e);

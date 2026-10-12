@@ -75,7 +75,7 @@ import { AccountWishlistCount } from './wishlist-count';
 // each now point here.
 //
 // ⚠️ RENAMED / FLATTENED 2026-09-13. This page used to give the Motivation
-// Centre a hero tier and flank it with Document Centre + Load Lab cards,
+// Centre a hero tier and flank it with Document Centre + Reloading Tool cards,
 // because those were the highest-value destinations here. As of this date
 // Motivations, the Document Centre and The Bench have been PROMOTED to their
 // own "Armory" tile on the landing page — so this hub deliberately no longer

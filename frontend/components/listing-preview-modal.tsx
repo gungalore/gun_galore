@@ -195,11 +195,10 @@ export function ListingPreviewModal({
       role="dialog"
       aria-modal
       aria-label="Listing preview"
-      // data-blocking-overlay stands the Ask Boet dock down for this modal's
-      // lifetime (rule in ask-gg-launcher.tsx). Boet is z-60 too and, being the
-      // last thing in <body>, wins the tie on DOM order — he'd otherwise land on
-      // the bottom-right action bar and cover "Publish listing", which is the
-      // only publish path there is. Any new full-screen overlay needs this attr.
+      // data-blocking-overlay suppresses competing fixed chrome for this modal's
+      // lifetime. A floating dock would otherwise land on the bottom-right
+      // action bar and cover "Publish listing", which is the only publish path
+      // there is. Any new full-screen overlay needs this attr.
       data-blocking-overlay="true"
       className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto p-4 sm:p-8"
       style={{ background: 'rgba(0,0,0,0.72)', opacity: 0 }}

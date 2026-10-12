@@ -2919,7 +2919,7 @@ export default function NewListingPage() {
               from all sides mean fewer buyer questions and protect you if a
               buyer ever disputes the item.
             </p>
-            {/* (Ask Boet's "Help me describe this from the photos"
+            {/* (The "Help me describe this from the photos" photo helper
                 button stood here — removed by the operator 2026-08-28.
                 It read the staged photos and proposed a title,
                 description, category and condition. That is the assistant

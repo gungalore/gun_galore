@@ -2,7 +2,7 @@
 
 Compiled 2026-09-29 from the local build at `C:\dev\gun-galore` (branch HEAD `f8c4094f`, plus uncommitted working-tree changes). Only the code was treated as authoritative. Where the docs (`docs/project-reference.md`, `README.md`) say something different, the code value is used here and the conflict is listed in section 9.
 
-Scope: the two selling platforms (**Marketplace** = Buy Now listings with offers, and **Auctions**), plus the **Motivation Creator**, **the Vault** (Document Centre), **the Bench** and the **SAPS Application Tracker**. Take-a-Shot and Swop are treated as retired (see 9.1).
+Scope: the two selling platforms (**Marketplace** = Buy Now listings with offers, and **Auctions**), plus the **Motivation Creator**, **the Vault** (Document Centre), **the Bench** and the **SAPS Application Tracker**.
 
 Legal references were checked against the bundled Firearms Control Act 60 of 2000 text where a rule depends on a section number. This is a code inventory, not legal advice.
 
@@ -194,7 +194,7 @@ Ban threshold `BAN_AT = 2` strikes: sets `sellingBannedAt` and cancels all ACTIV
 ### 5.2 Shipping routes
 | Item class | Allowed methods |
 |---|---|
-| Firearms and barrels | `DEALER_TRANSFER` or `PRIVATE_ARRANGE` only. Never courier or locker (courier quote endpoint also refuses firearms). |
+| Firearms and barrels | `DEALER_TRANSFER` or `PRIVATE_ARRANGE` only. Never by courier (the courier quote endpoint also refuses firearms). |
 | Collection-only | `COLLECTION` only |
 | Everything else | `COURIER` only (Cheapest Door, Fastest Door or Store Pickup from one Bob Go quote) |
 The buyer can only pick a method the seller offered. (`validateShipping`, `shipping.service.ts`)
@@ -366,11 +366,9 @@ Flag `licenceCentreEnabled` (off by default); when off, every route 404s. Remind
 ## 10. Gaps, contradictions and violations found
 
 ### 10.1 Bugs / live risks
-1. **Accepted offers cannot be paid.** Offers are open on every ACTIVE listing (Buy Now and Auction), but checkout refuses any offer whose listing is not `TAKE_A_SHOT` (`transactions.service.ts:213`). Since the sell form only creates Buy Now and Auction, every accepted offer dead-ends at Pay.
-2. **API still accepts retired listing types.** `CreateListingDto` uses `@IsEnum(ListingType)`, so a crafted request can still create `TAKE_A_SHOT` or `SWOP` listings. Only the frontend restricts to Buy Now / Auction.
-3. **Tracker flag defaults ON.** `licenceTrackerEnabled` default is `true` with a comment saying it must be flipped back to `false` before a production deploy.
-4. **S16 semi-auto shotgun five-shot limit not enforced.** `sectionAllows` returns ok for anything under S16. FCA s16(1)(c) (five-shot limit) is still in force (the Act 28 of 2006 deletion never commenced), so a semi-auto shotgun holding more than five rounds under S16 is not blocked.
-5. **Moderation fails open** for text-only listings (flag off, no key, or model error = ACTIVE). Deliberate, but it means firearm listings can publish without the content check (the licence verifier still blocks).
+1. **Tracker flag defaults ON.** `licenceTrackerEnabled` default is `true` with a comment saying it must be flipped back to `false` before a production deploy.
+2. **S16 semi-auto shotgun five-shot limit not enforced.** `sectionAllows` returns ok for anything under S16. FCA s16(1)(c) (five-shot limit) is still in force (the Act 28 of 2006 deletion never commenced), so a semi-auto shotgun holding more than five rounds under S16 is not blocked.
+3. **Moderation fails open** for text-only listings (flag off, no key, or model error = ACTIVE). Deliberate, but it means firearm listings can publish without the content check (the licence verifier still blocks).
 
 ### 10.2 Code vs documentation drift
 1. **Commission bands:** docs say 9% / 7% / 5% / 3% (R5k / R20k / R100k); code and the public fees page say 10% / 8% / 6% / 4% (R5k / R15k / R25k).

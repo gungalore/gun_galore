@@ -1150,8 +1150,8 @@ export default async function ListingDetailPage({
                 `[data-listing-buy-bar]{bottom:0;padding-bottom:calc(10px + env(safe-area-inset-bottom));}`,
                 // Any blocking overlay (currently the auction BidModal) wins.
                 `body:has([data-blocking-overlay]) [data-listing-buy-bar]{display:none;}`,
-                // Lift Boet's dock clear of the bar so the mascot never
-                // covers the CTA. Same trick globals.css already uses for
+                // Lift any floating bottom-right dock clear of the bar so it
+                // never covers the CTA. Same trick globals.css already uses for
                 // the install prompt — and we defer to that rule when both
                 // are on screen, because its lift is the taller one.
               ].join(''),

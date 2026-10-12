@@ -96,7 +96,7 @@ function isListingDetail(pathname: string | null): boolean {
 }
 
 // Routes where an install popup would interrupt a focused task — never show
-// there (matches the Ask Boet suppression spirit).
+// there (same spirit as other focused-task suppression).
 const SUPPRESS_PREFIXES = [
   '/checkout',
   '/admin',
@@ -427,7 +427,7 @@ function InstallPromptBody() {
   // ⚠️ NOT ON LISTING DETAIL. That page has its own bottom buy bar at
   // bottom:0 in browser mode (app/listings/[id]/page.tsx), and covering a Buy
   // button to advertise an app is indefensible. This is a render gate rather
-  // than a CSS one on purpose: the Boet lift below keys on `:has(
+  // than a CSS one on purpose: the dock lift below keys on `:has(
   // [data-install-bar])`, and `:has()` still matches a display:none element.
   const showBar =
     barReady &&
@@ -445,9 +445,9 @@ function InstallPromptBody() {
   // The bar's own bottom-offset uses this to lift clear of it; see there.
   const tabBarPresent = isTabRoute(pathname);
 
-  // Ask Boet Everywhere — keep the body attribute stamped while our popup is up
-  // so the Sparkie daily-hello suppresses (it checks data-install-prompt) and
-  // the launcher lift rules stay coherent. Harmless behind our backdrop.
+  // Keep the body attribute stamped while our popup is up
+  // so other floating chrome suppresses and the lift rules stay coherent.
+  // Harmless behind our backdrop.
   useEffect(() => {
     if (showPopup) {
       document.body.setAttribute('data-install-prompt', 'true');
@@ -751,8 +751,8 @@ function InstallPromptBody() {
             bottom: tabBarPresent
               ? 'calc(var(--shell-tab-h) + min(env(safe-area-inset-bottom), 34px))'
               : 0,
-            // Under Boet (z-60) and under the tab bar (z-55), both of which
-            // outrank it by the house rule. Boet is lifted clear of this bar
+            // Under the floating dock (z-60) and under the tab bar (z-55), both of which
+            // outrank it by the house rule. The dock is lifted clear of this bar
             // by a rule in globals.css keyed on [data-install-bar]; the tab
             // bar is handled above instead of by a z-index assumption, now
             // that it renders on mobile web too and the two can share a
@@ -795,7 +795,7 @@ function InstallPromptBody() {
             }}
           />
           <div style={{ flex: 1, minWidth: 0 }}>
-            {/* ⚠️ ONE LINE, ALWAYS. The Boet lift (74px) and the body
+            {/* ⚠️ ONE LINE, ALWAYS. The dock lift (74px) and the body
                 reservation (62px) in globals.css are both hard-coded against
                 this bar's height, so a title that wraps on a narrow phone
                 would push the bar taller than the space reserved for it and

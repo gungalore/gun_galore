@@ -186,49 +186,6 @@ enum ListingQuestionStatus {
   HIDDEN // admin or seller hid this Q&A row from the public panel
 }
 
-// Featured-slot system (paid placement on the left rail). 10 slots
-// rotate via per-slot auctions. See FeaturedSlot model below.
-enum FeaturedSlotStatus {
-  VACANT // no occupant + no active auction (cold start only)
-  AUCTION_RUNNING // pre-auction is open, no current occupant yet
-  BIND_WINDOW // auction closed, winner has 15 min to pick a listing
-  OCCUPIED // listing bound, featured live until featuredUntil
-}
-
-enum FeaturedAuctionStatus {
-  OPEN // accepting bids
-  CLOSED_AWARDED // closed with a winner
-  CLOSED_NO_BIDS // closed with zero bids — slot reopens an ad-hoc auction
-  CANCELLED_BY_ADMIN // admin killed the auction
-}
-
-// Why the auction was opened — affects duration (24h scheduled vs 2h ad-hoc).
-enum FeaturedAuctionKind {
-  SCHEDULED // opens 24h before the predecessor's featuredUntil
-  AD_HOC // listing sold mid-feature OR cold-start vacancy
-}
-
-enum FeaturedBidStatus {
-  ACTIVE // outstanding, may still win
-  WON // this bid won its auction (Peach charge pending)
-  LOST // outbid before auction close
-  WITHDRAWN // bidder pulled before auction close (if allowed)
-  REFUNDED // won + paid + later refunded (e.g. admin force-evict)
-}
-
-// Five tiers map a bid amount to a featured duration. The amounts +
-// durations are CONFIGURABLE via FeaturedSlotConfig — these enum
-// names are stable label-free discriminators (display labels come
-// from the config row, not the enum, so re-pricing doesn't require
-// a schema migration).
-enum FeaturedTier {
-  T1
-  T2
-  T3
-  T4
-  T5
-}
-
 // The channel we fall back to when a send FAILS.
 //
 // ⚠️ This is NOT a primary/secondary ordering, and reading it that way is the
@@ -540,15 +497,6 @@ model User {
   askedListingQuestions    ListingQuestion[] @relation("AskedQuestions")
   answeredListingQuestions ListingQuestion[] @relation("AnsweredQuestions")
 
-  // Featured slot system — back-relations.
-  // `featuredSlotBids` is every bid this user has ever placed on a
-  // featured slot auction (active, won, or lost). `featuredSlots` is
-  // the (zero or more) slots this user currently occupies — populated
-  // when their bid won + they bound a listing to it + the slot's
-  // `featuredUntil` is still in the future.
-  featuredSlotBids FeaturedSlotBid[] @relation("FeaturedSlotBidder")
-  featuredSlots    FeaturedSlot[]    @relation("FeaturedSlotOccupant")
-
   // ── Zoho Books linkage ────────────────────────────────────────────
   // The user's Contact record in Zoho Books. Created lazily the first
   // time we need to invoice them (e.g. on their first sale that hits
@@ -645,7 +593,6 @@ model User {
   swapProposalsReceived SwapProposal[] @relation("SwapProposalsReceived")
   swapsInitiated        Swap[]         @relation("SwapsInitiated")
   swapsReceived         Swap[]         @relation("SwapsReceived")
-  prizeDrawsWon         PrizeDraw[]
 
   // ── Wishlist back-relation ───────────────────────────────────────
   // Saved listings the user wants to come back to. See WatchedListing.
@@ -1035,10 +982,9 @@ model Listing {
   publicLocality String?   @db.VarChar(80)
 
   isFirearm               Boolean   @default(false)
-  // Snapshotted from Category.publicVisible at create time. Denormalised for
-  // exactly the reason isDealListing is: every public-discovery query filters
-  // on it, and the Meilisearch document can only carry scalars — a join to
-  // Category is not available inside a Meili filter clause.
+  // Snapshotted from Category.publicVisible at create time. Denormalised so a
+  // Meilisearch document can carry it as a scalar — a join to Category is not
+  // available inside a Meili filter clause.
   //
   // Kept in sync by (a) create/update when the category changes, and (b) the
   // admin category-visibility resync. Default false = a row that somehow
@@ -1321,7 +1267,7 @@ model Listing {
   // can't race the every-minute sweep.
   winnerRemindedAt DateTime?
 
-  // Stale-listing lifecycle (non-auction, non-deal). lastRenewedAt seeds from
+  // Stale-listing lifecycle (non-auction). lastRenewedAt seeds from
   // createdAt (backfilled at migration, now() for new rows) and advances ONLY
   // on an explicit seller "still for sale" renew — NEVER on unrelated writes
   // (offer counters, moderation edits touch updatedAt, which would silently
@@ -1331,12 +1277,9 @@ model Listing {
   lastRenewedAt   DateTime  @default(now())
   renewalNudgedAt DateTime?
 
-  // Daily Deals (DD-1) — true when this listing is a first-party house DEAL
-  // (owned by the "Gun Galore" house seller, overlaid by a Deal row). Deal
-  // listings are DELIBERATELY EXCLUDED from every public marketplace surface
-  // (browse, search, brands, category counts, sitemap, price comps,
-  // saved-search alerts) via `isDealListing: false` on those queries — they
-  // only appear on the dedicated /deals surface. See DAILY-DEALS-PLAN.md.
+  // Legacy first-party-deal marker. Kept as a column (public browse, search
+  // and price comps still filter `isDealListing: false` as the public-
+  // discovery chokepoint), but nothing writes it true any more.
   isDealListing Boolean @default(false)
 
   images               ListingImage[]
@@ -1354,15 +1297,6 @@ model Listing {
   // saved this" social-proof signal.
   wishlistedBy         WatchedListing[]
   questions            ListingQuestion[]
-  // Featured-slot back-relation. When a seller wins a featured slot
-  // auction + binds this listing to it, the slot's
-  // `currentListingId` points here. Optional 1:1 (a listing is in
-  // ≤1 slot at a time, a slot has ≤1 listing).
-  featuredInSlot       FeaturedSlot?     @relation("FeaturedSlotListing")
-
-  // Daily Deals (DD-1) — 1:1 overlay carrying the deal economics + schedule.
-  // Present only when isDealListing = true.
-  deal Deal? @relation("DealListing")
 
   // Community feed posts that attach this listing as context. Optional and
   // SetNull: deleting the listing orphans the post's card but never deletes
@@ -1380,7 +1314,7 @@ model Listing {
   // P5.1 saved-search matcher hot path: ACTIVE listings newly listed since a
   // cursor (WHERE status='ACTIVE' AND listedAt > cursor).
   @@index([status, listedAt])
-  // Daily Deals — every public listing query filters `isDealListing: false`.
+  // Legacy first-party-deal marker — every public listing query filters it.
   @@index([isDealListing])
   // Signed-out discovery — every anonymous browse adds `publicVisible: true`
   // on top of the status filter, so index the pair.
@@ -1398,151 +1332,6 @@ model ListingImage {
   createdAt DateTime @default(now())
 
   @@index([listingId])
-}
-
-// ---------------------------------------------------------------------------
-// Daily Deals (OneDayOnly-style first-party deals) — DD-1
-// ---------------------------------------------------------------------------
-// Lifecycle of a single deal. DD-1 stops at DRAFT/SCHEDULED authoring; the
-// LIVE/EXTENDED/ENDED/SOLD_OUT transitions are driven by the DD-4 drop cron.
-enum DealStatus {
-  DRAFT // admin building it
-  SCHEDULED // queued for a future drop (startsAt set)
-  LIVE // on sale now (in the current drop)
-  EXTENDED // ran past its window — surfaces in "Extra Time"
-  ENDED // window closed, not sold out
-  SOLD_OUT // stock hit 0
-  CANCELLED // pulled by admin
-}
-
-// A first-party Daily Deal — a thin economics + schedule overlay on top of a
-// BUY_NOW Listing owned by the house seller (isDealListing = true). The
-// Listing is the single source of truth for checkout (price, stock, images,
-// shipping); the Deal row carries the internal cost, the "was" anchor, the
-// drop schedule, and the fair-share cap. Buyers ride the normal cart / EFT /
-// courier rails; DD-2 adds the first-party money branches. See
-// DAILY-DEALS-PLAN.md §2.2.
-model Deal {
-  id        String  @id @default(cuid())
-  listingId String  @unique
-  listing   Listing @relation("DealListing", fields: [listingId], references: [id], onDelete: Cascade)
-
-  status DealStatus @default(DRAFT)
-
-  // Economics (ZAR cents). The deal SELL price lives on Listing.price (the
-  // checkout source of truth); these are the overlay's own fields.
-  costPriceCents Int // internal — per-unit supplier cost (never public)
-  wasPriceCents  Int // RRP anchor, shown struck-through (also mirrored to Listing.compareAtPriceZarCents)
-
-  // Schedule. A drop = every deal sharing a dropDate/startsAt going live together.
-  startsAt      DateTime?
-  endsAt        DateTime?
-  extendedUntil DateTime? // set when a winner is pushed into Extra Time
-  dropDate      DateTime? // groups deals into one drop (calendar / pipeline)
-  liveAt        DateTime? // stamped when it actually went LIVE
-  endedAt       DateTime?
-  soldOutAt     DateTime?
-
-  heroRank       Int @default(0) // ordering within the drop grid (higher = more prominent)
-  initialStock   Int // snapshot of stock at go-live → sell-through %
-  perCustomerCap Int @default(10) // fair-share cap (units per buyer per deal)
-
-  // Per-deal delivery promise (the JIT supply model makes this honest).
-  shipsInDaysMin Int @default(3)
-  shipsInDaysMax Int @default(7)
-
-  // Supplier bookkeeping (internal — never public).
-  supplierName String?
-  supplierRef  String?
-
-  // JIT supplier-fulfilment (DD-F): the structured supplier + its purchase order.
-  // Kept alongside the legacy free-text supplierName/supplierRef above.
-  supplierId String?
-  supplier   Supplier? @relation(fields: [supplierId], references: [id])
-
-  purchaseOrder DealPurchaseOrder?
-
-  createdByAdminId String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  @@index([status, startsAt])
-  @@index([dropDate])
-  @@index([supplierId])
-}
-
-// A JIT fulfilment supplier for Daily Deals (DD-F). GG is the first-party
-// seller; on a house-deal sale we raise a Zoho Purchase Order to the supplier
-// and The Courier Guy collects the stock from THIS warehouse. Supplier, cost,
-// and PO data are strictly internal — never exposed on any public surface.
-model Supplier {
-  id            String  @id @default(cuid())
-  name          String
-  contactPerson String
-  email         String
-  phone         String
-  vatNumber     String?
-  regNumber     String?
-
-  // Collection warehouse — where The Courier Guy collects from.
-  warehouseStreet     String
-  warehouseSuburb     String
-  warehouseCity       String
-  warehouseProvince   Province
-  warehousePostalCode String
-  warehouseLat        Float?
-  warehouseLng        Float?
-
-  notes String?
-
-  // Zoho Books vendor sync (one Books object = one dedicated id column).
-  zohoVendorId          String?
-  zohoSyncStatus        String?
-  zohoSyncError         String?
-  zohoSyncLastAttemptAt DateTime?
-
-  active           Boolean  @default(true)
-  createdByAdminId String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  deals Deal[]
-}
-
-// The purchase order raised against a Supplier when a house deal sells. One
-// PO per Deal (dealId unique). Zoho Books PO id lives in its own column for
-// idempotency; email send is gated behind the deal_po_email_enabled flag.
-model DealPurchaseOrder {
-  id     String @id @default(cuid())
-  dealId String @unique
-  deal   Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
-
-  unitsOrdered  Int
-  unitCostCents Int
-  totalCents    Int
-
-  status DealPoStatus @default(DRAFT)
-
-  // Zoho Books purchase-order sync (one Books object = one dedicated id column).
-  zohoPurchaseOrderId   String?
-  zohoSyncStatus        String?
-  zohoSyncError         String?
-  zohoSyncLastAttemptAt DateTime?
-
-  placedAt     DateTime?
-  emailedAt    DateTime?
-  stockReadyAt DateTime?
-
-  createdByAdminId String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-}
-
-enum DealPoStatus {
-  DRAFT // row created, not yet placed with Zoho
-  PLACED // Zoho PO created
-  EMAILED // PO emailed to the supplier
-  CANCELLED // pulled
 }
 
 model Dealer {
@@ -2145,9 +1934,9 @@ model Transaction {
   zohoCommissionPaymentId String?
   zohoCreditNoteId        String?
   zohoBuyerInvoiceId      String?
-  // ── Daily Deals first-party Zoho (DD-2) ─────────────────────────────
-  // A house deal (Listing.isDealListing) is a FIRST-PARTY sale: GG is the
-  // seller, so there is no commission invoice + payout. Instead a
+  // ── Legacy first-party-sale Zoho fields ─────────────────────────────
+  // For a first-party sale (GG as seller) there is no commission invoice +
+  // payout. Instead a
   // full-amount Sales Receipt is posted to the BUYER at RELEASED, and a
   // Credit Note against it on a post-release refund. These IDs are kept
   // SEPARATE from zohoCommissionInvoiceId/zohoCreditNoteId on purpose — a
@@ -2532,7 +2321,7 @@ model AdminRecoveryCode {
 // Each row is one admin operation: who did it, when, on what, what
 // changed (oldValue → newValue), and the reason they typed at the
 // time. Read-only from the UI; only inserted by AdminAuditService.
-// Domain-specific audit tables (FeaturedSlotAuditEvent) stay as-is for
+// Domain-specific audit tables stay as-is for
 // module-specific event types; this table captures the
 // broad ops surface — user bans / tier changes / KYC overrides /
 // transaction refunds / etc.
@@ -2991,257 +2780,6 @@ model SmsLog {
   @@index([status, nextRetryAt])
 }
 
-// ---------------------------------------------------------------------------
-// Featured-slot system (paid left-rail placement)
-//
-// 10 hard-allocated slots rotate via per-slot auctions. Each slot has:
-//   - A current occupant (a listing + seller + featuredUntil) when filled
-//   - A pre-auction that opens 24h before the occupant's featuredUntil,
-//     closes at featuredUntil sharp, winner takes over with zero gap
-//   - An ad-hoc 2h auction if the slot frees unexpectedly (occupant's
-//     listing sold mid-feature, or admin force-evicted)
-//
-// Seller flow: bid first → win → 15-min bind window to pick an active
-// listing → Peach charged → listing goes featured for the tier duration.
-// Losers walk away (no rollover). One seller can hold multiple slots.
-// ---------------------------------------------------------------------------
-
-model FeaturedSlot {
-  id String @id @default(cuid())
-
-  // 1-10. Hard-allocated at seed. The rail's vertical order matches this.
-  slotNumber Int @unique
-
-  status FeaturedSlotStatus @default(VACANT)
-
-  // The listing currently displayed in this slot (null when VACANT or
-  // AUCTION_RUNNING or BIND_WINDOW with the winner not yet bound).
-  currentListingId String?  @unique
-  currentListing   Listing? @relation("FeaturedSlotListing", fields: [currentListingId], references: [id])
-
-  // Quick-lookup denormalisation — the seller who owns the current
-  // listing. Also used to enforce "can't bid on a slot you own".
-  currentSellerId String?
-  currentSeller   User?   @relation("FeaturedSlotOccupant", fields: [currentSellerId], references: [id])
-
-  // When the current occupant's featured time ends. Cron tick promotes
-  // the next auction's winner at this exact moment.
-  featuredUntil DateTime?
-
-  // Auction tracking. `currentAuctionId` is the auction that's either
-  // OPEN now (pre-auction or ad-hoc) or recently closed and in the
-  // BIND_WINDOW phase. Cron creates new auctions as slots free up.
-  currentAuctionId String?                  @unique
-  currentAuction   FeaturedAuction?         @relation("SlotCurrentAuction", fields: [currentAuctionId], references: [id])
-  auctions         FeaturedAuction[]        @relation("SlotAuctions")
-  events           FeaturedSlotAuditEvent[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([status])
-  @@index([featuredUntil])
-}
-
-model FeaturedAuction {
-  id String @id @default(cuid())
-
-  slotId String
-  slot   FeaturedSlot @relation("SlotAuctions", fields: [slotId], references: [id], onDelete: Cascade)
-
-  // The back-relation for FeaturedSlot.currentAuction (1:1 to a single
-  // auction at any time). Listed without fields so Prisma can wire it.
-  slotAsCurrent FeaturedSlot? @relation("SlotCurrentAuction")
-
-  kind   FeaturedAuctionKind
-  status FeaturedAuctionStatus @default(OPEN)
-
-  // The auction OPENS the moment the slot becomes vacant (closesAt
-  // null = waiting for first bid). On the first bid, the bid handler
-  // sets closesAt = now + bidWindowSec (24h by default). Subsequent
-  // bids during the window do NOT reset it — the winner is whoever
-  // has the highest bid when the timer hits zero.
-  openedAt DateTime  @default(now())
-  closesAt DateTime?
-  closedAt DateTime?
-
-  // Snapshot of the winning bid once closed. Null while OPEN.
-  winningBidId String?          @unique
-  winningBid   FeaturedSlotBid? @relation("AuctionWinningBid", fields: [winningBidId], references: [id])
-
-  bids FeaturedSlotBid[] @relation("AuctionBids")
-
-  @@index([slotId, status])
-  @@index([closesAt])
-}
-
-model FeaturedSlotBid {
-  id String @id @default(cuid())
-
-  auctionId String
-  auction   FeaturedAuction @relation("AuctionBids", fields: [auctionId], references: [id], onDelete: Cascade)
-
-  bidderId String
-  bidder   User   @relation("FeaturedSlotBidder", fields: [bidderId], references: [id])
-
-  // ZAR cents. Backend snaps to nearest tier on submit. This is the
-  // FACE bid — what the bidder is "saying" they'd pay, and what the
-  // leaderboard uses for ranking. The actual cents collected is
-  // `chargedAmountCents` (set at charge time).
-  amountCents Int
-  tier        FeaturedTier
-
-  // Buy-Now purchase (skip-the-auction premium). When true this row is
-  // NOT an auction bid — the seller paid a fixed 2× the tier's base price
-  // to claim the slot outright + immediately, bypassing the auction. The
-  // `tier` still drives the featured DURATION; `amountCents` holds the 2×
-  // base (pre-discount) and `chargedAmountCents` the cash collected. Lets
-  // revenue reports + /my/bids distinguish outright purchases from bids.
-  isBuyNow Boolean @default(false)
-
-  // Phase E2 — Ask GG subscription perk (OD1 locked).
-  //   FREE   → 0  (full price)
-  //   MEMBER → 25 (25% off the slot fee)
-  //   PRO    → 50 (50% off the slot fee)
-  // Snapshotted on the bid at bid time so the discount can't be
-  // gamed by upgrading right before settlement OR penalised by a
-  // downgrade between bid + bind. Charged cents = floor(
-  // amountCents * (100 - discountPercent) / 100).
-  discountPercent    Int  @default(0)
-  // Actual ZAR cents charged. Null until the bid wins + binds.
-  // Once set, Zoho receipt + admin revenue reports use this value
-  // (NOT amountCents) so the books match the cash that landed.
-  chargedAmountCents Int?
-
-  // ── P1.2 — manual-EFT slot-fee payment lane ──────────────────────
-  // On bind-request the winner gets an FS reference + a pay-by
-  // deadline; the reconciler completes the bind on payment match.
-  // pendingListingId remembers WHICH listing to feature once paid.
-  orderReference    String?   @unique
-  pendingListingId  String?
-  paymentPayByAt    DateTime?
-  paymentDetectedAt DateTime?
-
-  status FeaturedBidStatus @default(ACTIVE)
-
-  // Set when the bid wins + the gateway is charged (= COMMITTED). Lets admin
-  // refund cleanly via the gateway payment ID.
-  gatewayPaymentId String?
-  paidAt         DateTime?
-
-  // If the winner doesn't bind a listing within the 15-min bind window
-  // we cascade to the next-highest bid. `cascadedFromId` records the
-  // forfeited bid we replaced. Read-only audit trail.
-  cascadedFromId String?          @unique
-  cascadedFrom   FeaturedSlotBid? @relation("BidCascade", fields: [cascadedFromId], references: [id])
-  cascadedTo     FeaturedSlotBid? @relation("BidCascade")
-
-  // Back-relation for FeaturedAuction.winningBid.
-  wonAuction FeaturedAuction? @relation("AuctionWinningBid")
-
-  // ── Zoho Books linkage ────────────────────────────────────────────
-  // Featured-slot fee invoice (Gun Galore → winning bidder) created
-  // when the bid wins + Peach captures payment. Only set on winning
-  // bids that actually paid (status = COMMITTED + paidAt set).
-  zohoInvoiceId         String?
-  zohoSyncStatus        String?
-  zohoSyncError         String?
-  zohoSyncLastAttemptAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([auctionId, amountCents])
-  @@index([bidderId, status])
-}
-
-// Operator-editable configuration so tier prices + durations + bid floor
-// can change WITHOUT a code deploy. Singleton row (id="default" always).
-// Admin Settings tab writes through.
-model FeaturedSlotConfig {
-  id String @id @default("default")
-
-  // Number of slots — default 10. Changing this needs a follow-up
-  // migration to add/remove FeaturedSlot rows; UI gates the change
-  // behind a confirm dialog.
-  slotCount Int @default(10)
-
-  // Bid floor in ZAR cents. Default 10000 (R100).
-  bidFloorCents Int @default(10000)
-
-  // Tier amounts in ZAR cents + duration in seconds. Five tiers, all
-  // editable. Defaults match the agreed table:
-  //   T1 R100 = 86400s   (1d)
-  //   T2 R200 = 172800s  (2d)
-  //   T3 R300 = 432000s  (5d)
-  //   T4 R400 = 604800s  (7d)
-  //   T5 R500 = 1209600s (14d)
-  t1AmountCents Int @default(10000)
-  t1DurationSec Int @default(86400)
-  t2AmountCents Int @default(20000)
-  t2DurationSec Int @default(172800)
-  t3AmountCents Int @default(30000)
-  t3DurationSec Int @default(432000)
-  t4AmountCents Int @default(40000)
-  t4DurationSec Int @default(604800)
-  t5AmountCents Int @default(50000)
-  t5DurationSec Int @default(1209600)
-
-  // How long the auction stays open AFTER the first bid lands. The
-  // auction itself opens the moment the slot becomes vacant, but
-  // sits at closesAt=null (waiting for a first bid). When the first
-  // bid lands, closesAt is set to now + bidWindowSec. Subsequent
-  // bids during the window don't reset it.
-  bidWindowSec Int @default(86400) // 24h
-
-  // 15-min bind window the winner has to pick a listing.
-  bindWindowSec Int @default(900)
-
-  updatedAt        DateTime @updatedAt
-  updatedByAdminId String?
-}
-
-// Admin can permanently bar a user from bidding on featured slots
-// (e.g. spam, payment-default repeat offender, abuse). Separate from
-// the listing-side `isBanned` flag so featured-slot bans don't kill
-// the user's whole account.
-model FeaturedSlotBidderBan {
-  id              String   @id @default(cuid())
-  userId          String   @unique
-  reason          String
-  bannedByAdminId String
-  createdAt       DateTime @default(now())
-}
-
-// Audit log — every featured-slot event. Lets the operator answer
-// "who got that slot at 14:32 yesterday and how much did they pay?"
-// without leaving the admin panel.
-//
-// Event types (free-text for forward-compat):
-//   AUCTION_OPENED, BID_PLACED, AUCTION_CLOSED, BIND_WINDOW_OPENED,
-//   LISTING_BOUND, BIND_WINDOW_EXPIRED, CASCADED_TO_RUNNER_UP,
-//   FEATURED_LIVE, FEATURED_EXPIRED, LISTING_SOLD_FREES_SLOT,
-//   FORCE_EVICTED, MANUALLY_AWARDED, REFUND_ISSUED, CONFIG_CHANGED,
-//   BIDDER_BANNED, BIDDER_UNBANNED
-model FeaturedSlotAuditEvent {
-  id     String        @id @default(cuid())
-  slotId String?
-  slot   FeaturedSlot? @relation(fields: [slotId], references: [id])
-
-  eventType   String
-  payloadJson String? // JSON-encoded payload; freeform per eventType
-
-  // Who fired this. EITHER a user (bidder action) OR an admin
-  // (override action). System cron events have both null.
-  actorUserId  String?
-  actorAdminId String?
-
-  createdAt DateTime @default(now())
-
-  @@index([slotId, createdAt])
-  @@index([eventType, createdAt])
-}
-
 // =====================================================================
 // ActionToken — single-use, scoped tokens for SMS-link action pages
 // =====================================================================
@@ -3481,46 +3019,6 @@ model Subscription {
 
 // One row per recurring charge attempt (success or failure). Drives
 // the billing-history page on /subscriptions + admin spend audit.
-// ── PRO prize draw (promotional competition) ─────────────────────────
-// A physical prize bought by GG, displayed for the whole cycle, drawn
-// among paid-up PRO members (comp/admin-granted accounts excluded). The
-// prize budget is ADVISORY ONLY (computed in admin from a % of recent
-// subscription revenue) — no money moves through this module. Winners
-// may exchange any prize for an alternative of equal value (this is
-// also how a licence-bearing prize is handled when the winner cannot
-// or prefers not to accept it). Public copy never names prize
-// categories — the actual prize of the running cycle is displayed.
-enum PrizeDrawStatus {
-  LIVE // on display, drawAt scheduled
-  DRAWN // winner picked, awaiting fulfilment
-  FULFILLED // prize handed over / exchanged
-  CANCELLED // withdrawn before the draw (admin, reason kept)
-}
-
-model PrizeDraw {
-  id              String          @id @default(cuid())
-  title           String
-  description     String
-  prizeValueCents Int // actual value of the purchased prize
-  imageUrls       String[]
-  status          PrizeDrawStatus @default(LIVE)
-  displayStartAt  DateTime        @default(now())
-  drawAt          DateTime
-  drawnAt         DateTime?
-  winnerUserId    String?
-  winner          User?           @relation(fields: [winnerUserId], references: [id], onDelete: SetNull)
-  entrantCount    Int             @default(0)
-  // Draw audit: { entrantsHash, algorithm, timestamp } — CPA record-keeping.
-  drawAudit       Json?
-  fulfilledAt     DateTime?
-  fulfilmentNote  String? // e.g. "exchanged for equal-value alternative"
-  cancelledReason String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  @@index([status, drawAt])
-}
-
 model SubscriptionCharge {
   id             String       @id @default(cuid())
   subscriptionId String
@@ -7242,8 +6740,7 @@ model FeedAward {
   @@index([createdAt])
 }
 
-/// Featured ads — a FRESH model, deliberately not the orphaned FeaturedSlot*
-/// tables (those were homepage slots removed 2026-08-26). Admin/official
+/// Featured ads — the community feed's promotional surface. Admin/official
 /// created; shown in the members-only community feed only. Members may not
 /// advertise, so this is the only promotional surface in the feed.
 enum FeedAdStatus {

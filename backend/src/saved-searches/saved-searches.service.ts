@@ -372,8 +372,7 @@ export class SavedSearchesService {
 
         const where: Prisma.ListingWhereInput = {
           status: 'ACTIVE',
-          // Daily Deals have their own drop push — a deal going LIVE must not
-          // also fire everyone's saved-search alerts.
+          // First-party deal listings must not fire saved-search alerts.
           isDealListing: false,
           // Never alert a user about their own new listing.
           sellerId: { not: s.userId },

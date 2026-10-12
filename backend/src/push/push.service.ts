@@ -172,8 +172,8 @@ export class PushService implements OnModuleInit {
     return this._deliver(subs, payload);
   }
 
-  /** DD-4 — fan a push out to EVERY device opted-in for the given category,
-   * across all users (used for Daily Deal drop announcements). Same per-sub
+  /** Fan a push out to EVERY device opted-in for the given category,
+   * across all users. Same per-sub
    * error handling + 410-prune as sendToUser. VAPID-degrades to a no-op.
    * Chunked so a large audience doesn't fire thousands of concurrent
    * requests at the push gateways at once. Returns the successful-send count.

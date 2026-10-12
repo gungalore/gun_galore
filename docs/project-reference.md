@@ -46,7 +46,7 @@ revisiting.
    term All Outdoor is not registered for. Use `paymentStatus`, "funds held",
    "payment protected", "payment released". ⚠️ The guard that *blocks* the word
    (and its tests) is the mechanism, not a violation — do not "clean it up".
-2. **A firearm never travels by courier or locker.** Enforced in
+2. **A firearm never travels by courier.** Enforced in
    `shipping.service.ts`. Two lawful routes: `DEALER_TRANSFER` (buyer picks the
    receiving SAPS-licensed dealer at checkout) and `PRIVATE_ARRANGE` (both parties
    attend a dealer in person, no pre-picked dealer). Every firearm listing must
@@ -290,11 +290,6 @@ the next session must know.
   from here.
 - ⚠️ `ballistics.gungalore.co.za` is a subdomain of the domain being allowed to
   lapse. It needs its own home before that happens — cheap now, an outage later.
-- **The hunt-ballistics code is still compiled into the marketplace backend**
-  (`HuntBallisticsModule` in `app.module.ts`, plus `HuntPdf`, `HuntPdfPage` and
-  `RangeEstimate` in `schema.prisma`). "Ballistics stays behind" is not automatic.
-  Deleting it is a pure subtraction with no relations into the rest of the graph;
-  that decision is still open.
 - **No staging.** Work hits production after local type-check, tests and build.
 
 ### Backups and recovery
@@ -353,20 +348,15 @@ state — do not read its absence as the switch being broken).
 `OZOW_PAYOUT_API_KEY` / `OZOW_PAYOUT_SITE_CODE` / `OZOW_PAYOUT_ACCESS_TOKEN` /
 `OZOW_PAYOUT_ENCRYPTION_KEY`).
 
-⚠️ **The Ozow names matter.** No `PEACH_*` variable (and no
-`OZOW_ACCESS_TOKEN`/`OZOW_BASE_URL`) is read by anything — hosts are hardcoded
-per environment. An operator setting the wrong names at go-live gets a silent
-mock, because missing credentials do not stop the boot. None of the `OZOW_*`
-names are set on production today, which is a second, independent reason the
-rail is inert.
+⚠️ **The Ozow names matter.** No `OZOW_ACCESS_TOKEN`/`OZOW_BASE_URL` is read by
+anything — hosts are hardcoded per environment. An operator setting the wrong
+names at go-live gets a silent mock, because missing credentials do not stop the
+boot.
 
 ⚠️ **`ALLOW_LOCAL_ORIGINS`** lets the production API accept credentialed requests
 from localhost and LAN origins, so a developer can run the frontend locally
 against real data. It warns on every boot and raises a Desk card. It is currently
 **false**. Never turn it on once the platform carries real members.
-
-`STITCH_CLIENT_ID` / `STITCH_CLIENT_SECRET` are dead vars from a rejected
-evaluation. `ODOO_*`, `PUDO_*` and `TCG_*` are gone.
 
 ---
 
@@ -472,37 +462,12 @@ stats, news clippings, complaints, the reloading corpus, Warden.
   payout (an invalid account then fails the payout itself). **Do not claim
   automated AVS in user-facing copy.**
 
-**Gone — do not rebuild against it, do not go looking for it:**
-- **Featured Slots** (paid ad placement) — removed 2026-08-26. Six `FeaturedSlot*`
-  Prisma models and `Listing.isFeatured` survive orphaned on purpose.
-- **Swop / M4 Swap** — removed from code and routes; `SwapProposal` / `Swap`
-  models survive. **M3 New Store** was never built.
-- **Take a Shot as a listing mode** — since 2026-08-27 it is the "also accept
-  offers" toggle on a Buy Now or Auction listing, not a third mode. The
-  `TAKE_A_SHOT` enum value survives.
-- **Hunting Packages / Experiences, AO PRO, Ask Boet chat, Daily Deals,
-  the prize draw, Load Lab** (replaced by The Bench).
-- **Pudo (lockers)** and **The Courier Guy (TCG)** — retired 2026-09-24. The
-  `PUDO` and `TCG` enum values survive only as **deprecated, never-written**
-  placeholders. Door delivery is the `COURIER` method served by Bob Go. Pudo
-  lockers are gone; a **Pargo store-pickup** option (Bob Go pickup-point rate)
-  was added 2026-09-25 — the delivery rail, not a seller.
-- **Manual EFT pay-in**, **Stitch**, **Odoo**, **Sentry**, the legacy `/admin`
-  dashboard, the 63-file email template pack.
-- **Clerk** — removed 2026-09-10. Member auth is self-hosted; see the Auth
-  section. `User.clerkId` is **dropped**, not orphaned: `User.id` is now the
-  only user identifier and `@CurrentUser()` returns it. Nothing named
-  `clerkId` survives anywhere, so a reference to one is stale code, not a
-  compatibility shim. **Google sign-in and 2FA went with it** — both lived in
-  Clerk's hosted surfaces and neither was rebuilt.
-- **VerifyNow** and **AWS Rekognition** (KYC face-match + Face Liveness) —
-  removed 2026-09-10 with the Didit cut-over. See the KYC section for the one
-  capability that went with them and has no free replacement.
+**Gone — do not rebuild.** The retired-feature list lives in one place now:
+`AGENTS.md` → "Retired Features (do not rebuild)". Do not reintroduce them,
+document them as live, or resurrect their routes, models, flags or copy.
 
-⚠️ **An orphaned Prisma model is not evidence a feature is live.** Several removed
-features deliberately kept their tables, and live sweeps still read those columns
-to stay correctly scoped. Check for a route and a controller before believing in a
-feature. Equally, do not drop those models without a migration review.
+⚠️ **An orphaned Prisma model is not evidence a feature is live.** Check for a
+route and a controller before believing in a feature.
 
 ---
 
@@ -551,9 +516,7 @@ on our own delivery margin.
 
 ### Payments (Ozow) — live for money-in
 
-One API (pay-in + refunds) + Payouts API (seller disbursement). Peach was the
-prior rail and was replaced by Ozow in 2026-09. **There is no Stitch code in
-this repo.**
+One API (pay-in + refunds) + Payouts API (seller disbursement).
 
 - **Pay-in:** `ozow.createPayment()` (`POST https://one.ozow.com/v1/payments`)
   → hosted page → `/checkout/complete?id=…` → `verifyResult()` re-fetches
@@ -693,7 +656,7 @@ this repo.**
 ## Shipping
 
 - **Firearms / barrels:** `DEALER_TRANSFER` or `PRIVATE_ARRANGE` only, enforced
-  server-side. Never a courier, never a locker.
+  server-side. Never by courier.
 - **Non-firearms:** the buyer chooses one of **three options** from ONE Bob Go
   quote — **Cheapest Door Delivery**, **Fastest Door Delivery**, or **Store
   Pickup** (the nearest Pargo counters; the buyer picks one). Every option is
@@ -730,7 +693,7 @@ this repo.**
 - **`ON_SITE_SERVICE`** — a future-dated on-site service with no parcel.
 - ⚠️ **Bob Go answers HTTP 201 before a courier has agreed.** Every booking starts
   unconfirmed (`pending-rates`). Branch on `submission`, never on "it did not
-  throw". See `BOBGO-MIGRATION.md`.
+  throw". See `docs/ARCHITECTURE.md`.
 - ⚠️ **The payout gate depends on a correct status map.** Exactly two carrier
   slugs reach Prisma `DELIVERED`, and `DELIVERED` starts the clock that releases
   the seller's money. Bob Go aggregates many providers, so its vocabulary is its
@@ -1334,7 +1297,7 @@ the licence-centre one, because that controller's `AuthGuard` would 401 the phon
 One screen at `/bench`, members only, reached from Account. It is the **reverse
 load finder**: "what can I load from what is on my shelf". A member keeps a bench —
 powders, bullets, cartridges they own — and the screen answers with consolidated
-loads. It replaced Load Lab.
+loads.
 
 ⚠️ **Members-only, no-store, including the reads.** Every `/api/bench` route takes
 `AuthGuard` and every method carries `@NoStore()`. `@Header` is method-only in
@@ -1407,9 +1370,8 @@ Spec: `docs/design/the-bench/SPEC-BUILD.md`.
 - **`reloading/`** — admin-only manual corpus. The operator SCPs PDFs into
   `RELOADING_MANUALS_INBOX_DIR`, hits `POST /admin/reloading/scan`, and the service
   SHA-256-dedupes and stores under random hex filenames.
-- **`ballistics/`** — see the separate app on the box.
-- **`ask-gg/`** — the chat backend was retired 2026-09-07. Only
-  `POST /ask-gg/identify-listing` and the admin KB and guide editors remain.
+- **`ask-gg/`** — `POST /ask-gg/identify-listing` (the create-listing photo
+  helper) and the admin KB and guide editors.
 
 **Feature flags** live in `FLAGS` in `backend/src/settings/settings.service.ts`
 (34 keys — booleans, numbers and strings, mixed defaults), edited through the admin
@@ -1496,7 +1458,6 @@ the running system. Start there. Particularly:
   open operator decisions and its top three risks. Live work.
 - `docs/ARCHITECTURE.md`, `docs/ENVIRONMENT.md` — integration table and per-service
   failure modes.
-- `BOBGO-MIGRATION.md` — the courier cutover.
 - `DOCUMENT-CENTRE.md`, `LICENCE-APPLICATION-REBUILD.md`,
   `LICENCE-SERVICES-AND-FEED.md`, `MOTIVATION-*.md`, `SAPS271-PREFILL.md` — the
   licence stack in depth.

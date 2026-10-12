@@ -120,9 +120,8 @@ function SubHeading({ children }: { children: React.ReactNode }) {
  * The overlay.
  *
  * ⚠️ z-[60] AND data-blocking-overlay, both load-bearing. The bottom tab bar
- * is z-55 and would otherwise sit over this; Boet's dock is z-60 too and,
- * being last in <body>, wins the tie on DOM order — the attribute stands
- * him down for the overlay's lifetime.
+ * is z-55 and would otherwise sit over this; the attribute suppresses any other
+ * fixed chrome for the overlay's lifetime.
  */
 function CloseAccountDialog({
   getToken,

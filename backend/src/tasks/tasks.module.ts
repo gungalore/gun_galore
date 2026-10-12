@@ -32,8 +32,6 @@ import { FeedModule } from '../feed/feed.module';
     PushModule,
     ZohoBooksModule,
     SavedSearchesModule,
-    // DealsModule dropped with Daily Deals — the drop / collection-sweep crons
-    // it fed are gone from TasksService.
     //
     // Trust-score refresh cron — RatingsModule exports RatingsService.
     RatingsModule,

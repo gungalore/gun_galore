@@ -3,10 +3,9 @@
 // Kept in one pure, testable file so the orchestrator gains a call site rather
 // than a second brain.
 //
-// DOOR + PICKUP-POINT SELECTION. Since 2026-09-24 the platform offers three
-// buyer options from ONE Bob Go quote: cheapest door, fastest door, and the
-// cheapest pickup-point rate (Pargo counters). Pudo lockers and TCG stay
-// retired — pickup-point delivery now comes only through Bob Go's Pargo
+// DOOR + PICKUP-POINT SELECTION. The platform offers three buyer options from
+// ONE Bob Go quote: cheapest door, fastest door, and the cheapest pickup-point
+// rate (Pargo counters). Pickup-point delivery comes through Bob Go's Pargo
 // network, which the buyer reaches at a nominated counter.
 //
 // The four pickers below are the whole policy surface; keep them pure so the

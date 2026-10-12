@@ -171,8 +171,6 @@ export class AdminCommandCenterService {
           paymentStatus: 'HELD',
         },
       }),
-      // NOTE: the Daily Deals "Supplier fulfilment" card (dealFulfilmentAttention)
-      // was removed with the feature. Nothing else fed that count.
     ]);
 
     return {
@@ -527,11 +525,8 @@ const ADMIN_DETAIL_ROUTES: Record<string, string> = {
 };
 const ADMIN_LIST_ROUTES: Record<string, string> = {
   Setting: 'settings',
-  // 'Deal' and 'Supplier' dropped with Daily Deals — /admin/deals and
-  // /admin/suppliers are both gone (the supplier registry was Daily Deals
-  // infrastructure), so any legacy audit row of those resourceTypes falls
-  // through to /admin/audit. 'Dealer' (firearm dealers) is a DIFFERENT
-  // feature and stays.
+  // Legacy audit rows for retired resource types fall through to /admin/audit.
+  // 'Dealer' (firearm dealers) is a DIFFERENT feature and stays.
   Dealer: 'dealers',
   Category: 'categories',
   CategoryAttribute: 'categories',

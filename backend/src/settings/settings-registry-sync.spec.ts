@@ -11,8 +11,7 @@ import * as path from 'node:path';
 // They are not. A key registered ONLY in the runtime registry is invisible in
 // /admin/settings AND rejected by PATCH with "Unknown setting key" — so the
 // operator cannot change it at all, and the only way to move it is a SQL
-// UPDATE against the Setting table. Twelve keys are in that state today,
-// including pro_draw_enabled and subscription_pro_price_cents.
+// UPDATE against the Setting table. Two keys are in that state today.
 //
 // This spec does two things:
 //   1. Fails if a NEW key drifts. That is the regression guard.
@@ -40,17 +39,8 @@ function keysIn(relPath: string): Set<string> {
  * stays untouched.
  */
 const KNOWN_ADMIN_INVISIBLE = [
-  'ask_gg_free_msg_cap_per_30d',
   'ask_gg_free_photo_cap_per_30d',
-  'ask_gg_member_msg_cap_per_hour',
-  'ask_gg_pro_msg_cap_per_hour',
-  'ask_gg_support_msg_cap_per_day',
   'dealer_auto_register_enabled',
-  'pro_draw_enabled',
-  'raffle_floor_cents',
-  'raffle_frequency',
-  'raffle_pool_percent',
-  'subscription_pro_price_cents',
 ].sort();
 
 describe('settings flag registries', () => {

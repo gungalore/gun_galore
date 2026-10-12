@@ -83,9 +83,8 @@ export default function CartPage() {
   const wishlist = useWishlist();
 
   // What the buyer chose, per parcel the cart will ship as. The groups are
-  // the server's — a cart consolidates, and every Daily Deal shares the house
-  // seller id, so a client-side grouping would show one parcel where two
-  // suppliers each ship one.
+  // the server's — a cart consolidates per seller, so a client-side grouping
+  // would misgroup a parcel.
   const [chosenDelivery, setChosenDelivery] = useState<Record<string, CartDeliveryOption>>({});
   const [deliveryGroups, setDeliveryGroups] = useState<CartDeliveryGroupView[]>([]);
   const [addr, setAddr] = useState<ManualAddressValue>(emptyManualAddress);

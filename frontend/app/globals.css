@@ -776,9 +776,8 @@ footer li > a {
      asked for reduced motion.
 
      Tag any future scroll-driven chrome with data-chrome-slide and it is
-     covered automatically. (It deliberately skipped the Ask Boet launcher,
-     an opacity cross-fade rather than vestibular motion; the launcher was
-     removed 2026-08-26 and the carve-out went with it.) */
+     covered automatically. (A now-removed floating launcher used an opacity
+     cross-fade rather than vestibular motion; the carve-out went with it.) */
   [data-chrome-slide] {
     transition: none !important;
   }

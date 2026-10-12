@@ -8,22 +8,15 @@
 > that need them. Throughout this document, `<NEW_ORIGIN_IP>` and `<OLD_ORIGIN_IP>` are
 > placeholders you substitute as you go.
 
-> **This document replaces the migration runbook that used to live at this path.** That
-> one was written for a rebrand of the *same* legal entity — it preserved users,
-> transferred the Clerk application, kept the Zoho ledger, protected Cloudinary URLs, and
-> told you to open rename tickets with Pudo and The Courier Guy. Every one of those
-> instructions is now wrong. If you have a copy or a memory of it, discard it.
+> **This document replaces an earlier migration runbook that used to live at this path.**
+> That one was written for a rebrand of the *same* legal entity and preserved users and the
+> ledger across the move. Some of its instructions no longer apply. If you have a copy or a
+> memory of it, treat this document as authoritative.
 
-> **Status — the Bob Go shipping migration is DONE (2026-09-24).** The legacy Pudo
-> (lockers) and The Courier Guy (TCG) rails were deleted from the code. Bob Go is now
-> the **only** courier rail, and it is **door-to-door only**: the platform always books
-> the **cheapest Bob Go door rate**. Lockers/pickup points no longer exist anywhere, and
-> the `bobgo_enabled` runtime flag was removed — Bob Go is unconditional. The
-> `ShippingMethod` enum uses a single **`COURIER`** value; `PUDO` and `TCG` survive only
-> as deprecated, never-written placeholders, and the `Listing`/`Transaction` Pudo/TCG
-> columns were dropped. Section 4 and Phase 9 below are retained as the **record of the
-> build** — their "recommendation", "unknown", effort and open-question framing is
-> historical, not pending work.
+> **Status — Bob Go is the courier rail.** It is **door-to-door only** (plus a Pargo
+> store-pickup buyer option), and the platform always books the **cheapest Bob Go door
+> rate**. The `ShippingMethod` enum uses a single **`COURIER`** value. See section 4 and
+> `docs/ARCHITECTURE.md`.
 
 ---
 
@@ -52,7 +45,7 @@ What is genuinely hard is everything the clean slate does *not* help with:
 | The hard part | Why |
 |---|---|
 | Ozow + Nedbank TPPP | Restarts from zero under the new entity. Weeks to months. Gates trading entirely. |
-| Bob Go courier integration — **DONE 2026-09-24** | Pudo and The Courier Guy were dropped; Bob Go is the only courier rail, door-to-door at the cheapest rate. Lockers dropped, the `bobgo_enabled` flag removed, enum collapsed to `COURIER`. See section 4. |
+| Bob Go courier integration — **DONE 2026-09-24** | Bob Go is the only courier rail, door-to-door at the cheapest rate, with Pargo store pickup as an alternative buyer option. See section 4. |
 | Legal documents | New AML/RMCP policies, new TPPP application, new Information Officer. Human work, attorney turnaround. |
 | Email sending reputation | A zero-history domain on a zero-history account. Multi-day warm-up floor, cannot be compressed. |
 
@@ -377,494 +370,33 @@ domain, billing cap set.
 
 ---
 
-## 4. The Bob Go work
-
-> **DONE — 2026-09-24.** This section is the record of the build. Bob Go is now the only
-> courier rail and it is **door-to-door only**: the platform always books the **cheapest
-> Bob Go door rate**. The locker/pickup-point half of the aggregator was **dropped, not
-> migrated** — there is no pickup-point picker. The `bobgo_enabled` flag was removed, and
-> the enum landed as a single **`COURIER`** value rather than the two recommended in 4.3.
-> The "what is not verified", effort and recommendation framing below is historical.
-
-**Pudo and The Courier Guy are both dropped. Bob Go replaces both.** Bob Go is an
-aggregator, but only its **door-to-door** rail is used: the platform books the cheapest
-Bob Go door rate for the parcel and route. Its locker/pickup-point rates are ignored
-entirely, and there is no locker or pickup-point delivery anywhere in the product.
-
-This was the single largest piece of engineering in the whole programme — bigger than the
-box, the database, the DNS and the legal work combined. It is now **done**.
-
-### 4.1 What is verified, and what is not
-
-Verified live against the sandbox — observed facts, not documentation:
-
-```
-Base URL   https://api.sandbox.bobgo.co.za/v2      Bearer token auth
-Endpoints  POST /rates-at-checkout · POST/GET /rates · POST/GET/PATCH /orders
-           GET /order-fulfillments · POST/GET/DELETE /packages
-           POST/GET /shipments · GET /shipments/waybill · GET /shipments/sticker-waybill
-           POST /shipments/cancel · GET /shipments/pod
-           GET /tracking?tracking_reference= · POST/GET/DELETE /webhooks
-           GET /locations?lat=&lng=&stacked_height=&stacked_width=&stacked_length=&total_weight=
-```
-
-A real `POST /rates-at-checkout` response:
-
-```json
-{ "rates": [{ "id": 334, "service_name": "Standard shipping",
-              "service_code": "bobgo_334_34_0", "total_price": 263, "currency": "ZAR",
-              "min_delivery_date": "2026-08-18", "max_delivery_date": "2026-08-19",
-              "base_rate": 262.5,
-              "liability_cover": { "declared_value": 5400, "price": 0,
-                                   "provider_liability_cover": false },
-              "surcharges": [], "type": "door", "service_level_priority": 2,
-              "provider_slug": "sandbox", "service_level_code": "ECO" }],
-  "count": 1 }
-```
-
-Six webhook event types exist: tracking updated · fulfillment created · shipment submission
-status updated · shipment charged amount changed · shipment charged weight changed ·
-shipment health status updated.
-
-**Seven things are NOT verified, and they swing the estimate by more than a week.** Answer
-all of them from the sandbox before anyone writes a line of integration code:
-
-1. **Can a shipment be booked in one call, or is it `POST /orders` then `POST /shipments`?**
-   And if two calls: what happens if the first succeeds and the second fails? This is the
-   most expensive unknown in the port — see 4.4.
-2. **Is `service_code` (`bobgo_334_34_0`, next to `id: 334`) a stable service tier, or a
-   per-quote rate id that expires?** The whole book-at-seller-accept design assumes it can
-   be echoed back days later without re-quoting
-   (`backend/src/shipping/shipping.service.ts:572-576`). If it expires, every order falls
-   into the fail-safe manual-dispatch branch. Test by quoting, waiting a day, then booking.
-3. **How is a pickup-point rate distinguished from `type: "door"`, and what extra fields
-   does a pickup-point shipment need?**
-4. **Does `total_price` include `surcharges[]` and `liability_cover.price`?** If not, every
-   quote under-collects.
-5. **What is the complete tracking-status vocabulary?** The six webhook types are topics,
-   not statuses, and are not a substitute. This one is money — see the risk at 4.7.
-6. **Does a pickup-point drop-off issue a PIN (or a QR, or a reference)?** The seller
-   hand-off flow, one database column and three notification channels depend on the answer.
-7. **Is there a balance/wallet endpoint, and is billing prepaid or invoiced monthly?**
-
-Also: **does Bob Go publish a public consumer tracking page?** Two hard-coded links to
-`pudo.co.za` and `thecourierguy.co.za` (`frontend/app/transactions/[id]/page.tsx:49-50`,
-`frontend/app/admin/(protected)/transactions/[id]/page.tsx:856-857`) either get a
-replacement or get deleted. If deleted, our own timeline becomes the buyer's only tracking
-surface, which raises the stakes on question 5.
-
-### 4.2 The headline architectural finding
-
-**There is no carrier abstraction to plug into.** `backend/src/shipping/carrier.types.ts`
-defines two shared DTOs and nothing else — no interface, no adapter, no `implements`
-anywhere in the repo. Its own header claims it is "kept carrier-neutral", and line 18
-hard-codes `carrier: 'PUDO' | 'TCG'`.
-
-**But the blast radius is smaller than that implies.** Every courier HTTP call lives in
-exactly two files (`pudo.service.ts`, `tcg.service.ts`) and `ShippingService` is their only
-consumer. The rest of the application talks to six carrier-neutral methods on
-`ShippingService` (`shipping.service.ts:178, 323, 454, 831, 918, 992`).
-
-So the shape of the work is: **one new service, one de-branched orchestrator, and an enum
-rename that ripples widely** — not a rewrite of the call sites' logic.
-
-Write a real `CarrierAdapter` interface (quote / book / waybill / track / cancel / pod /
-points) that `BobGoService` implements, so the next carrier swap is a provider registration
-rather than this exercise again.
-
-### 4.3 The real coupling is the enum, and the compiler will not catch it
-
-The `ShippingMethod` enum values `PUDO` and `TCG` (`backend/prisma/schema.prisma:102-109`)
-appear in roughly 20 non-test backend files and 10 frontend files as branch conditions,
-Prisma `where` filters, DTO validators, raw SQL and customer-facing copy.
-
-**Rename them to carrier-neutral values.** Recommendation: **`COURIER_DOOR`** and
-**`COURIER_PICKUP_POINT`**, leaving `DEALER_TRANSFER`, `PRIVATE_ARRANGE`, `COLLECTION` and
-`ON_SITE_SERVICE` untouched. Keep **two** members rather than collapsing to one: the
-seller's "I will drop at a pickup point" versus "collect from my address" choice is a real
-distinction that `Listing.shippingMethods` exists to record, and pickup points have parcel
-size limits that door delivery does not.
-
-Add one exported helper, `isCourierBacked(method)`, so the next change is a one-line edit.
-
-> **Decide this before any code is written.** Changing your mind halfway means touching
-> every call site twice.
-
-> **Outcome (2026-09-24).** The enum landed as a **single `COURIER` value**, not the two
-> recommended above — pickup points were dropped entirely, so there was no second member to
-> keep. `PUDO` and `TCG` remain in the enum as **deprecated, never-written** placeholders so
-> historical `TrackingEvent`/`carrierProvider` rows still resolve.
-
-The tempting shortcut — keep the names `PUDO`/`TCG` and point them at Bob Go — saves about
-two days and bakes a dead carrier's name into the schema, the admin UI and the analytics
-SQL forever. On a database with zero rows the rename is free. It will never be this cheap
-again.
-
-**Four call sites `tsc` will not catch:**
-
-| Where | What |
-|---|---|
-| `backend/src/admin/admin-analytics.service.ts:405` | Raw SQL string: `AND "shippingMethod" IN ('PUDO', 'TCG', 'DEALER_TRANSFER')`. Compiles fine, returns zero rows forever. |
-| `create-transaction.dto.ts:79,85` and `create-order.dto.ts:36,41` | `@ValidateIf((o) => o.shippingMethod === 'PUDO')` — a string compared against an untyped DTO field. |
-| `backend/src/payments/dispatch-sla.service.ts:62,132,333,410,469` | Five `shippingMethod: { in: ['PUDO','TCG'] }` filters driving the dispatch nudge, the 5-day auto-refund, the 72h stuck-funds alert, the 48h confirm nudge and the 7-day transit-stall alert. Every one is money-critical. Miss these and the sweeps match nothing, forever, with no error. |
-| `backend/src/ai/ask-gg-claude.service.ts:551,722` | The Ask Boet system prompt tells buyers about "PUDO locker-to-locker and The Courier Guy door-to-door". Customer-facing and wrong. |
-
-Grep for the string literals, not just the enum. After cutover, create one test order per
-method and confirm each sweep sees it.
-
-### 4.4 What gets written
-
-| Component | Notes |
-|---|---|
-| `BobGoService` | 700–900 lines. Absorbs both existing clients (32 KB + 13 KB today). Rates, orders+shipments, waybill + sticker-waybill, tracking, cancel, POD, locations, webhook register/verify. |
-| `CarrierAdapter` interface | Replaces the fake neutrality in `carrier.types.ts`. |
-| `shipping/money.ts` | The single rand↔cents boundary. See 4.6. |
-| Webhook handler with a `switch` on event type | Today's handler assumes there is no event type at all — `shipping.service.ts:1191-1194` says so in a comment. Six typed events need routing. |
-| `BOBGO_STATUS_MAP` | Alongside the existing map. `COLLAPSED_TO_PRISMA` and the 7-value `PrismaShippingStatus` stay untouched. |
-| Carrier price-change reconciliation | New capability. See 4.7. |
-| POD fetch | New capability. `Transaction.podProofUrl` (`schema.prisma:1409`) exists and has never been written by anything. |
-
-**The booking two-step is the single most expensive item.** `bookForTransaction`
-(`shipping.service.ts:454-825`) is 370 lines of money-critical code. It contains an atomic
-claim on `shipmentBookingStartedAt` set *before* the wallet-billed call (`:472-485`), a
-`paymentStatus !== 'HELD'` backstop (`:511`), never-throws-into-caller semantics
-(`:811-824`), and a consolidated-sibling parcel roll-up (`:700-717`). **All of it must
-survive verbatim.**
-
-Its idempotency is one atomic claim around one billed call. If Bob Go needs `POST /orders`
-then `POST /shipments`, a failure between them releases the claim and a retry creates a
-*second* order — real money, silently. Either confirm a single-call path exists, or persist
-the Bob Go order id in its own column immediately after step one and make step two
-resumable.
-
-### 4.5 What gets deleted
-
-The largest single subtraction, and it is satisfying:
-
-> **All of this landed (2026-09-24).** The locker cache/normaliser, the ranking, the
-> `pudo_lockers` Meilisearch index, `PostalCodesService`, the box-fit apparatus, the
-> unauthenticated `/shipping/webhook/pudo` route and the legacy Pudo/TCG columns are all
-> deleted. Tracking is webhook-only; the 10-minute poll was removed rather than kept.
-
-| Deleted | Where | Size |
-|---|---|---|
-| The 24h in-memory locker cache and feed normaliser | `pudo.service.ts:572-721` | ~150 lines of defensive field-mapping over ~2,700 rows filtered to ~1,800 |
-| The hand-curated `PHANTOM_LOCKER_CODES` blocklist | `pudo.service.ts:24-32` | — |
-| Three-tier exact-postal / Delaunay-neighbour / haversine ranking | `pudo.service.ts:77-179`, `:723-733` | — |
-| The `pudo_lockers` Meilisearch index and its reindex cycle | `search/search.service.ts:8,104-106`, `pudo.service.ts:699-711` | one index; README's "three indexes" becomes two |
-| `PostalCodesService` + `scripts/build-postal-neighbours.mjs` + `backend/data/postal-neighbours.json` | `postal-codes.service.ts` | Its only consumer is the Pudo picker. Confirmed by grep. |
-| `waybillUrl()` — interpolates `PUDO_API_KEY` into a URL | `pudo.service.ts:394` | The only thing stopping that leaking is a comment. |
-| The box-fit apparatus (`fitsBox`, the five-size sort, `boxName`) | `pudo.service.ts:780`, `:466-481`, `:62` | Bob Go's `GET /locations` filters by parcel dimensions server-side |
-| The unauthenticated `/shipping/webhook/pudo` route | `shipping.controller.ts:135` | Has no authentication of any kind. Delete rather than port. |
-| `TRANSIT_BUSINESS_DAYS = { PUDO: 5, TCG: 4 }` and `methodHasEstimate` | `backend/src/shipping/delivery-estimate.ts:14-17` | Bob Go returns real min/max dates. Keep `addBusinessDays`. |
-| Legacy collapsed statuses `AWAITING_TCG_COLLECTION`, `TCG_IN_TRANSIT` | `status-map.ts:127-131` | Kept only for old `TrackingEvent` rows. There are none. |
-| Legacy columns `pudoTrackingCode`, `tcgWaybill` | `schema.prisma:1414,1418` | Superseded by `trackingReference` and never removed. |
-| `HuntPdf`, `HuntPdfPage`, `RangeEstimate` models + two enums | `schema.prisma:3229-3322` | ~95 lines, zero relations into the rest of the graph. See section 7 — this is a decision, not automatic. |
-| `Swap.cashDetectedAt` / `cashVerifiedAt`, `Listing.passFeeToBuyer` | `schema.prisma:3663-3670`, `:911-914` | Documented as "kept to avoid a destructive migration". On an empty database that category does not exist. |
-
-> **Verify before deleting the locker stack.** If `GET /locations` returns thinner data
-> than Pudo's feed — no opening hours, no postal code, straight-line ranking only — the
-> buyer's picker regresses and part of the deletion has to be undone. Check the response
-> shape first.
-
-### 4.6 The rand/cents boundary — where the 100× bug will be
-
-**Bob Go returns rand with decimals (`263`, `262.5`). This codebase is integer cents from
-the quote boundary onward.** Both sides are TypeScript `number`, so nothing will catch a
-mistake. Get it wrong and every shipping charge is out by two orders of magnitude.
-
-The conversion already exists and works — twice, once per carrier, which is exactly how two
-copies drift:
-- `backend/src/shipping/pudo.service.ts:791` — `Math.round(Number(raw) * 100)` on a string
-- `backend/src/shipping/tcg.service.ts:186` — `Math.round(rate * 100)` on a number
-
-And it runs in **both directions**: `tcg.service.ts:135,236` send
-`declared_value: Math.round(declaredValueCents / 100)` because the carrier wants rand. Bob
-Go's observed `declared_value: 5400` confirms the same convention.
-
-**The rules, decided once, in `backend/src/shipping/money.ts`:**
-
-1. **One module.** `randToCents()` and `centsToRand()`, exported, used at every boundary. A
-   bare `* 100` anywhere in the carrier client is a review failure.
-2. **`Math.ceil` on the carrier cost we must recover.** The brief's two rules — "in the
-   platform's favour" and "never against the buyer" — collide at the half-cent. Ceiling the
-   carrier cost means we never under-recover; the flat R15 handling margin
-   (`fee.calculator.ts:45`) absorbs the ≤1c difference, so the buyer is never charged more
-   than the true cost either. Both rules satisfied. **Write that reasoning in a comment**
-   or someone will "fix" it later.
-3. **Round the quoted rand UP to a whole rand before converting.** `formatPrice`
-   (`frontend/lib/utils.ts:1-6`) renders with zero decimals, so an un-rounded 262.5
-   displays as "R263" while the buyer is charged R262.50. `Math.ceil(rand) * 100` makes
-   displayed price equal charged price. Do **not** fix this by giving `formatPrice`
-   decimals — it renders every price on the site.
-4. **Round declared value UP.** Integer-rand rounding understates liability cover on odd
-   amounts. Over-insure by less than R1 so a claim is never short.
-5. **Never sum `base_rate + surcharges[]` in rand and then convert.** Use `total_price`, or
-   convert each component to cents and sum in cents.
-6. **Throw above R100,000.** A shipping charge that high is impossible and means someone
-   passed cents where rand was expected. A loud 500 at checkout beats a R2.63 charge nobody
-   notices for a month.
-7. **Guard non-finite values,** and note that `105.7 * 100` is `10569.999…` in IEEE 754 —
-   `Math.round(Number(x.toFixed(2)) * 100)`.
-8. **Store the raw decimal alongside** for reconciliation against the invoice.
-
-Unit-test with `262.5`, `263`, `0`, `1234.56`, a string input, and a property test.
-
-**Good news for the frontend:** no frontend file performs a `/100` or `* 100` on a shipping
-rate. The only contract is `ShippingQuote.priceCents` (`frontend/lib/types.ts:610-618`).
-Keep it that way and the 100× bug cannot reach the UI.
-
-### 4.7 The two webhooks that have no home — and the payout gate
-
-**These are the two most consequential findings in the whole courier scope.**
-
-> **Update (2026-09-24).** The "delivered to pickup point / locker" scenario below no longer
-> exists — there are no lockers. The payout-gate rule it illustrates still holds: map only
-> a genuine delivered-to-buyer event to `DELIVERED`. Unknown statuses stay default-deny.
-
-**Silent margin leak.** Two of Bob Go's six webhooks — *shipment charged amount changed* and
-*shipment charged weight changed* — exist specifically to tell you the carrier is billing
-something other than what it quoted. Re-weighing at the hub is routine in South African
-courier. Today `Transaction.shippingCost` (`schema.prisma:1306`) is what the *buyer* paid
-and must never be mutated after payment, and there is **nowhere to record what the carrier
-actually charged.** Grep for `reconcil`, `actualCost`, `carrierCost`, `chargedAmount` across
-`backend/src` and you get zero courier hits.
-
-The seller is insulated (`sellerPayout = listingPrice − commission`), so 100% of any
-overrun lands on the platform's R15-per-waybill margin, invisibly. The old carriers did this
-too; the difference is that Bob Go *tells you*. Leaving the webhook unhandled is a decision
-to keep bleeding, not a neutral omission.
-
-Add `carrierChargedCents`, `carrierChargedWeightGrams`, `carrierChargeChangedAt`; raise an
-`AdminAlert` above a rand threshold into the existing `/admin/alerts` inbox; add a line to
-the admin transaction detail; produce a weekly variance report. Do **not** try to re-charge
-the buyer after capture.
-
-**The payout gate.** `backend/src/shipping/status-map.ts:92-93` is the only thing standing
-between a tracking event and releasing the seller's money. Exactly **two** slugs reach
-Prisma `DELIVERED`, and `DELIVERED` sets `deliveredAt`, which starts the buyer-confirm /
-auto-release clock.
-
-If Bob Go emits something like *"delivered to pickup point"* for a parcel sitting in a
-locker the buyer has not opened, and that maps to `DELIVERED`, **the platform pays sellers
-for goods the buyer never received** and finds out via chargebacks. It must map to
-`AT_LOCKER` → `OUT_FOR_DELIVERY` (`status-map.ts:86-89`).
-
-Mitigation: enumerate the full vocabulary from the sandbox before writing a single map row;
-keep the existing default-deny behaviour (unmapped → null, `status-map.ts:151`); write an
-explicit regression test named for this exact failure.
-
-Also rename the Pudo-branded collapsed keys and buyer-facing labels while the
-`TrackingEvent` table is empty: `PUDO_PIN_ISSUED` → `PICKUP_PIN_ISSUED`, "Dropped off at a
-Pudo locker" → point-neutral wording (`status-map.ts:54,166-204`). These strings are stored
-verbatim in the database (`schema.prisma:1769`). Free now, expensive in six months.
-
-### 4.8 The schema, after
-
-**Renamed:** `ShippingMethod.PUDO` → `COURIER_PICKUP_POINT`, `TCG` → `COURIER_DOOR` ·
-`Listing.pickupPudoLockerId` → `defaultDropoffPointCode` · `Transaction.pudoPickupLockerId`
-→ `pickupPointCode` · `pudoDropoffLockerId` → `dropoffPointCode`
-
-**Deleted:** `Transaction.pudoTrackingCode` · `Transaction.tcgWaybill` ·
-`Transaction.estimatedDeliveryAt` (replaced by a min/max pair)
-
-**Added:**
-
-| Column | Why |
-|---|---|
-| `carrierOrderId String?` | Bob Go's order and shipment are different objects with different ids. `carrierShipmentId` can only hold one. |
-| `carrierRateId Int?` | The numeric rate id (`334`), distinct from `service_code`. |
-| `pickupPointSnapshot Json?` | `GET /locations` is a live directory; a point can close between checkout and booking. |
-| `estimatedDeliveryMinAt` / `MaxAt DateTime?` | Bob Go returns a window, not a date. |
-| `rateSnapshot Json?` | The raw rate object. The only way to explain an invoice variance. Json, not columns, so a new surcharge type never needs a migration. |
-| `carrierChargedCents` / `carrierChargedWeightGrams` / `carrierChargeChangedAt` | See 4.7. |
-| `carrierPodUrl String?` | Separate from `podProofUrl`, which is user-uploaded. Conflating operator-fetched carrier evidence with user-supplied evidence weakens both in a dispute. |
-| `collectionAddress Json?` | The delivery side is snapshotted; the collection side is read live off `Listing.pickup*` at booking time. A seller who edits their pickup address between sale and dispatch silently redirects the courier, with no record. Pre-existing defect; free to fix now. |
-| `@@index([trackingReference])` | The tracking poll and the webhook handler both look up by it and there is no index today. |
-| `pickupProvince` on `Listing` (consider) | There is no pickup province; the collection province is taken from `Listing.province`, which assumes the pickup address is in the same province as the listing. |
-
-`Transaction.trackingReference` (`schema.prisma:1393`) is kept and is, conveniently,
-exactly Bob Go's identifier name — `GET /tracking?tracking_reference=` takes it verbatim.
-
-`TrackingEvent.source` is a free String precisely so a new carrier needs no migration; the
-values become `'INTERNAL' | 'BOBGO'`. Keep the `@@unique([transactionId, status,
-occurredAt])` at `:1795` — with a tracking webhook running alongside the poll, that guard
-matters more, not less.
-
-### 4.9 The pickup-point picker — most of the frontend effort
-
-> **Dropped (2026-09-24).** Lockers/pickup points were not migrated at all. There is no
-> picker, no `GET /locations` plumbing and no geocode search. Door delivery needs only a
-> street address, so this entire frontend workstream was removed rather than ported. The
-> analysis below is kept only as a record of what was scoped.
-
-Three compounding problems, and they are why the frontend number is what it is.
-
-**(a) The locker directory is not in Postgres.** There is no locker table, no foreign key —
-just three unconstrained string columns. The ~2,700 Pudo lockers live in a 24h in-memory
-cache plus a Meilisearch index. So there is nothing to migrate and nothing to export: the
-directory is simply gone, replaced by a server-side nearest-query.
-
-**(b) The picker's free-text search mode has no Bob Go equivalent.** Today a user types
-"Sandton City" or "8000" and gets typo-tolerant matches
-(`frontend/components/locker-picker.tsx:104-128`). `GET /locations` is lat/lng-only. The
-fix is geocode-then-locate: type an area → Google Geocoder → `/locations` with the parcel
-dimensions → render points. Google's Geocoder is already loaded client-side for the address
-field (`frontend/components/address-autocomplete.tsx:409`) and the Maps key is one of the
-two being carried over, so the mechanism exists. But **the UX genuinely changes** — you
-search an *area*, not a locker *name* — and the labels and placeholder copy change with it.
-Watch the geocode quota; this fires on keystroke-pause against a key shared with the
-address autocomplete.
-
-**(c) The cart's picker is called with no props at all.**
-`frontend/app/cart/page.tsx:600` is `<LockerPicker selectedId={...} onSelect={...} />` —
-no lat, no lng, no postal code. Under Bob Go, which needs coordinates *and* parcel
-dimensions, this call site cannot be ported. And the cart is multi-item: courier items ship
-as one combined parcel on one waybill, so something must compute stacked height/width/length
-and total weight across N listings before `/locations` can be called at all. That combining
-step does not exist in the frontend today.
-
-**Decide early whether the backend exposes a combined-parcel endpoint or the frontend does
-the arithmetic.** Do not discover this mid-build.
-
-One piece of good news: the backend already computes exactly the box Bob Go asks for.
-`quoteCombined` (`shipping.service.ts:337-366`) builds max(length), max(width), Σ(height ×
-qty), Σ(weight × qty) — "a conservative STACKED bounding box so we never UNDER-quote" — and
-`GET /locations` takes precisely those four values. The shapes line up with no adaptation.
-
-Related: the sell form's oversize guard hard-codes Pudo's largest box, `PUDO_MAX_BOX_CM =
-[69,60,41]` / `PUDO_MAX_WEIGHT_KG = 20` (`frontend/app/listings/new/page.tsx:1308-1342`),
-and silently strips the locker option from the seller's selection inside a `useEffect`. The
-same "60 × 41 × 69 cm at 20 kg" appears in six more copy blocks in that file. Bob Go's
-`/locations` filters by parcel dimensions server-side, so the guard can probably be deleted
-— but that moves the seller's feedback from "greyed out as you type" to "no pickup points
-at checkout", which is worse for the seller. Confirm what `/locations` returns for an
-oversize parcel before choosing.
-
-### 4.10 Everything else that changes
-
-**Tests — rewrite, do not delete.** Six spec files, 897 lines:
-`book-deal-collection.spec.ts` (233), `tcg-webhook.spec.ts` (199),
-`book-for-transaction.spec.ts` (161), `carrier-shipment.spec.ts` (153),
-`status-map.spec.ts` (107), `delivery-estimate.spec.ts` (44). They encode the hard-won
-invariants — the idempotency claim, the HELD backstop, the deal-supplier collection origin,
-the webhook ref-matching fallbacks, the payout-gate mapping. **Port the assertions and swap
-the fixtures.** Add three new tests the suite lacks: rand→cents property tests, the
-order→shipment partial-failure path, and a "pickup point does not mean delivered"
-regression test.
-
-**Modules that break on the rename:** `dispatch-sla.service.ts` (five filters) ·
-`transactions.service.ts` (~12 sites) · `my-shipments.service.ts:63` ·
-`swap-funding.service.ts:118,319,329,378` (swap legs hard-coded to `ShippingMethod.TCG`) ·
-`deals.service.ts:120,186,321` (deals forced to `[TCG]`, and `transactions.service.ts:399`
-throws "Daily Deals ship by courier only" on anything but TCG) ·
-`notifications.service.ts:4974-4993` · `admin.service.ts:1050` · `main.ts:87-91` (the boot
-warning for `TCG_WEBHOOK_SECRET`).
-
-> Swap legs are already broken independently of the courier: `confirmSwapFunding` has had
-> **no caller** since manual EFT was stripped (`docs/ARCHITECTURE.md:483-485`). Scope Bob
-> Go work there as part of the swap-funding rewire, not as courier work.
-
-**Public copy naming the carriers** — nine surfaces, and two of them are statutory:
-`(legal)/terms/page.tsx:256-258,457-459` (delivery options *and* the POPIA third-party
-processor list) · `(legal)/privacy/page.tsx:226-229` (the cross-border operator table, one
-row per carrier) · `(legal)/fees/page.tsx:144-147` · `(legal)/refund-policy/page.tsx:127-129`
-· `(legal)/about/page.tsx:59-62` · `faq/page.tsx:63-64` ·
-`members/regulated-items/page.tsx:150,422,430-431` · `listings/[id]/page.tsx:844-846` ·
-`components/profile-completion-ring.tsx:41` · plus the seeded help-centre rows in the
-database (`prisma/seed-data/help-centre.ts:204,213,228,236`).
-
-Two of those need more than a find-and-replace:
-- **The privacy operator table.** Bob Go is an *aggregator* — buyer address and parcel data
-  flow onward to whichever provider fulfils the leg. A POPIA disclosure naming only Bob Go
-  is arguably incomplete. "Bob Go and its contracted delivery providers" is probably the
-  honest phrasing. Get it checked.
-- **`regulated-items/page.tsx:422`** — "may not be sent by locker-to-locker service" is a
-  compliance restriction derived from Pudo's prohibited-goods list. Bob Go aggregates
-  multiple providers with potentially different rules. **Do not copy it across on faith.**
-
-**The dispatch SMS has a cost trap.** `notifications.service.ts:1646` builds
-`All Outdoor: <title truncated to 26> sold! <handover> Waybill <ref>. Print label…<url>`
-and it is already close to the 160-character segment boundary. The handover string is
-currently `Drop at any Pudo locker, PIN 1234.` — longer wording pushes every dispatch SMS
-into a second segment, doubling the cost forever, and these are flagged delivery-essential
-so they cannot be suppressed. **Count characters against the worst case before choosing the
-wording.**
-
-**Environment variables:** six retired (`PUDO_API_KEY`, `PUDO_API_SECRET`, `PUDO_BASE_URL`,
-`TCG_API_KEY`, `TCG_BASE_URL`, `TCG_WEBHOOK_SECRET`) and were replaced by `BOBGO_API_KEY`,
-`BOBGO_BASE_URL` and `BOBGO_WEBHOOK_SECRET`. Documented in three places:
-`backend/.env.example` and `docs/ENVIRONMENT.md` (the shipping section plus the summary
-block).
-
-**Webhook registration is self-service, and the poll was dropped.** The old 10-minute
-tracking poll existed because, per the comment at `tasks.service.ts`, "Pudo webhooks need a
-support ticket". Bob Go has `POST/GET/DELETE /webhooks`, so registration is a scripted deploy
-step. The poll was **removed**, not kept as a backstop: tracking arrives by webhook, and the
-only recurring job left is a 5-minute sweep that resolves Bob Go bookings the courier has
-not yet accepted.
-
-**Two admin surfaces collapse to one each:** the credit-balance probes
-(`admin-credits.service.ts`, both of which already guess at field names and degrade to null
-— copy that defensiveness) and the health-check rows (`admin-health.service.ts:112-125`).
-`CreditSnapshot.service` is a free String, so no migration. **If Bob Go exposes no balance
-API, drop the probe rather than ship a permanently-erroring tile.**
-
-**Carry one warning across verbatim.** `docs/ARCHITECTURE.md:712` says "This is production
-mode — creating a shipment bills real credits." A sandbox-versus-production base-URL
-mistake spends real money. Keep that sentence, with Bob Go's name in it.
-
-### 4.11 Effort — honestly
-
-> **Spent — completed 2026-09-24.** The figures below are the scoping record, not remaining
-> work. The pickup-point workstream was dropped and the tracking poll was removed, so the
-> landed scope is the door-to-door subset.
-
-Four independent scoping passes produced 51–66 developer-days between them. They
-double-count: the enum rename appears in three, the test rewrite in three, the money module
-in two. **De-duplicated, the honest figure is 38–52 developer-days.**
-
-| Workstream | Days |
-|---|---|
-| Sandbox verification of the seven unknowns | 2–3 |
-| `BobGoService` client, all endpoints, real error handling | 4–5 |
-| De-branch `ShippingService`, preserving the CAS claim / HELD backstop / never-throw / consolidated roll-up | 2 |
-| `money.ts` + property tests + auditing every existing boundary | 1 |
-| `BOBGO_STATUS_MAP` + payout-gate preservation | 1.5 |
-| Pickup-point backend (delete ~350 lines, retune on `/locations`) | 2 |
-| Enum rename + ~30 call sites + DTOs + raw SQL + admin + copy + Ask Boet prompt | 3–5 |
-| Schema authoring (new columns, deletions) | 0.5–1 |
-| Carrier price/weight-change reconciliation — **new capability** | 3–4 |
-| Refund-before-cancel ordering + cancel confirmation | 1–2 |
-| Service-code expiry / re-quote-at-book — **depends entirely on question 2** | 1–2 |
-| POD fetch — **new capability** | 1 |
-| Credit/balance poller | 0.5 |
-| Frontend: picker rewrite + geocode search + parcel plumbing | 2.5–3 |
-| Frontend: cart integration (no coords, multi-item combine) | 1 |
-| Frontend: checkout form (2,466 lines, 68 carrier refs) + offer checkout | 2 |
-| Frontend: sell form (5,085 lines, 60 refs, oversize guard) | 1.5 |
-| Frontend: transaction page + dispatch button (449 lines, 35 refs) + timeline | 1.5 |
-| Frontend: `/shipping` module, admin, Daily Deals | 2 |
-| Legal + informational copy | 1 |
-| Notification templates + SMS character count | 0.5 |
-| Ops: env, webhook registration, Meilisearch index removal, docs | 1 |
-| Test rewrite (6 files, 897 lines) + new coverage | 2–3 |
-| Regression pass, desktop and mobile, no staging safety net | 1.5 |
-| **Total** | **38–52** |
-
-Optional, deferrable to a phase 2 at a known cost: the price-change reconciliation (3–4 d)
-and the Zoho handling-fee line (1 d). Deferring them ships a system that bleeds carrier
-overruns silently — which is exactly what it does today, so it is not a regression, but it
-is a knowingly accepted loss.
-
-**Calendar: 10–14 weeks** for one experienced backend developer, not 8. The gap between
-38–52 days and 10–14 weeks is real: several items are gated on Bob Go sandbox round-trips
-and on the account being provisioned under the new entity, and those answers arrive in the
-middle of the port rather than at the start.
-
-**If an AI agent does this rather than a developer, add roughly 50%.** The CAS guards, the
-claim/rollback ordering in `autoRefundStale`, and the deliberate exclusion of the handling
-margin from the processing-fee base all look like tidy-up targets and are not.
+## 4. Courier — Bob Go
+
+Bob Go is the **only** courier rail. It is **door-to-door**: every non-firearm parcel is
+booked at the **cheapest Bob Go door rate** for the parcel and route. A buyer may instead
+choose **store pickup** (a Pargo counter, returned as a pickup-point rate in the same Bob
+Go quote). Firearms and barrels never travel by courier — see section 9 of
+`docs/ARCHITECTURE.md` and the Regulated Goods rules.
+
+The integration lives in `backend/src/shipping/`:
+
+- `bobgo.service.ts` — the client (quote, book, cancel, tracking, `GET /locations`).
+- `bobgo-adapter.ts` — maps a Bob Go response onto the platform's carrier shape.
+- `bobgo-webhook.service.ts` — the inbound tracking webhook.
+- `shipping.service.ts` — the orchestration: quote → delivery option → book → track.
+
+Two warnings are still true and were expensive to learn:
+
+1. **The rand/cents boundary.** Bob Go rates come back as decimal rand; the database is
+   integer ZAR cents everywhere. Convert exactly once, at the adapter, and never let a
+   decimal leak inward.
+2. **Bob Go answers HTTP 201 before a courier has agreed.** A booking starts unconfirmed.
+   Branch on the `submission` field, never on "it did not throw".
+
+Configuration is `BOBGO_API_KEY`, `BOBGO_BASE_URL` (⚠️ defaults to the **sandbox** —
+production must set `https://api.bobgo.co.za/v2`) and `BOBGO_WEBHOOK_SECRET` (the webhook
+is fail-closed without it). With no key the service is inert: rates and bookings are
+skipped and logged. See `docs/ENVIRONMENT.md`.
 
 ---
 
@@ -872,7 +404,7 @@ margin from the processing-fee base all look like tidy-up targets and are not.
 
 Phases 1–7 are the box and can be done in about a week. Phase 8 (self-hosted KYC storage)
 is a day and must land before the first real seller verifies. Phase 9 (Bob Go) is **done**
-(2026-09-24) — door-to-door only, lockers dropped, flag removed. Phases 10–12 are the launch.
+(2026-09-24) — door-to-door only. Phases 10–12 are the launch.
 
 ---
 
@@ -1093,7 +625,7 @@ npx prisma migrate status
 
 **Verify.** All migrations applied, no drift.
 
-> **Never run `npx prisma db push`.** Three services — the Ask Boet knowledge base,
+> **Never run `npx prisma db push`.** Three services — the Ask GG knowledge base,
 > reloading-manual full-text search, and listings full-text search — create `tsvector
 > GENERATED` columns and GIN indexes at boot with raw DDL. Those columns are not in
 > `schema.prisma`, so `db push --accept-data-loss` drops them and the next boot does not
@@ -1157,7 +689,7 @@ Order matters: categories first (other seeds reference them), then everything el
 > state: 46 of its 54 rows are `cron:lastrun:*` timestamps, and importing stale ones either
 > suppresses a cron's first run or trips the watchdog. Of the eight that are real, seven are
 > feature flags to be set deliberately on the new box — and one is `house_seller_user_id`,
-> which points at a User row that will not exist. Carrying it breaks Daily Deals in a way
+> which points at a User row that will not exist. Carrying it produces confusing behaviour
 > that looks like a code bug. Set the flags by hand, and set the house-seller id after the
 > house-seller account is created.
 >
@@ -1230,7 +762,8 @@ build output and ~80 MB of PDFs: `ssh alloutdoor "df -h /"`.
 
 **Settings.** Do not bulk-import `settings.csv`. Open it, read all 54 rows, and apply them
 deliberately through the admin UI or one SQL statement at a time. These are the feature
-flags: Daily Deals, the prize draw, the Claude KYC flow, moderation thresholds. Several
+flags — the Claude KYC flow, the motivation writer, the licence centre, moderation
+thresholds, and so on. Several
 should stay OFF on a site that is not trading. Code defaults exist for every one of them
 (`backend/src/settings/settings.service.ts`), so an unset row is safe.
 
@@ -1289,9 +822,8 @@ npx web-push generate-vapid-keys   # VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY, as a 
 > `NEXT_PUBLIC_*` values are inlined into the JavaScript bundle at **build** time. Editing
 > `.env.production` and restarting pm2 does nothing. You must rebuild.
 
-**Delete rather than carry:** `STITCH_CLIENT_ID`, `STITCH_CLIENT_SECRET`, `IMAP_*`,
-`GOOGLE_MAPS_API_KEY` (the non-public one) — nothing reads any of them. And after the Bob
-Go work lands, `PUDO_*` and `TCG_*` go too.
+**Delete rather than carry:** `IMAP_*` and `GOOGLE_MAPS_API_KEY` (the non-public one) —
+nothing reads either.
 
 **Verify.** Boot the backend once in the foreground and read the log:
 
@@ -1299,8 +831,8 @@ Go work lands, `PUDO_*` and `TCG_*` go too.
 cd ~/app/backend && node dist/src/main
 ```
 
-Four lines must appear: `Meilisearch connected`, and the FTS column + GIN index lines for
-`ReloadingManualPage`, `AskGgKbEntry` and (if the models are kept) `HuntPdf`. Any FTS
+Lines must appear: `Meilisearch connected`, and the FTS column + GIN index lines for
+`ReloadingManualPage` and `AskGgKbEntry`. Any FTS
 failure means the database role cannot `ALTER TABLE` — go back to Phase 1 Step 4.
 
 Confirm the warnings you expect are **absent**: no `DIDIT_WEBHOOK_SECRET is not set`, no
@@ -1334,12 +866,10 @@ things that *would* have been warnings — a weak `JWT_MEMBER_SECRET` and a sand
 **nginx.** `infra/nginx/alloutdoor.conf` has literal `gungalore.co.za` server names (its own
 header at line 23-27 explains why and gives the fix):
 
-> ✅ **That header is now out of date in our favour, and this is the one piece of good
-> news in the whole auth rewrite.** It says to do the rename "only together with the DNS
-> move and the Clerk FAPI domain — the frontend's Clerk keys are issued against
-> `clerk.gungalore.co.za`". Those keys no longer exist. **Nothing outside DNS is pinned to
-> the old hostname any more**, so the `gungalore.co.za` → `alloutdoor.co.za` rename is
-> unblocked and goes with the DNS move alone.
+> ✅ **That header is now out of date in our favour.** It says to do the rename "only
+> together with the DNS move and the identity provider's FAPI domain". Nothing outside DNS
+> is pinned to the old hostname any more, so the `gungalore.co.za` → `alloutdoor.co.za`
+> rename is unblocked and goes with the DNS move alone.
 
 ```bash
 sudo cp ~/app/infra/nginx/alloutdoor.conf /etc/nginx/sites-available/alloutdoor
@@ -1423,8 +953,7 @@ one-off script calling `ListingsService.reindexAllActiveListings()`
 to index yet, so the real test comes after the first listings are created — but write and
 test the script now, not on launch day.
 
-The `cartridges` index rebuilds itself on the first Load Lab burn-chart request. Hit the
-powder chart once to warm it. The `pudo_lockers` index is being deleted (section 4.5).
+The `cartridges` index rebuilds itself on first use. Warm it once after launch.
 
 ---
 
@@ -1555,27 +1084,12 @@ document to prove the base64 path works. Do not mark this done on unit tests alo
 
 ### Phase 9 — Bob Go (DONE 2026-09-24)
 
-Section 4 is the scope. Runs in parallel with everything above. The sequencing that mattered:
+Bob Go is the only courier rail, door-to-door at the cheapest rate, with Pargo store pickup
+as an alternative buyer option. `BOBGO_API_KEY` and `BOBGO_BASE_URL` (production:
+`https://api.bobgo.co.za/v2`) must be set, and the webhook registered.
 
-1. **Sandbox token on day one.** Answer the seven questions in 4.1 before estimating or
-   building. Two of them (the booking two-step, and whether `service_code` expires) swing
-   the estimate by several days each.
-2. **Decide the enum names before any code.** `COURIER_DOOR` / `COURIER_PICKUP_POINT`.
-   Changing your mind halfway means touching every call site twice.
-3. **Write `money.ts` first**, with its tests, before any endpoint work. Everything else
-   consumes it.
-4. **Enumerate the tracking vocabulary before writing the status map.** This is the payout
-   gate.
-5. **Register the production webhook via `POST /webhooks` as a scripted deploy step**, not a
-   support ticket.
-
-Do not go live on the production Bob Go base URL until a full quote → book → waybill →
-track → cancel cycle has passed in sandbox. **Creating a shipment on production bills real
-money.**
-
-**Landed 2026-09-24:** door-to-door only at the cheapest Bob Go rate; the enum is a single
-`COURIER`; `bobgo_enabled` was removed; the Pudo/TCG columns were dropped; lockers, the
-pickup-point picker and the tracking poll were all removed.
+Do not book on the production Bob Go base URL until a full quote → book → waybill → track →
+cancel cycle has passed in sandbox. **Creating a shipment on production bills real money.**
 
 ---
 
@@ -1627,8 +1141,7 @@ you are not testing what visitors see.
 - [ ] `/admin/login` works (create the admin with `backend/scripts/create-admin.mjs`)
 - [ ] `/admin/credits` — every tile returns a number, not "not configured"
 - [ ] Open a reloading manual in `/admin/reloading` and download it
-- [ ] Ask Boet a question requiring a manual citation — it answers rather than erroring
-- [ ] The Load Lab powder chart renders (warms the `cartridges` index)
+- [ ] A reloading reference lookup renders (warms the `cartridges` index)
 - [ ] Cartridge spec panel shows correct chamber/pressure for `.308 Win`, `8×57 IS` and
       `.45-70 Govt.` — the three that were wrong before the OVERRIDES fix
 - [ ] `/checkout` is inert — payments must not be live
@@ -1762,18 +1275,16 @@ decision needs to be written down rather than implied by switching off a server.
 
 **5. Two statutory pages need more than a name change.**
 `terms/page.tsx:457-459` and `privacy/page.tsx:226-229` list third-party processors and what
-personal data each receives. Both currently name Pudo and The Courier Guy. Under Bob Go the
-two rows become one — but Bob Go is an *aggregator*, so buyer address and parcel data pass
-onward to whichever provider fulfils the leg. Naming only Bob Go is arguably an incomplete
-operator disclosure. The two pages must also match each other exactly. See section 4.10.
+personal data each receives. The courier rows must name the live delivery aggregator, and
+because it is an *aggregator*, buyer address and parcel data pass onward to whichever
+provider fulfils the leg. Naming only the aggregator is arguably an incomplete operator
+disclosure. The two pages must also match each other exactly.
 
 **6. The published fee schedule.**
-`fees/page.tsx:144-147` states the R15 handling fee and names both carriers. Under a new
+`fees/page.tsx:144-147` states the R15 handling fee. Under a new
 legal entity that copy is a fresh supplier disclosure under ECT Act s43 and must be correct
 on day one, not patched after launch. Also re-check that R15 still makes commercial sense
-against Bob Go's actual rates before republishing it — the old architecture existed partly
-to arbitrage Pudo wholesale (~R200) against TCG retail (R123) for the same parcel
-(`tcg.service.ts:5-10`), and an aggregator gives one price. **Quote a representative basket
+against the courier's actual rates before republishing it. **Quote a representative basket
 in the sandbox and re-check the margin before go-live.**
 
 ---
@@ -1795,27 +1306,8 @@ redirect rule and the eventual lapse both kill it. Before either happens, the ba
 needs its own domain, or a subdomain of `alloutdoor.co.za` pointed at the old box. Decide
 this early — it is cheap now and an outage later.
 
-**(b) The hunt-ballistics code is compiled into the marketplace backend.**
-`HuntBallisticsModule` is imported and registered in `backend/src/app.module.ts:48,108`, and
-`HuntPdf`, `HuntPdfPage` and `RangeEstimate` are models in the marketplace
-`schema.prisma:3229-3322`. "Ballistics stays behind" is not automatic.
-
-The clean slate makes it nearly automatic: those three tables simply never get imported, so
-they exist but stay empty. But the module still boots, `migrate deploy` still creates the
-tables, and the FTS boot DDL still runs against `HuntPdf`.
-
-**A decision, and it should be made deliberately:**
-
-- **Delete them** — remove the two lines from `app.module.ts`, delete
-  `backend/src/hunt-ballistics/`, delete the five declarations from `schema.prisma`
-  (~95 lines), drop `HUNT_BALLISTICS_ADMIN_KEY`. Verified: zero relations into the rest of
-  the graph, so it is a pure subtraction with no cascade. The two-product separation becomes
-  structural rather than a convention.
-- **Leave them inert** — costs three empty tables and one boot-time DDL statement, and the
-  code is there if the products ever recombine.
-
-Recommendation: delete. This is the one moment when it costs nothing, and "the ballistics
-app is not actually independent" has already been a source of confusion once.
+**(b) The separate ballistics application is not compiled into the marketplace backend.**
+The two-product separation is structural; nothing ballistics-related ships in this repo.
 
 **How long the old box lives.** Keep it running for at least three months after go-live —
 it is the fallback build machine if the 4 GB box cannot compile the frontend (Phase 2), it
@@ -1835,35 +1327,27 @@ work.
    failure mode: a prepaid wallet running dry now stops *all* shipping, because one
    aggregator account funds every parcel rather than two separate ones.
 
-2. **Enum naming: `COURIER_DOOR` / `COURIER_PICKUP_POINT`, or keep `PUDO` / `TCG` pointed at
-   Bob Go?** The shortcut saves about two days now and bakes a dead carrier's name into the
-   schema, the admin UI and the analytics SQL permanently. Recommendation: rename. But it is
-   a real two days if cash is tight at cutover, and it must be decided before any code.
-
-3. **Carrier price-change reconciliation: build it, or accept the bleed?** Bob Go's
+2. **Carrier price-change reconciliation: build it, or accept the bleed?** Bob Go's
    charged-amount and charged-weight webhooks make post-hoc carrier re-billing visible for
    the first time. Building it is 3–4 developer-days. Not building it means the R15
    handling margin is notional the moment a parcel re-weighs, and the first evidence is the
    monthly invoice. Today the system already bleeds this silently, so declining is not a
    regression — but it is now a choice rather than an oversight.
 
-4. **Does the new box need more RAM?** 2 cores and 4 GB, with the frontend build peaking
+3. **Does the new box need more RAM?** 2 cores and 4 GB, with the frontend build peaking
    over 2 GB next to Postgres and Meilisearch. Phase 2 answers it empirically. If the answer
    is "it builds, but only with everything else stopped", that is a permanent operational
    tax on every deploy — and the old box that is currently the fallback is scheduled for
    decommission.
 
-5. **Delete the hunt-ballistics module and models, or leave them inert?** See section 7.
-
-6. **How long does `gungalore.co.za` redirect before it lapses?** Six months is the
+4. **How long does `gungalore.co.za` redirect before it lapses?** Six months is the
    suggested floor. And `ballistics.gungalore.co.za` needs a new home before the answer
    matters.
 
-7. **Zoho chart of accounts — does the R15 shipping handling margin get its own revenue
+5. **Zoho chart of accounts — does the R15 shipping handling margin get its own revenue
    line?** Free to add while the ledger is empty; a real reconstruction job later.
 
-8. **Which Setting flags start ON?** 54 rows came off the old box. Daily Deals, the prize
-   draw and several others should almost certainly start OFF on a site that is not trading.
+6. **Which Setting flags start ON?**
 
 ---
 
@@ -1872,8 +1356,8 @@ work.
 **1. The payout gate mis-maps a Bob Go status.** `backend/src/shipping/status-map.ts:92-93`
 — exactly two carrier slugs reach Prisma `DELIVERED`, and `DELIVERED` starts the clock that
 releases the seller's money. Bob Go aggregates many providers, so its vocabulary is its own
-and may vary by provider underneath. If an event meaning "parcel is in the locker, buyer
-hasn't opened it" maps to `DELIVERED`, the platform pays sellers for goods buyers never
+and may vary by provider underneath. If an event meaning "parcel is ready for collection,
+buyer hasn't opened it" maps to `DELIVERED`, the platform pays sellers for goods buyers never
 received and finds out via chargebacks. Enumerate the full vocabulary from the sandbox
 before writing a single map row.
 

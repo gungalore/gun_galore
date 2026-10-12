@@ -38,8 +38,7 @@ export type ShippingMethod = 'COURIER' | 'DEALER_TRANSFER';
  * (DEALER_TRANSFER, PRIVATE_ARRANGE, COLLECTION, ON_SITE_SERVICE) is a
  * non-courier hand-over and is NOT the buyer's to choose.
  *
- * Since 2026-09-24 there is exactly ONE courier shape: door-to-door via Bob Go.
- * Pudo lockers and The Courier Guy were retired.
+ * There is exactly ONE courier shape: door-to-door via Bob Go.
  */
 const COURIER_METHODS = ['COURIER'] as const;
 

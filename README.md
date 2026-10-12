@@ -11,8 +11,9 @@ Three things make it unusual, and they shape most of the code:
 - **Regulated categories are members-only.** A signed-out visitor sees an outdoor store.
   Nothing weapon-related is reachable, crawlable, or searchable without an account. This is
   an auth wall, not cloaking — a signed-out human and Googlebot get byte-identical pages.
-- **Four selling modes**, not one. Every listing is `BUY_NOW`, `AUCTION`, `TAKE_A_SHOT`
-  (offers), or `SWOP` (item-for-item trade). Each has its own state machine.
+- **Two listing types**, plus offers. Every listing is `BUY_NOW` or `AUCTION`. Offers are a
+  feature on either (the buyer names a price, the seller accepts, rejects or counters), not a
+  separate listing type.
 - **Funds are held.** Payment lands with the platform, sits at `HELD`, and is released to
   the seller after delivery. Never call this "escrow" in code, copy or docs — we are not a
   licensed escrow agent. "Funds held" / "payment held".
@@ -37,7 +38,7 @@ The site is live. Card payments are gated off until the payment provider goes li
 | Auth | Self-hosted sessions (buyers + sellers) — access JWT + rotating refresh token, both in httpOnly cookies | `@nestjs/jwt ^11.0.2`, `jose` on the Next edge |
 | Auth (admin) | A second custom JWT, entirely separate from the member one | `@nestjs/jwt ^11.0.2` |
 | Verification | Didit — seller KYC only (the sign-up codes are ours: Resend + SMSPortal) | hand-rolled adapter |
-| AI | Anthropic SDK — moderation, document vision, the "Ask Boet" assistant | `^0.96.0` |
+| AI | Moderation, document vision and field extraction (all via `LlmService`) | provider-agnostic |
 | Images | Cloudinary | `^2.10.0` |
 | Email / SMS / Push | Resend, SMSPortal, `web-push` (VAPID) | `resend ^6.12.3`, `web-push ^3.6.7` |
 | Payments | Ozow (One API pay-in + refunds, Payouts API pay-out) | hand-rolled adapter |
@@ -167,7 +168,7 @@ Prisma 7 reads the connection URL from `prisma.config.ts`, **not** from `schema.
    their foreign key but the category disappears from pickers.
 2. Upserts the canonical tree — 14 root categories, ~110 sub-categories — with the flags
    that drive the whole domain: `isFirearm`, `requiresLicence`, `availableSecondhand`,
-   `collectionOnly`, `isExperience`, and `publicVisible`.
+   `collectionOnly`, and `publicVisible`.
 3. Upserts per-category attribute definitions (rod class, draw weight, battery Wh, vehicle
    fitment…). These are kept in deliberate lockstep with the migrations that first created
    them — the seed is the canonical copy.
@@ -280,10 +281,9 @@ Read this section before you file a bug against your own machine.
 - **21 markdown files at the repo root are historical audit reports**, not current
   documentation. `AUDIT-2026-06-10.md`, `DUMMY-RUN-REPORT.md`, `TAKEALOT-UX-PARITY-REPORT.md`
   and friends describe a moment in time. Treat them as archaeology.
-- **`CLAUDE.md` has stale patches.** Its Tech Stack section still names Stitch as the
-  payment provider and says not to reintroduce Peach; the code has used Ozow since
-  2026-09 (Peach before that, from 2026-07). Where CLAUDE.md and the code disagree, the
-  code wins.
+- **`CLAUDE.md` no longer exists.** Its rules and decisions now live in
+  `docs/project-reference.md`. Treat any lingering `CLAUDE.md` reference as stale and follow
+  the reference document (and the code) instead.
 
 ---
 
@@ -301,7 +301,6 @@ Every module is registered in `app.module.ts`; read that file first, it's the ho
 | `categories/` | The category tree, the public/members-only split, and per-category attribute resolution (a listing inherits its leaf category's attributes plus every ancestor's, nearest wins). |
 | `offers/` | "Take a Shot" — buyer offers, seller accept/reject/counter, auto-accept thresholds, and the reject-reason strike policy. |
 | `auctions/` | Timed bidding, auto-bids, anti-snipe extension (a bid in the last 2 minutes moves the clock), hidden reserves, bind windows, runner-up offers. |
-| `swaps/` | Swop/Trade — proposals, value-based fees, proof-of-possession via Claude vision, two-way shipping. |
 | `payments/` | The money engine: Ozow adapter, transaction state (`HELD` → `RELEASED`), fee maths, refund arms, dispatch SLAs. `payment-mode.ts` is the seam that gates everything. |
 | `orders/` | Multi-item order rollup over individual transactions. |
 | `shipping/` | Courier booking (Bob Go door-to-door, the only courier rail), waybills, tracking, dealer hand-off. |
@@ -325,11 +324,8 @@ Every module is registered in `app.module.ts`; read that file first, it's the ho
 | `tasks/` | The scheduler. ~40 `@Cron` jobs live across the codebase; this is where most of them are wired. Auction close, offer expiry, KYC chasers, payout collection, digests. |
 | `actions/` | One-tap action tokens. An SMS link like `/a/<token>` **is** the credential — no session at all — scoped to a single action (accept an offer, raise a bid, pay). |
 | `notifications/`, `push/`, `sms/` | In-app feed, Web Push (VAPID), SMSPortal. Email templates live in `src/modules/notifications/templates/emails/`. |
-| `ask-gg/` | "Ask Boet", the site-wide Claude assistant: knowledge base, page context, account tools, fair-use lanes. |
-| `load-lab/`, `reloading/`, `hunt-ballistics/` | Reloading manual library, powder burn charts, cartridge specs, ballistics reference. Domain content, not marketplace mechanics. |
-| `deals/`, `suppliers/` | Daily Deals — All Outdoor as a first-party seller. Flag-gated off. |
-| `featured/` | Paid featured-listing slots. |
-| `subscriptions/`, `raffle/` | AO PRO (R99/month) and the PRO prize draw. |
+| `ask-gg/` | The create-listing photo helper (`POST /ask-gg/identify-listing`) that names an item from its photos. |
+| `reloading/` | Reloading reference data — cartridge specs and the manual library — behind the Bench (`/bench`). Domain content, not marketplace mechanics. |
 | `settings/` | Runtime feature flags, read from the DB (`FLAGS` in `settings.service.ts`). Most half-built features ship dark behind one of these. |
 | `activity/` | Buffered analytics event capture feeding the insights dashboard. |
 | `zoho/` | Zoho Books accounting sync. |
@@ -346,8 +342,8 @@ touch the schema.
 | Path | What |
 | --- | --- |
 | `middleware.ts` | **Read this before adding any page.** The session-cookie check, the public-route allowlist, the coming-soon gate, token-authed pages. A new public page that isn't in `isPublicRoute` will 307 signed-out visitors to sign-in — including Googlebot. The pattern matching itself lives in `lib/route-matcher.ts`, with a spec. |
-| `app/` | App Router pages. `listings/`, `category/`, `checkout/`, `my/` (bids, offers, orders, sales, listings, earnings, swaps), `account/`, `admin/` (its own `(protected)` group), `(legal)/` (terms, privacy, PAIA, complaints, fees — statutory pages, treat as legal text), `a/[token]/` (SMS one-tap actions). |
-| `components/` | ~80 shared components. `listing-card`, `filter-bar`, `bid-stepper`, `dealer-picker`, `photo-dropzone`, `bottom-tab-bar`, plus `admin/` and `ask-gg/` subtrees. |
+| `app/` | App Router pages. `listings/`, `category/`, `checkout/`, `my/` (bids, offers, orders, sales, listings, earnings), `account/`, `admin/` (its own `(protected)` group), `(legal)/` (terms, privacy, PAIA, complaints, fees — statutory pages, treat as legal text), `a/[token]/` (SMS one-tap actions). |
+| `components/` | ~80 shared components. `listing-card`, `filter-bar`, `bid-stepper`, `dealer-picker`, `photo-dropzone`, `bottom-tab-bar`, plus an `admin/` subtree. |
 | `lib/` | Client helpers. `auth.tsx` (the client session — `useAuth()`, `useUser()`, `<SignInButton>`) and `auth-server.ts` (the server half, reading the `ao_at` cookie), `route-matcher.ts` (the middleware's public-route matcher, with a spec), `api.ts` (the `apiFetch` wrapper), `safe-json.ts` (**use this** — a raw `res.json()` on an empty 200 throws, which caused a whole class of sign-up bugs), `cart-store.ts`, `use-push.ts`, `account-menu-data.tsx`, `support-contact.ts`. |
 | `app/sw.ts` | Serwist service worker source, compiled to `public/sw.js` at build time only. Not active in dev. |
 
@@ -390,9 +386,9 @@ you push a routing change.
 | Document | What it is |
 | --- | --- |
 | [docs/INDEX.md](docs/INDEX.md) | Index of everything in `docs/`, and which root-level markdown files are current versus historical. Start here if a link below moves. |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit: request path, the money state machine, the four selling modes end to end, background jobs, third-party integrations. |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit: request path, the money state machine, the two listing types and offers end to end, background jobs, third-party integrations. |
 | [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) | Every environment variable, what it does, what breaks when it's missing, and which are required in production. |
-| [CLAUDE.md](CLAUDE.md) | 1,400 lines of **decisions and rules**, written for the AI agent that built this. Not an onboarding path and not always current, but it is the only record of *why* many things are the way they are — the payment-rail history, the legal constraints, the naming rules ("never say escrow", "never expose real names"). Read it second, and cross-check against the code. |
+| [docs/project-reference.md](docs/project-reference.md) | The house rules and standing decisions, written for the AI agent that built this: what is legally load-bearing, what wording is banned, what must never be changed without an operator call. Read it second, and cross-check against the code. |
 | `backend/prisma/schema.prisma` | The domain model, with comments explaining the constraints. |
 | `backend/src/app.module.ts` | The real module index. |
 | `frontend/middleware.ts` | The real routing and auth-gating index. |
@@ -405,11 +401,9 @@ you push a routing change.
 | **Dealer transfer** | A firearm cannot legally move seller → buyer directly. It goes to a SAPS-licensed dealer, who handles the paperwork and hands it over. `Category.requiresLicence` forces this shipping path. |
 | **SAP 534** | The SAPS form for a change of firearm ownership. We capture the serial number and licence details needed to complete it. |
 | **KYC** | Know Your Customer — identity verification. Runs at a seller's first payment; a seller cannot be **paid out** until it passes. |
-| **Shipping methods** | `COURIER` (non-firearm door delivery via Bob Go — the only courier rail, always booked at the cheapest Bob Go door rate), `DEALER_TRANSFER` (firearm, via a SAPS dealer), `PRIVATE_ARRANGE` (firearm, the pair go to a dealer themselves — requires seller consent), `COLLECTION` (buyer collects; forced for trailers and dangerous goods), `ON_SITE_SERVICE` (hunting packages — no parcel at all). The legacy `PUDO` and `TCG` values are deprecated and never written. Each one has different rules about when funds release. |
+| **Shipping methods** | `COURIER` (non-firearm door delivery via Bob Go — the only courier rail, always booked at the cheapest Bob Go door rate), `DEALER_TRANSFER` (firearm, via a SAPS dealer), `PRIVATE_ARRANGE` (firearm, the pair go to a dealer themselves — requires seller consent), `COLLECTION` (buyer collects; forced for trailers and dangerous goods). Each one has different rules about when funds release. |
 | **Bakkie** | Pickup truck. Ubiquitous here; a whole product category (canopies, drawer systems, roof racks, bull bars) exists around it under Overlanding. |
 | **Take a Shot** | Our name for offers: the buyer names a price, the seller accepts, rejects or counters. |
-| **Swop** | Trade. Two items exchange hands, optionally with a cash top-up. Both sides pay a leg fee and we manage both shipments. |
-| **AO PRO** | The paid membership tier, R99/month. |
 | **ZAR / cents** | Prices are stored as **integer cents** throughout. Ozow's pay-in API speaks decimal rand, so the payment adapter converts at the boundary — that conversion is the single place the two representations meet. |
 | **TPPP** | Third-Party Payment Provider. Holding buyer funds makes us one, which drives the bank onboarding, AML policy and statutory pages under `app/(legal)/`. |
 

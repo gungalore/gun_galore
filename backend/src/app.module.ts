@@ -99,9 +99,6 @@ import { ValuationModule } from './valuation/valuation.module';
     AdminModule,
     OffersModule,
     AuctionsModule,
-    // DealsModule (Daily Deals) removed with the feature. The Deal /
-    // DealPurchaseOrder Prisma models are deliberately left orphaned in the
-    // schema — house precedent, same as Message and the Competitions tables.
     TasksModule,
     KycModule,
     ReferenceNumberModule,

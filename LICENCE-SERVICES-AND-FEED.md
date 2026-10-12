@@ -113,7 +113,7 @@ The operator supplies real motivations as reference material. Handling rules:
   checkbox, and beta users get asked for their CFR outcome later — which seeds Phase 2's
   crowd data.
 - **Attorney reviews the TEMPLATES once** (prompt frameworks + disclaimer + PDF skeleton),
-  not each document. Same posture as the raffle rules.
+  not each document. Same posture as the other locked-report rules.
 
 ### Commercial wiring
 
@@ -122,7 +122,7 @@ The operator supplies real motivations as reference material. Handling rules:
 | | firearm bought elsewhere | firearm bought on site |
 |---|---|---|
 | no subscription | **R199** | **R99** |
-| AO Pro | **R99** | **FREE** |
+| paid tier | **R99** | **FREE** |
 
 Built as `backend/src/motivations/motivation-pricing.ts` — pure, no Nest, no clock, 11 tests.
 
@@ -139,7 +139,7 @@ something they are entitled to.
 applicant types. It is worth R100–R199, so it is exactly the claim someone would make.
 
 - Payments are OFF until Ozow — the table goes live with the paygate; before that the
-  capped free beta runs. No manual EFT (retired). The price a member is quoted during the
+  capped free beta runs. The price a member is quoted during the
   beta comes from this module, so it is the price they will actually pay.
 
 ### Continuity for a returning applicant (operator, 2026-08-18)
@@ -187,7 +187,7 @@ The cap was set BEFORE the flag was flipped. The other order leaves a window at
 100 seats.
 
 Verified after switching on: `/motivations` still 307s signed-out, the homepage
-and `/raffle` still carry zero motivation or firearm wording, the sitemap has not
+still carries zero motivation or firearm wording, the sitemap has not
 gained a single URL, no seats claimed, no rows, zero errors.
 
 **On the live box** at `5d5882c`, three migrations applied, both services
@@ -331,9 +331,9 @@ owns the moment that demand surfaces:
 
 1. **Renewal packs** (exists already): the T-180 reminder lands with one tap → an
    `S24_RENEWAL` motivation, pre-filled from the vault, priced by the existing table
-   (R199 / R99 / free-with-PRO). No new billing surface needed for revenue on day one.
-2. **Subscription pull**: reminder automation + the family vault are natural AO Pro
-   benefits — a reason to HOLD the R99/mo that has nothing to do with trading.
+   (R199 / R99 / free for the paid tier). No new billing surface needed for revenue on day one.
+2. **Subscription pull**: reminder automation + the family vault are natural paid-tier
+   benefits — a reason to HOLD the subscription that has nothing to do with trading.
 3. **The data moat**: a member whose licences live here renews here, and Phase 2's
    checker and Phase 3's feed get their coldest data warm.
 
@@ -407,13 +407,13 @@ document as printed always governs; the confirm screen and every reminder say so
 
 | Model | Free tier | Paid | Trade-off |
 |---|---|---|---|
-| **A. PRO-only** | nothing | Centre entirely inside AO Pro R99/mo | cleanest story; smallest funnel — non-Pro members store nothing, data moat starves |
-| **B. Standalone sub** | view 1 credential | Centre sub ~R29/mo or ~R249/yr; PRO includes it | own revenue line; second billing surface to build and explain |
-| **C. Freemium (recommended)** | store + see expiry dates, unlimited | reminder AUTOMATION (SMS/push/email), family vault, renewal-pack discount = PRO | maximises documents-in (the moat and the prefill), sells PRO at the exact moment the member feels the deadline |
+| **A. PRO-only** | nothing | Centre entirely inside the paid tier | cleanest story; smallest funnel — non-members store nothing, data moat starves |
+| **B. Standalone sub** | view 1 credential | Centre sub ~R29/mo or ~R249/yr; the paid tier includes it | own revenue line; second billing surface to build and explain |
+| **C. Freemium (recommended)** | store + see expiry dates, unlimited | reminder AUTOMATION (SMS/push/email), family vault, renewal-pack discount = paid tier | maximises documents-in (the moat and the prefill), sells the paid tier at the exact moment the member feels the deadline |
 
 **Chosen: C.** Storage free, automation paid — store + see expiry dates free for
 everyone; reminder automation (SMS/push/email), family vault and a renewal-pack discount
-are AO Pro. The renewal-pack table already monetises the deadline itself, so free
+are paid-tier. The renewal-pack table already monetises the deadline itself, so free
 storage costs us almost nothing and feeds everything. B stays available later as an
 annual "Centre pass" for people who will never trade.
 

@@ -129,8 +129,6 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     listing.shippingMethods?.includes('COLLECTION') ??
     false;
 
-  // Hunting Packages / Experiences (Phase E) — a future-dated on-site
-
   // Allowed methods = intersection of (legal for this listing class) and
   // (what the seller offered in the Sell form). Legacy listings with an
   // empty shippingMethods array fall back to the full legal set so old
@@ -510,7 +508,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       ...papers,
     };
     // ON_SITE_SERVICE is retained on the union for historic rows; nothing in
-    // this form can select it now that Hunting Packages are gone.
+    // this form can select it.
     if (method === 'ON_SITE_SERVICE') return base;
     // Collection — no courier, no address, no quote. Just the base payload
     // with shippingMethod = 'COLLECTION' (+ the papers ack when required).
@@ -1925,138 +1923,6 @@ function FirearmAttestation({
         {accepted
           ? '✓ Confirmation recorded. You can proceed to payment below.'
           : 'Tick the box to enable payment.'}
-      </p>
-    </div>
-  );
-}
-
-// Hunting Packages / Experiences (Phase E) — the FIVE required buyer
-// attestations at experience checkout. The backend HARD-refuses the
-// booking unless all five are true, so this is both a regulatory /
-// consumer-protection consent and a server-enforced gate. Pay is blocked
-// via isReady() until every box is ticked.
-interface ExpAttState {
-  over18: boolean;
-  licenceOrSupervised: boolean;
-  intermediary: boolean;
-  cancellationPolicy: boolean;
-  risks: boolean;
-}
-function ExperienceAttestations({
-  value,
-  onChange,
-}: {
-  value: ExpAttState;
-  onChange: (next: ExpAttState) => void;
-}) {
-  const allOk =
-    value.over18 &&
-    value.licenceOrSupervised &&
-    value.intermediary &&
-    value.cancellationPolicy &&
-    value.risks;
-  const set = (k: keyof ExpAttState, v: boolean) =>
-    onChange({ ...value, [k]: v });
-  const rowStyle: React.CSSProperties = {
-    marginTop: 3,
-    accentColor: 'var(--red)',
-  };
-  return (
-    <div
-      className="rounded-[6px] p-4 text-sm space-y-3"
-      style={{
-        background: 'rgba(227,6,19,0.06)',
-        border: '0.5px solid var(--red)',
-        color: 'var(--text-primary)',
-        lineHeight: 1.55,
-      }}
-    >
-      <p
-        className="text-xs uppercase"
-        style={{ color: 'var(--red)', letterSpacing: '0.05em', fontWeight: 600 }}
-      >
-        Experience booking — required confirmations
-      </p>
-
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={value.over18}
-          onChange={(e) => set('over18', e.target.checked)}
-          style={rowStyle}
-        />
-        <span style={{ color: 'var(--text-secondary)' }}>
-          I am at least 18 years old.
-        </span>
-      </label>
-
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={value.licenceOrSupervised}
-          onChange={(e) => set('licenceOrSupervised', e.target.checked)}
-          style={rowStyle}
-        />
-        <span style={{ color: 'var(--text-secondary)' }}>
-          I hold the relevant firearm licence / competency, or I will be
-          hunting under the outfitter&apos;s direct supervision.
-        </span>
-      </label>
-
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={value.intermediary}
-          onChange={(e) => set('intermediary', e.target.checked)}
-          style={rowStyle}
-        />
-        <span style={{ color: 'var(--text-secondary)' }}>
-          I understand ALL Outdoor is a payment-protection intermediary — the
-          outfitter is the supplier of this experience.
-        </span>
-      </label>
-
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={value.cancellationPolicy}
-          onChange={(e) => set('cancellationPolicy', e.target.checked)}
-          style={rowStyle}
-        />
-        <span style={{ color: 'var(--text-secondary)' }}>
-          I accept the{' '}
-          <a
-            href="/experiences-cancellation-policy"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'var(--red)', textDecoration: 'underline' }}
-          >
-            experiences cancellation policy
-          </a>
-          .
-        </span>
-      </label>
-
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={value.risks}
-          onChange={(e) => set('risks', e.target.checked)}
-          style={rowStyle}
-        />
-        <span style={{ color: 'var(--text-secondary)' }}>
-          I accept the inherent risks of hunting / range activities and will
-          follow the outfitter&apos;s safety instructions.
-        </span>
-      </label>
-
-      <p
-        className="text-xs"
-        style={{ color: allOk ? 'var(--success)' : 'var(--text-tertiary)' }}
-      >
-        {allOk
-          ? '✓ Confirmations recorded. You can proceed to payment below.'
-          : 'Tick all five boxes to enable payment.'}
       </p>
     </div>
   );

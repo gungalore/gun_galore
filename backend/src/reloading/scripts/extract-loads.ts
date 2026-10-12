@@ -3,15 +3,15 @@
  *
  * Reads the ACTIVE reloading manuals already in the library and extracts
  * published load data for the cartridges you name, upserting ManualLoad rows.
- * Those rows are what Load Lab serves: burn-chart, manual-browse and
+ * Those rows are what the Bench serves: burn-chart, manual-browse and
  * recommended-loads all read them, so this script is the only route by which
- * /load-lab gains new data.
+ * the corpus gains new data.
  *
  * ⚠️ THIS REPLACES THE ADMIN BUTTON, DELIBERATELY. Reloading is gone from the
  * admin panel by operator decision — the library is content, not operations,
- * and Load Lab is changed in code from here on. Ingest already had a script
+ * and it is changed in code from here on. Ingest already had a script
  * (library-ingest.ts); extraction did not, and removing the panel without
- * this would have quietly ended Load Lab's ability to grow.
+ * this would have quietly ended the corpus's ability to grow.
  *
  * ⚠️ IT COSTS MONEY AND IT IS NOT INSTANT. Extraction runs Claude once per
  * candidate page, per cartridge. Naming ten cartridges is ten passes over the

@@ -6,8 +6,8 @@ import { cartridgeKey } from '../common/cartridge-key';
 
 /**
  * Load-data extraction — reads the ingested reloading-manual pages and pulls
- * STRUCTURED published load rows into the ManualLoad table, so the Load Lab
- * "Recommended loads" panel can serve authoritative start→max charges per
+ * STRUCTURED published load rows into the ManualLoad table, so the reloading
+ * published-loads panel can serve authoritative start→max charges per
  * powder by cartridge + bullet weight instantly (no per-request PDF reading).
  *
  * Per cartridge: ReloadingService.searchPages() finds the load-table pages

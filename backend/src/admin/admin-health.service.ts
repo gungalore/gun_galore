@@ -334,12 +334,6 @@ export class AdminHealthService {
       // was declared "every 10 min" while the cron runs hourly, which
       // false-red'd the row for 30 of every 60 minutes).
       //
-      // The three Daily Deals rows are gone with the feature: 'deal-drops'
-      // was never monitored, and 'deal-po-retry' / 'deal-collection-sweep'
-      // HAD to come out — their @Cron handlers no longer exist, so their
-      // `cron:lastrun:*` Setting rows freeze at the last pre-deploy run and
-      // cronWatchdog would raise a permanent urgent CRON_STALE alert (and an
-      // ops SMS) for two jobs that were deliberately deleted.
       { key: 'shipping-poll', label: 'Shipping tracking poll', schedule: 'every 10 min', expectedIntervalSec: 600 },
       // Nightly at 02:40. Deletes the encrypted identity documents behind
       // motivations past their retention date. A retention job that stops

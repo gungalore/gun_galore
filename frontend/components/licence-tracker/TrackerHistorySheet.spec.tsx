@@ -50,9 +50,9 @@ describe('the window itself', () => {
     );
   });
 
-  it('stands the Ask Boet dock down, being a full-screen overlay', () => {
-    // Both are z-60 and the dock wins the tie on DOM order, so without this
-    // the dock sits on top of a sheet that is meant to be the whole screen.
+  it('is a full-screen overlay that blocks competing fixed chrome', () => {
+    // A full-screen modal must suppress the bottom tab bar and any other fixed
+    // chrome, or it sits on top of a sheet meant to be the whole screen.
     renderSheet();
     expect(
       screen.getByRole('dialog').getAttribute('data-blocking-overlay'),

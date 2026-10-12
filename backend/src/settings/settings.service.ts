@@ -86,55 +86,6 @@ export const FLAGS = {
       return Number.isFinite(n) ? n : 20000;
     },
   } as FlagDefinition<number>,
-  // AO PRO subscription price, ZAR CENTS per 31-day period. Single paid
-  // tier since 2026-07-19 (MEMBER retired — operator decision): FREE gets
-  // a demo of every PRO feature, PRO is R99/mo.
-  subscriptionProPriceCents: {
-    key: 'subscription_pro_price_cents',
-    default: 9900,
-    parse: (s) => {
-      const n = parseInt(s, 10);
-      return Number.isFinite(n) && n > 0 ? n : 9900;
-    },
-  } as FlagDefinition<number>,
-  // ── PRO prize draw (promotional competition) ─────────────────────
-  // Master switch — OFF until payments are live + attorney sign-off on
-  // the rules page. The whole module (cron, public page, admin panel)
-  // no-ops/teases while OFF.
-  proDrawEnabled: {
-    key: 'pro_draw_enabled',
-    default: false,
-    parse: (s) => s === 'true' || s === '1',
-  } as FlagDefinition<boolean>,
-  // ADVISORY budget maths shown in /admin/raffle only — % of PRO
-  // subscription revenue over the ending cycle suggested as the next
-  // prize budget. Never shown publicly, never moves money.
-  rafflePoolPercent: {
-    key: 'raffle_pool_percent',
-    default: 30,
-    parse: (s) => {
-      const n = parseInt(s, 10);
-      return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 30;
-    },
-  } as FlagDefinition<number>,
-  // Guaranteed floor for the suggested prize budget, ZAR cents.
-  raffleFloorCents: {
-    key: 'raffle_floor_cents',
-    default: 50_000,
-    parse: (s) => {
-      const n = parseInt(s, 10);
-      return Number.isFinite(n) && n >= 0 ? n : 50_000;
-    },
-  } as FlagDefinition<number>,
-  // Draw cadence: MONTHLY (30d) → BIWEEKLY (14d) → WEEKLY (7d). Applies
-  // to NEWLY created draws only — a live displayed prize keeps its
-  // announced draw date (a running competition's goalposts never move).
-  raffleFrequency: {
-    key: 'raffle_frequency',
-    default: 'MONTHLY',
-    parse: (s) =>
-      s === 'WEEKLY' || s === 'BIWEEKLY' || s === 'MONTHLY' ? s : 'MONTHLY',
-  } as FlagDefinition<string>,
   // Dangerous-goods gate — a loose lithium battery (the `battery_wh` attribute)
   // above this watt-hour value is forced collection-only, never couriered
   // (carriers won't carry >100 Wh loose cells, UN3480). Admin-tunable without a
@@ -147,59 +98,16 @@ export const FLAGS = {
       return Number.isFinite(n) && n > 0 ? n : 100;
     },
   } as FlagDefinition<number>,
-  // ── Ask GG quota caps ──────────────────────────────────────────────
-  // Tunable from /admin/settings without a deploy. Defaults mirror the
-  // launch spec (OD3). All fail open to defaults.
-  //
-  // ⚠️ ONLY `ask_gg_free_photo_cap_per_30d` IS STILL READ (retired
-  // 2026-09-07). It caps FREE identifications on the Sell page's photo
-  // helper — the one Ask GG route that survived the chat's removal. The
-  // four MESSAGE caps below metered a chat that no longer exists and are
-  // read by nothing. They are kept as flag definitions so the rows already
-  // in the live Settings table stay recognised rather than turning up as
-  // orphans in /admin/settings; settings-registry-sync.spec.ts pins the
-  // key list. Do not wire a new feature to them — it would inherit a
-  // meaning nobody remembers.
-  askGgFreeMsgCapPer30d: {
-    key: 'ask_gg_free_msg_cap_per_30d',
-    default: 5,
-    parse: (s) => {
-      const n = parseInt(s, 10);
-      return Number.isFinite(n) && n >= 0 ? n : 5;
-    },
-  } as FlagDefinition<number>,
-  askGgMemberMsgCapPerHour: {
-    key: 'ask_gg_member_msg_cap_per_hour',
-    default: 20,
-    parse: (s) => {
-      const n = parseInt(s, 10);
-      return Number.isFinite(n) && n > 0 ? n : 20;
-    },
-  } as FlagDefinition<number>,
-  askGgProMsgCapPerHour: {
-    key: 'ask_gg_pro_msg_cap_per_hour',
-    default: 60,
-    parse: (s) => {
-      const n = parseInt(s, 10);
-      return Number.isFinite(n) && n > 0 ? n : 60;
-    },
-  } as FlagDefinition<number>,
+  // ── Ask GG quota cap ───────────────────────────────────────────────
+  // Caps FREE identifications on the Sell page's photo helper
+  // (`POST /ask-gg/identify-listing`) — the one Ask GG route still read.
+  // Tunable from /admin/settings without a deploy; fails open to the default.
   askGgFreePhotoCapPer30d: {
     key: 'ask_gg_free_photo_cap_per_30d',
     default: 5,
     parse: (s) => {
       const n = parseInt(s, 10);
       return Number.isFinite(n) && n >= 0 ? n : 5;
-    },
-  } as FlagDefinition<number>,
-  // RETIRED with the chat (see above): the per-day abuse cap on the free
-  // SUPPORT lane of the two-lane quota.
-  askGgSupportMsgCapPerDay: {
-    key: 'ask_gg_support_msg_cap_per_day',
-    default: 20,
-    parse: (s) => {
-      const n = parseInt(s, 10);
-      return Number.isFinite(n) && n >= 0 ? n : 20;
     },
   } as FlagDefinition<number>,
   // ── Claude-vision KYC ──────────────────────────────────────────────

@@ -55,9 +55,9 @@ What each session did, found, and changed — so the next one does not re-derive
 **Findings**
 
 - The earlier audit's "dead route" list was wrong: `/coming-soon`, `/preview`, `/condition-guide`, `/witness/[token]`, `/t/[code]` are all live/linked. Footer and legal surfaces left intact by operator call.
-- `manual-payments` is mis-named — it is the Ozow pay-out engine, not manual EFT; kept as a connector.
+- `manual-payments` is mis-named — it is the Ozow pay-out engine; kept as a connector.
 - ⚠️ Seller payouts paused by design: the Desk was the only trigger for `getPayoutsDue → Ozow.createPayout`; the old FNB cron was already gone. Operator will rebuild the Desk.
-- Prisma orphans kept (no migration): `Deal`, `DealPurchaseOrder`, `Message`, `Competition`, ask-gg tables.
+- Prisma orphans kept (no migration): `Message`, `Competition`, ask-gg tables.
 
 **Admin panel (same session, built after the strip)**
 
@@ -73,7 +73,7 @@ What each session did, found, and changed — so the next one does not re-derive
 
 **KYC images from Didit + full member profile (same session)**
 
-- Privacy policy corrected: we store **no copy** of the ID image, selfie or liveness video — Didit holds them (`(legal)/privacy` §3.2/§8/§9). Also `Israel` → `European Union` (Didit's docs say EU-by-default AWS processing) and **stale Clerk disclosures removed** (provider table, §8, §3.1 "verified via Clerk", §3.6 "handled by Clerk").
+- Privacy policy corrected: we store **no copy** of the ID image, selfie or liveness video — Didit holds them (`(legal)/privacy` §3.2/§8/§9). Also `Israel` → `European Union` (Didit's docs say EU-by-default AWS processing) and **stale retired-provider disclosures removed** (provider table, §8, §3.1, §3.6).
 - `DiditService.fetchSessionImage()` re-requests the decision for **fresh 4h presigned links** and streams bytes; `readKycFile` falls back to it. Selfie = `liveness_checks[].reference_image`, ID = `full_front_image` → `front_image`. Nothing stored. 8 unit tests.
 - `GET /admin/users/:id/id-number` decrypts + **audits every reveal**; the ciphertext is stripped from the dossier (only `hasIdNumber` ships). 5 unit tests.
 - New `/admin/people/[id]` full profile (checklist first); drawer + page share `components/admin/user-actions.tsx`.

@@ -536,7 +536,7 @@ export class UsersService {
     // preserved at all, which meant anyone who had never traded was removed
     // outright — and with them, by cascade, their Complaint rows and every
     // ComplaintPhoto, their SupportTicket history, their LoginEvent trail and
-    // their Ask Boet conversations.
+    // their assistant conversations.
     //
     // Operator, 2026-08-22: "if a user commited a crime or something they cant
     // just vanish by deleting and wiping evidence." The delete was exactly

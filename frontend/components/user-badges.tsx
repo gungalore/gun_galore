@@ -1,6 +1,6 @@
 ﻿'use client';
 
-// Phase E1 — Ask Boet subscription badges rendered next to a username
+// Phase E1 — subscription-tier badges rendered next to a username
 // on every public surface (listing card, listing-detail seller chip,
 // /sellers/[userId] profile, Q&A answers).
 //
@@ -118,8 +118,8 @@ function GgPlusPill({
       // unchanged and still described to members.
       title={
         isPro
-          ? 'Ask Boet Pro — full assistant + Pro perks'
-          : 'Ask Boet Plus — fuller assistant + member perks'
+          ? 'Pro member — extra perks'
+          : 'Member — extra perks'
       }
       style={{
         display: 'inline-flex',
@@ -206,7 +206,7 @@ export function UserBadgesWithTooltip({
       {hasExpert && (
         <HelpTip title="Verified Expert" side="bottom">
           Awarded by ALL Outdoor staff after this seller has contributed
-          5+ verified entries to the Ask Boet knowledge base. Their answers
+          5+ verified entries to the knowledge base. Their answers
           on listings + Q&A carry extra weight.
           {expertBadgeReason ? (
             <>

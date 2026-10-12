@@ -49,8 +49,8 @@ export class ReloadingAdminController {
 
   /**
    * Extract structured published loads for one or more cartridges from the
-   * ingested manuals into the ManualLoad table (powers the Load Lab
-   * "Recommended loads" panel). Body: { cartridges: string[] }. Idempotent —
+   * ingested manuals into the ManualLoad table (powers the reloading
+   * published-loads panel). Body: { cartridges: string[] }. Idempotent —
    * re-running re-reads the pages and upserts. Runs Claude per candidate page.
    */
   @Post('extract-loads')

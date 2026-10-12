@@ -1,7 +1,6 @@
 ﻿// Single source of truth for carrier tracking-status → internal status.
 //
-// Bob Go is the ONLY courier rail (Pudo and The Courier Guy were retired
-// 2026-09-24). Bob Go's exact-key table lives below; anything absent returns
+// Bob Go is the ONLY courier rail. Bob Go's exact-key table lives below; anything absent returns
 // null — recorded on the timeline, never rolling shippingStatus. Widen it only
 // from statuses actually observed arriving.
 //

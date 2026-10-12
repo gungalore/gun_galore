@@ -9,10 +9,10 @@
 // running as the installed standalone app.
 //
 // Pinned to the LEFT of its footer band (marginRight:auto beats the band's
-// justify-content:flex-end). The bottom-right of the viewport belongs to
-// Boet — his dock is `fixed` there and is ~160px wide on a phone, ~240px on
-// desktop, so a right-aligned pill in the footer is sitting under the mascot
-// from the moment the footer scrolls into view. See ask-gg-launcher.tsx.
+// justify-content:flex-end). The bottom-right of the viewport belongs to the
+// floating dock (~160px on a phone, ~240px on desktop), so a right-aligned
+// pill in the footer would sit under it from the moment the footer scrolls
+// into view.
 
 import { installPlatform, useInstallPrompt } from '@/lib/use-install-prompt';
 import { trackInstall } from '@/lib/activity-beacon';

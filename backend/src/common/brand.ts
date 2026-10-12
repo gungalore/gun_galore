@@ -61,8 +61,7 @@ export const SUPPORT_EMAIL = 'support@alloutdoor.co.za';
 
 /**
  * Subscription tier name. Was "GG PRO" — GG meant Gun Galore, the wound-down
- * entity. LABEL ONLY: the `SubscriptionTier.PRO` enum, the `pro_draw_enabled`
- * flag key and every `tier === 'PRO'` comparison are persisted values and stay
- * exactly as they are.
+ * entity. LABEL ONLY: the `SubscriptionTier.PRO` enum and every `tier === 'PRO'`
+ * comparison are persisted values and stay exactly as they are.
  */
 export const PRO_NAME = 'AO PRO';

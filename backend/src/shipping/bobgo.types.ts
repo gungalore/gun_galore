@@ -4,9 +4,8 @@
 // copied from documentation. Where a value is inferred rather than seen, the
 // comment says so.
 //
-// Bob Go replaced BOTH Pudo (lockers) and TCG (door) — it aggregates
-// door-to-door and pickup-point delivery behind one API, so the two-carrier
-// split in carrier.types.ts collapses into this one client.
+// Bob Go aggregates door-to-door and pickup-point delivery behind one API, so
+// this is the one courier client and carrier.types.ts stays carrier-neutral.
 
 /** A normalised address for quoting and booking. */
 export interface BobGoAddress {
@@ -109,8 +108,8 @@ export interface BobGoQuote {
  * A 201 therefore means "we recorded your request", NOT "a courier is
  * coming". Treating the two as the same would tell a seller their collection
  * is booked, print a waybill, and SMS the buyer a tracking reference for a
- * shipment that does not exist. Both Pudo and TCG returned booked-or-error, so
- * this is genuinely new behaviour the port has to model rather than inherit.
+ * shipment that does not exist. The older carrier clients returned booked-or-error, so
+ * this is genuinely new behaviour to model rather than inherit.
  */
 export type BobGoSubmissionState =
   /** Courier accepted it — safe to tell the seller and the buyer. */
