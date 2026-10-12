@@ -49,7 +49,6 @@ import {
   ChipId,
   buildSections,
   chipCounts,
-  defaultOpenSections,
   pageLabel,
   pageSide,
   placeRow,
@@ -107,16 +106,6 @@ import {
 
 /** Mirrors UPLOAD_MIME in licence-centre.controller.ts. NO HEIC. */
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-
-/**
- * Which sections the member has folded by hand.
- *
- * ⚠️ PER BROWSER, NOT PER MEMBER, AND THAT IS DELIBERATE. It holds nothing
- * about any document — only which of seven fixed headings were shut — so
- * there is nothing here worth keying to an account, and a value keyed to one
- * would have to be fetched before the page could draw.
- */
-const OPEN_KEY = 'document-centre:open-sections';
 
 // This page is still named /licence-centre in the URL and in every API call
 // below — the rename to "Document Centre" was copy-only — so the trail names
@@ -290,29 +279,14 @@ export default function LicenceCentrePage() {
   const [completed, setCompleted] = useState<MotivationSummary[]>([]);
 
   /**
-   * ⚠️ WHICH SECTIONS ARE OPEN, AND WHY IT IS REMEMBERED PER BROWSER.
+   * ⚠️ EVERY SECTION STARTS CLOSED, EVERY TIME.
    *
-   * Two open by default — Your firearms and Competency — plus anything
-   * holding a row an attention chip points at. A member who shuts one is
-   * telling us something durable about how they read this page, so the
-   * toggles are kept; nothing about a document is stored, only which headings
-   * were folded, which is why a page-wide key rather than a per-member one is
-   * honest here.
-   *
-   * ⚠️ EVERY READ AND WRITE IS WRAPPED. localStorage throws outright in a
-   * browser set to block site data, and a page that will not render because
-   * it could not remember a chevron is worse than one that forgets.
+   * The Centre opens with the whole list folded so the member sees the seven
+   * headings and their counts at a glance before choosing what to read. The
+   * folds are session-local: nothing is remembered between visits, so the page
+   * always opens the same way.
    */
-  const [openSections, setOpenSections] = useState<DocSectionId[] | null>(null);
-  const [manual, setManual] = useState<Record<string, boolean>>(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      const raw = window.localStorage.getItem(OPEN_KEY);
-      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
 
   const rowsById = useMemo(
     () => new Map((rows ?? []).map((r) => [r.id, r] as const)),
@@ -359,33 +333,14 @@ export default function LicenceCentrePage() {
   const [showPartner, setShowPartner] = useState(false);
   useEffect(() => setShowPartner(false), [selectedId]);
 
-  /**
-   * ⚠️ THE DEFAULTS ARE COMPUTED ONCE THE ROWS ARRIVE, NOT ON EVERY BUILD.
-   * `views` changes as the member types in the search box, and re-deriving
-   * the open set from it would slam sections open and shut under the cursor.
-   */
-  useEffect(() => {
-    if (rows === null || openSections !== null) return;
-    setOpenSections(defaultOpenSections(views));
-  }, [rows, views, openSections]);
-
   const isOpen = useCallback(
-    (id: DocSectionId) =>
-      manual[id] ?? (openSections ?? ['firearms', 'competency']).includes(id),
-    [manual, openSections],
+    (id: DocSectionId) => openSections[id] ?? false,
+    [openSections],
   );
 
   const toggleSection = useCallback(
     (id: DocSectionId, open: boolean) => {
-      setManual((prev) => {
-        const next = { ...prev, [id]: open };
-        try {
-          window.localStorage.setItem(OPEN_KEY, JSON.stringify(next));
-        } catch {
-          // A browser that will not keep this still has to render the page.
-        }
-        return next;
-      });
+      setOpenSections((prev) => ({ ...prev, [id]: open }));
     },
     [],
   );
