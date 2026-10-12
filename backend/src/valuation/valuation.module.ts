@@ -16,6 +16,7 @@ import { SerperClient } from './sources/serper.client';
 import { ApifyClient } from './sources/apify-client';
 import { ApifyMarketplaceAdapter } from './sources/adapters/apify-marketplace.adapter';
 import { GunAfricaAdapter } from './sources/adapters/gunafrica.adapter';
+import { HtmlCatalogAdapter } from './sources/adapters/html-catalog.adapter';
 import { JaracalAdapter } from './sources/adapters/jaracal.adapter';
 import { MagentoAdapter } from './sources/adapters/magento.adapter';
 import { SitemapJsonLdAdapter } from './sources/adapters/sitemap-jsonld.adapter';
@@ -54,6 +55,7 @@ import { WebToolsService } from './web-tools.service';
     WooAdapter,
     GunAfricaAdapter,
     JaracalAdapter,
+    HtmlCatalogAdapter,
     ApifyMarketplaceAdapter,
     SitemapJsonLdAdapter,
     MagentoAdapter,

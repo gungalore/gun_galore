@@ -8,6 +8,7 @@ export type SourcePlatform =
   | 'WOO'
   | 'SITEMAP_HTML'
   | 'MAGENTO'
+  | 'HTML'
   | 'MARKETPLACE'
   | 'AUCTION'
   | 'OWN'

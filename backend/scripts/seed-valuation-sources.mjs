@@ -25,6 +25,7 @@ const WOO = 'WOO';
 const SHOPIFY = 'SHOPIFY';
 const MARKETPLACE = 'MARKETPLACE';
 const SITEMAP_HTML = 'SITEMAP_HTML';
+const HTML = 'HTML';
 
 // Verified: WooCommerce Store API returns a keyless JSON product array.
 const SOURCES = [
@@ -58,6 +59,18 @@ const SOURCES = [
   // SA precision parts makers on WooCommerce (Store API readable).
   { domain: 'axisprecisionworx.com', label: 'Axis Precision Worx', platform: WOO, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics'] },
   { domain: 'impactproshop.net', label: 'Impact Pro Shop', platform: WOO, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics', 'hunting'] },
+  // Big retailer on Shopify (readable now).
+  { domain: 'quenets.com', label: 'Quenets', platform: SHOPIFY, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'shooting-accessories', 'air-rifles', 'knives', 'hunting', 'reloading-equipment'] },
+  // Custom/no-feed retailers read by the generic HTML catalog adapter.
+  { domain: 'sportsmanswarehouse.co.za', label: 'Sportsmans Warehouse', platform: HTML, roles: ['ANCHOR'], categories: ['*'] },
+  { domain: 'camdix.co.za', label: 'Camdix', platform: HTML, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'reloading-equipment', 'shooting-accessories', 'knives', 'hunting'] },
+  { domain: 'kingsfirearms.co.za', label: 'Kings Firearms', platform: HTML, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'shooting-accessories', 'reloading-equipment'] },
+  { domain: 'chsguns.co.za', label: 'CHS Guns', platform: HTML, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'reloading-components', 'shooting-accessories'] },
+  { domain: 'gunsammo.co.za', label: 'Guns & Ammo', platform: HTML, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'shooting-accessories'] },
+  { domain: 'nationalluna.com', label: 'National Luna', platform: HTML, roles: ['ANCHOR'], categories: ['overlanding', 'camping-outdoor'] },
+  { domain: 'frontierbullets.co.za', label: 'Frontier Bullets', platform: HTML, roles: ['ANCHOR'], categories: ['reloading-components'] },
+  { domain: 'impalabullets.co.za', label: 'Impala Bullets', platform: HTML, roles: ['ANCHOR'], categories: ['reloading-components'] },
+  { domain: 'stewartbullets.co.za', label: 'Stewart Bullets', platform: HTML, roles: ['ANCHOR'], categories: ['reloading-components'] },
   // Wix/JS storefronts: only readable through Apify (lane closed) so left disabled.
   { domain: 'gunwarrior.co.za', label: 'Gun Warrior', platform: MARKETPLACE, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'optics'], needsApify: true },
   { domain: 'musgraverifles.co.za', label: 'Musgrave Rifles', platform: MARKETPLACE, roles: ['ANCHOR'], categories: ['firearms'], needsApify: true },

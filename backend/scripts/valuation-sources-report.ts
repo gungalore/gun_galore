@@ -23,6 +23,7 @@ import { ApifyClient } from '../src/valuation/sources/apify-client';
 import { ApifyMarketplaceAdapter } from '../src/valuation/sources/adapters/apify-marketplace.adapter';
 import { SitemapJsonLdAdapter } from '../src/valuation/sources/adapters/sitemap-jsonld.adapter';
 import { MagentoAdapter } from '../src/valuation/sources/adapters/magento.adapter';
+import { HtmlCatalogAdapter } from '../src/valuation/sources/adapters/html-catalog.adapter';
 import { ShopifyAdapter } from '../src/valuation/sources/adapters/shopify.adapter';
 import { WooAdapter } from '../src/valuation/sources/adapters/woo.adapter';
 import { GunAfricaAdapter } from '../src/valuation/sources/adapters/gunafrica.adapter';
@@ -59,6 +60,7 @@ async function main(): Promise<void> {
       new ApifyMarketplaceAdapter(new ApifyClient()),
       new SitemapJsonLdAdapter(),
       new MagentoAdapter(),
+      new HtmlCatalogAdapter(),
       new JevMatchService(),
     );
 
