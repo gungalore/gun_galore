@@ -70,6 +70,7 @@ const SOURCES = [
   { domain: 'takla.co.za', label: 'Takla Products', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['overlanding', 'camping-outdoor'] },
   { domain: 'spearfishingsa.co.za', label: 'Spearfishing South Africa', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['fishing'] },
   { domain: 'accuratearms.co.za', label: 'Accurate Arms', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'gun-smithing-parts', 'optics'] },
+  { domain: 'outdoorandvelocity.co.za', label: 'Outdoor & Velocity', platform: WOO, roles: ['ANCHOR'], categories: ['paintball', 'air-rifles', 'shooting-accessories', 'self-defence', 'camping-outdoor'] },
   { domain: 'makro.co.za', label: 'Makro', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['*'] },
   { domain: 'frontrunneroutfitters.com', label: 'Front Runner', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['overlanding', 'camping-outdoor'] },
   // Used classifieds forum reachable by plain GET (bounded recent-listings crawl).
