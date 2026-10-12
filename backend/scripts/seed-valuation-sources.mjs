@@ -60,6 +60,16 @@ const SOURCES = [
   // Big retailers that JS/Cloudflare-block our own fetch.
   { domain: 'capeunionmart.co.za', label: 'Cape Union Mart', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['*'] },
   { domain: 'gunsbows.co.za', label: 'Guns & Bows', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'air-rifles', 'optics', 'shooting-accessories', 'archery-bowhunting', 'knives', 'hunting'] },
+  // Added from the leftover shop list (verified SA + reachable).
+  { domain: 'knifeguy.co.za', label: 'The Knife Guy', platform: SHOPIFY, roles: ['ANCHOR'], categories: ['knives', 'shooting-accessories', 'self-defence'] },
+  { domain: 'orpenwapens.co.za', label: 'Orpen Wapens', platform: WOO, roles: ['ANCHOR'], categories: ['firearms', 'reloading-equipment', 'reloading-components', 'shooting-accessories', 'optics'] },
+  { domain: 'wildmanhuntingandoutdoor.com', label: 'Wildman', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['*'] },
+  { domain: 'lynx.co.za', label: 'Lynx Optics', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['optics'] },
+  { domain: 'vectoroptics-africa.com', label: 'Vector Optics Africa', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['optics', 'shooting-accessories'] },
+  { domain: 'tacticallyarmed.co.za', label: 'Tactically Armed', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'shooting-accessories', 'knives', 'self-defence', 'optics'] },
+  { domain: 'takla.co.za', label: 'Takla Products', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['overlanding', 'camping-outdoor'] },
+  { domain: 'spearfishingsa.co.za', label: 'Spearfishing South Africa', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['fishing'] },
+  { domain: 'accuratearms.co.za', label: 'Accurate Arms', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'gun-smithing-parts', 'optics'] },
   { domain: 'makro.co.za', label: 'Makro', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['*'] },
   { domain: 'frontrunneroutfitters.com', label: 'Front Runner', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['overlanding', 'camping-outdoor'] },
   // Used classifieds forum reachable by plain GET (bounded recent-listings crawl).
