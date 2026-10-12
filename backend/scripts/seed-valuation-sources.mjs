@@ -49,10 +49,21 @@ const SOURCES = [
   { domain: 'fishsa.co.za', label: 'FishSA', platform: WOO, roles: ['ANCHOR'], categories: ['fishing'] },
   // Verified: server-rendered classifieds, robots-permissive plain GET.
   { domain: 'gunafrica.co.za', label: 'Gun Africa', platform: MARKETPLACE, roles: ['USED'], categories: ['firearms', 'air-rifles', 'optics', 'knives', 'archery-bowhunting', 'reloading-equipment', 'reloading-components', 'shooting-accessories', 'gun-smithing-parts'] },
-  // Blocked/JS: need Apify + residential proxies (off until that plan is live).
-  { domain: 'gumtree.co.za', label: 'Gumtree', platform: MARKETPLACE, roles: ['USED'], categories: ['*'], needsApify: true },
-  { domain: 'facebook.com/marketplace', label: 'Facebook Marketplace', platform: MARKETPLACE, roles: ['USED'], categories: ['*'], needsApify: true },
-  { domain: 'junkmail.co.za', label: 'Junk Mail', platform: MARKETPLACE, roles: ['USED'], categories: ['*'], needsApify: true },
+  // Blocked/JS/SPA retailers: read via the Scrapewise render lane.
+  { domain: 'gumtree.co.za', label: 'Gumtree', platform: SCRAPEWISE, roles: ['USED'], categories: ['*'] },
+  { domain: 'facebook.com/marketplace', label: 'Facebook Marketplace', platform: SCRAPEWISE, roles: ['USED'], categories: ['*'] },
+  { domain: 'junkmail.co.za', label: 'Junk Mail', platform: SCRAPEWISE, roles: ['USED'], categories: ['*'] },
+  { domain: '247hunter.co.za', label: '247 Hunter', platform: SCRAPEWISE, roles: ['USED'], categories: ['firearms', 'optics', 'hunting', 'knives', 'shooting-accessories'] },
+  { domain: 'bluewatergear.co.za', label: 'Blue Water Gear', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['fishing'] },
+  { domain: 'davesheer.com', label: 'Dave Sheer Firearms', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['firearms', 'optics', 'shooting-accessories', 'reloading-equipment'] },
+  { domain: 'decathlon.co.za', label: 'Decathlon South Africa', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['camping-outdoor', 'overlanding', 'outdoor-clothing-footwear'] },
+  { domain: 'melvillandmoon.com', label: 'Melvill & Moon', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['camping-outdoor', 'overlanding'] },
+  { domain: 'terraintamer.com', label: 'Terrain Tamer South Africa', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['overlanding'] },
+  // Big retailers that JS/Cloudflare-block our own fetch.
+  { domain: 'capeunionmart.co.za', label: 'Cape Union Mart', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['*'] },
+  { domain: 'takealot.com', label: 'Takealot', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['*'] },
+  { domain: 'makro.co.za', label: 'Makro', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['*'] },
+  { domain: 'frontrunneroutfitters.com', label: 'Front Runner', platform: SCRAPEWISE, roles: ['ANCHOR'], categories: ['overlanding', 'camping-outdoor'] },
   // Used classifieds forum reachable by plain GET (bounded recent-listings crawl).
   { domain: 'jaracal.com', label: 'Jaracal', platform: MARKETPLACE, roles: ['USED'], categories: ['firearms', 'optics', 'reloading-equipment', 'reloading-components', 'shooting-accessories', 'knives', 'hunting', 'air-rifles', 'paintball', 'archery', 'outdoor-clothing-footwear', 'camping-outdoor', 'fishing', 'self-defence'] },
   // SA precision/chassis maker on Shopify (readable now).
