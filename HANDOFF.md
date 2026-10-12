@@ -7,6 +7,58 @@ overwritten.
 
 Last updated: **2026-10-12**.
 
+## 2026-10-12 — RETIRED-FEATURE PURGE (DOCS + CODE) (FULL DEPLOY)
+
+Commit **`22d23b11`** (92 files), full deploy via `infra/deploy/deploy.sh`
+(Git Bash). Rollback point printed by the box's `~/bin/backup.sh`; migration
+`20261012120000_drop_retired_models` applied (`prisma migrate status`: 116
+migrations, schema up to date). Health x2 OK, public 200 x2, three pm2 services
+(`alloutdoor-backend`, `alloutdoor-frontend`, `warden`) online. Deployed HEAD
+`22d23b11`.
+
+Gates before deploy: backend `tsc` clean + **346 suites/5488 tests**; frontend
+`tsc` clean + **136 files/1700 tests** + production build.
+
+**What shipped.** Removed every reference to the retired feature set from
+documentation and code, so nothing in the repo implies a removed feature is
+live.
+
+- **Docs.** Deleted the dedicated removed-feature docs (Daily Deals x3,
+  OnDayOnly teardown, KoraPay, Peach/Ivori, Clerk-removal, Load Lab port guide,
+  hunt pilot, and the Bob Go migration record `BOBGO-MIGRATION.md`). Scrubbed
+  the retired set (Swop, the `TAKE_A_SHOT` listing type, Experiences/Hunting
+  Packages, PRO/raffle, Featured slots, Ask Boet, hunt-ballistics, legacy
+  payment/identity vendors, TCG/Pudo) from `README`, `docs/INDEX`,
+  `docs/ARCHITECTURE`, `docs/project-reference`, `docs/ENVIRONMENT`,
+  `ALLOUTDOOR-REPLATFORM`, `COMPLIANCE-RULES`, `ACCOUNT-CLOSURE`, `HANDOFF`
+  history and the rest. `docs/ARCHITECTURE` §4 was replaced with a concise
+  current-state courier section; `docs/INDEX` rewritten and its "nothing is
+  ever deleted" rule dropped.
+- **Guard.** `AGENTS.md` gained a **"Retired Features (do not rebuild)"** list
+  and the note that `docs/project-reference.md` replaces the deleted
+  `CLAUDE.md`.
+- **Schema.** Dropped the orphaned models `FeaturedSlot*`(6), `PrizeDraw`,
+  `Deal`, `DealPurchaseOrder`, `Supplier` and their enums/relations via
+  `20261012120000_drop_retired_models`. `Listing.isDealListing` is kept (a live
+  public-discovery chokepoint).
+- **Code.** Dead flags removed (`pro_draw_enabled`, `raffle_*`,
+  `subscription_pro_price_cents`, the four `ask_gg_*` message caps); retired
+  public routes removed from `frontend/middleware.ts`; the stale `dummy-run`
+  harness and `seed-featured-slots` seeder deleted; stale comments scrubbed.
+  **Kept:** the live offers/"Take a Shot" brand, `isDealListing`, the Bob Go
+  `tcg` provider slugs, the create-listing photo helper. "Ask Boet" branding on
+  that helper and the tier badges was renamed to neutral copy.
+- **Left for a follow-up (deliberate):** the deeper refactor — `Swap`/
+  `SwapProposal` + `Transaction.swapId`, `Subscription`/`SubscriptionCharge` +
+  `SubscriptionTier`, the `TAKE_A_SHOT`/`SWOP` enum values, the
+  `AskGgConversation` cluster and `manual-payments`. These are still referenced
+  by live code.
+
+**Know.** Removing the retired public middleware patterns means those dead URLs
+now 307 to sign-in instead of serving an honest 404. A `docs/history` report that
+described the deleted offline harness (`DUMMY-RUN-REPORT.md`) is retained; the
+harness itself is gone.
+
 ## 2026-10-12 - GEMINI 3.8 FLASH + JEV FILES DOCUMENTS (FULL DEPLOY)
 
 Commit **`3190fb12`** (27 files), full deploy via `infra/deploy/deploy.sh`.
