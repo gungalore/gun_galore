@@ -5,7 +5,38 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-11**.
+Last updated: **2026-10-12**.
+
+## 2026-10-12 - GEMINI 3.8 FLASH + JEV FILES DOCUMENTS (FULL DEPLOY)
+
+Commit **`3190fb12`** (27 files), full deploy via `infra/deploy/deploy.sh`.
+Rollback point **`alloutdoor-20261012-175530.dump`**; no pending migrations.
+Backend + frontend health x2 OK, warden online, public 200 x2, three pm2
+services online. Gates: backend tsc clean + **346 suites/5496 tests**; frontend
+tsc clean + **136 files/1701 tests** + prod build.
+
+**Two asks shipped.**
+- **Model routing.** Platform default is now `gemini-3.8-flash`
+  (`llm.service.ts`, `gemini.provider.ts`). Moderation (images, escalation,
+  video) is pinned to `gemini-3.1-flash-lite` by the `modelFor` code backstop.
+  DeepSeek and Qwen are retired from routing (the provider classes stay as
+  rollback). The licence-card OCR and valuation now run on Gemini. Price rows
+  added for both models — **PLACEHOLDER rates, confirm against Google's rate
+  card**. Fixed the stale "DeepSeek is the default" header.
+- **Jev files documents.** New `backend/src/common/document-filing/`
+  (`DocumentFilingService`). Gemini transcribes the whole page to raw text and
+  Jev picks the folder: vault credential kind plus `also_covers`, motivation
+  document kind, and evidence container. Wired into the vault and motivation
+  classifiers. A photograph with no printed text keeps the tuned vision
+  classifier — Jev cannot see.
+
+**Know.** Moderation TEXT stays on Jev; the ladder's second opinion moved to
+`gemini-3.1-flash-lite` and the verdict `source` label is now `gemini`. New
+purposes: `vault.transcribe`, `vault.file`, `motivation.transcribe`,
+`motivation.classify.file`, `motivation.evidence.file`. With Jev configured, a
+photo pays one extra Gemini transcription before the vision classifier. Set
+`LLM_MODEL=gemini-3.8-flash` on the box only if you want it explicit; the code
+default already is.
 
 ## 2026-10-11 - FEED RESUME + REFRESH + LIVE COUNTS (FULL DEPLOY)
 
