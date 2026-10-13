@@ -7,6 +7,47 @@ overwritten.
 
 Last updated: **2026-10-13**.
 
+## 2026-10-13 — DOCUMENT CENTRE: A TRAINING ROW IS NAMED BY ITS FIREARM (FRONTEND DEPLOY)
+
+Commit **`a73a7b39`** (`fix(document-centre): name a training certificate by
+its firearm, not the Act`), 2 files, frontend-only deploy via
+`infra/deploy/deploy.sh --frontend-only` (Git Bash) — the backend kept serving
+(uptime 27m after). Rollback point `alloutdoor-20261013-132644.dump` (29 MB).
+Frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD
+`a73a7b39`.
+
+Gates before deploy: frontend `tsc` clean + **136 files/1701 tests** +
+production build.
+
+**The report.** Operator: "scanned all my proficiency certs, it missed the
+handgun and just gave the firearms control act on it." Diagnosed from the live
+DB (the newest rows, 13:16–13:18 SAST):
+
+- The handgun statement of results **read correctly** — `unit_standard =
+  "117705, 119649"`, derived title "Proficiency - Handgun". So the handgun unit
+  (119649) was never actually dropped.
+- The vault names a training row by its unit standards **in print order**
+  (`trainingName`, `frontend/lib/document-centre-sections.ts`). 117705 —
+  "Demonstrate knowledge of the Firearms Control Act..." — is on virtually
+  every statement of results and endorses no firearm, so it led the row and the
+  handgun hid behind it. On the list the row read as a Firearms Control Act
+  document.
+
+**What shipped.** `trainingName` now sorts the firearm units first and the
+mandatory knowledge unit (117705) last. Code and title are kept — a DFO asks by
+number — only the order changes, so "119649 · Handle and use a handgun · 117705
+· ..." is what the row reads.
+
+**Left for you (data, not code).** The handgun statement is **unpaired** — its
+side is `back` and it carries `{side-missing}` attention, because the handgun
+certificate FRONT was never in the vault (the rifle/shotgun/SL-rifle
+proficiencies each have both sides). One page in that session (13:17:24 SAST)
+also landed as a blank `COMPETENCY_CERTIFICATE` (`extractionOk=false`,
+`present: []`) — if that was the handgun certificate front, it was misclassified
+and should be re-scanned as a proficiency. The blank-read half should be gone
+now that `read()` disables thinking (see the entry below); if it recurs the log
+line names the cause. Re-scan the handgun certificate front to pair it.
+
 ## 2026-10-13 — DOCUMENT CENTRE: READ EVERY PAGE, COUNT EVERY ARRIVAL (FULL DEPLOY)
 
 Commit **`02c8320f`** (`fix(document-centre): read every page, and count every
