@@ -412,6 +412,8 @@ export interface BugReportDetails {
   description: string;
   /** User id of the reporter — never a real name. */
   reporterId: string;
+  /** The page the member reported from, when we have one. */
+  url?: string | null;
   /** Optional uploaded screenshot, attached to the operator email. */
   screenshot?: {
     buffer: Buffer;
@@ -4712,6 +4714,7 @@ export class NotificationsService {
       ).replace(/\n/g, '<br>')}`,
       rows: [
         { label: 'Category', value: d.category },
+        { label: 'Page', value: d.url ?? '—' },
         { label: 'Reporter', value: d.reporterId },
         { label: 'Received', value: new Date().toISOString() },
         { label: 'Screenshot', value: d.screenshot ? 'Attached' : 'None' },

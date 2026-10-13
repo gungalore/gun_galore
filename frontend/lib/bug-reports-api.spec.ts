@@ -14,7 +14,12 @@ describe('submitBugReport', () => {
 
     const shot = new Blob(['x'], { type: 'image/png' });
     const result = await submitBugReport(
-      { category: 'BUY_NOW', description: 'Something broke here.', screenshot: shot as unknown as File },
+      {
+        category: 'BUY_NOW',
+        description: 'Something broke here.',
+        url: 'https://alloutdoor.co.za/listings/abc',
+        screenshot: shot as unknown as File,
+      },
       'tok',
     );
 
@@ -28,6 +33,7 @@ describe('submitBugReport', () => {
     const form = init.body as FormData;
     expect(form.get('category')).toBe('BUY_NOW');
     expect(form.get('description')).toBe('Something broke here.');
+    expect(form.get('url')).toBe('https://alloutdoor.co.za/listings/abc');
     // FormData serialises a Blob to a File (named "blob"); assert the part is
     // present with the right type/size rather than object identity.
     const attached = form.get('screenshot');

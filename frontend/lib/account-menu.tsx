@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useAuth } from './auth';
+import { useBugReport } from '@/components/bug-report/bug-report-context';
 import {
   ACCOUNT_GROUPS,
   LogoutIcon,
@@ -89,6 +90,7 @@ export function AccountMenuList({
   // same "action needed" rows the bell counts. Fails silent (empty = no
   // badges) so the menu always renders.
   const { getToken } = useAuth();
+  const { open: openBugReport } = useBugReport();
   const [counts, setCounts] = useState<Record<string, number>>({});
   useEffect(() => {
     let cancelled = false;
@@ -132,11 +134,20 @@ export function AccountMenuList({
           </p>
           {group.items.map((item) => {
             const active = isActive(pathname, item.href);
+            // "Report a bug" opens the global capture sheet instead of
+            // navigating, so the screenshot is of the page the member was on.
+            const isBugReport = item.href === '/report-a-bug';
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={onNavigate}
+                onClick={(e) => {
+                  if (isBugReport) {
+                    e.preventDefault();
+                    openBugReport();
+                  }
+                  onNavigate?.();
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

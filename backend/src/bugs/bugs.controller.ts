@@ -33,7 +33,7 @@ export class BugsController {
   )
   report(
     @CurrentUser() userId: string,
-    @Body() body: { category?: string; description?: string },
+    @Body() body: { category?: string; description?: string; url?: string },
     @UploadedFile()
     file?: { buffer: Buffer; mimetype: string; size: number },
   ) {
@@ -46,6 +46,7 @@ export class BugsController {
       userId,
       category: body?.category,
       description: body?.description,
+      url: body?.url,
       screenshot: file ?? null,
     });
   }

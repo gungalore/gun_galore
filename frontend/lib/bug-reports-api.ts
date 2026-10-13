@@ -8,6 +8,8 @@ const API_URL =
 export interface BugReportInput {
   category: string;
   description: string;
+  /** The page the member was on when they reported it. */
+  url?: string;
   screenshot?: File | null;
 }
 
@@ -22,6 +24,7 @@ export async function submitBugReport(
   const form = new FormData();
   form.append('category', input.category);
   form.append('description', input.description);
+  if (input.url) form.append('url', input.url);
   if (input.screenshot) form.append('screenshot', input.screenshot);
 
   const res = await fetch(`${API_URL}/bugs/report`, {

@@ -2082,4 +2082,16 @@ canvas,
   background: var(--success);
 }
 
+/* Desktop-only "Report a bug" hovering button. On phones/installed app the
+   same action lives in the bottom tray tab, so this is hidden below 768px.
+   inline-flex (not block) so the icon and label sit on one line. */
+.gg-bug-fab {
+  display: none;
+}
+@media (min-width: 768px) {
+  .gg-bug-fab {
+    display: inline-flex;
+  }
+}
+
 

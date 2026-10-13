@@ -19,6 +19,8 @@ import { PushFirstLaunchPrompt } from '@/components/push-first-launch-prompt';
 import { ProfileSetupPrompt } from '@/components/profile-setup-prompt';
 import { ProfileCompleteNudge } from '@/components/profile-complete-nudge';
 import { WishlistProvider } from '@/lib/use-wishlist';
+import { BugReportProvider } from '@/components/bug-report/bug-report-context';
+import { BugReportFab } from '@/components/bug-report/bug-report-fab';
 import { WelcomeBanner } from '@/components/welcome-banner';
 import { TrustGuaranteeModal } from '@/components/trust-guarantee-modal';
 import './globals.css';
@@ -331,6 +333,10 @@ export default function RootLayout({
           {/* Flushes any pending sign-up consent to the backend once the
               session is live (POPIA record). No-op when signed out. */}
           <WishlistProvider>
+          {/* Site-wide "Report a bug" — the sheet (opened from the bottom tray
+              tab or the desktop hovering button) captures the current page and
+              its URL. Wraps the shell so both entry points share one modal. */}
+          <BugReportProvider>
           {/* PublicNav + PublicFooter hide themselves on /admin/*
               (the admin layout owns its own chrome) so the public
               Nav and ECT Â§ 43 footer only render on the buyer/
@@ -431,6 +437,10 @@ export default function RootLayout({
               param (?why=alloutdoor / ?guarantee=true) and renders null
               otherwise. Attach the param to any URL to open it. */}
           <TrustGuaranteeModal />
+          {/* Desktop-only hovering report button; hidden under 768px where the
+              bottom tray tab carries the same action. */}
+          <BugReportFab />
+          </BugReportProvider>
           </WishlistProvider>
         </body>
       </html>

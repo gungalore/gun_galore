@@ -44,7 +44,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SignInButton, useUser, useClerk, useAuth } from '../lib/auth';
 import { useStandalone } from '@/lib/use-standalone';
@@ -54,6 +54,7 @@ import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { isTabRoute } from '@/lib/shell-routes';
 import { PushToggleRow } from '@/components/push-opt-in-banner';
 import { AccountMenuList } from '@/lib/account-menu';
+import { useBugReport } from '@/components/bug-report/bug-report-context';
 import type { CategoryWithCount } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -119,8 +120,9 @@ interface Tab {
   // Centred-prominent tabs (currently just Sell) get the raised
   // circular-FAB treatment. Only works at 5 tabs (position 3 = 50%).
   prominent?: boolean;
-  // 'shop' / 'more' open sheets instead of navigating.
-  action?: 'shop' | 'more' | 'search';
+  // 'shop' / 'more' open sheets instead of navigating; 'bug-report' opens
+  // the global report-a-bug sheet.
+  action?: 'shop' | 'more' | 'search' | 'bug-report';
 }
 
 // Inline SVG icons — no extra dep. 24×24 viewbox, currentColor stroke
@@ -139,14 +141,24 @@ function IconHome() {
   );
 }
 
-function IconSearch() {
+function IconBug() {
+  // Report a bug — a beetle, the universal "something is broken here" glyph.
   return (
     <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth={1.9} />
-      <path
-        d="M15.5 15.5 21 21"
+      <path d="M9 8a3 3 0 0 1 6 0" stroke="currentColor" strokeWidth={1.6} />
+      <rect
+        x="8"
+        y="8"
+        width="8"
+        height="9"
+        rx="4"
         stroke="currentColor"
-        strokeWidth={1.9}
+        strokeWidth={1.6}
+      />
+      <path
+        d="M12 8v9M8 11H4M8 15l-3 2M16 11h4M16 15l3 2M8 11l-3-2M16 11l3-2"
+        stroke="currentColor"
+        strokeWidth={1.6}
         strokeLinecap="round"
       />
     </svg>
@@ -297,41 +309,6 @@ function IconMore() {
     </svg>
   );
 }
-function IconSparkles() {
-  // Four-point sparkle cluster — universal "AI / magic" affordance.
-  // A large centre sparkle with two smaller satellite sparkles reads
-  // as the "smart helper" idiom established by ChatGPT / Apple
-  // Intelligence / Copilot. Drawn with currentColor stroke so the
-  // active-tab tint (var(--red)) flows through.
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-      {/* Main sparkle — centred, larger */}
-      <path
-        d="M12 4 L13.6 9.4 L19 11 L13.6 12.6 L12 18 L10.4 12.6 L5 11 L10.4 9.4 Z"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      {/* Small sparkle — top-right */}
-      <path
-        d="M18.5 4 L19 5.5 L20.5 6 L19 6.5 L18.5 8 L18 6.5 L16.5 6 L18 5.5 Z"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      {/* Small sparkle — bottom-right */}
-      <path
-        d="M18.5 16 L19 17.2 L20.2 17.7 L19 18.2 L18.5 19.4 L18 18.2 L16.8 17.7 L18 17.2 Z"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </svg>
-  );
-}
 function IconChevronRight() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -349,11 +326,11 @@ function IconChevronRight() {
 export function BottomTabBar() {
   const isStandalone = useStandalone();
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   const { signOut } = useClerk();
+  const bugReport = useBugReport();
   const [shopOpen, setShopOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [alertsCount, setAlertsCount] = useState<number>(0);
@@ -585,21 +562,18 @@ export function BottomTabBar() {
         (p === '/' && !sp?.get('q')) || p.startsWith('/category/'),
     },
     {
-      // ⚠️ THIS SLOT WAS "SAVED" (→ /wishlist). The design names it Search and
-      // puts the wishlist heart in the header instead, where it sits beside the
-      // cart on every root screen — so nothing was lost, it moved up.
-      //
-      // There is no /search route and there should not be one: the storefront
-      // at "/" IS the search surface (it already takes q, listingType,
-      // categoryId and sort, and /listings redirects to it). So this tab does
-      // what the design's Search board actually shows — the storefront with its
-      // search field focused. Routing to a new page that rendered the same
-      // results would have duplicated the homepage's whole data path to no end.
-      key: 'search',
-      label: 'Search',
-      href: '/',
-      isActive: (_p, sp) => Boolean(sp?.get('q')),
-      action: 'search',
+      // ⚠️ THIS SLOT WAS "SEARCH" (and, before that, "Saved"), then "Value".
+      // Operator, 2026-10-13: replace both the Search and Value tabs with a
+      // "Report a bug" entry. Search duplicated the storefront's own search
+      // field, and Value My Item is reachable from the shop tiles and the
+      // account menu — neither earned a permanent slot. This is a button, not
+      // a Link: it opens the global report sheet, which screenshots the page
+      // the member is on and records its URL.
+      key: 'report',
+      label: 'Report',
+      href: '/report-a-bug',
+      isActive: (p) => p.startsWith('/report-a-bug'),
+      action: 'bug-report',
     },
     {
       key: 'sell',
@@ -625,14 +599,6 @@ export function BottomTabBar() {
       // No `action` — this is a real Link, not a sheet.
     },
     {
-      // Value My Item: the AI valuation surface. Sits beside the commerce
-      // tabs; opens the /value flow (member-gated inside the page).
-      key: 'value',
-      label: 'Value',
-      href: '/value',
-      isActive: (p) => p.startsWith('/value'),
-    },
-    {
       // ⚠️ "Account", NOT "More" — and a route, not a sheet. "More" is a name
       // for a place with no idea what is in it. The sheet it opened rendered
       // ACCOUNT_GROUPS from lib/account-menu-data; /account renders the same
@@ -649,12 +615,10 @@ export function BottomTabBar() {
     switch (key) {
       case 'home':
         return <IconHome />;
-      case 'search':
-        return <IconSearch />;
+      case 'report':
+        return <IconBug />;
       case 'orders':
         return <IconBox />;
-      case 'value':
-        return <IconSparkles />;
       case 'account':
         // The badge, NOT the bell, is the thing that had to survive the tab
         // rename: it only renders when alertsCount > 0, polls via active-count,
@@ -850,20 +814,7 @@ export function BottomTabBar() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (tab.action === 'search') {
-                        // The storefront IS the search surface, so this focuses
-                        // the field the shell header already renders rather
-                        // than navigating to a second page that would run the
-                        // same query. Route there first if we are elsewhere;
-                        // the focus then lands after the header mounts.
-                        if (pathname !== '/') router.push('/');
-                        requestAnimationFrame(() => {
-                          const input = document.querySelector<HTMLInputElement>(
-                            '[data-shell-header] input',
-                          );
-                          input?.focus();
-                        });
-                      }
+                      if (tab.action === 'bug-report') bugReport.open();
                     }}
                     aria-label={tab.label}
                     style={{

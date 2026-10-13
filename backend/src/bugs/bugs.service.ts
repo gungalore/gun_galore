@@ -47,7 +47,24 @@ export interface ReportBugInput {
   userId: string;
   category?: string;
   description?: string;
+  url?: string;
   screenshot?: { buffer: Buffer; mimetype: string } | null;
+}
+
+const MAX_URL_LENGTH = 2048;
+
+/** Keep only an http(s) URL, capped. Anything else (missing, junk, a
+ *  javascript:/data: scheme) becomes null rather than reaching the email. */
+function cleanUrl(raw?: string): string | null {
+  const value = (raw ?? '').trim();
+  if (!value || value.length > MAX_URL_LENGTH) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }
 
 @Injectable()
@@ -81,6 +98,7 @@ export class BugsService {
       category: CATEGORY_LABELS[category as BugCategory],
       description,
       reporterId: input.userId,
+      url: cleanUrl(input.url),
       screenshot: shot
         ? {
             buffer: shot.buffer,
