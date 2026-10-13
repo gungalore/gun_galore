@@ -125,6 +125,24 @@ describe('the roles a document also covers', () => {
     expect(clean('DEDICATED_STATUS', undefined)).toEqual([]);
     expect(clean('DEDICATED_STATUS', 'GOOD_STANDING')).toEqual([]);
   });
+
+  it('\u26a0\ufe0f refuses a role that cannot share a page with the kind', () => {
+    // ⚠️ THE OPERATOR'S OWN PACK, 2026-10-13. Jev answered also_covers:
+    // [ASSOCIATION_ENDORSEMENT] for a firearm LICENCE — both name a firearm by
+    // serial — and `mayArmReadExpiry` then refused to arm the licence's expiry
+    // ("document fills more than one role"), so a readable licence fired no
+    // reminder. A licence is not an endorsement. The filter is the choke point
+    // both classify paths use, so the refusal lives here, not in the prompt.
+    expect(clean('FIREARM_LICENCE', ['ASSOCIATION_ENDORSEMENT'])).toEqual([]);
+    expect(clean('ASSOCIATION_ENDORSEMENT', ['FIREARM_LICENCE'])).toEqual([]);
+    // The exclusion is narrow: an unrelated co-occurring role still survives.
+    expect(
+      clean('FIREARM_LICENCE', [
+        'ASSOCIATION_ENDORSEMENT',
+        'COMPETENCY_CERTIFICATE',
+      ]),
+    ).toEqual(['COMPETENCY_CERTIFICATE']);
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────

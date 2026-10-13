@@ -184,22 +184,67 @@ export function currentKind(kind: CredentialKind): CredentialKind {
   return RETIRED_KINDS.get(kind) ?? kind;
 }
 
+/**
+ * Roles that cannot BOTH be true of one page.
+ *
+ * ⚠️ PAID FOR IN PRODUCTION, 2026-10-13. Jev answered `also_covers:
+ * [ASSOCIATION_ENDORSEMENT]` for a firearm LICENCE, because both "name a
+ * firearm by serial" — so the licence was filed as also an endorsement. The
+ * cost is not cosmetic: `mayArmReadExpiry` refuses to arm a date on a document
+ * that "fills more than one role", so that licence's expiry was read off the
+ * page and then never watched (the operator's own pack, one of five).
+ *
+ * A licence is the state's permit for one firearm; an endorsement is an
+ * association's letter that a firearm suits a discipline. They are different
+ * papers, and one page is never both. Kept here, at the single choke point
+ * both classify paths run their covers through, rather than in the prompt
+ * alone — a prompt asks, this refuses.
+ */
+const EXCLUSIVE_COVERS: Readonly<Record<string, readonly string[]>> = {
+  [CredentialKind.FIREARM_LICENCE]: [CredentialKind.ASSOCIATION_ENDORSEMENT],
+  [CredentialKind.ASSOCIATION_ENDORSEMENT]: [CredentialKind.FIREARM_LICENCE],
+};
+
 export function cleanAlsoCovers(
   kind: CredentialKind,
   raw: unknown,
 ): CredentialKind[] {
   if (!Array.isArray(raw)) return [];
   const known = Object.values(CredentialKind) as string[];
+  const excluded = EXCLUSIVE_COVERS[kind] ?? [];
   return [
     ...new Set(
       raw
         .map((k) => String(k ?? '').trim())
         .filter(
           (k): k is CredentialKind =>
-            known.includes(k) && k !== kind && k !== 'OTHER',
+            known.includes(k) &&
+            k !== kind &&
+            k !== 'OTHER' &&
+            !excluded.includes(k),
         ),
     ),
   ];
+}
+
+/**
+ * A PII-FREE SIGNATURE of a model reply that would not parse.
+ *
+ * ⚠️ NEVER THE TEXT ITSELF. A read reply can carry a name or a serial, and
+ * this file's logs are not the vault. The shape alone is what separates the
+ * two failures we can actually fix: a reply cut off mid-object (truncation —
+ * the thinking budget, see read()) versus a reply wrapped in prose or a fence
+ * (the tolerant hunt handles it). Enough to tell them apart, nothing to leak.
+ */
+function replyShape(text: string): string {
+  const t = text.trim();
+  if (!t) return 'empty';
+  if (t.startsWith('```')) return 'fenced';
+  if (t.startsWith('{')) {
+    return t.endsWith('}') ? 'braces-closed-but-invalid' : 'truncated';
+  }
+  if (t.startsWith('[')) return 'array';
+  return 'prose';
 }
 
 /**
@@ -700,6 +745,12 @@ export class LicenceCentreExtractService {
         // No `model`: every call takes LlmService.model. See the note at the
         // top of this file about the two model names that used to live here.
         maxTokens: 200,
+        // ⚠️ THINKING OFF, LIKE transcribe(). A vision answer that must come
+        // back as strict JSON cannot share its output budget with a reasoning
+        // pass: on gemini-3.8-flash the default thinking can consume the
+        // allowance and truncate the reply, which lands here as unparseable
+        // JSON. See the note on read() — that one paid for this in production.
+        thinking: { budgetTokens: 0 },
         timeoutMs: 60_000,
         system: CLASSIFY_SYSTEM,
         messages: [
@@ -810,6 +861,9 @@ export class LicenceCentreExtractService {
     try {
       const res = await this.llm.complete({
         maxTokens: 200,
+        // Thinking off for the same reason as classifyVision — a two-token
+        // answer must never be pre-empted by a reasoning pass.
+        thinking: { budgetTokens: 0 },
         timeoutMs: 30_000,
         system: ORIENT_SYSTEM,
         messages: [
@@ -880,9 +934,21 @@ export class LicenceCentreExtractService {
     ];
 
     let text = '';
+    let stopReason: string | undefined;
     try {
       const res = await this.llm.complete({
-        maxTokens: 1200,
+        // ⚠️ THINKING OFF, AND THE BUDGET RAISED. On 2026-10-13 two of a
+        // five-document pack read as NOTHING — the log said "unparseable
+        // JSON" — and the cause is here: unlike transcribe(), this call left
+        // thinking at the model default. On the gemini-3.8-flash default the
+        // reasoning pass can eat the output allowance, so the JSON was cut
+        // off mid-object and JSON.parse threw, which parse() reads as an empty
+        // page. transcribe() already disables it for exactly this reason
+        // ("a thinking budget would eat the allowance and truncate"); a
+        // transcription-style extraction is the same case. 1200 was also tight
+        // for ~15 fields plus the {"fields":[...]} envelope, so it goes up too.
+        maxTokens: 2400,
+        thinking: { budgetTokens: 0 },
         timeoutMs: 60_000,
         system: SYSTEM_PROMPT,
         messages: [
@@ -908,6 +974,7 @@ export class LicenceCentreExtractService {
         purpose: 'vault.read',
       });
       text = res.text.trim();
+      stopReason = res.stopReason;
     } catch (err) {
       this.logger.warn(
         `Credential read failed for ${args.kind}: ${(err as Error).message}`,
@@ -915,28 +982,42 @@ export class LicenceCentreExtractService {
       return EMPTY;
     }
 
-    return { ...this.parse(text, args.kind, args.alsoCovers ?? []), reader: 'model' };
+    return {
+      ...this.parse(text, args.kind, args.alsoCovers ?? [], stopReason),
+      reader: 'model',
+    };
   }
 
   private parse(
     text: string,
     kind: CredentialKind,
     alsoCovers: readonly CredentialKind[] = [],
+    stopReason?: string,
   ): CredentialReading {
     let parsed: {
       fields?: { key?: string; value?: string; confidence?: string }[];
     };
     try {
-      // ⚠️ NO MORE /\{[\s\S]*\}/ HUNT. That regex existed to find the JSON
-      // inside a reply that might carry surrounding prose despite being
-      // asked not to. With the response schema-enforced (see the call site),
-      // `text` is already a bare JSON document — there is nothing around it
-      // to hunt out of. A malformed reply still lands here as a thrown
-      // SyntaxError, caught below exactly as before.
       parsed = JSON.parse(text);
     } catch {
-      this.logger.warn(`Credential read returned unparseable JSON (${kind})`);
-      return EMPTY;
+      // ⚠️ THE HUNT IS BACK, AND IT EARNED ITS PLACE. Removing it rested on
+      // the assumption that the response schema guarantees a bare JSON
+      // document. Production disproved that on 2026-10-13: a reply can still
+      // arrive wrapped (in prose or a ```json fence), and treating a wrapped
+      // reply as an empty page is the worst possible reading of a document we
+      // can plainly read. So a reply that is not bare JSON now gets one
+      // tolerant attempt at the object inside it. A TRUNCATED reply has no
+      // closing brace, still fails, and now says so with its stop reason — see
+      // the note on read(), where the thinking budget was cutting the reply off.
+      const m = text.match(/\{[\s\S]*\}/);
+      try {
+        parsed = JSON.parse(m ? m[0] : text) as typeof parsed;
+      } catch {
+        this.logger.warn(
+          `Credential read returned unparseable JSON (${kind}, stop=${stopReason ?? '?'}, ${replyShape(text)})`,
+        );
+        return EMPTY;
+      }
     }
 
     const allowed = new Set([

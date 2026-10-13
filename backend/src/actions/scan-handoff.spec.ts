@@ -314,5 +314,31 @@ describe('the end of a scanning session', () => {
     const res = await controller.status('user_1', 'h1');
     expect(res.added).toBe(1);
     expect(res.pending).toBe(1);
+    // ⚠️ THE HEADING COUNTS ARRIVALS, NOT READINGS. `added` hides the row
+    // still being read; `landed` shows both, so a five-document pack whose
+    // two came back blank never reads as "3 arrived" in front of a member
+    // whose vault already holds five (operator, 2026-10-13).
+    expect(res.landed).toBe(2);
+  });
+
+  it('\u26a0\ufe0f counts a blank read as arrived, not as missing', async () => {
+    // Both rows landed; neither is readable (no vision kind, extraction not
+    // settled). `added` is 0 for both, `landed` is 2 — and it is `landed` the
+    // dialog's "N documents arrived" now reads.
+    const { controller } = makeController('licence-centre', [
+      {
+        kind: CredentialKind.FIREARM_LICENCE,
+        extractionOk: false,
+        createdAt: ago(2),
+      },
+      {
+        kind: CredentialKind.FIREARM_LICENCE,
+        extractionOk: false,
+        createdAt: ago(3),
+      },
+    ]);
+    const res = await controller.status('user_1', 'h1');
+    expect(res.added).toBe(0);
+    expect(res.landed).toBe(2);
   });
 });

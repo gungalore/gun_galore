@@ -201,23 +201,31 @@ export default function PhoneHandoffDialog({
         const s = (await res.json()) as {
           state: State;
           added: number;
+          /**
+           * Everything that ARRIVED, readable or not. `added` drops a document
+           * still being read (or one that came back blank) until it ages out,
+           * which made a five-document pack read as "3"/"4 arrived" while the
+           * vault held all five. Prefer `landed`; fall back for an older box.
+           */
+          landed?: number;
           /** The member pressed "I am finished" on the phone. */
           finished?: boolean;
           /** Landed, but not readable yet. */
           pending?: number;
         };
         if (!alive) return;
+        const received = s.landed ?? s.added;
         setState(s.state);
-        setAdded(s.added);
-        latestRef.current = s.added;
+        setAdded(received);
+        latestRef.current = received;
 
         // ⚠️ IDENTITY VERIFICATION IS EXACTLY ONE DOCUMENT, so it keeps the
         // old behaviour on purpose: that upload REPLACES rather than adds,
         // and the very next thing the desktop does is move the member on to
         // the selfie. There is nothing to carry on scanning.
         if (dest === 'kyc') {
-          if (s.added > 0) {
-            report(s.added);
+          if (received > 0) {
+            report(received);
             // A beat to read "Your ID arrived" — vanishing on the instant
             // reads as a crash.
             window.setTimeout(() => {
@@ -237,7 +245,7 @@ export default function PhoneHandoffDialog({
         // them — an open panel would sprout a back link and relabel its
         // buttons, and somebody who had reached "All filed" would be pulled
         // back into a review. That one gets a single build, after the end.
-        if (dest === 'motivation') report(s.added);
+        if (dest === 'motivation') report(received);
 
         // ⚠️ IT USED TO CLOSE INSTEAD OF EXPLAINING. setState('expired') above
         // and finishUp() here batch into ONE commit under React 19, so the

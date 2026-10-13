@@ -329,3 +329,72 @@ describe('document_side', () => {
     ).toBeUndefined();
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE READ CALL ITSELF — NOT ONLY WHAT parse() DOES WITH ITS ANSWER.
+//
+// ⚠️ PAID FOR IN PRODUCTION, 2026-10-13. Two of a five-document pack filed
+// blank with "unparseable JSON". The reply was being cut off: unlike
+// transcribe(), read() left thinking at the model default, and on
+// gemini-3.8-flash that reasoning pass can consume the output budget and
+// truncate the JSON mid-object. This pins the two knobs that fix it, so a
+// later edit cannot quietly drop them back.
+// ────────────────────────────────────────────────────────────────────
+describe('the read call', () => {
+  const reply = (
+    fields: { key: string; value: string; confidence?: string }[],
+  ) => JSON.stringify({ fields });
+
+  const readingSvc = (replyText: string) => {
+    const complete = jest.fn(
+      (req: { thinking?: unknown; maxTokens?: number }) => {
+        void req;
+        return {
+          text: replyText,
+          parts: [{ type: 'text' as const, text: replyText }],
+          toolCalls: [],
+          stopReason: 'end',
+          usage: { inputTokens: 1, outputTokens: 1 },
+          model: 'test-model',
+          provider: 'gemini' as const,
+          assistantMessage: { role: 'assistant' as const, content: replyText },
+        };
+      },
+    );
+    const service = new LicenceCentreExtractService({
+      isConfigured: () => true,
+      complete,
+    } as unknown as LlmService);
+    return { service, complete };
+  };
+
+  it('\u26a0\ufe0f disables thinking and gives the reader room to finish', async () => {
+    const { service, complete } = readingSvc(
+      reply([{ key: 'make', value: 'CZ' }]),
+    );
+    const out = await service.read({
+      kind: CredentialKind.FIREARM_LICENCE,
+      bytes: Buffer.from('x'),
+      mimeType: 'image/jpeg',
+    });
+    const req = complete.mock.calls[0][0];
+    expect(req.thinking).toEqual({ budgetTokens: 0 });
+    // 1200 was tight for ~15 fields plus the {"fields":[...]} envelope.
+    expect(req.maxTokens).toBeGreaterThanOrEqual(2000);
+    expect(out.details.make).toBe('CZ');
+  });
+
+  it('still reads a wrapped reply the provider was asked to keep bare', async () => {
+    // The response schema is meant to guarantee bare JSON, but production
+    // disproved it. A fenced reply must not be filed as an empty page.
+    const { service } = readingSvc(
+      '```json\n{"fields":[{"key":"make","value":"Howa"}]}\n```',
+    );
+    const out = await service.read({
+      kind: CredentialKind.FIREARM_LICENCE,
+      bytes: Buffer.from('x'),
+      mimeType: 'image/jpeg',
+    });
+    expect(out.details.make).toBe('Howa');
+  });
+});

@@ -338,6 +338,17 @@ export class ScanHandoffController {
     return {
       state,
       added: counted,
+      /**
+       * ⚠️ EVERYTHING THAT LANDED THIS SESSION, readable or not. `added` counts
+       * only rows whose reading has settled; a document we are still reading —
+       * or one we could not read at all — is absent from it until the 45s
+       * backstop. The desktop's "N documents arrived" asked on `added`, so a
+       * five-document pack where two came back blank read as "3"/"4 arrived"
+       * in front of a member whose vault already held all five (operator,
+       * 2026-10-13). The heading is a count of what ARRIVED; the reading is
+       * what `pending` is for.
+       */
+      landed,
       connected,
       /**
        * The member pressed "I am finished" on the phone.
