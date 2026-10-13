@@ -97,7 +97,7 @@ describe('the applied-for-firearm batch', () => {
   });
 
   it('⚠️ keeps BOTH pages when the two sides cannot be composed', async () => {
-    composeSides.mockRejectedValueOnce(new Error('no canvas'));
+    composeSides.mockRejectedValue(new Error('no canvas'));
     const out = await prepareSourceBatch(
       [img('f.jpg'), img('b.jpg')],
       [
@@ -105,6 +105,31 @@ describe('the applied-for-firearm batch', () => {
         { id: 'b', side: 'back' },
       ],
     );
+    expect(out).toHaveLength(2);
+  });
+
+  it('⚠️ composes two images EVEN WHEN the side was not named', async () => {
+    // The side orders them (front on top); it must not decide WHETHER they
+    // become one page. Operator's card: two photos, one page.
+    const first = img('one.jpg');
+    const second = img('two.jpg');
+    const out = await prepareSourceBatch(
+      [first, second],
+      [
+        { id: 'a', side: null, kind: 'FIREARM_SOURCE_PROOF' },
+        { id: 'b', side: null, kind: 'FIREARM_SOURCE_PROOF' },
+      ],
+    );
+    expect(composeSides).toHaveBeenCalledWith(first, second);
+    expect(out).toHaveLength(1);
+  });
+
+  it('⚠️ does NOT compose when one of the two is a PDF', async () => {
+    const out = await prepareSourceBatch(
+      [img('page.jpg'), pdf('form.pdf')],
+      [{ id: 'a' }, { id: 'b' }],
+    );
+    expect(composeSides).not.toHaveBeenCalled();
     expect(out).toHaveLength(2);
   });
 

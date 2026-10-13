@@ -62,28 +62,31 @@ export async function prepareSourceBatch(
   // ⚠️ SEQUENTIALLY. The detector is a single shared worker; firing every
   // image at it at once makes the later ones contend for it. The vault's own
   // batch does the same for the same reason.
-  const items: (PreparedUpload & { side: 'front' | 'back' | null })[] = [];
+  const items: (PreparedUpload & {
+    side: 'front' | 'back' | null;
+    isImage: boolean;
+  })[] = [];
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     const v = verdicts[i];
     const side = v?.side ?? null;
+    const pdf = isPdf(file);
     const shape: DocShape = side ? 'card' : shapeForKind(v?.kind ?? '');
-    const prepared = isPdf(file) ? file : await autoPolish(file, shape, v?.rotate);
+    const prepared = pdf ? file : await autoPolish(file, shape, v?.rotate);
     items.push({
       file: prepared,
       identifyId: v?.id ?? '',
       saps271: v?.saps271 === true,
       side,
+      isImage: !pdf,
     });
   }
 
   // ── 2. Compose the two sides of the card ──────────────────────────
   //
   // ⚠️ ORDER-INDEPENDENT (2026-10-14). The pairing used to require the front to
-  // arrive BEFORE the back, so a member who picked the back first — or whose
-  // picker returned them in that order — got two separate pages and no compose.
-  // Operator hit exactly that: one attempt composed, the next did not. Find the
-  // front and the back wherever they are.
+  // arrive BEFORE the back, so a member who picked the back first got two
+  // separate pages. Find the front and the back wherever they are.
   const frontIdx = items.findIndex((x) => x.side === 'front');
   const backIdx = items.findIndex((x) => x.side === 'back');
   if (frontIdx !== -1 && backIdx !== -1) {
@@ -110,6 +113,26 @@ export async function prepareSourceBatch(
       return out;
     } catch {
       // The pair could not be composed — keep both pages rather than lose one.
+    }
+  }
+
+  // ── 3. Two photographs, one page ──────────────────────────────────
+  //
+  // ⚠️ EVEN WHEN THE SIDE COULD NOT BE NAMED (2026-10-14). Operator: "If its two
+  // images that the owner just sent me ... put onto one fucking page." The side
+  // is a nicety for ORDERING (front on top); it must not be the thing that
+  // decides WHETHER the two photographs become one page. When two images are
+  // picked and the sides were not both named, compose them anyway — a card
+  // whose front was read fine and whose back was not still becomes one page.
+  if (items.length === 2 && items.every((x) => x.isImage)) {
+    const [a, b] = items;
+    const top = a.side === 'front' ? a : b.side === 'front' ? b : a;
+    const bottom = top === a ? b : a;
+    try {
+      const composed = await composeSides(top.file, bottom.file);
+      return [{ file: composed, identifyId: top.identifyId }];
+    } catch {
+      // Fall through to two pages rather than lose one.
     }
   }
 

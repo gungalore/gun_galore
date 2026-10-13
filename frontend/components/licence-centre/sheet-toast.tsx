@@ -42,7 +42,7 @@ export default function SheetToast({
     <div
       role="status"
       aria-live="polite"
-      className="gg-tile pointer-events-none fixed inset-x-4 bottom-[84px] z-[6] mx-auto max-w-[420px] rounded-[var(--r-md)] bg-[var(--text-primary)] px-4 py-3 text-center text-[13px] text-white"
+      className="gg-tile pointer-events-none fixed inset-x-4 bottom-[84px] z-[6] mx-auto max-w-[420px] rounded-[var(--r-md)] bg-[var(--text-primary)] px-4 py-3 text-center text-[13px] text-[var(--bg)]"
     >
       {message}
     </div>
