@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-10-13**.
 
+## 2026-10-13 — LICENCE CENTRE: A PROOF OF ADDRESS IS RECOGNISED (FULL DEPLOY)
+
+Commit **`da65f6f2`** (`fix(licence-centre) recognise a proof of address when Jev files it`), 3 files, full deploy. Rollback point `alloutdoor-20261013-214336.dump`. Backend and frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `da65f6f2`.
+
+Gates: backend `tsc` clean + **353 suites/5547 tests**; frontend `tsc` clean + **139 files/1713 tests** + production build OK.
+
+**The report.** Operator, 2026-10-13: "uploaded a proof of address and it was not recognized as such."
+
+**What was wrong.** The vault classification is now Jev filing from the folder hints in `common/document-filing/vault-kind-options.ts`. The `ADDRESS_CONFIRMATION` hint was a stub — "a utility bill or bank statement" — which dropped the full definition the retired vision prompt still carries at `licence-centre-extract.service.ts:1746`. Separately, the role question in `document-filing.service.ts` listed a bare "an affidavit" as an evidence example, and a confirmation of residence is usually one, so Jev could file it as evidence. A lease, a SARS/insurance/medical-aid letter, or a signed confirmation of residence matched neither path.
+
+**What shipped.** The proof-of-address hint now names municipal/rates accounts, bank and retail statements, SARS/insurance/telecoms/medical-aid letters, leases, and a signed confirmation of residence (even an affidavit). The role criteria claim the affidavit explicitly ("an affidavit that confirms where the member lives is a proof of residence, NOT evidence"). A spec case pins the disambiguation. Backend-only, no schema change.
+
 ## 2026-10-13 — LICENCE CENTRE: A FIREARM LICENCE CARD HAS NO LICENCE NUMBER (FULL DEPLOY)
 
 Commit **`f763679e`** (`fix(licence-centre) a firearm licence card has no licence number; the serial is the reference`), 14 files, full deploy. Rollback point `alloutdoor-20261013-212348.dump`. Backend and frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `f763679e`.
