@@ -233,6 +233,29 @@ describe('Training certificates', () => {
     ).toBe('119649 · Handle and use a handgun');
   });
 
+  it('\u26a0\ufe0f leads with the firearm, not the Firearms Control Act unit', () => {
+    // 117705 is on every statement of results and endorses no firearm. Printed
+    // first, as it is on the paper, it named the operator's handgun statement
+    // "…Firearms Control Act…" and the handgun looked missing (2026-10-13).
+    expect(
+      trainingName(
+        row({
+          kind: 'PROFICIENCY',
+          unitStandards: [
+            {
+              code: '117705',
+              title:
+                'Demonstrate knowledge of the Firearms Control Act applicable to possessing a firearm',
+            },
+            { code: '119649', title: 'Handle and use a handgun' },
+          ],
+        }),
+      ),
+    ).toBe(
+      '119649 · Handle and use a handgun · 117705 · Demonstrate knowledge of the Firearms Control Act applicable to possessing a firearm',
+    );
+  });
+
   it('puts a 117705-only certificate under Knowledge of the Act', () => {
     const act = row({
       kind: 'PROFICIENCY',

@@ -137,10 +137,29 @@ export function firearmName(row: CredentialRow): string {
  */
 export function trainingName(row: CredentialRow): string {
   const us = row.unitStandards ?? [];
-  if (us.length > 0) {
-    return us.map((u) => `${u.code} · ${u.title}`).join(' · ');
+  if (us.length === 0) {
+    return row.title?.trim() || KIND_LABELS[row.kind] || row.kind;
   }
-  return row.title?.trim() || KIND_LABELS[row.kind] || row.kind;
+  /**
+   * ⚠️ THE FIREARM UNITS LEAD; THE MANDATORY KNOWLEDGE UNIT GOES LAST.
+   *
+   * 117705 — "Demonstrate knowledge of the Firearms Control Act" — is on
+   * virtually every statement of results and endorses NO firearm. Printed
+   * first, as it is on the paper, it made every training row read as a
+   * "Firearms Control Act" document with the firearm hidden behind it: the
+   * operator's handgun statement (117705 + 119649) looked, on the list, as
+   * though the handgun had been missed (2026-10-13). The code and its title are
+   * kept — a DFO asks by number — only the order changes, so what the
+   * certificate is FOR comes first. `sort` is stable, so the firearms keep the
+   * order they were printed in.
+   */
+  const ordered = [...us].sort((a, b) => rankUnit(a.code) - rankUnit(b.code));
+  return ordered.map((u) => `${u.code} · ${u.title}`).join(' · ');
+}
+
+/** Firearm endorsements first; the knowledge-of-the-Act unit last. */
+function rankUnit(code: string): number {
+  return code === ACT_UNIT_STANDARD ? 1 : 0;
 }
 
 /** Whatever this row should be called in its section. */
