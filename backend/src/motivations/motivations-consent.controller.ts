@@ -4,13 +4,16 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Post,
   Req,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import {
@@ -21,6 +24,7 @@ import {
 } from './motivation-seller-consent.service';
 import { LicenceCardOcrService } from './licence-card-ocr.service';
 import { cardRowsFor } from './motivation-seller-consent.service';
+import { MotivationRenderService } from './motivation-render.service';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SELLER-CONSENT ROUTES.
@@ -43,6 +47,7 @@ import { cardRowsFor } from './motivation-seller-consent.service';
 export class MotivationsConsentController {
   constructor(
     private readonly consent: MotivationSellerConsentService,
+    private readonly render: MotivationRenderService,
   ) {}
 
   /** Where the applicant sends the link from. */
@@ -81,6 +86,16 @@ export class MotivationsConsentController {
       channels?: Partial<Record<keyof ConsentChannels, unknown>>;
       firearm?: FirearmSnapshot;
       applicantName?: string;
+      /**
+       * ⚠️ ONLY SET WHEN THE APPLICANT HAS CONFIRMED OVERWRITING A SIGNED
+       * CONSENT. A consent is once-off, but an issue with one is a real thing
+       * and the operator wants a new one sendable — operator, 2026-10-13: "if
+       * it is already submitted by the owner, the applicant can send another
+       * one but a pop up must warn them that the current one will be
+       * overwritten". The flag is what makes that a deliberate act on a signed
+       * document rather than a resend that silently voids a signature.
+       */
+      replace?: unknown;
     },
   ) {
     if (!body?.firearm) {
@@ -112,6 +127,8 @@ export class MotivationsConsentController {
         : undefined,
       firearm: body.firearm,
       baseUrl: origin,
+      // Only a literal true — see the note on the type.
+      replace: body.replace === true,
     });
   }
 
@@ -140,6 +157,38 @@ export class MotivationsConsentController {
   @Get(':id/seller-consent')
   async status(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.consent.statusFor(userId, id);
+  }
+
+  /**
+   * The signed consent letter, as a standalone read-only PDF.
+   *
+   * ⚠️ THE SAME SHEET THE PACK PRINTS, from the same builder, in the DEFAULT
+   * style. It exists for the "view the letter" affordance before the pack is
+   * generated — operator, 2026-10-13: "Just show the consent letter using a
+   * default style. We can rerender it according to the user picked style when
+   * we create the whole motivation." The finished pack re-renders it in the
+   * chosen style with its annexure caption; this is the plain letter only.
+   *
+   * `no-store`, like the pack download — it is a third party's identity number
+   * and licence.
+   */
+  @Get(':id/seller-consent/letter')
+  async letter(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const letter = await this.render.renderConsentLetter(userId, id);
+    if (!letter) {
+      throw new NotFoundException('There is no signed consent to show yet.');
+    }
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${letter.filename}"`,
+      'Content-Length': String(letter.pdf.length),
+      'Cache-Control': 'private, no-store',
+    });
+    return new StreamableFile(Buffer.from(letter.pdf));
   }
 }
 

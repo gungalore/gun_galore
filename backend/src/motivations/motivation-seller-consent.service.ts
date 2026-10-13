@@ -4,6 +4,7 @@
   signedLineFor,
 } from './motivation-consent-statement';
 import { FIREARM_SOURCE_KEY, SOURCE_PRIVATE } from './motivation-fields';
+import { MotivationStatus } from '@prisma/client';
 import {
   BadRequestException,
   ForbiddenException,
@@ -710,6 +711,18 @@ export class MotivationSellerConsentService {
     channels?: Partial<ConsentChannels>;
     firearm: FirearmSnapshot;
     baseUrl: string;
+    /**
+     * Send a fresh invite over one the owner has ALREADY SIGNED, replacing it.
+     *
+     * ⚠️ A CONSENT IS ONCE-OFF, BUT IT CAN GO WRONG (2026-10-13). Operator: "if
+     * it is already submitted by the owner, the applicant can send another one
+     * but a pop up must warn them that the current one will be overwritten with
+     * the new one. this is in case there is a issue with the current one and
+     * needs a new one from the owner." Required for that overwrite: without it
+     * a plain resend against a signed consent is refused, so a signature is
+     * never voided by accident.
+     */
+    replace?: boolean;
   }) {
     // ⚠️ RESOLVE THE CLERK SUBJECT TO OUR OWN USER ROW. `User.id` is a cuid
     // and `User.userId` is `user_...`; they are different values, and
@@ -731,10 +744,20 @@ export class MotivationSellerConsentService {
     const owns = user
       ? await this.prisma.motivation.findFirst({
           where: { id: args.motivationId, userId: user.id },
-          select: { id: true },
+          select: { id: true, status: true },
         })
       : null;
     if (!user || !owns) throw new NotFoundException('Motivation not found');
+
+    // ⚠️ ONCE THE MOTIVATION IS FINALISED, NOTHING ABOUT IT MOVES (2026-10-13).
+    // Operator: "after generation there won't be access to the fields again."
+    // A consent sent now could never be printed into the finished pack, so the
+    // invite is refused rather than accepted into a dead end.
+    if (owns.status === MotivationStatus.COMPLETED) {
+      throw new BadRequestException(
+        'This application has been finalised. Its consent can no longer be changed.',
+      );
+    }
 
     const name = args.name.trim();
     const phone = args.phone.trim();
@@ -801,11 +824,25 @@ export class MotivationSellerConsentService {
 
     const existing = await this.prisma.motivationSellerConsent.findUnique({
       where: { motivationId: args.motivationId },
-      select: { id: true, status: true, createdAt: true, updatedAt: true },
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        licenceFrontKey: true,
+        licenceBackKey: true,
+        signatureKey: true,
+        firearmSnapshotEncrypted: true,
+      },
     });
-    if (existing?.status === 'COMPLETED') {
+    // ⚠️ A SIGNED CONSENT IS REPLACED, NOT REFUSED (2026-10-13). Operator:
+    // "the applicant can send another one but a pop up must warn them that the
+    // current one will be overwritten". `replace` is what the applicant
+    // confirmed; without it a plain resend must not silently void a signature.
+    const replacingSigned = existing?.status === 'COMPLETED';
+    if (replacingSigned && !args.replace) {
       throw new BadRequestException(
-        'The owner has already signed. Delete that consent first if you need a new one.',
+        'The owner has already signed. Send a new one to replace it if something is wrong with it.',
       );
     }
     if (
@@ -833,8 +870,15 @@ export class MotivationSellerConsentService {
             firearmSnapshotEncrypted: snapshot,
             // A fresh invitation is a fresh start.
             declinedAt: null,
-            answersEncrypted: null,
             openedAt: null,
+            /**
+             * ⚠️ THE SIGNED ARTIFACTS ARE CLEARED ONLY AFTER A SUCCESSFUL SEND,
+             * WHEN WE ARE REPLACING A SIGNED CONSENT. Clearing them here would
+             * void a signature before the replacement link had reached anybody,
+             * so a bad SMS would take the owner's consent with it. Every other
+             * resend has nothing to protect and clears as it always did.
+             */
+            ...(replacingSigned ? {} : { answersEncrypted: null }),
           },
         })
       : await this.prisma.motivationSellerConsent.create({
@@ -1037,12 +1081,84 @@ export class MotivationSellerConsentService {
           `Seller consent ${row.id}: sent, but ${failures.join(' and ')} failed.`,
         );
       }
+
+      /**
+       * ⚠️ ONLY NOW IS THE OLD SIGNED CONSENT DESTROYED (2026-10-13). The
+       * replacement link reached somebody, so the previous signature, licence
+       * photographs and stamped section F are cleared and their blobs removed —
+       * the once-off consent is truly replaced rather than sitting behind a new
+       * invite. It is deferred to here, and not done beside the update above, so
+       * a send that fails cannot take the owner's signature with it.
+       */
+      if (replacingSigned && existing) {
+        try {
+          for (const key of [
+            existing.licenceFrontKey,
+            existing.licenceBackKey,
+            existing.signatureKey,
+          ]) {
+            if (key) await this.files.remove(key).catch(() => undefined);
+          }
+          await this.prisma.motivationUpload
+            .deleteMany({
+              where: {
+                motivationId: args.motivationId,
+                storageKey: {
+                  in: [existing.licenceFrontKey, existing.licenceBackKey].filter(
+                    (k): k is string => !!k,
+                  ),
+                },
+              },
+            })
+            .catch(() => undefined);
+          await this.prisma.motivationSellerConsentDocument
+            .deleteMany({ where: { consentId: row.id } })
+            .catch(() => undefined);
+          await this.prisma.motivationSellerConsent.update({
+            where: { id: row.id },
+            data: {
+              answersEncrypted: null,
+              sectionFEncrypted: null,
+              signatureKey: null,
+              signatureMime: null,
+              licenceFrontKey: null,
+              licenceBackKey: null,
+              licenceMime: null,
+              signedPlace: null,
+              signedAt: null,
+              submitIp: null,
+              submitUserAgent: null,
+            },
+          });
+          this.logger.log(
+            `Seller consent ${row.id}: replaced a signed consent`,
+          );
+        } catch (err) {
+          // The invite went out; failing to tidy the old artifacts must not turn
+          // that into an error the applicant sees. Log it and carry on.
+          this.logger.warn(
+            `Seller consent ${row.id}: replaced, but could not clear the old artifacts — ${(err as Error).message}`,
+          );
+        }
+      }
     } catch (err) {
-      // Only a row THIS call created. An existing one predates the failure and
-      // deleting it would throw away a consent the applicant already had.
+      // A row THIS call created has nothing behind it: delete it. An existing
+      // one predates the failure and must not be thrown away — and when we were
+      // replacing a signed consent, the old one is put back exactly as it was,
+      // because the replacement never reached anybody.
       if (!existing) {
         await this.prisma.motivationSellerConsent
           .delete({ where: { id: row.id } })
+          .catch(() => undefined);
+      } else if (replacingSigned) {
+        await this.prisma.motivationSellerConsent
+          .update({
+            where: { id: row.id },
+            data: {
+              status: existing.status,
+              firearmSnapshotEncrypted: existing.firearmSnapshotEncrypted,
+            },
+          })
           .catch(() => undefined);
       }
       throw err;

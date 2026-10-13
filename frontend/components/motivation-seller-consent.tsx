@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { motivationsApi } from '@/lib/motivations-api';
 import { readFlag, writeFlag } from '@/lib/motivation-draft';
+import ConfirmDialog from './confirm-dialog';
 
 /** Where "they have already adopted the card" is remembered. */
 const ADOPTED_FLAG = 'sellerCardAdopted';
@@ -163,6 +164,15 @@ export default function MotivationSellerConsent({
   } | null>(null);
   const [showStatement, setShowStatement] = useState(false);
   const [removing, setRemoving] = useState(false);
+  /**
+   * ⚠️ REPLACING A SIGNED CONSENT (2026-10-13). A consent is once-off, but an
+   * issue with one is real and the operator wants a new one sendable. The owner
+   * has already signed, so a resend first raises `confirmReplace` (a styled
+   * modal, not window.confirm) and `replacing` is the blank invite form that
+   * follows.
+   */
+  const [confirmReplace, setConfirmReplace] = useState(false);
+  const [replacing, setReplacing] = useState(false);
 
   /**
    * ⚠️ EVERY setState AFTER AN await IS GUARDED. This panel polls every 30s
@@ -320,8 +330,16 @@ export default function MotivationSellerConsent({
         channels,
         applicantName,
         firearm: { ...firearm, label: labelToSend },
+        // The applicant confirmed overwriting a signed consent — see the
+        // warning below. Without this the server refuses a resend over one.
+        replace: replacing,
       });
       if (!alive.current) return;
+      // A replacement moves the consent back to WAITING even though the last
+      // read said COMPLETED; the poll will confirm. Without this the completed
+      // card would keep rendering over the invite that was just sent.
+      if (replacing) setStatus('INVITED');
+      setReplacing(false);
       setSent(true);
     } catch (e) {
       if (!alive.current) return;
@@ -367,7 +385,7 @@ export default function MotivationSellerConsent({
 
   // ── Signed. The government card is now the source of truth for the firearm,
   //    and the buyer confirms it into their own application. ──────────────
-  if (status === 'COMPLETED') {
+  if (status === 'COMPLETED' && !replacing) {
     return (
       <div className="rounded-[var(--r-md)] border border-[var(--border)] p-4">
         <p className="text-sm font-medium text-[var(--success)]">
@@ -452,6 +470,22 @@ export default function MotivationSellerConsent({
           {removing ? 'Removing…' : 'Remove this consent'}
         </button>
 
+        {/*
+          ⚠️ A NEW ONE OVER A SIGNED ONE, WITH A WARNING (2026-10-13). A consent
+          is once-off, so this replaces the signed consent rather than adding a
+          second. Operator: "the applicant can send another one but a pop up
+          must warn them that the current one will be overwritten with the new
+          one. this is in case there is a issue with the current one." The warning
+          is the styled modal below.
+        */}
+        <button
+          type="button"
+          onClick={() => setConfirmReplace(true)}
+          className="mt-3 min-h-[36px] text-xs font-medium text-[var(--red)] underline"
+        >
+          Send a new one
+        </button>
+
         {cardFirearm && onAdopt && (!adopted || stillMissing) && (
           <div className="mt-3 rounded-[var(--r-md)] border border-[var(--border)] p-3">
             <p className="text-xs font-medium">
@@ -505,6 +539,24 @@ export default function MotivationSellerConsent({
             edit anything there.
           </p>
         )}
+
+        {/*
+          ⚠️ THE WARNING BEFORE A SIGNED CONSENT IS REPLACED. Its words are the
+          operator's own: the current one is overwritten and the owner has to
+          sign again. Confirming flips `replacing`, which renders the blank
+          invite form; cancelling changes nothing.
+        */}
+        <ConfirmDialog
+          open={confirmReplace}
+          title="Send a new consent?"
+          body="The consent the owner already signed will be replaced, and their licence photographs and signature go with it. You will need them to sign again. Do this only if something is wrong with the current one."
+          confirmLabel="Replace it"
+          onConfirm={() => {
+            setConfirmReplace(false);
+            setReplacing(true);
+          }}
+          onCancel={() => setConfirmReplace(false)}
+        />
       </div>
     );
   }
@@ -567,6 +619,14 @@ export default function MotivationSellerConsent({
         consent comes straight into your pack. Buying from a dealer? Ignore
         this and attach their invoice above.
       </p>
+
+      {replacing ? (
+        <p className="mt-2 rounded-[var(--r-sm)] border border-[var(--red-line)] bg-[var(--red-wash)] px-3 py-2 text-xs text-[var(--red)]">
+          Sending this will replace the consent the owner already signed, and
+          their signature and licence photographs go with it. They will have to
+          sign again.
+        </p>
+      ) : null}
 
       <label className="mt-3 block text-xs text-[var(--text-secondary)]">
         Their name
@@ -742,8 +802,22 @@ export default function MotivationSellerConsent({
         }
         className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
       >
-        {busy ? 'Sending…' : 'Send them the link'}
+        {busy
+          ? 'Sending…'
+          : replacing
+            ? 'Send the new link'
+            : 'Send them the link'}
       </button>
+
+      {replacing ? (
+        <button
+          type="button"
+          onClick={() => setReplacing(false)}
+          className="mt-2 w-full text-xs text-[var(--text-tertiary)] underline"
+        >
+          Keep the current consent
+        </button>
+      ) : null}
     </div>
   );
 }

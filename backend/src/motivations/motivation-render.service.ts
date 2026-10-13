@@ -1980,6 +1980,37 @@ export class MotivationRenderService {
     );
   }
 
+  /**
+   * The current owner's consent letter as a STANDALONE read-only PDF.
+   *
+   * ⚠️ THE SAME SHEET THE PACK PRINTS, FROM THE SAME BUILDER. It is
+   * `buildSellerConsent` (above), so the view cannot disagree with the document
+   * a DFO reads. Only the PRESENTATION differs: default scheme and no pack
+   * chrome or annexure caption — operator, 2026-10-13: "Just show the consent
+   * letter using a default style. We can rerender it according to the user
+   * picked style when we create the whole motivation."
+   *
+   * Returns null when there is no completed consent — the caller answers 404.
+   */
+  async renderConsentLetter(
+    applicantId: string,
+    motivationId: string,
+  ): Promise<{ pdf: Buffer; filename: string } | null> {
+    // ⚠️ OWNERSHIP FIRST, the same check deleteFor makes. The letter is a named
+    // third party's declaration and licence; serving it to anybody who guesses
+    // an id would be handing over somebody else's paperwork.
+    const owned = await this.prisma.motivation.findFirst({
+      where: { id: motivationId, userId: applicantId },
+      select: { id: true },
+    });
+    if (!owned) throw new NotFoundException('Motivation not found');
+
+    const form = await this.buildSellerConsent(motivationId);
+    if (!form) return null;
+    const pdf = await this.pdf.renderStandaloneStatement(form);
+    return { pdf, filename: `consent-${motivationId}.pdf` };
+  }
+
   private async buildWitnessStatements(
     motivationId: string,
     applicantName: string,

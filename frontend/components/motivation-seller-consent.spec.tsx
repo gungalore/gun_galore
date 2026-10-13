@@ -190,3 +190,71 @@ describe('telling the page the seller answered', () => {
     }
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// A NEW CONSENT OVER A SIGNED ONE (2026-10-13).
+//
+// A consent is once-off, but an issue with one is real. Operator: "the
+// applicant can send another one but a pop up must warn them that the current
+// one will be overwritten". The warning is a styled dialog, the form starts
+// blank, and the send carries `replace` so the server allows the overwrite.
+// ────────────────────────────────────────────────────────────────────
+
+describe('sending a new consent over a signed one', () => {
+  beforeEach(() => {
+    api.sellerConsentStatus.mockResolvedValue({ status: 'COMPLETED' });
+  });
+
+  it('⚠️ warns first, then sends replace with a blank form', async () => {
+    render(<MotivationSellerConsent {...base} />);
+    const trigger = await screen.findByRole('button', {
+      name: /Send a new one/i,
+    });
+    await userEvent.click(trigger);
+
+    // The styled warning, not window.confirm.
+    expect(screen.getByRole('dialog')).toBeDefined();
+    expect(screen.getByText(/will be replaced/i)).toBeDefined();
+
+    await userEvent.click(screen.getByRole('button', { name: /Replace it/i }));
+
+    // The blank invite form, with the replace notice.
+    await waitFor(() =>
+      expect(screen.getByText(/Sending this will replace/i)).toBeDefined(),
+    );
+    await userEvent.type(screen.getByLabelText(/Their name/i), 'Piet Seller');
+    await userEvent.type(
+      screen.getByLabelText(/Their mobile number/i),
+      '0743039999',
+    );
+    await userEvent.type(
+      screen.getByLabelText(/Their email address/i),
+      'piet@example.co.za',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /Send the new link/i }),
+    );
+
+    await waitFor(() => expect(api.inviteSellerConsent).toHaveBeenCalled());
+    const body = api.inviteSellerConsent.mock.calls[0][2];
+    expect(body.replace).toBe(true);
+  });
+
+  it('normal sends do not carry replace', async () => {
+    api.sellerConsentStatus.mockResolvedValue({ status: 'NONE' });
+    render(<MotivationSellerConsent {...base} />);
+    await screen.findByLabelText(/Their name/i);
+    await userEvent.type(screen.getByLabelText(/Their name/i), 'Piet Seller');
+    await userEvent.type(
+      screen.getByLabelText(/Their mobile number/i),
+      '0743039999',
+    );
+    await userEvent.type(
+      screen.getByLabelText(/Their email address/i),
+      'piet@example.co.za',
+    );
+    await userEvent.click(send());
+    await waitFor(() => expect(api.inviteSellerConsent).toHaveBeenCalled());
+    expect(api.inviteSellerConsent.mock.calls[0][2].replace).toBe(false);
+  });
+});

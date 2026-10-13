@@ -1473,6 +1473,54 @@ export class MotivationPdfService {
   // and can be provided anywhere without dragging a dependency graph along.
 
   /**
+   * Render ONE signed statement on its own — the current owner's consent letter.
+   *
+   * ⚠️ DEFAULT SCHEME, NO PACK CHROME, NO ANNEXURE CAPTION (2026-10-13). This
+   * exists only for the read-only "view the letter" affordance before the pack
+   * is generated. The finished motivation re-renders the same sheet inside the
+   * pack in the member's chosen colourway and layout, with its annexure caption;
+   * operator: "Just show the consent letter using a default style. We can
+   * rerender it according to the user picked style when we create the whole
+   * motivation." So this is deliberately the plain letter and nothing else.
+   *
+   * ⚠️ `autoFirstPage: false` BECAUSE renderStatementForm ADDS ITS OWN PAGE.
+   * With the default the document would carry a leading blank page before the
+   * statement.
+   */
+  async renderStandaloneStatement(
+    form: CharacterStatementForm,
+  ): Promise<Buffer> {
+    const doc = new PDFDocument({
+      size: [PAGE_WIDTH, PAGE_HEIGHT],
+      margins: {
+        top: K.BODY_TOP,
+        bottom: MARGIN_BOTTOM,
+        left: MARGIN,
+        right: MARGIN_RIGHT,
+      },
+      info: { Title: form.title, Creator: 'ALL Outdoor' },
+      autoFirstPage: false,
+      bufferPages: true,
+    });
+
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+    });
+
+    // A missing font must not fail the view, the same rule `render()` follows.
+    const realFonts = K.registerFonts(doc);
+    const F = K.faces(realFonts);
+    const chrome: K.Chrome = { doc, c: SCHEMES[DEFAULT_SCHEME], f: F };
+
+    renderStatementForm(chrome, form);
+    doc.end();
+    return done;
+  }
+
+  /**
    * Render the motivation. Returns the bytes plus the filename the controller
    * puts in Content-Disposition — the `{ pdf, filename }` contract the existing
    * receipt/SAPS-534 controllers already stream.

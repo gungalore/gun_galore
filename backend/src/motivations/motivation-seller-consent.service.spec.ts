@@ -27,14 +27,16 @@ afterAll(() => {
 
 const USER_ID = 'cmt50g5j30000wyvnjy31n6fj';
 
-function make(over: { user?: unknown; owns?: unknown; mint?: jest.Mock; sms?: jest.Mock } = {}) {
+function make(over: { user?: unknown; owns?: unknown; existingConsent?: unknown; mint?: jest.Mock; sms?: jest.Mock } = {}) {
   const consentRow = { id: 'consent-1', status: 'INVITED', createdAt: new Date(0), updatedAt: new Date(0) };
   const del = jest.fn(async () => consentRow);
   const prisma = {
     user: { findUnique: jest.fn(async () => ('user' in over ? over.user : { id: USER_ID })) },
     motivation: { findFirst: jest.fn(async () => ('owns' in over ? over.owns : { id: 'mo-1' })) },
     motivationSellerConsent: {
-      findUnique: jest.fn(async (_a?: any): Promise<any> => null),
+      findUnique: jest.fn(async (_a?: any): Promise<any> =>
+        'existingConsent' in over ? over.existingConsent : null,
+      ),
       create: jest.fn(async (_a?: any): Promise<any> => consentRow),
       update: jest.fn(async (_a?: any): Promise<any> => consentRow),
       delete: del,
@@ -55,6 +57,12 @@ function make(over: { user?: unknown; owns?: unknown; mint?: jest.Mock; sms?: je
       findFirst: jest.fn(async (_a?: any): Promise<any> => null),
       update: jest.fn(async (_a?: any): Promise<any> => ({})),
       delete: jest.fn(async (_a?: any): Promise<any> => ({})),
+      deleteMany: jest.fn(async (_a?: any): Promise<any> => ({ count: 0 })),
+    },
+    // The applicant's annexure rows — the licence photographs copied onto the
+    // application on submit. A replace deletes the ones this consent filed.
+    motivationUpload: {
+      deleteMany: jest.fn(async (_a?: any): Promise<any> => ({ count: 0 })),
     },
   };
   const mint = over.mint ?? jest.fn(async () => 'tok_abc');
@@ -1221,5 +1229,100 @@ describe('choosing how the link travels', () => {
     await svc.invite(ARGS as never);
     expect(sms).toHaveBeenCalledTimes(1);
     expect(notifications.sellerConsentInvite).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// A SIGNED CONSENT CAN BE REPLACED, BUT ONLY ON PURPOSE (2026-10-13).
+//
+// Operator: "if it is already submitted by the owner, the applicant can send
+// another one but a pop up must warn them that the current one will be
+// overwritten with the new one. this is in case there is a issue with the
+// current one and needs a new one from the owner."
+//
+// The consent is once-off, so a replacement is the SAME row sent again. The
+// signature, the licence photographs and the stamped section F are destroyed —
+// but only after the new link has actually gone out, so a failed SMS cannot
+// void the owner's signature on its way to nobody.
+// ────────────────────────────────────────────────────────────────────
+
+const SIGNED = {
+  id: 'consent-1',
+  status: 'COMPLETED',
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+  licenceFrontKey: 'motivations/front.enc',
+  licenceBackKey: 'motivations/back.enc',
+  signatureKey: 'motivations/sig.enc',
+  firearmSnapshotEncrypted: 'old-snapshot',
+};
+
+describe('replacing a signed consent', () => {
+  it('refuses a plain resend against a signed consent', async () => {
+    const { svc, mint } = make({ existingConsent: SIGNED });
+    await expect(svc.invite(ARGS as never)).rejects.toThrow(/already signed/i);
+    expect(mint).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ replaces it when confirmed, destroying the old artifacts', async () => {
+    const { svc, files, prisma, mint } = make({ existingConsent: SIGNED });
+    await svc.invite({ ...ARGS, replace: true } as never);
+    expect(mint).toHaveBeenCalledTimes(1);
+
+    // The signature and both licence photographs are removed from the store.
+    const removed = (files.remove as jest.Mock).mock.calls.map(
+      (c: unknown[]) => c[0],
+    );
+    expect(removed).toEqual(
+      expect.arrayContaining([
+        SIGNED.signatureKey,
+        SIGNED.licenceFrontKey,
+        SIGNED.licenceBackKey,
+      ]),
+    );
+    // The annexure copies on the application and the seller's working set go too.
+    expect(prisma.motivationUpload.deleteMany).toHaveBeenCalled();
+    expect(
+      prisma.motivationSellerConsentDocument.deleteMany,
+    ).toHaveBeenCalledWith({ where: { consentId: SIGNED.id } });
+    // And the completed fields are cleared on the row.
+    const cleared = prisma.motivationSellerConsent.update.mock.calls.find(
+      (c) => c[0]?.data?.signatureKey === null,
+    );
+    expect(cleared).toBeDefined();
+  });
+
+  it('⚠️ does NOT destroy the signature when the replacement fails to send', async () => {
+    const { svc, files, prisma } = make({
+      existingConsent: SIGNED,
+      sms: jest.fn(async () => ({ success: false })),
+    });
+    await expect(
+      svc.invite({
+        ...ARGS,
+        replace: true,
+        channels: {
+          sellerSms: true,
+          sellerEmail: false,
+          meSms: false,
+          meEmail: false,
+        },
+      } as never),
+    ).rejects.toThrow();
+    expect(files.remove).not.toHaveBeenCalled();
+    // The old signed status is put back, so the owner's consent still stands.
+    expect(prisma.motivationSellerConsent.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'COMPLETED' }),
+      }),
+    );
+  });
+
+  it('⚠️ refuses ANY invite once the motivation is finalised', async () => {
+    const { svc, mint } = make({
+      owns: { id: 'mo-1', status: 'COMPLETED' },
+    });
+    await expect(svc.invite(ARGS as never)).rejects.toThrow(/finalised/i);
+    expect(mint).not.toHaveBeenCalled();
   });
 });

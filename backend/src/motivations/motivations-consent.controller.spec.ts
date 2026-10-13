@@ -1,6 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, StreamableFile } from '@nestjs/common';
 import { MotivationsConsentController } from './motivations-consent.controller';
 import type { MotivationSellerConsentService } from './motivation-seller-consent.service';
+import type { MotivationRenderService } from './motivation-render.service';
 
 // ────────────────────────────────────────────────────────────────────
 // THE CONTROLLER'S JOB IS TO FORWARD THE BODY, AND IT DROPPED A FIELD.
@@ -21,8 +22,16 @@ const req = { headers: { origin: 'https://alloutdoor.co.za' } } as never;
 
 function make() {
   const invite = jest.fn().mockResolvedValue({ id: 'c1', status: 'INVITED' });
+  const renderConsentLetter = jest.fn();
   const service = { invite } as unknown as MotivationSellerConsentService;
-  return { invite, controller: new MotivationsConsentController(service) };
+  const render = {
+    renderConsentLetter,
+  } as unknown as MotivationRenderService;
+  return {
+    invite,
+    renderConsentLetter,
+    controller: new MotivationsConsentController(service, render),
+  };
 }
 
 describe('POST :id/seller-consent', () => {
@@ -84,5 +93,53 @@ describe('POST :id/seller-consent', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(invite).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ forwards replace as a literal true only', async () => {
+    // The applicant confirmed overwriting a signed consent. A truthy string
+    // must not do it — see the note on the body type.
+    const { invite, controller } = make();
+    await controller.invite('user_1', 'mo-1', req, {
+      name: 'Pieter Botha',
+      phone: '0821234567',
+      email: 'pieter@example.co.za',
+      firearm: { make: 'CZ' } as never,
+      replace: true,
+    });
+    expect(invite).toHaveBeenCalledWith(
+      expect.objectContaining({ replace: true }),
+    );
+  });
+});
+
+describe('GET :id/seller-consent/letter', () => {
+  it('streams the letter PDF and refuses to cache it', async () => {
+    const { renderConsentLetter, controller } = make();
+    renderConsentLetter.mockResolvedValue({
+      pdf: Buffer.from('%PDF-1.4'),
+      filename: 'consent-mo-1.pdf',
+    });
+    const set = jest.fn();
+    const file = await controller.letter(
+      'user_1',
+      'mo-1',
+      { set } as never,
+    );
+    expect(renderConsentLetter).toHaveBeenCalledWith('user_1', 'mo-1');
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        'Content-Type': 'application/pdf',
+        'Cache-Control': 'private, no-store',
+      }),
+    );
+    expect(file).toBeInstanceOf(StreamableFile);
+  });
+
+  it('404s when there is no signed consent to show', async () => {
+    const { renderConsentLetter, controller } = make();
+    renderConsentLetter.mockResolvedValue(null);
+    await expect(
+      controller.letter('user_1', 'mo-1', { set: jest.fn() } as never),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

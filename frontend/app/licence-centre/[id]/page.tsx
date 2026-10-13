@@ -20,7 +20,7 @@ import DocumentShelf from '@/components/licence-centre/document-shelf';
 import DesignPicker from '@/components/licence-centre/design-picker';
 import SheetFooter from '@/components/licence-centre/sheet-footer';
 import SheetToast from '@/components/licence-centre/sheet-toast';
-import ConsentCard from '@/components/licence-centre/consent-card';
+import SourceActions from '@/components/licence-centre/source-actions';
 import CompetencyLines from '@/components/licence-centre/competency-lines';
 import CredentialPair from '@/components/licence-centre/credential-pair';
 import DangerAreas from '@/components/licence-centre/danger-areas';
@@ -72,16 +72,6 @@ const CARD_COMPONENT_KEYS = new Set([
   'receiver_serial',
   'receiver_make',
 ]);
-
-/**
- * ⚠️ THE ROUTE IS READ OFF THE UPLOADED PAPERWORK NOW (2026-10-13). The
- * dealer/private picker is gone, so there is no stored answer to branch on at
- * first — only what the reader returns. The consent card is a standing
- * SECONDARY action under the source row, shown until the route is known to be a
- * dealer sale. A dealer completes Part F and their own SAPS 350(a), so the card
- * would ask them to chase a signature nobody needs; everyone else can use it.
- */
-const SOURCE_DEALER = 'From a dealer';
 
 /**
  * SAPS 271 boxes on the "You" section that a member should never have to think
@@ -957,101 +947,80 @@ export default function LicenceCentreSheetPage() {
         );
       };
 
+      // ⚠️ THE APPLIED-FOR FIREARM'S PAPERWORK AND THE OWNER'S CONSENT COME
+      // FIRST (2026-10-13). The source row is internal now — never rendered —
+      // so this is where the upload control and the collapsed consent live. It
+      // replaces the inline ConsentCard that used to sit here fully open. See
+      // SourceActions.
+      out.push(
+        <SourceActions
+          key="__source-actions"
+          motivationId={id}
+          applicantName={byKey.get('full_name')?.value ?? ''}
+          /*
+            ⚠️ EVERY KEY THE CARD CAN FILL, not just the four the panel used to
+            show. The panel compares these against what the card carries to
+            decide whether there is anything left to adopt, so a short list here
+            means it stops offering the six component rows the moment the first
+            four have landed.
+          */
+          firearm={{
+            make: byKey.get('firearm_make')?.value,
+            model: byKey.get('firearm_model')?.value,
+            type: byKey.get('firearm_type')?.value,
+            calibre: byKey.get('firearm_calibre')?.value,
+            serial: byKey.get('firearm_serial')?.value,
+            barrel_serial: byKey.get('barrel_serial')?.value,
+            barrel_make: byKey.get('barrel_make')?.value,
+            frame_serial: byKey.get('frame_serial')?.value,
+            frame_make: byKey.get('frame_make')?.value,
+            receiver_serial: byKey.get('receiver_serial')?.value,
+            receiver_make: byKey.get('receiver_make')?.value,
+          }}
+          sourceValue={sourceValue}
+          signed={sellerSigned}
+          generated={sheet.application.status === 'COMPLETED'}
+          onUpload={async (files) => {
+            // Filed explicitly as the source proof — "upload proof of applied
+            // for firearm" — rather than the shelf's classify-and-file.
+            for (const f of files) await onAddFile('FIREARM_SOURCE_PROOF', f);
+          }}
+          onArrived={async (status) => {
+            await load();
+            setToast(
+              status === 'COMPLETED'
+                ? 'The seller has signed. Their consent and licence are on your application.'
+                : 'The seller declined. Nothing has been added to your application.',
+            );
+          }}
+          /*
+            ⚠️ IT FILLS THE EMPTY ONES AND NEVER OVERWRITES. Adopting used to
+            write every field the card carried, which is why the offer had to be
+            shown once and then hidden for good — "inviting them to overwrite
+            their own corrections with the same card a second time". Skipping
+            answered fields makes a second adopt harmless. Theirs wins, always —
+            the same rule the credential offer already follows.
+          */
+          onAdopt={(fields) => {
+            for (const [k, v] of Object.entries(fields)) {
+              const item = byKey.get(k);
+              /*
+                ⚠️ "THEIRS WINS" MEANS THE MEMBER'S, NOT A PREVIOUS READ OF THE
+                SAME CARD. A value the CARD gave us is ours to correct; one the
+                MEMBER typed is not, and the server's stamp() refuses to
+                overwrite MEMBER provenance in any case.
+              */
+              if (item?.provenance?.source === 'MEMBER') continue;
+              if (!item?.provenance && (item?.value ?? '').trim()) continue;
+              onChange(k, v);
+            }
+          }}
+        />,
+      );
+
       for (const i of visible) {
         if (CARD_COMPONENT_KEYS.has(i.key)) continue;
         out.push(row(i));
-
-        // ⚠️ THE TWO CARDS BELONG UNDER THE SOURCE ROW — SPEC-BUILD §8.3 and
-        // §8.4 — and the source row is now the first row of the section, so
-        // this is where they go. They used to render after every row in the
-        // section, which was "under the source row" only while that row was
-        // fifth of seventeen.
-        if (i.key === 'firearm_source') {
-          // ⚠️ A STANDING SECONDARY ACTION (2026-10-13). The dealer/private
-          // picker is gone, so the route starts UNKNOWN and is settled by what
-          // the member uploads. The consent link has to be reachable before
-          // that — it is the second way to settle it — so the card renders
-          // whenever the route is not already a dealer sale, not only once
-          // "private" has been read. See ConsentCard and MotivationSellerConsent.
-          if (sourceValue !== SOURCE_DEALER) {
-            out.push(
-              <ConsentCard
-                key="__consent"
-                motivationId={id}
-                applicantName={byKey.get('full_name')?.value ?? ''}
-                /*
-                  ⚠️ EVERY KEY THE CARD CAN FILL, not just the four the panel
-                  used to show. The panel compares these against what the card
-                  carries to decide whether there is anything left to adopt, so
-                  a short list here means it stops offering the six component
-                  rows the moment the first four have landed.
-                */
-                firearm={{
-                  make: byKey.get('firearm_make')?.value,
-                  model: byKey.get('firearm_model')?.value,
-                  type: byKey.get('firearm_type')?.value,
-                  calibre: byKey.get('firearm_calibre')?.value,
-                  serial: byKey.get('firearm_serial')?.value,
-                  barrel_serial: byKey.get('barrel_serial')?.value,
-                  barrel_make: byKey.get('barrel_make')?.value,
-                  frame_serial: byKey.get('frame_serial')?.value,
-                  frame_make: byKey.get('frame_make')?.value,
-                  receiver_serial: byKey.get('receiver_serial')?.value,
-                  receiver_make: byKey.get('receiver_make')?.value,
-                }}
-                signed={sellerSigned}
-                /*
-                  ⚠️ THE PANEL POLLED; THE PAGE DID NOT. The consent, the
-                  seller's licence copies and the filled-in Part F land as
-                  documents ON THE APPLICATION, and every surface that shows
-                  them — the checklist rows, the annexure index, the coverage
-                  meter, and this card's own `signed` line — is drawn from
-                  `sheet`. Nothing re-read it, so a member watched the panel
-                  say "signed" and still had to reload the page before the
-                  paperwork appeared. Operator, 2026-09-09: "I have to refresh
-                  the page to import it."
-                */
-                onArrived={async (status) => {
-                  await load();
-                  setToast(
-                    status === 'COMPLETED'
-                      ? 'The seller has signed. Their consent and licence are on your application.'
-                      : 'The seller declined. Nothing has been added to your application.',
-                  );
-                }}
-                /*
-                  ⚠️ IT FILLS THE EMPTY ONES AND NEVER OVERWRITES. Adopting used
-                  to write every field the card carried, which is why the offer
-                  had to be shown once and then hidden for good — "inviting them
-                  to overwrite their own corrections with the same card a second
-                  time". Skipping answered fields makes a second adopt harmless,
-                  which is what lets the panel offer again when the card turns
-                  out to carry rows the application still lacks. Theirs wins,
-                  always — the same rule the credential offer already follows.
-                */
-                onAdopt={(fields) => {
-                  for (const [k, v] of Object.entries(fields)) {
-                    const item = byKey.get(k);
-                    /*
-                      ⚠️ "THEIRS WINS" MEANS THE MEMBER'S, NOT A PREVIOUS READ
-                      OF THE SAME CARD. Skipping every answered field looked
-                      right until a bad read had already landed: the operator's
-                      Glock adopted as "ZABA01892 VUURWAPEMLISENSIEN" before the
-                      serial cleanup, and a rule that refuses to touch anything
-                      answered would leave that on the 271 for ever. A value the
-                      CARD gave us is ours to correct; one the MEMBER typed is
-                      not, and the server's stamp() refuses to overwrite MEMBER
-                      provenance in any case.
-                    */
-                    if (item?.provenance?.source === 'MEMBER') continue;
-                    if (!item?.provenance && (item?.value ?? '').trim()) continue;
-                    onChange(k, v);
-                  }
-                }}
-              />,
-            );
-          }
-        }
 
         // Straight after the headline serial, which is the number they will
         // actually be asked for at the counter.

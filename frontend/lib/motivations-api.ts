@@ -1361,6 +1361,12 @@ export const motivationsApi = {
       };
       applicantName: string;
       firearm: Record<string, string | undefined>;
+      /**
+       * The applicant has confirmed overwriting a consent the owner already
+       * signed. ⚠️ A CONSENT IS ONCE-OFF, so a resend over a signed one is
+       * refused unless this is true — see the warning the panel shows first.
+       */
+      replace?: boolean;
     },
   ) =>
     request<{ id: string; status: string }>(t, `/${id}/seller-consent`, {
@@ -1635,6 +1641,29 @@ export const motivationsApi = {
     });
     if (!r.ok) {
       throw new MotivationApiError('We could not open that document.', r.status);
+    }
+    return URL.createObjectURL(await r.blob());
+  },
+
+  /**
+   * The signed consent letter, rendered read-only as a PDF.
+   *
+   * ⚠️ SAME SHEET THE PACK PRINTS, DEFAULT STYLE (2026-10-13). It is generated
+   * on demand from the stored consent, so there is no public URL and `<a href>`
+   * cannot reach it — fetch the bytes and hand back a blob URL, like
+   * uploadBlobUrl. The caller owns the URL and must revokeObjectURL it.
+   */
+  sellerConsentLetterUrl: async (
+    t: TokenGetter,
+    id: string,
+  ): Promise<string> => {
+    const token = await t();
+    const r = await fetch(
+      `${API_URL}/motivations/${id}/seller-consent/letter`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
+    if (!r.ok) {
+      throw new MotivationApiError('We could not open the letter.', r.status);
     }
     return URL.createObjectURL(await r.blob());
   },
