@@ -884,6 +884,30 @@ describe('MotivationsService.generate', () => {
     expect(claude.generate).not.toHaveBeenCalled();
   });
 
+  it('\u26a0\ufe0f refuses a proficiency short of the Act or its certificate', async () => {
+    // Operator, 2026-10-13: the submitted pack needs the statement showing
+    // 117705 AND the firearm's statement with its certificate. Here the only
+    // proficiency page is the rifle statement of results — no 117705, no
+    // certificate — so generation must stop before Claude is spent.
+    const uploads = [
+      ...requiredDocs(MotivationLicenceType.S16_DEDICATED_HUNTER),
+      {
+        kind: MotivationUploadKind.PROFICIENCY_CERTIFICATE,
+        coversKinds: [] as MotivationUploadKind[],
+        extractionEncrypted: encryptJson({
+          unit_standard: '119651',
+          document_side: 'back',
+        }),
+      },
+    ];
+    const { svc, prisma, claude } = buildReady({ uploads });
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    await expect(svc.generate('c1', 'mo-1')).rejects.toMatchObject({
+      response: { code: 'motivation-proficiency-incomplete' },
+    });
+    expect(claude.generate).not.toHaveBeenCalled();
+  });
+
   it('CAS: a second concurrent click does not spend money twice', async () => {
     const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());

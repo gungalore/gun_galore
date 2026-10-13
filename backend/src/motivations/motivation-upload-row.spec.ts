@@ -1,7 +1,9 @@
 import {
   ROW_CAUTION_DAYS,
   competencyCovers,
+  hasProficiencyPackGap,
   proficiencyCovers,
+  proficiencyPackGap,
   expiryFromReading,
   uploadCaution,
 } from './motivation-upload-row';
@@ -125,5 +127,80 @@ describe('the statement that carries the Act', () => {
 
   it('still admits the one that covers what is needed', () => {
     expect(proficiencyCovers('119651', 'rifle-mo')).toBe(true);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// WHAT THE SUBMITTED PACK IS MISSING (operator, 2026-10-13).
+//
+// "the application must have the statement of results for the act and the
+// statement of result and certificate for the rifle. If they are on one
+// statement we can add just that statement. If they are on different
+// statements we need to add both plus the certificate of the firearm."
+//
+// This is about the PAGES ON THE APPLICATION, not about what the member holds.
+// ────────────────────────────────────────────────────────────────────
+
+describe('what the pack itself is missing', () => {
+  const page = (text: string, side: string | null = null) => ({ text, side });
+
+  it('passes a complete rifle pack: the pair plus the Act statement', () => {
+    const gap = proficiencyPackGap(
+      [
+        page('119651', 'back'),
+        page('', 'front'),
+        page('117705, 119649', 'back'),
+      ],
+      'rifle-mo',
+    );
+    expect(hasProficiencyPackGap(gap)).toBe(false);
+  });
+
+  it('passes when the Act sits on the firearm statement itself', () => {
+    const gap = proficiencyPackGap(
+      [page('117705, 119651', 'back'), page('', 'front')],
+      'rifle-mo',
+    );
+    expect(hasProficiencyPackGap(gap)).toBe(false);
+  });
+
+  it('\u26a0\ufe0f flags a pack with no 117705 anywhere', () => {
+    const gap = proficiencyPackGap(
+      [page('119651', 'back'), page('', 'front')],
+      'rifle-mo',
+    );
+    expect(gap.missingLaw).toBe(true);
+    expect(hasProficiencyPackGap(gap)).toBe(true);
+  });
+
+  it('\u26a0\ufe0f flags a firearm whose statement has no certificate', () => {
+    // The operator's own handgun row: a lone statement of results.
+    const gap = proficiencyPackGap([page('117705, 119651', 'back')], 'rifle-mo');
+    expect(gap.missingCertificate).toBe(true);
+  });
+
+  it('flags a proficiency for the wrong firearm', () => {
+    const gap = proficiencyPackGap(
+      [page('117705, 119649', 'back'), page('', 'front')],
+      'rifle-mo',
+    );
+    expect(gap.missingFirearm).toBe(true);
+  });
+
+  it('\u26a0\ufe0f says NOTHING when it could read nothing', () => {
+    // An unreadable page must not block a member whose pack is fine.
+    const gap = proficiencyPackGap([page('', null)], 'rifle-mo');
+    expect(gap.unread).toBe(true);
+    expect(hasProficiencyPackGap(gap)).toBe(false);
+  });
+
+  it('does not ask for a certificate it cannot see a side for', () => {
+    const gap = proficiencyPackGap([page('117705, 119651', null)], 'rifle-mo');
+    expect(gap.missingCertificate).toBe(false);
+  });
+
+  it('does not gate on a firearm before one is described', () => {
+    const gap = proficiencyPackGap([page('117705', 'back')], null);
+    expect(hasProficiencyPackGap(gap)).toBe(false);
   });
 });

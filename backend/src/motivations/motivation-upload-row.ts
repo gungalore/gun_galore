@@ -2,6 +2,7 @@ import { MotivationUploadKind } from '@prisma/client';
 import {
   Endorsement,
   MANDATORY_UNIT_STANDARD,
+  endorsementFromUnitStandard,
   parseEndorsements,
   parseUnitStandards,
   readStatementOfResults,
@@ -203,3 +204,91 @@ export const ENDORSEMENT_GATED: ReadonlySet<MotivationUploadKind> = new Set([
   MotivationUploadKind.COMPETENCY_CERTIFICATE,
   MotivationUploadKind.PROFICIENCY_CERTIFICATE,
 ]);
+
+/** One proficiency page as it sits ON THE APPLICATION, for the pack check. */
+export interface PackProficiencyPage {
+  /**
+   * The unit-standard text read off this page. The vault row's parsed
+   * `unit_standard` first, the raw OCR text otherwise — parseUnitStandards
+   * reads digits out of either.
+   */
+  text: string;
+  /** 'front' (provider certificate) | 'back' (statement of results) | null. */
+  side: string | null;
+}
+
+/**
+ * WHAT THE PACK ITSELF IS MISSING FOR A FIREARM MOTIVATION.
+ *
+ * ⚠️ THE CHECK IS ABOUT THE PAGES ON THE APPLICATION, NOT ABOUT THE MEMBER.
+ * `proficiencyCover` (common/sa-proficiency-cover.ts) answers "do they hold
+ * 117705 anywhere", across the vault AND this application, and a pack can be
+ * short while that answer is CONFIRMED — the statement is in the vault and was
+ * never attached. The rule the operator stated (2026-10-13) is about the
+ * SUBMITTED PACK: "the application must have the statement of results for the
+ * act and the statement of result and certificate for the rifle."
+ *
+ * Three things the pack needs, all from the attached proficiency pages:
+ *   · the firearm's unit standard (119649/119650/119651/119652), and
+ *   · 117705, on that same page or on a separate statement of results;
+ *   · both sides of the firearm's proficiency — the statement of results AND
+ *     the provider certificate — because half a document is not a document.
+ *
+ * ⚠️ UNREAD IS NOT MISSING. If no attached page yielded a single code, we say
+ * nothing: a photograph taken at an angle must not block a member whose pack
+ * is fine. Every gap is only reported against pages we could actually read.
+ * Likewise the certificate check needs at least one side we could SEE — an
+ * unrecorded `document_side` must not read as a missing certificate.
+ */
+export interface ProficiencyPackGap {
+  /** No attached proficiency page carried a code we could read. */
+  unread: boolean;
+  /** No attached page carries 117705 (Knowledge of the Firearms Control Act). */
+  missingLaw: boolean;
+  /** No attached page carries the applied firearm's unit standard. */
+  missingFirearm: boolean;
+  /** The firearm's proficiency has only one side on the application. */
+  missingCertificate: boolean;
+}
+
+export function proficiencyPackGap(
+  pages: readonly PackProficiencyPage[],
+  needed: Endorsement | null,
+): ProficiencyPackGap {
+  const codes = new Set<string>();
+  const sides = new Set<string>();
+  for (const p of pages) {
+    for (const c of parseUnitStandards(p.text ?? '')) codes.add(c);
+    if (p.side) sides.add(p.side);
+  }
+
+  if (codes.size === 0) {
+    return {
+      unread: true,
+      missingLaw: false,
+      missingFirearm: false,
+      missingCertificate: false,
+    };
+  }
+
+  const hasLaw = codes.has(MANDATORY_UNIT_STANDARD);
+  const hasFirearm =
+    !needed || [...codes].some((c) => endorsementFromUnitStandard(c) === needed);
+  // ⚠️ BOTH SIDES, OR IT IS HALF A DOCUMENT. Only asked of the firearm's own
+  // proficiency, and only when we can see a side at all — see the note above.
+  const paired = sides.has('front') && sides.has('back');
+
+  return {
+    unread: false,
+    missingLaw: !hasLaw,
+    missingFirearm: !!needed && !hasFirearm,
+    missingCertificate: !!needed && hasFirearm && sides.size > 0 && !paired,
+  };
+}
+
+/** Is anything the pack needs from its proficiency pages actually missing? */
+export function hasProficiencyPackGap(gap: ProficiencyPackGap): boolean {
+  return (
+    gap.missingLaw || gap.missingFirearm || gap.missingCertificate
+  );
+}

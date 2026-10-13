@@ -17,7 +17,15 @@ import {
   tryDecryptText,
 } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
-import { applicationBlockers } from './motivation-eligibility';
+import {
+  applicationBlockers,
+  requiredEndorsement,
+} from './motivation-eligibility';
+import {
+  hasProficiencyPackGap,
+  proficiencyPackGap,
+} from './motivation-upload-row';
+import { endorsementSpec } from '../common/sa-competency';
 import {
   BLOCK_LABELS,
   MotivationResearchService,
@@ -642,16 +650,25 @@ export class MotivationGenerationService {
     // from the same kinds), and a name it can key off survives a copy change.
     const uploads = await this.prisma.motivationUpload.findMany({
       where: { motivationId: row.id },
-      select: { kind: true, coversKinds: true },
+      select: {
+        kind: true,
+        coversKinds: true,
+        // For the proficiency pack check below: what the reader got off each
+        // page (unit standards and which side it is), and the raw page text as
+        // the fallback.
+        extractionEncrypted: true,
+        ocrTextEncrypted: true,
+      },
     });
-    const missingDocuments = documentStatus(
+    const docStatus = documentStatus(
       row.licenceType,
       // One entry per FILE and every role it fills — the safe row counts files,
       // and a membership certificate answers two lines. Same expression both
       // other callers use; deduplicating it here would break the safe.
       uploads.flatMap((u) => [u.kind, ...u.coversKinds]),
       answers,
-    ).missingRequired;
+    );
+    const missingDocuments = docStatus.missingRequired;
     if (missingDocuments.length) {
       throw new ConflictException({
         message:
@@ -660,6 +677,74 @@ export class MotivationGenerationService {
             : `${missingDocuments.length} required documents are still missing.`,
         code: 'motivation-documents-incomplete',
         missingDocuments,
+      });
+    }
+
+    /**
+     * ⚠️ AND WHAT THE PROFICIENCY PAGES THEMSELVES ARE MISSING. Operator,
+     * 2026-10-13: "the application must have the statement of results for the
+     * act and the statement of result and certificate for the rifle ... 117705
+     * ... must always be present when submitting a motivation."
+     *
+     * H13 above stops a pack with NO proficiency on it. This stops one that has
+     * a proficiency and is still short: a statement with no certificate, a
+     * statement for the wrong firearm, or no page carrying 117705 at all. The
+     * autolink attaches what it can; this is the gate that says when it could
+     * not.
+     *
+     * ⚠️ IT DOES NOT CREATE A REQUIREMENT THAT WAS NOT THERE. The proficiency
+     * is on the EXPECTED tier, not REQUIRED (the Act does not name it), and a
+     * pack that attaches none is untouched — `proficiencyPackGap` reports
+     * nothing for an empty or unreadable set. The rule bites only on pages the
+     * member actually put on the application and we could READ.
+     *
+     * ⚠️ NOT the same question as `proficiencyCover`, which asks whether the
+     * member holds 117705 ANYWHERE (vault included). This is about the pack
+     * about to be submitted, and a pack can be short while that answer is yes.
+     */
+    const proficiencyPages = uploads
+      .filter((u) => u.kind === 'PROFICIENCY_CERTIFICATE')
+      .map((u) => {
+        let fields: Record<string, string> | null = null;
+        try {
+          fields = u.extractionEncrypted
+            ? decryptJson<Record<string, string>>(u.extractionEncrypted)
+            : null;
+        } catch {
+          fields = null;
+        }
+        let text = (fields?.unit_standard ?? '').trim();
+        if (!text && u.ocrTextEncrypted) {
+          try {
+            text = decryptJson<{ text?: string }>(u.ocrTextEncrypted)?.text ?? '';
+          } catch {
+            text = '';
+          }
+        }
+        return { text, side: fields?.document_side ?? null };
+      });
+    const needed = requiredEndorsement(answers);
+    const proficiencyGap = proficiencyPackGap(proficiencyPages, needed);
+    if (hasProficiencyPackGap(proficiencyGap)) {
+      const label = needed ? (endorsementSpec(needed)?.label ?? needed) : '';
+      const problems: string[] = [];
+      if (proficiencyGap.missingLaw) {
+        problems.push(
+          'the statement of results showing 117705 (Knowledge of the Firearms Control Act)',
+        );
+      }
+      if (proficiencyGap.missingFirearm) {
+        problems.push(`the statement of results for the ${label}`);
+      }
+      if (proficiencyGap.missingCertificate) {
+        problems.push(
+          `the certificate that goes with the ${label} statement of results`,
+        );
+      }
+      throw new ConflictException({
+        message: `Your pack is still missing ${problems.join(' and ')}.`,
+        code: 'motivation-proficiency-incomplete',
+        missingProficiency: proficiencyGap,
       });
     }
 
