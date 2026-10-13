@@ -27,7 +27,7 @@ export const VAULT_KIND_OPTIONS: readonly FilingOption[] = [
   {
     id: CredentialKind.COMPETENCY_CERTIFICATE,
     label: 'Competency certificate',
-    hint: 'a SAPS competency certificate',
+    hint: 'a SAPS competency certificate (the SAPS 524, or the older plastic card), naming a firearm category. It carries NO SAQA unit-standard number — a page with a unit-standard number such as 117705 or 119649 is a Proficiency, not this.',
   },
   {
     id: CredentialKind.DEDICATED_DISCIPLINE,
@@ -42,7 +42,7 @@ export const VAULT_KIND_OPTIONS: readonly FilingOption[] = [
   {
     id: CredentialKind.PROFICIENCY,
     label: 'Proficiency',
-    hint: 'a firearm proficiency or unit-standard training certificate: the PFTC Statement of Results, or a provider certificate naming SAQA unit-standard codes and an accreditation number',
+    hint: 'a firearm proficiency / unit-standard training certificate: the PFTC Statement of Results, or a training provider\u2019s own certificate. It carries SAQA unit-standard NUMBERS \u2014 117705 (Knowledge of the Firearms Control Act), 119649 (handgun), 119650 (self-loading rifle), 119651 (manually operated rifle), 119652 (shotgun), 243200 (muzzle-loader). A page showing any of those numbers is this, whatever it titles itself: a provider\u2019s "COMPETENCY COURSE" certificate is a Proficiency, NOT a competency certificate.',
   },
   {
     id: CredentialKind.IDENTITY_DOCUMENT,

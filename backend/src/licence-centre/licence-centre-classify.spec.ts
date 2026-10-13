@@ -290,6 +290,77 @@ describe('the Jev filing path', () => {
     });
   });
 
+  it('\u26a0\ufe0f reads a provider "COMPETENCY COURSE" certificate by its number', async () => {
+    // Operator, 2026-10-13: the handgun certificate prints "COMPETENCY COURSE"
+    // and 117705, so Jev filed it as a competency and its card then asked for
+    // two dates to check — on a document that does not expire. The registered
+    // unit-standard number is the document, and the marker library reads it
+    // without asking Jev.
+    const decide = jest.fn(async () => ({
+      model: 'jev-1.13.0',
+      answers: {
+        role: choice('document'),
+        kind: choice('COMPETENCY_CERTIFICATE'),
+      },
+      usage: { inputTokens: 1, outputTokens: 0 },
+    }));
+    const llm = {
+      complete: jest.fn(async (req: { system?: string }) => {
+        const isTranscribe = (req.system ?? '').includes(
+          'transcribe the printed text',
+        );
+        const text = isTranscribe
+          ? 'SASSETA ACCREDITATION No 1234\n' +
+            'This is to certify that the member has completed the following ' +
+            'proficiency firearm training\n' +
+            '117705 Knowledge of the Firearms Control Act\n' +
+            '119649 Handle and use a Handgun'
+          : '';
+        return {
+          text,
+          parts: [{ type: 'text', text }],
+          toolCalls: [],
+          stopReason: 'end',
+          usage: { inputTokens: 1, outputTokens: 1 },
+          model: 'test-model',
+          provider: 'gemini',
+          assistantMessage: { role: 'assistant', content: text },
+        } as LlmResponse;
+      }),
+      decide,
+      isConfigured: () => true,
+      isConfiguredFor: () => true,
+      providerNameFor: () => 'gemini',
+      model: 'test-model',
+      provider: 'gemini' as const,
+    };
+    const filing = new DocumentFilingService(llm as never);
+    const svc = new LicenceCentreExtractService(llm as never, filing);
+    await expect(svc.classify(png)).resolves.toMatchObject({
+      role: 'document',
+      kind: CredentialKind.PROFICIENCY,
+      confident: true,
+      via: 'markers',
+    });
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it('keeps a real SAPS 524 a competency certificate', async () => {
+    const svc = svcJev({
+      transcription:
+        'SAPS 524\nCOMPETENCY CERTIFICATE\nSection 10 of the Firearms Control ' +
+        'Act, 2000 (Act No 60 of 2000)\nCompetency to possess a firearm: HANDGUN',
+      answers: {
+        role: choice('document'),
+        kind: choice('COMPETENCY_CERTIFICATE'),
+      },
+    });
+    await expect(svc.classify(png)).resolves.toMatchObject({
+      role: 'document',
+      kind: CredentialKind.COMPETENCY_CERTIFICATE,
+    });
+  });
+
   it('⚠️ falls back to the vision classifier when the page has no text', async () => {
     // A photograph of a scene transcribes to nothing. classify must NOT ask
     // Jev to guess from an empty page; it hands the file to the vision path,

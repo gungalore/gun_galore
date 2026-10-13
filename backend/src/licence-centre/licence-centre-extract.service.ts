@@ -9,6 +9,8 @@ import {
 } from '../common/document-filing/vault-kind-options';
 import { CredentialKind } from '@prisma/client';
 import { parseIsoDate } from './licence-dates';
+import { readMarkers } from '../common/document-markers';
+import { UPLOAD_TO_CREDENTIAL } from './upload-to-credential';
 
 // ────────────────────────────────────────────────────────────────────
 // READING A LICENCE OR CERTIFICATE.
@@ -637,6 +639,46 @@ export class LicenceCentreExtractService {
       // ⚠️ A PHOTOGRAPH HAS NO TEXT. Below the floor it is the vision
       // classifier's job; Jev would be guessing from an empty page.
       if (text && text.trim().length >= MIN_TRANSCRIPTION_CHARS) {
+        /**
+         * ⚠️ A REGISTERED UNIT-STANDARD NUMBER IS THE DOCUMENT (operator,
+         * 2026-10-13): "Proficiency certificates must be recognized by their
+         * number. the handgun certificates shows 117705. I'm sure JEV is smart
+         * enough so we can give it the numbers and it can place it in the
+         * correct boxes according to that."
+         *
+         * A training provider's certificate prints "COMPETENCY COURSE" and the
+         * unit-standard codes it awards (117705, 119649-119652). Jev read the
+         * words and filed the operator's handgun certificates as COMPETENCY
+         * CERTIFICATES — the one kind whose card then asks for two dates to
+         * check, on documents that do not expire. The marker library already
+         * recognises these BY NUMBER, and was the vault's classifier before
+         * Textract was removed (see the note on readMarkers below). It is
+         * wired back in here, ahead of Jev: the number cannot hallucinate and
+         * it costs nothing. `readMarkers`' own SAPS-524 and application vetoes
+         * keep a real competency certificate, and a SAPS 517 applying for one,
+         * out of this branch.
+         *
+         * Only a marker that maps to a vault kind is used; anything else falls
+         * through to Jev as before. `confident` follows the marker's strength,
+         * so a number recognised beside its title still asks the member to
+         * confirm.
+         */
+        const verdict = readMarkers(text);
+        if (verdict) {
+          const kind = UPLOAD_TO_CREDENTIAL[verdict.kind];
+          if (kind) {
+            return {
+              role: 'document',
+              kind,
+              confident: verdict.strength === 'definitive',
+              via: 'markers',
+              alsoCovers: [],
+              markers: verdict.matched.map((m) => m.name),
+              strength: verdict.strength,
+            };
+          }
+        }
+
         const filed = await this.filing.fileVault({
           text,
           kindOptions: VAULT_KIND_OPTIONS,
@@ -724,14 +766,12 @@ export class LicenceCentreExtractService {
    * across the top — asking a model what a document is, when the document
    * says so in words, spends a round trip to be told something the paper
    * already stated", and only fell through to the model on a document the
-   * marker table did not decide. There is no OCR text left to run a marker
-   * match against without Textract, so every classify costs a call now.
-   * `readMarkers` (common/document-markers.ts) and `UPLOAD_TO_CREDENTIAL`
-   * (./upload-to-credential.ts) are consequently unused BY THIS FILE as of
-   * this change — `readMarkers` is still used by motivations' own classifier,
-   * untouched here; `UPLOAD_TO_CREDENTIAL` has no other caller left and is
-   * flagged separately rather than deleted, since deciding its fate is a
-   * judgement call outside removing Textract.
+   * marker table did not decide. Textract's OCR went with it, so the marker
+   * match now runs against the GEMINI TRANSCRIPTION instead — see classify()
+   * above, reinstated 2026-10-13: a registered unit-standard number is a
+   * proficiency however the page titles itself, and reading it costs nothing.
+   * Jev still decides everything the markers do not, and this vision fallback
+   * is what runs when there is no transcription at all.
    */
   async classifyVision(args: {
     bytes: Buffer;
