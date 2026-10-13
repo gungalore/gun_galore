@@ -39,6 +39,7 @@ import { WishlistModule } from './wishlist/wishlist.module';
 import { MarketingModule } from './marketing/marketing.module';
 import { SavedSearchesModule } from './saved-searches/saved-searches.module';
 import { ReportsModule } from './reports/reports.module';
+import { BugsModule } from './bugs/bugs.module';
 import { SupportModule } from './support/support.module';
 import { ComplaintsModule } from './complaints/complaints.module';
 import { BenchModule } from './bench/bench.module';
@@ -108,6 +109,7 @@ import { ValuationModule } from './valuation/valuation.module';
     MarketingModule,
     SavedSearchesModule,
     ReportsModule,
+    BugsModule,
     PushModule,
     AskGgModule,
     ReloadingModule,

@@ -405,6 +405,20 @@ export interface ListingDecisionDetails {
   reason?: string | null;
 }
 
+export interface BugReportDetails {
+  /** Human-readable category label, e.g. "Buy Now". */
+  category: string;
+  /** The member's free-text description (already length-checked upstream). */
+  description: string;
+  /** User id of the reporter — never a real name. */
+  reporterId: string;
+  /** Optional uploaded screenshot, attached to the operator email. */
+  screenshot?: {
+    buffer: Buffer;
+    filename: string;
+  } | null;
+}
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -4678,6 +4692,59 @@ export class NotificationsService {
       preheader: `${d.buyerUsername} left a ${starsLabel} review`,
     });
     await this.send(d.email, `New ${starsLabel} review from ${d.buyerUsername}`, html);
+  }
+
+  // ---------------------------------------------------------------
+  // Operator: a member reported a bug / issue from the site.
+  //
+  // Goes ONLY to the support mailbox — this is a one-way operator notice,
+  // there is no member-facing email and no inbox row (operator decision,
+  // 2026-10-13: "forget the admin alert"). The screenshot is attached when
+  // the member uploaded one. Fails open like every other rail: a Resend
+  // error is logged and swallowed, never thrown back at the member.
+  // ---------------------------------------------------------------
+  async bugReport(d: BugReportDetails): Promise<void> {
+    const html = this.email({
+      status: { tone: 'pending', label: 'Bug report' },
+      headline: 'New bug report',
+      body: `A member reported a problem under ${b(d.category)}.<br><br><strong>What they said:</strong><br>${escapeHtml(
+        d.description,
+      ).replace(/\n/g, '<br>')}`,
+      rows: [
+        { label: 'Category', value: d.category },
+        { label: 'Reporter', value: d.reporterId },
+        { label: 'Received', value: new Date().toISOString() },
+        { label: 'Screenshot', value: d.screenshot ? 'Attached' : 'None' },
+      ],
+      preheader: `Bug report — ${d.category}`,
+    });
+
+    if (!this.resend) return;
+    try {
+      await this.resend.emails.send({
+        from: FROM,
+        to: SUPPORT_EMAIL,
+        subject: `Bug report — ${d.category}`,
+        html,
+        ...(d.screenshot
+          ? {
+              attachments: [
+                {
+                  filename: d.screenshot.filename,
+                  content: d.screenshot.buffer.toString('base64'),
+                },
+              ],
+            }
+          : {}),
+      });
+      this.logger.debug(
+        `Bug report emailed → ${SUPPORT_EMAIL} (category=${d.category}, screenshot=${Boolean(d.screenshot)})`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `bugReport: Resend send failed: ${(err as Error).message}`,
+      );
+    }
   }
 
   // ---------------------------------------------------------------

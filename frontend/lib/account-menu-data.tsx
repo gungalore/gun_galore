@@ -158,6 +158,13 @@ const BookIcon: IconC = () => (
     <path d="M12 6v14" />
   </Svg>
 );
+const BugIcon: IconC = () => (
+  <Svg>
+    <path d="M9 8a3 3 0 0 1 6 0" />
+    <rect x="8" y="8" width="8" height="9" rx="4" />
+    <path d="M12 8v9M8 11H4M8 15l-3 2M16 11h4M16 15l3 2M8 11l-3-2M16 11l3-2" />
+  </Svg>
+);
 
 const CartridgeIcon: IconC = () => (
   <Svg>
@@ -294,6 +301,7 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
       { href: '/support', label: 'Support & tickets', Icon: HelpIcon },
       { href: '/faq', label: 'FAQ', Icon: FaqIcon },
       { href: '/how-selling-works', label: 'How selling works', Icon: BookIcon },
+      { href: '/report-a-bug', label: 'Report a bug', Icon: BugIcon },
     ],
   },
 ];
