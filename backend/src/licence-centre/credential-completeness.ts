@@ -44,7 +44,11 @@ import type { CredentialKind } from '@prisma/client';
  */
 export const MUST_READ: Partial<Record<CredentialKind, readonly string[]>> = {
   FIREARM_LICENCE: [
-    'licence_number',
+    // ⚠️ THE SERIAL, NOT A LICENCE NUMBER. Operator, 2026-10-13: "there is no
+    // license number on a firearm license card. The police will use the Serial
+    // Number as the reference number of the card." Requiring `licence_number`
+    // flagged every licence "Worth a look" for a field the card never prints.
+    'serial',
     'holder_name',
     'firearm_type',
     'make',
@@ -59,7 +63,7 @@ export const MUST_READ: Partial<Record<CredentialKind, readonly string[]>> = {
 
 /** What a member calls each one. */
 const LABEL: Record<string, string> = {
-  licence_number: 'the licence number',
+  serial: 'the serial number',
   holder_name: 'the name on the card',
   firearm_type: 'the type',
   make: 'the make',

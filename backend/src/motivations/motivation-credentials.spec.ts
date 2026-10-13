@@ -35,7 +35,9 @@ const licence = (
     calibre: '.308 Win',
     frame_serial: 'F12345',
     barrel_serial: 'B67890',
-    licence_number: 'LIC-001',
+    // A licence card has no licence number; its serial is the reference
+    // (operator, 2026-10-13). The card prints this against the barrel too.
+    serial: 'B67890',
     firearm_type: 'Bolt Action Rifle',
   },
   ...over,
@@ -143,7 +145,11 @@ describe('what the Licence Centre offers a motivation', () => {
     expect(o.values.existing_firearm_1_serial).toBe('B67890');
     expect(o.values.existing_firearm_1_frame_serial).toBeUndefined();
     expect(o.values.existing_firearm_1_barrel_serial).toBeUndefined();
-    expect(o.values.existing_firearm_1_licence_no).toBe('LIC-001');
+    // ⚠️ THE "LICENCE OR PERMIT NO" BOX IS NOT FILLED. A firearm licence card
+    // has no licence number (operator, 2026-10-13); its serial is the reference
+    // and it goes in the row's serial box, not here — this box is for a storage
+    // permit and stays blank.
+    expect(o.values.existing_firearm_1_licence_no).toBeUndefined();
     // "Bolt Action Rifle" is not one of the form's four words.
     expect(o.values.existing_firearm_1_type).toBe('Rifle');
   });
@@ -727,7 +733,7 @@ describe('a firearm already on the form', () => {
     existing_firearm_1_make: 'Tikka',
     existing_firearm_1_frame_serial: 'F12345',
     existing_firearm_1_barrel_serial: 'B67890',
-    existing_firearm_1_licence_no: 'LIC-001',
+    existing_firearm_1_licence_no: 'B67890',
   };
 
   it('is not offered again for the next free row', () => {
@@ -738,9 +744,12 @@ describe('a firearm already on the form', () => {
     expect(proposed).toEqual([]);
   });
 
-  it('matches on the licence number even if the serials were retyped', () => {
+  it('matches on the row’s serial even if the component rows were retyped', () => {
+    // The card's reference is its serial (operator, 2026-10-13), so the row's
+    // own serial box is what identifies the firearm once a draft holds it.
     const o = offerWith(TYPE2, [licence()], {
       ...rowOne,
+      existing_firearm_1_serial: 'B67890',
       existing_firearm_1_frame_serial: 'typed it differently',
       existing_firearm_1_barrel_serial: '',
     });
@@ -765,7 +774,7 @@ describe('a firearm already on the form', () => {
     });
     const o = offerWith(TYPE2, [other], rowOne);
     expect(o.values.existing_firearm_2_make).toBe('CZ');
-    expect(o.values.existing_firearm_2_licence_no).toBe('LIC-002');
+    expect(o.values.existing_firearm_2_serial).toBe('B99999');
   });
 
   it('⚠️ does NOT treat a blank frame serial as a match', () => {
@@ -790,7 +799,7 @@ describe('a firearm already on the form', () => {
       existing_firearm_1_licence_no: 'LIC-999',
       existing_firearm_1_barrel_serial: 'B111',
     });
-    expect(o.values.existing_firearm_2_licence_no).toBe('LIC-003');
+    expect(o.values.existing_firearm_2_serial).toBe('B333');
   });
 });
 
@@ -1612,7 +1621,7 @@ describe('H12 — the licence being renewed', () => {
     // the licence; one started BY HAND arrives with nothing, and both of these
     // are REQUIRED fields.
     const o = offerWith('S24_RENEWAL', [licence()], {});
-    expect(o.values.existing_licence_number).toBe('LIC-001');
+    expect(o.values.existing_licence_number).toBe('B67890');
     expect(o.values.licence_expiry).toBe('2030-01-01');
   });
 

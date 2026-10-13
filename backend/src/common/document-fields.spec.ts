@@ -135,7 +135,9 @@ describe('the association document', () => {
 
 describe('a licence fills an owned-firearm row', () => {
   const licence = {
-    licence_number: 'L998',
+    // A firearm licence card has no licence number; its serial is the reference
+    // (operator, 2026-10-13), and it fills the licence_no box.
+    serial: 'L998',
     firearm_type: 'Rifle',
     make: 'CZ',
     calibre: '.308',
@@ -153,7 +155,7 @@ describe('a licence fills an owned-firearm row', () => {
     const row3 = toMotivationAnswers('FIREARM_LICENCE', licence, 3);
     expect(row3.existing_firearm_3_make).toBe('CZ');
     expect(row3.existing_firearm_3_calibre).toBe('.308');
-    expect(row3.existing_firearm_3_licence_no).toBe('L998');
+    expect(row3.existing_firearm_3_serial).toBe('L998');
     expect(row3.existing_firearm_1_make).toBeUndefined();
   });
 
@@ -214,7 +216,7 @@ describe('a licence fills an owned-firearm row', () => {
     // The rest of the card is untouched — a placeholder in one row says
     // nothing about the next.
     expect(out.existing_firearm_6_make).toBe('CZ');
-    expect(out.existing_firearm_6_licence_no).toBe('L998');
+    expect(out.existing_firearm_6_serial).toBe('L998');
   });
 
   it('keeps a real value that merely contains the word', () => {

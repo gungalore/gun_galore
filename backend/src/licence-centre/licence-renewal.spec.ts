@@ -34,7 +34,9 @@ const base: RenewalSource = {
   dateSource: null,
   firearmSelfLoading: null,
   details: {
-    licence_number: 'ZA1234567',
+    // A card has no licence number; its serial is the reference (operator,
+    // 2026-10-13). The renewal's `existing_licence_number` reads this.
+    serial: 'ZA1234567',
     make: 'Musgrave',
     model: 'K98',
     calibre: '.308 Winchester',
@@ -207,7 +209,7 @@ describe('what the renewal opens with', () => {
   it('⚠️ falls back to the document id when the number could not be read', () => {
     const noNumber = {
       ...base,
-      details: { ...base.details, licence_number: '' },
+      details: { ...base.details, serial: '' },
     };
     const a = renewalPlan(noNumber).applicationRef;
     const b = renewalPlan({ ...noNumber, id: 'cred-shotgun' }).applicationRef;
@@ -260,7 +262,7 @@ describe('what the renewal opens with', () => {
   it('never invents a value the document did not carry', () => {
     const { seed } = renewalPlan({
       ...base,
-      details: { licence_number: 'ZA1234567' },
+      details: { serial: 'ZA1234567' },
     });
     expect(seed.existing_firearm_1_make).toBeUndefined();
     expect(seed.existing_firearm_1_calibre).toBeUndefined();
@@ -286,7 +288,7 @@ describe('renewing more than one licence', () => {
     const a = renewalPlan(base);
     const b = renewalPlan({
       ...base,
-      details: { ...base.details, licence_number: 'ZA7654321' },
+      details: { ...base.details, serial: 'ZA7654321' },
     });
     expect(a.applicationRef).toBe('LIC-ZA1234567');
     expect(b.applicationRef).toBe('LIC-ZA7654321');

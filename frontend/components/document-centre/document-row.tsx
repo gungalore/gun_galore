@@ -48,7 +48,11 @@ import { evidenceNeedsWords, filedUnsure } from '@/lib/document-review-rules';
  * not belong in a column about licences.
  */
 const NUMBER_DETAIL_KEYS: Partial<Record<CredentialKind, string[]>> = {
-  FIREARM_LICENCE: ['licence_number'],
+  // ⚠️ THE SERIAL, NOT A LICENCE NUMBER. Operator, 2026-10-13: "there is no
+  // license number on a firearm license card. The police will use the Serial
+  // Number as the reference number of the card." A licence's reference IS its
+  // serial, so that is the number this column shows.
+  FIREARM_LICENCE: ['serial'],
   COMPETENCY_CERTIFICATE: ['competency_number'],
   DEDICATED_DISCIPLINE: [
     'status_number',

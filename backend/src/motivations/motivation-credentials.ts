@@ -13,7 +13,6 @@ import {
   parseEndorsements,
 } from '../common/sa-competency';
 import { answerValue, isCardPlaceholder } from '../common/card-placeholder';
-import { looksLikeLicenceNumber } from '../licence-centre/credential-duplicates';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT THE LICENCE CENTRE ALREADY KNOWS.
@@ -835,7 +834,6 @@ export function credentialOffer(
   interface OnForm {
     /** Which row it is, so the member can be pointed at it. */
     row: number;
-    licence: string;
     /** Every serial the row carries, placeholders already dropped. */
     serials: string[];
     make: string;
@@ -846,7 +844,6 @@ export function credentialOffer(
     const at = (col: string) => norm(answered[`existing_firearm_${n}_${col}`] ?? '');
     onForm.push({
       row: n,
-      licence: at('licence_no'),
       // Whichever of the three keys a draft happens to hold — a row saved
       // before the collapse has `_barrel_serial` and no `_serial`.
       serials: ['serial', 'barrel_serial', 'frame_serial']
@@ -861,8 +858,8 @@ export function credentialOffer(
    * Null when this firearm is not on the form; otherwise HOW it was matched.
    *
    * ⚠️ 'guess' IS NOT 'identifier', AND THE CALLER MUST TELL THEM APART. A
-   * licence-number or serial match is a fact: the same firearm, nothing to say.
-   * The make-and-calibre last resort is an inference about two rows with no
+   * serial match is a fact: the same firearm, nothing to say. The
+   * make-and-calibre last resort is an inference about two rows with no
    * numbers on either of them, and it is right about the Marlin and wrong about
    * a member who owns two identical rifles. Returning one boolean for both is
    * what let the second rifle disappear off a signed declaration in silence.
@@ -870,50 +867,23 @@ export function credentialOffer(
    * ⚠️ IDENTIFIERS ARE TESTED ACROSS EVERY ROW BEFORE ANY GUESS IS. Otherwise a
    * firearm that genuinely matches row 4 by serial could be reported as a
    * guessed duplicate of row 1 and get a note nobody needs.
+   *
+   * ⚠️ THE SERIAL IS THE ONLY IDENTIFIER NOW. A firearm licence card carries no
+   * licence number (operator, 2026-10-13), so the old licence-number branch
+   * matched on a field that does not exist and is gone.
    */
   const alreadyOnForm = (
-    licence: string,
     serial: string,
     make: string,
     calibre: string,
   ): { how: 'identifier' | 'guess'; row: number } | null => {
     for (const r of onForm) {
-      /**
-       * ⚠️ A LICENCE NUMBER THAT CANNOT BE ONE IDENTIFIES NOTHING, AND THIS
-       * KEPT FOUR FIREARMS OFF A SIGNED FORM.
-       *
-       * Read off MO000075 on 2026-09-09: six firearms in the vault, TWO on the
-       * application and two on the 271. The reader had put the holder's
-       * 13-digit ID number into `licence_number` on three cards and a bare
-       * four-digit number on the other four — the same value every time — so
-       * the CZ claimed row 1 and the Nordiske, the second CZ and the Glock
-       * were each judged "already on the form" against it; the Marlin claimed
-       * row 2 and the Mauser and the Howa went the same way. Operator: "Not
-       * all my firearms I posses licenses for are listed on the motivation or
-       * 271."
-       *
-       * ⚠️ AND IT WAS SILENT, BECAUSE 'identifier' MEANS "the same firearm,
-       * nothing to say". Only the `guess` branch below tells anybody. A wrong
-       * identifier match is the one that disappears a rifle without a word.
-       *
-       * `looksLikeLicenceNumber` is the same guard `documentFingerprints` uses
-       * for the duplicate flag — one bad read, two places it did damage.
-       */
-      if (
-        licence &&
-        r.licence &&
-        r.licence === norm(licence) &&
-        looksLikeLicenceNumber(licence)
-      ) {
-        return { how: 'identifier', row: r.row };
-      }
       if (serial && r.serials.includes(norm(serial))) {
         return { how: 'identifier', row: r.row };
       }
     }
     for (const r of onForm) {
       if (
-        !r.licence &&
         !r.serials.length &&
         Boolean(make && calibre) &&
         r.make === norm(make) &&
@@ -967,15 +937,14 @@ export function credentialOffer(
      */
     const serial = first(
       c.details,
+      'serial',
       'barrel_serial',
       'frame_serial',
-      'serial',
       'receiver_serial',
     );
-    const licence = first(c.details, 'licence_number');
     const type = normaliseFirearmType(first(c.details, 'firearm_type', 'type'));
 
-    if (!make && !calibre && !serial && !licence) {
+    if (!make && !calibre && !serial) {
       skipped.push({
         title: c.title,
         why: 'we could not read a make, calibre or serial off it',
@@ -986,23 +955,23 @@ export function credentialOffer(
     // Already listed. Tested BEFORE the row cap so it can never be counted as a
     // leftover either.
     //
-    // ⚠️ AN IDENTIFIER MATCH SAYS NOTHING; A GUESS HAS TO. Matching on a licence
-    // number or a serial is a fact — nothing is missing, the firearm is on the
-    // form, and a note about it would be noise. Matching on make and calibre
+    // ⚠️ AN IDENTIFIER MATCH SAYS NOTHING; A GUESS HAS TO. Matching on a serial
+    // is a fact — nothing is missing, the firearm is on the form, and a note
+    // about it would be noise. Matching on make and calibre
     // alone is an inference drawn about a row carrying no numbers at all, and
     // the doc block on alreadyOnForm has always claimed the member "is told one
     // is already listed and adds the second by hand". Nobody was told: it was
     // the same silent `continue`. So a member who genuinely owns two identical
-    // rifles, neither with a readable serial or licence number — precisely the
+    // rifles, neither with a readable serial — precisely the
     // Marlin's shape this rule was written for — lost the second one off a
     // signed declaration with no trace on any screen. Now the trade-off is
     // actually the one the comment describes.
-    const listed = alreadyOnForm(licence, serial, make, calibre);
+    const listed = alreadyOnForm(serial, make, calibre);
     if (listed?.how === 'identifier') continue;
     if (listed?.how === 'guess') {
       skipped.push({
         title: c.title,
-        why: `it looks like the firearm already listed as Firearm ${listed.row} — the same make and calibre, and neither carries a serial or licence number to tell them apart. If you own two of them, add the second one by hand`,
+        why: `it looks like the firearm already listed as Firearm ${listed.row} — the same make and calibre, and neither carries a serial to tell them apart. If you own two of them, add the second one by hand`,
       });
       continue;
     }
@@ -1014,7 +983,7 @@ export function credentialOffer(
     }
 
     // In the order the operator asked for them to be listed: make, model,
-    // serial, expiry. Type, calibre, use and the licence number follow —
+    // serial, expiry. Type, calibre and use follow —
     // still asked, still stored, still what motivation-overlap argues from,
     // and not part of the summary line.
     const p = `existing_firearm_${row}_`;
@@ -1117,13 +1086,11 @@ export function credentialOffer(
     );
     offer(`${p}type`, `Firearm ${row} — type`, type, c.title, c.id);
     offer(`${p}calibre`, `Firearm ${row} — calibre`, calibre, c.title, c.id);
-    offer(`${p}licence_no`, `Firearm ${row} — licence number`, licence, c.title, c.id);
     // Now on the form as far as the rest of this run is concerned. See the
     // note on alreadyOnForm: a vault holding the same card twice would
     // otherwise list one firearm as two.
     onForm.push({
       row,
-      licence: norm(licence),
       serials: serial ? [norm(serial)] : [],
       make: norm(make),
       calibre: norm(calibre),
@@ -1486,7 +1453,7 @@ export function credentialOffer(
       offer(
         'existing_licence_number',
         'The licence being renewed',
-        first(c.details, 'licence_number'),
+        first(c.details, 'serial'),
         c.title,
         c.id,
       );

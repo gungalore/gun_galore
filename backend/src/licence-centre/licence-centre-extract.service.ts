@@ -339,7 +339,15 @@ const DATE_DETAILS: ReadonlySet<string> = new Set([
 
 export const WANTED: Record<CredentialKind, string[]> = {
   FIREARM_LICENCE: [
-    'licence_number',
+    /**
+     * ⚠️ THE HEADLINE SERIAL, NOT A LICENCE NUMBER. Operator, 2026-10-13:
+     * "there is no license number on a firearm license card. The police will
+     * use the Serial Number as the reference number of the card." The vault
+     * asked every card for a licence number it does not print, so the read came
+     * back empty and credential-completeness flagged every licence "Worth a
+     * look" for a missing field that was never on the card.
+     */
+    'serial',
     'holder_name',
     'firearm_type',
     'make',
@@ -1361,21 +1369,20 @@ export function userPrompt(
           'firearm_type is the Type row EXACTLY as printed, including any S/L,',
           'N/S/L or M/O in front of it - that prefix says whether the firearm is',
           'self-loading and must not be dropped or expanded.',
-          // ⚠️ THE READER WAS GUESSING WHICH NUMBER THIS WAS, and it guessed
-          // two different wrong ones. Across the operator's seven cards it put
-          // the holder's 13-digit ID number in licence_number on one layout
-          // and a bare 4-digit number on the other — the same value on every
-          // card of each layout. Four firearms were then flagged as copies of
-          // each other (documentFingerprints keys a licence on that number),
-          // and the 271's "Licence or permit no" box takes the same field.
-          'licence_number is the number of THIS LICENCE - the one the card',
-          'calls Licence No, Licence Number, Permit No or Reference. It is',
-          'unique to this one firearm.',
-          'NEVER the holder\'s ID number (13 digits), never a date or a year,',
-          'never a page or item number, and never a number shared with another',
-          'card. If the card prints no licence number, leave it out entirely -',
-          'an absent field is correct and a guessed one is worse than nothing.',
-          // The serials, and which row each one comes off.
+          // ⚠️ THERE IS NO LICENCE NUMBER ON A FIREARM LICENCE CARD. Operator,
+          // 2026-10-13: "there is no license number on a firearm license card.
+          // The police will use the Serial Number as the reference number of
+          // the card." This block used to ask for `licence_number` and warn the
+          // reader off the 13-digit ID and the 4-digit card number; the reader
+          // hunted for a number that is not printed, returned nothing, and the
+          // row was flagged incomplete on every card.
+          'serial is the firearm\'s SERIAL NUMBER - the row the card labels',
+          'simply "Serial Number", printed above the barrel / receiver / frame',
+          'rows. It is unique to this one firearm and it is what the police use',
+          'as the card\'s reference. Read it from that headline row. NEVER the',
+          'holder\'s ID number (13 digits), never a date or a year, and never a',
+          'number shared with another card.',
+          // The component rows, and which row each one comes off.
           'frame_serial, barrel_serial and receiver_serial each come off THEIR',
           'OWN row. A card prints NONE against a component that carries no',
           'number: transcribe that NONE rather than leaving the key out, and',

@@ -210,24 +210,30 @@ export function renewalPlan(src: RenewalSource): RenewalPlan {
 
   return {
     seed,
-    // The licence number is the natural reference: it is what the member and
-    // the DFO both call this application, and it keeps two renewals for two
-    // different firearms from colliding on the one-per-type constraint.
+    // The serial is the natural reference: a licence card has no licence
+    // number, and the serial is what the member and the DFO both use to name
+    // this card. It keeps two renewals for two different firearms from
+    // colliding on the one-per-type constraint.
     //
-    // ⚠️ AND IT FALLS BACK TO THE DOCUMENT'S OWN ID RATHER THAN TO ''. A
-    // missing licence number is expressly not a refusal above — glare loses
-    // the number while the expiry reads fine — and an empty ref put every such
-    // renewal on the same (userId, S24_RENEWAL, '') key. startRenewal's
-    // idempotency findFirst keys on exactly that triple, so a member with two
-    // unreadable licences tapped Renew on the second and was silently opened
-    // into the FIRST licence's pack, already seeded with the other firearm's
-    // make, calibre and serial, with nothing on screen saying so.
+    // ⚠️ AND IT FALLS BACK TO THE DOCUMENT'S OWN ID RATHER THAN TO ''. The
+    // serial is always printed (operator, 2026-10-13), but a read can still
+    // lose it, and an empty ref put every such renewal on the same
+    // (userId, S24_RENEWAL, '') key. startRenewal's idempotency findFirst keys
+    // on exactly that triple, so a member with two unreadable licences tapped
+    // Renew on the second and was silently opened into the FIRST licence's
+    // pack, already seeded with the other firearm's make, calibre and serial,
+    // with nothing on screen saying so.
     applicationRef: number ? `LIC-${number}` : `LIC-ROW-${src.id}`,
   };
 }
 
 function licenceNumber(d: Record<string, string>): string {
-  return (d.licence_number ?? d.reference_number ?? '').trim();
+  // ⚠️ THE CARD'S REFERENCE IS ITS SERIAL. Operator, 2026-10-13: "there is no
+  // license number on a firearm license card. The police will use the Serial
+  // Number as the reference number of the card." This read
+  // `licence_number ?? reference_number`, so a renewal opened from a card that
+  // never printed one carried an empty reference.
+  return (d.serial ?? '').trim();
 }
 
 // ────────────────────────────────────────────────────────────────────

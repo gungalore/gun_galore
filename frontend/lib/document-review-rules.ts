@@ -74,7 +74,7 @@ const FIELD_LABELS: Record<string, string> = {
   competency_number: 'the certificate number',
   competency_issued: 'the date of issue',
   certificate_number: 'the certificate number',
-  licence_number: 'the licence number',
+  serial: 'the serial number',
   section: 'the section',
   firearm_type: 'the firearm type',
   make: 'the make',

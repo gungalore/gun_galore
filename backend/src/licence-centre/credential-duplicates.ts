@@ -86,37 +86,25 @@ export function documentFingerprints(s: DuplicateSubject): string[] {
   const out: (string | null)[] = [];
   switch (s.kind) {
     case 'FIREARM_LICENCE':
-      // The licence number when it is printed; otherwise the serials. A
-      // frame serial names the firearm on every South African card, so it is
-      // the strongest of the three.
       /**
-       * ⚠️ THE SERIALS FIRST, AND THE LICENCE NUMBER ONLY IF IT LOOKS LIKE
-       * ONE. Read off the operator's own vault on 2026-09-09: the reader had
-       * put the holder's 13-digit ID number into `licence_number` on three
-       * cards and a bare four-digit number on four others — the same value
-       * every time — so a Nordiske .223, a Glock 9mm, a Mauser .30-06 and a
-       * Howa 6.5 Creedmoor were all flagged as copies of a CZ or a Marlin.
-       * Five of six firearms called duplicates of an unrelated one.
+       * ⚠️ THE SERIALS, AND NOTHING ELSE. A firearm licence card has no licence
+       * number (operator, 2026-10-13: "there is no license number on a firearm
+       * license card. The police will use the Serial Number as the reference
+       * number of the card"), and the reader used to grab the holder's 13-digit
+       * ID or a bare 4-digit card number for it — flagging a Nordiske, a Glock,
+       * a Mauser and a Howa all as copies of a CZ or a Marlin. `serial` is the
+       * headline row and identifies the firearm on its own.
        *
-       * The reader is told to do better (see the FIREARM_LICENCE guidance in
-       * licence-centre-extract.service.ts), and `looksLikeLicenceNumber` is
-       * what holds when it does not. A duplicate flag is the one place a bad
-       * read is loud rather than quiet: it tells a member their licences are
-       * copies of each other.
-       *
-       * ⚠️ AND `serial_number` WAS A KEY NOTHING EVER WROTE. The vault stores
+       * ⚠️ `serial_number` WAS A KEY NOTHING EVER WROTE. The vault stores
        * `serial`, `frame_serial`, `barrel_serial` and `receiver_serial`; that
        * tag has matched nothing since it was written, and the receiver serial
        * — the only number a Marlin carries — was invisible here as well.
        */
       out.push(
+        tag('serial', d.serial),
         tag('frame', d.frame_serial),
         tag('barrel', d.barrel_serial),
         tag('receiver', d.receiver_serial),
-        tag('serial', d.serial),
-        looksLikeLicenceNumber(d.licence_number)
-          ? tag('licence', d.licence_number)
-          : null,
       );
       break;
     case 'COMPETENCY_CERTIFICATE':

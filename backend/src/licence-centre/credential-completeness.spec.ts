@@ -22,7 +22,7 @@ import {
 // ────────────────────────────────────────────────────────────────────
 
 const full: Record<string, string> = {
-  licence_number: 'SAPS/2019/0004471',
+  serial: 'MR90189D',
   holder_name: 'A SHOOTER',
   firearm_type: 'RIFLE',
   make: 'MARLIN',

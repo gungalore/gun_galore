@@ -71,7 +71,17 @@ export const FIELD_ALIASES: Record<string, readonly FieldAlias[]> = {
   // A firearm licence describes a firearm the applicant ALREADY OWNS, so it
   // fills an owned-firearm row — never the applied-for firearm.
   FIREARM_LICENCE: [
-    { vault: 'licence_number', motivation: 'existing_firearm_{n}_licence_no' },
+    /**
+     * ⚠️ THE CARD HAS NO LICENCE NUMBER; ITS SERIAL IS THE REFERENCE. Operator,
+     * 2026-10-13: "there is no license number on a firearm license card. The
+     * police will use the Serial Number as the reference number of the card."
+     * The vault now reads the headline `serial`, and it fills the row's ONE
+     * serial box. `ownedFirearmSerial` and item 2.1 of the 271 read this box, so
+     * the serial lands in the Frame/receiver column and nowhere else — never in
+     * the "Licence/permit authorization No" column, which is for a storage
+     * permit and is left blank.
+     */
+    { vault: 'serial', motivation: 'existing_firearm_{n}_serial' },
     { vault: 'firearm_type', motivation: 'existing_firearm_{n}_type' },
     { vault: 'make', motivation: 'existing_firearm_{n}_make' },
     { vault: 'model', motivation: 'existing_firearm_{n}_model' },
@@ -93,25 +103,17 @@ export const FIELD_ALIASES: Record<string, readonly FieldAlias[]> = {
     { vault: 'frame_serial', motivation: 'existing_firearm_{n}_frame_serial' },
     { vault: 'barrel_serial', motivation: 'existing_firearm_{n}_barrel_serial' },
     /**
-     * ⚠️ AND THE RECEIVER, WHICH GOES TO THE LIVE BOX RATHER THAN A RETIRED
-     * ONE. The two above name the retired keys because the wizard collapsed
-     * its two serial boxes into `_serial` on 2026-09-07 and neither of them
-     * may claim it — whichever ran last would overwrite the other, and on a
-     * card where they genuinely differ that is the wrong number on a signed
-     * form. The receiver has no retired key of its own and no competitor for
-     * the live one, so it takes it.
-     *
-     * ⚠️ WHICH IS ALSO THE RIGHT ANSWER FOR THE FIREARM THAT NEEDED IT. The
-     * operator's Marlin prints NONE for the frame and NONE for the barrel and
-     * carries its number on the receiver; `ownedFirearmSerial` reads `_serial`
-     * first, so that number now wins over two placeholders instead of losing
-     * to them. Where a card prints one number against all three components —
-     * the common case — every key gets the same value and nothing changes.
+     * ⚠️ THE RECEIVER NOW HAS NO BOX OF ITS OWN, BECAUSE THE HEADLINE SERIAL
+     * DOES. `serial` above claims `_serial` — it is the number that identifies
+     * the firearm and the one SAPS uses — and two vault keys cannot write one
+     * motivation key without one silently overwriting the other. The receiver
+     * still reaches item 2.1's Frame/receiver column: credentialOffer reads it
+     * directly off `details` (motivation-credentials.ts, frameOrReceiver) and
+     * offers it to `_frame_serial`, which `ownedFirearmSerial` falls back to.
+     * On the operator's Marlin the headline serial IS the receiver number, so
+     * the value lands either way.
      */
-    {
-      vault: 'receiver_serial',
-      motivation: 'existing_firearm_{n}_serial',
-    },
+    { vault: 'receiver_serial', motivation: null },
     // ⚠️ NO MOTIVATION BOX YET, AND IT IS THE MOST USEFUL FIELD ON THE CARD.
     // The section decides the licence's term (LICENCE_YEARS) and therefore the
     // competency expiry that follows it, and credential-auto-date refuses to

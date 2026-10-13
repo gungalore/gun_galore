@@ -910,6 +910,12 @@ function ownedFirearmRow(n: number): MotivationField[] {
       scope: 'profile',
     },
     {
+      // ⚠️ THIS IS FOR A STORAGE PERMIT, NOT A FIREARM LICENCE. Operator,
+      // 2026-09-08: "the License/Permit number is if you have a storage permit
+      // for someone elses weapon which is very uncommon, so we can leave that
+      // blank." A firearm licence card carries no licence number at all
+      // (operator, 2026-10-13); the card's reference is its Serial Number,
+      // which lives in the row's own `_serial` box above.
       key: `${p}licence_no`,
       docSourced: 'CURRENT_LICENCE',
       label: 'Licence or permit no',

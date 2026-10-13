@@ -20,7 +20,7 @@ describe('documentFingerprints', () => {
   it('names a licence by its printed serials, ignoring NONE', () => {
     const f = documentFingerprints({
       kind: 'FIREARM_LICENCE',
-      details: { frame_serial: 'B 477-423', barrel_serial: 'NONE', licence_number: '' },
+      details: { frame_serial: 'B 477-423', barrel_serial: 'NONE' },
       issuedOn: null,
     });
     expect(f).toEqual(['frame:B477423']);
@@ -89,13 +89,17 @@ describe('findDuplicate', () => {
 // WHAT THE OPERATOR'S OWN VAULT HELD ON 2026-09-09.
 //
 // Seven firearm licence cards, six firearms, and FIVE flagged as duplicates.
-// The reader had put the holder's 13-digit ID number into `licence_number` on
-// three cards and a bare four-digit number on the other four — the same value
-// every time — so a Nordiske .223, a Glock 9mm, a Mauser .30-06 and a Howa
-// 6.5 Creedmoor were each called a copy of an unrelated CZ or Marlin.
+// The reader had put the holder's 13-digit ID number into the old
+// `licence_number` on three cards and a bare four-digit number on the other
+// four — the same value every time — so a Nordiske .223, a Glock 9mm, a Mauser
+// .30-06 and a Howa 6.5 Creedmoor were each called a copy of an unrelated CZ or
+// Marlin.
 //
-// ⚠️ A DUPLICATE FLAG IS WHERE A BAD READ IS LOUD. It tells a member their
-// licences are copies of each other, on the screen where they check them.
+// ⚠️ THE FIELD IS GONE NOW. Operator, 2026-10-13: "there is no license number
+// on a firearm license card. The police will use the Serial Number as the
+// reference number of the card." The fingerprint keys on the serials only, and
+// `looksLikeLicenceNumber` survives for the motivation matcher, which still has
+// to tell a real reference from an ID number.
 // ────────────────────────────────────────────────────────────────────
 
 const licence = (details: Record<string, string>) => ({
@@ -104,8 +108,8 @@ const licence = (details: Record<string, string>) => ({
   issuedOn: null,
 });
 
-describe('a licence number that cannot be one', () => {
-  it('⚠️ IGNORES A 13-DIGIT ID NUMBER, so one person is not one firearm', () => {
+describe('the fingerprint keys on the serial, never a licence number', () => {
+  it('⚠️ A 13-DIGIT ID NUMBER IS NOT A FINGERPRINT', () => {
     expect(looksLikeLicenceNumber('8001015009087')).toBe(false);
     const f = documentFingerprints(
       licence({ licence_number: '8001015009087', frame_serial: 'AB1234' }),
@@ -120,11 +124,10 @@ describe('a licence number that cannot be one', () => {
     );
   });
 
-  it('keeps a real one', () => {
-    expect(looksLikeLicenceNumber('SAPS/2019/0004471')).toBe(true);
-    expect(
-      documentFingerprints(licence({ licence_number: 'SAPS/2019/0004471' })),
-    ).toEqual(['licence:SAPS20190004471']);
+  it('⚠️ THE HEADLINE SERIAL IS THE FINGERPRINT', () => {
+    expect(documentFingerprints(licence({ serial: 'MR90189D' }))).toEqual([
+      'serial:MR90189D',
+    ]);
   });
 
   it('⚠️ READS THE RECEIVER SERIAL, which nothing was reading', () => {
@@ -141,16 +144,16 @@ describe('a licence number that cannot be one', () => {
   });
 
   it('⚠️ TWO DIFFERENT FIREARMS ARE NOT A DUPLICATE PAIR', () => {
-    // The whole failure in one assertion: same bad licence_number, different
-    // serials, and they must not match.
+    // The whole failure in one assertion: same bad number, different serials,
+    // and they must not match.
     const day = new Date('2026-09-09T10:00:00Z');
     const cz = {
       id: 'cz',
       title: 'CZ 6.35',
       createdAt: day,
-      ...licence({ licence_number: '2035', barrel_serial: '12345' }),
+      ...licence({ barrel_serial: '12345' }),
     };
-    const glock = licence({ licence_number: '2035', frame_serial: 'ABCD12345' });
+    const glock = licence({ frame_serial: 'ABCD12345' });
     expect(findDuplicate(glock, [cz])).toBeNull();
   });
 
@@ -160,9 +163,9 @@ describe('a licence number that cannot be one', () => {
       id: 'a',
       title: 'CZ 6.35',
       createdAt: day,
-      ...licence({ licence_number: '2035', barrel_serial: '12345' }),
+      ...licence({ barrel_serial: '12345' }),
     };
-    const again = licence({ licence_number: '2035', barrel_serial: '12345' });
+    const again = licence({ barrel_serial: '12345' });
     expect(findDuplicate(again, [first])?.id).toBe('a');
   });
 });
