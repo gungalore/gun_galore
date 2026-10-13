@@ -173,10 +173,13 @@ describe('what the pack itself is missing', () => {
     expect(hasProficiencyPackGap(gap)).toBe(true);
   });
 
-  it('\u26a0\ufe0f flags a firearm whose statement has no certificate', () => {
-    // The operator's own handgun row: a lone statement of results.
+  it('\u26a0\ufe0f does NOT block on a missing certificate — it is optional', () => {
+    // "minimum statement of results. Certificate optional but must be added if
+    // available." The operator's own handgun row is a lone statement of results;
+    // it is noted, but it never refuses the pack.
     const gap = proficiencyPackGap([page('117705, 119651', 'back')], 'rifle-mo');
-    expect(gap.missingCertificate).toBe(true);
+    expect(gap.certificateMissing).toBe(true);
+    expect(hasProficiencyPackGap(gap)).toBe(false);
   });
 
   it('flags a proficiency for the wrong firearm', () => {
@@ -196,7 +199,7 @@ describe('what the pack itself is missing', () => {
 
   it('does not ask for a certificate it cannot see a side for', () => {
     const gap = proficiencyPackGap([page('117705, 119651', null)], 'rifle-mo');
-    expect(gap.missingCertificate).toBe(false);
+    expect(gap.certificateMissing).toBe(false);
   });
 
   it('does not gate on a firearm before one is described', () => {

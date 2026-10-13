@@ -736,11 +736,6 @@ export class MotivationGenerationService {
       if (proficiencyGap.missingFirearm) {
         problems.push(`the statement of results for the ${label}`);
       }
-      if (proficiencyGap.missingCertificate) {
-        problems.push(
-          `the certificate that goes with the ${label} statement of results`,
-        );
-      }
       throw new ConflictException({
         message: `Your pack is still missing ${problems.join(' and ')}.`,
         code: 'motivation-proficiency-incomplete',

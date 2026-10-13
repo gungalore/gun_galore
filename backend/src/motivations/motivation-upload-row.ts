@@ -225,20 +225,29 @@ export interface PackProficiencyPage {
  * 117705 anywhere", across the vault AND this application, and a pack can be
  * short while that answer is CONFIRMED — the statement is in the vault and was
  * never attached. The rule the operator stated (2026-10-13) is about the
- * SUBMITTED PACK: "the application must have the statement of results for the
- * act and the statement of result and certificate for the rifle."
+ * SUBMITTED PACK:
  *
- * Three things the pack needs, all from the attached proficiency pages:
+ *   "the pack must include the annexure for the act and the annexure for the
+ *    firearm that is being applied for. minimum statement of results.
+ *    Certificate optional but must be added if available. if both are on one
+ *    statement of result just add one annexure but reference both."
+ *
+ * So the pack must carry, in one page or two:
  *   · the firearm's unit standard (119649/119650/119651/119652), and
- *   · 117705, on that same page or on a separate statement of results;
- *   · both sides of the firearm's proficiency — the statement of results AND
- *     the provider certificate — because half a document is not a document.
+ *   · 117705 (Knowledge of the Firearms Control Act).
+ * A single statement of results carrying both settles the whole requirement on
+ * its own.
+ *
+ * ⚠️ THE CERTIFICATE IS NOT REQUIRED. The statement of results is the minimum;
+ * the provider certificate is optional (added when the member has it — the
+ * autolink rides a paired certificate along). Its absence is reported so it can
+ * be SUGGESTED, never to refuse the pack.
  *
  * ⚠️ UNREAD IS NOT MISSING. If no attached page yielded a single code, we say
  * nothing: a photograph taken at an angle must not block a member whose pack
- * is fine. Every gap is only reported against pages we could actually read.
- * Likewise the certificate check needs at least one side we could SEE — an
- * unrecorded `document_side` must not read as a missing certificate.
+ * is fine. Likewise the optional-certificate note needs at least one side we
+ * could SEE — an unrecorded `document_side` must not read as a missing
+ * certificate.
  */
 export interface ProficiencyPackGap {
   /** No attached proficiency page carried a code we could read. */
@@ -247,8 +256,12 @@ export interface ProficiencyPackGap {
   missingLaw: boolean;
   /** No attached page carries the applied firearm's unit standard. */
   missingFirearm: boolean;
-  /** The firearm's proficiency has only one side on the application. */
-  missingCertificate: boolean;
+  /**
+   * The firearm's proficiency shows only one side. NOT a refusal — the
+   * statement of results is the minimum and the certificate is optional; this
+   * only drives a "add the certificate if you have it" suggestion.
+   */
+  certificateMissing: boolean;
 }
 
 export function proficiencyPackGap(
@@ -267,28 +280,28 @@ export function proficiencyPackGap(
       unread: true,
       missingLaw: false,
       missingFirearm: false,
-      missingCertificate: false,
+      certificateMissing: false,
     };
   }
 
   const hasLaw = codes.has(MANDATORY_UNIT_STANDARD);
   const hasFirearm =
     !needed || [...codes].some((c) => endorsementFromUnitStandard(c) === needed);
-  // ⚠️ BOTH SIDES, OR IT IS HALF A DOCUMENT. Only asked of the firearm's own
-  // proficiency, and only when we can see a side at all — see the note above.
+  // ⚠️ BOTH SIDES IS A SUGGESTION, NOT A REQUIREMENT. Only asked of the
+  // firearm's own proficiency, and only when we can see a side at all.
   const paired = sides.has('front') && sides.has('back');
 
   return {
     unread: false,
     missingLaw: !hasLaw,
     missingFirearm: !!needed && !hasFirearm,
-    missingCertificate: !!needed && hasFirearm && sides.size > 0 && !paired,
+    certificateMissing: !!needed && hasFirearm && sides.size > 0 && !paired,
   };
 }
 
-/** Is anything the pack needs from its proficiency pages actually missing? */
+/** Is anything the pack is REQUIRED to carry from its proficiency pages gone? */
 export function hasProficiencyPackGap(gap: ProficiencyPackGap): boolean {
-  return (
-    gap.missingLaw || gap.missingFirearm || gap.missingCertificate
-  );
+  // ⚠️ `certificateMissing` IS DELIBERATELY ABSENT. The statement of results is
+  // the minimum; the certificate is optional.
+  return gap.missingLaw || gap.missingFirearm;
 }
