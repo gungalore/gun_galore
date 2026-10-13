@@ -7,6 +7,48 @@ overwritten.
 
 Last updated: **2026-10-13**.
 
+## 2026-10-13 — MOTIVATIONS: THE ACT AND A COMPLETE PROFICIENCY (BACKEND DEPLOY)
+
+Commit **`762da5de`** (`feat(motivations): the pack needs the Act and a
+complete proficiency`), 4 files, backend-only deploy via
+`infra/deploy/deploy.sh --backend-only` (Git Bash) — the frontend kept serving
+(uptime 21m after). Rollback point `alloutdoor-20261013-134754.dump` (29 MB).
+Backend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD
+`762da5de`. No migration.
+
+Gates before deploy: backend `tsc` clean + **346 suites/5510 tests**
+(`npm test -- --maxWorkers=2`).
+
+**The rule (operator, 2026-10-13).** Every motivation needs 117705 (Knowledge of
+the Firearms Control Act) plus the applied firearm's unit standard, evidenced by
+its statement of results AND its certificate. If the Act sits on the firearm's
+own statement, one page settles both; if it is on a separate statement (usually
+the first course), both statements are needed. This was already modelled for the
+MEMBER (`common/sa-proficiency-cover.ts` — "do they hold 117705 anywhere") and
+for the autolink (`pickProficiencyPair`), but nothing blocked a SUBMITTED pack
+that was short, and a lone statement (the operator's handgun `back`) satisfied
+the checklist on its own.
+
+**What shipped.** New pure `proficiencyPackGap()` in `motivation-upload-row.ts`
+reads the proficiency pages ON the application — their unit standards and which
+side each is (`document_side`) — and reports: a missing Act page, a statement
+for the wrong firearm, or a half proficiency (a statement without its
+certificate). The generation gate (`motivation-generation.service.ts`, after the
+H13 document check) throws `motivation-proficiency-incomplete` with the specific
+pieces named. It never runs on an unreadable page and never invents a
+requirement for a pack that attaches no proficiency (the proficiency is on the
+EXPECTED tier, not REQUIRED).
+
+**Know.**
+- Frontend needs no change: the generic error handler already shows
+  `body.message`, and the message names exactly what is missing.
+- `motivations.service.spec.ts` gained a gate test; `motivation-upload-row.spec.ts`
+  gained the pure-rule cases (complete pack, Act on the firearm statement,
+  missing Act, half proficiency, wrong firearm, unreadable, no firearm yet).
+- The gate reads `extractionEncrypted` (unit_standard + document_side) with the
+  OCR text as fallback; a page whose `document_side` was never read is not
+  accused of missing its certificate.
+
 ## 2026-10-13 — DOCUMENT CENTRE: A TRAINING ROW IS NAMED BY ITS FIREARM (FRONTEND DEPLOY)
 
 Commit **`a73a7b39`** (`fix(document-centre): name a training certificate by
