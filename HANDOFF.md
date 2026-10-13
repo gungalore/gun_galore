@@ -7,6 +7,47 @@ overwritten.
 
 Last updated: **2026-10-13**.
 
+## 2026-10-13 — DOCUMENT CENTRE: RECOGNISE A PROFICIENCY BY ITS NUMBER (BACKEND DEPLOY)
+
+Commit **`1432baa1`** (`fix(document-centre): recognise a proficiency by its
+unit-standard number`), 3 files, backend-only deploy via `--backend-only`.
+Rollback point `alloutdoor-20261013-143349.dump` (30 MB). Backend health x2 OK,
+public 200 x2, three pm2 services online. Deployed HEAD `1432baa1`.
+
+Gates: backend `tsc` clean + **346 suites/5512 tests**.
+
+**The report.** Operator: "why is there two dates to check on competency
+certificates. those are the certificates for the handgun. It says Competency
+course on it ... Proficiency certificates must be recognized by their number.
+the handgun certificates shows 117705." The handgun training certificates print
+"COMPETENCY COURSE" and their unit-standard codes; the vault filed them as
+COMPETENCY_CERTIFICATE (two rows, `cmv6ni1rf` and `cmv6l6p7o`, details empty),
+and the competency card then asks for two dates to check — on documents that do
+not expire.
+
+**Cause.** When Textract was removed, the vault classifier dropped the marker
+library and relied on Jev alone. Jev read the words "COMPETENCY COURSE" and
+picked the competency folder. The marker library (`common/document-markers.ts`)
+already recognises these **by number** — `accredited-provider-course-certificate`
+(NSN's "COMPETENCY COURSE" cert: accreditation line + completion phrase + unit
+code) and `unit-code-beside-its-title` — and the MOTIVATION classifier already
+uses it. Only the vault path had lost it.
+
+**What shipped.** `classify()` now runs `readMarkers` on the Gemini
+transcription **before** Jev, exactly as the motivation classifier does. A
+verdict maps to a vault kind through `UPLOAD_TO_CREDENTIAL`; anything the
+markers do not decide falls through to Jev. The SAPS-524 and application vetoes
+in the marker table are untouched, so a real competency certificate (and a SAPS
+517 applying for one) stays a competency. Jev's own Proficiency/Competency hints
+now name the unit-standard numbers (117705, 119649-119652, 243200) so it too
+places a numbered page correctly.
+
+**Know.** The two blank COMPETENCY rows already in the vault do not re-classify
+themselves — refile them as Proficiency (the card's type control) or re-scan;
+a new scan now lands as PROFICIENCY. Tests: 2 cases added to
+`licence-centre-classify.spec.ts` (the COMPETENCY COURSE cert read by number
+with Jev bypassed; a real SAPS 524 kept a competency).
+
 ## 2026-10-13 — MOTIVATIONS: THE PROFICIENCY CERTIFICATE IS OPTIONAL (BACKEND DEPLOY)
 
 Commit **`681a08c8`** (`fix(motivations): the proficiency certificate is
