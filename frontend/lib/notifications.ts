@@ -17,7 +17,21 @@ export interface NotificationItem {
   body: string;
   url: string | null;
   iconKey: string | null;
-  linkedType: 'offer' | 'transaction' | 'bid' | 'listing' | null;
+  // Mirrors NotificationLinkedType in
+  // backend/src/notifications/notifications.service.ts — keep in sync.
+  linkedType:
+    | 'offer'
+    | 'transaction'
+    | 'bid'
+    | 'listing'
+    | 'bank'
+    | 'complaint'
+    | 'credential'
+    | 'motivation'
+    | 'post'
+    | 'comment'
+    | 'tracked_application'
+    | null;
   linkedId: string | null;
   dismissible: boolean;
   resolvedAt: string | null;
@@ -54,6 +68,7 @@ export async function fetchFeed(
   category: NotificationCategory,
   status: 'active' | 'resolved' = 'active',
   before?: string,
+  beforeId?: string,
   limit = 50,
 ): Promise<NotificationItem[]> {
   try {
@@ -62,7 +77,12 @@ export async function fetchFeed(
       status,
       limit: String(limit),
     });
-    if (before) qs.set('before', before);
+    if (before) {
+      qs.set('before', before);
+      // Tiebreaker for rows sharing the boundary millisecond — see the
+      // backend cursor. Sent only alongside `before`.
+      if (beforeId) qs.set('beforeId', beforeId);
+    }
     const r = await fetch(`${API_URL}/notifications/me?${qs}`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',

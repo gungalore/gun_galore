@@ -3773,6 +3773,20 @@ export class NotificationsService {
     const url = `${this.appUrl}/complaints`;
     const pretty = d.status.replace(/_/g, ' ').toLowerCase();
 
+    // ⚠️ SUPERSEDE FIRST — this is what makes the row terminable. The
+    // AWAITING_USER variant is dismissible:false, and there is NO action
+    // handler that resolves a complaint by entity (unlike offers, sales and
+    // shipments). Without this, the only thing that could ever clear the row
+    // was another status change — so a case that ended on AWAITING_USER, or
+    // was abandoned, left an un-dismissible row inflating the member's bell
+    // badge for good. Resolving here makes each status change the single
+    // current state of the case: the previous row is retired, the new one is
+    // written below.
+    await this.resolveByEntity('complaint', d.referenceNumber, {
+      types: ['complaint_status_changed'],
+      resolvedBy: 'auto_expired',
+    });
+
     await this.persistByEmail(d.email, {
       category: 'ACCOUNT',
       type: 'complaint_status_changed',

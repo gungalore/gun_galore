@@ -103,17 +103,32 @@ export class NotificationsFeedController {
     const status = q.status ?? 'active';
     const limit = q.limit ?? 50;
 
+    // Keyset cursor on (createdAt, id). A timestamp-only cursor drops any
+    // row that shares the boundary millisecond with the previous page's last
+    // row — which batch persists produce. The id comparison is only reached
+    // for rows AT `before`; the orderBy matches it so the tie group stays
+    // stably ordered.
+    const before = q.before ? new Date(q.before) : null;
     const where: Prisma.NotificationWhereInput = {
       userId: user.id,
       ...(q.category ? { category: q.category as NotificationCategory } : {}),
       ...(status === 'active' ? { resolvedAt: null } : {}),
       ...(status === 'resolved' ? { resolvedAt: { not: null } } : {}),
-      ...(q.before ? { createdAt: { lt: new Date(q.before) } } : {}),
+      ...(before
+        ? {
+            OR: [
+              { createdAt: { lt: before } },
+              ...(q.beforeId
+                ? [{ createdAt: before, id: { lt: q.beforeId } }]
+                : []),
+            ],
+          }
+        : {}),
     };
 
     return this.prisma.notification.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit,
     });
   }

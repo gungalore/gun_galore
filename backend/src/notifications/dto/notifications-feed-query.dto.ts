@@ -1,4 +1,12 @@
-import { IsEnum, IsInt, IsISO8601, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { NotificationCategory } from '@prisma/client';
 
@@ -26,4 +34,12 @@ export class NotificationsFeedQueryDto {
   @IsOptional()
   @IsISO8601()
   before?: string;
+
+  // Tiebreaker for the cursor: the id of the same last row. Batch writes
+  // (e.g. acceptedOfferLapsed persists buyer+seller rows in one tick) can
+  // share a createdAt to the millisecond, and paging on the timestamp alone
+  // would skip the sibling. Pairing (createdAt, id) makes the cursor total.
+  @IsOptional()
+  @IsString()
+  beforeId?: string;
 }

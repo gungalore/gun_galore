@@ -147,6 +147,12 @@ const HelpIcon: IconC = () => (
     <circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none" />
   </Svg>
 );
+const FlagIcon: IconC = () => (
+  <Svg>
+    <path d="M5 21V4" />
+    <path d="M5 5h11l-2 3 2 3H5" />
+  </Svg>
+);
 const FaqIcon: IconC = () => (
   <Svg>
     <path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4V5z" />
@@ -299,6 +305,11 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     title: 'Help',
     items: [
       { href: '/support', label: 'Support & tickets', Icon: HelpIcon },
+      // The member's own dispute cases. It is a distinct surface from
+      // Support (a formal case with a CO reference that can hold a payout),
+      // and complaint_status_changed notifications deep-link here — without
+      // a menu row they had no badge and no route in.
+      { href: '/complaints', label: 'Complaints', Icon: FlagIcon },
       { href: '/faq', label: 'FAQ', Icon: FaqIcon },
       { href: '/how-selling-works', label: 'How selling works', Icon: BookIcon },
       { href: '/report-a-bug', label: 'Report a bug', Icon: BugIcon },

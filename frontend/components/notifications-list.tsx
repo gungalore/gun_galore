@@ -94,7 +94,13 @@ export function NotificationsList({
       return;
     }
     const last = items[items.length - 1];
-    const more = await fetchFeed(token, category, status, last.createdAt);
+    const more = await fetchFeed(
+      token,
+      category,
+      status,
+      last.createdAt,
+      last.id,
+    );
     setItems((prev) => [...prev, ...more]);
     setHasMore(more.length >= 50);
     setLoadingMore(false);

@@ -34,20 +34,32 @@ export function moduleForNotification(
   // Subscription (AO PRO).
   if (type.startsWith('subscription_')) return '/subscribe';
 
-  // Seller's listings — moderation results, delisting, licence expiry.
+  // Seller's listings — moderation results, delisting, licence expiry, and
+  // the listing hygiene nudges (stale / expired / missing photos) whose own
+  // url already points at /my/listings.
   if (
     type === 'listing_approved' ||
     type === 'listing_rejected' ||
     type === 'firearm_listing_delisted' ||
-    type === 'firearm_licence_expiring'
+    type === 'firearm_licence_expiring' ||
+    type === 'listing_stale_nudge' ||
+    type === 'listing_expired_stale' ||
+    type === 'listing_photos_missing'
   ) {
     return '/my/listings';
   }
 
   // The member's OWN document vault. Distinct from firearm_licence_expiring
   // above, which is about a LISTING's licence and belongs on /my/listings —
-  // the prefix cannot collide with that exact match.
-  if (type.startsWith('licence_centre_')) return '/licence-centre';
+  // the prefix cannot collide with that exact match. The SAPS application
+  // tracker and motivation documents also live under the Licence Centre.
+  if (
+    type.startsWith('licence_centre_') ||
+    type === 'tracked_application_changed' ||
+    type.startsWith('motivation_')
+  ) {
+    return '/licence-centre';
+  }
 
   // A rating lands on the sale (seller) or the order (buyer).
   if (type === 'rating_received') {
@@ -66,33 +78,62 @@ export function moduleForNotification(
     type === 'order_dispatched' ||
     type === 'shipping_dispatched' ||
     type === 'shipping_delivered' ||
+    type === 'shipping_ready_for_pickup' ||
     type === 'collection_confirm_nudge' ||
-    type === 'dealer_transfer_stall_nudge'
+    type === 'dealer_transfer_stall_nudge' ||
+    type === 'private_arrange_handover' ||
+    type === 'private_arrange_delivered' ||
+    type === 'private_arrange_reminder'
   ) {
     return '/shipping';
   }
 
-  // Seller sale lifecycle — new sale, accept/reject/escalate.
-  if (type === 'new_sale' || type.startsWith('sale_')) {
+  // Buyer sale lifecycle — the accept/cancel notices a buyer reads on their
+  // Orders surface. The category split is what keeps a BUYER row off the
+  // SELLER module: `sale_rejected` is emitted to both sides of a sale, and a
+  // blanket `startsWith('sale_')` used to badge the buyer's own cancellation
+  // under the seller-only /my/sales entry.
+  if (
+    (type === 'sale_accepted' || type === 'sale_rejected') &&
+    category !== 'SELLER'
+  ) {
+    return '/my/orders';
+  }
+
+  // Seller sale lifecycle — new sale, accept reminder/escalation, the
+  // action-required SAPS 534 upload, and dealer-verification reshoots.
+  if (
+    type === 'new_sale' ||
+    type.startsWith('sale_') ||
+    type === 'sap534_required' ||
+    type === 'dealer_verification_rejected'
+  ) {
     return '/my/sales';
   }
 
-  // Buyer order lifecycle — refunds (delivery/tracking now live in Shipping).
-  if (type === 'refund_issued') {
+  // Buyer order lifecycle — refunds, delivery-confirmation nudges and
+  // cancellation requests (all surfaced on the buyer's Orders page; live
+  // delivery/tracking rows live in Shipping above).
+  if (
+    type === 'refund_issued' ||
+    type === 'confirm_receipt_nudge' ||
+    type === 'cancellation_requested_buyer'
+  ) {
     return '/my/orders';
   }
+
+  // Complaints — the member's own dispute cases. The row's url already points
+  // at /complaints, which is now an account-menu entry, so the badge lands.
+  if (type === 'complaint_status_changed') return '/complaints';
 
   // Payout release — seller's earnings; for a buyer it's an order event.
   if (type === 'payment_released') {
     return category === 'SELLER' ? '/my/earnings' : '/my/orders';
   }
 
-  // Experiences, dealer verification, prize draw → the dashboard hub.
-  if (
-    type.startsWith('experience_') ||
-    type === 'dealer_verification_rejected' ||
-    type === 'raffle_winner'
-  ) {
+  // Experiences and prize draw → the dashboard hub. (dealer_verification_
+  // rejected is an action-required seller row and now lives on /my/sales.)
+  if (type.startsWith('experience_') || type === 'raffle_winner') {
     return '/dashboard';
   }
 
