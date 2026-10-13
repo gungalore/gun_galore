@@ -455,9 +455,16 @@ describe('the acquisition route', () => {
     return new Map(s.needs.map((n) => [n.kind, n.tier]));
   };
 
-  it('asks a private buyer for the seller’s licence, on every new application', () => {
+  it('⚠️ carries a private transfer on the SINGLE source row, not a second one', () => {
+    // ⚠️ ONE ROW, NOT TWO (2026-10-13). Operator: "just one upload applied for
+    // firearm license/evidence... remove the dealer/private picker." The
+    // owner's licence no longer gets its own checklist row; the source row is
+    // where the invoice, the licence or the consent letter all land.
     for (const t of NEW_APPLICATIONS) {
       expect(tiersFor(t, 'From a private owner').get(K.SELLER_LICENCE)).toBe(
+        undefined,
+      );
+      expect(tiersFor(t, 'From a private owner').get(K.FIREARM_SOURCE_PROOF)).toBe(
         'expected',
       );
     }
@@ -551,13 +558,16 @@ describe('the source-proof row, per route', () => {
   });
 
   it('does not offer it before the route has been answered', () => {
-    // Same rule as the form's own item 1.2 tick: nothing is inferred. The
-    // guidance on the row describes both routes until they say which.
+    // The route is read off the uploaded paperwork now, so it is often unstated
+    // when the row first renders. The guidance describes every possibility
+    // until the reader settles which; the consent FLAG — which puts the
+    // dedicated consent card under the row — is only set once we know it is a
+    // private sale.
     for (const firearm_source of ['', 'Not decided yet']) {
       expect(row(firearm_source)?.sellerConsent).toBeUndefined();
     }
     expect(row('')?.why).toContain('invoice');
-    expect(row('')?.why).toContain('agree');
+    expect(row('')?.why).toContain('consent');
   });
 
   it('does not offer it on a stored estate answer', () => {

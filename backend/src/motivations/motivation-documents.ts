@@ -408,11 +408,12 @@ export function sourceProofWhy(source: string): string {
   }
   if (source === SOURCE_PRIVATE) {
     return (
-      'A letter from the person who currently owns the firearm saying they agree ' +
-      'to you applying for a licence over it — or send them the consent link ' +
-      'below and we will build it for you. A DFO reads this to answer one ' +
-      'question: whose firearm is this, and an application that cannot answer it ' +
-      'stalls.'
+      'The current owner’s licence, front and back — that is what a DFO asks ' +
+      'for on a private transfer. If you also have their written permission, ' +
+      'a letter or a signed consent page, add it here; the consent link below ' +
+      'gets you the permission and their licence without anybody printing ' +
+      'anything. A DFO reads this to answer one question: whose firearm is ' +
+      'this, and an application that cannot answer it stalls.'
     );
   }
   return WHY.FIREARM_SOURCE_PROOF ?? '';
@@ -422,7 +423,7 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
   SHOOTING_ACTIVITY_LOG:
     'Your log of the shooting you actually do \u2014 dates, where, and the discipline or the quarry, whichever applies to you. This is the annexure that shows you actually do the thing you are applying to do, rather than saying you intend to. Nothing in the Act asks for it; the packs that get taken seriously all carry one.',
   FIREARM_SOURCE_PROOF:
-    'Either the dealer\u2019s invoice or quote, or a letter from the person who currently owns the firearm saying they agree to you applying for a licence over it. A DFO reads this to answer one question \u2014 whose firearm is this \u2014 and an application that cannot answer it stalls.',
+    'Whatever paperwork you have for the firearm — a dealer’s invoice or quote, the current owner’s licence (front and back), or their written consent. We read the make, model, calibre and serial off it, and it settles whether this is a dealer or a private transfer. A DFO reads it to answer one question \u2014 whose firearm is this \u2014 and an application that cannot answer it stalls.',
   SELLER_LICENCE:
     'Only for a private transfer, and it goes with the permission letter: the letter says the owner agrees, and this shows they are the person entitled to agree. Ask them for a copy \u2014 it is theirs to give.',
   EXECUTOR_APPOINTMENT:
@@ -561,40 +562,30 @@ export function documentStatus(
 
   // ── WHERE THE FIREARM IS COMING FROM ──────────────────────────────
   //
-  // A private transfer needs paperwork a dealer sale does not, and the two
-  // club checklists bound into real submitted packs differ in exactly this
-  // one limb: the private-transfer version adds the current owner's licence
-  // and a signed consent letter to everything the dealer version asks for.
+  // ⚠️ ONE ROW, NOT TWO (2026-10-13). Operator: "maybe we should have just one
+  // upload applied for firearm license/evidence. let JEV make the call what it
+  // is and how it should be processed." The private route used to add a second
+  // row, SELLER_LICENCE, beside FIREARM_SOURCE_PROOF — so a private buyer was
+  // asked for the owner's licence on one line and the owner's letter on
+  // another, when both are the same document slot: whatever paperwork names the
+  // firearm and the person transferring it. The member now drops the invoice,
+  // the owner's licence or the consent letter on the SINGLE source row, and the
+  // reader decides which it is.
+  //
+  // ⚠️ SELLER_LICENCE SURVIVES AS A KIND, SO NOTHING IS STRANDED. The consent
+  // flow still files the owner's two licence photographs as SELLER_LICENCE, and
+  // an upload from before this change keeps its label, its annexure letter and
+  // its place in the pack. What is gone is the second CHECKLIST row.
   //
   // ⚠️ ONLY EVER ADDS, NEVER REMOVES. FIREARM_SOURCE_PROOF stays EXPECTED on
   // both routes because it is the document that answers the question either
-  // way — a dealer invoice or the owner's letter. Demoting it for a dealer
-  // buyer would be reading more into one tap than it can carry, and somebody
-  // who taps "dealer" and then buys privately must not silently lose a row.
-  //
-  // ⚠️ AND NOTHING IS DEMANDED OF SOMEBODY WHO HAS NOT DECIDED. An
-  // application written before the firearm is found is normal — the motivation
-  // is what the dealer or the seller gets shown.
+  // way — a dealer invoice or the owner's paperwork. And nothing is demanded of
+  // somebody whose route the reader has not yet settled.
   const source = (answers[FIREARM_SOURCE_KEY] ?? '').trim();
-  // ⚠️ THE ESTATE ROUTE IS GONE, AND SO IS ITS DOCUMENT. Operator, 2026-08-29:
-  // "Those are the only two we are going to support, the rest we will build at
-  // a later stage. So the EXECUTOR_APPOINTMENT must go."
-  //
-  // It used to be pushed into `required` whenever the source answer was the
-  // estate route. Asking for it now would be worse than not asking: we cannot
-  // process the application it belongs to — the SAPS 271's Type E block is no
-  // longer ticked at all — so demanding the one document that route needs
-  // would send somebody to fetch a letter of executorship for a pack that
-  // cannot be completed. The kind survives in the enum and keeps its label and
-  // guidance, so a legacy upload still renders; nothing asks for it.
-
-  if (source === SOURCE_PRIVATE && licenceType !== 'S24_RENEWAL') {
-    // The seller's licence proves the person consenting is entitled to
-    // consent. It sat at the bottom of the picker as an "extra" — reachable
-    // only by scrolling past everything — on the one route where a DFO
-    // expects it.
-    if (!expected.includes('SELLER_LICENCE')) expected.push('SELLER_LICENCE');
-  }
+  // The estate route is retired and asks for nothing; see the note that stood
+  // here about EXECUTOR_APPOINTMENT. Nothing is pushed into `expected` by
+  // `source` any more — the single source row covers dealer, private and
+  // not-yet-decided alike.
 
   // ── the safe: one line, several photographs ───────────────────────
   //

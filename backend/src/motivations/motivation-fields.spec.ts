@@ -1039,22 +1039,20 @@ describe('what the writer must see despite formOnly', () => {
 // still must not reach the writer: "the applicant is buying from a dealer" is
 // padding fuel, not an argument for needing a firearm.
 describe('where the firearm is coming from', () => {
-  it('is asked on BOTH SAPS 271 paths', () => {
+  it('⚠️ is NOT asked on any path, on any licence type', () => {
+    // ⚠️ THE PICKER IS GONE (2026-10-13). Operator: "remove the dealer/private
+    // picker. Let Jev make the call what it is and how it should be processed."
+    // The route is read off the uploaded paperwork, so the field is `internal`
+    // and never on screen — including on the SAPS 271 paths, where it used to
+    // be asked on purpose ("marking this formOnly would silence the question
+    // for the group it most concerns"). The reader answers it now, so nobody is
+    // asked to choose.
     for (const t of ALL) {
-      // ⚠️ EXCEPT ON A RENEWAL, WHICH IS ASKED NEITHER QUESTION. This test ran
-      // over all five and asserted the source question everywhere, so it was
-      // pinning the bug: a section 24 applicant already holds the licence, and
-      // "where is this firearm coming from?" asked them to account for a
-      // transfer that is not happening. The rest of the backend had said so all
-      // along — motivation-documents skips the private-sale branch for S24 by
-      // name, EXPECTED.S24_RENEWAL is empty, and the checklist says in capitals
-      // that a renewal has no source document. See NOT_ASKED_BY_TYPE.
-      if (t === MotivationLicenceType.S24_RENEWAL) continue;
       for (const fill of [SAPS271_FILL, SAPS271_DEALER]) {
         const keys = fieldsFor(t)
           .filter((f) => isVisible(f, { [SAPS271_OPT_KEY]: fill }))
           .map((f) => f.key);
-        expect(keys).toContain(FIREARM_SOURCE_KEY);
+        expect(keys).not.toContain(FIREARM_SOURCE_KEY);
       }
     }
   });
@@ -1093,7 +1091,7 @@ describe('where the firearm is coming from', () => {
     }
   });
 
-  it('offers exactly two routes, and still accepts the retired ones', () => {
+  it('still accepts two live routes and the retired ones, but no longer asks', () => {
     // ⚠️ PINNED ON PURPOSE. Each route drives a different required document
     // and a different custody statement, so a route added without its routing
     // is a dead option and a route removed silently strands whoever picked it.
@@ -1112,20 +1110,13 @@ describe('where the firearm is coming from', () => {
     expect(f.retiredChoices).toEqual([SOURCE_ESTATE, SOURCE_UNDECIDED]);
     expect(allowedValues(f)).toContain(SOURCE_ESTATE);
     expect(allowedValues(f)).toContain(SOURCE_UNDECIDED);
-    // ⚠️ REQUIRED, AND THE ASSERTION ABOVE ALREADY SAID SO — "the field is
-    // required, so refusing a stored value would be a wizard its owner cannot
-    // get past". It was asserted undefined, and three comments in the registry
-    // assumed the opposite. Changed 2026-09-08 after a live walkthrough:
-    // marked Optional and sitting fifth of seventeen, it was never answered,
-    // so the seller-consent card — the door to the seller's own "photograph
-    // your licence" scanner — never rendered, and the pack meter could only
-    // plead "Tell us where the firearm is coming from".
-    //
-    // The old reasoning ("applications are written before the firearm is
-    // found") went with SOURCE_UNDECIDED when that choice was retired: there
-    // is no longer an answer that satisfies the question without answering it,
-    // and the member can change the route whenever the answer changes.
-    expect(f.required).toBe(true);
+    // ⚠️ NO LONGER REQUIRED, AND NO LONGER ON SCREEN (2026-10-13). The route is
+    // read off the uploaded paperwork now, so the field is `internal` —
+    // hidden from the wizard and out of requiredKeys — while still accepting
+    // every value a document read can return.
+    expect(f.required).toBeUndefined();
+    expect(f.internal).toBe(true);
+    expect(isVisible(f, {})).toBe(false);
   });
 
   it('⚠️ NEVER ASKS A RENEWAL WHERE THE FIREARM IS COMING FROM', () => {

@@ -1334,7 +1334,21 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Where is this firearm coming from?',
     kind: 'choice',
     section: 'The firearm',
-    required: true,
+    // ⚠️ THE ROUTE IS NOW READ OFF THE PAPERWORK, NOT PICKED (2026-10-13).
+    // Operator: "remove the dealer/private picker. Let Jev make the call what
+    // it is and how it should be processed." The member photographs whatever
+    // they have — a dealer's invoice, a prefilled SAPS 271, the current owner's
+    // licence (front and back) or a signed consent letter — and the reader
+    // returns this answer off the page. It still drives section F, the custody
+    // statement and the document tiers exactly as before; what changed is that
+    // nobody is asked to choose it up front.
+    //
+    // `internal` is the flag that hides it from the wizard unconditionally
+    // (isVisible returns false) while keeping the value stored, accepted and
+    // editable by the reader. It is no longer `required`: asking the member to
+    // answer a question we now answer from their upload would be the picker
+    // back by another name.
+    internal: true,
     // ⚠️ TWO ROUTES, NOT FIVE. Operator, 2026-08-28: "lets keep the options
     // between Individual and dealer for now."
     // ⚠️ EXACTLY TWO. Operator, 2026-08-29: "The form must only give two

@@ -41,16 +41,21 @@ describe('the guidance follows the route', () => {
     expect(why).toMatch(/until your licence is granted/i);
   });
 
-  it('asks a private buyer for the OWNER’S consent instead', () => {
+  it('asks a private buyer for the OWNER’S licence, front and back', () => {
+    // ⚠️ ONE ROW, NOT TWO (2026-10-13). The owner's licence and the consent
+    // letter are the same document slot now, so the private guidance names the
+    // licence first — what a DFO actually asks for — and offers the consent link
+    // as the second way to produce it.
     const why = sourceProofWhy(SOURCE_PRIVATE);
-    expect(why).toMatch(/agree to you applying/i);
+    expect(why).toMatch(/front and back/i);
+    expect(why).toMatch(/consent link/i);
     expect(why).not.toMatch(/invoice/i);
   });
 
   it('keeps the both-routes wording for somebody who has not decided', () => {
     const why = sourceProofWhy(SOURCE_UNDECIDED);
     expect(why).toMatch(/invoice/i);
-    expect(why).toMatch(/letter from the person/i);
+    expect(why).toMatch(/written consent/i);
   });
 
   it('⚠️ the three answers are genuinely different text', () => {
@@ -71,11 +76,16 @@ describe('the document tiers are unchanged by the wording', () => {
       [`firearm_source`]: source,
     } as Record<string, string>);
 
-  it('still only the PRIVATE route demands the seller’s licence', () => {
+  it('⚠️ no route asks for a second, separate seller-licence row', () => {
+    // ⚠️ ONE ROW, NOT TWO (2026-10-13). The private route used to add
+    // SELLER_LICENCE beside FIREARM_SOURCE_PROOF. Both the owner's licence and
+    // the owner's letter land on the SINGLE source row now, so neither route
+    // carries the second row.
     const priv = status(SOURCE_PRIVATE).needs.map((n) => n.kind);
     const dealer = status(SOURCE_DEALER).needs.map((n) => n.kind);
-    expect(priv).toContain('SELLER_LICENCE');
+    expect(priv).not.toContain('SELLER_LICENCE');
     expect(dealer).not.toContain('SELLER_LICENCE');
+    expect(priv).toContain('FIREARM_SOURCE_PROOF');
   });
 
   it('⚠️ the dealer route does not make the invoice REQUIRED', () => {
@@ -304,6 +314,16 @@ describe('reading the source document', () => {
 
   it('⚠️ can be read at all', () => {
     expect(MotivationExtractService.canExtract('FIREARM_SOURCE_PROOF')).toBe(true);
+  });
+
+  it('⚠️ also asks the reader to settle the ROUTE', () => {
+    // ⚠️ THE ONE PLACE THE DEALER/PRIVATE ROUTE IS DECIDED NOW (2026-10-13).
+    // The picker is gone, so the member's upload is what settles section F. The
+    // key has to be in this list or the route would never be read at all, and
+    // the SAPS 271 would print with no owner-type box ticked.
+    expect(MotivationExtractService.wantedFor('FIREARM_SOURCE_PROOF')).toContain(
+      'firearm_source',
+    );
   });
 
   it('fills the firearm from it, not the applicant’s identity', () => {

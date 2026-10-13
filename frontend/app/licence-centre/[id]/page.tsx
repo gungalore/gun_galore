@@ -74,11 +74,14 @@ const CARD_COMPONENT_KEYS = new Set([
 ]);
 
 /**
- * ⚠️ ONLY ON A PRIVATE SALE does the consent card render. A dealer completes
- * Part F and their own SAPS 350(a); an estate is the executor's. Showing it on
- * either route asks somebody to chase a signature nobody needs.
+ * ⚠️ THE ROUTE IS READ OFF THE UPLOADED PAPERWORK NOW (2026-10-13). The
+ * dealer/private picker is gone, so there is no stored answer to branch on at
+ * first — only what the reader returns. The consent card is a standing
+ * SECONDARY action under the source row, shown until the route is known to be a
+ * dealer sale. A dealer completes Part F and their own SAPS 350(a), so the card
+ * would ask them to chase a signature nobody needs; everyone else can use it.
  */
-const SOURCE_PRIVATE = 'From a private owner';
+const SOURCE_DEALER = 'From a dealer';
 
 /**
  * SAPS 271 boxes on the "You" section that a member should never have to think
@@ -964,7 +967,13 @@ export default function LicenceCentreSheetPage() {
         // section, which was "under the source row" only while that row was
         // fifth of seventeen.
         if (i.key === 'firearm_source') {
-          if (sourceValue === SOURCE_PRIVATE) {
+          // ⚠️ A STANDING SECONDARY ACTION (2026-10-13). The dealer/private
+          // picker is gone, so the route starts UNKNOWN and is settled by what
+          // the member uploads. The consent link has to be reachable before
+          // that — it is the second way to settle it — so the card renders
+          // whenever the route is not already a dealer sale, not only once
+          // "private" has been read. See ConsentCard and MotivationSellerConsent.
+          if (sourceValue !== SOURCE_DEALER) {
             out.push(
               <ConsentCard
                 key="__consent"

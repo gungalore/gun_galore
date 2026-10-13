@@ -5,10 +5,13 @@ import MotivationSellerConsent from '@/components/motivation-seller-consent';
 // ────────────────────────────────────────────────────────────────────
 // THE SELLER'S CONSENT, ON A PRIVATE SALE.
 //
-// ⚠️ IT RENDERS UNDER THE SOURCE ROW AND ONLY ON A PRIVATE SALE. A dealer
-// completes Part F and their own SAPS 350(a); an estate is the executor's.
-// Showing this card on either route would be asking somebody to chase a
-// signature nobody needs.
+// ⚠️ IT RENDERS UNDER THE SOURCE ROW AS A SECONDARY ACTION (2026-10-13). The
+// route is no longer picked up front — it is read off whatever the member
+// uploads — so this card is shown until the route is known to be a dealer sale.
+// The consent link is the second way to settle it: the owner signs on their own
+// phone, and the licence and Part F come back into the application. A dealer
+// completes Part F and their own SAPS 350(a), so the card is hidden once we know
+// it is a dealer purchase.
 //
 // ⚠️ THE PART F LINE IS THE POINT OF WRAPPING IT. The consent flow already
 // captures every box of section F 81-87, and until now the seller signed a

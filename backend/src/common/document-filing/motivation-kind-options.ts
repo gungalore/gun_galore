@@ -43,7 +43,7 @@ export const MOTIVATION_KIND_OPTIONS: readonly FilingOption[] = [
   {
     id: 'CURRENT_LICENCE',
     label: 'Firearm licence',
-    hint: 'a firearm licence card or certificate',
+    hint: "a firearm licence card or certificate that is THE APPLICANT'S OWN (one of the firearms they already hold, not someone else's)",
   },
   {
     id: 'ASSOCIATION_CARD',
@@ -78,7 +78,7 @@ export const MOTIVATION_KIND_OPTIONS: readonly FilingOption[] = [
   {
     id: 'FIREARM_SOURCE_PROOF',
     label: 'Firearm source proof',
-    hint: "a dealer's invoice, a prefilled SAPS 271, seller paperwork or estate letters",
+    hint: "paperwork for the firearm being bought: a dealer's invoice or quote, a dealer-prefilled SAPS 271, the CURRENT OWNER'S licence card (front or back), or a letter or signed consent from that owner",
   },
   {
     id: 'PREVIOUS_MOTIVATION',

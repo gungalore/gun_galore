@@ -242,6 +242,16 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
     'firearm_model',
     'firearm_calibre',
     'firearm_serial',
+    // ⚠️ THE ROUTE, READ OFF THE PAGE (2026-10-13). With the dealer/private
+    // picker removed, this is the ONE place the route is decided, and it can
+    // only be decided from what the member uploaded. A dealer's invoice, a
+    // quote, or a 271 prefilled by a dealer says "From a dealer"; the current
+    // owner's licence card or their signed consent says "From a private
+    // owner". A choice is validated and canonicalised in parse() below, so a
+    // value the model words differently is dropped rather than stored, and the
+    // userPrompt below carries a special instruction because this is a
+    // JUDGEMENT the transcriber is otherwise told not to make.
+    'firearm_source',
   ],
   EMPLOYMENT_CONFIRMATION: ['employer_name', 'employer_address'],
   // Written against ROW 1 and remapped to whichever row is free — see
@@ -1215,9 +1225,30 @@ than a confident wrong one.`.trim();
         (f.choices ? ` (must be exactly one of: ${f.choices.join(' | ')})` : '') +
         (f.help ? ` — ${f.help}` : ''),
     );
+    // ⚠️ THE ROUTE IS THE ONE JUDGEMENT THIS TRANSCRIBER IS ASKED FOR
+    // (2026-10-13). Every other key here is a value printed on the page. This
+    // one asks the model to say WHICH KIND OF PAGE IT IS — dealer paperwork or
+    // a private individual's — because the dealer/private picker is gone and
+    // nothing else can settle section F. Spelled out rather than left to the
+    // generic "must be exactly one of", which rule 5 of the system prompt
+    // ("return every field as null rather than reading a different document")
+    // would otherwise talk the model out of.
+    const routeNote = asked.some((f) => f.key === 'firearm_source')
+      ? [
+          '',
+          'firearm_source is the ROUTE, read from what the document IS, not a',
+          'value printed on it:',
+          '  - a dealer invoice or quote, or a SAPS 271 completed by a dealer →',
+          '    the dealer choice',
+          '  - the current private owner’s licence card, or a letter or signed',
+          '    consent from them → the private-owner choice',
+          'Omit it if the page does not make clear which it is.',
+        ]
+      : [];
     return [
       'Read the attached document and transcribe these fields:',
       ...lines,
+      ...routeNote,
       '',
       'Return only the fields you can actually see on it.',
     ].join('\n');

@@ -3,6 +3,7 @@
   firearmRowsFor,
   signedLineFor,
 } from './motivation-consent-statement';
+import { FIREARM_SOURCE_KEY, SOURCE_PRIVATE } from './motivation-fields';
 import {
   BadRequestException,
   ForbiddenException,
@@ -1441,7 +1442,6 @@ export class MotivationSellerConsentService {
   ): Promise<void> {
     try {
       const mapped = cardToApplicationFirearm(snapshot);
-      if (!Object.keys(mapped).length || !motivationId) return;
 
       const row = await this.prisma.motivation.findUnique({
         where: { id: motivationId },
@@ -1464,6 +1464,16 @@ export class MotivationSellerConsentService {
         if ((answers[key] ?? '').trim()) continue;
         answers[key] = value;
         written.push(key);
+      }
+
+      // ⚠️ A COMPLETED SELLER CONSENT IS A PRIVATE TRANSFER, BY DEFINITION
+      // (2026-10-13). With the dealer/private picker gone, the route is read
+      // off the paperwork — and this consent IS that paperwork: a named private
+      // individual agreeing to the transfer. Written only where empty, so it can
+      // never overwrite a route the member or a document already settled.
+      if (!(answers[FIREARM_SOURCE_KEY] ?? '').trim()) {
+        answers[FIREARM_SOURCE_KEY] = SOURCE_PRIVATE;
+        written.push(FIREARM_SOURCE_KEY);
       }
       if (!written.length) return;
 
