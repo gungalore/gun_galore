@@ -7,6 +7,23 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — MOTIVATIONS: THE PAPERWORK READS (FULL DEPLOY)
+
+Commit **`aaae2c75`** (`fix(motivations) read the paperwork readably: JSON-shaped extraction, word-based card side, visible progress`), 4 files, full deploy. Rollback point `alloutdoor-20261014-003426.dump`. Backend and frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `aaae2c75`.
+
+Gates: backend `tsc` clean + **353 suites/5564 tests**; frontend `tsc` clean + **141 files/1728 tests** + production build OK.
+
+**The report.** Operator, 2026-10-14, on the source button just shipped: "i selected two pictures to be uploaded and it gave me a blank notification bar ... and then nothing happened." The server had actually filed both pages (two 201s and a sheet reload), so the real failures were that nothing was READ from the documents and the two sides were not paired.
+
+**What was wrong.** Two faults, both model-shape faults:
+- `motivation.extract.*` relied on the system prompt saying "Return STRICT JSON and nothing else". The current model answers in prose ("Here is the JSON …"), so every extraction came back `unparseable JSON` and NOTHING filled. `readFirearm` never had this because it constrains the shape with `json: { schema }`.
+- `classifyFace` made one unguarded model call; the same model answered in prose, the parse threw, the side read as null, and the two card sides were never composed. It also ignored the OCR text, which already prints the words that name each side.
+
+**What shipped.**
+- `extract()` now sends `json: { schema: EXTRACT_SCHEMA }`, so the page is read as `{fields:[…]}` (the same constraint `readFirearm` carries).
+- `classifyFace` names the side from the OCR words FIRST — front = "Serial Number" + "Calibre", back = "Signature" + "Fingerprint" — with no model call; only when the words are absent is the model asked, and then with two attempts and the OCR text handed in. A SAPS 271 is still flagged.
+- The button now says "Reading your pictures…" while a batch is in flight, and a failure shows the server's own message rather than a blank bar. A blank toast is now impossible: every branch has words.
+
 ## 2026-10-14 — MOTIVATIONS: THE APPLIED-FOR FIREARM'S PAPERWORK IS TREATED (FULL DEPLOY)
 
 Commit **`124e8440`** (`feat(motivations) treat the applied-for firearm's paperwork: scan, pair the card sides, read and file`), 11 files, full deploy. Rollback point `alloutdoor-20261014-001952.dump`. Backend and frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `124e8440`.
