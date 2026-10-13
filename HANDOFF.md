@@ -7,6 +7,16 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — MOTIVATIONS: THE CARD SIDES PAIR IN ANY ORDER (FRONTEND DEPLOY)
+
+Commit **`fd53ebe7`** (`fix(motivations) pair a licence front with its back whatever order they were picked`), 2 files, frontend-only deploy. Rollback point `alloutdoor-20261014-004659.dump`. Frontend health x2 OK, public 200 x2, three pm2 services online (backend untouched). Deployed HEAD `fd53ebe7`.
+
+Gates: frontend `tsc` clean + **141 files/1729 tests** + production build OK.
+
+**The report.** Operator, 2026-10-14, testing on production: one attempt composed the two card sides onto one page, the next did not (two uploads). The server logs showed the extraction working (the earlier JSON-schema fix holds — no more `unparseable JSON`, and `Firearm read filled 10 field(s)`), so the failure was purely the pairing.
+
+**What was wrong.** `prepareSourceBatch` paired a front with a back only when the front came FIRST in the pick. A member who picked the back first — or whose picker returned them that way — got two separate pages. `frontIdx`/`backIdx` now find the sides wherever they are, so the order no longer matters.
+
 ## 2026-10-14 — MOTIVATIONS: THE PAPERWORK READS (FULL DEPLOY)
 
 Commit **`aaae2c75`** (`fix(motivations) read the paperwork readably: JSON-shaped extraction, word-based card side, visible progress`), 4 files, full deploy. Rollback point `alloutdoor-20261014-003426.dump`. Backend and frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `aaae2c75`.
