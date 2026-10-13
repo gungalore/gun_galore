@@ -7,6 +7,60 @@ overwritten.
 
 Last updated: **2026-10-13**.
 
+## 2026-10-13 — DOCUMENT CENTRE: READ EVERY PAGE, COUNT EVERY ARRIVAL (FULL DEPLOY)
+
+Commit **`02c8320f`** (`fix(document-centre): read every page, and count every
+arrival`), 6 files, full deploy via `infra/deploy/deploy.sh` (Git Bash).
+Rollback point `alloutdoor-20261013-125946.dump` (29 MB). Backend + frontend
+health x2 OK, warden reloaded and online, public 200 x2, three pm2 services
+online. Deployed HEAD `02c8320f`. No migration (no-op).
+
+Gates before deploy: backend `tsc` clean + **346 suites/5501 tests**
+(`npm test -- --maxWorkers=2`); frontend `tsc` clean + **136
+files/1700 tests** + production build.
+
+**The report.** Operator: "The scanner said 5 are sent, desktop reported 4
+received but there are 5 licenses in the vault" — and the five had not been
+properly read. Diagnosed from the live DB and ledger (five rows at 12:40–12:41
+SAST, all `FIREARM_LICENCE`, all high-confidence):
+
+- **Two of the five reads came back empty** — the log said `Credential read
+  returned unparseable JSON (FIREARM_LICENCE)`. `read()` in
+  `licence-centre-extract.service.ts` sent **no `thinking: { budgetTokens: 0 }`**,
+  unlike `transcribe()`. On the `gemini-3.8-flash` default the reasoning pass can
+  consume the 1200-token output budget and truncate the JSON mid-object;
+  `JSON.parse` then threw and `parse()` returned an empty reading, which is a
+  document filed with nothing on it.
+- **One readable licence never armed its expiry.** Jev answered `also_covers:
+  [ASSOCIATION_ENDORSEMENT]` for it (a licence and an endorsement both name a
+  firearm by serial), and `mayArmReadExpiry` refuses to arm a date when a
+  document "fills more than one role" — so the date was read and then never
+  watched.
+- **The desktop said "4 arrived" because the handoff count asked on `added`**
+  (rows whose reading had SETTLED), and the two blank reads were not settled
+  until the 45s backstop. All five rows were in the vault the whole time; the
+  server already computed `landed` (every row since the token) and only used it
+  for `pending`.
+
+**What shipped.**
+- `read()` now disables thinking (`transcribe()` is the precedent) and its
+  budget goes 1200 → 2400. `classifyVision()` and `orient()` disable thinking
+  too.
+- `parse()` has its tolerant `/\{[\s\S]*\}/` object hunt back (the schema was
+  assumed to guarantee bare JSON; production disproved it), and an unparseable
+  reply now logs `stopReason` and a **PII-free shape** (`truncated` / `fenced` /
+  `prose`) via `replyShape()` so the next one is diagnosable without guessing.
+- `cleanAlsoCovers()` now enforces `EXCLUSIVE_COVERS`: a `FIREARM_LICENCE` is
+  never also an `ASSOCIATION_ENDORSEMENT` (and vice versa), at the single choke
+  point both classify paths use — so the licence arms its own expiry again.
+- `scan-handoff` returns `landed`, and the dialog's "N documents arrived" reads
+  it, so a blank read still counts as arrived.
+
+**Know.** The `motivation-pdf.service.spec.ts` suite is load-flaky: it fails
+under the default parallel Jest workers and passes alone (82/82). Run the
+backend gate as `npm test -- --maxWorkers=2` for a stable result — that is what
+was green here.
+
 ## 2026-10-13 — DOCUMENT CENTRE: A RANDOM FILE IS NOT A FIREARM LICENCE (FULL DEPLOY)
 
 Commit **`a770cd61`** (`fix(document-centre): a random file is not a firearm
