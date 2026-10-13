@@ -80,6 +80,7 @@ import {
 } from './credential-completeness';
 import { assessAddressProof } from './address-proof';
 import { uprightImageBytes } from './upright-image';
+import { rotateDocumentBytes } from './rotate-document';
 import { MotivationsService } from '../motivations/motivations.service';
 // ⚠️ FROM MotivationsModule, WHICH EXPORTS IT FOR THIS ONE CALLER. Evidence's
 // master copy is a vault Credential, so the upload lives in this module — but
@@ -3097,6 +3098,182 @@ export class LicenceCentreService {
       mimeType: row.mimeType,
       filename: `${row.kind.toLowerCase()}-${row.id.slice(-6)}.${ext}`,
     };
+  }
+
+  /**
+   * TURN A STORED DOCUMENT A QUARTER TURN, FOR GOOD.
+   *
+   * Operator, 2026-10-13: "my ID scan is on its side." The document the member
+   * photographs or the scanner hands back is usually uprighted before it is
+   * filed — uprightImageBytes bakes an EXIF tag, and the model answers an up
+   * or down on the review screen — but both can be beaten. A scan can arrive
+   * with NO orientation tag at all (an iPhone that stores landscape pixels and
+   * writes nothing), and the model's orient call is not always right. When it
+   * is beaten, the member is looking at their own document on its side with no
+   * way to fix it, and the file that prints in an annexure is sideways too.
+   *
+   * ⚠️ THIS IS THE ONE PLACE THE MEMBER DECIDES THE ORIENTATION. Everything
+   * else guesses; this is a person who can see the page and says which way is
+   * up. It rewrites the stored file, so it survives a refresh and every later
+   * reader sees the same page.
+   *
+   * ⚠️ THE ROW IS RE-KEYED, NOT OVERWRITTEN IN PLACE. SecureFileStorageService
+   * always mints a NEW key for a write, so the old file is removed only after
+   * the row points at the new one. A crash between the two leaves an orphan
+   * (swept later) rather than a row pointing at nothing.
+   */
+  async rotate(userId: string, id: string, direction: 'left' | 'right') {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(userId);
+
+    const row = await this.prisma.credential.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, storageKey: true, mimeType: true, purgedAt: true },
+    });
+    if (!row) throw new NotFoundException('Document not found');
+    if (!row.storageKey || row.purgedAt) {
+      throw new GoneException('That document has been deleted.');
+    }
+
+    let bytes: Buffer;
+    try {
+      bytes = await this.files.read(row.storageKey);
+    } catch (err) {
+      this.logger.error(
+        `Credential ${id}: could not read bytes to rotate: ${(err as Error).message}`,
+      );
+      throw new ServiceUnavailableException('We could not open that document.');
+    }
+
+    // Left is a counter-clockwise quarter turn, which is three clockwise ones.
+    const turns = direction === 'left' ? 3 : 1;
+    let turned: { bytes: Buffer; mimeType: string };
+    try {
+      turned = await rotateDocumentBytes(bytes, row.mimeType, turns);
+    } catch (err) {
+      this.logger.warn(
+        `Credential ${id}: could not rotate: ${(err as Error).message}`,
+      );
+      throw new BadRequestException('We could not rotate that document.');
+    }
+
+    // BYTES FIRST, ROW SECOND, exactly as create() does — see its note.
+    let stored: { storageKey: string; sha256: string; byteSize: number };
+    try {
+      stored = await this.files.write('credentials', turned.bytes, new Date());
+    } catch (err) {
+      this.logger.error(
+        `Credential ${id}: could not store rotated bytes: ${(err as Error).message}`,
+      );
+      throw new ServiceUnavailableException(
+        'We could not save that just now. Please try again.',
+      );
+    }
+
+    try {
+      await this.prisma.credential.update({
+        where: { id },
+        data: {
+          storageKey: stored.storageKey,
+          mimeType: turned.mimeType,
+          byteSize: stored.byteSize,
+          sha256: stored.sha256,
+        },
+      });
+    } catch (err) {
+      // The rotated bytes are not referenced by any row now.
+      await this.files.remove(stored.storageKey).catch(() => undefined);
+      // ⚠️ A ROTATION CHANGES THE sha256, so it can land on a hash the member
+      // already has a row for — the same page filed twice, once already turned.
+      // That is a member-actionable answer ("you already have this"), not a 500.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'You already have another copy of this document.',
+        );
+      }
+      throw err;
+    }
+
+    // The row points at the new file now, so the old one is unreferenced.
+    await this.files.remove(row.storageKey).catch((err) => {
+      this.logger.warn(
+        `Credential ${id}: could not remove old file ${row.storageKey}: ${(err as Error).message}`,
+      );
+    });
+
+    await this.rotateAttachedCopies(id, turned);
+
+    this.vaultLog?.note({
+      stage: 'member',
+      outcome: 'corrected',
+      code: 'rotated',
+      userId: user.id,
+      credentialId: id,
+      detail: { direction, mimeType: turned.mimeType },
+    });
+
+    return { rotated: true };
+  }
+
+  /**
+   * Turn the copies a document already made when it was attached to a pack.
+   *
+   * ⚠️ A COPY OWNS ITS OWN BYTES. addFromLibrary reads the credential's file
+   * and writes a NEW key under `motivations` (motivation-documents.service.ts),
+   * so a pack does not share the vault row's file. Turning the vault file alone
+   * would leave the sideways page in every application it is already in — and
+   * the "Used in" list matches credential to upload by sha256, so a rotated row
+   * whose copies kept the old hash would quietly drop off its own documents.
+   * Each attached copy is turned too, under its own key.
+   *
+   * ⚠️ BEST EFFORT, NEVER FATAL. The vault row is already saved; one copy that
+   * will not rewrite must not roll that back. A failure is logged and the next
+   * copy is tried.
+   */
+  private async rotateAttachedCopies(
+    credentialId: string,
+    turned: { bytes: Buffer; mimeType: string },
+  ): Promise<void> {
+    const copies = await this.prisma.motivationUpload.findMany({
+      where: {
+        sourceCredentialId: credentialId,
+        storageKey: { not: null },
+        purgedAt: null,
+      },
+      select: { id: true, storageKey: true },
+    });
+    for (const copy of copies) {
+      if (!copy.storageKey) continue;
+      try {
+        const stored = await this.files.write(
+          'motivations',
+          turned.bytes,
+          new Date(),
+        );
+        try {
+          await this.prisma.motivationUpload.update({
+            where: { id: copy.id },
+            data: {
+              storageKey: stored.storageKey,
+              mimeType: turned.mimeType,
+              byteSize: stored.byteSize,
+              sha256: stored.sha256,
+            },
+          });
+        } catch (err) {
+          await this.files.remove(stored.storageKey).catch(() => undefined);
+          throw err;
+        }
+        await this.files.remove(copy.storageKey).catch(() => undefined);
+      } catch (err) {
+        this.logger.warn(
+          `Credential ${credentialId}: could not rotate attached copy ${copy.id}: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   /** POPIA erasure of one document. Files first — a cascade cannot reach disk. */

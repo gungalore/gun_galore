@@ -528,6 +528,23 @@ export class LicenceCentreController {
   }
 
   /**
+   * Turn a stored document a quarter turn, for good.
+   *
+   * ⚠️ DIRECTION IS COERCED, NOT TRUSTED. A bare @Body('direction') is not a
+   * DTO (there is no forbidNonWhitelisted here), so anything but 'left' is
+   * treated as a clockwise turn — the default a member expects.
+   */
+  @Post(':id/rotate')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  rotate(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body('direction') direction?: string,
+  ) {
+    return this.svc.rotate(userId, id, direction === 'left' ? 'left' : 'right');
+  }
+
+  /**
    * POPIA erasure — the row AND the encrypted file.
    *
    * ⚠️ 60, NOT 10, AND THE OLD CEILING COST A REAL AFTERNOON. The operator

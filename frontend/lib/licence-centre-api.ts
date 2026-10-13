@@ -656,6 +656,19 @@ export const licenceCentreApi = {
     ),
 
   /**
+   * Turn a stored document a quarter turn, for good.
+   *
+   * ⚠️ POST, NOT PATCH. It rewrites the stored bytes and re-keys the row — the
+   * file the member sees afterwards is a different file, not an edited field.
+   * The caller must reload the list so the card redraws from the new row.
+   */
+  rotate: (t: TokenGetter, id: string, direction: 'left' | 'right') =>
+    request<{ rotated: boolean }>(t, `/${id}/rotate`, {
+      method: 'POST',
+      body: JSON.stringify({ direction }),
+    }),
+
+  /**
    * Start a section 24 renewal pack from this document.
    *
    * Returns the new motivation, which the caller navigates to. The backend

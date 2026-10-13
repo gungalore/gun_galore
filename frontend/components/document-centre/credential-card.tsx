@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ConfirmPanel from '@/components/document-centre/confirm-panel';
 import { KINDS } from '@/components/document-centre/kinds';
 import { evidenceNeedsWords, filedUnsure } from '@/lib/document-review-rules';
@@ -62,6 +62,70 @@ export default function CredentialCard({
   // bottom of the page, which on a phone is well below the fold — the button
   // appeared to do nothing at all.
   const [renewErr, setRenewErr] = useState<string | null>(null);
+
+  /**
+   * THE PAGE ITSELF, SO THE MEMBER CAN SEE WHICH WAY IS UP.
+   *
+   * ⚠️ A ROTATE BUTTON WITHOUT A PREVIEW IS A BLIND BUTTON. The whole feature
+   * exists because somebody's scan came in on its side and they can see it
+   * needs turning; making them turn it and reopen the View tab to check is the
+   * same guess the scanner already made. Images render here. A PDF does not —
+   * there is no rasteriser on this path — and is left to View.
+   */
+  const canPreview = row.available && row.mimeType.startsWith('image/');
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!canPreview) {
+      setPreview(null);
+      return;
+    }
+    // Clear first: a re-run (a fresh turn) must not keep showing the old blob
+    // after its URL is revoked.
+    setPreview(null);
+    let url: string | null = null;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const next = await licenceCentreApi.fileBlobUrl(token, row.id);
+        if (cancelled) {
+          URL.revokeObjectURL(next);
+          return;
+        }
+        url = next;
+        setPreview(next);
+      } catch {
+        // A preview is a convenience; the card is complete without it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+    // row.byteSize changes after a turn, which is what re-fetches the new file.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row.id, row.byteSize, canPreview, token]);
+
+  /**
+   * ⚠️ THE ONE ACTION ON THIS CARD THAT CHANGES THE FILE ITSELF. Everything
+   * else edits a field or a label. It reloads the list afterwards, because the
+   * row now points at a different file and the preview must be fetched again.
+   */
+  const spin = async (direction: 'left' | 'right') => {
+    setBusy(true);
+    onError(null);
+    try {
+      await licenceCentreApi.rotate(token, row.id, direction);
+      await onChanged();
+    } catch (e) {
+      onError(
+        e instanceof LicenceApiError
+          ? e.message
+          : 'We could not rotate that document just now.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   /**
    * Exactly what is standing between this document and green.
@@ -162,21 +226,23 @@ export default function CredentialCard({
       word in it.
     */
     <li className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-card)] p-4">
-      {/* ⚠️ NO PREVIEW HERE, AND THIS IS THE SECOND TIME THAT HAS BEEN
-          DECIDED. A 148px box holding a generic page glyph stood here — it
-          was in the approved drawing, and it rendered the same for every
-          document, so it told nobody anything about the one they had
-          selected. Operator, 2026-08-25: "remove that small preview, just
-          keep the information underneath it. There is a view option so that
-          would be more than fine."
-
-          The thing it stood in for is real and reachable: View below fetches
-          the decrypted bytes and opens the actual document. What it would
-          take to render it in place is written up in the same conversation —
-          cheap for a photographed licence, and needing a PDF rasteriser this
-          backend does not have for anything scanned to PDF. If that is ever
-          revisited, put a real render here or nothing; a placeholder is the
-          one option already tried twice. */}
+      {/* ⚠️ A REAL RENDER, AND ONLY A REAL ONE. A placeholder page glyph stood
+          here once and told nobody anything, so it was removed (operator,
+          2026-08-25) with a note to put a real render back the day it was
+          worth it. That day is the rotate feature: operator, 2026-10-13: "my
+          ID scan is on its side." Turning a page you cannot see is the same
+          guess the scanner already made. Images render; a PDF is left to View,
+          which is the only path that can show one here. */}
+      {canPreview && preview ? (
+        <div className="mb-4 flex justify-center overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] p-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={preview}
+            alt={`Preview of ${row.title}`}
+            className="block max-h-[240px] w-auto max-w-full rounded-[4px]"
+          />
+        </div>
+      ) : null}
       <div>
         {/* ⚠️ WE NAME IT, THEY OWN THE NAME. A firearm licence is titled make +
             calibre off the document — "Howa 6.5 Creedmoor" — because six rows
@@ -728,6 +794,29 @@ export default function CredentialCard({
                 ? 'Change the date'
                 : 'Check the date'}
           </button>
+        )}
+        {/* ⚠️ TURN THE PAGE YOU ARE LOOKING AT. Only where there is a file to
+            turn: a purged row has nothing behind it. Two buttons, not one,
+            because undoing a wrong turn should not take three taps. */}
+        {row.available && (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              className="underline disabled:opacity-50"
+              onClick={() => void spin('left')}
+            >
+              Rotate left
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              className="underline disabled:opacity-50"
+              onClick={() => void spin('right')}
+            >
+              Rotate right
+            </button>
+          </>
         )}
         {row.available && (
           <button
