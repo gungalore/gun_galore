@@ -5,7 +5,23 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-13**.
+Last updated: **2026-10-14**.
+
+## 2026-10-14 — MOTIVATIONS: THE APPLIED-FOR FIREARM'S PAPERWORK IS TREATED (FULL DEPLOY)
+
+Commit **`124e8440`** (`feat(motivations) treat the applied-for firearm's paperwork: scan, pair the card sides, read and file`), 11 files, full deploy. Rollback point `alloutdoor-20261014-001952.dump`. Backend and frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `124e8440`.
+
+Gates: backend `tsc` clean + **353 suites/5560 tests**; frontend `tsc` clean + **141 files/1728 tests** + production build OK.
+
+**The report.** Operator, 2026-10-14: "When the user selects this button they will upload the evidence in the form of a consent letter, the licence card, an invoice, a dealer completed 271 form ... If its two images that the owner just sent me ... they must get the scanner treatment in the background ... pulled straight, color corrected, cropped, scaled properly and put onto one page ... the information can be OCR'd and classified by JEV to find their correct places." Decisions locked: pair a licence FRONT (Serial Number, Make, Calibre, Type, Model) with a BACK (Signature, Fingerprint); front top / back bottom on one page; a 271 is read but NOT annexed; add the classifier rotation; no review screen.
+
+**What shipped.**
+- The "Upload the applied-for-firearm's paperwork" button (`SourceActions`) now runs a batch: `POST /motivations/:id/identify` names each file, then `autoPolish` (the same headless scanner pipeline the vault uses) treats each image, then the two sides of a licence are composed onto one page, then each page is filed as `FIREARM_SOURCE_PROOF`. PDFs and undecodable files pass through.
+- `frontend/lib/scan-upload/compose.ts` (new): front on top, back below on a portrait page. `frontend/lib/scan-upload/source-batch.ts` (new): the pairing.
+- Identify verdict gained `rotate`, `side` and `saps271`; `classifyFace` in `motivation-extract.service.ts` answers them (front/back by the operator's keys; rotation from the page top).
+- A SAPS 271 is read and never annexed: `looksLikeSaps271`/`SAPS_271_MARKER` (`common/document-markers.ts`), stamped into `extractedFields` at upload, filtered out of `kinds` + `annexureImages` in `motivation-render.service.ts`. No schema change, no migration.
+
+**Know.** Identify adds one small model call per image (same posture as the vault's orient); up/down rotation depends on that answer. The 271 suppression uses the model verdict (covers PDFs Vision cannot OCR) plus the printed form number when OCR is available.
 
 ## 2026-10-13 — MOTIVATIONS: COLLAPSED CONSENT, VISIBLE LETTER, REPLACEABLE (FULL DEPLOY)
 
