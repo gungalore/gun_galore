@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-10-13**.
 
+## 2026-10-13 — LICENCE CENTRE: A FIREARM LICENCE CARD HAS NO LICENCE NUMBER (FULL DEPLOY)
+
+Commit **`f763679e`** (`fix(licence-centre) a firearm licence card has no licence number; the serial is the reference`), 14 files, full deploy. Rollback point `alloutdoor-20261013-212348.dump`. Backend and frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `f763679e`.
+
+Gates: backend `tsc` clean + **353 suites/5546 tests**; frontend `tsc` clean + **139 files/1713 tests** + production build OK.
+
+**The report.** Operator, 2026-10-13: "there is no license number on a firearm license card. The police will use the Serial Number as the reference number of the card." A card prints the holder's ID number (13 digits, top left) and a card/control number (4 digits, top right), neither of which is a licence number; the identifier is the row the card labels "Serial Number".
+
+**What was wrong.** The vault's WANTED list asked every licence for `licence_number`, a field the card never prints, so `MUST_READ` flagged every licence "Worth a look" for a missing field. When the reader guessed, it grabbed the holder's ID number or the 4-digit card number, which `credential-duplicates.ts` records as having flagged unrelated firearms as copies of each other. The renewal reference and the SAPS 271 fed off the same field.
+
+**What shipped.** The vault reads the headline Serial Number row as `serial`; completeness, the duplicate fingerprint, the renewal reference (`existing_licence_number`) and `applicationRef` all use it. On the SAPS 271 the serial fills the row's single serial box and flows to item 2.1's Frame/receiver column; the "Licence or permit no" box stays for storage permits and is left blank. The licence-number branches in the motivation matcher were removed. No schema change, no migration.
+
+**Know.** Existing rows still hold the stale `licence_number` and the old "Worth a look" flag; the operator is deleting and re-adding the licences rather than running a backfill.
+
 ## 2026-10-13 — DOCUMENT CENTRE: ROTATE A STORED DOCUMENT (FULL DEPLOY)
 
 Commit **`e3c5da26`** (`feat(licence-centre) rotate a stored document from the
