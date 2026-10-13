@@ -7,6 +7,38 @@ overwritten.
 
 Last updated: **2026-10-13**.
 
+## 2026-10-13 — DOCUMENT CENTRE: ROTATE A STORED DOCUMENT (FULL DEPLOY)
+
+Commit **`e3c5da26`** (`feat(licence-centre) rotate a stored document from the
+Document Centre`), 8 files, full deploy (frontend + backend) via
+`infra/deploy/deploy.sh`. Rollback point `alloutdoor-20261013-201502.dump`.
+Backend and frontend health x2 OK, public 200 x2, three pm2 services online.
+Deployed HEAD `e3c5da26`.
+
+Gates: backend `tsc` clean + **353 suites/5546 tests**; frontend `tsc` clean +
+**139 files/1713 tests** + production build OK.
+
+**The report.** Operator: "can we add a rotate document directly in the document
+library" — "my ID scan is on its side." A scan with no EXIF Orientation tag
+stores landscape pixels, and the pre-commit model orient call is not always
+right, so a page can land in the vault sideways with no way to fix it.
+
+**What shipped.** `POST /licence-centre/:id/rotate` (`{ direction: left|right }`),
+throttled 30/min. `rotate-document.ts` re-encodes an image upright via sharp
+(white-flattened JPEG) and adjusts each PDF page's `/Rotate` with pdf-lib (no
+rasterising). The row is re-keyed to a new storageKey and the old file removed;
+`P2002` on the new sha is a 409, not a 500. `rotateAttachedCopies` also turns
+every `MotivationUpload` with the same `sourceCredentialId`, because
+`addFromLibrary` copies bytes into the `motivations` namespace and the Used-in
+list matches by sha256. Ledger: `member/corrected/rotated`. On the card
+(`credential-card.tsx`), a real image preview plus Rotate left/right beside View;
+the preview is images only (PDFs stay on View).
+
+**Know.** Rotating fixes the stored file and everything produced afterwards; it
+does not rewrite a pack PDF already generated, and it does not re-run an earlier
+OCR read. The preview downloads the whole file (up to 10MB) when a card is
+selected. No schema change, no migration, no new dependency.
+
 ## 2026-10-13 — DOCUMENT CENTRE: RECOGNISE A PROFICIENCY BY ITS NUMBER (BACKEND DEPLOY)
 
 Commit **`1432baa1`** (`fix(document-centre): recognise a proficiency by its
