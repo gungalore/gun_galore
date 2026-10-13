@@ -14,9 +14,19 @@
 // Confirmed against ai.google.dev/api/generate-content and
 // ai.google.dev/gemini-api/docs/structured-output on 2026-09-07: the
 // accepted keys are type, format, description, nullable, enum, items,
-// properties, required, propertyOrdering, minimum, maximum, minItems,
-// maxItems. Everything else is dropped rather than passed through, on the
+// properties, required, propertyOrdering, minimum, maximum, minItems.
+// Everything else is dropped rather than passed through, on the
 // principle that a silently weaker schema beats a 400.
+//
+// ⚠️ `maxItems` IS DELIBERATELY ABSENT, THOUGH THE DOCS LIST IT. Probed live
+// against gemini-3.8-flash on 2026-10-13: a schema with `maxItems` on an
+// array whose item schema carries its own nested array (the valuation
+// RESULT_SCHEMA's `comps[].match.diffs[]`) is rejected with 400
+// INVALID_ARGUMENT, deterministically (the same schema without `maxItems`
+// returns 200). The threshold moved with the outer count, so it is not a
+// single-key rule but an interaction — the safe fix is to drop `maxItems`
+// entirely. No parser in this repo enforces a count, so the schema is only
+// looser, which is exactly the trade this file already makes.
 // ────────────────────────────────────────────────────────────────────
 
 /** The keys Gemini accepts on a schema node. Anything else is dropped. */
@@ -24,7 +34,6 @@ const PASSTHROUGH_KEYS = [
   'description',
   'enum',
   'format',
-  'maxItems',
   'maximum',
   'minItems',
   'minimum',

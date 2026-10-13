@@ -36,6 +36,42 @@ describe('toGeminiSchema', () => {
     });
   });
 
+  // ⚠️ PAID FOR BY A LIVE 400 on 2026-10-13. The valuation RESULT_SCHEMA
+  // carries `maxItems` on `comps`, whose item schema nests `match.diffs`
+  // (another array with its own `maxItems`). gemini-3.8-flash rejects that
+  // combination with INVALID_ARGUMENT and accepts the identical schema with
+  // `maxItems` removed — every extraction call failed until this was dropped.
+  it('⚠️ drops maxItems, even nested, because Gemini 400s on the combination', () => {
+    const out = toGeminiSchema({
+      type: 'object',
+      properties: {
+        comps: {
+          type: 'array',
+          maxItems: 20,
+          items: {
+            type: 'object',
+            properties: {
+              diffs: { type: 'array', maxItems: 6, items: { type: 'string' } },
+            },
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(out)).not.toContain('maxItems');
+    expect(out).toEqual({
+      type: 'object',
+      properties: {
+        comps: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { diffs: { type: 'array', items: { type: 'string' } } },
+          },
+        },
+      },
+    });
+  });
+
   it('rewrites a ["string","null"] union as nullable', () => {
     expect(toGeminiSchema({ type: ['string', 'null'] })).toEqual({
       type: 'string',
