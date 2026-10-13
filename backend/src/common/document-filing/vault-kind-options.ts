@@ -52,7 +52,15 @@ export const VAULT_KIND_OPTIONS: readonly FilingOption[] = [
   {
     id: CredentialKind.ADDRESS_CONFIRMATION,
     label: 'Proof of address',
-    hint: 'a document proving where the member lives, such as a utility bill or bank statement',
+    // ⚠️ THE HINT IS THE DISCRIMINATOR, AND IT WAS A STUB. It read only "a
+    // document proving where the member lives, such as a utility bill or bank
+    // statement" — a fraction of what the retired vision prompt named
+    // (licence-centre-extract.service.ts). Operator, 2026-10-13: "uploaded a
+    // proof of address and it was not recognized as such." A lease, a SARS or
+    // insurance or medical-aid letter, or a signed confirmation of residence
+    // from the person they live with matched none of it and filed as Something
+    // else. What makes the category is an address and a date, not the sender.
+    hint: 'a proof of where the member lives: a municipal rates or utility account, a bank or retail account statement, a SARS, insurance, telecoms or medical-aid letter or statement, a lease or rental agreement, or a signed confirmation of residence (often an affidavit) from the person they live with. Addressed to a named person at a residential address and carrying a date; the sender does not matter.',
   },
   {
     id: CredentialKind.EMPLOYMENT_CONFIRMATION,

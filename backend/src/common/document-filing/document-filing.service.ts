@@ -108,12 +108,12 @@ export class DocumentFilingService {
       role: {
         type: 'choice',
         instructions:
-          'A member uploaded one file to their document vault. Is it a personal document we file by TYPE, or EVIDENCE that supports a licence motivation (a hunting photograph, a landowner permission letter, a score sheet, an affidavit)?',
+          'A member uploaded one file to their document vault. Is it a personal document we file by TYPE, or EVIDENCE that supports a licence motivation (a hunting photograph, a landowner permission letter, a score sheet, or an affidavit about the firearm or a hunt)?',
         criteria: {
           document:
-            'Personal paperwork we file by type: an identity document, a FIREARM licence, a competency certificate, an association certificate or endorsement, a proficiency, proof of address, an employment letter, a safe photograph, a shooting-activity log.',
+            'Personal paperwork we file by type: an identity document, a FIREARM licence, a competency certificate, an association certificate or endorsement, a proficiency, a proof of residence (a municipal rates or utility account, a bank or retail statement, a SARS, insurance, telecoms or medical-aid letter, a lease or rental agreement, or a signed confirmation of residence \u2014 even when it is an affidavit \u2014 from the person they live with), an employment letter, a safe photograph, a shooting-activity log.',
           evidence:
-            'Anything else, including a licence or certificate that is NOT about firearms — a driver\u2019s, TV, business, fishing or software licence, a EULA, or any unrelated file. These are not our document types.',
+            'Anything else, including a licence or certificate that is NOT about firearms \u2014 a driver\u2019s, TV, business, fishing or software licence, a EULA, or any unrelated file. These are not our document types. \u26a0\ufe0f An affidavit that confirms where the member lives is a proof of residence above, NOT this; only an affidavit about the firearm or a hunt is evidence.',
         },
       },
       kind: {

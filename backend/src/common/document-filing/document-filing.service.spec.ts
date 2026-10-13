@@ -173,4 +173,33 @@ describe('DocumentFilingService', () => {
     expect(questions.role.criteria.evidence).toMatch(/driver/i);
     expect(questions.kind.instructions).toMatch(/names no firearm/i);
   });
+
+  it('\u26a0\ufe0f KEEPS A CONFIRMATION-OF-RESIDENCE AFFIDAVIT A DOCUMENT', async () => {
+    // Operator, 2026-10-13: "uploaded a proof of address and it was not
+    // recognized as such." The role question listed a bare "affidavit" as an
+    // evidence example, and a signed confirmation of residence is usually one,
+    // so Jev filed it as evidence. The document criteria now name the whole
+    // proof-of-residence family and claim the affidavit explicitly.
+    const decide = jest.fn((req: { questions: unknown }) => {
+      expect(req.questions).toBeDefined();
+      return {
+        model: 'jev-1.13.0',
+        answers: { role: choice('document'), kind: choice('OTHER') },
+        usage: { inputTokens: 1, outputTokens: 0 },
+      };
+    });
+    const svc = new DocumentFilingService({ decide } as unknown as LlmService);
+    await svc.fileVault({ text: 'CONFIRMATION OF RESIDENCE', kindOptions: KINDS });
+    const questions = decide.mock.calls[0][0].questions as {
+      role: { instructions: string; criteria: { document: string; evidence: string } };
+    };
+    // The bare affidavit example is gone from the prompt line.
+    expect(questions.role.instructions).not.toMatch(/score sheet, an affidavit\)/);
+    expect(questions.role.criteria.document).toMatch(/proof of residence/i);
+    expect(questions.role.criteria.document).toMatch(/lease/i);
+    expect(questions.role.criteria.document).toMatch(/confirmation of residence/i);
+    expect(questions.role.criteria.evidence).toMatch(
+      /affidavit that confirms where the member lives/i,
+    );
+  });
 });
