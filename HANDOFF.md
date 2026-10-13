@@ -7,6 +7,17 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — MOTIVATIONS: TWO PHOTOS = ONE PAGE, AND A READABLE TOAST (FRONTEND DEPLOY)
+
+Commit **`c2bff8b1`** (`fix(motivations) two picked photos always become one page; toast readable in dark mode`), 3 files, frontend-only deploy. Rollback point `alloutdoor-20261014-005519.dump`. Frontend health x2 OK, public 200 x2, three pm2 services online (backend untouched). Deployed HEAD `c2bff8b1`.
+
+Gates: frontend `tsc` clean + **141 files/1731 tests** + production build OK.
+
+**The reports.** Operator, 2026-10-14: "Still nothing" (the two card photos still filed as two pages) and "what is this white bar that pops up" (the toast).
+
+- **Pairing.** The order-independent fix (`fd53ebe7`) was not enough: when the server did not NAME both sides, the batch fell back to two pages — and the identify is not naming them reliably. `prepareSourceBatch` now composes two picked IMAGES onto one page even when neither side was named (the side only decides which goes on top). A lone image, a PDF, or three-plus files stay their own pages.
+- **The white bar** is `SheetToast`. It painted `bg-[var(--text-primary)] text-white`, so in DARK MODE the bar is near-white and the white text vanishes. Now `text-[var(--bg)]` — the true inverse of the bar, readable in both themes.
+
 ## 2026-10-14 — MOTIVATIONS: THE CARD SIDES PAIR IN ANY ORDER (FRONTEND DEPLOY)
 
 Commit **`fd53ebe7`** (`fix(motivations) pair a licence front with its back whatever order they were picked`), 2 files, frontend-only deploy. Rollback point `alloutdoor-20261014-004659.dump`. Frontend health x2 OK, public 200 x2, three pm2 services online (backend untouched). Deployed HEAD `fd53ebe7`.
