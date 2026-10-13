@@ -938,6 +938,7 @@ function makeService(
     // Real calculator, not a stub — dependency-free, and it keeps the
     // BUY_NOW markup maths honest wherever a spec touches pricing.
     new FeeCalculator(),
+    { resolveByEntity: jest.fn() } as never, // notifications
   );
   return { service, prisma, search, moderation };
 }

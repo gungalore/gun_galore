@@ -33,6 +33,7 @@ import { validateAndCleanAttributes } from './attribute-validation';
 import { toPublicLocality } from './locality';
 import { Prisma } from '@prisma/client';
 import { FeeCalculator } from '../payments/fee.calculator';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // Public-safe projection for the unauthenticated GET /listings/:id detail
 // endpoint. This is an explicit ALLOWLIST: every field named here is safe to
@@ -779,6 +780,11 @@ export class ListingsService {
     // so a new dependency inserted earlier would silently shift every argument
     // along and hand prisma to the wrong field.
     private readonly fees: FeeCalculator,
+    // Also appended last (same reason as `fees`). NotificationsModule is
+    // @Global, so this resolves without a module import. Used only to clear
+    // the listing-task notifications (photos missing, firearm delisted) when
+    // the seller republishes the listing to ACTIVE.
+    private readonly notifications: NotificationsService,
   ) {}
 
   // AMMUNITION BAN — the single chokepoint every write path calls
@@ -3238,6 +3244,11 @@ export class ListingsService {
 
     if (updated.status === ListingStatus.ACTIVE) {
       await this.indexListing(updated);
+      // Republishing to ACTIVE is the member's fix for the action-required
+      // listing tasks (listing_photos_missing, firearm_listing_delisted), both
+      // linked ('listing', id). Nothing else cleared them, so they sat in the
+      // inbox forever. Fire-and-forget; a hiccup must not fail the edit.
+      void this.notifications.resolveByEntity('listing', updated.id);
     } else if (listing.status === ListingStatus.ACTIVE) {
       // The edit knocked a live listing back into review (moderation REJECT).
       // Leaving the old document behind would keep the pre-edit copy

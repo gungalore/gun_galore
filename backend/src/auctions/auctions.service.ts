@@ -1407,6 +1407,9 @@ export class AuctionsService {
     // Same machinery as a first-place win — the buyer gets the identical
     // "you won, pay within 24h" flow with a CHECKOUT deep link.
     void this.notifyAuctionWon(runnerUpBidderId, listingId, amount);
+    // The seller just acted on the "offer it to the next bidder?" task — clear
+    // it (and, harmlessly, the other listing-linked rows for this listing).
+    void this.notifications.resolveByEntity('listing', listingId);
     return { offered: true };
   }
 

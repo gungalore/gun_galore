@@ -2836,6 +2836,11 @@ export class AdminService {
         },
         data: { resolved: true, resolvedAt: new Date() },
       });
+      // Clear the member's transaction-linked inbox rows too. A resolved
+      // cancellation that does NOT end in a full refund (a decline, or a
+      // partial) skipped the fullyRefunded sweep below, leaving the buyer's
+      // non-dismissible `cancellation_requested_buyer` row stranded.
+      void this.notifications.resolveByEntity('transaction', txId);
       // P5.2: a fully-refunded sale is dead — cancel any platform-booked
       // carrier shipment so we don't leave a live, already-billed waybill.
       // Best-effort + idempotent; only cancels while the parcel hasn't been

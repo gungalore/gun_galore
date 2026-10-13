@@ -46,6 +46,7 @@ describe('ListingsService — browse filters & brand facet', () => {
       // Real calculator, not a stub — it is dependency-free and keeps the
       // BUY_NOW markup maths honest wherever a spec touches pricing.
       new FeeCalculator(),
+      { resolveByEntity: jest.fn() } as never, // notifications
     );
   });
 
@@ -131,6 +132,7 @@ describe('ListingsService — findById projection & owner-awareness', () => {
       // Real calculator, not a stub — it is dependency-free and keeps the
       // BUY_NOW markup maths honest wherever a spec touches pricing.
       new FeeCalculator(),
+      { resolveByEntity: jest.fn() } as never, // notifications
     );
   });
 
@@ -311,6 +313,7 @@ describe('ListingsService — distanceToBuyer (W3)', () => {
       {} as never,
       { record: jest.fn() } as never,
       new FeeCalculator(),
+      { resolveByEntity: jest.fn() } as never, // notifications
     );
     return { service, prisma };
   }
@@ -388,6 +391,7 @@ describe('ListingsService — cancel status guard', () => {
       {} as never,
       { record: jest.fn() } as never,
       new FeeCalculator(),
+      { resolveByEntity: jest.fn() } as never, // notifications
     );
   });
 

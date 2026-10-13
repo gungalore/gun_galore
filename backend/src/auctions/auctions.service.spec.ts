@@ -458,7 +458,7 @@ describe('cancelProxy — CAS guard against a concurrent opposing bid', () => {
 
 describe('offerToRunnerUp — moves the isWinner flag with the promotion', () => {
   it('clears the defaulted winner and flags the runner-up bid', async () => {
-    const { service, prisma, tx } = makeMocks();
+    const { service, prisma, tx, notifications } = makeMocks();
     prisma.listing.findUnique.mockResolvedValue({
       id: 'L1',
       status: 'EXPIRED',
@@ -486,10 +486,12 @@ describe('offerToRunnerUp — moves the isWinner flag with the promotion', () =>
       where: { id: 'BID2' },
       data: { isWinner: true },
     });
+    // The seller's action clears the "offer it to the next bidder?" task.
+    expect(notifications.resolveByEntity).toHaveBeenCalledWith('listing', 'L1');
   });
 
   it('does nothing extra when the promotion CAS loses', async () => {
-    const { service, prisma, tx } = makeMocks();
+    const { service, prisma, tx, notifications } = makeMocks();
     prisma.listing.findUnique.mockResolvedValue({
       id: 'L1',
       status: 'EXPIRED',
@@ -508,5 +510,6 @@ describe('offerToRunnerUp — moves the isWinner flag with the promotion', () =>
     expect(res.offered).toBe(false);
     expect(tx.bid.updateMany).not.toHaveBeenCalled();
     expect(tx.bid.update).not.toHaveBeenCalled();
+    expect(notifications.resolveByEntity).not.toHaveBeenCalled();
   });
 });

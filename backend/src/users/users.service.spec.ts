@@ -57,7 +57,7 @@ describe('UsersService — address book & notification prefs', () => {
     service = new UsersService(
       prisma as never,
       {} as never,
-      { resolveByEntity: jest.fn() } as never,
+      { resolveByEntity: jest.fn(), resolveBankDetailTasks: jest.fn() } as never,
       { purgeForUser: jest.fn() } as never,
       // Account deletion removes a member's encrypted licence documents before
       // the cascade takes the rows that point at them.
@@ -379,7 +379,7 @@ describe('UsersService.deleteById', () => {
     const svc = new UsersService(
       prisma as never,
       {} as never,
-      { resolveByEntity: jest.fn() } as never,
+      { resolveByEntity: jest.fn(), resolveBankDetailTasks: jest.fn() } as never,
       retention as never,
       licenceCentre as never,
       // And the pair that matters most: the identity document and the selfie

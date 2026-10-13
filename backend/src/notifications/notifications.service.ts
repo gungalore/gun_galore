@@ -591,6 +591,45 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Clear the member's action-required "we need your bank details" rows once
+   * they actually save them.
+   *
+   * ⚠️ WHY THIS EXISTS SEPARATELY FROM resolveByEntity('bank', …). The refund
+   * rows below are linked to the TRANSACTION (`linkedType: 'transaction'`) so
+   * the order/amount context travels with the row, but the member's fix is
+   * saving bank details — which resolved only `('bank', userId)`. The two
+   * never met, so a row that asked the member to act could not be cleared by
+   * the act: it sat non-dismissibly in the inbox (and counted toward the bell
+   * badge) until an admin happened to touch the transaction. This is the
+   * member-side resolver for exactly those rows.
+   *
+   * Only dismissible:false rows are touched, so the informational
+   * `refund_issued`/`sale_rejected` variants (which the member can × away) are
+   * left alone. Fails open like every resolve path.
+   */
+  async resolveBankDetailTasks(userId: string): Promise<number> {
+    try {
+      const r = await this.prisma.notification.updateMany({
+        where: {
+          userId,
+          resolvedAt: null,
+          dismissible: false,
+          type: {
+            in: ['refund_needs_bank_details', 'refund_issued', 'sale_rejected'],
+          },
+        },
+        data: { resolvedAt: new Date(), resolvedBy: 'user_action' },
+      });
+      return r.count;
+    } catch (err) {
+      this.logger.error(
+        `resolveBankDetailTasks(${userId}) failed: ${err instanceof Error ? err.message : err}`,
+      );
+      return 0;
+    }
+  }
+
   // ─── Community feed ──────────────────────────────────────────────
   // In-app + push only for the MVP. Feed activity is informational and must
   // not become a second email/SMS inbox — always dismissible, never a send on

@@ -4431,6 +4431,11 @@ export class TransactionsService {
     void this.zohoBooks.createCommissionInvoice(txId);
     void this.zohoBooks.createBuyerInvoice(txId);
     void this.tracking.recordInternal(txId, 'PAYOUT_RELEASED', { occurredAt: now });
+    // Confirm-receipt is the member's action on the private-arrange delivered
+    // / reminder rows (both non-dismissible, linked to the transaction). The
+    // release is where that action lands, so clear them here — otherwise they
+    // outlive the handover they describe.
+    void this.notifications.resolveByEntity('transaction', txId);
     void this.notifications.paymentReleasedSeller({
       sellerEmail: tx.seller.email,
       sellerName: tx.seller.firstName ?? tx.seller.username ?? 'Seller',

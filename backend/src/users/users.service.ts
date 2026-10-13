@@ -784,8 +784,11 @@ export class UsersService {
       `Profile completed for ${userId} (bank=${dto.bankName})`,
     );
     // Saving new details is the "fix" action — clear any open bank-verify
-    // task (requestBankVerification is a no-op under Ozow, which has no BANV).
+    // task (requestBankVerification is a no-op under Ozow, which has no BANV)
+    // AND the action-required refund rows that asked for bank details (those
+    // are linked to the transaction, not 'bank', so they need their own sweep).
     void this.notifications.resolveByEntity('bank', updated.id);
+    void this.notifications.resolveBankDetailTasks(updated.id);
     void this.requestBankVerification(updated.id);
     return updated;
   }
@@ -850,8 +853,11 @@ export class UsersService {
     });
     this.logger.log(`Bank details updated for ${userId} (bank=${bankName})`);
     // Saving new details is the "fix" action — clear any open bank-verify
-    // task (requestBankVerification is a no-op under Ozow, which has no BANV).
+    // task (requestBankVerification is a no-op under Ozow, which has no BANV)
+    // AND the action-required refund rows that asked for bank details (those
+    // are linked to the transaction, not 'bank', so they need their own sweep).
     void this.notifications.resolveByEntity('bank', user.id);
+    void this.notifications.resolveBankDetailTasks(user.id);
     void this.requestBankVerification(user.id);
     return updated;
   }

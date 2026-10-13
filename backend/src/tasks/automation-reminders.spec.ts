@@ -172,7 +172,7 @@ describe('AuctionsService.remindUnpaidWinners', () => {
     };
     const service = new AuctionsService(
       prisma as never,
-      {} as never,
+      { resolveByEntity: jest.fn() } as never,
       { mint: jest.fn().mockResolvedValue('tok') } as never,
       { record: jest.fn() } as never,
     );
@@ -568,7 +568,7 @@ describe('AuctionsService.offerToRunnerUp', () => {
     };
     const service = new AuctionsService(
       prisma as never,
-      {} as never,
+      { resolveByEntity: jest.fn() } as never,
       { mint: jest.fn().mockResolvedValue('tok') } as never,
       { record: jest.fn() } as never,
     );
