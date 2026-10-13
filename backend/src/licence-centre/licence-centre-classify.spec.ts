@@ -110,6 +110,15 @@ describe('the classifier prompt', () => {
     // asked to confirm either way, and only one of the two tells them to look.
     expect(CLASSIFY_USER).toMatch(/OTHER - anything else, or you cannot tell/);
   });
+
+  it('\u26a0\ufe0f KEEPS A NON-FIREARM LICENCE OUT OF FIREARM_LICENCE', () => {
+    // Operator report: a random file came back as a licence. A generic licence
+    // (a driver's, TV, business or software one) must not be read as a firearm
+    // licence just because it is a "licence".
+    expect(CLASSIFY_USER).toMatch(/driver.{0,3}s, TV, business/i);
+    expect(CLASSIFY_USER).toMatch(/software licence/i);
+    expect(CLASSIFY_USER).toMatch(/names no make, model/i);
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────

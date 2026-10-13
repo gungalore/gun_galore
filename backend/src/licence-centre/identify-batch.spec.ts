@@ -121,6 +121,14 @@ describe('identifying a batch', () => {
     expect(out[0].id).not.toBe(out[1].id);
   });
 
+  it('\u26a0\ufe0f A LOW-CONFIDENCE DOCUMENT VERDICT IS CARRIED AS OTHER, NOT ITS KIND', async () => {
+    // The identify card must not wear a confident-looking type on a guess we
+    // are unsure of — see filedKindOrOther.
+    const { svc } = build({ classify: [asDocument('FIREARM_LICENCE', false)] });
+    const [verdict] = await svc.identify('u1', [img('random')]);
+    expect(verdict).toMatchObject({ role: 'document', kind: 'OTHER', confident: false });
+  });
+
   it('\u26a0\ufe0f ASKS THE ORIENTATION ONLY OF A DOCUMENT, AND CARRIES IT', async () => {
     // The ink can find the quarter turn but not the direction; a separate,
     // minimal vision call answers it, and only for a page — evidence is a
@@ -509,7 +517,53 @@ describe('the store handler files from the record, not the request', () => {
     });
     const out = await svc.create('u1', null, '', img('id'), { identifyId: 'stale' });
     expect(classify).toHaveBeenCalledTimes(1);
-    expect(out.kind).toBe('IDENTITY_DOCUMENT');
+    // ⚠️ OTHER, NOT IDENTITY_DOCUMENT. The fallback classify was not confident,
+    // and a kind we are not sure of is not filed as that kind — see
+    // filedKindOrOther. The row stays findable and the member picks the type.
+    expect(out.kind).toBe('OTHER');
+  });
+
+  it('⚠️ A KIND WE ARE NOT SURE OF IS FILED AS OTHER, NOT AS THE GUESS', async () => {
+    // The operator's own report: a random file came back as a licence. A
+    // low-confidence guess must not be stored under the kind it named, or a
+    // random letter that merely mentions "a licence" lands in the firearms
+    // section, one confirmation from arming a renewal for a firearm that is
+    // not there.
+    const { svc, create } = buildCreate({
+      classify: { role: 'document', kind: 'FIREARM_LICENCE', alsoCovers: ['PROFICIENCY'], confident: false },
+    });
+    await svc.create('u1', null, '', img('random'));
+    expect(create.mock.calls[0][0].data.kind).toBe('OTHER');
+    // The covers came off the same guess, so they go with it.
+    expect(create.mock.calls[0][0].data.coversKinds).toEqual([]);
+  });
+
+  it('⚠️ A CONFIDENT KIND IS STILL FILED AS THE KIND', async () => {
+    const { svc, create } = buildCreate({
+      classify: { role: 'document', kind: 'FIREARM_LICENCE', alsoCovers: [], confident: true },
+    });
+    await svc.create('u1', null, '', img('licence'));
+    expect(create.mock.calls[0][0].data.kind).toBe('FIREARM_LICENCE');
+  });
+
+  it('⚠️ A LOW-CONFIDENCE IDENTIFY VERDICT IS NOT CARRIED AS ITS KIND', async () => {
+    const { svc, create, take } = buildCreate({
+      verdict: {
+        id: 'id-3',
+        ownerId: 'u1',
+        sha256: 'x',
+        role: 'document',
+        kind: 'FIREARM_LICENCE',
+        alsoCovers: ['COMPETENCY_CERTIFICATE'],
+        container: null,
+        confident: false,
+        ocrText: null,
+      },
+    });
+    await svc.create('u1', null, '', img('random'), { identifyId: 'id-3' });
+    expect(take).toHaveBeenCalledWith({ id: 'id-3', ownerId: 'u1' });
+    expect(create.mock.calls[0][0].data.kind).toBe('OTHER');
+    expect(create.mock.calls[0][0].data.coversKinds).toEqual([]);
   });
 
   it('does not consult the store when there is no identify id', async () => {

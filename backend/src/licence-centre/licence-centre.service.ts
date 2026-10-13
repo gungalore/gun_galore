@@ -135,6 +135,36 @@ const MAX_TITLE = 120;
 const MAX_DESCRIPTION = MAX_IDENTIFY_DESCRIPTION;
 
 /**
+ * ⚠️ A KIND WE ARE NOT SURE OF IS NOT A KIND.
+ *
+ * The classifier PROPOSES; the member confirms. But a low-confidence proposal
+ * was being STORED as the kind it named — so a random letter that merely
+ * mentioned "a licence", or a driver's licence, arrived in the Centre titled
+ * "Firearm licence", sat in the firearms section, and was one confirmation
+ * away from arming a renewal reminder for a firearm that does not exist.
+ *
+ * The evidence path already refuses a low-confidence container for exactly
+ * this reason ("a wrong one moves a file and ticks a DFO row"); this is the
+ * document half of that rule. OTHER is not a worse answer: it keeps the row
+ * findable, keeps it out of every kind-specific query (renewals, firearm
+ * facets, auto-attach), and puts the type control in front of the member —
+ * which is the whole point of a "we are not sure" row.
+ *
+ * ⚠️ EVIDENCE IS LEFT ALONE. Its kind is never guessed; its ROLE is the answer.
+ *
+ * ⚠️ A MEMBER'S OWN CHOICE NEVER COMES THROUGH HERE. This runs only on the
+ * classifier's answer, where confidence means something; a kind the member
+ * picked is filed as chosen.
+ */
+function filedKindOrOther(
+  kind: CredentialKind,
+  confident: boolean,
+): CredentialKind {
+  if (confident || kind === CredentialKind.EVIDENCE) return kind;
+  return CredentialKind.OTHER;
+}
+
+/**
  * How many files `identify()` works on at once.
  *
  * ⚠️ WALKING THEM ONE AT A TIME WAS THE BUG. Every file costs a classify call
@@ -1334,6 +1364,16 @@ export class LicenceCentreService {
           confident = guess.confident;
         }
       }
+      // ⚠️ THE GUESS IS FILED ONLY WHERE WE WERE SURE OF IT. A specific kind
+      // proposed below the confidence floor lands as OTHER instead, so a random
+      // file can never enter the Centre as a firearm licence on a coin toss.
+      // See filedKindOrOther. A kind the member declared never reaches here —
+      // it is `kind`, not this branch.
+      const guarded = filedKindOrOther(resolved, confident);
+      if (guarded !== resolved) {
+        resolved = guarded;
+        alsoCovers = [];
+      }
     }
 
     // BYTES FIRST, ROW SECOND. The database's unique constraint is what spots
@@ -2315,11 +2355,27 @@ export class LicenceCentreService {
     // OCR text, which is the expensive part to re-read.
     const seen = await this.identifyStore.findBySha({ ownerId, sha256: hash });
     if (seen) {
-      await this.identifyStore.put({ ...seen, id, ownerId, sha256: hash });
+      // ⚠️ THE CACHED VERDICT IS GUARDED LIKE A FRESH ONE. A record written
+      // before a low-confidence kind was refused would otherwise ride back into
+      // this session under the kind it named. See filedKindOrOther; a record we
+      // were sure of is untouched, so an ordinary cache hit changes nothing.
+      const seenKind =
+        seen.role === 'document' && seen.kind
+          ? filedKindOrOther(seen.kind as CredentialKind, seen.confident)
+          : seen.kind;
+      const seenCovers = seenKind === seen.kind ? seen.alsoCovers : [];
+      await this.identifyStore.put({
+        ...seen,
+        id,
+        ownerId,
+        sha256: hash,
+        kind: seenKind,
+        alsoCovers: seenCovers,
+      });
       return {
         id,
         role: seen.role,
-        kind: seen.kind,
+        kind: seenKind,
         container: seen.container,
         confident: seen.confident,
         ocrChars: seen.ocrText === null ? null : seen.ocrText.length,
@@ -2350,8 +2406,13 @@ export class LicenceCentreService {
 
     if (guess && guess.role === 'document') {
       role = 'document';
-      kind = guess.kind;
-      alsoCovers = guess.alsoCovers;
+      // ⚠️ A KIND WE ARE NOT SURE OF IS NOT CARRIED TO THE MEMBER AS THAT KIND.
+      // It reads back as OTHER and the card says "we think this is a document",
+      // so a random file is never shown wearing a confident-looking type. See
+      // filedKindOrOther; the member's own menu is a separate field and never
+      // passes through here.
+      kind = filedKindOrOther(guess.kind, guess.confident);
+      alsoCovers = kind === guess.kind ? guess.alsoCovers : [];
       confident = guess.confident;
       // ⚠️ A SECOND, SEPARATE CALL — see orient(). It is asked ONLY of a page
       // the classifier called a document, and only because the ink cannot say

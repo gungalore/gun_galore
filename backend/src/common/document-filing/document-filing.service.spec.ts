@@ -148,4 +148,29 @@ describe('DocumentFilingService', () => {
     await expect(svc.fileEvidence({ text: 'x', options: CONTAINERS })).resolves.toBeNull();
     await expect(svc.fileVault({ text: 'x', kindOptions: KINDS })).resolves.toBeNull();
   });
+
+  it('\u26a0\ufe0f TELLS JEV A LICENCE MUST BE A FIREARM LICENCE', async () => {
+    // Operator report: a random file came back as a licence. The document
+    // vocabulary said only "a licence", so any licence satisfied it.
+    const decide = jest.fn((req: { questions: unknown }) => {
+      expect(req.questions).toBeDefined();
+      return {
+        model: 'jev-1.13.0',
+        answers: { role: choice('evidence') },
+        usage: { inputTokens: 1, outputTokens: 0 },
+      };
+    });
+    const svc = new DocumentFilingService({ decide } as unknown as LlmService);
+    await svc.fileVault({
+      text: 'SOFTWARE LICENCE AGREEMENT',
+      kindOptions: KINDS,
+    });
+    const questions = decide.mock.calls[0][0].questions as {
+      role: { criteria: { document: string; evidence: string } };
+      kind: { instructions: string };
+    };
+    expect(questions.role.criteria.document).toMatch(/FIREARM licence/i);
+    expect(questions.role.criteria.evidence).toMatch(/driver/i);
+    expect(questions.kind.instructions).toMatch(/names no firearm/i);
+  });
 });

@@ -22,7 +22,7 @@ export const VAULT_KIND_OPTIONS: readonly FilingOption[] = [
   {
     id: CredentialKind.FIREARM_LICENCE,
     label: 'Firearm licence',
-    hint: 'a South African firearm licence card or certificate naming a firearm, usually with a section of the Firearms Control Act',
+    hint: 'a South African FIREARM licence card or certificate. The text must name a firearm (a make, model, calibre or serial) or cite a section of the Firearms Control Act. A licence for anything else — a driver\u2019s, TV, business, fishing or software licence, or a EULA — is NOT this: file it as Something else.',
   },
   {
     id: CredentialKind.COMPETENCY_CERTIFICATE,

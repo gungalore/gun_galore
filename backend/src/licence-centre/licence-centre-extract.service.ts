@@ -1496,16 +1496,18 @@ not need to transcribe anything.
 FIRST, IS THIS ONE OF OUR DOCUMENTS OR IS IT EVIDENCE?
 
 "document" is a piece of personal paperwork we file by type: an identity
-document, a licence, a competency certificate, an association certificate or
-endorsement, a proficiency, proof of address, an employment letter, a safe
-photograph, a shooting-activity log.
+document, a FIREARM licence, a competency certificate, an association
+certificate or endorsement, a proficiency, proof of address, an employment
+letter, a safe photograph, a shooting-activity log.
 
 "evidence" is anything else a member sends to SUPPORT a motivation: a
 photograph of hunting, of a range, of reloading or cleaning a firearm, a
-collection; or a supporting paper that is not one of our document types - a
+collection; a supporting paper that is not one of our document types - a
 landowner's permission to hunt, a score sheet, a farm letter, an invoice, an
-affidavit. Evidence is sorted into a container separately, so do NOT name a
-kind for it.
+affidavit; or an unrelated file that is none of our types at all, including a
+licence or certificate that is NOT about firearms (a driver's, TV, business,
+fishing or software licence, a EULA). Evidence is sorted into a container
+separately, so do NOT name a kind for it.
 
 Answer:
 {"role":"evidence","confidence":"high"|"low"}
@@ -1554,7 +1556,11 @@ export const CLASSIFY_USER = [
   'Which of these is this document? Answer with the exact string.',
   '',
   'FIREARM_LICENCE - a South African firearm licence card or certificate,',
-  '  naming a firearm and usually a section of the Firearms Control Act',
+  '  naming a firearm and usually a section of the Firearms Control Act.',
+  '  \u26a0\ufe0f A LICENCE FOR ANYTHING ELSE IS NOT THIS. A driver\u2019s, TV, business,',
+  '  fishing or software licence, or a EULA, names no firearm - none of them is',
+  '  a FIREARM_LICENCE. If the page is a licence but names no make, model,',
+  '  calibre or serial and cites no section of the Act, answer OTHER, not this.',
   'COMPETENCY_CERTIFICATE - a SAPS competency certificate',
   'DEDICATED_DISCIPLINE - ANY document from a shooting or hunting association',
   '  about one of its members. A membership certificate, a dedicated SPORT',
@@ -1647,5 +1653,6 @@ export const CLASSIFY_USER = [
   '',
   'A competency certificate permits a person to POSSESS firearms; a licence is',
   'for ONE specific firearm and names it. If it names a make, calibre or serial',
-  'number it is a licence.',
+  'number it is a licence. A licence that names no firearm and cites no section',
+  'of the Act is not the FIREARM_LICENCE category - answer OTHER.',
 ].join('\n');

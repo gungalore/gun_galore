@@ -111,15 +111,15 @@ export class DocumentFilingService {
           'A member uploaded one file to their document vault. Is it a personal document we file by TYPE, or EVIDENCE that supports a licence motivation (a hunting photograph, a landowner permission letter, a score sheet, an affidavit)?',
         criteria: {
           document:
-            'Personal paperwork we file by type: an identity document, a licence, a competency certificate, an association certificate or endorsement, a proficiency, proof of address, an employment letter, a safe photograph, a shooting-activity log.',
+            'Personal paperwork we file by type: an identity document, a FIREARM licence, a competency certificate, an association certificate or endorsement, a proficiency, proof of address, an employment letter, a safe photograph, a shooting-activity log.',
           evidence:
-            'Anything else a member sends to SUPPORT a motivation — an activity photograph, or a supporting paper that is not one of our document types.',
+            'Anything else, including a licence or certificate that is NOT about firearms — a driver\u2019s, TV, business, fishing or software licence, a EULA, or any unrelated file. These are not our document types.',
         },
       },
       kind: {
         type: 'choice',
         instructions:
-          'If this is one of our documents, which category primarily describes it, by its own title and what the text shows? Use OTHER if it is a document but none of these fits.',
+          'If this is one of our documents, which category primarily describes it, by its own title and what the text shows? Use OTHER if it is a document but none of these fits, or if you cannot tell which. Pick a specific category — especially Firearm licence — ONLY where the text plainly shows it: a licence that names no firearm is not a Firearm licence.',
         criteria: Object.fromEntries(
           args.kindOptions.map((o) => [o.id, `${o.label} — ${o.hint}`]),
         ),
