@@ -176,6 +176,12 @@ export default function LicenceCentreSheetPage() {
   useReportMotivationBusy(busy);
   const [toast, setToast] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  /**
+   * A source-paperwork batch is in flight — naming, straightening, pairing and
+   * filing. Its own flag, so the button says so without the sheet's own `busy`
+   * lighting it up for unrelated actions.
+   */
+  const [sourceBusy, setSourceBusy] = useState(false);
   const [active, setActive] = useState<string>('firearm');
   /** The Add-a-document sheet, and the kinds it may file into. */
   const [adding, setAdding] = useState(false);
@@ -657,7 +663,7 @@ export default function LicenceCentreSheetPage() {
   const onUploadSource = useCallback(
     async (files: File[]) => {
       if (!files.length) return;
-      setBusy(true);
+      setSourceBusy(true);
       try {
         // NAME THEM FIRST, so the scanner knows the shape and which way is up,
         // and so the two sides of a licence can be told apart.
@@ -681,10 +687,18 @@ export default function LicenceCentreSheetPage() {
             ? 'Added the paperwork.'
             : `Added ${prepared.length} pages.`,
         );
-      } catch {
-        setToast('We could not add that just now. Please try again.');
+      } catch (e) {
+        // ⚠️ THE SERVER'S WORDS, NOT OURS. It refuses by name ("That exact
+        // file is already attached", "That file is larger than 10 MB") and
+        // replacing that with "something went wrong" leaves the member guessing
+        // at a problem we already diagnosed. A blank bar is worse than either.
+        setToast(
+          e instanceof Error && e.message
+            ? e.message
+            : 'We could not add that just now. Please try again.',
+        );
       } finally {
-        setBusy(false);
+        setSourceBusy(false);
       }
     },
     [getToken, id, load],
@@ -1027,6 +1041,7 @@ export default function LicenceCentreSheetPage() {
           signed={sellerSigned}
           generated={sheet.application.status === 'COMPLETED'}
           onUpload={onUploadSource}
+          busy={sourceBusy}
           onArrived={async (status) => {
             await load();
             setToast(

@@ -41,6 +41,26 @@ export interface SourceFaceAnswer {
   rotate: 0 | 90 | 180 | 270 | undefined;
 }
 
+/** The shape every extraction must answer in, enforced by the provider. */
+const EXTRACT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    fields: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string' },
+          value: { type: 'string' },
+          confidence: { type: 'string', enum: ['high', 'low'] },
+        },
+        required: ['key', 'value'],
+      },
+    },
+  },
+  required: ['fields'],
+};
+
 const FACE_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
@@ -84,6 +104,30 @@ const ROTATE_FOR_EDGE: Record<string, 0 | 90 | 180 | 270> = {
   bottom: 180,
   right: 270,
 };
+
+/** Parse one face answer. Null when the model did not answer in JSON. */
+function parseFaceAnswer(
+  text: string,
+): { side: 'front' | 'back' | null; saps271: boolean; rotate: 0 | 90 | 180 | 270 | undefined } | null {
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    const parsed = JSON.parse(m[0]) as {
+      side?: unknown;
+      orientation?: unknown;
+      saps271?: unknown;
+    };
+    const side = String(parsed.side ?? '').trim().toLowerCase();
+    const edge = String(parsed.orientation ?? '').trim().toLowerCase();
+    return {
+      side: side === 'front' || side === 'back' ? side : null,
+      saps271: parsed.saps271 === true,
+      rotate: ROTATE_FOR_EDGE[edge],
+    };
+  } catch {
+    return null;
+  }
+}
 
 // ────────────────────────────────────────────────────────────────────
 // READING WHAT THE APPLICANT ALREADY HAS.
@@ -715,6 +759,14 @@ export class MotivationExtractService {
           },
         ],
         purpose: `motivation.extract.${kind.toLowerCase()}`,
+        // ⚠️ THE SHAPE IS THE PROVIDER'S JOB, NOT THE PROMPT'S (2026-10-14).
+        // This call used to rely on the system prompt saying "Return STRICT
+        // JSON and nothing else" — and the current model answered in prose
+        // ("Here is the JSON …"), so every extraction came back unparseable and
+        // NOTHING was filled from the document. `readFirearm` has carried a
+        // schema since it was written and never had this failure; this is the
+        // same constraint on the same kind of call.
+        json: { schema: EXTRACT_SCHEMA },
         timeoutMs: 60_000,
       });
       text = res.text.trim();
@@ -1064,49 +1116,90 @@ export class MotivationExtractService {
     }
     const saps271 = looksLikeSaps271(text ?? '');
 
+    /**
+     * ⚠️ THE SIDE IS READ OFF THE WORDS WHEN THE WORDS ARE THERE (2026-10-14).
+     * Operator: "for front identify the following: Serial Number, Make, Calibre,
+     * Type, Model. for back: Signature, Fingerprint." Those are printed words,
+     * so the OCR text settles it without a model — which is faster and cannot
+     * answer in prose. The model is only asked when the page was not read (no
+     * Vision) or the words are ambiguous.
+     */
+    const ocrLower = (text ?? '').toLowerCase();
+    const hasBack = ocrLower.includes('fingerprint') && ocrLower.includes('signature');
+    const hasFront =
+      /serial\s*(no|number)/.test(ocrLower) &&
+      /(calibre|caliber)/.test(ocrLower);
+    const ocrSide: 'front' | 'back' | null =
+      hasFront && !hasBack ? 'front' : hasBack && !hasFront ? 'back' : null;
+    if (ocrSide) {
+      // The quarter turn the scanner needs comes from its ink axis; the model's
+      // up/down answer is a nicety we forgo here rather than pay five seconds
+      // and risk a prose answer for a side we already know.
+      return { side: ocrSide, saps271, rotate: undefined };
+    }
+
     if (!this.llm.isConfigured()) {
       return { side: null, saps271, rotate: undefined };
     }
 
-    try {
-      const res = await this.llm.complete({
-        maxTokens: 120,
-        thinking: { budgetTokens: 0 },
-        system: FACE_SYSTEM,
-        messages: [
+    // ⚠️ THE OCR TEXT IS HANDED IN AS DATA. A back prints "Signature" and
+    // "Fingerprint", which is far easier to name from the words than from a
+    // photograph of a card held at an angle.
+    const ocrBlock = (text ?? '').trim()
+      ? [
           {
-            role: 'user',
-            content: [
-              contentBlock(args.bytes, args.mimeType),
-              { type: 'text', text: FACE_USER },
-            ],
+            type: 'text' as const,
+            text:
+              'A separate OCR pass over the SAME image read these characters. ' +
+              'Use them to settle what the picture shows.' +
+              String.fromCharCode(10) +
+              String.fromCharCode(10) +
+              '<ocr>' +
+              String.fromCharCode(10) +
+              text +
+              String.fromCharCode(10) +
+              '</ocr>',
           },
-        ],
-        json: { schema: FACE_SCHEMA },
-        purpose: 'motivation.source.face',
-        timeoutMs: 30_000,
-      });
-      const m = res.text.match(/\{[\s\S]*\}/);
-      const parsed = JSON.parse(m ? m[0] : res.text) as {
-        side?: unknown;
-        orientation?: unknown;
-        saps271?: unknown;
-      };
-      const side = String(parsed.side ?? '').trim().toLowerCase();
-      const edge = String(parsed.orientation ?? '').trim().toLowerCase();
-      return {
-        side: side === 'front' || side === 'back' ? side : null,
-        // Either the printed form number (from the OCR, free) or the model's
-        // own reading — whichever fired.
-        saps271: saps271 || parsed.saps271 === true,
-        rotate: ROTATE_FOR_EDGE[edge],
-      };
-    } catch (err) {
-      this.logger.warn(
-        `Source face read failed: ${MotivationExtractService.why(err)}`,
-      );
-      return { side: null, saps271, rotate: undefined };
+        ]
+      : [];
+
+    // ⚠️ TWO ATTEMPTS, THE SAME AS readFirearm. The model sometimes answers in
+    // prose despite the schema; a second try is cheaper than losing the pair.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await this.llm.complete({
+          maxTokens: 120,
+          thinking: { budgetTokens: 0 },
+          system: FACE_SYSTEM,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                contentBlock(args.bytes, args.mimeType),
+                ...ocrBlock,
+                { type: 'text', text: FACE_USER },
+              ],
+            },
+          ],
+          json: { schema: FACE_SCHEMA },
+          purpose: 'motivation.source.face',
+          timeoutMs: 30_000,
+        });
+        const parsed = parseFaceAnswer(res.text);
+        if (parsed) {
+          return {
+            side: parsed.side,
+            saps271: saps271 || parsed.saps271,
+            rotate: parsed.rotate,
+          };
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Source face read failed: ${MotivationExtractService.why(err)}`,
+        );
+      }
     }
+    return { side: null, saps271, rotate: undefined };
   }
 
   /**

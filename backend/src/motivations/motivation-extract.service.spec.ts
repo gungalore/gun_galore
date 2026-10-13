@@ -526,3 +526,44 @@ describe('failing softly', () => {
     expect(typeof part.data).toBe('string');
   });
 });
+
+// -------------------------------------------------------------------
+// THE FACE OF A LICENCE CARD (2026-10-14).
+//
+// Operator: "for front identify the following: Serial Number, Make, Calibre,
+// Type, Model. for back: Signature, Fingerprint." The client composes a front
+// and a back onto one page, so this answer is what pairs them.
+// -------------------------------------------------------------------
+describe('classifyFace', () => {
+  const face = (ocrText: string) =>
+    new MotivationExtractService(
+      { isConfigured: () => false } as never,
+      noReadCache(),
+    ).classifyFace({ bytes: Buffer.from('x'), mimeType: 'image/jpeg', ocrText });
+
+  it('names the FRONT from Serial Number + Calibre', async () => {
+    await expect(
+      face(
+        'Licence To Possess a Firearm\nSerial Number ZABA01892\nCalibre 9MM PAR\nMake GLOCK\nType HANDGUN',
+      ),
+    ).resolves.toMatchObject({ side: 'front' });
+  });
+
+  it('names the BACK from Signature + Fingerprint', async () => {
+    await expect(
+      face('SOUTH AFRICA\nSignature\nFingerprint'),
+    ).resolves.toMatchObject({ side: 'back' });
+  });
+
+  it('says nothing when neither set is printed', async () => {
+    await expect(face('a photograph of a table')).resolves.toMatchObject({
+      side: null,
+    });
+  });
+
+  it('flags a SAPS 271 form', async () => {
+    await expect(
+      face('SAPS 271\nApplication for a licence to possess a firearm'),
+    ).resolves.toMatchObject({ saps271: true });
+  });
+});

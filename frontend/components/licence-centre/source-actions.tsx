@@ -42,6 +42,15 @@ export interface SourceActionsProps {
   generated: boolean;
   /** Files chosen from this device, filed as the source proof. */
   onUpload?: (files: File[]) => void | Promise<void>;
+  /**
+   * A batch is in flight — naming, straightening, pairing and filing.
+   *
+   * ⚠️ THE BUTTON MUST SAY SO (2026-10-14). The treatment is a scanner pipeline
+   * (a model call per image, then warp, then upload), so it takes tens of
+   * seconds for two photographs. A button that looks idle through all of it is
+   * a member pressing it again.
+   */
+  busy?: boolean;
   onAdopt?: (fields: Record<string, string>) => void;
   onArrived?: (status: 'COMPLETED' | 'DECLINED') => void;
 }
@@ -54,6 +63,7 @@ export default function SourceActions({
   signed,
   generated,
   onUpload,
+  busy = false,
   onAdopt,
   onArrived,
 }: SourceActionsProps) {
@@ -74,18 +84,23 @@ export default function SourceActions({
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className={`${button} cursor-pointer`}>
-          Upload the applied-for firearm&rsquo;s paperwork
+        <label
+          className={`${button} cursor-pointer ${busy ? 'opacity-60' : ''}`}
+        >
+          {busy
+            ? 'Reading your pictures…'
+            : 'Upload the applied-for firearm\u2019s paperwork'}
           <input
             type="file"
             accept={ACCEPT}
             multiple
+            disabled={busy}
             className="sr-only"
             onChange={(e) => {
               const files = Array.from(e.target.files ?? []);
               // Reset first, so picking the same file twice fires again.
               e.target.value = '';
-              if (files.length) void onUpload?.(files);
+              if (!busy && files.length) void onUpload?.(files);
             }}
           />
         </label>
@@ -94,6 +109,7 @@ export default function SourceActions({
           <button
             type="button"
             aria-expanded={consentOpen}
+            disabled={busy}
             onClick={() => setConsentOpen((v) => !v)}
             className={button}
           >
