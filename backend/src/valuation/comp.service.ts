@@ -284,15 +284,31 @@ export class CompService {
       };
     }
 
-    const low = compLow != null ? Math.min(compLow, mid) : roundTo100(Math.round(mid * 0.8));
-    const high = compHigh != null ? Math.max(compHigh, mid) : roundTo100(Math.round(mid * 1.2));
+    // ⚠️ A COLLAPSED BAND READS AS NONSENSE. With a thin pool the weighted
+    // median can land on the pool's maximum (a heavily weighted own-sold or
+    // fresh comp), so compHigh == mid and high == mid. The member then saw
+    // "Mid R8 558 / High R8 558" with a recommended asking ABOVE the high and
+    // a "Hold out" tier BELOW it. Widen any collapsed side to the same default
+    // band used when there are no comps at all (0.8 / 1.2), and never let the
+    // top of the range sit below the asking price.
+    let low = compLow != null ? Math.min(compLow, mid) : roundTo100(Math.round(mid * 0.8));
+    let high = compHigh != null ? Math.max(compHigh, mid) : roundTo100(Math.round(mid * 1.2));
+    if (high <= mid) high = roundTo100(Math.round(mid * 1.2));
+    if (low >= mid) low = roundTo100(Math.round(mid * 0.8));
+    const asking = roundTo100(Math.round(mid * 1.05));
+    if (high < asking) high = asking;
+    // Expected sale sits between the low end and the mid, never outside the
+    // band: a fair buyer price is below the ask and above the floor.
+    let expectedSale = roundTo100(Math.round(mid * 0.97));
+    if (expectedSale < low) expectedSale = low;
+    if (expectedSale > mid) expectedSale = mid;
 
     return {
       low,
       mid,
       high,
-      asking: roundTo100(Math.round(mid * 1.05)),
-      expectedSale: roundTo100(Math.round(mid * 0.97)),
+      asking,
+      expectedSale,
       retailAnchor: anchor,
       compCount: usedCount,
       basis,

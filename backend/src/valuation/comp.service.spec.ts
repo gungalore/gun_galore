@@ -202,6 +202,36 @@ describe('CompService.resolvePricing', () => {
     expect(p.mid).toBe(4_000_000);
   });
 
+  // ⚠️ PAID FOR BY A LIVE RESULT: "Mid R8 558 / High R8 558", a recommended
+  // asking ABOVE the high, and a "Hold out" tier BELOW it. A thin pool let the
+  // weighted median land on the maximum, collapsing the band.
+  it('widens a collapsed band on a thin pool so the range stays ordered', () => {
+    const p = svc.resolvePricing([kept({ priceCents: 3_000_000 })], {
+      ...BASE_INPUT,
+      minComps: 1,
+    });
+    expect(p.mid).toBe(3_000_000);
+    expect(p.high!).toBeGreaterThan(p.mid!);
+    expect(p.low!).toBeLessThan(p.mid!);
+    expect(p.asking!).toBeLessThanOrEqual(p.high!);
+    expect(p.expectedSale!).toBeGreaterThanOrEqual(p.low!);
+    expect(p.expectedSale!).toBeLessThanOrEqual(p.mid!);
+  });
+
+  it('never lets the asking price exceed the high when the median lands on the max', () => {
+    const p = svc.resolvePricing(
+      [
+        kept({ priceCents: 1_000_000, sourceSite: 'bidorbuy.co.za' }),
+        kept({ priceCents: 4_000_000, sourceSite: 'own-sold' }),
+      ],
+      { ...BASE_INPUT, minComps: 2 },
+    );
+    expect(p.mid).toBe(4_000_000);
+    expect(p.low!).toBeLessThan(p.mid!);
+    expect(p.high!).toBeGreaterThan(p.mid!);
+    expect(p.asking!).toBeLessThanOrEqual(p.high!);
+  });
+
   it('weights fresher comps more heavily toward the median', () => {
     const now = Date.now();
     const fiveYearsAgo = new Date(now - 5 * 365.25 * 24 * 3600 * 1000);

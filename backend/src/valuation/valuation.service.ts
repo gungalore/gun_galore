@@ -761,14 +761,25 @@ export class ValuationService {
       );
     }
     const pkgMid = addUplift(pricing.mid, accessorySum);
+    const pkgLow = addUplift(pricing.low, accessorySum);
+    let pkgHigh = addUplift(pricing.high, accessorySum);
+    const askingCents = pkgMid != null ? roundTo100c(pkgMid * 1.05) : null;
+    // ⚠️ Accessories are added flat to the band but proportionally to the ask,
+    // so a package "High" can land a hair below the recommended asking. Clamp
+    // so the asking price is never above the top of the range, and the expected
+    // sale never falls outside it either.
+    if (pkgHigh != null && askingCents != null && pkgHigh < askingCents) pkgHigh = askingCents;
+    let expectedCents = pkgMid != null ? roundTo100c(pkgMid * 0.97) : null;
+    if (expectedCents != null && pkgLow != null && expectedCents < pkgLow) expectedCents = pkgLow;
+    if (expectedCents != null && pkgMid != null && expectedCents > pkgMid) expectedCents = pkgMid;
 
     const finalPricing = priced
       ? {
-          lowZar: centsToZar(addUplift(pricing.low, accessorySum)),
+          lowZar: centsToZar(pkgLow),
           midZar: centsToZar(pkgMid),
-          highZar: centsToZar(addUplift(pricing.high, accessorySum)),
-          askingZar: pkgMid != null ? centsToZar(roundTo100c(pkgMid * 1.05)) : null,
-          expectedSaleZar: pkgMid != null ? centsToZar(roundTo100c(pkgMid * 0.97)) : null,
+          highZar: centsToZar(pkgHigh),
+          askingZar: centsToZar(askingCents),
+          expectedSaleZar: centsToZar(expectedCents),
           retailAnchorZar: centsToZar(pricing.retailAnchor),
           missingData: null,
         }
@@ -805,19 +816,19 @@ export class ValuationService {
             {
               key: 'fast',
               label: 'Sell fast',
-              priceZar: centsToZar(roundTo100c(pkgMid * 0.97)),
+              priceZar: centsToZar(expectedCents),
               note: 'Priced to move quickly',
             },
             {
               key: 'balanced',
               label: 'Recommended',
-              priceZar: centsToZar(roundTo100c(pkgMid * 1.05)),
+              priceZar: centsToZar(askingCents),
               note: 'Balanced price for a normal sale',
             },
             {
               key: 'patient',
               label: 'Hold out',
-              priceZar: centsToZar(addUplift(pricing.high, accessorySum)),
+              priceZar: centsToZar(pkgHigh),
               note: 'If you can wait for the right buyer',
             },
           ]
