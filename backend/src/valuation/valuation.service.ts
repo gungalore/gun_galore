@@ -555,41 +555,72 @@ export class ValuationService {
     );
 
     try {
-      const result = await this.researchService.research({
-        valuationId: id,
-        imageUrls: selected.map((i) => i.url),
-        categorySlug,
-        make: confirmedMake,
-        model: confirmedModel,
-        keySpec: confirmedKeySpec,
-        conditionBand,
-        answersText,
-        description: valuation.description,
-        config,
-      });
+      const started = Date.now();
+      // ⚠️ HARD CEILING ON THE WHOLE RESEARCH RUN. The per-call timeouts were
+      // not enough: a retry storm could leave the member staring at a spinner
+      // past eight minutes with nothing written. This bounds the run so it
+      // always ends COMPLETED or FAILED well inside the promised window.
+      const budgetMs = Number(process.env.VALUATION_RESEARCH_BUDGET_MS ?? 240_000);
+      const result = await this.withBudget(
+        this.researchService.research({
+          valuationId: id,
+          imageUrls: selected.map((i) => i.url),
+          categorySlug,
+          make: confirmedMake,
+          model: confirmedModel,
+          keySpec: confirmedKeySpec,
+          conditionBand,
+          answersText,
+          description: valuation.description,
+          config,
+        }),
+        budgetMs,
+      );
+      this.logger.log(`research ${id} run finished in ${Date.now() - started}ms`);
       await this.finalise(id, categorySlug, result, config.minComps);
       this.events.emitResearch(id, { type: 'done', valuationId: id });
     } catch (err) {
       const message = (err as Error).message;
+      const errorCode = message.startsWith('SCHEMA_VALIDATION_FAILED')
+        ? 'SCHEMA_VALIDATION_FAILED'
+        : message.startsWith('RESEARCH_TIMEOUT')
+          ? 'RESEARCH_TIMEOUT'
+          : 'MODEL_ERROR';
       this.logger.warn(`research ${id} failed: ${message}`);
       await this.prisma.valuation.update({
         where: { id },
         data: {
           status: 'FAILED',
-          errorCode: message.startsWith('SCHEMA_VALIDATION_FAILED')
-            ? 'SCHEMA_VALIDATION_FAILED'
-            : 'MODEL_ERROR',
+          errorCode,
           errorMessage: message.slice(0, 500),
         },
       });
-      this.events.emitResearch(id, {
-        type: 'failed',
-        errorCode: message.startsWith('SCHEMA_VALIDATION_FAILED')
-          ? 'SCHEMA_VALIDATION_FAILED'
-          : 'MODEL_ERROR',
-        message,
-      });
+      this.events.emitResearch(id, { type: 'failed', errorCode, message });
     }
+  }
+
+  /**
+   * Reject if `promise` does not settle within `ms`. The abandoned research
+   * run may still resolve in the background, but nothing reads its value, so
+   * it cannot write a late COMPLETED over the FAILED set above.
+   */
+  private withBudget<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`RESEARCH_TIMEOUT: exceeded ${ms}ms`)),
+        ms,
+      );
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err as Error);
+        },
+      );
+    });
   }
 
   private async finalise(

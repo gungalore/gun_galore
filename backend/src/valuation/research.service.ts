@@ -11,8 +11,22 @@ import { researchSystemPrompt } from './prompts';
 import { RawComp, RESULT_SCHEMA, parseResult, ResultOutput } from './schemas';
 
 // The gateway intermittently returns a degenerate `[]` for a structured call;
-// re-request. See identify.service for the same guard.
-const MAX_VALIDATION_RETRIES = 5;
+// re-request. See identify.service for the same guard. Kept at 3 because each
+// retry re-sends the whole conversation (images + grounding) and a fifth slow
+// attempt is what pushed a valuation past eight minutes.
+const MAX_VALIDATION_RETRIES = 3;
+
+// Per-stage ceilings, env-tunable so a slow provider can be dialled without a
+// deploy. The grounded search turn is the long pole: the AiUsage ledger shows
+// it at 160-220s per run, so its ceiling stays at 240s to avoid cutting a run
+// that was going to succeed. The extraction is short (4-50s) but its retries
+// were the blow-up, so its ceiling is 60s and it retries at most 3 times.
+function searchTimeoutMs(): number {
+  return Number(process.env.VALUATION_RESEARCH_SEARCH_TIMEOUT_MS ?? 240_000);
+}
+function extractTimeoutMs(): number {
+  return Number(process.env.VALUATION_RESEARCH_EXTRACT_TIMEOUT_MS ?? 60_000);
+}
 
 function isDegenerate(raw: string): boolean {
   const t = raw.trim();
@@ -101,11 +115,17 @@ export class ResearchService {
       detail: `Confirming spec: ${[args.make, args.model, args.keySpec].filter(Boolean).join(' ') || args.categorySlug}`,
     });
 
-    const images: LlmPart[] = [];
-    for (const url of args.imageUrls) {
-      const blob = await fetchImageBase64(url);
-      if (blob) images.push({ type: 'image', mimeType: blob.mimeType, data: blob.data });
-    }
+    // Fetch photos in PARALLEL and with a per-image timeout. The old serial
+    // loop with an unbounded fetch meant one slow photo URL stalled the whole
+    // valuation before a single model call had been made.
+    const imagesStarted = Date.now();
+    const fetched = await Promise.all(args.imageUrls.map((url) => fetchImageBase64(url)));
+    const images: LlmPart[] = fetched
+      .filter((b): b is { mimeType: string; data: string } => b !== null)
+      .map((blob) => ({ type: 'image', mimeType: blob.mimeType, data: blob.data }));
+    this.logger.log(
+      `valuation ${args.valuationId} stage images ${Date.now() - imagesStarted}ms (${images.length}/${args.imageUrls.length})`,
+    );
 
     this.events.emitResearch(args.valuationId, {
       type: 'step',
@@ -137,6 +157,7 @@ export class ResearchService {
     // candidates and anchors above are EXTRA evidence. This always runs, so a
     // thin Serper result can never weaken the search.
     if (this.llm.isConfiguredFor('valuation.research')) {
+      const searchStarted = Date.now();
       const searchTurn = await this.llm.complete({
         system: researchSystemPrompt({
           specBlock,
@@ -152,8 +173,11 @@ export class ResearchService {
         // extractor still runs at this budget. Trims the perceived "hang".
         thinking: { budgetTokens: 2048 },
         purpose: 'valuation.research',
-        timeoutMs: 240_000,
+        timeoutMs: searchTimeoutMs(),
       });
+      this.logger.log(
+        `valuation ${args.valuationId} stage search ${Date.now() - searchStarted}ms`,
+      );
       meter.recordLlm(searchTurn.usage, searchTurn.model);
       messages.push(searchTurn.assistantMessage);
       if (searchTurn.groundingSources?.length) {
@@ -181,11 +205,19 @@ export class ResearchService {
       },
     ];
 
+    const extractStarted = Date.now();
     const parsed = await this.extractOnce(extraction, meter, args);
+    this.logger.log(
+      `valuation ${args.valuationId} stage extract ${Date.now() - extractStarted}ms`,
+    );
 
     // Verify every cited comp: pageOpened is set by our own fetch, never by
     // the model's claim.
+    const verifyStarted = Date.now();
     parsed.comps = await this.verifyComps(parsed.comps);
+    this.logger.log(
+      `valuation ${args.valuationId} stage verify ${Date.now() - verifyStarted}ms`,
+    );
     this.logger.log(
       `valuation ${args.valuationId} spend ${JSON.stringify(meter.summary())} comps=${parsed.comps.length}`,
     );
@@ -217,7 +249,7 @@ export class ResearchService {
           json: { schema: RESULT_SCHEMA },
           thinking: { budgetTokens: 0 },
           purpose: 'valuation.research',
-          timeoutMs: 180_000,
+          timeoutMs: extractTimeoutMs(),
         });
       } catch (err) {
         // ⚠️ A THROWN PROVIDER ERROR MUST BE RETRIED, NOT FATAL. Qwen returns
@@ -439,7 +471,8 @@ async function fetchImageBase64(
   url: string,
 ): Promise<{ mimeType: string; data: string } | null> {
   try {
-    const res = await fetch(url);
+    // Bounded: an unresponsive photo host must not hold the whole valuation.
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return null;
     const mimeType = res.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg';
     const buf = Buffer.from(await res.arrayBuffer());
