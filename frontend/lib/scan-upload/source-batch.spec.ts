@@ -51,8 +51,24 @@ describe('the applied-for-firearm batch', () => {
     expect(out[0].identifyId).toBe('a');
   });
 
-  it('uploads a lone image as its own page', async () => {
+  it('⚠️ composes a BACK then a FRONT, whatever order they were picked', async () => {
+    // Operator hit exactly this: one attempt composed, the next did not, because
+    // the pairing used to require the front to arrive first.
+    const front = img('front.jpg');
+    const back = img('back.jpg');
     const out = await prepareSourceBatch(
+      [back, front],
+      [
+        { id: 'b', side: 'back', kind: 'CURRENT_LICENCE' },
+        { id: 'a', side: 'front', kind: 'CURRENT_LICENCE' },
+      ],
+    );
+    expect(composeSides).toHaveBeenCalledWith(front, back);
+    expect(out).toHaveLength(1);
+    expect(out[0].identifyId).toBe('a');
+  });
+
+  it('uploads a lone image as its own page', async () => {    const out = await prepareSourceBatch(
       [img('invoice.jpg')],
       [{ id: 'a', side: null, kind: 'FIREARM_SOURCE_PROOF' }],
     );

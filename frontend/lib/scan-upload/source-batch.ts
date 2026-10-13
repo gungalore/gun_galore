@@ -57,49 +57,65 @@ export async function prepareSourceBatch(
   files: File[],
   verdicts: SourceVerdict[],
 ): Promise<PreparedUpload[]> {
-  const out: PreparedUpload[] = [];
-  let front: PreparedUpload | null = null;
-
-  const flushFront = () => {
-    if (front) {
-      out.push(front);
-      front = null;
-    }
-  };
-
+  // ── 1. Polish each page, one at a time ────────────────────────────
+  //
+  // ⚠️ SEQUENTIALLY. The detector is a single shared worker; firing every
+  // image at it at once makes the later ones contend for it. The vault's own
+  // batch does the same for the same reason.
+  const items: (PreparedUpload & { side: 'front' | 'back' | null })[] = [];
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     const v = verdicts[i];
-    const identifyId = v?.id ?? '';
-    const saps271 = v?.saps271 === true;
-
-    const shape: DocShape = v?.side ? 'card' : shapeForKind(v?.kind ?? '');
+    const side = v?.side ?? null;
+    const shape: DocShape = side ? 'card' : shapeForKind(v?.kind ?? '');
     const prepared = isPdf(file) ? file : await autoPolish(file, shape, v?.rotate);
-
-    if (v?.side === 'front') {
-      // A second front with no back between them: the first is its own page.
-      flushFront();
-      front = { file: prepared, identifyId, saps271 };
-      continue;
-    }
-
-    if (v?.side === 'back' && front) {
-      try {
-        const composed = await composeSides(front.file, prepared);
-        // A composed card page is never a 271 form.
-        out.push({ file: composed, identifyId: front.identifyId });
-      } catch {
-        // The pair could not be composed — keep both pages rather than lose one.
-        out.push(front, { file: prepared, identifyId, saps271 });
-      }
-      front = null;
-      continue;
-    }
-
-    flushFront();
-    out.push({ file: prepared, identifyId, saps271 });
+    items.push({
+      file: prepared,
+      identifyId: v?.id ?? '',
+      saps271: v?.saps271 === true,
+      side,
+    });
   }
 
-  flushFront();
-  return out;
+  // ── 2. Compose the two sides of the card ──────────────────────────
+  //
+  // ⚠️ ORDER-INDEPENDENT (2026-10-14). The pairing used to require the front to
+  // arrive BEFORE the back, so a member who picked the back first — or whose
+  // picker returned them in that order — got two separate pages and no compose.
+  // Operator hit exactly that: one attempt composed, the next did not. Find the
+  // front and the back wherever they are.
+  const frontIdx = items.findIndex((x) => x.side === 'front');
+  const backIdx = items.findIndex((x) => x.side === 'back');
+  if (frontIdx !== -1 && backIdx !== -1) {
+    try {
+      const composed = await composeSides(
+        items[frontIdx].file,
+        items[backIdx].file,
+      );
+      const out: PreparedUpload[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (i === frontIdx) {
+          // The composed page takes the front's verdict id; it is the page the
+          // server reads the firearm off.
+          out.push({ file: composed, identifyId: items[i].identifyId });
+          continue;
+        }
+        if (i === backIdx) continue;
+        out.push({
+          file: items[i].file,
+          identifyId: items[i].identifyId,
+          saps271: items[i].saps271,
+        });
+      }
+      return out;
+    } catch {
+      // The pair could not be composed — keep both pages rather than lose one.
+    }
+  }
+
+  return items.map((x) => ({
+    file: x.file,
+    identifyId: x.identifyId,
+    saps271: x.saps271,
+  }));
 }
