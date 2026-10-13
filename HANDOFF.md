@@ -7,6 +7,36 @@ overwritten.
 
 Last updated: **2026-10-13**.
 
+## 2026-10-13 — MOTIVATIONS: THE PROFICIENCY CERTIFICATE IS OPTIONAL (BACKEND DEPLOY)
+
+Commit **`681a08c8`** (`fix(motivations): the proficiency certificate is
+optional`), 3 files, backend-only deploy via `--backend-only`. Rollback point
+`alloutdoor-20261013-141346.dump` (29 MB). Backend health x2 OK, public 200 x2,
+three pm2 services online. Deployed HEAD `681a08c8`.
+
+Gates: backend `tsc` clean + **346 suites/5510 tests**.
+
+**The correction (operator, 2026-10-13).** The earlier gate (762da5de) made the
+provider certificate mandatory. The operator clarified the rule: "the pack must
+include the annexure for the act and the annexure for the firearm that is being
+applied for. minimum statement of results. Certificate optional but must be
+added if available. if both are on one statement of result just add one annexure
+but reference both Act and firearm."
+
+**What changed.** `proficiencyPackGap()` now blocks on only two things: no
+attached page carries 117705, or no attached page carries the applied firearm's
+unit standard. A single statement of results carrying both satisfies both. The
+missing certificate is still noted as `certificateMissing`, but
+`hasProficiencyPackGap()` ignores it, so a lone statement of results never
+refuses a pack. The gate message and its spec were updated to match.
+
+**Know.** "Reference both Act and firearm" is satisfied by the one-page case: a
+combined statement settles both requirements on a single annexure. The annexure
+INDEX title is still the generic "Proficiency / training certificate" — it is
+built from upload KINDS only, so if the operator wants that index line to name
+the codes, `buildAnnexures` would need the unit standards passed in (not done;
+flag if wanted).
+
 ## 2026-10-13 — MOTIVATIONS: THE ACT AND A COMPLETE PROFICIENCY (BACKEND DEPLOY)
 
 Commit **`762da5de`** (`feat(motivations): the pack needs the Act and a
