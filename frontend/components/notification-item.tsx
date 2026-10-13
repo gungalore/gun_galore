@@ -260,25 +260,43 @@ export function NotificationItem({
       </Link>
 
       {!resolved && item.dismissible && (
+        // ⚠️ IT WAS A BARE "×" IN FAINT GREY — a 18px glyph on a transparent
+        // ground that read as decoration, not a control, and was the single
+        // thing members could not find ("how do I get rid of this?"). It is
+        // now a bordered, labelled pill with a real touch target, so "clear
+        // this" is legible before it is tapped. Kept as a sibling of the Link
+        // (never inside it) so clearing never navigates.
         <button
           type="button"
-          aria-label="Dismiss"
+          aria-label="Clear this notification"
+          title="Clear this notification"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
             onDismiss(item.id);
           }}
           style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--text-tertiary)',
-            fontSize: 18,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--border)',
+            borderRadius: 8,
+            color: 'var(--text-secondary)',
+            fontSize: 12,
+            fontWeight: 600,
+            lineHeight: 1,
             cursor: 'pointer',
-            padding: '4px 8px',
+            padding: '8px 11px',
+            minHeight: 34,
             flexShrink: 0,
+            whiteSpace: 'nowrap',
           }}
         >
-          ×
+          <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>
+            ×
+          </span>
+          Clear
         </button>
       )}
 
