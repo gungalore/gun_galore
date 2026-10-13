@@ -65,6 +65,7 @@ import {
   evidenceRow,
   isAnnexureEvidence,
 } from './evidence-taxonomy';
+import { looksLikeSaps271, SAPS_271_MARKER } from '../common/document-markers';
 import {
   FIELD_REGISTRY_VERSION,
   fieldsFor,
@@ -134,6 +135,21 @@ export interface IdentifyVerdict {
   container: string | null;
   confident: boolean;
   ocrChars: number | null;
+  /**
+   * Which way up the page is, as how far to turn it clockwise. Undefined when
+   * the model could not tell. The headless scanner turns the page with this.
+   */
+  rotate?: 0 | 90 | 180 | 270;
+  /**
+   * Which side of a firearm licence card this page is, or null. Two images that
+   * are a front and a back are composed onto one page by the client.
+   */
+  side?: 'front' | 'back' | null;
+  /**
+   * The page IS a SAPS 271 application form. We read it and place its facts; it
+   * is never printed as an annexure. See common/document-markers.ts.
+   */
+  saps271?: boolean;
 }
 
 /**
@@ -2295,6 +2311,18 @@ export class MotivationDocumentsService {
       confident = false;
     }
 
+    // ── The face of a card, and which way up the page is ──────────────
+    //
+    // ⚠️ IMAGES ONLY. A PDF is not composed and not turned by the client's
+    // scanner; asking the model to name the side of a PDF page would spend a
+    // call on an answer nobody uses. The 271 answer is a printed form number and
+    // is read from the OCR text without a model at all.
+    const face = file.mimetype.startsWith('image/')
+      ? await this.extract
+          .classifyFace({ bytes: file.buffer, mimeType: file.mimetype, ocrText })
+          .catch(() => null)
+      : null;
+
     await this.identifyStore.put({
       id,
       ownerId,
@@ -2314,6 +2342,9 @@ export class MotivationDocumentsService {
       container,
       confident,
       ocrChars: ocrText === null ? null : ocrText.length,
+      ...(face
+        ? { side: face.side, saps271: face.saps271, rotate: face.rotate }
+        : {}),
     };
   }
 
@@ -2369,6 +2400,8 @@ export class MotivationDocumentsService {
       skipExtraction?: boolean;
       identifyId?: string;
       description?: string;
+      /** The client's verdict said this page is a SAPS 271 form (never annexed). */
+      saps271?: boolean;
     } = {},
   ) {
     await this.quota.assertEnabled();
@@ -2745,13 +2778,22 @@ export class MotivationDocumentsService {
           MotivationExtractService.readsFirearm(resolved))
       ) {
         try {
+          // ⚠️ A SAPS 271 IS READ, NEVER ANNEXED (2026-10-13). Operator: "271
+          // just extracts the information and adds it where it needs to be. any
+          // other document that serves as evidence becomes an annexure." The
+          // sentinel rides on extractedFields (a String[] already in the clear),
+          // and the pack skips anything carrying it — no schema change.
+          const is271 = opts.saps271 === true || looksLikeSaps271(ocrText ?? '');
           await this.prisma.motivationUpload.update({
             where: { id: created.id },
             data: {
               extractionOk: readable.length > 0,
               // KEYS only in the clear — the registry is not PII, the values
               // are. The values themselves are encrypted.
-              extractedFields: readable.map((f) => f.key),
+              extractedFields: [
+                ...readable.map((f) => f.key),
+                ...(is271 ? [SAPS_271_MARKER] : []),
+              ],
               extractionEncrypted: readable.length
                 ? encryptJson(
                     Object.fromEntries(readable.map((f) => [f.key, f.value])),

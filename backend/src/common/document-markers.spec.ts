@@ -1,6 +1,7 @@
 import {
   DOCUMENT_MARKERS,
   MODEL_ONLY_KINDS,
+  looksLikeSaps271,
   readMarkers,
 } from './document-markers';
 import { clauseText } from './ocr-tolerant';
@@ -500,5 +501,47 @@ Nationality   Country of birth   Identity Number`;
     // SAPS 524 prints "Identity number" but neither of the other two labels.
     expect(readMarkers(SAPS_524)?.kind).toBe('COMPETENCY_CERTIFICATE');
     expect(readMarkers(GREEN_ID_BOOK)?.strength).toBe('definitive');
+  });
+});
+
+// -------------------------------------------------------------------
+// A SAPS 271 IS READ, NEVER ANNEXED (2026-10-13).
+//
+// Operator: "271 just extracts the information and adds it where it needs to
+// be. any other document that serves as evidence becomes an annexure." The
+// detector here is what the upload uses to stamp the sentinel that keeps the
+// page out of the printed pack.
+// -------------------------------------------------------------------
+describe('looksLikeSaps271', () => {
+  it('recognises the form by its number', () => {
+    expect(looksLikeSaps271('SAPS 271\nApplication for a licence')).toBe(true);
+  });
+
+  it('recognises the form by its title', () => {
+    expect(
+      looksLikeSaps271(
+        'APPLICATION FOR A LICENCE TO POSSESS A FIREARM\nFirearms Control Act',
+      ),
+    ).toBe(true);
+  });
+
+  it('does NOT fire on a licence card', () => {
+    expect(
+      looksLikeSaps271(
+        'Licence To Possess a Firearm\nSerial Number ZABA01892\nType HANDGUN',
+      ),
+    ).toBe(false);
+  });
+
+  it('does NOT fire on a consent letter that merely mentions a licence', () => {
+    expect(
+      looksLikeSaps271(
+        'I, the licensed holder, consent to the applicant applying for a licence to possess the firearm listed below.',
+      ),
+    ).toBe(false);
+  });
+
+  it('says nothing about an empty page', () => {
+    expect(looksLikeSaps271('')).toBe(false);
   });
 });

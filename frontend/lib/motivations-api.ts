@@ -530,6 +530,30 @@ export interface AddedUpload extends UploadRow {
 }
 
 /**
+ * One file's verdict from identify(), named by a server-minted id.
+ *
+ * ⚠️ `side` AND `rotate` EXIST FOR THE APPLIED-FOR-FIREARM DOOR (2026-10-13).
+ * A licence card is photographed as two images — a front (Serial Number, Make,
+ * Calibre, Type, Model) and a back (Signature, Fingerprint) — and the client
+ * composes them onto one page. `rotate` lets the headless scanner turn the page
+ * the right way up. Everything else is the vault's verdict shape.
+ */
+export interface IdentifyVerdict {
+  id: string;
+  role: 'document' | 'evidence';
+  kind: string | null;
+  container: string | null;
+  confident: boolean;
+  ocrChars: number | null;
+  /** Which way up the page is, as how far to turn it clockwise. */
+  rotate?: 0 | 90 | 180 | 270;
+  /** Which side of a firearm licence card this is, or null. */
+  side?: 'front' | 'back' | null;
+  /** The page IS a SAPS 271 form (read, never annexed). */
+  saps271?: boolean;
+}
+
+/**
  * Whether this member holds unit standard 117705, across every document.
  *
  * ⚠️ SERVED, NEVER DERIVED HERE. The answer spans every motivation they have
@@ -1309,9 +1333,30 @@ export const motivationsApi = {
    * document from its contents. That is how a whole pack goes up at once: the
    * member cannot label files that do not exist yet.
    */
-  addUpload: async (t: TokenGetter, id: string, kind: string, file: File) => {
+  addUpload: async (
+    t: TokenGetter,
+    id: string,
+    kind: string,
+    file: File,
+    opts: {
+      /**
+       * The server-minted verdict this file was identified as, so the server
+       * reuses the classification and OCR it already made rather than reading
+       * the page again. See identify().
+       */
+      identifyId?: string;
+      /**
+       * The identified page IS a SAPS 271 form. We read it and place its facts;
+       * it is never printed as an annexure. Carried from the verdict so a PDF
+       * (which Vision cannot OCR) is still suppressed.
+       */
+      saps271?: boolean;
+    } = {},
+  ) => {
     const form = new FormData();
     form.append('kind', kind);
+    if (opts.identifyId) form.append('identifyId', opts.identifyId);
+    if (opts.saps271) form.append('saps271', 'true');
     form.append('file', file);
     // The response carries SUGGESTIONS read off the document. They are not
     // answers yet — the applicant confirms them first.
@@ -1319,6 +1364,32 @@ export const motivationsApi = {
       t,
       `/${id}/uploads`,
       { method: 'POST', body: form },
+    );
+  },
+
+  /**
+   * Name a batch of files before any of them is stored.
+   *
+   * ⚠️ THE SAME DOOR THE LICENCE CENTRE USES. Each file gets a server-minted id
+   * and a verdict: is it a document or evidence, which kind, which container,
+   * which way up the page is, and — for a firearm licence card — which side
+   * (front or back). The client uses `side` to compose the two sides onto one
+   * page and `rotate` to straighten it, then uploads with the id.
+   */
+  identify: (
+    t: TokenGetter,
+    id: string,
+    files: File[],
+    descriptions: string[] = [],
+  ): Promise<IdentifyVerdict[]> => {
+    const form = new FormData();
+    for (const f of files) form.append('files', f);
+    for (const d of descriptions) form.append('descriptions', d ?? '');
+    return request<IdentifyVerdict[]>(
+      t,
+      `/${id}/identify`,
+      { method: 'POST', body: form },
+      [],
     );
   },
 

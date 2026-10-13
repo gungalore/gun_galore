@@ -4,6 +4,7 @@ import { useAuth } from '../../../lib/auth';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motivationsApi } from '@/lib/motivations-api';
+import { prepareSourceBatch } from '@/lib/scan-upload/source-batch';
 import { useReportMotivationBusy } from '@/lib/motivation-busy';
 import type {
   CredentialSlot,
@@ -645,6 +646,51 @@ export default function LicenceCentreSheetPage() {
   );
 
   /**
+   * The applied-for firearm's paperwork, as a batch.
+   *
+   * ⚠️ IDENTIFY, TREAT, PAIR, UPLOAD (2026-10-13). The member photographs the
+   * owner's licence as two images, or drops an invoice, a consent letter or a
+   * dealer-completed 271; the server names each file, the scanner treatment runs
+   * in the background, the two sides of a card are composed onto one page, and
+   * the result is filed as the source proof. See lib/scan-upload/source-batch.
+   */
+  const onUploadSource = useCallback(
+    async (files: File[]) => {
+      if (!files.length) return;
+      setBusy(true);
+      try {
+        // NAME THEM FIRST, so the scanner knows the shape and which way is up,
+        // and so the two sides of a licence can be told apart.
+        const verdicts = await motivationsApi.identify(getToken, id, files);
+        const prepared = await prepareSourceBatch(files, verdicts);
+        for (const p of prepared) {
+          await motivationsApi.addUpload(
+            getToken,
+            id,
+            'FIREARM_SOURCE_PROOF',
+            p.file,
+            {
+              identifyId: p.identifyId || undefined,
+              saps271: p.saps271,
+            },
+          );
+        }
+        await load();
+        setToast(
+          prepared.length === 1
+            ? 'Added the paperwork.'
+            : `Added ${prepared.length} pages.`,
+        );
+      } catch {
+        setToast('We could not add that just now. Please try again.');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [getToken, id, load],
+  );
+
+  /**
    * Accept the declaration, then draft.
    *
    * ⚠️ THE DECLARATION STEP HAD NO SURFACE AND THE FAILURE HAD NO VOICE.
@@ -980,11 +1026,7 @@ export default function LicenceCentreSheetPage() {
           sourceValue={sourceValue}
           signed={sellerSigned}
           generated={sheet.application.status === 'COMPLETED'}
-          onUpload={async (files) => {
-            // Filed explicitly as the source proof — "upload proof of applied
-            // for firearm" — rather than the shelf's classify-and-file.
-            for (const f of files) await onAddFile('FIREARM_SOURCE_PROOF', f);
-          }}
+          onUpload={onUploadSource}
           onArrived={async (status) => {
             await load();
             setToast(

@@ -34,6 +34,7 @@ import {
 import { NewsService } from '../news/news.service';
 import { CrimeStatsService } from '../crime-stats/crime-stats.service';
 import { parseTravelledAreas } from './motivation-danger-areas';
+import { SAPS_271_MARKER } from '../common/document-markers';
 import { TRAVELLED_AREAS_KEY } from './motivation-fields';
 import type { NewsIncident } from '../news/news.types';
 import { imageSize, isEmbeddable } from './motivation-annexure-layout';
@@ -1164,6 +1165,10 @@ export class MotivationRenderService {
             // wrote for it — encrypted at rest, decrypted for this render only.
             evidenceType: true,
             evidenceDescriptionEncrypted: true,
+            // ⚠️ THE SAPS 271 SENTINEL RIDES HERE. A page the member uploaded
+            // that is a 271 form is read but never annexed; see buildAnnexures
+            // filtering below and SAPS_271_MARKER.
+            extractedFields: true,
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -1212,8 +1217,15 @@ export class MotivationRenderService {
     // with you" half of the checklist is rendered onto the last page, with
     // boxes to tick with a pen, and the "your pack" half is not — that half is
     // what they are already holding.
-    const kinds = (row.uploads ?? []).map((u) => u.kind);
-
+    // ⚠️ A SAPS 271 THE MEMBER UPLOADED IS READ, NEVER ANNEXED (2026-10-13).
+    // Operator: "271 just extracts the information and adds it where it needs
+    // to be. any other document that serves as evidence becomes an annexure."
+    // The sentinel rides on extractedFields; the row is dropped from everything
+    // that letters or prints, while staying in the database and in the reads.
+    const packUploads = (row.uploads ?? []).filter(
+      (u) => !(u.extractedFields ?? []).includes(SAPS_271_MARKER),
+    );
+    const kinds = packUploads.map((u) => u.kind);
     // ⚠️ THE CHECKLIST HAS PROMISED THIS SINCE THE MODULE SHIPPED AND NOTHING
     // PRODUCED IT. "Request for prior notice before refusal (PAJA)" sits under
     // "Your pack", owned by us, ticking itself green the moment the motivation
@@ -1297,7 +1309,7 @@ export class MotivationRenderService {
      * here with everything else; the body-placed photographs take no letter
      * and are built into the Activities page below. See evidenceForRender.
      */
-    const evidence = this.evidenceForRender(row.uploads ?? []);
+    const evidence = this.evidenceForRender(packUploads);
     const annexures = buildAnnexures(
       kinds,
       sellerConsent ? ['SELLER_CONSENT'] : [],
@@ -1317,7 +1329,7 @@ export class MotivationRenderService {
       kinds,
       answers,
     ).missingRequired.map((kind) => documentLabel(kind));
-    const printable = await this.annexureImages(row.uploads ?? [], annexures);
+    const printable = await this.annexureImages(packUploads, annexures);
     const pressClippings = await this.buildPressClippings(pressIncidents);
     const evidenceBody = await this.buildEvidenceBody(evidence.bodyUploads);
 

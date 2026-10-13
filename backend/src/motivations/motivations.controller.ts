@@ -697,6 +697,7 @@ export class MotivationsController {
     @Body('kind') kind: string,
     @Body('identifyId') identifyId: string,
     @Body('description') description: string,
+    @Body('saps271') saps271: string,
     @UploadedFile(
       new ParseFilePipe({
         validators: [
@@ -717,6 +718,9 @@ export class MotivationsController {
     const opts = {
       identifyId: fromIdentify || undefined,
       description: (description ?? '').trim() || undefined,
+      // The client's own verdict said this page is a SAPS 271 form; see
+      // MotivationDocumentsService.addUpload and SAPS_271_MARKER.
+      saps271: (saps271 ?? '') === 'true',
     };
 
     // NO KIND MEANS "SORT IT FOR ME" — the batch path, where a member picks a

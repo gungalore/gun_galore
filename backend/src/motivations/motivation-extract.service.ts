@@ -13,7 +13,7 @@ import { fieldsFor, nextOwnedRow } from './motivation-fields';
 import { readSaId } from './sa-id';
 import { endorsementSpec, parseEndorsements } from '../common/sa-competency';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
-import { readMarkers } from '../common/document-markers';
+import { readMarkers, looksLikeSaps271 } from '../common/document-markers';
 import {
   FIREARM_READING_SCHEMA,
   firearmIdentityPrompt,
@@ -30,6 +30,60 @@ import {
 const EVIDENCE_FILING_OPTIONS: readonly FilingOption[] = EVIDENCE_CONTAINERS.map(
   (c) => ({ id: c.id, label: c.label, hint: c.hint }),
 );
+
+/** The face of a licence card, and which way up the page is. See classifyFace. */
+export interface SourceFaceAnswer {
+  /** Which side of a firearm licence card this page is, or null. */
+  side: 'front' | 'back' | null;
+  /** The page is a SAPS 271 application form (read, never annexed). */
+  saps271: boolean;
+  /** Where the top of the page sits, as how far to turn it. */
+  rotate: 0 | 90 | 180 | 270 | undefined;
+}
+
+const FACE_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    side: { type: 'string', enum: ['front', 'back', 'none'] },
+    orientation: { type: 'string', enum: ['top', 'right', 'bottom', 'left'] },
+    saps271: { type: 'boolean' },
+  },
+  required: ['side'],
+};
+
+const FACE_SYSTEM = `
+You are shown one photograph of a South African document. You answer two
+questions and nothing else.
+`;
+
+const FACE_USER = [
+  'This page may be a firearm licence card.',
+  'If it is the FRONT of a firearm licence card it prints the words "Serial',
+  'Number" and the firearm\'s Make, Calibre and Type (and often a Model), under',
+  'the heading "Licence To Possess a Firearm". Answer side "front".',
+  'If it is the BACK of a firearm licence card it shows a barcode and two boxes',
+  'headed "Signature" and "Fingerprint", and no Make, Calibre or Serial Number.',
+  'Answer side "back".',
+  'Anything else: answer side "none".',
+  '',
+  'Also say whether this page is a completed SAPS 271 application form — the',
+  'printed form with numbered boxes and the applicant\'s own particulars filled',
+  'in, titled something like "Application for a licence to possess a firearm".',
+  'Answer saps271 true or false.',
+  '',
+  'Second, where is the TOP of the page — the edge the heading sits nearest — in',
+  'THIS picture? The picture may not be upright. Answer one of: top, right,',
+  'bottom, left.',
+  'Return STRICT JSON: {"side":"front|back|none","saps271":true|false,"orientation":"top|right|bottom|left"}',
+].join('\n');
+
+/** Which edge the top of the page sits on -> how far to turn the picture. */
+const ROTATE_FOR_EDGE: Record<string, 0 | 90 | 180 | 270> = {
+  top: 0,
+  left: 90,
+  bottom: 180,
+  right: 270,
+};
 
 // ────────────────────────────────────────────────────────────────────
 // READING WHAT THE APPLICANT ALREADY HAS.
@@ -838,9 +892,13 @@ export class MotivationExtractService {
     return out;
   }
 
+  // ── The face of a licence card, and which way up the page is ────────
+  //
+  // See classifyFace. One small model call answers both, because the same
+  // picture is being looked at for both.
+
   async classify(args: {
-    bytes: Buffer;
-    mimeType: string;
+    bytes: Buffer;    mimeType: string;
     /** Text already read off these bytes. See ocr() — undefined ≠ null. */
     ocrText?: string | null;
   }): Promise<MotivationClassifyAnswer | null> {
@@ -971,6 +1029,83 @@ export class MotivationExtractService {
       return { role: 'document', kind, confident };
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * THE FACE OF A LICENCE CARD, AND WHICH WAY UP THE PAGE IS.
+   *
+   * ⚠️ THIS IS WHAT LETS TWO PHOTOGRAPHS BECOME ONE PAGE (2026-10-13). Operator:
+   * "If its two images that the owner just sent me ... they must get the scanner
+   * treatment ... and put onto one page." The client composes a FRONT and a
+   * BACK onto one sheet, and it can only tell them apart from this answer.
+   *
+   * Front = prints "Serial Number" and the firearm's Make, Calibre and Type
+   * (often a Model). Back = a barcode and the boxes "Signature" and
+   * "Fingerprint", and no firearm particulars. Operator, 2026-10-13: "for front
+   * identify the following: Serial Number, Make, Calibre, Type, Model. for back:
+   * Signature, Fingerprint."
+   *
+   * Also answers where the top of the page sits, so the headless scanner can
+   * turn it the right way up — the ink axis finds the quarter turn but not the
+   * direction.
+   *
+   * Fail-soft: no model, no answer, and the caller falls back to "not a card".
+   */
+  async classifyFace(args: {
+    bytes: Buffer;
+    mimeType: string;
+    ocrText?: string | null;
+  }): Promise<SourceFaceAnswer> {
+    // The 271 answer needs no model — it is a printed form number.
+    let text = args.ocrText;
+    if (text === undefined) {
+      text = await this.ocr(args.bytes, args.mimeType).catch(() => null);
+    }
+    const saps271 = looksLikeSaps271(text ?? '');
+
+    if (!this.llm.isConfigured()) {
+      return { side: null, saps271, rotate: undefined };
+    }
+
+    try {
+      const res = await this.llm.complete({
+        maxTokens: 120,
+        thinking: { budgetTokens: 0 },
+        system: FACE_SYSTEM,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              contentBlock(args.bytes, args.mimeType),
+              { type: 'text', text: FACE_USER },
+            ],
+          },
+        ],
+        json: { schema: FACE_SCHEMA },
+        purpose: 'motivation.source.face',
+        timeoutMs: 30_000,
+      });
+      const m = res.text.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(m ? m[0] : res.text) as {
+        side?: unknown;
+        orientation?: unknown;
+        saps271?: unknown;
+      };
+      const side = String(parsed.side ?? '').trim().toLowerCase();
+      const edge = String(parsed.orientation ?? '').trim().toLowerCase();
+      return {
+        side: side === 'front' || side === 'back' ? side : null,
+        // Either the printed form number (from the OCR, free) or the model's
+        // own reading — whichever fired.
+        saps271: saps271 || parsed.saps271 === true,
+        rotate: ROTATE_FOR_EDGE[edge],
+      };
+    } catch (err) {
+      this.logger.warn(
+        `Source face read failed: ${MotivationExtractService.why(err)}`,
+      );
+      return { side: null, saps271, rotate: undefined };
     }
   }
 

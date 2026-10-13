@@ -148,6 +148,41 @@ const IS_AN_APPLICATION = [
   /application\s+(form\s+)?for\s+(a|the)\s+(licence|license|competency)/i,
 ];
 
+/**
+ * Is this page the SAPS 271 APPLICATION form itself, rather than its product?
+ *
+ * ⚠️ WE GENERATE THE SAPS 271, SO AN UPLOADED ONE IS READ AND NOT ANNEXED.
+ * Operator, 2026-10-13: "271 just extracts the information and adds it where it
+ * needs to be. any other document that serves as evidence becomes an annexure."
+ * The page is still stored and read — this only tells the pack not to print it
+ * as an annexure, because the form's facts belong in the form we fill in.
+ *
+ * Narrower than IS_AN_APPLICATION on purpose: a bare "application" would flag a
+ * letter that merely mentions one. This needs the form number or the title.
+ */
+const IS_SAPS_271: Clause[] = [
+  phrase('SAPS 271', { required: ['271'] }),
+  /application\s+(form\s+)?for\s+(a|the)\s+(licence|license)\s+to\s+possess/i,
+  phrase('application for a licence to possess', {
+    allowMissing: 1,
+    required: ['application'],
+  }),
+];
+
+/** Does this OCR text read as a SAPS 271 application form? */
+export function looksLikeSaps271(text: string): boolean {
+  const body = (text ?? '').toString();
+  if (!body.trim()) return false;
+  return IS_SAPS_271.some((c) => clauseMatches(c, body) !== false);
+}
+
+/**
+ * The sentinel written into a MotivationUpload's `extractedFields` for a page
+ * that IS a SAPS 271 form. The pack skips anything carrying it — it is read,
+ * never annexed. See looksLikeSaps271.
+ */
+export const SAPS_271_MARKER = 'SAPS_271_FORM';
+
 export const DOCUMENT_MARKERS: readonly DocumentMarker[] = [
   // ── The SAPS competency certificate. ───────────────────────────
   {
