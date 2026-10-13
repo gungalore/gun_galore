@@ -7,6 +7,22 @@ overwritten.
 
 Last updated: **2026-10-13**.
 
+## 2026-10-13 — MOTIVATIONS: COLLAPSED CONSENT, VISIBLE LETTER, REPLACEABLE (FULL DEPLOY)
+
+Commit **`7a601e75`** (`feat(motivations) one paperwork row with a collapsed consent, viewable and replaceable`), 14 files, full deploy. Rollback point `alloutdoor-20261013-232159.dump`. Backend and frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `7a601e75`.
+
+Gates: backend `tsc` clean + **353 suites/5555 tests**; frontend `tsc` clean + **140 files/1722 tests** + production build OK.
+
+**The report.** Operator, 2026-10-13: the consent panel was rendering fully open at the top of the firearm section ("this is then still there, why?"). It had to be "hidden underneath a button alongside upload proof of applied for firearm", the filled-out state shown with a "View", and a signed consent replaceable: "if it is already submitted by the owner, the applicant can send another one but a pop up must warn them that the current one will be overwritten". Also: "after generation there won't be access to the fields again" and the letter is shown "using a default style", re-rendered in the member's picked style at generation.
+
+**What shipped.**
+- `SourceActions` (`components/licence-centre/source-actions.tsx`) is the applied-for firearm's row: "Upload the applied-for firearm's paperwork" (filed as `FIREARM_SOURCE_PROOF`) beside a collapsed "Ask the current owner for consent". A filled-out consent shows the subscript "Consent filled out" and a "View". The consent control hides on a known dealer sale; the whole row renders nothing once the motivation is `COMPLETED`. Replaces the old inline `ConsentCard` at `app/licence-centre/[id]/page.tsx`.
+- View opens the consent letter read-only (`ConsentLetterModal`) from a new `GET /motivations/:id/seller-consent/letter`. It reuses the pack's own `consentFormFor`/`buildSellerConsent` + `renderStatementForm` (`MotivationPdfService.renderStandaloneStatement`), DEFAULT scheme, no annexure caption.
+- Replacing a signed consent: `MotivationSellerConsent` gains "Send a new one" with a styled `ConfirmDialog` warning; the form starts blank and sends `replace: true`. `invite()` requires `replace` for that path, refuses any invite once the motivation is `COMPLETED`, and destroys the old signature/licence/section F only AFTER the replacement link is delivered (a failed send restores the signed state).
+- No schema change, no migration.
+
+**Know.** The View letter is generated per request, default style only; the member's colourway/layout is applied when the whole motivation is generated. Post-generation the row disappears entirely, so an already-sent consent notice is not shown then. The paygate on "Generate my motivation" and the full field lock are still to be built.
+
 ## 2026-10-13 — MOTIVATIONS: ONE SOURCE UPLOAD, JEV DECIDES THE ROUTE (FULL DEPLOY)
 
 Commit **`37e1ecc3`** (`feat(motivations) one source upload, Jev decides the dealer/private route`), 10 files, full deploy. Rollback point `alloutdoor-20261013-222851.dump`. Backend and frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `37e1ecc3`.
