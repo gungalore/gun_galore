@@ -5,7 +5,50 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-12**.
+Last updated: **2026-10-13**.
+
+## 2026-10-13 — DOCUMENT CENTRE: A RANDOM FILE IS NOT A FIREARM LICENCE (FULL DEPLOY)
+
+Commit **`a770cd61`** (`fix(document-centre): a random file is not a firearm
+licence`), 7 files, full deploy via `infra/deploy/deploy.sh` (Git Bash).
+Rollback point `alloutdoor-20261013-123502.dump` (29 MB). Backend + frontend
+health x2 OK, warden reloaded and online, public 200 x2, three pm2 services
+online. Deployed HEAD `a770cd61`. No migration in the changeset (no-op).
+
+Gates before deploy: backend `tsc` clean + **346 suites/5497 tests**; frontend
+`tsc` clean + **136 files/1700 tests** + production build.
+
+**The bug.** Operator: "i read in a random file into the document centre and it
+came back as a license. thats wrong." Two seams let it happen.
+
+- **The vocabulary called any licence ours.** `DocumentFilingService.fileVault`
+  told Jev a `document` is "an identity document, a licence, ...", and the
+  vision `CLASSIFY_SYSTEM`/`CLASSIFY_USER` said the same. Any licence - a
+  driver's, TV, business or software one, a EULA - satisfied the document
+  branch, and the nearest kind was `FIREARM_LICENCE`.
+- **A low-confidence kind was stored as that kind.** `create()` wrote
+  `resolved` from the classifier answer regardless of `confident`, and
+  `confident` only drove the "Not sure" badge. So a weak guess of
+  `FIREARM_LICENCE` landed the row in the firearms section, one confirmation
+  from arming a renewal for a firearm that does not exist.
+
+**What shipped.** `document-filing.service.ts` role criteria now say "a FIREARM
+licence" and route non-firearm licences, EULAs and unrelated files to evidence;
+the kind instruction prefers OTHER and warns a licence naming no firearm is not
+Firearm licence. `vault-kind-options.ts` tightens the Firearm licence hint to
+require a named firearm or a cited Act section. `licence-centre-extract.service.ts`
+makes `CLASSIFY_SYSTEM`/`CLASSIFY_USER` firearm-specific with an explicit
+"answer OTHER" rule. New `filedKindOrOther()` in `licence-centre.service.ts`:
+a specific kind proposed below the confidence floor is filed as `OTHER` (covers
+dropped), applied in `create()`, `identifyOne()` and the identify cache path.
+A member-declared kind never passes through it.
+
+**Know.** A low-confidence document is now filed as OTHER and reads back as
+"we think this is a document" on the batch card and the review row, instead of
+wearing the guessed type. Specs updated/added: guard in `identify-batch.spec.ts`
+(stale-id fallback now expects OTHER), prompt assertions in
+`licence-centre-classify.spec.ts` and `document-filing.service.spec.ts`. Repo
+lint remains red on untouched files (prettier drift) and is not a deploy gate.
 
 ## 2026-10-12 — DOCUMENT CENTRE: EVERY SECTION OPENS COLLAPSED (FRONTEND DEPLOY)
 
