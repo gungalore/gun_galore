@@ -7,6 +7,24 @@ overwritten.
 
 Last updated: **2026-10-13**.
 
+## 2026-10-13 — MOTIVATIONS: ONE SOURCE UPLOAD, JEV DECIDES THE ROUTE (FULL DEPLOY)
+
+Commit **`37e1ecc3`** (`feat(motivations) one source upload, Jev decides the dealer/private route`), 10 files, full deploy. Rollback point `alloutdoor-20261013-222851.dump`. Backend and frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `37e1ecc3`.
+
+Gates: backend `tsc` clean + **353 suites/5547 tests**; frontend `tsc` clean + **139 files/1713 tests** + production build OK.
+
+**The report.** Operator, 2026-10-13: "remove the dealer/private picker. Let Jev make the call what it is and how it should be processed ... just one upload applied for firearm license/evidence." The dealer/private choice at "Where is this firearm coming from?" is gone; the member uploads whatever paperwork they hold and the reader settles the route. Decisions locked with the operator: (1) Jev may set the SAPS 271 section-F owner-type tick, from the uploaded document; (2) one upload row; (3) `firearm_source` removed from the wizard; (4) the consent link stays as a secondary action.
+
+**What changed.**
+- `motivation-fields.ts`: `firearm_source` is now `internal` (never on screen, never in `requiredKeys`) and no longer `required`. It is still stored, accepted and validated — the reader writes it.
+- `motivation-documents.ts`: the private route no longer adds a second `SELLER_LICENCE` checklist row. The invoice, the current owner's licence (front and back) and the consent letter all land on the single `FIREARM_SOURCE_PROOF` row. Guidance is route-agnostic until the reader settles which.
+- `motivation-extract.service.ts`: the source reader now also returns `firearm_source` (dealer vs private-owner), with a dedicated instruction because this is the one judgement the transcriber is otherwise told not to make. A choice is canonicalised and validated in `parse`, so a vague answer is dropped rather than stored. It arrives on the confirm card like every other read.
+- `motivation-kind-options.ts`: `CURRENT_LICENCE` is now explicitly the applicant's OWN licence; `FIREARM_SOURCE_PROOF` names the owner's licence/consent, so Jev does not file someone else's card as the member's.
+- `motivation-seller-consent.service.ts`: a completed consent writes `firearm_source = From a private owner` when empty.
+- `frontend/app/licence-centre/[id]/page.tsx`: the consent card is a standing secondary action under the source row, shown until the route is known to be a dealer sale.
+
+**Know.** If the reader is unsure of the route it omits the value, section F stays unticked, and the only fallback is the consent link — there is no explicit inline "dealer or private?" prompt for the omit case yet. `SELLER_LICENCE` survives as a kind (the consent flow still files the owner's two licence photographs as it) but is no longer a checklist row; the DFO still gets the licence front and back through the consent. No schema change, no migration.
+
 ## 2026-10-13 — LICENCE CENTRE: A PROOF OF ADDRESS IS RECOGNISED (FULL DEPLOY)
 
 Commit **`da65f6f2`** (`fix(licence-centre) recognise a proof of address when Jev files it`), 3 files, full deploy. Rollback point `alloutdoor-20261013-214336.dump`. Backend and frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `da65f6f2`.
