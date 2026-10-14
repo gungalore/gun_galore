@@ -2054,3 +2054,95 @@ describe('⚠️ SPLITTING A NUMBERED HEADING', () => {
     });
   });
 });
+
+describe('the purpose exhibits under heading 3', () => {
+  const svc = new MotivationPdfService();
+
+  /** A real 1×1 PNG, so pdfkit genuinely embeds an image. */
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  const withPurposeSection = [
+    'Introduction:',
+    'I am applying for a licence in terms of section 16.',
+    '3. My hunting',
+    'Impala and kudu are the staple quarry for this calibre at bushveld distances.',
+    '5. The firearm applied for',
+    'The rifle suits the purpose set out above.',
+  ].join('\n\n');
+
+  const PLATES = [
+    {
+      pageIndex: 1,
+      plateIndex: 1,
+      title: 'Impala',
+      description:
+        'Impala is characteristic quarry of this class at bushveld distances.',
+      image: { bytes: PNG, width: 1800, height: 900 },
+    },
+    {
+      pageIndex: 1,
+      plateIndex: 2,
+      title: 'Greater kudu',
+      description: 'Kudu is characteristic quarry taken at longer ranges.',
+      image: { bytes: PNG, width: 1800, height: 900 },
+    },
+    {
+      pageIndex: 2,
+      plateIndex: 1,
+      title: 'Gemsbok',
+      description: 'Gemsbok is characteristic quarry of the open plains.',
+      image: { bytes: PNG, width: 1800, height: 900 },
+    },
+  ];
+
+  it('⚠️ PRINTS THE EXHIBITS UNDER HEADING 3, WITH THEIR DESCRIPTIONS', async () => {
+    const { pdf } = await svc.render({
+      ...makeInput(withPurposeSection),
+      purposeHeading: '3. MY HUNTING',
+      purposePlates: PLATES,
+    } as never);
+    const pages = await pageTexts(pdf);
+    const joined = pages.join(' ');
+    expect(joined).toContain('Impala');
+    expect(joined).toContain('Greater kudu');
+    expect(joined).toContain('Gemsbok');
+    expect(joined).toContain(
+      'characteristic quarry of this class at bushveld distances',
+    );
+
+    // Two pages of exhibits, numbered, both present.
+    expect(flat(joined)).toMatch(/PURPOSE EXHIBITS \(PAGE 1 OF 2\)/i);
+    expect(flat(joined)).toMatch(/PURPOSE EXHIBITS \(PAGE 2 OF 2\)/i);
+  });
+
+  it('⚠️ DRAWS NOTHING WHEN THE PACK HAS NO EXHIBITS', async () => {
+    const { pdf } = await svc.render({
+      ...makeInput(withPurposeSection),
+      purposeHeading: '3. MY HUNTING',
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t).not.toMatch(/Purpose exhibits/i);
+  });
+
+  it('⚠️ A PLATE WITH NO PICTURE STILL PRINTS ITS WORDS', async () => {
+    // A safety refusal or a slow call loses one picture, never the page.
+    const { pdf } = await svc.render({
+      ...makeInput(withPurposeSection),
+      purposeHeading: '3. MY HUNTING',
+      purposePlates: [
+        {
+          pageIndex: 1,
+          plateIndex: 1,
+          title: 'Impala',
+          description: 'Impala is characteristic quarry at bushveld distances.',
+        },
+      ],
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t).toContain('Impala');
+    expect(t).toContain('characteristic quarry at bushveld distances');
+  });
+});

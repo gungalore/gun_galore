@@ -4184,6 +4184,50 @@ model QuarryPlate {
   createdAt DateTime @default(now())
 }
 
+/// The purpose exhibits for one motivation — one to two pages of photographic
+/// plates under heading 3, each with a title and a neutral description.
+///
+/// ⚠️ A ROW PER PLATE, NOT ONE BLOB. The pictures are drawn in parallel and a
+/// safety refusal or a slow call loses ONE plate, not the page; a single row
+/// would make a half-failed generation all-or-nothing. Each row also carries
+/// its own prompt and prompt version, so a plate can be explained and redrawn
+/// on its own.
+///
+/// ⚠️ BYTES IN THE ROW, NOT A FILE ON DISK, for the same reason as QuarryPlate:
+/// a row is inside `pg_dump` automatically, and a new directory would need a
+/// change to backup.sh that somebody would forget — the silent failure mode
+/// being a pack that renders with a blank box.
+model MotivationPlate {
+  id           String     @id @default(cuid())
+  motivationId String
+  motivation   Motivation @relation(fields: [motivationId], references: [id], onDelete: Cascade)
+
+  /// 'hunting' | 'self_defence' | 'sport'. Plain string, not an enum: adding a
+  /// purpose is a code deploy, never a migration.
+  purpose    String @db.VarChar(30)
+  /// 1-based page and 1-based slot within it. Two plates to a page.
+  pageIndex  Int
+  plateIndex Int
+
+  title       String @db.VarChar(160)
+  description String @db.Text
+  /// The rough scenes the picture model was asked for, for a later audit.
+  prompt        String @db.Text
+  promptVersion String @db.VarChar(40)
+
+  mimeType String @db.VarChar(40)
+  bytes    Bytes
+  width    Int
+  height   Int
+
+  /// Which model drew it, for the ledger's benefit and for a later audit.
+  model     String   @db.VarChar(80)
+  createdAt DateTime @default(now())
+
+  @@unique([motivationId, pageIndex, plateIndex])
+  @@index([motivationId, pageIndex, plateIndex])
+}
+
 model MotivationResearch {
   id String @id @default(cuid())
 
@@ -4525,6 +4569,9 @@ model Motivation {
   /// The quarry photograph for this application's cartridge page, if it has
   /// one. Drawn during generation, read on every download. See QuarryPlate.
   quarryPlate     QuarryPlate?
+  /// The purpose exhibits — one to two pages of pictures under heading 3,
+  /// drawn during generation and read on every download. See MotivationPlate.
+  purposePlates   MotivationPlate[]
   documentVersion Int          @default(0)
   // Versions of the attorney-reviewed PDF skeleton and disclaimer, stamped at
   // generation so documents produced under a reviewed version can be told

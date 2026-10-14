@@ -388,6 +388,9 @@ function build(
     // ⚠️ A STUB THAT DRAWS NOTHING. A real one would reach the picture model
     // on every generation; these tests assert on documents, not photographs.
     { makeFor: async () => undefined } as never,
+    // ⚠️ SAME POSTURE FOR THE PURPOSE EXHIBITS — one to two pages of pictures
+    // under heading 3. A stub that draws nothing.
+    { makeFor: async () => undefined } as never,
     // ⚠️ A VAULT WITH NOTHING IN IT. The owned-firearm top-up runs before
     // every generation; these tests assert on drafts, and an empty vault is
     // the state every one of them was written against.
@@ -416,6 +419,8 @@ function build(
     // once per species; these tests assert on documents, not photographs, and
     // returning undefined is the state every one of them was written against.
     { plateFor: async () => undefined } as never,
+    // ⚠️ THE PURPOSE EXHIBITS — a read on the render path. Nothing stored.
+    { storedFor: async () => [] } as never,
     // ⚠️ NOTHING IS RASTERISED HERE. Only a PDF annexure reaches this, and no
     // test in this file carries one.
     { pagesFor: async () => [] } as never,

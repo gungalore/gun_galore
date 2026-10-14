@@ -35,6 +35,7 @@ import {
 } from './motivation-research.service';
 import { huntsAtAll, quarriesFor } from './motivation-quarry';
 import { QuarryPlateService } from './quarry-plate.service';
+import { MotivationPlatesService } from './motivation-plates.service';
 import { MotivationPrefillService } from './motivation-prefill.service';
 import { credentialOffer } from './motivation-credentials';
 
@@ -390,6 +391,9 @@ export class MotivationGenerationService {
     // The quarry photograph for the cartridge page. Drawn here rather than at
     // render time — see the call below.
     private readonly quarryPlates: QuarryPlateService,
+    // The purpose exhibits — one to two pages of pictures under heading 3.
+    // Drawn here for the same reason as the quarry plate.
+    private readonly purposePlates: MotivationPlatesService,
     // The member's vault, for the owned-firearm top-up below.
     private readonly prefill: MotivationPrefillService,
     // The reason paragraph — the comparison the applicant would otherwise have
@@ -1093,18 +1097,44 @@ export class MotivationGenerationService {
          * matched from there would picture an animal this application is not
          * about. Only the applied-for firearm's own two blocks are read.
          */
-        const quarryText = [
+        const speciesText = [
           sectionOf(research, BLOCK_LABELS.firearm),
           sectionOf(research, BLOCK_LABELS.calibre),
         ]
           .filter(Boolean)
           .join('\n\n');
         const species = quarriesFor({
-          cartridgeText: quarryText,
+          cartridgeText: speciesText,
           gameClasses: answers.hunt_game_class,
         });
         await this.quarryPlates.makeFor(row.id, species).catch(() => undefined);
       }
+
+      // ── the purpose exhibits ──────────────────────────────────────
+      //
+      // One to two pages of pictures under heading 3 — the quarry for a hunting
+      // pack, the scenarios for a self-defence one, the activities for a sport
+      // one. Drawn HERE for the same reasons as the quarry plate: background
+      // work, fail-soft, and never in the download path. The scenes are chosen
+      // in code from the applicant's own answers (see motivation-plates.ts);
+      // the only model call is the picture.
+      //
+      // ⚠️ NOT GATED ON `research`. A self-defence or sport pack has scenes
+      // that do not need the research at all, and a hunting pack with no
+      // research names no species, so the hunter simply gets no exhibits — the
+      // same fail-soft rule the quarry plate already follows.
+      await this.purposePlates
+        .makeFor(row.id, {
+          licenceType: row.licenceType,
+          answers,
+          research: [
+            sectionOf(research ?? '', BLOCK_LABELS.firearm),
+            sectionOf(research ?? '', BLOCK_LABELS.calibre),
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+        })
+        .catch(() => undefined);
 
       // ── the cover photograph ──────────────────────────────────────
       //

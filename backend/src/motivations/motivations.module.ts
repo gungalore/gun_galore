@@ -31,6 +31,7 @@ import { DocumentScreeningService } from './document-screening.service';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
 import { CipSheetService } from './cip-sheet.service';
 import { QuarryPlateService } from './quarry-plate.service';
+import { MotivationPlatesService } from './motivation-plates.service';
 import { FirearmImageService } from './motivation-firearm-image';
 import { MotivationWitnessService } from './motivation-witness.service';
 import { MotivationSellerConsentService } from './motivation-seller-consent.service';
@@ -126,6 +127,7 @@ import { DocumentFilingModule } from '../common/document-filing/document-filing.
     GoogleVisionOcrService,
     CipSheetService,
     QuarryPlateService,
+    MotivationPlatesService,
     Saps271Service,
     FirearmImageService,
     MotivationWitnessService,

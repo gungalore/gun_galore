@@ -50,6 +50,8 @@ function serviceWith(
     null as never,
     null as never,
     null as never,
+    // The purpose exhibits — a read on the render path.
+    null as never,
     // The page rasteriser: a PDF annexure is rasterised before it is planned.
     pageRaster as never,
   );

@@ -1147,6 +1147,25 @@ export interface MotivationPdfInput {
     /** Names the animal. Never says the applicant has hunted one. */
     caption: string;
   };
+  /**
+   * The purpose exhibits — one to two pages of pictures under heading 3.
+   *
+   * Operator, 2026-10-14: "1 to 2 pages per application with descriptions of
+   * the pictures. For hunting the quarry the rifle can hunt, for self defense
+   * scenarios ... for sport shooting the activities they will be attending."
+   *
+   * ⚠️ DRAWN AT GENERATION, NOT HERE. The pictures are stored rows read on
+   * every download; this input only places them. A plate with no `image` prints
+   * its words on a page of its own rather than disappearing, the same rule the
+   * press clippings and the evidence pages already follow.
+   */
+  purposePlates?: PurposePlate[];
+  /**
+   * The plan's heading 3 — "3. My hunting" and its alternates. The exhibits are
+   * drawn when this heading's section ends. Undefined prints them as their own
+   * block before the declaration.
+   */
+  purposeHeading?: string;
   cartridgeArticle?: {
     /** The cartridge's standardised name, as the headline. */
     title: string;
@@ -1460,6 +1479,28 @@ export interface EvidencePage {
    * The picture itself. Absent means nothing prints for this item — there is
    * NO placeholder box, the same rule as the press clippings: a box would
    * assert a photograph the applicant cannot point a DFO at.
+   */
+  image?: { bytes: Buffer; width: number; height: number };
+}
+
+/**
+ * One purpose exhibit: a picture with a headline and a neutral description,
+ * placed under heading 3. Two to a page, at most two pages.
+ *
+ * The scenes are chosen in code from the applicant's own answers (see
+ * motivation-plates.ts) and drawn at generation; this is what the renderer
+ * places. The description is OUR prose about the scenario or the species, never
+ * a claim about what the applicant has done.
+ */
+export interface PurposePlate {
+  /** 1-based page, and 1-based slot within it. */
+  pageIndex: number;
+  plateIndex: number;
+  title: string;
+  description: string;
+  /**
+   * The picture. Absent drops the picture, never the words — the caption still
+   * prints, the same rule as the press clippings and the evidence pages.
    */
   image?: { bytes: Buffer; width: number; height: number };
 }
@@ -2256,6 +2297,9 @@ export class MotivationPdfService {
      */
     let crimeDrawn = false;
 
+    /** True once the purpose exhibits have printed — they print at most once. */
+    let purposePlatesDrawn = false;
+
     const hasCrimeEvidence = () =>
       (input.precinctTables?.length ?? 0) > 0 ||
       (input.pressClippings?.length ?? 0) > 0;
@@ -2529,6 +2573,103 @@ export class MotivationPdfService {
         doc.y = rowBottom + K.mm(5);
       }
       doc.y += PARA_GAP;
+    };
+
+    /**
+     * The purpose exhibits — one to two pages of pictures under heading 3.
+     *
+     * Operator, 2026-10-14: "1 to 2 pages per application with descriptions of
+     * the pictures." Each page carries up to two plates: the picture, a bold
+     * headline, then a short neutral description.
+     *
+     * ⚠️ IT OPENS ITS OWN PAGES. The exhibits are a spread of their own: they
+     * must not start halfway down the paragraph that introduced them, and the
+     * heading-4 prose must not run on underneath. So each rendered page is a
+     * clean `addPage()`; the block that follows begins on the next sheet.
+     *
+     * ⚠️ A PLATE WITH NO PICTURE PRINTS ITS WORDS. A safety refusal or a slow
+     * call loses one picture, never the page — the caption still prints where
+     * the frame would have sat, the same rule the press clippings follow.
+     */
+    const drawPurposePlates = () => {
+      if (purposePlatesDrawn) return;
+      const plates = (input.purposePlates ?? []).filter(
+        (p) => (p.title ?? '').trim() || (p.description ?? '').trim(),
+      );
+      if (!plates.length) return;
+      purposePlatesDrawn = true;
+
+      const pageNumbers = [...new Set(plates.map((p) => p.pageIndex))].sort(
+        (a, b) => a - b,
+      );
+      const totalPages = pageNumbers.length;
+      const baseNumber = input.purposeHeading
+        ? splitHeading(input.purposeHeading).number
+        : '';
+
+      const usable = contentWidth - K.SECTION_INDENT;
+      const x0 = MARGIN + K.SECTION_INDENT;
+      /** The tallest a plate may print, so two always close a page. */
+      const maxImageH = K.mm(74);
+
+      pageNumbers.forEach((pageNumber, i) => {
+        doc.addPage();
+        doc.x = MARGIN;
+        doc.y = bodyTop;
+        renderHeading(
+          baseNumber
+            ? `${baseNumber}.1 Purpose exhibits (page ${i + 1} of ${totalPages})`
+            : `Purpose exhibits (page ${i + 1} of ${totalPages})`,
+        );
+
+        const group = plates
+          .filter((p) => p.pageIndex === pageNumber)
+          .sort((a, b) => a.plateIndex - b.plateIndex);
+
+        for (const plate of group) {
+          const img = plate.image;
+          if (img && img.width > 0 && img.height > 0) {
+            // Contain within the full column width and the max height.
+            let w = usable;
+            let h = w * (img.height / img.width);
+            if (h > maxImageH) {
+              h = maxImageH;
+              w = h / (img.height / img.width);
+            }
+            try {
+              doc.image(img.bytes, x0 + (usable - w) / 2, doc.y, {
+                width: w,
+                height: h,
+              });
+              doc.y += h + K.mm(3);
+            } catch {
+              // pdfkit refused the bytes. Drop the picture, never the words.
+            }
+          }
+          if ((plate.title ?? '').trim()) {
+            doc
+              .font(B.bodySemi)
+              .fontSize(K.px(11.5))
+              .fillColor(C.deep)
+              .text(plate.title.trim(), x0, doc.y, { width: usable });
+            doc.y += K.mm(1);
+          }
+          if ((plate.description ?? '').trim()) {
+            doc
+              .font(B.body)
+              .fontSize(K.px(10.5))
+              .fillColor(C.ink)
+              .text(plate.description.trim(), x0, doc.y, {
+                width: usable,
+                lineGap: K.px(1),
+              });
+          }
+          doc.x = MARGIN;
+          doc.y += K.mm(7);
+        }
+      });
+
+      doc.x = MARGIN;
     };
 
     /**
@@ -3189,6 +3330,13 @@ export class MotivationPdfService {
     /** True while the body is inside heading 11 — see `isStatute` below. */
     let inStatutorySection = false;
     let pendingCrime = false;
+    /**
+     * ⚠️ THE EXHIBITS RIDE WITH HEADING 3. Set when the purpose heading is
+     * rendered and flushed at the next heading, exactly like pendingCrime — the
+     * plates print at the foot of the section that argues the purpose, not
+     * underneath the heading that introduced it.
+     */
+    let pendingPlates = false;
 
     /**
      * The body's closing sections that have no heading of their own in the
@@ -3205,6 +3353,17 @@ export class MotivationPdfService {
      * declaration-less path, drawn once at the end as it always was.
      */
     const drawDeferredBody = () => {
+      /**
+       * ⚠️ THE EXHIBITS, IF THE WRITER NEVER CLOSED THEIR SECTION. They normally
+       * print at the next heading after heading 3; this is the draft whose
+       * purpose section is the last thing in the body, where the flush would
+       * otherwise never come.
+       */
+      if (pendingPlates) {
+        drawPurposePlates();
+        pendingPlates = false;
+      }
+
       /**
        * ⚠️ THE EVIDENCE IS NEVER DROPPED IN SILENCE. Where the writer opened
        * an exposure section this already printed at the foot of it; this is
@@ -3278,6 +3437,10 @@ export class MotivationPdfService {
           drawCrimeEvidence();
           pendingCrime = false;
         }
+        if (pendingPlates) {
+          drawPurposePlates();
+          pendingPlates = false;
+        }
         /**
          * ⚠️ THE DRAWING GOES UNDER THE WRITER'S OWN HEADING. Every S13 plan
          * opens a section on the cartridge, and that is the one place in the
@@ -3315,6 +3478,19 @@ export class MotivationPdfService {
           !crimeDrawn &&
           hasCrimeEvidence() &&
           block.replace(/:\s*$/, '').toUpperCase() === input.exposureHeading;
+
+        /**
+         * ⚠️ THE EXHIBITS GO WHERE THE PURPOSE IS ARGUED. Matched on the plan's
+         * own heading 3 — the_threat, the_quarry or the_discipline — and drawn
+         * at the next heading, at the foot of that section. The plate list is
+         * not consulted for the match: a pack whose plates all failed still
+         * prints nothing rather than a stray heading.
+         */
+        const wantsPlates =
+          !!input.purposeHeading &&
+          !purposePlatesDrawn &&
+          (input.purposePlates?.length ?? 0) > 0 &&
+          block.replace(/:\s*$/, '').toUpperCase() === input.purposeHeading;
 
         // Keep a heading with at least a couple of lines of its paragraph:
         // if we are near the bottom, start the page now rather than orphan it.
@@ -3407,6 +3583,7 @@ export class MotivationPdfService {
           cartridgeAfterFirearm = true;
         }
         pendingCrime = wantsCrime;
+        pendingPlates = wantsPlates;
       } else {
         // A parenthetical annexure reference is its own line in their
         // documents — "(Refer to Annexure B: Proficiency Certificates)" —

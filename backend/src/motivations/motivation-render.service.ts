@@ -20,6 +20,7 @@ import { decryptJson, tryDecryptText } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
 import { QuarryPlateService } from './quarry-plate.service';
+import { MotivationPlatesService } from './motivation-plates.service';
 import { huntsAtAll, quarryCaption, quarryFromKey } from './motivation-quarry';
 import { displayCalibre } from './saps-vocabulary';
 import { asLayout } from './motivation-pdf-layouts';
@@ -512,6 +513,23 @@ function headingOf(plan: unknown, id: string): string | undefined {
   return hit?.heading?.replace(/:\s*$/, '').toUpperCase();
 }
 
+/**
+ * The plan's purpose heading — heading 3, whichever of the four ids the plan
+ * chose (the_threat, the_quarry, the_discipline).
+ *
+ * ⚠️ READ OFF THE PLAN, NEVER MATCHED ON WORDS. The three ids share number 3
+ * but not wording, and the renderer places the purpose exhibits when this
+ * heading's section ends — the same rule `exposureHeading` and `batteryHeading`
+ * already follow.
+ */
+function purposeHeadingOf(plan: unknown): string | undefined {
+  return (
+    headingOf(plan, 'the_threat') ??
+    headingOf(plan, 'the_quarry') ??
+    headingOf(plan, 'the_discipline')
+  );
+}
+
 @Injectable()
 export class MotivationRenderService {
   private readonly logger = new Logger(MotivationRenderService.name);
@@ -531,6 +549,8 @@ export class MotivationRenderService {
     private readonly news: NewsService,
     private readonly crimeStats: CrimeStatsService,
     private readonly quarry: QuarryPlateService,
+    // The purpose exhibits under heading 3 — read here, drawn at generation.
+    private readonly plates: MotivationPlatesService,
     private readonly pageRaster: DocumentPageRasterService,
   ) {}
 
@@ -1353,6 +1373,11 @@ export class MotivationRenderService {
     const article = cartridgeArticle(row.researchEncrypted, cartridge?.name);
     const cartridgePhoto = await this.quarryPhotoFor(row.id, answers);
 
+    // The purpose exhibits — a read, on every download, never a model call.
+    const storedPlates = await this.plates
+      .storedFor(row.id)
+      .catch(() => []);
+
     return this.pdf.render({
       referenceNumber: row.referenceNumber,
       // The applicant's REAL name — the documented exception to the site-wide
@@ -1431,6 +1456,17 @@ export class MotivationRenderService {
       // part of the flow, it must not be just placed there because it has to
       // be there."
       exposureHeading: headingOf(row.structurePlan, 'the_threat'),
+      // ⚠️ THE PURPOSE EXHIBITS PRINT UNDER HEADING 3, at the foot of the
+      // paragraphs that argue the purpose. One to two pages of pictures drawn
+      // at generation; the heading comes off the plan, never matched on words.
+      purposeHeading: purposeHeadingOf(row.structurePlan),
+      purposePlates: storedPlates.map((p) => ({
+        pageIndex: p.pageIndex,
+        plateIndex: p.plateIndex,
+        title: p.title,
+        description: p.description,
+        image: { bytes: p.bytes, width: p.width, height: p.height },
+      })),
       // ⚠️ THE CARTRIDGE FEATURE FOLLOWS THE FIREARM SECTION. Operator,
       // 2026-09-20: "move THE CARTRIDGE straight after THE FIREARM APPLIED FOR
       // AND WHY IT SUITS THE PURPOSE as they are very relevant to each other".
