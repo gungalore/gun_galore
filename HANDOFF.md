@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — COMMUNITY: FOLLOWER/FOLLOWING LISTS + REMOVE FOLLOWER (FULL DEPLOY)
+
+Commit **`dfaa7c32`** (`feat(community): follower/following lists with remove-follower and unfollow`), 8 files, full deploy (backend touched). Rollback point `alloutdoor-20261014-125336.dump`. Health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `dfaa7c32`.
+
+Gates: backend `tsc` clean + **354 suites/5571 tests**; frontend `tsc` clean + **142 files/1740 tests** + production build OK. (The two suites run in PARALLEL produced one 5s-timeout failure each in unrelated heavy specs — `motivations/motivation-pdf.service.spec.ts` and `components/licence-centre/design-picker.spec.tsx`; both pass in isolation and in the sequential full runs, so it was CPU contention, not a regression. Run the two suites sequentially on this box.)
+
+**The report.** Operator, 2026-10-14: "in the community. I want the users to be able to see who follows them and who they follow as well as remove followers from the list and also unfollow people who they are following."
+
+**What shipped.** The Followers and Following numbers on the community control panel (right rail / homepage Community tab) are now buttons that open a `FollowsSheet`: the member's followers (per-row Remove) and the members they follow (per-row Unfollow). New backend: `GET /community/me/followers`, `GET /community/me/following` (cursor-paged, `FEED_PAGE_MAX`, privacy-gated username+avatar, `isFollowing` per row) and `DELETE /community/me/followers/:id` (idempotent, no notification) — `listFollowers`/`listFollowing`/`removeFollower` in `feed.service.ts`, routes in `feed.controller.ts`. Frontend: `components/community/follows-sheet.tsx` + `fetchMyFollowers`/`fetchMyFollowing`/`removeFollower` in `lib/community-api.ts`. No schema change (reuses `Follow`). Spec §21 in `docs/design/community-feed/spec.md`.
+
+**Know.** Unfollowing reuses the existing `DELETE /community/users/:id/follow`. The lists are the member's OWN only — other members' profiles still just show the counts.
+
 ## 2026-10-14 — MOTIVATIONS: SLIDERS ON THE DOCUMENTS STRIP (FRONTEND DEPLOY)
 
 Commit **`739305db`** (`feat(motivations) slide the documents strip left and right when it overflows`), 2 files, frontend-only deploy. Rollback point `alloutdoor-20261014-075133.dump`. Frontend health x2 OK, public 200 x2, three pm2 services online (backend untouched). Deployed HEAD `739305db`.
