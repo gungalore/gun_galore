@@ -1,5 +1,6 @@
 import { CredentialKind } from '@prisma/client';
 import {
+  CLASSIFY_SCHEMA,
   CLASSIFY_USER,
   LicenceCentreExtractService,
 } from './licence-centre-extract.service';
@@ -118,6 +119,30 @@ describe('the classifier prompt', () => {
     expect(CLASSIFY_USER).toMatch(/driver.{0,3}s, TV, business/i);
     expect(CLASSIFY_USER).toMatch(/software licence/i);
     expect(CLASSIFY_USER).toMatch(/names no make, model/i);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE CLASSIFY SCHEMA.
+//
+// ⚠️ IT MUST REQUIRE A CONFIDENCE, AND THAT IS NOT COSMETIC. Left optional, a
+// schema-enforced model simply omits the property it has nothing to add to —
+// the reply came back as bare {"role":"document","kind":"SAFE_PHOTOGRAPHS"}.
+// classifyVision reads an absent confidence as "not sure"
+// ((parsed.confidence ?? '') === 'high' → false) and filedKindOrOther then
+// downgrades a CORRECTLY named kind to OTHER. Production, 2026-10-14: three
+// photographs of a rifle safe — shut, part open, bolts showing — were all
+// filed as "Supporting document" on a confident SAFE_PHOTOGRAPHS answer that
+// arrived without a confidence. See the note on CLASSIFY_SCHEMA.
+// ────────────────────────────────────────────────────────────────────
+describe('the classify schema', () => {
+  it('\u26a0\ufe0f REQUIRES A CONFIDENCE, so an omitted one cannot read as unsure', () => {
+    expect(CLASSIFY_SCHEMA.required).toEqual(
+      expect.arrayContaining(['role', 'confidence']),
+    );
+    // ⚠️ `kind` STAYS OPTIONAL. An evidence item has no kind, and requiring
+    // one would force the model to invent it for a hunting photograph.
+    expect(CLASSIFY_SCHEMA.required).not.toContain('kind');
   });
 });
 

@@ -1526,8 +1526,25 @@ function blockFor(bytes: Buffer, mimeType: string): LlmPart {
  * one for a hunting photograph. ⚠️ AND DEEPSEEK IGNORES THE SCHEMA ENTIRELY
  * (it only ever sets `json_object`), so the role is re-validated in code —
  * an unrecognised role reads as null, never as a document.
+ *
+ * ⚠️ `confidence` IS REQUIRED BECAUSE LEAVING IT OPTIONAL SILENTLY UNSORTED
+ * EVERY PHOTOGRAPH. Paid for in production, 2026-10-14: the operator uploaded
+ * three photographs of his rifle safe — door shut, part open with the key in
+ * it, wide open showing the locking bolts — and all three were filed as
+ * "Supporting document" (OTHER). Replayed against the live model and this
+ * exact prompt, the classifier names SAFE_PHOTOGRAPHS correctly every time;
+ * what it does NOT do, when `confidence` is optional, is answer `confidence`
+ * at all — a schema-enforced model omits an optional property it has nothing
+ * to add to, and the reply came back as bare
+ * `{"role":"document","kind":"SAFE_PHOTOGRAPHS"}`. classifyVision reads a
+ * missing confidence as `(parsed.confidence ?? '') === 'high'` → false, and
+ * `filedKindOrOther` then downgrades the CORRECT kind to OTHER — so a sure
+ * answer arrived looking like an unsure one and every safe photograph in the
+ * vault was filed as unsorted. Requiring the field makes the model commit to
+ * high|low, which is what the prompt has always asked for. See
+ * licence-centre-classify.spec.ts, which pins it.
  */
-const CLASSIFY_SCHEMA: Record<string, unknown> = {
+export const CLASSIFY_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
     role: { type: 'string', enum: ['document', 'evidence'] },
@@ -1538,7 +1555,7 @@ const CLASSIFY_SCHEMA: Record<string, unknown> = {
     },
     confidence: { type: 'string', enum: ['high', 'low'] },
   },
-  required: ['role'],
+  required: ['role', 'confidence'],
 };
 
 /**
