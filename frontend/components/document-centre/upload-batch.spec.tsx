@@ -110,14 +110,24 @@ describe('the one-line verdict, in the member\u2019s words', () => {
 });
 
 describe('whether a file gets the scanner treatment', () => {
-  it('⚠️ SKIPS A DOCUMENT WITH NO TEXT — A PHOTOGRAPH, NOT A PAGE', () => {
-    // Operator, 2026-10-14: the safe pictures came back washed out. The OCR the
-    // identify pass already took decides: no characters read = a photograph, so
-    // it must NOT be colour-normalised and wrapped to a page.
+  it('⚠️ NEVER FILTERS A PHOTOGRAPH KIND, EVEN WHEN THE OCR CAUGHT A LABEL', () => {
+    // Operator, 2026-10-14: the three safe photographs read ocrChars null, 11
+    // and 37 — Vision saw a serial or a word in the frame — so a text-only test
+    // skipped the first and FILTERED THE OTHER TWO. The KIND is the answer: a
+    // photograph is never treated as a page.
     expect(
-      shouldPolish(verdictOf({ kind: 'SAFE_PHOTOGRAPHS', ocrChars: 0 })),
+      shouldPolish(verdictOf({ kind: 'SAFE_PHOTOGRAPHS', ocrChars: 11 })),
     ).toBe(false);
-    // A misclassified photograph (OTHER) with no text is caught too.
+    expect(
+      shouldPolish(verdictOf({ kind: 'SAFE_PHOTOGRAPHS', ocrChars: 37 })),
+    ).toBe(false);
+    expect(
+      shouldPolish(verdictOf({ kind: 'SAFE_PHOTOGRAPHS', ocrChars: null })),
+    ).toBe(false);
+  });
+
+  it('⚠️ ALSO SKIPS A PAGE WITH NO TEXT FILED AS SOMETHING ELSE', () => {
+    // The net for a text-less page the classifier did not call a photograph.
     expect(shouldPolish(verdictOf({ kind: 'OTHER', ocrChars: null }))).toBe(false);
   });
 

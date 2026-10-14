@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { KIND_LABELS, type IdentifyVerdict } from '@/lib/licence-centre-api';
+import { SAFE_PHOTO_KINDS } from './kinds';
 
 // ────────────────────────────────────────────────────────────────────
 // ONE UPLOADER, ONE AI SORT — THE PER-FILE STRIP.
@@ -114,19 +115,28 @@ export function verdictLine(v: IdentifyVerdict): string {
 }
 
 /**
- * ⚠️ THE SCANNER TREATMENT IS FOR PAGES, AND A PAGE WITH NO TEXT IS NOT ONE.
+ * ⚠️ THE SCANNER TREATMENT IS FOR PAGES, AND A PHOTOGRAPH IS NOT A PAGE.
  *
  * Operator, 2026-10-14: "it also applies the filters to the safe pictures
  * washing them out. can we not do this when the is no text available on the
  * document." The colour and light normalise that makes a licence legible
  * flattens a photograph of a safe into a grey wash, and the wrap-to-a-page
- * crop has no page to aim at. The OCR the identify pass already took answers
- * it: a document that read no characters is a photograph, so its raw bytes go
- * up like evidence. A PDF reads `ocrChars` null and falls through the same
- * door (autoPolish would pass it through anyway).
+ * crop has no page to aim at.
+ *
+ * ⚠️ TEXT ALONE DECIDES IT WRONG, AND THE OPERATOR'S OWN THREE PHOTOGRAPHS
+ * PROVED IT. The identify pass read `ocrChars` null, 11 and 37 on the three
+ * safe photographs — Vision picks a serial or a word off a label in the frame
+ * — so the text test skipped the first and FILTERED THE OTHER TWO. A kind the
+ * classifier read as a photograph is therefore skipped WHOLESALE, and the
+ * text test stays only as the net for a text-less page filed as something
+ * else. See SAFE_PHOTO_KINDS.
  */
+const PHOTOGRAPH_KINDS: ReadonlySet<string> = new Set(SAFE_PHOTO_KINDS);
+
 export function shouldPolish(v: IdentifyVerdict): boolean {
-  return v.role === 'document' && (v.ocrChars ?? 0) > 0;
+  if (v.role !== 'document' || !v.kind) return false;
+  if (PHOTOGRAPH_KINDS.has(v.kind)) return false;
+  return (v.ocrChars ?? 0) > 0;
 }
 
 /**
