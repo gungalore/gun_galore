@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — MOTIVATIONS: THE ATTACHED DOCUMENTS ARE VISIBLE AND PREVIEWABLE (FRONTEND DEPLOY)
+
+Commit **`f4f3fb7f`** (`feat(motivations) show the attached documents and preview them full-screen`), 4 files, frontend-only deploy. Rollback point `alloutdoor-20261014-073607.dump`. Frontend health x2 OK, public 200 x2, three pm2 services online (backend untouched). Deployed HEAD `f4f3fb7f`.
+
+Gates: frontend `tsc` clean + **141 files/1733 tests** + production build OK.
+
+**The report.** Operator, 2026-10-14, driving the live page: "I don't see the physical documents." The shelf drew a generic file icon for every attachment, so the actual licence page was invisible.
+
+**What shipped.** `DocumentShelf` now fetches each document's authenticated blob URL (`loadUrl`) and draws the ACTUAL page as a 72px thumbnail (images; PDFs keep the icon), and a View control opens it full-screen (`components/licence-centre/document-preview.tsx` — image or PDF, Esc/backdrop to close). Verified live: the composed "Where the firearm is coming from" page shows the licence front on top and its back below on one page, and the firearm boxes (Type/Make/Model/Calibre/Serial + components) are filled "from a document you uploaded".
+
+**Know.** The thumbnails fetch one encrypted blob per image document on load; the URL is revoked when the tile unmounts.
+
 ## 2026-10-14 — MOTIVATIONS: THE READ FIELDS ARE APPLIED (FRONTEND DEPLOY)
 
 Commit **`27f99a11`** (`fix(motivations) apply the uploaded paperwork's read fields so the firearm boxes fill`), 1 file, frontend-only deploy. Rollback point `alloutdoor-20261014-072457.dump`. Frontend health x2 OK, public 200 x2, three pm2 services online (backend untouched). Deployed HEAD `27f99a11`.
