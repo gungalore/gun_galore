@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import DocumentShelf from './document-shelf';
 import type { SheetDocument } from './contract';
@@ -280,5 +280,57 @@ describe('saving your own documents to the Licence Centre', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Remove My ID' }));
     expect(onRemove).toHaveBeenCalledWith('u1');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// SEEING THE DOCUMENT ITSELF (2026-10-14).
+//
+// Operator: "I don't see the physical documents." The shelf drew a generic
+// file icon; now it draws the member's own page and opens it full-screen.
+// ────────────────────────────────────────────────────────────────────
+describe('seeing the document itself', () => {
+  const withUrls = () => {
+    Object.defineProperty(global.URL, 'createObjectURL', {
+      configurable: true,
+      value: () => 'blob:doc',
+    });
+    Object.defineProperty(global.URL, 'revokeObjectURL', {
+      configurable: true,
+      value: () => undefined,
+    });
+  };
+
+  it('⚠️ draws the actual page, not a generic icon', async () => {
+    withUrls();
+    const loadUrl = vi.fn().mockResolvedValue('blob:doc');
+    const { container } = render(
+      <DocumentShelf
+        documents={[doc({ label: 'Licence card' })]}
+        onUpload={vi.fn()}
+        onScan={vi.fn()}
+        loadUrl={loadUrl}
+      />,
+    );
+    await waitFor(() => expect(container.querySelector('img')).toBeTruthy());
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:doc');
+    expect(loadUrl).toHaveBeenCalledWith('u1');
+  });
+
+  it('⚠️ opens the page full-screen from the tile', async () => {
+    withUrls();
+    const loadUrl = vi.fn().mockResolvedValue('blob:doc');
+    render(
+      <DocumentShelf
+        documents={[doc({ label: 'Licence card' })]}
+        onUpload={vi.fn()}
+        onScan={vi.fn()}
+        loadUrl={loadUrl}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'View Licence card' }),
+    );
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
   });
 });

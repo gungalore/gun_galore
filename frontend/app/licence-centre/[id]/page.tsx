@@ -1378,9 +1378,12 @@ export default function LicenceCentreSheetPage() {
            the placement the server gave each row; this page only reads it.
          */}
 
-         <DocumentShelf
-          documents={sheet.documents}
-          keeping={keeping}
+          <DocumentShelf
+           documents={sheet.documents}
+           keeping={keeping}
+           loadUrl={(uploadId) =>
+             motivationsApi.uploadBlobUrl(getToken, id, uploadId)
+           }
           onRemove={async (uploadId) => {
             setBusy(true);
             try {

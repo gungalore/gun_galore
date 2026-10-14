@@ -1,8 +1,9 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useUploadEnhance } from "@/components/scan-upload/use-upload-enhance";
 import type { SheetDocument } from "./contract";
+import DocumentPreview from "./document-preview";
 
 // ────────────────────────────────────────────────────────────────────
 // THE DOCUMENT SHELF — everything attached, across the top, once.
@@ -144,6 +145,16 @@ export interface DocumentShelfProps {
    * while its own empty-state copy promised scanning.
    */
   onScan: () => void;
+  /**
+   * Fetch an authenticated blob URL for one attached document.
+   *
+   * ⚠️ THE BYTES ARE DECRYPTED PER REQUEST and there is no public URL, so a
+   * tile cannot use a plain `src`. This is what lets the shelf draw the ACTUAL
+   * page the member attached rather than a generic file icon — operator,
+   * 2026-10-14: "I don't see the physical documents." The caller owns the URL
+   * (see the note on uploadBlobUrl).
+   */
+  loadUrl?: (uploadId: string) => Promise<string>;
 }
 
 export default function DocumentShelf({
@@ -153,10 +164,37 @@ export default function DocumentShelf({
   onKeep,
   onRemove,
   keeping = false,
+  loadUrl,
 }: DocumentShelfProps) {
   const empty = documents.length === 0;
   const mine = documents.filter((d) => d.origin === "member");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  /** The document open in the full-screen preview, if any. */
+  const [preview, setPreview] = useState<{
+    label: string;
+    url: string;
+    mime: string | null;
+  } | null>(null);
+
+  const openPreview = useCallback(
+    async (doc: SheetDocument) => {
+      if (!loadUrl) return;
+      try {
+        const url = await loadUrl(doc.id);
+        setPreview({ label: doc.label, url, mime: doc.mime });
+      } catch {
+        /* fail-soft: the tile still shows the thumbnail */
+      }
+    },
+    [loadUrl],
+  );
+
+  const closePreview = useCallback(() => {
+    setPreview((p) => {
+      if (p) URL.revokeObjectURL(p.url);
+      return null;
+    });
+  }, []);
   /*
     ⚠️ THE PICKER OPENS THE OPERATING SYSTEM'S DIALOG FROM INSIDE THE TAP, so
     it cannot be wrapped in DocumentEnhancer (which owns its own trigger and
@@ -276,7 +314,17 @@ export default function DocumentShelf({
           {documents.map((d) => (
             <div key={d.id} className="w-[72px] flex-shrink-0">
               <div className="relative flex h-[92px] w-[72px] items-center justify-center overflow-hidden rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-tertiary)]">
-                <FileIcon />
+                {/* ⚠️ THE ACTUAL PAGE, NOT A GENERIC ICON. See Thumb. */}
+                <Thumb doc={d} loadUrl={loadUrl} />
+                {loadUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => void openPreview(d)}
+                    aria-label={`View ${d.label}`}
+                    title="View"
+                    className="absolute inset-0"
+                  />
+                ) : null}
                 {d.letter ? (
                   <span className="absolute bottom-[5px] left-[5px] rounded-[4px] bg-[var(--text-primary)] px-[5px] py-[3px] font-mono text-[10.5px] font-medium leading-none text-white">
                     {d.letter}
@@ -434,6 +482,58 @@ export default function DocumentShelf({
         removed — so this must live where the state lives.
       */}
       {enhanceOverlay}
+
+      {preview ? (
+        <DocumentPreview
+          label={preview.label}
+          url={preview.url}
+          mime={preview.mime}
+          onClose={closePreview}
+        />
+      ) : null}
     </div>
   );
+}
+
+/**
+ * One shelf tile's picture, or the generic icon while it loads.
+ *
+ * ⚠️ IT DRAWS THE MEMBER'S OWN PAGE (2026-10-14). Operator: "I don't see the
+ * physical documents." The bytes are encrypted and served per request, so the
+ * URL is fetched here and revoked when the tile goes. A PDF has no thumbnail to
+ * draw, so it keeps the icon and the view button opens it whole.
+ */
+function Thumb({
+  doc,
+  loadUrl,
+}: {
+  doc: SheetDocument;
+  loadUrl?: (uploadId: string) => Promise<string>;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const isImage = (doc.mime ?? "").startsWith("image/");
+
+  useEffect(() => {
+    if (!isImage || !loadUrl) return;
+    let live = true;
+    let made: string | null = null;
+    void loadUrl(doc.id)
+      .then((u) => {
+        made = u;
+        if (live) setUrl(u);
+        else URL.revokeObjectURL(u);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+      if (made) URL.revokeObjectURL(made);
+      setUrl(null);
+    };
+  }, [doc.id, isImage, loadUrl]);
+
+  if (url) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={url} alt="" className="h-full w-full object-cover" />;
+  }
+  return <FileIcon />;
 }
