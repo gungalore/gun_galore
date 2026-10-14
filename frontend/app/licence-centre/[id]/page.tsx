@@ -37,6 +37,7 @@ import type {
   DangerArea,
   LibraryItem,
   PickableKind,
+  Suggestion,
 } from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
@@ -629,9 +630,41 @@ export default function LicenceCentreSheetPage() {
    * this replaces, which put a full scanner-plus-picker-plus-reuse block on
    * every step and asked the member to file each one by hand.
    */
+  /**
+   * Write what a document was read as into the answers.
+   *
+   * ⚠️ THIS WAS MISSING AND IT IS WHY NOTHING EVER FILLED (2026-10-14). The
+   * server returns the read fields as `suggestions` and deliberately does not
+   * write them; the CALLER confirms them. Nothing on this page did — the
+   * upload's return value was dropped — so a licence card was read perfectly
+   * and every box stayed empty. `applyExtraction` only fills EMPTY fields, so a
+   * value the member typed is never overwritten, and the row stays editable with
+   * a "from a document you uploaded" source line.
+   */
+  const applyReads = useCallback(
+    async (suggestions: Suggestion[]) => {
+      const answers: Record<string, string> = {};
+      for (const s of suggestions) {
+        // ⚠️ TRUSTED ONLY. `trusted: false` is a read our own checks doubt (a
+        // Luhn-failing ID, a value the model was unsure of); writing that into a
+        // form the member signs is the one thing the extraction pipeline is
+        // built to refuse. The safe fields are the ones a licence card prints.
+        if (s?.key && s.value && s.trusted) answers[s.key] = s.value;
+      }
+      if (!Object.keys(answers).length) return;
+      try {
+        await motivationsApi.applyExtraction(getToken, id, answers);
+      } catch {
+        // Fail-soft: the document is stored either way; the member can type.
+      }
+    },
+    [getToken, id],
+  );
+
   const onAddFile = useCallback(
     async (kind: string, file: File) => {
       const added = await motivationsApi.addUpload(getToken, id, kind, file);
+      if (added?.suggestions?.length) await applyReads(added.suggestions);
       await load();
       setToast(
         added?.kind
@@ -640,7 +673,7 @@ export default function LicenceCentreSheetPage() {
       );
       return added;
     },
-    [getToken, id, load],
+    [getToken, id, load, applyReads],
   );
 
   const onRefile = useCallback(
@@ -669,8 +702,12 @@ export default function LicenceCentreSheetPage() {
         // and so the two sides of a licence can be told apart.
         const verdicts = await motivationsApi.identify(getToken, id, files);
         const prepared = await prepareSourceBatch(files, verdicts);
+        // ⚠️ COLLECT WHAT EVERY PAGE WAS READ AS, THEN WRITE IT. The upload's
+        // return value carries the suggestions; dropping it is why the firearm
+        // boxes stayed empty after a perfect read. See applyReads.
+        const reads: Suggestion[] = [];
         for (const p of prepared) {
-          await motivationsApi.addUpload(
+          const added = await motivationsApi.addUpload(
             getToken,
             id,
             'FIREARM_SOURCE_PROOF',
@@ -680,7 +717,9 @@ export default function LicenceCentreSheetPage() {
               saps271: p.saps271,
             },
           );
+          if (added?.suggestions?.length) reads.push(...added.suggestions);
         }
+        if (reads.length) await applyReads(reads);
         await load();
         setToast(
           prepared.length === 1
@@ -701,7 +740,7 @@ export default function LicenceCentreSheetPage() {
         setSourceBusy(false);
       }
     },
-    [getToken, id, load],
+    [getToken, id, load, applyReads],
   );
 
   /**
