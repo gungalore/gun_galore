@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useUploadEnhance } from "@/components/scan-upload/use-upload-enhance";
 import type { SheetDocument } from "./contract";
 import DocumentPreview from "./document-preview";
@@ -195,6 +195,52 @@ export default function DocumentShelf({
       return null;
     });
   }, []);
+
+  /**
+   * ⚠️ THE STRIP SCROLLS WITH NO VISIBLE SCROLLBAR, SO A MOUSE CANNOT MOVE IT.
+   * `.gg-row` hides the scrollbar (globals.css:1206), which is right for a
+   * touch swipe and useless on a desktop: once the documents run past the edge,
+   * there is nothing to drag. Operator, 2026-10-14: "add a slider when the
+   * documents get too much so the user can slide left and right." So the arrows
+   * appear only when there is somewhere to go — one at each end.
+   */
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+
+  const updateEdges = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    const left = el.scrollLeft > 2;
+    const right = el.scrollLeft < max - 2;
+    setEdges((cur) =>
+      cur.left === left && cur.right === right ? cur : { left, right },
+    );
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    updateEdges();
+    el.addEventListener("scroll", updateEdges, { passive: true });
+    // jsdom has no ResizeObserver; the arrows simply recompute on scroll there.
+    const ro =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateEdges) : null;
+    ro?.observe(el);
+    return () => {
+      el.removeEventListener("scroll", updateEdges);
+      ro?.disconnect();
+    };
+  }, [updateEdges, documents.length]);
+
+  const slide = useCallback((dir: -1 | 1) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({
+      left: dir * Math.max(160, Math.round(el.clientWidth * 0.8)),
+      behavior: "smooth",
+    });
+  }, []);
   /*
     ⚠️ THE PICKER OPENS THE OPERATING SYSTEM'S DIALOG FROM INSIDE THE TAP, so
     it cannot be wrapped in DocumentEnhancer (which owns its own trigger and
@@ -310,8 +356,19 @@ export default function DocumentShelf({
         Your documents
       </p>
       <div className="flex items-start gap-[10px] pr-4">
-        <div className="flex min-w-0 flex-1 gap-[10px] gg-row">
-          {documents.map((d) => (
+        <div className="relative min-w-0 flex-1">
+          {edges.left ? (
+            <button
+              type="button"
+              onClick={() => slide(-1)}
+              aria-label="Show earlier documents"
+              className="absolute left-0 top-1/2 z-[3] flex h-[36px] w-[26px] -translate-y-1/2 items-center justify-center rounded-[6px] border border-[var(--border)] bg-[var(--bg-card)] text-[18px] leading-none text-[var(--text-primary)] shadow-sm"
+            >
+              ‹
+            </button>
+          ) : null}
+          <div ref={scrollRef} className="flex min-w-0 flex-1 gap-[10px] gg-row">
+            {documents.map((d) => (
             <div key={d.id} className="w-[72px] flex-shrink-0">
               <div className="relative flex h-[92px] w-[72px] items-center justify-center overflow-hidden rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-tertiary)]">
                 {/* ⚠️ THE ACTUAL PAGE, NOT A GENERIC ICON. See Thumb. */}
@@ -383,7 +440,18 @@ export default function DocumentShelf({
                 {d.label}
               </div>
             </div>
-          ))}
+            ))}
+          </div>
+          {edges.right ? (
+            <button
+              type="button"
+              onClick={() => slide(1)}
+              aria-label="Show more documents"
+              className="absolute right-0 top-1/2 z-[3] flex h-[36px] w-[26px] -translate-y-1/2 items-center justify-center rounded-[6px] border border-[var(--border)] bg-[var(--bg-card)] text-[18px] leading-none text-[var(--text-primary)] shadow-sm"
+            >
+              ›
+            </button>
+          ) : null}
         </div>
 
         {/*

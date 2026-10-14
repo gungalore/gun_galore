@@ -334,3 +334,36 @@ describe('seeing the document itself', () => {
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE SLIDERS (2026-10-14).
+//
+// Operator: "add a slider when the documents get too much so the user can slide
+// left and right." `.gg-row` hides the scrollbar, so a mouse has nothing to
+// drag once the documents run past the edge.
+// ────────────────────────────────────────────────────────────────────
+describe('sliding through the documents', () => {
+  it('⚠️ shows the right arrow only when the strip overflows', async () => {
+    const many = Array.from({ length: 8 }, (_, i) =>
+      doc({ id: `u${i}`, label: `Doc ${i}` }),
+    );
+    render(<DocumentShelf documents={many} onUpload={vi.fn()} onScan={vi.fn()} />);
+
+    const strip = document.querySelector('.gg-row') as HTMLElement;
+    Object.defineProperty(strip, 'scrollWidth', { value: 1000, configurable: true });
+    Object.defineProperty(strip, 'clientWidth', { value: 300, configurable: true });
+    strip.dispatchEvent(new Event('scroll'));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Show more documents')).toBeDefined(),
+    );
+    // Nothing to the left yet — the strip is at its start.
+    expect(screen.queryByLabelText('Show earlier documents')).toBeNull();
+  });
+
+  it('offers no slider when everything fits', () => {
+    render(<DocumentShelf documents={[doc()]} onUpload={vi.fn()} onScan={vi.fn()} />);
+    expect(screen.queryByLabelText('Show more documents')).toBeNull();
+    expect(screen.queryByLabelText('Show earlier documents')).toBeNull();
+  });
+});
