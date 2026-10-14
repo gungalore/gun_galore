@@ -7,6 +7,30 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — MOTIVATIONS: THE SAPS 271'S FIREARM BOXES, AND KEEPING THE CARD'S "NONE" (FULL DEPLOY)
+
+Commit **`7b2bc27b`** (`fix(motivations) fill the 271's firearm boxes and keep the card's NONE`), 7 files, full deploy via `infra/deploy/deploy.sh` (Git Bash, backend touched). Rollback point `alloutdoor-20261014-165253.dump` (`/var/backups/alloutdoor/db/`). Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `7b2bc27b`. No migration.
+
+Gates: backend `tsc` clean + **354 suites/5578 tests**; frontend `tsc` clean + **142 files/1745 tests** + production build OK.
+
+**The reports.** Operator, 2026-10-14, on the generated SAPS 271 for MO000094 (S13, applied-for Glock 9mm): "It missed a lot of the applied for firearms details. It also wrongly filled in my current firearms details." Then: "make sure NONE is always kept and used as it is on the card."
+
+**Cause (read from the live row MO000094 + the vault).**
+- **The applied-for firearm's component rows (E 1.7–1.12) printed blank.** The FIREARM_SOURCE_PROOF upload's stored reading held all 12 fields, including `barrel_serial/frame_serial/receiver_serial` and their makes (all `ZABA01892`/`GLOCK`), but the ANSWERS carried only six. `FIREARM_SOURCE_PROOF`'s `EXTRACTABLE` list stopped at `firearm_serial`; the six component keys came ONLY from the `readFirearm` second pass, which tags every value `trusted: false`, and the one-tap upload flow (`applyReads`, `frontend/app/licence-centre/[id]/page.tsx`) writes only trusted fields — so they were read and dropped.
+- **Item 2.1's Barrel Serial No column printed blank on every row.** `credentialOffer` computed it, but `offer()` gates on `keys.has(key)` where `keys` came from `fieldsFor()`, which deliberately excludes the collapsed legacy keys `existing_firearm_N_barrel_serial`/`_frame_serial`. Every owned barrel/frame serial the vault held (e.g. the Marlin's `NONE`, the Glock's `ZABA01892`) was silently dropped.
+- **NONE was stripped in three places** while the SAPS 271 wants it: `parseFirearmReading` dropped it; the readFirearm answer boundary ran `answerValue`; and the offer gate above.
+
+**What shipped.**
+- `motivation-extract.service.ts` — added `barrel_serial, barrel_make, frame_serial, frame_make, receiver_serial, receiver_make` to `EXTRACTABLE.FIREARM_SOURCE_PROOF`, so the component rows reach the answers on the trusted confidence path.
+- `common/firearm-identity.ts` — `parseFirearmReading` keeps `NONE`/`N/A`/`nil`; only the model declining (`unknown`, `not visible/stated/shown/legible`) is dropped.
+- `motivation-documents.service.ts` — the readFirearm answer boundary keeps the card's value verbatim.
+- `motivation-credentials.ts` — `offer()` now accepts the legacy owned component keys. The strip stays at the PROSE boundary (`renderFacts`), so the writer never sees "Model NONE".
+
+**Know.**
+- ⚠️ The fix applies to NEW reads and NEW applications. MO000094 (and any already-completed form) will not change; regenerate it (or a fresh application) to see the boxes fill. The vault already holds the component serials (WANTED.FIREARM_LICENCE reads them), so a fresh create picks them up via `credentialOffer`.
+- ⚠️ Left as-is, deliberately: in-wizard `CURRENT_LICENCE` batches all target the same free row (the slot is computed from SAVED answers before any is applied). It is harmless here because those reads are untrusted and the vault already lists the firearms; making them trusted would duplicate the vault rows.
+- ⚠️ Section F (current owner) stays blank until the private seller completes consent — by design.
+
 ## 2026-10-14 — MOTIVATIONS: THE DOCUMENTS SHELF STOPS RE-FETCHING (FRONTEND DEPLOY)
 
 Commit **`f6a9bc6d`** (`fix(motivations) stop the documents shelf re-fetching every thumbnail on every render`), 3 files, frontend-only deploy via `infra/deploy/deploy.sh --frontend-only` (Git Bash) — the backend kept serving (uptime 29m after). Rollback point `alloutdoor-20261014-145152.dump` (~30 MB). Frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `f6a9bc6d`. No migration.
