@@ -7,6 +7,24 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — OCR/IDENTIFICATION ON 3.1-FLASH-LITE, AND NO FILTERS ON A PHOTOGRAPH (FULL DEPLOY)
+
+Commits **`f6105520`** (`feat(llm): OCR and identification run on 3.1-flash-lite, escalating to 3.8 on low confidence`, 8 files) and **`cb7a039e`** (`fix(document-centre): do not run the scanner filters over a photograph with no text`, 3 files), full deploy (both sides touched) via `infra/deploy/deploy.sh`. Rollback point `alloutdoor-20261014-142233.dump` (~30 MB). Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `cb7a039e`. No migration.
+
+Gates: backend `tsc` clean + **354 suites/5578 tests** (`npm test -- --maxWorkers=2`); frontend `tsc` clean + **142 files/1743 tests** + production build OK.
+
+**The reports.** Operator, 2026-10-14: "can we have gemini 3.1 flash lite with reasoning do the OCR to save on tokens" → "just implement 3.1 if the confidence is not high with a OCR or identification switch to 3.8 to help with that task"; and "it also applies the filters to the safe pictures washing them out. can we not do this when the is no text available on the document."
+
+**What shipped.**
+- **Model escalation.** `FAST_GEMINI_MODEL` (`gemini-3.1-flash-lite`) is now the PRIMARY for `vault.classify`, `vault.read` and `licence.card.*` (`modelFor` in `llm.service.ts`); a not-confident answer retries ONCE on `STRONG_GEMINI_MODEL` (`gemini-3.8-flash`). `classifyVision` retries a `low`/unparseable answer (the retry wins only if IT is confident); `read` retries a parsed-but-unsure one and keeps the stronger reply only if it recovered more (`readingScore`); the licence-card OCR retries an incomplete card (missing ID or component row) then runs the focused ID pass, both on strong. ⚠️ Reasoning does NOT save tokens — the cheaper model does; on a 3-series id the thinking config is a LEVEL, so `budgetTokens: 0` still reasons at LOW.
+- **Pricing.** `llm.pricing.ts` 3.1-flash-lite (`$0.25`/`$1.50`/`$0.025`) and 3.8-flash (`$0.75`/`$3.75`/`$0.075`) confirmed from the operator's pricing-page screenshots, replacing wrong placeholders. ⚠️ 3.8-flash DOUBLES on 2027-01-01 (input `$1.50`, output `$7.50`); the ledger under-reports by half after that until the row is re-read.
+- **No filters on a text-less page.** The Document Centre batch (`prepareCard` in `app/licence-centre/page.tsx`) polishes a document ONLY when the identify pass read text off it — `shouldPolish(v) = v.role === 'document' && (v.ocrChars ?? 0) > 0` (`components/document-centre/upload-batch.tsx`). A page with no OCR characters is a photograph: the colour/light normalise washed it out and the wrap-to-a-page crop had no page to aim at. Its raw bytes go up like evidence. This keys off TEXT, not the kind, so a misclassified photograph is caught too.
+
+**Know.**
+- ⚠️ If the OCR call is down, `ocrChars` is `null` and a real document will also skip the polish (cosmetic; recoverable with "Fix crop"). Fall back to `kind`-based if that ever bites.
+- Scope of the no-filter change: the Document Centre batch only. `lib/scan-upload/source-batch.ts` (the applied-for firearm's paperwork) has no `ocrChars` on its verdict and is untouched.
+- The three safe photographs from the earlier report still sit as `OTHER` — refile them or re-scan; new uploads classify correctly (see the entry below).
+
 ## 2026-10-14 — DOCUMENT CENTRE: A SAFE PHOTOGRAPH FILES AS A SAFE PHOTOGRAPH (BACKEND DEPLOY)
 
 Commit **`6960bd6d`** (`fix(document-centre): require a confidence so a safe photograph files as one`), 2 files, backend-only deploy via `infra/deploy/deploy.sh --backend-only` (Git Bash) — the frontend kept serving (uptime 29m after). Rollback point `alloutdoor-20261014-132237.dump` (30.5 MB). Backend health x2 OK, public 200 x2, three pm2 services online (`alloutdoor-backend`, `alloutdoor-frontend`, `warden`). Deployed HEAD `6960bd6d`. No migration.
