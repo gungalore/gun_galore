@@ -7,6 +7,27 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — MOTIVATIONS: PURPOSE EXHIBITS, 1–2 PAGES OF GENERATED PICTURES UNDER HEADING 3 (FULL DEPLOY + MIGRATION)
+
+Commit **`4d6cc2d5`** (`feat(motivations) purpose exhibits: 1-2 pages of generated pictures under heading 3`), 14 files (3 new source + spec, hand-written migration `20261014180000_motivation_plates`). Full deploy via `infra/deploy/deploy.sh` (Git Bash). Migration applied by `migrate deploy` — verified: `MotivationPlate` exists on the box and the migration is recorded finished. Rollback point `alloutdoor-20261014-201455.dump` (`/var/backups/alloutdoor/db/`, ~30.5 MB). Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `4d6cc2d5`.
+
+Gates: backend `tsc` clean + **355 suites/5592 tests** (one file-storage timeout was an unrelated flake, green in isolation); frontend `tsc` clean + **142 files/1745 tests** + production build OK.
+
+**The report.** Operator, 2026-10-14: "i want nano banana 2.1 images generated for all sections. 1 to 2 pages per application with descriptions of the pictures. For hunting the quarry the rifle can hunt, for self defense scenarios where the person might find themselves in. For sport shooting the activities they will be attending in competition or recreationally." Confirmed: embedded under heading 3, 2 pages, `gemini-3.1-flash-lite-image`.
+
+**What shipped.**
+- **`motivation-plates.ts`** — the scenes chosen IN CODE from the applicant's own answers, never a model. `purposeFor()` maps S13/S14 → self-defence, S16 hunter / S15 hunting → hunting, S16 sport / S15 sport → sport, S24 → none. Hunting pictures one plate per species the research names, filtered by the applicant's own `hunt_game_class` (reuses `quarriesFor`). Self-defence picks scenes (rural perimeter, communal access, commute, driveway) from premises/movements/circumstances. Sport picks disciplines from firearm class, action and association. Fail-soft: an empty list is a valid answer.
+- **`motivation-plates.service.ts`** — draws in PARALLEL (4 max) via `LlmService.generateImage` (`model` defaults to `gemini-3.1-flash-lite-image`, `aspectRatio: '2:1'`), crops with `sharp` to 1800×900, stores one row per plate; replaces on regeneration; one refusal/slow call loses one plate.
+- **`MotivationPlate`** table (schema + migration), bytes in-row so `pg_dump` covers them. A row per plate so a partial failure is not all-or-nothing.
+- **PDF** (`motivation-pdf.service.ts`): `drawPurposePlates()` prints the exhibits under the plan's heading 3 — matched on `purposeHeading` off the structure plan, flushed at the next heading like the crime evidence — each page a clean `addPage()` with `3.1 Purpose exhibits (page N of M)` in the contents. A plate with no picture still prints its words.
+- **Generation** (`motivation-generation.service.ts`): `purposePlates.makeFor()` beside the quarry plate; NOT gated on research.
+
+**Know.**
+- ⚠️ The prompts keep a self-defence or sport scene to the PLACE (a gate, a road, a range bay) with no people, weapons or acts, so the image model's violence filter clears. Do not add a person or a firearm to those prompts — a refused plate is a blank page in a lodged document.
+- ⚠️ Cost and latency: ~$0.035/image, up to 4 per application, drawn in parallel (~15–25 s added to a run). A hunting pack whose research names no species gets no exhibits.
+- ⚠️ A regeneration redraws the plates (a second gate cycle pays again), deliberately — matching the quarry plate, because new research can name different species/scenarios.
+- Existing packs (e.g. MO000094) are unchanged; regenerate or file a new application to see the exhibits.
+
 ## 2026-10-14 — MOTIVATIONS: THE SAPS 271'S FIREARM BOXES, AND KEEPING THE CARD'S "NONE" (FULL DEPLOY)
 
 Commit **`7b2bc27b`** (`fix(motivations) fill the 271's firearm boxes and keep the card's NONE`), 7 files, full deploy via `infra/deploy/deploy.sh` (Git Bash, backend touched). Rollback point `alloutdoor-20261014-165253.dump` (`/var/backups/alloutdoor/db/`). Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `7b2bc27b`. No migration.
