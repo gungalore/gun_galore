@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 
-import { LlmService } from '../common/llm/llm.service';
+import { LlmService, STRONG_GEMINI_MODEL } from '../common/llm/llm.service';
 import type { LlmPart } from '../common/llm/llm.types';
 import { DocumentFilingService } from '../common/document-filing/document-filing.service';
 import {
@@ -247,6 +247,19 @@ function replyShape(text: string): string {
   }
   if (t.startsWith('[')) return 'array';
   return 'prose';
+}
+
+/**
+ * How much a reading actually recovered, so an escalated read is kept only
+ * where it beat the primary. See read(): the stronger model is a retry, not a
+ * replacement, and a reply that read LESS must not win.
+ */
+function readingScore(reading: CredentialReading): number {
+  return (
+    Object.keys(reading.details).length +
+    (reading.expiresOn ? 1 : 0) +
+    (reading.issuedOn ? 1 : 0)
+  );
 }
 
 /**
@@ -787,11 +800,35 @@ export class LicenceCentreExtractService {
   }): Promise<VaultClassifyAnswer | null> {
     if (!this.llm.isConfigured()) return null;
 
+    const fast = await this.classifyVisionOnce(args);
+    /**
+     * ⚠️ NOT CONFIDENT → ONE RETRY ON THE STRONGER MODEL.
+     *
+     * Operator, 2026-10-14: "just implement 3.1 if the confidence is not high
+     * with a OCR or identification switch to 3.8 to help with that task." The
+     * primary is the cheap `gemini-3.1-flash-lite` (see modelFor); a `low` or
+     * unparseable answer is exactly the case the bigger model is kept for. The
+     * retry WINS ONLY WHEN IT IS CONFIDENT — a second unsure answer must not
+     * overwrite the first, since `filedKindOrOther` files either as OTHER.
+     */
+    if (fast?.confident) return fast;
+    const strong = await this.classifyVisionOnce(args, STRONG_GEMINI_MODEL);
+    return strong?.confident ? strong : (fast ?? strong);
+  }
+
+  /** One classify call — on `model`, or the primary `modelFor` gives. */
+  private async classifyVisionOnce(
+    args: { bytes: Buffer; mimeType: string },
+    model?: string,
+  ): Promise<VaultClassifyAnswer | null> {
     let text = '';
     try {
       const res = await this.llm.complete({
-        // No `model`: every call takes LlmService.model. See the note at the
-        // top of this file about the two model names that used to live here.
+        // ⚠️ `model` IS THE ESCALATION, AND ABSENT MEANS THE PRIMARY. With it
+        // unset the call takes modelFor('vault.classify') — the cheap
+        // flash-lite — so the retry is the only thing that ever names a
+        // stronger model. See FAST/STRONG_GEMINI_MODEL in llm.service.ts.
+        ...(model ? { model } : {}),
         maxTokens: 200,
         // ⚠️ THINKING OFF, LIKE transcribe(). A vision answer that must come
         // back as strict JSON cannot share its output budget with a reasoning
@@ -975,6 +1012,35 @@ export class LicenceCentreExtractService {
   }): Promise<CredentialReading> {
     if (!this.llm.isConfigured()) return EMPTY;
 
+    const fast = await this.readOnce(args);
+    /**
+     * ⚠️ NOT CONFIDENT → ONE RETRY ON THE STRONGER MODEL.
+     *
+     * Operator, 2026-10-14: "just implement 3.1 if the confidence is not high
+     * with a OCR or identification switch to 3.8 to help with that task." The
+     * primary is the cheap `gemini-3.1-flash-lite` (see modelFor). A result
+     * with NO `reader` is an outage or an unconfigured provider — retrying in
+     * vain — so only a reply that PARSED but came back unsure (`autoFillable`
+     * false, i.e. it flagged a field it does store) escalates. The stronger
+     * read is kept only where it recovered MORE than the first (readingScore),
+     * so a worse reply can never replace a better one.
+     */
+    if (fast.autoFillable === true || !fast.reader) return fast;
+    const strong = await this.readOnce({
+      ...args,
+      model: STRONG_GEMINI_MODEL,
+    });
+    return readingScore(strong) > readingScore(fast) ? strong : fast;
+  }
+
+  /** One read call — on `model`, or the primary `modelFor` gives. */
+  private async readOnce(args: {
+    kind: CredentialKind;
+    bytes: Buffer;
+    mimeType: string;
+    alsoCovers?: CredentialKind[];
+    model?: string;
+  }): Promise<CredentialReading> {
     const keys = [
       ...wantedFor(args.kind, args.alsoCovers ?? []),
       'issued_on',
@@ -985,6 +1051,11 @@ export class LicenceCentreExtractService {
     let stopReason: string | undefined;
     try {
       const res = await this.llm.complete({
+        // ⚠️ `model` IS THE ESCALATION, AND ABSENT MEANS THE PRIMARY. Unset,
+        // this call takes modelFor('vault.read') — the cheap flash-lite — so
+        // the retry is the only thing that ever names a stronger model. See
+        // FAST/STRONG_GEMINI_MODEL in llm.service.ts.
+        ...(args.model ? { model: args.model } : {}),
         // ⚠️ THINKING OFF, AND THE BUDGET RAISED. On 2026-10-13 two of a
         // five-document pack read as NOTHING — the log said "unparseable
         // JSON" — and the cause is here: unlike transcribe(), this call left

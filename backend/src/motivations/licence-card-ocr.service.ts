@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { LlmService } from '../common/llm/llm.service';
+import { LlmService, STRONG_GEMINI_MODEL } from '../common/llm/llm.service';
 import type { LlmPart } from '../common/llm/llm.types';
 import type { FirearmSnapshot } from './motivation-seller-consent.service';
 
@@ -178,9 +178,74 @@ export class LicenceCardOcrService {
     }
     if (!bytes?.length) return EMPTY;
 
+    let reading = await this.readFull(bytes, mimeType);
+    /**
+     * ⚠️ NOT A COMPLETE CARD → ONE RETRY ON THE STRONGER MODEL.
+     *
+     * Operator, 2026-10-14: "just implement 3.1 if the confidence is not high
+     * with a OCR or identification switch to 3.8 to help with that task." The
+     * primary is the cheap `gemini-3.1-flash-lite` (modelFor pins
+     * `licence.card.*`). The card is complete BY CONSTRUCTION — every row is
+     * printed — so a missing ID or component is a read we got wrong, not a
+     * fact the card omitted, which is exactly when the bigger model is worth
+     * its cost. The stronger reply is kept only where it recovered MORE
+     * (pickBetter), so a worse read never replaces a better one.
+     */
+    if (!reading || !isCompleteCard(reading)) {
+      const strong = await this.readFull(bytes, mimeType, STRONG_GEMINI_MODEL);
+      reading = pickBetter(reading, strong);
+    }
+    if (!reading) return EMPTY;
+
+    // ⚠️ THE ID FALLS BACK TO ITS OWN FOCUSED READ. See ID_ONLY_SCHEMA: even
+    // the stronger model can drop the smallest field on the card, and the ID is
+    // the one the seller must not be left to type by hand.
+    if (!reading.holderIdNumber) {
+      reading.holderIdNumber = await this.readIdOnly(
+        bytes,
+        mimeType,
+        STRONG_GEMINI_MODEL,
+      );
+    }
+
+    const short = (
+      [
+        'barrelSerial',
+        'barrelMake',
+        'receiverSerial',
+        'receiverMake',
+        'frameSerial',
+        'frameMake',
+      ] as CardField[]
+    ).filter((k) => !reading!.fields[k]);
+    if (short.length) {
+      this.logger.warn(
+        `Licence-card read is short of ${short.length} component field(s): ${short.join(', ')} — the card always prints all six`,
+      );
+    }
+    if (!reading.holderIdNumber) {
+      this.logger.warn(
+        'Licence-card read returned no holder ID (13 digits) from any pass',
+      );
+    }
+
+    return { ...reading, ok: true };
+  }
+
+  /** One full-card read — on `model`, or the primary `modelFor` gives. */
+  private async readFull(
+    bytes: Buffer,
+    mimeType: string,
+    model?: string,
+  ): Promise<CardRead | null> {
     let text = '';
     try {
       const res = await this.llm.complete({
+        // ⚠️ `model` IS THE ESCALATION, AND ABSENT MEANS THE PRIMARY. Unset,
+        // this call takes modelFor('licence.card.read') — the cheap flash-lite
+        // — so the retry is the only thing that names a stronger model. See
+        // FAST/STRONG_GEMINI_MODEL in llm.service.ts.
+        ...(model ? { model } : {}),
         maxTokens: 700,
         timeoutMs: 45_000,
         system: SYSTEM,
@@ -198,7 +263,7 @@ export class LicenceCardOcrService {
       text = res.text.trim();
     } catch (err) {
       this.logger.warn(`Licence-card read failed: ${(err as Error).message}`);
-      return EMPTY;
+      return null;
     }
 
     let parsed: Record<string, unknown>;
@@ -206,7 +271,7 @@ export class LicenceCardOcrService {
       parsed = JSON.parse(text) as Record<string, unknown>;
     } catch {
       this.logger.warn('Licence-card read returned unparseable JSON');
-      return EMPTY;
+      return null;
     }
 
     // ⚠️ EMPTY STAYS EMPTY. A blank value is dropped rather than written, so a
@@ -217,41 +282,11 @@ export class LicenceCardOcrService {
       if (value) (fields as Record<string, string>)[key] = value;
     }
 
-    const short = (
-      [
-        'barrelSerial',
-        'barrelMake',
-        'receiverSerial',
-        'receiverMake',
-        'frameSerial',
-        'frameMake',
-      ] as CardField[]
-    ).filter((k) => !fields[k]);
-    if (short.length) {
-      this.logger.warn(
-        `Licence-card read is short of ${short.length} component field(s): ${short.join(', ')} — the card always prints all six`,
-      );
-    }
-
-    // ⚠️ THE ID FALLS BACK TO ITS OWN FOCUSED READ. See ID_ONLY_SCHEMA: the
-    // full read occasionally drops the smallest field on the card, and the ID
-    // is the one the seller must not be left to type by hand.
-    let holderIdNumber = readId(parsed.holder_id_number);
-    if (!holderIdNumber) {
-      holderIdNumber = await this.readIdOnly(bytes, mimeType);
-    }
-    if (!holderIdNumber) {
-      this.logger.warn(
-        'Licence-card read returned no holder ID (13 digits) from either pass',
-      );
-    }
-
     return {
       fields,
-      holderIdNumber,
+      holderIdNumber: readId(parsed.holder_id_number),
       holderNameOnCard: asText(parsed.holder_name) || undefined,
       rawText: text,
-      ok: true,
     };
   }
 
@@ -259,9 +294,11 @@ export class LicenceCardOcrService {
   private async readIdOnly(
     bytes: Buffer,
     mimeType: string,
+    model?: string,
   ): Promise<string | undefined> {
     try {
       const res = await this.llm.complete({
+        ...(model ? { model } : {}),
         maxTokens: 40,
         timeoutMs: 30_000,
         system:
@@ -327,4 +364,42 @@ function readId(value: unknown): string | undefined {
         : '';
   const digits = s.replace(/\D/g, '');
   return digits.length === 13 ? digits : undefined;
+}
+
+/**
+ * One full-card reading, before the public `ok` is stamped on.
+ *
+ * `null` from readFull means the call failed or the reply would not parse —
+ * distinct from a reading that came back merely incomplete.
+ */
+type CardRead = Omit<LicenceCardReading, 'ok'>;
+
+/** How much of the card this read recovered — see read()'s escalation. */
+function completeness(reading: CardRead): number {
+  return (
+    Object.keys(reading.fields).length +
+    (reading.holderIdNumber ? 1 : 0) +
+    (reading.holderNameOnCard ? 1 : 0)
+  );
+}
+
+/**
+ * ⚠️ THE CARD IS COMPLETE BY CONSTRUCTION, SO ANYTHING MISSING IS OUR MISS.
+ * The operator, holding one: "it will either be a serial next to every
+ * component or NONE, but it will never be empty." So every CARD_FIELD being
+ * present (with "NONE" counting as present) is the definition of a confident
+ * read — and the trigger for the escalation in read().
+ */
+function isCompleteCard(reading: CardRead): boolean {
+  return (
+    Boolean(reading.holderIdNumber) &&
+    CARD_FIELDS.every((key) => Boolean(reading.fields[key]))
+  );
+}
+
+/** Whichever read recovered more; a tie keeps the first (the cheaper) one. */
+function pickBetter(a: CardRead | null, b: CardRead | null): CardRead | null {
+  if (!a) return b;
+  if (!b) return a;
+  return completeness(a) >= completeness(b) ? a : b;
 }

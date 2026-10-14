@@ -219,6 +219,68 @@ describe('the document-or-evidence role', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────
+// THE CONFIDENCE ESCALATION.
+//
+// ⚠️ OPERATOR, 2026-10-14. The primary vision model is the cheap
+// gemini-3.1-flash-lite (modelFor pins `vault.classify` to it). When its
+// answer is not confident, classifyVision retries ONCE on gemini-3.8-flash —
+// and the retry wins only when IT is confident, so a second unsure answer
+// never overwrites a better first one.
+// ────────────────────────────────────────────────────────────────────
+describe('the vision confidence escalation', () => {
+  const svcWithQueue = (replies: string[]) => {
+    let i = 0;
+    const complete: jest.Mock = jest.fn(async () => {
+      const text = replies[Math.min(i++, replies.length - 1)] ?? '';
+      return {
+        text,
+        parts: [{ type: 'text', text }],
+        toolCalls: [],
+        stopReason: 'end',
+        usage: { inputTokens: 10, outputTokens: 10 },
+        model: 'test-model',
+        provider: 'gemini',
+        assistantMessage: { role: 'assistant', content: text },
+      } as LlmResponse;
+    });
+    return {
+      svc: new LicenceCentreExtractService({
+        complete,
+        isConfigured: () => true,
+      } as never),
+      complete,
+    };
+  };
+
+  it('\u26a0\ufe0f RETRIES ON 3.8-FLASH WHEN THE PRIMARY IS NOT CONFIDENT', async () => {
+    const { svc, complete } = svcWithQueue([
+      '{"role":"document","kind":"SAFE_PHOTOGRAPHS","confidence":"low"}',
+      '{"role":"document","kind":"SAFE_PHOTOGRAPHS","confidence":"high"}',
+    ]);
+    await expect(svc.classify(png)).resolves.toMatchObject({
+      role: 'document',
+      kind: CredentialKind.SAFE_PHOTOGRAPHS,
+      confident: true,
+    });
+    expect(complete).toHaveBeenCalledTimes(2);
+    // The first call takes the primary (no explicit model); the retry names it.
+    expect(complete.mock.calls[0][0].model).toBeUndefined();
+    expect(complete.mock.calls[1][0].model).toBe('gemini-3.8-flash');
+  });
+
+  it('keeps the first answer when the retry is ALSO unsure', async () => {
+    const { svc } = svcWithQueue([
+      '{"role":"document","kind":"SAFE_PHOTOGRAPHS","confidence":"low"}',
+      '{"role":"document","kind":"OTHER","confidence":"low"}',
+    ]);
+    await expect(svc.classify(png)).resolves.toMatchObject({
+      kind: CredentialKind.SAFE_PHOTOGRAPHS,
+      confident: false,
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
 // THE ORIENTATION QUESTION — A SEPARATE CALL, ON PURPOSE.
 //
 // ⚠️ IT MUST NOT LIVE ON classify(). Bending the kind prompt to answer

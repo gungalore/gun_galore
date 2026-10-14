@@ -140,9 +140,29 @@ describe('LicenceCardOcrService', () => {
     expect(spaced.holderIdNumber).toBe('8001015009087');
   });
 
-  it('⚠️ RE-READS THE ID ON ITS OWN WHEN THE FULL READ MISSES IT', async () => {
+  it('⚠️ ESCALATES TO THE STRONGER MODEL WHEN THE CARD READ IS INCOMPLETE', async () => {
+    // ⚠️ OPERATOR, 2026-10-14. The primary is 3.1-flash-lite (modelFor). The
+    // card is complete by construction, so a missing ID is a wrong read — and
+    // the retry names 3.8-flash explicitly. The first call takes the primary.
     const complete = jest
       .fn()
+      .mockResolvedValueOnce({
+        text: JSON.stringify({ ...GLOCK, holder_id_number: '' }),
+      })
+      .mockResolvedValueOnce({ text: JSON.stringify(GLOCK) });
+    const r = await make(complete).read(Buffer.from('x'), 'image/jpeg');
+    expect(r.holderIdNumber).toBe('8001015009087');
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[0][0].model).toBeUndefined();
+    expect(complete.mock.calls[1][0].model).toBe('gemini-3.8-flash');
+  });
+
+  it('⚠️ RE-READS THE ID ON ITS OWN WHEN EVEN THE STRONGER READ MISSES IT', async () => {
+    const complete = jest
+      .fn()
+      .mockResolvedValueOnce({
+        text: JSON.stringify({ ...GLOCK, holder_id_number: '' }),
+      })
       .mockResolvedValueOnce({
         text: JSON.stringify({ ...GLOCK, holder_id_number: '' }),
       })
@@ -151,8 +171,10 @@ describe('LicenceCardOcrService', () => {
       });
     const r = await make(complete).read(Buffer.from('x'), 'image/jpeg');
     expect(r.holderIdNumber).toBe('8001015009087');
-    expect(complete).toHaveBeenCalledTimes(2);
-    expect(complete.mock.calls[1][0].purpose).toBe('licence.card.read.id');
+    expect(complete).toHaveBeenCalledTimes(3);
+    expect(complete.mock.calls[1][0].model).toBe('gemini-3.8-flash');
+    expect(complete.mock.calls[2][0].purpose).toBe('licence.card.read.id');
+    expect(complete.mock.calls[2][0].model).toBe('gemini-3.8-flash');
   });
 
   it('coerces an ID returned as a JSON number', async () => {

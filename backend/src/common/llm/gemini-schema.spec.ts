@@ -358,10 +358,46 @@ describe('costUsdMicros', () => {
     ).toBe(400_000);
   });
 
+  // ⚠️ CONFIRMED BY THE OPERATOR 2026-10-14 (pricing-page screenshot). These
+  // are the OCR/identification rows — a wrong rate here under-reports every
+  // document read, every licence-card OCR and every safe photograph.
+  it('\u26a0\ufe0f PRICES THE OCR/IDENTIFICATION MODELS AT THE CONFIRMED RATES', () => {
+    // gemini-3.1-flash-lite: in $0.25/1M, out $1.50/1M.
+    expect(
+      costUsdMicros({
+        model: 'gemini-3.1-flash-lite',
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+      }),
+    ).toBe(250_000);
+    expect(
+      costUsdMicros({
+        model: 'gemini-3.1-flash-lite',
+        inputTokens: 0,
+        outputTokens: 1_000_000,
+      }),
+    ).toBe(1_500_000);
+    // gemini-3.8-flash: in $0.75/1M, out $3.75/1M (through 2026-12-31; the
+    // ledger will under-report by half from 2027-01-01 when Google doubles it).
+    expect(
+      costUsdMicros({
+        model: 'gemini-3.8-flash',
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+      }),
+    ).toBe(750_000);
+    expect(
+      costUsdMicros({
+        model: 'gemini-3.8-flash',
+        inputTokens: 0,
+        outputTokens: 1_000_000,
+      }),
+    ).toBe(3_750_000);
+  });
+
   // ⚠️ promptTokenCount INCLUDES the cached tokens, so they must be billed
   // once at the cache rate, not twice.
-  it('bills cached tokens at the cache rate, not on top of input', () => {
-    expect(
+  it('bills cached tokens at the cache rate, not on top of input', () => {    expect(
       costUsdMicros({
         model: 'gemini-2.5-flash-lite',
         inputTokens: 1_000_000,

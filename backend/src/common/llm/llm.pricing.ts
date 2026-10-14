@@ -13,6 +13,17 @@
 //   gemini-3.5-flash-lite    input  $0.30 / 1M  (text, image, video, audio)
 //                            output $2.50 / 1M
 //                            cached $0.03 / 1M
+//   gemini-3.1-flash-lite    input  $0.25 / 1M  (text, image, video; audio $0.50)
+//                            output $1.50 / 1M  (thinking tokens included)
+//                            cached $0.025 / 1M
+//   gemini-3.8-flash         input  $0.75 / 1M  (through 2026-12-31; $1.50 after)
+//                            output $3.75 / 1M  (through 2026-12-31; $7.50 after)
+//                            cached $0.075 / 1M (through 2026-12-31; $0.15 after)
+//
+// ⚠️ THE 3.1-FLASH-LITE AND 3.8-FLASH ROWS WERE CONFIRMED BY THE OPERATOR ON
+// 2026-10-14 (screenshots of the pricing page), replacing placeholder numbers
+// that were both wrong. 3.8-flash is on a PROMOTIONAL rate that DOUBLES from
+// 2027-01-01 — re-read the page before then, or spend under-reports.
 //
 // ⚠️ 3.5 IS HERE BECAUSE 2.5 MAY NOT BE REACHABLE. On 2026-09-07 a freshly
 // created key was refused 2.5-flash-lite with "no longer available to new
@@ -59,27 +70,30 @@ const PRICES: Record<string, ModelPrice> = {
   /**
    * gemini-3.8-flash — the platform default from 2026-10-12.
    *
-   * ⚠️ PLACEHOLDER RATES. The operator must confirm these against
-   * https://ai.google.dev/gemini-api/docs/pricing before trusting /admin/
-   * credits. Copied from the flash-lite row so a call is priced at all rather
-   * than booked as free; a wrong number under- or over-reports spend only.
+   * ⚠️ CONFIRMED 2026-10-14 (operator, pricing-page screenshot). These are the
+   * STANDARD paid rates through 2026-12-31; from 2027-01-01 Google DOUBLES
+   * them (input $1.50, output $7.50, cached $0.15), so the ledger would
+   * under-report by half after that date. Re-read the page before then.
    */
   'gemini-3.8-flash': {
-    inputPerMillion: 0.3,
-    outputPerMillion: 2.5,
-    cachedInputPerMillion: 0.03,
+    inputPerMillion: 0.75,
+    outputPerMillion: 3.75,
+    cachedInputPerMillion: 0.075,
   },
   /**
-   * gemini-3.1-flash-lite — the moderation model (images, escalation, video).
+   * gemini-3.1-flash-lite — the moderation model (images, escalation), and
+   * from 2026-10-14 the PRIMARY for OCR and identification (`vault.classify`,
+   * `vault.read`, `licence.card.*` — see FAST_GEMINI_MODEL in llm.service.ts).
    *
-   * ⚠️ PLACEHOLDER RATES, same caveat as the row above. The `-image` sibling
-   * already carries a read rate card; the text rate is not separately
-   * published in this repo. Confirm before relying on the spend chart.
+   * ⚠️ CONFIRMED 2026-10-14 (operator, pricing-page screenshot). Input is the
+   * text/image/video rate; audio input is $0.50 but we send none, so every
+   * input token is priced here. Output INCLUDES thinking tokens, which
+   * costUsdMicros already bills at this rate.
    */
   'gemini-3.1-flash-lite': {
-    inputPerMillion: 0.1,
-    outputPerMillion: 0.4,
-    cachedInputPerMillion: 0.01,
+    inputPerMillion: 0.25,
+    outputPerMillion: 1.5,
+    cachedInputPerMillion: 0.025,
   },
   /**
    * Nano Banana 2 Lite — the quarry plates.

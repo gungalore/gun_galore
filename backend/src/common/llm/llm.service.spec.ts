@@ -247,6 +247,35 @@ describe('LlmService', () => {
     expect(gemini.calls[0].model).toBe('gemini-2.5-flash-lite');
   });
 
+  // ⚠️ OCR AND IDENTIFICATION DEFAULT TO 3.1-FLASH-LITE, AND ESCALATE TO
+  // 3.8-FLASH ONLY WHEN A CALL SITE ASKS. Operator, 2026-10-14. The escalation
+  // is the call site's explicit `model` (see STRONG_GEMINI_MODEL), so this only
+  // pins the PRIMARY — and an explicit model still wins over it, below.
+  it('⚠️ DEFAULTS THE DOCUMENT-CENTRE OCR AND IDENTIFICATION TO 3.1-FLASH-LITE', async () => {
+    const { svc, gemini } = build();
+    await svc.complete({ messages: [], maxTokens: 10, purpose: 'licence.card.read' });
+    await svc.complete({ messages: [], maxTokens: 10, purpose: 'licence.card.read.id' });
+    await svc.complete({ messages: [], maxTokens: 10, purpose: 'vault.classify' });
+    await svc.complete({ messages: [], maxTokens: 10, purpose: 'vault.read' });
+    expect(gemini.calls.map((c) => c.model)).toEqual([
+      'gemini-3.1-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-3.1-flash-lite',
+    ]);
+  });
+
+  it('lets the OCR/identification escalation name 3.8-flash for one call', async () => {
+    const { svc, gemini } = build();
+    await svc.complete({
+      messages: [],
+      maxTokens: 10,
+      purpose: 'vault.read',
+      model: 'gemini-3.8-flash',
+    });
+    expect(gemini.calls[0].model).toBe('gemini-3.8-flash');
+  });
+
   it('lets a call site override the model for one call', async () => {
     const { svc, gemini } = build();
     await svc.complete({

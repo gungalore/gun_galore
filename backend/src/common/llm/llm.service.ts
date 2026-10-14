@@ -65,6 +65,34 @@ const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 /** The cheap flash-lite the moderation path is pinned to (images, escalation). */
 const MODERATION_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
+/**
+ * ⚠️ OCR AND IDENTIFICATION DEFAULT TO THE CHEAP FLASH-LITE.
+ *
+ * Operator, 2026-10-14: "just implement 3.1 if the confidence is not high with
+ * a OCR or identification switch to 3.8 to help with that task." The reading
+ * purposes — the Document Centre's classify (`vault.classify`) and read
+ * (`vault.read`), and the consent link's licence-card OCR (`licence.card.*`) —
+ * now take this model as their PRIMARY. The call site retries once on
+ * `STRONG_GEMINI_MODEL` when the answer is not confident, which is a `model`
+ * argument it passes itself; `modelFor` below only sets the primary, and an
+ * explicit `LLM_MODEL_<PURPOSE>` env var still wins over both.
+ *
+ * ⚠️ REASONING DOES NOT SAVE TOKENS; THE CHEAPER MODEL DOES. On a 3-series id
+ * the thinking config is a LEVEL, not a budget (see thinkingConfigFor), so a
+ * `budgetTokens: 0` call still reasons at `LOW`. Escalating adds output tokens;
+ * the economy is that 3.1-flash-lite lists at ~1/3 the input and ~1/6 the
+ * output rate of 3.8-flash (both rows are unconfirmed placeholders — see
+ * llm.pricing.ts before trusting the spend chart).
+ */
+export const FAST_GEMINI_MODEL = 'gemini-3.1-flash-lite';
+
+/**
+ * What an OCR or identification call retries on when the primary was not
+ * confident. See FAST_GEMINI_MODEL. This is the platform default, named here
+ * so a call site can pass it explicitly without hard-coding a model id.
+ */
+export const STRONG_GEMINI_MODEL = DEFAULT_GEMINI_MODEL;
+
 // ⚠️ DI tokens for the two providers, deliberately NOT registered anywhere.
 // A constructor parameter typed as an interface emits `Object` as its design
 // type, and Nest would try to resolve a provider called Object and fail to
@@ -238,6 +266,20 @@ export class LlmService {
     // model. `feed.moderation.video` names its own model and never reaches here.
     if (purpose === 'moderation.escalation' || purpose.endsWith('.images')) {
       return MODERATION_GEMINI_MODEL;
+    }
+    // ⚠️ OCR AND IDENTIFICATION START ON THE CHEAP FLASH-LITE. Operator,
+    // 2026-10-14 — see FAST_GEMINI_MODEL. The primaries are the Document
+    // Centre's identification (`vault.classify`) and reading (`vault.read`) and
+    // the consent link's licence-card OCR (`licence.card.*`). The ESCALATION to
+    // STRONG_GEMINI_MODEL on a non-confident answer is the CALL SITE's, passed
+    // as an explicit `model`, so it never passes through here — and an explicit
+    // `LLM_MODEL_<PURPOSE>` env var still wins over this primary.
+    if (
+      purpose === 'vault.classify' ||
+      purpose === 'vault.read' ||
+      purpose.startsWith('licence.card.')
+    ) {
+      return FAST_GEMINI_MODEL;
     }
     return undefined;
   }
