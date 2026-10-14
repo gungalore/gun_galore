@@ -7,6 +7,16 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — MOTIVATIONS: SLIDERS ON THE DOCUMENTS STRIP (FRONTEND DEPLOY)
+
+Commit **`739305db`** (`feat(motivations) slide the documents strip left and right when it overflows`), 2 files, frontend-only deploy. Rollback point `alloutdoor-20261014-075133.dump`. Frontend health x2 OK, public 200 x2, three pm2 services online (backend untouched). Deployed HEAD `739305db`.
+
+Gates: frontend `tsc` clean + **141 files/1735 tests** + production build OK.
+
+**The report.** Operator, 2026-10-14: "add a slider when the documents get too much so the user can slide left and right to view them in your documents."
+
+**What shipped.** `.gg-row` hides the scrollbar (globals.css:1206), so once "Your documents" runs past the edge a mouse had nothing to drag. The shelf now shows a left arrow at the start and a right arrow at the end, each only while there is somewhere to go, and they scroll the strip by ~80% of its width with `scroll-behavior: smooth`. Verified live: with 7+ documents the right arrow appears at the strip's end.
+
 ## 2026-10-14 — MOTIVATIONS: THE ATTACHED DOCUMENTS ARE VISIBLE AND PREVIEWABLE (FRONTEND DEPLOY)
 
 Commit **`f4f3fb7f`** (`feat(motivations) show the attached documents and preview them full-screen`), 4 files, frontend-only deploy. Rollback point `alloutdoor-20261014-073607.dump`. Frontend health x2 OK, public 200 x2, three pm2 services online (backend untouched). Deployed HEAD `f4f3fb7f`.
