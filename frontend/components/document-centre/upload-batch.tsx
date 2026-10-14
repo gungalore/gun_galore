@@ -114,6 +114,22 @@ export function verdictLine(v: IdentifyVerdict): string {
 }
 
 /**
+ * ⚠️ THE SCANNER TREATMENT IS FOR PAGES, AND A PAGE WITH NO TEXT IS NOT ONE.
+ *
+ * Operator, 2026-10-14: "it also applies the filters to the safe pictures
+ * washing them out. can we not do this when the is no text available on the
+ * document." The colour and light normalise that makes a licence legible
+ * flattens a photograph of a safe into a grey wash, and the wrap-to-a-page
+ * crop has no page to aim at. The OCR the identify pass already took answers
+ * it: a document that read no characters is a photograph, so its raw bytes go
+ * up like evidence. A PDF reads `ocrChars` null and falls through the same
+ * door (autoPolish would pass it through anyway).
+ */
+export function shouldPolish(v: IdentifyVerdict): boolean {
+  return v.role === 'document' && (v.ocrChars ?? 0) > 0;
+}
+
+/**
  * A container id in the member's words, or null when there is none.
  *
  * ⚠️ A LAST-RESORT READING, NOT THE LABEL. The server owns the container

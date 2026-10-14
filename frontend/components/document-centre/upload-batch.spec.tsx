@@ -5,6 +5,7 @@ import React from 'react';
 import UploadBatch, {
   containerLabel,
   placementLine,
+  shouldPolish,
   verdictLine,
   type BatchCard,
 } from './upload-batch';
@@ -105,6 +106,29 @@ describe('the one-line verdict, in the member\u2019s words', () => {
     // two things a member is choosing between when they describe a photograph.
     expect(placementLine('annexure')).toBe('This will print on its own page in your pack.');
     expect(placementLine('body')).toBe('This will print on your Activities page.');
+  });
+});
+
+describe('whether a file gets the scanner treatment', () => {
+  it('⚠️ SKIPS A DOCUMENT WITH NO TEXT — A PHOTOGRAPH, NOT A PAGE', () => {
+    // Operator, 2026-10-14: the safe pictures came back washed out. The OCR the
+    // identify pass already took decides: no characters read = a photograph, so
+    // it must NOT be colour-normalised and wrapped to a page.
+    expect(
+      shouldPolish(verdictOf({ kind: 'SAFE_PHOTOGRAPHS', ocrChars: 0 })),
+    ).toBe(false);
+    // A misclassified photograph (OTHER) with no text is caught too.
+    expect(shouldPolish(verdictOf({ kind: 'OTHER', ocrChars: null }))).toBe(false);
+  });
+
+  it('polishes a document the OCR actually read', () => {
+    expect(shouldPolish(verdictOf({ ocrChars: 240 }))).toBe(true);
+  });
+
+  it('never polishes evidence, whatever the OCR says', () => {
+    expect(
+      shouldPolish(verdictOf({ role: 'evidence', kind: null, ocrChars: 0 })),
+    ).toBe(false);
   });
 });
 

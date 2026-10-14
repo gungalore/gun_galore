@@ -61,6 +61,7 @@ import { DocSectionId } from '@/components/document-centre/kinds';
 import CompletedMotivations from '@/components/licence-centre/completed-motivations';
 import UploadBatch, {
   type BatchCard,
+  shouldPolish,
 } from '@/components/document-centre/upload-batch';
 import BatchReview from '@/components/document-centre/batch-preview';
 import { ImageLightbox } from '@/components/image-lightbox';
@@ -1295,7 +1296,7 @@ function AddPanel({
       patchCard(card.id, { prepared: file, previewUrl: url, state: 'ready' });
     };
 
-    if (card.verdict.role === 'document') {
+    if (shouldPolish(card.verdict)) {
       // ⚠️ AUTOMATIC NOW, WITH NO CROPPER IN THE PATH — see lib/scan-upload/
       // auto.ts. The kind the classifier read picks the aim shape; a crop that
       // comes out wrong is fixed from the review screen with "Fix crop".
@@ -1309,8 +1310,9 @@ function AddPanel({
       );
       ready(polished);
     } else {
-      // ⚠️ NOT POLISHED. An evidence photograph is not a page: its own raw
-      // bytes are what will be uploaded.
+      // ⚠️ NOT POLISHED. An evidence photograph, a PDF, or a DOCUMENT WITH NO
+      // TEXT — which is a photograph too: the filters only flatten it. See
+      // shouldPolish. Its own raw bytes are what will be uploaded.
       ready(card.file);
     }
   }
