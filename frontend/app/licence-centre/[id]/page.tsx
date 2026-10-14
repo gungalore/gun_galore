@@ -305,6 +305,22 @@ export default function LicenceCentreSheetPage() {
   }, [getToken, id]);
 
   /**
+   * ⚠️ STABLE, OR THE SHELF RE-FETCHES EVERY THUMBNAIL ON EVERY RENDER.
+   *
+   * The shelf's tiles fetch their bytes through this, and the page re-renders
+   * on every scroll tick and every state change. Handing an inline arrow made
+   * `loadUrl` a new function each time, so — with it in the tile effect's deps
+   * — each re-render re-ran the fetch for all N documents, bursting past the
+   * API's 60-requests-a-minute throttle: tiles fell back to icons and the
+   * preview would not open (429). Memoised on the two things that can actually
+   * change the request, the tile effect runs once per document.
+   */
+  const loadUploadUrl = useCallback(
+    (uploadId: string) => motivationsApi.uploadBlobUrl(getToken, id, uploadId),
+    [getToken, id],
+  );
+
+  /**
    * Answer "may we keep your documents?" and finish the save that raised it.
    *
    * ⚠️ ANSWERING RETRIES THE SAVE. The member pressed "Save to my Licence
@@ -1381,9 +1397,7 @@ export default function LicenceCentreSheetPage() {
           <DocumentShelf
            documents={sheet.documents}
            keeping={keeping}
-           loadUrl={(uploadId) =>
-             motivationsApi.uploadBlobUrl(getToken, id, uploadId)
-           }
+           loadUrl={loadUploadUrl}
           onRemove={async (uploadId) => {
             setBusy(true);
             try {

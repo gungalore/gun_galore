@@ -581,11 +581,26 @@ function Thumb({
   const [url, setUrl] = useState<string | null>(null);
   const isImage = (doc.mime ?? "").startsWith("image/");
 
+  /**
+   * ⚠️ THE FETCH MUST NOT FOLLOW `loadUrl`'s IDENTITY, SO IT IS READ FROM A
+   * REF. The caller hands a function, and even a memoised one is a new value
+   * the day its own deps change; holding it here means the tile's effect
+   * depends ONLY on the document, and the bytes are fetched once. Otherwise a
+   * parent re-render (the page re-renders on every scroll tick) re-ran this
+   * effect for every tile and re-fetched every thumbnail — which burst past
+   * the API's throttle and turned the shelf into icons (429).
+   */
+  const loadRef = useRef(loadUrl);
   useEffect(() => {
-    if (!isImage || !loadUrl) return;
+    loadRef.current = loadUrl;
+  });
+
+  useEffect(() => {
+    const load = loadRef.current;
+    if (!isImage || !load) return;
     let live = true;
     let made: string | null = null;
-    void loadUrl(doc.id)
+    void load(doc.id)
       .then((u) => {
         made = u;
         if (live) setUrl(u);
@@ -597,7 +612,10 @@ function Thumb({
       if (made) URL.revokeObjectURL(made);
       setUrl(null);
     };
-  }, [doc.id, isImage, loadUrl]);
+    // ⚠️ ONLY THE DOCUMENT. `loadUrl` is deliberately NOT a dependency — see
+    // the ref above; re-fetching on its identity is the bug this prevents.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.id, isImage]);
 
   if (url) {
     // eslint-disable-next-line @next/next/no-img-element

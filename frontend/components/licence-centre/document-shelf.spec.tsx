@@ -333,6 +333,30 @@ describe('seeing the document itself', () => {
     );
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
   });
+
+  it('⚠️ DOES NOT RE-FETCH THE BYTES WHEN THE CALLER RE-RENDERS', async () => {
+    // The bug behind the 429: the page handed an inline arrow, so every render
+    // (and it re-renders on every scroll tick) gave a new `loadUrl` identity and
+    // every tile re-fetched every thumbnail in a burst. The tile must hold the
+    // fetch once per document, whatever the callback's identity does.
+    withUrls();
+    const first = vi.fn().mockResolvedValue('blob:one');
+    const props = {
+      documents: [doc({ label: 'Licence card' })],
+      onUpload: vi.fn(),
+      onScan: vi.fn(),
+    };
+    const { container, rerender } = render(
+      <DocumentShelf {...props} loadUrl={first} />,
+    );
+    await waitFor(() => expect(container.querySelector('img')).toBeTruthy());
+    expect(first).toHaveBeenCalledTimes(1);
+
+    const second = vi.fn().mockResolvedValue('blob:two');
+    rerender(<DocumentShelf {...props} loadUrl={second} />);
+    expect(second).not.toHaveBeenCalled();
+    expect(first).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────
