@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — MOTIVATIONS: THE DOCUMENTS SHELF STOPS RE-FETCHING (FRONTEND DEPLOY)
+
+Commit **`f6a9bc6d`** (`fix(motivations) stop the documents shelf re-fetching every thumbnail on every render`), 3 files, frontend-only deploy via `infra/deploy/deploy.sh --frontend-only` (Git Bash) — the backend kept serving (uptime 29m after). Rollback point `alloutdoor-20261014-145152.dump` (~30 MB). Frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `f6a9bc6d`. No migration.
+
+Gates: frontend `tsc` clean + **142 files/1745 tests** + production build OK.
+
+**The report.** Operator, 2026-10-14: "Why can't I see or open the thumbnails anymore onside a motivation in the Your documents?"
+
+**Cause.** nginx showed the per-document blob route (`GET /api/motivations/<id>/uploads/<uploadId>`) returning **429**. The shelf fetches one authenticated blob per tile, and that route has no per-route limit, so it shares the global 60-requests-a-minute bucket. The page passed `loadUrl` as an INLINE ARROW — a new function identity on every render — and the page re-renders on every scroll tick and every state change, so each tile's effect (which had `loadUrl` in its deps) re-fetched all N documents in a burst. Once throttled, tiles fell back to the generic icon and the View preview (same loader) 429'd too, so a shelf that had worked with a few documents broke as the count grew.
+
+**What shipped.** `app/licence-centre/[id]/page.tsx` memoises `loadUrl` (`useCallback([getToken, id])`); `components/licence-centre/document-shelf.tsx` reads it through a ref so the tile effect depends only on `[doc.id, isImage]` — the bytes are fetched ONCE per document. A spec re-renders with a fresh `loadUrl` and asserts no second fetch.
+
+**Know.** The global throttle is still 60/min per IP for ALL routes; a much larger shelf plus the page's other calls could brush it again. Raising the uploads GET's own limit (`@Throttle` on the route) is the lever if it recurs.
+
 ## 2026-10-14 — DOCUMENT CENTRE: A PHOTOGRAPH KIND IS NEVER FILTERED (FRONTEND DEPLOY)
 
 Commit **`41cf1df1`** (`fix(document-centre): skip the scanner treatment for a photograph kind, not only text-less pages`), 2 files, frontend-only deploy via `infra/deploy/deploy.sh --frontend-only` (Git Bash) — the backend kept serving (uptime 17m after). Rollback point `alloutdoor-20261014-143919.dump` (~30 MB). Frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `41cf1df1`. No migration.
