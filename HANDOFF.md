@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — DOCUMENT CENTRE: A PHOTOGRAPH KIND IS NEVER FILTERED (FRONTEND DEPLOY)
+
+Commit **`41cf1df1`** (`fix(document-centre): skip the scanner treatment for a photograph kind, not only text-less pages`), 2 files, frontend-only deploy via `infra/deploy/deploy.sh --frontend-only` (Git Bash) — the backend kept serving (uptime 17m after). Rollback point `alloutdoor-20261014-143919.dump` (~30 MB). Frontend health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `41cf1df1`. No migration.
+
+Gates: frontend `tsc` clean + **142 files/1744 tests** + production build OK.
+
+**The report.** Operator, 2026-10-14: "it is ignoring the filter on the first picture and then applying it to the rest."
+
+**Cause.** The text-only skip (see the entry below) half-worked. Read from the live `DocumentIdentify` rows: the three safe photographs all classified `SAFE_PHOTOGRAPHS`/confident, but their `ocrChars` were **null, 11 and 37** — Google Vision `DOCUMENT_TEXT_DETECTION` catches a serial or a word off a label in the frame — so `shouldPolish` skipped the null one and POLISHED the other two. A text test can never separate a photograph from a page on its own.
+
+**What shipped.** `shouldPolish` (`components/document-centre/upload-batch.tsx`) now returns false for any `SAFE_PHOTO_KINDS` kind (`SAFE_PHOTOGRAPHS` plus the retired safe kinds) WHATEVER the text, and keeps the `ocrChars` test only as the net for a text-less page the classifier filed as something else. Spec pins the null/11/37 case.
+
 ## 2026-10-14 — OCR/IDENTIFICATION ON 3.1-FLASH-LITE, AND NO FILTERS ON A PHOTOGRAPH (FULL DEPLOY)
 
 Commits **`f6105520`** (`feat(llm): OCR and identification run on 3.1-flash-lite, escalating to 3.8 on low confidence`, 8 files) and **`cb7a039e`** (`fix(document-centre): do not run the scanner filters over a photograph with no text`, 3 files), full deploy (both sides touched) via `infra/deploy/deploy.sh`. Rollback point `alloutdoor-20261014-142233.dump` (~30 MB). Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `cb7a039e`. No migration.
