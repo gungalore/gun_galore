@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — DOCUMENT CENTRE: A SAFE PHOTOGRAPH FILES AS A SAFE PHOTOGRAPH (BACKEND DEPLOY)
+
+Commit **`6960bd6d`** (`fix(document-centre): require a confidence so a safe photograph files as one`), 2 files, backend-only deploy via `infra/deploy/deploy.sh --backend-only` (Git Bash) — the frontend kept serving (uptime 29m after). Rollback point `alloutdoor-20261014-132237.dump` (30.5 MB). Backend health x2 OK, public 200 x2, three pm2 services online (`alloutdoor-backend`, `alloutdoor-frontend`, `warden`). Deployed HEAD `6960bd6d`. No migration.
+
+Gates: backend `tsc` clean + **354 suites/5572 tests** (`npm test -- --maxWorkers=2`).
+
+**The report.** Operator, 2026-10-14: "uploaded 3 photos to the document centre. It is pictures of my safe and it recognized them as something else." The three (2026-10-14, 09:04Z) were filed as `OTHER` / "Supporting document" (`cmv805f7h…`, `cmv805jx8…`, `cmv805o9v…`); the vault ledger showed `classify → model-unsure`, and the live model had actually named them correctly.
+
+**Cause.** The photographs carry no printed text, so `classify()` fell to the vision classifier (`classifyVision`). Replayed against the live model with the production prompt, it names `SAFE_PHOTOGRAPHS` every time — but returned it as bare `{"role":"document","kind":"SAFE_PHOTOGRAPHS"}`. `CLASSIFY_SCHEMA` required only `role`, so a schema-enforced model omitted the optional `confidence`; `classifyVision` read the absence as `(parsed.confidence ?? '') === 'high'` → `false`, and `filedKindOrOther` (`licence-centre.service.ts:160`) then downgraded the CORRECT kind to `OTHER`. A sure answer arrived looking unsure. (Production token count was 13 — exactly the no-confidence JSON.)
+
+**What shipped.** `CLASSIFY_SCHEMA.required` is now `['role','confidence']` (`kind` stays optional: an evidence item has none). `licence-centre-classify.spec.ts` pins it. Replayed against the same three images: all now return `confidence:"high"` and file as `SAFE_PHOTOGRAPHS`.
+
+**Know.** The fix governs NEW uploads only. The three existing rows are still `OTHER` — refile them as *Safe photographs* on the card, or re-scan. There are currently ZERO `SAFE_PHOTOGRAPHS` rows in the vault.
+
 ## 2026-10-14 — COMMUNITY: FOLLOWER/FOLLOWING LISTS + REMOVE FOLLOWER (FULL DEPLOY)
 
 Commit **`dfaa7c32`** (`feat(community): follower/following lists with remove-follower and unfollow`), 8 files, full deploy (backend touched). Rollback point `alloutdoor-20261014-125336.dump`. Health x2 OK, public 200 x2, three pm2 services online. Deployed HEAD `dfaa7c32`.
