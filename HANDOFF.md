@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-10-14**.
 
+## 2026-10-14 — MOTIVATIONS: THE READ FIELDS ARE APPLIED (FRONTEND DEPLOY)
+
+Commit **`27f99a11`** (`fix(motivations) apply the uploaded paperwork's read fields so the firearm boxes fill`), 1 file, frontend-only deploy. Rollback point `alloutdoor-20261014-072457.dump`. Frontend health x2 OK, public 200 x2, three pm2 services online (backend untouched). Deployed HEAD `27f99a11`.
+
+Gates: frontend `tsc` clean + **141 files/1731 tests** + production build OK.
+
+**The report.** Operator, 2026-10-14: "it says added the paperwork but I can't see where it is or preview it. It also does not autofill anywhere I can see."
+
+**What was wrong.** The document WAS stored and read (the server logged `Firearm read filled 10 field(s)`), but the licence-centre page DROPPED the read fields. `addUpload` returns `suggestions` and deliberately does not write them; the caller must confirm. `onAddFile` ignored the return value and NOTHING on the page called `applyExtraction`, so every box stayed empty after a perfect read.
+
+**What shipped.** The page now collects the suggestions from each upload and calls `applyExtraction` for the TRUSTED ones (`trusted: false` is a read our own checks doubt and is still refused), then reloads. `onAddFile` (the shelf) and the source-paperwork batch both do it. `applyExtraction` only fills EMPTY fields, so a value the member typed is never overwritten, and each filled row carries a "from a document you uploaded" source line and stays editable.
+
+**Know.** The uploaded page serves at the top of the sheet in "Your documents" (label "Where this firearm is coming from"); the shelf has a remove control but no full preview — the Document Centre is where preview/rotate live.
+
 ## 2026-10-14 — MOTIVATIONS: TWO PHOTOS = ONE PAGE, AND A READABLE TOAST (FRONTEND DEPLOY)
 
 Commit **`c2bff8b1`** (`fix(motivations) two picked photos always become one page; toast readable in dark mode`), 3 files, frontend-only deploy. Rollback point `alloutdoor-20261014-005519.dump`. Frontend health x2 OK, public 200 x2, three pm2 services online (backend untouched). Deployed HEAD `c2bff8b1`.
