@@ -140,8 +140,9 @@ describe('what a firearm read lands on', () => {
         { key: 'firearm_type', value: 'MANUALLY OPERATED RIFLE' },
         { key: 'receiver_serial', value: 'MR90189D' },
         { key: 'receiver_make', value: 'MARLIN' },
-        // The card prints NONE against these; the parser treats that as
-        // absence rather than writing "NONE" into a box.
+        // The card prints NONE against these rows. The reader keeps the word —
+        // the form prints it back (SAPS 271 section E 1.7/1.11) — and only the
+        // prose boundary strips it so the writer never sees a firearm called None.
         { key: 'barrel_serial', value: 'NONE' },
         { key: 'frame_serial', value: 'NONE' },
       ]),
@@ -150,8 +151,10 @@ describe('what a firearm read lands on', () => {
     expect(out.firearm_serial).toBe('MR90189D');
     expect(out.firearm_make).toBe('MARLIN');
     expect(out.firearm_calibre).toBe('.45-70 GOVERNMENT');
-    // NONE never becomes a value.
-    expect(Object.values(out)).not.toContain('NONE');
+    // The card's own word survives the reader.
+    expect(out.barrel_serial).toBe('NONE');
+    expect(out.frame_serial).toBe('NONE');
+    expect(out.receiver_serial).toBe('MR90189D');
   });
 
   it('carries every component row to its OWN field, conflating none', async () => {

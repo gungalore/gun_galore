@@ -340,6 +340,22 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
     'firearm_model',
     'firearm_calibre',
     'firearm_serial',
+    // ⚠️ THE THREE COMPONENT ROWS, AND THEIR MAKES, ARE ASKED FOR HERE (2026-10-14).
+    // SAPS 271 section E items 1.7 to 1.12 print a serial AND a make for each of
+    // the barrel, the frame and the receiver. The applied-for firearm's own
+    // paperwork names them (a licence card prints all three rows; an invoice may
+    // print one), and readFirearm() below reads them — but ONLY this kind-extract
+    // list carries a value into the answers, because readFirearm's output is
+    // offered untrusted and the one-tap upload flow writes only trusted fields.
+    // So every component row was read and then dropped, and the form printed
+    // E 1.7-1.12 blank. A card that says NONE keeps NONE here, the same way the
+    // vault path and the question registry already do.
+    'barrel_serial',
+    'barrel_make',
+    'frame_serial',
+    'frame_make',
+    'receiver_serial',
+    'receiver_make',
     // ⚠️ THE ROUTE, READ OFF THE PAGE (2026-10-13). With the dealer/private
     // picker removed, this is the ONE place the route is decided, and it can
     // only be decided from what the member uploaded. A dealer's invoice, a
@@ -924,20 +940,11 @@ export class MotivationExtractService {
     for (const [from, to] of Object.entries(FIREARM_KEY_MAP)) {
       // ⚠️ THIS IS A READER, AND A READER KEEPS THE CARD VERBATIM. The
       // card-placeholder rule states it in capitals and this loop is not the
-      // place for it: the answer boundary is the ONE consumer,
-      // motivation-documents.service.ts, which runs answerValue() over every
-      // pair before it becomes a proposed answer. A new consumer that wants a
-      // reading turned into an answer must do the same — what this function
-      // returns is what the page said, which is exactly what the printed
-      // seller-consent declaration is entitled to.
-      //
-      // ⚠️ AND "NONE" NEVER REACHED HERE ANYWAY, whatever an earlier note
-      // claimed. parseFirearmReading in common/firearm-identity.ts drops
-      // none / n/a / unknown / "not visible" before a value is ever written
-      // into `reading.values`, so a guard here could only ever have caught the
-      // wordings that rule does not know (NIL, GEEN, a bare dash) — and those
-      // are caught at the boundary with everything else. Do not weaken the
-      // inner filter on the strength of a duplicate that is no longer here.
+      // place for it: the PROSE boundary is where "NONE" stops being a value —
+      // renderFacts runs answerValue() over every answer so the writer never
+      // sees a firearm called None. What this function returns is what the page
+      // said, which is exactly what the printed seller-consent declaration and
+      // SAPS 271 section E and item 2.1 are entitled to.
       const v = (reading.values[from] ?? '').trim();
       if (v) out[to] = v;
     }

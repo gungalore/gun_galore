@@ -479,6 +479,16 @@ export function credentialOffer(
   );
 
   const keys = new Set(fieldsFor(licenceType).map((f) => f.key));
+  // ⚠️ THE COMPONENT SERIAL ROWS ARE NOT IN `fieldsFor` — see LEGACY_OWNED_FIELDS.
+  // They are accepted answers all the same, and SAPS 271 item 2.1 prints them.
+  // Without them here, offer()'s `!keys.has(key)` guard silently dropped every
+  // barrel/frame serial the vault held, which is why item 2.1's Barrel Serial No
+  // column printed blank on every form even where the card said NONE or a real
+  // number. The vault keeps the card verbatim, and offer() below keeps it too.
+  for (let n = 1; n <= OWNED_ROWS; n++) {
+    keys.add(`existing_firearm_${n}_barrel_serial`);
+    keys.add(`existing_firearm_${n}_frame_serial`);
+  }
   const values: Record<string, string> = {};
   const items: CredentialOfferItem[] = [];
   const skipped: { title: string; why: string }[] = [];

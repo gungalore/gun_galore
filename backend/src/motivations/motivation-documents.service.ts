@@ -2714,12 +2714,15 @@ export class MotivationDocumentsService {
           );
           for (const [key, raw] of Object.entries(firearm)) {
             if (already.has(key)) continue;
-            // ⚠️ AND NEVER THE CARD'S OWN "NOTHING HERE". This loop had no
-            // guard at all, so a licence reading "Frame Serial No NONE" — the
-            // card being complete, not a serial — became a proposed answer.
-            // Seen live on 2026-09-07: "Firearm 6 — frame serial NONE ·
-            // barrel serial NONE". Absent stays absent.
-            const value = answerValue(raw);
+            // ⚠️ AND THE CARD'S OWN "NONE" IS A VALUE NOW (2026-10-14). This
+            // ran answerValue(), which dropped the card's "nothing here" — so a
+            // licence reading "Frame Serial No NONE" proposed an empty box where
+            // SAPS 271 section E expects the word NONE. Operator, 2026-09-08:
+            // "read a NONE as NONE and not leave it out ... especially on the
+            // 271 that requires it." The placeholder strip belongs at the PROSE
+            // boundary (renderFacts), never between the card and the answer. See
+            // card-placeholder-boundary.spec.ts.
+            const value = (raw ?? '').trim();
             if (!value) continue;
             const field = {
               key,

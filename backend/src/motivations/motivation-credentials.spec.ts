@@ -143,8 +143,12 @@ describe('what the Licence Centre offers a motivation', () => {
     // frame, so two boxes asked two questions with one answer. The barrel is
     // the number the card prints first, so it is the one taken.
     expect(o.values.existing_firearm_1_serial).toBe('B67890');
-    expect(o.values.existing_firearm_1_frame_serial).toBeUndefined();
-    expect(o.values.existing_firearm_1_barrel_serial).toBeUndefined();
+    // ⚠️ THE TWO COMPONENT ROWS ARE OFFERED NOW (2026-10-14). They are not
+    // `fieldsFor` keys, so offer()'s `!keys.has(key)` guard used to drop them and
+    // item 2.1's Barrel Serial No column printed blank on every form. The vault
+    // keeps the card verbatim: a number, or the card's own word NONE.
+    expect(o.values.existing_firearm_1_barrel_serial).toBe('B67890');
+    expect(o.values.existing_firearm_1_frame_serial).toBe('F12345');
     // ⚠️ THE "LICENCE OR PERMIT NO" BOX IS NOT FILLED. A firearm licence card
     // has no licence number (operator, 2026-10-13); its serial is the reference
     // and it goes in the row's serial box, not here — this box is for a storage
@@ -242,12 +246,17 @@ describe('what the Licence Centre offers a motivation', () => {
     expect(o.values.existing_firearm_1_expiry).toBe('2030-01-01');
   });
 
-  it('⚠️ never offers a card placeholder as a serial, a model or a make', () => {
+  it('⚠️ skips a placeholder in the fallback chain but keeps the card\u2019s own word on the two serial rows', () => {
     // A licence prints NONE in a row that does not apply — the operator's own
-    // Glock card reads "Model NONE". Seen live on 2026-09-07 as "Firearm 6 —
-    // frame serial NONE · barrel serial NONE", offered, accepted and written
-    // into a form somebody signs. The fallback chain must SKIP it rather than
-    // stop on it, or the frame serial that does exist is never consulted.
+    // Glock card reads "Model NONE". The FALLBACK CHAIN (make, model, serial)
+    // must SKIP a placeholder rather than stop on it, or the frame serial that
+    // does exist is never consulted.
+    //
+    // ⚠️ BUT THE TWO COMPONENT ROWS KEEP IT VERBATIM (2026-10-14). Item 2.1 has
+    // a Barrel Serial No and a Frame/receiver Serial No column, and a card that
+    // prints N/A or NONE against the barrel is saying something the blank box
+    // does not. Operator, 2026-09-08: "read a NONE as NONE and not leave it out
+    // ... especially on the 271 that requires it."
     const o = offerWith(
       TYPE,
       [
@@ -265,10 +274,13 @@ describe('what the Licence Centre offers a motivation', () => {
       ],
       {},
     );
+    // The chain skipped the placeholder: the model stays blank and the serial
+    // that does exist is the one taken.
     expect(o.values.existing_firearm_1_model).toBeUndefined();
     expect(o.values.existing_firearm_1_serial).toBe('ZABA01892');
-    expect(Object.values(o.values)).not.toContain('NONE');
-    expect(Object.values(o.values)).not.toContain('N/A');
+    // The two serial rows transcribe the card, placeholder and all.
+    expect(o.values.existing_firearm_1_barrel_serial).toBe('N/A');
+    expect(o.values.existing_firearm_1_frame_serial).toBe('ZABA01892');
   });
 
   it('NEVER overwrites something the applicant typed', () => {

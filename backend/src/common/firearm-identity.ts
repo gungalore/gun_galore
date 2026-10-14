@@ -270,8 +270,18 @@ export function parseFirearmReading(raw: string): FirearmReading {
     const value = String((f as { value?: unknown })?.value ?? '').trim();
     if (!KEYS.has(key) || !value) continue;
     // A model asked for "omit rather than guess" still sometimes says so out
-    // loud. These are not values.
-    if (/^(n\/?a|none|unknown|not (visible|stated|shown|legible))$/i.test(value)) {
+    // loud. Those phrases are the model declining, not words on the page, and
+    // they are not values.
+    //
+    // ⚠️ NONE IS A VALUE NOW (2026-10-14). This dropped none / n/a / nil and the
+    // rest, and that broke the one rule the form has: a licence card prints NONE
+    // in a row that carries no number, and SAPS 271 section E and item 2.1 both
+    // print that word back. Operator, 2026-09-08: "instruct gemini to read a NONE
+    // as NONE and not leave it out ... especially on the 271 that requires it."
+    // The strip lives at the PROSE boundary now — renderFacts runs answerValue
+    // over every answer so the writer never sees "Model NONE" — not here. See
+    // card-placeholder-boundary.spec.ts, the pair that pins both ends.
+    if (/^(?:unknown|not (?:visible|stated|shown|legible))$/i.test(value)) {
       continue;
     }
     out.values[key] = value;

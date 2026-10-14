@@ -205,11 +205,17 @@ describe('parsing the reply', () => {
     expect(out.lowConfidence).toEqual(['barrel_serial']);
   });
 
-  it('treats "N/A" and friends as absence, not as a value', () => {
-    // A model told to omit rather than guess still sometimes says so out loud,
-    // and "Not stated" written into a serial box on a signed application is
-    // worse than an empty box.
-    for (const v of ['N/A', 'n/a', 'none', 'None', 'unknown', 'Not visible']) {
+  it('keeps the card\u2019s "NONE" and drops only the model declining', () => {
+    // ⚠️ NONE IS A VALUE, NOT ABSENCE (2026-10-14). A licence card prints NONE in
+    // a row that carries no number, and both SAPS 271 section E and item 2.1
+    // print that word back. The reader keeps it; the prose boundary strips it so
+    // the writer never sees "Model NONE". This test used to assert the reverse.
+    for (const v of ['none', 'None', 'NONE', 'N/A', 'n/a']) {
+      const out = parseFirearmReading(reply([{ key: 'barrel_serial', value: v }]));
+      expect(out.values).toEqual({ barrel_serial: v });
+    }
+    // The model declining to answer is still not a value.
+    for (const v of ['unknown', 'Not visible', 'not stated']) {
       const out = parseFirearmReading(reply([{ key: 'barrel_serial', value: v }]));
       expect(out.values).toEqual({});
     }
