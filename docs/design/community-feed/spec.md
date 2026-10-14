@@ -1151,3 +1151,36 @@ Numeric fields (bullet weight, charge, size, distance, trip days), the star
 rating, the date, and `firearmModel` (no reliable list — free text). Charge
 weights are deliberately not suggested: a load-data-shaped number in a social
 post is not the Bench.
+
+---
+
+## 21. Follow lists + remove follower (2026-10-14)
+
+The member can now see who follows them and who they follow, remove a follower,
+and unfollow anyone they follow. Built on the existing `Follow` join table; no
+schema change.
+
+Backend (`feed.service.ts` / `feed.controller.ts`, members-only):
+- `GET /community/me/followers?before=` — the viewer's OWN followers, newest
+  first, cursor-paged. Each row carries `isFollowing` (does the viewer follow
+  them back) so the row can render a follow control. Paged at `FEED_PAGE_MAX`.
+- `GET /community/me/following?before=` — the members the viewer follows,
+  newest first; `isFollowing` is always true.
+- `DELETE /community/me/followers/:id` — remove `:id` from the viewer's own
+  followers (`deleteMany` on `{ followerId: id, followingId: viewer }`).
+  Idempotent; self-ids are ignored; no notification is sent.
+- Rows expose only `username` + the privacy-gated `avatarUrl`, never a real
+  name (`shapeSocialUser`, same contract as `listPostLikes`).
+- Unfollowing reuses the existing `DELETE /community/users/:id/follow`.
+
+Frontend:
+- `components/community/follows-sheet.tsx` (`FollowsSheet`, `mode:
+  'followers' | 'following'`) — a sheet styled like `liked-by-sheet.tsx`; rows
+  link to the member's profile and carry a Remove / Unfollow action.
+- `my-control-panel.tsx` — the Followers and Following numbers are now buttons
+  that open the sheet and adjust the counts optimistically on removal.
+- `lib/community-api.ts` — `fetchMyFollowers`, `fetchMyFollowing`,
+  `removeFollower`, `SocialUser` / `SocialUserPage`.
+
+Tests: `backend/src/feed/feed-follows.spec.ts`,
+`frontend/components/community/follows-sheet.spec.tsx`.

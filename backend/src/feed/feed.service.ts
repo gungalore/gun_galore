@@ -499,6 +499,106 @@ export class FeedService {
   }
 
   /**
+   * Shape a member for a social list (followers/following). Same privacy
+   * contract as the likers list: username only, and the avatar is withheld when
+   * the member turned their profile picture off. Never a real name.
+   */
+  private shapeSocialUser(
+    u: {
+      id: string;
+      username: string | null;
+      avatarUrl: string | null;
+      sellerTier: string | null;
+      isVerifiedExpert: boolean;
+      feedShowAvatar: boolean;
+    },
+    extra: { isFollowing?: boolean } = {},
+  ) {
+    return {
+      id: u.id,
+      username: authorName(u),
+      avatarUrl: u.feedShowAvatar === false ? null : (u.avatarUrl ?? null),
+      sellerTier: u.sellerTier,
+      isVerifiedExpert: u.isVerifiedExpert,
+      ...extra,
+    };
+  }
+
+  /**
+   * The member's OWN followers, newest first. Each row also carries
+   * `isFollowing` — whether the viewer follows them back — so the row can show
+   * a follow control inline. Removal of a follower is a separate write
+   * (`removeFollower`).
+   */
+  async listFollowers(userId: string, before?: string) {
+    await this.assertEnabled();
+    await this.viewer(userId);
+    const limit = FEED_PAGE_MAX;
+    const rows = await this.prisma.follow.findMany({
+      where: {
+        followingId: userId,
+        ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1,
+      select: {
+        createdAt: true,
+        follower: { select: { id: true, ...PUBLIC_AUTHOR_SELECT } },
+      },
+    });
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const ids = page.map((r) => r.follower.id);
+    // Which of these does the viewer follow back? One extra query, not N.
+    const mine = ids.length
+      ? await this.prisma.follow.findMany({
+          where: { followerId: userId, followingId: { in: ids } },
+          select: { followingId: true },
+        })
+      : [];
+    const following = new Set(mine.map((m) => m.followingId));
+    return {
+      users: page.map((r) =>
+        this.shapeSocialUser(r.follower, {
+          isFollowing: following.has(r.follower.id),
+        }),
+      ),
+      nextBefore: hasMore ? page[page.length - 1].createdAt.toISOString() : null,
+    };
+  }
+
+  /**
+   * The members `userId` follows, newest first. Every row is, by definition,
+   * followed by the viewer, so `isFollowing` is always true — exposed so the
+   * same row component can render both lists.
+   */
+  async listFollowing(userId: string, before?: string) {
+    await this.assertEnabled();
+    await this.viewer(userId);
+    const limit = FEED_PAGE_MAX;
+    const rows = await this.prisma.follow.findMany({
+      where: {
+        followerId: userId,
+        ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1,
+      select: {
+        createdAt: true,
+        following: { select: { id: true, ...PUBLIC_AUTHOR_SELECT } },
+      },
+    });
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    return {
+      users: page.map((r) =>
+        this.shapeSocialUser(r.following, { isFollowing: true }),
+      ),
+      nextBefore: hasMore ? page[page.length - 1].createdAt.toISOString() : null,
+    };
+  }
+
+  /**
    * Lightweight like/comment counts for a set of posts, so the client can keep
    * counts fresh on a poll without re-fetching (and re-ordering) the feed.
    * Only PUBLISHED posts are returned; unknown/non-published ids are dropped.
@@ -1218,6 +1318,21 @@ export class FeedService {
       where: { followerId: userId, followingId: targetId },
     });
     return { following: false };
+  }
+
+  /**
+   * Remove a member from the viewer's OWN followers. Idempotent: removing a
+   * follower who is no longer there is a no-op, not an error. No notification
+   * is sent — a removal is the viewer's private choice. Self-ids are ignored.
+   */
+  async removeFollower(userId: string, followerId: string) {
+    await this.assertEnabled();
+    await this.viewer(userId);
+    if (followerId === userId) return { removed: false };
+    const res = await this.prisma.follow.deleteMany({
+      where: { followerId, followingId: userId },
+    });
+    return { removed: res.count > 0 };
   }
 
   async reportPost(

@@ -61,6 +61,19 @@ export class FeedController {
     return this.feed.mySummary(userId);
   }
 
+  // The member's own follower/following lists, newest first, cursor-paged.
+  @Get('me/followers')
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  myFollowers(@CurrentUser() userId: string, @Query('before') before?: string) {
+    return this.feed.listFollowers(userId, before);
+  }
+
+  @Get('me/following')
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  myFollowing(@CurrentUser() userId: string, @Query('before') before?: string) {
+    return this.feed.listFollowing(userId, before);
+  }
+
   @Get('search')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   search(@CurrentUser() userId: string, @Query() q: FeedSearchDto) {
@@ -256,6 +269,13 @@ export class FeedController {
   @Delete('users/:id/follow')
   unfollow(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.unfollow(userId, id);
+  }
+
+  // Remove someone from the member's own followers (`:id` is the follower).
+  @Delete('me/followers/:id')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  removeFollower(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.feed.removeFollower(userId, id);
   }
 
   @Put('preferences')

@@ -446,6 +446,48 @@ export function unfollowUser(
   return jsonFetch(`/community/users/${id}/follow`, token, { method: 'DELETE' });
 }
 
+export interface SocialUser {
+  id: string;
+  username: string;
+  avatarUrl: string | null;
+  sellerTier: string | null;
+  isVerifiedExpert: boolean;
+  /** Whether the viewer follows this member. Always true in the following list. */
+  isFollowing?: boolean;
+}
+
+export interface SocialUserPage {
+  users: SocialUser[];
+  nextBefore: string | null;
+}
+
+const socialQuery = (before?: string) =>
+  before ? `?before=${encodeURIComponent(before)}` : '';
+
+/** The member's own followers, newest first. */
+export function fetchMyFollowers(
+  token: string,
+  before?: string,
+): Promise<SocialUserPage> {
+  return jsonFetch(`/community/me/followers${socialQuery(before)}`, token);
+}
+
+/** The members the viewer follows, newest first. */
+export function fetchMyFollowing(
+  token: string,
+  before?: string,
+): Promise<SocialUserPage> {
+  return jsonFetch(`/community/me/following${socialQuery(before)}`, token);
+}
+
+/** Remove someone from the viewer's own followers. */
+export function removeFollower(
+  token: string,
+  id: string,
+): Promise<{ removed: boolean }> {
+  return jsonFetch(`/community/me/followers/${id}`, token, { method: 'DELETE' });
+}
+
 export function fetchPreferences(token: string): Promise<FeedPreferences> {
   return jsonFetch('/community/preferences', token);
 }

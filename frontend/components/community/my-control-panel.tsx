@@ -12,6 +12,7 @@ import {
   fetchMySummary,
 } from '../../lib/community-api';
 import { postTypeLabel } from '../../lib/post-types';
+import { FollowsSheet, type FollowsMode } from './follows-sheet';
 import { PostComposer } from './post-composer';
 
 // Compact status pill shared by the rail and the full control centre.
@@ -53,6 +54,7 @@ export function MyControlPanel() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [followsSheet, setFollowsSheet] = useState<FollowsMode | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
@@ -107,6 +109,29 @@ export function MyControlPanel() {
         {label}
       </span>
     </div>
+  );
+
+  const statLink = (
+    value: number | undefined,
+    label: string,
+    onClick: () => void,
+  ) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className="gg-press flex flex-col items-center"
+      aria-label={`View ${label.toLowerCase()}`}
+    >
+      <span
+        className="text-[16px] font-medium"
+        style={{ color: 'var(--text-primary)' }}
+      >
+        {value ?? '—'}
+      </span>
+      <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+        {label}
+      </span>
+    </button>
   );
 
   const initial = (summary?.username?.[0] ?? '?').toUpperCase();
@@ -172,8 +197,12 @@ export function MyControlPanel() {
         <div className="grid grid-cols-4">
           {stat(summary?.postCount, 'Posts')}
           {stat(summary?.commentCount, 'Comments')}
-          {stat(summary?.followerCount, 'Followers')}
-          {stat(summary?.followingCount, 'Following')}
+          {statLink(summary?.followerCount, 'Followers', () =>
+            setFollowsSheet('followers'),
+          )}
+          {statLink(summary?.followingCount, 'Following', () =>
+            setFollowsSheet('following'),
+          )}
         </div>
 
         <div
@@ -196,6 +225,30 @@ export function MyControlPanel() {
           </Link>
         </div>
       </section>
+
+      {followsSheet && (
+        <FollowsSheet
+          mode={followsSheet}
+          onClose={() => setFollowsSheet(null)}
+          onRemoved={(mode) =>
+            setSummary((s) =>
+              s
+                ? {
+                    ...s,
+                    followerCount:
+                      mode === 'followers'
+                        ? Math.max(0, s.followerCount - 1)
+                        : s.followerCount,
+                    followingCount:
+                      mode === 'following'
+                        ? Math.max(0, s.followingCount - 1)
+                        : s.followingCount,
+                  }
+                : s,
+            )
+          }
+        />
+      )}
 
       {/* Create Post modal — reuses the one composer, in controlled mode. */}
       {composerOpen &&
