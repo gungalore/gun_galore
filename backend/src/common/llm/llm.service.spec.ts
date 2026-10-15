@@ -703,4 +703,26 @@ describe('LlmService', () => {
     await flush();
     expect(create.mock.calls[0][0].data.provider).toBe('gemini');
   });
+
+  it('⚠️ REFUSES AN UNSUPPORTED aspectRatio BEFORE IT SPENDS A CALL (MO000096)', async () => {
+    // The image API only accepts the enumerated ratios; the plates shipped
+    // "2:1" and every draw came back 400 with the picture missing.
+    process.env.LLM_PROVIDER = 'gemini';
+    const { svc, gemini } = build();
+    await expect(
+      svc.generateImage({
+        prompt: 'a plate',
+        purpose: 'motivation.plate',
+        aspectRatio: '2:1',
+      }),
+    ).rejects.toThrow(/aspectRatio/);
+    expect(gemini.imageCalls).toHaveLength(0);
+    // A ratio from the list still draws.
+    await svc.generateImage({
+      prompt: 'a plate',
+      purpose: 'motivation.plate',
+      aspectRatio: '21:9',
+    });
+    expect(gemini.imageCalls).toHaveLength(1);
+  });
 });

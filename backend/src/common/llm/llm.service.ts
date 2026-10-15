@@ -43,6 +43,7 @@ import { costUsdMicros } from './llm.pricing';
 import type { LlmProviderClient } from './provider.interface';
 import {
   LlmError,
+  SUPPORTED_IMAGE_ASPECT_RATIOS,
   type LlmPing,
   type LlmImageRequest,
   type LlmImageResponse,
@@ -436,6 +437,28 @@ export class LlmService {
     const startedAt = Date.now();
     const model =
       req.model ?? provider.defaultImageModel?.() ?? provider.defaultModel();
+
+    /**
+     * ⚠️ A RATIO THE PROVIDER DOES NOT LIST IS A SPENT CALL THAT DRAWS NOTHING.
+     * The image API rejects anything outside `SUPPORTED_IMAGE_ASPECT_RATIOS`
+     * with a 400, and the motivation plates shipped an unsupported "2:1" for a
+     * day before anyone noticed the exhibits were missing. Refuse here, naming
+     * the offending value, so the failure is our line and not a provider
+     * complaint scrolled past in the ledger.
+     */
+    if (
+      req.aspectRatio &&
+      !SUPPORTED_IMAGE_ASPECT_RATIOS.includes(
+        req.aspectRatio as (typeof SUPPORTED_IMAGE_ASPECT_RATIOS)[number],
+      )
+    ) {
+      const err = new LlmError(
+        'bad_request',
+        `aspectRatio "${req.aspectRatio}" is not one of ${SUPPORTED_IMAGE_ASPECT_RATIOS.join(', ')}`,
+      );
+      this.record(req, provider.name, model, startedAt, undefined, err);
+      throw err;
+    }
 
     if (!provider.generateImage) {
       const err = new LlmError(

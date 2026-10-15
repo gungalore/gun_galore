@@ -278,6 +278,31 @@ export interface LlmPing {
 // lands in the same AiUsage table /admin/credits already reads.
 // ────────────────────────────────────────────────────────────────────
 
+/**
+ * ⚠️ THE IMAGE MODEL'S aspect_ratio IS AN ENUMERATED SET, AND A VALUE OUTSIDE IT
+ * IS A 400 THAT COSTS THE PICTURE. Copied from the API's own error, which names
+ * every legal value; the motivations plates shipped "2:1" for a day and drew
+ * nothing at all (MO000096, 2026-10-15). LlmService refuses a value outside
+ * this list up front so the log names the ratio rather than echoing a provider
+ * complaint.
+ */
+export const SUPPORTED_IMAGE_ASPECT_RATIOS = [
+  '1:1',
+  '1:4',
+  '1:8',
+  '2:3',
+  '3:2',
+  '3:4',
+  '4:1',
+  '4:3',
+  '4:5',
+  '5:4',
+  '8:1',
+  '9:16',
+  '16:9',
+  '21:9',
+] as const;
+
 export interface LlmImageRequest {
   /** What to draw. */
   prompt: string;
@@ -290,7 +315,9 @@ export interface LlmImageRequest {
   /** Overrides the configured image model. */
   model?: string;
   /**
-   * The frame shape, e.g. "21:9".
+   * The frame shape, e.g. "21:9". Must be one of
+   * SUPPORTED_IMAGE_ASPECT_RATIOS — the image model answers anything else with
+   * a 400 INVALID_ARGUMENT.
    *
    * ⚠️ PROVED BEFORE IT WAS DECLARED. Sent as `generationConfig.imageConfig
    * .aspectRatio` and probed live on 2026-09-10: "21:9" came back 1584×672,

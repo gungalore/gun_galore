@@ -32,17 +32,29 @@ import {
 // ────────────────────────────────────────────────────────────────────
 
 /**
- * The shape the page reserves and the model is asked for.
- *
- * ⚠️ ONE NUMBER, THREE PLACES (the page's slot, the request, the crop), the
- * same discipline as the quarry plate: the model answers "2:1" with something
- * close, and a plate that is nearly the slot's shape leaves a sliver of white
- * or overflows it. Cropping at store time is what makes the page identical
- * every time.
+ * The shape the page reserves and the crop produces — 2:1, the frame the
+ * operator asked for (about 182 x 91 mm) and what the PDF lays out.
  */
 export const PLATE_W = 2;
 export const PLATE_H = 1;
-const PLATE_RATIO = `${PLATE_W}:${PLATE_H}`;
+
+/**
+ * ⚠️ AND THE MODEL HAS NO "2:1", SO WE ASK FOR A RATIO IT DOES HAVE.
+ *
+ * The image API's `aspect_ratio` is an ENUMERATED set — 1:1, 1:4, 1:8, 2:3,
+ * 3:2, 3:4, 4:1, 4:3, 4:5, 5:4, 8:1, 9:16, 16:9, 21:9 — and "2:1" is not in it.
+ * Every purpose plate was requested at 2:1 and came back 400 INVALID_ARGUMENT,
+ * so no exhibit was ever drawn: MO000096, 2026-10-15, read
+ * `aspect_ratio must be one of ...` four times and
+ * `Purpose plates drawn (sport): 0/4 kept`, and the pack shipped with no
+ * exhibits at all. The quarry plate never hit this because it already asks for
+ * 21:9 — the same value probed on this model (`llm.types.ts`).
+ *
+ * The answer is cropped to the 2:1 frame at store time (`fit: cover`), so the
+ * printed shape is the designed one whatever ratio comes back; asking for a
+ * supported ratio only decides how much the model frames before the crop.
+ */
+export const PLATE_REQUEST_RATIO = '21:9';
 
 const STORE_WIDTH = 1800;
 const STORE_QUALITY = 82;
@@ -164,7 +176,7 @@ export class MotivationPlatesService {
     try {
       const res = await this.llm.generateImage({
         prompt,
-        aspectRatio: PLATE_RATIO,
+        aspectRatio: PLATE_REQUEST_RATIO,
         purpose: 'motivation.plate',
         timeoutMs: TIMEOUT_MS,
       });

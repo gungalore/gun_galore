@@ -1,9 +1,11 @@
 import { MotivationLicenceType } from '@prisma/client';
+import { SUPPORTED_IMAGE_ASPECT_RATIOS } from '../common/llm/llm.types';
 import {
   MAX_PLATES,
   buildPlateSpecs,
   purposeFor,
 } from './motivation-plates';
+import { PLATE_REQUEST_RATIO, PLATE_W, PLATE_H } from './motivation-plates.service';
 
 // ────────────────────────────────────────────────────────────────────
 // THE PURPOSE EXHIBITS — WHICH SCENES, FOR WHICH PACK.
@@ -120,6 +122,18 @@ describe('the sport plates come from the firearm and discipline', () => {
     });
     expect(plates).toHaveLength(MAX_PLATES);
     expect(plates[0].title).toBe('Practical shooting');
+  });
+
+  it('⚠️ ASKS THE MODEL FOR A RATIO IT SUPPORTS, AND KEEPS THE 2:1 FRAME (MO000096)', () => {
+    // The image API rejects anything outside SUPPORTED_IMAGE_ASPECT_RATIOS with
+    // a 400; the plates asked for "2:1" and drew nothing at all for a day.
+    expect(
+      SUPPORTED_IMAGE_ASPECT_RATIOS.includes(
+        PLATE_REQUEST_RATIO as (typeof SUPPORTED_IMAGE_ASPECT_RATIOS)[number],
+      ),
+    ).toBe(true);
+    // The printed frame stays the operator's 2:1 whatever the model returns.
+    expect(PLATE_W / PLATE_H).toBe(2);
   });
 
   it('⚠️ EVERY PLATE CARRIES A TITLE, A DESCRIPTION AND A PROMPT', () => {
