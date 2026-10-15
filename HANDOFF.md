@@ -7,6 +7,30 @@ overwritten.
 
 Last updated: **2026-10-15**.
 
+## 2026-10-15 — MOTIVATIONS: COURSE-OF-FIRE EXHIBITS, CHEAPER PICTURES, FULL PAGES (FULL DEPLOY)
+
+Commits **`84b1ef34`** (cheaper image model), **`ad3260c8`** (course-of-fire exhibits + page-fill), **`863c4973`** (keep ICORE off a pistol's defaults), 3 files new / 8 edited. Full deploy via `infra/deploy/deploy.sh` (Git Bash) x2 (the ICORE tweak redeployed). Rollback point `alloutdoor-20261015-192513.dump`. Health x2 OK, warden reloaded, public 200 x2, three pm2 services online. Deployed HEAD `863c4973`. No migration.
+
+Gates: backend `tsc` clean + **356 suites/5608 tests** (1 skipped).
+
+**Operator's three asks.**
+1. "the current prompts does not look good ... research what the layout rules are for each course ... take out any humans and action. we just need to show the course of fire and explain it."
+2. "use a cheaper gemini to create the images, nana banana is too expensive."
+3. "sometimes it writes just one sentence on a page and the rest is empty ... add content to where the page is at least 50% full."
+
+**What shipped.**
+
+- **Course-of-fire exhibits (`motivation-courses.ts`).** The sport plates no longer draw a generic venue. **18 curated courses** — handgun (IPSC Practical Pistol, SADPA/IDPA, Steel Challenge, ICORE, Natshoot 20 m); self-loading rifle (IPSC Rifle, 3-Gun, TPS, SADPA Long Gun); manual rifle (SA Hunters bolt, Fullbore, Lever-Action, Cowboy, F-Class, PRS); shotgun (Clay/Trap/Skeet, IPSC Shotgun, Multi-Gun) — each sets out the actual course (targets, distances, positions, props) and a caption that EXPLAINS it. Selection mines the generated uses (`intendedUsesFor`, now computed BEFORE the draw) against each course's keywords, falls back to the class/action defaults, and never crosses class. `PLATES_PROMPT_VERSION` -> `2026-10-16a`.
+- **Empty courses (`EMPTY` tail).** Every sport prompt now ends with no people, no shooter, no hands, no firearms, no muzzle, no muzzle flash, no motion or action. Verified on MO000096: an empty IPSC bay and an empty Steel Challenge plate array.
+- **Cheaper pictures (`gemini.provider.ts`).** `DEFAULT_IMAGE_MODEL` -> **`gemini-3.1-flash-lite-image`** (~$0.0336/plate; priced in `llm.pricing.ts`). 2.1 was expensive AND unpriced — the ledger booked its spend as $0.
+- **Full pages (`motivation-fill.ts`).** Geometry-derived floors from the real body column (BODY_SIZE/LEADING/indent): the writer is now told "no section is a single line" (rule 13) and a **thin-section detector** feeds the retry loop, which now also runs while a section is under its floor (bounded by the existing 3 attempts). Per-section floor ~18 % of a page, lower for sections short by design; the 50 %/40 % target is a PAGE fill, stored as `qualityFindings.pageFillEstimate` + `thinSections`. Rule 7 holds: the answer to a short section is the detail the brief names, never padding.
+
+**Redraw.** MO000096 redrawn (plates-only): **IPSC Practical Pistol, Defensive Pistol (SADPA/IDPA), Steel Challenge, Natshoot / SA Jagters 20 m handgun** — `model = gemini-3.1-flash-lite-image`.
+
+**Know.**
+- The fill change is an ESTIMATE of page fill (from the layout geometry), not a measurement of the rendered PDF, and it targets SECTIONS under their floor — the retry loop is what tops them up. A true rendered-page measurement remains open.
+- ICORE is revolver-only and now rank-last: shown when the firearm is a revolver or the uses name it, never as a pistol default.
+
 ## 2026-10-15 — MOTIVATIONS: ONE ANIMAL PER QUARRY EXHIBIT, UP TO FIVE (FULL DEPLOY)
 
 Commit **`2d1ab786`** (`feat(motivations) one animal per exhibit, up to five, and retire the quarry line-up`), 4 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-155124.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `2d1ab786`. No migration.
