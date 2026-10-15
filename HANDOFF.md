@@ -7,6 +7,27 @@ overwritten.
 
 Last updated: **2026-10-15**.
 
+## 2026-10-15 — ASSOCIATION ENDORSEMENT: GENERIC RECOGNITION + MATCH TO THE APPLIED-FOR FIREARM (FULL DEPLOY)
+
+Commit **`c4b0604c`**, 4 files edited / 2 new. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-220658.dump`. Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `c4b0604c`. No migration.
+
+Gates: backend `tsc` clean + **358 suites/5627 tests** (1 suite/8 tests skipped). Frontend untouched.
+
+**The ask.** Operator, 2026-10-15: "the endorsement is a requirement for dedicated hunting and sport. We need to OCR it as such as well. We don't need to pull the information to fill in anywhere. But it must be matched to the firearm that is applied for. We can recognize it because it will say endorsement somewhere in the document. And it will also specify the firearm. Endorsements from different entities do not look the same, so we need to generically match them."
+
+The example (`108828_Endorsement (1).pdf`) is a **scanned image (no text layer)** — that is the point. Rendered, it reads: title "ENDORSEMENT – DEDICATED SPORT SHOOTER", "PART TWO SUITABILITY OF FIREARM", a table Handgun · 9 mm Parabellum · Glock · Self loading · `ZABA01892` — the applied-for firearm exactly.
+
+**What shipped.**
+- **Generic recognition.** The Gemini fallback prompt `CLASSIFY_USER` only listed a subset of `CLASSIFIABLE` and omitted the endorsement; it now offers `ASSOCIATION_ENDORSEMENT`, `GOOD_STANDING_LETTER` and `FIREARM_SOURCE_PROOF`, and the Jev/Gemini hints key on the word "endorsement" plus a firearm named by type/calibre/make/action/serial (a "suitability of firearm" table). No per-entity layout is assumed.
+- **Match (`motivation-endorsement.ts`, new).** `endorsementVerdict(endorsed, applied)` compares the read endorsement to the application's `firearm_*` answers: **serial first and it decides alone** (a same-serial endorsement is accepted even if worded differently; a different serial is refused even if everything else agrees); with no serial, type + calibre, refusing only on a clear disagreement (different class, or a differing lead number like 9 vs 308). Returns `match | mismatch | unverified`.
+- **Wired at upload (`motivation-documents.service.ts`).** An endorsement is read once for the match. **Mismatch → demoted to OTHER (1a)** — it can no longer sit under the endorsement row. **Firearm not yet described → kept on trust (2a).**
+- **No fill.** `ASSOCIATION_ENDORSEMENT` removed from `EXTRACTABLE` and `FIREARM_READABLE`, so it never writes a form field; it is read only to be matched.
+- Tests: `motivation-endorsement.spec.ts` (9 verdict cases), `motivation-read-firearm.spec.ts` updated.
+
+**Know.**
+- The mismatch demotion is server-side and silent in the payload: the row simply reads "Something else" and the member can re-file it. There is no dedicated reason field on the upload row; a follow-up could surface the reason on the card.
+- Jev filing is live in prod (`JEV_API_KEY` set). The Gemini fallback is the path when Jev cannot place the document.
+
 ## 2026-10-15 — MOTIVATION PACK LAYOUT: ANNEXURE HEADINGS, STAMP BLOCK, NO WATERMARK, NO END PAGES (FULL DEPLOY)
 
 Commit **`5325e4ad`** (`feat(motivations) annexure headings, STAMP block, no watermark, no end pages`), 6 files edited / 0 new. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-214250.dump`. Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `5325e4ad`. No migration.
