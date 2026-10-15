@@ -7,7 +7,11 @@ import {
   type CompetencyCategory,
   type LicenceSection,
 } from '../common/sa-competency';
-import { documentScope, southAfricanise } from './motivation-scope';
+import {
+  documentScope,
+  southAfricanise,
+  spellsOutMeasurement,
+} from './motivation-scope';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT A FIREARM OF THIS CLASS IS PLAUSIBLY USED FOR, IN SOUTH AFRICA.
@@ -869,9 +873,22 @@ export class FirearmUsesService {
     const out: string[] = [];
     let refused = 0;
     for (const raw of v) {
+      const rawTrim = String(raw ?? '').trim();
+      /**
+       * ⚠️ A SPELLED MEASUREMENT IS DROPPED HERE, NOT FOLDED, AND THIS SLICE
+       * IS THE ONE PLACE THAT IS TRUE. The document writer folds it (see
+       * normaliseMeasurements) because it cannot throw a sentence away; this
+       * slice CAN, and it almost always also carries the figures form of the
+       * same claim — folding would ship both "at 200 metres" and "at 200 m" as
+       * two uses. The exemplar must not be the spelled one.
+       */
+      if (spellsOutMeasurement(rawTrim)) {
+        refused++;
+        continue;
+      }
       // Fold the spelling BEFORE judging it — "caliber" is a spelling to fix,
       // not a sentence to throw away.
-      const u = southAfricanise(String(raw ?? '').trim());
+      const u = southAfricanise(rawTrim);
       if (u.length <= 3 || u.length > 200) continue;
       const faults = documentScope(u, {
         licenceType: SLICE_AS_TYPE[slice],

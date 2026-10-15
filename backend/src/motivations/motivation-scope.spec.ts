@@ -448,6 +448,42 @@ describe('filler, claims and pressure', () => {
       ),
     ).toEqual([]);
   });
+
+  it('⚠️ FOLDS A SPELLED MEASUREMENT INTO FIGURES RATHER THAN FAILING THE PACK (MO000096)', () => {
+    // MO000096, 2026-10-15: a section 16 sport motivation failed three
+    // generations over this one sentence. `repairTargets` can mend a vocabulary
+    // word and nothing else, so the only fix is to fold the number here.
+    expect(southAfricanise('at two hundred metres')).toBe('at 200 metres');
+    expect(southAfricanise('the last four kilometres has no lighting')).toBe(
+      'the last 4 kilometres has no lighting',
+    );
+    expect(
+      southAfricanise(
+        'steel targets spread over distances extending from seven to twenty-five metres',
+      ),
+    ).toBe(
+      'steel targets spread over distances extending from 7 to 25 metres',
+    );
+    // "a hundred" is "100", but an article that belongs to the noun stays.
+    expect(southAfricanise('a hundred metres of fence')).toBe(
+      '100 metres of fence',
+    );
+    expect(southAfricanise('a five metre room')).toBe('a 5 metre room');
+    // A numeral, an unrelated "one", and a unit with no number word are left be.
+    expect(southAfricanise('at 600 m')).toBe('at 600 m');
+    expect(southAfricanise('One of my rifles is a CZ')).toBe(
+      'One of my rifles is a CZ',
+    );
+    // After folding, the check is silent on the sentence that failed MO000096.
+    expect(
+      documentScope(
+        southAfricanise(
+          'steel targets spread over distances extending from seven to twenty-five metres.',
+        ),
+        s13,
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe('the mirror of the section discipline', () => {

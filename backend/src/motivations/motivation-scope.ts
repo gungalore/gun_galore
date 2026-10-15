@@ -611,6 +611,119 @@ export function spellsOutMeasurement(text: string): boolean {
 }
 
 /**
+ * ⚠️ FIGURES MEASURE, WORDS ARGUE, AND THIS IS WHERE THE WORD BECOMES THE
+ * FIGURE RATHER THAN FAILING THE DOCUMENT.
+ *
+ * MO000096, 2026-10-15: a section 16 sport motivation was written, and a single
+ * sentence — "steel targets spread over distances extending from seven to
+ * twenty-five metres" — failed the whole pack. The complaint is mechanical and
+ * correct (an adjacent number word and unit), and it is the ONE such complaint
+ * the mender cannot touch: `repairTargets` finds no vocabulary word to rewrite,
+ * so it returns null and the repair is skipped. Three fresh drafts, the same
+ * slip, and the applicant is told we could not finish their document over a
+ * number they would have been happy to read as "7 to 25".
+ *
+ * ⚠️ SO IT IS FOLDED, LIKE A SPELLING, AND NOT REGENERATED. The conversion is
+ * deterministic and changes the REPRESENTATION and nothing else: "twenty-five
+ * metres" becomes "25 metres", the same distance in the register the house rule
+ * already mandates ("100 to 125 m"). No fact moves, no sentence is rewritten,
+ * which is the test `southAfricanise` sets for a silent fix (see below). It runs
+ * before the check, so the check now fires only on something this could not
+ * parse — a spelled number it does not recognise, which is the signal worth
+ * having.
+ *
+ * ⚠️ ONE CAPTURE, the number adjective and the unit it touches, plus an optional
+ * "to" range so "seven to twenty-five metres" folds both ends and does not leave
+ * a stray spelled word in front of a figure. The unit word is left alone: only
+ * the number is a register slip.
+ */
+const WORD_VALUE: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
+  hundred: 100,
+  thousand: 1000,
+};
+
+const NUM_COMPOUND = `(?:${NUMBER_ALT})(?:[\\s-]+(?:and[\\s-]+)?(?:${NUMBER_ALT}))*`;
+const NUM_RANGE = `(?:${NUM_COMPOUND})(?:\\s+to\\s+(?:${NUM_COMPOUND}))?`;
+
+/** article, its spacing, the number phrase (a range allowed), spacing, the unit. */
+const MEASURE_CAPTURE = new RegExp(
+  `\\b(?:(a|an)([\\s-]+))?(${NUM_RANGE})([\\s-]+)(${UNIT_ALT})\\b`,
+  'gi',
+);
+
+function compoundToNumber(phrase: string): number {
+  let total = 0;
+  let current = 0;
+  for (const token of phrase.split(/[\s-]+/)) {
+    const value = WORD_VALUE[token.toLowerCase()];
+    if (value === undefined || token.toLowerCase() === 'and') continue;
+    if (value === 100) current = (current || 1) * 100;
+    else if (value === 1000) {
+      total += (current || 1) * 1000;
+      current = 0;
+    } else current += value;
+  }
+  return total + current;
+}
+
+function spellToFigures(phrase: string): string {
+  return phrase
+    .split(/\s+to\s+/i)
+    .map((part) => String(compoundToNumber(part)))
+    .join(' to ');
+}
+
+/**
+ * Rewrite every adjacent spelled measurement in figures. See the note above.
+ *
+ * The leading article is dropped only where it IS the number — "a hundred
+ * metres" is "100 metres", not "a 100 metres" — and kept where it belongs to the
+ * following noun, as in "a five metre room" -> "a 5 metre room".
+ */
+export function normaliseMeasurements(text: string): string {
+  return text.replace(
+    MEASURE_CAPTURE,
+    (_whole, article: string, articleSep: string, phrase: string, sep: string, unit: string) => {
+      const firstToken = phrase
+        .split(/\s+to\s+/i)[0]
+        .split(/[\s-]+/)[0]
+        .toLowerCase();
+      const articleIsNumber =
+        !!article && (firstToken === 'hundred' || firstToken === 'thousand');
+      const head = article && !articleIsNumber ? `${article}${articleSep}` : '';
+      return `${head}${spellToFigures(phrase)}${sep}${unit}`;
+    },
+  );
+}
+
+/**
  * Everything the document says that the pack does not support.
  *
  * Returns one plain sentence per fault, naming the offending words, for an
@@ -1041,6 +1154,11 @@ export function southAfricanise(text: string): string {
   for (const [pattern, replacement] of SPELLING) {
     out = out.replace(pattern, (m) => likeFor(replacement, m));
   }
+  // ⚠️ MANY A SPELLING FOLD, AND FOR THE SAME REASON: a mechanical failure
+  // costs the applicant the whole pack, so every register slip that can be
+  // fixed deterministically is fixed here and the check fires only on what is
+  // left. See normaliseMeasurements.
+  out = normaliseMeasurements(out);
   return dropOpeningFiller(out);
 }
 
