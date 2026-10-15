@@ -7,6 +7,23 @@ overwritten.
 
 Last updated: **2026-10-15**.
 
+## 2026-10-15 — ENDORSEMENT MISMATCH NOW SAYS SO (FULL DEPLOY)
+
+Commit **`87d23635`**, 2 backend files + 1 frontend. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-221902.dump`. Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `87d23635`. No migration.
+
+Gates: backend `tsc` clean + **358 suites/5627 tests**; frontend `tsc` clean + **142 files/1745 tests** + prod build.
+
+**The ask.** Operator, 2026-10-15: "we read a different firearm's serial" — surface the reason, which the previous build left silent (the row just read "Something else").
+
+**What shipped.**
+- **Persisted reason.** `ENDORSEMENT_FIREARM_MISMATCH` sentinel written to `MotivationUpload.extractedFields` (no schema change — the SAPS_271_MARKER trick), so the reason survives a reload.
+- **Row caution.** The GET uploads row now carries an amber `caution`: "We read a different firearm's serial on this document, so it was not filed as your endorsement. Re-file it if that is wrong." The wizard's `UploadRowNotes` already renders `row.caution`.
+- **Immediate.** `addUpload` returns the same caution and the licence-centre toast shows it.
+- **No fill from a mismatched endorsement.** Demotion leaves `resolved = OTHER`, which is `FIREARM_READABLE`, so the readFirearm fill is now suppressed for that row — otherwise the wrong firearm's serial would be offered on the application's own boxes.
+- Constants live in `motivation-endorsement.ts` (`ENDORSEMENT_FIREARM_MISMATCH`, `ENDORSEMENT_MISMATCH_CAUTION`).
+
+**Know.** The caution is `amber`, not `red` — it does not block or untick anything, it tells the member and offers the correction control.
+
 ## 2026-10-15 — ASSOCIATION ENDORSEMENT: GENERIC RECOGNITION + MATCH TO THE APPLIED-FOR FIREARM (FULL DEPLOY)
 
 Commit **`c4b0604c`**, 4 files edited / 2 new. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-220658.dump`. Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `c4b0604c`. No migration.
