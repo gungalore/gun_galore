@@ -4,6 +4,7 @@ import {
   MAX_PLATES,
   buildPlateSpecs,
   purposeFor,
+  weaponClass,
 } from './motivation-plates';
 import { PLATE_REQUEST_RATIO, PLATE_W, PLATE_H } from './motivation-plates.service';
 
@@ -121,7 +122,52 @@ describe('the sport plates come from the firearm and discipline', () => {
       answers: { association_name: 'SAPSA', firearm_type: 'Handgun' },
     });
     expect(plates).toHaveLength(MAX_PLATES);
-    expect(plates[0].title).toBe('Practical shooting');
+    expect(plates[0].title).toBe('Practical shooting (IPSC / IDPA)');
+  });
+
+  it('⚠️ PICTURES ONLY THE DISCIPLINES THE APPLIED-FOR FIREARM IS ELIGIBLE FOR (MO000096)', () => {
+    // A Glock 9 mm handgun was drawn with rifle and shotgun venues because the
+    // picker filled from the whole catalogue. Each class is now its own pool.
+    const handgun = buildPlateSpecs({
+      licenceType: S16_SPORT,
+      answers: { firearm_type: 'Handgun', firearm_calibre: '9MM PAR (9X19MM)' },
+    }).map((p) => p.title);
+    expect(handgun).toContain('Practical shooting (IPSC / IDPA)');
+    expect(handgun).toHaveLength(MAX_PLATES);
+    for (const title of handgun) {
+      expect(title).not.toMatch(/long-range|clay|benchrest|target rifle|veldskiet|shotgun/i);
+    }
+
+    const rifle = buildPlateSpecs({
+      licenceType: S16_SPORT,
+      answers: { firearm_type: 'Rifle', firearm_calibre: '6.5MM CREEDMOOR' },
+    }).map((p) => p.title);
+    expect(rifle).toContain('Long-range precision');
+    for (const title of rifle) {
+      expect(title).not.toMatch(/practical shooting|steel challenge|clay|shotgun/i);
+    }
+
+    const shotgun = buildPlateSpecs({
+      licenceType: S16_SPORT,
+      answers: { firearm_type: 'Shotgun', firearm_calibre: '12 GAUGE' },
+    }).map((p) => p.title);
+    expect(shotgun).toContain('Clay target shooting');
+    for (const title of shotgun) {
+      expect(title).not.toMatch(/handgun|practical shooting|long-range|benchrest/i);
+    }
+  });
+
+  it('classifies the applied-for firearm from its own answers', () => {
+    expect(weaponClass({ firearm_type: 'Handgun' })).toBe('handgun');
+    expect(weaponClass({ firearm_type: 'Rifle' })).toBe('rifle');
+    expect(weaponClass({ firearm_type: 'Shotgun' })).toBe('shotgun');
+    // Type first; calibre only breaks a tie.
+    expect(weaponClass({ firearm_calibre: '9MM PAR (9X19MM)' })).toBe('handgun');
+    expect(weaponClass({ firearm_type: 'Rifle', firearm_calibre: '9MM PAR' })).toBe(
+      'rifle',
+    );
+    // An unrecognised type keeps the whole catalogue (no class, no withholding).
+    expect(weaponClass({ firearm_type: 'Combination' })).toBeNull();
   });
 
   it('⚠️ ASKS THE MODEL FOR A RATIO IT SUPPORTS, AND KEEPS THE 2:1 FRAME (MO000096)', () => {

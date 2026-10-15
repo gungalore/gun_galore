@@ -40,7 +40,7 @@ import { s15Purpose } from './motivation-fields';
  * wording with no way to tell which is which — the same trap
  * QUARRY_PROMPT_VERSION and researchAskVersion were written to close.
  */
-export const PLATES_PROMPT_VERSION = '2026-10-14a';
+export const PLATES_PROMPT_VERSION = '2026-10-15a';
 
 /** Which of the three purposes a pack's exhibits serve. */
 export type PlatePurpose = 'hunting' | 'self_defence' | 'sport';
@@ -271,7 +271,62 @@ function pickScenes(
 
 // ── sport ─────────────────────────────────────────────────────────────
 
+/**
+ * The three classes a sport pack can be about, off the APPLIED-FOR firearm.
+ *
+ * ⚠️ THE EXHIBITS MUST MATCH THE FIREARM, OR THE PAGE ARGUES THE WRONG SPORT.
+ * The applied-for firearm is one class; the disciplines it is eligible for are
+ * that class's, and no others. MO000096, 2026-10-15: a Glock 9 mm Parabellum
+ * handgun was pictured with "Long-range precision", "Clay target shooting" and
+ * "Target rifle and benchrest" — rifle and shotgun venues on a page lodged for
+ * a pistol — because the picker's fallback filled from the whole list (see
+ * pickActivities). Operator, 2026-10-15: "the images need to be specific to
+ * the type of firearm ... disciplines a Glock 43X will be eligible for."
+ */
+export type WeaponClass = 'handgun' | 'rifle' | 'shotgun';
+
+/**
+ * The applied-for firearm's class, from its own answers.
+ *
+ * ⚠️ THE TYPE BOX LEADS AND THE CALIBRE ONLY BREAKS A TIE. `firearm_type` is
+ * the form's own Handgun/Rifle/Shotgun word and is the reliable signal; a 9 mm
+ * is usually a handgun but can be a carbine, so the calibre is read only where
+ * the type says nothing. Null — an unrecognised type — never withholds plates:
+ * pickActivities falls back to the whole catalogue rather than printing none.
+ */
+export function weaponClass(a: Record<string, string>): WeaponClass | null {
+  const type = (a.firearm_type ?? '').toLowerCase();
+  if (/shotgun/.test(type)) return 'shotgun';
+  if (/handgun|pistol|revolver/.test(type)) return 'handgun';
+  if (/rifle|carbine/.test(type)) return 'rifle';
+
+  const blob = `${a.firearm_type ?? ''} ${a.firearm_action ?? ''} ${
+    a.firearm_calibre ?? ''
+  }`.toLowerCase();
+  if (/shotgun|\bgauge\b|\b\d{1,2}\s?ga\b/.test(blob)) return 'shotgun';
+  if (
+    /handgun|pistol|revolver|9\s?mm|9x19|parabellum|\.22\s?lr|\.380|\.40\s?sw|\.45\s?acp/.test(
+      blob,
+    )
+  ) {
+    return 'handgun';
+  }
+  if (
+    /rifle|carbine|creedmoor|springfield|\b6\.5\b|\.22\s?250|\.223|\.243|\.270|\.308|\.30-?06|\.300|\.338/.test(
+      blob,
+    )
+  ) {
+    return 'rifle';
+  }
+  return null;
+}
+
 interface Activity {
+  /**
+   * ⚠️ WHICH FIREARM CLASSES MAY BE PICTURED WITH THIS ACTIVITY. Absent means
+   * any class may (a club range is a club range). See weaponClass.
+   */
+  classes?: readonly WeaponClass[];
   when?: (a: Record<string, string>) => boolean;
   title: string;
   description: string;
@@ -280,25 +335,60 @@ interface Activity {
 
 const SPORT_ACTIVITIES: readonly Activity[] = [
   {
+    classes: ['handgun'],
     when: (a) =>
       /handgun|pistol|self-loading|semi-auto|9mm|revolver/i.test(
         `${a.firearm_type ?? ''} ${a.firearm_calibre ?? ''} ${a.firearm_action ?? ''}`,
-      ) || /ipsc|idpa|practical|sadpa/i.test(`${a.association_name ?? ''} ${a.sport_formats ?? ''}`),
-    title: 'Practical shooting',
+      ) ||
+      /ipsc|idpa|practical|sadpa/i.test(
+        `${a.association_name ?? ''} ${a.sport_formats ?? ''}`,
+      ),
+    title: 'Practical shooting (IPSC / IDPA)',
     description:
       'Practical handgun shooting is run as timed stages: barricades, fault ' +
       'lines, moving targets and steel, shot under a range officer and ' +
-      'scored on both time and accuracy.',
+      'scored on both time and accuracy. A compact self-loading pistol in 9 ' +
+      'mm Parabellum is eligible for these divisions, and the short barrel ' +
+      'and light recoil suit the close, fast courses.',
     prompt:
       'A photorealistic photograph of an outdoor practical shooting range ' +
       'bay in South Africa, earthen safety berms, wooden barricades and a row ' +
-      'of steel targets, sand underfoot, clear daylight. ' +
+      'of steel targets at close range, sand underfoot, clear daylight. ' +
       `${NEGATIVES}`,
   },
   {
+    classes: ['handgun'],
+    title: 'Steel challenge',
+    description:
+      'Steel challenge sets five falling-plate stages, shot from a stationary ' +
+      'box at close ranges where draw, reload and split times decide the ' +
+      'score. It is a first-tier discipline for a service-calibre handgun.',
+    prompt:
+      'A photorealistic photograph of a steel-target range in South Africa, ' +
+      'painted steel plates on stands in front of an earth berm on a flat ' +
+      'range, a shooting box marked on the ground, bright daylight. ' +
+      `${NEGATIVES}`,
+  },
+  {
+    classes: ['handgun'],
+    title: 'Indoor and club range practice',
+    description:
+      'Regular practice at a club or indoor handgun range — slow fire, ' +
+      'draw-and-fire drills and reload practice at 10 to 25 metres — is the ' +
+      'recurring activity a dedicated sports status is built around.',
+    prompt:
+      'A photorealistic photograph of an indoor handgun range in South ' +
+      'Africa, numbered shooting lanes with target carriers at the far end, ' +
+      'a concrete floor and overhead lighting, no people. ' +
+      `${NEGATIVES}`,
+  },
+  {
+    classes: ['rifle'],
     when: (a) =>
       /rifle/i.test(a.firearm_type ?? '') ||
-      /precision|prs|long.range|bisley|target/i.test(`${a.sport_formats ?? ''} ${a.discipline ?? ''}`),
+      /precision|prs|long.range|bisley|target/i.test(
+        `${a.sport_formats ?? ''} ${a.discipline ?? ''}`,
+      ),
     title: 'Long-range precision',
     description:
       'Precision rifle matches are fired prone or from props at steel and ' +
@@ -311,20 +401,7 @@ const SPORT_ACTIVITIES: readonly Activity[] = [
       `clear highveld sky. ${NEGATIVES}`,
   },
   {
-    when: (a) =>
-      /shotgun/i.test(`${a.firearm_type ?? ''} ${a.discipline ?? ''}`) ||
-      /clay|trap|skeet|sporting/i.test(`${a.sport_formats ?? ''} ${a.discipline ?? ''}`),
-    title: 'Clay target shooting',
-    description:
-      'Trap, skeet and sporting clays are shot at clay targets thrown from ' +
-      'fixed or oscillating traps, at five stations and over the distances ' +
-      'the discipline sets.',
-    prompt:
-      'A photorealistic photograph of a clay target shooting layout in South ' +
-      'Africa, a trap house and a curved line of shooting stands on mown ' +
-      `grass under an open sky. ${NEGATIVES}`,
-  },
-  {
+    classes: ['rifle'],
     when: (a) =>
       /benchrest|bench rest|f-class|fclass|prone|target/i.test(
         `${a.sport_formats ?? ''} ${a.discipline ?? ''}`,
@@ -338,6 +415,49 @@ const SPORT_ACTIVITIES: readonly Activity[] = [
       'A photorealistic photograph of a covered target-rifle firing point in ' +
       'South Africa, concrete benches and a long empty range with distant ' +
       `target frames. ${NEGATIVES}`,
+  },
+  {
+    classes: ['rifle'],
+    title: 'Veldskiet and gong shooting',
+    description:
+      'Veldskiet and gong matches are shot from field positions at steel and ' +
+      'gongs at unknown distances, the practical rifle discipline most South ' +
+      'African hunters and sport shooters shoot between seasons.',
+    prompt:
+      'A photorealistic photograph of a South African veld rifle range, ' +
+      'steel gongs of graduated size on a distant slope, open grassland and ' +
+      'scrub, a dirt firing line in the foreground, highveld sky. ' +
+      `${NEGATIVES}`,
+  },
+  {
+    classes: ['shotgun'],
+    when: (a) =>
+      /shotgun/i.test(`${a.firearm_type ?? ''} ${a.discipline ?? ''}`) ||
+      /clay|trap|skeet|sporting/i.test(
+        `${a.sport_formats ?? ''} ${a.discipline ?? ''}`,
+      ),
+    title: 'Clay target shooting',
+    description:
+      'Trap, skeet and sporting clays are shot at clay targets thrown from ' +
+      'fixed or oscillating traps, at five stations and over the distances ' +
+      'the discipline sets.',
+    prompt:
+      'A photorealistic photograph of a clay target shooting layout in South ' +
+      'Africa, a trap house and a curved line of shooting stands on mown ' +
+      `grass under an open sky. ${NEGATIVES}`,
+  },
+  {
+    classes: ['shotgun'],
+    title: 'Practical shotgun',
+    description:
+      'Practical shotgun runs timed field courses with multiple targets, ' +
+      'movement and reloads under a range officer, the shotgun counterpart of ' +
+      'practical handgun shooting.',
+    prompt:
+      'A photorealistic photograph of a practical shotgun range in South ' +
+      'Africa, a bay of wooden barricades and a scatter of steel plates at ' +
+      'varied distances in front of an earth berm, sand underfoot. ' +
+      `${NEGATIVES}`,
   },
   {
     title: 'Club-level competition',
@@ -356,6 +476,19 @@ function pickActivities(
   answers: Record<string, string>,
   limit: number,
 ): Activity[] {
+  const cls = weaponClass(answers);
+  /**
+   * ⚠️ NEVER FALL BACK ACROSS CLASSES. The old fill loop drew from the WHOLE
+   * catalogue, so a handgun pack was padded with rifle and shotgun venues the
+   * moment it ran short of a handgun discipline. A class-limited pool is the
+   * fix: a handgun sees only handgun activities (and the class-agnostic club
+   * range), a rifle only rifle ones. An unrecognised type keeps the whole
+   * catalogue — an unread type is not a reason to print no exhibits.
+   */
+  const pool = SPORT_ACTIVITIES.filter(
+    (s) => !s.classes || cls === null || s.classes.includes(cls),
+  );
+
   const chosen: Activity[] = [];
   const seen = new Set<string>();
   const add = (s: Activity) => {
@@ -364,8 +497,8 @@ function pickActivities(
     seen.add(s.title);
     chosen.push(s);
   };
-  for (const s of SPORT_ACTIVITIES) if (s.when?.(answers)) add(s);
-  for (const s of SPORT_ACTIVITIES) add(s);
+  for (const s of pool) if (s.when?.(answers)) add(s);
+  for (const s of pool) add(s);
   return chosen.slice(0, limit);
 }
 
