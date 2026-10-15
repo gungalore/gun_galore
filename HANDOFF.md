@@ -7,6 +7,24 @@ overwritten.
 
 Last updated: **2026-10-15**.
 
+## 2026-10-15 — MOTIVATIONS: EXHIBITS ON NANO BANANA 2.1, TARGETS DOWNRANGE (FULL DEPLOY + REDRAW)
+
+Commit **`78cf339e`** (`feat(motivations) draw exhibits with Nano Banana 2.1 and keep targets downrange`), 3 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-150209.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `78cf339e`. No migration.
+
+Gates: backend `tsc` clean + **355 suites/5601 tests** (1 skipped).
+
+**The report.** Operator, 2026-10-15: "it needs to use nano banana 2.1 to generate the images. Some of the images do not make sense, where the targets sit next to the shooting benches."
+
+**What shipped.**
+- **Model.** `DEFAULT_IMAGE_MODEL` in `common/llm/gemini.provider.ts` moved from `gemini-3.1-flash-lite-image` (the cheapest, "Nano Banana Lite") to **`gemini-nano-banana-2.1`**. The id is on the account's own `GET /v1beta/models` list and was probed live on 2026-10-15: it answers the ordinary generateContent shape at `21:9`. Still overridable with `LLM_IMAGE_MODEL` (unset on the box, so the code default applies). This is the model for EVERY image — quarry plate, cover photo and the purpose exhibits.
+- **Layout.** A shared `DOWNRANGE` clause is now appended to every range venue prompt: the firing point/benches are in the foreground and every target is far downrange beyond them, never beside or behind the firing point. The "Target rifle and benchrest" prompt was rewritten to name the firing point and the butts explicitly — the one whose target frames sat next to the benches. `PLATES_PROMPT_VERSION` -> `2026-10-15b`.
+
+**Redraw.** MO000096's plates were replaced (plates-only backfill): **Practical shooting (IPSC / IDPA)**, **Steel challenge**, **Indoor and club range practice**, **Club-level competition** — 4/4 kept, `model = gemini-nano-banana-2.1`, 1800x900.
+
+**Know.**
+- 2.1 is slower than Lite: ~14-20 s per plate vs ~4-7 s (observed on the redraw). Plates run in parallel so a pack gains roughly 20 s, but a regeneration that draws plates is slower than before.
+- 2.1 costs more than Lite per image; the operator chose it for quality deliberately.
+
 ## 2026-10-15 — MOTIVATIONS: THE EXHIBITS FOLLOW THE FIREARM'S CLASS (FULL DEPLOY + REDRAW)
 
 Commit **`5166718e`** (`fix(motivations) picture only the disciplines the applied-for firearm is eligible for`), 2 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-144141.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `5166718e`. No migration.
