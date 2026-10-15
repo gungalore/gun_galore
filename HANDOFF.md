@@ -5,7 +5,21 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-14**.
+Last updated: **2026-10-15**.
+
+## 2026-10-15 — MOTIVATIONS: THE DEDICATED STATUS RUNS WITH THE MEMBERSHIP (FULL DEPLOY)
+
+Commit **`b02f3a67`** (`fix(motivations) the dedicated status runs with the association membership`), 3 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-102428.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `b02f3a67`. No migration.
+
+Gates: backend `tsc` clean + **355 suites/5595 tests**; frontend `tsc` clean + **142 files/1745 tests** + production build OK.
+
+**The report.** Operator, 2026-10-15, pointing at the "Dedicated status held since" and the association "valid until" rows: "these two are actually the same thing. If the membership expires so does the dedicated status." Asked how to treat the pair, the operator ruled: "keep both but link the two dates and user can change the dates if he wants."
+
+**What shipped.** Copy on both rows (both association slots) says the dedicated status runs with the membership and ends on the membership's valid-until; both stay fully editable. A new warning `dedicated-status-after-membership` fires when `dedicated_since` is dated AFTER `association_expiry` — the status cannot begin after the membership it depends on has lapsed — so the pair is kept consistent.
+
+**Know.**
+- The vault already models membership + dedicated status + good standing as ONE validity (`licence-centre-naming.spec.ts`), and SAPS 271 item 60 already prints the membership's valid-until. This change only aligned the wizard wording and added the consistency guard.
+- If the operator wants a LIVE link (editing one date auto-fills the other's value in the wizard) rather than a consistency guard, that is a frontend change and was deliberately not done — setting "held since" equal to "valid until" is usually an impossible date.
 
 ## 2026-10-14 — MOTIVATIONS: PURPOSE EXHIBITS, 1–2 PAGES OF GENERATED PICTURES UNDER HEADING 3 (FULL DEPLOY + MIGRATION)
 
