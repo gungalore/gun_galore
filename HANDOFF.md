@@ -7,6 +7,28 @@ overwritten.
 
 Last updated: **2026-10-15**.
 
+## 2026-10-15 — MOTIVATIONS: ONE ANIMAL PER QUARRY EXHIBIT, UP TO FIVE (FULL DEPLOY)
+
+Commit **`2d1ab786`** (`feat(motivations) one animal per exhibit, up to five, and retire the quarry line-up`), 4 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-155124.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `2d1ab786`. No migration.
+
+Gates: backend `tsc` clean + **355 suites/5602 tests** (1 skipped).
+
+**The report.** Operator, 2026-10-15: "do the same for the quarry. one animal per picture with up to five animals where applicable ... research what animals each firearm is good for in south africa ... give a description of why it is good for that animal." Asked where it should render, the operator chose: **Heading-3 exhibits, drop the cartridge-page line-up, animal alone (wildlife photograph)**.
+
+**What shipped (hunting exhibits, `motivation-plates.ts`).**
+- One animal per plate, **cap raised 4 -> 5** (`MAX_HUNTING_PLATES`; sport/self-defence stay at 4). Five plates is three pages — 2 + 2 + 1.
+- Each species keeps its own picture (already one-to-a-plate) and now carries a **why-this-cartridge-suits-it** sentence. The reason is stated CLASS BY CLASS, not invented per species (`CLASS_RATIONALE`), and the plate is on the page because the cartridge brief for THIS application named the species (see `quarriesFor`). No energy, velocity or figure is asserted — a recalled number would be an invented fact on a signed document.
+- Species still come from the research the document prints (firearm + calibre blocks) filtered by the applicant's own `hunt_game_class`; the research already asks what the round is used for in South Africa.
+
+**What shipped (retire the composite line-up).**
+- `motivation-generation.service.ts`: the `quarryPlates.makeFor(...)` draw is removed (nothing spends money on the line-up).
+- `motivation-render.service.ts`: `quarryPhotoFor` deleted and `cartridgePhoto` no longer passed — the cartridge page keeps its text and C.I.P. inset, and the empty slot collapses (the PDF already handled "no quarry photo" for sport packs).
+- `quarry-plate.service.ts` and its stored rows are left in place but are no longer drawn or shown. The `quarryPlates`/`quarry` constructor deps are kept (marked RETIRED) so specs that build these services positionally are untouched.
+
+**Know.**
+- No hunting motivation exists on prod to redraw (only MO000096, a sport pack), so nothing was regenerated. A NEW hunting pack draws its animals under heading 3; an EXISTING hunting pack loses the line-up on its next render (the render no longer supplies it) but keeps its cartridge text.
+- `QUARRY_PROMPT_VERSION` is untouched (the composite prompt is dead); `PLATES_PROMPT_VERSION` -> `2026-10-15c`.
+
 ## 2026-10-15 — MOTIVATIONS: EXHIBITS ON NANO BANANA 2.1, TARGETS DOWNRANGE (FULL DEPLOY + REDRAW)
 
 Commit **`78cf339e`** (`feat(motivations) draw exhibits with Nano Banana 2.1 and keep targets downrange`), 3 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-150209.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `78cf339e`. No migration.
