@@ -7,6 +7,25 @@ overwritten.
 
 Last updated: **2026-10-15**.
 
+## 2026-10-15 — MOTIVATION PACK LAYOUT: ANNEXURE HEADINGS, STAMP BLOCK, NO WATERMARK, NO END PAGES (FULL DEPLOY)
+
+Commit **`5325e4ad`** (`feat(motivations) annexure headings, STAMP block, no watermark, no end pages`), 6 files edited / 0 new. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-214250.dump`. Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `5325e4ad`. No migration.
+
+Gates: backend `tsc` clean + **357 suites/5617 tests** (1 suite/8 tests skipped). Frontend untouched.
+
+**Operator's asks (2026-10-15), on MO000096 (6).pdf.** "I don't like the annexures that has one page dividers … I'd rather just have the page itself have a nice heading that says Annexure x with the content below it"; "remove the before you go pages at the end"; "remove the watermark"; "on the annexures that needs certification just add a 60mm x 60mm block at the bottom with the heading stamp"; "remove the things in the screenshots" (the index certification column and the Regulation 13(4)(b) note).
+
+**What shipped.**
+- **Annexure headings, no divider** (`motivation-pdf.service.ts`, `motivation-annexure-layout.ts`). The M8 divider sheet (`drawAnnexureDivider`: big letter, edge tab, item count) is gone. Each annexure now opens with `Annexure X — <label>` at the top of its first content page; the planner gained an `openingHeadingH` argument that reserves `HEADING_H` (18 mm) on the opening page only. Copies are planned **per letter**, so a letter always opens its own page and the heading lands at the top.
+- **STAMP block** (`motivation-pdf.service.ts`, `motivation-annexure-layout.ts`). The four-field commissioner frame (Commissioner of Oaths / Signature / Date) and the `CERTIFICATION REQUIRED — REGULATION 13(4)(b)` heading are replaced by a single **60 × 60 mm box headed `STAMP`**. `STAMP_H` 92 pt → 170 pt (≈60 mm).
+- **Index cleaned** (`motivation-pdf.service.ts`). The certification pill column (`REQUIRED` / `USUALLY ASKED`) and the Regulation 13(4)(b) paragraph are removed; the index is Tab · Document only.
+- **Watermark removed everywhere** (`motivation-render.service.ts`, `motivation-pdf.service.ts`, `motivation-pdf-merge.ts`, `motivation-html.service.ts`, `motivations.service.ts`). The unpaid `NOT FOR USE` mark (pdfkit draw + pdf-lib merged-page draw) and the cover `Preview copy` line are gone; the flag is forced `false`. **This reverses the 2026-08-22 "watermark until paid" rule — unpaid packs are now clean.**
+- **End pages removed** (`motivation-render.service.ts`). `takeWithYou` is no longer passed, so the `BEFORE YOU GO / TAKE THESE WITH YOU` sheets (last two pages) are not drawn. The renderer block and its insertion anchor still exist but stay gated.
+
+**Open / not done.**
+- **Endorsement (ask 2a).** Operator said the association's endorsement of the firearm "does not add". **It is not a render bug: MO000096 has no `ASSOCIATION_ENDORSEMENT` upload at all** — its 15 uploads are identity, competency, 2 proficiency, address, 3 safe photos, 5 current licences, association card (covers `GOOD_STANDING_LETTER`), firearm source proof. The index only letters an endorsement when one exists (`buildAnnexures` counts the kind). Awaiting a decision: (a) confirm the endorsement is expected to be generated, or (b) it is an upload that is being mis-classified elsewhere — needs the upload to reproduce.
+- **Page fill.** The only near-empty prose pages are **p9 (210 chars)** and **p12 (439 chars)** — tails of a section that spilled one sentence onto the next sheet. Annexure pages are sparse by design. A generation-side top-up (the `motivation-fill.ts` path) would address it; not changed in this build.
+
 ## 2026-10-15 — MOTIVATION PLATES MOVE TO xAI (GROK IMAGINE) (FULL DEPLOY)
 
 Commit **`476a953d`** (`feat(llm) xAI Grok Imagine provider for the motivation plates`), 6 files edited / 2 new. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-211118.dump`. Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `476a953d`. No migration. Live probe on the box: xAI returned `status 200`, 1 image, `cost_in_usd_ticks` 400000000 ($0.04).
