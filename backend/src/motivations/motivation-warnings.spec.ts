@@ -243,3 +243,38 @@ describe('the two that are practice rather than the Act', () => {
     expect(w.authority).toContain('not the Act');
   });
 });
+
+describe('the dedicated status runs with the membership', () => {
+  // Operator, 2026-10-14: "these two are actually the same thing. If the
+  // membership expires so does the dedicated status." The two dates are the
+  // start and the end of one validity.
+  const S16 = MotivationLicenceType.S16_DEDICATED_HUNTER;
+
+  it('warns when the status is dated as starting after the membership lapsed', () => {
+    const out = applicationWarnings(S16, {
+      dedicated_since: '2028-01-01',
+      association_expiry: '2027-06-30',
+    });
+    expect(out.map((w) => w.code)).toContain(
+      'dedicated-status-after-membership',
+    );
+  });
+
+  it('is quiet when the two dates form a sensible period', () => {
+    expect(
+      codes(S16, {
+        dedicated_since: '2019-04-01',
+        association_expiry: '2027-06-30',
+      }),
+    ).not.toContain('dedicated-status-after-membership');
+  });
+
+  it('is quiet when either date is missing', () => {
+    expect(codes(S16, { dedicated_since: '2028-01-01' })).not.toContain(
+      'dedicated-status-after-membership',
+    );
+    expect(codes(S16, { association_expiry: '2027-06-30' })).not.toContain(
+      'dedicated-status-after-membership',
+    );
+  });
+});

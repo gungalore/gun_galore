@@ -2637,6 +2637,12 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // the nineties, so this one gets the decade strip.
       focusOffsetYears: -10,
       reach: 'far',
+      // ⚠️ THE STATUS RUNS WITH THE MEMBERSHIP. Operator, 2026-10-14: "these
+      // two are actually the same thing. If the membership expires so does the
+      // dedicated status." So this is the START of one validity whose END is
+      // `association_expiry` below — not an independent standing. The member
+      // owns both dates and may change either.
+      help: 'The day your association awarded the dedicated status. Your status runs with your membership: it ends when the membership does, on the "valid until" date below.',
     },
     {
       key: 'association_expiry',
@@ -2655,7 +2661,11 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'Your association membership is valid until',
       kind: 'date',
       section: 'Dedicated status',
-      help: 'The "valid until" date on your letter of good standing. Photograph the letter and we will read it for you.',
+      // ⚠️ THE OTHER END OF THE DEDICATED STATUS, NOT JUST THE MEMBERSHIP.
+      // Operator, 2026-10-14: the dedicated status runs with the membership.
+      // This is the "valid until" the status shares, so the two rows above and
+      // below are one period.
+      help: 'The "valid until" on your letter of good standing. Your dedicated status ends on the same date — if the membership lapses, so does the status. Photograph the letter and we will read it for you.',
       focusOffsetYears: 1,
     },
     // ── association 2 ─────────────────────────────────────────────
@@ -2844,6 +2854,12 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // the nineties, so this one gets the decade strip.
       focusOffsetYears: -10,
       reach: 'far',
+      // ⚠️ THE STATUS RUNS WITH THE MEMBERSHIP. Operator, 2026-10-14: "these
+      // two are actually the same thing. If the membership expires so does the
+      // dedicated status." So this is the START of one validity whose END is
+      // `association_expiry` below — not an independent standing. The member
+      // owns both dates and may change either.
+      help: 'The day your association awarded the dedicated status. Your status runs with your membership: it ends when the membership does, on the "valid until" date below.',
     },
     {
       key: 'association_expiry',
@@ -2862,7 +2878,11 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'Your association membership is valid until',
       kind: 'date',
       section: 'Dedicated status',
-      help: 'The "valid until" date on your letter of good standing. Photograph the letter and we will read it for you.',
+      // ⚠️ THE OTHER END OF THE DEDICATED STATUS, NOT JUST THE MEMBERSHIP.
+      // Operator, 2026-10-14: the dedicated status runs with the membership.
+      // This is the "valid until" the status shares, so the two rows above and
+      // below are one period.
+      help: 'The "valid until" on your letter of good standing. Your dedicated status ends on the same date — if the membership lapses, so does the status. Photograph the letter and we will read it for you.',
       focusOffsetYears: 1,
     },
     // ── association 2 ─────────────────────────────────────────────

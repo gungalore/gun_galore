@@ -36,7 +36,8 @@ export interface ApplicationWarning {
     | 'section-16-shotgun-capacity'
     | 'renewal-inside-90-days'
     | 'section-15-association-member'
-    | 'semi-auto-hunting-not-landowner';
+    | 'semi-auto-hunting-not-landowner'
+    | 'dedicated-status-after-membership';
   /** The subsection or policy it comes from, named so the member can check it. */
   authority: string;
   /** Plain words, on the checklist page. Never in the motivation. */
@@ -252,6 +253,28 @@ export function applicationWarnings(
         'Associations generally endorse a semi-automatic firearm for HUNTING only for landowners and their ' +
         'immediate family. Check with yours before you lodge — without their endorsement the application has ' +
         'no section 16(2) support. Dedicated sport shooting is the usual route for a semi-automatic.',
+    });
+  }
+
+  /**
+   * ⚠️ THE DEDICATED STATUS RUNS WITH THE MEMBERSHIP. Operator, 2026-10-14:
+   * "these two are actually the same thing. If the membership expires so does
+   * the dedicated status." The two dates on the "Dedicated status" step are the
+   * start and the end of ONE validity, so a status dated as starting after the
+   * membership it depends on has already lapsed is impossible. The member owns
+   * both dates and may change either; this only says the pair does not add up.
+   */
+  const dedicatedSince = parseDay(answers.dedicated_since ?? '');
+  const membershipUntil = parseDay(answers.association_expiry ?? '');
+  if (dedicatedSince && membershipUntil && dedicatedSince > membershipUntil) {
+    out.push({
+      code: 'dedicated-status-after-membership',
+      authority:
+        'the association membership and the dedicated status share one validity',
+      message:
+        'Your dedicated status cannot begin after your association membership has lapsed: the status runs with ' +
+        `the membership and ends when it does. Your answers give the dedicated status held since ${answers.dedicated_since} ` +
+        `and the membership valid until ${answers.association_expiry}. Check both dates.`,
     });
   }
 
