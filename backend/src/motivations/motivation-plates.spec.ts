@@ -157,6 +157,19 @@ describe('the sport plates come from the firearm and discipline', () => {
     }
   });
 
+  it('⚠️ EVERY RANGE PROMPT PUTS THE TARGETS DOWNRANGE, NOT BESIDE THE BENCHES (MO000096)', () => {
+    // Operator, 2026-10-15: "some of the images do not make sense, where the
+    // targets sit next to the shooting benches."
+    for (const firearm_type of ['Handgun', 'Rifle', 'Shotgun']) {
+      for (const plate of buildPlateSpecs({
+        licenceType: S16_SPORT,
+        answers: { firearm_type },
+      })) {
+        expect(plate.prompt).toMatch(/downrange beyond them/i);
+      }
+    }
+  });
+
   it('classifies the applied-for firearm from its own answers', () => {
     expect(weaponClass({ firearm_type: 'Handgun' })).toBe('handgun');
     expect(weaponClass({ firearm_type: 'Rifle' })).toBe('rifle');

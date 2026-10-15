@@ -40,7 +40,7 @@ import { s15Purpose } from './motivation-fields';
  * wording with no way to tell which is which — the same trap
  * QUARRY_PROMPT_VERSION and researchAskVersion were written to close.
  */
-export const PLATES_PROMPT_VERSION = '2026-10-15a';
+export const PLATES_PROMPT_VERSION = '2026-10-15b';
 
 /** Which of the three purposes a pack's exhibits serve. */
 export type PlatePurpose = 'hunting' | 'self_defence' | 'sport';
@@ -108,6 +108,20 @@ const NEGATIVES = [
   'distress, no text, no lettering, no watermark, no logo, no overlay, no',
   'borders, no captions, no markings of any kind.',
 ].join(' ');
+
+/**
+ * ⚠️ A RANGE RUNS ALONG ONE AXIS, AND THE MODEL KEEPS MIXING ITS ENDS.
+ * Operator, 2026-10-15: "some of the images do not make sense, where the
+ * targets sit next to the shooting benches." A range is a straight line —
+ * firing point (with benches or a firing line) nearest the camera, every
+ * target far downrange beyond it — and a picture with steel standing beside
+ * the benches reads as a mistake to anyone who shoots. Appended to the range
+ * venues only; the quarry, cover and cartridge pictures have no such axis.
+ */
+const DOWNRANGE =
+  'The firing point, benches and firing line are in the foreground; every ' +
+  'target is far downrange beyond them, small and distant on the same axis, ' +
+  'never beside or behind the firing point.';
 
 // ── hunting ───────────────────────────────────────────────────────────
 
@@ -352,9 +366,8 @@ const SPORT_ACTIVITIES: readonly Activity[] = [
       'and light recoil suit the close, fast courses.',
     prompt:
       'A photorealistic photograph of an outdoor practical shooting range ' +
-      'bay in South Africa, earthen safety berms, wooden barricades and a row ' +
-      'of steel targets at close range, sand underfoot, clear daylight. ' +
-      `${NEGATIVES}`,
+      'bay in South Africa, earthen safety berms and wooden barricades on a ' +
+      `sand surface. ${DOWNRANGE} ${NEGATIVES}`,
   },
   {
     classes: ['handgun'],
@@ -365,9 +378,9 @@ const SPORT_ACTIVITIES: readonly Activity[] = [
       'score. It is a first-tier discipline for a service-calibre handgun.',
     prompt:
       'A photorealistic photograph of a steel-target range in South Africa, ' +
-      'painted steel plates on stands in front of an earth berm on a flat ' +
-      'range, a shooting box marked on the ground, bright daylight. ' +
-      `${NEGATIVES}`,
+      'painted steel plates on stands against an earth berm on a flat range, ' +
+      'a shooting box marked on the ground in the foreground, bright ' +
+      `daylight. ${DOWNRANGE} ${NEGATIVES}`,
   },
   {
     classes: ['handgun'],
@@ -378,9 +391,8 @@ const SPORT_ACTIVITIES: readonly Activity[] = [
       'recurring activity a dedicated sports status is built around.',
     prompt:
       'A photorealistic photograph of an indoor handgun range in South ' +
-      'Africa, numbered shooting lanes with target carriers at the far end, ' +
-      'a concrete floor and overhead lighting, no people. ' +
-      `${NEGATIVES}`,
+      'Africa, numbered shooting lanes and a concrete floor under overhead ' +
+      `lighting. ${DOWNRANGE} ${NEGATIVES}`,
   },
   {
     classes: ['rifle'],
@@ -398,7 +410,7 @@ const SPORT_ACTIVITIES: readonly Activity[] = [
       'A photorealistic photograph of a long-range rifle range in South ' +
       'Africa, a mown firing point with shooting mats behind a low earth ' +
       'berm, a distant line of steel targets on a hillside, wind flags and a ' +
-      `clear highveld sky. ${NEGATIVES}`,
+      `clear highveld sky. ${DOWNRANGE} ${NEGATIVES}`,
   },
   {
     classes: ['rifle'],
@@ -412,9 +424,10 @@ const SPORT_ACTIVITIES: readonly Activity[] = [
       'position at ranges of 100 to 500 metres, scored on group size and ' +
       'precision.',
     prompt:
-      'A photorealistic photograph of a covered target-rifle firing point in ' +
-      'South Africa, concrete benches and a long empty range with distant ' +
-      `target frames. ${NEGATIVES}`,
+      'A photorealistic photograph looking down a covered target-rifle ' +
+      'firing point in South Africa: concrete benches under a roof in the ' +
+      'foreground and a long, empty mown range stretching away, with target ' +
+      `frames far down at the butts. ${DOWNRANGE} ${NEGATIVES}`,
   },
   {
     classes: ['rifle'],
@@ -427,7 +440,7 @@ const SPORT_ACTIVITIES: readonly Activity[] = [
       'A photorealistic photograph of a South African veld rifle range, ' +
       'steel gongs of graduated size on a distant slope, open grassland and ' +
       'scrub, a dirt firing line in the foreground, highveld sky. ' +
-      `${NEGATIVES}`,
+      `${DOWNRANGE} ${NEGATIVES}`,
   },
   {
     classes: ['shotgun'],
@@ -443,8 +456,8 @@ const SPORT_ACTIVITIES: readonly Activity[] = [
       'the discipline sets.',
     prompt:
       'A photorealistic photograph of a clay target shooting layout in South ' +
-      'Africa, a trap house and a curved line of shooting stands on mown ' +
-      `grass under an open sky. ${NEGATIVES}`,
+      'Africa, a curved line of shooting stands on mown grass and a low trap ' +
+      `house beyond them under an open sky. ${DOWNRANGE} ${NEGATIVES}`,
   },
   {
     classes: ['shotgun'],
@@ -455,9 +468,8 @@ const SPORT_ACTIVITIES: readonly Activity[] = [
       'practical handgun shooting.',
     prompt:
       'A photorealistic photograph of a practical shotgun range in South ' +
-      'Africa, a bay of wooden barricades and a scatter of steel plates at ' +
-      'varied distances in front of an earth berm, sand underfoot. ' +
-      `${NEGATIVES}`,
+      'Africa, wooden barricades on a sand surface and steel plates scattered ' +
+      `across the bay against an earth berm. ${DOWNRANGE} ${NEGATIVES}`,
   },
   {
     title: 'Club-level competition',
@@ -467,8 +479,8 @@ const SPORT_ACTIVITIES: readonly Activity[] = [
       'built around.',
     prompt:
       'A photorealistic photograph of a South African shooting club range at ' +
-      'midday, an open gravel firing line, earth berms and target stands, ' +
-      `open veld beyond. ${NEGATIVES}`,
+      'midday, an open gravel firing line in the foreground, earth berms and ' +
+      `target stands far down the range, open veld beyond. ${DOWNRANGE} ${NEGATIVES}`,
   },
 ];
 

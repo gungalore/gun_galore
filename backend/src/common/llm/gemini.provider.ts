@@ -117,20 +117,22 @@ import {
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 
 /**
- * The picture model. Operator, 2026-09-10: "use nana banana lite (the cheapest
- * model)."
+ * The picture model. Operator, 2026-10-15: "it needs to use nano banana 2.1 to
+ * generate the images." (It was the Lite model, the cheapest, before that;
+ * operator 2026-09-10.)
  *
- * ⚠️ TAKEN FROM THE ACCOUNT'S OWN MODEL LIST, NOT FROM MEMORY. "Nano Banana
- * Lite" is a nickname; the id was read off `GET /v1beta/models` on this
- * platform's key on 2026-09-10, which answered with seven image models and
- * exactly one lite. The same discipline the Anthropic path uses for its dated
- * snapshots — a guessed model id is a 404 at the worst moment.
+ * ⚠️ TAKEN FROM THE ACCOUNT'S OWN MODEL LIST, NOT FROM MEMORY. The id was read
+ * off `GET /v1beta/models` on this platform's key, which lists `image` ids
+ * including `gemini-nano-banana-2.1`, and probed live on 2026-10-15: it answers
+ * the ordinary generateContent shape with an image at 21:9, ~1.1 MB. The same
+ * discipline the Anthropic path uses for its dated snapshots — a guessed model
+ * id is a 404 at the worst moment.
  *
- * Overridable with LLM_IMAGE_MODEL, so a repricing or a better model is an env
- * edit and a reload rather than a deploy.
+ * Overridable with LLM_IMAGE_MODEL, so a repricing or a different model is an
+ * env edit and a reload rather than a deploy.
  */
 const DEFAULT_IMAGE_MODEL =
-  process.env.LLM_IMAGE_MODEL || 'gemini-3.1-flash-lite-image';
+  process.env.LLM_IMAGE_MODEL || 'gemini-nano-banana-2.1';
 
 /**
  * The thinking setting in the dialect the model generation understands.
