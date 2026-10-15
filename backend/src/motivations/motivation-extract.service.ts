@@ -198,8 +198,13 @@ const FIREARM_READABLE = new Set<string>([
   'FIREARM_SOURCE_PROOF',
   'SELLER_LICENCE',
   'CURRENT_LICENCE',
-  'ASSOCIATION_ENDORSEMENT',
   'OTHER',
+  // ⚠️ ASSOCIATION_ENDORSEMENT IS DELIBERATELY ABSENT (2026-10-15). An
+  // endorsement names the applied-for firearm, but the operator's instruction
+  // is "we don't need to pull the information to fill in anywhere — it must be
+  // MATCHED to the firearm that is applied for". Its firearm is read by a
+  // dedicated call in motivation-documents.service (endorsementVerdict), never
+  // offered as a fill; see motivation-endorsement.ts.
 ]);
 
 /**
@@ -291,30 +296,16 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
     'association_expiry',
     'dedicated_since',
   ],
-  // ⚠️ IT DESCRIBES THE FIREARM BEING APPLIED FOR, so it fills the firearm
-  // fields, not the association ones. That is what makes it worth reading: an
-  // endorsement already names the type, calibre, make, action and serial, and
-  // the applicant would otherwise type all five again.
-  ASSOCIATION_ENDORSEMENT: [
-    'firearm_type',
-    'firearm_calibre',
-    'firearm_make',
-    // ⚠️ ADDED 2026-08-24. firearm_model is REQUIRED and was the one field on
-    // the applied-for firearm that NO path could fill — not this endorsement,
-    // which names the firearm in full, and not the licence-card OCR, which
-    // reads a Model row. An applicant whose every other firearm box filled
-    // itself still had to type this one, which reads as the feature not
-    // working. Operator, item 5 of twelve: "get the details from the consent
-    // or the upload and fill it."
-    'firearm_model',
-    'firearm_action',
-    'firearm_serial',
-  ],
-  // ⚠️ THE DOCUMENT THAT DESCRIBES THE FIREARM BEING BOUGHT, AND IT WAS NEVER
-  // READ. FIREARM_SOURCE_PROOF appeared in no extractable list at all, so a
-  // dealer's invoice — which names the make, model, calibre and serial of the
-  // exact firearm — was stored and used for nothing, and the applicant typed
-  // all four again off the paper in their hand.
+  // ⚠️ ASSOCIATION_ENDORSEMENT IS NOT EXTRACTABLE (2026-10-15). It used to
+  // fill the applied-for firearm's type/calibre/make/model/action/serial from
+  // the association's letter. Operator: "We don't need to pull the information
+  // to fill in anywhere. But it must be matched to the firearm that is applied
+  // for." So the endorsement is READ (readFirearm, in
+  // motivation-documents.service) and COMPARED (endorsementVerdict in
+  // motivation-endorsement.ts), but it no longer writes a single answer.
+  //
+  // ⚠️ FIREARM_SOURCE_PROOF NAMES THE FIREARM BEING BOUGHT, so — unlike the
+  // endorsement above — it DOES fill the applied-for firearm's fields.
   //
   // Routing spec §5.4 covers FOUR source paths and puts every one of them in
   // this same slot: a dealer invoice, a dealer-prefilled SAPS 271, a private
@@ -1820,6 +1811,16 @@ const CLASSIFY_USER = [
   'PROFICIENCY_CERTIFICATE - a proficiency or firearm training certificate',
   'CURRENT_LICENCE - a firearm licence card or certificate',
   'ASSOCIATION_CARD - hunting or sport-shooting association membership',
+  'ASSOCIATION_ENDORSEMENT - an association\'s endorsement of ONE firearm: the',
+  '  word "endorsement" appears (often in the heading) and it names that firearm',
+  '  by type, calibre, make, action or serial (often a table headed "suitability',
+  '  of firearm"). It is NOT the membership card and NOT a letter of good standing.',
+  'GOOD_STANDING_LETTER - an association\'s letter or sworn statement that the',
+  '  member is in good standing (the section 16(2) document); it does not name a',
+  '  firearm. Do not confuse it with the endorsement, which does.',
+  'FIREARM_SOURCE_PROOF - paperwork for the firearm being bought: a dealer\'s',
+  '  invoice or quote, a dealer-prefilled SAPS 271, the current owner\'s licence',
+  '  card, or a signed letter or consent from that owner',
   'ADDRESS_CONFIRMATION - proof of address: a municipal bill, bank statement,',
   '  lease or affidavit showing a residential address',
   'EMPLOYMENT_CONFIRMATION - a letter confirming employment',

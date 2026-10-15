@@ -66,6 +66,7 @@ import {
   isAnnexureEvidence,
 } from './evidence-taxonomy';
 import { looksLikeSaps271, SAPS_271_MARKER } from '../common/document-markers';
+import { endorsementVerdict } from './motivation-endorsement';
 import {
   FIELD_REGISTRY_VERSION,
   fieldsFor,
@@ -1458,6 +1459,25 @@ export class MotivationDocumentsService {
   }
 
   /**
+   * The applied-for firearm's own answers, for matching an endorsement.
+   *
+   * ⚠️ READ, NOT FILLED. These are the applicant's answers; an endorsement is
+   * compared against them (see endorsementVerdict) and never written into
+   * them. Empty strings mean the firearm has not been described yet, which the
+   * verdict reads as 'unverified' rather than a mismatch (2a).
+   */
+  private appliedFirearm(answersEncrypted: string | null): Record<string, string> {
+    const answers = this.shared.readAnswers(answersEncrypted);
+    return {
+      firearm_serial: answers.firearm_serial ?? '',
+      firearm_type: answers.firearm_type ?? '',
+      firearm_calibre: answers.firearm_calibre ?? '',
+      firearm_make: answers.firearm_make ?? '',
+      firearm_action: answers.firearm_action ?? '',
+    };
+  }
+
+  /**
    * Where the thing about to be attached will print, if it is evidence.
    *
    * ⚠️ RESOLVED FROM THE SOURCE, BEFORE ANY BYTES MOVE. The container is on
@@ -2521,6 +2541,40 @@ export class MotivationDocumentsService {
           confident = guess.confident;
         }
         if (resolved === 'EVIDENCE') evidenceWords = (opts.description ?? '').trim() || null;
+      }
+    }
+
+    // ⚠️ AN ENDORSEMENT MUST NAME THE FIREARM THAT IS APPLIED FOR. Operator,
+    // 2026-10-15. The association's endorsement is the one document that names
+    // ONE firearm, so a mismatched one in the pack is exactly the failure the
+    // library guard already exists to prevent. 1a: a mismatch is DEMOTED to
+    // OTHER — it can no longer sit under the endorsement row, and the member
+    // can re-file it. 2a: an application whose firearm is not yet described
+    // cannot be compared, so the endorsement is kept on trust (unverified).
+    // Its firearm is read here for the MATCH only — never offered as a fill.
+    if (
+      !opts.skipExtraction &&
+      resolved === MotivationUploadKind.ASSOCIATION_ENDORSEMENT
+    ) {
+      try {
+        const endorsed = await this.extract.readFirearm({
+          bytes: file.buffer,
+          mimeType: file.mimetype,
+        });
+        if (
+          endorsementVerdict(endorsed, this.appliedFirearm(row.answersEncrypted)) ===
+          'mismatch'
+        ) {
+          this.logger.warn(
+            `Motivation ${row.id}: endorsement names a different firearm — filed as OTHER`,
+          );
+          resolved = MotivationUploadKind.OTHER;
+        }
+      } catch (err) {
+        // Fail-soft: a reader outage leaves the endorsement as it was filed.
+        this.logger.warn(
+          `Motivation ${row.id}: endorsement match could not be read — ${(err as Error).message}`,
+        );
       }
     }
 

@@ -23,7 +23,7 @@ export const MOTIVATION_KIND_OPTIONS: readonly FilingOption[] = [
   {
     id: 'ASSOCIATION_ENDORSEMENT',
     label: 'Association endorsement',
-    hint: 'an association endorsement of ONE SPECIFIC FIREARM: it names that gun by type, calibre, make, action or serial',
+    hint: 'an association\'s endorsement of ONE SPECIFIC FIREARM for a discipline: the word "endorsement" appears (often in the heading) and it names that firearm by type, calibre, make, action or serial (often a table headed "suitability of firearm"). It is NOT the membership card and NOT a letter of good standing.',
   },
   {
     id: 'IDENTITY_DOCUMENT',

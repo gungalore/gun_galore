@@ -71,7 +71,6 @@ describe('which kinds get a firearm read', () => {
       'FIREARM_SOURCE_PROOF',
       'SELLER_LICENCE',
       'CURRENT_LICENCE',
-      'ASSOCIATION_ENDORSEMENT',
       'OTHER',
     ]) {
       expect(
@@ -96,6 +95,18 @@ describe('which kinds get a firearm read', () => {
         MotivationExtractService.readsFirearm(k as MotivationUploadKind),
       ).toBe(false);
     }
+  });
+
+  it('⚠️ does NOT read-and-FILL the association endorsement', () => {
+    // Operator, 2026-10-15: "We don't need to pull the information to fill in
+    // anywhere. But it must be matched to the firearm that is applied for." Its
+    // firearm is read by a dedicated call in motivation-documents.service and
+    // compared (endorsementVerdict); it never fills a form field.
+    expect(
+      MotivationExtractService.readsFirearm(
+        'ASSOCIATION_ENDORSEMENT' as MotivationUploadKind,
+      ),
+    ).toBe(false);
   });
 });
 
