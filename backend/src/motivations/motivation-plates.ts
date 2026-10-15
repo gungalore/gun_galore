@@ -1,6 +1,7 @@
 import { MotivationLicenceType } from '@prisma/client';
 import { quarriesFor, type QuarrySpecies } from './motivation-quarry';
 import { s15Purpose } from './motivation-fields';
+import { coursesFor, type CourseSpec } from './motivation-courses';
 
 // ────────────────────────────────────────────────────────────────────
 // THE PURPOSE EXHIBITS — ONE TO TWO PAGES OF PICTURES UNDER HEADING 3.
@@ -28,8 +29,9 @@ import { s15Purpose } from './motivation-fields';
 // firearms marketplace generates lawful, regulated content, but an image model
 // reads "self-defence scenario" as violence. So the self-defence plates
 // picture the PLACE (a gate, a road, a corridor) and never a person, a firearm
-// or an act. The sport plates picture the VENUE, not a shooter. See the shared
-// NEGATIVES below.
+// or an act. The sport plates picture the COURSE OF FIRE — an empty range, no
+// shooter — and the caption explains the course. See the shared NEGATIVES and
+// motivation-courses.ts.
 // ────────────────────────────────────────────────────────────────────
 
 /**
@@ -40,7 +42,7 @@ import { s15Purpose } from './motivation-fields';
  * wording with no way to tell which is which — the same trap
  * QUARRY_PROMPT_VERSION and researchAskVersion were written to close.
  */
-export const PLATES_PROMPT_VERSION = '2026-10-15c';
+export const PLATES_PROMPT_VERSION = '2026-10-16a';
 
 /** Which of the three purposes a pack's exhibits serve. */
 export type PlatePurpose = 'hunting' | 'self_defence' | 'sport';
@@ -75,6 +77,13 @@ export interface PlateContext {
   answers: Record<string, string>;
   /** The applied-for firearm's research prose — the firearm and calibre blocks. */
   research?: string;
+  /**
+   * The generated uses for the applied-for firearm, joined — the sentences
+   * firearm-uses.service.ts writes per class and kind of shooter. The SPORT
+   * exhibits mine these to choose the right courses (see coursesFor); absent
+   * or thin, the firearm's class supplies the defaults.
+   */
+  usesText?: string;
 }
 
 /**
@@ -117,20 +126,6 @@ const NEGATIVES = [
   'distress, no text, no lettering, no watermark, no logo, no overlay, no',
   'borders, no captions, no markings of any kind.',
 ].join(' ');
-
-/**
- * ⚠️ A RANGE RUNS ALONG ONE AXIS, AND THE MODEL KEEPS MIXING ITS ENDS.
- * Operator, 2026-10-15: "some of the images do not make sense, where the
- * targets sit next to the shooting benches." A range is a straight line —
- * firing point (with benches or a firing line) nearest the camera, every
- * target far downrange beyond it — and a picture with steel standing beside
- * the benches reads as a mistake to anyone who shoots. Appended to the range
- * venues only; the quarry, cover and cartridge pictures have no such axis.
- */
-const DOWNRANGE =
-  'The firing point, benches and firing line are in the foreground; every ' +
-  'target is far downrange beyond them, small and distant on the same axis, ' +
-  'never beside or behind the firing point.';
 
 // ── hunting ───────────────────────────────────────────────────────────
 
@@ -385,183 +380,19 @@ export function weaponClass(a: Record<string, string>): WeaponClass | null {
   return null;
 }
 
-interface Activity {
-  /**
-   * ⚠️ WHICH FIREARM CLASSES MAY BE PICTURED WITH THIS ACTIVITY. Absent means
-   * any class may (a club range is a club range). See weaponClass.
-   */
-  classes?: readonly WeaponClass[];
-  when?: (a: Record<string, string>) => boolean;
-  title: string;
-  description: string;
-  prompt: string;
-}
-
-const SPORT_ACTIVITIES: readonly Activity[] = [
-  {
-    classes: ['handgun'],
-    when: (a) =>
-      /handgun|pistol|self-loading|semi-auto|9mm|revolver/i.test(
-        `${a.firearm_type ?? ''} ${a.firearm_calibre ?? ''} ${a.firearm_action ?? ''}`,
-      ) ||
-      /ipsc|idpa|practical|sadpa/i.test(
-        `${a.association_name ?? ''} ${a.sport_formats ?? ''}`,
-      ),
-    title: 'Practical shooting (IPSC / IDPA)',
-    description:
-      'Practical handgun shooting is run as timed stages: barricades, fault ' +
-      'lines, moving targets and steel, shot under a range officer and ' +
-      'scored on both time and accuracy. A compact self-loading pistol in 9 ' +
-      'mm Parabellum is eligible for these divisions, and the short barrel ' +
-      'and light recoil suit the close, fast courses.',
-    prompt:
-      'A photorealistic photograph of an outdoor practical shooting range ' +
-      'bay in South Africa, earthen safety berms and wooden barricades on a ' +
-      `sand surface. ${DOWNRANGE} ${NEGATIVES}`,
-  },
-  {
-    classes: ['handgun'],
-    title: 'Steel challenge',
-    description:
-      'Steel challenge sets five falling-plate stages, shot from a stationary ' +
-      'box at close ranges where draw, reload and split times decide the ' +
-      'score. It is a first-tier discipline for a service-calibre handgun.',
-    prompt:
-      'A photorealistic photograph of a steel-target range in South Africa, ' +
-      'painted steel plates on stands against an earth berm on a flat range, ' +
-      'a shooting box marked on the ground in the foreground, bright ' +
-      `daylight. ${DOWNRANGE} ${NEGATIVES}`,
-  },
-  {
-    classes: ['handgun'],
-    title: 'Indoor and club range practice',
-    description:
-      'Regular practice at a club or indoor handgun range — slow fire, ' +
-      'draw-and-fire drills and reload practice at 10 to 25 metres — is the ' +
-      'recurring activity a dedicated sports status is built around.',
-    prompt:
-      'A photorealistic photograph of an indoor handgun range in South ' +
-      'Africa, numbered shooting lanes and a concrete floor under overhead ' +
-      `lighting. ${DOWNRANGE} ${NEGATIVES}`,
-  },
-  {
-    classes: ['rifle'],
-    when: (a) =>
-      /rifle/i.test(a.firearm_type ?? '') ||
-      /precision|prs|long.range|bisley|target/i.test(
-        `${a.sport_formats ?? ''} ${a.discipline ?? ''}`,
-      ),
-    title: 'Long-range precision',
-    description:
-      'Precision rifle matches are fired prone or from props at steel and ' +
-      'paper from 300 to over 800 metres, where wind reading and a steady ' +
-      'position decide the score.',
-    prompt:
-      'A photorealistic photograph of a long-range rifle range in South ' +
-      'Africa, a mown firing point with shooting mats behind a low earth ' +
-      'berm, a distant line of steel targets on a hillside, wind flags and a ' +
-      `clear highveld sky. ${DOWNRANGE} ${NEGATIVES}`,
-  },
-  {
-    classes: ['rifle'],
-    when: (a) =>
-      /benchrest|bench rest|f-class|fclass|prone|target/i.test(
-        `${a.sport_formats ?? ''} ${a.discipline ?? ''}`,
-      ),
-    title: 'Target rifle and benchrest',
-    description:
-      'Benchrest and target rifle are shot from a fixed bench or a prone ' +
-      'position at ranges of 100 to 500 metres, scored on group size and ' +
-      'precision.',
-    prompt:
-      'A photorealistic photograph looking down a covered target-rifle ' +
-      'firing point in South Africa: concrete benches under a roof in the ' +
-      'foreground and a long, empty mown range stretching away, with target ' +
-      `frames far down at the butts. ${DOWNRANGE} ${NEGATIVES}`,
-  },
-  {
-    classes: ['rifle'],
-    title: 'Veldskiet and gong shooting',
-    description:
-      'Veldskiet and gong matches are shot from field positions at steel and ' +
-      'gongs at unknown distances, the practical rifle discipline most South ' +
-      'African hunters and sport shooters shoot between seasons.',
-    prompt:
-      'A photorealistic photograph of a South African veld rifle range, ' +
-      'steel gongs of graduated size on a distant slope, open grassland and ' +
-      'scrub, a dirt firing line in the foreground, highveld sky. ' +
-      `${DOWNRANGE} ${NEGATIVES}`,
-  },
-  {
-    classes: ['shotgun'],
-    when: (a) =>
-      /shotgun/i.test(`${a.firearm_type ?? ''} ${a.discipline ?? ''}`) ||
-      /clay|trap|skeet|sporting/i.test(
-        `${a.sport_formats ?? ''} ${a.discipline ?? ''}`,
-      ),
-    title: 'Clay target shooting',
-    description:
-      'Trap, skeet and sporting clays are shot at clay targets thrown from ' +
-      'fixed or oscillating traps, at five stations and over the distances ' +
-      'the discipline sets.',
-    prompt:
-      'A photorealistic photograph of a clay target shooting layout in South ' +
-      'Africa, a curved line of shooting stands on mown grass and a low trap ' +
-      `house beyond them under an open sky. ${DOWNRANGE} ${NEGATIVES}`,
-  },
-  {
-    classes: ['shotgun'],
-    title: 'Practical shotgun',
-    description:
-      'Practical shotgun runs timed field courses with multiple targets, ' +
-      'movement and reloads under a range officer, the shotgun counterpart of ' +
-      'practical handgun shooting.',
-    prompt:
-      'A photorealistic photograph of a practical shotgun range in South ' +
-      'Africa, wooden barricades on a sand surface and steel plates scattered ' +
-      `across the bay against an earth berm. ${DOWNRANGE} ${NEGATIVES}`,
-  },
-  {
-    title: 'Club-level competition',
-    description:
-      'A licensed firearm is used in monthly club competitions and practice ' +
-      'sessions, the regular activity a dedicated or occasional status is ' +
-      'built around.',
-    prompt:
-      'A photorealistic photograph of a South African shooting club range at ' +
-      'midday, an open gravel firing line in the foreground, earth berms and ' +
-      `target stands far down the range, open veld beyond. ${DOWNRANGE} ${NEGATIVES}`,
-  },
-];
-
-function pickActivities(
-  answers: Record<string, string>,
-  limit: number,
-): Activity[] {
-  const cls = weaponClass(answers);
-  /**
-   * ⚠️ NEVER FALL BACK ACROSS CLASSES. The old fill loop drew from the WHOLE
-   * catalogue, so a handgun pack was padded with rifle and shotgun venues the
-   * moment it ran short of a handgun discipline. A class-limited pool is the
-   * fix: a handgun sees only handgun activities (and the class-agnostic club
-   * range), a rifle only rifle ones. An unrecognised type keeps the whole
-   * catalogue — an unread type is not a reason to print no exhibits.
-   */
-  const pool = SPORT_ACTIVITIES.filter(
-    (s) => !s.classes || cls === null || s.classes.includes(cls),
-  );
-
-  const chosen: Activity[] = [];
-  const seen = new Set<string>();
-  const add = (s: Activity) => {
-    if (chosen.length >= limit) return;
-    if (seen.has(s.title)) return;
-    seen.add(s.title);
-    chosen.push(s);
-  };
-  for (const s of pool) if (s.when?.(answers)) add(s);
-  for (const s of pool) add(s);
-  return chosen.slice(0, limit);
+/**
+ * A course of fire as the exhibit picker draws it.
+ *
+ * ⚠️ THE SPORT PLATES COME FROM THE COURSE LIBRARY, NOT A VENUE CATALOGUE. See
+ * motivation-courses.ts: each is the actual course the discipline's rules lay
+ * out — targets, distances, positions, props — pictured empty, with a caption
+ * that explains the course. The old fixed nine-activity list drew a generic
+ * venue that matched no discipline in particular.
+ */
+function coursePlate(
+  c: CourseSpec,
+): Omit<PlateSpec, 'pageIndex' | 'plateIndex'> {
+  return { title: c.title, description: c.description, prompt: c.prompt };
 }
 
 // ── assembly ──────────────────────────────────────────────────────────
@@ -603,5 +434,14 @@ export function buildPlateSpecs(ctx: PlateContext): PlateSpec[] {
     );
   }
 
-  return withSlots(pickActivities(ctx.answers, MAX_PLATES));
+  // Sport: the courses of fire this firearm is genuinely used in. Selected from
+  // the generated uses where they name a discipline, else the class/action
+  // defaults — see coursesFor.
+  const courses = coursesFor({
+    weaponClass: weaponClass(ctx.answers),
+    action: ctx.answers.firearm_action,
+    usesText: ctx.usesText,
+    limit: MAX_PLATES,
+  });
+  return withSlots(courses.map(coursePlate), MAX_PLATES);
 }

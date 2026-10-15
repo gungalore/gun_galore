@@ -960,8 +960,11 @@ describe('MotivationsService.generate', () => {
     expect(data.documentTextEncrypted).not.toContain('Introduction');
     expect(data.templateVersion).toBeTruthy();
     expect(data.retentionPurgeAt).toBeInstanceOf(Date);
-    // Token spend is accumulated across every pass, not just the last one.
-    expect(data.promptTokens).toBe(900 + 400);
+    // Token spend is accumulated across every pass, not just the last one. The
+    // mock draft is a single short line per heading, so it trips the
+    // thin-section top-up (motivation-fill.ts) and the writer is called on all
+    // three attempts — hence 3 x 900 rather than one.
+    expect(data.promptTokens).toBe(900 * 3 + 400);
   });
 
   describe('press clippings, self-defence only', () => {

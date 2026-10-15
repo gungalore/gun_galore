@@ -1046,10 +1046,17 @@ ${sectionVocabularyRule(licenceType)}
    assembled by us into the printed pack; do not write them, do not
    reproduce them, and do not leave placeholders for them. It is why the
    printed pack runs many times longer than anything you produce.
-   ⚠️ A RANGE, NOT A QUOTA. Rules 1 and 7 outrank it in both directions:
-   never reach the bottom of the range by inventing, never reach it with
-   material that could belong to anyone. Where the supplied facts genuinely
-   do not carry the range, come in under it and let the gate report the gap.
+    ⚠️ A RANGE, NOT A QUOTA. Rules 1 and 7 outrank it in both directions:
+    never reach the bottom of the range by inventing, never reach it with
+    material that could belong to anyone. Where the supplied facts genuinely
+    do not carry the range, come in under it and let the gate report the gap.
+    ⚠️ AND NO SECTION IS A SINGLE LINE. The range is spread across the
+    sections, not dumped into one of them: every section must be a real passage
+    of at least a short paragraph — two to four sentences of the specific detail
+    that section's brief asks for. A section of one sentence prints as a page
+    that is almost blank. This is the same rule as rule 7, not an exception to
+    it: the answer to a short section is the detail the brief names, never
+    padding.
 
 FORMAT
 Return the motivation body ONLY — no preamble, no closing remark to the reader,

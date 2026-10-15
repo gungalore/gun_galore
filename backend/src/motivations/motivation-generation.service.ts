@@ -73,6 +73,7 @@ import {
   southAfricanise,
   wordBandFor,
 } from './motivation-scope';
+import { estimatedFill, thinSectionNotes } from './motivation-fill';
 import {
   hasDeclaredRecord,
   holdsFirearms,
@@ -1098,6 +1099,15 @@ export class MotivationGenerationService {
       // that do not need the research at all, and a hunting pack with no
       // research names no species, so the hunter simply gets no exhibits — the
       // same fail-soft rule the quarry plate already follows.
+      //
+      // ⚠️ THE SPORT EXHIBITS MINE THE GENERATED USES, so the uses must be in
+      // hand BEFORE the pictures are drawn. `firearmUses.forClass` is cached per
+      // class, so the later call for the fact pack (below) is a cache hit and
+      // costs nothing.
+      const sportUses = (await this.intendedUsesFor(row.licenceType, answers))
+        .flatMap((u) => u.uses)
+        .join(' ');
+
       await this.purposePlates
         .makeFor(row.id, {
           licenceType: row.licenceType,
@@ -1108,6 +1118,7 @@ export class MotivationGenerationService {
           ]
             .filter(Boolean)
             .join('\n\n'),
+          usesText: sportUses,
         })
         .catch(() => undefined);
 
@@ -1477,6 +1488,14 @@ export class MotivationGenerationService {
         ...packConsistency(attempt.text, answers, annexures),
         ...scopeOf(attempt.text),
       ];
+      /**
+       * ⚠️ A SECTION THAT RAN ONE SENTENCE IS A PAGE THAT PRINTS ONE SENTENCE.
+       * `thinSectionNotes` is ADVISORY — it never fails a run — but it DOES
+       * extend the retry loop, because the fix is the writer's own detail and a
+       * regeneration is what applies it. Operator, 2026-10-15: "can it add
+       * content to where the page is at least 50% full?" See motivation-fill.ts.
+       */
+      let thin = thinSectionNotes(attempt.text, plan, row.licenceType);
 
       /**
        * ⚠️ SAMENESS IS NO LONGER A REASON TO REGENERATE, and taking it out is
@@ -1559,7 +1578,8 @@ export class MotivationGenerationService {
       const MAX_ATTEMPTS = 3;
       for (
         let attemptNo = 2;
-        attemptNo <= MAX_ATTEMPTS && (!structureOk || mechanics.length);
+        attemptNo <= MAX_ATTEMPTS &&
+        (!structureOk || mechanics.length || thin.length);
         attemptNo++
       ) {
         const before = mechanics.length;
@@ -1580,6 +1600,7 @@ export class MotivationGenerationService {
          */
         const retry = [
           ...mechanics,
+          ...thin,
           ...advisoryIssues(attempt.text, row.licenceType),
         ];
         attempt = await write(retry);
@@ -1591,6 +1612,7 @@ export class MotivationGenerationService {
           ...packConsistency(attempt.text, answers, annexures),
           ...scopeOf(attempt.text),
         ];
+        thin = thinSectionNotes(attempt.text, plan, row.licenceType);
         keepIfBetter();
         /**
          * ⚠️ THE EARLY BREAK IS GONE, AND IT WAS COSTING US THE THIRD
@@ -1620,6 +1642,8 @@ export class MotivationGenerationService {
       attempt = { ...attempt, text: best.text };
       mechanics = best.mechanics;
       structureOk = best.structureOk;
+      // Recompute for the KEPT draft, whatever attempt it came from.
+      thin = thinSectionNotes(best.text, plan, row.licenceType);
 
       /**
        * ⚠️ MEND THE SENTENCE BEFORE BINNING THE DOCUMENT.
@@ -1737,6 +1761,13 @@ export class MotivationGenerationService {
         wordBand: wordBandFor(row.licenceType),
         duplicateSentences: proseQuality.duplicateSentences,
         repeatedPhrases: proseQuality.repeatedPhrases,
+        // The sections still under their floor after the top-up attempts, and
+        // the estimated fill of the whole body. Reported, never fatal — see
+        // motivation-fill.ts.
+        thinSections: thin,
+        pageFillEstimate: Number(
+          estimatedFill(proseWordCount(attempt.text)).toFixed(2),
+        ),
         // ⚠️ THE RESET CHECK. Kept in this Json column rather than a schema
         // change: prepareGeneration compares it with the answers it is about to
         // generate from, and gives the member a fresh cycle budget when they

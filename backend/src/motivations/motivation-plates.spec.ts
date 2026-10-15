@@ -139,57 +139,76 @@ describe('the hunting plates come from the research', () => {
   });
 });
 
-describe('the sport plates come from the firearm and discipline', () => {
-  it('reaches two pages of activities', () => {
+describe('the sport plates are the courses of fire for the firearm', () => {
+  it('reaches two pages of courses', () => {
     const plates = buildPlateSpecs({
       licenceType: S16_SPORT,
-      answers: { association_name: 'SAPSA', firearm_type: 'Handgun' },
+      answers: { firearm_type: 'Handgun' },
     });
     expect(plates).toHaveLength(MAX_PLATES);
-    expect(plates[0].title).toBe('Practical shooting (IPSC / IDPA)');
+    expect(plates[0].title).toBe('IPSC Practical Pistol');
   });
 
-  it('⚠️ PICTURES ONLY THE DISCIPLINES THE APPLIED-FOR FIREARM IS ELIGIBLE FOR (MO000096)', () => {
-    // A Glock 9 mm handgun was drawn with rifle and shotgun venues because the
-    // picker filled from the whole catalogue. Each class is now its own pool.
+  it('⚠️ PICTURES ONLY THE COURSES THE APPLIED-FOR FIREARM IS ELIGIBLE FOR (MO000096)', () => {
+    // A handgun was once drawn with rifle and shotgun venues. Each class — and,
+    // for a rifle, each action — is now its own pool.
     const handgun = buildPlateSpecs({
       licenceType: S16_SPORT,
       answers: { firearm_type: 'Handgun', firearm_calibre: '9MM PAR (9X19MM)' },
     }).map((p) => p.title);
-    expect(handgun).toContain('Practical shooting (IPSC / IDPA)');
+    expect(handgun).toContain('IPSC Practical Pistol');
     expect(handgun).toHaveLength(MAX_PLATES);
     for (const title of handgun) {
-      expect(title).not.toMatch(/long-range|clay|benchrest|target rifle|veldskiet|shotgun/i);
+      expect(title).not.toMatch(/rifle|shotgun|clay|f-class|prs/i);
     }
 
-    const rifle = buildPlateSpecs({
+    const rifleSemi = buildPlateSpecs({
       licenceType: S16_SPORT,
-      answers: { firearm_type: 'Rifle', firearm_calibre: '6.5MM CREEDMOOR' },
+      answers: { firearm_type: 'Rifle', firearm_action: 'Semi-automatic (self-loading)' },
     }).map((p) => p.title);
-    expect(rifle).toContain('Long-range precision');
-    for (const title of rifle) {
-      expect(title).not.toMatch(/practical shooting|steel challenge|clay|shotgun/i);
+    expect(rifleSemi).toContain('IPSC Practical Rifle');
+    for (const title of rifleSemi) {
+      expect(title).not.toMatch(/handgun|shotgun|f-class|lever|cowboy/i);
+    }
+
+    const rifleManual = buildPlateSpecs({
+      licenceType: S16_SPORT,
+      answers: { firearm_type: 'Rifle', firearm_action: 'Manual (bolt-action)' },
+    }).map((p) => p.title);
+    expect(rifleManual).toContain('F-Class');
+    for (const title of rifleManual) {
+      expect(title).not.toMatch(/handgun|shotgun|practical rifle|3-gun/i);
     }
 
     const shotgun = buildPlateSpecs({
       licenceType: S16_SPORT,
       answers: { firearm_type: 'Shotgun', firearm_calibre: '12 GAUGE' },
     }).map((p) => p.title);
-    expect(shotgun).toContain('Clay target shooting');
+    expect(shotgun).toContain('Clay Pigeon / Trap / Skeet');
     for (const title of shotgun) {
-      expect(title).not.toMatch(/handgun|practical shooting|long-range|benchrest/i);
+      expect(title).not.toMatch(/handgun|rifle|f-class/i);
     }
   });
 
-  it('⚠️ EVERY RANGE PROMPT PUTS THE TARGETS DOWNRANGE, NOT BESIDE THE BENCHES (MO000096)', () => {
-    // Operator, 2026-10-15: "some of the images do not make sense, where the
-    // targets sit next to the shooting benches."
+  it('⚠️ MINES THE GENERATED USES TO PUT THE RIGHT COURSE FIRST', () => {
+    const plates = buildPlateSpecs({
+      licenceType: S16_SPORT,
+      answers: { firearm_type: 'Handgun' },
+      usesText:
+        'It is used in Steel Challenge, scored purely on the time against five steel plates.',
+    });
+    expect(plates[0].title).toBe('Steel Challenge');
+  });
+
+  it('⚠️ EVERY COURSE PROMPT IS AN EMPTY RANGE — NO PEOPLE, NO ACTION (2026-10-15)', () => {
     for (const firearm_type of ['Handgun', 'Rifle', 'Shotgun']) {
       for (const plate of buildPlateSpecs({
         licenceType: S16_SPORT,
         answers: { firearm_type },
       })) {
-        expect(plate.prompt).toMatch(/downrange beyond them/i);
+        expect(plate.prompt).toMatch(/no people/i);
+        expect(plate.prompt).toMatch(/no firearms/i);
+        expect(plate.prompt).toMatch(/no motion or action/i);
       }
     }
   });
