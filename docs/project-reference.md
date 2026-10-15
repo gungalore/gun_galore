@@ -330,8 +330,9 @@ state — do not read its absence as the switch being broken).
 **Backend**: `DATABASE_URL`, `JWT_MEMBER_SECRET`, `JWT_ADMIN_SECRET`,
 `ID_HASH_SECRET`, `HEALTH_PING_SECRET`, `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`,
 `DIDIT_WEBHOOK_SECRET`, `DIDIT_MODE`, `DIDIT_BASE_URL`, `GEMINI_API_KEY`,
+`GROK_API_KEY`,
 `LLM_PROVIDER`,
-`LLM_MODEL`, `LLM_IMAGE_MODEL`, `ANTHROPIC_API_KEY` (rollback only),
+`LLM_MODEL`, `LLM_IMAGE_MODEL`, `XAI_IMAGE_MODEL`, `ANTHROPIC_API_KEY` (rollback only),
 `CLOUDINARY_CLOUD_NAME`,
 `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `MEILISEARCH_HOST`,
 `MEILISEARCH_API_KEY`, `SMSPORTAL_CLIENT_ID`, `SMSPORTAL_API_SECRET`,
@@ -418,6 +419,18 @@ against real data. It warns on every boot and raises a Desk card. It is currentl
   overrides it without a deploy. Anthropic has no image model: the adapter
   raises `unsupported` (a distinct code from `not_configured`, because a
   missing key and a provider that cannot draw are different problems).
+  ⚠️ **THE MOTIVATION PLATES ARE ON xAI (GROK IMAGINE), NOT GEMINI.** Operator,
+  2026-10-15: "wire in the grok." The PURPOSE exhibits (`motivation.plate`) and
+  the QUARRY plate (`motivation.quarry`) are pinned to the `xai` provider
+  (`providerFor`), which draws with `grok-imagine-image-2.0` at a flat
+  $0.04/image (`XAI_IMAGE_MODEL` overrides it; `GROK_API_KEY` is the key, with
+  `XAI_API_KEY` accepted). xAI has **no "enhance prompt" parameter** — the
+  curated course-of-fire and species prompts are sent verbatim, and its image
+  endpoint is the only thing this provider does. An explicit
+  `LLM_PROVIDER_MOTIVATION_PLATE` / `_QUARRY=gemini` moves a purpose back. xAI
+  bills per image, so `LlmUsage.images` carries the count and `costUsdMicros`
+  charges `flatPerImageUsd` (Gemini still bills image output by the token via
+  `imageTokens`).
   ⚠️ **IMAGE OUTPUT IS TWENTY TIMES THE TEXT RATE AND ARRIVES IN THE SAME
   COUNTER.** $30/1M against $1.50/1M, both inside one `candidatesTokenCount`,
   so `mapUsage` carves the image half out via `candidatesTokensDetails` and

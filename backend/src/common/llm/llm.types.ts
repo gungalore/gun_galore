@@ -22,7 +22,15 @@ export type LlmProvider =
   | 'deepseek'
   | 'typesafe'
   /** Qwen Cloud (qwen3.8-flash) — the Value My Item valuation engine. */
-  | 'qwen';
+  | 'qwen'
+  /**
+   * xAI (Grok Imagine) — the motivation PURPOSE and QUARRY plate generator.
+   *
+   * ⚠️ IMAGES ONLY ON THIS PLATFORM. The xai provider draws pictures and
+   * refuses every text call as `unsupported`; nothing routes a text purpose
+   * to it. See xai.provider.ts.
+   */
+  | 'xai';
 
 /** Base64 bytes with their type. Both providers take exactly this. */
 export interface LlmBlob {
@@ -152,6 +160,17 @@ export interface LlmUsage {
    * them apart — see llm.pricing.
    */
   imageTokens?: number;
+  /**
+   * How many pictures a call produced, where the provider prices PER IMAGE.
+   *
+   * ⚠️ A DIFFERENT MEASURE FROM `imageTokens`, AND BOTH ARE NEEDED. Gemini
+   * bills image output by the TOKEN (see imageTokens); xAI bills Imagine calls
+   * a FLAT fee per image and reports no tokens at all. `costUsdMicros` uses
+   * this count against a flat rate when the model carries one, so an xAI plate
+   * is never booked as free — the exact trap the unpriced nano-banana 2.1
+   * model fell into.
+   */
+  images?: number;
 }
 
 export type LlmStopReason =

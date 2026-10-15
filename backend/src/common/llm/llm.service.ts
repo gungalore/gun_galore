@@ -39,6 +39,7 @@ import { DeepSeekProvider } from './deepseek.provider';
 import { GeminiProvider } from './gemini.provider';
 import { JevClient } from './jev.client';
 import { QwenProvider } from './qwen.provider';
+import { XaiProvider } from './xai.provider';
 import { costUsdMicros } from './llm.pricing';
 import type { LlmProviderClient } from './provider.interface';
 import {
@@ -105,6 +106,7 @@ export const LLM_ANTHROPIC_PROVIDER = Symbol('LLM_ANTHROPIC_PROVIDER');
 export const LLM_DEEPSEEK_PROVIDER = Symbol('LLM_DEEPSEEK_PROVIDER');
 export const LLM_JEV_CLIENT = Symbol('LLM_JEV_CLIENT');
 export const LLM_QWEN_PROVIDER = Symbol('LLM_QWEN_PROVIDER');
+export const LLM_XAI_PROVIDER = Symbol('LLM_XAI_PROVIDER');
 
 @Injectable()
 export class LlmService {
@@ -113,6 +115,7 @@ export class LlmService {
   private readonly anthropic: LlmProviderClient;
   private readonly deepseek: LlmProviderClient;
   private readonly qwen: LlmProviderClient;
+  private readonly xai: LlmProviderClient;
   private readonly jev: JevClient;
 
   constructor(
@@ -124,12 +127,14 @@ export class LlmService {
     @Optional() @Inject(LLM_ANTHROPIC_PROVIDER) anthropic?: LlmProviderClient,
     @Optional() @Inject(LLM_DEEPSEEK_PROVIDER) deepseek?: LlmProviderClient,
     @Optional() @Inject(LLM_QWEN_PROVIDER) qwen?: LlmProviderClient,
+    @Optional() @Inject(LLM_XAI_PROVIDER) xai?: LlmProviderClient,
     @Optional() @Inject(LLM_JEV_CLIENT) jev?: JevClient,
   ) {
     this.gemini = gemini ?? new GeminiProvider();
     this.anthropic = anthropic ?? new AnthropicProvider();
     this.deepseek = deepseek ?? new DeepSeekProvider();
     this.qwen = qwen ?? new QwenProvider();
+    this.xai = xai ?? new XaiProvider();
     this.jev = jev ?? new JevClient();
   }
 
@@ -172,6 +177,20 @@ export class LlmService {
     if (explicit === 'deepseek') return this.deepseek;
     if (explicit === 'gemini') return this.gemini;
     if (explicit === 'qwen') return this.qwen;
+    if (explicit === 'xai') return this.xai;
+    // ⚠️ THE MOTIVATION IMAGE EXHIBITS RUN ON XAI (GROK IMAGINE). Operator,
+    // 2026-10-15: "wire in the grok." The PURPOSE plates (`motivation.plate`)
+    // and the QUARRY plate (`motivation.quarry`) are the platform's only
+    // generateImage call sites, and both draw from it; the curated course and
+    // species prompts are sent verbatim (xAI has no "enhance prompt" parameter
+    // and none is used). Pinned in code so a global LLM_PROVIDER switch cannot
+    // drag the exhibits onto a text-only provider, exactly as video and the
+    // moderation images are pinned. An explicit `LLM_PROVIDER_MOTIVATION_PLATE`
+    // / `_QUARRY` env var still wins, above — the lever to move one purpose
+    // back to gemini without a deploy.
+    if (purpose === 'motivation.plate' || purpose === 'motivation.quarry') {
+      return this.xai;
+    }
     // ⚠️ VIDEO IS GEMINI-ONLY ON THIS PLATFORM. A video moderation call must
     // not fall through to DeepSeek (whose vision path rejects video) just
     // because a global LLM_PROVIDER switch is set. An explicit per-purpose env
@@ -392,7 +411,13 @@ export class LlmService {
     try {
       for await (const event of provider.stream({ ...req, model })) {
         if (event.type === 'done') {
-          this.record(req, event.response.provider, event.response.model, startedAt, event.response.usage);
+          this.record(
+            req,
+            event.response.provider,
+            event.response.model,
+            startedAt,
+            event.response.usage,
+          );
         }
         yield event;
       }
@@ -621,12 +646,14 @@ export class LlmService {
     const cachedInputTokens = usage?.cachedInputTokens ?? 0;
     const thinkingTokens = usage?.thinkingTokens ?? 0;
     const imageTokens = usage?.imageTokens ?? 0;
+    const images = usage?.images ?? 0;
     const cost = costUsdMicros({
       model,
       inputTokens,
       outputTokens,
       cachedInputTokens,
       imageTokens,
+      images,
     });
 
     // One line per call. Purpose, model, tokens, ms — never content.

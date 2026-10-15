@@ -459,6 +459,31 @@ describe('costUsdMicros', () => {
     expect(carved).toBe(30_000_000);
   });
 
+  // ⚠️ xAI BILLS PER IMAGE, NOT PER TOKEN. Read from
+  // https://docs.x.ai/developers/pricing on 2026-10-15: $0.04 an image
+  // (probed live — the response echoed 400000000 `cost_in_usd_ticks`). A grok
+  // plate reports no tokens, so the charge must come off the image count; an
+  // unpriced or uncounted row is exactly how the nano-banana 2.1 plate was
+  // booked as free.
+  it('\u26a0\ufe0f PRICES A GROK PLATE AT THE FLAT PER-IMAGE RATE', () => {
+    expect(
+      costUsdMicros({
+        model: 'grok-imagine-image-2.0',
+        inputTokens: 0,
+        outputTokens: 0,
+        images: 1,
+      }),
+    ).toBe(40_000);
+    expect(
+      costUsdMicros({
+        model: 'grok-imagine-image-2.0',
+        inputTokens: 0,
+        outputTokens: 0,
+        images: 4,
+      }),
+    ).toBe(160_000);
+  });
+
   it('prices an unknown model — Anthropic included — at zero', () => {
     expect(
       costUsdMicros({

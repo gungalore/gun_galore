@@ -136,12 +136,17 @@ describe('LlmService', () => {
     // it is never confused with the pinned deepseek fake above.
     const qwen = new FakeProvider('qwen');
     qwen.response = { ...qwen.response, model: 'qwen3.8-flash' };
+    // ⚠️ xAI (Grok Imagine) — images only, so acceptsDocuments: false, and it
+    // draws (the pin sends motivation.plate / motivation.quarry here).
+    const xai = new FakeProvider('xai', false);
+    xai.response = { ...xai.response, model: 'grok-imagine-image-2.0' };
     return {
-      svc: new LlmService(prisma, gemini, anthropic, deepseek, qwen),
+      svc: new LlmService(prisma, gemini, anthropic, deepseek, qwen, xai),
       gemini,
       anthropic,
       deepseek,
       qwen,
+      xai,
       create,
     };
   };
@@ -666,7 +671,10 @@ describe('LlmService', () => {
   it('⚠️ sends an image request to gemini when the purpose defaults to deepseek', async () => {
     process.env.LLM_PROVIDER = 'deepseek';
     const { svc, gemini, deepseek } = build();
-    const res = await svc.generateImage({ prompt: 'a plate', purpose: 'motivation.quarry' });
+    const res = await svc.generateImage({
+      prompt: 'a plate',
+      purpose: 'dealer.verify',
+    });
     expect(deepseek.imageCalls).toHaveLength(0);
     expect(gemini.imageCalls).toHaveLength(1);
     expect(res.provider).toBe('gemini');
@@ -678,9 +686,9 @@ describe('LlmService', () => {
       .spyOn(require('@nestjs/common').Logger.prototype, 'warn')
       .mockImplementation(() => {});
     const { svc } = build();
-    await svc.generateImage({ prompt: 'a plate', purpose: 'motivation.quarry' });
+    await svc.generateImage({ prompt: 'a plate', purpose: 'dealer.verify' });
     const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(logged).toContain('motivation.quarry');
+    expect(logged).toContain('dealer.verify');
     expect(logged).toContain('deepseek');
   });
 
@@ -699,9 +707,50 @@ describe('LlmService', () => {
   it('books the image call under the provider that actually drew it', async () => {
     process.env.LLM_PROVIDER = 'deepseek';
     const { svc, create } = build();
-    await svc.generateImage({ prompt: 'a plate', purpose: 'motivation.quarry' });
+    await svc.generateImage({ prompt: 'a plate', purpose: 'dealer.verify' });
     await flush();
     expect(create.mock.calls[0][0].data.provider).toBe('gemini');
+  });
+
+  // ⚠️ THE MOTIVATION PLATES AND THE QUARRY PLATE RUN ON XAI (GROK IMAGINE).
+  // Operator, 2026-10-15: "wire in the grok." Pinned in providerFor, and the
+  // pin must beat a global LLM_PROVIDER switch (proved under deepseek here).
+  it('⚠️ ROUTES THE MOTIVATION PLATES AND QUARRY PLATE TO XAI', async () => {
+    process.env.LLM_PROVIDER = 'deepseek';
+    const { svc, gemini, xai } = build();
+    const plate = await svc.generateImage({
+      prompt: 'a course of fire',
+      purpose: 'motivation.plate',
+    });
+    const quarry = await svc.generateImage({
+      prompt: 'an impala',
+      purpose: 'motivation.quarry',
+    });
+    expect(gemini.imageCalls).toHaveLength(0);
+    expect(xai.imageCalls).toHaveLength(2);
+    expect(plate.provider).toBe('xai');
+    expect(quarry.provider).toBe('xai');
+  });
+
+  it('lets an explicit LLM_PROVIDER_MOTIVATION_PLATE move a plate back to gemini', async () => {
+    process.env.LLM_PROVIDER_MOTIVATION_PLATE = 'gemini';
+    const { svc, gemini, xai } = build();
+    await svc.generateImage({
+      prompt: 'a course of fire',
+      purpose: 'motivation.plate',
+    });
+    expect(xai.imageCalls).toHaveLength(0);
+    expect(gemini.imageCalls).toHaveLength(1);
+  });
+
+  it('books a grok plate under xai in the ledger', async () => {
+    const { svc, create } = build();
+    await svc.generateImage({
+      prompt: 'a course of fire',
+      purpose: 'motivation.plate',
+    });
+    await flush();
+    expect(create.mock.calls[0][0].data.provider).toBe('xai');
   });
 
   it('⚠️ REFUSES AN UNSUPPORTED aspectRatio BEFORE IT SPENDS A CALL (MO000096)', async () => {
@@ -712,7 +761,7 @@ describe('LlmService', () => {
     await expect(
       svc.generateImage({
         prompt: 'a plate',
-        purpose: 'motivation.plate',
+        purpose: 'dealer.verify',
         aspectRatio: '2:1',
       }),
     ).rejects.toThrow(/aspectRatio/);
@@ -720,7 +769,7 @@ describe('LlmService', () => {
     // A ratio from the list still draws.
     await svc.generateImage({
       prompt: 'a plate',
-      purpose: 'motivation.plate',
+      purpose: 'dealer.verify',
       aspectRatio: '21:9',
     });
     expect(gemini.imageCalls).toHaveLength(1);

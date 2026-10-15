@@ -54,6 +54,18 @@ interface ModelPrice {
    * three cents of spend as one tenth of one.
    */
   imageOutputPerMillion?: number;
+  /**
+   * A FLAT fee per generated image, in USD, where the provider prices that way
+   * rather than by token.
+   *
+   * ⚠️ xAI'S IMAGINE MODELS ARE FLAT, NOT TOKEN-PRICED, so `inputPerMillion`
+   * and `outputPerMillion` above are meaningless for them — a grok plate
+   * reports no tokens at all, only a per-image charge (and, helpfully, its own
+   * `cost_in_usd_ticks`). `costUsdMicros` charges `images × this` and ignores
+   * the token fields, which is why the token rates on a flat-priced row are 0.
+   * Leaving the row out entirely would book every grok plate as free.
+   */
+  flatPerImageUsd?: number;
 }
 
 const PRICES: Record<string, ModelPrice> = {
@@ -113,6 +125,23 @@ const PRICES: Record<string, ModelPrice> = {
     outputPerMillion: 1.5,
     cachedInputPerMillion: 0.025,
     imageOutputPerMillion: 30,
+  },
+  /**
+   * Grok Imagine — the motivation PURPOSE and QUARRY plates (xAI).
+   *
+   * ⚠️ FLAT PER IMAGE, NOT TOKEN-PRICED. Read from
+   * https://docs.x.ai/developers/pricing on 2026-10-15: `grok-imagine-image-2.0`
+   * is $0.04 an image (`grok-imagine-image-quality` $0.05, `grok-imagine-image`
+   * $0.02). The live API also echoes the exact charge back as
+   * `usage.cost_in_usd_ticks` (400000000 ticks = $0.04), and this constant
+   * matches the probe. The token rates are 0 because xAI bills no tokens for an
+   * image; `costUsdMicros` charges the flat rate off `images`.
+   */
+  'grok-imagine-image-2.0': {
+    inputPerMillion: 0,
+    outputPerMillion: 0,
+    cachedInputPerMillion: 0,
+    flatPerImageUsd: 0.04,
   },
   /**
    * DeepSeek-V4.1-Flash (model id `deepseek-flash`) — feed moderation only.
@@ -200,9 +229,24 @@ export function costUsdMicros(args: {
    * leaving them at the text rate would report a thirtieth of it.
    */
   imageTokens?: number;
+  /**
+   * How many images the call produced, for a FLAT-per-image model.
+   *
+   * ⚠️ ONLY READ WHEN THE MODEL CARRIES `flatPerImageUsd`. On the token-priced
+   * image models the picture is in `imageTokens`, not here; an xAI plate
+   * reports no tokens at all and is charged `images × flatPerImageUsd`.
+   */
+  images?: number;
 }): number {
   const price = PRICES[args.model];
   if (!price) return 0;
+
+  // ⚠️ A FLAT-PRICED MODEL IGNORES THE TOKEN FIELDS ENTIRELY. xAI bills per
+  // image, so any tokens the response happens to carry must not also be
+  // charged — the flat fee IS the bill.
+  if (price.flatPerImageUsd !== undefined) {
+    return Math.round((args.images ?? 0) * price.flatPerImageUsd * 1_000_000);
+  }
 
   const cached = Math.max(0, args.cachedInputTokens ?? 0);
   const freshInput = Math.max(0, args.inputTokens - cached);
