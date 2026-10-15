@@ -7,6 +7,22 @@ overwritten.
 
 Last updated: **2026-10-15**.
 
+## 2026-10-15 — MOTIVATIONS: A SPELLED MEASUREMENT IS FOLDED, NOT FATAL (FULL DEPLOY)
+
+Commit **`dbb07e6d`** (`fix(motivations) fold a spelled measurement into figures instead of failing the pack`), 3 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-132159.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `dbb07e6d`. No migration.
+
+Gates: backend `tsc` clean + **355 suites/5596 tests** (1 suite/8 tests skipped, the pdftotext-missing ones); frontend untouched.
+
+**The report.** Operator, 2026-10-15: "see why the last motivation did not generate." MO000096, a section 16 dedicated-sport application, was FAILED with the reason *"the document spells out a measurement; write it in figures"*.
+
+**Root cause.** The reject draft was decrypted from `documentTextEncrypted`; the offending sentence was `steel targets spread over distances extending from seven to twenty-five metres.` — the mechanical `documentScope` check caught `twenty-five metres` (`spellsOutMeasurement`, `motivation-scope.ts`). It survived all three regenerations, and the mender could not touch it: `repairTargets` calls `phraseIn(issue)`, which returns `null` for this complaint because it names no vocabulary word, so the repair pass is skipped entirely. Three fresh drafts, the same slip, and the applicant was emailed "we could not finish".
+
+**What shipped.** A deterministic `normaliseMeasurements` in `motivation-scope.ts`, folded into `southAfricanise` (so it runs before the gate, exactly like the spelling fold), converts an adjacent spelled number word — and a `to` range — in front of a unit into figures: `two hundred metres` -> `200 metres`, `seven to twenty-five metres` -> `7 to 25 metres`. The leading article is dropped only when it IS the number (`a hundred metres` -> `100 metres`) and kept when it belongs to the noun (`a five metre room` -> `a 5 metre room`). The unit word is untouched. The check stays and now fires only on a spelled number the fold could not parse. `firearm-uses.service.ts` deliberately still DROPS a spelled measurement (not folds) — its slice usually also carries the figures form and folding would ship both — so `spellsOutMeasurement` is screened on the raw sentence first.
+
+**Know.**
+- The writer prompt (`motivation-prompts.ts:839-840`) still grants an exception for a measurement that OPENS a sentence. After this fix that exception is moot: a sentence-initial spelled measurement is silently converted to figures too, so it neither fails nor survives. Left as-is to avoid re-baselining the prompt-cache spec.
+- A slipped measurement is no longer worth a manual fix; the gate only pages an admin for what the fold cannot parse.
+
 ## 2026-10-15 — MOTIVATIONS: THE DEDICATED STATUS RUNS WITH THE MEMBERSHIP (FULL DEPLOY)
 
 Commit **`b02f3a67`** (`fix(motivations) the dedicated status runs with the association membership`), 3 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-102428.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `b02f3a67`. No migration.
