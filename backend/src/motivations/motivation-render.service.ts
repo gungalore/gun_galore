@@ -21,7 +21,7 @@ import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
 import { QuarryPlateService } from './quarry-plate.service';
 import { MotivationPlatesService } from './motivation-plates.service';
-import { huntsAtAll, quarryCaption, quarryFromKey } from './motivation-quarry';
+
 import { displayCalibre } from './saps-vocabulary';
 import { asLayout } from './motivation-pdf-layouts';
 import { consentFormFor } from './motivation-consent-statement';
@@ -548,6 +548,8 @@ export class MotivationRenderService {
     private readonly shared: MotivationSharedService,
     private readonly news: NewsService,
     private readonly crimeStats: CrimeStatsService,
+    // ⚠️ RETIRED 2026-10-15 — no longer read. Kept so callers/specs that build
+    // this service positionally are untouched; the quarry line-up is gone.
     private readonly quarry: QuarryPlateService,
     // The purpose exhibits under heading 3 — read here, drawn at generation.
     private readonly plates: MotivationPlatesService,
@@ -1365,13 +1367,15 @@ export class MotivationRenderService {
     );
 
     /**
-     * ⚠️ BUILT ONCE AND SHARED, because the quarry is chosen FROM it. The
-     * species on the photograph comes out of the same prose the page prints,
-     * so calling `cartridgeArticle` twice would let the picture and the words
-     * disagree the day one of them changes.
+     * ⚠️ BUILT ONCE AND SHARED — the cartridge text and the C.I.P. inset are
+     * both read from this one article.
+     *
+     * ⚠️ NO QUARRY PHOTOGRAPH (retired 2026-10-15). The composite line-up that
+     * used to print across the foot of this page is gone; each animal now has
+     * its own picture under heading 3 (motivation-plates.ts). The page keeps
+     * its cartridge text.
      */
     const article = cartridgeArticle(row.researchEncrypted, cartridge?.name);
-    const cartridgePhoto = await this.quarryPhotoFor(row.id, answers);
 
     // The purpose exhibits — a read, on every download, never a model call.
     const storedPlates = await this.plates
@@ -1513,7 +1517,6 @@ export class MotivationRenderService {
        * the picture taken away.
        */
       cartridgeArticle: article,
-      cartridgePhoto,
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
       // ⚠️ THE APPLICANT'S PAGE, NOT THE REGISTRAR'S. See MotivationPdfInput.
@@ -1810,42 +1813,10 @@ export class MotivationRenderService {
    * data directory absent, a page that will not rasterise — returns undefined
    * and the caller falls back to our own drawing.
    */
-  /**
-   * The quarry photograph for the cartridge page, or nothing.
-   *
-   * ⚠️ A READ. The picture was drawn during GENERATION, beside the research
-   * and the cover photograph; this path renders on every download and may not
-   * spend twenty seconds on a picture model against a sixty-second nginx
-   * ceiling. See quarry-plate.service.
-   */
-  private async quarryPhotoFor(
-    motivationId: string,
-    answers: Record<string, string>,
-  ): Promise<
-    | { png: Buffer; widthMm: number; heightMm: number; caption: string }
-    | undefined
-  > {
-    /**
-     * ⚠️ GATED ON THE STATED USE, NOT ON THE SECTION AND NOT ON THE
-     * CARTRIDGE. A 6,5 Creedmoor suits impala whether or not this applicant
-     * has ever hunted one. Operator, 2026-09-10: "if its hunting or
-     * hunting/sport shooting, yes. both on section 15 and 16."
-     */
-    if (!huntsAtAll(answers.firearm_use_kind)) return undefined;
-
-    const plate = await this.quarry
-      .storedFor(motivationId)
-      .catch(() => undefined);
-    if (!plate) return undefined;
-
-    return {
-      png: plate.bytes,
-      // Only the ratio matters — the page places it in a fixed slot.
-      widthMm: 210,
-      heightMm: (210 * plate.height) / plate.width,
-      caption: quarryCaption(quarryFromKey(plate.speciesKeys)),
-    };
-  }
+  // ⚠️ THE QUARRY PHOTOGRAPH IS RETIRED (2026-10-15). The composite line-up on
+  // the cartridge page was replaced by one animal per picture under heading 3;
+  // there is nothing to read here any more. quarry-plate.service is left in
+  // place but is no longer drawn or shown.
 
   private async cipInset(
     calibre: string,

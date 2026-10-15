@@ -33,7 +33,6 @@ import {
   sectionOf,
   type ResearchPack,
 } from './motivation-research.service';
-import { huntsAtAll, quarriesFor } from './motivation-quarry';
 import { QuarryPlateService } from './quarry-plate.service';
 import { MotivationPlatesService } from './motivation-plates.service';
 import { MotivationPrefillService } from './motivation-prefill.service';
@@ -388,8 +387,10 @@ export class MotivationGenerationService {
     // What a firearm of a given CLASS is used for, generated once per class
     // and shared by everyone who holds one. See firearm-uses.service.ts.
     private readonly firearmUses: FirearmUsesService,
-    // The quarry photograph for the cartridge page. Drawn here rather than at
-    // render time — see the call below.
+    // ⚠️ RETIRED 2026-10-15 — no longer called. The composite quarry line-up
+    // was replaced by one animal per picture under heading 3 (see the purpose
+    // exhibits below). The dependency is kept for now so existing specs that
+    // build this service positionally are untouched; nothing draws it.
     private readonly quarryPlates: QuarryPlateService,
     // The purpose exhibits — one to two pages of pictures under heading 3.
     // Drawn here for the same reason as the quarry plate.
@@ -1071,44 +1072,18 @@ export class MotivationGenerationService {
 
       // ── the quarry photograph ─────────────────────────────────────
       //
-      // Drawn HERE for the same reasons as the cover photograph below it: it
-      // is background work, it is fail-soft, and it must not be in the
-      // download path. Operator, 2026-09-10: "we can call that api for each
-      // motivation, it's stupid cheap" — three and a half US cents, and the
-      // page it fills would otherwise render a third empty.
+      // ⚠️ RETIRED 2026-10-15. The quarry was ONE wide photograph on the
+      // cartridge page with the species in a line-up. Operator, 2026-10-15:
+      // "we need to do the same for the quarry. one animal per picture with up
+      // to five animals where applicable." Each animal now has its OWN picture
+      // under heading 3 — see the purpose exhibits below and speciesPlate in
+      // motivation-plates.ts — so the composite is neither drawn here nor shown
+      // (motivation-render.service.quarryPhotoFor is a stub). The cartridge
+      // page keeps its text.
       //
-      // ⚠️ GATED ON THE APPLICANT'S OWN ANSWER ABOUT GAME. A cartridge suits
-      // impala whether or not this applicant has ever hunted one; game in a
-      // SPORT application argues a purpose nobody applied for.
-      //
-      // ⚠️ AND THE SPECIES COME OUT OF THE RESEARCH THE DOCUMENT ITSELF
-      // PRINTS, so the picture and the page can never name different animals.
-      if (research && huntsAtAll(answers.firearm_use_kind)) {
-        /**
-         * ⚠️ BOTH BLOCKS, NOT THE CALIBRE ONE ALONE. The cartridge brief is
-         * often generic — "medium and large plains game within shorter bushveld
-         * distances" — while the FIREARM brief is where the actual species are
-         * named. Reading only the calibre block found nothing on a .45-70 and
-         * the plate was silently never drawn, which is exactly the failure the
-         * empty-answer note in `quarriesFor` says it cannot detect.
-         *
-         * ⚠️ THE HELD-CARTRIDGE BLOCKS ARE DELIBERATELY EXCLUDED. "A CARTRIDGE
-         * THE APPLICANT ALREADY HOLDS" describes other firearms; a species
-         * matched from there would picture an animal this application is not
-         * about. Only the applied-for firearm's own two blocks are read.
-         */
-        const speciesText = [
-          sectionOf(research, BLOCK_LABELS.firearm),
-          sectionOf(research, BLOCK_LABELS.calibre),
-        ]
-          .filter(Boolean)
-          .join('\n\n');
-        const species = quarriesFor({
-          cartridgeText: speciesText,
-          gameClasses: answers.hunt_game_class,
-        });
-        await this.quarryPlates.makeFor(row.id, species).catch(() => undefined);
-      }
+      // The species still come from the research the document prints, and only
+      // the applied-for firearm's own two blocks are read (never the held-
+      // cartridge blocks, which describe other firearms).
 
       // ── the purpose exhibits ──────────────────────────────────────
       //

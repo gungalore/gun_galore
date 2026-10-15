@@ -40,14 +40,23 @@ import { s15Purpose } from './motivation-fields';
  * wording with no way to tell which is which — the same trap
  * QUARRY_PROMPT_VERSION and researchAskVersion were written to close.
  */
-export const PLATES_PROMPT_VERSION = '2026-10-15b';
+export const PLATES_PROMPT_VERSION = '2026-10-15c';
 
 /** Which of the three purposes a pack's exhibits serve. */
 export type PlatePurpose = 'hunting' | 'self_defence' | 'sport';
 
-/** Two plates to a page, at most two pages. */
+/** Two plates to a page. */
 export const PLATES_PER_PAGE = 2;
+
+/**
+ * The exhibit budget. Sport and self-defence stop at two pages; HUNTING runs to
+ * five, because the operator asked for one animal to a picture and up to five
+ * animals (2026-10-15: "one animal per picture with up to five animals where
+ * applicable"). Five plates is three pages — 2 + 2 + 1 — which is the honest
+ * size of a line-up that used to sit squeezed into one composite frame.
+ */
 export const MAX_PLATES = 4;
+export const MAX_HUNTING_PLATES = 5;
 
 export interface PlateSpec {
   /** 1-based page, and 1-based slot within it. */
@@ -150,15 +159,56 @@ const RANGE: Record<string, string> = {
   wingshooting: 'taken on the wing over decoys or walked-up cover',
 };
 
+/** How the caption names the class of animal. */
+const CLASS_LABEL: Record<string, string> = {
+  small: 'small game and varmint',
+  plains_light: 'light plains game',
+  plains_medium: 'medium to large plains game',
+  dangerous: 'dangerous game',
+  wingshooting: 'a bird taken on the wing',
+};
+
+/**
+ * ⚠️ WHY THIS CARTRIDGE SUITS THIS ANIMAL, AND WHY IT CLAIMS NOTHING IT CANNOT.
+ * Operator, 2026-10-15: "give a description of why it is good for that animal."
+ * The reason is stated CLASS BY CLASS, not invented per species: what a class of
+ * quarry demands of a cartridge is a fact about the class (its size, its range,
+ * how it is taken), and the applicant's own cartridge is on the page because the
+ * cartridge brief for THIS application named it (see quarriesFor). No figure, no
+ * energy, no velocity is asserted — those live in the cartridge research text,
+ * and a number recalled here would be an invented fact on a signed document.
+ */
+const CLASS_RATIONALE: Record<string, string> = {
+  small:
+    'this class is taken at close range, so what counts is a light, ' +
+    'flat-shooting load and a quick, accurate shot',
+  plains_light:
+    'this class is taken in the open at distance, where a flat trajectory ' +
+    'and a fast follow-up shot matter most',
+  plains_medium:
+    'this class is heavy-bodied and often taken at bushveld distances, so a ' +
+    'cartridge matched to it must carry the retained energy to place the shot ' +
+    'cleanly and humanely',
+  dangerous:
+    'this class demands a heavy, controlled cartridge that will stop a ' +
+    'determined charge at close quarters',
+  wingshooting:
+    'this class is taken on the wing at close range, where a fast, spreading ' +
+    'shot pattern is what the shot depends on',
+};
+
 function speciesPlate(species: QuarrySpecies): Omit<PlateSpec, 'pageIndex' | 'plateIndex'> {
   const habitat = HABITAT[species.klass] ?? HABITAT.plains_medium;
   const range = RANGE[species.klass] ?? RANGE.plains_medium;
+  const label = CLASS_LABEL[species.klass] ?? CLASS_LABEL.plains_medium;
+  const why = CLASS_RATIONALE[species.klass] ?? CLASS_RATIONALE.plains_medium;
   return {
     title: species.name,
     description:
-      `${species.name} is characteristic quarry of this class, ${range}. ` +
-      `The photograph places the animal in ${habitat}, the setting a licence ` +
-      `for this purpose is intended for.`,
+      `${species.name} is ${label}, ${range}. The cartridge brief for this ` +
+      `application names it among the game this firearm is well matched to, ` +
+      `and this is why: ${why}. It is pictured in ${habitat}, the setting a ` +
+      `licence for this purpose is intended for.`,
     prompt:
       `A photorealistic wildlife photograph of ${species.subject} standing ` +
       `broadside in ${habitat}, soft early-morning light, taken with a long ` +
@@ -518,8 +568,9 @@ function pickActivities(
 
 function withSlots(
   specs: Omit<PlateSpec, 'pageIndex' | 'plateIndex'>[],
+  cap: number = MAX_PLATES,
 ): PlateSpec[] {
-  return specs.slice(0, MAX_PLATES).map((s, i) => ({
+  return specs.slice(0, cap).map((s, i) => ({
     ...s,
     pageIndex: Math.floor(i / PLATES_PER_PAGE) + 1,
     plateIndex: (i % PLATES_PER_PAGE) + 1,
@@ -538,11 +589,12 @@ export function buildPlateSpecs(ctx: PlateContext): PlateSpec[] {
   if (purpose === null) return [];
 
   if (purpose === 'hunting') {
+    // One animal to a picture, up to five (see MAX_HUNTING_PLATES).
     const species = quarriesFor({
       cartridgeText: ctx.research,
       gameClasses: ctx.answers.hunt_game_class,
     });
-    return withSlots(species.map(speciesPlate));
+    return withSlots(species.map(speciesPlate), MAX_HUNTING_PLATES);
   }
 
   if (purpose === 'self_defence') {

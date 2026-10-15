@@ -103,6 +103,30 @@ describe('the hunting plates come from the research', () => {
     expect(plates.map((p) => p.title)).toEqual(['Kudu']);
   });
 
+  it('⚠️ ONE ANIMAL PER PICTURE, UP TO FIVE, EACH SAYING WHY IT SUITS THE FIREARM (2026-10-15)', () => {
+    // The composite line-up is retired: each species gets its own plate, to a
+    // cap of five, and each description states why the cartridge suits it.
+    const plates = buildPlateSpecs({
+      licenceType: S16_HUNT,
+      answers: {},
+      research:
+        'Well matched to impala, springbok, blesbok, warthog and kudu at bushveld distances.',
+    });
+    expect(plates.map((p) => p.title)).toEqual([
+      'Impala',
+      'Springbok',
+      'Blesbok',
+      'Warthog',
+      'Kudu',
+    ]);
+    expect(plates.map((p) => p.pageIndex)).toEqual([1, 1, 2, 2, 3]);
+    expect(plates.map((p) => p.plateIndex)).toEqual([1, 2, 1, 2, 1]);
+    for (const p of plates) {
+      expect(p.description).toMatch(/well matched to/);
+      expect(p.prompt).toMatch(/Photorealistic/);
+    }
+  });
+
   it('⚠️ PRINTS NOTHING WHEN THE RESEARCH NAMES NO SPECIES', () => {
     // A guessed animal is worse than a plainer page — the quarry rule.
     expect(
