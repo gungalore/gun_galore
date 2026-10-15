@@ -7,6 +7,28 @@ overwritten.
 
 Last updated: **2026-10-15**.
 
+## 2026-10-15 — MOTIVATIONS: THE EXHIBITS FOLLOW THE FIREARM'S CLASS (FULL DEPLOY + REDRAW)
+
+Commit **`5166718e`** (`fix(motivations) picture only the disciplines the applied-for firearm is eligible for`), 2 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-144141.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `5166718e`. No migration.
+
+Gates: backend `tsc` clean + **107 motivations suites / 2404 tests** (full suite not re-run); frontend untouched.
+
+**The report.** Operator, 2026-10-15: the exhibits now generate, "but I need the images to be specific to the type of firearm ... For the last motivation it must be disciplines a Glock 43X will be eligible for to use."
+
+**Root cause.** `pickActivities` (`motivation-plates.ts`) filled its shortfall from the WHOLE `SPORT_ACTIVITIES` list, not just the matching ones — so MO000096 (GLOCK, 9 mm Parabellum, Handgun, semi-auto) was pictured with "Long-range precision", "Clay target shooting" and "Target rifle and benchrest": rifle and shotgun venues on a pistol pack.
+
+**What shipped.**
+- `weaponClass()` classifies the applied-for firearm from its own answers (type first — Handgun/Rifle/Shotgun — calibre only breaks a tie). Exported for tests.
+- Every `SPORT_ACTIVITIES` entry declares the class(es) it may be pictured with; `pickActivities` only ever fills within the firearm's class. "Club-level competition" stays class-agnostic. An unrecognised type keeps the whole catalogue (never withholds exhibits).
+- New handgun venues (Steel challenge, Indoor and club range practice) and a rifle (Veldskiet and gong) and shotgun (Practical shotgun) entry so each class can reach two pages on its own.
+- `PLATES_PROMPT_VERSION` -> `2026-10-15a`.
+
+**Redraw.** MO000096's four stale plates were replaced (plates-only backfill, document text untouched): **Practical shooting (IPSC / IDPA)**, **Steel challenge**, **Indoor and club range practice**, **Club-level competition** — 4/4 kept.
+
+**Know.**
+- The copy names the class, not the model: MO000096's answers carry `firearm_model = "NONE"` (make GLOCK), so the descriptions say "a compact self-loading pistol in 9 mm Parabellum". Fill the model on the application to have it named.
+- Plates are stored at generation/backfill time; changing the wording or the class of an existing pack needs a redraw, not just a deploy.
+
 ## 2026-10-15 — MOTIVATIONS: THE PURPOSE EXHIBITS ACTUALLY DRAW (FULL DEPLOY + BACKFILL)
 
 Commit **`329ce53b`** (`fix(motivations) request a supported image ratio so the purpose exhibits actually draw`), 5 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-133544.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `329ce53b`. No migration.
