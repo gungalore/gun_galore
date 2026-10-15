@@ -440,7 +440,16 @@ export function buildPlateSpecs(ctx: PlateContext): PlateSpec[] {
   const courses = coursesFor({
     weaponClass: weaponClass(ctx.answers),
     action: ctx.answers.firearm_action,
-    usesText: ctx.usesText,
+    // The generated uses name the disciplines, and the firearm's own words
+    // (a revolver, say) break the ties the class cannot — see coursesFor.
+    usesText: [
+      ctx.usesText,
+      ctx.answers.firearm_type,
+      ctx.answers.firearm_calibre,
+      ctx.answers.firearm_action,
+    ]
+      .filter(Boolean)
+      .join(' '),
     limit: MAX_PLATES,
   });
   return withSlots(courses.map(coursePlate), MAX_PLATES);

@@ -135,6 +135,9 @@ const COURSES: readonly CourseSpec[] = [
     title: 'ICORE (revolver)',
     classes: ['handgun'],
     match: ['icore', 'revolver', 'wheelgun'],
+    // Niche and revolver-only: shown when the firearm is a revolver (matched
+    // from its type/calibre) or the uses name it, never as a pistol default.
+    rank: 9,
     description:
       'ICORE is a revolver discipline: six- or eight-shot wheelguns are shot ' +
       'on timed stages against paper and steel, with reloads from speed ' +
