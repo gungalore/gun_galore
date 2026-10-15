@@ -7,6 +7,34 @@ overwritten.
 
 Last updated: **2026-10-15**.
 
+## 2026-10-15 — MOTIVATIONS: THE PURPOSE EXHIBITS ACTUALLY DRAW (FULL DEPLOY + BACKFILL)
+
+Commit **`329ce53b`** (`fix(motivations) request a supported image ratio so the purpose exhibits actually draw`), 5 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-133544.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `329ce53b`. No migration.
+
+Gates: backend `tsc` clean + **355 suites/5598 tests** (1 suite/8 skipped, pdftotext); frontend untouched.
+
+**The report.** Operator, 2026-10-15: "where is the pictures it is supposed to generate that will exhibit some of the activities that will be done with the firearm?" The purpose exhibits (operator 2026-10-14) shipped on 2026-10-14 but no pack ever carried one: `MotivationPlate` was empty.
+
+**Root cause.** The plates asked the image model for aspect ratio `2:1`, which is NOT in the API's enumerated set. Every draw came back 400 INVALID_ARGUMENT and `Purpose plates drawn (sport): 0/4 kept`:
+
+```
+aspect_ratio must be one of '1:1','1:4','1:8','2:3','3:2','3:4','4:1','4:3','4:5','5:4','8:1','9:16','16:9','21:9'
+```
+
+The quarry plate never hit this because it already asks for `21:9`.
+
+**What shipped.**
+- `motivation-plates.service.ts`: asks for `PLATE_REQUEST_RATIO = '21:9'` (supported) and still crops to the operator's 2:1 frame at store time, so the printed shape is unchanged.
+- `common/llm/llm.types.ts`: `SUPPORTED_IMAGE_ASPECT_RATIOS` — the API's own enumerated set.
+- `common/llm/llm.service.ts`: `generateImage` refuses an unsupported `aspectRatio` up front with a clear message (names the value) instead of spending a call that returns 400.
+- Regression tests: the plates ratio is in the supported set and the frame is 2:1; the LLM guard refuses `2:1` and still draws `21:9`.
+
+**Backfill.** MO000096 (COMPLETED, no plates) was backfilled by drawing the plates only — sport plates are built from the applicant's own answers, so no research spend and the document text was not rewritten. A hand-built `MotivationPlatesService(prisma, new LlmService(prisma))` (the `scripts/backfill-*` pattern, bare `PrismaClient` + `PrismaPg`) drew **4/4 kept** (2 pages × 2, 1800×900, `gemini-3.1-flash-lite-image`). A completed pack re-renders on download, so its next download now carries the exhibits.
+
+**Know.**
+- Future generations draw plates inline; no further backfill is needed for new packs.
+- Existing packs generated between 2026-10-14 and this deploy have no plates and need a backfill (or a regeneration) if their exhibits are wanted.
+
 ## 2026-10-15 — MOTIVATIONS: A SPELLED MEASUREMENT IS FOLDED, NOT FATAL (FULL DEPLOY)
 
 Commit **`dbb07e6d`** (`fix(motivations) fold a spelled measurement into figures instead of failing the pack`), 3 files, full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-132159.dump`. Backend and frontend health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `dbb07e6d`. No migration.
