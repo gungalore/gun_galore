@@ -7,6 +7,28 @@ overwritten.
 
 Last updated: **2026-10-15**.
 
+## 2026-10-15 — MOTIVATION PLATES MOVE TO xAI (GROK IMAGINE) (FULL DEPLOY)
+
+Commit **`476a953d`** (`feat(llm) xAI Grok Imagine provider for the motivation plates`), 6 files edited / 2 new. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-211118.dump`. Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `476a953d`. No migration. Live probe on the box: xAI returned `status 200`, 1 image, `cost_in_usd_ticks` 400000000 ($0.04).
+
+Gates: backend `tsc` clean + **357 suites/5619 tests** (1 suite/8 tests skipped). Frontend untouched.
+
+**The ask.** Operator, 2026-10-15: "wire in the grok. just send it our own enhanced prompt." xAI has **no "enhance prompt" parameter** (the website's button is a client-side step, not an API field); the curated course-of-fire and species prompts are sent verbatim, exactly like the Gemini path.
+
+**What shipped.**
+- **`xai.provider.ts` (new).** The `xai` provider: `POST https://api.x.ai/v1/images/generations`, model `grok-imagine-image-2.0`, `response_format: b64_json`, `aspect_ratio` passed through (the plates use `21:9`, in xAI's list). Empty output is a `safety` refusal (a blank box must never be stored); retries the transient codes; maps HTTP/transport errors to the same `LlmError` codes as the other providers. **Images only** — `complete`/`stream` throw `unsupported`, and nothing routes text to it.
+- **`llm.service.ts`.** `providerFor` pins `motivation.plate` and `motivation.quarry` to `xai` (the platform's only two `generateImage` call sites); an explicit `LLM_PROVIDER=…=xai` is also honoured, and `LLM_PROVIDER_MOTIVATION_PLATE=gemini` moves a plate back without a deploy.
+- **`llm.pricing.ts`.** `grok-imagine-image-2.0` at a **flat $0.04/image** (docs.x.ai/developers/pricing; the API echoed `cost_in_usd_ticks` = 400000000). `costUsdMicros` charges `images × flatPerImageUsd`, carried on `LlmUsage.images`. Without this a plate would book as **$0** — the nano-banana 2.1 trap.
+- **`llm.types.ts`** — `LlmProvider` gains `'xai'`; `LlmUsage.images`.
+- **Tests** — `xai.provider.spec.ts` (7), routing/ledger pins in `llm.service.spec.ts` (the generic image-rescue tests moved to `dealer.verify`, since `motivation.*` is now pinned), and a flat-pricing test in `gemini-schema.spec.ts`.
+
+**Env.** `GROK_API_KEY` set in `backend/.env` on the box (value from the local env; `XAI_API_KEY` accepted as a fallback). `XAI_IMAGE_MODEL` overrides the model. Backed up as `.env.bak-xai-<ts>` before the edit.
+
+**Know.**
+- The key must exist on the box for plates to draw; without it the plates fail soft and the pack renders with no exhibits.
+- Grok output is cropped to the 2:1 page frame at store time (`fit: cover`, the existing pipeline); the 21:9 request only decides how much the model frames.
+- The pins are code-level; the fallback lever if Grok draws badly is `LLM_PROVIDER_MOTIVATION_PLATE=gemini` (and `_QUARRY`) plus a reload.
+
 ## 2026-10-15 — MOTIVATIONS: COURSE-OF-FIRE EXHIBITS, CHEAPER PICTURES, FULL PAGES (FULL DEPLOY)
 
 Commits **`84b1ef34`** (cheaper image model), **`ad3260c8`** (course-of-fire exhibits + page-fill), **`863c4973`** (keep ICORE off a pistol's defaults), 3 files new / 8 edited. Full deploy via `infra/deploy/deploy.sh` (Git Bash) x2 (the ICORE tweak redeployed). Rollback point `alloutdoor-20261015-192513.dump`. Health x2 OK, warden reloaded, public 200 x2, three pm2 services online. Deployed HEAD `863c4973`. No migration.
