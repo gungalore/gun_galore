@@ -44,7 +44,6 @@ import { SettingsService, FLAGS } from '../settings/settings.service';
 import { type SectionId } from './motivation-structure';
 import {
   buildAnnexures,
-  buildChecklist,
   UPLOAD_KIND_LABELS,
   annexureByKind,
   annexureByContainer,
@@ -110,11 +109,7 @@ import {
   parsePressClippingIds,
 } from './motivation-fields';
 import { Saps271Service } from './saps271.service';
-import {
-  MotivationSharedService,
-  TEMPLATE_VERSION,
-  isPaidFor,
-} from './motivation-shared.service';
+import { MotivationSharedService, TEMPLATE_VERSION } from './motivation-shared.service';
 
 // ────────────────────────────────────────────────────────────────────
 // RENDERING — the finished pack. The PDF, its annexure images, the C.I.P.
@@ -1398,9 +1393,12 @@ export class MotivationRenderService {
       format: asFormat(row.templateFormat),
       colourway: asScheme(row.templateColourway),
       layout: asLayout(row.templateLayout),
-      // See isPaidFor. Payments are not live, so today this stamps almost
-      // every download — which is the right way round.
-      watermark: !isPaidFor(row),
+      // ⚠️ NO WATERMARK. Operator, 2026-10-15: "remove the watermark." The
+      // unpaid "NOT FOR USE" mark that used to stamp every un-paid pack is
+      // gone from the product; the field is left in place (always false) so no
+      // caller can turn it back on by accident, and the renderer no longer
+      // draws it.
+      watermark: false,
       // Named in the running footer of every page, the way a professional
       // pack does it — a loose sheet has to identify its own application.
       firearmLine: firearmLine(answers),
@@ -1524,9 +1522,10 @@ export class MotivationRenderService {
         authority: w.authority,
         message: w.message,
       })),
-      takeWithYou: buildChecklist(row.licenceType, kinds)
-        .sections.find((sec) => sec.key === 'theirs')
-        ?.items.map((i) => ({ label: i.label, note: i.note })),
+      // ⚠️ THE "TAKE THESE WITH YOU" END PAGES ARE GONE. Operator, 2026-10-15:
+      // "remove the before you go pages at the end." Not passing `takeWithYou`
+      // means the renderer draws neither the worksheet nor its continuation;
+      // the annexure-insertion fallback already handles a null anchor.
     });
   }
 

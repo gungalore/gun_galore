@@ -617,11 +617,10 @@ export class MotivationsService {
         colourway: asScheme(row.templateColourway),
         layout: asLayout(row.templateLayout),
       },
-      // ⚠️ WATERMARK UNTIL IT IS PAID FOR. Operator, 2026-08-19: "Be sure to
-      // watermark any item that has not been paid for"; and again 2026-08-22,
-      // of a beta-seated pack: "remember to add a watermark as this is not
-      // been paid for yet." A free seat is not a payment — see isPaidFor.
-      watermarked: !isPaidFor(row),
+      // ⚠️ THE WATERMARK IS GONE. Operator, 2026-10-15: "remove the
+      // watermark." The flag stays on the wire (always false) so the client
+      // contract is unchanged, but nothing is marked any more.
+      watermarked: false,
       editable: EDITABLE.includes(row.status),
       createdAt: row.createdAt,
       completedAt: row.completedAt,

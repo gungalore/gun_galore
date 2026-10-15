@@ -83,27 +83,36 @@ export const CAPTION_H = 16;
 /** Gap between one image and the next caption on the same page. */
 export const GAP = 18;
 /**
- * Height reserved under a copy for the certification block, in points.
+ * Height reserved under a copy for the STAMP block, in points.
  *
- * 92pt ≈ 32 mm — enough for a 40 mm round stamp to sit in and still leave the
- * signature and date rules readable beside it. Bigger and a full-page A4
- * certificate stops fitting on one page; smaller and the stamp overhangs onto
- * the copy, which is exactly what the reservation exists to prevent.
+ * ⚠️ 170pt ≈ 60 mm — the square block the operator asked for (2026-10-15:
+ * "just add a 60mm x 60mm block at the bottom with the heading stamp"). The
+ * old 92pt strip held a four-field commissioner frame with a 40 mm round
+ * stamp beside it; that frame is gone, and this reserves the whole square.
+ * A full-page A4 copy now scales to leave 60 mm of clear paper beneath it.
  */
-export const STAMP_H = 92;
+export const STAMP_H = 170;
 
 /**
  * Pack images onto pages.
+ *
+ * `openingHeadingH` reserves room at the top of the FIRST page only, for the
+ * "Annexure X" heading drawn there (the divider sheet was removed — operator,
+ * 2026-10-15). Later pages get the full box. Default 0 keeps the old packing
+ * exactly, so the arithmetic tests are unaffected.
  *
  * @returns one array of placements per page, in order.
  */
 export function planAnnexurePages(
   images: AnnexureImage[],
   box: LayoutBox,
+  openingHeadingH = 0,
 ): PlacedImage[][] {
   const pages: PlacedImage[][] = [];
   let page: PlacedImage[] = [];
-  let cursor = box.y;
+  let top = box.y + openingHeadingH;
+  let avail = box.height - openingHeadingH;
+  let cursor = top;
 
   for (const img of images) {
     // Full content width, unless that makes it taller than a whole page.
@@ -111,27 +120,31 @@ export function planAnnexurePages(
     const stampH = img.stamp ? STAMP_H : 0;
     let w = box.width;
     let h = w * ratio;
-    const maxH = box.height - CAPTION_H - stampH;
+    const maxH = avail - CAPTION_H - stampH;
     if (h > maxH) {
       h = maxH;
       w = ratio > 0 ? h / ratio : box.width;
     }
 
     const need = CAPTION_H + h + stampH;
-    const used = cursor - box.y;
+    const used = cursor - top;
     // ⚠️ A SOLO COPY ALWAYS STARTS A FRESH SHEET. Its own full page means it
     // shares with neither what came before nor what follows.
     if (img.solo && page.length > 0) {
       pages.push(page);
       page = [];
-      cursor = box.y;
+      top = box.y;
+      avail = box.height;
+      cursor = top;
     }
     // ⚠️ THE FIRST IMAGE NEVER BREAKS. Without this a single image taller
     // than the box would loop forever pushing itself to a fresh page.
-    if (page.length > 0 && used + GAP + need > box.height) {
+    if (page.length > 0 && used + GAP + need > avail) {
       pages.push(page);
       page = [];
-      cursor = box.y;
+      top = box.y;
+      avail = box.height;
+      cursor = top;
     }
     if (page.length > 0) cursor += GAP;
 
@@ -151,7 +164,9 @@ export function planAnnexurePages(
     if (img.solo) {
       pages.push(page);
       page = [];
-      cursor = box.y;
+      top = box.y;
+      avail = box.height;
+      cursor = top;
     }
   }
 

@@ -2,7 +2,6 @@
 import PDFDocument from 'pdfkit';
 import {
   GAP,
-  STAMP_H,
   captionFor,
   planAnnexurePages,
   planSafePhotoPages,
@@ -4118,9 +4117,8 @@ export class MotivationPdfService {
       // left the rest blank, which reads as a page that ran out of content.
       // This is a reference table a DFO reads down while checking a folder,
       // so the room is not decoration — it is what makes a row scannable.
-      const certW = K.mm(34);
       const letterW = K.mm(30);
-      const labelW = contentWidth - letterW - certW - K.mm(6);
+      const labelW = contentWidth - letterW - K.mm(6);
 
       /**
        * Column captions, so the certification marks are not read as a claim
@@ -4145,13 +4143,6 @@ export class MotivationPdfService {
         }
         K.label(chrome, 'Tab', MARGIN, doc.y, letterW);
         K.label(chrome, 'Document', MARGIN + letterW, doc.y, labelW);
-        K.label(
-          chrome,
-          'Certification',
-          MARGIN + contentWidth - certW,
-          doc.y,
-          certW,
-        );
         doc.y += K.px(8.5) * 1.2 + K.mm(2);
         doc
           .moveTo(MARGIN, doc.y)
@@ -4193,34 +4184,6 @@ export class MotivationPdfService {
             lineGap: K.px(2),
           });
         const rowBottom = Math.max(doc.y, y + K.px(13) * 1.3);
-
-        if (a.certification !== 'none') {
-          // ⚠️ A PILL, NOT A DASHED BOX. The old marks were dashed rectangles
-          // whose borders nearly touched between rows, so the column read as
-          // one grey block instead of a mark against each annexure — and a
-          // dashed border is the visual language of "cut here", which is the
-          // opposite of what this says.
-          const required = a.certification === 'required';
-          const cx = MARGIN + contentWidth - certW;
-          const h = K.mm(5.4);
-          doc
-            .roundedRect(cx, y, certW, h, h / 2)
-            .lineWidth(0.8)
-            .fillAndStroke(
-              required ? C.band : C.wash,
-              required ? C.deep : C.hair,
-            );
-          doc
-            .font(required ? F.sansBold : F.sans)
-            .fontSize(K.px(8))
-            .fillColor(required ? C.deep2 : C.mut)
-            .text(required ? 'REQUIRED' : 'USUALLY ASKED', cx, y + K.mm(1.5), {
-              width: certW,
-              align: 'center',
-              characterSpacing: K.px(8) * 0.12,
-              lineBreak: false,
-            });
-        }
 
         doc.x = MARGIN;
         doc.y = rowBottom + K.mm(3);
@@ -4277,22 +4240,6 @@ export class MotivationPdfService {
               lineGap: K.px(2),
             });
           const rowBottom = Math.max(doc.y, y + K.px(13) * 1.3);
-          const cx = MARGIN + contentWidth - certW;
-          const h = K.mm(5.4);
-          doc
-            .roundedRect(cx, y, certW, h, h / 2)
-            .lineWidth(0.8)
-            .fillAndStroke(C.band, C.deep);
-          doc
-            .font(F.sansBold)
-            .fontSize(K.px(8))
-            .fillColor(C.deep2)
-            .text('REQUIRED', cx, y + K.mm(1.5), {
-              width: certW,
-              align: 'center',
-              characterSpacing: K.px(8) * 0.12,
-              lineBreak: false,
-            });
           doc.x = MARGIN;
           doc.y = rowBottom + K.mm(3);
           doc
@@ -4305,31 +4252,11 @@ export class MotivationPdfService {
         }
       }
 
-      // The distinction, stated once.
-      if (input.annexures.some((a) => a.certification !== 'none')) {
-        doc.y += K.mm(2);
-        const top = doc.y;
-        doc
-          .font(F.sans)
-          .fontSize(K.px(10))
-          .fillColor(C.sub)
-          .text(
-            // ⚠️ NOT "WHEN A COPY STANDS IN FOR AN ORIGINAL". That was false of
-            // the competency certificate, where SAPS asks for the original
-            // ITSELF and the copy travels alongside it — so the sentence
-            // told an applicant they could leave the original at home.
-            'Regulation 13(4)(b) of the Firearms Control Regulations, 2004 requires a ' +
-              'certified copy of your identity document. The rows marked "usually asked" ' +
-              'are not required by the Regulations — they are what most stations want ' +
-              'on file alongside the originals you bring, and many DFOs will certify ' +
-              'them at the counter. Bring every original. Ask your own station.',
-            MARGIN + K.mm(6),
-            doc.y,
-            { width: contentWidth - K.mm(6), lineGap: K.px(3) },
-          );
-        doc.rect(MARGIN, top, K.px(2), doc.y - top).fill(C.band);
-        doc.x = MARGIN;
-      }
+      // ⚠️ THE REGULATION 13(4)(b) NOTE AND THE CERTIFICATION COLUMN ARE GONE.
+      // Operator, 2026-10-15: "remove the things in the screenshots." The
+      // index is now just Tab · Document; what a copy needs is stated on the
+      // annexure's own page as a plain STAMP block (see the certification
+      // block below).
 
       // ⚠️ NAME WHAT IS NOT IN THE PACK. A member whose upload could not be
       // reprinted must not discover at the DFO's counter that the pack is one
@@ -4419,27 +4346,47 @@ export class MotivationPdfService {
         stamp: a2.safe ? false : (a2.certification ?? 'none') !== 'none',
       }));
       const pages: ReturnType<typeof planAnnexurePages> = [];
-      let ordinary: typeof plannedImages = [];
-      let safes: typeof plannedImages = [];
-      const flushOrdinary = () => {
-        if (ordinary.length) pages.push(...planAnnexurePages(ordinary, box));
-        ordinary = [];
-      };
-      const flushSafes = () => {
-        if (safes.length) pages.push(...planSafePhotoPages(safes, box));
-        safes = [];
-      };
+      /**
+       * ⚠️ PLANNED PER LETTER, EACH OPENING WITH A HEADING. Operator,
+       * 2026-10-15: "I don't like the annexures that has one page dividers.
+       * I'd rather just have the page itself have a nice heading that says
+       * Annexure x with the content below it on the same page." So the
+       * divider sheet is gone and each letter's first content page reserves
+       * `HEADING_H` at the top for that heading. Grouping by letter also
+       * guarantees a letter starts its own page, which is what makes the
+       * heading land at the top of the annexure rather than mid-sheet.
+       */
+      const HEADING_H = K.mm(18);
+      const letters: string[] = [];
+      const byLetter = new Map<string, typeof plannedImages>();
       for (const image of plannedImages) {
-        if (image.safe) {
-          flushOrdinary();
-          safes.push(image);
-        } else {
-          flushSafes();
-          ordinary.push(image);
+        const group = byLetter.get(image.letter);
+        if (group) group.push(image);
+        else {
+          byLetter.set(image.letter, [image]);
+          letters.push(image.letter);
         }
       }
-      flushOrdinary();
-      flushSafes();
+      for (const letter of letters) {
+        const group = byLetter.get(letter)!;
+        const ordinary = group.filter((i) => !i.safe);
+        const safes = group.filter((i) => i.safe);
+        if (ordinary.length) {
+          pages.push(...planAnnexurePages(ordinary, box, HEADING_H));
+        }
+        if (safes.length) {
+          // The safe sheet is 2×2; shift its whole box down so the heading
+          // sits above it. A safe annexure is at most a handful of shots and
+          // fits the one headered page.
+          pages.push(
+            ...planSafePhotoPages(safes, {
+              ...box,
+              y: box.y + HEADING_H,
+              height: box.height - HEADING_H,
+            }),
+          );
+        }
+      }
       const sourceByBytes = new Map(
         input.annexureImages.map((a) => [a.bytes, a]),
       );
@@ -4452,79 +4399,34 @@ export class MotivationPdfService {
        * assigned once.
        */
       /**
-       * M8 — a lettered divider before each annexure group, with an edge tab.
-       *
-       * MOTIVATION-LAYOUT-SPEC §5 and MOTIVATION-GUIDE-BOOK 7.7 both ask for a
-       * divider sheet opening each annexure: the letter large, what it is, and
-       * a small solid tab at the page edge the reader can thumb to.
-       *
-       * ⚠️ ONE PER LETTER, AT THE FIRST SHEET THAT LETTER OPENS ON. The
-       * contents entry is re-pointed at the divider, so "Annexure B" in the
-       * index lands on the sheet that names it rather than the first copy
-       * behind it. A page that merely continues an earlier letter takes no
-       * divider; a letter whose first copy shares a sheet with the tail of the
-       * previous one does not get its own (the packing puts several short
-       * documents on one sheet, and splitting it would reflow the planner).
+       * ⚠️ NO DIVIDER SHEET. Operator, 2026-10-15: "I don't like the annexures
+       * that has one page dividers. I'd rather just have the page itself have a
+       * nice heading that says Annexure x with the content below it on the same
+       * page." The old M8 divider (letter at 46mm, edge tab, item count) is
+       * gone; each annexure's first content page now opens with this heading,
+       * and the contents entry points at that page.
        */
       const annexureByLetter = new Map(
         (input.annexures ?? []).map((a) => [a.letter, a] as const),
       );
-      const drawAnnexureDivider = (letter: string) => {
+      const drawAnnexureHeading = (letter: string) => {
         const entry = annexureByLetter.get(letter);
-        const tabW = K.mm(14);
-        const tabH = K.mm(34);
-        const tabY = PAGE_HEIGHT / 2 - tabH / 2;
-        doc.rect(PAGE_WIDTH - tabW, tabY, tabW, tabH).fill(C.bannerFrom);
+        const heading = entry
+          ? `Annexure ${letter} — ${entry.label}`
+          : `Annexure ${letter}`;
         doc
-          .font(F.sansBold)
-          .fontSize(K.mm(13))
-          .fillColor('#ffffff')
-          .text(letter, PAGE_WIDTH - tabW, tabY + tabH / 2 - K.mm(4.5), {
-            width: tabW,
-            align: 'center',
-            lineBreak: false,
-          });
-
-        doc
-          .font(F.sansBold)
-          .fontSize(K.mm(46))
+          .font(F.sansSemi)
+          .fontSize(K.px(15))
           .fillColor(C.deep)
-          .text(letter, MARGIN, K.mm(78), {
-            width: contentWidth,
-            align: 'center',
-            lineBreak: false,
-          });
+          .text(heading, MARGIN, box.y, { width: contentWidth });
+        const ruleY = doc.y + K.mm(2);
         doc
-          .font(F.sans)
-          .fontSize(K.px(18))
-          .fillColor(C.deep)
-          .text(`Annexure ${letter}`, MARGIN, K.mm(142), {
-            width: contentWidth,
-            align: 'center',
-          });
-        if (entry) {
-          doc
-            .font(F.sansSemi)
-            .fontSize(K.px(12))
-            .fillColor(C.mut)
-            .text(entry.label, MARGIN, K.mm(152), {
-              width: contentWidth,
-              align: 'center',
-            });
-          doc
-            .font(F.sans)
-            .fontSize(K.px(9.5))
-            .fillColor(C.mut)
-            .text(
-              `${entry.count} ${entry.count === 1 ? 'item' : 'items'} · ` +
-                certificationPhrase(entry.certification),
-              MARGIN,
-              K.mm(159),
-              { width: contentWidth, align: 'center' },
-            );
-        }
+          .moveTo(MARGIN, ruleY)
+          .lineTo(MARGIN + contentWidth, ruleY)
+          .lineWidth(1)
+          .strokeColor(C.deep)
+          .stroke();
         doc.x = MARGIN;
-        doc.y = K.BODY_BOTTOM;
       };
 
       /**
@@ -4547,14 +4449,16 @@ export class MotivationPdfService {
 
       const placedLetters = new Set<string>();
       for (const page of pages) {
+        doc.addPage();
         const opening = page[0]?.letter;
         if (opening && !placedLetters.has(opening)) {
-          doc.addPage();
-          drawAnnexureDivider(opening);
+          // ⚠️ THE HEADING GOES ON THE CONTENT PAGE, NOT A DIVIDER BEFORE IT.
+          // The planner reserved HEADING_H at the top of this page, so the
+          // copies below sit clear of it. See drawAnnexureHeading.
+          drawAnnexureHeading(opening);
           assignTocPage(opening, doc.bufferedPageRange().count);
           placedLetters.add(opening);
         }
-        doc.addPage();
         for (const place of page) {
           if (placedLetters.has(place.letter)) continue;
           placedLetters.add(place.letter);
@@ -4611,85 +4515,33 @@ export class MotivationPdfService {
           // and an applicant checking their own pack can see an empty block
           // from across a table.
           //
-          // The wording is the commissioner's to supply — we print the
-          // FRAME, never the words "I certify", because a pre-printed
-          // certification on an uncertified copy is exactly the document
-          // nobody should be able to produce.
+          // ⚠️ A SINGLE 60 mm × 60 mm STAMP BLOCK, AND NOTHING ELSE. Operator,
+          // 2026-10-15: "on the annexures that needs certification just add a
+          // 60mm x 60mm block at the bottom with the heading stamp, that's all
+          // that needs to be there." The old four-field frame (Commissioner of
+          // Oaths / Signature / Date, plus the REGULATION 13(4)(b) heading) is
+          // gone. We still print only the FRAME and the word STAMP — never "I
+          // certify" — so a pre-printed certification can never be produced.
           if (place.stampY !== undefined) {
+            const boxW = K.mm(60);
+            const boxH = K.mm(60);
             const bx = MARGIN;
-            const bw = contentWidth;
-            const bh = STAMP_H - 12;
+            const by = place.stampY;
             doc
-              .rect(bx, place.stampY, bw, bh)
-              .lineWidth(0.7)
-              .dash(3, { space: 2.5 })
+              .rect(bx, by, boxW, boxH)
+              .lineWidth(0.8)
               .strokeColor(C.hair)
-              .stroke()
-              .undash();
-
-            const required = src.certification === 'required';
+              .stroke();
             doc
               .font(F.sansBold)
-              .fontSize(7.5)
+              .fontSize(K.px(11))
               .fillColor(C.ink)
-              .text(
-                required
-                  ? 'CERTIFICATION REQUIRED — REGULATION 13(4)(b)'
-                  : 'CERTIFICATION',
-                bx + 8,
-                place.stampY + 7,
-                { width: bw - 16, characterSpacing: 1.1, lineBreak: false },
-              );
-
-            // The stamp's own landing zone, on the right, sized for a 40 mm
-            // round stamp. Named, so nobody stamps the signature rules.
-            const zoneW = 128;
-            const zoneX = bx + bw - zoneW - 8;
-            doc
-              .rect(zoneX, place.stampY + 20, zoneW, bh - 28)
-              .lineWidth(0.5)
-              .dash(2, { space: 2 })
-              .strokeColor(C.hair)
-              .stroke()
-              .undash();
-            doc
-              .font(F.sans)
-              .fontSize(7)
-              .fillColor(C.mut)
-              .text('Stamp', zoneX, place.stampY + bh / 2, {
-                width: zoneW,
+              .text('STAMP', bx, by + K.mm(5), {
+                width: boxW,
                 align: 'center',
+                characterSpacing: 1.4,
                 lineBreak: false,
               });
-
-            // Rules for the things a commissioner writes by hand.
-            // ⚠️ THE LAST LABEL FITS, AND IT DID NOT AT FIRST. Three rows at
-            // a 17pt step from +32 put "Date and designation" on the box's
-            // own bottom border — legible on screen, a smudge in print.
-            // 24 + 3×16 + the 6.5pt label lands at 74.5 inside an 80pt box.
-            const fieldW = bw - zoneW - 30;
-            let fy = place.stampY + 24;
-            for (const label of [
-              'Commissioner of Oaths — full name',
-              'Signature',
-              'Date and designation',
-            ]) {
-              doc
-                .moveTo(bx + 8, fy + 8)
-                .lineTo(bx + 8 + fieldW, fy + 8)
-                .lineWidth(0.4)
-                .strokeColor(C.hair)
-                .stroke();
-              doc
-                .font(F.sans)
-                .fontSize(6.5)
-                .fillColor(C.mut)
-                .text(label, bx + 8, fy + 10, {
-                  width: fieldW,
-                  lineBreak: false,
-                });
-              fy += 16;
-            }
             doc.x = MARGIN;
           }
 
@@ -5207,56 +5059,14 @@ export class MotivationPdfService {
       // COVER too — the page the footer loop deliberately skips. Drawn before
       // the banner for that reason.
       //
-      // ⚠️ IT USED TO SAY "PREVIEW" IN 90 PT HELVETICA. Operator, 2026-08-22:
-      // "Add NOT FOR USE around the ALL Outdoor logo as the watermark." The
-      // composition — logo, words above and below, the whole thing on the
-      // sheet's own diagonal — is page furniture, so it lives with the banner
-      // and the footer strip in motivation-pdf-chrome rather than here.
-      if (input.watermark) {
-        doc.switchToPage(range.start + i);
-        // ⚠️ ZERO THE BOTTOM MARGIN FIRST, for the same reason the footer pass
-        // does it twenty lines below. Text placed outside the printable box
-        // makes pdfkit start a FRESH PAGE and write there instead, and the
-        // cover line below sits under the body's bottom margin on purpose.
-        // The first version of this added a silent extra page to every
-        // watermarked pack and numbered a six-page document "of 5".
-        const keepBottom = doc.page.margins.bottom;
-        const keepTop = doc.page.margins.top;
-        doc.page.margins.bottom = 0;
-        doc.page.margins.top = 0;
-
-        K.watermark(chrome);
-
-        // A second line, small and legible, at the foot of the cover: a
-        // 7%-opacity diagonal reads as a print artefact on a photocopy, and
-        // somebody has to be able to tell what they are holding and that a
-        // clean copy exists.
-        //
-        // ⚠️ ABOVE THE FOOTER STRIP, NOT INSIDE IT. This line sat at
-        // MARGIN_BOTTOM + 26 — which was clear air under the old two-line
-        // footer, and is inside the 10 mm wash band the 2026-08-21 restyle put
-        // there. footerStrip() fills that band opaquely a few lines below, so
-        // the line was drawn and then painted out: INVISIBLE on every
-        // watermarked cover since the restyle, and invisible in the source
-        // too, because nothing about `PAGE_HEIGHT - MARGIN_BOTTOM + 26` says
-        // "under the footer". Found by rendering a fixture and looking at it.
-        if (i === 0) {
-          doc
-            .font(F.sans)
-            .fontSize(9)
-            .fillColor(C.mut)
-            .text(
-              'Preview copy — not for use and not for filing. ' +
-                'The final document is issued without this mark.',
-              MARGIN,
-              PAGE_HEIGHT - MARGIN_BOTTOM - mmGap(5),
-              { width: contentWidth, align: 'center', lineBreak: false },
-            );
-        }
-
-        doc.page.margins.bottom = keepBottom;
-        doc.page.margins.top = keepTop;
-      }
+      // ── The watermark: REMOVED ─────────────────────────────
+      //
+      // ⚠️ Operator, 2026-10-15: "remove the watermark." The unpaid "NOT FOR
+      // USE" mark (logo + words, drawn here via K.watermark) and the cover's
+      // "Preview copy" line are gone from the product. The `input.watermark`
+      // flag is left on the interface so the call sites still compile, but it
+      // now draws nothing.
+      //
       // ⚠️ NOT ON THE COVER. "Page 1 of 6" under a title page is what a
       // word-processed document does; a bound submission starts numbering at
       // the first page of content. The cover already carries the reference
@@ -5393,8 +5203,6 @@ export class MotivationPdfService {
       referenceNumber: input.referenceNumber,
       templateVersion: input.templateVersion,
       bodyPageCount: range.count,
-      // 0-based: the take-with-you sheets step aside for these.
-      watermark: input.watermark,
     });
     return { pdf, filename: `motivation-${input.referenceNumber}.pdf` };
   }

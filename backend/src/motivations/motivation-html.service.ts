@@ -501,19 +501,15 @@ td { padding: 2.2mm 2mm 2.2mm 0; border-bottom: .5pt solid var(--hair);
 .masthead { display: flex; justify-content: space-between; font: 8.5pt ${SANS};
   color: var(--mut); letter-spacing: .04em; border-bottom: .5pt solid var(--hair);
   padding-bottom: 2mm; margin-bottom: 6mm; }
-.wm { position: fixed; left: 0; right: 0; top: 42%; text-align: center;
-  font: 700 46pt ${SANS}; color: rgba(0,0,0,.05); transform: rotate(-24deg);
-  letter-spacing: .2em; white-space: nowrap; pointer-events: none; z-index: 0; }
 .ftr { position: fixed; left: 0; right: 0; bottom: 0; display: flex;
   justify-content: space-between; font: 8.5pt ${SANS}; color: var(--mut);
   letter-spacing: .04em; padding: 2mm 20mm 0; border-top: .5pt solid var(--hair); }
 [data-layout="banner"] .masthead { border-bottom-color: var(--accent); }
 `;
 
-  const watermark = input.watermark
-    ? `<div class="wm">NOT FOR USE · PREVIEW</div>`
-    : '';
-
+  // ⚠️ NO WATERMARK. Operator, 2026-10-15: "remove the watermark." The
+  // on-screen "NOT FOR USE · PREVIEW" mark is gone; `input.watermark` is no
+  // longer read.
   return [
     '<!doctype html>',
     `<html lang="en" data-layout="${layoutKey}">`,
@@ -523,7 +519,6 @@ td { padding: 2.2mm 2mm 2.2mm 0; border-bottom: .5pt solid var(--hair);
     `<style>${css}</style>`,
     '</head>',
     '<body>',
-    watermark,
     runningFooter,
     cover,
     contents,

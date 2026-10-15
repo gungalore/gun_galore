@@ -1611,11 +1611,11 @@ describe('MotivationsService.renderPdf', () => {
     uploads: [{ kind: 'IDENTITY_DOCUMENT' }],
   });
 
-  it('watermarks a free-beta pack: a seat is not a payment', async () => {
-    // ⚠️ THIS USED TO GO THE OTHER WAY. isSettled() treated a beta seat as
-    // settling the pack and handed the holder a clean, fileable document.
-    // Operator, 2026-08-22: "remember to add a watermark as this is not been
-    // paid for yet." billedCents is the only column that records money.
+  // ⚠️ THE MARK IS GONE ENTIRELY. Operator, 2026-10-15: "remove the
+  // watermark." The renderer is asked for no mark whether or not the pack was
+  // billed; this reversed the 2026-08-22 rule that a free seat is not a
+  // payment.
+  it('never asks the renderer to watermark, paid or unpaid', async () => {
     const { svc, prisma, pdf } = build();
     prisma.motivation.findFirst.mockResolvedValueOnce({
       ...readyToRender(),
@@ -1623,10 +1623,10 @@ describe('MotivationsService.renderPdf', () => {
       betaSeatNo: 7,
     });
     await svc.renderPdf('c1', 'mo-1');
-    expect(pdf.render.mock.calls[0][0].watermark).toBe(true);
+    expect(pdf.render.mock.calls[0][0].watermark).toBe(false);
   });
 
-  it('clears the mark once the pack has actually been billed', async () => {
+  it('still asks for no mark on a billed pack', async () => {
     const { svc, prisma, pdf } = build();
     prisma.motivation.findFirst.mockResolvedValueOnce({
       ...readyToRender(),

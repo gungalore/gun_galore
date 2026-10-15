@@ -389,12 +389,14 @@ describe('MotivationPdfService', () => {
   });
 });
 
-describe('the unpaid mark', () => {
+describe('the watermark — removed', () => {
   const svc = new MotivationPdfService();
 
-  // ⚠️ THE MARK IS THE ONLY THING BETWEEN AN UNPAID PACK AND A FILEABLE ONE,
-  // so what is asserted here is not decoration. Operator, 2026-08-22: "Add NOT
-  // FOR USE around the ALL Outdoor logo as the watermark."
+  // ⚠️ OPERATOR, 2026-10-15: "remove the watermark." The unpaid "NOT FOR USE"
+  // mark (logo + words on the page diagonal) and the cover's "Preview copy"
+  // line are gone from the product. These assert the ABSENCE — the reverse of
+  // what they once asserted (2026-08-22: "Add NOT FOR USE around the ALL
+  // Outdoor logo as the watermark").
 
   const long = Array.from(
     { length: 30 },
@@ -410,79 +412,20 @@ describe('the unpaid mark', () => {
         .match(/\/Type\s*\/Pages[\s\S]{0,200}?\/Count\s+(\d+)/)?.[1] ?? 0,
     );
 
-  it('stamps every page, adds none, and leaves the text layer clean', async () => {
-    // ⚠️ THE PAGE COUNT IS THE POINT OF THIS TEST. pdfkit answers anything
-    // drawn below the bottom margin by starting a fresh page and drawing
-    // there, so a mark through the middle of an A4 is one careless option away
-    // from appending a blank sheet after every page — which an earlier
-    // version of this did, numbering a six-page document "of 5".
-    const clean = await svc.render({ ...makeInput(long), watermark: false });
+  it('draws no mark and no cover line, however the flag is set', async () => {
     const marked = await svc.render({ ...makeInput(long), watermark: true });
-
-    expect(pageCount(clean.pdf)).toBeGreaterThan(2);
-    expect(pageCount(marked.pdf)).toBe(pageCount(clean.pdf));
-
-    // ⚠️ AND NO WATERMARK GLYPHS IN THE TEXT LAYER — THE REVERSE OF WHAT THIS
-    // ONCE ASSERTED. The words are a raster now
-    // (all-outdoor-watermark-words.png). Drawn as a text run they came out of
-    // any text tool as stray capitals interleaved into the applicant's prose,
-    // on every page, twice; MOTIVATION-GUIDE-BOOK Part 14 and the S13 output
-    // review both forbid that. The mark is carried by images, so the text
-    // stream must hold none of it.
     const { text } = await readPdfAsync(marked.pdf);
-    expect(squash(text)).not.toContain(squash(WATERMARK_TEXT));
-  });
-
-  it('embeds the logo ONCE, however many pages carry it', async () => {
-    // ⚠️ doc.image() caches by string src, so the renderer hands it the PATH.
-    // Reading the file and passing the bytes instead re-embeds the artwork per
-    // page — a megabyte and a half onto a long pack, for one mark.
-    //
-    // ⚠️ ASSERTED AS "DOES NOT GROW WITH THE PACK", NOT AS A FIXED NUMBER, and
-    // that rewrite is the point. It used to expect exactly 2 — the lockup and
-    // the soft mask carrying its alpha — which was true while the document
-    // used ONE piece of artwork. Branding the covers added two more (the white
-    // knockout for a deep masthead, the monogram the footer needs because a
-    // wordmark is illegible at 3 mm), and a literal 2 failed for a change that
-    // broke nothing: the cache still works, there is simply more than one
-    // mark. A count that has to be edited every time a mark is added tests the
-    // artwork inventory; what actually matters is that a 20-page pack costs no
-    // more image data than a 3-page one.
-    const short = await svc.render({ ...makeInput(), watermark: true });
-    const marked = await svc.render({ ...makeInput(long), watermark: true });
-    const images = (pdf: Buffer) =>
-      (pdf.toString('latin1').match(/\/Subtype\s*\/Image/g) ?? []).length;
-
-    expect(pageCount(marked.pdf)).toBeGreaterThan(pageCount(short.pdf));
-    expect(images(marked.pdf)).toBe(images(short.pdf));
-    // Two objects per distinct mark, and a small, bounded number of marks.
-    expect(images(marked.pdf) % 2).toBe(0);
-    expect(images(marked.pdf)).toBeLessThanOrEqual(8);
-  });
-
-  it('says on the cover that a clean copy exists', async () => {
-    // ⚠️ AND THAT IT IS VISIBLE. This line sat inside the footer strip's wash
-    // band, which is filled opaquely a few lines later — so it was drawn and
-    // then painted out on every watermarked cover. Nothing in the source said
-    // so; a rendered fixture did.
-    const marked = await svc.render({ ...makeInput(), watermark: true });
-    const { text } = await readPdfAsync(marked.pdf);
-    expect(flat(text)).toContain('Preview copy');
-    expect(flat(text)).toMatch(/issued without this mark/i);
-  });
-
-  it('leaves a paid pack clean of the UNPAID mark', async () => {
-    const paid = await svc.render({ ...makeInput(), watermark: false });
-    const { text } = await readPdfAsync(paid.pdf);
     expect(squash(text)).not.toContain(squash(WATERMARK_TEXT));
     expect(flat(text)).not.toContain('Preview copy');
-    // ⚠️ AND NO BRANDING EITHER, WHICH REVERSES WHAT THIS ONCE ASSERTED.
-    // Operator, 2026-08-24: "add ALLOUTDOORS logo on the footer of each page
-    // and say Prepared by ALL Outdoor" — overtaken by MOTIVATION-GUIDE-BOOK
-    // Part 1 rule 2 (2026-09-09): no service name anywhere in the lodged
-    // pack. squash(), not flat(): the footer is set with wide character
-    // spacing and extracts as "P R E P A R E D  B Y ...".
-    expect(squash(text)).not.toContain(squash('PREPARED BY ALL OUTDOOR'));
+  });
+
+  it('adds no page for a mark', async () => {
+    // ⚠️ KEPT FROM THE OLD SUITE: the mark once sat close enough to the bottom
+    // margin that pdfkit started a fresh page, numbering a six-page document
+    // "of 5". Removing the draw keeps the page count stable either way.
+    const clean = await svc.render({ ...makeInput(long), watermark: false });
+    const marked = await svc.render({ ...makeInput(long), watermark: true });
+    expect(pageCount(marked.pdf)).toBe(pageCount(clean.pdf));
   });
 });
 
@@ -528,8 +471,8 @@ describe('the annexure index', () => {
 
   it('points the contents at the FIRST sheet of a multi-copy annexure', async () => {
     // ⚠️ EVERY COPY USED TO RE-ASSIGN ITS LETTER'S CONTENTS ENTRY, so the last
-    // one won: a three-page proficiency certificate sent the reader to its
-    // third page. Three identity copies is the same shape with a stable label.
+    // one won. With the divider gone, the cited sheet is the content page that
+    // OPENS the annexure — the one carrying the "Annexure A" heading.
     const png = await sharp({
       create: { width: 4, height: 3, channels: 3, background: '#ffffff' },
     })
@@ -556,20 +499,16 @@ describe('the annexure index', () => {
     const cited = /Annexure A\s*-\s*Copy[^)]*\)\s*(\d+)/.exec(contents);
     expect(cited).not.toBeNull();
 
-    // The first copy's caption page. M8 puts a lettered DIVIDER immediately
-    // before it, and the contents is pointed at that divider — the annexure's
-    // first sheet — so the cited number is one behind the caption page.
-    const firstSheet = pages.findIndex((p) =>
-      /Annexure A\s*\u2014\s*Copy/.test(p),
-    );
-    expect(firstSheet).toBeGreaterThan(0);
-    expect(Number(cited![1])).toBe(firstSheet);
+    // 1-based page numbers in the contents; the cited sheet opens the annexure.
+    const n = Number(cited![1]);
+    expect(n).toBeGreaterThan(0);
+    expect(pages[n - 1]).toMatch(/Annexure A/);
   });
 
-  it('opens an annexure with a lettered divider sheet (M8)', async () => {
-    // MOTIVATION-LAYOUT-SPEC §5 / GUIDE-BOOK 7.7: a divider naming the letter
-    // stands before the copies, and the contents points at it. Asserted as
-    // page order — the divider is a page of its own before the first caption.
+  it('opens each annexure with a heading on the content page, no divider', async () => {
+    // ⚠️ OPERATOR, 2026-10-15: the one-page divider is gone. The "Annexure A"
+    // heading is drawn on the same sheet as the copies — asserted by finding
+    // the heading and the first copy's "(1 of 2)" caption on ONE page.
     const png = await sharp({
       create: { width: 4, height: 3, channels: 3, background: '#ffffff' },
     })
@@ -590,18 +529,9 @@ describe('the annexure index', () => {
       })),
     });
     const pages = await pageTexts(pdf);
-    const dividerAt = pages.findIndex(
-      (p) =>
-        /Annexure A/.test(p) &&
-        /Copy of the applicant/i.test(p) &&
-        !/Annexure A\s*\u2014/.test(p),
-    );
-    const captionAt = pages.findIndex((p) =>
-      /Annexure A\s*\u2014\s*Copy/.test(p),
-    );
-    expect(dividerAt).toBeGreaterThan(-1);
-    expect(captionAt).toBeGreaterThan(-1);
-    expect(dividerAt).toBeLessThan(captionAt);
+    const opening = pages.find((p) => /Annexure A\s*\u2014\s*Copy/.test(p));
+    expect(opening).toBeDefined();
+    expect(opening).toMatch(/\(1 of 2\)/);
   });
 
   it('prints the safe sheet in letter order, not after the last annexure', async () => {
@@ -933,13 +863,11 @@ describe('template choice', () => {
 describe('the certification column on the annexure index', () => {
   const svc = new MotivationPdfService();
 
-  it('separates what the Regulations require from what stations ask for', async () => {
-    // ⚠️ THIS DISTINCTION IS THE WHOLE POINT. Regulation 13(4)(b) requires a
-    // certified copy of the IDENTITY DOCUMENT. Telling an applicant that six
-    // documents are legally required to be certified would be the same
-    // confident-sounding wrongness the firearms-law discipline exists to
-    // prevent — and it sends people to a commissioner of oaths to get
-    // photographs of their own safe stamped.
+  it('no longer prints a certification column or the regulation note', async () => {
+    // ⚠️ OPERATOR, 2026-10-15: "remove the things in the screenshots." The
+    // index is Tab · Document only; what a copy needs is a plain STAMP block on
+    // the annexure's own page, not a REQUIRED / USUALLY ASKED column and the
+    // Regulation 13(4)(b) paragraph here.
     const { pdf } = await svc.render({
       ...makeInput(),
       annexures: buildAnnexures([
@@ -950,14 +878,8 @@ describe('the certification column on the annexure index', () => {
     });
     const t = squash((await readPdfAsync(pdf)).text);
 
-    // The verb moved into the column heading — "CERTIFICATION" over a column
-    // of "REQUIRED" / "USUALLY ASKED" says what "CERTIFY — REQUIRED" said in
-    // every single row, and stops the column reading as an instruction
-    // repeated eight times.
-    expect(t).toContain(squash('CERTIFICATION'));
-    expect(t).toContain(squash('REQUIRED'));
-    expect(t).toContain(squash('USUALLY ASKED'));
-    expect(t).toContain(squash('Regulation 13(4)(b)'));
+    expect(t).not.toContain(squash('USUALLY ASKED'));
+    expect(t).not.toContain(squash('Regulation 13(4)(b)'));
   });
 
   it('marks the ID as required and the safe photographs as neither', () => {
