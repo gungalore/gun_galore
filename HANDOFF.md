@@ -7,6 +7,24 @@ overwritten.
 
 Last updated: **2026-10-15**.
 
+## 2026-10-15 — A DOCUMENT CAN BE ADDED TO A COMPLETED PACK (FULL DEPLOY)
+
+Commit **`a45ef7f0`**, 2 files edited + 1 new spec. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-222807.dump`. Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `a45ef7f0`. No migration.
+
+Gates: backend `tsc` clean + **359 suites/5630 tests**. Frontend untouched.
+
+**The report.** Operator: "uploaded it but nothing seemed to have happened" (the SA Hunters endorsement, after the match feature shipped). Diagnosed from production: nginx logged `POST /api/motivations/<id>/uploads 409`, and the row never appeared. **Root cause: MO000096 is `COMPLETED`**, and every document route required `EDITABLE` (DRAFT / INTERVIEW / NEEDS_MORE_INFO) — the pack was locked. Nothing to do with the endorsement code.
+
+**Why COMPLETED should allow it.** The pack re-renders on every download from the stored rows, so a document added after generation appears on the next download and takes its annexure letter from the same `buildAnnexures` call; the written prose is unchanged until the member regenerates, which `REGENERABLE` already allows from `COMPLETED`. Locking uploads left an admin as the only way to add a document the DFO requires.
+
+**What shipped.**
+- New **`DOCUMENT_EDITABLE = EDITABLE + COMPLETED + FAILED`** in `motivation-shared.service.ts` (NOT `GENERATING`/`QUALITY_REVIEW`/`ABANDONED`).
+- Applied to the document routes in `motivation-documents.service.ts`: autolink, add-from-library (`openForAttach`), `identify`, `addUpload`, `applyExtraction`, `removeUpload`. `changeUploadKind` (refile) already had no gate.
+- **Left as EDITABLE-only:** `removeCredentialFromEditableDrafts` — a completed pack is retained evidence and is not swept when a vault credential is deleted.
+- Spec: `motivation-document-editable.spec.ts`.
+
+**Next.** Re-upload the endorsement to MO000096: it should now file as an endorsement (serial `ZABA01892` matches) and print on the next download.
+
 ## 2026-10-15 — ENDORSEMENT MISMATCH NOW SAYS SO (FULL DEPLOY)
 
 Commit **`87d23635`**, 2 backend files + 1 frontend. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261015-221902.dump`. Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `87d23635`. No migration.
