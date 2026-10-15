@@ -87,7 +87,7 @@ import {
   documentStatus,
   pickableKinds,
 } from './motivation-documents';
-import { EDITABLE, MotivationSharedService } from './motivation-shared.service';
+import { DOCUMENT_EDITABLE, EDITABLE, MotivationSharedService } from './motivation-shared.service';
 import { MotivationPrefillService } from './motivation-prefill.service';
 
 // ────────────────────────────────────────────────────────────────────
@@ -481,7 +481,7 @@ export class MotivationDocumentsService {
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
-    if (!EDITABLE.includes(row.status)) {
+    if (!DOCUMENT_EDITABLE.includes(row.status)) {
       return { attached: [], skipped: [], reason: 'not-editable' as const };
     }
 
@@ -1427,7 +1427,7 @@ export class MotivationDocumentsService {
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
-    if (!EDITABLE.includes(row.status)) {
+    if (!DOCUMENT_EDITABLE.includes(row.status)) {
       throw new ConflictException('This application can no longer be changed.');
     }
     return row;
@@ -2236,7 +2236,7 @@ export class MotivationDocumentsService {
       select: { id: true, status: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
-    if (!EDITABLE.includes(row.status)) {
+    if (!DOCUMENT_EDITABLE.includes(row.status)) {
       throw new ConflictException(
         'This application can no longer be edited, so documents cannot be added.',
       );
@@ -2441,7 +2441,7 @@ export class MotivationDocumentsService {
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
-    if (!EDITABLE.includes(row.status)) {
+    if (!DOCUMENT_EDITABLE.includes(row.status)) {
       throw new ConflictException(
         'This application can no longer be edited, so documents cannot be added.',
       );
@@ -2982,7 +2982,7 @@ export class MotivationDocumentsService {
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
-    if (!EDITABLE.includes(row.status)) {
+    if (!DOCUMENT_EDITABLE.includes(row.status)) {
       throw new ConflictException('This application can no longer be edited.');
     }
 
@@ -3315,7 +3315,7 @@ export class MotivationDocumentsService {
       },
     });
     if (!up) throw new NotFoundException('Document not found');
-    if (!EDITABLE.includes(up.motivation.status)) {
+    if (!DOCUMENT_EDITABLE.includes(up.motivation.status)) {
       throw new ConflictException('This application can no longer be edited.');
     }
 

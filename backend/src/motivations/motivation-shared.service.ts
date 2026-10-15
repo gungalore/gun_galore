@@ -109,6 +109,29 @@ export const EDITABLE: MotivationStatus[] = [
   MotivationStatus.NEEDS_MORE_INFO,
 ];
 
+/**
+ * Statuses where DOCUMENTS may still be added, removed or refiled.
+ *
+ * ⚠️ EDITABLE PLUS COMPLETED, AND THE ADDITION IS THE POINT. A finished pack is
+ * re-rendered on every download from the stored rows, so a document added after
+ * generation — the association's endorsement that arrived late, a corrected
+ * licence copy — appears on the next download WITHOUT regenerating, and takes
+ * its annexure letter from the same buildAnnexures call. The written prose is
+ * unchanged until the member regenerates, which REGENERABLE already allows from
+ * COMPLETED. Locking uploads on a finished pack left an admin as the only way
+ * to add a document the DFO requires (measured on MO000096, 2026-10-15: the
+ * endorsement upload answered 409 "can no longer be edited").
+ *
+ * ⚠️ NOT ABANDONED (somebody walked away), NOT GENERATING OR QUALITY_REVIEW (a
+ * pass is in flight). FAILED is in — the pack is unusable, so there is nothing
+ * to protect.
+ */
+export const DOCUMENT_EDITABLE: MotivationStatus[] = [
+  ...EDITABLE,
+  MotivationStatus.COMPLETED,
+  MotivationStatus.FAILED,
+];
+
 @Injectable()
 export class MotivationSharedService {
   private readonly logger = new Logger(MotivationSharedService.name);
