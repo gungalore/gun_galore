@@ -117,22 +117,24 @@ import {
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 
 /**
- * The picture model. Operator, 2026-10-15: "it needs to use nano banana 2.1 to
- * generate the images." (It was the Lite model, the cheapest, before that;
- * operator 2026-09-10.)
+ * The picture model. Operator, 2026-10-15: "use a cheaper gemini to create the
+ * images, nana banana is too expensive." — back to the Lite model, the
+ * cheapest, after a short spell on `gemini-nano-banana-2.1`.
+ *
+ * ⚠️ AND 2.1 WAS NOT EVEN PRICED. It was missing from PRICES in llm.pricing.ts,
+ * so `costUsdMicros` returned 0 for every 2.1 call and the ledger booked that
+ * spend as free. The Lite model IS priced (llm.pricing.ts: image output
+ * $30/1M, about $0.0336 a plate), which is the second reason to prefer it.
  *
  * ⚠️ TAKEN FROM THE ACCOUNT'S OWN MODEL LIST, NOT FROM MEMORY. The id was read
- * off `GET /v1beta/models` on this platform's key, which lists `image` ids
- * including `gemini-nano-banana-2.1`, and probed live on 2026-10-15: it answers
- * the ordinary generateContent shape with an image at 21:9, ~1.1 MB. The same
- * discipline the Anthropic path uses for its dated snapshots — a guessed model
- * id is a 404 at the worst moment.
+ * off `GET /v1beta/models` on this platform's key, which lists `image` ids; a
+ * guessed model id is a 404 at the worst moment.
  *
  * Overridable with LLM_IMAGE_MODEL, so a repricing or a different model is an
  * env edit and a reload rather than a deploy.
  */
 const DEFAULT_IMAGE_MODEL =
-  process.env.LLM_IMAGE_MODEL || 'gemini-nano-banana-2.1';
+  process.env.LLM_IMAGE_MODEL || 'gemini-3.1-flash-lite-image';
 
 /**
  * The thinking setting in the dialect the model generation understands.
