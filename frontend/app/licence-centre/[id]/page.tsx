@@ -683,9 +683,11 @@ export default function LicenceCentreSheetPage() {
       if (added?.suggestions?.length) await applyReads(added.suggestions);
       await load();
       setToast(
-        added?.kind
-          ? `Read your ${added.kind.toLowerCase().replace(/_/g, ' ')}.`
-          : 'Added.',
+        added?.caution?.text
+          ? added.caution.text
+          : added?.kind
+            ? `Read your ${added.kind.toLowerCase().replace(/_/g, ' ')}.`
+            : 'Added.',
       );
       return added;
     },

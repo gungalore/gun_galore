@@ -66,7 +66,11 @@ import {
   isAnnexureEvidence,
 } from './evidence-taxonomy';
 import { looksLikeSaps271, SAPS_271_MARKER } from '../common/document-markers';
-import { endorsementVerdict } from './motivation-endorsement';
+import {
+  endorsementVerdict,
+  ENDORSEMENT_FIREARM_MISMATCH,
+  ENDORSEMENT_MISMATCH_CAUTION,
+} from './motivation-endorsement';
 import {
   FIELD_REGISTRY_VERSION,
   fieldsFor,
@@ -2499,6 +2503,8 @@ export class MotivationDocumentsService {
     let resolved: MotivationUploadKind = kind ?? 'OTHER';
     let autoFiled = false;
     let confident = false;
+    /** An endorsement that named a different firearm — see the match below. */
+    let endorsementMismatch = false;
     /** The container, for an evidence row the classifier could place. */
     let evidenceContainer: string | null = null;
     /** The member's own words about an evidence item. From the identify card. */
@@ -2569,6 +2575,7 @@ export class MotivationDocumentsService {
             `Motivation ${row.id}: endorsement names a different firearm — filed as OTHER`,
           );
           resolved = MotivationUploadKind.OTHER;
+          endorsementMismatch = true;
         }
       } catch (err) {
         // Fail-soft: a reader outage leaves the endorsement as it was filed.
@@ -2729,6 +2736,11 @@ export class MotivationDocumentsService {
 
       if (
         !opts.skipExtraction &&
+        // ⚠️ NOT A DEMOTED ENDORSEMENT. `resolved` is OTHER by now, which is
+        // FIREARM_READABLE — so without this the (wrong-firearm) endorsement
+        // would be read and its serial offered on the applied-for firearm's
+        // boxes. We read it once, to match it; we never fill from it.
+        !endorsementMismatch &&
         MotivationExtractService.readsFirearm(resolved)
       ) {
         try {
@@ -2831,7 +2843,8 @@ export class MotivationDocumentsService {
       // proof of address) gets no write at all, same as it always has.
       if (
         !opts.skipExtraction &&
-        (MotivationExtractService.canExtract(resolved) ||
+        (endorsementMismatch ||
+          MotivationExtractService.canExtract(resolved) ||
           MotivationExtractService.readsFirearm(resolved))
       ) {
         try {
@@ -2850,6 +2863,10 @@ export class MotivationDocumentsService {
               extractedFields: [
                 ...readable.map((f) => f.key),
                 ...(is271 ? [SAPS_271_MARKER] : []),
+                // ⚠️ THE REASON SURVIVES THE REQUEST. A demoted endorsement
+                // writes this sentinel so the card can still say WHY on a later
+                // load — see ENDORSEMENT_FIREARM_MISMATCH.
+                ...(endorsementMismatch ? [ENDORSEMENT_FIREARM_MISMATCH] : []),
               ],
               extractionEncrypted: readable.length
                 ? encryptJson(
@@ -2896,8 +2913,18 @@ export class MotivationDocumentsService {
       await this.reapplyOffer(user.id, row.id);
 
       // The wizard shows what each document was filed as, and `autoFiled` is
-      // what tells it which rows to put a correction control on.
-      return { ...created, suggestions, autoFiled, confident };
+      // what tells it which rows to put a correction control on. A demoted
+      // endorsement carries the caution immediately, so the reason is on screen
+      // before any reload.
+      return {
+        ...created,
+        suggestions,
+        autoFiled,
+        confident,
+        ...(endorsementMismatch
+          ? { caution: ENDORSEMENT_MISMATCH_CAUTION }
+          : {}),
+      };
     } catch (err) {
       // Whatever went wrong, the bytes must not outlive the attempt: a file
       // with no row pointing at it is undeletable except by hand.
@@ -3170,6 +3197,16 @@ export class MotivationDocumentsService {
             }
           : null,
       ...this.shared.expiryFor(u, now),
+      /**
+       * ⚠️ A DEMOTED ENDORSEMENT SAYS WHY, ON THE ROW, AFTER A RELOAD. The
+       * sentinel rides on extractedFields (a String[] already in the clear),
+       * the same no-schema-change trick as SAPS_271_MARKER. The caution wins
+       * over expiryFor's, because a document filed on the wrong line has
+       * nothing to do with when it expires.
+       */
+      ...((u.extractedFields ?? []).includes(ENDORSEMENT_FIREARM_MISMATCH)
+        ? { caution: ENDORSEMENT_MISMATCH_CAUTION }
+        : {}),
     }));
 
     // What the APPLICATION still needs, weighed against what is attached.

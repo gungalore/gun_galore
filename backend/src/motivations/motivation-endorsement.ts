@@ -38,6 +38,25 @@ export type EndorsementVerdict =
   /** Too little on one side to tell — accept it, but on trust, not proof. */
   | 'unverified';
 
+/**
+ * The sentinel written into a MotivationUpload's `extractedFields` when an
+ * endorsement named a DIFFERENT firearm.
+ *
+ * ⚠️ NO SCHEMA CHANGE — the same trick SAPS_271_MARKER uses. The row carries
+ * this string so the card can STILL say why it was not filed as the
+ * applicant's endorsement after a reload; the alternative was a migration for
+ * one sentence, or a reason the member only saw once.
+ */
+export const ENDORSEMENT_FIREARM_MISMATCH = 'ENDORSEMENT_FIREARM_MISMATCH';
+
+/** The line the card shows for a demoted endorsement. */
+export const ENDORSEMENT_MISMATCH_CAUTION = {
+  tone: 'amber' as const,
+  text:
+    "We read a different firearm's serial on this document, so it was not " +
+    'filed as your endorsement. Re-file it if that is wrong.',
+};
+
 /** Letters and digits only, upper-cased — serials are printed with spaces, / and -. */
 function normSerial(value?: string): string {
   return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
