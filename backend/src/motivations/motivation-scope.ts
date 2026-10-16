@@ -1208,3 +1208,60 @@ function dropOpeningFiller(text: string): string {
   }
   return out;
 }
+
+/**
+ * Rewrite the one fault a model must not be asked to mend: a held firearm
+ * described with a purpose its own pack never stated.
+ *
+ * ⚠️ DETERMINISTIC, AND THAT IS THE WHOLE POINT. `documentScope` refuses this
+ * as a CLAIM (see the note at its `SPORTING_WORDS` guard) and `repairTargets`
+ * therefore returns null for it — a model told to "remove a word" cannot be
+ * trusted to rewrite a claim it invented. But the fault is mechanically
+ * fixable: the ONLY thing the pack supports about a held firearm whose purpose
+ * is unstated is its section, or failing that its identity. So the offending
+ * sentence is replaced, in code, with exactly that — the writer's invented
+ * purpose gone, the comparison it stood in left in place.
+ *
+ * ⚠️ THREE RECURRENCES, ONE APPLICANT. MO000074 (2026-09-09), MO000075
+ * (2026-09-10) and MO000096 (2026-10-15) each failed the whole run on a
+ * sentence about the same CZ 6.35mm pocket pistol — whose section is on its
+ * card but whose PURPOSE nobody stated, and for whose class under section 16
+ * no candidate use could be generated. A prompt has now been strengthened
+ * twice for this and the model has reached for a purpose three times; a claim
+ * the pack does not carry is a code problem, not a wording one.
+ *
+ * @returns the text with each such sentence replaced, or null when there is
+ *          none to replace (the caller changes nothing on null).
+ */
+export function repairUnstatedPurpose(
+  text: string,
+  ctx: ScopeContext,
+): string | null {
+  const names = batteryNames(ctx.arsenal);
+  const byName = new Map(names.map((n, i) => [n, ctx.arsenal[i]]));
+  let out = text;
+  let changed = false;
+
+  for (const para of text.split(/\n\s*\n/)) {
+    for (const s of sentences(para)) {
+      const match = bestFirearmMatch(s, names);
+      const row = match ? byName.get(match) : undefined;
+      if (!row) continue;
+      // A stated purpose, or a candidate the writer may argue from: nothing to do.
+      if (row.licensedFor) continue;
+      if (row.candidateUses?.some((g) => g.uses.length)) continue;
+      if (!SPORTING_WORDS.some((w) => contains(s, w))) continue;
+
+      const subject =
+        [row.make, row.calibre].filter(Boolean).join(' ').trim() || match;
+      const replacement = row.section
+        ? `The ${subject} is licensed under ${row.section}.`
+        : `I also hold a ${subject}.`;
+      if (out.includes(s)) {
+        out = out.replace(s, replacement);
+        changed = true;
+      }
+    }
+  }
+  return changed ? out : null;
+}

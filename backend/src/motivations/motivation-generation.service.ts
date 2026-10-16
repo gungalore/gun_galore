@@ -70,6 +70,7 @@ import { cartridgeFacts, findCartridge } from './motivation-cartridge';
 import { arsenalRows, type ArsenalRow } from './motivation-arsenal';
 import {
   documentScope,
+  repairUnstatedPurpose,
   southAfricanise,
   wordBandFor,
 } from './motivation-scope';
@@ -1668,6 +1669,36 @@ export class MotivationGenerationService {
        * that introduced a fact or traded one refused word for another fails
        * exactly as the draft would have.
        */
+      /**
+       * ⚠️ AN UNSTATED PURPOSE IS MENDED IN CODE, BEFORE THE MODEL IS ASKED.
+       * `repairTargets` refuses this fault on purpose — it is a claim, not a
+       * word — so the deterministic rewrite runs first: any sentence that gives
+       * a held firearm a purpose its own pack never stated is replaced with
+       * that firearm's section. See `repairUnstatedPurpose`, and MO000074 /
+       * MO000075 / MO000096, three runs binned on the same CZ 6.35mm.
+       *
+       * The full gate runs over the result, so the rewrite is trusted no more
+       * than the model's own: an invented fact or a wrong section still fails.
+       */
+      const purposeFixed = repairUnstatedPurpose(best.text, {
+        licenceType: row.licenceType,
+        arsenal,
+      });
+      if (purposeFixed && purposeFixed !== best.text) {
+        this.logger.log(
+          `Motivation ${row.id}: rewrote an unstated-purpose claim to the section-only sentence`,
+        );
+        best = { ...best, text: purposeFixed };
+        attempt = { ...attempt, text: purposeFixed };
+        // The gate runs again over the rewrite, so an invented fact or a wrong
+        // section still fails exactly as before.
+        mechanics = [
+          ...packConsistency(purposeFixed, answers, annexures),
+          ...scopeOf(purposeFixed),
+        ];
+        structureOk = followsPlan(purposeFixed, plan).ok;
+      }
+
       const targets = repairTargets(best.text, mechanics);
       if (targets) {
         const fixed = await this.model.repairSentences(targets);

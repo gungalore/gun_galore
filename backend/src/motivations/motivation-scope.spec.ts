@@ -3,6 +3,7 @@ import { REGENERABLE } from './motivation-generation.service';
 import { MotivationLicenceType } from '@prisma/client';
 import {
   documentScope,
+  repairUnstatedPurpose,
   southAfricanise,
   withoutRefusedCopy,
 } from './motivation-scope';
@@ -90,6 +91,43 @@ describe('the roles a document may state', () => {
       s13,
     );
     expect(out.join(' ')).toContain('nothing in the pack states what it is licensed for');
+  });
+
+  it('⚠️ AND THE SECTION-ONLY REWRITE MEND IT, clearing the very check it tripped', () => {
+    // MO000074 / MO000075 / MO000096: the same invented purpose binned three
+    // runs. The rewrite is deterministic — no model call — and replaces the
+    // sentence with the firearm's section, which is the one fact the pack has.
+    const text =
+      'The Howa in 6.5mm Creedmoor is a dedicated precision sport shooting rifle under section 15.';
+    const out = repairUnstatedPurpose(text, s13);
+    expect(out).toBe('The Howa 6.5mm Creedmoor is licensed under section 15.');
+    expect(documentScope(out as string, s13)).toEqual([]);
+  });
+
+  it('leaves a stated purpose and a bare identity alone', () => {
+    const stated = {
+      ...s13,
+      arsenal: arsenalRows(
+        {
+          existing_firearm_1_make: 'Howa',
+          existing_firearm_1_calibre: '6.5mm Creedmoor',
+          existing_firearm_1_serial: 'HW65001',
+          existing_firearm_1_use: 'plains game hunting',
+        },
+        { 1: 'section 15' },
+      ),
+    };
+    // A stated purpose is not the fault, and a sentence with no sporting word
+    // is not either — both return null so the caller changes nothing.
+    expect(
+      repairUnstatedPurpose(
+        'My Howa in 6.5mm Creedmoor is licensed under section 15 for plains game hunting.',
+        stated,
+      ),
+    ).toBeNull();
+    expect(
+      repairUnstatedPurpose('The Howa rifle is kept in my safe.', s13),
+    ).toBeNull();
   });
 
   it('accepts a purpose the endorsement supplied', () => {
