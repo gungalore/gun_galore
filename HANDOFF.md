@@ -7,6 +7,16 @@ overwritten.
 
 Last updated: **2026-10-16**.
 
+## 2026-10-16 — PRIOR-NOTICE LETTER FITS ONE SHEET (BACKEND DEPLOY)
+
+Commit **`84bfbbf4`**, 1 backend source + 1 spec. Backend-only deploy via `infra/deploy/deploy.sh --backend-only`. Rollback point `alloutdoor-20261016-165926.dump` (32 277 561 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `84bfbbf4`. No migration.
+
+Gates: backend `tsc` clean + **360 suites/5646 tests**.
+
+**The ask.** Operator, 2026-10-16: "trim the REQUEST FOR PRIOR NOTICE AND WRITTEN REASONS — the name and surname spills over to the next page."
+
+**What shipped.** The one-sheet fit for the prior-notice letter searched spacing only, and a slightly longer letter ran out of air — the signature block, and the applicant's name, went overleaf. The fit now also shrinks the **body type** (down to 90%), keeping every word; the first candidate is still 11 pt, so a letter that already fits is unchanged. Masthead untouched. Regression spec renders a long firearm line and asserts the first sentence, the last sentence and the signature rule all sit on the letter's own sheet.
+
 ## 2026-10-16 — DOCUMENT DICTIONARY, STEP C1 + C2 (BACKEND DEPLOY)
 
 Operator direction: "do what is safe in steps, so we can keep track of what is done and what still needs to be done." Step C is the internal consolidation of the document tables; C1 and C2 below moved data with NO behaviour change (both are re-exports, so every importer is unchanged).
