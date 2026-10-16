@@ -1685,7 +1685,7 @@ const UPLOAD_LABEL: Partial<Record<MotivationUploadKind, string>> = {
 };
 
 /** The kinds a photograph can actually be sorted into. */
-const CLASSIFIABLE: MotivationUploadKind[] = [
+export const CLASSIFIABLE: MotivationUploadKind[] = [
   // ⚠️ ALL THREE ASSOCIATION DOCUMENTS ARE SEPARATELY CLASSIFIABLE, and they
   // must be: they come from the same association on the same letterhead, and
   // a classifier that only knew ASSOCIATION_CARD would file the sworn letter
