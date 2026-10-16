@@ -7,6 +7,21 @@ overwritten.
 
 Last updated: **2026-10-16**.
 
+## 2026-10-16 — EVERY PROSE PARAGRAPH JUSTIFIED (FULL DEPLOY)
+
+Commit **`98ee029c`**, 3 backend files. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-102429.dump` (32 277 246 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `98ee029c`. No migration.
+
+Gates: backend `tsc` clean + **359 suites/5635 tests** (1 suite/8 skipped); frontend `tsc` clean + **142 files/1745 tests** + prod build (untouched, run anyway).
+
+**The ask.** Operator, 2026-10-16: "make the paragraph justify for the whole document."
+
+**What shipped.**
+- Justified prose: the body paragraphs and the declaration (main body loop), the PAJA prior-notice letter, the character-statement prose blocks (`text` and the italic quote block), and the HTML preview (`p { text-align: justify }`).
+- **Reverses MOTIVATION-GUIDE-BOOK Part 7.1** (ragged right). The reversal is recorded at the body draw in `motivation-pdf.service.ts`. pdfkit justifies by word-spacing alone (no hyphenation), so a line heavy with serials or calibres can open white gaps.
+- Left unchanged (not paragraphs): headings, tables, captions, the cover, annexure labels, and form furniture — notes, numbered questions, answer pills.
+
+**Know.** No spec asserted the old alignment and none broke; pdf-parse still extracts the spaces, so the `squash()` helper was not needed for the new justified body.
+
 ## 2026-10-16 — CARTRIDGE GETS A FULL PAGE + PAGE-BALANCE FIXES (FULL DEPLOY)
 
 Commit **`e654ea5d`**, 6 backend files (3 source, 3 specs) + `docs/project-reference.md`. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-095544.dump` (32 214 111 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `e654ea5d`. No migration.
