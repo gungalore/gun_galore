@@ -7,6 +7,21 @@ overwritten.
 
 Last updated: **2026-10-16**.
 
+## 2026-10-16 — UNSTATED HELD-FIREARM PURPOSE REWRITTEN TO THE SECTION (FULL DEPLOY)
+
+Commit **`ec9d2e69`**, 2 backend source + 1 spec. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-133117.dump` (32 222 090 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `ec9d2e69`. No migration.
+
+Gates: backend `tsc` clean + **359 suites/5638 tests**; frontend `tsc` clean + **142 files/1745 tests** + prod build.
+
+**The report.** Operator: "check why it couldn't generate a new motivation" (MO000096), then "the cz does have a section printed on the license card". Diagnosis confirmed the section IS on record (`existing_firearm_2_section_held = "section_16"`; vault card `section: "SECTION 16"`). The real cause was downstream: the `FirearmUseProfile` table has EMPTY uses for `6.35MM BROWNING / Handgun / s16_hunt` and `/s16_sport` (s13=7, s15_sport=3). So the held row had neither a stated purpose (`existing_firearm_2_primary_use` is unset) nor candidate uses, and the writer's "the CZ … is for sport shooting" was refused as a purpose nobody stated — a CLAIM, so `repairTargets` returns null and the run fails hard after 3 attempts. Third recurrence (MO000074, MO000075, MO000096) on the same CZ 6.35mm.
+
+**What shipped.**
+- New pure `repairUnstatedPurpose(text, ctx)` in `motivation-scope.ts`: for a sentence that names a held firearm with no stated purpose and no candidate uses and uses a sporting/hunting word, it replaces the sentence with the section-only form (`The CZ 6.35MM BROWNING is licensed under section 16.`), or its identity where no section is known.
+- Run in `motivation-generation.service.ts` before the model repair; the full gate (`packConsistency` + `documentScope` + `followsPlan`) re-runs over the rewrite, so an invented fact or wrong section still fails. No model call, no tokens.
+- 2 scope spec tests: the rewrite clears the very check it tripped, and a stated purpose or a bare identity is left alone.
+
+**Know.** The empty `6.35mm` s16 use rows were left in place (data untouched). A held firearm with a known section but no stated purpose now generates instead of failing. The durable alternative — the applicant stating the held firearm's purpose ("What it is for") — remains the better fix and is still worth prompting for.
+
 ## 2026-10-16 — MALFORMED CARTRIDGE ARTICLE REFUSED (FULL DEPLOY)
 
 Commit **`1269bf69`**, 1 backend source + 1 spec. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-124355.dump` (32 223 477 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `1269bf69`. No migration.
