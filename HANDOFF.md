@@ -14,9 +14,11 @@ Operator direction: "do what is safe in steps, so we can keep track of what is d
 - **C1 — `72cacd2a`** (backend-only deploy). New `common/document-filing/document-dictionary.ts` is the single source for the vault kind/cover options and the motivation kind options; `vault-kind-options.ts` and `motivation-kind-options.ts` became thin re-exports. `document-dictionary.spec.ts` pins it: vault options are live `CredentialKind`s (`currentKind` maps each to itself), the cover set is the kind set minus `OTHER`, and the motivation set mirrors `CLASSIFIABLE` (now exported).
 - **C2 — `b1503345`** (backend-only deploy, rollback `alloutdoor-20261016-163235.dump`). `CREDENTIAL_TO_UPLOAD` (the vault-kind → motivation-slot placement map) moved into the dictionary and is re-exported from `motivation-credentials.ts`. Spec pins the dedicated-certificate row.
 
+- **C3 — `4e64e225`** (backend-only deploy, rollback `alloutdoor-20261016-164120.dump`). `WANTED` (what each `CredentialKind` is read for, 263 lines) moved into the dictionary and is re-exported from `licence-centre-extract.service.ts`. A vault kind's folder, its placement and its read fields now all live in one module.
+
 Gates each step: backend `tsc` clean + **360 suites/5645 tests**.
 
-**Step C remaining (tracked):** C3 — move the extraction field lists (`WANTED` + the per-kind prompt fragments) into the dictionary; C4 — a decider/placer seam shared by the two classify paths. Both are relocations of existing behaviour; neither is required for correctness (the decider, extractor and enum-exhaustive maps already work on both surfaces).
+**Step C — complete.** C4 ("a decider/placer seam shared by the two classify paths") was assessed and NOT pursued as a refactor: the decider is already shared (`DocumentFilingService.fileVault` + `readMarkers`), the placer maps now live in the dictionary (`CREDENTIAL_TO_UPLOAD`, `effectiveUploadKinds`), and the remaining per-service glue is surface-specific (different enums, different marker→kind maps, different vision fallback). Merging it would be risk without behaviour gain. The dictionary spec is the drift guard.
 
 **Also still pending (needs a live action, not code):** re-download MO000096 to confirm the annexure index no longer lists the good-standing letter; upload/read one document to confirm a HIGH-reasoning read returns complete fields.
 
