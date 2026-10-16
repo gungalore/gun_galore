@@ -123,6 +123,9 @@ describe('what gets researched', () => {
     )!.ask;
     expect(sport).toContain('ADVANTAGES');
     expect(hunt).toContain('ADVANTAGES');
+    // ⚠️ The advantages are asked for as a bullet list (operator, 2026-10-16:
+    // "bullet style"), because the page is a two-column bullet article.
+    expect(sport).toContain('BULLET');
     // The purpose itself, not a generic paragraph: the use class is named.
     expect(sport).not.toBe(hunt);
   });

@@ -1327,33 +1327,31 @@ describe('the cartridge drawing', () => {
     expect(t).toContain('Ø9.96');
   });
 
-  it('⚠️ PRINTS THE DIMENSIONS TABLE, EVEN WITH NO RESEARCH ARTICLE', async () => {
+  it('⚠️ PRINTS THE ADVANTAGES AS A BULLET LIST', async () => {
     /**
-     * Operator, 2026-10-15: "On the cartridge, I want it to have it's own
-     * page. the dimensions with the advantages of the cartridge for the
-     * applied for purpose." MO000096 had no research calibre block, so the old
-     * renderer drew a bare figure and left the page two thirds empty. The held
-     * figures print as a table whether or not the research arrived.
+     * Operator, 2026-10-16: "Let the writer write all the advantages in bullete
+     * style why the cartridge is suited for the chosen role of the cartridge."
+     * Each bullet is its own line and its own block, so the list can break
+     * between the columns.
      */
-    const withSpecs = {
-      ...drawing,
-      specs: [
-        { label: 'Overall length', value: '29.69 mm' },
-        { label: 'Case length', value: '19.15 mm' },
-        { label: 'Bullet diameter', value: '9.01 mm' },
-        { label: 'Maximum average pressure', value: '2350 bar' },
+    const bullets = {
+      title: '9 mm Luger',
+      paragraphs: [
+        '- Its modest recoil keeps the sights on target between shots.',
+        '- The chambering is the most commonly stocked pistol round in South Africa.',
+        '- Factory loads from several makers cycle reliably in service pistols.',
       ],
     };
     const { pdf } = await svc.render({
       ...makeInput(withCartridgeSection),
-      cartridgeDrawing: withSpecs,
+      cartridgeDrawing: drawing,
+      cartridgeArticle: bullets,
     } as never);
     const t = flat((await readPdfAsync(pdf)).text);
-    expect(t).toContain('STANDARD DIMENSIONS');
-    expect(t).toContain('Case length');
-    expect(t).toContain('19.15 mm');
-    expect(t).toContain('Maximum average pressure');
-    expect(t).toContain('2350 bar');
+    expect(t).toContain('modest recoil keeps the sights on target');
+    expect(t).toContain('most commonly stocked pistol round in South Africa');
+    // The marker is drawn as text, so it extracts with the bullet's line.
+    expect(t).toContain('•');
   });
 
   it('⚠️ GIVES THE CARTRIDGE A WHOLE SHEET, WITH NO RESEARCH ARTICLE', async () => {
@@ -1363,19 +1361,16 @@ describe('the cartridge drawing', () => {
      * article, and the old renderer dropped the drawing into the tail of the
      * firearm section, leaving a third of the sheet bare. Asserted per PAGE,
      * because whole-document text cannot tell whether the feature shares a
-     * sheet — see pageTexts.
+     * sheet — see pageTexts. The fallback is a bullet list too (2026-10-16).
      */
     const { pdf } = await svc.render({
       ...makeInput(withCartridgeSection),
-      cartridgeDrawing: {
-        ...drawing,
-        specs: [{ label: 'Case length', value: '19.15 mm' }],
-      },
+      cartridgeDrawing: drawing,
     } as never);
     const sheets = await pageTexts(pdf);
-    const idx = sheets.findIndex((p) => p.includes('STANDARD DIMENSIONS'));
+    const idx = sheets.findIndex((p) => p.includes('drawn to scale'));
     expect(idx).toBeGreaterThanOrEqual(0);
-    // The page carries the table and the standalone note...
+    // The page carries the figure's caption and the standalone bullets...
     expect(sheets[idx]).toContain('standardised');
     // ...and nothing from the section that follows it.
     expect(sheets[idx]).not.toContain('SABS-approved safe');

@@ -165,6 +165,24 @@ function subheadingOf(text: string): string | null {
 }
 
 /**
+ * A line that is one bullet-list item.
+ *
+ * ⚠️ THE CARTRIDGE ARTICLE IS A BULLET LIST NOW. Operator, 2026-10-16: the
+ * page is filled with the writer's "bullet style advantages". The research
+ * returns one bullet per line, opening with "- " ("•" and "*" are accepted
+ * too), and each bullet is its own block so the list can break between the
+ * columns. A "**Heading**" line is a subheading, not a bullet.
+ */
+function isBulletLine(text: string): boolean {
+  return /^\s*[-•*]\s+\S/.test(text);
+}
+
+/** The text of a bullet, its marker stripped. */
+function bulletTextOf(text: string): string {
+  return text.replace(/^\s*[-•*]\s+/, '').trim();
+}
+
+/**
  * A run-in heading and the prose after it, split apart.
  *
  * Returns null when the paragraph does not open with one.
@@ -3001,71 +3019,20 @@ export class MotivationPdfService {
      * operator's full-page rule (2026-10-15) when a research call failed or a
      * cartridge nobody has written up produced no article.
      */
-    const CARTRIDGE_STANDALONE = [
-      'This cartridge is a standardised design: its case dimensions and its ' +
-        'maximum average pressure are fixed by standard rather than chosen by ' +
-        'any one maker. Because the chambering is standard, factory ' +
-        'ammunition from any manufacturer is interchangeable in the firearm ' +
-        'applied for, which is what makes the round dependable to buy and ' +
-        'economical to practise with.',
-      'The figures in the table are the round’s own standardised ' +
-        'measurements, held against the specification for this chambering. ' +
-        'They are what a firearm’s chamber, bore and pressure ceiling are ' +
-        'checked against.',
-    ];
-
     /**
-     * The feature page's dimensions table, in the right column under the
-     * picture.
-     *
-     * ⚠️ A TABLE, NOT MORE CALLOUTS. Operator, 2026-10-15: "the dimensions ...
-     * It must be a full page." On a half-page feature the figures as callouts
-     * on the drawing were enough; on a page of its own a reviewer reads them
-     * off a list. Both come off the same held figures, so they cannot disagree.
+     * ⚠️ THE FALLBACK IS BULLETS TOO. Operator, 2026-10-16: the page is "bullet
+     * style advantages ... in article style". When no research article came
+     * back these bullets carry only what the held figures support — that the
+     * round is standardised and therefore interchangeable and available — and
+     * invent no performance. They fill the same two columns the researched
+     * article would.
      */
-    const drawSpecTable = (
-      x: number,
-      y: number,
-      w: number,
-      rows: { label: string; value: string }[],
-    ): number => {
-      let at = y;
-      doc
-        .font(F.sansSemi)
-        .fontSize(K.px(9))
-        .fillColor(C.mut)
-        .text('STANDARD DIMENSIONS', x, at, {
-          width: w,
-          characterSpacing: K.px(9) * 0.1,
-        });
-      at = doc.y + K.mm(1.6);
-      const labelW = w * 0.6;
-      for (const row of rows) {
-        const rowY = at;
-        doc
-          .font(F.sans)
-          .fontSize(K.px(9))
-          .fillColor(C.mut)
-          .text(row.label, x, rowY, { width: labelW - K.mm(2) });
-        const afterLabel = doc.y;
-        doc
-          .font(F.sansSemi)
-          .fontSize(K.px(9))
-          .fillColor(C.ink)
-          .text(row.value, x + labelW, rowY, {
-            width: w - labelW,
-            align: 'right',
-          });
-        at = Math.max(afterLabel, doc.y) + K.mm(1.4);
-        doc
-          .moveTo(x, at - K.mm(0.7))
-          .lineTo(x + w, at - K.mm(0.7))
-          .lineWidth(0.5)
-          .strokeColor(C.hair)
-          .stroke();
-      }
-      return at;
-    };
+    const CARTRIDGE_STANDALONE = [
+      '- It is a standardised cartridge: its case dimensions and its maximum average pressure are fixed by standard rather than chosen by any one maker.',
+      '- Because the chambering is standard, factory ammunition from any manufacturer is interchangeable in the firearm applied for.',
+      '- Ammunition is therefore dependable to buy and economical to practise with, which is what sustains regular practice.',
+      '- The round’s held measurements are the figures a firearm’s chamber, bore and pressure ceiling are checked against.',
+    ];
 
     const drawCartridgeFeature = (
       a: { title: string; paragraphs: string[] } | undefined,
@@ -3093,33 +3060,19 @@ export class MotivationPdfService {
       const top = doc.y + K.mm(1);
 
       /**
-       * ⚠️ THREE FIXED SLOTS, AND THAT IS THE WHOLE DESIGN.
+       * ⚠️ ONE FIGURE AND A TWO-COLUMN BULLET LIST, LIKE A MAGAZINE FEATURE.
        *
-       * Operator, 2026-09-10: "then we can have permanent placeholder, one for
-       * the CIP image, one for the text to fit in and one for the quearry
-       * picture, so we know it renders perfect every time."
+       * Operator, 2026-10-16, with a sketch: the cartridge image sits at the
+       * top of the right column, the bullet list fills the left column top to
+       * bottom, then continues under the image down the right column. The
+       * columns are half the content width each; the picture is set to the
+       * column width and never overlaps the text because the right column
+       * starts below it.
        *
-       * The sizes below are CONSTANTS, not measurements of the content. A page
-       * whose geometry depends on how much the research happened to return is
-       * a page that looks different for every cartridge and can only be
-       * checked one cartridge at a time. Fixed boxes mean the layout is the
-       * same document every time and only what is inside them changes — a
-       * short brief leaves white space at the foot of a column, which is what
-       * white space in a two-column feature is for.
-       *
-       * The arithmetic they are chosen from, on a 182 mm content width and the
-       * ~244 mm of column left under the heading:
-       *
-       *   photograph   182 x 78 mm   (21:9, the shape the model is asked for)
-       *   caption                6 mm
-       *   columns             ~154 mm each, so 308 mm of column in total
-       *   C.I.P. sheet   88 x 119 mm  (the right column's full width)
-       *   text                ~189 mm of column, against ~145 mm typical
-       *
-       * ⚠️ A SLOT WITH NOTHING IN IT COLLAPSES rather than printing a hole. A
-       * sport application has no quarry photograph at all, and reserving 84 mm
-       * for a picture it is never going to get would be a worse page than the
-       * one this replaces.
+       * ⚠️ THE QUARRY PHOTOGRAPH IS RETIRED (2026-10-15). The `cartridgePhoto`
+       * slot is kept so no caller breaks, but the render service no longer
+       * passes one; when it is absent the two columns simply run to the foot
+       * of the sheet, which is the whole page.
        */
       const photo = input.cartridgePhoto;
       /** 21:9, matching PLATE_W/PLATE_H in quarry-plate.service. */
@@ -3176,35 +3129,22 @@ export class MotivationPdfService {
       }
 
       /**
-       * ⚠️ THE TABLE GOES UNDER THE PICTURE, IN THE SAME COLUMN. The left
-       * column is the argument, the right column is the evidence for it: the
-       * round as drawn, then the round as measured. The figures are the sheet's
-       * own and the table is our own layout, so it reproduces no typeset page.
-       */
-      const specs = input.cartridgeDrawing?.specs ?? [];
-      if (specs.length) {
-        rightTop = align(
-          drawSpecTable(rightX, rightTop, colW, specs) + K.mm(3),
-        );
-      }
-
-      /**
-       * ⚠️ A SUBHEADING TRAVELS WITH ITS OWN PARAGRAPHS. Dealt one at a
-       * time the columns came out as ORIGIN at the top of one and the sentence
-       * about 1902 at the top of the other — two headings and two orphaned
-       * facts. Caught by extracting a rendered page and reading it.
-       */
-      /**
-       * ⚠️ RUN-INS ARE TURNED INTO REAL HEADINGS FIRST. The research writes
-       * either "**Origin**" on its own line or "Origin: Developed in ..." as a
-       * run-in, and it changed from the first to the second the day the ask
-       * gained a length instruction. Left alone the run-in form makes ONE
-       * group of the whole article, which cannot be split, so the balancer
-       * fills one column and leaves the other blank.
+       * ⚠️ ARTICLE STYLE: THE COPY FILLS THE LEFT COLUMN, THEN CONTINUES UNDER
+       * THE PICTURE. Operator, 2026-10-16, with a sketch: the featured
+       * illustration is a top-right figure, the bullet list runs the full
+       * height of the left column, and only then does it pick up again at the
+       * top of the right column, below the picture, down to the foot of the
+       * sheet. That is how a magazine sets a feature round one figure, and it
+       * fills the page rather than balancing two half-columns.
        */
       const source = a?.paragraphs.length ? a.paragraphs : CARTRIDGE_STANDALONE;
       const paras: string[] = [];
       for (const raw of source) {
+        // Bullets are their own line and are never fused with a run-in.
+        if (isBulletLine(raw)) {
+          paras.push(raw);
+          continue;
+        }
         const run = subheadingOf(raw) ? null : runInOf(raw);
         if (run) {
           paras.push(`**${run.head}**`);
@@ -3216,7 +3156,8 @@ export class MotivationPdfService {
 
       const groups: string[][] = [];
       for (const para of paras) {
-        if (subheadingOf(para) || !groups.length) groups.push([para]);
+        if (isBulletLine(para) || subheadingOf(para) || !groups.length)
+          groups.push([para]);
         else groups[groups.length - 1].push(para);
       }
 
@@ -3224,118 +3165,108 @@ export class MotivationPdfService {
       let ry = rightTop;
       const spill: string[][] = [];
 
-      const put = (group: string[], x: number, y: number): number => {
+      /** Hanging indent so a wrapped bullet aligns under its own text. */
+      const BULLET_INDENT = K.mm(5);
+      const bulletGap = K.mm(1.6);
+
+      const put = (
+        group: string[],
+        x: number,
+        y: number,
+        w: number,
+      ): number => {
         let at = y;
         for (const raw of group) {
+          if (isBulletLine(raw)) {
+            const body = bulletTextOf(raw);
+            doc.font(B.body).fontSize(K.px(12)).fillColor(C.ink);
+            // The marker, then the text on the same first line.
+            doc.text('•', x, at, { width: BULLET_INDENT, lineBreak: false });
+            doc.text(body, x + BULLET_INDENT, at, {
+              width: w - BULLET_INDENT,
+              align: 'justify',
+              lineGap: BODY_LEADING,
+            });
+            at = doc.y + bulletGap;
+            continue;
+          }
           const sub = subheadingOf(raw);
           if (sub) {
             doc.font(B.bodySemi).fontSize(K.px(10.5)).fillColor(C.sub);
             doc.text(sub.toUpperCase(), x, at, {
-              width: colW,
+              width: w,
               characterSpacing: K.px(10.5) * 0.06,
             });
             at = doc.y + K.mm(0.8);
             continue;
           }
           doc.font(B.body).fontSize(K.px(12)).fillColor(C.ink);
-          doc.text(stripMarks(raw), x, at, { width: colW });
+          doc.text(stripMarks(raw), x, at, {
+            width: w,
+            align: 'justify',
+            lineGap: BODY_LEADING,
+          });
           at = doc.y + gap;
         }
         return at;
       };
 
-      const costOf = (group: string[]) => {
-        doc.font(B.body).fontSize(K.px(12));
-        return group.reduce(
-          (n, t) =>
-            n + doc.heightOfString(stripMarks(t), { width: colW }) + gap,
-          0,
-        );
+      const costOf = (group: string[], w: number): number => {
+        let n = 0;
+        for (const raw of group) {
+          if (isBulletLine(raw)) {
+            doc.font(B.body).fontSize(K.px(12));
+            n +=
+              doc.heightOfString(bulletTextOf(raw), {
+                width: w - BULLET_INDENT,
+                lineGap: BODY_LEADING,
+              }) + bulletGap;
+            continue;
+          }
+          const sub = subheadingOf(raw);
+          if (sub) {
+            doc.font(B.bodySemi).fontSize(K.px(10.5));
+            n +=
+              doc.heightOfString(sub.toUpperCase(), { width: w }) + K.mm(0.8);
+            continue;
+          }
+          doc.font(B.body).fontSize(K.px(12));
+          n +=
+            doc.heightOfString(stripMarks(raw), {
+              width: w,
+              lineGap: BODY_LEADING,
+            }) + gap;
+        }
+        return n;
       };
 
       /**
-       * ⚠️ SPLIT BY WHAT EACH COLUMN CAN HOLD, NOT BY WHICHEVER IS SHORTER
-       * AT THE TIME.
+       * ⚠️ FILL THE LEFT COLUMN TO THE FOOT, THEN THE RIGHT UNDER THE PICTURE.
        *
-       * The old rule was `ly <= ry`, which fills the left column until it
-       * passes the bottom of the C.I.P. sheet and only then starts the right.
-       * That worked when the columns ran the full page. It stopped working the
-       * moment the photograph took the bottom third: the columns are now about
-       * 153 mm and the sheet eats 119 mm of the right one, so the left column
-       * alone very nearly holds the whole article — everything went left, the
-       * right column stayed empty under the sheet, and the page rendered with a
-       * 35 mm band of white above the photograph.
+       * This is the operator's sketch (2026-10-16): the bullet list runs the
+       * full height of the left column, and only once it reaches the foot does
+       * it pick up at the top of the right column, under the figure, and run
+       * down to the foot of the sheet. It replaces the old "balanced" split,
+       * which was right when the article was two short prose columns and wrong
+       * now the page is a single bullet list around one figure: balancing left
+       * white in both columns instead of filling one then the other.
        *
-       * So the TAIL that fits under the sheet is measured off the end and sent
-       * right, and the head goes left. Both columns finish level on the line
-       * above the photograph, which is what a fixed slot is for.
+       * ⚠️ NOTHING RUNS OFF THE PAGE. pdfkit sets text past the bottom margin
+       * happily when given an explicit y, and the footer would print over it.
+       * What fits neither column is held back and set full width overleaf.
        */
-      /**
-       * ⚠️ AND A GROUP TOO BIG FOR A COLUMN IS BROKEN UP ANYWAY. Grouping
-       * keeps a heading with its own paragraphs, which is right; but a single
-       * group larger than the shorter column can only ever go in one place,
-       * and the page then has a blank column beside it. Where that happens the
-       * group is dealt out paragraph by paragraph instead: a heading stranded
-       * at the foot of a column is a smaller fault than half a page of white.
-       */
-      const colCap = Math.max(0, K.BODY_BOTTOM - top);
-      for (let i = 0; i < groups.length; i++) {
-        if (groups[i].length > 1 && costOf(groups[i]) > colCap) {
-          groups.splice(i, 1, ...groups[i].map((x) => [x]));
+      for (const group of groups) {
+        const h = costOf(group, colW);
+        if (ly + h <= floor) {
+          ly = put(group, leftX, ly, colW);
+          continue;
         }
+        if (ry + h <= floor) {
+          ry = put(group, rightX, ry, colW);
+          continue;
+        }
+        spill.push(group);
       }
-
-      const costs = groups.map((g) => costOf(g));
-      const rightCap = Math.max(0, floor - rightTop);
-      const textTotal = costs.reduce((n, c) => n + c, 0);
-      /**
-       * ⚠️ BALANCED, NOT MAXIMISED. Sending as much as will fit under the
-       * sheet leaves the two columns ending 40 mm apart, because the right one
-       * starts 120 mm lower. The share that makes them END LEVEL is the one
-       * that solves L + R = total and L — R = (rightTop — top), which is this:
-       */
-      const ideal = Math.min(
-        rightCap,
-        Math.max(0, (textTotal - (rightTop - top)) / 2),
-      );
-      let tailCount = 0;
-      let tailCost = 0;
-      for (let i = groups.length - 1; i >= 0; i--) {
-        const next = tailCost + costs[i];
-        if (next > rightCap) break;
-        // Stop when adding another group would overshoot the balance point by
-        // more than leaving it out undershoots.
-        if (tailCount && Math.abs(next - ideal) > Math.abs(tailCost - ideal)) {
-          break;
-        }
-        tailCost = next;
-        tailCount += 1;
-      }
-      const firstRight = groups.length - tailCount;
-
-      groups.forEach((group, i) => {
-        const cost = costs[i];
-        const toLeft = i < firstRight;
-        const y = toLeft ? ly : ry;
-        /**
-         * ⚠️ NEITHER COLUMN RUNS OFF THE PAGE. pdfkit will happily set text
-         * past the bottom margin when it is given an explicit y, and the
-         * footer — or the photograph — would print straight over it. What will
-         * not fit is held back and set full width overleaf rather than lost.
-         */
-        if (y + cost > floor) {
-          const other = toLeft ? ry : ly;
-          if (other + cost > floor) {
-            spill.push(group);
-            return;
-          }
-          if (toLeft) ry = put(group, rightX, ry);
-          else ly = put(group, leftX, ly);
-          return;
-        }
-        if (toLeft) ly = put(group, leftX, ly);
-        else ry = put(group, rightX, ry);
-      });
 
       /**
        * ⚠️ AT THE FOOT, NOT UNDER THE TEXT. Placed at `floor` rather than at
@@ -3367,21 +3298,7 @@ export class MotivationPdfService {
         doc.x = MARGIN;
         doc.y = bodyTop;
         for (const group of spill) {
-          for (const raw of group) {
-            const sub = subheadingOf(raw);
-            if (sub) {
-              doc.font(B.bodySemi).fontSize(K.px(10.5)).fillColor(C.sub);
-              doc.text(sub.toUpperCase(), leftX, doc.y, {
-                width: usable,
-                characterSpacing: K.px(10.5) * 0.06,
-              });
-              doc.y += K.mm(0.8);
-              continue;
-            }
-            doc.font(B.body).fontSize(K.px(12)).fillColor(C.ink);
-            doc.text(stripMarks(raw), leftX, doc.y, { width: usable });
-            doc.y += gap;
-          }
+          doc.y = put(group, leftX, doc.y, usable);
         }
         doc.y += PARA_GAP;
       }
@@ -3391,10 +3308,10 @@ export class MotivationPdfService {
       if (!hasCartridgeBlock || cartridgeDrawn) return;
       cartridgeDrawn = true;
       /**
-       * ⚠️ ONE LAYOUT, WITH OR WITHOUT THE RESEARCH. The columns, the picture
-       * and the dimensions table are the page; when the article is absent the
-       * left column carries the standalone note instead. The old full-width
-       * figure path is gone — it was the half page the operator rejected.
+       * ⚠️ ONE LAYOUT, WITH OR WITHOUT THE RESEARCH. The figure and the bullet
+       * list are the page; when the article is absent the list carries the
+       * standalone notes instead. The old full-width figure path is gone — it
+       * was the half page the operator rejected.
        */
       drawCartridgeFeature(article, bodyPicture);
       // The spread owns its sheet on both sides — see the latch in the loop.
@@ -3425,7 +3342,7 @@ export class MotivationPdfService {
        * an article; a pack whose research failed then dropped the drawing into
        * the back half of the firearm section, which is the bare third the
        * operator was looking at. The page now owns a sheet whether or not the
-       * research arrived, because the held dimensions table is always there.
+       * research arrived, because the held-figure bullets are always there.
        */
       if (doc.y > bodyTop + K.mm(1)) doc.addPage();
       renderHeading(cartridgeHeading);

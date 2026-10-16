@@ -112,7 +112,7 @@ export const RESEARCH_TTL_DAYS = 180;
  * out of its own firearm research; rewording the ask without this would have
  * shipped, looked right, and still handed the writer the same marketing.
  */
-export const RESEARCH_ASK_VERSION = '2026-10-15a';
+export const RESEARCH_ASK_VERSION = '2026-10-16a';
 
 export function cacheKeyFor(
   target: ResearchTarget,
@@ -176,11 +176,22 @@ export function targetsFor(
         // is a whole sheet of its own now, and what a DFO reads is why THIS
         // round suits THIS purpose. Ask for it as fact with sources; never as
         // sales copy, and never as terminal effect we hold no sheet for.
-        `Then set out the ADVANTAGES this cartridge has for ${useClass}: why`,
-        'it is well matched to that purpose, what it does well that decides',
-        'the match, and what it is over- or under-matched to. Ground every',
-        'claim in published fact and name the source of a figure. Figures',
-        'with sources, never impressions.',
+        /**
+         * ⚠️ BULLET STYLE, BECAUSE THAT IS THE PAGE. Operator, 2026-10-16:
+         * "Let the writer write all the advantages in bullete style why the
+         * cartridge is suited for the chosen role." Each bullet is one reason
+         * THIS round suits THIS application, printed as a bullet list down two
+         * columns. Ask for fact with sources, never sales copy, and never
+         * terminal effect we hold no sheet for.
+         */
+        `Then set out the ADVANTAGES this cartridge has for ${useClass}, as a`,
+        'BULLET LIST: one bullet per advantage, each one to three sentences,',
+        'each a reason this round is well matched to this purpose (and, where',
+        'it matters, what it is over- or under-matched to). Ground every claim',
+        'in published fact and name the source of a figure. Figures with',
+        'sources, never impressions.',
+        'BULLET FORMAT: begin every bullet with "- " at the start of its own',
+        'line, one bullet per line, no numbering and no sub-headings.',
         /**
          * ⚠️ THE LENGTH IS THE SIZE OF THE HOLE IT IS PRINTED IN.
          *
@@ -188,35 +199,26 @@ export function targetsFor(
          * because you know the text size and spacing and how much real estate
          * there is and have a perfectly filled sheet everytime."
          *
-         * ⚠️ RE-MEASURED WHEN THE PAGE BECAME A PAGE OF ITS OWN (2026-10-15).
-         * The old slot reserved a 90 mm quarry band (since retired) and set the
-         * C.I.P. sheet in the right column. The feature now runs two full
-         * columns to the foot of the sheet, with the picture (our drawing at
-         * about 49 mm once scaled into a column, or the C.I.P. sheet at its own
-         * 119 mm) and then the dimensions table in the right column:
+         * ⚠️ RE-MEASURED WHEN THE PAGE BECAME A BULLET LIST (2026-10-16). The
+         * figure sits at the top of the right column and the bullets fill the
+         * left column top to bottom, then continue under the figure down the
+         * right column. Each bullet carries a marker and a hanging indent:
          *
          *   column width                88.0 mm
-         *   columns, full height       ~232 mm each
-         *   right column: picture        49-119 mm
-         *   right column: spec table     ~50 mm
-         *   capacity                  ~295-365 mm
-         *   cost per word                0.899 mm, subheadings amortised
-         *   —> the slot holds about 330 to 405 words
+         *   columns, full height       ~238 mm each
+         *   right column: figure         49-119 mm (our drawing, or the sheet)
+         *   capacity                  ~390-460 mm of bullet text
+         *   cost per word                0.899 mm, plus a per-bullet gap
+         *   —> the slot holds roughly 400 to 480 words
          *
-         * 300 is asked for so the page lands full in the drawing case and
-         * around 90% in the C.I.P.-sheet case: a little white at the foot of a
-         * column is what white space in a feature is for, and overshooting
-         * spills the tail onto a second sheet nobody asked for — which is the
-         * near-empty page this work exists to remove.
-         *
-         * ⚠️ THE SECTION COUNT IS PINNED TOO, because a subheading costs a
-         * line and its spacing. The same 300 words in fourteen sections is
-         * taller than in eight and would overflow a slot the word count says
-         * is fine.
+         * 250 to 300 is asked for, on the operator's instruction (2026-10-16),
+         * so the list lands full and every bullet is a whole thought: the
+         * bullets are read one by one, and overshooting spills the tail onto a
+         * second sheet nobody asked for.
          */
-        'LENGTH: about 300 words in total, in about 8 short sections. This is',
-        'printed in a fixed space on the page — materially longer overflows it',
-        'and materially shorter leaves it half empty.',
+        'LENGTH: about 250 to 300 words in total, across about 8 to 12 bullets.',
+        'This is printed in a fixed space on the page — materially longer',
+        'overflows it and materially shorter leaves it half empty.',
         '',
         '⚠️ NEVER PAD TO REACH THE COUNT. Where you cannot document one of the',
         'points, write nothing for it and let the page be short. This text is',
