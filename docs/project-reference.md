@@ -1183,33 +1183,40 @@ research failed dropped the drawing into the tail of the firearm section and
 left a bare third of a sheet. The feature now breaks to its own page whether or
 not the research arrived, and the close of the firearms section never shares it.
 
-A two-column spread, with the picture and the dimensions table in the right
-column and the prose filling the left plus whatever the right leaves:
+⚠️ **IT IS A BULLET ARTICLE AROUND A TOP-RIGHT FIGURE** (operator, 2026-10-16,
+with a sketch: "fill the cartridge page ... all the advantages in bullete style
+... in a articale style as the illustration"). The figure sits at the top of the
+right column; the bullet list fills the LEFT column top to bottom, then
+continues at the top of the right column, under the figure, down to the foot of
+the sheet. Each bullet is its own block, so the list breaks between columns.
 
 | slot | size |
 |---|---|
 | picture (C.I.P. sheet, else our drawing) | right column width; 88 × 119 mm as the sheet, ~88 × 49 mm as the drawing |
-| dimensions table | right column, under the picture; the held figures only |
-| text | left column full height, then the right column remainder |
+| bullets | left column full height, then the right column below the figure |
 
-The dimensions table is built from the **same** `completeDims` set the drawing
-cuts, through `cartridgeDimRows`, so the table and the callouts can never quote
-two different measurements. A derived letter (a shoulder or groove the sheet
-never printed) is omitted from both.
+⚠️ **THE BULLETS ARE JUSTIFIED** like the rest of the document, with a `•`
+marker in a hanging indent so a wrapped bullet aligns under its own text. A
+`**Heading**` line is still a subheading; a `- `, `•` or `*` line is a bullet
+(`isBulletLine`).
 
-⚠️ **THE RESEARCH ASK IS SIZED TO THE SLOT.** 0.899 mm per word, so the two
-full columns hold about 330–405 words depending on whether the picture is the
-sheet or our drawing, and the calibre ask asks for 300 in about 8 sections.
-Change the slot and the ask has to move with it. When there is no article the
-left column carries a standalone note derived from the held figures
-(standardisation and interchangeability), never invented performance copy.
+⚠️ **THE SEPARATE DIMENSIONS TABLE IS GONE** (2026-10-16). The picture carries
+the dimensions as callouts; a second list beside it was the same facts twice.
+`cartridgeDrawing.specs` is still built by the render service but the PDF no
+longer draws it — the plumbing is kept in case the table is wanted back.
 
-⚠️ **THE RESEARCH WRITES HEADINGS TWO WAYS AND BOTH MUST BE HANDLED** —
-`**Origin**` on its own line, and `Origin: …` run in. It switched to the second
-the day the ask gained a length instruction. Groups split on subheadings, so
-run-ins made ONE atomic group of the whole article and a column rendered blank.
-Nothing failed; one group is a valid layout, which is why no test caught it and
-the operator did.
+⚠️ **THE RESEARCH ASK IS SIZED TO THE SLOT.** 0.899 mm per word, plus a
+per-bullet gap; the two columns hold roughly 400–480 words, and the calibre ask
+asks for **250–300 words across 8–12 bullets**, one reason per bullet why THIS
+round suits THIS application. Change the slot and the ask has to move with it.
+When there is no article the list carries bullets derived from the held figures
+(standardisation and interchangeability), never invented performance copy. The
+ask demands `- ` at the start of each bullet on its own line.
+
+⚠️ **LEGACY NON-BULLET ARTICLES STILL RENDER.** Research cached before the
+bullet ask may return headings two ways — `**Origin**` on its own line, and
+`Origin: …` run in. The run-in form is split into a heading and its sentence, so
+it does not become one atomic group that fills a single column.
 
 ⚠️ **THE C.I.P. SHEET IS REPRODUCED BY OPERATOR DECISION.** The sheet carries
 "Reproduction forbidden as well as in the form of extracts without approval of

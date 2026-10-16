@@ -7,6 +7,22 @@ overwritten.
 
 Last updated: **2026-10-16**.
 
+## 2026-10-16 — CARTRIDGE PAGE IS A TWO-COLUMN BULLET ARTICLE (FULL DEPLOY)
+
+Commit **`0c025dca`**, 2 backend source + 2 specs. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-114243.dump` (32 277 765 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `0c025dca`. No migration.
+
+Gates: backend `tsc` clean + **359 suites/5635 tests**; frontend `tsc` clean + **142 files/1745 tests** + prod build.
+
+**The ask.** Operator, 2026-10-16, with a sketch: "i want to fill the cartridge page. Let the writer write all the advantages in bullete style why the cartridge is suited for the chosen role ... between 250 and 300 words. The cartridge image still has to be on the page ... in a articale style as the illustration."
+
+**What shipped.**
+- **Bullet article layout.** The cartridge page fills the left column top to bottom, then continues under the cartridge image down the right column — the sketch's magazine-feature shape. Replaces the old left/right "balanced" split.
+- **Bullets.** The writer (researcher) sets the advantages as a bullet list, 250–300 words across 8–12 bullets, one reason per bullet why THIS round suits THIS application. `- ` line format; `RESEARCH_ASK_VERSION` bumped `2026-10-15a` → `2026-10-16a` so cached calibres re-ask. Bullets render with a `•` marker and a hanging indent, justified like the rest of the document.
+- **The image stays.** It is the inset (C.I.P. sheet, else our drawing) at the top of the right column; the right-column text starts below it.
+- **The standalone dimensions table is gone** (per the sketch; the image carries the dimensions as callouts). The no-research fallback is now bullets derived from the held figures.
+
+**Know.** Removing the table was a judgement call on the sketch; flag to the operator if it should come back. `docs/project-reference.md` still describes the removed table and should be updated on the next doc pass.
+
 ## 2026-10-16 — EVERY PROSE PARAGRAPH JUSTIFIED (FULL DEPLOY)
 
 Commit **`98ee029c`**, 3 backend files. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-102429.dump` (32 277 246 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `98ee029c`. No migration.
