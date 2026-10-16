@@ -386,7 +386,13 @@ export function renderStatementForm(
           .font(f.serif)
           .fontSize(M.px(12))
           .fillColor(c.ink)
-          .text(b.text, X, doc.y, { width: W, lineGap: M.px(2) });
+          // Justified — operator, 2026-10-16: "make the paragraph justify for
+          // the whole document." A statement's prose is part of it.
+          .text(b.text, X, doc.y, {
+            width: W,
+            lineGap: M.px(2),
+            align: 'justify',
+          });
         doc.x = X;
         doc.y += M.mm(2.5);
         break;
@@ -485,6 +491,8 @@ export function renderStatementForm(
           .text(b.text, X + M.mm(5), doc.y, {
             width: W - M.mm(5),
             lineGap: M.px(2.5),
+            // Justified — see the 'text' case above.
+            align: 'justify',
           });
         doc.rect(X, top, M.px(2), doc.y - top).fill(c.band);
         doc.x = X;

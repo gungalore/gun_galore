@@ -3804,15 +3804,15 @@ export class MotivationPdfService {
           .text(block, MARGIN + bodyIndent + statuteIndent, doc.y, {
             width: contentWidth - bodyIndent - statuteIndent,
             /**
-             * ⚠️ RAGGED RIGHT, NEVER JUSTIFIED. MOTIVATION-GUIDE-BOOK Part
-             * 7.1. Justification in pdfkit is word-spacing only — there is no
-             * hyphenation and no letter-fit — so a line carrying a serial
-             * number, a calibre and a station name opens rivers of white the
-             * width of a word. On the professionally prepared packs a DFO
-             * already knows, the body is ranged left, and a ragged edge is
-             * what a typed page looks like when nobody has stretched it.
+             * ⚠️ JUSTIFIED, AND THIS REVERSES MOTIVATION-GUIDE-BOOK Part 7.1.
+             * That rule chose ragged right because pdfkit justifies by
+             * word-spacing alone — no hyphenation, no letter-fit — so a line
+             * carrying a serial number, a calibre and a station name can open
+             * rivers of white. Operator, 2026-10-16: "make the paragraph
+             * justify for the whole document." The operator's call, recorded
+             * here: every prose paragraph is justified.
              */
-            align: 'left',
+            align: 'justify',
             lineGap: BODY_LEADING,
           });
         doc.x = MARGIN;
@@ -4157,8 +4157,9 @@ export class MotivationPdfService {
             .fillColor(C.ink)
             .text(block, bodyX + (numbered ? K.mm(6) : 0), doc.y, {
               width: bodyW - (numbered ? K.mm(6) : 0),
-              // Ragged right here too — Part 7.1, and see the body block.
-              align: 'left',
+              // Justified here too — operator, 2026-10-16: "the whole
+              // document". See the body block for the reversed Part 7.1 note.
+              align: 'justify',
               lineGap: pnLeading,
             });
           doc.y += numbered ? K.mm(2.5) : pnGap;

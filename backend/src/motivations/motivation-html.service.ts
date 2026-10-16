@@ -470,7 +470,7 @@ h2.h--bar { border-left: 4mm solid var(--accent); padding-left: 3mm; }
 h2.h--caps { letter-spacing: .18em; margin-bottom: 5mm; }
 h3 { font: 700 9.5pt ${SANS}; text-transform: uppercase; letter-spacing: .06em;
   color: var(--sub); margin: 6mm 0 2mm 0; page-break-after: avoid; }
-p { font-size: 10.5pt; line-height: 1.5; margin: 0 0 3mm 0; text-align: left; }
+p { font-size: 10.5pt; line-height: 1.5; margin: 0 0 3mm 0; text-align: justify; }
 p.small, .small { font-size: 8.5pt; color: var(--mut); line-height: 1.4; }
 p.signer { margin-top: 6mm; font-weight: 700; }
 ul { margin: 0 0 3mm 0; padding-left: 5mm; font-size: 10.5pt; line-height: 1.5; }
