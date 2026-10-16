@@ -1365,13 +1365,22 @@ describe('the cartridge drawing', () => {
      */
     const { pdf } = await svc.render({
       ...makeInput(withCartridgeSection),
-      cartridgeDrawing: drawing,
+      cartridgeDrawing: {
+        ...drawing,
+        specs: [
+          { label: 'Case length', value: '19.15 mm' },
+          { label: 'Maximum average pressure', value: '2350 bar' },
+        ],
+      },
     } as never);
     const sheets = await pageTexts(pdf);
     const idx = sheets.findIndex((p) => p.includes('drawn to scale'));
     expect(idx).toBeGreaterThanOrEqual(0);
-    // The page carries the figure's caption and the standalone bullets...
+    // The page carries the figure's caption, the standalone bullets and the
+    // held dimensions block that fills the right column...
     expect(sheets[idx]).toContain('standardised');
+    expect(sheets[idx]).toContain('STANDARD DIMENSIONS');
+    expect(sheets[idx]).toContain('19.15 mm');
     // ...and nothing from the section that follows it.
     expect(sheets[idx]).not.toContain('SABS-approved safe');
   });

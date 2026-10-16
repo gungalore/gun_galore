@@ -3029,10 +3029,71 @@ export class MotivationPdfService {
      */
     const CARTRIDGE_STANDALONE = [
       '- It is a standardised cartridge: its case dimensions and its maximum average pressure are fixed by standard rather than chosen by any one maker.',
+      '- The maximum average pressure is the loading ceiling for the round, so ammunition loaded at or below it is safe in any firearm chambered for the cartridge.',
       '- Because the chambering is standard, factory ammunition from any manufacturer is interchangeable in the firearm applied for.',
+      '- Factory loads are made by several manufacturers, so a reliable load for this firearm is almost always in stock.',
       '- Ammunition is therefore dependable to buy and economical to practise with, which is what sustains regular practice.',
+      '- The case and overall lengths are fixed by standard, so the round chambers correctly in any firearm cut to this chambering.',
+      '- The bullet diameter is fixed by standard, so any maker’s bullet of that diameter suits the bore.',
+      '- The rim and head dimensions are standard, so the round feeds and extracts as this firearm was designed to handle it.',
+      '- It is a widely used chambering, so magazines, spares and gunsmith experience are all easy to find in South Africa.',
       '- The round’s held measurements are the figures a firearm’s chamber, bore and pressure ceiling are checked against.',
     ];
+
+    /**
+     * The dimensions block, under the picture in the right column.
+     *
+     * ⚠️ IT FILLS THE COLUMN THE BULLETS DO NOT REACH. Operator, 2026-10-16,
+     * on a cartridge page that was two thirds blank: the held figures are the
+     * one thing we always have, research or no research, and they belong on
+     * the page beside the round. They come off the same `completeDims` set the
+     * drawing cuts, through `cartridgeDimRows`, so the block and the callouts
+     * cannot quote two different measurements; a derived letter is omitted
+     * from both.
+     */
+    const drawSpecTable = (
+      x: number,
+      y: number,
+      w: number,
+      rows: { label: string; value: string }[],
+    ): number => {
+      let at = y;
+      doc
+        .font(F.sansSemi)
+        .fontSize(K.px(9))
+        .fillColor(C.mut)
+        .text('STANDARD DIMENSIONS', x, at, {
+          width: w,
+          characterSpacing: K.px(9) * 0.1,
+        });
+      at = doc.y + K.mm(1.6);
+      const labelW = w * 0.6;
+      for (const row of rows) {
+        const rowY = at;
+        doc
+          .font(F.sans)
+          .fontSize(K.px(9))
+          .fillColor(C.mut)
+          .text(row.label, x, rowY, { width: labelW - K.mm(2) });
+        const afterLabel = doc.y;
+        doc
+          .font(F.sansSemi)
+          .fontSize(K.px(9))
+          .fillColor(C.ink)
+          .text(row.value, x + labelW, rowY, {
+            width: w - labelW,
+            align: 'right',
+          });
+        at = Math.max(afterLabel, doc.y) + K.mm(1.4);
+        doc
+          .moveTo(x, at - K.mm(0.7))
+          .lineTo(x + w, at - K.mm(0.7))
+          .lineWidth(0.5)
+          .strokeColor(C.hair)
+          .stroke();
+      }
+      return at;
+    };
 
     const drawCartridgeFeature = (
       a: { title: string; paragraphs: string[] } | undefined,
@@ -3126,6 +3187,18 @@ export class MotivationPdfService {
       if (picture) {
         const h = placeDrawing(picture, rightX, top, colW);
         rightTop = align(top + h + K.mm(3));
+      }
+
+      /**
+       * ⚠️ THE FIGURES SIT UNDER THE PICTURE, IN THE SAME COLUMN. Right column:
+       * the round as drawn, then the round as measured; left column, then what
+       * is left of the right column, is the bullet argument.
+       */
+      const specs = input.cartridgeDrawing?.specs ?? [];
+      if (specs.length) {
+        rightTop = align(
+          drawSpecTable(rightX, rightTop, colW, specs) + K.mm(3),
+        );
       }
 
       /**

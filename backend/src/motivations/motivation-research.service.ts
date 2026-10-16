@@ -112,7 +112,7 @@ export const RESEARCH_TTL_DAYS = 180;
  * out of its own firearm research; rewording the ask without this would have
  * shipped, looked right, and still handed the writer the same marketing.
  */
-export const RESEARCH_ASK_VERSION = '2026-10-16a';
+export const RESEARCH_ASK_VERSION = '2026-10-16b';
 
 export function cacheKeyFor(
   target: ResearchTarget,
@@ -199,26 +199,29 @@ export function targetsFor(
          * because you know the text size and spacing and how much real estate
          * there is and have a perfectly filled sheet everytime."
          *
-         * ⚠️ RE-MEASURED WHEN THE PAGE BECAME A BULLET LIST (2026-10-16). The
-         * figure sits at the top of the right column and the bullets fill the
-         * left column top to bottom, then continue under the figure down the
-         * right column. Each bullet carries a marker and a hanging indent:
+         * ⚠️ RE-MEASURED 2026-10-16, WHEN THE PAGE BECAME A BULLET ARTICLE AND
+         * THE OPERATOR ASKED FOR "more words more facts" to fill it. The figure
+         * and the held dimensions block sit in the right column; the bullets
+         * fill the left column top to bottom, then continue under them down the
+         * right column:
          *
          *   column width                88.0 mm
          *   columns, full height       ~238 mm each
-         *   right column: figure         49-119 mm (our drawing, or the sheet)
-         *   capacity                  ~390-460 mm of bullet text
+         *   right column: figure +
+         *     dimensions block           ~95-165 mm
+         *   capacity                  ~380-400 mm of bullet text
          *   cost per word                0.899 mm, plus a per-bullet gap
-         *   —> the slot holds roughly 400 to 480 words
+         *   —> the slot holds roughly 400 words / 16 bullets (measured: 400
+         *      words render on one sheet, 450 spill to a second)
          *
-         * 250 to 300 is asked for, on the operator's instruction (2026-10-16),
-         * so the list lands full and every bullet is a whole thought: the
-         * bullets are read one by one, and overshooting spills the tail onto a
-         * second sheet nobody asked for.
+         * 350 to 400 words across 12 to 16 bullets is asked for so the list
+         * lands full on one sheet: the bullets are read one by one, and the
+         * ceiling was measured by rendering, because overshooting spills the
+         * tail onto a second sheet nobody asked for.
          */
-        'LENGTH: about 250 to 300 words in total, across about 8 to 12 bullets.',
-        'This is printed in a fixed space on the page — materially longer',
-        'overflows it and materially shorter leaves it half empty.',
+        'LENGTH: about 350 to 400 words in total, across about 12 to 16',
+        'bullets. This is printed in a fixed space on the page — materially',
+        'longer overflows it and materially shorter leaves it half empty.',
         '',
         '⚠️ NEVER PAD TO REACH THE COUNT. Where you cannot document one of the',
         'points, write nothing for it and let the page be short. This text is',
