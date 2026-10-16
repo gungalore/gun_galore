@@ -13,6 +13,7 @@ import {
   parseEndorsements,
 } from '../common/sa-competency';
 import { answerValue, isCardPlaceholder } from '../common/card-placeholder';
+import { CREDENTIAL_TO_UPLOAD } from '../common/document-filing/document-dictionary';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT THE LICENCE CENTRE ALREADY KNOWS.
@@ -1607,100 +1608,13 @@ export function credentialChoices(
 }
 
 /**
- * ⚠️ ONE VAULT DOCUMENT CAN SATISFY SEVERAL CHECKLIST ROWS, so this is a list.
- *
- * It was one-to-one, which was exactly wrong for the document that prompted
- * the consolidation: a single membership certificate that is both the
- * association card and the section 16 letter of good standing could satisfy
- * one row or the other, never both, and the applicant was asked to upload a
- * paper they had already given us.
- *
- * FIRST ENTRY IS THE PRIMARY — the kind the stored upload row actually gets.
- * The rest ride along in MotivationUpload.coversKinds, because a second row
- * for the same bytes would print the same page twice in the pack.
+ * ⚠️ THE PLACEMENT MAP MOVED TO THE DICTIONARY (2026-10-16). It lived here as a
+ * `Record<CredentialKind, MotivationUploadKind[]>`; it now sits beside the
+ * folders themselves in common/document-filing/document-dictionary.ts, and is
+ * re-exported here so every importer is unchanged. See that module for the
+ * exhaustiveness argument and the per-kind notes.
  */
-/**
- * ⚠️ EXHAUSTIVE OVER CredentialKind, AND THAT IS THE POINT. This was
- * `Record<string, string[]>`, which compiles cleanly whatever is missing —
- * so adding a vault kind without a mapping here produces no error anywhere.
- * The failure it hides is silent and total: primaryUploadKind() returns
- * undefined, buildLibrary drops the row from the picker, and addFromLibrary
- * refuses it with "That document does not answer anything on this
- * application" — a document that is stored, invisible, and still counting
- * against the member's cap.
- *
- * Typed to the enum, the compiler names every site the day a kind is added.
- * An empty array is a legitimate answer — a vault document with no slot on a
- * motivation is kept and tracked and simply has nothing to fill; see
- * motivation-library.ts, which already handles it.
- */
-export const CREDENTIAL_TO_UPLOAD: Record<
-  CredentialKind,
-  MotivationUploadKind[]
-> = {
-  FIREARM_LICENCE: [MotivationUploadKind.CURRENT_LICENCE],
-  COMPETENCY_CERTIFICATE: [MotivationUploadKind.COMPETENCY_CERTIFICATE],
-  DEDICATED_DISCIPLINE: [
-    MotivationUploadKind.ASSOCIATION_CARD,
-    MotivationUploadKind.GOOD_STANDING_LETTER,
-  ],
-  PROFICIENCY: [MotivationUploadKind.PROFICIENCY_CERTIFICATE],
-  /**
-   * ⚠️ IT FILLS THE SLOT, AND IT IS STILL IN NEVER_AUTOLINK. Mapping a kind to
-   * a slot says where it CAN go, not that it goes there unasked — an
-   * endorsement names one firearm, so an older one describes the wrong gun,
-   * which is the rule motivation-autolink.ts has always applied to it. What
-   * changes is that a member picking one from their Centre now has somewhere
-   * to put it.
-   */
-  ASSOCIATION_ENDORSEMENT: [MotivationUploadKind.ASSOCIATION_ENDORSEMENT],
-  // Retired kinds, kept so rows filed before the consolidation still map.
-  DEDICATED_STATUS: [MotivationUploadKind.ASSOCIATION_CARD],
-  DEDICATED_HUNTER: [MotivationUploadKind.ASSOCIATION_CARD],
-  GOOD_STANDING: [MotivationUploadKind.GOOD_STANDING_LETTER],
-  // No slot on any motivation. Kept in the vault, chased for expiry, and not
-  // offered as an attachment — a Professional Hunter registration evidences
-  // nothing under section 16, and OTHER is unclassified by definition.
-  PROFESSIONAL_HUNTER: [],
-  OTHER: [],
-
-  // ── AN IDENTITY MAP, WHICH IS WHY THE NAMES MATCH ──────────────────
-  //
-  // The eight person-level kinds were deliberately given the same names as
-  // their MotivationUploadKind counterparts so this half of the module has no
-  // translation table for anyone to get wrong. Same name, same document, same
-  // checklist row.
-  IDENTITY_DOCUMENT: [MotivationUploadKind.IDENTITY_DOCUMENT],
-  ADDRESS_CONFIRMATION: [MotivationUploadKind.ADDRESS_CONFIRMATION],
-  EMPLOYMENT_CONFIRMATION: [MotivationUploadKind.EMPLOYMENT_CONFIRMATION],
-  SAFE_PHOTOGRAPHS: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
-  // ⚠️ THE RETIRED FOUR MAP FORWARD, they do not map to themselves. A vault row
-  // filed before 2026-08-23 still answers the safe row on a new application;
-  // pointing it at its own retired upload kind would file it outside the only
-  // kind the checklist now looks for, and the member would be asked to
-  // photograph a safe we already hold pictures of.
-  SAFE_PHOTO_CLOSED: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
-  SAFE_PHOTO_AJAR: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
-  SAFE_PHOTO_BOLTS: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
-  SAFE_INSTALLATION: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
-  SHOOTING_ACTIVITY_LOG: [MotivationUploadKind.SHOOTING_ACTIVITY_LOG],
-  /**
-   * ⚠️ EVIDENCE ANSWERS NO DOCUMENT SLOT, AND THAT IS NOT A GAP.
-   *
-   * An empty array here means the library picker can still offer the row and
-   * the attach path still files it — `addFromLibrary` writes the credential's
-   * own kind — but nothing in it counts as satisfying a DOCUMENT requirement.
-   * That is exactly right: a hunting photograph is not a competency
-   * certificate, and a permission letter ticks FIREARM_SOURCE_PROOF through
-   * its CONTAINER's `satisfies` (motivation-library), not through this map.
-   *
-   * ⚠️ DO NOT FILL IT WITH A GUESSED SLOT. Listing CURRENT_LICENCE here to
-   * "have something" would let a photograph tick a required document row the
-   * member never supplied, which is the one failure this whole split exists to
-   * prevent.
-   */
-  EVIDENCE: [],
-};
+export { CREDENTIAL_TO_UPLOAD };
 
 /**
  * The checklist row a vault document is filed as, or undefined for one that

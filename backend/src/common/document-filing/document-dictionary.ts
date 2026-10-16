@@ -1,4 +1,4 @@
-import { CredentialKind } from '@prisma/client';
+import { CredentialKind, MotivationUploadKind } from '@prisma/client';
 import type { FilingOption } from './document-filing.service';
 
 // ────────────────────────────────────────────────────────────────────
@@ -188,3 +188,66 @@ export const MOTIVATION_KIND_OPTIONS: readonly FilingOption[] = [
     hint: 'anything else, or you cannot tell',
   },
 ];
+
+
+/**
+ * ONE VAULT DOCUMENT CAN SATISFY SEVERAL CHECKLIST ROWS � the placement map.
+ *
+ * ?? MOVED FROM motivation-credentials.ts (2026-10-16), so the folder a document
+ * is filed under and the checklist rows it answers live beside the folders
+ * themselves. Re-exported from there, so every importer is unchanged.
+ *
+ * FIRST ENTRY IS THE PRIMARY � the kind the stored upload row actually gets.
+ * The rest ride along in MotivationUpload.coversKinds, because a second row for
+ * the same bytes would print the same page twice in the pack.
+ *
+ * ?? EXHAUSTIVE OVER CredentialKind, AND THAT IS THE POINT. Typed to the enum,
+ * the compiler names every site the day a kind is added; `Record<string, ...>`
+ * would compile cleanly whatever is missing and hide a silent, total failure
+ * (a stored document, invisible in the picker, still counting against the cap).
+ */
+export const CREDENTIAL_TO_UPLOAD: Record<
+  CredentialKind,
+  MotivationUploadKind[]
+> = {
+  FIREARM_LICENCE: [MotivationUploadKind.CURRENT_LICENCE],
+  COMPETENCY_CERTIFICATE: [MotivationUploadKind.COMPETENCY_CERTIFICATE],
+  DEDICATED_DISCIPLINE: [
+    MotivationUploadKind.ASSOCIATION_CARD,
+    MotivationUploadKind.GOOD_STANDING_LETTER,
+  ],
+  PROFICIENCY: [MotivationUploadKind.PROFICIENCY_CERTIFICATE],
+  /**
+   * ?? IT FILLS THE SLOT, AND IT IS STILL IN NEVER_AUTOLINK. Mapping a kind to
+   * a slot says where it CAN go, not that it goes there unasked � an
+   * endorsement names one firearm, so an older one describes the wrong gun,
+   * which is the rule motivation-autolink.ts has always applied to it. What
+   * changes is that a member picking one from their Centre now has somewhere
+   * to put it.
+   */
+  ASSOCIATION_ENDORSEMENT: [MotivationUploadKind.ASSOCIATION_ENDORSEMENT],
+  // Retired kinds, kept so rows filed before the consolidation still map.
+  DEDICATED_STATUS: [MotivationUploadKind.ASSOCIATION_CARD],
+  DEDICATED_HUNTER: [MotivationUploadKind.ASSOCIATION_CARD],
+  GOOD_STANDING: [MotivationUploadKind.GOOD_STANDING_LETTER],
+  // No slot on any motivation. Kept in the vault, chased for expiry, and not
+  // offered as an attachment � a Professional Hunter registration evidences
+  // nothing under section 16, and OTHER is unclassified by definition.
+  PROFESSIONAL_HUNTER: [],
+  OTHER: [],
+  IDENTITY_DOCUMENT: [MotivationUploadKind.IDENTITY_DOCUMENT],
+  ADDRESS_CONFIRMATION: [MotivationUploadKind.ADDRESS_CONFIRMATION],
+  EMPLOYMENT_CONFIRMATION: [MotivationUploadKind.EMPLOYMENT_CONFIRMATION],
+  SAFE_PHOTOGRAPHS: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+  // ?? THE RETIRED FOUR MAP FORWARD, they do not map to themselves. A vault row
+  // filed before 2026-08-23 still answers the safe row on a new application.
+  SAFE_PHOTO_CLOSED: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+  SAFE_PHOTO_AJAR: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+  SAFE_PHOTO_BOLTS: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+  SAFE_INSTALLATION: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+  SHOOTING_ACTIVITY_LOG: [MotivationUploadKind.SHOOTING_ACTIVITY_LOG],
+  // ?? EVIDENCE ANSWERS NO DOCUMENT SLOT, AND THAT IS NOT A GAP. A hunting
+  // photograph is not a competency certificate; a permission letter ticks
+  // FIREARM_SOURCE_PROOF through its CONTAINER's `satisfies`, not this map.
+  EVIDENCE: [],
+};

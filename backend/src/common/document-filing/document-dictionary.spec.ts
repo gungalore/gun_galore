@@ -1,5 +1,6 @@
-import { CredentialKind } from '@prisma/client';
+import { CredentialKind, MotivationUploadKind } from '@prisma/client';
 import {
+  CREDENTIAL_TO_UPLOAD,
   MOTIVATION_KIND_OPTIONS,
   VAULT_COVER_OPTIONS,
   VAULT_KIND_OPTIONS,
@@ -46,6 +47,16 @@ describe('the document dictionary', () => {
       const ids = set.map((o) => o.id);
       expect(new Set(ids).size).toBe(ids.length);
     }
+  });
+
+  it('places a dedicated certificate on the card AND the good-standing row', () => {
+    // The placement map moved here with the folders; this is the one row the
+    // operator keeps asking about — a valid dedicated certificate answers the
+    // section 16 letter of good standing, so it fills both checklist rows.
+    expect(CREDENTIAL_TO_UPLOAD[CredentialKind.DEDICATED_DISCIPLINE]).toEqual([
+      MotivationUploadKind.ASSOCIATION_CARD,
+      MotivationUploadKind.GOOD_STANDING_LETTER,
+    ]);
   });
 
   it('gives every folder a label and a discriminator', () => {
