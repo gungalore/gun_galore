@@ -5,7 +5,29 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-15**.
+Last updated: **2026-10-16**.
+
+## 2026-10-16 — CARTRIDGE GETS A FULL PAGE + PAGE-BALANCE FIXES (FULL DEPLOY)
+
+Commit **`e654ea5d`**, 6 backend files (3 source, 3 specs) + `docs/project-reference.md`. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-095544.dump` (32 214 111 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `e654ea5d`. No migration.
+
+Gates: backend `tsc` clean + **359 suites/5635 tests** (1 suite/8 shown skipped); frontend `tsc` clean + **142 files/1745 tests** + prod build (frontend untouched, run anyway).
+
+**The ask.** Operator, 2026-10-15, on MO000096: "Check for structure and lay out issues … it must apply to section 13, 14, 15, 16 and renewals. On the cartridge, I want it to have it's own page. the dimensions with the advantages of the cartridge for the applied for purpose, we can have the researcher research that. It must be a full page. Also address the almost completely empty pages."
+
+**What shipped.**
+- **The cartridge owns a sheet, always.** `placeCartridgeFeature`, the deferred path and the `wantsCartridge` branch all break to the feature's own page; it no longer depends on a research article existing (which is why MO000096 left a bare third: the calibre research came back empty, so the drawing fell into the firearm section's tail).
+- **Dimensions table.** New `cartridgeDrawing.specs`, built in `motivation-render.service.ts` from the same `completeDims` the drawing cuts, via `cartridgeDimRows`; drawn as `STANDARD DIMENSIONS` under the picture in the right column (`drawSpecTable`). Table and callouts cannot disagree, and a derived letter is omitted from both.
+- **Advantages researched.** The calibre ask now asks for the cartridge's advantages for the applied-for purpose; length re-measured to ~300 words / 8 sections for the full-page slot. `RESEARCH_ASK_VERSION` bumped `2026-09-10c` → `2026-10-15a`, so cached calibre rows re-ask on the next generation.
+- **No-research fallback.** `CARTRIDGE_STANDALONE` prints a standardisation/interchangeability note derived from the held figures, so the page is never bare.
+- **Declaration measured fit.** It opens its own page only when the whole close (heading + paragraphs + signature + disclaimer) will not fit what is left; otherwise it fills the sheet. MO000096's orphan-paragraph page 9 came from the old unconditional break.
+- **PAJA letter fits one sheet by spacing**, never by cutting words (four measured leading/gap candidates).
+- **Owned-firearms `Section` column** widened 46 → 60pt; the header no longer wraps to "SECTIO / N".
+- **Licence cards three to a sheet.** `planAnnexurePages` gained `{ perPage }` and `AnnexureImagePage.threeUp` (set for `CURRENT_LICENCE`); a 5-card run is 3 + 2, not 2 + 2 + 1.
+
+**Verification.** All motivations suites green; full backend suite green; frontend untouched but its gates run. A throwaway render harness (since deleted) confirmed the cartridge page carried heading + callouts + table + article and nothing from the next section, the fallback printed with no research, and five licence cards packed 3 + 2.
+
+**Know.** The cartridge page now deliberately owns a sheet on both sides, so the page *before* it can end short — the tradeoff the operator asked for. `docs/project-reference.md` updated (annexure packing, cartridge slots, declaration/PAJA rules).
 
 ## 2026-10-15 — A DOCUMENT CAN BE ADDED TO A COMPLETED PACK (FULL DEPLOY)
 
