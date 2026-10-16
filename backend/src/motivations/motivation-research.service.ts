@@ -112,7 +112,7 @@ export const RESEARCH_TTL_DAYS = 180;
  * out of its own firearm research; rewording the ask without this would have
  * shipped, looked right, and still handed the writer the same marketing.
  */
-export const RESEARCH_ASK_VERSION = '2026-09-10c';
+export const RESEARCH_ASK_VERSION = '2026-10-15a';
 
 export function cacheKeyFor(
   target: ResearchTarget,
@@ -170,8 +170,17 @@ export function targetsFor(
         `THE CARTRIDGE: ${calibre}.`,
         'Find its origin and character — recoil, typical factory loads,',
         'effective range — and what it is commonly used for in South Africa.',
-        `Say what it is well matched to for ${useClass}, and what it is over-`,
-        'or under-matched to. Figures with sources, never impressions.',
+        // ⚠️ THE ADVANTAGES ARE NOW THE POINT OF THE PAGE. Operator, 2026-10-15:
+        // "the dimensions with the advantages of the cartridge for the applied
+        // for purpose ... we can have the researcher research that." The page
+        // is a whole sheet of its own now, and what a DFO reads is why THIS
+        // round suits THIS purpose. Ask for it as fact with sources; never as
+        // sales copy, and never as terminal effect we hold no sheet for.
+        `Then set out the ADVANTAGES this cartridge has for ${useClass}: why`,
+        'it is well matched to that purpose, what it does well that decides',
+        'the match, and what it is over- or under-matched to. Ground every',
+        'claim in published fact and name the source of a figure. Figures',
+        'with sources, never impressions.',
         /**
          * ⚠️ THE LENGTH IS THE SIZE OF THE HOLE IT IS PRINTED IN.
          *
@@ -179,27 +188,33 @@ export function targetsFor(
          * because you know the text size and spacing and how much real estate
          * there is and have a perfectly filled sheet everytime."
          *
-         * Measured rather than guessed, with the real face at the real size in
-         * the real slot (MEASURE_SLOT in motivation-pdf.service):
+         * ⚠️ RE-MEASURED WHEN THE PAGE BECAME A PAGE OF ITS OWN (2026-10-15).
+         * The old slot reserved a 90 mm quarry band (since retired) and set the
+         * C.I.P. sheet in the right column. The feature now runs two full
+         * columns to the foot of the sheet, with the picture (our drawing at
+         * about 49 mm once scaled into a column, or the C.I.P. sheet at its own
+         * 119 mm) and then the dimensions table in the right column:
          *
          *   column width                88.0 mm
-         *   left column, full height   152.8 mm
-         *   right column, under the
-         *     C.I.P. sheet              30.3 mm
-         *   capacity                   183.1 mm
+         *   columns, full height       ~232 mm each
+         *   right column: picture        49-119 mm
+         *   right column: spec table     ~50 mm
+         *   capacity                  ~295-365 mm
          *   cost per word                0.899 mm, subheadings amortised
-         *   —> the slot holds about 204 words
+         *   —> the slot holds about 330 to 405 words
          *
-         * 190 is asked for so the page lands around 94% full: a little white
-         * at the foot of a column is what white space in a feature is for, and
-         * overshooting spills the tail onto a second sheet nobody asked for.
+         * 300 is asked for so the page lands full in the drawing case and
+         * around 90% in the C.I.P.-sheet case: a little white at the foot of a
+         * column is what white space in a feature is for, and overshooting
+         * spills the tail onto a second sheet nobody asked for — which is the
+         * near-empty page this work exists to remove.
          *
          * ⚠️ THE SECTION COUNT IS PINNED TOO, because a subheading costs a
-         * line and its spacing. The same 190 words in fourteen sections is
-         * taller than in seven and would overflow a slot the word count says
+         * line and its spacing. The same 300 words in fourteen sections is
+         * taller than in eight and would overflow a slot the word count says
          * is fine.
          */
-        'LENGTH: about 190 words in total, in about 7 short sections. This is',
+        'LENGTH: about 300 words in total, in about 8 short sections. This is',
         'printed in a fixed space on the page — materially longer overflows it',
         'and materially shorter leaves it half empty.',
         '',
@@ -621,7 +636,9 @@ export class MotivationResearchService {
     } catch (err) {
       // We have the answer in hand; failing to cache it costs the NEXT
       // applicant a call, not this one a document.
-      this.logger.warn(`Research cache write failed: ${(err as Error).message}`);
+      this.logger.warn(
+        `Research cache write failed: ${(err as Error).message}`,
+      );
     }
   }
 }

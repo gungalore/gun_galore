@@ -52,6 +52,38 @@ describe('planAnnexurePages', () => {
     }
   });
 
+  it('⚠️ PUTS THREE LICENCE CARDS ON ONE PAGE when the run asks for it', () => {
+    // Operator, 2026-10-15: "we can fit 3 licenses per page." Five cards then
+    // pack 3 + 2 instead of 2 + 2 + 1, so a five-card annexure loses its
+    // near-empty third sheet. Each card is scaled to the per-page budget and
+    // still larger than an ID-1 card is in life.
+    const five = Array.from({ length: 5 }, (_, i) =>
+      card({ letter: 'F', index: i + 1, total: 5, threeUp: true }),
+    );
+    const pages = planAnnexurePages(five, BOX, 51, { perPage: 3 });
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toHaveLength(3);
+    expect(pages[1]).toHaveLength(2);
+    for (const page of pages) {
+      for (const p of page) {
+        expect(p.w).toBeLessThan(BOX.width);
+        expect(p.w).toBeGreaterThan(BOX.width * 0.5);
+      }
+    }
+  });
+
+  it('⚠️ KEEPS FULL WIDTH WHEN NO PER-PAGE BUDGET IS GIVEN', () => {
+    // The size-by-default guarantee: every annexure but a licence-card run
+    // still prints a copy at the full content width.
+    const pages = planAnnexurePages(
+      [card({ letter: 'F' }), card({ letter: 'F' }), card({ letter: 'F' })],
+      BOX,
+    );
+    for (const p of pages[0]) {
+      expect(p.w).toBeCloseTo(BOX.width, 6);
+    }
+  });
+
   it('⚠️ NEVER LETS AN IMAGE RUN OFF THE PAGE', () => {
     // Readable means printable. A placement that overflows the content box is
     // a copy the printer crops, which is worse than one that is merely small.

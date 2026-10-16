@@ -1057,6 +1057,17 @@ export interface MotivationPdfInput {
     /** The section heading, e.g. "The cartridge — 9 mm Luger". */
     label: string;
     /**
+     * The figures for the feature page's dimensions table.
+     *
+     * Operator, 2026-10-15: "On the cartridge, I want it to have it's own page.
+     * the dimensions with the advantages of the cartridge for the applied for
+     * purpose ... It must be a full page." The page had shown the figures only
+     * as callouts on the picture; the table sets them where a DFO can read them
+     * off. Built from the same set the drawing cuts, so the two cannot
+     * disagree. Absent on a legacy input, which simply prints no table.
+     */
+    specs?: { label: string; value: string }[];
+    /**
      * Set: this drawing is the COVER'S HERO, and the body does not repeat it.
      *
      * Operator, 2026-09-09: "i think we put the renedered cartridge as the
@@ -1381,6 +1392,16 @@ export interface AnnexureImagePage {
    * never from the label.
    */
   solo?: boolean;
+  /**
+   * True for a licence-card copy, which packs three to a sheet.
+   *
+   * Operator, 2026-10-15: "we can fit 3 licenses per page." A licence is a
+   * small ID-1 card and one of its kind carries no certification block
+   * (CERTIFICATION.CURRENT_LICENCE is 'none'), so a page of three loses
+   * nothing a commissioner needs to stamp. Set from the annexure kind, never
+   * from the label — the same rule `safe` follows.
+   */
+  threeUp?: boolean;
 }
 
 const CLIPPING_MONTHS = [
@@ -2752,7 +2773,15 @@ export class MotivationPdfService {
         { head: 'Type', w: 44, key: 'type' },
         { head: 'Calibre', w: 68, key: 'calibre' },
         { head: 'Serial', w: 74, key: 'serial' },
-        { head: 'Section', w: 46, key: 'section' },
+        /**
+         * ⚠️ WIDE ENOUGH FOR THE HEADER WORD. At 46pt "Section" wrapped in the
+         * head row and printed as "SECTIO / N" on every battery — a wrapped
+         * heading reads as a broken table, which is the opposite of the
+         * at-a-glance check this column exists for. 60pt also lets "Section 15"
+         * sit on one line in the cells; the slack comes off 'Make and model',
+         * which has a floor and takes the remainder anyway.
+         */
+        { head: 'Section', w: 60, key: 'section' },
         ...(hasPurpose
           ? [{ head: 'Purpose', w: 62, key: 'status' as const }]
           : []),
@@ -2761,9 +2790,7 @@ export class MotivationPdfService {
         // three. Capped here, and the slack goes to the first column instead.
         { head: 'Expires', w: EXPIRES_W, key: 'expiry' },
       ];
-      const fixedWidth = cols
-        .slice(1)
-        .reduce((sum, col) => sum + col.w, 0);
+      const fixedWidth = cols.slice(1).reduce((sum, col) => sum + col.w, 0);
       cols[0].w = Math.max(96, contentWidth - fixedWidth);
 
       const drawBatteryHead = (continued: boolean) =>
@@ -2889,8 +2916,19 @@ export class MotivationPdfService {
       ? input.cartridgeArticle
       : undefined;
 
-    /** Whether the body still owns anything to put under a cartridge heading. */
-    const hasCartridgeBlock = !!bodyPicture || !!article;
+    /**
+     * Whether the body still owns anything to put under a cartridge heading.
+     *
+     * ⚠️ THE SPECS COUNT TOO. The page prints the held dimensions table even
+     * when the research came back with no article and the second raster failed,
+     * so a drawing-less input with figures is still a block — the operator's
+     * full-page rule is about the round's data being on the page, not about it
+     * being illustrated.
+     */
+    const hasCartridgeBlock =
+      !!bodyPicture ||
+      !!article ||
+      (input.cartridgeDrawing?.specs?.length ?? 0) > 0;
 
     /**
      * The cartridge feature's heading, NUMBERED AS A SUB-SECTION.
@@ -2950,8 +2988,87 @@ export class MotivationPdfService {
      * is. The right column simply starts lower — under the drawing — so the
      * left fills first and the last group lands wherever it balances.
      */
+    /**
+     * The page's own words when the researcher had nothing to say.
+     *
+     * ⚠️ IT IS NOT INVENTED, IT IS DERIVED FROM THE FIGURES WE HOLD. The whole
+     * reason the cartridge block exists is that the writer was recalling
+     * velocities and energies; this says only what a standardised cartridge IS
+     * — that its dimensions and its pressure ceiling are fixed, so ammunition
+     * from any manufacturer is interchangeable in a firearm chambered for it.
+     * That is a consequence of the measurements on the table above it, not a
+     * claim about the round's performance, and it names no source. It keeps the
+     * operator's full-page rule (2026-10-15) when a research call failed or a
+     * cartridge nobody has written up produced no article.
+     */
+    const CARTRIDGE_STANDALONE = [
+      'This cartridge is a standardised design: its case dimensions and its ' +
+        'maximum average pressure are fixed by standard rather than chosen by ' +
+        'any one maker. Because the chambering is standard, factory ' +
+        'ammunition from any manufacturer is interchangeable in the firearm ' +
+        'applied for, which is what makes the round dependable to buy and ' +
+        'economical to practise with.',
+      'The figures in the table are the round’s own standardised ' +
+        'measurements, held against the specification for this chambering. ' +
+        'They are what a firearm’s chamber, bore and pressure ceiling are ' +
+        'checked against.',
+    ];
+
+    /**
+     * The feature page's dimensions table, in the right column under the
+     * picture.
+     *
+     * ⚠️ A TABLE, NOT MORE CALLOUTS. Operator, 2026-10-15: "the dimensions ...
+     * It must be a full page." On a half-page feature the figures as callouts
+     * on the drawing were enough; on a page of its own a reviewer reads them
+     * off a list. Both come off the same held figures, so they cannot disagree.
+     */
+    const drawSpecTable = (
+      x: number,
+      y: number,
+      w: number,
+      rows: { label: string; value: string }[],
+    ): number => {
+      let at = y;
+      doc
+        .font(F.sansSemi)
+        .fontSize(K.px(9))
+        .fillColor(C.mut)
+        .text('STANDARD DIMENSIONS', x, at, {
+          width: w,
+          characterSpacing: K.px(9) * 0.1,
+        });
+      at = doc.y + K.mm(1.6);
+      const labelW = w * 0.6;
+      for (const row of rows) {
+        const rowY = at;
+        doc
+          .font(F.sans)
+          .fontSize(K.px(9))
+          .fillColor(C.mut)
+          .text(row.label, x, rowY, { width: labelW - K.mm(2) });
+        const afterLabel = doc.y;
+        doc
+          .font(F.sansSemi)
+          .fontSize(K.px(9))
+          .fillColor(C.ink)
+          .text(row.value, x + labelW, rowY, {
+            width: w - labelW,
+            align: 'right',
+          });
+        at = Math.max(afterLabel, doc.y) + K.mm(1.4);
+        doc
+          .moveTo(x, at - K.mm(0.7))
+          .lineTo(x + w, at - K.mm(0.7))
+          .lineWidth(0.5)
+          .strokeColor(C.hair)
+          .stroke();
+      }
+      return at;
+    };
+
     const drawCartridgeFeature = (
-      a: { title: string; paragraphs: string[] },
+      a: { title: string; paragraphs: string[] } | undefined,
       picture?: {
         png: Buffer;
         widthMm: number;
@@ -3048,11 +3165,27 @@ export class MotivationPdfService {
        * part that reads as broken.
        */
       const lineH = doc.currentLineHeight(true);
+      /** The next baseline on the page's line grid, never off it. */
+      const align = (y: number) =>
+        top + Math.ceil((y - top) / lineH - 1e-6) * lineH;
 
       let rightTop = top;
       if (picture) {
         const h = placeDrawing(picture, rightX, top, colW);
-        rightTop = top + Math.ceil((h + K.mm(3)) / lineH - 1e-6) * lineH;
+        rightTop = align(top + h + K.mm(3));
+      }
+
+      /**
+       * ⚠️ THE TABLE GOES UNDER THE PICTURE, IN THE SAME COLUMN. The left
+       * column is the argument, the right column is the evidence for it: the
+       * round as drawn, then the round as measured. The figures are the sheet's
+       * own and the table is our own layout, so it reproduces no typeset page.
+       */
+      const specs = input.cartridgeDrawing?.specs ?? [];
+      if (specs.length) {
+        rightTop = align(
+          drawSpecTable(rightX, rightTop, colW, specs) + K.mm(3),
+        );
       }
 
       /**
@@ -3069,8 +3202,9 @@ export class MotivationPdfService {
        * group of the whole article, which cannot be split, so the balancer
        * fills one column and leaves the other blank.
        */
+      const source = a?.paragraphs.length ? a.paragraphs : CARTRIDGE_STANDALONE;
       const paras: string[] = [];
-      for (const raw of a.paragraphs) {
+      for (const raw of source) {
         const run = subheadingOf(raw) ? null : runInOf(raw);
         if (run) {
           paras.push(`**${run.head}**`);
@@ -3256,25 +3390,15 @@ export class MotivationPdfService {
     const drawCartridge = () => {
       if (!hasCartridgeBlock || cartridgeDrawn) return;
       cartridgeDrawn = true;
-
-      if (article) {
-        drawCartridgeFeature(article, bodyPicture);
-        // The spread owns its sheet on both sides — see the latch in the loop.
-        featureBreakPending = true;
-        return;
-      }
       /**
-       * ⚠️ NO ARTICLE MEANS NO COLUMNS. A drawing on its own is a figure and
-       * takes the whole column, as it did before the feature existed — the
-       * research can be absent (a cartridge nobody has looked up, a call that
-       * failed) and the picture must still land.
+       * ⚠️ ONE LAYOUT, WITH OR WITHOUT THE RESEARCH. The columns, the picture
+       * and the dimensions table are the page; when the article is absent the
+       * left column carries the standalone note instead. The old full-width
+       * figure path is gone — it was the half page the operator rejected.
        */
-      if (bodyPicture) {
-        const y0 = doc.y;
-        const drawH = placeDrawing(bodyPicture, MARGIN, y0, contentWidth);
-        doc.x = MARGIN;
-        doc.y = y0 + drawH + PARA_GAP;
-      }
+      drawCartridgeFeature(article, bodyPicture);
+      // The spread owns its sheet on both sides — see the latch in the loop.
+      featureBreakPending = true;
     };
 
     /**
@@ -3294,10 +3418,16 @@ export class MotivationPdfService {
       cartridgeAfterFirearm = false;
       if (!hasCartridgeBlock || cartridgeDrawn || !input.cartridgeDrawing)
         return;
-      // The feature takes a sheet of its own — same rule as the deferred path.
-      if (article && doc.y > bodyTop + K.mm(1)) doc.addPage();
-      else if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20))
-        doc.addPage();
+      /**
+       * ⚠️ THE FEATURE ALWAYS TAKES A SHEET OF ITS OWN. Operator, 2026-10-15:
+       * "On the cartridge, I want it to have it's own page ... It must be a
+       * full page." It used to claim a page only when the research had produced
+       * an article; a pack whose research failed then dropped the drawing into
+       * the back half of the firearm section, which is the bare third the
+       * operator was looking at. The page now owns a sheet whether or not the
+       * research arrived, because the held dimensions table is always there.
+       */
+      if (doc.y > bodyTop + K.mm(1)) doc.addPage();
       renderHeading(cartridgeHeading);
       drawCartridge();
       // The spread owns its sheet on both sides, so the next section starts a
@@ -3382,9 +3512,7 @@ export class MotivationPdfService {
        */
       if (hasCartridgeBlock && input.cartridgeDrawing && !cartridgeDrawn) {
         // The feature takes a page of its own here too — see the body loop.
-        if (article && doc.y > bodyTop + K.mm(1)) doc.addPage();
-        else if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20))
-          doc.addPage();
+        if (doc.y > bodyTop + K.mm(1)) doc.addPage();
         renderHeading(cartridgeHeading);
         drawCartridge();
       }
@@ -3413,7 +3541,37 @@ export class MotivationPdfService {
       }
     };
 
-    for (const block of blocks) {
+    /**
+     * Height the declaration's own close needs after its last paragraph: the
+     * signature block's guard (mm 64) plus the disclaimer's (mm 30) plus the
+     * gap the disclaimer rule adds. Both guards are unchanged; this only lets
+     * the declaration decide whether it can share a sheet BEFORE the heading is
+     * drawn, so it never splits.
+     */
+    const DECLARATION_TAIL_H = K.mm(64) + K.mm(30) + K.mm(12);
+    /** A conservative allowance for the declaration heading's band and air. */
+    const DECLARATION_HEAD_H = K.mm(16);
+
+    /**
+     * Measure every block of the declaration section from `from` to the next
+     * heading — the paragraphs that follow the declaration heading.
+     */
+    const declarationParagraphsHeight = (from: number): number => {
+      doc.font(B.body).fontSize(BODY_SIZE);
+      let h = 0;
+      for (let i = from; i < blocks.length; i++) {
+        if (isHeading(blocks[i])) break;
+        h +=
+          doc.heightOfString(blocks[i], {
+            width: contentWidth - (L.hangingRule ? K.SECTION_INDENT : 0),
+            lineGap: BODY_LEADING,
+          }) + PARA_GAP;
+      }
+      return h;
+    };
+
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const block = blocks[bi];
       /**
        * ⚠️ AND NOTHING FOLLOWS THE FEATURE ONTO ITS PAGE EITHER.
        *
@@ -3535,8 +3693,28 @@ export class MotivationPdfService {
           drawDeferredBody();
           // The feature's own page break is satisfied by the declaration's.
           featureBreakPending = false;
-          if (doc.y > bodyTop + K.mm(1)) doc.addPage();
-        } else if (wantsCartridge && article && doc.y > bodyTop + K.mm(1)) {
+          /**
+           * ⚠️ MEASURED FIT, NOT ALWAYS A FRESH SHEET. Operator, 2026-10-15:
+           * "address the almost completely empty pages." The 2026-09-15 rule
+           * broke to its own page unconditionally — right when the statutory
+           * section ran long, because a heading with its paragraphs overleaf
+           * splits a page the applicant signs, and wrong when the section ended
+           * a few lines short: MO000096 left page 9 holding one orphan
+           * paragraph and the rest of the sheet blank. So break ONLY when the
+           * whole close — heading, its paragraphs, the signature block and the
+           * disclaimer — cannot fit what is left. When it fits, the declaration
+           * fills the sheet; when it does not, the old rule applies unchanged.
+           */
+          if (doc.y > bodyTop + K.mm(1)) {
+            const fitsWhole =
+              doc.y +
+                DECLARATION_HEAD_H +
+                declarationParagraphsHeight(bi + 1) +
+                DECLARATION_TAIL_H <=
+              K.BODY_BOTTOM;
+            if (!fitsWhole) doc.addPage();
+          }
+        } else if (wantsCartridge && doc.y > bodyTop + K.mm(1)) {
           doc.addPage();
         } else if (
           headingWouldOrphan({
@@ -3894,11 +4072,59 @@ export class MotivationPdfService {
       pnRule.start(doc.y);
       const bodyX = MARGIN + K.SECTION_INDENT;
       const bodyW = contentWidth - K.SECTION_INDENT;
-
-      for (const block of input.priorNotice.body
+      const pnBlocks = input.priorNotice.body
         .split(/\n\s*\n/)
         .map((b) => b.trim())
-        .filter(Boolean)) {
+        .filter(Boolean);
+      /** The signature close: place/date line, rule, identity number. */
+      const pnSigNeed = K.mm(4) + K.mm(11) + K.mm(9) + K.px(13) * 2.4;
+
+      /**
+       * ⚠️ FIT THE LETTER ON ONE SHEET BY SPACING, NEVER BY CUTTING WORDS.
+       *
+       * Operator, 2026-10-15: "address the almost completely empty pages."
+       * MO000096's request spilled its last paragraph and the whole signature
+       * block onto a second sheet that was three quarters bare. The letter is a
+       * fixed document, so its words are not ours to trim in a layout pass —
+       * only its air is. Measure the blocks at decreasing leading and paragraph
+       * gap and take the first spacing the sheet holds; the copy is unchanged,
+       * and the first candidate is today's spacing, so a letter that already
+       * fits keeps it.
+       */
+      doc.font(B.body).fontSize(K.BODY_SIZE);
+      const pnBlocksHeight = (leading: number, gap: number): number => {
+        let h = 0;
+        for (const b of pnBlocks) {
+          const numbered = /^\d\.\s/.test(b);
+          const isLabel = /:$/.test(b) && b.length < 40;
+          doc
+            .font(isLabel ? F.sansSemi : B.body)
+            .fontSize(isLabel ? K.px(10) : K.BODY_SIZE);
+          h +=
+            doc.heightOfString(b, {
+              width: bodyW - (numbered ? K.mm(6) : 0),
+              lineGap: isLabel ? 0 : leading,
+            }) + (isLabel ? K.mm(2) : numbered ? K.mm(2.5) : gap);
+        }
+        return h;
+      };
+      const pnAvailable = K.BODY_BOTTOM - doc.y;
+      let pnLeading = K.BODY_LEADING;
+      let pnGap = K.PARA_GAP;
+      for (const [lead, gap] of [
+        [K.BODY_LEADING, K.PARA_GAP],
+        [K.BODY_LEADING, K.mm(2.5)],
+        [K.BODY_LEADING * 0.4, K.mm(2)],
+        [0, K.mm(1.5)],
+      ] as [number, number][]) {
+        if (pnBlocksHeight(lead, gap) + pnSigNeed <= pnAvailable) {
+          pnLeading = lead;
+          pnGap = gap;
+          break;
+        }
+      }
+
+      for (const block of pnBlocks) {
         // A numbered ask is a hanging indent, not a justified paragraph — the
         // three of them have to be countable at a glance.
         const numbered = /^\d\.\s/.test(block);
@@ -3909,7 +4135,7 @@ export class MotivationPdfService {
           .fontSize(isLabel ? K.px(10) : K.BODY_SIZE);
         const need = doc.heightOfString(block, {
           width: bodyW - (numbered ? K.mm(6) : 0),
-          lineGap: isLabel ? 0 : K.BODY_LEADING,
+          lineGap: isLabel ? 0 : pnLeading,
         });
         if (doc.y + need > K.BODY_BOTTOM) {
           pnRule.close(K.BODY_BOTTOM);
@@ -3933,9 +4159,9 @@ export class MotivationPdfService {
               width: bodyW - (numbered ? K.mm(6) : 0),
               // Ragged right here too — Part 7.1, and see the body block.
               align: 'left',
-              lineGap: K.BODY_LEADING,
+              lineGap: pnLeading,
             });
-          doc.y += numbered ? K.mm(2.5) : K.PARA_GAP;
+          doc.y += numbered ? K.mm(2.5) : pnGap;
         }
         doc.x = MARGIN;
       }
@@ -3945,9 +4171,9 @@ export class MotivationPdfService {
       // of clear space above it — a one-line page seven that reads as a
       // printing accident on a document somebody is handing to an official.
       // The place/date line, the signature rule and the identity number, the
-      // same three any official request from the applicant carries.
-      const sigNeed = K.mm(4) + K.mm(11) + K.mm(9) + K.px(13) * 2.4;
-      if (doc.y + sigNeed > K.BODY_BOTTOM) {
+      // same three any official request from the applicant carries. See
+      // pnSigNeed above, where the fit was measured with the same figure.
+      if (doc.y + pnSigNeed > K.BODY_BOTTOM) {
         pnRule.close(K.BODY_BOTTOM);
         doc.addPage();
         doc.y = bodyTop;
@@ -3987,12 +4213,9 @@ export class MotivationPdfService {
           .font(B.body)
           .fontSize(K.px(11))
           .fillColor(C.sub)
-          .text(
-            `Identity number: ${input.idNumber}`,
-            MARGIN,
-            doc.y + K.px(2),
-            { width: contentWidth },
-          );
+          .text(`Identity number: ${input.idNumber}`, MARGIN, doc.y + K.px(2), {
+            width: contentWidth,
+          });
       }
       doc.x = MARGIN;
     }
@@ -4338,6 +4561,7 @@ export class MotivationPdfService {
         height: a2.height,
         safe: a2.safe ?? false,
         solo: a2.solo ?? false,
+        threeUp: a2.threeUp ?? false,
         // ⚠️ PHOTOGRAPHS OF THE SAFE ARE ORIGINALS, NOT COPIES. Nothing
         // certifies a photograph of your own safe against an original
         // photograph, so the stamp strip is not reserved for them even though
@@ -4372,7 +4596,21 @@ export class MotivationPdfService {
         const ordinary = group.filter((i) => !i.safe);
         const safes = group.filter((i) => i.safe);
         if (ordinary.length) {
-          pages.push(...planAnnexurePages(ordinary, box, HEADING_H));
+          /**
+           * ⚠️ LICENCE CARDS PACK THREE-UP. Operator, 2026-10-15: "we can fit 3
+           * licenses per page." Only a run that is entirely licence cards (and
+           * has at least three, so two-up is unchanged) asks the planner for the
+           * smaller uniform card; every other annexure keeps full width. Solo
+           * evidence copies are excluded — they own their sheet. See
+           * motivation-annexure-layout.ts.
+           */
+          const licenceCards =
+            ordinary.length > 2 && ordinary.every((i) => i.threeUp);
+          pages.push(
+            ...planAnnexurePages(ordinary, box, HEADING_H, {
+              perPage: licenceCards ? 3 : undefined,
+            }),
+          );
         }
         if (safes.length) {
           // The safe sheet is 2×2; shift its whole box down so the heading

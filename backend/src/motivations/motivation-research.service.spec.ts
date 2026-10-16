@@ -108,6 +108,25 @@ describe('what gets researched', () => {
     expect(ask).toContain('SOUTH AFRICAN ENGLISH');
   });
 
+  it('⚠️ ASKS FOR THE CARTRIDGE ADVANTAGES FOR THE APPLIED-FOR PURPOSE', () => {
+    /**
+     * Operator, 2026-10-15: "the dimensions with the advantages of the
+     * cartridge for the applied for purpose ... we can have the researcher
+     * research that." The feature is a whole page of its own now, and the
+     * reason a DFO reads it is the match between the round and the purpose.
+     */
+    const sport = targetsFor(SPORT, ANSWERS).find(
+      (t) => t.target === 'calibre',
+    )!.ask;
+    const hunt = targetsFor(HUNTER, ANSWERS).find(
+      (t) => t.target === 'calibre',
+    )!.ask;
+    expect(sport).toContain('ADVANTAGES');
+    expect(hunt).toContain('ADVANTAGES');
+    // The purpose itself, not a generic paragraph: the use class is named.
+    expect(sport).not.toBe(hunt);
+  });
+
   it('keys a discipline to its registry slug, not to what was typed', () => {
     const t = targetsFor(SPORT, {
       ...ANSWERS,

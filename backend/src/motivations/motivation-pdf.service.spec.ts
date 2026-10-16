@@ -1327,6 +1327,60 @@ describe('the cartridge drawing', () => {
     expect(t).toContain('Ø9.96');
   });
 
+  it('⚠️ PRINTS THE DIMENSIONS TABLE, EVEN WITH NO RESEARCH ARTICLE', async () => {
+    /**
+     * Operator, 2026-10-15: "On the cartridge, I want it to have it's own
+     * page. the dimensions with the advantages of the cartridge for the
+     * applied for purpose." MO000096 had no research calibre block, so the old
+     * renderer drew a bare figure and left the page two thirds empty. The held
+     * figures print as a table whether or not the research arrived.
+     */
+    const withSpecs = {
+      ...drawing,
+      specs: [
+        { label: 'Overall length', value: '29.69 mm' },
+        { label: 'Case length', value: '19.15 mm' },
+        { label: 'Bullet diameter', value: '9.01 mm' },
+        { label: 'Maximum average pressure', value: '2350 bar' },
+      ],
+    };
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: withSpecs,
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t).toContain('STANDARD DIMENSIONS');
+    expect(t).toContain('Case length');
+    expect(t).toContain('19.15 mm');
+    expect(t).toContain('Maximum average pressure');
+    expect(t).toContain('2350 bar');
+  });
+
+  it('⚠️ GIVES THE CARTRIDGE A WHOLE SHEET, WITH NO RESEARCH ARTICLE', async () => {
+    /**
+     * Operator, 2026-10-15: "On the cartridge, I want it to have it's own page
+     * ... It must be a full page." MO000096's research had produced no calibre
+     * article, and the old renderer dropped the drawing into the tail of the
+     * firearm section, leaving a third of the sheet bare. Asserted per PAGE,
+     * because whole-document text cannot tell whether the feature shares a
+     * sheet — see pageTexts.
+     */
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: {
+        ...drawing,
+        specs: [{ label: 'Case length', value: '19.15 mm' }],
+      },
+    } as never);
+    const sheets = await pageTexts(pdf);
+    const idx = sheets.findIndex((p) => p.includes('STANDARD DIMENSIONS'));
+    expect(idx).toBeGreaterThanOrEqual(0);
+    // The page carries the table and the standalone note...
+    expect(sheets[idx]).toContain('standardised');
+    // ...and nothing from the section that follows it.
+    expect(sheets[idx]).not.toContain('SABS-approved safe');
+  });
+
   // ── The hero ──────────────────────────────────────────────────────
   //
   // Operator, 2026-09-09: "i think we put the renedered cartridge as the Hero

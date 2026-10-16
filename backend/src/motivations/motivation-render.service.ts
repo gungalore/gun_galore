@@ -87,6 +87,7 @@ import { DocumentPageRasterService } from './document-page-raster.service';
 import sharp from 'sharp';
 import { findCartridge } from './motivation-cartridge';
 import {
+  cartridgeDimRows,
   cartridgeDrawing,
   completeDims,
   type DrawingText,
@@ -109,7 +110,10 @@ import {
   parsePressClippingIds,
 } from './motivation-fields';
 import { Saps271Service } from './saps271.service';
-import { MotivationSharedService, TEMPLATE_VERSION } from './motivation-shared.service';
+import {
+  MotivationSharedService,
+  TEMPLATE_VERSION,
+} from './motivation-shared.service';
 
 // ────────────────────────────────────────────────────────────────────
 // RENDERING — the finished pack. The PDF, its annexure images, the C.I.P.
@@ -756,6 +760,8 @@ export class MotivationRenderService {
       safe: boolean;
       /** An evidence annexure: takes its own letter AND its own full page. */
       solo: boolean;
+      /** A licence-card copy: three to a sheet. See AnnexureImagePage.threeUp. */
+      threeUp: boolean;
       certification: AnnexureEntry['certification'];
       pages: { bytes: Buffer; width: number; height: number }[];
     }
@@ -850,6 +856,11 @@ export class MotivationRenderService {
         // reprinting its own possession, so it gets a whole sheet; an ordinary
         // copy keeps the pack-as-many-as-fit rule.
         solo: !!evidenceEntry,
+        // ⚠️ KEYED OFF THE KIND, NEVER THE LABEL. A licence card is small and
+        // uncertified, so three pack a sheet with nothing a commissioner needs.
+        // Operator, 2026-10-15: "we can fit 3 licenses per page." See the same
+        // warning on `safe` above for why the label is not consulted.
+        threeUp: u.kind === MotivationUploadKind.CURRENT_LICENCE,
         certification: entry?.certification ?? 'none',
         pages,
       });
@@ -860,7 +871,10 @@ export class MotivationRenderService {
     // this page's place in that run.
     const pageTotals = new Map<string, number>();
     for (const r of resolved) {
-      pageTotals.set(r.bucket, (pageTotals.get(r.bucket) ?? 0) + r.pages.length);
+      pageTotals.set(
+        r.bucket,
+        (pageTotals.get(r.bucket) ?? 0) + r.pages.length,
+      );
     }
     for (const r of resolved) {
       const total = pageTotals.get(r.bucket) ?? r.pages.length;
@@ -877,6 +891,7 @@ export class MotivationRenderService {
           height: page.height,
           certification: r.certification,
           safe: r.safe,
+          threeUp: r.threeUp,
         });
       }
     }
@@ -1373,9 +1388,7 @@ export class MotivationRenderService {
     const article = cartridgeArticle(row.researchEncrypted, cartridge?.name);
 
     // The purpose exhibits — a read, on every download, never a model call.
-    const storedPlates = await this.plates
-      .storedFor(row.id)
-      .catch(() => []);
+    const storedPlates = await this.plates.storedFor(row.id).catch(() => []);
 
     return this.pdf.render({
       referenceNumber: row.referenceNumber,
@@ -1558,6 +1571,14 @@ export class MotivationRenderService {
         label: string;
         /** The cartridge's standardised name, for the feature's headline. */
         name: string;
+        /**
+         * The figures for the feature page's dimensions table, in the order a
+         * reader wants them. Built from the same `completeDims` set the drawing
+         * cuts its silhouette from, so the table and the callouts can never
+         * quote two different measurements of one round. Only letters the sheet
+         * printed appear; a stood-in shoulder or groove is omitted.
+         */
+        specs: { label: string; value: string }[];
         hero?: { subtitle: string };
         inset?: {
           png: Buffer;
@@ -1692,6 +1713,17 @@ export class MotivationRenderService {
          */
         label: `The cartridge \u2014 ${displayCalibre(printed) || hit.name}`,
         name: hit.name,
+        /**
+         * ⚠️ THE TABLE'S FIGURES ARE THE DRAWING'S FIGURES. Both read
+         * `completed`, and `cartridgeDimRows` refuses every derived letter, so
+         * a cartridge with no shoulder prints no shoulder diameter — the same
+         * rule the callouts follow. See motivation-cartridge-drawing.ts.
+         */
+        specs: cartridgeDimRows(
+          completed.dims,
+          completed.derived,
+          label.pmaxBar,
+        ),
         /**
          * ⚠️ THE LABEL IS STILL BUILT ON A HERO PACK. It is the contents-page
          * entry and the fallback heading, and a later change that gives the

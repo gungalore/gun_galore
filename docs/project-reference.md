@@ -1122,6 +1122,22 @@ not fit moves whole only once the page is at least `MIN_PAGE_FILL` used, and
 never at all if it is taller than a whole page. Either rule alone makes the
 document worse — change one and read the other.
 
+⚠️ **THE DECLARATION IS PLACED BY MEASURE, NOT BY A BLANKET BREAK**
+(operator, 2026-10-15: "address the almost completely empty pages"). It opens
+its own page only when the whole close — heading, its paragraphs, the signature
+block and the disclaimer — will not fit what is left of the current sheet; when
+it fits, it fills the sheet. MO000096 had left page 9 holding a single orphan
+paragraph because the old rule broke unconditionally. `DECLARATION_TAIL_H`
+reserves the signature and disclaimer guards; `declarationParagraphsHeight`
+measures the section's remaining blocks.
+
+⚠️ **THE PRIOR-NOTICE LETTER FITS ONE SHEET BY SPACING, NEVER BY CUTTING
+WORDS.** Its blocks are measured at four decreasing leading/gap settings and the
+first that fits the sheet is taken; the copy is a fixed legal document and a
+layout pass does not get to trim it. The first candidate is today's spacing, so
+a letter that already fits keeps it. MO000096's spilled its last paragraph and
+the signature onto a near-empty second sheet.
+
 ⚠️ **NO SERVICE NAME ANYWHERE IN A LODGED PACK** — book Part 1 rule 2. No
 "prepared by", no footer brand, no "we"; the applicant signs it as their own
 letter. This reverses the operator's 2026-08-24 instruction to put the logo and
@@ -1141,29 +1157,52 @@ are part of the body's own flow, under the argument they are evidence for.
   it). It is a third party's signed statement about a firearm. It is lettered
   through `GeneratedAnnexureId` and printed LAST, which is a placement decision
   rather than an ordering one: every other annexure is an uploaded image laid
-  out two to a sheet by `planAnnexurePages`, and this is a page we render.
+  out by `planAnnexurePages`, and this is a page we render.
   Last in both is the only arrangement where the index and the pages cannot
   disagree.
+
+  ⚠️ **THE PLANNER PACKS AT FULL WIDTH, EXCEPT LICENCE CARDS AT THREE A
+  SHEET.** Ordinary copies take the content width and as many fit a page
+  (an A4 scan takes a page to itself; two licence-height cards share one).
+  A run that is entirely licence-card copies — and has at least three — asks
+  the planner for `perPage: 3` and the cards shrink uniformly to fit (operator,
+  2026-10-15: "we can fit 3 licenses per page"). Five cards then pack 3 + 2
+  across two sheets instead of 2 + 2 + 1 across three, so the annexure loses
+  its near-empty tail. Keyed off the upload kind (`CURRENT_LICENCE`), never the
+  label; safe photographs (2x2) and evidence `solo` copies are unchanged.
 - **`SELLER_LICENCE` is NOT an annexure** ("Remove", twice). The consent page
   already prints the front and the back of that same card above the signature.
   The upload is not deleted, only unlettered.
 
 ### The cartridge feature page
 
-A two-column spread on a page of its own, with **three fixed slots** — sizes
-are constants, not measurements of the content, so the page is the same
-document every cartridge and can be checked once:
+⚠️ **THE PAGE IS ALWAYS A PAGE OF ITS OWN** (operator, 2026-10-15: "On the
+cartridge, I want it to have it's own page … It must be a full page"). It used
+to claim a sheet only when the research had produced an article; a pack whose
+research failed dropped the drawing into the tail of the firearm section and
+left a bare third of a sheet. The feature now breaks to its own page whether or
+not the research arrived, and the close of the firearms section never shares it.
+
+A two-column spread, with the picture and the dimensions table in the right
+column and the prose filling the left plus whatever the right leaves:
 
 | slot | size |
 |---|---|
-| C.I.P. sheet | 88 × 119 mm, top of the right column |
-| quarry photograph | 182 × 78 mm (21:9) across the foot, plus a 6 mm caption |
-| text | about 183 mm of column |
+| picture (C.I.P. sheet, else our drawing) | right column width; 88 × 119 mm as the sheet, ~88 × 49 mm as the drawing |
+| dimensions table | right column, under the picture; the held figures only |
+| text | left column full height, then the right column remainder |
 
-⚠️ **THE RESEARCH ASK IS SIZED TO THE SLOT.** 0.899 mm per word, measured with
-the real face at the real size (`MEASURE_SLOT=1` on a render prints the
-figures), so the slot holds ~204 words and the calibre ask asks for 190 in
-about 7 sections. Change the slot and the ask has to move with it.
+The dimensions table is built from the **same** `completeDims` set the drawing
+cuts, through `cartridgeDimRows`, so the table and the callouts can never quote
+two different measurements. A derived letter (a shoulder or groove the sheet
+never printed) is omitted from both.
+
+⚠️ **THE RESEARCH ASK IS SIZED TO THE SLOT.** 0.899 mm per word, so the two
+full columns hold about 330–405 words depending on whether the picture is the
+sheet or our drawing, and the calibre ask asks for 300 in about 8 sections.
+Change the slot and the ask has to move with it. When there is no article the
+left column carries a standalone note derived from the held figures
+(standardisation and interchangeability), never invented performance copy.
 
 ⚠️ **THE RESEARCH WRITES HEADINGS TWO WAYS AND BOTH MUST BE HANDLED** —
 `**Origin**` on its own line, and `Origin: …` run in. It switched to the second

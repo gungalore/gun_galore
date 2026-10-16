@@ -56,6 +56,15 @@ export interface AnnexureImage {
    * pack-as-many-as-fit rule.
    */
   solo?: boolean;
+  /**
+   * A licence-card copy, which the run packs three to a sheet.
+   *
+   * ⚠️ THE CALLER ALSO PASSES `perPage: 3` FOR SUCH A RUN. This flag lets the
+   * planner know a downscale is intended, so the full-width rule in the header
+   * above still holds for every other annexure. Operator, 2026-10-15: "we can
+   * fit 3 licenses per page."
+   */
+  threeUp?: boolean;
 }
 
 export interface PlacedImage extends AnnexureImage {
@@ -107,12 +116,40 @@ export function planAnnexurePages(
   images: AnnexureImage[],
   box: LayoutBox,
   openingHeadingH = 0,
+  opts: { perPage?: number } = {},
 ): PlacedImage[][] {
   const pages: PlacedImage[][] = [];
   let page: PlacedImage[] = [];
   let top = box.y + openingHeadingH;
   let avail = box.height - openingHeadingH;
   let cursor = top;
+
+  /**
+   * ⚠️ A UNIFORM PER-PAGE BUDGET WHEN A RUN PACKS MORE THAN TWO-UP.
+   *
+   * Licence cards go three to a sheet (operator, 2026-10-15). Sizing every card
+   * to the FIRST page's room — the shorter one, because it also carries the
+   * annexure heading — keeps the run uniform and guarantees three fit on every
+   * sheet, the headered one included. Absent (or 1) keeps the old full-width
+   * packing exactly, so every other annexure is untouched.
+   */
+  const perPage = Math.max(1, Math.floor(opts.perPage ?? 0));
+  const budgetH =
+    perPage > 1
+      ? Math.max(
+          0,
+          // ⚠️ ONE POINT OF SLACK. Sizing three cards to the sheet exactly
+          // leaves the third on a boundary the break test can lose to floating
+          // point — 648.90 against 648.89 — and the headered page then holds
+          // two. The point is invisible on the paper and buys the guarantee.
+          (box.height -
+            openingHeadingH -
+            perPage * CAPTION_H -
+            (perPage - 1) * GAP -
+            1) /
+            perPage,
+        )
+      : Number.POSITIVE_INFINITY;
 
   for (const img of images) {
     // Full content width, unless that makes it taller than a whole page.
@@ -121,8 +158,11 @@ export function planAnnexurePages(
     let w = box.width;
     let h = w * ratio;
     const maxH = avail - CAPTION_H - stampH;
-    if (h > maxH) {
-      h = maxH;
+    // A solo copy is never shrunk to share; every other copy is capped by the
+    // per-page budget when the run packs more than two-up.
+    const cap = img.solo ? maxH : Math.min(maxH, budgetH);
+    if (h > cap) {
+      h = cap;
       w = ratio > 0 ? h / ratio : box.width;
     }
 
