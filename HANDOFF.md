@@ -7,6 +7,19 @@ overwritten.
 
 Last updated: **2026-10-16**.
 
+## 2026-10-16 — DOCUMENT DICTIONARY, STEP C1 + C2 (BACKEND DEPLOY)
+
+Operator direction: "do what is safe in steps, so we can keep track of what is done and what still needs to be done." Step C is the internal consolidation of the document tables; C1 and C2 below moved data with NO behaviour change (both are re-exports, so every importer is unchanged).
+
+- **C1 — `72cacd2a`** (backend-only deploy). New `common/document-filing/document-dictionary.ts` is the single source for the vault kind/cover options and the motivation kind options; `vault-kind-options.ts` and `motivation-kind-options.ts` became thin re-exports. `document-dictionary.spec.ts` pins it: vault options are live `CredentialKind`s (`currentKind` maps each to itself), the cover set is the kind set minus `OTHER`, and the motivation set mirrors `CLASSIFIABLE` (now exported).
+- **C2 — `b1503345`** (backend-only deploy, rollback `alloutdoor-20261016-163235.dump`). `CREDENTIAL_TO_UPLOAD` (the vault-kind → motivation-slot placement map) moved into the dictionary and is re-exported from `motivation-credentials.ts`. Spec pins the dedicated-certificate row.
+
+Gates each step: backend `tsc` clean + **360 suites/5645 tests**.
+
+**Step C remaining (tracked):** C3 — move the extraction field lists (`WANTED` + the per-kind prompt fragments) into the dictionary; C4 — a decider/placer seam shared by the two classify paths. Both are relocations of existing behaviour; neither is required for correctness (the decider, extractor and enum-exhaustive maps already work on both surfaces).
+
+**Also still pending (needs a live action, not code):** re-download MO000096 to confirm the annexure index no longer lists the good-standing letter; upload/read one document to confirm a HIGH-reasoning read returns complete fields.
+
 ## 2026-10-16 — OCR REASONING, ANNEXURE-INDEX COVERAGE, ENDORSEMENT GUARD (FULL DEPLOY)
 
 Commit **`54e7d1e7`**, 11 backend files + 1 frontend. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-162206.dump` (32 186 918 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `54e7d1e7`. No migration.
