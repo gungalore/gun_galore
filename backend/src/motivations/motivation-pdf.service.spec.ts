@@ -1337,9 +1337,11 @@ describe('the cartridge drawing', () => {
     const bullets = {
       title: '9 mm Luger',
       paragraphs: [
-        '- Its modest recoil keeps the sights on target between shots.',
-        '- The chambering is the most commonly stocked pistol round in South Africa.',
-        '- Factory loads from several makers cycle reliably in service pistols.',
+        '- Its modest recoil keeps the sights on target between shots, which matters when a second shot has to be taken quickly.',
+        '- The chambering is the most commonly stocked pistol round in South Africa, so ammunition is available in every town.',
+        '- Factory loads from several makers cycle reliably in service pistols designed for the chambering.',
+        '- Its widespread use by security companies means spares and gunsmith experience are easy to find.',
+        '- Training ammunition is inexpensive, so the applicant can afford the regular practice that safe use depends on.',
       ],
     };
     const { pdf } = await svc.render({
@@ -1352,6 +1354,40 @@ describe('the cartridge drawing', () => {
     expect(t).toContain('most commonly stocked pistol round in South Africa');
     // The marker is drawn as text, so it extracts with the bullet's line.
     expect(t).toContain('•');
+  });
+
+  it('⚠️ REFUSES A MALFORMED ARTICLE AND PRINTS THE HELD-FIGURE BULLETS', async () => {
+    /**
+     * MO000096, 2026-10-16: the stored research came back as one word per line
+     * with a stray counter — "The / 2 cartridge / 3 is …" — truncated at
+     * "which". It printed as a column of single words and left the page blank.
+     * A slice that thin is refused and the page falls back to the standardised
+     * bullets instead.
+     */
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: drawing,
+      cartridgeArticle: {
+        title: '9 mm Luger',
+        paragraphs: [
+          'The',
+          '2 cartridge',
+          '3 is',
+          '4 properly',
+          '5 matched',
+          '6 above',
+          '7 smaller',
+          '8 calibres',
+          '9 like',
+          '10 7.65mm',
+          '11 Browning,',
+          '12 which',
+        ],
+      },
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t).not.toContain('2 cartridge');
+    expect(t).toContain('standardised');
   });
 
   it('⚠️ GIVES THE CARTRIDGE A WHOLE SHEET, WITH NO RESEARCH ARTICLE', async () => {
@@ -1445,6 +1481,12 @@ describe('the cartridge drawing', () => {
   // Operator, 2026-09-09, item 3 of five: "the CIP dimensions should be inside
   // the application where the firearm is described."
 
+  /**
+   * ⚠️ OVER SIXTY WORDS, LIKE A REAL ARTICLE. `articleIsUsable` refuses a
+   * slice that is too thin to be prose (see the malformed-research guard), and
+   * a fixture under that floor would silently exercise the fallback instead of
+   * the feature it is meant to test.
+   */
   const article = {
     title: '9 mm Luger',
     paragraphs: [
@@ -1453,6 +1495,10 @@ describe('the cartridge drawing', () => {
       '**Common uses in South Africa**',
       'It is the most widely available centrefire pistol chambering here.',
       'Ammunition is carried by most dealers, which matters for practice.',
+      '**Recoil and control**',
+      'The recoil is modest, so a shooter can keep the sights on target between shots and practise without fatigue.',
+      '**Factory loads**',
+      'Several manufacturers produce the round, so a reliable load is almost always in stock.',
     ],
   };
 

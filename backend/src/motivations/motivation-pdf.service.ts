@@ -183,6 +183,32 @@ function bulletTextOf(text: string): string {
 }
 
 /**
+ * Whether a sliced research article is fit to print on the cartridge page.
+ *
+ * ⚠️ A MALFORMED ARTICLE IS NO ARTICLE. MO000096's cartridge page (2026-10-16)
+ * came out as twelve one-word paragraphs — "The / 2 cartridge / 3 is / … /
+ * 12 which" — because the grounded provider had interleaved its citation
+ * markers into the text and the brief had failed, leaving a truncated
+ * fragment. It printed as a column of stray words and left the page blank.
+ * A slice with fewer than sixty words, or whose lines are mostly under three
+ * words each, is refused here and the page falls back to the held-figure
+ * bullets, which are always clean. A real article is 350–400 words of full
+ * sentences or bullets, so the floor is far below anything honest.
+ */
+function articleIsUsable(paragraphs: string[]): boolean {
+  const words = paragraphs.join(' ').split(/\s+/).filter(Boolean).length;
+  if (words < 60) return false;
+  const fragments = paragraphs.filter(
+    (p) =>
+      p
+        .replace(/^\s*[-•*]\s+/, '')
+        .split(/\s+/)
+        .filter(Boolean).length < 3,
+  ).length;
+  return fragments * 2 <= paragraphs.length;
+}
+
+/**
  * A run-in heading and the prose after it, split apart.
  *
  * Returns null when the paragraph does not open with one.
@@ -3210,7 +3236,10 @@ export class MotivationPdfService {
        * sheet. That is how a magazine sets a feature round one figure, and it
        * fills the page rather than balancing two half-columns.
        */
-      const source = a?.paragraphs.length ? a.paragraphs : CARTRIDGE_STANDALONE;
+      const source =
+        a?.paragraphs.length && articleIsUsable(a.paragraphs)
+          ? a.paragraphs
+          : CARTRIDGE_STANDALONE;
       const paras: string[] = [];
       for (const raw of source) {
         // Bullets are their own line and are never fused with a run-in.
