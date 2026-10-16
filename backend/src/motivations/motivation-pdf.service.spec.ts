@@ -14,6 +14,7 @@
 } from './motivation-pdf.service';
 import { sectionRule, WATERMARK_TEXT } from './motivation-pdf-chrome';
 import { buildAnnexures } from './motivation-checklist';
+import { buildPriorNoticeRequest } from './motivation-prior-notice';
 import { MotivationUploadKind } from '@prisma/client';
 import sharp from 'sharp';
 
@@ -620,6 +621,38 @@ describe('the annexure index', () => {
       (await pageTexts(pdf)).find((p) => p.includes('CONTENTS')) ?? '';
     expect(contents).toContain('(1 item;');
     expect(contents).not.toContain('(1 items;');
+  });
+
+  it('⚠️ KEEPS THE PRIOR-NOTICE LETTER ON ONE SHEET, signature and all', async () => {
+    /**
+     * Operator, 2026-10-16: "the name and surname spills over to the next
+     * page." Spacing alone had run out, so the fit now also shrinks the body
+     * type (no word is cut). A long firearm line is the case that tipped it
+     * over — the signature block, and with it the applicant's name, must stay
+     * on the letter's own sheet.
+     */
+    const priorNotice = buildPriorNoticeRequest({
+      applicantName: 'Gerhard Johan Petrus Fourie',
+      idNumber: '8905125220089',
+      referenceNumber: 'MO000096',
+      licenceTypeLabel: 'section 16 — dedicated sport shooter',
+      firearmLine:
+        'a Česká zbrojovka CZ 75 SP-01 Shadow in 9mm Parabellum, serial ZABA01892',
+    });
+    const { pdf } = await svc.render({ ...makeInput(), priorNotice });
+    const pages = await pageTexts(pdf);
+    const idx = pages.findIndex((p) => p.includes('PRIOR NOTICE'));
+    expect(idx).toBeGreaterThanOrEqual(0);
+    /**
+     * ⚠️ ASSERTED ON THE LETTER'S OWN WORDS, NOT THE NAME. The running footer
+     * carries the applicant's full names on EVERY page, so a name assertion
+     * would pass on the close whether or not the signature had stayed. The
+     * first sentence, the last sentence and the signature rule together prove
+     * the whole letter — closing block included — is on one sheet.
+     */
+    expect(pages[idx]).toContain('lodge this request');
+    expect(pages[idx]).toContain('undertake to notify');
+    expect(pages[idx]).toContain('Signed at');
   });
 
   it('points the contents at the generated consent page, not the index', async () => {

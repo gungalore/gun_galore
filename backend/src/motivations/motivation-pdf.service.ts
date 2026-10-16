@@ -4111,14 +4111,18 @@ export class MotivationPdfService {
        * fits keeps it.
        */
       doc.font(B.body).fontSize(K.BODY_SIZE);
-      const pnBlocksHeight = (leading: number, gap: number): number => {
+      const pnBlocksHeight = (
+        size: number,
+        leading: number,
+        gap: number,
+      ): number => {
         let h = 0;
         for (const b of pnBlocks) {
           const numbered = /^\d\.\s/.test(b);
           const isLabel = /:$/.test(b) && b.length < 40;
           doc
             .font(isLabel ? F.sansSemi : B.body)
-            .fontSize(isLabel ? K.px(10) : K.BODY_SIZE);
+            .fontSize(isLabel ? K.px(10) : size);
           h +=
             doc.heightOfString(b, {
               width: bodyW - (numbered ? K.mm(6) : 0),
@@ -4128,15 +4132,29 @@ export class MotivationPdfService {
         return h;
       };
       const pnAvailable = K.BODY_BOTTOM - doc.y;
+      let pnSize = K.BODY_SIZE;
       let pnLeading = K.BODY_LEADING;
       let pnGap = K.PARA_GAP;
-      for (const [lead, gap] of [
-        [K.BODY_LEADING, K.PARA_GAP],
-        [K.BODY_LEADING, K.mm(2.5)],
-        [K.BODY_LEADING * 0.4, K.mm(2)],
-        [0, K.mm(1.5)],
-      ] as [number, number][]) {
-        if (pnBlocksHeight(lead, gap) + pnSigNeed <= pnAvailable) {
+      /**
+       * ⚠️ THE TYPE MAY SHRINK, BUT NO WORD IS CUT. Operator, 2026-10-16: "the
+       * name and surname spills over to the next page." Spacing alone had run
+       * out — the last candidate (zero leading, 1.5 mm gap) still left the
+       * signature block overleaf on a slightly longer letter. A legal request
+       * is not ours to shorten in a layout pass, so the fit now searches a
+       * SMALLER BODY SIZE as well, down to 90%: the same words, set tighter.
+       * The first candidate is today's 11 pt, so a letter that already fits
+       * keeps it.
+       */
+      for (const [size, lead, gap] of [
+        [K.BODY_SIZE, K.BODY_LEADING, K.PARA_GAP],
+        [K.BODY_SIZE, K.BODY_LEADING, K.mm(2.5)],
+        [K.BODY_SIZE, K.BODY_LEADING * 0.4, K.mm(2)],
+        [K.BODY_SIZE, 0, K.mm(1.5)],
+        [K.BODY_SIZE * 0.95, 0, K.mm(1.5)],
+        [K.BODY_SIZE * 0.9, 0, K.mm(1.5)],
+      ] as [number, number, number][]) {
+        if (pnBlocksHeight(size, lead, gap) + pnSigNeed <= pnAvailable) {
+          pnSize = size;
           pnLeading = lead;
           pnGap = gap;
           break;
@@ -4151,7 +4169,7 @@ export class MotivationPdfService {
 
         doc
           .font(isLabel ? F.sansSemi : B.body)
-          .fontSize(isLabel ? K.px(10) : K.BODY_SIZE);
+          .fontSize(isLabel ? K.px(10) : pnSize);
         const need = doc.heightOfString(block, {
           width: bodyW - (numbered ? K.mm(6) : 0),
           lineGap: isLabel ? 0 : pnLeading,
