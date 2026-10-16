@@ -1,5 +1,6 @@
 import { CredentialKind } from '@prisma/client';
 import { LicenceCentreExtractService } from './licence-centre-extract.service';
+import { OCR_MAX_TOKENS, OCR_THINKING } from '../common/llm/llm.service';
 import type { LlmService } from '../common/llm/llm.service';
 
 // ────────────────────────────────────────────────────────────────────
@@ -368,7 +369,7 @@ describe('the read call', () => {
     return { service, complete };
   };
 
-  it('\u26a0\ufe0f disables thinking and gives the reader room to finish', async () => {
+  it('\u26a0\ufe0f asks for high reasoning at the model own output cap', async () => {
     const { service, complete } = readingSvc(
       reply([{ key: 'make', value: 'CZ' }]),
     );
@@ -378,9 +379,9 @@ describe('the read call', () => {
       mimeType: 'image/jpeg',
     });
     const req = complete.mock.calls[0][0];
-    expect(req.thinking).toEqual({ budgetTokens: 0 });
-    // 1200 was tight for ~15 fields plus the {"fields":[...]} envelope.
-    expect(req.maxTokens).toBeGreaterThanOrEqual(2000);
+    expect(req.thinking).toEqual(OCR_THINKING);
+    // The cap is the model's own, so thinking can never truncate the envelope.
+    expect(req.maxTokens).toBe(OCR_MAX_TOKENS);
     expect(out.details.make).toBe('CZ');
   });
 

@@ -143,6 +143,24 @@ describe('the roles a document also covers', () => {
       ]),
     ).toEqual(['COMPETENCY_CERTIFICATE']);
   });
+
+  it('\u26a0\ufe0f refuses a DEDICATED_DISCIPLINE cover on an endorsement', () => {
+    // ⚠️ THE OPERATOR'S OWN ROW, 2026-10-16. Jev answered also_covers:
+    // [DEDICATED_DISCIPLINE] for an ASSOCIATION_ENDORSEMENT — both name a
+    // firearm and a discipline — so the endorsement looked like it also held
+    // the member's dedicated status. An endorsement is the association's letter
+    // that ONE firearm suits a discipline; the status is a different paper.
+    expect(clean('ASSOCIATION_ENDORSEMENT', ['DEDICATED_DISCIPLINE'])).toEqual(
+      [],
+    );
+    // The licence pair is still refused, and an unrelated role still survives.
+    expect(
+      clean('ASSOCIATION_ENDORSEMENT', [
+        'DEDICATED_DISCIPLINE',
+        'SHOOTING_ACTIVITY_LOG',
+      ]),
+    ).toEqual(['SHOOTING_ACTIVITY_LOG']);
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────

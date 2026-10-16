@@ -95,6 +95,44 @@ export const FAST_GEMINI_MODEL = 'gemini-3.1-flash-lite';
  */
 export const STRONG_GEMINI_MODEL = DEFAULT_GEMINI_MODEL;
 
+/**
+ * ⚠️ HIGH REASONING ON EVERY DOCUMENT CALL. Operator, 2026-10-16: "don't care
+ * about the budget, gemini 3.1 is cheap enough, just enable high reasoning for
+ * OCR." On a 3.x id the thinking config is a LEVEL, not a budget (see
+ * `thinkingConfigFor`), and a budget above 24 576 maps to HIGH — so every read,
+ * classification, orientation and transcription passes this budget.
+ *
+ * ⚠️ AND THE OUTPUT CAP HAS TO COME UP WITH IT. Gemini bills thinking INSIDE
+ * `maxOutputTokens`, so HIGH reasoning on the old 40/120/200/1 200/2 400 caps
+ * would spend the allowance thinking and truncate the answer — the exact bug
+ * that emptied two licence reads on 3.8-flash. `gemini-3.1-flash-lite` reports
+ * `outputTokenLimit: 65536` and `thinking: true`, so `OCR_MAX_TOKENS` takes that
+ * cap and thinking can never starve the JSON or the transcript.
+ */
+export const OCR_THINKING = { budgetTokens: 32_768 } as const;
+export const OCR_MAX_TOKENS = 65_536;
+
+/** The purposes that read or interpret a page; all pinned to the flash-lite. */
+const DOCUMENT_PURPOSES: ReadonlySet<string> = new Set([
+  'vault.classify',
+  'vault.read',
+  'vault.orient',
+  'vault.transcribe',
+  'motivation.classify',
+  'motivation.classify.file',
+  'motivation.transcribe',
+  'motivation.source.face',
+  'motivation.evidence.classify',
+]);
+
+function isDocumentPurpose(purpose: string): boolean {
+  return (
+    DOCUMENT_PURPOSES.has(purpose) ||
+    purpose.startsWith('licence.card.') ||
+    purpose.startsWith('motivation.extract')
+  );
+}
+
 // ⚠️ DI tokens for the two providers, deliberately NOT registered anywhere.
 // A constructor parameter typed as an interface emits `Object` as its design
 // type, and Nest would try to resolve a provider called Object and fail to
@@ -287,20 +325,18 @@ export class LlmService {
     if (purpose === 'moderation.escalation' || purpose.endsWith('.images')) {
       return MODERATION_GEMINI_MODEL;
     }
-    // ⚠️ OCR AND IDENTIFICATION START ON THE CHEAP FLASH-LITE. Operator,
-    // 2026-10-14 — see FAST_GEMINI_MODEL. The primaries are the Document
-    // Centre's identification (`vault.classify`) and reading (`vault.read`) and
-    // the consent link's licence-card OCR (`licence.card.*`). The ESCALATION to
+    // ⚠️ EVERY DOCUMENT PURPOSE STARTS ON THE CHEAP FLASH-LITE. Operator,
+    // 2026-10-14 — see FAST_GEMINI_MODEL — and widened 2026-10-16 so no OCR or
+    // extraction call is left on the 3.8-flash default: the Document Centre's
+    // identification and reads (`vault.*`), the consent link and licence-centre
+    // card OCR (`licence.card.*`), and the motivation side's transcription,
+    // classification and per-kind extraction (`motivation.transcribe`,
+    // `motivation.classify*`, `motivation.source.face`,
+    // `motivation.evidence.classify`, `motivation.extract.*`). The ESCALATION to
     // STRONG_GEMINI_MODEL on a non-confident answer is the CALL SITE's, passed
     // as an explicit `model`, so it never passes through here — and an explicit
     // `LLM_MODEL_<PURPOSE>` env var still wins over this primary.
-    if (
-      purpose === 'vault.classify' ||
-      purpose === 'vault.read' ||
-      purpose.startsWith('licence.card.')
-    ) {
-      return FAST_GEMINI_MODEL;
-    }
+    if (isDocumentPurpose(purpose)) return FAST_GEMINI_MODEL;
     return undefined;
   }
 

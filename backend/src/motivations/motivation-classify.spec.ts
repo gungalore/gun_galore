@@ -3,6 +3,7 @@ import { MotivationExtractService } from './motivation-extract.service';
 import { DocumentFilingService } from '../common/document-filing/document-filing.service';
 import { RETIRED } from './motivation-documents';
 import type { LlmResponse } from '../common/llm/llm.types';
+import { OCR_THINKING } from '../common/llm/llm.service';
 
 /**
  * The read cache is not under test here: every lookup misses and every store
@@ -109,11 +110,10 @@ describe('naming a document from its contents', () => {
     expect(llm.complete).not.toHaveBeenCalled();
   });
 
-  it('sends no sampling parameters, and no budget for reasoning', async () => {
-    // ⚠️ 200 TOKENS IS THE TIGHTEST CEILING IN THE FILE — one small JSON
-    // object. A thinking budget sharing it truncates the answer, which parses
-    // to null, which files the document as "something else": a silent
-    // regression that looks exactly like a model which could not tell.
+  it('sends no sampling parameters, and asks for high reasoning', async () => {
+    // ⚠️ HIGH REASONING NOW (operator, 2026-10-16: "enable high reasoning for
+    // OCR"), at the model's own output cap so it cannot truncate the JSON — see
+    // OCR_THINKING / OCR_MAX_TOKENS.
     const llm = fakeLlm('{"kind":"OTHER","confidence":"low"}');
     const svc = new MotivationExtractService(llm as never, noReadCache());
     await svc.classify(png);
@@ -121,7 +121,7 @@ describe('naming a document from its contents', () => {
     for (const p of ['temperature', 'top_p', 'top_k']) {
       expect(req[p]).toBeUndefined();
     }
-    expect(req.thinking).toEqual({ budgetTokens: 0 });
+    expect(req.thinking).toEqual(OCR_THINKING);
     expect(req.purpose).toBe('motivation.classify');
   });
 

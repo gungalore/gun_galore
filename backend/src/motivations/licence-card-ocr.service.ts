@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { LlmService, STRONG_GEMINI_MODEL } from '../common/llm/llm.service';
+import {
+  LlmService,
+  OCR_MAX_TOKENS,
+  OCR_THINKING,
+  STRONG_GEMINI_MODEL,
+} from '../common/llm/llm.service';
 import type { LlmPart } from '../common/llm/llm.types';
 import type { FirearmSnapshot } from './motivation-seller-consent.service';
 
@@ -246,7 +251,7 @@ export class LicenceCardOcrService {
         // — so the retry is the only thing that names a stronger model. See
         // FAST/STRONG_GEMINI_MODEL in llm.service.ts.
         ...(model ? { model } : {}),
-        maxTokens: 700,
+        maxTokens: OCR_MAX_TOKENS,
         timeoutMs: 45_000,
         system: SYSTEM,
         messages: [
@@ -255,8 +260,9 @@ export class LicenceCardOcrService {
             content: [blockFor(bytes, mimeType), { type: 'text', text: USER }],
           },
         ],
-        // A reading, not a verdict — no reasoning budget to spend.
-        thinking: { budgetTokens: 0 },
+        // ⚠️ HIGH REASONING, at the model's own cap. Operator, 2026-10-16:
+        // "enable high reasoning for OCR". See OCR_THINKING.
+        thinking: OCR_THINKING,
         json: { schema: CARD_SCHEMA },
         purpose: 'licence.card.read',
       });
@@ -299,7 +305,7 @@ export class LicenceCardOcrService {
     try {
       const res = await this.llm.complete({
         ...(model ? { model } : {}),
-        maxTokens: 40,
+        maxTokens: OCR_MAX_TOKENS,
         timeoutMs: 30_000,
         system:
           'You transcribe ONE field from a photograph of a South African SAPS firearm licence card.',
@@ -312,7 +318,7 @@ export class LicenceCardOcrService {
             ],
           },
         ],
-        thinking: { budgetTokens: 0 },
+        thinking: OCR_THINKING,
         json: { schema: ID_ONLY_SCHEMA },
         purpose: 'licence.card.read.id',
       });

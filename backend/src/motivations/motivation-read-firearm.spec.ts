@@ -2,6 +2,7 @@ import { MotivationUploadKind } from '@prisma/client';
 import { MotivationExtractService } from './motivation-extract.service';
 import type { LlmResponse } from '../common/llm/llm.types';
 import { answerValue } from '../common/card-placeholder';
+import { OCR_THINKING } from '../common/llm/llm.service';
 
 /**
  * The read cache is not under test here: every lookup misses and every store
@@ -342,7 +343,7 @@ describe('what a firearm read lands on', () => {
     await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
     const req = complete.mock.calls[0][0] as any;
     expect(req.purpose).toBe('motivation.extract.firearm');
-    expect(req.thinking).toEqual({ budgetTokens: 0 });
+    expect(req.thinking).toEqual(OCR_THINKING);
     expect(req.messages[0].content[0]).toMatchObject({
       type: 'image',
       mimeType: 'image/jpeg',
@@ -386,8 +387,8 @@ describe('the shape is the provider’s job', () => {
       const req = complete.mock.calls[0][0] as any;
       expect(req.json?.schema).toBeDefined();
       expect(req.json.schema.properties.fields).toBeDefined();
-      // The budget must be text, not reasoning — this is transcription.
-      expect(req.thinking).toEqual({ budgetTokens: 0 });
+      // High reasoning now, at the model's own cap — see OCR_THINKING.
+      expect(req.thinking).toEqual(OCR_THINKING);
     });
   });
 

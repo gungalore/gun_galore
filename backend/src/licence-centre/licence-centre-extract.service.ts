@@ -1,6 +1,11 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 
-import { LlmService, STRONG_GEMINI_MODEL } from '../common/llm/llm.service';
+import {
+  LlmService,
+  OCR_MAX_TOKENS,
+  OCR_THINKING,
+  STRONG_GEMINI_MODEL,
+} from '../common/llm/llm.service';
 import type { LlmPart } from '../common/llm/llm.types';
 import { DocumentFilingService } from '../common/document-filing/document-filing.service';
 import {
@@ -204,7 +209,19 @@ export function currentKind(kind: CredentialKind): CredentialKind {
  */
 const EXCLUSIVE_COVERS: Readonly<Record<string, readonly string[]>> = {
   [CredentialKind.FIREARM_LICENCE]: [CredentialKind.ASSOCIATION_ENDORSEMENT],
-  [CredentialKind.ASSOCIATION_ENDORSEMENT]: [CredentialKind.FIREARM_LICENCE],
+  /**
+   * ⚠️ AN ENDORSEMENT IS NOT A DEDICATED-STATUS CERTIFICATE EITHER. Both name a
+   * firearm and a discipline, so Jev tagged the operator's own endorsement with
+   * `also_covers: [DEDICATED_DISCIPLINE]` (seen on production, 2026-10-16).
+   * That is the same over-assignment as the licence↔endorsement pair: an
+   * endorsement is the association's letter that ONE firearm suits a discipline;
+   * a dedicated certificate is the member's status. One page is never both, and
+   * a wrong cover makes the row look like it holds a status it does not.
+   */
+  [CredentialKind.ASSOCIATION_ENDORSEMENT]: [
+    CredentialKind.FIREARM_LICENCE,
+    CredentialKind.DEDICATED_DISCIPLINE,
+  ],
 };
 
 export function cleanAlsoCovers(
@@ -747,10 +764,11 @@ export class LicenceCentreExtractService {
   ): Promise<string | null> {
     try {
       const res = await this.llm.complete({
-        maxTokens: 2000,
-        // A transcription is not a reasoning task; a thinking budget would eat
-        // the allowance and truncate the page.
-        thinking: { budgetTokens: 0 },
+        maxTokens: OCR_MAX_TOKENS,
+        // ⚠️ HIGH REASONING NOW. Operator, 2026-10-16: "enable high reasoning
+        // for OCR" — and the output cap above is the model's own 65 536, so
+        // thinking can no longer truncate the page. See OCR_THINKING.
+        thinking: OCR_THINKING,
         system: TRANSCRIBE_SYSTEM,
         messages: [
           {
@@ -829,13 +847,11 @@ export class LicenceCentreExtractService {
         // flash-lite — so the retry is the only thing that ever names a
         // stronger model. See FAST/STRONG_GEMINI_MODEL in llm.service.ts.
         ...(model ? { model } : {}),
-        maxTokens: 200,
-        // ⚠️ THINKING OFF, LIKE transcribe(). A vision answer that must come
-        // back as strict JSON cannot share its output budget with a reasoning
-        // pass: on gemini-3.8-flash the default thinking can consume the
-        // allowance and truncate the reply, which lands here as unparseable
-        // JSON. See the note on read() — that one paid for this in production.
-        thinking: { budgetTokens: 0 },
+        maxTokens: OCR_MAX_TOKENS,
+        // ⚠️ HIGH REASONING, WITH THE CAP TO HOLD IT. See OCR_THINKING; the cap
+        // is what stops the reasoning pass truncating the JSON, which is the
+        // fault read() paid for in production on 2026-10-13.
+        thinking: OCR_THINKING,
         timeoutMs: 60_000,
         system: CLASSIFY_SYSTEM,
         messages: [
@@ -945,10 +961,9 @@ export class LicenceCentreExtractService {
     let text = '';
     try {
       const res = await this.llm.complete({
-        maxTokens: 200,
-        // Thinking off for the same reason as classifyVision — a two-token
-        // answer must never be pre-empted by a reasoning pass.
-        thinking: { budgetTokens: 0 },
+        maxTokens: OCR_MAX_TOKENS,
+        // High reasoning with the cap to hold it — see OCR_THINKING.
+        thinking: OCR_THINKING,
         timeoutMs: 30_000,
         system: ORIENT_SYSTEM,
         messages: [
@@ -1056,18 +1071,18 @@ export class LicenceCentreExtractService {
         // the retry is the only thing that ever names a stronger model. See
         // FAST/STRONG_GEMINI_MODEL in llm.service.ts.
         ...(args.model ? { model: args.model } : {}),
-        // ⚠️ THINKING OFF, AND THE BUDGET RAISED. On 2026-10-13 two of a
-        // five-document pack read as NOTHING — the log said "unparseable
-        // JSON" — and the cause is here: unlike transcribe(), this call left
-        // thinking at the model default. On the gemini-3.8-flash default the
-        // reasoning pass can eat the output allowance, so the JSON was cut
-        // off mid-object and JSON.parse threw, which parse() reads as an empty
-        // page. transcribe() already disables it for exactly this reason
-        // ("a thinking budget would eat the allowance and truncate"); a
-        // transcription-style extraction is the same case. 1200 was also tight
-        // for ~15 fields plus the {"fields":[...]} envelope, so it goes up too.
-        maxTokens: 2400,
-        thinking: { budgetTokens: 0 },
+        /**
+         * ⚠️ HIGH REASONING AND THE MODEL'S FULL OUTPUT CAP. On 2026-10-13 two
+         * of a five-document pack read as NOTHING — "unparseable JSON" — because
+         * the reasoning pass ate the output allowance and the JSON was cut off
+         * mid-object. The fix then was to turn thinking OFF at 2 400; the
+         * operator's instruction now (2026-10-16) is the opposite — high
+         * reasoning on every OCR call — so the cap is what has to come up
+         * instead. `OCR_MAX_TOKENS` is the model's own limit, so thinking can
+         * never starve the fields. See OCR_THINKING.
+         */
+        maxTokens: OCR_MAX_TOKENS,
+        thinking: OCR_THINKING,
         timeoutMs: 60_000,
         system: SYSTEM_PROMPT,
         messages: [

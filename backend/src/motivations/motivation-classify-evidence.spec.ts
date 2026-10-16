@@ -1,6 +1,7 @@
 import { MotivationExtractService } from './motivation-extract.service';
 import { EVIDENCE_CONTAINERS } from './evidence-taxonomy';
 import type { LlmResponse } from '../common/llm/llm.types';
+import { OCR_MAX_TOKENS, OCR_THINKING } from '../common/llm/llm.service';
 
 // ────────────────────────────────────────────────────────────────────
 // SORTING AN EVIDENCE ITEM INTO A CONTAINER.
@@ -133,7 +134,7 @@ describe('sorting evidence into a container', () => {
 });
 
 describe('the evidence call itself', () => {
-  it('pins the model ON THE DEEPSEEK ROAD, disables thinking and routes by purpose', async () => {
+  it('pins the model ON THE DEEPSEEK ROAD, asks for high reasoning and routes by purpose', async () => {
     const { svc, llm } = svcWith('{"container":"HUNTING_PHOTO","confidence":"high"}');
     await svc.classifyEvidence({ ...png, description: 'a hunt' });
     const req = llm.complete.mock.calls[0][0];
@@ -141,9 +142,9 @@ describe('the evidence call itself', () => {
     // defaultModel() reads LLM_MODEL, so a global Gemini model id would leak
     // into a DeepSeek vision call without it.
     expect(req.model).toBe('deepseek-flash');
-    expect(req.thinking).toEqual({ budgetTokens: 0 });
+    expect(req.thinking).toEqual(OCR_THINKING);
     expect(req.purpose).toBe('motivation.evidence.classify');
-    expect(req.maxTokens).toBe(200);
+    expect(req.maxTokens).toBe(OCR_MAX_TOKENS);
   });
 
   it('⚠️ DOES NOT send a DeepSeek model id to a NON-DeepSeek provider', async () => {

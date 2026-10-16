@@ -1201,6 +1201,19 @@ export class MotivationRenderService {
             // that is a 271 form is read but never annexed; see buildAnnexures
             // filtering below and SAPS_271_MARKER.
             extractedFields: true,
+            /**
+             * ⚠️ THE ANNEXURE INDEX NEEDS THE SECOND ROLE, NOT ONLY THE KIND.
+             * One membership certificate is both the association card and the
+             * section 16 letter of good standing — the vault records the second
+             * role in `coversKinds`. The index computes what is still missing
+             * from this same set, so without the column the pack printed a
+             * "still to be attached" row for a paper the applicant had already
+             * given us. Operator, 2026-10-16: "why is it asking for a letter of
+             * good standing when the dedicated status is showing that its valid
+             * until june 2027?" Every other surface counts the union; the index
+             * was the one that did not.
+             */
+            coversKinds: true,
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -1356,9 +1369,20 @@ export class MotivationRenderService {
      * index: the applicant sees what to bring, and a DFO sees it was not
      * withheld.
      */
+    /**
+     * ⚠️ THE UNION, NOT THE KIND ALONE. `kinds` above is what LETTERS the
+     * annexures and must stay kind-only (one document, one letter). What is
+     * still MISSING is a different question and takes every role a row fills,
+     * exactly as the sheet, the documents endpoint and the generation blocker
+     * already do — see the note on the `coversKinds` select.
+     */
+    const coveredKinds = packUploads.flatMap((u) => [
+      u.kind,
+      ...(u.coversKinds ?? []),
+    ]);
     const missingDocuments = documentStatus(
       row.licenceType,
-      kinds,
+      coveredKinds,
       answers,
     ).missingRequired.map((kind) => documentLabel(kind));
     const printable = await this.annexureImages(packUploads, annexures);

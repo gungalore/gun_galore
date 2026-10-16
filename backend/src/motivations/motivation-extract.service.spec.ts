@@ -1,6 +1,7 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import { MotivationExtractService } from './motivation-extract.service';
 import type { LlmResponse } from '../common/llm/llm.types';
+import { OCR_MAX_TOKENS, OCR_THINKING } from '../common/llm/llm.service';
 
 /**
  * The read cache is not under test here: every lookup misses and every store
@@ -498,16 +499,15 @@ describe('failing softly', () => {
     }
   });
 
-  it('spends its ceiling on the transcription, not on reasoning', async () => {
-    // ⚠️ 1200 TOKENS IS A JSON OBJECT OF FIELDS. A thinking budget shares that
-    // ceiling, and a truncated object parses to nothing — which reads exactly
-    // like "we could not read anything on this document". The writer lost a
-    // live document to that failure; this is the same trap, one file over.
+  it('asks for high reasoning at the model own output cap', async () => {
+    // ⚠️ HIGH REASONING, AND THE CAP TO HOLD IT. A truncated object parses to
+    // nothing — "we could not read anything on this document" — which is why
+    // the cap is the model's own 65 536 rather than 1 200. Operator, 2026-10-16.
     const { svc, complete } = build({ fields: [] });
     await run(svc);
     const req = complete.mock.calls[0][0] as any;
-    expect(req.thinking).toEqual({ budgetTokens: 0 });
-    expect(req.maxTokens).toBe(1200);
+    expect(req.thinking).toEqual(OCR_THINKING);
+    expect(req.maxTokens).toBe(OCR_MAX_TOKENS);
     // Spend is read per feature off the ledger, so every call says what it is
     // for — and this one says which KIND of document it was reading.
     expect(req.purpose).toBe('motivation.extract.identity_document');

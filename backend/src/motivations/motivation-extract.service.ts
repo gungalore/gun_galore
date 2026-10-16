@@ -2,7 +2,11 @@ import { createHash } from 'node:crypto';
 import { DocumentReadCacheService } from './document-read-cache.service';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
-import { LlmService } from '../common/llm/llm.service';
+import {
+  LlmService,
+  OCR_MAX_TOKENS,
+  OCR_THINKING,
+} from '../common/llm/llm.service';
 import { LlmError, type LlmPart } from '../common/llm/llm.types';
 import {
   DocumentFilingService,
@@ -553,8 +557,8 @@ export class MotivationExtractService {
   ): Promise<string | null> {
     try {
       const res = await this.llm.complete({
-        maxTokens: 2000,
-        thinking: { budgetTokens: 0 },
+        maxTokens: OCR_MAX_TOKENS,
+        thinking: OCR_THINKING,
         system: MOTIVATION_TRANSCRIBE_SYSTEM,
         messages: [
           {
@@ -709,13 +713,13 @@ export class MotivationExtractService {
     let text = '';
     try {
       const res = await this.llm.complete({
-        maxTokens: 1200,
-        // ⚠️ THINKING OFF. Twelve hundred tokens is a JSON object of
-        // transcribed fields; a thinking budget shares that ceiling and the
-        // whole allowance can go to reasoning, leaving a truncated object that
-        // the fail-soft parse below reads as "could not read anything on this".
-        // The motivation writer lost a live document to exactly that.
-        thinking: { budgetTokens: 0 },
+        maxTokens: OCR_MAX_TOKENS,
+        // ⚠️ HIGH REASONING, WITH THE CAP TO HOLD IT. Operator, 2026-10-16:
+        // "enable high reasoning for OCR". The cap is the model's own 65 536, so
+        // the reasoning pass can no longer truncate the object that the
+        // fail-soft parse below would read as "could not read anything on
+        // this". See OCR_THINKING / OCR_MAX_TOKENS.
+        thinking: OCR_THINKING,
         // ⚠️ NO `temperature` HERE, AND THINK BEFORE ADDING ONE.
         //
         // temperature / top_p / top_k were REMOVED from the Anthropic API on
@@ -886,10 +890,9 @@ export class MotivationExtractService {
     let text = '';
     try {
       const res = await this.llm.complete({
-        maxTokens: 800,
-        // Transcription into a fixed JSON shape, like every read in this file:
-        // the budget must be text, not reasoning. See attemptRead().
-        thinking: { budgetTokens: 0 },
+        maxTokens: OCR_MAX_TOKENS,
+        // High reasoning with the cap to hold it — see OCR_THINKING.
+        thinking: OCR_THINKING,
         system: firearmIdentityPrompt(),
         messages: [
           {
@@ -1031,13 +1034,12 @@ export class MotivationExtractService {
     let text = '';
     try {
       const res = await this.llm.complete({
-        maxTokens: 200,
-        // ⚠️ THINKING OFF, AND THIS IS THE TIGHTEST CEILING IN THE FILE. Two
-        // hundred tokens is one small JSON object; a thinking budget sharing
-        // it produces a truncated answer, which parses to null, which files
-        // the document as "something else" — a silent regression that looks
-        // exactly like a model that could not tell.
-        thinking: { budgetTokens: 0 },
+        maxTokens: OCR_MAX_TOKENS,
+        // ⚠️ HIGH REASONING. The old 200-token cap could not share with a
+        // thinking pass, which is why it used to be off; at the model's own cap
+        // it can, so the answer is no longer truncated into "something else".
+        // See OCR_THINKING.
+        thinking: OCR_THINKING,
         system: CLASSIFY_SYSTEM,
         messages: [
           { role: 'user', content: [block, { type: 'text', text: CLASSIFY_USER }] },
@@ -1166,8 +1168,8 @@ export class MotivationExtractService {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const res = await this.llm.complete({
-          maxTokens: 120,
-          thinking: { budgetTokens: 0 },
+          maxTokens: OCR_MAX_TOKENS,
+          thinking: OCR_THINKING,
           system: FACE_SYSTEM,
           messages: [
             {
@@ -1338,11 +1340,10 @@ export class MotivationExtractService {
     let text = '';
     try {
       const res = await this.llm.complete({
-        maxTokens: 200,
-        // ⚠️ THINKING OFF, SAME REASON AS classify(): the 200-token budget is
-        // one small JSON object, and a thinking budget sharing it truncates
-        // the answer, which parses to null and files the item as undecided.
-        thinking: { budgetTokens: 0 },
+        maxTokens: OCR_MAX_TOKENS,
+        // ⚠️ HIGH REASONING at the model's own cap — see OCR_THINKING; the old
+        // 200-token ceiling is what forced thinking off here.
+        thinking: OCR_THINKING,
         system: EVIDENCE_CLASSIFY_SYSTEM,
         messages: [{ role: 'user', content: parts }],
         // Bare JSON is all DeepSeek's `response_format` offers — it guarantees

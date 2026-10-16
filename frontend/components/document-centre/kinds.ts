@@ -211,7 +211,7 @@ export const SECTIONS: readonly DocSection[] = [
     grouping: null,
     noun: ['document', 'documents'],
     emptyLine:
-      'A section 16 application needs the status certificate, a letter of good standing and the endorsement.',
+      'A section 16 application needs the status certificate and the endorsement, plus a letter of good standing — unless your dedicated certificate is still valid, which serves as that letter until it lapses.',
     addKind: 'DEDICATED_DISCIPLINE',
   },
   {
