@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-10-16**.
 
+## 2026-10-16 — MALFORMED CARTRIDGE ARTICLE REFUSED (FULL DEPLOY)
+
+Commit **`1269bf69`**, 1 backend source + 1 spec. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-124355.dump` (32 223 477 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `1269bf69`. No migration.
+
+Gates: backend `tsc` clean + **359 suites/5636 tests**; frontend `tsc` clean + **142 files/1745 tests** + prod build.
+
+**The report.** Operator attached `MO000096 (10).pdf` and said "inspect". Rasterised it: 24 pages, **only page 7 (cartridge) broken**. The stored research article came back as one word per line with a stray counter — `The / 2 cartridge / 3 is / 4 properly / … / 12 which` — a truncated fragment with citation markers. It printed as twelve one-word paragraphs and left the page blank. Everything else on pages 1-6 and 8-24 is clean.
+
+**What shipped.**
+- **`articleIsUsable` guard** in `motivation-pdf.service.ts`: a sliced article with fewer than 60 words, or whose lines are mostly under three words, is refused and the page falls back to the held-figure bullets (always clean). This is a render-time guard, so a **re-download** fixes the page with no regeneration.
+- Restores the earlier `articleIsUsable`-style protection; test fixtures lengthened past the floor so the column tests still exercise a real article.
+
+**Know.** The bad text is in `Motivation.researchEncrypted` — a data problem from the grounding provider, not a layout bug. The fallback shows on the next download; the **real advantages only return when the pack is REGENERATED** under the current ask (`RESEARCH_ASK_VERSION 2026-10-16b`). The writer also received that garbage research, but the body reads fine, so only the cartridge page was affected. A deeper fix — refusing/retrying malformed research at GENERATION, before it is stored — is not done and is worth doing if it recurs.
+
 ## 2026-10-16 — CARTRIDGE PAGE FILLED: DIMENSIONS BLOCK + MORE BULLETS (FULL DEPLOY)
 
 Commit **`b0bf9cd6`**, 2 backend source + 1 spec. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-120532.dump` (32 313 451 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `b0bf9cd6`. No migration.
