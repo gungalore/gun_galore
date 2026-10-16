@@ -1193,25 +1193,31 @@ the sheet. Each bullet is its own block, so the list breaks between columns.
 | slot | size |
 |---|---|
 | picture (C.I.P. sheet, else our drawing) | right column width; 88 × 119 mm as the sheet, ~88 × 49 mm as the drawing |
-| bullets | left column full height, then the right column below the figure |
+| STANDARD DIMENSIONS block | right column, under the picture; the held figures only |
+| bullets | left column full height, then the right column below the picture/figures |
+
+⚠️ **THE DIMENSIONS BLOCK WAS REMOVED, THEN PUT BACK (2026-10-16).** It was
+taken out when the page became a bullet article, and the page then came out two
+thirds blank on a pack that had no research article — the operator's "not happy
+with that". It is back under the picture: the held figures are the one thing we
+always have, research or no research, and they come off the same `completeDims`
+set the drawing cuts, through `cartridgeDimRows`, so the block and the callouts
+cannot disagree. A derived letter is omitted from both.
 
 ⚠️ **THE BULLETS ARE JUSTIFIED** like the rest of the document, with a `•`
 marker in a hanging indent so a wrapped bullet aligns under its own text. A
 `**Heading**` line is still a subheading; a `- `, `•` or `*` line is a bullet
 (`isBulletLine`).
 
-⚠️ **THE SEPARATE DIMENSIONS TABLE IS GONE** (2026-10-16). The picture carries
-the dimensions as callouts; a second list beside it was the same facts twice.
-`cartridgeDrawing.specs` is still built by the render service but the PDF no
-longer draws it — the plumbing is kept in case the table is wanted back.
-
 ⚠️ **THE RESEARCH ASK IS SIZED TO THE SLOT.** 0.899 mm per word, plus a
-per-bullet gap; the two columns hold roughly 400–480 words, and the calibre ask
-asks for **250–300 words across 8–12 bullets**, one reason per bullet why THIS
-round suits THIS application. Change the slot and the ask has to move with it.
-When there is no article the list carries bullets derived from the held figures
-(standardisation and interchangeability), never invented performance copy. The
-ask demands `- ` at the start of each bullet on its own line.
+per-bullet gap; the two columns hold roughly 400 words, and the calibre ask asks
+for **350–400 words across 12–16 bullets** (operator, 2026-10-16: "more words
+more facts"), one reason per bullet why THIS round suits THIS application.
+**Measured:** 400 words / 16 bullets render on one sheet, 450 spill to a second,
+so 350–400 is the safe band. Change the slot and the ask has to move with it.
+When there is no article the list carries ten stand-in bullets derived from the
+held figures (standardisation, interchangeability, availability), never invented
+performance copy. The ask demands `- ` at the start of each bullet.
 
 ⚠️ **LEGACY NON-BULLET ARTICLES STILL RENDER.** Research cached before the
 bullet ask may return headings two ways — `**Origin**` on its own line, and

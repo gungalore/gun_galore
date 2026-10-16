@@ -7,6 +7,24 @@ overwritten.
 
 Last updated: **2026-10-16**.
 
+## 2026-10-16 — CARTRIDGE PAGE FILLED: DIMENSIONS BLOCK + MORE BULLETS (FULL DEPLOY)
+
+Commit **`b0bf9cd6`**, 2 backend source + 1 spec. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-120532.dump` (32 313 451 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `b0bf9cd6`. No migration.
+
+Gates: backend `tsc` clean + **359 suites/5635 tests**; frontend `tsc` clean + **142 files/1745 tests** + prod build.
+
+**The ask.** Operator, 2026-10-16, on MO000096 page 7: "not happy with that" — the bullet-article page shipped in `0c025dca` came out two thirds blank because that pack had no research article (it fell back to four lines) and the dimensions block had been removed. Follow-up answer on the word count: "more words more facts".
+
+**What shipped.**
+- **The STANDARD DIMENSIONS block is back**, under the cartridge image in the right column, built from the same `completeDims` set the drawing cuts. It fills the right column whatever the research returned.
+- **The no-research fallback is ten bullets**, so that case fills the left column too (it was four).
+- **The writer is asked for 350-400 words across 12-16 bullets** (was 250-300). `RESEARCH_ASK_VERSION` bumped `2026-10-16a` → `2026-10-16b`.
+- **Measured ceiling:** 400 words / 16 bullets render on ONE sheet; 450 spill to a second. 350-400 is the safe band.
+
+**Verified by rasterising the page** (`dist/src/motivations/pdf-raster.child.js`, scale 2): at 350 words the bullets fill the left column (1-10) and continue under the image/table down the right column (11-14) to the foot — both columns full, matching the operator's sketch.
+
+**Know.** The earlier page was blank because (a) research was absent for that pack — the render is a read, so a completed pack only gains the researched bullets when it is REGENERATED under the new ask version — and (b) the dimensions block had been removed. Both are fixed; a pack that is only re-downloaded still shows the fallback until it is regenerated.
+
 ## 2026-10-16 — CARTRIDGE PAGE IS A TWO-COLUMN BULLET ARTICLE (FULL DEPLOY)
 
 Commit **`0c025dca`**, 2 backend source + 2 specs. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-114243.dump` (32 277 765 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `0c025dca`. No migration.
