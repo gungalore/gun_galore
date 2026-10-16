@@ -7,6 +7,22 @@ overwritten.
 
 Last updated: **2026-10-16**.
 
+## 2026-10-16 — OCR REASONING, ANNEXURE-INDEX COVERAGE, ENDORSEMENT GUARD (FULL DEPLOY)
+
+Commit **`54e7d1e7`**, 11 backend files + 1 frontend. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-162206.dump` (32 186 918 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `54e7d1e7`. No migration.
+
+Gates: backend `tsc` clean + **359 suites/5638 tests**; frontend `tsc` clean + **142 files/1745 tests** + prod build.
+
+**STEP A — the annexure index asked for a good-standing letter a valid cert already covered.** `motivation-render.service.ts:1260` built the missing-document set from `u.kind` only and the uploads query did not select `coversKinds`, so `documentStatus(...).missingRequired` at `:1359` missed the date-gated coverage every other surface counts. Now: select `coversKinds`; `missingRequired` uses `[kind, ...coversKinds]`; `buildAnnexures` stays kind-only.
+
+**STEP B — HIGH reasoning on every OCR call, on flash-lite.** `modelFor` (`llm.service.ts`) now pins every document purpose (`vault.*`, `licence.card.*`, `motivation.transcribe`, `motivation.classify(.file)`, `motivation.source.face`, `motivation.evidence.classify`, `motivation.extract.*`) to `gemini-3.1-flash-lite`. New `OCR_THINKING` (budget 32 768 ⇒ `HIGH` on 3.x) and `OCR_MAX_TOKENS = 65 536` (the model's own cap, probed) applied at all 12 OCR call sites, replacing 40/120/200/700/1200/2400 caps — thinking inside the output budget could previously truncate a read. Non-Gemini roads are unaffected (DeepSeek always sends its own `thinking: disabled`).
+
+**STEP D — endorsement over-cover + copy.** `ASSOCIATION_ENDORSEMENT` added to `EXCLUSIVE_COVERS` (`licence-centre-extract.service.ts`) so Jev cannot tag it `also_covers: DEDICATED_DISCIPLINE` (as it did on the operator's row); Document Centre associations copy now says a valid dedicated certificate serves as the good-standing letter. Spec added in `licence-centre-naming.spec.ts`.
+
+**Still to do — STEP C: one decide → read → place pipeline.** The decider (markers → Jev) and per-kind extractor already exist on both surfaces and now run on flash-lite HIGH; `WANTED` and `CREDENTIAL_TO_UPLOAD` are already enum-exhaustive. The remaining work is the **consolidation of the scattered tables** (`VAULT_KIND_OPTIONS`/`VAULT_COVER_OPTIONS`, `MOTIVATION_KIND_OPTIONS`, `CLASSIFIABLE`, `CREDENTIAL_TO_UPLOAD`, `WANTED`, `document-fields`) into one document dictionary consumed by both surfaces — a refactor with no behaviour change, deliberately NOT bundled into this release. Operator direction: do safe work in tracked steps.
+
+**Pending verification.** Re-download MO000096 to confirm the index no longer lists the good-standing letter; upload/read one document to confirm a HIGH-reasoning read returns complete fields.
+
 ## 2026-10-16 — UNSTATED HELD-FIREARM PURPOSE REWRITTEN TO THE SECTION (FULL DEPLOY)
 
 Commit **`ec9d2e69`**, 2 backend source + 1 spec. Full deploy via `infra/deploy/deploy.sh` (Git Bash). Rollback point `alloutdoor-20261016-133117.dump` (32 222 090 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `ec9d2e69`. No migration.
