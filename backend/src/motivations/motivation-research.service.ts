@@ -117,7 +117,7 @@ export const RESEARCH_TTL_DAYS = 180;
  * out of its own firearm research; rewording the ask without this would have
  * shipped, looked right, and still handed the writer the same marketing.
  */
-export const RESEARCH_ASK_VERSION = '2026-10-17c';
+export const RESEARCH_ASK_VERSION = '2026-10-17d';
 
 export function cacheKeyFor(
   target: ResearchTarget,
