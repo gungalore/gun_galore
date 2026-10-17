@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-10-17**.
 
+## 2026-10-17 — INVALIDATE THE FROZEN RESEARCH (BACKEND DEPLOY)
+
+Second inspection of MO000099, generated after `e807ad16`: the exhibit page break worked (page 5 is exhibits only; section 5 starts page 6), the 271 NONE boxes still pass, and the prior notice still fits. 5.2 was still the fallback.
+
+**Why the new research never ran.** `researchAskVersion` was already `2026-10-17c` when `e807ad16` shipped. The generator treats a matching version as current and reuses `researchEncrypted`; MO000099's frozen pack was the old 180-byte firearm-only block, so the new purpose-aware ask and the quality gate were never reached. `RESEARCH_ASK_VERSION` is now **`2026-10-17d`**, which invalidates every frozen pack and forces one fresh pass. The old thin cache row is already ignored by the quality gate, and the new ask is keyed to sport shooting for this .223 self-loader.
+
+Gates: backend `tsc` clean + **362 suites / 5 672 tests** (8 skipped); frontend unchanged, 142 files / 1 749 tests.
+
+Commit **`512351fa`**. Backend-only deploy at 20:54 SAST: rollback `alloutdoor-20261017-205419.dump` (32 605 443 bytes), health x2 OK, warden reloaded and online, public 200 x2, backend/frontend/warden all online. No migration.
+
+**Unrelated worktree state:** `backend/package.json` carries two uncommitted motivation-golden scripts from another session. It was stashed for the deploy's clean-tree gate and restored immediately after; it remains uncommitted and untouched.
+
+**Next:** regenerate MO000099 once more. 5.2 should now contain the researched sport-specific bullet article; if the model again returns a thin answer, the retry runs once and the page falls back to the exhibit notes. The seller's card still prints receiver serial `ZA22265488` against headline/barrel `ZA2226548`; the 271 copies both faithfully and the applicant should verify it with the DFO.
+
 ## 2026-10-17 — RESEARCH THE PACK'S REAL PURPOSE, EXHIBITS KEEP THEIR PAGES (BACKEND DEPLOY)
 
 Inspection of MO000099 / MO000099-saps271, generated after `2eeaa93b`. NONE, the 271 Section E / item 2.1 boxes, the cover hero, 5.1, the prior notice and the blank-page/TOC fixes all passed. Three things did not.
