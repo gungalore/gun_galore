@@ -51,6 +51,26 @@ describe('matching what a licence card prints', () => {
     expect(calibreCandidates('.45-70 GOVT')).toContain('4570GOVERNMENT');
   });
 
+  it('⚠️ CONTRACTS "SPRINGFIELD" BACK, BECAUSE THE BENCH FILES "30-06 SPRG"', () => {
+    // MO000098: the card prints ".30-06 SPRINGFIELD", the Bench row is named
+    // "30-06 SPRG". Expansion alone produced 3006SPRINGFIELD and the lookup
+    // returned null, so the cover used a photograph and no rendered cartridge
+    // was drawn. The contraction is the mirror of SPRG -> Springfield.
+    expect(calibreCandidates('.30-06 SPRINGFIELD')).toContain('3006SPRG');
+    expect(
+      findCartridge([{ name: '30-06 SPRG' }], '.30-06 SPRINGFIELD')?.name,
+    ).toBe('30-06 SPRG');
+    // The production Bench row is named "30-06 Spring.", not SPRG. Both are
+    // contractions of the same word.
+    expect(calibreCandidates('.30-06 SPRINGFIELD')).toContain('3006SPRING');
+    expect(
+      findCartridge([{ name: '30-06 Spring.' }], '.30-06 SPRINGFIELD')?.name,
+    ).toBe('30-06 Spring.');
+    // The Bench's own spelling must still find the C.I.P. sheet filed under
+    // "30-06 Springfield".
+    expect(calibreCandidates('30-06 Spring.')).toContain('3006SPRINGFIELD');
+  });
+
   it('⚠️ CONTRACTS "GOVERNMENT" BACK, BECAUSE THE REFERENCE FILE ABBREVIATES', () => {
     // MO000001: the card prints ".45-70 GOVERNMENT", the imported Bench row is
     // key 4570govt ("45-70 Govt."), and the lookup returned null. The expansion

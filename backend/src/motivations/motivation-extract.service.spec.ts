@@ -302,6 +302,19 @@ describe('what it refuses', () => {
     );
   });
 
+  it('⚠️ trusts a NONE the card prints even when the model says low confidence', async () => {
+    // The one-tap upload writes only trusted suggestions. A high-confidence
+    // make beside a hesitant NONE used to fill one and drop the other; NONE is
+    // a short printed word, and it is exactly what the 271 needs.
+    const { svc } = build({
+      fields: [
+        { key: 'existing_firearm_1_model', value: 'NONE', confidence: 'low' },
+      ],
+    });
+    const out = await run(svc, MotivationUploadKind.CURRENT_LICENCE);
+    expect(out[0]?.trusted).toBe(true);
+  });
+
   it('⚠️ STILL DROPS A GENUINELY EMPTY READ, which means something else', async () => {
     // NONE is the card saying "there is nothing here". Empty is US saying "we
     // could not make it out". licence-card-ocr.service.ts is told never to
@@ -376,19 +389,20 @@ describe('⚠️ what a licence photograph is asked for', () => {
   // "a document answers this, stop asking" and read-result renders as "Not on
   // the document" against an empty one. A key the reader never asks for can
   // never fill, so the promise has to be kept here or withdrawn there.
-  it('asks for the ONE serial, not the two retired keys', async () => {
-    // ⚠️ THE TWO SERIAL BOXES COLLAPSED INTO ONE ON 2026-09-07 and this list
-    // was not followed. sanitiseAnswers still ACCEPTS the retired keys, so
-    // nothing failed and nothing said anything: the member was told we had read
-    // their licence and the serial landed in a box no screen renders.
+  it('⚠️ asks for the headline serial AND the two component rows the 271 prints', async () => {
+    // The wizard shows ONE serial since 2026-09-07, but SAPS 271 item 2.1 has a
+    // barrel column and a frame/receiver column. Asking only the headline
+    // serial left the barrel box blank (or borrowed the receiver number) even
+    // when the card plainly said NONE. These keys are legacy on the screen and
+    // live on the form; sanitiseAnswers still accepts them.
     const { svc, complete } = build({ fields: [] });
     await run(svc, MotivationUploadKind.CURRENT_LICENCE);
     const prompt = (complete.mock.calls[0][0] as any).messages[0].content
       .map((p: any) => p.text ?? '')
       .join(' ');
     expect(prompt).toContain('existing_firearm_1_serial');
-    expect(prompt).not.toContain('existing_firearm_1_barrel_serial');
-    expect(prompt).not.toContain('existing_firearm_1_frame_serial');
+    expect(prompt).toContain('existing_firearm_1_barrel_serial');
+    expect(prompt).toContain('existing_firearm_1_frame_serial');
   });
 
   it('asks for the model and the expiry the form says it reads', async () => {
@@ -403,6 +417,19 @@ describe('⚠️ what a licence photograph is asked for', () => {
       .join(' ');
     expect(prompt).toContain('existing_firearm_1_model');
     expect(prompt).toContain('existing_firearm_1_expiry');
+  });
+
+  it('⚠️ tells the transcriber that NONE is a value, not a blank', async () => {
+    // MO000098: the card printed "Model NONE" and the licence centre left the
+    // Model box empty. The system prompt's "if a field is not on the document,
+    // return null" was being read as "NONE means no value", so the model
+    // omitted it. Rule 6 names the card's own NONE and forbids copying a
+    // neighbouring serial into it.
+    const { svc, complete } = build({ fields: [] });
+    await run(svc, MotivationUploadKind.CURRENT_LICENCE);
+    const system = (complete.mock.calls[0][0] as any).system as string;
+    expect(system).toContain('NONE IS A VALUE, NOT A BLANK');
+    expect(system).toContain('Model NONE');
   });
 
   it('writes into the first FREE row, by any column', async () => {

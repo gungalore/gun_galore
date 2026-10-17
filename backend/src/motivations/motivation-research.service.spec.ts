@@ -130,6 +130,17 @@ describe('what gets researched', () => {
     expect(sport).not.toBe(hunt);
   });
 
+  it('⚠️ NAMES THE EXHIBITS THE PACK WILL PRINT, so 5.2 answers about them', () => {
+    // Operator, 2026-10-17: "the WHY .30-06 SPRINGFIELD SUITS THIS PURPOSE
+    // should be researched why it fits the purpose exhibits that was created."
+    // The exhibits are chosen in code before the call; the ask must name them.
+    const ask = targetsFor(SPORT, ANSWERS).find(
+      (t) => t.target === 'calibre',
+    )!.ask;
+    expect(ask).toContain('purpose exhibits in this application are');
+    expect(ask).toContain('Explain why this cartridge suits EACH');
+  });
+
   it('keys a discipline to its registry slug, not to what was typed', () => {
     const t = targetsFor(SPORT, {
       ...ANSWERS,

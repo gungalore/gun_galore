@@ -65,6 +65,73 @@ describe('needs_you — the control is open, always', () => {
   });
 });
 
+describe('dedicated status — the member-since copy', () => {
+  it('⚠️ offers "same as member since" and fills the joining date', async () => {
+    // MO000098: "Member of that association since" was filled from the
+    // certificate, and "Dedicated status held since" sat below it as "Still
+    // needed". The certificate often prints only the joining date.
+    const onChange = vi.fn();
+    render(
+      <SheetRow
+        item={needsYou({
+          key: 'dedicated_since',
+          label: 'Dedicated status held since',
+          kind: 'date',
+          value: '',
+          help: undefined,
+        })}
+        sameAsValue="2024-06-07"
+        onChange={onChange}
+      />,
+    );
+    const box = screen.getByRole('checkbox', {
+      name: /same as member of that association since/i,
+    });
+    await userEvent.click(box);
+    expect(onChange).toHaveBeenCalledWith('2024-06-07');
+  });
+
+  it('shows the box ticked when the dates already agree, and unticking clears it', async () => {
+    const onChange = vi.fn();
+    render(
+      <SheetRow
+        item={needsYou({
+          key: 'dedicated_since',
+          label: 'Dedicated status held since',
+          kind: 'date',
+          value: '2024-06-07',
+          help: undefined,
+        })}
+        sameAsValue="2024-06-07"
+        onChange={onChange}
+      />,
+    );
+    const box = screen.getByRole('checkbox', {
+      name: /same as member of that association since/i,
+    }) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    await userEvent.click(box);
+    expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('does not offer the copy on any other date field', () => {
+    render(
+      <SheetRow
+        item={needsYou({
+          key: 'association_joined',
+          label: 'Member of that association since',
+          kind: 'date',
+          value: '',
+          help: undefined,
+        })}
+        sameAsValue="2024-06-07"
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+});
+
 describe('filled — a value we hold, with no task attached', () => {
   it('shows the value and where it came from', () => {
     render(<SheetRow item={filled()} onChange={vi.fn()} />);

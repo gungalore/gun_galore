@@ -886,6 +886,11 @@ export default function LicenceCentreSheetPage() {
         onOwnWordsChange={
           i.ownWordsKey ? (v) => onChange(i.ownWordsKey as string, v) : undefined
         }
+        sameAsValue={
+          i.key === 'dedicated_since'
+            ? byKey.get('association_joined')?.value
+            : undefined
+        }
       />
     );
 

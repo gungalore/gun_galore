@@ -13,7 +13,7 @@ import {
   type FilingOption,
 } from '../common/document-filing/document-filing.service';
 import { MOTIVATION_KIND_OPTIONS } from '../common/document-filing/motivation-kind-options';
-import { fieldsFor, nextOwnedRow } from './motivation-fields';
+import { fieldByKey, fieldsFor, nextOwnedRow } from './motivation-fields';
 import { readSaId } from './sa-id';
 import { endorsementSpec, parseEndorsements } from '../common/sa-competency';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
@@ -390,6 +390,16 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
     'existing_firearm_1_serial',
     'existing_firearm_1_expiry',
     'existing_firearm_1_licence_no',
+    // ⚠️ THE TWO COMPONENT ROWS ARE ASKED FOR AGAIN, FOR THE 271 ONLY. They
+    // are legacy on the WIZARD (the one visible serial collapsed them on
+    // 2026-09-07) but not on the form: SAPS 271 item 2.1 prints a barrel
+    // column and a frame/receiver column, and a card that says NONE against
+    // one of them must say NONE there. Asking only the headline serial left
+    // the barrel column blank or borrowed the receiver's number — the exact
+    // false statement the map's own note warns against. These values are
+    // stored and printed; the sheet still renders one serial row.
+    'existing_firearm_1_barrel_serial',
+    'existing_firearm_1_frame_serial',
   ],
 };
 
@@ -605,7 +615,20 @@ export class MotivationExtractService {
     }
 
     const registry = fieldsFor(args.licenceType);
-    const asked = registry.filter((f) => wanted.includes(f.key));
+    /**
+     * ⚠️ LEGACY KEYS COUNT TOO. `fieldsFor` deliberately omits the two owned
+     * component serials, because the wizard no longer renders them — but the
+     * 271 does render their boxes, and the card prints NONE there. Reading the
+     * key into the answers is not the same as putting a third box on screen:
+     * the sheet still shows one serial row, and sanitiseAnswers already accepts
+     * these keys (see LEGACY_OWNED_FIELDS).
+     */
+    const asked = wanted.flatMap((key) => {
+      const field =
+        registry.find((f) => f.key === key) ??
+        fieldByKey(args.licenceType, key);
+      return field ? [field] : [];
+    });
     if (!asked.length) return [];
 
     /**
@@ -1427,6 +1450,11 @@ RULES, in order of importance:
 4. Dates as YYYY-MM-DD.
 5. If the document is not the type you were told to expect, return every field
    as null rather than reading a different document's contents into them.
+6. ⚠️ NONE IS A VALUE, NOT A BLANK. A South African licence card prints the
+   word NONE in a row that does not apply — "Model NONE", "Frame Serial No
+   NONE", "Make NONE". Transcribe that word exactly as the value for its key.
+   Do NOT omit a NONE row, and do NOT copy another row's number into it. An
+   empty box on the SAPS 271 says something different from NONE.
 
 Return STRICT JSON and nothing else:
 {"fields":[{"key":"<exactly one of the keys given>","value":"<string>","confidence":"high"|"low"}]}
@@ -1612,6 +1640,24 @@ than a confident wrong one.`.trim();
 
       let trusted = row.confidence === 'high';
       let note: string | undefined;
+
+      /**
+       * ⚠️ A CARD'S "NONE" IS TRUSTED EVEN WHEN THE MODEL IS HESITANT. The
+       * operator's licence prints "Model NONE" and the one-tap upload writes
+       * only trusted suggestions, so a high-confidence "MAUSER" beside a
+       * low-confidence "NONE" filled the make and left the model blank. NONE is
+       * a short, unambiguous printed word, and it is the exact value the SAPS
+       * 271 needs; a low confidence on it must not throw it away. Scoped to
+       * firearm keys so a hesitant "N/A" in an address still waits for a human.
+       */
+      if (
+        /^none$/i.test(value) &&
+        /^(?:firearm_|barrel_|frame_|receiver_|existing_firearm_\d+_)/.test(
+          row.key,
+        )
+      ) {
+        trusted = true;
+      }
 
       // THE ID NUMBER IS VERIFIED IN CODE. A Luhn failure means it was misread,
       // whatever the model's confidence says.

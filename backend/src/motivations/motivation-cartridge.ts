@@ -125,6 +125,24 @@ export function calibreCandidates(raw: string): string[] {
     .replace(/\bAutomatic\b/gi, 'Auto')
     .replace(/\bSpecial\b/gi, 'Spec')
     /**
+     * ⚠️ SPRINGFIELD IS FILED AS "SPRG" AS OFTEN AS IT IS SPELT OUT. A SAPS
+     * card prints ".30-06 SPRINGFIELD"; The Bench files that row as
+     * "30-06 SPRG". Expanding the abbreviation only fixed the other direction,
+     * so the lookup returned null, the cover fell back to a photograph and the
+     * rendered cartridge the operator asked for was missing. The contraction is
+     * the mirror of `SPRG? -> Springfield` above, exactly like Magnum -> Mag.
+     */
+    .replace(/\bSpringfield\b/gi, 'Sprg')
+    /**
+     * ⚠️ AND THE BENCH ITSELF FILES IT AS "30-06 Spring.". The production row
+     * is key `3006springfield`, name "30-06 Spring." — neither the card's full
+     * word nor the SPRG contraction. Without this candidate the lookup still
+     * returned null on the operator's own .30-06. "Spring" is the same
+     * standard abbreviation, not a guess.
+     */
+    .replace(/\bSpringfield\b/gi, 'Spring')
+    .replace(/\bSprg\b/gi, 'Spring')
+    /**
      * ⚠️ AND "GOVERNMENT", WHICH THE EXPANSION ALREADY ASSUMES. `GOVT?` above
      * expands to "Government", so a card printing the abbreviation was covered
      * — but the reference file files the round as "45-70 Govt.", and a card
@@ -136,6 +154,15 @@ export function calibreCandidates(raw: string): string[] {
      */
     .replace(/\bGovernment\b/gi, 'Govt');
   push(contracted);
+  // Both contractions of the same word: a sheet may read "Springfield", the
+  // production row "30-06 Spring.", and some references "30-06 SPRG".
+  push(text.replace(/\bSpringfield\b/gi, 'Sprg'));
+  push(text.replace(/\bSpringfield\b/gi, 'Spring'));
+  push(text.replace(/\bSprg\b/gi, 'Spring'));
+  // And back out again: The Bench row is "30-06 Spring.", but the C.I.P. sheet
+  // is filed under the full word. Without this the drawing resolves and its
+  // dimension page does not.
+  push(text.replace(/\bSpring\b/gi, 'Springfield'));
 
   /**
    * ⚠️ "6.5MM CREEDMOOR" AND "6,5 Creedmoor" ARE ONE CARTRIDGE, AND THE "MM"

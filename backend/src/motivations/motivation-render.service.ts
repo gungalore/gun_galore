@@ -1513,6 +1513,10 @@ export class MotivationRenderService {
         description: p.description,
         image: { bytes: p.bytes, width: p.width, height: p.height },
       })),
+      // ⚠️ THE SAME WORDS THE EXHIBITS PRINT, so the suitability sheet can
+      // still argue the applicant's actual purpose when the calibre research
+      // failed or predates the purpose-specific ask.
+      purposeNotes: storedPlates.map((p) => `${p.title}: ${p.description}`),
       // ⚠️ THE CARTRIDGE FEATURE FOLLOWS THE FIREARM SECTION. Operator,
       // 2026-09-20: "move THE CARTRIDGE straight after THE FIREARM APPLIED FOR
       // AND WHY IT SUITS THE PURPOSE as they are very relevant to each other".

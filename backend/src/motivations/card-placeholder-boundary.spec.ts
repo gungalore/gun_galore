@@ -46,6 +46,10 @@ describe('the SAPS 271 prints what the card printed', () => {
     };
 
   it('⚠️ PUTS "NONE" IN THE BOX RATHER THAN LEAVING IT BLANK', () => {
+    // Model is a first-class Section E box too. The card prints "Model NONE";
+    // an empty e_model says the model was not captured, which is a different
+    // statement to the register.
+    expect(built().text.e_model).toBe('NONE');
     expect(built().text.e_barrel_serial).toBe('NONE');
     expect(built().text.e_frame_serial).toBe('NONE');
   });

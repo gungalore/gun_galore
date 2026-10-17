@@ -256,6 +256,14 @@ export interface SheetRowProps {
   /** The paired "in your own words" item, for a cards row. */
   ownWords?: SheetItem;
   onOwnWordsChange?: (value: string) => void;
+  /**
+   * The association's joining date, for the one-field copy beside
+   * `dedicated_since`. When present the row offers "Same as member of that
+   * association since" — operator, 2026-10-17: "Dedicated status held since
+   * should have the date input or a tickbox that says same as member of that
+   * association since."
+   */
+  sameAsValue?: string;
 }
 
 export default function SheetRow({
@@ -265,6 +273,7 @@ export default function SheetRow({
   prompt,
   ownWords,
   onOwnWordsChange,
+  sameAsValue,
 }: SheetRowProps) {
   /**
    * ⚠️ "Change" IS LOCAL, AND IT IS THE ONLY STATE THIS FILE HOLDS. Whether
@@ -337,6 +346,18 @@ export default function SheetRow({
 
   const openControl = item.state === 'needs_you' || editing;
 
+  /*
+   * ⚠️ DEDICATED STATUS USUALLY STARTS THE DAY THE MEMBER JOINS, AND THE
+   * CERTIFICATE OFTEN PRINTS ONLY THE JOINING DATE. Asking for the same day
+   * twice is how the box stayed "Still needed" beneath a filled member-since
+   * date (MO000098). The copy is explicit and reversible: ticking writes the
+   * joining date, unticking clears this field so they can enter a different
+   * award date.
+   */
+  const sameAs = sameAsValue?.trim() ?? '';
+  const canCopySameAs = item.key === 'dedicated_since' && !!sameAs;
+  const isSameAs = canCopySameAs && item.value.trim() === sameAs;
+
   if (openControl) {
     return (
       <div className="grid grid-cols-[minmax(0,1fr)] gap-x-3 gap-y-[6px] border-b border-[var(--border-divider)] py-[11px] last:border-b-0">
@@ -356,6 +377,16 @@ export default function SheetRow({
               )}
             </span>
           </div>
+          {canCopySameAs ? (
+            <label className="mt-[6px] flex min-h-[32px] cursor-pointer items-center gap-2 text-[12.5px] text-[var(--text-secondary)]">
+              <input
+                type="checkbox"
+                checked={isSameAs}
+                onChange={(e) => edit(e.target.checked ? sameAs : '')}
+              />
+              Same as member of that association since
+            </label>
+          ) : null}
           <div className="mt-[6px]">
             <Control item={item} value={item.value} onChange={edit} />
           </div>

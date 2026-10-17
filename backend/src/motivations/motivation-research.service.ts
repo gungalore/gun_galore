@@ -7,6 +7,7 @@ import { LlmError } from '../common/llm/llm.types';
 import { HUNT_GAME_CLASS } from './motivation-cards';
 import { disciplineByValue } from './shooting-disciplines';
 import { resolveSportingPurpose } from './motivation-purpose';
+import { buildPlateSpecs } from './motivation-plates';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT THE APPLICANT IS NEVER ASKED, BECAUSE WE LOOK IT UP.
@@ -113,7 +114,7 @@ export const RESEARCH_TTL_DAYS = 180;
  * out of its own firearm research; rewording the ask without this would have
  * shipped, looked right, and still handed the writer the same marketing.
  */
-export const RESEARCH_ASK_VERSION = '2026-10-16b';
+export const RESEARCH_ASK_VERSION = '2026-10-17c';
 
 export function cacheKeyFor(
   target: ResearchTarget,
@@ -164,9 +165,39 @@ export function targetsFor(
 
   // ── the cartridge ──────────────────────────────────────────────────
   if (calibre) {
+    /**
+     * ⚠️ NAME THE EXHIBITS THE PACK WILL PRINT. Operator, 2026-10-17: "the WHY
+     * .30-06 SPRINGFIELD SUITS THIS PURPOSE should be researched why it fits
+     * the purpose exhibits that was created." The exhibits are chosen in code
+     * before this call (buildPlateSpecs), so the researcher can answer about
+     * THESE species or THESE courses instead of a generic class. The same list
+     * is printed under heading 3; the two pages now argue the same case.
+     */
+    const exhibits = buildPlateSpecs({ licenceType, answers })
+      .map((p) => p.title)
+      .filter(Boolean);
+    const exhibitAsk = exhibits.length
+      ? `The purpose exhibits in this application are: ${exhibits.join(', ')}. ` +
+        'Explain why this cartridge suits EACH of them specifically — the ' +
+        'bullet weights and impact energy it is normally loaded to at the ' +
+        'ranges those species or courses are taken at, its trajectory and ' +
+        'recoil, and where it is marginal — not merely why it is a ' +
+        'standardised round.'
+      : '';
     out.push({
       target: 'calibre',
-      cacheKey: cacheKeyFor('calibre', [calibre, useClass]),
+      /**
+       * ⚠️ THE EXHIBITS ARE PART OF THE QUESTION, SO THEY ARE PART OF THE KEY.
+       * Two .30-06 hunters with different quarry sets are asking the researcher
+       * to explain two different pages; sharing one cached answer would put
+       * another applicant's species under this one's heading 5.2. The set is
+       * code-chosen and tiny, so the extra cache rows are bounded.
+       */
+      cacheKey: cacheKeyFor('calibre', [
+        calibre,
+        useClass,
+        exhibits.join('+'),
+      ]),
       ask: [
         `THE CARTRIDGE: ${calibre}.`,
         'Find its origin and character — recoil, typical factory loads,',
@@ -191,6 +222,7 @@ export function targetsFor(
         'it matters, what it is over- or under-matched to). Ground every claim',
         'in published fact and name the source of a figure. Figures with',
         'sources, never impressions.',
+        exhibitAsk,
         'BULLET FORMAT: begin every bullet with "- " at the start of its own',
         'line, one bullet per line, no numbering and no sub-headings.',
         /**

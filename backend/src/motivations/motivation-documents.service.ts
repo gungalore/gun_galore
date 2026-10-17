@@ -2796,10 +2796,18 @@ export class MotivationDocumentsService {
             const field = {
               key,
               value,
-              // Read without knowing what the document is, so it is offered
-              // for confirmation like everything else here rather than
-              // trusted outright.
-              trusted: false,
+              /**
+               * ⚠️ A PRINTED NONE IS TRUSTED, EVEN FROM THE SECOND PASS. This
+               * read does not know what the document is, so its values are
+               * normally offered for confirmation rather than written. But
+               * "Model NONE" / "Frame Serial No NONE" is exactly what the SAPS
+               * 271 must print, and leaving it in the untrusted panel is how
+               * the applied-for model stayed blank while make and calibre
+               * filled. Scoped to firearm keys and to the literal word.
+               */
+              trusted:
+                /^none$/i.test(value) &&
+                /^(?:firearm_|barrel_|frame_|receiver_)/.test(key),
               note: 'Read off the document you uploaded — check it against the paperwork.',
             } as (typeof suggestions)[number];
             readable.push(field);

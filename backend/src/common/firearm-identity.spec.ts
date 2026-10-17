@@ -146,11 +146,15 @@ describe('the prompt asks for a firearm and not a person', () => {
     expect(p).toMatch(/NOT necessarily the firearm.s serial number/);
   });
 
-  it('expects the component rows to read NONE, and says to leave them out', () => {
+  it('expects the component rows to read NONE, and says to transcribe it', () => {
     // "All the other fields may have a NONE or a number attached to it, it all
-    // depends on the firearm."
+    // depends on the firearm." The prompt used to tell the reader to LEAVE a
+    // NONE row out, which is why the applied-for model and frame serial
+    // vanished before the 271 could print them. A NONE is a value.
     expect(p).toMatch(/may legitimately read NONE/);
-    expect(p).toMatch(/Leave a NONE row out rather than copying/);
+    expect(p).toMatch(/NONE IS A VALUE, NOT A BLANK/);
+    expect(p).toMatch(/NOT omit a NONE row/);
+    expect(p).toMatch(/Model NONE/);
   });
 
   it('forbids copying one serial into another serial’s field', () => {

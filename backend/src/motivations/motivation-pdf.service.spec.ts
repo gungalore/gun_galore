@@ -1,4 +1,4 @@
-﻿import {
+import {
   HEADING_KEEP_WITH_NEXT,
   headingWouldOrphan,
   DEFAULT_SCHEME,
@@ -639,7 +639,11 @@ describe('the annexure index', () => {
       firearmLine:
         'a Česká zbrojovka CZ 75 SP-01 Shadow in 9mm Parabellum, serial ZABA01892',
     });
-    const { pdf } = await svc.render({ ...makeInput(), priorNotice });
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      idNumber: '8905125220089',
+      priorNotice,
+    });
     const pages = await pageTexts(pdf);
     const idx = pages.findIndex((p) => p.includes('PRIOR NOTICE'));
     expect(idx).toBeGreaterThanOrEqual(0);
@@ -653,6 +657,10 @@ describe('the annexure index', () => {
     expect(pages[idx]).toContain('lodge this request');
     expect(pages[idx]).toContain('It asks only for what regulation 89 already requires');
     expect(pages[idx]).toContain('Signed at');
+    // ⚠️ "Identity number:" is body copy; the footer carries the bare number on
+    // every page, so this is what proves the name/ID block did not spill alone
+    // onto the next sheet (MO000098, page 16).
+    expect(pages[idx]).toContain('Identity number: 8905125220089');
   });
 
   it('points the contents at the generated consent page, not the index', async () => {
@@ -1841,6 +1849,40 @@ describe('the cartridge drawing', () => {
     }
   }, 30000);
 
+  it('⚠️ SHRINKS THE PHOTO FRAME RATHER THAN SPILLING THE PARTICULARS', async () => {
+    // MO000098: a cover photograph plus the full Part 7.2 grid did not fit, and
+    // the grid was pushed to its own page — whose running head said CONTENTS.
+    // A photograph is the one thing on a cover that can give way; the grid is
+    // what a DFO files by.
+    const full = [
+      ['Firearm type and action', 'Rifle, bolt-action'],
+      ['Make', 'MAUSER'],
+      ['Model', 'NONE'],
+      ['Calibre', '.30-06 SPRINGFIELD'],
+      ['Serial number', '96008993'],
+      ['Section applied under', 'Section 16'],
+      ['Date', '17 October 2026'],
+    ];
+    const base = {
+      ...makeInput(withCartridgeSection),
+      coverParticulars: full,
+      idNumber: '8905125220089',
+    };
+    const noPhoto = await svc.render(base as never);
+    const withPhoto = await svc.render({
+      ...base,
+      firearmPhoto: hero.png,
+    } as never);
+
+    expect(await pageCount(withPhoto.pdf)).toBe(await pageCount(noPhoto.pdf));
+    const first = ((await pageTexts(withPhoto.pdf))[0] ?? '').replace(
+      /\s+/g,
+      '',
+    );
+    expect(first).toContain('APPLICANTANDFIREARM');
+    expect(first).toContain('96008993');
+  }, 30000);
+
   it('⚠️ ADDS TWO FULL CARTRIDGE SHEETS — DIMENSION, THEN SUITABILITY (2026-10-17)', async () => {
     // The operator's split: the cover keeps the rendered hero, and the body
     // gives the round two sheets of its own — the full-page dimension sheet,
@@ -1867,6 +1909,104 @@ describe('the cartridge drawing', () => {
     } as never);
     expect(await pageCount(withSheets.pdf)).toBeGreaterThanOrEqual(
       (await pageCount(base.pdf)) + 2,
+    );
+    // ⚠️ AND NO EMPTY SHEET BETWEEN THEM. MO000098 printed page 9 with only a
+    // band and a stray "9" in the contents before 5.1. The two sheets must be
+    // adjacent, and the page before 5.1 must still be the firearm section.
+    const pages = await pageTexts(withSheets.pdf);
+    const flat = (s: string) => s.replace(/\s+/g, '');
+    const dim = pages.findIndex(
+      (p) => flat(p).includes('DIMENSIONS') && !p.includes('CONTENTS'),
+    );
+    const suit = pages.findIndex(
+      (p) =>
+        flat(p).toLowerCase().includes('suitsthis') &&
+        !p.includes('CONTENTS'),
+    );
+    expect(dim).toBeGreaterThan(0);
+    expect(suit).toBe(dim + 1);
+    // The sheet before 5.1 is real content, not the empty headed page the
+    // operator saw at MO000098 page 9.
+    expect(flat(pages[dim - 1] ?? '').length).toBeGreaterThan(100);
+  }, 30000);
+
+  it('⚠️ FALLS BACK TO THE EXHIBITS, NOT GENERIC C.I.P. PLATITUDES (2026-10-17)', async () => {
+    // MO000098's 5.2 printed ten standardisation bullets while its own exhibits
+    // named kudu, gemsbok and blue wildebeest. If the calibre research failed,
+    // the page must still argue the applicant's purpose.
+    const image = {
+      png: hero.png,
+      widthMm: hero.widthMm,
+      heightMm: hero.heightMm,
+      texts: hero.texts,
+    };
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeArticle: undefined,
+      cartridgeDrawing: hero,
+      dimensionSheet: {
+        label: 'The cartridge — .30-06 Springfield — dimensions',
+        image,
+      },
+      suitabilitySheet: {
+        label: 'Why .30-06 Springfield suits this purpose',
+      },
+      purposeNotes: [
+        'Kudu: Kudu is medium to large plains game, typically taken at 150 to 250 metres. The cartridge applied for is matched to this class of game.',
+      ],
+    } as never);
+    const pages = await pageTexts(pdf);
+    const sheet =
+      pages.find(
+        (p) =>
+          p.replace(/\s+/g, '').toLowerCase().includes('suitsthis') &&
+          !p.includes('CONTENTS'),
+      ) ?? '';
+    expect(sheet).toContain('Kudu is medium to large plains game');
+    expect(sheet).not.toContain('standardised cartridge: its case dimensions');
+  }, 30000);
+
+  it('⚠️ NAMES THE EXHIBITS WHEN AN OLD ARTICLE DOES NOT', async () => {
+    // An article stored before the purpose-specific ask is still re-rendered on
+    // every download. If it never mentions the exhibits, 5.2 leads with them.
+    const image = {
+      png: hero.png,
+      widthMm: hero.widthMm,
+      heightMm: hero.heightMm,
+      texts: hero.texts,
+    };
+    const generic = Array.from(
+      { length: 8 },
+      () =>
+        'The cartridge is standardised, so its dimensions and pressure ceiling are fixed and factory ammunition is interchangeable in the firearm applied for.',
+    );
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeArticle: {
+        title: '.30-06 Springfield',
+        paragraphs: generic,
+      },
+      cartridgeDrawing: hero,
+      dimensionSheet: {
+        label: 'The cartridge — .30-06 Springfield — dimensions',
+        image,
+      },
+      suitabilitySheet: {
+        label: 'Why .30-06 Springfield suits this purpose',
+      },
+      purposeNotes: [
+        'Kudu: Kudu is medium to large plains game, typically taken at 150 to 250 metres.',
+      ],
+    } as never);
+    const pages = await pageTexts(pdf);
+    const sheet =
+      pages.find(
+        (p) =>
+          p.replace(/\s+/g, '').toLowerCase().includes('suitsthis') &&
+          !p.includes('CONTENTS'),
+      ) ?? '';
+    expect(sheet.replace(/\s+/g, ' ')).toContain(
+      'The purpose exhibits in this application are Kudu',
     );
   }, 30000);
 

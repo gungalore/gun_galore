@@ -34,6 +34,14 @@ describe('C.I.P. lookup accepts the card, not only the reference name', () => {
     expect(cip.lookup('.45-70 GOVERNMENT')?.name).toMatch(/45-70/);
   });
 
+  it('finds .30-06 from both the card and the Bench spelling', () => {
+    // The card prints ".30-06 SPRINGFIELD"; the Bench row and the C.I.P. index
+    // both say "30-06 Spring.". The candidate list has to cross that gap or the
+    // cover falls back to a photograph and 5.1 loses its sheet (MO000098).
+    expect(cip.lookup('.30-06 SPRINGFIELD')?.name).toBe('30-06 Spring.');
+    expect(cip.lookup('30-06 Spring.')?.name).toBe('30-06 Spring.');
+  });
+
   it('still refuses to guess a cartridge it does not hold', () => {
     expect(cip.lookup('6.5 Grendel Wildcat')).toBeNull();
   });

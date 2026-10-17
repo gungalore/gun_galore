@@ -1215,6 +1215,16 @@ export interface MotivationPdfInput {
    */
   purposePlates?: PurposePlate[];
   /**
+   * What the exhibits argue, in the pack's own words.
+   *
+   * ⚠️ THE SUITABILITY SHEET'S FALLBACK, AND THE REASON IT IS NOT GENERIC. If
+   * the stored calibre research is absent (a failed call, a cache row from
+   * before the ask changed, a thin article) page 5.2 must still explain why
+   * THIS round suits THESE exhibits. These are the same captions printed under
+   * heading 3, so the two pages cannot argue different purposes.
+   */
+  purposeNotes?: string[];
+  /**
    * The plan's heading 3 — "3. My hunting" and its alternates. The exhibits are
    * drawn when this heading's section ends. Undefined prints them as their own
    * block before the declaration.
@@ -2071,7 +2081,27 @@ export class MotivationPdfService {
       // rather than cropped to it: a rifle fills the width, an upright
       // photograph sits centred with wash either side, and nothing is cut.
       const frameW = K.mm(COVER_FRAME_MM.w);
-      const frameH = K.mm(COVER_FRAME_MM.h);
+      /**
+       * ⚠️ THE FRAME GIVES WAY TO THE PARTICULARS, NOT THE OTHER WAY ROUND.
+       * MO000098's cover carried a photograph, a nine-row particulars grid and
+       * a caption; the 85 mm frame left the grid 8 mm short, so the whole
+       * identification block was pushed to a second page whose running head
+       * said CONTENTS. A cover is the one page a DFO must be able to file, and
+       * a photograph is the one thing on it that can shrink. Fit the frame to
+       * what the grid needs, keeping a 40 mm floor so it is still a picture.
+       */
+      const reserve =
+        dossierHead(0, false) +
+        measureGrid(particularRows()) +
+        K.mm(12) +
+        K.mm(5);
+      const frameH = Math.max(
+        K.mm(40),
+        Math.min(
+          K.mm(COVER_FRAME_MM.h),
+          K.BODY_BOTTOM - coverY - reserve,
+        ),
+      );
 
       doc
         .rect(MARGIN, coverY, frameW, frameH)
@@ -2250,8 +2280,9 @@ export class MotivationPdfService {
         (input.annexures?.length ? 1 + input.annexures.length : 0) +
         (input.characterStatements?.length ?? 0) +
         (input.priorNotice ? 1 : 0) +
-        // The cartridge feature's own heading, when it takes one.
-        (input.cartridgeDrawing ? 1 : 0);
+        // The cartridge feature's own heading(s): the new spread takes two
+        // (5.1 dimensions and 5.2 suitability), the legacy feature one.
+        (input.dimensionSheet ? 2 : input.cartridgeDrawing ? 1 : 0);
       const contentsPages = Math.max(1, Math.ceil(estimatedEntries / 24));
       for (let page = 1; page < contentsPages; page++) {
         doc.addPage();
@@ -2344,6 +2375,14 @@ export class MotivationPdfService {
     /** Which of the book's twelve numbers the body actually printed. */
     const printedNumbers = new Set<string>();
     const renderHeading = (heading: string) => {
+      /**
+       * ⚠️ AN EMPTY HEADING IS NOT AN ENTRY. MO000098 printed a TOC line "9"
+       * with no title and a blank page before the C.I.P. sheet, because the
+       * cartridge spread drew an outer heading with an empty label and then
+       * each new sheet added its own page underneath. Nothing may draw a band,
+       * a page or a contents line without words.
+       */
+      if (!heading.trim()) return;
       // ⚠️ THE PREVIOUS SECTION'S RULE ENDS HERE, BEFORE THE HEADING'S OWN AIR
       // IS ADDED. Closing after the gap would run the old section's hairline up
       // beside the next heading.
@@ -3105,6 +3144,33 @@ export class MotivationPdfService {
     ];
 
     /**
+     * The suitability sheet when the research article is absent.
+     *
+     * ⚠️ NOT THE GENERIC STANDARDISATION LIST WHEN WE KNOW THE EXHIBITS. The
+     * operator's MO000098 printed ten C.I.P. platitudes under "why .30-06
+     * Springfield suits this purpose" while the pack's own exhibits named kudu,
+     * gemsbok and blue wildebeest. The exhibit captions already state what the
+     * class of quarry demands; using them here keeps page 5.2 about THIS
+     * application even when the research call failed. No figure is invented —
+     * the only measurements are the held ones in `specs`, and the notes are the
+     * same words printed under heading 3.
+     */
+    const purposeFallback = (): string[] => {
+      const notes = input.purposeNotes ?? [];
+      if (!notes.length) return CARTRIDGE_STANDALONE;
+      const specs = input.suitabilitySheet?.specs ?? [];
+      const held = specs
+        .slice(0, 4)
+        .map((s) => `${s.label.toLowerCase()} ${s.value}`)
+        .join(', ');
+      return [
+        `- The cartridge is a standardised centrefire round${held ? `: ${held}` : ''}. Its dimensions and pressure ceiling are fixed by standard, so factory ammunition is interchangeable in the firearm applied for.`,
+        '- The purpose exhibits in this application set the class of use, and the held measurements above are what that class is checked against:',
+        ...notes.map((n) => `- ${n}`),
+      ];
+    };
+
+    /**
      * The dimensions block, under the picture in the right column.
      *
      * ⚠️ IT FILLS THE COLUMN THE BULLETS DO NOT REACH. Operator, 2026-10-16,
@@ -3524,10 +3590,36 @@ export class MotivationPdfService {
       const top = doc.y + K.mm(1);
       const floor = K.BODY_BOTTOM;
 
-      const source =
+      const researched =
         article?.paragraphs.length && articleIsUsable(article.paragraphs)
           ? article.paragraphs
-          : CARTRIDGE_STANDALONE;
+          : null;
+      /**
+       * ⚠️ THE PAGE MUST NAME THIS APPLICATION'S EXHIBITS EVEN WHEN THE
+       * STORED RESEARCH PREDATES THE PURPOSE-SPECIFIC ASK. MO000098's 5.2
+       * never mentioned kudu, gemsbok or blue wildebeest at all. The new ask
+       * fixes that on the next generation, but an old stored article is still
+       * re-rendered on every download — so if its text names none of the
+       * exhibit titles, lead with them. A good article already names them and
+       * is left untouched.
+       */
+      const exhibitTitles = (input.purposeNotes ?? [])
+        .map((n) => n.split(':')[0]?.trim())
+        .filter(Boolean);
+      const named = researched
+        ? exhibitTitles.some((t) =>
+            researched.join(' ').toLowerCase().includes(t.toLowerCase()),
+          )
+        : false;
+      const lead =
+        researched && exhibitTitles.length && !named
+          ? [
+              `- The purpose exhibits in this application are ${exhibitTitles.join(', ')}. The research below explains why this round suits that purpose.`,
+            ]
+          : [];
+      const source = researched
+        ? [...lead, ...researched]
+        : purposeFallback();
       const paras: string[] = [];
       for (const raw of source) {
         if (isBulletLine(raw)) {
@@ -3704,8 +3796,18 @@ export class MotivationPdfService {
        * operator was looking at. The page now owns a sheet whether or not the
        * research arrived, because the held-figure bullets are always there.
        */
-      if (doc.y > bodyTop + K.mm(1)) doc.addPage();
-      renderHeading(cartridgeHeading);
+      /**
+       * ⚠️ THE NEW SHEETS OWN THEIR HEADINGS. `drawDimensionPage` and
+       * `drawSuitabilityPage` each add a page and render their own numbered
+       * heading (5.1, 5.2). Drawing an outer "The cartridge" heading first left
+       * a page carrying nothing but an empty band — the operator's MO000098,
+       * page 9 — and a stray "9" in the contents. The outer heading survives
+       * only for the legacy single-feature path.
+       */
+      if (!input.dimensionSheet) {
+        if (doc.y > bodyTop + K.mm(1)) doc.addPage();
+        renderHeading(cartridgeHeading);
+      }
       drawCartridge();
       // The spread owns its sheet on both sides, so the next section starts a
       // page. The loop's own latch runs before this branch, so spend it here.
@@ -4360,8 +4462,26 @@ export class MotivationPdfService {
         .split(/\n\s*\n/)
         .map((b) => b.trim())
         .filter(Boolean);
-      /** The signature close: place/date line, rule, identity number. */
-      const pnSigNeed = K.mm(4) + K.mm(11) + K.mm(9) + K.px(13) * 2.4;
+      /**
+       * The signature close: place/date line, signature rule and label, the
+       * applicant's name and the identity number.
+       *
+       * ⚠️ THE OLD FIGURE RESERVED THE RULE AND FORGOT THE NAME. It came to
+       * roughly 35 mm, while the block actually needs about 46 mm: MO000098's
+       * fit check passed, the rule and "Signature" landed on page 15, and the
+       * applicant's name and ID spilled alone onto page 16. The reserve now
+       * matches the draw below, including the identity line's 2 px offset.
+       */
+      const pnSigNeed =
+        K.mm(4) +
+        K.px(12) * 1.2 +
+        K.mm(11) +
+        K.mm(9) +
+        K.mm(5.5) +
+        K.px(13) * 1.2 +
+        K.px(2) +
+        K.px(11) * 1.2 +
+        K.mm(2);
 
       /**
        * ⚠️ FIT THE LETTER ON ONE SHEET BY SPACING, NEVER BY CUTTING WORDS.
@@ -4417,6 +4537,11 @@ export class MotivationPdfService {
         [K.BODY_SIZE, 0, K.mm(1.5)],
         [K.BODY_SIZE * 0.95, 0, K.mm(1.5)],
         [K.BODY_SIZE * 0.9, 0, K.mm(1.5)],
+        // ⚠️ THE LAST RESORT BEFORE A SECOND SHEET. On MO000098 even 90% left
+        // the name and ID overleaf; 85% and 82% are still legible for a short
+        // statutory request and keep the signature whole.
+        [K.BODY_SIZE * 0.85, 0, K.mm(1.5)],
+        [K.BODY_SIZE * 0.82, 0, K.mm(1.2)],
       ] as [number, number, number][]) {
         if (pnBlocksHeight(size, lead, gap) + pnSigNeed <= pnAvailable) {
           pnSize = size;

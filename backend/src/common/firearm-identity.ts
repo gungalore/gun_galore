@@ -94,7 +94,7 @@ export const FIREARM_FIELDS: readonly FirearmField[] = [
   {
     key: 'firearm_model',
     describe:
-      'the MODEL name or number the manufacturer gives it, e.g. "T3x", "1301", "457" — Section E box 1.6. It is not the calibre and not the type. If the document only gives one string like "Howa 1500 .308", the model is the part that is neither the maker nor the calibre.',
+      'the MODEL name or number the manufacturer gives it, e.g. "T3x", "1301", "457" — Section E box 1.6. It is not the calibre and not the type. If the document only gives one string like "Howa 1500 .308", the model is the part that is neither the maker nor the calibre. If the document prints the word NONE, transcribe NONE — many South African cards read "Model NONE".',
   },
   {
     key: 'firearm_serial',
@@ -109,7 +109,7 @@ export const FIREARM_FIELDS: readonly FirearmField[] = [
   {
     key: 'barrel_make',
     describe:
-      'the make recorded against the BARREL row specifically — SAPS 271 section E box 1.8. The form gives every serial its own make and they genuinely differ; real cards read things like barrel CZ, receiver NONE, frame NONE. Leave blank unless the document names a make for the barrel row itself.',
+      'the make recorded against the BARREL row specifically — SAPS 271 section E box 1.8. The form gives every serial its own make and they genuinely differ; real cards read things like barrel CZ, receiver NONE, frame NONE. If the barrel row prints NONE, transcribe NONE; leave it out only when there is no barrel row at all.',
   },
   {
     key: 'firearm_calibre',
@@ -129,22 +129,22 @@ export const FIREARM_FIELDS: readonly FirearmField[] = [
   {
     key: 'frame_serial',
     describe:
-      'the serial in the row labelled FRAME — SAPS 271 section E box 1.9 — where the document lists it as its own row, distinct from the barrel serial. Leave it blank if the document gives only one serial; do NOT copy the barrel serial into this field.',
+      'the serial in the row labelled FRAME — SAPS 271 section E box 1.9 — where the document lists it as its own row, distinct from the barrel serial. If that row prints NONE, transcribe NONE; leave it out only when there is no frame row, and do NOT copy the barrel serial into this field.',
   },
   {
     key: 'frame_make',
     describe:
-      'the make recorded against the FRAME row specifically (SAPS 271 section E box 1.10). Blank unless the document names one.',
+      'the make recorded against the FRAME row specifically (SAPS 271 section E box 1.10). If it prints NONE, transcribe NONE; leave it out only when the document has no frame make row.',
   },
   {
     key: 'receiver_serial',
     describe:
-      'the serial in the row labelled RECEIVER — SAPS 271 section E box 1.11 — where the document lists it separately from both the barrel and the frame. Many documents have no such row; leave it blank rather than repeating another serial.',
+      'the serial in the row labelled RECEIVER — SAPS 271 section E box 1.11 — where the document lists it separately from both the barrel and the frame. If that row prints NONE, transcribe NONE; leave it out only when there is no receiver row, and never repeat another serial.',
   },
   {
     key: 'receiver_make',
     describe:
-      'the make recorded against the RECEIVER row specifically (SAPS 271 section E box 1.12). Blank unless the document names one.',
+      'the make recorded against the RECEIVER row specifically (SAPS 271 section E box 1.12). If it prints NONE, transcribe NONE; leave it out only when there is no receiver make row.',
   },
 ];
 
@@ -217,10 +217,15 @@ export function firearmIdentityPrompt(): string {
     '  handwritten, or partly out of frame.',
     '- NEVER copy one serial into another serial’s field. A single unlabelled',
     '  serial goes in firearm_serial and nowhere else.',
+    '- ⚠️ NONE IS A VALUE, NOT A BLANK. A licence card prints the word NONE',
+    '  in a row that does not apply — "Model NONE", "Frame Serial No NONE",',
+    '  "Make NONE". Transcribe that word exactly for the key it belongs to. Do',
+    '  NOT omit a NONE row, and do NOT copy the firearm’s serial into it. SAPS',
+    '  271 section E and item 2.1 print the word back, and an empty box says',
+    '  something different from NONE.',
     '- The component rows may legitimately read NONE, and often do — a rifle',
     '  whose receiver carries the number will show NONE against the barrel and',
-    '  the frame. Leave a NONE row out rather than copying the firearm’s serial',
-    '  into it.',
+    '  the frame.',
     '- Transcribe exactly, including letters, leading zeros and punctuation.',
     '  Serial numbers are not words and must not be tidied or corrected.',
     '',
