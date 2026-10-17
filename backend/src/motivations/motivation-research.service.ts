@@ -6,7 +6,10 @@ import { LlmService } from '../common/llm/llm.service';
 import { LlmError } from '../common/llm/llm.types';
 import { HUNT_GAME_CLASS } from './motivation-cards';
 import { disciplineByValue } from './shooting-disciplines';
-import { resolveSportingPurpose } from './motivation-purpose';
+import {
+  isSportingLicence,
+  resolveSportingPurpose,
+} from './motivation-purpose';
 import { buildPlateSpecs } from './motivation-plates';
 
 // ────────────────────────────────────────────────────────────────────
@@ -145,7 +148,14 @@ export function targetsFor(
   const calibre = a('firearm_calibre');
   const type = a('firearm_type');
   const action = a('firearm_action');
-  const useClass = USE_CLASS[licenceType];
+  /**
+   * ⚠️ THE PACK'S PURPOSE, NOT THE ENUM. MO000099 is a Section 16 hunter
+   * application whose .223 self-loader is argued as SPORT. `USE_CLASS` keyed
+   * the calibre ask on S16_DEDICATED_HUNTER and asked for "advantages for
+   * hunting" beside four sport courses; the model returned one truncated
+   * bullet. Resolve the same purpose the plan and the exhibits use.
+   */
+  const useClass = useClassFor(licenceType, answers);
 
   // ── the firearm itself ─────────────────────────────────────────────
   if (make && model) {
@@ -176,13 +186,22 @@ export function targetsFor(
     const exhibits = buildPlateSpecs({ licenceType, answers })
       .map((p) => p.title)
       .filter(Boolean);
+    /**
+     * ⚠️ THE EVIDENCE FOLLOWS THE PURPOSE. "Impact energy" is the right
+     * question for a kudu and the wrong one for a steel course; a sport brief
+     * that asks for terminal performance invites a hunting page beside four
+     * sport exhibits. Ask for the facts the exhibits actually test.
+     */
+    const suitabilityFacts =
+      useClass === 'sport shooting'
+        ? 'recoil and sight recovery, accuracy, velocity and power factor, ' +
+          'magazine/feeding behaviour, and the distances and target types the courses use'
+        : useClass === 'hunting'
+          ? 'typical bullet weights and impact energy at the ranges those species are taken at, trajectory, penetration and where it is marginal'
+          : 'recoil and sight recovery, accuracy, typical bullet weights and impact energy at the ranges involved, trajectory, and where it is marginal';
     const exhibitAsk = exhibits.length
       ? `The purpose exhibits in this application are: ${exhibits.join(', ')}. ` +
-        'Explain why this cartridge suits EACH of them specifically — the ' +
-        'bullet weights and impact energy it is normally loaded to at the ' +
-        'ranges those species or courses are taken at, its trajectory and ' +
-        'recoil, and where it is marginal — not merely why it is a ' +
-        'standardised round.'
+        `Explain why this cartridge suits EACH of them specifically — ${suitabilityFacts} — not merely why it is a standardised round.`
       : '';
     out.push({
       target: 'calibre',
@@ -344,6 +363,49 @@ const USE_CLASS: Record<MotivationLicenceType, string> = {
   S24_RENEWAL: 'continued use',
 };
 
+/**
+ * What the cartridge is FOR, for the research ask and its cache key.
+ *
+ * ⚠️ ONE DOOR MEANS ONE ANSWER. After Section 16 collapsed to a single entry,
+ * the licence type no longer says hunting or sport — the pack does. The held
+ * calibres already used `resolveSportingPurpose`; the applied-for cartridge
+ * did not, which is how MO000099's sport brief was researched as hunting.
+ */
+function useClassFor(
+  licenceType: MotivationLicenceType,
+  answers: Record<string, string>,
+): string {
+  if (!isSportingLicence(licenceType)) return USE_CLASS[licenceType];
+  const purpose = resolveSportingPurpose(answers);
+  if (purpose === 'sport') return 'sport shooting';
+  if (purpose === 'hunting') return 'hunting';
+  return 'hunting and sport shooting';
+}
+
+/**
+ * The minimum a research answer must contain to be worth storing or printing.
+ *
+ * ⚠️ A TRUNCATED ANSWER IS WORSE THAN NO ANSWER. MO000099's cache row was one
+ * 244-byte bullet ending "[cite: CIP" — the model stopped mid-citation. The
+ * reader stored it, the writer could not use it, and 5.2 fell back to exhibit
+ * captions. A calibre entry is a printed page, so it must carry a real article;
+ * the shorter targets only need a fact or two.
+ */
+const MIN_WORDS: Record<ResearchTarget, number> = {
+  firearm: 25,
+  calibre: 120,
+  discipline: 20,
+  game: 20,
+};
+
+function researchIsUsable(target: ResearchTarget, text: string, min = MIN_WORDS[target]): boolean {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  if (words < min) return false;
+  // A citation opened and not closed is a truncated answer, not a short one.
+  if (/\[cite:[^\]]*$/i.test(text.trim())) return false;
+  return true;
+}
+
 const SYSTEM = [
   'You are preparing background notes for a South African firearm licence',
   'motivation. Search the web for what you do not reliably know.',
@@ -451,17 +513,7 @@ export class MotivationResearchService {
       ),
     ].slice(0, 3);
 
-    const purpose = resolveSportingPurpose(answers);
-    const useClass =
-      licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER ||
-      licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||
-      licenceType === MotivationLicenceType.S16_DEDICATED_SPORT
-        ? purpose === 'sport'
-          ? 'sport shooting'
-          : purpose === 'hunting'
-            ? 'hunting'
-            : 'hunting and sport shooting'
-        : USE_CLASS[licenceType];
+    const useClass = useClassFor(licenceType, answers);
     const entries: ResearchEntry[] = [];
     for (const calibre of held) {
       const entry = await this.entryFor(
@@ -474,6 +526,8 @@ export class MotivationResearchService {
           `Say what it is well matched to for ${useClass}, and what it is over-`,
           'or under-matched to. Figures with sources, never impressions.',
         ].join(' '),
+        // A comparison entry is a paragraph, not the whole suitability page.
+        40,
       );
       if (entry) entries.push(entry);
     }
@@ -548,8 +602,9 @@ export class MotivationResearchService {
     target: ResearchTarget,
     cacheKey: string,
     ask: string,
+    minWords: number = MIN_WORDS[target],
   ): Promise<ResearchEntry | null> {
-    const hit = await this.read(cacheKey);
+    const hit = await this.read(cacheKey, target, minWords);
     if (hit) return hit;
 
     if (!this.llm.isConfigured()) return null;
@@ -557,36 +612,57 @@ export class MotivationResearchService {
     let text = '';
     let sources: ResearchSource[] = [];
     let usage: ResearchEntry['usage'];
-    try {
-      const res = await this.llm.complete({
-        system: SYSTEM,
-        messages: [{ role: 'user', content: ask }],
-        maxTokens: 1500,
-        grounding: { web: true },
-        purpose: `motivation.research.${target}`,
-        timeoutMs: TIMEOUT_MS,
-      });
-      text = res.text.trim();
-      sources = (res.groundingSources ?? []).map((s) => ({
-        uri: s.uri,
-        title: s.title,
-      }));
-      usage = {
-        promptTokens: res.usage?.inputTokens ?? 0,
-        completionTokens: res.usage?.outputTokens ?? 0,
-      };
-    } catch (err) {
-      // ⚠️ NO QUERY TEXT AND NO PROVIDER NAME IN THE LOG. Nothing personal
-      // reaches a query any more, but the habit is the guard: a log line that
-      // echoes a prompt is one registry change away from echoing an answer.
-      const code = err instanceof LlmError ? err.code : 'unknown';
+    /**
+     * ⚠️ ONE RETRY, AND ONLY FOR A BAD ANSWER. A grounded call that comes back
+     * as a single truncated bullet is not a fact we can print, and it must not
+     * be cached for 180 days. The second attempt says what was wrong; a second
+     * bad answer is taken at its word and costs the page its research, not the
+     * document.
+     */
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await this.llm.complete({
+          system: SYSTEM,
+          messages: [
+            {
+              role: 'user',
+              content:
+                attempt === 0
+                  ? ask
+                  : `${ask}\n\nThe previous answer was too short or cut off. Return the COMPLETE answer now, with every bullet starting "- " on its own line.`,
+            },
+          ],
+          maxTokens: 1500,
+          grounding: { web: true },
+          purpose: `motivation.research.${target}`,
+          timeoutMs: TIMEOUT_MS,
+        });
+        text = res.text.trim();
+        sources = (res.groundingSources ?? []).map((s) => ({
+          uri: s.uri,
+          title: s.title,
+        }));
+        usage = {
+          promptTokens: res.usage?.inputTokens ?? 0,
+          completionTokens: res.usage?.outputTokens ?? 0,
+        };
+      } catch (err) {
+        // ⚠️ NO QUERY TEXT AND NO PROVIDER NAME IN THE LOG. Nothing personal
+        // reaches a query any more, but the habit is the guard: a log line that
+        // echoes a prompt is one registry change away from echoing an answer.
+        const code = err instanceof LlmError ? err.code : 'unknown';
+        this.logger.warn(
+          `Research failed for ${target} [${code}] — the document is written without it.`,
+        );
+        return null;
+      }
+      if (researchIsUsable(target, text, minWords)) break;
       this.logger.warn(
-        `Research failed for ${target} [${code}] — the document is written without it.`,
+        `Research for ${target} came back too thin or truncated (${text.trim().split(/\s+/).filter(Boolean).length} words) — ${attempt === 0 ? 'retrying once' : 'dropping it'}.`,
       );
-      return null;
     }
 
-    if (!text) return null;
+    if (!text || !researchIsUsable(target, text, minWords)) return null;
 
     if (!sources.length) {
       // Sourceless is not a failure — the brief itself says to stay silent on
@@ -630,7 +706,11 @@ export class MotivationResearchService {
     return entry;
   }
 
-  private async read(cacheKey: string): Promise<ResearchEntry | null> {
+  private async read(
+    cacheKey: string,
+    target: ResearchTarget,
+    minWords: number,
+  ): Promise<ResearchEntry | null> {
     try {
       const row = await this.prisma.motivationResearch.findUnique({
         where: { cacheKey },
@@ -647,6 +727,18 @@ export class MotivationResearchService {
       // cache to stay honest, and a sweep that failed would otherwise serve
       // stale discipline rules into a signed document.
       if (!row || row.expiresAt.getTime() <= Date.now()) return null;
+      /**
+       * ⚠️ A THIN CACHE ROW IS A MISS, NOT AN ANSWER. MO000099's calibre row
+       * was one truncated bullet ending "[cite: CIP"; serving it again would
+       * make every future .223 application fall back to exhibit captions
+       * without ever asking the model for the page it needs.
+       */
+      if (!researchIsUsable(target, row.payload, minWords)) {
+        this.logger.warn(
+          `Research cache row for ${target} is too thin or truncated — treating it as a miss.`,
+        );
+        return null;
+      }
       return {
         target: row.target as ResearchTarget,
         cacheKey: row.cacheKey,

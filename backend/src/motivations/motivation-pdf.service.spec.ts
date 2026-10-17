@@ -2010,6 +2010,44 @@ describe('the cartridge drawing', () => {
     );
   }, 30000);
 
+  it('⚠️ PRINTS A ONE-PARAGRAPH RESEARCHED ARTICLE, NOT THE FALLBACK', async () => {
+    // The renderer used to reject an article with fewer than three LINES, so a
+    // grounded 350-word answer delivered as one block was discarded and 5.2
+    // fell back to exhibit captions.
+    const image = {
+      png: hero.png,
+      widthMm: hero.widthMm,
+      heightMm: hero.heightMm,
+      texts: hero.texts,
+    };
+    const sentence =
+      'The .223 Remington is a light-recoiling centrefire round whose flat trajectory and modest blast make rapid sight recovery straightforward on timed steel and paper courses.';
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeArticle: {
+        title: '.223 Remington',
+        paragraphs: [Array.from({ length: 8 }, () => sentence).join(' ')],
+      },
+      cartridgeDrawing: hero,
+      dimensionSheet: {
+        label: 'The cartridge — .223 Remington — dimensions',
+        image,
+      },
+      suitabilitySheet: {
+        label: 'Why .223 Remington suits this purpose',
+      },
+    } as never);
+    const pages = await pageTexts(pdf);
+    const sheet =
+      pages.find(
+        (p) =>
+          p.replace(/\s+/g, '').toLowerCase().includes('suitsthis') &&
+          !p.includes('CONTENTS'),
+      ) ?? '';
+    expect(sheet).toContain('light-recoiling centrefire round');
+    expect(sheet).not.toContain('set the class of use');
+  }, 30000);
+
   it('⚠️ STILL SUPPRESSES THE SPLICED SHEET, which is why hero rides on this field', async () => {
     // The C.I.P. page is suppressed by the PRESENCE of a drawing. Had the hero
     // arrived as its own input, this pack would have looked drawing-less and
@@ -2344,6 +2382,18 @@ describe('the purpose exhibits under heading 3', () => {
     // Two pages of exhibits, numbered, both present.
     expect(flat(joined)).toMatch(/PURPOSE EXHIBITS \(PAGE 1 OF 2\)/i);
     expect(flat(joined)).toMatch(/PURPOSE EXHIBITS \(PAGE 2 OF 2\)/i);
+
+    // ⚠️ AND THE NEXT SECTION DOES NOT START ON THE LAST EXHIBIT PAGE.
+    // MO000099's page 5 carried the second pair of course photos, heading 5
+    // and the opening paragraph, with a running head that said THE FIREARM
+    // APPLIED FOR over sport exhibits.
+    const secondExhibits = pages.find(
+      (p) =>
+        !p.includes('CONTENTS') &&
+        p.replace(/\s+/g, '').includes('PAGE2OF2'),
+    );
+    expect(secondExhibits).toBeDefined();
+    expect(flat(secondExhibits ?? '')).not.toContain('THE FIREARM APPLIED FOR');
   });
 
   it('⚠️ DRAWS NOTHING WHEN THE PACK HAS NO EXHIBITS', async () => {

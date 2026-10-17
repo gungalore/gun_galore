@@ -362,8 +362,14 @@ function cartridgeArticle(
    * ⚠️ A THIN BRIEF IS NOT WORTH A FEATURE. Two lines under a drawing reads
    * as a page that ran out of things to say, which is worse for the
    * application than the drawing standing alone.
+   *
+   * ⚠️ BUT ONE FULL PARAGRAPH IS. The old floor counted LINES, so a grounded
+   * answer delivered as a single 350-word block was discarded and 5.2 fell
+   * back to generic exhibit captions (MO000099). The floor is now the word
+   * count; the page sets the block as prose if it has no line breaks.
    */
-  return paragraphs.length >= 3 ? { title, paragraphs } : undefined;
+  const words = paragraphs.join(' ').split(/\s+/).filter(Boolean).length;
+  return words >= 60 ? { title, paragraphs } : undefined;
 }
 
 /**

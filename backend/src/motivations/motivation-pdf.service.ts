@@ -3165,7 +3165,13 @@ export class MotivationPdfService {
         .join(', ');
       return [
         `- The cartridge is a standardised centrefire round${held ? `: ${held}` : ''}. Its dimensions and pressure ceiling are fixed by standard, so factory ammunition is interchangeable in the firearm applied for.`,
-        '- The purpose exhibits in this application set the class of use, and the held measurements above are what that class is checked against:',
+        /**
+         * ⚠️ NO DANGLING LEAD-IN. This used to be a bullet ending in a colon
+         * ("The purpose exhibits ... are checked against:") with the actual
+         * notes as separate bullets underneath, which prints as a sentence
+         * that never finishes (MO000099, 5.2). Each note is already a complete
+         * statement; let them stand.
+         */
         ...notes.map((n) => `- ${n}`),
       ];
     };
@@ -3980,6 +3986,16 @@ export class MotivationPdfService {
         if (pendingPlates) {
           drawPurposePlates();
           pendingPlates = false;
+          /**
+           * ⚠️ THE EXHIBIT SPREAD ENDS BEFORE THE NEXT SECTION BEGINS. Without
+           * this, a short second exhibit page left room for heading 5 and its
+           * opening paragraph (MO000099, page 5), so the running head said
+           * THE FIREARM APPLIED FOR over a page of sport exhibits. The plates
+           * own their pages; the next heading starts a fresh one.
+           */
+          doc.addPage();
+          doc.x = MARGIN;
+          doc.y = bodyTop;
         }
         /**
          * ⚠️ THE DRAWING GOES UNDER THE WRITER'S OWN HEADING. Every S13 plan

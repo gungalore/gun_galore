@@ -49,7 +49,16 @@ function build(opts: { row?: any; text?: string; throws?: Error } = {}) {
   const complete = jest.fn(async (_req?: any) => {
     if (opts.throws) throw opts.throws;
     return {
-      text: opts.text ?? 'The CZ Shadow 2 is a steel-framed competition pistol.',
+      /**
+       * A real answer, not a sentence. `entryFor` now refuses a calibre brief
+       * that is too thin to be a printed page (MO000099's was one truncated
+       * bullet), so the default fixture has to be long enough to pass.
+       */
+      text:
+        opts.text ??
+        'The firearm and its cartridge are documented in published material, with dimensions, pressures and typical uses set out for the reader. '.repeat(
+          10,
+        ),
       groundingSources: [{ uri: 'https://example.co.za/a', title: 'A' }],
     };
   });
@@ -88,9 +97,24 @@ describe('what gets researched', () => {
     // plains game" and "is .308 right for this discipline" are different
     // questions about one cartridge, and sharing a row would answer one of
     // them with the other's brief.
-    const sport = targetsFor(SPORT, ANSWERS).find((t) => t.target === 'calibre')!;
-    const hunt = targetsFor(HUNTER, ANSWERS).find((t) => t.target === 'calibre')!;
+    // ⚠️ SAME CARTRIDGE, TWO PURPOSES, TWO DIFFERENT ASKS. A handgun answers
+    // "sport" under either Section 16 enum now, so use a manual rifle for the
+    // hunting side or the two collide by design.
+    const base = {
+      firearm_type: 'Rifle',
+      firearm_calibre: '.308 Winchester',
+    };
+    const sport = targetsFor(SPORT, {
+      ...base,
+      firearm_action: 'Semi-automatic (self-loading)',
+    }).find((t) => t.target === 'calibre')!;
+    const hunt = targetsFor(HUNTER, {
+      ...base,
+      firearm_action: 'Bolt action',
+    }).find((t) => t.target === 'calibre')!;
     expect(sport.cacheKey).not.toBe(hunt.cacheKey);
+    expect(sport.ask).toContain('for sport shooting');
+    expect(hunt.ask).toContain('for hunting');
   });
 
   it('⚠️ ASKS THE CARTRIDGE IN THE UNITS AND THE SPELLING OF THE DOCUMENT', () => {
@@ -115,12 +139,18 @@ describe('what gets researched', () => {
      * research that." The feature is a whole page of its own now, and the
      * reason a DFO reads it is the match between the round and the purpose.
      */
-    const sport = targetsFor(SPORT, ANSWERS).find(
-      (t) => t.target === 'calibre',
-    )!.ask;
-    const hunt = targetsFor(HUNTER, ANSWERS).find(
-      (t) => t.target === 'calibre',
-    )!.ask;
+    const sport = targetsFor(SPORT, {
+      ...ANSWERS,
+      firearm_type: 'Rifle',
+      firearm_action: 'Semi-automatic (self-loading)',
+      firearm_calibre: '.223 Remington',
+    }).find((t) => t.target === 'calibre')!.ask;
+    const hunt = targetsFor(HUNTER, {
+      ...ANSWERS,
+      firearm_type: 'Rifle',
+      firearm_action: 'Bolt action',
+      firearm_calibre: '.30-06 SPRINGFIELD',
+    }).find((t) => t.target === 'calibre')!.ask;
     expect(sport).toContain('ADVANTAGES');
     expect(hunt).toContain('ADVANTAGES');
     // ⚠️ The advantages are asked for as a bullet list (operator, 2026-10-16:
@@ -211,11 +241,13 @@ describe('⚠️ nothing about the applicant reaches a search query', () => {
 
 describe('the cache', () => {
   it('⚠️ A HIT MAKES NO CALL AT ALL', async () => {
+    const cached =
+      'The CZ Shadow 2 is a steel-framed competition pistol used in Production division, with a heavy frame, low recoil and a sight radius suited to fast, accurate fire at typical club ranges in South Africa.';
     const { svc, complete } = build({
       row: {
         target: 'firearm',
         cacheKey: 'firearm|cz|shadow 2|9mm parabellum|sport shooting',
-        payload: 'cached prose',
+        payload: cached,
         sources: [{ uri: 'https://example.co.za/a' }],
         expiresAt: future(),
       },
@@ -225,7 +257,7 @@ describe('the cache', () => {
       firearm_model: 'Shadow 2',
     });
     expect(complete).not.toHaveBeenCalled();
-    expect(pack.firearm?.payload).toBe('cached prose');
+    expect(pack.firearm?.payload).toBe(cached);
   });
 
   it('treats an expired row as a miss and refetches', async () => {
@@ -328,6 +360,24 @@ describe('it fails soft, always', () => {
       firearm_model: 'Shadow 2',
     });
     expect(pack.firearm).toBeUndefined();
+    expect(upserts).toHaveLength(0);
+  });
+
+  it('⚠️ RETRIES A TRUNCATED CARTRIDGE ANSWER, THEN DROPS IT RATHER THAN CACHING', async () => {
+    // MO000099's stored row was one 244-byte bullet ending "[cite: CIP". It was
+    // cached for 180 days, the writer could not use it, and 5.2 fell back to
+    // exhibit captions. A second bad answer costs the research page, not the
+    // document; it must not poison the cache.
+    const { svc, complete, upserts } = build({
+      text: '- Introduced in 1964 by Remington Arms as a civilian commercialisation of the military 5.56×45mm development [cite: CIP',
+    });
+    const pack = await svc.researchFor(HUNTER, {
+      firearm_type: 'Rifle',
+      firearm_action: 'Semi-automatic (self-loading)',
+      firearm_calibre: '.223 Remington',
+    });
+    expect(pack.calibre).toBeUndefined();
+    expect(complete).toHaveBeenCalledTimes(2);
     expect(upserts).toHaveLength(0);
   });
 });
