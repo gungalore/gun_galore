@@ -56,7 +56,7 @@
  * tidy-up: it is the only thing on the page that says whether the text was
  * reviewed.
  */
-export const PRIOR_NOTICE_VERSION = 'pn-2026-08-a-draft';
+export const PRIOR_NOTICE_VERSION = 'pn-2026-10-16-a-draft';
 
 export interface PriorNoticeInput {
   applicantName: string;
@@ -93,33 +93,34 @@ export function buildPriorNoticeRequest(
     ? `my application under ${input.licenceTypeLabel} for ${input.firearmLine}`
     : `my application under ${input.licenceTypeLabel}`;
 
+  /**
+   * ⚠️ SHORT BY INSTRUCTION. Operator, 2026-10-16: "work on the wording and
+   * shorten the whole document" — the letter was spilling its signature block
+   * onto a second sheet. Every provision it rests on is kept (reg 89, PAJA s3,
+   * reg 91(1)(a) and 91(4)); what went is the second sentence of each point,
+   * the repetition between them, and the separate contact undertaking. The
+   * three numbered asks stay three, because a longer list reads as a demand.
+   */
   const body = [
     `I, ${who} lodge this request together with ${what}, reference ${input.referenceNumber}.`,
 
     'What I am asking for:',
 
-    // Kept to three numbered asks. A longer list reads as a demand; these
-    // three are each anchored in a provision that already binds the decision
-    // maker, which is what makes the page unobjectionable to receive.
-    '1. That, should the Registrar be minded to refuse this application or to grant it subject to conditions, I be given notice of that intention and a reasonable opportunity to make representations before the decision is taken.',
+    '1. That, if the Registrar is minded to refuse this application or grant it subject to conditions, I first be given notice and a reasonable opportunity to make representations.',
 
-    '2. That, if a decision adverse to me is taken, I be notified of it in writing, stating the reasons for it and the date and place at which it was taken.',
+    '2. That any adverse decision be notified to me in writing, with the reasons and the date and place it was taken.',
 
-    '3. That the notification referred to above be sent to the address given in my application, and that I be told the date on which the decision was made.',
+    '3. That the notification be sent to the address in my application.',
 
     'Why I am asking:',
 
-    'Regulation 89 of the Firearms Control Regulations, 2004 requires a police official taking an administrative decision which may detrimentally affect the rights of a person to record the reasons for that decision in writing when it is made, to sign and date those reasons, and without delay to notify the person concerned in writing of the decision and of those reasons.',
+    'Regulation 89 of the Firearms Control Regulations, 2004 requires an official taking an administrative decision that may detrimentally affect a person’s rights to record the reasons in writing when it is made, to sign and date them, and to notify the person in writing without delay.',
 
-    'Section 3 of the Promotion of Administrative Justice Act 3 of 2000 provides that administrative action which materially and adversely affects a person’s rights must be procedurally fair, which includes adequate notice of the nature and purpose of the proposed action and a reasonable opportunity to make representations.',
+    'Section 3 of the Promotion of Administrative Justice Act 3 of 2000 requires administrative action that materially and adversely affects a person’s rights to be procedurally fair, including adequate notice and a reasonable opportunity to make representations.',
 
-    // The practical point, stated plainly. This is the sentence that explains
-    // why the request is filed at the START rather than after a refusal.
-    'I make this request now, with my application, rather than after a decision, for a practical reason: regulation 91(1)(a) requires an appeal to be noted within 90 days after the date on which the decision was made, and regulation 91(4) requires a copy of the regulation 89(c) notification to be attached to the appeal notice. Written notice of the decision and its date is therefore what makes an appeal possible at all.',
+    'I ask now, with my application, because regulation 91(1)(a) gives 90 days to note an appeal from the date of the decision, and regulation 91(4) requires the regulation 89(c) notification to be attached to the appeal notice.',
 
-    'This request is not an objection to anything and is not made in anticipation of a refusal. It asks only for what regulation 89 already requires, and it is on the file so that it does not have to be asked for later.',
-
-    'I confirm that the contact details in my application are correct and undertake to notify the Designated Firearms Officer in writing of any change to them while this application is pending.',
+    'This request is not an objection and is not made in anticipation of a refusal. It asks only for what regulation 89 already requires.',
   ].join('\n\n');
 
   return {

@@ -651,7 +651,7 @@ describe('the annexure index', () => {
      * the whole letter — closing block included — is on one sheet.
      */
     expect(pages[idx]).toContain('lodge this request');
-    expect(pages[idx]).toContain('undertake to notify');
+    expect(pages[idx]).toContain('It asks only for what regulation 89 already requires');
     expect(pages[idx]).toContain('Signed at');
   });
 
