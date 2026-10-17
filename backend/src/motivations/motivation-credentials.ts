@@ -312,13 +312,24 @@ export function dedicatedDisciplineOf(
  * why. We refuse only what we have READ and can name.
  */
 export function dedicatedStatusFits(
-  licenceType: MotivationLicenceType,
+  _licenceType: MotivationLicenceType,
   doc: Pick<CredentialSource, 'kind' | 'details'>,
 ): boolean {
   const discipline = dedicatedDisciplineOf(doc);
-  if (discipline === 'unknown' || discipline === 'both') return true;
-  if (licenceType === 'S16_DEDICATED_SPORT') return discipline === 'sport';
-  if (licenceType === 'S16_DEDICATED_HUNTER') return discipline === 'hunter';
+  /**
+   * ⚠️ ONE SECTION 16 ENTRY POINT. Operator, 2026-10-17: "first look at what
+   * firearms they already own and what section the licenses falls in, look for
+   * gaps that the current calibre fills best in hunting or sport shooting and
+   * use it in that. Rmember a person may sport shoot or hunt with a firearm
+   * regardless of the dedicated status, as long as they posses a legal license
+   * for that firearm they may use it for any lawfull purpose."
+   *
+   * So a dedicated HUNTER's papers evidence section 16 even where the
+   * motivation argues sport shooting, and the reverse. What they cannot do is
+   * evidence section 16 at all when they are a provincial PROFESSIONAL HUNTER
+   * registration — that is a different authorisation.
+   */
+  if (discipline === 'professional') return false;
   // No other licence type has an association block at all, so there is nothing
   // to protect and nothing to explain.
   return true;
@@ -407,20 +418,13 @@ function bestJoinedFor(
 
 /** Why we would not take association details off this document, in their words. */
 function wrongDisciplineReason(
-  licenceType: MotivationLicenceType,
+  _licenceType: MotivationLicenceType,
   discipline: DedicatedDiscipline,
 ): string {
-  const wanted =
-    licenceType === 'S16_DEDICATED_SPORT'
-      ? 'a dedicated SPORT SHOOTER, and that has to come from an accredited sports-shooting organisation'
-      : 'a dedicated HUNTER, and that has to come from an accredited hunting association';
-  const says =
-    discipline === 'professional'
-      ? 'it is a professional hunter registration, which is a provincial occupational licence and not dedicated status at all'
-      : discipline === 'hunter'
-        ? 'it awards dedicated HUNTER status'
-        : 'it awards dedicated SPORT SHOOTER status';
-  return `${says}. This application is for ${wanted}`;
+  if (discipline === 'professional') {
+    return 'it is a professional hunter registration, which is a provincial occupational licence and not section 16 dedicated status';
+  }
+  return `it awards ${discipline === 'sport' ? 'sport-shooting' : 'hunter'} status, which is not dedicated status this application can use`;
 }
 
 /**

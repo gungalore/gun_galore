@@ -471,54 +471,11 @@ export default function LicenceCentreSheetPage() {
   }, [sheet, getToken, id, load]);
 
   /**
-   * Write "why this firearm" once the firearm is described.
-   *
-   * ⚠️ AUTOMATIC, BECAUSE A CAUTIOUS BLANK IS NOT SAFER THAN A GOOD ANSWER.
-   * The operator's standing rule (2026-08-25) is fill it in, arm it, let them
-   * change it — and `firearm_fit_reason` was REQUIRED until 2026-09-08 and was
-   * "the largest single reason an application stalled: it asked the applicant
-   * to write the argument the product exists to write for them".
-   *
-   * ⚠️ AND ONLY WHILE THE BOX IS EMPTY, WHICH IS WHAT BOUNDS THE BILL. It is a
-   * model call. The moment it succeeds the box has a value, so the condition is
-   * false for the rest of the application's life; the latch below stops a
-   * failed call being retried on every render. The server refuses anyway if the
-   * member has written their own — stamp() will not overwrite MEMBER.
+   * ⚠️ THE "WHY THIS FIREARM" BOX IS NO LONGER A QUESTION (2026-10-17). The
+   * reason is generated during "Write my motivation" from the same pack, and
+   * the sheet no longer shows an inferred paragraph asking the member to
+   * confirm work we did for them. Nothing to fire here any more.
    */
-  const reasonedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!sheet) return;
-    const fit = sheet.items.find((i) => i.key === 'firearm_fit_reason');
-    if (!fit || fit.value.trim()) return;
-    const make = sheet.items.find((i) => i.key === 'firearm_make')?.value ?? '';
-    const type = sheet.items.find((i) => i.key === 'firearm_type')?.value ?? '';
-    if (!make && !type) return;
-    const key = `${make}|${type}`;
-    if (reasonedFor.current === key) return;
-    reasonedFor.current = key;
-    void (async () => {
-      try {
-        const r = await motivationsApi.reason(getToken, id);
-        if (!r.written) return;
-        await load();
-        /*
-          ⚠️ A WARNING IS SHOWN, NOT SWALLOWED, AND IT IS NOT A FAILURE. The
-          paragraph is always written now — MOTIVATION-CORPUS-LEARNINGS.md
-          found the Registrar approving thinner cases than anything we would
-          have refused — so a thin distinction is something the applicant
-          should know a DFO may ask about, on a document they are about to
-          sign, rather than a reason to hand them a blank box.
-        */
-        setToast(
-          r.warnings?.length
-            ? `We have written your reason — read it. ${r.warnings[0]}`
-            : 'We have written your reason — read it and change anything.',
-        );
-      } catch {
-        /* Fail soft: the box stays empty and they can write it themselves. */
-      }
-    })();
-  }, [sheet, getToken, id, load]);
 
   /**
    * Load the area list once, for a self-defence application.

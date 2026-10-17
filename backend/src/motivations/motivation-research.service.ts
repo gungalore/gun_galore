@@ -6,6 +6,7 @@ import { LlmService } from '../common/llm/llm.service';
 import { LlmError } from '../common/llm/llm.types';
 import { HUNT_GAME_CLASS } from './motivation-cards';
 import { disciplineByValue } from './shooting-disciplines';
+import { resolveSportingPurpose } from './motivation-purpose';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT THE APPLICANT IS NEVER ASKED, BECAUSE WE LOOK IT UP.
@@ -418,7 +419,17 @@ export class MotivationResearchService {
       ),
     ].slice(0, 3);
 
-    const useClass = USE_CLASS[licenceType];
+    const purpose = resolveSportingPurpose(answers);
+    const useClass =
+      licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER ||
+      licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||
+      licenceType === MotivationLicenceType.S16_DEDICATED_SPORT
+        ? purpose === 'sport'
+          ? 'sport shooting'
+          : purpose === 'hunting'
+            ? 'hunting'
+            : 'hunting and sport shooting'
+        : USE_CLASS[licenceType];
     const entries: ResearchEntry[] = [];
     for (const calibre of held) {
       const entry = await this.entryFor(

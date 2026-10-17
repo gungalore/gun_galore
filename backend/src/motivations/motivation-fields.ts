@@ -856,6 +856,13 @@ function ownedFirearmRow(n: number): MotivationField[] {
       // row we have usually already read off an uploaded licence, so somebody
       // who has uploaded nothing never sees it. Two words are enough.
       key: `${p}use`,
+      /**
+       * ⚠️ NOT ASKED (2026-10-17). A licence card cannot state a purpose, and
+       * the applicant should not be made to retype what an endorsement, the
+       * firearm's class or a previous motivation already establishes. Old
+       * answers survive and are still read.
+       */
+      internal: true,
       label: 'What you use it for',
       kind: 'short',
       section: OWNED_SECTION,
@@ -879,6 +886,7 @@ function ownedFirearmRow(n: number): MotivationField[] {
       // calibre and serial; nothing printed on it says what the firearm is
       // for. This is the one fact in the row that has to come from the person.
       key: `${p}primary_use`,
+      internal: true,
       label: 'What it is for',
       kind: 'cards',
       section: OWNED_SECTION,
@@ -1568,6 +1576,12 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // §2.2 forbids asking. Kept so somebody with something specific to say has
     // somewhere to say it.
     key: 'firearm_fit_reason',
+    /**
+     * ⚠️ WRITTEN FOR THE APPLICANT, NEVER ASKED (2026-10-17). The reason is
+     * generated from the pack during generation (MotivationReasonService) and
+     * the sheet must not present it as work the member has to do.
+     */
+    internal: true,
     label: 'Anything specific about why this firearm',
     kind: 'long',
     section: 'The firearm',
@@ -2329,16 +2343,21 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     // preference.
     {
       key: 's13_reasons',
+      /**
+       * ⚠️ RETIRED AS A QUESTION (2026-10-17). The circumstances are argued
+       * from the applicant's own premises, routine, station figures, travelled
+       * areas and battery — not from a wall of taps. See motivation-purpose.ts.
+       */
+      internal: true,
       label: 'What makes you believe you need it',
       kind: 'cards',
       section: 'Your circumstances',
       options: S13_REASONS,
       help: 'Tap the ones that are true of you.',
-      required: true,
-      sensitive: true,
     },
     {
       key: 's13_movements',
+      internal: true,
       label: 'Where you go',
       kind: 'cards',
       section: 'Your circumstances',
@@ -2347,6 +2366,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
     {
       key: 's13_carry_style',
+      internal: true,
       label: 'How you would keep it',
       kind: 'cards',
       section: 'Your circumstances',
@@ -2359,6 +2379,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // cards do not cover still needs somewhere to say so, and because
       // nothing anybody has already typed is ever thrown away.
       key: 'threat_circumstances',
+      internal: true,
       label: 'Anything else about your circumstances',
       kind: 'long',
       section: 'Your circumstances',
@@ -2368,6 +2389,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
     {
       key: 'daily_movements',
+      internal: true,
       label: 'Anything else about your routine',
       kind: 'long',
       section: 'Your circumstances',
@@ -2377,6 +2399,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
     {
       key: 'alternatives_considered',
+      internal: true,
       label: 'What else you have done about it',
       kind: 'long',
       section: 'Your circumstances',
@@ -2512,10 +2535,17 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       kind: 'cards',
       section: 'Experience',
       options: FIREARM_USE_KIND,
-      required: true,
+      /**
+       * ⚠️ NEVER ASKED, AND NO LONGER REQUIRED (2026-10-17). The route is
+       * decided from the applicant's paperwork, their battery and the firearm
+       * itself — see motivation-purpose.ts. The key stays accepted so a draft
+       * written before this still loads.
+       */
+      internal: true,
     },
     {
       key: 'hunting_history',
+      internal: true,
       label: 'Anything else about your experience',
       kind: 'long',
       section: 'Experience',
@@ -2530,6 +2560,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // not get past. The quarry now comes from hunt_game_class, which they
       // are free to leave empty.
       key: 'intended_quarry',
+      internal: true,
       label: 'Anything specific you intend to hunt',
       kind: 'short',
       section: 'Experience',
@@ -2538,6 +2569,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
     {
       key: 'hunting_locations',
+      internal: true,
       label: 'Anything else about where you hunt or shoot',
       kind: 'long',
       section: 'Experience',
@@ -2571,12 +2603,18 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       kind: 'cards',
       section: 'Experience',
       options: FIREARM_USE_KIND,
-      required: true,
+      /**
+       * ⚠️ NEVER ASKED, AND NO LONGER REQUIRED (2026-10-17). The route is
+       * decided from the applicant's paperwork, their battery and the firearm
+       * itself — see motivation-purpose.ts. The key stays accepted so a draft
+       * written before this still loads.
+       */
+      internal: true,
     },
     {
       key: 'association_name',
     docSourced: 'ASSOCIATION_CARD',
-      label: 'Your hunting association',
+      label: 'Your accredited association',
       kind: 'short',
       section: 'Dedicated status',
       required: true,
@@ -2746,6 +2784,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // hunts a year" — four questions in one box, which is the composition
       // problem the cards replace.
       key: 'hunting_history',
+      internal: true,
       label: 'Anything else about your hunting record',
       kind: 'long',
       section: 'Experience',
@@ -2755,6 +2794,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
     {
       key: 'activity_record',
+      internal: true,
       label: 'Anything else about your association activities',
       kind: 'long',
       section: 'Experience',
@@ -2788,12 +2828,18 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       kind: 'cards',
       section: 'Experience',
       options: FIREARM_USE_KIND,
-      required: true,
+      /**
+       * ⚠️ NEVER ASKED, AND NO LONGER REQUIRED (2026-10-17). The route is
+       * decided from the applicant's paperwork, their battery and the firearm
+       * itself — see motivation-purpose.ts. The key stays accepted so a draft
+       * written before this still loads.
+       */
+      internal: true,
     },
     {
       key: 'association_name',
     docSourced: 'ASSOCIATION_CARD',
-      label: 'Your sport-shooting association',
+      label: 'Your accredited association',
       kind: 'short',
       section: 'Dedicated status',
       required: true,
@@ -2961,6 +3007,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // and asking somebody to retype it in prose alongside them was asking
       // twice for the same evidence.
       key: 'competition_record',
+      internal: true,
       label: 'Anything else about your record',
       kind: 'long',
       section: 'Experience',
@@ -3034,6 +3081,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // of them made the shortest application in the product the one with the
       // longest compulsory box.
       key: 'continued_use',
+      internal: true,
       label: 'Anything else about how you have used it',
       kind: 'long',
       section: 'The existing licence',
@@ -3141,35 +3189,20 @@ export function isAssociationMember(answers: Record<string, string>): boolean {
 /**
  * Which variant a section 15 application is.
  *
- * ⚠️ FAILURE MODE 5 IS TREATING SECTION 15 AS HUNTING ONLY. It is hunting OR
- * sport, and the heading, the brief and half the vocabulary differ. Book Part
- * 5.3: "The generator picks one from the applicant's answer; the document
- * never mixes both unless the applicant genuinely does both, and then hunting
- * leads" — so this returns ONE variant, and hunting wins a tie.
- *
- * Hunting is also the default when neither set of cards was tapped: the type
- * is named for the occasional hunter, and a document with the hunting heading
- * and thin facts is a weaker application, where one with the sport heading and
- * hunting facts is a wrong one.
+ * ⚠️ THE ROUTE IS RESOLVED FROM THE PACK NOW, NOT FROM CARD TAPS. See
+ * motivation-purpose.ts: s15Purpose lives there and reads the battery, the
+ * firearm's class and the licence sections already held. The card grid that
+ * used to decide this was retired with the other purpose questions on
+ * 2026-10-17.
  */
-export function s15Purpose(
-  answers: Record<string, string>,
-): 'hunting' | 'sport' {
-  const any = (keys: readonly string[]) =>
-    keys.some((k) => (answers[k] ?? '').trim() !== '');
-  if (any(['hunt_game_class', 'hunt_terrain', 'hunt_where', 'hunt_reasons']))
-    return 'hunting';
-  if (any(['sport_reasons', 'sport_formats'])) return 'sport';
-  return 'hunting';
-}
 
 /** Human label for the document header and the UI. */
 export const LICENCE_TYPE_LABELS: Record<MotivationLicenceType, string> = {
   S13_SELF_DEFENCE: 'Section 13 — Self-defence',
   S14_RESTRICTED_SELF_DEFENCE: 'Section 14 — Self-defence, restricted firearm',
   S15_OCCASIONAL_HUNTER: 'Section 15 — Occasional hunter / sport shooter',
-  S16_DEDICATED_HUNTER: 'Section 16 — Dedicated hunter',
-  S16_DEDICATED_SPORT: 'Section 16 — Dedicated sport shooter',
+  S16_DEDICATED_HUNTER: 'Section 16 — Dedicated hunting or sport-shooting',
+  S16_DEDICATED_SPORT: 'Section 16 — Dedicated hunting or sport-shooting',
   S24_RENEWAL: 'Section 24 — Renewal',
 };
 
@@ -3422,16 +3455,28 @@ const NEVER_PROMPTED =
  */
 const PROMPTED_DESPITE_FORM_ONLY = new Set(['firearm_serial']);
 
+/**
+ * Internal fields whose STORED answers still reach the writer.
+ *
+ * ⚠️ HIDDEN FROM THE SHEET IS NOT THE SAME AS UNTRUE (2026-10-17). The purpose
+ * questions were retired so nobody is asked them again, but a draft written
+ * before that may hold the applicant's own words — and those words are still
+ * the best fact the writer has. This is the one-way door `internal` otherwise
+ * keeps shut.
+ */
+const PROMPTED_DESPITE_INTERNAL =
+  /^(firearm_fit_reason|s13_reasons|s13_movements|s13_carry_style|threat_circumstances|daily_movements|alternatives_considered|hunting_history|intended_quarry|hunting_locations|activity_record|competition_record|continued_use|existing_firearm_\d+_(use|primary_use))$/;
+
 export function factPackFields(
   type: MotivationLicenceType,
 ): readonly MotivationField[] {
   return fieldsFor(type).filter(
     (f) =>
-      // ⚠️ `internal` HAS NO ESCAPE HATCH, unlike formOnly's. A field we filled
-      // in from a lookup is never an argument for needing a firearm, and there
-      // is no case — as there was for firearm_serial — where the writer needs
-      // one to do its job.
-      !f.internal &&
+      // ⚠️ `internal` HAS NO ESCAPE HATCH FOR VALUES WE LOOKED UP, unlike
+      // formOnly's. A field we filled in from a lookup is never an argument for
+      // needing a firearm. The retired PURPOSE questions are the exception:
+      // they are hidden from the sheet, not from the pack.
+      (!f.internal || PROMPTED_DESPITE_INTERNAL.test(f.key)) &&
       (!f.formOnly || PROMPTED_DESPITE_FORM_ONLY.has(f.key)) &&
       !NEVER_PROMPTED.test(f.key),
   );

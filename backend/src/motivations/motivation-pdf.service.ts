@@ -1227,6 +1227,42 @@ export interface MotivationPdfInput {
     paragraphs: string[];
   };
   /**
+   * The cartridge's dimension sheet, as a FULL PAGE immediately after the
+   * firearm section.
+   *
+   * Operator, 2026-10-17: "the rendered cartridge shows on the first page of
+   * the application. Currently it renders the cartridge on the cartridge page
+   * inside the application and should be the full page CIP dimension sheet."
+   *
+   * The image is the C.I.P. sheet when we hold one for the round, and our own
+   * full-width engineering drawing when we do not. It takes the sheet on its
+   * own — no half-column inset, no article beside it.
+   */
+  dimensionSheet?: {
+    label: string;
+    image: {
+      png: Buffer;
+      widthMm: number;
+      heightMm: number;
+      texts: DrawingText[];
+    };
+    /** Held figures, printed under our own drawing when there is room. */
+    specs?: { label: string; value: string }[];
+  };
+  /**
+   * The second cartridge sheet: a FULL PAGE of why this round suits the
+   * applied-for purpose.
+   *
+   * Operator, 2026-10-17: "Then we can have a second cartridge sheets that give
+   * a full page why this cartridge fits the applied for purpose." The
+   * researched advantages (`cartridgeArticle`) fill two columns; no picture
+   * competes with them for the page.
+   */
+  suitabilitySheet?: {
+    label: string;
+    specs?: { label: string; value: string }[];
+  };
+  /**
    * What the applicant physically carries to the DFO.
    *
    * ⚠️ THE TICK BOXES STAY DIGITAL — that decision holds (operator,
@@ -2970,6 +3006,8 @@ export class MotivationPdfService {
      * being illustrated.
      */
     const hasCartridgeBlock =
+      !!input.dimensionSheet ||
+      !!input.suitabilitySheet ||
       !!bodyPicture ||
       !!article ||
       (input.cartridgeDrawing?.specs?.length ?? 0) > 0;
@@ -3406,17 +3444,233 @@ export class MotivationPdfService {
       }
     };
 
+    /** A cartridge sub-section heading under the firearm section's number. */
+    const cartridgeSubHeading = (base: string, sub: '1' | '2') => {
+      const n = (input.firearmHeading ?? '').match(/^(\d{1,2})\./)?.[1];
+      return n ? `${n}.${sub} ${base}` : base;
+    };
+
+    /**
+     * The first cartridge sheet: the dimension sheet as a full page.
+     *
+     * ⚠️ NO HALF-COLUMN INSET ANY MORE (2026-10-17). The C.I.P. sheet was set
+     * into the top of one column with the article flowing around it, which is
+     * the page the operator asked to replace. It takes the sheet on its own,
+     * full width, directly under its own heading.
+     */
+    const drawDimensionPage = () => {
+      const ds = input.dimensionSheet;
+      if (!ds) return;
+      doc.addPage();
+      doc.x = MARGIN;
+      doc.y = bodyTop;
+      renderHeading(cartridgeSubHeading(ds.label, '1'));
+      const indent = L.hangingRule ? K.SECTION_INDENT : 0;
+      const usable = contentWidth - indent;
+      const x0 = MARGIN + indent;
+      const image = ds.image;
+      if (!image || image.widthMm <= 0 || image.heightMm <= 0) return;
+
+      const availH = K.BODY_BOTTOM - doc.y - K.mm(2);
+      let w = usable;
+      let h = w * (image.heightMm / image.widthMm);
+      if (h > availH) {
+        h = Math.max(0, availH);
+        w = h * (image.widthMm / image.heightMm);
+      }
+      try {
+        doc.image(image.png, x0 + (usable - w) / 2, doc.y, {
+          width: w,
+          height: h,
+        });
+        doc.y += h + K.mm(4);
+      } catch {
+        // A drawing pdfkit refuses costs the picture, never the page.
+      }
+
+      // Our own full-width drawing carries figures under it; the C.I.P. sheet
+      // is the figures and needs nothing added.
+      if (ds.specs?.length && doc.y < K.BODY_BOTTOM - K.mm(28)) {
+        drawSpecTable(x0, doc.y, usable, ds.specs);
+      }
+      doc.x = MARGIN;
+    };
+
+    /**
+     * The second cartridge sheet: why this round suits the applied-for purpose.
+     *
+     * ⚠️ TWO FULL COLUMNS, NO PICTURE. The page is the researched bullet list;
+     * a figure in the right column was what left the prose stranded in half a
+     * sheet. The held dimensions close the right column where there is room.
+     */
+    const drawSuitabilityPage = () => {
+      doc.addPage();
+      doc.x = MARGIN;
+      doc.y = bodyTop;
+      renderHeading(
+        cartridgeSubHeading(
+          input.suitabilitySheet?.label ??
+            `Why ${article?.title ?? 'this cartridge'} suits this purpose`,
+          '2',
+        ),
+      );
+
+      const indent = L.hangingRule ? K.SECTION_INDENT : 0;
+      const usable = contentWidth - indent;
+      const leftX = MARGIN + indent;
+      const GUTTER = K.mm(6);
+      const colW = (usable - GUTTER) / 2;
+      const rightX = leftX + colW + GUTTER;
+      const top = doc.y + K.mm(1);
+      const floor = K.BODY_BOTTOM;
+
+      const source =
+        article?.paragraphs.length && articleIsUsable(article.paragraphs)
+          ? article.paragraphs
+          : CARTRIDGE_STANDALONE;
+      const paras: string[] = [];
+      for (const raw of source) {
+        if (isBulletLine(raw)) {
+          paras.push(raw);
+          continue;
+        }
+        const run = subheadingOf(raw) ? null : runInOf(raw);
+        if (run) {
+          paras.push(`**${run.head}**`);
+          paras.push(run.rest);
+        } else {
+          paras.push(raw);
+        }
+      }
+      const groups: string[][] = [];
+      for (const para of paras) {
+        if (isBulletLine(para) || subheadingOf(para) || !groups.length)
+          groups.push([para]);
+        else groups[groups.length - 1].push(para);
+      }
+
+      const gap = K.px(12) * 0.7;
+      const BULLET_INDENT = K.mm(5);
+      const bulletGap = K.mm(1.6);
+
+      const put = (
+        group: string[],
+        x: number,
+        y: number,
+        w: number,
+      ): number => {
+        let at = y;
+        for (const raw of group) {
+          if (isBulletLine(raw)) {
+            const body = bulletTextOf(raw);
+            doc.font(B.body).fontSize(K.px(12)).fillColor(C.ink);
+            doc.text('•', x, at, { width: BULLET_INDENT, lineBreak: false });
+            doc.text(body, x + BULLET_INDENT, at, {
+              width: w - BULLET_INDENT,
+              align: 'justify',
+              lineGap: BODY_LEADING,
+            });
+            at = doc.y + bulletGap;
+            continue;
+          }
+          const sub = subheadingOf(raw);
+          if (sub) {
+            doc.font(B.bodySemi).fontSize(K.px(10.5)).fillColor(C.sub);
+            doc.text(sub.toUpperCase(), x, at, {
+              width: w,
+              characterSpacing: K.px(10.5) * 0.06,
+            });
+            at = doc.y + K.mm(0.8);
+            continue;
+          }
+          doc.font(B.body).fontSize(K.px(12)).fillColor(C.ink);
+          doc.text(stripMarks(raw), x, at, {
+            width: w,
+            align: 'justify',
+            lineGap: BODY_LEADING,
+          });
+          at = doc.y + gap;
+        }
+        return at;
+      };
+
+      const costOf = (group: string[], w: number): number => {
+        let n = 0;
+        for (const raw of group) {
+          if (isBulletLine(raw)) {
+            doc.font(B.body).fontSize(K.px(12));
+            n +=
+              doc.heightOfString(bulletTextOf(raw), {
+                width: w - BULLET_INDENT,
+                lineGap: BODY_LEADING,
+              }) + bulletGap;
+            continue;
+          }
+          const sub = subheadingOf(raw);
+          if (sub) {
+            doc.font(B.bodySemi).fontSize(K.px(10.5));
+            n +=
+              doc.heightOfString(sub.toUpperCase(), { width: w }) + K.mm(0.8);
+            continue;
+          }
+          doc.font(B.body).fontSize(K.px(12));
+          n +=
+            doc.heightOfString(stripMarks(raw), {
+              width: w,
+              lineGap: BODY_LEADING,
+            }) + gap;
+        }
+        return n;
+      };
+
+      let ly = top;
+      let ry = top;
+      const spill: string[][] = [];
+      for (const group of groups) {
+        const h = costOf(group, colW);
+        if (ly + h <= floor) {
+          ly = put(group, leftX, ly, colW);
+          continue;
+        }
+        if (ry + h <= floor) {
+          ry = put(group, rightX, ry, colW);
+          continue;
+        }
+        spill.push(group);
+      }
+
+      const specs = input.suitabilitySheet?.specs ?? [];
+      if (specs.length && ry < floor - K.mm(24)) {
+        drawSpecTable(rightX, Math.max(ry, top) + K.mm(2), colW, specs);
+      }
+
+      doc.x = MARGIN;
+      doc.y = Math.max(ly, ry) + PARA_GAP;
+      if (spill.length) {
+        doc.addPage();
+        doc.x = MARGIN;
+        doc.y = bodyTop;
+        for (const group of spill) doc.y = put(group, leftX, doc.y, usable);
+        doc.y += PARA_GAP;
+      }
+    };
+
     const drawCartridge = () => {
       if (!hasCartridgeBlock || cartridgeDrawn) return;
       cartridgeDrawn = true;
       /**
-       * ⚠️ ONE LAYOUT, WITH OR WITHOUT THE RESEARCH. The figure and the bullet
-       * list are the page; when the article is absent the list carries the
-       * standalone notes instead. The old full-width figure path is gone — it
-       * was the half page the operator rejected.
+       * ⚠️ TWO FULL SHEETS FROM 2026-10-17: the dimension sheet (C.I.P. or our
+       * full-width drawing), then why this round suits the purpose. The old
+       * single feature page remains only for callers that still pass the legacy
+       * `cartridgeDrawing` without the new sheets.
        */
-      drawCartridgeFeature(article, bodyPicture);
-      // The spread owns its sheet on both sides — see the latch in the loop.
+      if (input.dimensionSheet) {
+        drawDimensionPage();
+        drawSuitabilityPage();
+      } else {
+        drawCartridgeFeature(article, bodyPicture);
+      }
+      // The spread owns its sheets on both sides — see the latch in the loop.
       featureBreakPending = true;
     };
 
@@ -3435,7 +3689,11 @@ export class MotivationPdfService {
      */
     const placeCartridgeFeature = () => {
       cartridgeAfterFirearm = false;
-      if (!hasCartridgeBlock || cartridgeDrawn || !input.cartridgeDrawing)
+      if (
+        !hasCartridgeBlock ||
+        cartridgeDrawn ||
+        (!input.cartridgeDrawing && !input.dimensionSheet)
+      )
         return;
       /**
        * ⚠️ THE FEATURE ALWAYS TAKES A SHEET OF ITS OWN. Operator, 2026-10-15:
@@ -3529,7 +3787,11 @@ export class MotivationPdfService {
        * picture directly under the writer's own cartridge heading; this is the
        * fallback for a draft that never raised the subject.
        */
-      if (hasCartridgeBlock && input.cartridgeDrawing && !cartridgeDrawn) {
+      if (
+        hasCartridgeBlock &&
+        (input.cartridgeDrawing || input.dimensionSheet) &&
+        !cartridgeDrawn
+      ) {
         // The feature takes a page of its own here too — see the body loop.
         if (doc.y > bodyTop + K.mm(1)) doc.addPage();
         renderHeading(cartridgeHeading);
@@ -3624,7 +3886,10 @@ export class MotivationPdfService {
          * an interruption.
          */
         const wantsCartridge =
-          hasCartridgeBlock && !cartridgeDrawn && /\bCARTRIDGE\b/i.test(block);
+          !input.dimensionSheet &&
+          hasCartridgeBlock &&
+          !cartridgeDrawn &&
+          /\bCARTRIDGE\b/i.test(block);
         /**
          * ⚠️ THE FIREARM SECTION HAS ENDED — the cartridge feature follows it,
          * before this next section's heading. Skipped when this block is itself

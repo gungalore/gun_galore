@@ -73,17 +73,21 @@ export const LICENCE_TYPES: readonly LicenceTypeOption[] = [
     section: 'Section 15',
     blurb: 'For someone who hunts or shoots, without dedicated status.',
   },
+  /**
+   * ⚠️ ONE SECTION 16 ENTRY POINT. Operator, 2026-10-17: "I would like only
+   * one entry point for s16 and one for s15". A dedicated hunter and a
+   * dedicated sports person are the same section of the Act, and the
+   * paperwork decides which discipline the motivation argues — the applicant
+   * should not have to choose a label that may not match their certificate.
+   *
+   * `S16_DEDICATED_SPORT` stays accepted by the server for drafts written
+   * before this, which is why LEGACY_LABELS below still names it.
+   */
   {
     value: 'S16_DEDICATED_HUNTER',
-    label: 'Dedicated hunter',
+    label: 'Dedicated hunting or sport-shooting',
     section: 'Section 16',
-    blurb: 'Endorsed by an accredited hunting association.',
-  },
-  {
-    value: 'S16_DEDICATED_SPORT',
-    label: 'Dedicated sports shooter',
-    section: 'Section 16',
-    blurb: 'Endorsed by an accredited sport-shooting association.',
+    blurb: 'Endorsed by an accredited hunting or sport-shooting association.',
   },
   {
     value: 'S24_RENEWAL',
@@ -96,6 +100,14 @@ export const LICENCE_TYPES: readonly LicenceTypeOption[] = [
 export const LICENCE_LABEL: Record<string, string> = Object.fromEntries(
   LICENCE_TYPES.map((t) => [t.value, t.label]),
 );
+
+/**
+ * Sections 16 written before the single entry point. The server still accepts
+ * them, so a stored application must still render words rather than the enum.
+ */
+const LEGACY_LABELS: Record<string, string> = {
+  S16_DEDICATED_SPORT: 'Dedicated hunting or sport-shooting',
+};
 
 /** The section of the Act each type is applied for under. */
 export const LICENCE_SECTION: Record<string, string> = Object.fromEntries(
@@ -110,7 +122,7 @@ export const LICENCE_SECTION: Record<string, string> = Object.fromEntries(
  * printing the enum name is ugly and truthful, and a blank heading is neither.
  */
 export function licenceLabel(type: string): string {
-  return LICENCE_LABEL[type] ?? type;
+  return LICENCE_LABEL[type] ?? LEGACY_LABELS[type] ?? type;
 }
 
 /**
@@ -137,6 +149,13 @@ export function sectionCaption(raw: string | null | undefined): string | null {
   const m = t.match(/(?:S(?:EC(?:TION)?)?\.?\s*)?(\d{1,2})/);
   if (!m) return null;
   const section = `Section ${m[1]}`;
+  /**
+   * ⚠️ SECTION 16 NAMES NO PURPOSE, EVEN NOW IT HAS ONE ENTRY POINT. The card
+   * does not say whether the licence is held for hunting or sport, so the
+   * caption must not pick the combined label either — "Section 16" is the
+   * honest caption. The same rule returns the label for every other section.
+   */
+  if (section === 'Section 16') return section;
   const named = LICENCE_TYPES.filter((x) => x.section === section);
   return named.length === 1 ? `${section} · ${named[0].label.toLowerCase()}` : section;
 }

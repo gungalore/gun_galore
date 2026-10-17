@@ -26,25 +26,59 @@ const S16_SPORT = MotivationLicenceType.S16_DEDICATED_SPORT;
 const S24 = MotivationLicenceType.S24_RENEWAL;
 
 describe('which purpose a pack serves', () => {
-  it('maps the sections to their purpose', () => {
+  it('maps self-defence and leaves a renewal with nothing', () => {
     expect(purposeFor(S13, {})).toBe('self_defence');
     expect(purposeFor(S14, {})).toBe('self_defence');
-    expect(purposeFor(S16_HUNT, {})).toBe('hunting');
-    expect(purposeFor(S16_SPORT, {})).toBe('sport');
-  });
-
-  it('reads a section 15 by the applicant\u2019s own answer', () => {
-    expect(purposeFor(S15, { hunt_game_class: 'plains_medium' })).toBe(
-      'hunting',
-    );
-    expect(purposeFor(S15, { sport_formats: 'IPSC' })).toBe('sport');
-    // No answer at all defaults to hunting — s15Purpose's own rule.
-    expect(purposeFor(S15, {})).toBe('hunting');
-  });
-
-  it('gives a renewal no exhibits at all', () => {
     expect(purposeFor(S24, {})).toBeNull();
-    expect(buildPlateSpecs({ licenceType: S24, answers: {} })).toEqual([]);
+  });
+
+  it('⚠️ RESOLVES SECTION 15/16 FROM THE PACK, NOT THE LABEL (2026-10-17)', () => {
+    // One section 16 entry point; a handgun is sport whichever label the
+    // applicant started under.
+    expect(purposeFor(S16_HUNT, { firearm_type: 'Handgun' })).toBe('sport');
+    expect(purposeFor(S16_SPORT, { firearm_type: 'Handgun' })).toBe('sport');
+    // A dangerous-game rifle is hunting.
+    expect(
+      purposeFor(S16_HUNT, {
+        firearm_type: 'Rifle',
+        firearm_action: 'Bolt action',
+        firearm_calibre: '.375 H&H Magnum',
+      }),
+    ).toBe('hunting');
+    // A manual rifle with nothing to compare against can do both.
+    expect(
+      purposeFor(S15, {
+        firearm_type: 'Rifle',
+        firearm_action: 'Bolt action',
+        firearm_calibre: '6.5 Creedmoor',
+      }),
+    ).toBe('both');
+    // Nothing described at all: both pools is the only honest answer.
+    expect(purposeFor(S16_HUNT, {})).toBe('both');
+  });
+
+  it('⚠️ FINDS THE GAP AGAINST THE BATTERY', () => {
+    const base = {
+      firearm_type: 'Rifle',
+      firearm_action: 'Bolt action',
+      firearm_calibre: '6.5 Creedmoor',
+      existing_firearm_1_type: 'Rifle',
+      existing_firearm_1_calibre: '6.5 Creedmoor',
+    };
+    // The held rifle is the hunting rifle, so the new one is argued for sport.
+    expect(
+      purposeFor(S16_HUNT, {
+        ...base,
+        existing_firearm_1_use: 'bushveld plains game',
+      }),
+    ).toBe('sport');
+    // The held rifle is the match rifle, so the new one is argued for hunting.
+    expect(
+      purposeFor(S16_HUNT, {
+        ...base,
+        existing_firearm_1_use: 'sport competition',
+      }),
+    ).toBe('hunting');
   });
 });
 
@@ -81,15 +115,26 @@ describe('the self-defence scenarios', () => {
 });
 
 describe('the hunting plates come from the research', () => {
-  it('pictures exactly the species the brief names', () => {
+  /** A hunting rifle, forced hunting by a held sport rifle of the same class. */
+  const HUNTING = {
+    firearm_type: 'Rifle',
+    firearm_action: 'Bolt action',
+    firearm_calibre: '6.5 Creedmoor',
+    existing_firearm_1_type: 'Rifle',
+    existing_firearm_1_calibre: '6.5 Creedmoor',
+    existing_firearm_1_use: 'sport competition',
+  };
+
+  it('pictures the named species, then fills the two pages from the class', () => {
     const plates = buildPlateSpecs({
       licenceType: S16_HUNT,
-      answers: { hunt_game_class: 'plains_light,plains_medium' },
+      answers: { ...HUNTING, hunt_game_class: 'plains_light,plains_medium' },
       research:
         'Well matched to medium-sized plains game such as impala and kudu at bushveld distances.',
     });
-    expect(plates.map((p) => p.title)).toEqual(['Impala', 'Kudu']);
-    expect(plates.map((p) => p.pageIndex)).toEqual([1, 1]);
+    expect(plates.map((p) => p.title).slice(0, 2)).toEqual(['Impala', 'Kudu']);
+    expect(plates).toHaveLength(MAX_PLATES);
+    expect(plates.map((p) => p.pageIndex)).toEqual([1, 1, 2, 2]);
   });
 
   it('⚠️ A SPECIES OUTSIDE THE APPLICANT\u2019S OWN GAME CLASS IS DROPPED', () => {
@@ -97,37 +142,36 @@ describe('the hunting plates come from the research', () => {
     // printed for them even though the cartridge brief names it.
     const plates = buildPlateSpecs({
       licenceType: S16_HUNT,
-      answers: { hunt_game_class: 'plains_medium' },
+      answers: { ...HUNTING, hunt_game_class: 'plains_medium' },
       research: 'Well matched to impala and kudu.',
     });
-    expect(plates.map((p) => p.title)).toEqual(['Kudu']);
+    expect(plates.map((p) => p.title)).not.toContain('Impala');
+    expect(plates[0].title).toBe('Kudu');
   });
 
-  it('⚠️ ONE ANIMAL PER PICTURE, UP TO FIVE, EACH SAYING WHY IT SUITS THE FIREARM (2026-10-15)', () => {
-    // The composite line-up is retired: each species gets its own plate, to a
-    // cap of five, and each description states why the cartridge suits it.
+  it('⚠️ FOUR PLATES OVER TWO PAGES, EACH SAYING WHY IT SUITS THE FIREARM', () => {
     const plates = buildPlateSpecs({
       licenceType: S16_HUNT,
-      answers: {},
+      answers: HUNTING,
       research:
         'Well matched to impala, springbok, blesbok, warthog and kudu at bushveld distances.',
     });
+    expect(plates).toHaveLength(MAX_PLATES);
     expect(plates.map((p) => p.title)).toEqual([
       'Impala',
       'Springbok',
       'Blesbok',
       'Warthog',
-      'Kudu',
     ]);
-    expect(plates.map((p) => p.pageIndex)).toEqual([1, 1, 2, 2, 3]);
-    expect(plates.map((p) => p.plateIndex)).toEqual([1, 2, 1, 2, 1]);
+    expect(plates.map((p) => p.pageIndex)).toEqual([1, 1, 2, 2]);
+    expect(plates.map((p) => p.plateIndex)).toEqual([1, 2, 1, 2]);
     for (const p of plates) {
-      expect(p.description).toMatch(/well matched to/);
+      expect(p.description).toMatch(/matched to this class of game/);
       expect(p.prompt).toMatch(/Photorealistic/);
     }
   });
 
-  it('⚠️ PRINTS NOTHING WHEN THE RESEARCH NAMES NO SPECIES', () => {
+  it('⚠️ PRINTS NOTHING WHEN THERE IS NO FIREARM AND NO RESEARCH', () => {
     // A guessed animal is worse than a plainer page — the quarry rule.
     expect(
       buildPlateSpecs({
@@ -136,6 +180,27 @@ describe('the hunting plates come from the research', () => {
         research: 'A capable medium-bore cartridge for general use.',
       }),
     ).toEqual([]);
+  });
+
+  it('⚠️ MIXES ANIMALS AND ACTIVITIES FOR A FIREARM THAT DOES BOTH (2026-10-17)', () => {
+    const plates = buildPlateSpecs({
+      licenceType: S15,
+      answers: {
+        firearm_type: 'Rifle',
+        firearm_action: 'Bolt action',
+        firearm_calibre: '6.5 Creedmoor',
+      },
+      research:
+        'Well matched to impala and kudu at bushveld distances.',
+    });
+    expect(plates).toHaveLength(MAX_PLATES);
+    expect(plates.map((p) => p.pageIndex)).toEqual([1, 1, 2, 2]);
+    const firstTwo = plates.slice(0, 2).map((p) => p.title);
+    expect(firstTwo).toEqual(['Impala', 'Kudu']);
+    // Page two is the discipline the same rifle is used for.
+    expect(plates.slice(2).every((p) => !/impala|kudu/i.test(p.title))).toBe(
+      true,
+    );
   });
 });
 
@@ -173,7 +238,14 @@ describe('the sport plates are the courses of fire for the firearm', () => {
 
     const rifleManual = buildPlateSpecs({
       licenceType: S16_SPORT,
-      answers: { firearm_type: 'Rifle', firearm_action: 'Manual (bolt-action)' },
+      answers: {
+        firearm_type: 'Rifle',
+        firearm_action: 'Manual (bolt-action)',
+        // A held hunting rifle of the same class makes this application the
+        // sport gap — see motivation-purpose.ts.
+        existing_firearm_1_type: 'Rifle',
+        existing_firearm_1_use: 'bushveld plains game',
+      },
     }).map((p) => p.title);
     expect(rifleManual).toContain('F-Class');
     for (const title of rifleManual) {
@@ -204,7 +276,10 @@ describe('the sport plates are the courses of fire for the firearm', () => {
     for (const firearm_type of ['Handgun', 'Rifle', 'Shotgun']) {
       for (const plate of buildPlateSpecs({
         licenceType: S16_SPORT,
-        answers: { firearm_type },
+        answers: {
+          firearm_type,
+          firearm_action: 'Semi-automatic (self-loading)',
+        },
       })) {
         expect(plate.prompt).toMatch(/no people/i);
         expect(plate.prompt).toMatch(/no firearms/i);

@@ -653,7 +653,16 @@ export class MotivationSheetService {
     const sections: SheetSection[] = SECTIONS.map((s) => ({
       ...s,
       missing: missing.filter((k) => sectionOfKey.get(k) === s.id),
-    }));
+    })).filter(
+      (s) =>
+        // ⚠️ AN EMPTY SECTION IS DROPPED (2026-10-17). The purpose questions
+        // that used to fill "Your case" on a section 15 were retired, and a
+        // heading over nothing invites the member to hunt for a question that
+        // no longer exists. The pack section always prints: it is the summary.
+        s.id === 'pack' ||
+        s.missing.length > 0 ||
+        items.some((i) => i.section === s.id && i.state !== 'na'),
+    );
 
     // ⚠️ A REQUIRED KEY WITH NO SHEET SECTION WOULD BE UNREACHABLE — a member
     // told something is outstanding with nowhere on the page to answer it,

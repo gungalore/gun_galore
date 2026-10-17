@@ -940,24 +940,30 @@ describe('firearms the applicant already owns', () => {
   const owned = (t: MotivationLicenceType) =>
     fieldsFor(t).filter((f) => /^existing_firearm_\d+_/.test(f.key));
 
-  it('is visible when the dealer is filling the form in', () => {
+  it('is visible when the dealer is filling the form in, except the retired purpose boxes', () => {
     for (const t of ALL) {
       const rows = owned(t);
       if (!rows.length) continue;
       for (const f of rows) {
+        const retiredPurpose = /^existing_firearm_\d+_(use|primary_use)$/.test(
+          f.key,
+        );
         expect({ key: f.key, visible: isVisible(f, dealerPath) }).toEqual({
           key: f.key,
-          visible: true,
+          visible: !retiredPurpose,
         });
       }
     }
   });
 
-  it('is visible when we are filling the form in', () => {
+  it('is visible when we are filling the form in, except the retired purpose boxes', () => {
     const both = { [SAPS271_OPT_KEY]: SAPS271_FILL };
     for (const t of ALL) {
       for (const f of owned(t)) {
-        expect(isVisible(f, both)).toBe(true);
+        const retiredPurpose = /^existing_firearm_\d+_(use|primary_use)$/.test(
+          f.key,
+        );
+        expect(isVisible(f, both)).toBe(!retiredPurpose);
       }
     }
   });

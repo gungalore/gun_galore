@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { cartridgeKey } from '../common/cartridge-key';
+import { calibreCandidates } from './motivation-cartridge';
 import CIP_INDEX from './cip-index.json';
 
 // ────────────────────────────────────────────────────────────────────
@@ -103,13 +104,37 @@ export class CipSheetService {
 
   /** What C.I.P. holds for a cartridge, without reading the page off disk. */
   lookup(cartridgeName: string): (IndexEntry & { key: string }) | null {
-    const key = cartridgeKey(cartridgeName);
-    const direct = INDEX[key];
-    if (direct) return { ...direct, key };
-    // The C.I.P.-side normalisation, tried second so a key that already
-    // matches exactly is never rewritten.
-    const alt = cipKey(cartridgeName);
-    return INDEX[alt] ? { ...INDEX[alt], key: alt } : null;
+    /**
+     * ⚠️ EVERY SPELLING THE CARD MAY PRINT, NOT ONE. A SAPS licence prints
+     * "9MM PAR ( 9X19MM )" and "6.5MM CREEDMOOR"; the sheets are filed under
+     * "9luger" and "65creedmoor". `cartridgeKey` alone reduced the first to
+     * "9par" and found nothing, so the C.I.P. page was silently absent from a
+     * 9 mm application while the Bench drawing resolved the same round.
+     * `calibreCandidates` is the one list that already knows Parabellum is
+     * Luger, 9x19 is the same round, and mm is not part of the name.
+     */
+    const candidates = [cartridgeName, ...calibreCandidates(cartridgeName)];
+    for (const candidate of candidates) {
+      /**
+       * ⚠️ "9MM LUGER" AND "9 LUGER" ARE THE SAME KEY ONLY WHERE THE SPACE
+       * SURVIVES. `calibreCandidates` returns reduced keys ("9MMLUGER"), and
+       * `cartridgeKey`'s mm strip needs a boundary, so "9MMLUGER" stayed
+       * `9mmluger` while the index holds `9luger`. Dropping the MM after a
+       * leading number recovers the reference spelling — "65MMCREEDMOOR" →
+       * "65CREEDMOOR" is the same fix for the other common card.
+       */
+      const spellings = [
+        candidate,
+        candidate.replace(/(\d)\s*mm(?=[a-z0-9])/gi, '$1'),
+      ];
+      for (const spelling of spellings) {
+        const key = cartridgeKey(spelling);
+        if (INDEX[key]) return { ...INDEX[key], key };
+        const alt = cipKey(spelling);
+        if (INDEX[alt]) return { ...INDEX[alt], key: alt };
+      }
+    }
+    return null;
   }
 
   /**

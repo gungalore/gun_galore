@@ -1104,6 +1104,7 @@ export class MotivationRenderService {
     const cartridge = await this.cartridgeDrawingFor(
       answers.firearm_calibre,
       heroSubtitle(answers),
+      { skipCip: true },
     );
 
     const { pdf } = await this.pdf.render({
@@ -1410,6 +1411,12 @@ export class MotivationRenderService {
      * its cartridge text.
      */
     const article = cartridgeArticle(row.researchEncrypted, cartridge?.name);
+    // A round The Bench does not hold can still have a C.I.P. page. Try the
+    // sheet directly so the dimension page is not lost with the drawing.
+    const standaloneCip = cartridge
+      ? null
+      : await this.cipInset((answers.firearm_calibre ?? '').trim());
+    const dimensionImage = cartridge?.dimension ?? standaloneCip;
 
     // The purpose exhibits — a read, on every download, never a model call.
     const storedPlates = await this.plates.storedFor(row.id).catch(() => []);
@@ -1529,7 +1536,10 @@ export class MotivationRenderService {
       // matching is refused here. No match means no page, which costs nothing;
       // a WRONG datasheet would assert chamber dimensions and a maximum
       // pressure for another cartridge inside a document the applicant signs.
-      cipSheet: await this.cipSheetFor(answers.firearm_calibre),
+      // ⚠️ THE C.I.P. DATASHEET IS NOW A FULL BODY PAGE, NOT A SPLICE. The
+      // renderer places it under its own numbered heading so the running
+      // header, footer and page numbers stay with it. See dimensionSheet.
+      cipSheet: undefined,
       // ⚠️ AND THE DRAWING, WHICH TAKES PRECEDENCE OVER THAT PAGE. Operator,
       // 2026-09-09: "why arent we pulling in the dimension sheet of the
       // cartridge its using from The Bench?" Both are still built because the
@@ -1552,6 +1562,37 @@ export class MotivationRenderService {
        * the picture taken away.
        */
       cartridgeArticle: article,
+      /**
+       * ⚠️ THE TWO FULL CARTRIDGE SHEETS (2026-10-17). The first is the
+       * dimension sheet — the C.I.P. page when we hold one, our own full-width
+       * drawing otherwise. The second is why this round suits the applied-for
+       * purpose. `cartridgeDrawing` above remains the cover hero.
+       */
+      dimensionSheet: dimensionImage
+        ? {
+            label: `The cartridge \u2014 ${
+              displayCalibre(answers.firearm_calibre) ||
+              cartridge?.name ||
+              'this round'
+            } \u2014 dimensions`,
+            image: dimensionImage,
+            specs:
+              cartridge && !cartridge.dimensionIsCip
+                ? cartridge.specs
+                : undefined,
+          }
+        : undefined,
+      suitabilitySheet:
+        dimensionImage || cartridge
+          ? {
+              label: `Why ${
+                displayCalibre(answers.firearm_calibre) ||
+                cartridge?.name ||
+                'this cartridge'
+              } suits this purpose`,
+              specs: cartridge?.specs,
+            }
+          : undefined,
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
       // ⚠️ THE APPLICANT'S PAGE, NOT THE REGISTRAR'S. See MotivationPdfInput.
@@ -1586,6 +1627,7 @@ export class MotivationRenderService {
      * the pack's hero; absent means it stays a figure in the body.
      */
     heroLine?: string,
+    opts: { skipCip?: boolean } = {},
   ): Promise<
     | {
         png: Buffer;
@@ -1604,12 +1646,15 @@ export class MotivationRenderService {
          */
         specs: { label: string; value: string }[];
         hero?: { subtitle: string };
-        inset?: {
+        /** The full-page dimension image: the C.I.P. sheet or our drawing. */
+        dimension: {
           png: Buffer;
           widthMm: number;
           heightMm: number;
           texts: DrawingText[];
         };
+        /** True when `dimension` is the C.I.P. page rather than our drawing. */
+        dimensionIsCip: boolean;
       }
     | undefined
   > {
@@ -1671,47 +1716,21 @@ export class MotivationRenderService {
       const drawing = await raster({ hero: !!heroLine });
 
       /**
-       * ⚠️ THE SAME ROUND, DRAWN TWICE, BECAUSE THE TWO PLACES WANT DIFFERENT
-       * DRAWINGS. A hero is a cover picture: two lengths, big, no engineering.
-       * The feature's inset is the DIMENSION SHEET the operator asked to have
-       * back on 2026-09-10 — "the dimension sheet should shrink to a third of
-       * the page with the history, description and facts written around it" —
-       * and it carries the full set of callouts at a third of the width.
+       * ⚠️ THE DIMENSION SHEET IS THE C.I.P. PAGE WHEN WE HOLD ONE.
        *
-       * ⚠️ WHICH REVERSES THE 09-09 RULE THAT THE BODY GIVES UP ITS FIGURE
-       * WHEN THE COVER TAKES ONE. That rule was written to stop the SAME
-       * picture printing twice, and it was right about that. Two different
-       * renderings of one round, on the cover and inside, is what a magazine
-       * does with a photograph and a diagram — and the sketch that arrived the
-       * next day puts a drawing on the feature page explicitly.
+       * Operator, 2026-10-17: "the rendered cartridge shows on the first page
+       * of the application. Currently it renders the cartridge on the cartridge
+       * page inside the application and should be the full page CIP dimension
+       * sheet." The sheet is placed FULL WIDTH on its own page, not as a
+       * half-column inset. Our own full drawing is the fallback for a round
+       * with no C.I.P. page (a wildcat) or a raster that failed.
        *
-       * Only built when the cover took the hero; without one the body already
-       * receives the full drawing and a second raster would be waste.
+       * `hit.name` is the canonical spelling the index holds ("9 mm Luger"),
+       * which is what `CipSheetService` resolves; the card's spelling is not.
        */
-      /**
-       * ⚠️ THE FEATURE'S INSET IS THE C.I.P. SHEET ITSELF, NOT OUR DRAWING.
-       *
-       * Operator, 2026-09-10, having seen the page render with our own
-       * geometry in it: "rendered correctly but it's the wrong image. I need
-       * this as the scaled down image", and then "i want the CIP sheet in
-       * there, not negotiable ... we are not selling the sheet itself, we are
-       * using it in our document as proof."
-       *
-       * ⚠️ THE SHEET CARRIES A REPRODUCTION NOTICE ON ITS FACE — "Reproduction
-       * forbidden as well as in the form of extracts without approval of
-       * C.I.P." That was put to the operator and this is their decision on
-       * their own company's exposure, recorded here rather than argued again
-       * in a later session. The mechanism is not new either: `cipSheetFor`
-       * has spliced the whole page into packs as a fallback since it shipped,
-       * behind FLAGS.cipSheetEnabled, which this respects.
-       *
-       * Falls back to our own drawing when there is no sheet for the round,
-       * when the flag is off, or when the raster fails — the feature page must
-       * never lose its picture over this.
-       */
-      const inset = heroLine
-        ? ((await this.cipInset(printed)) ?? (await raster({ hero: false })))
-        : undefined;
+      const cip = opts.skipCip ? null : await this.cipInset(hit.name);
+      const dimension =
+        cip ?? (heroLine ? await raster({ hero: false }) : drawing);
 
       const png = drawing.png;
 
@@ -1754,7 +1773,9 @@ export class MotivationRenderService {
          * body its figure back must not have to remember to reinstate it.
          */
         ...(heroLine ? { hero: { subtitle: heroLine } } : {}),
-        ...(inset ? { inset } : {}),
+        /** The full-page dimension image: C.I.P. sheet or our own drawing. */
+        dimension,
+        dimensionIsCip: !!cip,
       };
     } catch (err) {
       this.logger?.warn?.(

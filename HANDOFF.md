@@ -7,6 +7,22 @@ overwritten.
 
 Last updated: **2026-10-17**.
 
+## 2026-10-17 — ONE S16 ENTRY, AUTOMATED ROUTE, TWO FULL CARTRIDGE SHEETS (UNCOMMITTED)
+
+Operator: "only one entry point for s16", "remove all the questions that asks the user what are they planning to do with this firearm", "look at what firearms they already own and what section the licenses falls in, look for gaps", and "the rendered cartridge shows on the first page ... the full page CIP dimension sheet ... a second cartridge sheets ... the two page images of either animals ... or the shooting activities ... mix them if the firearm is capable of both."
+
+**S16 is one door.** `frontend/lib/licence-labels.ts` offers one "Dedicated hunting or sport-shooting" tile under Section 16. The enum still holds both values so every stored application loads; `LICENCE_TYPE_LABELS` and the association labels are neutral, and `dedicatedStatusFits()` accepts hunter, sport and both papers on any Section 16 application (professional-hunter registrations remain refused).
+
+**No purpose questions, anywhere.** `firearm_use_kind`, `intended_quarry`, `hunting_history`, `hunting_locations`, `activity_record`, `competition_record`, `s13_reasons`, `s13_movements`, `s13_carry_style`, `threat_circumstances`, `daily_movements`, `alternatives_considered`, `continued_use`, `firearm_fit_reason` and the owned rows' `use`/`primary_use` are `internal` — hidden from the sheet, still accepted from old drafts, and still reaching the writer where a member had answered. The client no longer fires the "confirm this reason" call on page load. Empty sheet sections are dropped.
+
+**The pack chooses hunting, sport or both.** New `motivation-purpose.ts` reads the applied-for firearm (handgun/self-loader = sport; dangerous chambering = hunting; manual rifle/shotgun = both) and then the battery: where a held Section 15/16 firearm is the same calibre class, the new one is argued into the complementary gap. Used by `planFor`, the candidate uses, the reason angles, the research ask and the exhibits. Both Section 16 types now share one angle pool.
+
+**Two full cartridge sheets plus the cover hero.** The cover keeps our rendered cartridge. Inside, after the firearm section, page one is the FULL-PAGE C.I.P. dimension sheet (our full-width drawing is the fallback for a wildcat); page two is a FULL PAGE of why the round suits the applied-for purpose. The old half-column inset is gone. `CipSheetService.lookup` now resolves card spellings (`9MM PAR ( 9X19MM )`, `9x19mm`, `6.5MM CREEDMOOR`, `.45-70 GOVERNMENT`) through `calibreCandidates`, so the sheet pulls in where it used to miss.
+
+**Exhibits: four plates over two pages.** Hunting shows four quarry species (two a page), sport four courses of fire, and a firearm that does both shows two of each; the species reserve fills from the cartridge's class so a page is never half empty for a known firearm.
+
+Gates: backend `tsc` clean + **362 suites / 5 662 tests**; frontend `tsc` clean + **142 files / 1 746 tests**. Not committed or deployed.
+
 ## 2026-10-17 — THE CARD'S NONE IS NEVER DISCARDED (BACKEND DEPLOY)
 
 Commit **`851b38af`**, 2 backend source + 2 specs. Backend-only deploy via `infra/deploy/deploy.sh --backend-only`. Rollback point `alloutdoor-20261017-104615.dump` (30 918 236 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `851b38af`. No migration.

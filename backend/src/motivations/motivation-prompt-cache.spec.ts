@@ -318,11 +318,11 @@ const BEFORE_THE_REORDER: Record<
   },
   S16_DEDICATED_HUNTER: {
     lines: 118,
-    sha: 'a5ff9c8e1be3175811568aa4aa493f794248865c5428b48f4ac15ebd66ffb32a',
+    sha: '1dcefc43aa11c4ac9fc1ac56d1dda49dfb5472ed110f9295bfa24ff91fe9890e',
   },
   S16_DEDICATED_SPORT: {
     lines: 118,
-    sha: 'bfca3c86f10f2cec14dccd125c4f6d4c075179ad5c25e2808a09d11846c07498',
+    sha: 'e60111c8c9cff457fe35bc2799cc9b3fd2d46ac246f060f3aab777134c2b4c79',
   },
   S24_RENEWAL: {
     lines: 112,

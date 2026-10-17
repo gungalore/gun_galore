@@ -37,6 +37,6 @@ describe('CompletedMotivations', () => {
 
   it('falls back to the licence label for a row with no title', () => {
     render(<CompletedMotivations rows={[row()]} />);
-    expect(screen.getByText('Dedicated sports shooter')).toBeTruthy();
+    expect(screen.getByText('Dedicated hunting or sport-shooting')).toBeTruthy();
   });
 });

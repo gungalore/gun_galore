@@ -167,6 +167,17 @@ export function calibreCandidates(raw: string): string[] {
     push(v.replace(/\bParabellum\b/gi, 'Luger'));
     push(v.replace(/\bACP\b/gi, 'Auto'));
   }
+
+  /**
+   * ⚠️ 9×19 IS LUGER, AND THE CARD OFTEN PRINTS NOTHING ELSE. "9mm Parabellum"
+   * contracts to "9mm Luger" above, but "9MM PAR ( 9X19MM )" kept the bracketed
+   * designation and "9x19mm" alone has no name at all. The C.I.P. sheet is
+   * filed under "9 mm Luger"; without this candidate the commonest handgun
+   * round in the product found no dimension page at all.
+   */
+  if (/9\s*(?:mm\s*(?:par(?:abellum)?|luger)|[xX]\s*19)/i.test(text)) {
+    push('9 mm Luger');
+  }
   return out;
 }
 

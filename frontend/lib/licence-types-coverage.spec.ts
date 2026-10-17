@@ -41,12 +41,30 @@ import {
 
 const REGISTRY_TYPES = Object.keys(SECTIONS);
 
+/**
+ * Types the server still accepts for stored applications but the chooser no
+ * longer offers. Section 16 is one entry point now; the old sport value remains
+ * readable so a draft written before 2026-10-17 still renders.
+ */
+const LEGACY_TYPES = new Set(['S16_DEDICATED_SPORT']);
+const LIVE_REGISTRY_TYPES = REGISTRY_TYPES.filter((t) => !LEGACY_TYPES.has(t));
+
 describe('the licence types on offer', () => {
   it('⚠️ OFFERS EVERY TYPE THE SERVER HAS A FIELD REGISTRY FOR', () => {
     // A type the server can build an application for and the chooser never
     // shows is a section nobody can apply under.
     const offered = LICENCE_TYPES.map((t) => t.value);
-    expect([...offered].sort()).toEqual([...REGISTRY_TYPES].sort());
+    expect([...offered].sort()).toEqual([...LIVE_REGISTRY_TYPES].sort());
+  });
+
+  it('⚠️ STILL NAMES A TYPE IT NO LONGER OFFERS', () => {
+    // A draft begun under the old S16 sport value must keep reading in words.
+    expect(licenceLabel('S16_DEDICATED_SPORT')).toBe(
+      'Dedicated hunting or sport-shooting',
+    );
+    expect(
+      LICENCE_TYPES.some((t) => t.value === 'S16_DEDICATED_SPORT'),
+    ).toBe(false);
   });
 
   it('⚠️ OFFERS NOTHING THE SERVER WOULD REFUSE', () => {

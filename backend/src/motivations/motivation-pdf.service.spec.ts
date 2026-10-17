@@ -1839,7 +1839,36 @@ describe('the cartridge drawing', () => {
         await pageCount(short.pdf),
       ]);
     }
-  });
+  }, 30000);
+
+  it('⚠️ ADDS TWO FULL CARTRIDGE SHEETS — DIMENSION, THEN SUITABILITY (2026-10-17)', async () => {
+    // The operator's split: the cover keeps the rendered hero, and the body
+    // gives the round two sheets of its own — the full-page dimension sheet,
+    // then a full page of why it suits the applied-for purpose.
+    const image = {
+      png: hero.png,
+      widthMm: hero.widthMm,
+      heightMm: hero.heightMm,
+      texts: hero.texts,
+    };
+    const base = await svc.render({
+      ...makeInput(withCartridgeSection),
+    } as never);
+    const withSheets = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: hero,
+      dimensionSheet: {
+        label: 'The cartridge — 6.5 Creedmoor — dimensions',
+        image,
+      },
+      suitabilitySheet: {
+        label: 'Why 6.5 Creedmoor suits this purpose',
+      },
+    } as never);
+    expect(await pageCount(withSheets.pdf)).toBeGreaterThanOrEqual(
+      (await pageCount(base.pdf)) + 2,
+    );
+  }, 30000);
 
   it('⚠️ STILL SUPPRESSES THE SPLICED SHEET, which is why hero rides on this field', async () => {
     // The C.I.P. page is suppressed by the PRESENCE of a drawing. Had the hero

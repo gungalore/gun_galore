@@ -130,6 +130,12 @@ export const REASON_ANGLES: Record<MotivationLicenceType, readonly string[]> = {
     'first_hunting_rifle',
     'first_competition_firearm',
   ],
+  /**
+   * ⚠️ BOTH SECTION 16 TYPES ARGUE BOTH DISCIPLINES. Operator, 2026-10-17: a
+   * person may sport shoot or hunt with a firearm regardless of which
+   * dedicated status they hold. The angles are one pool so the gap the pack
+   * resolves (see motivation-purpose.ts) is always available to argue.
+   */
   [MotivationLicenceType.S16_DEDICATED_HUNTER]: [
     'exercise_eligibility',
     'species_class_gap',
@@ -139,18 +145,23 @@ export const REASON_ANGLES: Record<MotivationLicenceType, readonly string[]> = {
     'dedicated_load_development',
     'wingshooting_vs_rifle',
     'first_hunting_rifle',
+    'division_differentiation',
+    'primary_and_backup',
+    'match_and_practice',
+    'different_format',
+    'classification_progression',
+    'physical_configuration',
+    'first_competition_firearm',
   ],
   [MotivationLicenceType.S16_DEDICATED_SPORT]: [
-    /**
-     * ⚠️ FIRST BECAUSE IT IS PREFERRED, AND THE ORDER IS WHAT THE MODEL SEES.
-     * The approved packs' strongest argument is an association exercise the
-     * applied-for firearm is eligible for and a held one is not, by the
-     * association's own printed equipment rule — "7m 2x5 shot: only 9mmP
-     * pistols and larger" against a 6.35mm pocket pistol. That is a gap a
-     * reviewer can check against the annexed rules, and it beats any calibre
-     * opinion.
-     */
     'exercise_eligibility',
+    'species_class_gap',
+    'range_band_gap',
+    'terrain_configuration',
+    'backup_for_remote_trips',
+    'dedicated_load_development',
+    'wingshooting_vs_rifle',
+    'first_hunting_rifle',
     'division_differentiation',
     'primary_and_backup',
     'match_and_practice',

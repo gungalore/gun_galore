@@ -946,24 +946,20 @@ describe('the discipline the document actually awards', () => {
     ...over,
   });
 
-  it('⚠️ keeps a dedicated HUNTER document out of a dedicated SPORT application', () => {
+  it('⚠️ takes a dedicated HUNTER document on a section 16 application', () => {
+    // Operator, 2026-10-17: a person may hunt or sport shoot with the firearm
+    // regardless of which dedicated status they hold. Section 16 is one entry
+    // point now, so both disciplines' papers evidence it.
     const o = offerWith(SPORT, [paper('dedicated hunter')], {});
-    expect(o.values.association_name).toBeUndefined();
-    expect(o.values.association_number).toBeUndefined();
-    expect(o.items).toHaveLength(0);
-    // Refused OUT LOUD. A silent skip leaves the block empty and the prefill
-    // looking broken, with nothing the member can act on.
-    expect(o.skipped.some((k) => /dedicated HUNTER status/.test(k.why))).toBe(
-      true,
-    );
+    expect(o.values.association_name).toBe('SAHGCA');
+    expect(o.values.association_number).toBe('108828');
+    expect(o.skipped.some((k) => /dedicated/i.test(k.why))).toBe(false);
   });
 
-  it('⚠️ and the mirror - a SPORT document out of a HUNTER application', () => {
+  it('⚠️ and the mirror - a SPORT document on a section 16 application', () => {
     const o = offerWith(HUNTER, [paper('dedicated sport shooter')], {});
-    expect(o.values.association_name).toBeUndefined();
-    expect(
-      o.skipped.some((k) => /dedicated SPORT SHOOTER status/.test(k.why)),
-    ).toBe(true);
+    expect(o.values.association_name).toBe('SAHGCA');
+    expect(o.skipped.some((k) => /dedicated/i.test(k.why))).toBe(false);
   });
 
   it('takes the document that matches, on either type', () => {
@@ -1058,10 +1054,9 @@ describe('the discipline the document actually awards', () => {
     expect(o.skipped.some((k) => /dedicated/i.test(k.why))).toBe(false);
   });
 
-  it('⚠️ a wrong-discipline document does not burn the slot the right one needs', () => {
-    // If the refusal ran after the slot was claimed, the hunting certificate
-    // would take slot 1 and the sports club would be listed as association 2 -
-    // demoting the body the whole application rests on.
+  it('⚠️ both disciplines fill the three association slots', () => {
+    // One section 16 entry point means two bodies are two memberships, not a
+    // wrong-discipline refusal. The second body takes association 2.
     const club: CredentialSource = {
       ...paper('dedicated sport shooter'),
       id: 'd2',
@@ -1073,8 +1068,8 @@ describe('the discipline the document actually awards', () => {
       },
     };
     const o = offerWith(SPORT, [paper('dedicated hunter'), club], {});
-    expect(o.values.association_name).toBe('SAGA');
-    expect(o.values.association_2_name).toBeUndefined();
+    expect(o.values.association_name).toBe('SAHGCA');
+    expect(o.values.association_2_name).toBe('SAGA');
   });
 });
 

@@ -31,7 +31,7 @@ describe('motivationTitle', () => {
 
   it('falls back to the section label before a firearm is described', () => {
     expect(motivationTitle(S16, {})).toBe(
-      'Section 16 — Dedicated sport shooter',
+      'Section 16 — Dedicated hunting or sport-shooting',
     );
   });
 

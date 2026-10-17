@@ -437,12 +437,12 @@ export interface PlanOptions {
    */
   isAssociationMember?: boolean;
   /**
-   * Which variant a section 15 is. Ignored for every other type.
+   * Which purpose heading a section 15 OR section 16 document leads with.
    *
-   * Book Part 5.3: "The generator picks one from the applicant's answer; the
-   * document never mixes both unless the applicant genuinely does both, and
-   * then hunting leads." So this is one choice, not two sections — see
-   * `s15Purpose` in motivation-fields.ts, which reads it off the answers.
+   * ⚠️ ONE SECTION 16 ENTRY POINT NOW (2026-10-17). The dedicated hunter and
+   * dedicated sport labels no longer choose the heading — the pack does, via
+   * resolveSportingPurpose in motivation-purpose.ts, and this option carries
+   * its answer. "Both" leads with hunting, per the book.
    */
   purpose?: 'hunting' | 'sport';
 }
@@ -464,13 +464,26 @@ export function planFor(
   const budget = TYPE_PARAGRAPHS[licenceType];
 
   const sections = SECTION_SKELETONS[licenceType]
-    .map((id) =>
-      id === 'the_quarry' &&
-      licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER &&
-      opts.purpose === 'sport'
-        ? ('the_discipline' as SectionId)
-        : id,
-    )
+    .map((id) => {
+      const sporting =
+        licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER ||
+        licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||
+        licenceType === MotivationLicenceType.S16_DEDICATED_SPORT;
+      if (!sporting) return id;
+      if (id === 'the_quarry' && opts.purpose === 'sport') {
+        return 'the_discipline';
+      }
+      /**
+       * ⚠️ THE REVERSE SWAP IS NEW WITH THE SINGLE SECTION 16 ENTRY. An old
+       * S16_SPORT draft may now resolve to hunting (a manual rifle with a
+       * sporting battery behind it), and its skeleton carried the discipline
+       * heading. Without this it would argue sport under a hunting purpose.
+       */
+      if (id === 'the_discipline' && opts.purpose === 'hunting') {
+        return 'the_quarry';
+      }
+      return id;
+    })
     .filter((id) => {
       if (id === 'held_firearms') return opts.holdsFirearms === true;
       if (id === 'compliance_history') return opts.hasRecord === true;

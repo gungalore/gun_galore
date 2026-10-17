@@ -1,6 +1,7 @@
 import { MotivationLicenceType } from '@prisma/client';
-import { quarriesFor, type QuarrySpecies } from './motivation-quarry';
-import { s15Purpose } from './motivation-fields';
+import { QUARRY, quarriesFor, type QuarrySpecies } from './motivation-quarry';
+import { classifyCalibre } from './motivation-overlap';
+import { resolveSportingPurpose, weaponClass } from './motivation-purpose';
 import { coursesFor, type CourseSpec } from './motivation-courses';
 
 // ────────────────────────────────────────────────────────────────────
@@ -44,21 +45,24 @@ import { coursesFor, type CourseSpec } from './motivation-courses';
  */
 export const PLATES_PROMPT_VERSION = '2026-10-16a';
 
-/** Which of the three purposes a pack's exhibits serve. */
-export type PlatePurpose = 'hunting' | 'self_defence' | 'sport';
+/** Which of the purposes a pack's exhibits serve. */
+export type PlatePurpose = 'hunting' | 'sport' | 'both' | 'self_defence';
 
 /** Two plates to a page. */
 export const PLATES_PER_PAGE = 2;
 
 /**
- * The exhibit budget. Sport and self-defence stop at two pages; HUNTING runs to
- * five, because the operator asked for one animal to a picture and up to five
- * animals (2026-10-15: "one animal per picture with up to five animals where
- * applicable"). Five plates is three pages — 2 + 2 + 1 — which is the honest
- * size of a line-up that used to sit squeezed into one composite frame.
+ * The exhibit budget: FOUR PLATES ACROSS TWO FULL PAGES.
+ *
+ * ⚠️ TWO PICTURES TO A PAGE, ALWAYS TWO PAGES (2026-10-17). The operator asked
+ * for "the two page images of either animals the cartridge fit to hunt with
+ * descriptions or the shooting activities the firearm will be used for and if
+ * applicable we can mix them if the firearm is capable of both". A hunting
+ * pack therefore shows four quarry species over two pages, a sport pack four
+ * courses of fire, and a firearm that does both shows two of each.
  */
 export const MAX_PLATES = 4;
-export const MAX_HUNTING_PLATES = 5;
+export const MAX_HUNTING_PLATES = 4;
 
 export interface PlateSpec {
   /** 1-based page, and 1-based slot within it. */
@@ -98,13 +102,13 @@ export function purposeFor(
     case MotivationLicenceType.S13_SELF_DEFENCE:
     case MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE:
       return 'self_defence';
+    // ⚠️ ONE SECTION 16 ENTRY POINT, AND THE PACK DECIDES. A dedicated hunter
+    // may shoot sport with the same rifle and the reverse, so the licence type
+    // no longer picks the exhibits. See motivation-purpose.ts.
     case MotivationLicenceType.S16_DEDICATED_HUNTER:
-      return 'hunting';
     case MotivationLicenceType.S16_DEDICATED_SPORT:
-      return 'sport';
     case MotivationLicenceType.S15_OCCASIONAL_HUNTER:
-      // The section 15 variant is the applicant's own choice — see s15Purpose.
-      return s15Purpose(answers) === 'sport' ? 'sport' : 'hunting';
+      return resolveSportingPurpose(answers);
     default:
       return null;
   }
@@ -200,10 +204,9 @@ function speciesPlate(species: QuarrySpecies): Omit<PlateSpec, 'pageIndex' | 'pl
   return {
     title: species.name,
     description:
-      `${species.name} is ${label}, ${range}. The cartridge brief for this ` +
-      `application names it among the game this firearm is well matched to, ` +
-      `and this is why: ${why}. It is pictured in ${habitat}, the setting a ` +
-      `licence for this purpose is intended for.`,
+      `${species.name} is ${label}, ${range}. The cartridge applied for is ` +
+      `matched to this class of game, and this is why: ${why}. It is pictured ` +
+      `in ${habitat}, the setting a licence for this purpose is intended for.`,
     prompt:
       `A photorealistic wildlife photograph of ${species.subject} standing ` +
       `broadside in ${habitat}, soft early-morning light, taken with a long ` +
@@ -345,40 +348,11 @@ function pickScenes(
 export type WeaponClass = 'handgun' | 'rifle' | 'shotgun';
 
 /**
- * The applied-for firearm's class, from its own answers.
- *
- * ⚠️ THE TYPE BOX LEADS AND THE CALIBRE ONLY BREAKS A TIE. `firearm_type` is
- * the form's own Handgun/Rifle/Shotgun word and is the reliable signal; a 9 mm
- * is usually a handgun but can be a carbine, so the calibre is read only where
- * the type says nothing. Null — an unrecognised type — never withholds plates:
- * pickActivities falls back to the whole catalogue rather than printing none.
+ * The applied-for firearm's class. Moved to motivation-purpose.ts with the
+ * route resolver so the two decisions share one classifier; re-exported here
+ * because the exhibit pickers and their specs import it from this module.
  */
-export function weaponClass(a: Record<string, string>): WeaponClass | null {
-  const type = (a.firearm_type ?? '').toLowerCase();
-  if (/shotgun/.test(type)) return 'shotgun';
-  if (/handgun|pistol|revolver/.test(type)) return 'handgun';
-  if (/rifle|carbine/.test(type)) return 'rifle';
-
-  const blob = `${a.firearm_type ?? ''} ${a.firearm_action ?? ''} ${
-    a.firearm_calibre ?? ''
-  }`.toLowerCase();
-  if (/shotgun|\bgauge\b|\b\d{1,2}\s?ga\b/.test(blob)) return 'shotgun';
-  if (
-    /handgun|pistol|revolver|9\s?mm|9x19|parabellum|\.22\s?lr|\.380|\.40\s?sw|\.45\s?acp/.test(
-      blob,
-    )
-  ) {
-    return 'handgun';
-  }
-  if (
-    /rifle|carbine|creedmoor|springfield|\b6\.5\b|\.22\s?250|\.223|\.243|\.270|\.308|\.30-?06|\.300|\.338/.test(
-      blob,
-    )
-  ) {
-    return 'rifle';
-  }
-  return null;
-}
+export { weaponClass };
 
 /**
  * A course of fire as the exhibit picker draws it.
@@ -408,36 +382,10 @@ function withSlots(
   }));
 }
 
-/**
- * The plates a pack carries, in page order.
- *
- * ⚠️ FAIL-SOFT BY CONSTRUCTION. A hunting pack with no species the research
- * names returns an empty list and simply gets no exhibits — exactly the rule
- * the quarry plate already follows. Nothing here throws.
- */
-export function buildPlateSpecs(ctx: PlateContext): PlateSpec[] {
-  const purpose = purposeFor(ctx.licenceType, ctx.answers);
-  if (purpose === null) return [];
-
-  if (purpose === 'hunting') {
-    // One animal to a picture, up to five (see MAX_HUNTING_PLATES).
-    const species = quarriesFor({
-      cartridgeText: ctx.research,
-      gameClasses: ctx.answers.hunt_game_class,
-    });
-    return withSlots(species.map(speciesPlate), MAX_HUNTING_PLATES);
-  }
-
-  if (purpose === 'self_defence') {
-    return withSlots(
-      pickScenes(SELF_DEFENCE_SCENES, SELF_DEFENCE_DEFAULTS, ctx.answers, MAX_PLATES),
-    );
-  }
-
-  // Sport: the courses of fire this firearm is genuinely used in. Selected from
-  // the generated uses where they name a discipline, else the class/action
-  // defaults — see coursesFor.
-  const courses = coursesFor({
+/** The courses of fire a sport pack pictures, at most `limit`. */
+function sportSpecs(ctx: PlateContext, limit: number) {
+  if (limit <= 0) return [];
+  return coursesFor({
     weaponClass: weaponClass(ctx.answers),
     action: ctx.answers.firearm_action,
     // The generated uses name the disciplines, and the firearm's own words
@@ -450,7 +398,141 @@ export function buildPlateSpecs(ctx: PlateContext): PlateSpec[] {
     ]
       .filter(Boolean)
       .join(' '),
-    limit: MAX_PLATES,
-  });
-  return withSlots(courses.map(coursePlate), MAX_PLATES);
+    limit,
+  }).map(coursePlate);
+}
+
+/**
+ * The quarry species a hunting pack pictures, at most `limit`.
+ *
+ * ⚠️ IT NEVER COMES UP SHORT WHILE THE CALIBRE IS KNOWN. The research block
+ * names the species a round is suited to, but it is cached prose and may name
+ * two or three. The reserve fills from the same class of game for that
+ * cartridge (the curated table in motivation-overlap), so a two-page exhibit
+ * is two pages rather than one page and an empty sheet.
+ */
+function huntingSpecs(
+  ctx: PlateContext,
+  limit: number,
+  exclude: ReadonlySet<string> = new Set(),
+): Omit<PlateSpec, 'pageIndex' | 'plateIndex'>[] {
+  if (limit <= 0) return [];
+  const named = quarriesFor({
+    cartridgeText: ctx.research,
+    gameClasses: ctx.answers.hunt_game_class,
+  }).filter((q) => !exclude.has(q.key));
+
+  // ⚠️ NO FIREARM AND NO RESEARCH IS NOT A GUESSING OPPORTUNITY. The reserve
+  // exists to finish a page for a firearm we can classify; with neither a class
+  // nor a single named species there is nothing honest to draw.
+  const known =
+    !!classifyCalibre(ctx.answers.firearm_calibre ?? '') ||
+    !!weaponClass(ctx.answers);
+  if (!named.length && !known) return [];
+
+  const out: QuarrySpecies[] = [...named];
+  const taken = new Set([...exclude, ...out.map((q) => q.key)]);
+  const wanted = new Set(
+    (ctx.answers.hunt_game_class ?? '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean),
+  );
+  const klass = classifyCalibre(ctx.answers.firearm_calibre ?? '');
+  const klassKey =
+    klass === 'shotgun'
+      ? 'wingshooting'
+      : klass === 'dangerous_game'
+        ? 'dangerous'
+        : klass === 'rimfire'
+          ? 'small'
+          : klass === 'varmint' || klass === 'medium_game' || klass === 'large_game'
+            ? 'plains_medium'
+            : klass === 'handgun'
+              ? null
+              : null;
+
+  const add = (sameClassOnly: boolean) => {
+    for (const q of QUARRY) {
+      if (out.length >= limit) return;
+      if (taken.has(q.key)) continue;
+      if (wanted.size && !wanted.has(q.klass)) continue;
+      if (sameClassOnly && klassKey && q.klass !== klassKey) continue;
+      taken.add(q.key);
+      out.push(q);
+    }
+  };
+  add(true);
+  add(false);
+
+  return out.slice(0, limit).map(speciesPlate);
+}
+
+/**
+ * The plates a pack carries, in page order.
+ *
+ * ⚠️ TWO PAGES, ALWAYS. Four plates at two to a page; a hunting pack shows
+ * four species, a sport pack four courses of fire, and a firearm that lawfully
+ * does both shows two of each. See MAX_PLATES.
+ *
+ * ⚠️ FAIL-SOFT BY CONSTRUCTION. A pack whose pool is empty gets no exhibits
+ * rather than an invented one. Nothing here throws.
+ */
+export function buildPlateSpecs(ctx: PlateContext): PlateSpec[] {
+  const purpose = purposeFor(ctx.licenceType, ctx.answers);
+  if (purpose === null) return [];
+
+  // ⚠️ NOTHING IS DRAWN FOR A FIREARM NOBODY HAS DESCRIBED. The route resolver
+  // can say "both" from an empty pack, but a picture of a species or a course
+  // for an unnamed firearm is a guess about what the applicant is applying for.
+  const noFirearm =
+    !weaponClass(ctx.answers) &&
+    !classifyCalibre(ctx.answers.firearm_calibre ?? '');
+  if (purpose !== 'self_defence' && noFirearm) return [];
+
+  if (purpose === 'self_defence') {
+    return withSlots(
+      pickScenes(SELF_DEFENCE_SCENES, SELF_DEFENCE_DEFAULTS, ctx.answers, MAX_PLATES),
+    );
+  }
+
+  if (purpose === 'hunting') {
+    return withSlots(huntingSpecs(ctx, MAX_PLATES));
+  }
+
+  if (purpose === 'sport') {
+    return withSlots(sportSpecs(ctx, MAX_PLATES));
+  }
+
+  // Both: two of each when both pools can fill their half, and the remainder
+  // topped up from whichever pool still has material. A bolt-action .308 with
+  // a hunting battery behind it is the case this exists for: page one is the
+  // quarry, page two is the discipline.
+  const hunt = huntingSpecs(ctx, Math.min(2, MAX_PLATES));
+  const sport = sportSpecs(ctx, MAX_PLATES - hunt.length);
+  const mixed = [...hunt, ...sport].slice(0, MAX_PLATES);
+  if (mixed.length < MAX_PLATES) {
+    const used = new Set(mixed.map((p) => p.title).filter(Boolean));
+    // Top up from quarry first, then sport, without repeating a plate title.
+    const huntingTitles = new Set(hunt.map((p) => p.title));
+    const extraHunt = huntingSpecs(
+      ctx,
+      MAX_PLATES - mixed.length + hunt.length,
+      new Set(),
+    ).filter((p) => !huntingTitles.has(p.title));
+    for (const p of extraHunt) {
+      if (mixed.length >= MAX_PLATES) break;
+      if (used.has(p.title)) continue;
+      used.add(p.title);
+      mixed.push(p);
+    }
+    const sportTitles = new Set(sport.map((p) => p.title));
+    for (const p of sportSpecs(ctx, MAX_PLATES)) {
+      if (mixed.length >= MAX_PLATES) break;
+      if (used.has(p.title) || sportTitles.has(p.title)) continue;
+      used.add(p.title);
+      mixed.push(p);
+    }
+  }
+  return withSlots(mixed.slice(0, MAX_PLATES));
 }

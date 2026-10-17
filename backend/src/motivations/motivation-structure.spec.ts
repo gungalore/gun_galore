@@ -324,12 +324,18 @@ describe('the section 15 variant', () => {
     expect(idsFor(s15, {})).toContain('the_quarry');
   });
 
-  it('⚠️ SWAPS NOBODY ELSE’S PURPOSE SECTION', () => {
-    // The option is a section 15 answer. A dedicated sports shooter asked for
-    // `purpose: 'hunting'` still gets the discipline, because their section is
-    // what decides it.
+  it('⚠️ SWAPS THE PURPOSE HEADING ON EITHER SECTION 16 ROUTE', () => {
+    // One section 16 entry point now: a sport label asked for hunting gets the
+    // quarry, and a hunter label asked for sport gets the discipline. Section
+    // 13's threat heading is never swapped.
     expect(
       idsFor(MotivationLicenceType.S16_DEDICATED_SPORT, { purpose: 'hunting' }),
+    ).toContain('the_quarry');
+    expect(
+      idsFor(MotivationLicenceType.S16_DEDICATED_SPORT, { purpose: 'sport' }),
+    ).toContain('the_discipline');
+    expect(
+      idsFor(MotivationLicenceType.S16_DEDICATED_HUNTER, { purpose: 'sport' }),
     ).toContain('the_discipline');
     expect(
       idsFor(MotivationLicenceType.S13_SELF_DEFENCE, { purpose: 'sport' }),

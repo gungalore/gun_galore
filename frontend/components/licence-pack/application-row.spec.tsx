@@ -53,7 +53,7 @@ describe('an application row', () => {
 
   it('falls back to the licence label when no title was sent', () => {
     render(<ApplicationRow row={row()} token={token} onChanged={() => {}} />);
-    expect(screen.getByText('Dedicated sports shooter')).toBeTruthy();
+    expect(screen.getByText('Dedicated hunting or sport-shooting')).toBeTruthy();
   });
 
   it('⚠️ OFFERS NO SAPS 271 CONTROL AT ALL', () => {

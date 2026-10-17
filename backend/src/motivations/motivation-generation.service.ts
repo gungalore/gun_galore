@@ -80,8 +80,8 @@ import {
   holdsFirearms,
   isAssociationMember,
   isSelfDefence,
-  s15Purpose,
 } from './motivation-fields';
+import { resolveSportingPurpose, s15Purpose } from './motivation-purpose';
 import { packableIncidents } from './motivation-incident-filter';
 import { displayCalibre } from './saps-vocabulary';
 import {
@@ -127,31 +127,34 @@ const APPLIED_SLICES: Partial<Record<MotivationLicenceType, UseSlice[]>> = {
 };
 
 /**
- * Which pool the applicant asked for, out of the ones the section admits.
+ * Which pool is argued, out of the ones the section admits.
  *
- * ⚠️ THE MEMBER'S ONE TICK DECIDES THIS. Operator, 2026-09-09: "we just need
- * to ask if the applicant will be using it for hunting or Sport shooting or
- * both … and that will decide from which pool of reasons we are going to
- * motivate that firearm." `firearm_use_kind` is the only tick-box left in the
- * Experience section and this is the whole of what it does.
+ * ⚠️ THE APPLICANT IS NOT ASKED (2026-10-17). The battery, the firearm's class
+ * and action, and the licence sections already held decide it — see
+ * motivation-purpose.ts. The old `firearm_use_kind` tick was retired with the
+ * other purpose questions.
  *
  * ⚠️ THE LICENCE TYPE STILL BOUNDS IT. A section 13 application has no
- * sporting pool to choose from whatever anybody ticks, so the tick filters
- * what the section already admits rather than replacing it. And an unanswered
- * tick takes everything the section admits — the field is required, but a
- * draft written before it existed is not broken by it.
+ * sporting pool whatever the pack says.
  */
 function slicesWanted(
   licenceType: MotivationLicenceType,
   answers: Record<string, string>,
 ): UseSlice[] {
   const admits = APPLIED_SLICES[licenceType] ?? [];
-  const tick = (answers.firearm_use_kind ?? '').trim();
-  if (!tick || tick === 'both') return admits;
-  if (tick === 'hunting') {
+  if (!admits.length) return [];
+  if (
+    licenceType !== MotivationLicenceType.S15_OCCASIONAL_HUNTER &&
+    licenceType !== MotivationLicenceType.S16_DEDICATED_HUNTER &&
+    licenceType !== MotivationLicenceType.S16_DEDICATED_SPORT
+  ) {
+    return admits;
+  }
+  const purpose = resolveSportingPurpose(answers);
+  if (purpose === 'hunting') {
     return admits.filter((s) => !s.endsWith('_sport'));
   }
-  if (tick === 'sport') {
+  if (purpose === 'sport') {
     return admits.filter((s) => !s.endsWith('_hunt'));
   }
   return admits;
