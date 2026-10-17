@@ -5,7 +5,17 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-16**.
+Last updated: **2026-10-17**.
+
+## 2026-10-17 — PRIOR-NOTICE LETTER SHORTENED (BACKEND DEPLOY)
+
+Commit **`0eba8e74`**, 1 backend source + 1 spec. Backend-only deploy via `infra/deploy/deploy.sh --backend-only`. Rollback point `alloutdoor-20261017-095738.dump` (32 408 581 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `0eba8e74`. No migration.
+
+Gates: backend `tsc` clean + **360 suites/5646 tests**.
+
+**The ask.** Operator, 2026-10-17: "still the same, work on the wording and shorten the whole document" — the signature block (and the name) was still spilling past the letter's page.
+
+**What shipped.** `buildPriorNoticeRequest` rewritten shorter. Every provision it rests on is kept — reg 89, PAJA s3, reg 91(1)(a) with the 90 days, reg 91(4) — and the three numbered asks stay three. Cut: the second sentence of each point, the repetition between them, and the separate contact undertaking. `PRIOR_NOTICE_VERSION` bumped to `pn-2026-10-16-a-draft`. The type-shrink fallback from `84bfbbf4` stays as the second line of defence. Render now closes the letter, signature included, on its own page (regression spec updated).
 
 ## 2026-10-16 — PRIOR-NOTICE LETTER FITS ONE SHEET (BACKEND DEPLOY)
 
