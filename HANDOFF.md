@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-10-17**.
 
+## 2026-10-17 — THE CARD'S NONE IS NEVER DISCARDED (BACKEND DEPLOY)
+
+Commit **`851b38af`**, 2 backend source + 2 specs. Backend-only deploy via `infra/deploy/deploy.sh --backend-only`. Rollback point `alloutdoor-20261017-104615.dump` (30 918 236 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `851b38af`. No migration.
+
+Gates: backend `tsc` clean + **360 suites/5647 tests**.
+
+**The ask.** Operator, 2026-10-17: "Uploaded a licence inside the motivation for the firearm I want to apply for and it discards the NONE from the model. Make sure it never discards the NONE from any field on the motivation or the 271 form."
+
+**What shipped.** The readers, the vault, `sanitiseAnswers` and the SAPS 271 already kept NONE — the loss was at the three suggestion/offer builders, which ran `answerValue()` and turned a card's "NONE" into nothing before the member could accept it. New `printedAnswerValue()` in `card-placeholder.ts`: **NONE is a value**, while N/A, nil, a bare dash and model-declining phrases are still dropped. Applied at `addUpload`'s stored reading, `readingFor` (desktop read-back) and `addFromLibrary` (vault adoption). The writer's prose boundary (`renderFacts` → `answerValue`) still strips every placeholder, so the letter never writes about a firearm called None. Specs updated: NONE kept at the offer, "-" dropped, plus a `readingFor` regression.
+
+**Know.** A document already uploaded does not need re-scanning — its stored reading kept the NONE and `readingFor` now offers it; re-open the upload to see the suggestion. The writer's prose is unchanged by design.
+
 ## 2026-10-17 — PRIOR-NOTICE LETTER SHORTENED (BACKEND DEPLOY)
 
 Commit **`0eba8e74`**, 1 backend source + 1 spec. Backend-only deploy via `infra/deploy/deploy.sh --backend-only`. Rollback point `alloutdoor-20261017-095738.dump` (32 408 581 bytes). Health x2 OK, warden reloaded and online, public 200 x2, three pm2 services online. Deployed HEAD `0eba8e74`. No migration.
