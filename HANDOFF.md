@@ -7,6 +7,24 @@ overwritten.
 
 Last updated: **2026-10-17**.
 
+## 2026-10-17 — RESEARCH THE PACK'S REAL PURPOSE, EXHIBITS KEEP THEIR PAGES (BACKEND DEPLOY)
+
+Inspection of MO000099 / MO000099-saps271, generated after `2eeaa93b`. NONE, the 271 Section E / item 2.1 boxes, the cover hero, 5.1, the prior notice and the blank-page/TOC fixes all passed. Three things did not.
+
+**The calibre ask was keyed to the wrong purpose.** MO000099 is a Section 16 hunter application whose .223 self-loader is argued as sport. `targetsFor` still used `USE_CLASS[S16_DEDICATED_HUNTER]` and asked for “advantages for hunting” beside four sport courses. The research now uses `resolveSportingPurpose` for the ask and its cache key, exactly as the plan and the exhibits do; the sport ask asks for recoil, sight recovery, accuracy, velocity/power factor and course demands, not impact energy.
+
+**A truncated answer was cached as research.** The stored `.223` row was one 244-byte bullet ending “[cite: CIP”. `entryFor` now requires 120 words for a calibre entry (25 for a firearm, 20 for discipline/quarry, 40 for a held comparison), retries once when the answer is thin or ends mid-citation, and refuses to store or serve such a row. `cartridgeArticle` also accepts a single long paragraph; it used to require three lines, which discarded a valid one-block answer and sent 5.2 to the fallback.
+
+**The last exhibit page shared section 5.** Page 5 carried the second pair of course photos plus heading 5 and its opening paragraph, under a running head saying THE FIREARM APPLIED FOR. `drawPurposePlates` now forces the next section onto a fresh page. The fallback's dangling “checked against:” bullet is gone.
+
+**Verify with the DFO:** the seller’s card itself prints `Receiver Serial No ZA22265488` while the headline and barrel serial are `ZA2226548`. The 271 faithfully copies both; this is a card/SAPS-record discrepancy, not a PDF bug.
+
+Gates: backend `tsc` clean + **362 suites / 5 672 tests** (8 skipped); frontend unchanged, `tsc` clean + **142 files / 1 749 tests** (1 skipped).
+
+Commit **`e807ad16`**. Backend-only deploy at 20:30 SAST: rollback `alloutdoor-20261017-203021.dump` (32 553 495 bytes), health x2 OK, warden reloaded and online, public 200 x2, backend/frontend/warden all online. No migration.
+
+**Know.** Regenerate MO000099 to fetch the full 5.2 article; re-downloading it already moves section 5 off the exhibit page. The old thin research row is ignored, so the next generation asks again.
+
 ## 2026-10-17 — NONE ON THE CARD, PURPOSE-RESEARCHED 5.2, PACK LAYOUT REPAIRS (FULL DEPLOY)
 
 Operator: "it does not fill in NONE where model is ... it also dropped all the NONE inputs on the 271"; "Dedicated status held since should have ... a tickbox that says same as member of that association since"; "the WHY .30-06 SPRINGFIELD SUITS THIS PURPOSE should be researched why it fits the purpose exhibits"; and the attached MO000098's blank page 9, stray TOC "9", cover photograph and prior-notice spill.
