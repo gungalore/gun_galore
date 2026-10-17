@@ -7,7 +7,7 @@ overwritten.
 
 Last updated: **2026-10-17**.
 
-## 2026-10-17 — ONE S16 ENTRY, AUTOMATED ROUTE, TWO FULL CARTRIDGE SHEETS (UNCOMMITTED)
+## 2026-10-17 — ONE S16 ENTRY, AUTOMATED ROUTE, TWO FULL CARTRIDGE SHEETS (FULL DEPLOY)
 
 Operator: "only one entry point for s16", "remove all the questions that asks the user what are they planning to do with this firearm", "look at what firearms they already own and what section the licenses falls in, look for gaps", and "the rendered cartridge shows on the first page ... the full page CIP dimension sheet ... a second cartridge sheets ... the two page images of either animals ... or the shooting activities ... mix them if the firearm is capable of both."
 
@@ -21,7 +21,9 @@ Operator: "only one entry point for s16", "remove all the questions that asks th
 
 **Exhibits: four plates over two pages.** Hunting shows four quarry species (two a page), sport four courses of fire, and a firearm that does both shows two of each; the species reserve fills from the cartridge's class so a page is never half empty for a known firearm.
 
-Gates: backend `tsc` clean + **362 suites / 5 662 tests**; frontend `tsc` clean + **142 files / 1 746 tests**. Not committed or deployed.
+Gates: backend `tsc` clean + **362 suites / 5 662 tests**; frontend `tsc` clean + **142 files / 1 746 tests**, foreground production build exit 0.
+
+Commit **`87004018`**. Full deploy at 17:55 SAST: rollback `alloutdoor-20261017-175548.dump` (30 921 319 bytes), health x2 OK, warden reloaded and online, public 200 x2, backend/frontend/warden all online. No migration.
 
 ## 2026-10-17 — THE CARD'S NONE IS NEVER DISCARDED (BACKEND DEPLOY)
 
