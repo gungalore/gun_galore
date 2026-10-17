@@ -13,6 +13,8 @@ Commit **`851b38af`**, 2 backend source + 2 specs. Backend-only deploy via `infr
 
 Gates: backend `tsc` clean + **360 suites/5647 tests**.
 
+Re-deployed `8dda18ab` at 11:50 SAST to align the recorded HEAD to the docs commit (backend bytes unchanged): rollback `alloutdoor-20261017-115016.dump` (30 918 633 bytes), health x2 OK, warden online, public 200 x2.
+
 **The ask.** Operator, 2026-10-17: "Uploaded a licence inside the motivation for the firearm I want to apply for and it discards the NONE from the model. Make sure it never discards the NONE from any field on the motivation or the 271 form."
 
 **What shipped.** The readers, the vault, `sanitiseAnswers` and the SAPS 271 already kept NONE — the loss was at the three suggestion/offer builders, which ran `answerValue()` and turned a card's "NONE" into nothing before the member could accept it. New `printedAnswerValue()` in `card-placeholder.ts`: **NONE is a value**, while N/A, nil, a bare dash and model-declining phrases are still dropped. Applied at `addUpload`'s stored reading, `readingFor` (desktop read-back) and `addFromLibrary` (vault adoption). The writer's prose boundary (`renderFacts` → `answerValue`) still strips every placeholder, so the letter never writes about a firearm called None. Specs updated: NONE kept at the offer, "-" dropped, plus a `readingFor` regression.
