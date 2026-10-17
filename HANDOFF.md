@@ -7,6 +7,26 @@ overwritten.
 
 Last updated: **2026-10-17**.
 
+## 2026-10-17 — NONE ON THE CARD, PURPOSE-RESEARCHED 5.2, PACK LAYOUT REPAIRS (FULL DEPLOY)
+
+Operator: "it does not fill in NONE where model is ... it also dropped all the NONE inputs on the 271"; "Dedicated status held since should have ... a tickbox that says same as member of that association since"; "the WHY .30-06 SPRINGFIELD SUITS THIS PURPOSE should be researched why it fits the purpose exhibits"; and the attached MO000098's blank page 9, stray TOC "9", cover photograph and prior-notice spill.
+
+**NONE survives the reader and the form.** The extract system prompt now says NONE is a value, not a blank, and forbids omitting the row or copying a neighbouring serial into it. `firearmIdentityPrompt()` was telling the reader to leave NONE rows out — reversed for model, make and every component serial/make. A NONE on a firearm key is trusted even when the model marks it low, so the one-tap upload writes it. `CURRENT_LICENCE` asks for the two retired component serials again (stored and printed on SAPS 271 item 2.1; the sheet still shows one serial row). `card-placeholder-boundary.spec.ts` now asserts `e_model = NONE`.
+
+**Dedicated status since.** The date row offers "Same as member of that association since"; ticking copies `association_joined`, unticking clears it (`sheet-row.tsx`, wired from the licence-centre page).
+
+**`.30-06` resolves.** The production Bench files it as "30-06 Spring." and the C.I.P. index under `3006springfield`. `calibreCandidates` now contracts SPRINGFIELD to both SPRG and SPRING and expands Spring back to Springfield, so the card's `.30-06 SPRINGFIELD` reaches the Bench drawing and the C.I.P. sheet. The cover gets the rendered hero again; 5.1 gets the full sheet.
+
+**5.2 is researched against the exhibits.** The calibre ask names the four generated species/courses and asks why the round suits each; the cache key includes the exhibit set, and `RESEARCH_ASK_VERSION` is `2026-10-17c`. If a stored article predates the ask and names none of the exhibits, the page leads with them; if there is no usable article, the fallback uses the exhibit captions instead of C.I.P. platitudes.
+
+**Layout.** The cover photo frame shrinks to leave the Part 7.2 grid on page 1. The empty outer cartridge heading is gone, so 5.1 and 5.2 are adjacent with no blank page or stray TOC entry. The prior-notice reserve now includes the applicant name and ID, keeping the whole signature block on the letter sheet.
+
+Gates: backend `tsc` clean + **362 suites / 5 670 tests** (8 skipped); frontend `tsc` clean + **142 files / 1 749 tests** (1 skipped), foreground production build exit 0.
+
+Commit **`2eeaa93b`**. Full deploy at 19:17 SAST: rollback `alloutdoor-20261017-191723.dump` (32 050 243 bytes), health x2 OK, warden reloaded and online, public 200 x2, backend/frontend/warden all online. No migration.
+
+**Know.** A re-download fixes the existing pack's cover, 5.1, blank page and prior notice. Regenerate the motivation to fetch the new purpose-specific 5.2 research; an existing stored article is still used unless it names none of the exhibits, in which case the page now leads with them.
+
 ## 2026-10-17 — ONE S16 ENTRY, AUTOMATED ROUTE, TWO FULL CARTRIDGE SHEETS (FULL DEPLOY)
 
 Operator: "only one entry point for s16", "remove all the questions that asks the user what are they planning to do with this firearm", "look at what firearms they already own and what section the licenses falls in, look for gaps", and "the rendered cartridge shows on the first page ... the full page CIP dimension sheet ... a second cartridge sheets ... the two page images of either animals ... or the shooting activities ... mix them if the firearm is capable of both."
