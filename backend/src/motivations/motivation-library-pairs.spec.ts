@@ -730,14 +730,15 @@ describe('the ceiling, when the document is two pages', () => {
 
 // ── what a card printing "NONE" may become ──────────────────────────
 //
-// ⚠️ THE CARD KEEPS ITS WORDING; THE ANSWER DOES NOT GET ONE. A SA licence
-// card prints NONE in a row that does not apply to that firearm — the
-// operator's own Glock card reads "Model NONE" — and every guard between a
-// reading and an answer tested only for emptiness, so the word travelled into
-// a SAPS 271 the applicant signs ("Firearm 6 — frame serial NONE", seen live
-// on 2026-09-07). These are the boundaries in THIS file. The vault and the
-// printed seller-consent declaration still reproduce the card verbatim, which
-// is a different question and deliberately unchanged. See card-placeholder.ts.
+// ⚠️ NONE SURVIVES INTO THE ANSWER NOW (operator, 2026-10-17): "make sure it
+// never discards the NONE from any field on the motivation or the 271 form." A
+// SA licence card prints NONE in a row that does not apply — the applied-for
+// firearm's frame serial, say — and a SAPS 271 box reading NONE reproduces the
+// card where an empty one does not. The OTHER markers (a bare dash, "unknown",
+// "not visible") are still dropped: those are the model declining, not the
+// card answering. The writer's prose boundary still strips every placeholder,
+// so the letter never writes about a firearm called None. See
+// card-placeholder.ts (printedAnswerValue vs answerValue).
 
 describe('a vault reading offered as an answer', () => {
   const withReading = (details: Record<string, string>) =>
@@ -755,19 +756,20 @@ describe('a vault reading offered as an answer', () => {
     expect(res.suggestions.map((s) => s.value)).toEqual(['4567/2019']);
   });
 
-  it('⚠️ NEVER OFFERS THE CARD’S OWN "NOTHING HERE" AS A VALUE', async () => {
+  it('⚠️ KEEPS THE CARD’S NONE AS A VALUE', async () => {
+    // Operator, 2026-10-17. A box reading NONE says what the card says; a
+    // blank one says nobody filled it in. The answer keeps it.
     const { service } = withReading({ competency_number: 'NONE' });
     const res = await service.addFromLibrary('clerk-1', 'mo-1', 'credential', 'comp');
-    expect(res.suggestions).toEqual([]);
+    expect(res.suggestions.map((s) => s.value)).toEqual(['NONE']);
   });
 });
 
 describe('a stored reading handed back with the attachment', () => {
-  it('⚠️ FILTERS PLACEHOLDERS ON THE WAY OUT OF attachOne TOO', async () => {
-    // The fourth unguarded answer boundary, and the one the wizard writes in
-    // silently: `setAnswer(sg.key, sg.value, { onlyIfEmpty: true })`. For an
-    // upload source this is `extractionEncrypted` exactly as it was stored,
-    // possibly long before card-placeholder.ts existed.
+  it('⚠️ KEEPS NONE OUT OF attachOne AND STILL DROPS A BLANK MARKER', async () => {
+    // The wizard writes these in silently: `setAnswer(sg.key, sg.value, {
+    // onlyIfEmpty: true })`. NONE is a value now; a bare "-" and whitespace
+    // are not.
     const { service } = build([], {
       elsewhere: [
         attached({
@@ -789,15 +791,19 @@ describe('a stored reading handed back with the attachment', () => {
       ],
     });
     const res = await service.addFromLibrary('clerk-1', 'mo-1', 'upload', 'u1');
-    expect(res.suggestions.map((s) => s.key)).toEqual(['existing_firearm_1_make']);
+    expect(res.suggestions.map((s) => s.key)).toEqual([
+      'existing_firearm_1_make',
+      'existing_firearm_1_frame_serial',
+    ]);
   });
 });
 
 describe('a stored reading read back for the desktop', () => {
-  it('⚠️ FILTERS PLACEHOLDERS AT THE OFFER, not only where they were written', async () => {
-    // Documents read before card-placeholder.ts existed still carry NONE in
-    // their stored blob, and this route hands that blob straight to the
-    // prefill panel — so the guard has to stand here too.
+  it('⚠️ KEEPS THE CARD’S NONE AT THE OFFER, still dropping a blank marker', async () => {
+    // Operator, 2026-10-17: "make sure it never discards the NONE from any
+    // field on the motivation or the 271 form." The stored blob keeps the card
+    // verbatim, and this route hands it to the prefill panel — so NONE must
+    // survive here. A bare "-" is a blank in a costume and still goes.
     const { service, prisma } = build([]);
     prisma.motivationUpload.findFirst = jest.fn(async () => ({
       id: 'up-1',
@@ -809,7 +815,14 @@ describe('a stored reading read back for the desktop', () => {
       }),
     })) as never;
     const res = await service.readingFor('clerk-1', 'mo-1', 'up-1');
-    expect(res.suggestions.map((s) => s.key)).toEqual(['existing_firearm_1_make']);
+    expect(res.suggestions.map((s) => s.key)).toEqual([
+      'existing_firearm_1_make',
+      'existing_firearm_1_frame_serial',
+    ]);
+    expect(
+      res.suggestions.find((s) => s.key === 'existing_firearm_1_frame_serial')
+        ?.value,
+    ).toBe('NONE');
   });
 });
 

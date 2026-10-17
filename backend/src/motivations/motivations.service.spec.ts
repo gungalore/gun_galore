@@ -3219,6 +3219,26 @@ describe('the stored reading for an attached document', () => {
     expect(extract.extract).not.toHaveBeenCalled();
   });
 
+  it('⚠️ KEEPS THE CARD’S NONE, dropping only blanks', async () => {
+    // Operator, 2026-10-17: "make sure it never discards the NONE from any
+    // field on the motivation or the 271 form." A licence card prints NONE in
+    // a row that does not apply — the applied-for firearm's frame serial, say —
+    // and this ran answerValue(), so the wizard was offered nothing and the
+    // 271 printed a blank box. The value is kept; only whitespace is dropped.
+    const { svc } = readingCase({
+      blob: encryptJson({
+        frame_serial: 'NONE',
+        barrel_serial: 'MR90189D',
+        blank: '  ',
+      }),
+    });
+    const res = await svc.readingFor('c1', 'mo-1', 'up-1');
+    expect(res.suggestions).toEqual([
+      { key: 'frame_serial', value: 'NONE', label: 'frame_serial' },
+      { key: 'barrel_serial', value: 'MR90189D', label: 'barrel_serial' },
+    ]);
+  });
+
   it('is empty when the read failed or the blob cannot be opened', async () => {
     const failed = readingCase({ extractionOk: false });
     expect(

@@ -52,3 +52,24 @@ export function isCardPlaceholder(value: string | null | undefined): boolean {
 export function answerValue(value: string | null | undefined): string {
   return isCardPlaceholder(value) ? '' : (value ?? '').trim();
 }
+
+/**
+ * The value as it should reach a FORM field: the card's NONE is a value.
+ *
+ * ⚠️ OPERATOR, 2026-10-17: "make sure it never discards the NONE from any field
+ * on the motivation or the 271 form." A licence card prints NONE in a row that
+ * does not apply to the firearm, and a SAPS 271 box reading NONE reproduces the
+ * card where an empty box says nobody filled it in — different statements to a
+ * DFO. So NONE survives; N/A, nil, a bare dash and the model-declining phrases
+ * are still not values, because those are a blank in a costume rather than
+ * something the card printed as the answer.
+ *
+ * ⚠️ THE PROSE BOUNDARY STILL USES answerValue(), NOT THIS. `renderFacts` must
+ * never hand a model "Model NONE", or it writes about a firearm called None.
+ * This is for answers — the form and the 271 — and nowhere else.
+ */
+export function printedAnswerValue(value: string | null | undefined): string {
+  const s = (value ?? '').trim();
+  if (/^none$/i.test(s)) return s;
+  return answerValue(s);
+}

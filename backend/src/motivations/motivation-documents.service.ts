@@ -36,10 +36,7 @@ import {
   encryptText,
 } from '../common/blob-crypto';
 import { parseProvenance, stamp } from '../common/answer-provenance';
-// "NONE" on a licence card is the card saying there is nothing in that row —
-// never an answer on a form somebody signs. The readers and the vault keep the
-// card verbatim; this is the answer boundary. See card-placeholder.ts.
-import { answerValue } from '../common/card-placeholder';
+import { printedAnswerValue } from '../common/card-placeholder';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { requiredEndorsement } from './motivation-eligibility';
 import { decideAutolink, endorsementMoved } from './motivation-autolink';
@@ -1743,16 +1740,21 @@ export class MotivationDocumentsService {
           // endorsements reach the member through credentialOffer, which owns
           // the alias table and offers rather than writes.
           const wanted = new Set(MotivationExtractService.wantedFor(kind));
-          // ⚠️ AND "NONE" IS NOT A VALUE. A licence card prints NONE in a row
-          // that does not apply to that firearm — the operator's own Glock
-          // card reads "Model NONE" — and the old `&& v` guard tested only for
-          // emptiness, so the word travelled from the vault into a suggestion
-          // and on into a SAPS 271 the applicant signs. The card keeps its
-          // wording; the ANSWER does not get one. See card-placeholder.ts.
+          /**
+           * ⚠️ "NONE" IS A VALUE HERE, AND THAT REVERSES THE 2026-09-07 RULE.
+           * Operator, 2026-10-17: "make sure it never discards the NONE from
+           * any field on the motivation or the 271 form." A licence card prints
+           * NONE in a row that does not apply — the applied-for firearm's card
+           * reads "Frame Serial No NONE" — and this ran answerValue(), so the
+           * value reached the member as nothing and the SAPS 271 printed a blank
+           * box. The prose boundary still strips it (renderFacts), which is
+           * where it belongs: the writer never writes about a firearm called
+           * None, but the form reproduces the card.
+           */
           const kept = Object.fromEntries(
             Object.entries(details)
               .filter(([k]) => wanted.has(k))
-              .map(([k, v]) => [k, answerValue(v)] as const)
+              .map(([k, v]) => [k, printedAnswerValue(v)] as const)
               .filter(([, v]) => v !== ''),
           );
           if (Object.keys(kept).length > 0) {
@@ -2029,16 +2031,17 @@ export class MotivationDocumentsService {
         // serial — became a box on a SAPS 271 the applicant signs. Seen live
         // on 2026-09-07: "Firearm 6 — frame serial NONE · barrel serial NONE".
         //
-        // ⚠️ THE GUARD HAS TO BE HERE, NOT ONLY WHERE THE BLOB WAS WRITTEN.
-        // For an upload source this is `extractionEncrypted` as it was stored,
-        // possibly long before card-placeholder.ts existed, and CURRENT_LICENCE
-        // is not in NEVER_REUSABLE — so those readings cross applications. The
-        // same reasoning readingFor() already carries, on the same blobs.
-        // Absent stays absent. See card-placeholder.ts.
+        /**
+         * ⚠️ "NONE" IS KEPT NOW (operator, 2026-10-17). This ran answerValue(),
+         * so a licence card's "Frame Serial No NONE" reached the wizard as
+         * nothing and the member could never put it on the form. A value the
+         * reader took off the page is offered as read; the writer's prose
+         * boundary is where NONE stops being a value (renderFacts).
+         */
         suggestions = Object.entries(read ?? {})
           .map(([key, value]) => ({
             key,
-            value: typeof value === 'string' ? answerValue(value) : '',
+            value: printedAnswerValue(typeof value === 'string' ? value : ''),
             label: key,
           }))
           .filter((sg) => sg.value !== '');
@@ -2127,15 +2130,15 @@ export class MotivationDocumentsService {
         const read = decryptJson<Record<string, string>>(
           up.extractionEncrypted,
         );
-        // ⚠️ THE EMPTINESS TEST WAS NOT ENOUGH. A stored reading can hold the
-        // word the card prints for "nothing here" — NONE, N/A, a dash — and
-        // this list is offered straight into the member's answers. Cards read
-        // before card-placeholder.ts existed still carry those values, so the
-        // guard has to be here at the offer, not only where they are written.
+        // ⚠️ "NONE" IS KEPT NOW (operator, 2026-10-17). This ran answerValue(),
+        // so a stored reading of "Frame Serial No NONE" was offered as nothing
+        // and the applied-for firearm's 271 box printed blank. The word is a
+        // fact off the card and it reaches the member's answers; only the
+        // writer's prose boundary strips it. See card-placeholder-boundary.spec.
         suggestions = Object.entries(read ?? {})
           .map(([key, value]) => ({
             key,
-            value: typeof value === 'string' ? answerValue(value) : '',
+            value: printedAnswerValue(typeof value === 'string' ? value : ''),
             label: key,
           }))
           .filter((s) => s.value !== '');
