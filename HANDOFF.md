@@ -5,7 +5,23 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-17**.
+Last updated: **2026-10-18**.
+
+## 2026-10-18 - SIGNED ACTION LINKS FOR WHATSAPP, EMAIL, SMS AND PRIVATE ARRANGE (FULL DEPLOY)
+
+**One action model across channels.** Sales, offers, counters, outbid and auction-win notifications now use the same signed `/a/<token>` action link and the same action verbs in WhatsApp, email, SMS and the in-app inbox. WhatsApp quick replies for `Accept`/`Decline` are resolved from the tapped message's `context.id` and the sender's phone, not from anything in the button text.
+
+**Private Arrangement has a real action page.** `PRIVATE_ARRANGE_ACTION` tokens are minted for the seller and buyer; `/a/<token>` offers seller `Item delivered`, buyer `Item received` and either party `Dispute` without a session. The PA handover, delivery and buyer-reminder emails/SMS/in-app rows now use that page instead of `/transactions/<id>`.
+
+**Declines match email/SMS.** WhatsApp sale and offer declines send the reason-picker link instead of silently recording `Declined via WhatsApp`/`OTHER`. Courier decline keeps its existing reason-picker, and counter decline still rejects directly.
+
+Gates: backend `tsc` clean + **364 suites / 5 682 tests** (8 skipped); frontend `tsc` clean + **142 files / 1 754 tests** (1 skipped), foreground production build exit 0.
+
+Commit **`6e95e447`**. Full deploy at 21:00 SAST: rollback `alloutdoor-20261018-210052.dump` (32 720 157 bytes), no pending migrations, health x2 OK, warden reloaded and online, public 200 x2, backend/frontend/warden all online.
+
+**Know.** The Meta English template deletion lock is active until roughly 24-25 Oct. The four missing templates (`dealer_collection_ready_buyer`, `motivation_ready_applicant`, `motivation_needs_info_applicant`, `motivation_failed_applicant`) and the eight planned quick-reply/URL edits are still pending; quick replies will not fire until those templates are edited and approved. `bid_outbid_buyer` is still MARKETING, so its marketing-consent decision remains open. The PA action page and decline links are live now.
+
+**Unrelated worktree state.** The tree still carries the pre-existing motivation-golden scripts in `backend/package.json`, the motivation changes and repo-wide CRLF-only stat noise. They were not committed. The deploy ran from a clean detached worktree at `6e95e447` because `deploy.sh` refuses a dirty tree.
 
 ## 2026-10-17 — INVALIDATE THE FROZEN RESEARCH (BACKEND DEPLOY)
 
