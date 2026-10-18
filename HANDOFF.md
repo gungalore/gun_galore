@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-10-18**.
 
+## 2026-10-18 - PER-DEVICE PUSH SUBSCRIPTIONS AND APP BADGE (FRONTEND-ONLY DEPLOY)
+
+**Push is per device again.** `usePush` used `/push/me` (an account-wide answer) as if it meant "this device is enabled", so a second phone/laptop never showed the opt-in prompt when another device was already subscribed. It now requires both the account row **and** a local `pushManager.getSubscription()`. The backend already fans out to every `PushSubscription` row for the user.
+
+**App-icon badge.** The service worker now mirrors the active notification count with `setAppBadge()` on push and `clearAppBadge()` when none remain; `notificationclose` also resyncs. The `badge` option on `showNotification` is only the status-bar glyph, not the launcher count.
+
+Gates: frontend `tsc` clean + **143 files / 1 756 tests** (1 skipped), production build exit 0. Backend unchanged.
+
+Commit **`93cbb7e2`**. Frontend-only deploy at 21:28 SAST: rollback `alloutdoor-20261018-212820.dump` (32 720 602 bytes), health x2 OK, public 200 x2, backend/frontend/warden all online.
+
+**Test sent.** A real `test_notification` inbox row was created for `turbosnail` and pushed to both FCM subscriptions; both sends were accepted. Existing clients keep the old service worker until every tab/PWA window is closed and reopened, or the update banner is accepted; only then will the new app-icon badge code run. Android/Samsung launchers must also have notification badges enabled.
+
 ## 2026-10-18 - SIGNED ACTION LINKS FOR WHATSAPP, EMAIL, SMS AND PRIVATE ARRANGE (FULL DEPLOY)
 
 **One action model across channels.** Sales, offers, counters, outbid and auction-win notifications now use the same signed `/a/<token>` action link and the same action verbs in WhatsApp, email, SMS and the in-app inbox. WhatsApp quick replies for `Accept`/`Decline` are resolved from the tapped message's `context.id` and the sender's phone, not from anything in the button text.
