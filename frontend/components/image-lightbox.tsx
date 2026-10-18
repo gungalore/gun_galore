@@ -120,8 +120,8 @@ export function ImageLightbox({
         style={{
           ...squareButton,
           position: 'absolute',
-          top: 16,
-          right: 16,
+          top: 'max(16px, env(safe-area-inset-top))',
+          right: 'max(16px, env(safe-area-inset-right))',
           width: 40,
           height: 40,
           borderRadius: 20,
@@ -136,8 +136,8 @@ export function ImageLightbox({
         <div
           style={{
             position: 'absolute',
-            top: 22,
-            left: 22,
+            top: 'max(22px, env(safe-area-inset-top))',
+            left: 'max(22px, env(safe-area-inset-left))',
             color: 'rgba(255,255,255,0.7)',
             fontSize: 13,
             fontFamily: 'ui-monospace, monospace',
@@ -279,7 +279,9 @@ export function ImageLightbox({
         <div
           style={{
             position: 'absolute',
-            bottom: count > 1 ? 110 : 22,
+            bottom: count > 1
+              ? 'calc(110px + env(safe-area-inset-bottom))'
+              : 'max(22px, env(safe-area-inset-bottom))',
             color: 'rgba(255,255,255,0.5)',
             fontSize: 11,
             letterSpacing: '0.04em',
@@ -295,7 +297,7 @@ export function ImageLightbox({
           onClick={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',
-            bottom: 16,
+            bottom: 'max(16px, env(safe-area-inset-bottom))',
             left: '50%',
             transform: 'translateX(-50%)',
             display: 'flex',

@@ -56,6 +56,10 @@ export function NotificationsTabs({
           <Link
             key={tab.key}
             href={`/notifications?tab=${tab.query}`}
+            // Tabs are filters, not destinations. Pushing each one left the
+            // Android/iOS back gesture cycling Buyer -> Seller -> Account
+            // instead of leaving Notifications for the page that opened it.
+            replace
             style={{
               display: 'inline-flex',
               alignItems: 'center',

@@ -274,8 +274,13 @@ function PushHeader({ pathname }: { pathname: string }) {
           // history.back() where there is history, so the member returns to
           // their filters and scroll position rather than being dropped on the
           // home page. A cold entry from a shared link has none.
+          //
+          // Notifications is the one push destination whose fallback should be
+          // Account, not Home: a cold open from the OS notification has no
+          // previous page, and "back" from there should land on the member's
+          // own surface rather than the shop front.
           if (window.history.length > 1) router.back();
-          else router.push('/');
+          else router.push(pathname.startsWith('/notifications') ? '/account' : '/');
         }}
         aria-label="Back"
         className="gg-press"

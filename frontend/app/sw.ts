@@ -331,7 +331,7 @@ self.addEventListener('push', (event) => {
         // Monochrome white-on-transparent glyph - Android renders the badge
         // as a single-colour alpha mask; a full-colour icon degrades to a
         // grey blob in the status bar.
-        badge: '/badge-72.png',
+        badge: '/notification-icon.png',
         tag: payload.tag,
         data: { url },
         requireInteraction: false,

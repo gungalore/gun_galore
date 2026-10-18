@@ -28,6 +28,23 @@ function resolveTheme(preference: ThemeValue): ResolvedTheme {
   return preference;
 }
 
+// The viewport export emits two <meta name="theme-color"> tags selected by
+// prefers-color-scheme. That is fine for the OS default, but this app also has
+// an explicit light/dark control: a member who chooses dark on a light-OS phone
+// was still giving Android a light theme-color, which paints the system
+// navigation bar as a white slab under our dark tab bar. Keep the meta in step
+// with the theme we are actually rendering.
+const THEME_COLOR: Record<ResolvedTheme, string> = {
+  light: '#F7F6F3',
+  dark: '#131110',
+};
+
+function syncThemeColor(theme: ResolvedTheme): void {
+  document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+    meta.setAttribute('content', THEME_COLOR[theme]);
+  });
+}
+
 export function useTheme() {
   // ⚠️ THE FIRST RENDER IS ALWAYS 'light', AND THAT IS THE FIX FOR A REAL
   // HYDRATION MISMATCH (found 2026-09-30, once the toggle was mounted in the
@@ -80,6 +97,7 @@ export function useTheme() {
       return;
     }
     document.documentElement.dataset.theme = theme;
+    syncThemeColor(theme);
   }, [theme]);
 
   // Listen for external theme changes (direct DOM manipulation)
