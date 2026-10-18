@@ -7,6 +7,22 @@ overwritten.
 
 Last updated: **2026-10-18**.
 
+## 2026-10-18 - MOBILE CHROME, NOTIFICATION ICON AND BACK STACK (FRONTEND-ONLY DEPLOY)
+
+**Android system chrome.** The app could render dark while the `theme-color` meta stayed on the light arm (the media query follows the OS, not the member's explicit choice), so Android painted a white navigation bar under the dark tab bar. The pre-paint theme script and `useTheme` now rewrite every `theme-color` meta to the rendered theme.
+
+**Notification icon.** Android was using the full-colour logo as the small notification icon. Added `notification-icon.png` (white alpha silhouette) and pointed the service worker `badge` at it.
+
+**Notifications back stack.** Buyer/Seller/Account were history entries, so Android/iOS back cycled through them. The tabs now use `replace`; the header back button falls back to `/account` when Notifications was opened cold from a push.
+
+**Notch safety.** The photo lightbox close button, counter, hint and thumbnails now respect `safe-area-inset-top/right/bottom`.
+
+Gates: frontend `tsc` clean + **143 files / 1 756 tests** (1 skipped), production build exit 0. Backend unchanged.
+
+Commit **`635e0e1d`**. Frontend-only deploy at 22:12 SAST: rollback `alloutdoor-20261018-221201.dump` (32 723 348 bytes), health x2 OK, public 200 x2, backend/frontend/warden all online.
+
+**Know.** The service worker must finish an update (close/reopen the PWA or accept the update banner) before the new notification icon and app-badge code apply. Android/Samsung must also have notification badges enabled.
+
 ## 2026-10-18 - APPLE PUSH IPV4 FIX (FULL DEPLOY)
 
 **iPhone push timed out, every time.** Samsung/Windows FCM accepted the test, but `web.push.apple.com` returned `ETIMEDOUT`. The same request with an IPv4-only HTTPS agent returns `201` in under a second. `PushService` now uses `new Agent({ family: 4, keepAlive: true })` for Apple endpoints only; FCM keeps the default agent.
