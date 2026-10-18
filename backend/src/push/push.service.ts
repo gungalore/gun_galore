@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Agent } from 'https';
 import * as webpush from 'web-push';
 import { PrismaService } from '../prisma/prisma.service';
 import { SUPPORT_EMAIL } from '../common/brand';
@@ -33,6 +34,13 @@ import { NotificationCategory } from '@prisma/client';
 export class PushService implements OnModuleInit {
   private readonly logger = new Logger(PushService.name);
   private vapidConfigured = false;
+  /**
+   * Apple's push edge intermittently black-holes IPv6 from this box: the
+   * connection sits until ETIMEDOUT, even though the same request over IPv4
+   * answers in under a second. Force IPv4 for Apple only; FCM is happy on
+   * either family and keeps the default agent.
+   */
+  private readonly appleAgent = new Agent({ family: 4, keepAlive: true });
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -217,7 +225,12 @@ export class PushService implements OnModuleInit {
                 keys: { p256dh: sub.p256dh, auth: sub.auth },
               },
               json,
-              { TTL: 60 * 60 * 24 }, // 24h — drop if undelivered
+              {
+                TTL: 60 * 60 * 24, // 24h �?" drop if undelivered
+                ...(sub.endpoint.startsWith('https://web.push.apple.com/')
+                  ? { agent: this.appleAgent }
+                  : {}),
+              },
             );
             sent += 1;
             // Bump lastUsedAt asynchronously — don't block on this.
