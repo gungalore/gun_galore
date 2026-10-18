@@ -310,7 +310,7 @@ export class ComplaintsModule {}
 `ActionTokensModule` mints short, single-purpose, user-bound, expiring tokens
 that go out in SMS messages. The URL is `/a/<token>`; the page resolves it
 server-side and renders a UI scoped to exactly one action (accept this offer,
-verify your identity, pay for this item).
+verify your identity, pay for this item, confirm a private handover).
 
 The token *is* the credential. `/a/(.*)` is a public route in the middleware
 for that reason. Tokens are counted on invalid/wrong-purpose use and lock out

@@ -1,4 +1,4 @@
-﻿import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
 import { FeeModel, NotificationCategory } from '@prisma/client';
 import { SmsService } from '../sms/sms.service';
@@ -864,6 +864,8 @@ export class NotificationsService {
     hoursLeft: number;
     /** One-tap accept/reject link (TRANSACTION_ACCEPT token) when minted. */
     actionUrl?: string;
+    /** The raw token behind actionUrl, for the WhatsApp a<token> link. */
+    actionToken?: string;
   }) {
     const overdue = d.hoursLeft <= 0;
     const url = d.actionUrl ?? `${this.appUrl}/transactions/${d.transactionId}`;
@@ -876,7 +878,9 @@ export class NotificationsService {
       body: overdue
         ? `You didn't respond to the sale of ${d.listingTitle} in time — our team is reviewing it. Accept or decline NOW to keep the sale.`
         : `The buyer of ${d.listingTitle} has paid and is waiting. Accept or decline before the deadline or the sale escalates to support.`,
-      url: `/transactions/${d.transactionId}`,
+      url: d.actionToken
+        ? `/a/${d.actionToken}`
+        : `/transactions/${d.transactionId}`,
       iconKey: 'sold',
       linkedType: 'transaction',
       linkedId: d.transactionId,
@@ -900,20 +904,24 @@ export class NotificationsService {
       d.sellerEmail,
       overdue
         ? `Overdue: respond to your sale — ${d.listingTitle}`
-        : `Reminder: ~${d.hoursLeft}h left to accept — ${d.listingTitle}`,
+        : `Reminder: ~${d.hoursLeft}h left to accept or decline — ${d.listingTitle}`,
       html,
     );
     await this.sendSms(
       d.sellerPhone,
       overdue
         ? `ALL Outdoor: your sale of ${truncate(d.listingTitle, 24)} is OVERDUE for a response. Act now: ${url}`
-        : `ALL Outdoor: ~${d.hoursLeft}h left to accept your sale of ${truncate(d.listingTitle, 24)}. One tap: ${url}`,
+        : `ALL Outdoor: ~${d.hoursLeft}h left to accept/decline your sale of ${truncate(d.listingTitle, 24)}. One tap: ${url}`,
       `accept-reminder-${d.transactionId}${overdue ? '-overdue' : ''}`,
       {
         whatsapp: {
           templateKey: 'sale_accept_reminder_seller',
           vars: {
             ref: orderRef({ id: d.transactionId }),
+            code: d.actionToken
+              ? `a${d.actionToken}`
+              : `t${d.transactionId}`,
+            // Extra var for the inbound quick-reply handler.
             txId: d.transactionId,
           },
         },
@@ -945,7 +953,7 @@ export class NotificationsService {
       type: 'offer_expiry_reminder',
       title: `~${d.hoursLeft}h left to answer an offer`,
       body: `${d.buyerName}'s ${formatRand(d.offerAmount)} offer on ${d.listingTitle} expires soon — accept, counter or decline before it lapses.`,
-      url: '/offers/received',
+      url: d.actionUrl ?? '/offers/received',
       iconKey: 'offer',
       linkedType: 'offer',
       linkedId: d.offerId,
@@ -971,7 +979,7 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.sellerPhone,
-        `ALL Outdoor: ~${d.hoursLeft}h left to answer R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 22)}. Decide: ${d.actionUrl}`,
+        `ALL Outdoor: ~${d.hoursLeft}h left to answer R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 22)}. Accept/decline/counter: ${d.actionUrl}`,
         `offer-reminder-${d.offerId}`,
       );
     }
@@ -1038,7 +1046,7 @@ export class NotificationsService {
       type: 'offer_pay_reminder',
       title: `~${d.hoursLeft}h left to pay`,
       body: `Your offer on ${d.listingTitle} was accepted — pay within about ${d.hoursLeft}h to keep it.`,
-      url: `/listings/${d.listingId}`,
+      url: d.actionUrl ?? `/listings/${d.listingId}`,
       iconKey: 'cart',
       linkedType: 'offer',
       linkedId: d.offerId,
@@ -1089,7 +1097,7 @@ export class NotificationsService {
       type: 'auction_pay_reminder',
       title: `~${d.hoursLeft}h left to pay for your win`,
       body: `You won ${d.listingTitle} — pay within about ${d.hoursLeft}h to keep it.`,
-      url: `/listings/${d.listingId}`,
+      url: d.actionUrl ?? `/listings/${d.listingId}`,
       iconKey: 'cart',
       linkedType: 'listing',
       linkedId: d.listingId,
@@ -1151,7 +1159,7 @@ export class NotificationsService {
       type: 'new_sale',
       title: 'Your listing sold',
       body: hasAcceptToken
-        ? `${d.listingTitle} sold — ${formatRand(sellerRows.net)} to you, accept within 48h`
+        ? `${d.listingTitle} sold — ${formatRand(sellerRows.net)} to you, accept or decline within 48h`
         : `${d.listingTitle} sold — ${formatRand(sellerRows.net)} to you, dispatch within 48h`,
       // When we have a token URL, point the inbox row at it directly so
       // tapping the row → /a/<token> → Accept page works without sign-in.
@@ -1177,8 +1185,8 @@ export class NotificationsService {
     // the paperwork in parallel).
     const acceptLede = hasAcceptToken
       ? isCollection
-        ? `<p style="margin: 0 0 14px;"><b>First — confirm you can fulfil this sale within 48 hours.</b> Tap the Accept button below to lock the sale in. This item is collected in person — the buyer's contact details are on the sale page, so arrange the handover once you've accepted.</p>`
-        : `<p style="margin: 0 0 14px;"><b>First — confirm you can fulfil this sale within 48 hours.</b> Tap the Accept button below to lock the sale in. After accepting you have 5 days to dispatch.</p>`
+        ? `<p style="margin: 0 0 14px;"><b>First — confirm you can fulfil this sale within 48 hours.</b> Tap the button below to accept or decline. This item is collected in person — the buyer's contact details are on the sale page, so arrange the handover once you've accepted.</p>`
+        : `<p style="margin: 0 0 14px;"><b>First — confirm you can fulfil this sale within 48 hours.</b> Tap the button below to accept or decline. After accepting you have 5 days to dispatch.</p>`
       : '';
     const bodyText = isDealerTransfer
       ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by ALL Outdoor. Once you transfer the firearm to the chosen dealer, you'll need to upload 3 photos so we can verify the stock-in before releasing your payout:
@@ -1194,7 +1202,7 @@ export class NotificationsService {
 
     const html = this.email({
       status: { tone: 'success', label: 'New sale' },
-      headline: hasAcceptToken ? 'New sale — accept within 48h' : 'You have a new sale',
+      headline: hasAcceptToken ? 'New sale — accept or decline within 48h' : 'You have a new sale',
       body: bodyText,
       // ⚠️ THE SUBTRACTION HAS TO BE TRUE.
       //
@@ -1218,13 +1226,13 @@ export class NotificationsService {
         },
       ],
       cta: hasAcceptToken
-        ? { label: 'Accept this sale', url: acceptUrl }
+        ? { label: 'Accept or decline', url: acceptUrl }
         : { label: 'View sale', url: txUrl },
       // The model note always rides along: under the markup model a seller
       // seeing no commission row needs to know why, and under the deduct
       // model it says plainly who carried the gateway fee.
       footnote: hasAcceptToken
-        ? `One-tap accept — no sign-in needed. Link expires in 48 hours. ${sellerRows.note}`
+        ? `One-tap accept or decline — no sign-in needed. Link expires in 48 hours. ${sellerRows.note}`
         : sellerRows.note,
       preheader: `New sale — ${d.listingTitle}`,
     });
@@ -1236,10 +1244,10 @@ export class NotificationsService {
     // no token, fall back to the legacy "see email" copy.
     const smsBody = hasAcceptToken
       ? isDealerTransfer
-        ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (then 5d to dispatch): ${acceptUrl}`
+        ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept/decline within 48h (then 5d to dispatch): ${acceptUrl}`
         : isCollection
-          ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (collection - arrange pickup): ${acceptUrl}`
-          : `ALL Outdoor: New sale ${truncate(d.listingTitle, 28)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h: ${acceptUrl}`
+          ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept/decline within 48h (collection - arrange pickup): ${acceptUrl}`
+          : `ALL Outdoor: New sale ${truncate(d.listingTitle, 28)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept/decline within 48h: ${acceptUrl}`
       : isDealerTransfer
         ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 30)} - R${(d.sellerPayout / 100).toFixed(0)}. After dealer transfer, upload 3 photos (SAPS 534 BLOCK LETTERS) to release payout. See email.`
         : isCollection
@@ -1255,6 +1263,14 @@ export class NotificationsService {
               templateKey: 'new_sale_seller',
               vars: {
                 ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
+                // a<token> opens the signed-out accept page; t<txId> is the
+                // fallback when the token mint failed (and lands on the
+                // signed-in transaction page, as before).
+                code: d.acceptActionToken
+                  ? `a${d.acceptActionToken}`
+                  : `t${d.transactionId}`,
+                // Extra var (not in the template): the webhook needs the
+                // transaction id on an Accept/Decline quick reply.
                 txId: d.transactionId,
               },
             }
@@ -1264,12 +1280,16 @@ export class NotificationsService {
                 vars: {
                   ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
                   acceptToken: d.acceptActionToken,
+                  // Extra var (not in the template body/button): the webhook
+                  // uses it to resolve the transaction on an Accept tap.
+                  txId: d.transactionId,
                 },
               }
             : {
                 templateKey: 'new_sale_seller',
                 vars: {
                   ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
+                  code: `t${d.transactionId}`,
                   txId: d.transactionId,
                 },
               },
@@ -2429,7 +2449,7 @@ export class NotificationsService {
       body: qualifies
         ? `${d.buyerName} offered ${formatRand(d.offerAmount)} on ${d.listingTitle} — meets your auto-accept price. Confirm to sell.`
         : `${d.buyerName} offered ${formatRand(d.offerAmount)} on ${d.listingTitle}`,
-      url: '/offers/received',
+      url: d.actionUrl ?? '/offers/received',
       iconKey: 'offer',
       linkedType: 'offer',
       linkedId: d.offerId,
@@ -2463,12 +2483,20 @@ export class NotificationsService {
         d.sellerPhone,
         qualifies
           ? `ALL Outdoor: R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 24)} MEETS your asking price. Confirm: ${d.actionUrl}`
-          : `ALL Outdoor: ${truncate(d.buyerName, 20)} offered R${Math.round(d.offerAmount / 100)} on ${truncate(d.listingTitle, 28)}. Decide: ${d.actionUrl}`,
+          : `ALL Outdoor: ${truncate(d.buyerName, 20)} offered R${Math.round(d.offerAmount / 100)} on ${truncate(d.listingTitle, 28)}. Accept/decline/counter: ${d.actionUrl}`,
         `offer-${d.offerId}`,
         {
           whatsapp: {
             templateKey: 'offer_received_seller',
-            vars: {},
+            // Extra vars for the inbound quick-reply handler and the
+            // post-lock dynamic URL (a<actionToken>). The approved template
+            // is still the static /t/r list link, so `code` is inert for now.
+            vars: {
+              offerId: d.offerId,
+              code: d.actionUrl
+                ? `a${d.actionUrl.split('/').pop()}`
+                : 'r',
+            },
           },
         },
       );
@@ -2569,7 +2597,7 @@ export class NotificationsService {
       type: 'offer_accepted',
       title: 'Offer accepted — pay within 24h',
       body: `${d.listingTitle} — ${formatRand(d.acceptedAmount)}`,
-      url: `/checkout/offer/${d.offerId}`,
+      url: d.actionUrl ?? `/checkout/offer/${d.offerId}`,
       iconKey: 'offer',
       linkedType: 'offer',
       linkedId: d.offerId,
@@ -2591,7 +2619,12 @@ export class NotificationsService {
         {
           whatsapp: {
             templateKey: 'offer_accepted_buyer',
-            vars: {},
+            vars: {
+              offerId: d.offerId,
+              code: d.actionUrl
+                ? `a${d.actionUrl.split('/').pop()}`
+                : 'y',
+            },
           },
         },
       );
@@ -2663,7 +2696,7 @@ export class NotificationsService {
       headline: 'Counter-offer received',
       body: `Hi ${b(d.buyerName)}, the seller has countered your offer on ${b(d.listingTitle)}. You can accept or reject the counter. This is the final offer and it expires in 24 hours.`,
       rows,
-      cta: { label: 'Respond to counter', url },
+      cta: { label: 'Accept or decline', url },
       preheader: `Seller countered at ${formatRand(d.counterAmount)}`,
     });
     await this.send(d.buyerEmail, 'Counter-offer on: ' + d.listingTitle, html);
@@ -2677,7 +2710,7 @@ export class NotificationsService {
       type: 'offer_countered',
       title: 'Seller countered your offer',
       body: `${d.listingTitle} — ${formatRand(d.originalAmount)} → ${formatRand(d.counterAmount)}`,
-      url: '/my/offers',
+      url: d.actionUrl ?? '/my/offers',
       iconKey: 'offer',
       linkedType: 'offer',
       linkedId: d.offerId,
@@ -2686,12 +2719,17 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.buyerPhone,
-        `ALL Outdoor: Seller countered at R${Math.round(d.counterAmount / 100)} on ${truncate(d.listingTitle, 28)}. 24h to respond: ${d.actionUrl}`,
+        `ALL Outdoor: Seller countered at R${Math.round(d.counterAmount / 100)} on ${truncate(d.listingTitle, 28)}. Accept/decline within 24h: ${d.actionUrl}`,
         `counter-${d.offerId}`,
         {
           whatsapp: {
             templateKey: 'offer_countered_buyer',
-            vars: {},
+            vars: {
+              offerId: d.offerId,
+              code: d.actionUrl
+                ? `a${d.actionUrl.split('/').pop()}`
+                : 'y',
+            },
           },
         },
       );
@@ -3039,7 +3077,7 @@ export class NotificationsService {
       type: 'bid_outbid',
       title: "You've been outbid",
       body: `${listingTitle} — current bid ${formatRand(newAmount)}`,
-      url: listingId ? `/listings/${listingId}` : '/',
+      url: actionUrl ?? (listingId ? `/listings/${listingId}` : '/'),
       iconKey: 'bid',
       linkedType: 'listing',
       linkedId: listingId,
@@ -3049,13 +3087,13 @@ export class NotificationsService {
       status: { tone: 'error', label: 'Outbid' },
       headline: "You've been outbid",
       body: `Another bidder has overtaken you on ${b(listingTitle)}. The current high bid is now ${b(formatRand(newAmount))}. You can raise your maximum bid to take the lead — the system will only bid up to that amount on your behalf.`,
-      cta: { label: 'Raise your bid', url },
+      cta: { label: 'Bid again', url },
       preheader: `Outbid — high bid is now ${formatRand(newAmount)}`,
     });
     await this.send(buyerEmail, 'Outbid on: ' + listingTitle, html);
     if (buyerPhone) {
       const smsBody = actionUrl
-        ? `ALL Outdoor: Outbid on ${truncate(listingTitle, 26)} — high R${(newAmount / 100).toFixed(0)}. Raise: ${actionUrl}`
+        ? `ALL Outdoor: Outbid on ${truncate(listingTitle, 26)} — high R${(newAmount / 100).toFixed(0)}. Bid again: ${actionUrl}`
         : `ALL Outdoor: Outbid on ${truncate(listingTitle, 30)} — current bid R${(newAmount / 100).toFixed(0)}.`;
       await this.sendSms(
         buyerPhone,
@@ -3064,7 +3102,12 @@ export class NotificationsService {
         {
           whatsapp: {
             templateKey: 'bid_outbid_buyer',
-            vars: {},
+            vars: {
+              listingId: listingId ?? '',
+              code: actionUrl
+                ? `a${actionUrl.split('/').pop()}`
+                : 'w',
+            },
           },
         },
       );
@@ -3164,7 +3207,7 @@ export class NotificationsService {
       type: 'auction_won',
       title: 'You won — pay within 24h',
       body: `${listingTitle} for ${formatRand(amount)}`,
-      url: listingId ? `/checkout/${listingId}` : '/my/bids',
+      url: actionUrl ?? (listingId ? `/checkout/${listingId}` : '/my/bids'),
       iconKey: 'trophy',
       linkedType: 'listing',
       linkedId: listingId,
@@ -3181,12 +3224,17 @@ export class NotificationsService {
     if (winnerPhone) {
       await this.sendSms(
         winnerPhone,
-        `ALL Outdoor: You WON ${truncate(listingTitle, 26)} for R${(amount / 100).toFixed(0)}. 24h to pay: ${url}`,
+        `ALL Outdoor: You WON ${truncate(listingTitle, 26)} for R${(amount / 100).toFixed(0)}. Pay within 24h: ${url}`,
         `auction-won-${listingId ?? 'x'}`,
         {
           whatsapp: {
             templateKey: 'auction_won_buyer',
-            vars: {},
+            vars: {
+              listingId: listingId ?? '',
+              code: actionUrl
+                ? `a${actionUrl.split('/').pop()}`
+                : 'w',
+            },
           },
         },
       );
@@ -4253,14 +4301,17 @@ export class NotificationsService {
     sellerPhone: string | null;
     listingTitle: string;
     transactionId: string;
+    /** One-use, seller-scoped /a/<token> handover link. */
+    actionUrl?: string;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const url = d.actionUrl ?? txUrl;
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
       type: 'private_arrange_handover',
       title: 'Arrange the handover',
-      body: `${d.listingTitle} is paid — arrange the handover and mark it delivered. Your payment releases when the buyer confirms receipt.`,
-      url: txUrl,
+      body: `${d.listingTitle} is paid - arrange the handover and mark it delivered. Your payment releases when the buyer confirms receipt.`,
+      url,
       iconKey: 'transaction',
       linkedType: 'transaction',
       linkedId: d.transactionId,
@@ -4274,13 +4325,13 @@ export class NotificationsService {
         headline: 'Arrange the handover',
         body: `Hi ${b(d.sellerName)}, ${b(d.listingTitle)} is paid for. Arrange the handover with the buyer and mark it delivered when done. Your payment releases when the buyer confirms receipt, or 5 days after payment.`,
         rows: [{ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() }],
-        cta: { label: 'Open order', url: txUrl },
+        cta: { label: 'Open handover', url },
         preheader: `Arrange the handover for ${d.listingTitle}`,
       }),
     );
     await this.sendSms(
       d.sellerPhone,
-      `ALL Outdoor: ${truncate(d.listingTitle, 30)} is paid. Arrange the handover and mark it delivered. Payment releases when the buyer confirms.`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 30)} is paid. Arrange the handover and mark it delivered. Payment releases when the buyer confirms.${d.actionUrl ? ` Open: ${d.actionUrl}` : ''}`,
       `pa-handover-${d.transactionId}`,
       {
         whatsapp: {
@@ -4302,14 +4353,17 @@ export class NotificationsService {
     buyerPhone: string | null;
     listingTitle: string;
     transactionId: string;
+    /** One-use, buyer-scoped /a/<token> confirm/dispute link. */
+    actionUrl?: string;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const url = d.actionUrl ?? txUrl;
     await this.persistByEmail(d.buyerEmail, {
       category: 'BUYER',
       type: 'private_arrange_delivered',
       title: 'Confirm you received your item',
-      body: `${d.listingTitle} — the seller marked it delivered. Confirm receipt to release the seller's payment.`,
-      url: txUrl,
+      body: `${d.listingTitle} - the seller marked it delivered. Confirm receipt to release the seller's payment.`,
+      url,
       iconKey: 'transaction',
       linkedType: 'transaction',
       linkedId: d.transactionId,
@@ -4318,15 +4372,15 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'pending', label: 'Action needed' },
       headline: 'Did you receive your item?',
-      body: `Hi ${b(d.buyerName)}, the seller marked ${b(d.listingTitle)} as delivered. If you've received it, please confirm on the order page — that releases the seller's payment. If something's wrong, raise a dispute instead and we'll hold the funds while we help.`,
+      body: `Hi ${b(d.buyerName)}, the seller marked ${b(d.listingTitle)} as delivered. If you've received it, please confirm on the handover page — that releases the seller's payment. If something's wrong, raise a dispute instead and we'll hold the funds while we help.`,
       rows: [{ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() }],
-      cta: { label: 'Confirm receipt', url: txUrl },
+      cta: { label: 'Confirm receipt or dispute', url },
       preheader: `Confirm receipt of ${d.listingTitle}`,
     });
     await this.send(d.buyerEmail, 'Confirm you received: ' + d.listingTitle, html);
     await this.sendSms(
       d.buyerPhone,
-      `ALL Outdoor: seller marked ${truncate(d.listingTitle, 30)} delivered. Confirm receipt in the app to release payment, or raise a dispute.`,
+      `ALL Outdoor: seller marked ${truncate(d.listingTitle, 30)} delivered. Confirm receipt to release payment, or dispute.${d.actionUrl ? ` Open: ${d.actionUrl}` : ''}`,
       `pa-delivered-${d.transactionId}`,
       {
         whatsapp: {
@@ -4344,14 +4398,17 @@ export class NotificationsService {
     buyerPhone: string | null;
     listingTitle: string;
     transactionId: string;
+    /** Fresh one-use, buyer-scoped /a/<token> confirm/dispute link. */
+    actionUrl?: string;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const url = d.actionUrl ?? txUrl;
     await this.persistByEmail(d.buyerEmail, {
       category: 'BUYER',
       type: 'private_arrange_reminder',
       title: 'Still need to confirm receipt',
-      body: `${d.listingTitle} — please confirm you received it, or raise a dispute. Funds auto-release to the seller 5 days after payment.`,
-      url: txUrl,
+      body: `${d.listingTitle} - please confirm you received it, or raise a dispute. Funds auto-release to the seller 5 days after payment.`,
+      url,
       iconKey: 'transaction',
       linkedType: 'transaction',
       linkedId: d.transactionId,
@@ -4365,13 +4422,13 @@ export class NotificationsService {
         headline: 'Please confirm you received your item',
         body: `Hi ${b(d.buyerName)}, we haven't heard from you about ${b(d.listingTitle)}. Please confirm receipt (or raise a dispute) — the payment auto-releases to the seller 5 days after you paid.`,
         rows: [{ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() }],
-        cta: { label: 'Open order', url: txUrl },
+        cta: { label: 'Confirm receipt or dispute', url },
         preheader: `Reminder: confirm receipt of ${d.listingTitle}`,
       }),
     );
     await this.sendSms(
       d.buyerPhone,
-      `ALL Outdoor: please confirm you received ${truncate(d.listingTitle, 30)} (or dispute). Payment auto-releases to the seller 5 days after payment.`,
+      `ALL Outdoor: please confirm you received ${truncate(d.listingTitle, 30)} (or dispute). Payment auto-releases to the seller 5 days after payment.${d.actionUrl ? ` Open: ${d.actionUrl}` : ''}`,
       `pa-reminder-${d.transactionId}`,
       {
         whatsapp: {

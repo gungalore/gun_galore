@@ -1,6 +1,5 @@
 ﻿import { redirect } from 'next/navigation';
 import { Logo } from '@/components/brand/Logo';
-import { av } from '@/lib/asset-version';
 import { apiFetch } from '@/lib/api';
 import { withDiagnostics } from '@/lib/scan/diag-flag';
 import { ActionTokenError } from './error-screen';
@@ -11,6 +10,10 @@ import {
   type TransactionAcceptPayload,
 } from './transaction-accept';
 import { RunnerUpPage, type RunnerUpPayload } from './runner-up';
+import {
+  PrivateArrangeActionPage,
+  type PrivateArrangeActionPayload,
+} from './private-arrange-action';
 
 /**
  * Universal SMS-link landing page. URL pattern: `/a/<token>`.
@@ -41,7 +44,8 @@ type ResolvedPayload =
   | KycVerifyPayload
   | TransactionAcceptPayload
   | ScanHandoffPayload
-  | RunnerUpPayload;
+  | RunnerUpPayload
+  | PrivateArrangeActionPayload;
 
 interface CheckoutPayload {
   kind: 'CHECKOUT';
@@ -162,6 +166,8 @@ export default async function ActionTokenPage({
         <TransactionAcceptPage token={token} payload={payload} />
       ) : payload.kind === 'AUCTION_RUNNER_UP' ? (
         <RunnerUpPage token={token} payload={payload} />
+      ) : payload.kind === 'PRIVATE_ARRANGE_ACTION' ? (
+        <PrivateArrangeActionPage token={token} payload={payload} />
       ) : (
         <ActionTokenError status={500} />
       )}

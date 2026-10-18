@@ -11,6 +11,7 @@
  * |--------------------|-------------------------|
  * | `t<transactionId>` | `/transactions/<id>`    |
  * | `o<orderId>`       | `/orders/<id>`          |
+ * | `a<actionToken>`   | `/a/<token>`            |
  * | `m<motivationId>`  | `/licence-centre/<id>`  |
  * | `p`                | `/profile/edit`         |
  * | `b`                | `/my/orders`            |
@@ -39,6 +40,12 @@
 // resulting path.
 const ID_PATTERN = /^[a-z0-9]{10,40}$/i;
 
+// ActionTokensService mints 16 random bytes as base64url (~22 chars), which
+// may contain `-` and `_`. That is still a fixed, same-origin destination
+// (/a/<token>), so this is a shape check for the redirect table, not an
+// authentication decision — the backend re-validates the token.
+const ACTION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,64}$/;
+
 function isPlausibleId(id: string): boolean {
   return ID_PATTERN.test(id);
 }
@@ -63,6 +70,7 @@ export function resolveShortCode(code: string): string {
 
   if (kind === 't' && isPlausibleId(id)) return `/transactions/${id}`;
   if (kind === 'o' && isPlausibleId(id)) return `/orders/${id}`;
+  if (kind === 'a' && ACTION_TOKEN_PATTERN.test(id)) return `/a/${id}`;
   if (kind === 'm' && isPlausibleId(id)) return `/licence-centre/${id}`;
 
   return '/';

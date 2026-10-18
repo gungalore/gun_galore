@@ -3018,6 +3018,7 @@ export class TransactionsService {
         if (claim.count === 0) continue;
         // Fresh one-tap accept link, expiring with the deadline itself.
         let actionUrl: string | undefined;
+        let actionToken: string | undefined;
         try {
           const token = await this.tokens.mint({
             purpose: 'TRANSACTION_ACCEPT',
@@ -3026,7 +3027,8 @@ export class TransactionsService {
             authorisedUserId: tx.seller.id,
             expiresAt: tx.acceptDeadlineAt ?? new Date(now.getTime() + 24 * 3600_000),
           });
-          actionUrl = `${process.env.FRONTEND_URL ?? 'https://gungalore.co.za'}/a/${token}`;
+          actionToken = token;
+          actionUrl = `${process.env.FRONTEND_URL ?? 'https://alloutdoor.co.za'}/a/${token}`;
         } catch {
           /* token mint failed — the notification falls back to the web URL */
         }
@@ -3042,6 +3044,7 @@ export class TransactionsService {
           transactionId: tx.id,
           hoursLeft,
           actionUrl,
+          actionToken,
         });
       } catch (err) {
         this.logger.warn(
@@ -4469,12 +4472,18 @@ export class TransactionsService {
       where: { id: transactionId },
       data: { privateArrangeDeliveredAt: new Date() },
     });
+    const action = await this.mintPrivateArrangeAction(
+      transactionId,
+      tx.buyerId,
+      'buyer',
+    );
     void this.notifications.privateArrangeDeliveredNotify({
       buyerEmail: tx.buyer.email,
       buyerName: tx.buyer.firstName ?? 'there',
       buyerPhone: tx.buyer.phone,
       listingTitle: tx.listing.title,
       transactionId,
+      actionUrl: action.actionUrl,
     });
     return this.prisma.transaction.findUnique({ where: { id: transactionId } });
   }
@@ -4593,6 +4602,35 @@ export class TransactionsService {
     return { reminded, released };
   }
 
+  /**
+   * A one-use, party-scoped credential for the PA handover page. The token
+   * records the role so the page can offer the right button (seller:
+   * delivered; buyer: received) and so the dispute endpoint can still accept
+   * either side.
+   */
+  private async mintPrivateArrangeAction(
+    txId: string,
+    userId: string,
+    role: 'seller' | 'buyer',
+  ): Promise<{ actionUrl?: string; actionToken?: string }> {
+    try {
+      const token = await this.tokens.mint({
+        purpose: 'PRIVATE_ARRANGE_ACTION',
+        targetType: 'transaction',
+        targetId: txId,
+        authorisedUserId: userId,
+        expiresAt: new Date(Date.now() + 7 * 86400_000),
+        metadata: { role },
+      });
+      return {
+        actionToken: token,
+        actionUrl: `${process.env.FRONTEND_URL ?? 'https://alloutdoor.co.za'}/a/${token}`,
+      };
+    } catch {
+      return {};
+    }
+  }
+
   private async sendPrivateArrangeBuyerReminder(txId: string) {
     try {
       const tx = await this.prisma.transaction.findUnique({
@@ -4600,12 +4638,18 @@ export class TransactionsService {
         include: { buyer: true, listing: { select: { title: true } } },
       });
       if (!tx) return;
+      const action = await this.mintPrivateArrangeAction(
+        txId,
+        tx.buyerId,
+        'buyer',
+      );
       await this.notifications.privateArrangeBuyerReminder({
         buyerEmail: tx.buyer.email,
         buyerName: tx.buyer.firstName ?? 'there',
         buyerPhone: tx.buyer.phone,
         listingTitle: tx.listing.title,
         transactionId: txId,
+        actionUrl: action.actionUrl,
       });
     } catch (err) {
       this.logger.warn(
@@ -4621,12 +4665,18 @@ export class TransactionsService {
         include: { seller: true, listing: { select: { title: true } } },
       });
       if (!tx) return;
+      const action = await this.mintPrivateArrangeAction(
+        txId,
+        tx.sellerId,
+        'seller',
+      );
       await this.notifications.privateArrangeSellerHandover({
         sellerEmail: tx.seller.email,
         sellerName: tx.seller.firstName ?? tx.seller.username ?? 'Seller',
         sellerPhone: tx.seller.phone,
         listingTitle: tx.listing.title,
         transactionId: txId,
+        actionUrl: action.actionUrl,
       });
     } catch (err) {
       this.logger.warn(

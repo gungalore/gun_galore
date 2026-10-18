@@ -63,7 +63,7 @@ describe('WhatsappService', () => {
     const result = await svc.sendTemplate({
       to: '0821234567',
       templateKey: 'sale_accept_reminder_seller',
-      vars: { ref: 'MO123', txId: 'tx1' },
+      vars: { ref: 'MO123', code: 'tcktxid1234567890' },
       reference: 'order-confirmed-tx1',
     });
 
@@ -79,12 +79,12 @@ describe('WhatsappService', () => {
   // ⚠️ A SENT WHATSAPP MESSAGE CANNOT BE RECALLED, so a gap in the variables
   // has to stop the send rather than be discovered in it. Both gaps below are
   // silent on the wire: an empty body parameter renders "Order  is
-  // confirmed", and a missing txId builds the button suffix `tundefined`,
+  // confirmed", and a missing code builds a dead /t/ suffix,
   // which resolveShortCode quietly redirects to the home page.
   it.each([
-    ['a body variable', { txId: 'tx1' }, 'ref'],
-    ['the button variable', { ref: 'MO123' }, 'txId'],
-    ['a blank body variable', { ref: '   ', txId: 'tx1' }, 'ref'],
+    ['a body variable', { code: 'tcktxid1234567890' }, 'ref'],
+    ['the button variable', { ref: 'MO123' }, 'code'],
+    ['a blank body variable', { ref: '   ', code: 'tcktxid1234567890' }, 'ref'],
   ])(
     'refuses to send when %s is missing, and does not retry',
     async (_label, vars, expectedMissing) => {
@@ -128,7 +128,7 @@ describe('WhatsappService', () => {
     const result = await svc.sendTemplate({
       to: '0821234567',
       templateKey: 'sale_accept_reminder_seller',
-      vars: { ref: 'MO123', txId: 'tx1' },
+      vars: { ref: 'MO123', code: 'tcktxid1234567890' },
     });
 
     expect(result).toEqual({ success: true, messageId: 'wamid.ABC123' });
@@ -159,7 +159,7 @@ describe('WhatsappService', () => {
     const result = await svc.sendTemplate({
       to: '0821234567',
       templateKey: 'sale_accept_reminder_seller',
-      vars: { ref: 'MO123', txId: 'tx1' },
+      vars: { ref: 'MO123', code: 'tcktxid1234567890' },
     });
 
     expect(result).toEqual({ success: false });
@@ -188,7 +188,7 @@ describe('WhatsappService', () => {
     await svc.sendTemplate({
       to: '0821234567',
       templateKey: 'sale_accept_reminder_seller',
-      vars: { ref: 'MO123', txId: 'tx1' },
+      vars: { ref: 'MO123', code: 'tcktxid1234567890' },
     });
 
     expect(prisma.whatsappMessageLog.create).toHaveBeenCalledWith(
@@ -212,7 +212,7 @@ describe('WhatsappService', () => {
     await svc.sendTemplate({
       to: '0821234567',
       templateKey: 'sale_accept_reminder_seller',
-      vars: { ref: 'MO123', txId: 'tx1' },
+      vars: { ref: 'MO123', code: 'tcktxid1234567890' },
     });
 
     expect(prisma.whatsappMessageLog.create).toHaveBeenCalledWith(
@@ -256,7 +256,7 @@ describe('WhatsappService', () => {
         id: 'log-1',
         to: '+27821234567',
         templateKey: 'sale_accept_reminder_seller',
-        vars: { ref: 'MO123', txId: 'tx1' },
+        vars: { ref: 'MO123', code: 'tcktxid1234567890' },
         attempts: 2, // one more failure reaches MAX_WHATSAPP_ATTEMPTS (3)
         status: 'FAILED',
         retryable: true,

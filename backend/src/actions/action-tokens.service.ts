@@ -94,6 +94,13 @@ export type ActionTokenPurpose =
   // at the top of motivation-witness.service.ts. One hour, because the
   // applicant is expected to phone their witness first.
   | 'WITNESS_STATEMENT'
+  // PRIVATE_ARRANGE_ACTION — the seller's "Item delivered" / either party's
+  // "Dispute" page, and the buyer's "Item received" page, for a held-funds
+  // Private Arrangement handover. targetType = 'transaction';
+  // authorisedUserId is the seller OR the buyer, and metadata.role records
+  // which. The page performs the action without a session, exactly like every
+  // other /a/<token> action.
+  | 'PRIVATE_ARRANGE_ACTION'
   // SELLER_CONSENT — the link the CURRENT LICENCE HOLDER opens to consent, in
   // writing, to a named applicant applying for a licence over a named firearm.
   //

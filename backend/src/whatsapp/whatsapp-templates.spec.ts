@@ -11,6 +11,7 @@ const FULL_VARS: Record<string, string> = {
   waybill: 'WB123456789',
   pin: '4821',
   txId: 'cktxid1234567890',
+  code: 'aQ2x7Yk9mN4pR8sT2vW6zB',
   acceptToken: 'safe-action-token',
   title: FIXTURE_TITLE,
   listingTitle: FIXTURE_TITLE,
@@ -147,6 +148,30 @@ describe('WHATSAPP_TEMPLATES — the hard rule', () => {
       'dealer_collection_ready_buyer',
     ]) {
       expect(WHATSAPP_TEMPLATES[key].buttonParam).not.toBe(false);
+    }
+  });
+
+  it('sale templates link through the full a<token>/t<id> code', () => {
+    for (const key of ['new_sale_seller', 'sale_accept_reminder_seller']) {
+      const def = WHATSAPP_TEMPLATES[key];
+      expect(def.linkVars).toEqual(['code']);
+      expect(def.linkCode({ code: 'aQ2x7Yk9mN4pR8sT2vW6zB' })).toBe(
+        'aQ2x7Yk9mN4pR8sT2vW6zB',
+      );
+      expect(def.linkCode({ code: 'tcktxid1234567890' })).toBe(
+        'tcktxid1234567890',
+      );
+    }
+  });
+
+  it('quick-reply labels are unique, <=25 chars and never carry a title', () => {
+    for (const def of defs) {
+      if (!def.quickReplies) continue;
+      expect(new Set(def.quickReplies).size).toBe(def.quickReplies.length);
+      for (const label of def.quickReplies) {
+        expect(label.length).toBeLessThanOrEqual(25);
+        expect(label).not.toContain(FIXTURE_TITLE);
+      }
     }
   });
 

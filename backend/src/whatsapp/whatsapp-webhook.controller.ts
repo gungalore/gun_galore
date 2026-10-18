@@ -16,6 +16,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { verifyMetaSignature } from './whatsapp-signature';
 import { WhatsappService } from './whatsapp.service';
 import { TransactionsService } from '../payments/transactions.service';
+import { OffersService } from '../offers/offers.service';
 
 // The three Private Arrangement handover templates whose quick replies map to
 // order actions. Body/button text only carries the ref; the ACTION is resolved
@@ -32,7 +33,9 @@ const WINDOW_MS = 24 * 60 * 60 * 1000; // Meta's customer-service window
 // reply with no automated handler — it must reach a human, not disappear into
 // a table nothing reads (the Desk surface was removed).
 const HANDLED_BUTTON_TEXTS = new Set([
+  'accept',
   'decline',
+  'counter',
   'item delivered',
   'item received',
   'dispute',
@@ -222,17 +225,11 @@ export class WhatsappWebhookController {
       },
     });
 
-    if (
-      message.context?.id &&
-      messageText.trim().toLocaleLowerCase() === 'decline'
-    ) {
-      await this.handleCourierSaleDecline(phone, message.context.id);
-    }
-
-    // Private Arrangement quick replies: "Item delivered" / "Item received" /
-    // "Dispute". Resolved from the tapped message's templateKey + vars.txId.
+    // Every template quick reply (private arrange, sale accept/decline,
+    // offer accept/decline, counter accept/decline) is resolved from the
+    // tapped message's `context.id` → our log row → templateKey + vars.
     if (message.context?.id) {
-      await this.handlePrivateArrangeButton(
+      await this.handleTemplateButton(
         phone,
         messageText.trim().toLowerCase(),
         message.context.id,
@@ -286,6 +283,297 @@ export class WhatsappWebhookController {
     } catch (err) {
       this.logger.warn(
         `raiseInboundAlert failed (${phone}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * A template quick reply. Resolve the exact outbound message from Meta's
+   * `context.id`, verify the tap came from the phone we sent it to, then route
+   * the button text to the right party's action. Never throws — the webhook
+   * must always answer 200.
+   *
+   * The body/button only carries the action; identity comes from the message
+   * log row and the sender's WhatsApp number. The first tap of the inbound
+   * message also opens Meta's 24h window, which is why the confirmation can be
+   * a free-form session reply instead of another paid template.
+   */
+  private async handleTemplateButton(
+    senderPhone: string,
+    buttonText: string,
+    repliedToMessageId: string,
+  ): Promise<void> {
+    let sent:
+      | { to: string; templateKey: string; vars: unknown }
+      | null = null;
+    try {
+      sent = await this.prisma.whatsappMessageLog.findFirst({
+        where: { messageId: repliedToMessageId },
+        select: { to: true, templateKey: true, vars: true },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `template-button lookup failed: ${(err as Error).message}`,
+      );
+      return;
+    }
+    if (!sent) return;
+    // The tap must come from the phone we sent THIS message to.
+    if (normalisePhone(sent.to) !== normalisePhone(senderPhone)) return;
+
+    const vars = (sent.vars ?? {}) as Record<string, unknown>;
+
+    if (PRIVATE_ARRANGE_TEMPLATES.has(sent.templateKey)) {
+      await this.handlePrivateArrangeButton(
+        senderPhone,
+        buttonText,
+        repliedToMessageId,
+      );
+      return;
+    }
+
+    if (sent.templateKey === 'new_sale_seller_courier') {
+      // Decline keeps the existing reason-picker: a paid-sale rejection
+      // records a strike, so a default reason is the wrong default there.
+      if (buttonText === 'decline') {
+        await this.handleCourierSaleDecline(senderPhone, repliedToMessageId);
+        return;
+      }
+      if (buttonText === 'accept') {
+        await this.actOnSale(senderPhone, sent.templateKey, vars, 'accept');
+      }
+      return;
+    }
+
+    if (
+      sent.templateKey === 'new_sale_seller' ||
+      sent.templateKey === 'sale_accept_reminder_seller'
+    ) {
+      if (buttonText !== 'accept' && buttonText !== 'decline') return;
+      await this.actOnSale(senderPhone, sent.templateKey, vars, buttonText);
+      return;
+    }
+
+    if (
+      sent.templateKey === 'offer_received_seller' ||
+      sent.templateKey === 'offer_countered_buyer'
+    ) {
+      if (buttonText !== 'accept' && buttonText !== 'decline') return;
+      await this.actOnOffer(senderPhone, sent.templateKey, vars, buttonText);
+    }
+  }
+
+  private getTransactions(): TransactionsService | null {
+    try {
+      return (
+        this.moduleRef?.get(TransactionsService, { strict: false }) ?? null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private getOffers(): OffersService | null {
+    try {
+      return this.moduleRef?.get(OffersService, { strict: false }) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private appBase(): string {
+    return process.env.FRONTEND_URL ?? 'https://alloutdoor.co.za';
+  }
+
+  /**
+   * Resolve a template `code` to the page that performs it. `a<token>` is the
+   * signed-out action page; `t<txId>` is the transaction page (sign-in).
+   */
+  private actionPageUrl(code: string): string {
+    if (code.startsWith('a')) return `${this.appBase()}/a/${code.slice(1)}`;
+    if (code.startsWith('t')) {
+      return `${this.appBase()}/transactions/${code.slice(1)}`;
+    }
+    return this.appBase();
+  }
+
+  private async sessionReply(
+    to: string,
+    text: string,
+    reference: string,
+  ): Promise<void> {
+    if (!this.whatsapp) return;
+    try {
+      await this.whatsapp.sendSessionText({ to, text, reference });
+    } catch (err) {
+      this.logger.warn(
+        `session reply failed (${reference}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private stringVar(
+    vars: Record<string, unknown>,
+    key: string,
+  ): string | null {
+    const value = vars[key];
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  }
+
+  private async actOnSale(
+    senderPhone: string,
+    templateKey: string,
+    vars: Record<string, unknown>,
+    action: 'accept' | 'decline',
+  ): Promise<void> {
+    const txId = this.stringVar(vars, 'txId');
+    if (!txId) return;
+
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: txId },
+      select: {
+        sellerId: true,
+        seller: { select: { phone: true } },
+      },
+    });
+    if (
+      !tx ||
+      normalisePhone(tx.seller.phone) !== normalisePhone(senderPhone)
+    ) {
+      return;
+    }
+
+    const transactions = this.getTransactions();
+    if (!transactions) return;
+
+    try {
+      if (action === 'accept') {
+        // No schedule = acceptTransaction's existing default (the soonest
+        // valid courier pickup day). The URL button still opens the date
+        // picker for a seller who wants a later day.
+        await transactions.acceptTransaction(txId, tx.sellerId);
+        await this.sessionReply(
+          senderPhone,
+          "Sale accepted. The buyer has been notified and your pickup details are on the sale page. If you want a later collection day, open the original message and choose a date.",
+          `wa-sale-accept-${txId}`,
+        );
+      } else {
+        // Decline has consequences (a seller strike + refund), and the email
+        // and SMS links open the reason picker. Do the same here instead of
+        // silently choosing a default reason.
+        const code = this.stringVar(vars, 'code');
+        if (code?.startsWith('a')) {
+          await this.sessionReply(
+            senderPhone,
+            `Choose a reason to decline this sale: ${this.actionPageUrl(code)}`,
+            `wa-sale-decline-${txId}`,
+          );
+          return;
+        }
+        await this.sessionReply(
+          senderPhone,
+          `Open the sale to decline it: ${this.appBase()}/transactions/${txId}`,
+          `wa-sale-decline-${txId}`,
+        );
+        return;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `WhatsApp ${action} failed for ${templateKey}/${txId}: ${(err as Error).message}`,
+      );
+      await this.sessionReply(
+        senderPhone,
+        `We couldn't ${action} that sale: ${(err as Error).message}`,
+        `wa-sale-${action}-failed-${txId}`,
+      );
+    }
+  }
+
+  private async actOnOffer(
+    senderPhone: string,
+    templateKey: string,
+    vars: Record<string, unknown>,
+    action: 'accept' | 'decline',
+  ): Promise<void> {
+    const offerId = this.stringVar(vars, 'offerId');
+    if (!offerId) return;
+
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+      select: {
+        buyerId: true,
+        buyer: { select: { phone: true } },
+        listing: {
+          select: {
+            sellerId: true,
+            seller: { select: { phone: true } },
+          },
+        },
+      },
+    });
+    if (!offer) return;
+
+    const sellerSide = templateKey === 'offer_received_seller';
+    const actorPhone = sellerSide
+      ? offer.listing.seller.phone
+      : offer.buyer.phone;
+    if (normalisePhone(actorPhone) !== normalisePhone(senderPhone)) return;
+
+    const offers = this.getOffers();
+    if (!offers) return;
+
+    try {
+      if (sellerSide) {
+        if (action === 'accept') {
+          await offers.accept(offer.listing.sellerId, offerId);
+          await this.sessionReply(
+            senderPhone,
+            'Offer accepted. The buyer has been sent a payment link.',
+            `wa-offer-accept-${offerId}`,
+          );
+        } else {
+          // The ticklist requires a structured reason and the choice decides
+          // whether the rejection strikes the buyer. Email and SMS open that
+          // reason picker; do the same here instead of defaulting to OTHER.
+          const code = this.stringVar(vars, 'code');
+          if (code?.startsWith('a')) {
+            await this.sessionReply(
+              senderPhone,
+              `Choose a reason to decline this offer: ${this.actionPageUrl(code)}`,
+              `wa-offer-decline-${offerId}`,
+            );
+            return;
+          }
+          await this.sessionReply(
+            senderPhone,
+            `Open your offers to decline it: ${this.appBase()}/offers/received`,
+            `wa-offer-decline-${offerId}`,
+          );
+          return;
+        }
+      } else if (action === 'accept') {
+        await offers.acceptCounter(offer.buyerId, offerId);
+        await this.sessionReply(
+          senderPhone,
+          'Counter accepted. We have sent your payment link.',
+          `wa-counter-accept-${offerId}`,
+        );
+      } else {
+        await offers.rejectCounter(offer.buyerId, offerId);
+        await this.sessionReply(
+          senderPhone,
+          'Counter declined. The seller has been notified.',
+          `wa-counter-decline-${offerId}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `WhatsApp ${action} failed for ${templateKey}/${offerId}: ${(err as Error).message}`,
+      );
+      await this.sessionReply(
+        senderPhone,
+        `We couldn't ${action} that offer: ${(err as Error).message}`,
+        `wa-offer-${action}-failed-${offerId}`,
       );
     }
   }

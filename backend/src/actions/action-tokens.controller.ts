@@ -8,6 +8,7 @@ import {
   Inject,
   forwardRef,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
@@ -15,7 +16,6 @@ import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ActionTokensService,
-  ActionTokenPurpose,
   ResolvedToken,
 } from './action-tokens.service';
 import { OffersService } from '../offers/offers.service';
@@ -113,6 +113,8 @@ export class ActionTokensController {
         return this.buildDispatchPayload(resolved, user);
       case 'TRANSACTION_ACCEPT':
         return this.buildTransactionAcceptPayload(resolved, user);
+      case 'PRIVATE_ARRANGE_ACTION':
+        return this.buildPrivateArrangeActionPayload(resolved, user);
       case 'SWAP_PROPOSAL_DECISION':
       case 'SWAP_COUNTER_DECISION':
       default:
@@ -205,6 +207,80 @@ export class ActionTokensController {
       async ({ targetId, authorisedUserId }) => {
         const userId = await this.requireUser(authorisedUserId);
         return this.transactions.rejectTransaction(targetId, userId, reason);
+      },
+      reqIp(req),
+      reqUa(req),
+    );
+  }
+
+  // ─── Private Arrangement handover ────────────────────────────────
+  // The seller ("Item delivered"), buyer ("Item received") and either party
+  // ("Dispute") actions from the PA email/SMS link. The token is minted
+  // per party and records the role in metadata.
+
+  @Post(':token/private-arrange-delivered')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  privateArrangeDelivered(
+    @Param('token') token: string,
+    @Req() req: Request,
+  ) {
+    return this.tokens.runAction(
+      token,
+      'PRIVATE_ARRANGE_ACTION',
+      'transaction',
+      async ({ targetId, authorisedUserId, metadata }) => {
+        if (metadata?.role !== 'seller') {
+          throw new BadRequestException('Only the seller can mark this delivered.');
+        }
+        const userId = await this.requireUser(authorisedUserId);
+        return this.transactions.markPrivateArrangeDelivered(targetId, userId);
+      },
+      reqIp(req),
+      reqUa(req),
+    );
+  }
+
+  @Post(':token/private-arrange-received')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  privateArrangeReceived(
+    @Param('token') token: string,
+    @Req() req: Request,
+  ) {
+    return this.tokens.runAction(
+      token,
+      'PRIVATE_ARRANGE_ACTION',
+      'transaction',
+      async ({ targetId, authorisedUserId, metadata }) => {
+        if (metadata?.role !== 'buyer') {
+          throw new BadRequestException('Only the buyer can confirm receipt.');
+        }
+        const userId = await this.requireUser(authorisedUserId);
+        return this.transactions.confirmPrivateArrangeReceived(targetId, userId);
+      },
+      reqIp(req),
+      reqUa(req),
+    );
+  }
+
+  @Post(':token/private-arrange-dispute')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  privateArrangeDispute(
+    @Param('token') token: string,
+    @Body() body: { reason?: string },
+    @Req() req: Request,
+  ) {
+    const reason = (body?.reason ?? '').toString().trim();
+    return this.tokens.runAction(
+      token,
+      'PRIVATE_ARRANGE_ACTION',
+      'transaction',
+      async ({ targetId, authorisedUserId }) => {
+        const userId = await this.requireUser(authorisedUserId);
+        return this.transactions.disputePrivateArrange(
+          targetId,
+          userId,
+          reason || 'Raised from the handover link',
+        );
       },
       reqIp(req),
       reqUa(req),
@@ -562,6 +638,57 @@ export class ActionTokensController {
         amount,
       },
       stillAvailable,
+    };
+  }
+
+  private async buildPrivateArrangeActionPayload(
+    resolved: ResolvedToken,
+    user: { username: string | null; firstName: string | null },
+  ) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: resolved.targetId },
+      select: {
+        id: true,
+        orderReference: true,
+        sellerId: true,
+        buyerId: true,
+        paymentStatus: true,
+        paidAt: true,
+        privateArrangeDeliveredAt: true,
+        privateArrangeReceivedAt: true,
+        listing: { select: { title: true } },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction no longer exists');
+
+    const role =
+      resolved.metadata?.role === 'seller' ||
+      resolved.metadata?.role === 'buyer'
+        ? resolved.metadata.role
+        : resolved.authorisedUserId === tx.sellerId
+          ? 'seller'
+          : 'buyer';
+    if (
+      (role === 'seller' && tx.sellerId !== resolved.authorisedUserId) ||
+      (role === 'buyer' && tx.buyerId !== resolved.authorisedUserId)
+    ) {
+      throw new ForbiddenException('This link does not belong to you.');
+    }
+
+    return {
+      kind: 'PRIVATE_ARRANGE_ACTION' as const,
+      role,
+      expiresAt: resolved.expiresAt.toISOString(),
+      greeting: user.firstName ?? user.username ?? 'there',
+      transaction: {
+        id: tx.id,
+        orderReference: tx.orderReference,
+        listingTitle: tx.listing.title,
+        paymentStatus: tx.paymentStatus,
+        paidAt: tx.paidAt?.toISOString() ?? null,
+        deliveredAt: tx.privateArrangeDeliveredAt?.toISOString() ?? null,
+        receivedAt: tx.privateArrangeReceivedAt?.toISOString() ?? null,
+      },
     };
   }
 

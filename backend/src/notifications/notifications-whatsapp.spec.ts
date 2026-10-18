@@ -44,7 +44,7 @@ function makeService(overrides: Partial<Mocks> = {}) {
 }
 
 const REF = 'order-confirmed-tx1';
-const WA_OPT = { templateKey: 'sale_accept_reminder_seller', vars: { ref: 'ABCDEF12', txId: 'tx1' } };
+const WA_OPT = { templateKey: 'sale_accept_reminder_seller', vars: { ref: 'ABCDEF12', code: 'tcktxid1234567890' } };
 
 describe('sendSms fan-out seam', () => {
   it('behaves byte-identically to today when no `whatsapp:` opt is passed', async () => {

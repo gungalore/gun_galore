@@ -34,6 +34,22 @@ describe('resolveShortCode', () => {
     );
   });
 
+  it('maps an action-token code to the signed-out /a page', () => {
+    expect(resolveShortCode('aQ2x7Yk9mN4pR8sT2vW6zB')).toBe(
+      '/a/Q2x7Yk9mN4pR8sT2vW6zB',
+    );
+    // base64url characters are allowed in a token, never in a cuid.
+    expect(resolveShortCode('aQ2x7Yk9mN4pR8sT2vW6-_')).toBe(
+      '/a/Q2x7Yk9mN4pR8sT2vW6-_',
+    );
+  });
+
+  it('rejects an action token that is too short or contains unsafe punctuation', () => {
+    expect(resolveShortCode('ashort')).toBe('/');
+    expect(resolveShortCode('a../../etc/passwd')).toBe('/');
+    expect(resolveShortCode('aQ2x7Yk9mN4pR8sT2vW6zB.')).toBe('/');
+  });
+
   it('falls through to / for an unknown prefix', () => {
     expect(resolveShortCode('xabc123')).toBe('/');
     expect(resolveShortCode('q')).toBe('/');

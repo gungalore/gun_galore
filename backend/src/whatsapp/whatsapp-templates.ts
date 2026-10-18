@@ -65,6 +65,16 @@ export interface WhatsappTemplateDef {
    * pair); NO button component is sent and `linkVars`/`linkCode` are unused.
    */
   buttonType?: 'url' | 'quick_reply';
+  /**
+   * Quick-reply labels baked into the approved Meta template, listed here for
+   * specs/operations. They are NOT sent in the Cloud API payload — Meta stores
+   * them on the template, and the webhook reads `message.button.text`.
+   *
+   * A template may have a URL button AND quick replies (1 CTA + up to 3
+   * quick replies on this account). The URL component is still sent for
+   * `buttonType: 'url'`; quick replies need no component.
+   */
+  quickReplies?: readonly string[];
   /** The exact approved body, for specs and operations reference. */
   render: (v: Record<string, string>) => string;
 }
@@ -82,6 +92,9 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     linkVars: [],
     linkCode: () => 'r',
     buttonParam: false,
+    // Live on Meta after the post-lock edit. Until then this is metadata only;
+    // the URL is the static /t/r list link.
+    quickReplies: ['Accept', 'Decline'],
     render: () =>
       `You have a new offer on one of your listings. Open it to accept, reject or counter.`,
   },
@@ -104,6 +117,8 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     linkVars: [],
     linkCode: () => 'y',
     buttonParam: false,
+    // Live on Meta after the post-lock edit. Until then this is metadata only.
+    quickReplies: ['Accept', 'Decline'],
     render: () =>
       `The seller countered your offer. Review it and respond within 24 hours.`,
   },
@@ -135,8 +150,12 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     metaName: 'new_sale_seller',
     lang: 'en',
     requiredVars: ['ref'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
+    // `code` is the whole /t/ suffix: `a<actionToken>` for a signed-out
+    // accept page, or `t<txId>` when the token mint failed. The Meta URL is
+    // already /t/{{1}}, so this needs no template change.
+    linkVars: ['code'],
+    linkCode: (v) => v.code,
+    quickReplies: ['Accept', 'Decline'],
     render: (v) =>
       `You have a sale. Order ${v.ref} is paid and waiting for you to accept and arrange handover.`,
   },
@@ -152,6 +171,9 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     requiredVars: ['ref'],
     linkVars: ['acceptToken'],
     linkCode: (v) => v.acceptToken,
+    // Decline is already approved on this template; Accept is added in the
+    // post-lock edit. The URL stays so the seller can still pick a date.
+    quickReplies: ['Accept', 'Decline'],
     render: (v) =>
       `You have a sale. Order ${v.ref} is paid. Accept to choose a courier collection date and time.`,
   },
@@ -160,8 +182,10 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     metaName: 'sale_accept_reminder_seller',
     lang: 'en',
     requiredVars: ['ref'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
+    // Same `code` convention as new_sale_seller: a<token> or t<txId>.
+    linkVars: ['code'],
+    linkCode: (v) => v.code,
+    quickReplies: ['Accept', 'Decline'],
     render: (v) =>
       `Reminder: order ${v.ref} is still waiting for you to accept. The window closes soon.`,
   },
