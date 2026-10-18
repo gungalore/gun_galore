@@ -65,6 +65,26 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
+/**
+ * `/push/me` answers for the ACCOUNT, not this browser. A member can be
+ * subscribed on their laptop and still have no subscription on their phone;
+ * treating the account answer as "this device is enabled" hides the opt-in
+ * prompt and leaves that device silent forever. The local subscription is the
+ * only reliable per-device signal.
+ */
+async function hasLocalPushSubscription(): Promise<boolean> {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+    return false;
+  }
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    const subscription = await registration?.pushManager.getSubscription();
+    return Boolean(subscription);
+  } catch {
+    return false;
+  }
+}
+
 export function usePush(): PushState {
   const { isLoaded, isSignedIn } = useUser();
   const { getToken } = useAuth();
@@ -110,17 +130,30 @@ export function usePush(): PushState {
         try {
           const token = await getToken();
           if (token) {
-            const r = await fetch(`${API_URL}/push/me`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
+            const [r, local] = await Promise.all([
+              fetch(`${API_URL}/push/me`, {
+                headers: { Authorization: `Bearer ${token}` },
+              }),
+              hasLocalPushSubscription(),
+            ]);
             if (r.ok) {
               const data = (await r.json()) as { subscribed: boolean };
-              if (!cancelled) setEnabled(data.subscribed);
+              // Both must be true: the account has a row, AND this browser
+              // still holds the matching PushSubscription. A row from another
+              // device (or a stale row after reinstall) must not suppress the
+              // prompt on this one.
+              if (!cancelled) setEnabled(data.subscribed && local);
+            } else if (!cancelled) {
+              setEnabled(false);
             }
+          } else if (!cancelled) {
+            setEnabled(false);
           }
         } catch {
-          /* ignore */
+          if (!cancelled) setEnabled(false);
         }
+      } else if (!cancelled) {
+        setEnabled(false);
       }
       if (!cancelled) setReady(true);
     })();

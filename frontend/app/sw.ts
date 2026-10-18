@@ -278,6 +278,32 @@ self.addEventListener('message', (event) => {
 // (e.g. successive outbids on the same auction) replaces the
 // previous OS notification instead of stacking. Keeps the lock
 // screen clean.
+/**
+ * The `badge` option passed to showNotification is the monochrome status-bar
+ * glyph, NOT the launcher/app-icon count. Android and Samsung launchers only
+ * show a count when the site uses the Badging API, so mirror the active
+ * notification count onto the installed app icon here. Unsupported browsers
+ * simply no-op.
+ */
+type AppBadgeNavigator = WorkerNavigator & {
+  setAppBadge?: (count?: number) => Promise<void>;
+  clearAppBadge?: () => Promise<void>;
+};
+
+async function syncAppBadge(): Promise<void> {
+  try {
+    const notifications = await self.registration.getNotifications();
+    const nav = self.navigator as AppBadgeNavigator;
+    if (notifications.length > 0) {
+      await nav.setAppBadge?.(notifications.length);
+    } else {
+      await nav.clearAppBadge?.();
+    }
+  } catch {
+    /* Badging API unsupported or denied - the OS notification still shows. */
+  }
+}
+
 self.addEventListener('push', (event) => {
   const e = event as PushEvent;
   if (!e.data) return;
@@ -290,7 +316,7 @@ self.addEventListener('push', (event) => {
   try {
     payload = e.data.json();
   } catch {
-    // Plain-text fallback — backend always sends JSON but defend
+    // Plain-text fallback - backend always sends JSON but defend
     // against partner-injected pushes anyway.
     payload = { title: 'ALL Outdoor', body: e.data.text() };
   }
@@ -298,17 +324,20 @@ self.addEventListener('push', (event) => {
   const body = payload.body ?? '';
   const url = payload.url ?? '/';
   e.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon: '/icon-192.png',
-      // Monochrome white-on-transparent glyph — Android renders the badge
-      // as a single-colour alpha mask; a full-colour icon degrades to a
-      // grey blob in the status bar.
-      badge: '/badge-72.png',
-      tag: payload.tag,
-      data: { url },
-      requireInteraction: false,
-    }),
+    (async () => {
+      await self.registration.showNotification(title, {
+        body,
+        icon: '/icon-192.png',
+        // Monochrome white-on-transparent glyph - Android renders the badge
+        // as a single-colour alpha mask; a full-colour icon degrades to a
+        // grey blob in the status bar.
+        badge: '/badge-72.png',
+        tag: payload.tag,
+        data: { url },
+        requireInteraction: false,
+      });
+      await syncAppBadge();
+    })(),
   );
 });
 
@@ -321,6 +350,7 @@ self.addEventListener('notificationclick', (event) => {
   const url = (e.notification.data as { url?: string } | undefined)?.url ?? '/';
   e.waitUntil(
     (async () => {
+      await syncAppBadge();
       const allClients = await self.clients.matchAll({
         type: 'window',
         includeUncontrolled: true,
@@ -342,4 +372,10 @@ self.addEventListener('notificationclick', (event) => {
       await self.clients.openWindow(url);
     })(),
   );
+});
+
+// Swiping a notification away must drop the launcher count too.
+self.addEventListener('notificationclose', (event) => {
+  const e = event as NotificationEvent;
+  e.waitUntil(syncAppBadge());
 });
