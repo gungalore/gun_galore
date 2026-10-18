@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-10-18**.
 
+## 2026-10-18 - APPLE PUSH IPV4 FIX (FULL DEPLOY)
+
+**iPhone push timed out, every time.** Samsung/Windows FCM accepted the test, but `web.push.apple.com` returned `ETIMEDOUT`. The same request with an IPv4-only HTTPS agent returns `201` in under a second. `PushService` now uses `new Agent({ family: 4, keepAlive: true })` for Apple endpoints only; FCM keeps the default agent.
+
+Gates: backend `tsc` clean + **364 suites / 5 682 tests** (8 skipped); frontend unchanged (143 files / 1 756 tests, production build during deploy).
+
+Commit **`4b9e7f11`**. Full deploy at 21:40 SAST: rollback `alloutdoor-20261018-214015.dump` (32 721 729 bytes), no pending migrations, health x2 OK, warden reloaded/online, public 200 x2, all three pm2 services online.
+
+**Verified through the deployed `PushService`:** a real `test_notification` row for `turbosnail` sent to all **3** subscriptions and returned `sent=3` — Samsung, Windows and iPhone (Apple `201`). If the iPhone still shows nothing, check iOS Settings > Notifications for the installed PWA; the server-to-Apple leg is now working.
+
+## 2026-10-18 - PER-DEVICE PUSH SUBSCRIPTIONS AND APP BADGE (FRONTEND-ONLY DEPLOY)
+
 ## 2026-10-18 - PER-DEVICE PUSH SUBSCRIPTIONS AND APP BADGE (FRONTEND-ONLY DEPLOY)
 
 **Push is per device again.** `usePush` used `/push/me` (an account-wide answer) as if it meant "this device is enabled", so a second phone/laptop never showed the opt-in prompt when another device was already subscribed. It now requires both the account row **and** a local `pushManager.getSubscription()`. The backend already fans out to every `PushSubscription` row for the user.
