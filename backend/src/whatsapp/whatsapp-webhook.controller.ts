@@ -28,6 +28,16 @@ const PRIVATE_ARRANGE_TEMPLATES = new Set([
 
 const WINDOW_MS = 24 * 60 * 60 * 1000; // Meta's customer-service window
 
+// Button texts the controller acts on itself. Anything else is a free-text
+// reply with no automated handler — it must reach a human, not disappear into
+// a table nothing reads (the Desk surface was removed).
+const HANDLED_BUTTON_TEXTS = new Set([
+  'decline',
+  'item delivered',
+  'item received',
+  'dispute',
+]);
+
 function normalisePhone(phone: string | null | undefined): string {
   return (phone ?? '').replace(/\D/g, '');
 }
@@ -162,7 +172,8 @@ export class WhatsappWebhookController {
   // extends the 24h customer-service window from THIS message, since that
   // is the rule the window itself exists to track. Idempotent on
   // metaMessageId: Meta redelivers webhooks, and writing the same inbound
-  // message twice would double-count the Desk's unread thread list.
+  // message twice would duplicate the thread history and re-alert the
+  // operator for a message they already saw.
   private async handleInboundMessage(message: MetaMessageEntry): Promise<void> {
     if (!message.from) return;
     const phone = message.from.startsWith('+') ? message.from : `+${message.from}`;
@@ -225,6 +236,56 @@ export class WhatsappWebhookController {
         phone,
         messageText.trim().toLowerCase(),
         message.context.id,
+      );
+    }
+
+    // Free text has no automated handler. Store it AND surface it to the
+    // operator, otherwise WhatsApp becomes a write-only inbox: members reply
+    // to a sales message and nobody ever sees it.
+    if (
+      messageText.trim().length > 0 &&
+      !HANDLED_BUTTON_TEXTS.has(messageText.trim().toLowerCase())
+    ) {
+      await this.raiseInboundAlert(phone, messageText.trim());
+    }
+  }
+
+  /**
+   * One unresolved AdminAlert per phone number, refreshed with the latest
+   * message. Deduped deliberately: a chatty member must not create a new
+   * alert for every line. The full thread is in WhatsappInboundMessage.
+   */
+  private async raiseInboundAlert(phone: string, text: string): Promise<void> {
+    try {
+      const existing = await this.prisma.adminAlert.findFirst({
+        where: {
+          type: 'WHATSAPP_INBOUND_MESSAGE',
+          referenceId: phone,
+          resolved: false,
+        },
+        select: { id: true },
+      });
+      const context =
+        `Inbound WhatsApp from ${phone}: "${text.slice(0, 500)}". ` +
+        `Reply from the WhatsApp Business app; no member-facing action is automated.`;
+      if (existing) {
+        await this.prisma.adminAlert.update({
+          where: { id: existing.id },
+          data: { context },
+        });
+        return;
+      }
+      await this.prisma.adminAlert.create({
+        data: {
+          type: 'WHATSAPP_INBOUND_MESSAGE',
+          referenceId: phone,
+          urgent: false,
+          context,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `raiseInboundAlert failed (${phone}): ${(err as Error).message}`,
       );
     }
   }

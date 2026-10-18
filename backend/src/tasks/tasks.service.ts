@@ -16,6 +16,7 @@ import {
 import { AdminHealthService } from '../admin/admin-health.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { decideOpsAlert } from './ops-alert-decision';
 import { PushService } from '../push/push.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
@@ -64,6 +65,7 @@ export class TasksService {
     private readonly adminCredits: AdminCreditsService,
     private readonly notifications: NotificationsService,
     private readonly sms: SmsService,
+    private readonly whatsapp: WhatsappService,
     private readonly push: PushService,
     private readonly zohoBooks: ZohoBooksService,
     private readonly savedSearches: SavedSearchesService,
@@ -881,6 +883,28 @@ export class TasksService {
       this.logger.warn(`retryFailedSms failed: ${(err as Error).message}`);
     } finally {
       await this.recordCronRun('sms-retry');
+    }
+  }
+
+  // Every 10 min — the WhatsApp counterpart of the SMS retry above. Without
+  // this, a transient Meta failure was parked as FAILED forever and the
+  // outage alert (raised only from retryFailed) could never fire.
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async retryFailedWhatsapp() {
+    try {
+      // The kill switch must also stop queued retries — otherwise turning
+      // WhatsApp off would still let yesterday's failures leave the building.
+      if (!(await this.settings.get(FLAGS.whatsappEnabled))) return;
+      const r = await this.whatsapp.retryFailed();
+      if (r.sent > 0 || r.exhausted > 0) {
+        this.logger.log(
+          `WhatsApp retry: ${r.sent} sent, ${r.exhausted} exhausted of ${r.retried}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`retryFailedWhatsapp failed: ${(err as Error).message}`);
+    } finally {
+      await this.recordCronRun('whatsapp-retry');
     }
   }
 

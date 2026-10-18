@@ -7,14 +7,18 @@
  * mapping side of that: a one-letter kind prefix plus (where the kind needs
  * one) an entity id decides where `/t/<code>` sends the tap.
  *
- * | code               | →                    |
- * |--------------------|----------------------|
- * | `t<transactionId>` | `/transactions/<id>` |
- * | `o<orderId>`       | `/orders/<id>`       |
- * | `p`                | `/profile/edit`      |
- * | `b`                | `/my/orders`         |
- * | `s`                | `/my/sales`          |
- * | anything else      | `/`                  |
+ * | code               | →                       |
+ * |--------------------|-------------------------|
+ * | `t<transactionId>` | `/transactions/<id>`    |
+ * | `o<orderId>`       | `/orders/<id>`          |
+ * | `m<motivationId>`  | `/licence-centre/<id>`  |
+ * | `p`                | `/profile/edit`         |
+ * | `b`                | `/my/orders`            |
+ * | `s`                | `/my/sales`             |
+ * | `r`                | `/offers/received`      |
+ * | `y`                | `/my/offers`            |
+ * | `w`                | `/my/bids`              |
+ * | anything else      | `/`                     |
  *
  * ⚠️ THIS FUNCTION IS THE ONLY THING STANDING BETWEEN A WHATSAPP TAP AND AN
  * OPEN REDIRECT. `code` arrives as a raw, attacker-controlled URL segment —
@@ -50,12 +54,16 @@ export function resolveShortCode(code: string): string {
   if (code === 'p') return '/profile/edit';
   if (code === 'b') return '/my/orders';
   if (code === 's') return '/my/sales';
+  if (code === 'r') return '/offers/received';
+  if (code === 'y') return '/my/offers';
+  if (code === 'w') return '/my/bids';
 
   const kind = code[0];
   const id = code.slice(1);
 
   if (kind === 't' && isPlausibleId(id)) return `/transactions/${id}`;
   if (kind === 'o' && isPlausibleId(id)) return `/orders/${id}`;
+  if (kind === 'm' && isPlausibleId(id)) return `/licence-centre/${id}`;
 
   return '/';
 }

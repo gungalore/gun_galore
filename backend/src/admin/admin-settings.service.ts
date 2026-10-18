@@ -296,7 +296,7 @@ const FLAGS: SettingFlag[] = [
   {
     key: 'whatsapp_enabled',
     label: 'WhatsApp notifications enabled',
-    hint: 'Master switch for the WhatsApp channel. OFF = nothing is ever sent over WhatsApp, whatever a member has chosen — which is why the member toggle can sit ON while it is greyed out as "coming soon". There is no WhatsApp sender wired up yet, so leave this OFF until one is live and Meta has approved the templates. The plan is shipping updates only at first, to build sender reputation before anything else is sent.',
+    hint: 'Master switch for the WhatsApp channel. OFF = nothing is ever sent over WhatsApp, whatever a member has chosen — which is why the member toggle can sit ON while it is greyed out as "coming soon". The sender is live; leave this OFF until Meta has approved the sales and motivation templates. Scope is sales and document notifications only — shipping is sent by Bob Go directly.',
     group: 'Comms',
     type: 'boolean',
     default: 'false',

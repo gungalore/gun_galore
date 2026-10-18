@@ -14,6 +14,7 @@ import { RatingsModule } from '../ratings/ratings.module';
 import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module';
 import { ListingsModule } from '../listings/listings.module';
 import { FeedModule } from '../feed/feed.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 
 @Module({
   // AdminModule is imported so we can inject AdminCreditsService into
@@ -45,6 +46,8 @@ import { FeedModule } from '../feed/feed.module';
     ListingsModule,
     // Community-feed moderation sweep needs FeedService.runModeration.
     FeedModule,
+    // WhatsApp retry/outage cron needs WhatsappService.retryFailed.
+    WhatsappModule,
   ],
   providers: [TasksService],
 })

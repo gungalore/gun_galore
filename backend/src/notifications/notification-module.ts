@@ -31,9 +31,6 @@ export function moduleForNotification(
     return '/profile';
   }
 
-  // Subscription (AO PRO).
-  if (type.startsWith('subscription_')) return '/subscribe';
-
   // Seller's listings — moderation results, delisting, licence expiry, and
   // the listing hygiene nudges (stale / expired / missing photos) whose own
   // url already points at /my/listings.
@@ -80,6 +77,7 @@ export function moduleForNotification(
     type === 'shipping_delivered' ||
     type === 'shipping_ready_for_pickup' ||
     type === 'collection_confirm_nudge' ||
+    type === 'shipment_failed' ||
     type === 'dealer_transfer_stall_nudge' ||
     type === 'private_arrange_handover' ||
     type === 'private_arrange_delivered' ||
@@ -131,10 +129,11 @@ export function moduleForNotification(
     return category === 'SELLER' ? '/my/earnings' : '/my/orders';
   }
 
-  // Experiences and prize draw → the dashboard hub. (dealer_verification_
-  // rejected is an action-required seller row and now lives on /my/sales.)
-  if (type.startsWith('experience_') || type === 'raffle_winner') {
-    return '/dashboard';
+  // Buyer↔seller message thread — the row's own url is the transaction, but
+  // the account-menu badge belongs on the order/sale module for the side the
+  // member is on.
+  if (type === 'new_message') {
+    return category === 'SELLER' ? '/my/sales' : '/my/orders';
   }
 
   // Community feed — likes, replies and follows all live on /community.

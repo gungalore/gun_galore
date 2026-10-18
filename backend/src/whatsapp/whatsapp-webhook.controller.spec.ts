@@ -42,7 +42,9 @@ function makePrisma() {
     },
     adminAlert: {
       count: jest.fn().mockResolvedValue(0),
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
     },
     _inbound: inbound,
     _threads: threads,
@@ -172,6 +174,13 @@ describe('WhatsappWebhookController', () => {
           data: expect.objectContaining({ body: 'hi', metaMessageId: 'wamid.IN1' }),
         }),
       );
+      // Free text has no automated handler — it must reach the operator.
+      expect(prisma.adminAlert.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          type: 'WHATSAPP_INBOUND_MESSAGE',
+          referenceId: '+27821234567',
+        }),
+      });
     });
 
     it('Decline quick reply resolves the original courier sale and replies with its signed reason-picker link', async () => {

@@ -119,6 +119,24 @@ describe('ChannelPrefsSheet', () => {
     expect(screen.getByText('Coming soon')).toBeTruthy();
   });
 
+  it('does not write a WhatsApp opt-out while the channel is still coming soon', async () => {
+    const bodies: string[] = [];
+    mockFetchSequence([
+      () => meResponse({ whatsappChannelEnabled: false }),
+      (_url, init) => {
+        if (init?.body) bodies.push(String(init.body));
+        return {};
+      },
+    ]);
+    render(<ChannelPrefsSheet onDone={vi.fn()} />);
+    await screen.findByText('How should we reach you?');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save preferences' }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(JSON.parse(bodies[0]).whatsappEnabled).toBeUndefined();
+  });
+
   it('renders the WhatsApp switch live when the flag is on', async () => {
     mockFetchSequence([() => meResponse({ whatsappChannelEnabled: true })]);
     render(<ChannelPrefsSheet onDone={vi.fn()} />);
@@ -127,5 +145,16 @@ describe('ChannelPrefsSheet', () => {
     const wa = screen.getByRole('switch', { name: 'WhatsApp notifications' });
     expect(wa.getAttribute('aria-disabled')).toBeNull();
     expect(screen.queryByText('Coming soon')).toBeNull();
+  });
+
+  it('defaults WhatsApp OFF even when the column says true — explicit opt-in', async () => {
+    mockFetchSequence([
+      () => meResponse({ whatsappChannelEnabled: true, notifyWhatsappEnabled: true }),
+    ]);
+    render(<ChannelPrefsSheet onDone={vi.fn()} />);
+    await screen.findByText('How should we reach you?');
+
+    const wa = screen.getByRole('switch', { name: 'WhatsApp notifications' });
+    expect(wa.getAttribute('aria-checked')).toBe('false');
   });
 });

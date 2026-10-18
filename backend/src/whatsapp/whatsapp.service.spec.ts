@@ -62,16 +62,16 @@ describe('WhatsappService', () => {
 
     const result = await svc.sendTemplate({
       to: '0821234567',
-      templateKey: 'order_confirmed_buyer',
+      templateKey: 'sale_accept_reminder_seller',
       vars: { ref: 'MO123', txId: 'tx1' },
       reference: 'order-confirmed-tx1',
     });
 
-    expect(result).toEqual({ success: true, stub: true });
+    expect(result).toEqual({ success: false, stub: true });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(prisma.whatsappMessageLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: 'STUB', templateKey: 'order_confirmed_buyer' }),
+        data: expect.objectContaining({ status: 'STUB', templateKey: 'sale_accept_reminder_seller' }),
       }),
     );
   });
@@ -96,7 +96,7 @@ describe('WhatsappService', () => {
 
       const result = await svc.sendTemplate({
         to: '0821234567',
-        templateKey: 'order_confirmed_buyer',
+        templateKey: 'sale_accept_reminder_seller',
         vars: vars as Record<string, string>,
         reference: 'order-confirmed-tx1',
       });
@@ -127,7 +127,7 @@ describe('WhatsappService', () => {
 
     const result = await svc.sendTemplate({
       to: '0821234567',
-      templateKey: 'order_confirmed_buyer',
+      templateKey: 'sale_accept_reminder_seller',
       vars: { ref: 'MO123', txId: 'tx1' },
     });
 
@@ -158,7 +158,7 @@ describe('WhatsappService', () => {
 
     const result = await svc.sendTemplate({
       to: '0821234567',
-      templateKey: 'order_confirmed_buyer',
+      templateKey: 'sale_accept_reminder_seller',
       vars: { ref: 'MO123', txId: 'tx1' },
     });
 
@@ -187,7 +187,7 @@ describe('WhatsappService', () => {
 
     await svc.sendTemplate({
       to: '0821234567',
-      templateKey: 'order_confirmed_buyer',
+      templateKey: 'sale_accept_reminder_seller',
       vars: { ref: 'MO123', txId: 'tx1' },
     });
 
@@ -211,7 +211,7 @@ describe('WhatsappService', () => {
 
     await svc.sendTemplate({
       to: '0821234567',
-      templateKey: 'order_confirmed_buyer',
+      templateKey: 'sale_accept_reminder_seller',
       vars: { ref: 'MO123', txId: 'tx1' },
     });
 
@@ -255,7 +255,7 @@ describe('WhatsappService', () => {
       const dueRow = {
         id: 'log-1',
         to: '+27821234567',
-        templateKey: 'order_confirmed_buyer',
+        templateKey: 'sale_accept_reminder_seller',
         vars: { ref: 'MO123', txId: 'tx1' },
         attempts: 2, // one more failure reaches MAX_WHATSAPP_ATTEMPTS (3)
         status: 'FAILED',

@@ -91,7 +91,12 @@ export function ChannelPrefsSheet({ onDone }: { onDone: () => void }) {
         setSms(data.notifySmsEnabled !== false);
         const flagOn = data.whatsappChannelEnabled === true;
         setWhatsappChannelEnabled(flagOn);
-        setWhatsapp(flagOn && data.notifyWhatsappEnabled === true);
+        // ⚠️ Explicit opt-in. The column defaults TRUE, but this sheet is the
+        // Meta-audit consent record: a member must switch WhatsApp ON here.
+        // Defaulting to the column value would count a pre-ticked box as
+        // consent, and submitting FALSE while the channel is off would
+        // silently mute them for a launch they never saw.
+        setWhatsapp(false);
         setState('show');
       } catch {
         if (!cancelled) {
@@ -158,10 +163,12 @@ export function ChannelPrefsSheet({ onDone }: { onDone: () => void }) {
         body: JSON.stringify({
           emailEnabled: email,
           smsEnabled: sms,
-          // Never send `true` while the channel is gated off — the switch
-          // itself is disabled in that state, but a body built by hand
-          // must not disagree with what the UI shows.
-          whatsappEnabled: whatsappChannelEnabled ? whatsapp : false,
+          // ⚠️ OMIT the key while the channel is gated off. Sending `false`
+          // wrote an opt-out consent row for every member who answered the
+          // sheet before launch, so flipping `whatsapp_enabled` later found
+          // them all permanently muted. No key = no consent row and no
+          // preference change.
+          ...(whatsappChannelEnabled ? { whatsappEnabled: whatsapp } : {}),
         }),
       });
       if (!res.ok) {

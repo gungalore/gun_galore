@@ -1,4 +1,4 @@
-﻿// ─── WhatsApp template registry — THE ONE REVIEWED FILE ────────────────────
+// ─── WhatsApp template registry — THE ONE REVIEWED FILE ────────────────────
 //
 // 🚨 HARD RULE, ENFORCED HERE STRUCTURALLY: a WhatsApp message may NEVER
 // contain the listed item's title or description — only the order
@@ -10,21 +10,25 @@
 // across the whole registry, and a `render()` output is checked against a
 // fixture listing title to catch a body that quietly leaks it.
 //
+// ⚠️ SCOPE (operator, 2026-10-17): WhatsApp carries SALES and DOCUMENT
+// notifications only. Shipping/delivery tracking is sent by Bob Go directly,
+// so no shipment template lives here any more. Do not reintroduce one.
+//
 // Everything here is STATIC, not env-driven. `metaName` is fixed by what
 // Meta approved in WhatsApp Manager; only credentials (WHATSAPP_TOKEN etc.)
-// are env. `render()` must mirror the approved body character for character
-// — it is what the Desk preview shows an admin before a reply goes out, and
-// what the spec pins against Meta's own grammar rules (no leading/trailing
-// variable, no two adjacent variables, one URL button, one variable in its
-// suffix).
+// are env. `render()` must mirror the approved body character for character.
 //
 // Most URL buttons resolve through `https://alloutdoor.co.za/t/<code>` —
 // see `frontend/app/t/[code]/route.ts`. The courier sale template uses the
 // approved static base `https://alloutdoor.co.za/a/` and its action token as
 // the dynamic suffix, so it lands on the signed, one-use accept page.
+//
+// ⚠️ NEW OR CHANGED TEMPLATES ARE NOT LIVE UNTIL META APPROVES THEM. Until
+// then Meta answers 132001 (non-retryable), the send is logged as FAILED and
+// the caller falls back to SMS exactly as it does for any other miss.
 
 export interface WhatsappTemplateDef {
-  /** Internal lookup key, used by call sites and by the Desk drawer. */
+  /** Internal lookup key, used by call sites and the message log. */
   key: string;
   /** The exact name submitted to and approved by Meta — snake_case. */
   metaName: string;
@@ -48,39 +52,84 @@ export interface WhatsappTemplateDef {
   /** The URL-button suffix appended to `https://alloutdoor.co.za/t/`. */
   linkCode: (v: Record<string, string>) => string;
   /**
+   * False = the approved Meta template's URL button is FULLY STATIC (no
+   * `{{1}}` in it). A button component must NOT be sent for those — Meta
+   * rejects a parameter count that does not match the template. Defaults to
+   * true, because most buttons carry a per-instance suffix.
+   */
+  buttonParam?: boolean;
+  /**
    * 'url' (default) → a URL button component is sent, filling `linkCode`.
    * 'quick_reply' → the buttons are baked into the approved Meta template
    * (e.g. the Private Arrangement "Item delivered / Item received / Dispute"
    * pair); NO button component is sent and `linkVars`/`linkCode` are unused.
    */
   buttonType?: 'url' | 'quick_reply';
-  /** The exact approved body, for the Desk preview and for specs. */
+  /** The exact approved body, for specs and operations reference. */
   render: (v: Record<string, string>) => string;
 }
 
 export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
-  // ── Ship first (the proving pair) ──────────────────────────────────
-  order_confirmed_buyer: {
-    key: 'order_confirmed_buyer',
-    metaName: 'order_confirmed_buyer',
+  // ── Sales — offers and auctions ────────────────────────────────────
+  // These are the notifications that move a deal forward. Bodies are static
+  // (no amount, no title) and the button lands on the member's own list, so
+  // nothing sensitive reaches a lock screen.
+  offer_received_seller: {
+    key: 'offer_received_seller',
+    metaName: 'offer_received_seller',
     lang: 'en',
-    requiredVars: ['ref'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
-    render: (v) =>
-      `Order ${v.ref} is confirmed and your payment is protected. We'll message you again when it ships.`,
+    requiredVars: [],
+    linkVars: [],
+    linkCode: () => 'r',
+    buttonParam: false,
+    render: () =>
+      `You have a new offer on one of your listings. Open it to accept, reject or counter.`,
   },
-  shipment_dispatched_buyer: {
-    key: 'shipment_dispatched_buyer',
-    metaName: 'shipment_dispatched_buyer',
+  offer_accepted_buyer: {
+    key: 'offer_accepted_buyer',
+    metaName: 'offer_accepted_buyer',
     lang: 'en',
-    requiredVars: ['ref'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
-    render: (v) => `Order ${v.ref} has been collected by the courier and is on its way.`,
+    requiredVars: [],
+    linkVars: [],
+    linkCode: () => 'y',
+    buttonParam: false,
+    render: () =>
+      `An offer you made was accepted. Pay within 24 hours to secure the item.`,
+  },
+  offer_countered_buyer: {
+    key: 'offer_countered_buyer',
+    metaName: 'offer_countered_buyer',
+    lang: 'en',
+    requiredVars: [],
+    linkVars: [],
+    linkCode: () => 'y',
+    buttonParam: false,
+    render: () =>
+      `The seller countered your offer. Review it and respond within 24 hours.`,
+  },
+  bid_outbid_buyer: {
+    key: 'bid_outbid_buyer',
+    metaName: 'bid_outbid_buyer',
+    lang: 'en',
+    requiredVars: [],
+    linkVars: [],
+    linkCode: () => 'w',
+    buttonParam: false,
+    render: () =>
+      `You have been outbid on an auction. Bid again before it closes.`,
+  },
+  auction_won_buyer: {
+    key: 'auction_won_buyer',
+    metaName: 'auction_won_buyer',
+    lang: 'en',
+    requiredVars: [],
+    linkVars: [],
+    linkCode: () => 'w',
+    buttonParam: false,
+    render: () => `You won an auction. Pay within 24 hours to secure it.`,
   },
 
-  // ── Then, in approval order ────────────────────────────────────────
+  // ── Sales — paid sale lifecycle ────────────────────────────────────
   new_sale_seller: {
     key: 'new_sale_seller',
     metaName: 'new_sale_seller',
@@ -91,7 +140,7 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     render: (v) =>
       `You have a sale. Order ${v.ref} is paid and waiting for you to accept and arrange handover.`,
   },
-  // Courier sellers get the date/time picker from the URL button. The Meta
+  // Sellers get the date/time picker from the URL button. The Meta
   // template's static URL is https://alloutdoor.co.za/a/{{1}}; `acceptToken`
   // is the one-use TRANSACTION_ACCEPT credential minted at payment. Decline
   // is a Quick Reply handled by WhatsappWebhookController; the webhook then
@@ -115,84 +164,6 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     linkCode: (v) => `t${v.txId}`,
     render: (v) =>
       `Reminder: order ${v.ref} is still waiting for you to accept. The window closes soon.`,
-  },
-  shipment_booked_seller_locker: {
-    key: 'shipment_booked_seller_locker',
-    metaName: 'shipment_booked_seller_locker',
-    lang: 'en',
-    requiredVars: ['ref', 'waybill', 'pin'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
-    render: (v) =>
-      `Order ${v.ref} is booked. Waybill ${v.waybill} and your drop-off PIN is ${v.pin} — take both to the locker.`,
-  },
-  shipment_booked_seller_door: {
-    key: 'shipment_booked_seller_door',
-    metaName: 'shipment_booked_seller_door',
-    lang: 'en',
-    requiredVars: ['ref', 'waybill'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
-    render: (v) =>
-      `Order ${v.ref} is booked. Waybill ${v.waybill} — the courier will collect from your address.`,
-  },
-  dispatch_nudge_seller: {
-    key: 'dispatch_nudge_seller',
-    metaName: 'dispatch_nudge_seller',
-    lang: 'en',
-    requiredVars: ['ref'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
-    render: (v) =>
-      `Order ${v.ref} is still waiting to be dispatched. Please arrange it to keep the sale on track.`,
-  },
-  shipment_out_for_delivery_buyer: {
-    key: 'shipment_out_for_delivery_buyer',
-    metaName: 'shipment_out_for_delivery_buyer',
-    lang: 'en',
-    requiredVars: ['ref'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
-    render: (v) => `Order ${v.ref} is out for delivery today.`,
-  },
-  shipment_delivered_buyer: {
-    key: 'shipment_delivered_buyer',
-    metaName: 'shipment_delivered_buyer',
-    lang: 'en',
-    requiredVars: ['ref'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
-    render: (v) =>
-      `Order ${v.ref} has been delivered. Confirm it is good or dispute within 24 hours.`,
-  },
-  confirm_receipt_nudge_buyer: {
-    key: 'confirm_receipt_nudge_buyer',
-    metaName: 'confirm_receipt_nudge_buyer',
-    lang: 'en',
-    requiredVars: ['ref'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
-    render: (v) => `Order ${v.ref} is still waiting for you to confirm or dispute within 24 hours.`,
-  },
-  shipment_failed_buyer: {
-    key: 'shipment_failed_buyer',
-    metaName: 'shipment_failed_buyer',
-    lang: 'en',
-    requiredVars: ['ref'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
-    render: (v) =>
-      `There was a delivery problem with order ${v.ref}. Please open it to see what happens next.`,
-  },
-  parcel_delivered_seller: {
-    key: 'parcel_delivered_seller',
-    metaName: 'parcel_delivered_seller',
-    lang: 'en',
-    requiredVars: ['ref'],
-    linkVars: ['txId'],
-    linkCode: (v) => `t${v.txId}`,
-    render: (v) =>
-      `Order ${v.ref} has been delivered to the buyer. Payment is released once they confirm receipt.`,
   },
   payment_released_seller: {
     key: 'payment_released_seller',
@@ -263,6 +234,40 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
       `Reminder for order ${v.ref}. Please confirm you received your item, or tap Dispute. Payment auto-releases to the seller 5 days after payment.`,
   },
 
+  // ── Licence Centre — motivations ───────────────────────────────────
+  // Same lock-screen rule as the motivation inbox/SMS copy: the MO reference
+  // is the ONLY identifier. Never the firearm, calibre or licence section.
+  motivation_ready_applicant: {
+    key: 'motivation_ready_applicant',
+    metaName: 'motivation_ready_applicant',
+    lang: 'en',
+    requiredVars: ['ref'],
+    linkVars: ['motivationId'],
+    linkCode: (v) => `m${v.motivationId}`,
+    render: (v) =>
+      `Document ${v.ref} is ready. Open it to read it through and download the pack.`,
+  },
+  motivation_needs_info_applicant: {
+    key: 'motivation_needs_info_applicant',
+    metaName: 'motivation_needs_info_applicant',
+    lang: 'en',
+    requiredVars: ['ref'],
+    linkVars: ['motivationId'],
+    linkCode: (v) => `m${v.motivationId}`,
+    render: (v) =>
+      `Document ${v.ref} needs a bit more detail. Open it to add what is missing.`,
+  },
+  motivation_failed_applicant: {
+    key: 'motivation_failed_applicant',
+    metaName: 'motivation_failed_applicant',
+    lang: 'en',
+    requiredVars: ['ref'],
+    linkVars: ['motivationId'],
+    linkCode: (v) => `m${v.motivationId}`,
+    render: (v) =>
+      `We could not finish document ${v.ref}. Nothing is lost and nothing has been charged. Open it and try again.`,
+  },
+
   // ── Welcome ─────────────────────────────────────────────────────────
   welcome_complete_profile: {
     key: 'welcome_complete_profile',
@@ -270,9 +275,12 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     lang: 'en',
     requiredVars: [],
     // Nothing to fill in: the profile page is the same page for everyone.
+    // ⚠️ The approved Meta template's button is `…/t/{{1}}`, NOT a static
+    // `…/t/p` — so the button parameter MUST be sent (buttonParam defaults
+    // true). The class of 2026-10-18 verified this against the live template.
     linkVars: [],
     linkCode: () => 'p',
     render: () =>
-      `Welcome to ALL Outdoor. Finish setting up your profile so you can buy, sell and get your order updates here.`,
+      `Welcome to All Outdoor. Finish setting up your profile so you can buy, sell and get your order updates here.`,
   },
 };

@@ -30,7 +30,9 @@ function makeService() {
     whatsapp: [],
     critical: [],
   };
-  const svc = Object.create(NotificationsService.prototype) as NotificationsService;
+  const svc = Object.create(
+    NotificationsService.prototype,
+  ) as NotificationsService;
   Object.assign(svc as unknown as Record<string, unknown>, {
     appUrl: 'https://alloutdoor.co.za',
     persistByEmail: jest.fn(async (_e: string, n: { body: string }) => {
@@ -106,13 +108,12 @@ describe('shipmentBooked copy', () => {
     expect([...sent.sms, ...sent.emails].join(' ')).not.toMatch(/PIN/);
   });
 
-  it('sends the critical SMS and the door WhatsApp template, even with a PIN', async () => {
-    // The SMS bypasses the seller's mute; the WhatsApp rail has to use the
-    // door template or it would send the seller to a locker screen that has
-    // nothing to do with the courier coming to their address.
+  it('sends the critical SMS and nothing over WhatsApp, even with a PIN', async () => {
+    // Shipping is Bob Go's channel. The SMS bypasses the seller's mute and
+    // carries the waybill/PIN; WhatsApp must not receive a shipment template.
     const { svc, sent } = makeService();
     await svc.shipmentBooked({ ...BASE, dropoffPin: '4821' });
     expect(sent.critical[0]).toBe(true);
-    expect(sent.whatsapp[0]).toBe('shipment_booked_seller_door');
+    expect(sent.whatsapp[0]).toBeNull();
   });
 });

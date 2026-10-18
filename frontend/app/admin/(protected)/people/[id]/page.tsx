@@ -306,7 +306,6 @@ export default function MemberProfilePage() {
             .filter(Boolean)
             .join(', ') || 'none'}
         />
-        <Row label="Fallback channel" value={user.notifyFallbackChannel ?? '—'} />
       </NeonCard>
 
       {/* ── Selling & standing ────────────────────────────────────── */}

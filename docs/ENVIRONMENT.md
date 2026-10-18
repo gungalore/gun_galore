@@ -435,11 +435,15 @@ Local: leave blank. Sends no-op and log.
 
 ## WhatsApp — Meta Cloud API
 
-The fourth notification rail, built in `backend/src/whatsapp/`. **Inert until
-the `whatsapp_enabled` Setting (default `false`) is flipped on** — see
-`FLAGS.whatsappEnabled` in `settings.service.ts` — and separately gated per
-event by `sendSms`'s `whatsapp` opt (`notifications.service.ts`), so setting
-these vars alone sends nothing.
+The fifth notification rail, built in `backend/src/whatsapp/`. It carries
+**sales and document notifications only** (offers, auctions, paid sales,
+payouts/refunds, private-arrange handover, Licence Centre motivations) —
+shipping and delivery tracking are sent by Bob Go directly and have no
+WhatsApp template. **Inert until the `whatsapp_enabled` Setting (default
+`false`) is flipped on** — see `FLAGS.whatsappEnabled` in
+`settings.service.ts` — and separately gated per event by `sendSms`'s
+`whatsapp` opt (`notifications.service.ts`), so setting these vars alone sends
+nothing.
 
 ### `WHATSAPP_TOKEN`
 **Required in production**, alongside `WHATSAPP_PHONE_NUMBER_ID`. The System

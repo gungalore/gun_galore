@@ -1350,7 +1350,6 @@ export class AdminService {
         notifySmsEnabled: true,
         notifyOffersEnabled: true,
         notifyWhatsappEnabled: true,
-        notifyFallbackChannel: true,
         channelPrefsPromptedAt: true,
 
         termsAcceptedAt: true,

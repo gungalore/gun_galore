@@ -28,7 +28,12 @@ function makeService(overrides: Partial<Mocks> = {}) {
   const svc = Object.create(NotificationsService.prototype) as NotificationsService;
   Object.assign(svc as unknown as Record<string, unknown>, {
     logger: { debug: jest.fn(), warn: jest.fn(), error: jest.fn(), log: jest.fn() },
-    sms: { sendSms: smsSend },
+    sms: {
+      sendSms: smsSend,
+      // Production normalises through SmsService.toE164; the lookup now uses
+      // both forms, so the double must answer this too.
+      toE164: (v: string) => (v.startsWith('0') ? `+27${v.slice(1)}` : v),
+    },
     whatsapp: { sendTemplate: waSend },
     settings: { get: flagGet },
     prisma: {
@@ -39,7 +44,7 @@ function makeService(overrides: Partial<Mocks> = {}) {
 }
 
 const REF = 'order-confirmed-tx1';
-const WA_OPT = { templateKey: 'order_confirmed_buyer', vars: { ref: 'ABCDEF12', txId: 'tx1' } };
+const WA_OPT = { templateKey: 'sale_accept_reminder_seller', vars: { ref: 'ABCDEF12', txId: 'tx1' } };
 
 describe('sendSms fan-out seam', () => {
   it('behaves byte-identically to today when no `whatsapp:` opt is passed', async () => {
@@ -60,15 +65,15 @@ describe('sendSms fan-out seam', () => {
     expect(svc.sms.sendSms).toHaveBeenCalled();
   });
 
-  it('sends SMS when the phone is unverified', async () => {
+  it('still uses WhatsApp when the phone is unverified (buyers never OTP)', async () => {
     const svc = makeService({
       userFindFirst: jest
         .fn()
         .mockResolvedValue({ phoneVerified: false, notifyWhatsappEnabled: true }),
     });
     await svc.sendSms('0820000000', 'body', REF, { whatsapp: WA_OPT });
-    expect(svc.whatsapp.sendTemplate).not.toHaveBeenCalled();
-    expect(svc.sms.sendSms).toHaveBeenCalled();
+    expect(svc.whatsapp.sendTemplate).toHaveBeenCalled();
+    expect(svc.sms.sendSms).not.toHaveBeenCalled();
   });
 
   it('sends SMS when notifyWhatsappEnabled is false', async () => {
@@ -118,6 +123,27 @@ describe('sendSms fan-out seam', () => {
     });
     await svc.sendSms('0820000000', 'body', 'muted-ref');
     expect(svc.sms.sendSms).not.toHaveBeenCalled();
+  });
+
+  it('an SMS mute does not silence an opted-in WhatsApp send', async () => {
+    const svc = makeService({
+      userFindFirst: jest.fn().mockResolvedValue({
+        phoneVerified: false,
+        notifySmsEnabled: false,
+        notifyWhatsappEnabled: true,
+      }),
+    });
+    await svc.sendSms('0820000000', 'body', REF, { whatsapp: WA_OPT });
+    expect(svc.whatsapp.sendTemplate).toHaveBeenCalled();
+    expect(svc.sms.sendSms).not.toHaveBeenCalled();
+  });
+
+  it('falls back to SMS when WhatsApp is in stub mode', async () => {
+    const svc = makeService({
+      waSend: jest.fn().mockResolvedValue({ success: false, stub: true }),
+    });
+    await svc.sendSms('0820000000', 'body', REF, { whatsapp: WA_OPT });
+    expect(svc.sms.sendSms).toHaveBeenCalled();
   });
 
   it('critical: true does NOT bypass notifyWhatsappEnabled', async () => {

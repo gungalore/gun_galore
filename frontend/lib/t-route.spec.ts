@@ -19,10 +19,19 @@ describe('resolveShortCode', () => {
     );
   });
 
-  it('maps the three argument-free codes', () => {
+  it('maps the argument-free codes', () => {
     expect(resolveShortCode('p')).toBe('/profile/edit');
     expect(resolveShortCode('b')).toBe('/my/orders');
     expect(resolveShortCode('s')).toBe('/my/sales');
+    expect(resolveShortCode('r')).toBe('/offers/received');
+    expect(resolveShortCode('y')).toBe('/my/offers');
+    expect(resolveShortCode('w')).toBe('/my/bids');
+  });
+
+  it('maps a motivation code to the Licence Centre review sheet', () => {
+    expect(resolveShortCode('mclhq3v9m0000abc123defg')).toBe(
+      '/licence-centre/clhq3v9m0000abc123defg',
+    );
   });
 
   it('falls through to / for an unknown prefix', () => {

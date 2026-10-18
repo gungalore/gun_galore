@@ -4,7 +4,7 @@ import { SmsModule } from '../sms/sms.module';
 import { WhatsappService } from './whatsapp.service';
 import { WhatsappWebhookController } from './whatsapp-webhook.controller';
 
-// Meta WhatsApp Cloud API client — the fourth notification rail (email,
+// Meta WhatsApp Cloud API client — a notification rail (email,
 // SMS, in-app/web-push, WhatsApp). Mirrors SmsModule's shape.
 //
 // PrismaModule and SmsModule are both @Global already, so nothing outside

@@ -531,20 +531,18 @@ model User {
   // Muting a channel must never quietly discard someone's offer.
   notifyOffersEnabled   Boolean               @default(true)
   // ⚠️ Default TRUE on purpose — and the default is NOT what keeps this
-  // channel quiet. The toggle ships greyed out ("coming soon") while we
-  // build sender trust with Meta on shipping messages alone, so a member
-  // who defaulted to false could never switch themselves back on. The
-  // global `whatsapp_enabled` Setting (default false) is the kill switch;
-  // flip this default and everyone is silently muted the day it is thrown.
+  // channel quiet. The toggle ships greyed out ("coming soon") until Meta
+  // approves the sales/document templates, so a member who defaulted to
+  // false could never switch themselves back on. The global
+  // `whatsapp_enabled` Setting (default false) is the kill switch; flip
+  // this default and everyone is silently muted the day it is thrown.
+  // Scope: sales and document notifications only — shipping is Bob Go's.
   notifyWhatsappEnabled Boolean               @default(true)
-  // The channel to retry on when a send on an ENABLED channel fails —
-  // and only then. It is not a second-choice channel for normal traffic
-  // (every enabled channel already gets everything it is eligible for),
-  // and it fires even when the channel it names is switched off above.
-  // ⚠️ It therefore CANNOT satisfy the at-least-one-of-email-or-SMS
-  // floor the API enforces: nobody is reachable on a channel that only
-  // wakes up on a delivery failure. EMAIL by default — it costs us
-  // nothing to send and is the likeliest of the three to arrive.
+  // ⚠️ DEPRECATED / UNUSED. Exposed in Settings as "if a message can't be
+  // delivered, try…" but no dispatch path ever read it. The API no longer
+  // accepts or returns it; retries are per-channel (email outbox, SMS retry,
+  // WhatsApp retry). The column stays so a real cross-channel fallback can be
+  // added later without a destructive migration.
   notifyFallbackChannel NotifyFallbackChannel @default(EMAIL)
   // Stamped the first time the post-sign-up channel-preferences sheet is
   // shown — by a submit OR a dismiss, either counts. This has to live on the
@@ -6446,10 +6444,12 @@ model NewsPlace {
 // ─── WhatsApp — a fourth notification channel (Meta Cloud API) ─────────────
 //
 // `notifyWhatsappEnabled` (on User, above) and `whatsapp_enabled` (a Setting)
-// have existed since 2026-08-22 with no provider behind them. These four
-// models are that provider's storage: an outbound audit log mirroring
-// SmsLog, an inbound customer-service-window tracker, the inbound messages
-// themselves, and an append-only consent trail for a Meta audit.
+// gate the Meta Cloud API sender in backend/src/whatsapp/. These four models
+// are that sender's storage: an outbound audit log mirroring SmsLog, an
+// inbound customer-service-window tracker, the inbound messages themselves
+// (surfaced to the operator as an AdminAlert when they are free text), and an
+// append-only consent trail for a Meta audit. Scope is sales and document
+// notifications only; shipping is sent by Bob Go directly.
 //
 // ⚠️ A WhatsApp message may never name the listed item — only the order
 // reference (`orderRef()`, backend/src/common/). That rule lives in the
@@ -6465,7 +6465,7 @@ model NewsPlace {
 model WhatsappMessageLog {
   id          String    @id @default(cuid())
   to          String // E.164-normalised destination ("+27...")
-  templateKey String // registry key, e.g. "order_confirmed_buyer"
+  templateKey String // registry key, e.g. "new_sale_seller"
   vars        Json // exactly what was substituted into the template
   reference   String?
   status      String // 'SENT' | 'FAILED' | 'STUB'

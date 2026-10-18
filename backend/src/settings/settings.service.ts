@@ -353,12 +353,12 @@ export const FLAGS = {
   // ─── WhatsApp comms (W0) ─────────────────────────────────────────
   // ⚠️ Also in admin-settings.service.ts — both registries, or neither.
   //
-  // The kill switch for the entire third channel. OFF = nothing goes out over
+  // The kill switch for the entire WhatsApp rail. OFF = nothing goes out over
   // WhatsApp no matter what any member has on `notifyWhatsappEnabled`, which
   // is precisely why that column may default true while its toggle is greyed
-  // out. W0 ships schema, API and UI only — there is no provider behind this
-  // yet — so leave it OFF until a sender is wired up and Meta has approved the
-  // templates. It is also the "if WhatsApp misbehaves" switch afterwards.
+  // out. The sender is live; leave it OFF until Meta has approved the sales
+  // and motivation templates. Scope is sales/document notifications only —
+  // shipping is Bob Go's. It is also the "if WhatsApp misbehaves" switch.
   whatsappEnabled: {
     key: 'whatsapp_enabled',
     default: false,

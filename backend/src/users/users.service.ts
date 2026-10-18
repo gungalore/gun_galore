@@ -8,13 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SessionService } from '../auth/session.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { SmsService } from '../sms/sms.service';
-import {
-  User,
-  Province,
-  NotificationCategory,
-  NotifyFallbackChannel,
-  Prisma,
-} from '@prisma/client';
+import { User, Province, NotificationCategory, Prisma } from '@prisma/client';
 import { createHash, randomInt, timingSafeEqual } from 'crypto';
 import { encryptSaIdNumber, hashSaIdNumber } from '../common/id-crypto';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -134,17 +128,13 @@ function sha256(value: string): string {
 const AVATAR_MIME_RE = /^image\/(jpeg|png|webp)$/;
 const AVATAR_MAX_BYTES = 10 * 1024 * 1024;
 
-// The accepted values for the fallback channel, spelled out rather than
-// derived, because updateNotificationPrefs has to check an untrusted string
-// against them at runtime and a TS union type is gone by then. Listed
-// explicitly so adding an enum member to the schema does not silently widen
-// what the endpoint accepts before anyone has decided it should.
-const FALLBACK_CHANNELS: NotifyFallbackChannel[] = [
-  'NONE',
-  'WHATSAPP',
-  'SMS',
-  'EMAIL',
-];
+// ⚠️ `notifyFallbackChannel` is CLIENTSIDE-DEAD as of 2026-10-17. It was
+// exposed in Settings as "if a message can't be delivered, try…" but no
+// dispatch path ever read it, so the picker promised behaviour that did not
+// exist. Retries are per-channel and already wired: the email outbox, the SMS
+// retry cron and the WhatsApp retry cron. The column/enum stay in the schema
+// (no migration) in case a real cross-channel fallback is built later; the
+// API no longer accepts or returns it.
 
 @Injectable()
 export class UsersService {
@@ -1322,15 +1312,14 @@ export class UsersService {
 
   // ─────────────────── Notification preferences (Phase 2) ────────────
   // Per-channel mute. The in-app inbox is always on; web-push is managed
-  // per-device. Email, SMS and WhatsApp are settable here, plus the
-  // fallback channel — WhatsApp now carries shipping updates only.
+  // per-device. Email, SMS and WhatsApp are settable here. WhatsApp carries
+  // sales and document notifications only — shipping is Bob Go's.
   async updateNotificationPrefs(
     userId: string,
     prefs: {
       emailEnabled?: boolean;
       smsEnabled?: boolean;
       whatsappEnabled?: boolean;
-      fallbackChannel?: string;
     },
     // Where this write came from, for the append-only NotificationConsent
     // audit trail Meta requires evidence of opt-in against. Defaults to the
@@ -1342,7 +1331,6 @@ export class UsersService {
       notifyEmailEnabled?: boolean;
       notifySmsEnabled?: boolean;
       notifyWhatsappEnabled?: boolean;
-      notifyFallbackChannel?: NotifyFallbackChannel;
     } = {};
     if (typeof prefs.emailEnabled === 'boolean')
       data.notifyEmailEnabled = prefs.emailEnabled;
@@ -1350,35 +1338,13 @@ export class UsersService {
       data.notifySmsEnabled = prefs.smsEnabled;
     if (typeof prefs.whatsappEnabled === 'boolean')
       data.notifyWhatsappEnabled = prefs.whatsappEnabled;
-    // ⚠️ Validated BY HAND, and it has to be. This endpoint takes an inline
-    // body type rather than a DTO class, so the global ValidationPipe has no
-    // metadata to work from and waves the value straight through — an
-    // unchecked string reaches Prisma and dies as a 500 on an enum cast, or
-    // worse, a future `as` silences it. Treat the value as hostile: only the
-    // four names of the enum are accepted, anything else is a 400.
-    if (prefs.fallbackChannel !== undefined) {
-      const channel = prefs.fallbackChannel as NotifyFallbackChannel;
-      if (
-        typeof prefs.fallbackChannel !== 'string' ||
-        !FALLBACK_CHANNELS.includes(channel)
-      )
-        throw new BadRequestException(
-          `fallbackChannel must be one of: ${FALLBACK_CHANNELS.join(', ')}`,
-        );
-      data.notifyFallbackChannel = channel;
-    }
     // ⚠️ At least one of EMAIL or SMS has to survive the patch, or the
     // member has silenced every way we have of telling them their order
     // shipped. NEITHER of the other two counts towards that floor:
-    //   * WhatsApp carries SHIPPING UPDATES ONLY, so a member sitting on
-    //     WhatsApp alone would never hear about an offer, a payment, a KYC
-    //     step or a dealer hand-off — and it stays operator-gated
-    //     (whatsapp_enabled) on top of that.
-    //   * the fallback channel only fires when a send on an enabled channel
-    //     FAILS, so it is not a channel anyone is reachable on in the normal
-    //     case. It is a retry, not a subscription.
-    // Setting fallbackChannel on its own therefore cannot trip the floor
-    // either — it never touches the email/SMS pair, so it takes no guard.
+    //   * WhatsApp carries SALES and DOCUMENT notifications only. A member
+    //     sitting on WhatsApp alone would never hear about a shipping event,
+    //     a payment, a KYC step or a dealer hand-off — and it stays
+    //     operator-gated (whatsapp_enabled) on top of that.
     //
     // ⚠️ AND THE FLOOR IS ENFORCED IN THE `where`, NOT AFTER A READ. Reading
     // the row, deciding, then writing leaves a window: two tabs flipping email
@@ -1427,8 +1393,7 @@ export class UsersService {
       // ⚠️ APPEND-ONLY, ONE ROW PER CHANNEL THIS CALL ACTUALLY SET. This is
       // the Meta-audit consent trail (CLAUDE.md, the channel-preferences
       // sheet) — never update a row in place, the trail across time is the
-      // whole point. `fallbackChannel` writes no consent row: it is a retry
-      // channel, not a subscription, so there is nothing to attest to.
+      // whole point.
       const consentRows: {
         userId: string;
         channel: 'EMAIL' | 'SMS' | 'WHATSAPP';
@@ -1467,7 +1432,6 @@ export class UsersService {
         notifyEmailEnabled: true,
         notifySmsEnabled: true,
         notifyWhatsappEnabled: true,
-        notifyFallbackChannel: true,
       },
     });
     if (!row) throw new NotFoundException('User not found');

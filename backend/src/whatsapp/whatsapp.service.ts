@@ -19,9 +19,10 @@ interface SendTemplateResult {
   success: boolean;
   messageId?: string;
   /** True when WHATSAPP_TOKEN/WHATSAPP_PHONE_NUMBER_ID aren't configured and
-   *  we logged a STUB row instead of calling Meta. Mirrors SmsService's dev
-   *  stub behaviour so the caller (the sendSms seam) can fall back to SMS
-   *  exactly as it would for a real failure. */
+   *  we logged a STUB row instead of calling Meta. `success` is FALSE in that
+   *  case: the message was not delivered, so the sendSms seam must fall back
+   *  to SMS. Returning success here used to swallow the fallback and leave a
+   *  misconfigured production with no message on any channel. */
   stub?: boolean;
 }
 
@@ -44,7 +45,7 @@ const GRAPH_API_VERSION = 'v21.0';
 // Outbound WhatsApp via the Meta Cloud API. Mirrors backend/src/sms/sms.service.ts
 // on purpose — that service already solved logging, retry, backoff,
 // stub-when-unconfigured and outage alerting, and its shape has been in
-// production long enough to trust. WhatsApp is a fourth notification rail,
+// production long enough to trust. WhatsApp is a notification rail,
 // not a rewrite of the pattern.
 //
 // This service is a pure SENDER. It does not check `FLAGS.whatsappEnabled` or
@@ -114,7 +115,9 @@ export class WhatsappService {
     // rule) — sub_type "url", index "0" is the only button slot the URL
     // templates use. A quick-reply template (private_arrange_*) bakes its
     // buttons into the approved Meta template, so NO button component is sent.
-    if ((def.buttonType ?? 'url') === 'url') {
+    // A FULLY STATIC url button takes no parameter either — Meta rejects a
+    // parameter count that does not match the approved template.
+    if ((def.buttonType ?? 'url') === 'url' && def.buttonParam !== false) {
       components.push({
         type: 'button',
         sub_type: 'url',
@@ -238,7 +241,9 @@ export class WhatsappService {
           status: 'STUB',
         },
       });
-      return { success: true, stub: true };
+      // NOT a delivery. The caller falls back to SMS — the whole reason the
+      // seam exists is that no notification may be lost to a channel outage.
+      return { success: false, stub: true };
     }
 
     const result = await this.dispatch(normalised, def, params.vars);
@@ -427,7 +432,7 @@ export class WhatsappService {
 
   // Raise a deduped admin alert when the most-recent OUTAGE_STREAK real
   // sends are ALL failures — a strong signal the Meta Cloud API (or our
-  // token/phone-number-id) is down and order/shipping updates are silently
+  // token/phone-number-id) is down and sales/document updates are silently
   // failing over to SMS (or, if SMS is also down, not reaching anyone).
   private async checkOutage(): Promise<void> {
     try {
@@ -459,7 +464,7 @@ export class WhatsappService {
           urgent: true,
           context:
             `The last ${OUTAGE_STREAK} WhatsApp sends all FAILED — the Meta Cloud API looks down, ` +
-            `or the token/phone-number-id are broken. Order and shipping updates are falling back ` +
+            `or the token/phone-number-id are broken. Sales and document updates are falling back ` +
             `to SMS for members who opted into WhatsApp. Check WhatsApp Manager + the System User ` +
             `token. Fires at most once per 6h.`,
         },

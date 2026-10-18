@@ -503,7 +503,6 @@ export interface AdminUserProfile extends AdminUserRow {
   notifySmsEnabled?: boolean;
   notifyOffersEnabled?: boolean;
   notifyWhatsappEnabled?: boolean;
-  notifyFallbackChannel?: string | null;
 
   defaultWeightGrams?: number | null;
   defaultLengthCm?: number | null;

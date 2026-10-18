@@ -96,21 +96,71 @@ describe('WHATSAPP_TEMPLATES — the hard rule', () => {
     }
   });
 
-  it('order_confirmed_buyer and shipment_dispatched_buyer (the proving pair) are registered', () => {
-    expect(WHATSAPP_TEMPLATES.order_confirmed_buyer).toBeDefined();
-    expect(WHATSAPP_TEMPLATES.shipment_dispatched_buyer).toBeDefined();
+  it('carries no shipping templates — Bob Go sends shipping directly', () => {
+    const keys = Object.keys(WHATSAPP_TEMPLATES);
+    expect(
+      keys.some((k) => /shipment|shipping|dispatch|delivery|parcel/.test(k)),
+    ).toBe(false);
+  });
+
+  it('registers the sales-driving templates and the three motivation outcomes', () => {
+    for (const key of [
+      'offer_received_seller',
+      'offer_accepted_buyer',
+      'offer_countered_buyer',
+      'bid_outbid_buyer',
+      'auction_won_buyer',
+      'motivation_ready_applicant',
+      'motivation_needs_info_applicant',
+      'motivation_failed_applicant',
+    ]) {
+      expect(WHATSAPP_TEMPLATES[key]).toBeDefined();
+    }
   });
 
   it('welcome_complete_profile links to the static "p" code, not a per-instance one', () => {
-    expect(WHATSAPP_TEMPLATES.welcome_complete_profile.linkCode(FULL_VARS)).toBe(
-      'p',
-    );
+    expect(
+      WHATSAPP_TEMPLATES.welcome_complete_profile.linkCode(FULL_VARS),
+    ).toBe('p');
   });
 
-  it('shipment_booked_seller_locker carries ref, waybill and pin in that order', () => {
-    expect(WHATSAPP_TEMPLATES.shipment_booked_seller_locker.requiredVars).toEqual(
-      ['ref', 'waybill', 'pin'],
+  // ⚠️ REGRESSION: the live Meta template for welcome is /t/{{1}}, so the
+  // button parameter MUST be sent. Only the five fully-static sales buttons
+  // omit it. Getting this backwards is a silent 132001 + SMS fallback.
+  it('sends a URL-button parameter only for static-code exceptions', () => {
+    for (const key of [
+      'offer_received_seller',
+      'offer_accepted_buyer',
+      'offer_countered_buyer',
+      'bid_outbid_buyer',
+      'auction_won_buyer',
+    ]) {
+      expect(WHATSAPP_TEMPLATES[key].buttonParam).toBe(false);
+    }
+    expect(WHATSAPP_TEMPLATES.welcome_complete_profile.buttonParam).not.toBe(
+      false,
     );
+    for (const key of [
+      'motivation_ready_applicant',
+      'motivation_needs_info_applicant',
+      'motivation_failed_applicant',
+      'dealer_collection_ready_buyer',
+    ]) {
+      expect(WHATSAPP_TEMPLATES[key].buttonParam).not.toBe(false);
+    }
+  });
+
+  it('motivation templates link through the m<id> short code', () => {
+    const id = 'clhq3v9m0000abc123defg';
+    for (const key of [
+      'motivation_ready_applicant',
+      'motivation_needs_info_applicant',
+      'motivation_failed_applicant',
+    ]) {
+      expect(WHATSAPP_TEMPLATES[key].linkCode({ motivationId: id })).toBe(
+        `m${id}`,
+      );
+    }
   });
 
   // ⚠️ THE GUARD IN sendTemplate ONLY WORKS IF linkVars IS HONEST. It refuses

@@ -135,7 +135,7 @@ function assertProductionConfig() {
       `⚠️  ${BLOB_CRYPTO_SECRET_ENV} is not set — encrypted SA ID numbers and stored identity documents will FAIL, and KYC ID hashes will be written under a fallback salt that never matches once it is set. Nothing recovers data written in this state.`,
     );
   }
-  // WARN, not throw: WhatsApp is the fourth notification rail and is
+  // WARN, not throw: WhatsApp is a notification rail and is
   // ADDITIVE — a missing credential must degrade to SMS (its fallback),
   // never refuse to boot. Also gated by the whatsapp_enabled Setting
   // (default false), so this is launch-readiness noise until that flag and

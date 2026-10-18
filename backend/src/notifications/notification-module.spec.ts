@@ -65,19 +65,19 @@ describe('moduleForNotification', () => {
     expect(moduleForNotification('firearm_licence_expiring', 'SELLER')).toBe('/my/listings');
     expect(moduleForNotification('bank_verify_failed', 'ACCOUNT')).toBe('/profile');
     expect(moduleForNotification('refund_needs_bank_details', 'BUYER')).toBe('/profile');
-    expect(moduleForNotification('subscription_expiring', 'ACCOUNT')).toBe('/subscribe');
     expect(moduleForNotification('payment_released', 'SELLER')).toBe('/my/earnings');
     expect(moduleForNotification('payment_released', 'BUYER')).toBe('/my/orders');
+  });
+
+  it('routes message threads by perspective and delivery failures to Shipping', () => {
+    expect(moduleForNotification('new_message', 'BUYER')).toBe('/my/orders');
+    expect(moduleForNotification('new_message', 'SELLER')).toBe('/my/sales');
+    expect(moduleForNotification('shipment_failed', 'BUYER')).toBe('/shipping');
   });
 
   it('rating lands on sale for seller, order for buyer', () => {
     expect(moduleForNotification('rating_received', 'SELLER')).toBe('/my/sales');
     expect(moduleForNotification('rating_received', 'BUYER')).toBe('/my/orders');
-  });
-
-  it('experiences/dealer/raffle go to the dashboard', () => {
-    expect(moduleForNotification('experience_pre_event_reminder', 'BUYER')).toBe('/dashboard');
-    expect(moduleForNotification('raffle_winner', 'ACCOUNT')).toBe('/dashboard');
   });
 
   it('returns null for an unknown type (still counts in the bell total)', () => {

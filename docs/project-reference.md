@@ -791,10 +791,10 @@ rifle does not get a human look. Three settings keys survive in the admin UI
 
 ## Notifications
 
-Three channels, one source of truth in `NotificationsService`:
+Four channels, one source of truth in `NotificationsService`:
 
 1. **Email** (Resend) — every event, every recipient.
-2. **SMS** (SMSPortal) — every event with a verified phone. Action SMSes embed
+2. **SMS** (SMSPortal) — every event with a phone. Action SMSes embed
    single-use tokens with 48h expiry.
 3. **In-app inbox** (`Notification` model) — drives the bell badge and
    `/notifications`.
@@ -803,6 +803,15 @@ Three channels, one source of truth in `NotificationsService`:
    action-required events only**, calls `push.sendToUser()`. A 410 from the
    gateway deletes the subscription row. iOS Safari 16.4+ only delivers to an
    installed PWA.
+
+**WhatsApp** (Meta Cloud API, `backend/src/whatsapp/`) is a fifth rail, off by
+default behind the `whatsapp_enabled` Setting and per-member
+`notifyWhatsappEnabled`. Its scope is **sales and document notifications only**
+— offers, outbids, auction wins, paid sales, payouts/refunds, private-arrange
+handover and Licence Centre motivations. **Shipping is sent by Bob Go
+directly**; there are no shipment/delivery templates in the registry, and a
+missing or failed WhatsApp send falls back to SMS. Template bodies never carry
+a listing title (Meta commerce policy / regulated goods).
 
 ⚠️ **Every transactional email is rendered by ONE in-code helper** —
 `renderEmail()` in `notifications.service.ts`, from an `EmailContent` object
