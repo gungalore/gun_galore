@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-10-19**.
 
+## 2026-10-19 - GROK PLATE QUALITY (FULL DEPLOY)
+
+**Motivation plates now render at the same quality as Grok online.** xAI `/images/generations` was called without `quality` or `resolution`, so every plate defaulted to `1k` + `low`; the 1 k image was then upscaled to 1 800 px and stored at JPEG 82. `XaiProvider` now pins `quality: "medium"` and `resolution: "2k"`, the ledger prices the 2K-medium rate (`$0.08` an image), and both plate services store at JPEG 92 with `4:4:4` chroma so the downscale keeps detail.
+
+**Prompts rewritten to xAI's six-part guide.** The species plates, all six self-defence scenes and the quarry line-up now lead with the subject, then materials/count/angle, props, directional light with readable exposure, colour fields, and lens/framing. The self-defence scenes moved off "dusk/night/dim" onto well-exposed twilight. `PLATES_PROMPT_VERSION` and `QUARRY_PROMPT_VERSION` are `2026-10-19a`; the course prompts share the new `EMPTY` tail.
+
+Gates: backend `tsc` clean + **366 suites / 5 698 tests** (8 skipped); frontend `tsc` clean + **143 files / 1 756 tests** (1 skipped) + production build exit 0.
+
+Commit **`4e0e8338`**. Full deploy at 14:32 SAST: rollback `alloutdoor-20261019-143219.dump` (32 829 034 bytes), no pending migrations, health x2 OK, public 200 x2, backend/frontend/warden online.
+
+**Know.** A four-plate pack now costs `$0.32` (was `$0.16`). Existing stored plates keep their old bytes; only newly generated or regenerated motivations use the new settings, and each row's `promptVersion` records which brief drew it.
+
 ## 2026-10-19 - PWA SYSTEM CHROME REASSERT (FRONTEND-ONLY DEPLOY)
 
 **Android launch inset.** The pre-paint theme script can run before Next emits the `theme-color` meta tags, leaving Chrome on stale system chrome until the member toggles theme; the bottom bar sat behind the system bar. `useTheme` now writes the resolved theme colour once after mount, mirroring the toggle that settled the insets.
