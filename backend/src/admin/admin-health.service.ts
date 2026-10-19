@@ -367,6 +367,7 @@ export class AdminHealthService {
       { key: 'firearm-licence-expiry', label: 'Firearm licence expiry sweep', schedule: 'daily 06:00', expectedIntervalSec: 86400 },
       { key: 'pa-payout-reconcile', label: 'Payout reconcile sweep', schedule: 'every 5 min', expectedIntervalSec: 300 },
       { key: 'orphan-reclaim', label: 'Orphaned reservation reclaim', schedule: 'every 5 min', expectedIntervalSec: 300 },
+      { key: 'checkout-hold-expiry', label: '15-minute checkout hold expiry', schedule: 'every 1 min', expectedIntervalSec: 60 },
       { key: 'order-status-rollup', label: 'Order status rollup', schedule: 'every 30 min', expectedIntervalSec: 1800 },
       { key: 'zoho-revenue-doc-retry', label: 'Zoho revenue-doc retry', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'email-outbox-retry', label: 'Email outbox retry', schedule: 'every 10 min', expectedIntervalSec: 600 },

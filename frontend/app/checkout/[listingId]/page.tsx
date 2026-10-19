@@ -3,7 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../../lib/auth-server';
 import { apiFetch } from '@/lib/api';
-import { Listing } from '@/lib/types';
+import { Listing, CheckoutHold } from '@/lib/types';
 import { formatPrice, CONDITION_LABELS } from '@/lib/utils';
 import { CheckoutForm } from './checkout-form';
 
@@ -26,10 +26,13 @@ export async function generateMetadata({
 
 export default async function CheckoutPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ listingId: string }>;
+  searchParams: Promise<{ t?: string }>;
 }) {
   const { listingId } = await params;
+  const { t: actionToken } = await searchParams;
 
   // Members-only stock (firearms, publicVisible=false) 404s for anonymous
   // callers, so the buyer's session token MUST be forwarded or every firearm
@@ -48,9 +51,27 @@ export default async function CheckoutPage({
   // checkout with the WINNING BID as the price.
   const isAuctionWin =
     listing.listingType === 'AUCTION' && listing.status === 'PAYMENT_PENDING';
+
+  // The 15-minute hold starts when the page opens. Fetch an existing one first
+  // so a reload (which sees the listing already PAYMENT_PENDING) can still
+  // render for the buyer who holds it. SMS-link buyers carry the CHECKOUT
+  // action token instead of a session.
+  let initialHold: CheckoutHold | null = null;
+  if (listing.listingType === 'BUY_NOW' && (token || actionToken)) {
+    const query = actionToken
+      ? `?listingId=${encodeURIComponent(listingId)}&t=${encodeURIComponent(actionToken)}`
+      : `?listingId=${encodeURIComponent(listingId)}`;
+    initialHold = await apiFetch<CheckoutHold>(`/transactions/hold${query}`, {
+      cache: 'no-store',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    }).catch(() => null);
+  }
+
   if (!isAuctionWin) {
-    if (listing.status !== 'ACTIVE') return notFound();
     if (listing.listingType !== 'BUY_NOW') return notFound();
+    // ACTIVE = no hold yet. PAYMENT_PENDING is only renderable when it is
+    // THIS buyer's unexpired hold; everyone else gets the 404.
+    if (listing.status !== 'ACTIVE' && !initialHold) return notFound();
   }
 
   // Self-buy guard. Backend rejects with 400 anyway, but landing
@@ -164,7 +185,11 @@ export default async function CheckoutPage({
           <h1 className="text-base font-medium mb-5" style={{ color: 'var(--text-primary)' }}>
             Checkout
           </h1>
-          <CheckoutForm listing={effectiveListing} />
+          <CheckoutForm
+            listing={effectiveListing}
+            initialHold={initialHold}
+            holdIncludedInListing={initialHold != null}
+          />
         </div>
       </div>
     </main>

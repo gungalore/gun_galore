@@ -622,6 +622,16 @@ export interface FeeBreakdown {
   sellerPayout: number;
 }
 
+// The 15-minute reservation the checkout page takes on a BUY_NOW listing.
+// `serverNow` lets the countdown correct for a skewed client clock.
+export interface CheckoutHold {
+  holdId: string;
+  listingId: string;
+  quantity: number;
+  expiresAt: string;
+  serverNow: string;
+}
+
 export interface Rating {
   id: string;
   transactionId: string;

@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   NotFoundException,
   ForbiddenException,
   Logger,
@@ -92,6 +93,15 @@ export const OZOW_FINAL_FAILURE_SUBSTATUSES = new Set([
 //   - 5d no-dispatch: existing auto-refund + strike flow (unchanged)
 export const ACCEPT_DEADLINE_HOURS = 48;
 export const DISPATCH_DEADLINE_DAYS = 5;
+
+// How long a BUY_NOW checkout may hold the item. The hold starts when the
+// buyer opens the checkout page and is also the hosted-payment link TTL once
+// they Pay, so an abandoned checkout can never strand stock for the old 24h.
+export const CHECKOUT_HOLD_MINUTES = 15;
+const CHECKOUT_HOLD_MS = CHECKOUT_HOLD_MINUTES * 60_000;
+// The reconcile sweep waits this long after the payment link's 15-minute TTL
+// before releasing, so an in-flight webhook or status poll can still claim it.
+const CHECKOUT_RECONCILE_SLACK_MS = 2 * 60_000;
 
 // Gateway-agnostic payment-result shape that markPaid() binds on. Kept
 // separate from OzowPaymentResult so the money-state machine never depends on
@@ -190,6 +200,44 @@ export class TransactionsService {
       throw new BadRequestException('Sellers cannot buy their own listings');
     }
 
+    // ---- 15-minute checkout hold (BUY_NOW only) ----
+    // The checkout page reserves ONE unit when it opens. Pay claims that hold
+    // instead of reserving the item a second time; any extra units the buyer
+    // selected are reserved atomically below. Auction wins and offer checkouts
+    // keep their existing windows and never carry a hold.
+    let checkoutHold: {
+      id: string;
+      quantity: number;
+    } | null = null;
+    if (dto.holdId) {
+      const hold = await this.prisma.checkoutHold.findUnique({
+        where: { id: dto.holdId },
+      });
+      if (
+        !hold ||
+        hold.buyerId !== buyer.id ||
+        hold.listingId !== listing.id
+      ) {
+        throw new BadRequestException('Checkout hold not found.');
+      }
+      if (hold.claimedAt) {
+        throw new ConflictException(
+          'This checkout hold is already in use. Refresh the page to start a new one.',
+        );
+      }
+      if (hold.expiresAt.getTime() <= Date.now()) {
+        throw new ConflictException(
+          'Your 15-minute reservation expired — refresh the page to hold the item again.',
+        );
+      }
+      if (dto.offerId || listing.listingType !== 'BUY_NOW') {
+        throw new BadRequestException(
+          'Checkout holds are only available for Buy Now listings.',
+        );
+      }
+      checkoutHold = { id: hold.id, quantity: hold.quantity };
+    }
+
     // ---- Offer-based checkout (TAKE_A_SHOT) ----
     let offerRecord: { id: string; offerAmount: number; counterAmount: number | null; buyerId: string; status: string; listingId: string } | null = null;
     // P0.2 — auction-winner checkout takes a different validation +
@@ -243,7 +291,12 @@ export class TransactionsService {
       }
       auctionWin = true;
     } else {
-      if (listing.status !== 'ACTIVE') {
+      // A held BUY_NOW listing is already PAYMENT_PENDING (the hold is what
+      // removed it from sale), so the holder must be allowed through. Everyone
+      // else still needs ACTIVE.
+      const heldByThisBuyer =
+        checkoutHold != null && listing.status === ListingStatus.PAYMENT_PENDING;
+      if (listing.status !== 'ACTIVE' && !heldByThisBuyer) {
         throw new BadRequestException('Listing is no longer available');
       }
       if (listing.listingType !== 'BUY_NOW') {
@@ -348,7 +401,10 @@ export class TransactionsService {
       // Offers and auction wins are always single-item.
       requested: offerRecord || auctionWin ? 1 : (dto as { quantity?: number }).quantity,
       trackInventory: listing.trackInventory,
-      quantityAvailable: listing.quantityAvailable,
+      // The hold already removed its ONE unit from quantityAvailable; add it
+      // back so the buyer is not told their own held unit is sold out.
+      quantityAvailable:
+        listing.quantityAvailable + (checkoutHold?.quantity ?? 0),
       quantityReserved: listing.quantityReserved,
     });
     if ('error' in qres) throw new BadRequestException(qres.error);
@@ -475,6 +531,27 @@ export class TransactionsService {
           handlingFeeCents,
         );
 
+    // Claim the checkout hold AFTER every validation (the live shipping quote
+    // takes a moment). Claiming hides it from the expiry sweep; the extra units,
+    // if the buyer selected more than the one held, are reserved below.
+    if (checkoutHold) {
+      const claim = await this.prisma.checkoutHold.updateMany({
+        where: {
+          id: checkoutHold.id,
+          buyerId: buyer.id,
+          listingId: listing.id,
+          claimedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { claimedAt: new Date() },
+      });
+      if (claim.count === 0) {
+        throw new ConflictException(
+          'Your 15-minute reservation expired — refresh the page to hold the item again.',
+        );
+      }
+    }
+
     // Reserve the listing ATOMICALLY. Only ONE buyer can flip it from
     // ACTIVE → PAYMENT_PENDING. This is the double-sell guard: for
     // TAKE_A_SHOT listings multiple offers can be ACCEPTED at once, so
@@ -496,42 +573,97 @@ export class TransactionsService {
     // re-opened SMS link) matches 0 rows. Once a transaction exists, its own
     // manualPayByAt window + the freeze sweep own the lifecycle; the
     // unpaid-winner sweep (expiresAt < now, no claim) can no longer fire.
-    const reserve = auctionWin
-      ? await this.prisma.listing.updateMany({
-          where: {
-            id: listing.id,
-            status: ListingStatus.PAYMENT_PENDING,
-            expiresAt: { not: null },
-          },
-          data: { expiresAt: null },
-        })
-      : listing.trackInventory
-      ? await this.prisma.listing.updateMany({
-          where: {
-            id: listing.id,
-            status: ListingStatus.ACTIVE,
-            quantityAvailable: { gte: quantity },
-          },
-          data: {
-            quantityAvailable: { decrement: quantity },
-            quantityReserved: { increment: quantity },
-          },
-        })
-      : await this.prisma.listing.updateMany({
-          where: { id: listing.id, status: ListingStatus.ACTIVE },
-          data: { status: ListingStatus.PAYMENT_PENDING },
-        });
-    if (reserve.count === 0) {
-      throw new BadRequestException(
-        auctionWin
-          ? 'You already have a payment in progress for this auction — check My Purchases to finish paying.'
-          : 'This item is no longer available — another buyer is completing checkout, or it has already sold.',
-      );
+    const stockRemovedNow = checkoutHold
+      ? Math.max(0, quantity - checkoutHold.quantity)
+      : quantity;
+    let reservedExtra = 0;
+    try {
+      if (checkoutHold) {
+        // The hold already reserved ONE unit; reserve only the buyer's extra
+        // units here (a tracked listing may have any left).
+        if (stockRemovedNow > 0) {
+          const extraReserve = await this.prisma.listing.updateMany({
+            where: {
+              id: listing.id,
+              status: {
+                in: [ListingStatus.ACTIVE, ListingStatus.PAYMENT_PENDING],
+              },
+              quantityAvailable: { gte: stockRemovedNow },
+            },
+            data: {
+              quantityAvailable: { decrement: stockRemovedNow },
+              quantityReserved: { increment: stockRemovedNow },
+            },
+          });
+          if (extraReserve.count === 0) {
+            throw new BadRequestException(
+              'This item is no longer available — another buyer is completing checkout, or it has already sold.',
+            );
+          }
+          reservedExtra = stockRemovedNow;
+        }
+      } else {
+        const reserve = auctionWin
+          ? await this.prisma.listing.updateMany({
+              where: {
+                id: listing.id,
+                status: ListingStatus.PAYMENT_PENDING,
+                expiresAt: { not: null },
+              },
+              data: { expiresAt: null },
+            })
+          : listing.trackInventory
+            ? await this.prisma.listing.updateMany({
+                where: {
+                  id: listing.id,
+                  status: ListingStatus.ACTIVE,
+                  quantityAvailable: { gte: quantity },
+                },
+                data: {
+                  quantityAvailable: { decrement: quantity },
+                  quantityReserved: { increment: quantity },
+                },
+              })
+            : await this.prisma.listing.updateMany({
+                where: { id: listing.id, status: ListingStatus.ACTIVE },
+                data: { status: ListingStatus.PAYMENT_PENDING },
+              });
+        if (reserve.count === 0) {
+          throw new BadRequestException(
+            auctionWin
+              ? 'You already have a payment in progress for this auction — check My Purchases to finish paying.'
+              : 'This item is no longer available — another buyer is completing checkout, or it has already sold.',
+          );
+        }
+      }
+    } catch (err) {
+      // Put the claimed hold back (still unexpired) and undo any extras we
+      // managed to reserve, so the buyer can retry or the sweep can release it.
+      if (checkoutHold) {
+        await this.prisma.checkoutHold
+          .updateMany({
+            where: { id: checkoutHold.id },
+            data: { claimedAt: null },
+          })
+          .catch(() => undefined);
+      }
+      if (reservedExtra > 0) {
+        await this.prisma.listing
+          .update({
+            where: { id: listing.id },
+            data: {
+              quantityAvailable: { increment: reservedExtra },
+              quantityReserved: { decrement: reservedExtra },
+            },
+          })
+          .catch(() => undefined);
+      }
+      throw err;
     }
     // Tracked listing fully reserved → hide from browse (PAYMENT_PENDING)
     // until paid (→ SOLD) or released (→ ACTIVE). Best-effort cosmetic flip;
     // the counter above is the real oversell guard.
-    if (listing.trackInventory && listing.quantityAvailable - quantity <= 0) {
+    if (listing.trackInventory) {
       await this.prisma.listing
         .updateMany({
           where: { id: listing.id, quantityAvailable: { lte: 0 } },
@@ -543,74 +675,109 @@ export class TransactionsService {
     // Create the transaction record first to get an ID. If this throws on
     // the auction path, restore the pay-window column we CAS-claimed above
     // so the winner can retry (and the unpaid-winner sweep still applies).
-    const createTx = () => this.prisma.transaction.create({
-      data: {
-        listingId: listing.id,
-        buyerId: buyer.id,
-        sellerId: listing.sellerId,
-        quantity,
-        listingPrice,
-        commissionZar,
-        processingFee,
-        shippingCost,
-        shippingHandlingCents, // P6.4 — 10%-of-carrier-rate GG margin (0 for firearm/collection/sibling)
-        shippingServiceCode,
-        shippingProviderSlug,
-        shippingServiceLevelCode,
-        deliveryOption,
-        pickupPointLocationId,
-        pickupPointSnapshot: pickupPointSnapshot
-          ? (pickupPointSnapshot as Prisma.InputJsonValue)
-          : undefined,
-        // The EFFECTIVE flag and the model that produced these columns — see
-        // where both are derived above. Every document downstream reads them.
-        passFeeToBuyer: buyerPaysProcessingFee,
-        feeModel,
-        buyerTotal,
-        sellerPayout,
-        shippingMethod: dto.shippingMethod,
-        deliveryAddress: dto.deliveryAddress ? { ...dto.deliveryAddress } : undefined,
-        dealerId: dto.dealerId,
-        // PRIVATE_ARRANGE consent landed via DTO. We stamp the
-        // timestamp here (not at markPaid time) because the consent is
-        // given at checkout, regardless of whether Ozow captures the
-        // card. The immediate-payout branch in markPaid still verifies
-        // this column is set before releasing funds — defence in depth.
-        privateArrangeAcceptedAt:
-          dto.shippingMethod === 'PRIVATE_ARRANGE' && dto.privateArrangeConsent
-            ? new Date()
-            : null,
-        // M33 — durable evidence the buyer gave the 18+/SAPS-competency
-        // attestation. The hard gate above is what enforces it; this is what
-        // proves it afterwards. Only stamped on a firearm line, so a NULL on a
-        // non-firearm row means "not applicable", not "not attested".
-        firearmAttestationAcceptedAt:
-          listing.isFirearm && dto.firearmAttestation18Plus === true
-            ? new Date()
-            : null,
-        // P3 — durable evidence the buyer acknowledged in-person collection +
-        // papers handover for a trailer/caravan. Gate above enforces it.
-        collectionPapersAckAt:
-          listing.requiresPapers && dto.collectionPapersAccepted
-            ? new Date()
-            : null,
-        // The no-refund-for-location acknowledgement. Three columns because a
-        // bare timestamp proves a box was ticked, not what it said: the version
-        // pins the wording, and buyerLocationShown snapshots the exact vicinity
-        // string rendered above the tick. Listing.publicLocality stays editable
-        // after the sale, so a join would show what the listing says today
-        // rather than what this buyer was shown.
-        buyerTermsAckAt: new Date(),
-        buyerTermsAckVersion: REFUND_TERMS_VERSION,
-        buyerLocationShown: vicinityLabel(listing),
-      },
-    });
-    const tx = await createTx().catch(async (err) => {
+    // When a checkout hold is present, the hold is deleted in the SAME DB
+    // transaction as the sale row, so the expiry sweep can never release the
+    // reservation underneath a paid checkout.
+    const txData: Prisma.TransactionUncheckedCreateInput = {
+      listingId: listing.id,
+      buyerId: buyer.id,
+      sellerId: listing.sellerId,
+      quantity,
+      listingPrice,
+      commissionZar,
+      processingFee,
+      shippingCost,
+      shippingHandlingCents, // P6.4 — 10%-of-carrier-rate GG margin (0 for firearm/collection/sibling)
+      shippingServiceCode,
+      shippingProviderSlug,
+      shippingServiceLevelCode,
+      deliveryOption,
+      pickupPointLocationId,
+      pickupPointSnapshot: pickupPointSnapshot
+        ? (pickupPointSnapshot as Prisma.InputJsonValue)
+        : undefined,
+      // The EFFECTIVE flag and the model that produced these columns — see
+      // where both are derived above. Every document downstream reads them.
+      passFeeToBuyer: buyerPaysProcessingFee,
+      feeModel,
+      buyerTotal,
+      sellerPayout,
+      shippingMethod: dto.shippingMethod,
+      deliveryAddress: dto.deliveryAddress ? { ...dto.deliveryAddress } : undefined,
+      dealerId: dto.dealerId,
+      // PRIVATE_ARRANGE consent landed via DTO. We stamp the
+      // timestamp here (not at markPaid time) because the consent is
+      // given at checkout, regardless of whether Ozow captures the
+      // card. The immediate-payout branch in markPaid still verifies
+      // this column is set before releasing funds — defence in depth.
+      privateArrangeAcceptedAt:
+        dto.shippingMethod === 'PRIVATE_ARRANGE' && dto.privateArrangeConsent
+          ? new Date()
+          : null,
+      // M33 — durable evidence the buyer gave the 18+/SAPS-competency
+      // attestation. The hard gate above is what enforces it; this is what
+      // proves it afterwards. Only stamped on a firearm line, so a NULL on a
+      // non-firearm row means "not applicable", not "not attested".
+      firearmAttestationAcceptedAt:
+        listing.isFirearm && dto.firearmAttestation18Plus === true
+          ? new Date()
+          : null,
+      // P3 — durable evidence the buyer acknowledged in-person collection +
+      // papers handover for a trailer/caravan. Gate above enforces it.
+      collectionPapersAckAt:
+        listing.requiresPapers && dto.collectionPapersAccepted
+          ? new Date()
+          : null,
+      // The no-refund-for-location acknowledgement. Three columns because a
+      // bare timestamp proves a box was ticked, not what it said: the version
+      // pins the wording, and buyerLocationShown snapshots the exact vicinity
+      // string rendered above the tick. Listing.publicLocality stays editable
+      // after the sale, so a join would show what the listing says today
+      // rather than what this buyer was shown.
+      buyerTermsAckAt: new Date(),
+      buyerTermsAckVersion: REFUND_TERMS_VERSION,
+      buyerLocationShown: vicinityLabel(listing),
+    };
+    const persistTx = async () => {
+      if (!checkoutHold) {
+        return this.prisma.transaction.create({ data: txData });
+      }
+      return this.prisma.$transaction(async (txc) => {
+        const created = await txc.transaction.create({ data: txData });
+        const consumed = await txc.checkoutHold.deleteMany({
+          where: { id: checkoutHold.id, claimedAt: { not: null } },
+        });
+        if (consumed.count === 0) {
+          throw new Error('checkout hold disappeared while paying');
+        }
+        return created;
+      });
+    };
+    const tx = await persistTx().catch(async (err) => {
       if (auctionWin && listing.expiresAt) {
         await this.prisma.listing
           .updateMany({
             where: { id: listing.id, status: ListingStatus.PAYMENT_PENDING },
             data: { expiresAt: listing.expiresAt },
+          })
+          .catch(() => undefined);
+      }
+      if (checkoutHold) {
+        await this.prisma.checkoutHold
+          .updateMany({
+            where: { id: checkoutHold.id },
+            data: { claimedAt: null },
+          })
+          .catch(() => undefined);
+      }
+      if (reservedExtra > 0) {
+        await this.prisma.listing
+          .update({
+            where: { id: listing.id },
+            data: {
+              quantityAvailable: { increment: reservedExtra },
+              quantityReserved: { decrement: reservedExtra },
+            },
           })
           .catch(() => undefined);
       }
@@ -670,11 +837,254 @@ export class TransactionsService {
     };
   }
 
-  // Single-item checkout (the original create()). Reserves + creates ONE
-  // transaction via the shared core, then runs the payment branch (manual
-  // EFT today; gateway-neutral later). Behaviour is byte-identical to the
-  // pre-8b create() — the only change is that the core is now a reusable
-  // method that the multi-item order checkout also calls.
+  // ------------------------------------------------------------------
+  // 15-minute BUY_NOW checkout holds
+  // ------------------------------------------------------------------
+  // Opening /checkout/[listingId] reserves ONE unit and starts the visible
+  // countdown. The sale Transaction is still created only at Pay, where the
+  // hold is claimed and deleted atomically with it. An unpaid hold expires and
+  // the sweep releases the unit back to the marketplace.
+  private holdPayload(hold: {
+    id: string;
+    listingId: string;
+    quantity: number;
+    expiresAt: Date;
+  }) {
+    return {
+      holdId: hold.id,
+      listingId: hold.listingId,
+      quantity: hold.quantity,
+      expiresAt: hold.expiresAt.toISOString(),
+      serverNow: new Date().toISOString(),
+    };
+  }
+
+  async getCheckoutHold(buyerId: string, listingId: string) {
+    const hold = await this.prisma.checkoutHold.findUnique({
+      where: { buyerId_listingId: { buyerId, listingId } },
+    });
+    if (!hold || hold.claimedAt || hold.expiresAt.getTime() <= Date.now()) {
+      return null;
+    }
+    return this.holdPayload(hold);
+  }
+
+  async createCheckoutHold(buyerId: string, listingId: string) {
+    const buyer = await this.prisma.user.findUnique({ where: { id: buyerId } });
+    if (!buyer) throw new NotFoundException('Buyer not found');
+    assertAccountNotClosed(buyer);
+    if (buyer.isBanned) throw new ForbiddenException('Account is banned');
+
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+      select: {
+        id: true,
+        sellerId: true,
+        listingType: true,
+        status: true,
+        trackInventory: true,
+        quantityAvailable: true,
+      },
+    });
+    if (!listing) throw new NotFoundException('Listing not found');
+    if (listing.sellerId === buyer.id) {
+      throw new BadRequestException('Sellers cannot buy their own listings');
+    }
+    if (listing.listingType !== 'BUY_NOW') {
+      throw new BadRequestException('Only Buy Now checkouts can hold an item.');
+    }
+
+    const existing = await this.prisma.checkoutHold.findUnique({
+      where: { buyerId_listingId: { buyerId, listingId } },
+    });
+    if (existing) {
+      if (!existing.claimedAt && existing.expiresAt.getTime() > Date.now()) {
+        return this.holdPayload(existing);
+      }
+      if (existing.claimedAt) {
+        throw new ConflictException(
+          'This checkout hold is already in use. Refresh the page to start a new one.',
+        );
+      }
+      await this.releaseCheckoutHoldRow(existing, { requireExpired: true });
+    }
+
+    if (listing.status !== ListingStatus.ACTIVE) {
+      throw new ConflictException(
+        'This item is no longer available — another buyer is completing checkout, or it has already sold.',
+      );
+    }
+
+    // Reserve exactly ONE unit. Additional units are only reserved at Pay, so
+    // opening a checkout cannot empty the seller's stock.
+    const reserve = listing.trackInventory
+      ? await this.prisma.listing.updateMany({
+          where: {
+            id: listing.id,
+            status: ListingStatus.ACTIVE,
+            quantityAvailable: { gte: 1 },
+          },
+          data: {
+            quantityAvailable: { decrement: 1 },
+            quantityReserved: { increment: 1 },
+          },
+        })
+      : await this.prisma.listing.updateMany({
+          where: { id: listing.id, status: ListingStatus.ACTIVE },
+          data: { status: ListingStatus.PAYMENT_PENDING },
+        });
+    if (reserve.count === 0) {
+      throw new ConflictException(
+        'This item is no longer available — another buyer is completing checkout, or it has already sold.',
+      );
+    }
+    if (listing.trackInventory) {
+      // Conditional on the LIVE counter, not the snapshot above: a concurrent
+      // hold or checkout may have taken the last unit since this request read
+      // the row.
+      await this.prisma.listing
+        .updateMany({
+          where: { id: listing.id, quantityAvailable: { lte: 0 } },
+          data: { status: ListingStatus.PAYMENT_PENDING },
+        })
+        .catch(() => undefined);
+    }
+
+    try {
+      const hold = await this.prisma.checkoutHold.create({
+        data: {
+          listingId: listing.id,
+          buyerId: buyer.id,
+          quantity: 1,
+          expiresAt: new Date(Date.now() + CHECKOUT_HOLD_MS),
+        },
+      });
+      return this.holdPayload(hold);
+    } catch (err) {
+      // Two tabs (or a React double-mount) can race the unique key. The second
+      // request must return the hold the first one created, not release it.
+      if ((err as { code?: string }).code === 'P2002') {
+        const winner = await this.prisma.checkoutHold.findUnique({
+          where: { buyerId_listingId: { buyerId, listingId } },
+        });
+        if (
+          winner &&
+          !winner.claimedAt &&
+          winner.expiresAt.getTime() > Date.now()
+        ) {
+          return this.holdPayload(winner);
+        }
+      }
+      // Compensate the reservation we just took.
+      if (listing.trackInventory) {
+        await this.prisma.listing
+          .update({
+            where: { id: listing.id },
+            data: {
+              quantityAvailable: { increment: 1 },
+              quantityReserved: { decrement: 1 },
+            },
+          })
+          .catch(() => undefined);
+      } else {
+        await this.prisma.listing
+          .updateMany({
+            where: { id: listing.id, status: ListingStatus.PAYMENT_PENDING },
+            data: { status: ListingStatus.ACTIVE },
+          })
+          .catch(() => undefined);
+      }
+      throw err;
+    }
+  }
+
+  // Release one hold and put its unit back. `requireExpired` is the sweep's
+  // guard; the create path uses it to clear its own lapsed row first. Claimed
+  // holds are never touched here — the sale row owns that unit.
+  private async releaseCheckoutHoldRow(
+    hold: { id: string; listingId: string; quantity: number },
+    opts: { requireExpired?: boolean; allowClaimed?: boolean } = {},
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (txc) => {
+      const deleted = await txc.checkoutHold.deleteMany({
+        where: {
+          id: hold.id,
+          ...(opts.allowClaimed ? {} : { claimedAt: null }),
+          ...(opts.requireExpired ? { expiresAt: { lt: new Date() } } : {}),
+        },
+      });
+      if (deleted.count === 0) return false;
+
+      const listing = await txc.listing.findUnique({
+        where: { id: hold.listingId },
+        select: { trackInventory: true, quantityAvailable: true },
+      });
+      if (!listing) return true;
+
+      if (listing.trackInventory) {
+        const available = listing.quantityAvailable + hold.quantity;
+        await txc.listing.update({
+          where: { id: hold.listingId },
+          data: {
+            // Only show it again if there is stock left after other holds.
+            status:
+              available > 0
+                ? ListingStatus.ACTIVE
+                : ListingStatus.PAYMENT_PENDING,
+            quantityAvailable: { increment: hold.quantity },
+            quantityReserved: { decrement: hold.quantity },
+          },
+        });
+      } else {
+        await txc.listing.updateMany({
+          where: { id: hold.listingId, status: ListingStatus.PAYMENT_PENDING },
+          data: { status: ListingStatus.ACTIVE },
+        });
+      }
+      return true;
+    });
+  }
+
+  // Cron sweep: expired holds (and claims stranded by a crash before the sale
+  // row committed) put their unit back. Idempotent — deleteMany is the claim.
+  async releaseExpiredCheckoutHolds(): Promise<{ released: number }> {
+    const now = new Date();
+    const staleClaim = new Date(now.getTime() - 10 * 60_000);
+    const expired = await this.prisma.checkoutHold.findMany({
+      where: {
+        OR: [
+          { claimedAt: null, expiresAt: { lt: now } },
+          { claimedAt: { lt: staleClaim } },
+        ],
+      },
+      select: { id: true, listingId: true, quantity: true, claimedAt: true },
+      take: 50,
+    });
+    let released = 0;
+    for (const hold of expired) {
+      try {
+        if (
+          await this.releaseCheckoutHoldRow(hold, {
+            requireExpired: hold.claimedAt == null,
+            allowClaimed: hold.claimedAt != null,
+          })
+        ) {
+          released += 1;
+        }
+      } catch (err) {
+        this.logger.warn(
+          `releaseExpiredCheckoutHolds failed for ${hold.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (released > 0) {
+      this.logger.log(
+        `releaseExpiredCheckoutHolds: released ${released} expired hold(s)`,
+      );
+    }
+    return { released };
+  }
+
   async create(
     buyerId: string,
     dto: CreateTransactionDto,
@@ -719,6 +1129,11 @@ export class TransactionsService {
         amountZarCents: buyerTotal,
         merchantTransactionId: tx.id,
         returnUrl: resultUrl,
+        // A plain Buy Now gets the same 15-minute window as its hold. Auction
+        // wins and offer checkouts keep their existing longer windows.
+        ...(!auctionWin && !offerRecord
+          ? { expirySeconds: CHECKOUT_HOLD_MINUTES * 60 }
+          : {}),
       });
     } catch (err) {
       // Roll back the listing reservation if the gateway call fails.
@@ -1223,8 +1638,8 @@ export class TransactionsService {
   // simply means the buyer hasn't finished (or an EFT/PayShap is still
   // settling); reverting could double-sell a still-settling order.
   // Abandoned PAYMENT_PENDING listings are freed by the webhook and, failing
-  // that, by reconcileStaleGatewayCheckouts() after the 24h payment-link
-  // expiry.
+  // that, by reconcileStaleGatewayCheckouts() after the payment-link expiry
+  // (15 minutes for a plain Buy Now; 24h for auction/offer checkouts).
   async verifyResult(transactionId: string, _resourcePath?: string) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -4210,20 +4625,26 @@ export class TransactionsService {
   // either. Every abandoned checkout leaked one listing until manual DB
   // surgery. This is the poll half of the webhook+poll pattern.
   //
-  // After the Ozow pay-in link TTL (24h, see ozow.createPayment) plus slack,
-  // for each still-unpaid gateway tx: (a) re-fetch authoritative status and,
-  // if the money actually landed, markPaid (recovering a lost webhook); else
-  // (b) release the reservation + delete the dead tx. An auction win is handed
-  // back with a LAPSED expiresAt so the every-minute sweepUnpaidWins applies
-  // the full unpaid-winner lifecycle (EXPIRED + strike + runner-up) rather than
-  // reimplementing it here. A status-lookup failure NEVER releases — we must
-  // not free a possibly-paid order on a transient error.
+  // A plain BUY_NOW link now expires after 15 minutes (see
+  // CHECKOUT_HOLD_MINUTES), so its abandoned checkout is released after the
+  // TTL plus a short slack. Auction wins and offer checkouts keep the 24h Ozow
+  // link TTL. For each still-unpaid gateway tx: (a) re-fetch authoritative
+  // status and, if the money actually landed, markPaid (recovering a lost
+  // webhook); else (b) release the reservation + delete the dead tx. An auction
+  // win is handed back with a LAPSED expiresAt so the every-minute
+  // sweepUnpaidWins applies the full unpaid-winner lifecycle (EXPIRED + strike
+  // + runner-up) rather than reimplementing it here. A status-lookup failure
+  // NEVER releases — we must not free a possibly-paid order on a transient
+  // error.
   async reconcileStaleGatewayCheckouts(): Promise<{
     recovered: number;
     released: number;
   }> {
     const linkTtlMs = 25 * 60 * 60 * 1000; // 24h Ozow link + 1h slack
     const cutoff = new Date(Date.now() - linkTtlMs);
+    const buyNowCutoff = new Date(
+      Date.now() - CHECKOUT_HOLD_MINUTES * 60_000 - CHECKOUT_RECONCILE_SLACK_MS,
+    );
     const stale = await this.prisma.transaction.findMany({
       where: {
         paidAt: null,
@@ -4233,7 +4654,18 @@ export class TransactionsService {
         // reclaim filter; today a cart line never gets a gatewayCheckoutId.
         orderId: null,
         swapId: null,
-        createdAt: { lt: cutoff },
+        OR: [
+          // Plain Buy Now: 15-minute payment link.
+          {
+            listing: { listingType: 'BUY_NOW' },
+            createdAt: { lt: buyNowCutoff },
+          },
+          // Auction wins / offer checkouts keep the 24h link.
+          {
+            listing: { listingType: { not: 'BUY_NOW' } },
+            createdAt: { lt: cutoff },
+          },
+        ],
       },
       select: {
         id: true,

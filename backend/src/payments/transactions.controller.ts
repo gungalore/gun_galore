@@ -31,6 +31,7 @@ import { StreamableFile } from '@nestjs/common';
 import type { Response } from 'express';
 import { Res } from '@nestjs/common';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { CreateHoldDto } from './dto/create-hold.dto';
 import { BANDS, MIN_COMMISSION_CENTS } from './fee.calculator';
 
 @Controller('transactions')
@@ -60,6 +61,56 @@ export class TransactionsController {
       })),
       minimumCommissionCents: MIN_COMMISSION_CENTS,
     };
+  }
+
+  // ---------------------------------------------------------------
+  // 15-minute BUY_NOW checkout hold
+  //
+  // The checkout page calls GET to reuse an existing hold (or to render after
+  // a reload) and POST to take one when it opens. Both accept a CHECKOUT action
+  // token so an SMS-link buyer without a session can hold too. Only ONE unit is
+  // reserved; extra units are reserved at Pay.
+  // ---------------------------------------------------------------
+  @Get('hold')
+  @UseGuards(AuthOrTokenGuard)
+  getHold(
+    @CurrentUser() userId: string,
+    @Query('listingId') listingId: string,
+    @Req()
+    req: Request & {
+      viaActionToken?: boolean;
+      actionTokenTargetId?: string;
+    },
+  ) {
+    if (!listingId) {
+      throw new BadRequestException('listingId is required.');
+    }
+    // A CHECKOUT token authorises ONE listing only.
+    if (req.viaActionToken && req.actionTokenTargetId !== listingId) {
+      throw new BadRequestException(
+        'This checkout link is for a different listing.',
+      );
+    }
+    return this.txService.getCheckoutHold(userId, listingId);
+  }
+
+  @Post('hold')
+  @UseGuards(AuthOrTokenGuard)
+  createHold(
+    @CurrentUser() userId: string,
+    @Body() dto: CreateHoldDto,
+    @Req()
+    req: Request & {
+      viaActionToken?: boolean;
+      actionTokenTargetId?: string;
+    },
+  ) {
+    if (req.viaActionToken && req.actionTokenTargetId !== dto.listingId) {
+      throw new BadRequestException(
+        'This checkout link is for a different listing.',
+      );
+    }
+    return this.txService.createCheckoutHold(userId, dto.listingId);
   }
 
   // ---------------------------------------------------------------

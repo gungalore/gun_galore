@@ -162,6 +162,13 @@ export class CreateTransactionDto {
   @Min(1)
   quantity?: number;
 
+  // The 15-minute checkout hold created when the buyer opened the checkout
+  // page (POST /transactions/hold). Optional so token/legacy callers that never
+  // held still work: without it the old reserve-at-Pay path runs unchanged.
+  @IsOptional()
+  @IsString()
+  holdId?: string;
+
   // ─── Hunting Packages / Experiences (EXP-E1) buyer attestations ──────
   // Five booleans the buyer must tick at experience checkout. The service
   // re-checks listing.isExperience server-side and HARD-refuses the

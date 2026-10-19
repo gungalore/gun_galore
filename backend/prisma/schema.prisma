@@ -504,6 +504,9 @@ model User {
   listingInquiriesAsSeller ListingInquiry[] @relation("ListingInquirySeller")
   listingInquiryMessages    ListingInquiryMessage[]
 
+  /// 15-minute checkout holds created when a buyer opens a BUY_NOW checkout.
+  checkoutHolds CheckoutHold[] @relation("BuyerCheckoutHolds")
+
   // ── Zoho Books linkage ────────────────────────────────────────────
   // The user's Contact record in Zoho Books. Created lazily the first
   // time we need to invoice them (e.g. on their first sale that hits
@@ -1308,6 +1311,7 @@ model Listing {
   // saved this" social-proof signal.
   wishlistedBy         WatchedListing[]
   questions            ListingQuestion[]
+  checkoutHolds        CheckoutHold[]
 
   // Community feed posts that attach this listing as context. Optional and
   // SetNull: deleting the listing orphans the post's card but never deletes
@@ -1330,6 +1334,30 @@ model Listing {
   // Signed-out discovery — every anonymous browse adds `publicVisible: true`
   // on top of the status filter, so index the pair.
   @@index([status, publicVisible])
+}
+
+// A 15-minute reservation created when a buyer opens the checkout page for a
+// plain BUY_NOW listing. Holds exactly one unit (multi-unit listing) or the
+// single item until the buyer pays or the hold expires. The Transaction row is
+// only created at Pay, so an abandoned checkout never leaves a phantom sale.
+model CheckoutHold {
+  id        String   @id @default(cuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerId   String
+  buyer     User     @relation("BuyerCheckoutHolds", fields: [buyerId], references: [id], onDelete: Cascade)
+  // Units reserved by this hold. Always 1 today: the buyer can pick more only
+  // at Pay, where the extra units are reserved atomically.
+  quantity  Int      @default(1)
+  // Set when Pay claims the hold. A claimed hold is never released by the
+  // expiry sweep; it is deleted in the same DB transaction as the sale row.
+  claimedAt DateTime?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([buyerId, listingId])
+  @@index([listingId])
+  @@index([expiresAt])
 }
 
 model ListingImage {

@@ -10,8 +10,10 @@ import {
   ShippingMethod,
   ShippingQuote,
   Address,
+  CheckoutHold,
 } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
+import { useCountdown } from '@/lib/use-countdown';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
 import { PaymentMethodSection } from '@/components/payment-method-section';
@@ -78,7 +80,35 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function CheckoutForm({ listing }: { listing: Listing }) {
+// mm:ss for the 15-minute reservation clock.
+function formatHold(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// The deadline is the server's. Correct it by the client/server clock skew so
+// a wrong device clock cannot show more (or less) time than the server allows.
+function normalizeHold(hold: CheckoutHold): CheckoutHold {
+  const skew = new Date(hold.serverNow).getTime() - Date.now();
+  return {
+    ...hold,
+    expiresAt: new Date(
+      new Date(hold.expiresAt).getTime() - skew,
+    ).toISOString(),
+  };
+}
+
+export function CheckoutForm({
+  listing,
+  initialHold = null,
+  holdIncludedInListing = false,
+}: {
+  listing: Listing;
+  initialHold?: CheckoutHold | null;
+  holdIncludedInListing?: boolean;
+}) {
   const { getToken } = useAuth();
 
   // SMS-link checkout: when the URL has ?t=<token>, this checkout
@@ -118,6 +148,67 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       },
     };
   }
+
+  // ─── 15-minute reservation ────────────────────────────────────────
+  // Opening the checkout page reserves ONE unit of a plain Buy Now listing.
+  // The clock below is the same 15-minute window the server enforces; Pay
+  // claims the hold, and an unpaid one returns the unit to the marketplace.
+  // Auction wins and offer checkouts keep their existing windows.
+  const holdEligible = listing.listingType === 'BUY_NOW';
+  const [hold, setHold] = useState<CheckoutHold | null>(
+    initialHold ? normalizeHold(initialHold) : null,
+  );
+  const [holding, setHolding] = useState(false);
+  const [holdError, setHoldError] = useState<string | null>(null);
+  const holdRequestedRef = useRef(false);
+  const holdMs = useCountdown(hold?.expiresAt ?? null);
+  const holdExpired = hold != null && holdMs <= 0;
+
+  async function ensureHold() {
+    if (!holdEligible) return;
+    if (holdRequestedRef.current && holding) return;
+    setHolding(true);
+    setHoldError(null);
+    try {
+      const { url, headers } = await authedRequest('/transactions/hold');
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ listingId: listing.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as
+        | CheckoutHold
+        | { message?: string | string[] };
+      if (!res.ok) {
+        const msg = Array.isArray(
+          (data as { message?: string | string[] }).message,
+        )
+          ? (data as { message: string[] }).message.join(', ')
+          : ((data as { message?: string }).message ??
+            `Could not reserve this item (${res.status})`);
+        throw new Error(msg);
+      }
+      setHold(normalizeHold(data as CheckoutHold));
+    } catch (err) {
+      setHold(null);
+      setHoldError(
+        err instanceof Error ? err.message : 'Could not reserve this item',
+      );
+    } finally {
+      setHolding(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!holdEligible) return;
+    // The server already found a live hold for this buyer — never extend or
+    // duplicate it on mount.
+    if (initialHold) return;
+    if (holdRequestedRef.current) return;
+    holdRequestedRef.current = true;
+    void ensureHold();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [holdEligible, initialHold]);
 
   // Collection-only listing (trailers / caravans) — collected in person
   // from the seller, no courier. When true we hide all courier shipping
@@ -181,8 +272,15 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // POST /transactions anyway. Model A: quantityAvailable already nets out
   // in-flight reservations, so it IS sellable — do not subtract
   // quantityReserved again (that double-counts and under-sells).
+  // On a server-rendered reload the listing snapshot was fetched AFTER our
+  // hold existed, so its own held unit is missing from quantityAvailable —
+  // add it back. On a fresh page the client takes the hold after this
+  // snapshot, so it is already counted.
+  const holdUnitInSnapshot = holdIncludedInListing
+    ? (initialHold?.quantity ?? 0)
+    : 0;
   const maxQty = listing.trackInventory
-    ? Math.max(1, listing.quantityAvailable ?? 1)
+    ? Math.max(1, (listing.quantityAvailable ?? 1) + holdUnitInSnapshot)
     : 1;
   const [quantity, setQuantity] = useState(1);
 
@@ -504,6 +602,10 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       buyerTermsAccepted: buyerTermsAck,
       // P8a — units to buy. Backend resolves to 1 for non-tracked listings.
       ...(listing.trackInventory ? { quantity } : {}),
+      // Claim the 15-minute reservation instead of reserving again. Omitted
+      // when the hold could not be taken (e.g. an unsupported auth state), so
+      // the backend's normal atomic reserve still protects the sale.
+      ...(holdEligible && hold && !holdExpired ? { holdId: hold.holdId } : {}),
       ...attestation,
       ...papers,
     };
@@ -570,6 +672,9 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   }
 
   function isReady() {
+    // The reservation is the permission to buy this unit. Without it (or once
+    // it lapses) Pay must wait — the server would reject the stale hold anyway.
+    if (holdEligible && (!hold || holdExpired || holding)) return false;
     // Unconditional, and FIRST — ahead of the `method === 'COLLECTION'` early
     // return below, which would otherwise let a collection buyer pay without
     // ever ticking it. Mirrors the server gate in reserveAndCreateLine.
@@ -710,6 +815,13 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
       setSubmitting(false);
+      // Pay claims the hold. Any failure (gateway, validation after the claim)
+      // can leave the buyer holding nothing, so take a fresh reservation and
+      // let the clock tell the truth.
+      if (holdEligible) {
+        holdRequestedRef.current = true;
+        void ensureHold();
+      }
     }
   }
 
@@ -726,6 +838,142 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
         >
           {error}
+        </div>
+      )}
+
+      {/* 15-minute reservation clock. The digits stay on screen while the
+          buyer fills in checkout (sticky), and Pay is disabled the moment the
+          clock reaches zero until a fresh hold is taken. */}
+      {holdEligible && (
+        <div
+          role="timer"
+          aria-live="polite"
+          className="px-4 py-3 rounded-[8px]"
+          style={{
+            position: 'sticky',
+            top: 8,
+            zIndex: 20,
+            background: 'var(--bg-card)',
+            border: `1px solid ${
+              holdExpired || holdError ? 'var(--red)' : 'var(--border)'
+            }`,
+            boxShadow: holdExpired
+              ? 'none'
+              : '0 2px 10px rgba(0,0,0,0.06)',
+          }}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p
+                className="text-xs uppercase"
+                style={{
+                  color:
+                    holdExpired || holdError
+                      ? 'var(--red)'
+                      : 'var(--text-tertiary)',
+                  letterSpacing: '0.06em',
+                  fontWeight: 600,
+                }}
+              >
+                {holding || !hold
+                  ? 'Reserving this item'
+                  : holdExpired
+                    ? 'Reservation expired'
+                    : 'Item reserved for you'}
+              </p>
+              <p
+                className="text-xs mt-1"
+                style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
+              >
+                {holding || !hold
+                  ? 'Holding one unit while you complete checkout…'
+                  : holdExpired
+                    ? 'The item may be back on the marketplace.'
+                    : 'Complete payment before the clock runs out or the item goes back on the marketplace.'}
+              </p>
+            </div>
+            <div
+              aria-label={`${formatHold(holdMs)} left to pay`}
+              style={{
+                flexShrink: 0,
+                fontSize: 34,
+                lineHeight: 1,
+                fontWeight: 700,
+                fontVariantNumeric: 'tabular-nums',
+                letterSpacing: '0.01em',
+                color:
+                  holdExpired || holdError
+                    ? 'var(--red)'
+                    : 'var(--text-primary)',
+              }}
+            >
+              {holding || !hold
+                ? '--:--'
+                : holdExpired
+                  ? '0:00'
+                  : formatHold(holdMs)}
+            </div>
+          </div>
+
+          {/* Elapsed portion of the 15-minute window. */}
+          <div
+            style={{
+              height: 4,
+              marginTop: 10,
+              borderRadius: 999,
+              overflow: 'hidden',
+              background: 'var(--border-divider)',
+            }}
+          >
+            <div
+              style={{
+                height: '100%',
+                width: `${
+                  holding
+                    ? 0
+                    : holdExpired
+                      ? 100
+                      : hold
+                        ? Math.min(
+                            100,
+                            Math.max(
+                              0,
+                              Math.round(
+                                (1 - holdMs / (15 * 60_000)) * 100,
+                              ),
+                            ),
+                          )
+                        : 0
+                }%`,
+                background: 'var(--red)',
+                transition: 'width 1s linear',
+              }}
+            />
+          </div>
+
+          {(holdExpired || holdError) && (
+            <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>
+              {holdError ?? 'Your 15-minute reservation has expired.'}{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  holdRequestedRef.current = true;
+                  void ensureHold();
+                }}
+                disabled={holding}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--red)',
+                  cursor: holding ? 'not-allowed' : 'pointer',
+                  textDecoration: 'underline',
+                  padding: 0,
+                }}
+              >
+                {holding ? 'Holding…' : 'Hold it again'}
+              </button>
+            </p>
+          )}
         </div>
       )}
 

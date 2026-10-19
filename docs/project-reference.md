@@ -531,6 +531,16 @@ on our own delivery margin.
 
 One API (pay-in + refunds) + Payouts API (seller disbursement).
 
+- **15-minute Buy Now hold:** opening `/checkout/[listingId]` for a plain
+  `BUY_NOW` listing reserves exactly ONE unit (`CheckoutHold`) and starts a
+  visible countdown. Pay claims that hold and deletes it in the same DB
+  transaction as the `Transaction` row; extra units selected at Pay are
+  reserved atomically then. An unpaid hold is released by the every-minute
+  `checkout-hold-expiry` sweep, which restores the unit and relists the item.
+  Auction wins and offer checkouts keep their existing 24h windows. The Ozow
+  pay-in link for a plain `BUY_NOW` is also minted with a 15-minute expiry, and
+  `reconcileStaleGatewayCheckouts()` uses that shorter cutoff for Buy Now.
+
 - **Pay-in:** `ozow.createPayment()` (`POST https://one.ozow.com/v1/payments`)
   → hosted page → `/checkout/complete?id=…` → `verifyResult()` re-fetches
   authoritative status (`GET /payments/{id}/transactions`) and matches the
