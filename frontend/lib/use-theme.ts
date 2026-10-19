@@ -30,18 +30,25 @@ function resolveTheme(preference: ThemeValue): ResolvedTheme {
 
 // The viewport export emits two <meta name="theme-color"> tags selected by
 // prefers-color-scheme. That is fine for the OS default, but this app also has
-// an explicit light/dark control: a member who chooses dark on a light-OS phone
-// was still giving Android a light theme-color, which paints the system
-// navigation bar as a white slab under our dark tab bar. Keep the meta in step
-// with the theme we are actually rendering.
+// an explicit light/dark control.
+//
+// ⚠️ INSTALLED ANDROID PWA: the system navigation bar background follows the
+// device, not this app, and Chrome derives the navigation-button tint from
+// theme-color. A dark theme-color therefore produced white buttons on the
+// device's white bar — invisible. Keep the installed app on the light system
+// colour so the buttons stay dark and visible; the app content itself remains
+// dark. Browser tabs keep the app-coloured theme-color.
 const THEME_COLOR: Record<ResolvedTheme, string> = {
   light: '#F7F6F3',
   dark: '#131110',
 };
 
 function syncThemeColor(theme: ResolvedTheme): void {
+  const standalone =
+    document.documentElement.dataset.standalone === 'true';
+  const color = standalone ? '#F7F6F3' : THEME_COLOR[theme];
   document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
-    meta.setAttribute('content', THEME_COLOR[theme]);
+    meta.setAttribute('content', color);
   });
 }
 

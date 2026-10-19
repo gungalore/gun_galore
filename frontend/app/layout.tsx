@@ -78,7 +78,7 @@ const INSTALL_CAPTURE_SCRIPT = `(function(){try{window.__ggInstallEvent=window._
 // Reads localStorage 'gg-theme' (light|dark|system). Falls back to
 // prefers-color-scheme when 'system'. Writes data-theme to <html>.
 // Does NOT write to localStorage â€” that is the client hook's job.
-const THEME_DETECT_SCRIPT = `(function(){try{var KEY='gg-theme';var stored=localStorage&&localStorage.getItem(KEY);var pref=stored==='light'||stored==='dark'?stored:'system';var dark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;var theme=pref==='system'? (dark?'dark':'light') : pref;document.documentElement.dataset.theme=theme;var color=theme==='dark'?'#131110':'#F7F6F3';var metas=document.querySelectorAll('meta[name="theme-color"]');for(var i=0;i<metas.length;i++){metas[i].setAttribute('content',color);}}catch(_){}})();`;
+const THEME_DETECT_SCRIPT = `(function(){try{var KEY='gg-theme';var stored=localStorage&&localStorage.getItem(KEY);var pref=stored==='light'||stored==='dark'?stored:'system';var dark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;var theme=pref==='system'? (dark?'dark':'light') : pref;document.documentElement.dataset.theme=theme;var standalone=document.documentElement.dataset.standalone==='true';var color=standalone?'#F7F6F3':(theme==='dark'?'#131110':'#F7F6F3');var metas=document.querySelectorAll('meta[name="theme-color"]');for(var i=0;i<metas.length;i++){metas[i].setAttribute('content',color);}}catch(_){}})();`;
 
 // Canonical origin now lives in lib/brand.ts so the manifest and this file
 // cannot disagree â€” see the note there.

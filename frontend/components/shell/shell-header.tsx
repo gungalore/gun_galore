@@ -271,16 +271,20 @@ function PushHeader({ pathname }: { pathname: string }) {
       <button
         type="button"
         onClick={() => {
-          // history.back() where there is history, so the member returns to
-          // their filters and scroll position rather than being dropped on the
-          // home page. A cold entry from a shared link has none.
-          //
-          // Notifications is the one push destination whose fallback should be
-          // Account, not Home: a cold open from the OS notification has no
-          // previous page, and "back" from there should land on the member's
-          // own surface rather than the shop front.
+          // Notifications always goes to Account, even when the PWA has a
+          // history entry (which is every launch on iOS). The Back chevron is
+          // an exit from the notification centre, not a history scrubber.
+          // replace() rather than push() so pressing system back afterwards
+          // does not drop the member straight back into Notifications.
+          if (pathname.startsWith('/notifications')) {
+            router.replace('/account');
+            return;
+          }
+          // Everywhere else, history.back() returns the member to their
+          // filters and scroll position; a cold entry from a shared link has
+          // no history and goes Home.
           if (window.history.length > 1) router.back();
-          else router.push(pathname.startsWith('/notifications') ? '/account' : '/');
+          else router.push('/');
         }}
         aria-label="Back"
         className="gg-press"
