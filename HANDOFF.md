@@ -5,7 +5,19 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-18**.
+Last updated: **2026-10-19**.
+
+## 2026-10-19 - PWA SYSTEM CHROME AND NOTIFICATIONS BACK (FRONTEND-ONLY DEPLOY)
+
+**Installed PWA system chrome stays light.** Android derives the navigation-button tint from `theme-color`; a dark theme-color left white buttons invisible on the device's default white bar. In standalone mode the app now keeps `theme-color` light (`#F7F6F3`) while the app content still switches light/dark. Browser tabs keep the app-coloured theme-color.
+
+**Notifications back goes to Account.** The top-left chevron on `/notifications` now always `router.replace('/account')`, even when the PWA has history (iOS always does). System back will not fall into the notification tabs again.
+
+Gates: frontend `tsc` clean + **143 files / 1 756 tests** (1 skipped), production build exit 0. Backend unchanged.
+
+Commit **`4ded4e4a`**. Frontend-only deploy at 08:23 SAST: rollback `alloutdoor-20261019-082311.dump` (32 811 826 bytes), health x2 OK, public 200 x2, backend/frontend/warden all online.
+
+**Know.** The PWA cannot keep a dark status bar while forcing a light navigation bar: Android uses the same `theme-color` for both. A TWA would be required for independent control.
 
 ## 2026-10-18 - MOBILE CHROME, NOTIFICATION ICON AND BACK STACK (FRONTEND-ONLY DEPLOY)
 
