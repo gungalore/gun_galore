@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-10-19**.
 
+## 2026-10-19 - GROK PLATE TIMEOUT FIX (BACKEND DEPLOY)
+
+**The 2K/medium Grok plates were paid for and thrown away.** Measured on the box, one 2K/medium plate takes **99.5s**; both plate services still passed `timeoutMs: 60_000`, so every call aborted, retried twice and failed at ~181s. MO000099's 16:32 attempt logged four `motivation.plate` timeouts and kept nothing.
+
+`TIMEOUT_MS` is now **180_000** in `motivation-plates.service.ts` and `quarry-plate.service.ts`. No key/model/aspect change was needed: `GROK_API_KEY` (last4 `jWRY`) returned a real 9.35 MB 2K image, and `21:9` is a supported ratio.
+
+**Gemini key replaced too.** The box key (last4 `-HUg`) now returns **200 OK** on `gemini-3.5-flash` and `gemini-3.8-flash`; the previous `…s1Dw` value was returning 401 `ACCESS_TOKEN_TYPE_UNSUPPORTED`.
+
+Gates: backend `tsc` clean + **366 suites / 5 695 tests** (8 skipped); frontend `tsc` clean + **143 files / 1 756 tests** (1 skipped) + production build exit 0. One frontend run hit the known 5s timeout in `no-self-recursive-callbacks.spec.ts`; it passed alone and the full rerun was green.
+
+Commit **`fa2bb01f`**. Backend-only deploy at 19:35 SAST from a clean worktree (the main tree still carries the uncommitted fee-model rework): rollback `alloutdoor-20261019-193540.dump` (31 167 315 bytes), no pending migrations, health x2 OK, public 200 x2, backend/frontend/warden online.
+
+**Next:** regenerate MO000099 once and confirm the log says `Purpose plates drawn (…): 4/4 kept`. If a render still exceeds 180s, raise the constant rather than lowering quality.
+
 ## 2026-10-19 - GROK PLATE QUALITY (FULL DEPLOY)
 
 **Motivation plates now render at the same quality as Grok online.** xAI `/images/generations` was called without `quality` or `resolution`, so every plate defaulted to `1k` + `low`; the 1 k image was then upscaled to 1 800 px and stored at JPEG 82. `XaiProvider` now pins `quality: "medium"` and `resolution: "2k"`, the ledger prices the 2K-medium rate (`$0.08` an image), and both plate services store at JPEG 92 with `4:4:4` chroma so the downscale keeps detail.
