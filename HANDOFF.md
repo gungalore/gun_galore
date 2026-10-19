@@ -7,6 +7,16 @@ overwritten.
 
 Last updated: **2026-10-19**.
 
+## 2026-10-19 - PWA SYSTEM CHROME REASSERT (FRONTEND-ONLY DEPLOY)
+
+**Android launch inset.** The pre-paint theme script can run before Next emits the `theme-color` meta tags, leaving Chrome on stale system chrome until the member toggles theme; the bottom bar sat behind the system bar. `useTheme` now writes the resolved theme colour once after mount, mirroring the toggle that settled the insets.
+
+Gates: frontend `tsc` clean + **143 files / 1 756 tests** (1 skipped), production build exit 0. Backend unchanged.
+
+Commit **`b9ac2471`**. Frontend-only deploy at 08:35 SAST: rollback `alloutdoor-20261019-083529.dump` (32 812 167 bytes), health x2 OK, public 200 x2, backend/frontend/warden all online.
+
+**Know.** Installed PWA keeps the light system bar and dark buttons; the app content still switches light/dark. The status bar is also light because Android uses one `theme-color` for both bars.
+
 ## 2026-10-19 - PWA SYSTEM CHROME AND NOTIFICATIONS BACK (FRONTEND-ONLY DEPLOY)
 
 **Installed PWA system chrome stays light.** Android derives the navigation-button tint from `theme-color`; a dark theme-color left white buttons invisible on the device's default white bar. In standalone mode the app now keeps `theme-color` light (`#F7F6F3`) while the app content still switches light/dark. Browser tabs keep the app-coloured theme-color.
