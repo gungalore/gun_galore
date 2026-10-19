@@ -13,7 +13,8 @@
 // written, the same rule the Gemini provider was built on:
 //
 //   • Auth is `Authorization: Bearer <GROK_API_KEY>`.
-//   • Request: `{ model, prompt, n, aspect_ratio, response_format }`.
+//   • Request: `{ model, prompt, n, quality, resolution, aspect_ratio,
+//     response_format }`.
 //     `aspect_ratio: "21:9"` — the value the plate frames are cropped to — is
 //     in xAI's enumerated list and was accepted (the model also lists "2:1",
 //     which the Gemini list does not; we keep 21:9 so one constant serves
@@ -21,9 +22,9 @@
 //   • Response: `{ data: [{ b64_json, mime_type }], usage }`. Requesting
 //     `response_format: "b64_json"` returns the bytes inline, so no second
 //     download is needed; a `url` shape is still handled as a fallback.
-//   • `usage.cost_in_usd_ticks` echoed the exact charge — 400000000 ticks for
-//     one 2.0 plate, i.e. $0.04, matching the published flat price (see
-//     llm.pricing.ts). We still price from our own table, so the ledger's
+//   • `usage.cost_in_usd_ticks` echoes the exact charge — 800000000 ticks for
+//     one 2K medium 2.0 plate, i.e. $0.08, matching the published flat price
+//     (see llm.pricing.ts). We still price from our own table, so the ledger's
 //     money column keeps one author.
 //
 // ⚠️ THIS PROVIDER IS IMAGES ONLY. `complete`/`stream` throw `unsupported`;
@@ -49,7 +50,7 @@ import type { LlmProviderClient } from './provider.interface';
 const DEFAULT_BASE_URL = 'https://api.x.ai/v1';
 
 /**
- * The Imagine model. `grok-imagine-image-2.0` at $0.04 an image.
+ * The Imagine model. `grok-imagine-image-2.0` at $0.08 an image (2K, medium).
  *
  * ⚠️ TAKEN FROM xAI'S OWN MODEL/PRICING PAGES, NOT FROM MEMORY, and probed on
  * this key — a guessed id is a 404 at the worst moment. Overridable with
@@ -140,10 +141,20 @@ export class XaiProvider implements LlmProviderClient {
       );
     }
 
+    /**
+     * ⚠️ `quality` AND `resolution` ARE PINNED, NOT LEFT TO THE DEFAULT.
+     * Omitted `quality` resolves to `auto`, which xAI documents as `low` for
+     * generation; omitted `resolution` is `1k`. Those two defaults were the
+     * whole reason a plate looked worse than the same prompt in Grok online —
+     * and a 1K render upscaled to the page's 1800 px is soft before the crop.
+     * `2k` + `medium` is the $0.08 row in llm.pricing.ts.
+     */
     const body = JSON.stringify({
       model,
       prompt: req.prompt,
       n: 1,
+      quality: 'medium',
+      resolution: '2k',
       response_format: 'b64_json',
       // ⚠️ ONLY WHEN ASKED — absent takes the model's own default rather than a
       // shape we assumed, the same rule the Gemini path follows.

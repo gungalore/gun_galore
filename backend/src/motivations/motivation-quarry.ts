@@ -286,21 +286,19 @@ export function quarryCaption(species: readonly QuarrySpecies[]): string {
  * wording without changing PROMPT_VERSION would leave every existing plate
  * looking like the old brief with no way to tell which is which.
  */
-export const QUARRY_PROMPT_VERSION = '2026-09-10b';
+export const QUARRY_PROMPT_VERSION = '2026-10-19a';
 
 export function quarryPrompt(species: readonly QuarrySpecies[]): string {
   const subjects = species.map((q) => q.subject).join(', then ');
+  const count = species.length;
   return [
-    'A photorealistic wildlife photograph, wide landscape frame, of these',
-    `animals standing together in one line across the frame: ${subjects}.`,
-    'Every animal broadside side-on to the camera, facing left, whole body in',
-    'frame, none overlapping another, evenly spaced, all at the same distance',
-    'from the camera so their sizes are correctly in proportion to one another.',
-    'Natural South African bushveld in soft early-morning light, background',
-    'gently out of focus. Sharp focus on the animals, natural colours, taken',
-    'with a long lens.',
-    'No people, no vehicles, no blood, no injury, no firearms, no text, no',
-    'watermark, no overlay, no markings of any kind on the animals.',
+    `Photorealistic wildlife documentary photograph of ${count === 1 ? 'one animal' : `${count} animals`} standing in a single horizontal line across a dry grass clearing in the South African bushveld: ${subjects}.`,
+    'Every animal stands in full broadside side-on profile facing left with all four hooves on level red-brown sandy earth, evenly spaced with clear daylight between them, all at the exact same distance from the camera so their body heights and horn lengths are in true proportion to one another, sharp hair-coat texture and natural horn ridges.',
+    'Flat golden grass in the foreground, scattered flat-topped acacia thorn trees in the distant background.',
+    'Warm low-angle morning sun from the front-left with bright, even fill light across the flank of every animal, crisp highlights and open, readable shadow detail.',
+    'Rich russet, tan, slate-grey and dark horn tones against pale gold grass and a clean pale-blue sky.',
+    'Shot at eye level with a 200 mm telephoto lens, whole body of every animal inside the wide frame with generous margin at both ends, subjects tack-sharp and background softly out of focus.',
+    'No people, no vehicles, no blood, no injury, no firearms, no text, no watermark, no overlay, no markings of any kind on the animals.',
   ].join(' ');
 }
 

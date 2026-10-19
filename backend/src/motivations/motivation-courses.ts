@@ -37,10 +37,16 @@ import type { WeaponClass } from './motivation-plates';
  * not of somebody doing it.
  */
 const EMPTY = [
-  'Photorealistic documentary photograph, natural South African daylight, sharp',
-  'focus, long lens, no people, no shooter, no hands, no firearms, no muzzle,',
-  'no muzzle flash, no motion or action, no vehicles, no text, no lettering, no',
-  'watermark, no logo, no overlay, no borders, no markings of any kind.',
+  'Photorealistic documentary photograph of an empty course of fire, shot from',
+  'an elevated three-quarter viewpoint just behind the firing line with a 35 mm',
+  'lens, so the whole stage is in frame: foreground shooting box and painted',
+  'fault lines, mid-ground barricades and props, downrange targets and the back',
+  'berm. Crisp morning South African sunlight from the left casting clean shadows,',
+  'bright readable exposure, realistic wood grain, weathered steel, compacted earth',
+  'and brown cardboard textures, sharp focus from foreground to berm, consistent',
+  'scale and clear spacing between targets. No people, no shooter, no hands, no',
+  'firearms, no muzzle, no muzzle flash, no motion or action, no vehicles, no',
+  'text overlays, no logos, no watermarks.',
 ].join(' ');
 
 export interface CourseSpec {
@@ -85,11 +91,12 @@ const COURSES: readonly CourseSpec[] = [
       'handgun is the firearm the divisions are built around, and its short ' +
       'barrel and light recoil suit the close, fast stages.',
     prompt:
-      'An empty outdoor practical shooting bay on a South African range: ' +
-      'earthen side and back berms enclosing a sand bay, wooden barricades and ' +
-      'low walls, white-painted fault lines marking a course of fire on the ' +
-      'ground, and a mix of brown cardboard targets on stakes with a few steel ' +
-      'plates downrange against the berm. ' +
+      'An empty outdoor IPSC practical-pistol bay on a South African range: ' +
+      'flat sand floor inside high earthen side and back berms, three brown ' +
+      'cardboard targets on timber stakes at about 10 to 15 metres, two steel ' +
+      'poppers at about 18 to 25 metres, two timber barricades and a low wall, ' +
+      'and white-painted fault lines forming an L-shaped course from a marked ' +
+      'shooting box in the foreground. ' +
       EMPTY,
   },
   {
@@ -105,11 +112,11 @@ const COURSES: readonly CourseSpec[] = [
       'compact self-loading handgun carried as for everyday use is eligible, ' +
       'which is why its size and handling matter.',
     prompt:
-      'An empty defensive-pistol stage on a South African range: dark plywood ' +
-      'barricades and simulated cover along a dirt bay, a white line marking ' +
-      'the edge of cover on the ground, and cardboard targets on stakes ' +
-      'downrange, one a no-shoot figure with raised hands, against a dirt ' +
-      'berm. ' +
+      'An empty SADPA/IDPA defensive-pistol stage on a South African range: a ' +
+      'dirt bay with two dark plywood barricades and a simulated low-cover ' +
+      'wall, three brown cardboard targets at about 7 to 15 metres, one of ' +
+      'them a black no-shoot target, white fault lines marking the shooting ' +
+      'positions and the edge of cover, and a tall earth berm behind. ' +
       EMPTY,
   },
   {
@@ -124,10 +131,11 @@ const COURSES: readonly CourseSpec[] = [
       'purely on elapsed time. A service-calibre handgun is the class the ' +
       'centrefire divisions are built around.',
     prompt:
-      'An empty steel-target range in South Africa: five painted steel plates ' +
-      'on stands set in a wide arc in front of a tall dirt berm, one a bright ' +
-      'red rectangular stop plate, with a white-painted shooting box marked on ' +
-      'bare dirt in the foreground. ' +
+      'An empty Steel Challenge bay in South Africa: five round painted steel ' +
+      'plates on low stands arranged in a wide arc at about 7 to 18 metres in ' +
+      'front of a tall dirt berm, one bright red square stop plate at the ' +
+      'centre rear, and a white-painted rectangular shooting box on bare dirt ' +
+      'in the foreground. ' +
       EMPTY,
   },
   {
@@ -144,10 +152,10 @@ const COURSES: readonly CourseSpec[] = [
       'loaders or moon clips deciding much of the score. A revolver in a ' +
       'service calibre is the firearm the divisions are built around.',
     prompt:
-      'An empty revolver stage on a South African range: a dirt bay with ' +
-      'wooden barricades and a low wall, cardboard targets on stakes and a few ' +
-      'steel plates downrange against an earth berm, white fault lines painted ' +
-      'on the ground. ' +
+      'An empty ICORE revolver stage on a South African range: a dirt bay with ' +
+      'one timber barricade and a low wall, four brown cardboard targets on ' +
+      'stakes at about 7 to 15 metres and three steel plates against the earth ' +
+      'berm, white fault lines painted on the ground from the shooting box. ' +
       EMPTY,
   },
   {
@@ -162,9 +170,9 @@ const COURSES: readonly CourseSpec[] = [
       'dedicated handgun owner shoots at branch level and by post.',
     prompt:
       'An empty 20 m handgun firing line on a South African range: a covered ' +
-      'concrete firing point with numbered lanes and low dividers, and a row ' +
-      'of paper target frames standing at the 20 m line beyond, open veld ' +
-      'behind. ' +
+      'concrete firing point with five numbered lanes and low timber ' +
+      'dividers, a row of paper bullseye target frames standing at the 20 m ' +
+      'line beyond, and open veld behind the butts. ' +
       EMPTY,
   },
 
@@ -181,10 +189,11 @@ const COURSES: readonly CourseSpec[] = [
       'at different distances, scored on time and accuracy. A self-loading ' +
       'rifle is the class the semi-auto divisions are built around.',
     prompt:
-      'An empty practical rifle bay on a South African range: earthen berms ' +
-      'enclosing a wide bay, timber barricades and low walls with white fault ' +
-      'lines forming a course of fire, cardboard targets on stakes and steel ' +
-      'plates set out across the bay at varied distances against the berm. ' +
+      'An empty IPSC practical-rifle bay on a South African range: high ' +
+      'earthen side and back berms around a wide sand bay, five brown ' +
+      'cardboard targets on stakes at about 50 to 150 metres and three steel ' +
+      'plates at about 100 to 200 metres, two timber barricades and a low ' +
+      'wall, white fault lines forming a long course from the shooting box. ' +
       EMPTY,
   },
   {
@@ -199,10 +208,11 @@ const COURSES: readonly CourseSpec[] = [
       'and paper targets with movement between positions. A self-loading ' +
       'rifle is one of the three firearms the format is built on.',
     prompt:
-      'An empty multi-gun rifle stage on a South African range: a wide bay of ' +
-      'earth berms with timber barricades, platforms and props, steel plates ' +
-      'and cardboard targets set out at long, varied distances downrange, ' +
-      'white fault lines on the ground. ' +
+      'An empty 3-Gun rifle stage on a South African range: a wide bay of ' +
+      'earth berms with a timber barricade, a low wall and a raised shooting ' +
+      'platform, four cardboard targets at about 50 to 150 metres and six ' +
+      'steel plates at about 100 to 300 metres, white fault lines linking the ' +
+      'shooting positions on the ground. ' +
       EMPTY,
   },
   {
@@ -217,10 +227,11 @@ const COURSES: readonly CourseSpec[] = [
       'from supported positions with movement between barricades and props. A ' +
       'self-loading rifle is the firearm the format is built around.',
     prompt:
-      'An empty tactical rifle range in South Africa: a dirt and gravel bay ' +
-      'with timber barricades, a low wall and a shooting platform, steel ' +
-      'plates and cardboard targets standing at several distances against an ' +
-      'earth backdrop. ' +
+      'An empty tactical precision rifle range in South Africa: a dirt and ' +
+      'gravel bay with a timber barricade, a low wall and a shooting platform ' +
+      'in the foreground, four steel plates standing at about 200 to 600 ' +
+      'metres and three cardboard targets at about 50 to 100 metres against a ' +
+      'high earth backdrop, with white fault lines on the ground. ' +
       EMPTY,
   },
   {
@@ -235,10 +246,11 @@ const COURSES: readonly CourseSpec[] = [
       'barricades and simulated cover, scored on time. A self-loading rifle ' +
       'or carbine is the firearm the stages are built around.',
     prompt:
-      'An empty defensive carbine stage on a South African range: plywood ' +
-      'barricades and simulated cover in a dirt bay, white fault lines on the ' +
-      'ground, and cardboard targets with a few steel plates downrange against ' +
-      'an earth berm. ' +
+      'An empty SADPA defensive-carbine stage on a South African range: a ' +
+      'dirt bay with two plywood barricades and a simulated low-cover wall, ' +
+      'four brown cardboard targets at about 10 to 50 metres and two steel ' +
+      'plates at the earth berm, white fault lines marking the shooting ' +
+      'positions and the edge of cover. ' +
       EMPTY,
   },
 
@@ -256,10 +268,11 @@ const COURSES: readonly CourseSpec[] = [
       'targets. A bolt-action hunting rifle is the firearm the exercises are ' +
       'built around.',
     prompt:
-      'An empty hunting-rifle range in South Africa: a mown firing point with ' +
-      'wooden shooting sticks and a single shooting mat, looking out over open ' +
-      'veld to a line of flat animal-silhouette targets standing at staged ' +
-      'distances on an earth bank. ' +
+      'An empty SA Hunters hunting-rifle range in South Africa: a mown firing ' +
+      'point with wooden shooting sticks, a single shooting mat and a ' +
+      'spotting scope, looking over open veld to three rows of flat ' +
+      'animal-silhouette targets standing at 100 m, 200 m and 300 m on ' +
+      'earth banks, with distance markers beside each row. ' +
       EMPTY,
   },
   {
@@ -276,9 +289,9 @@ const COURSES: readonly CourseSpec[] = [
       'firearm the discipline is built around.',
     prompt:
       'An empty fullbore rifle range in South Africa: a mown firing point with ' +
-      'shooting mats and a spotting scope on a tripod looking down a long open ' +
-      'range, wind flags on poles along the way, and target frames standing ' +
-      'far down at the stop butt. ' +
+      'four shooting mats in a row, a spotting scope on a tripod, and wind ' +
+      'flags on poles down the range, target frames standing at 300 m, 600 m ' +
+      'and 900 m in front of a high stop butt. ' +
       EMPTY,
   },
   {
@@ -295,8 +308,9 @@ const COURSES: readonly CourseSpec[] = [
       'events are built around.',
     prompt:
       'An empty lever-action range in South Africa: a simple dirt firing line ' +
-      'with a low rail and timber posts, steel plates and paper targets on ' +
-      'stands downrange against an earth bank, open veld beyond. ' +
+      'with a low rail and timber posts, five steel plates at about 25 to 100 ' +
+      'metres and paper targets on stands against an earth bank, open veld ' +
+      'beyond. ' +
       EMPTY,
   },
   {
@@ -312,10 +326,10 @@ const COURSES: readonly CourseSpec[] = [
       'dressed with western props, scored on time. A lever-action or ' +
       'single-shot rifle fits the format.',
     prompt:
-      'An empty western-set stage on a South African range: a dirt course of ' +
-      'fire framed by a rough timber facade, barrels and props, with steel ' +
-      'plates standing downrange against an earth bank and the course marked ' +
-      'on the ground. ' +
+      'An empty cowboy-action stage on a South African range: a dirt course of ' +
+      'fire framed by a rough timber western facade, barrels and props, five ' +
+      'steel plates standing at about 7 to 25 metres against an earth bank, ' +
+      'and white fault lines and shooting positions marked on the ground. ' +
       EMPTY,
   },
   {
@@ -330,10 +344,10 @@ const COURSES: readonly CourseSpec[] = [
       'F-TR differ in the rest and the rifle weight, and both are shot with a ' +
       'scoped bolt-action rifle.',
     prompt:
-      'An empty F-Class firing point in South Africa: a mown range with prone ' +
-      'mats, front rests and rear bags set out in a row, a spotting scope on a ' +
-      'tripod, and target frames with wind flags far downrange at the butts ' +
-      'under a wide sky. ' +
+      'An empty F-Class firing point in South Africa: a mown range with four ' +
+      'prone mats in a row, each with a front rest and rear bag, spotting ' +
+      'scopes on tripods, target frames at 300 m, 600 m and 900 m at the ' +
+      'butts, and wind flags on poles downrange under a wide sky. ' +
       EMPTY,
   },
   {
@@ -349,10 +363,11 @@ const COURSES: readonly CourseSpec[] = [
       'of fire changes stage by stage and rewards a steady position and wind ' +
       'reading.',
     prompt:
-      'An empty precision-rifle course in South Africa: a wide field range ' +
-      'with a wooden barricade, a platform, tank-trap props and a low wall set ' +
-      'out along the firing area, and steel plates standing at several unknown ' +
-      'distances across open ground against a hillside. ' +
+      'An empty PRS precision-rifle course in South Africa: a wide field range ' +
+      'with a wooden barricade, a raised platform, tank-trap props and a low ' +
+      'wall along the firing area, six steel plates standing at unknown, ' +
+      'varied distances from about 300 to 900 metres across open ground ' +
+      'against a hillside, with fault lines at each position. ' +
       EMPTY,
   },
 
@@ -369,9 +384,11 @@ const COURSES: readonly CourseSpec[] = [
       'from stands set around a course. A shotgun — over-and-under or ' +
       'side-by-side — is the firearm every one of them is built around.',
     prompt:
-      'An empty clay-target layout in South Africa: a curved line of shooting ' +
-      'stands on mown grass, a low trap house set into the ground ahead, and ' +
-      'concrete skeet houses to the sides, with open sky and trees beyond. ' +
+      'An empty clay-target layout in South Africa: five concrete shooting ' +
+      'stations in a curved line on mown grass, a low trap house set into the ' +
+      'ground about 15 metres ahead, and separate high and low concrete skeet ' +
+      'houses with a crossing flight path between them, open sky and trees ' +
+      'beyond. ' +
       EMPTY,
   },
   {
@@ -385,10 +402,10 @@ const COURSES: readonly CourseSpec[] = [
       'reloading on the move, scored on time and accuracy. A shotgun of 20 ' +
       'gauge or larger is the firearm the divisions are built around.',
     prompt:
-      'An empty practical shotgun bay on a South African range: earthen berms ' +
-      'enclosing a sand bay with timber barricades and low walls, white fault ' +
-      'lines on the ground, and steel poppers and plates standing at varied ' +
-      'distances against the berm. ' +
+      'An empty IPSC practical-shotgun bay on a South African range: earthen ' +
+      'berms enclosing a sand bay, two timber barricades and a low wall, four ' +
+      'steel poppers at about 10 to 25 metres and three steel plates at about ' +
+      '25 to 40 metres against the berm, white fault lines on the ground. ' +
       EMPTY,
   },
   {
@@ -403,9 +420,10 @@ const COURSES: readonly CourseSpec[] = [
       'is the firearm the stage is built around.',
     prompt:
       'An empty multi-gun shotgun stage on a South African range: a bay of ' +
-      'earth berms with timber barricades and props, steel poppers and plates ' +
-      'and a clay-throwing area downrange, white fault lines marking the ' +
-      'course on the ground. ' +
+      'earth berms with a timber barricade, a low wall and props, five steel ' +
+      'poppers at about 10 to 30 metres, two steel plates and a small ' +
+      'clay-throwing area downrange, white fault lines marking the course on ' +
+      'the ground. ' +
       EMPTY,
   },
 ];

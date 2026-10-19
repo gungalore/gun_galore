@@ -57,7 +57,7 @@ export const PLATE_H = 1;
 export const PLATE_REQUEST_RATIO = '21:9';
 
 const STORE_WIDTH = 1800;
-const STORE_QUALITY = 82;
+const STORE_QUALITY = 92;
 
 /** Long enough for a picture model, short enough not to stall a generation. */
 const TIMEOUT_MS = 60_000;
@@ -187,7 +187,10 @@ export class MotivationPlatesService {
       const bytes = await sharp(Buffer.from(first.data, 'base64'))
         // ⚠️ `cover`, WHICH CROPS RATHER THAN SQUASHING — see quarry-plate.
         .resize(STORE_WIDTH, height, { fit: 'cover', position: 'centre' })
-        .jpeg({ quality: STORE_QUALITY })
+        // ⚠️ 4:4:4 KEEPS THE COLOUR EDGES. The xAI render is 2K; a 4:2:0
+        // downscale smears fine range detail. The file is still a fraction of
+        // the model's output.
+        .jpeg({ quality: STORE_QUALITY, chromaSubsampling: '4:4:4' })
         .toBuffer();
 
       return {

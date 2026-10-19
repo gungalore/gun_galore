@@ -43,11 +43,19 @@ describe('XaiProvider', () => {
     expect(new XaiProvider().isConfigured()).toBe(true);
   });
 
-  it('maps a b64 image and reports the xai provider, with no tokens', async () => {
+  it('maps a b64 image, pins 2k medium quality, and reports the xai provider with no tokens', async () => {
     mockFetch(
       okJson({ data: [{ b64_json: 'aGk=', mime_type: 'image/jpeg' }] }),
     );
     const res = await new XaiProvider().generateImage(imageReq);
+    const fetchMock = global.fetch as unknown as jest.Mock;
+    const calls = fetchMock.mock.calls as Array<[string, { body: string }]>;
+    const sentBody = JSON.parse(calls[0][1].body) as {
+      quality?: string;
+      resolution?: string;
+    };
+    expect(sentBody.quality).toBe('medium');
+    expect(sentBody.resolution).toBe('2k');
     expect(res.provider).toBe('xai');
     expect(res.model).toBe('grok-imagine-image-2.0');
     expect(res.images).toHaveLength(1);

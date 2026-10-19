@@ -130,18 +130,19 @@ const PRICES: Record<string, ModelPrice> = {
    * Grok Imagine — the motivation PURPOSE and QUARRY plates (xAI).
    *
    * ⚠️ FLAT PER IMAGE, NOT TOKEN-PRICED. Read from
-   * https://docs.x.ai/developers/pricing on 2026-10-15: `grok-imagine-image-2.0`
-   * is $0.04 an image (`grok-imagine-image-quality` $0.05, `grok-imagine-image`
-   * $0.02). The live API also echoes the exact charge back as
-   * `usage.cost_in_usd_ticks` (400000000 ticks = $0.04), and this constant
-   * matches the probe. The token rates are 0 because xAI bills no tokens for an
-   * image; `costUsdMicros` charges the flat rate off `images`.
+   * https://docs.x.ai/developers/pricing on 2026-10-19: `grok-imagine-image-2.0`
+   * at 2K · Medium is $0.08 an image (1K · Low $0.04, 2K · Low $0.06, 1K ·
+   * Medium $0.06). The provider is pinned to 2K + medium in xai.provider.ts so
+   * every plate bills this row. The live API also echoes the exact charge back
+   * as `usage.cost_in_usd_ticks` (800000000 ticks = $0.08). The token rates are
+   * 0 because xAI bills no tokens for an image; `costUsdMicros` charges the
+   * flat rate off `images`.
    */
   'grok-imagine-image-2.0': {
     inputPerMillion: 0,
     outputPerMillion: 0,
     cachedInputPerMillion: 0,
-    flatPerImageUsd: 0.04,
+    flatPerImageUsd: 0.08,
   },
   /**
    * DeepSeek-V4.1-Flash (model id `deepseek-flash`) — feed moderation only.

@@ -53,11 +53,11 @@ const PLATE_RATIO = `${PLATE_W}:${PLATE_H}`;
  * ⚠️ RESIZED BEFORE STORING, NOT AT RENDER TIME. The model returns about
  * 900 KB; the page prints it 182 mm wide, so 1 400 px is already past what a
  * printer resolves and every byte beyond it is carried in the row, in the
- * backup, and in the pack. 1 400 at quality 82 comes to a fraction of that
- * with nothing visible lost.
+ * backup, and in the pack. 1 400 at quality 92 (4:4:4) keeps the coat and horn
+ * detail the 2K render paid for.
  */
 const STORE_WIDTH = 1400;
-const STORE_QUALITY = 82;
+const STORE_QUALITY = 92;
 
 /** Long enough for a picture model, short enough not to stall a generation. */
 const TIMEOUT_MS = 60_000;
@@ -181,7 +181,10 @@ export class QuarryPlateService {
          * subject stands across the middle of the frame by construction.
          */
         .resize(STORE_WIDTH, height, { fit: 'cover', position: 'centre' })
-        .jpeg({ quality: STORE_QUALITY })
+        // ⚠️ 4:4:4 KEEPS THE COLOUR EDGES. The xAI render is 2K; a 4:2:0
+        // downscale smears fine horn ridges and grass detail. The file is
+        // still a fraction of the model's output.
+        .jpeg({ quality: STORE_QUALITY, chromaSubsampling: '4:4:4' })
         .toBuffer();
 
       this.logger.log(

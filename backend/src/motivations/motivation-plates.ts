@@ -43,7 +43,7 @@ import { coursesFor, type CourseSpec } from './motivation-courses';
  * wording with no way to tell which is which — the same trap
  * QUARRY_PROMPT_VERSION and researchAskVersion were written to close.
  */
-export const PLATES_PROMPT_VERSION = '2026-10-16a';
+export const PLATES_PROMPT_VERSION = '2026-10-19a';
 
 /** Which of the purposes a pack's exhibits serve. */
 export type PlatePurpose = 'hunting' | 'sport' | 'both' | 'self_defence';
@@ -124,11 +124,8 @@ export function purposeFor(
  * keeps a caption or a logo out of a page that prints under our own.
  */
 const NEGATIVES = [
-  'Photorealistic documentary photograph, natural South African light, sharp',
-  'focus on the subject, background gently out of focus.',
-  'No people, no firearms, no weapons, no violence, no blood, no injury, no',
-  'distress, no text, no lettering, no watermark, no logo, no overlay, no',
-  'borders, no captions, no markings of any kind.',
+  'Photorealistic documentary photograph, sharp focus across the subject, bright readable exposure.',
+  'No people, no firearms, no weapons, no vehicles in motion, no text, no watermark, no logo, no overlay, no borders.',
 ].join(' ');
 
 // ── hunting ───────────────────────────────────────────────────────────
@@ -208,9 +205,15 @@ function speciesPlate(species: QuarrySpecies): Omit<PlateSpec, 'pageIndex' | 'pl
       `matched to this class of game, and this is why: ${why}. It is pictured ` +
       `in ${habitat}, the setting a licence for this purpose is intended for.`,
     prompt:
-      `A photorealistic wildlife photograph of ${species.subject} standing ` +
-      `broadside in ${habitat}, soft early-morning light, taken with a long ` +
-      `lens. ${NEGATIVES}`,
+      `Wildlife photograph of ${species.subject} standing in full broadside ` +
+      `profile in ${habitat}, whole body in frame, all four hooves on dry ` +
+      'earth. Natural coat texture, distinct horn or body detail, shot at eye ' +
+      'level from a three-quarter front-side angle. Scattered acacia thorn ' +
+      'trees and bushveld scrub in the background. Warm early-morning sunlight ' +
+      'from the left with bright, clear fill on the animal and open shadow ' +
+      'detail. Natural warm tan, russet and earth tones against golden veld ' +
+      'grass and pale blue sky, 300 mm telephoto lens with the animal sharp in ' +
+      `the centre of the frame and the background softly out of focus. ${NEGATIVES}`,
   };
 }
 
@@ -233,9 +236,11 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'and a fence line stretches further than a single person can watch. A ' +
       'resident is on their own for the whole of that response time.',
     prompt:
-      'A photorealistic photograph of a rural smallholding at dusk in South ' +
-      'Africa, a farm gate and a long fence line running into open veld, a ' +
-      `distant farmhouse light, a wide empty landscape. ${NEGATIVES}`,
+      'A galvanized steel farm gate and taut wire-and-post perimeter fence stretching across open veld on a South African smallholding at early twilight, shot from an eye-level three-quarter angle along the gravel farm track. ' +
+      'Weathered timber strainer posts, red-brown compacted gravel road, dry highveld grass on both sides, and a single white-plastered farmhouse with a lit veranda porch in the far distance. ' +
+      'Warm golden horizon light from the right paired with a bright overhead gate floodlight illuminating the gravel and steel bars, clear readable shadows. ' +
+      'Steel grey, red ochre earth, pale gold grass and deep cobalt twilight sky, wide composition with the gate sharp in the foreground. ' +
+      `${NEGATIVES}`,
   },
   {
     when: (a) => /apartment|flat|communal|block/i.test(a.premises_type ?? ''),
@@ -245,9 +250,11 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'to, and a dim passage between a vehicle and a front door is where a ' +
       'resident is most exposed.',
     prompt:
-      'A photorealistic photograph of the communal entrance and parking area ' +
-      'of a low-rise apartment block in South Africa at dusk, an open ' +
-      `pedestrian gate and dim passage lighting. ${NEGATIVES}`,
+      'The communal pedestrian entrance gate and covered parking bays of a modern low-rise brick apartment block in South Africa at twilight, shot at eye level looking down the paved walkway toward a solid timber apartment door. ' +
+      'Face-brick columns, painted black steel palisade gate, concrete interlocking pavers, and numbered parking bays under a corrugated steel carport roof. ' +
+      'Bright white bulkhead LED wall lights mounted along the walkway casting crisp pools of light across the pavers and brick walls, well-exposed and clearly readable. ' +
+      'Warm red-brown brick, charcoal steel, pale grey concrete pavers and cool white security lighting, framed symmetrically along the passage. ' +
+      `${NEGATIVES}`,
   },
   {
     when: (a) =>
@@ -260,9 +267,11 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'hours each day, is a predictable and stationary exposure that no ' +
       'alarm or wall can cover.',
     prompt:
-      'A photorealistic photograph of an urban arterial road in South Africa ' +
-      'at dusk, stalled traffic lanes seen from a distance, shopfronts and ' +
-      `streetlights, long shadows. ${NEGATIVES}`,
+      'A multi-lane urban arterial road and intersection in South Africa at late afternoon golden hour, shot from an elevated roadside viewpoint looking along the asphalt lanes. ' +
+      'Painted white lane markings, concrete kerbs, traffic signal poles, corrugated-iron and plastered commercial shopfronts with roller shutters along the pavement, and overhead streetlamps. ' +
+      'Low golden afternoon sunlight from the left casting long crisp shadows across the tar road while streetlamps glow warmly overhead, bright and vivid exposure. ' +
+      'Charcoal asphalt, white road paint, warm ochre and grey building facades under a clear amber-and-blue sky, wide 35 mm framing. ' +
+      `${NEGATIVES}`,
   },
   {
     when: (a) => /gate|driveway|house|home|suburb|wall/i.test(a.premises_type ?? ''),
@@ -272,9 +281,10 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'waiting for a gate to open or close — the moment at home when a ' +
       'resident is least able to move.',
     prompt:
-      'A photorealistic photograph of a quiet suburban residential street in ' +
-      'South Africa at dusk, looking through a closed automated driveway gate ' +
-      'toward a house behind a high wall, warm security lights. ' +
+      'A closed sliding steel automated driveway gate set into a high plastered perimeter wall on a suburban residential street in South Africa at early evening, shot at eye level from the paved driveway apron. ' +
+      'Charcoal powder-coated steel gate slats, cream painted boundary wall with electric-fence brackets along the coping, brick-paved driveway, and a suburban house roof and front gables visible beyond the gate. ' +
+      'Two bright warm-white pillar security lights flanking the gate and an overhead streetlamp illuminating the paving and gate rails clearly, crisp highlights and open shadow detail. ' +
+      'Cream plaster, charcoal steel, terracotta brick pavers and deep blue evening sky, 35 mm architectural framing with the gate centred and sharp. ' +
       `${NEGATIVES}`,
   },
 ];
@@ -292,9 +302,11 @@ const SELF_DEFENCE_DEFAULTS: readonly Scene[] = [
       'and long gaps between police stations. A breakdown or a forced stop ' +
       'there leaves a motorist entirely without help.',
     prompt:
-      'A photorealistic photograph of an isolated regional road at dusk in ' +
-      'South Africa, open veld on both sides, distant hills and fading light, ' +
-      `an empty road. ${NEGATIVES}`,
+      'A straight two-lane tarred regional highway cutting through open South African karoo veld at sunset, shot at eye level from the gravel road shoulder looking down the empty road toward distant flat-topped hills. ' +
+      'Weathered dark asphalt with painted white centre and edge lines, graded red-gravel verge, roadside reflectors on short white posts, and low karoo scrub stretching to the horizon. ' +
+      'Low golden sunset light from the west raking across the road surface and gravel shoulder, bright and clear enough to read the road texture and horizon line. ' +
+      'Dark slate asphalt, crisp white road lines, rust-red gravel, olive-green scrub and warm amber-orange sky, wide 35 mm landscape composition. ' +
+      `${NEGATIVES}`,
   },
   SELF_DEFENCE_SCENES[0],
   SELF_DEFENCE_SCENES[3],
@@ -305,9 +317,11 @@ const SELF_DEFENCE_DEFAULTS: readonly Scene[] = [
       'and the first alarm is the sound of an intruder already inside. ' +
       'Response times make the first minutes the occupant\u2019s own.',
     prompt:
-      'A photorealistic photograph of the front of a suburban South African ' +
-      'house at night behind a wall, a security light above the door, a dark ' +
-      `quiet street. ${NEGATIVES}`,
+      'The front exterior of a single-storey South African suburban home behind a plastered boundary wall and steel security gate at twilight, shot at eye level from the quiet street pavement. ' +
+      'Painted masonry perimeter wall, steel pedestrian gate, neat lawn and paved front path leading to a timber front door fitted with a steel security gate and burglar bars on the windows. ' +
+      'A bright LED floodlight above the garage and warm porch sconces illuminating the entire front facade, path and perimeter wall clearly against the deep twilight sky. ' +
+      'Warm cream walls, charcoal steel gates, green lawn, terracotta roof tiles and deep indigo sky, sharp 35 mm architectural photograph. ' +
+      `${NEGATIVES}`,
   },
 ];
 

@@ -272,6 +272,23 @@ describe('the sport plates are the courses of fire for the firearm', () => {
     expect(plates[0].title).toBe('Steel Challenge');
   });
 
+  it('⚠️ GIVES THE IMAGE MODEL THE LAYOUT, NOT A GENERIC VENUE (2026-10-17)', () => {
+    const ipsc = buildPlateSpecs({
+      licenceType: S16_SPORT,
+      answers: { firearm_type: 'Handgun' },
+    })[0];
+    // The layout is what the picture is for: a wide, elevated view of the
+    // whole stage, the painted fault lines, the shooting box and the target
+    // distances. "No markings of any kind" used to ban the very fault lines
+    // the prompt asked for.
+    expect(ipsc.prompt).toMatch(/elevated three-quarter/i);
+    expect(ipsc.prompt).toMatch(/whole stage/i);
+    expect(ipsc.prompt).toMatch(/shooting box/i);
+    expect(ipsc.prompt).toMatch(/fault lines/i);
+    expect(ipsc.prompt).toMatch(/10 to 15 metres/i);
+    expect(ipsc.prompt).not.toMatch(/no markings/i);
+  });
+
   it('⚠️ EVERY COURSE PROMPT IS AN EMPTY RANGE — NO PEOPLE, NO ACTION (2026-10-15)', () => {
     for (const firearm_type of ['Handgun', 'Rifle', 'Shotgun']) {
       for (const plate of buildPlateSpecs({
