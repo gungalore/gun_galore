@@ -73,8 +73,16 @@ export function useTheme() {
   // Adopt whatever the pre-paint script decided (stored preference, else the
   // OS). Runs once on mount — after hydration, so it cannot reintroduce the
   // mismatch.
+  //
+  // ⚠️ ALSO RE-ASSERT THE THEME-COLOUR META HERE. On an Android PWA launch the
+  // pre-paint script can run before Next has emitted the meta tags, leaving
+  // Chrome with the OS-derived (dark) system chrome until something writes it
+  // again. That is what left the bottom bar tucked behind the system bar until
+  // the member toggled theme. One write after mount settles the system insets.
   useEffect(() => {
-    setTheme(resolveTheme(getStoredTheme()));
+    const resolved = resolveTheme(getStoredTheme());
+    setTheme(resolved);
+    syncThemeColor(resolved);
   }, []);
 
   const toggleTheme = useCallback(() => {
