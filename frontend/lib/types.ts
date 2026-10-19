@@ -25,6 +25,19 @@ export interface ListingImage {
   isPrimary: boolean;
 }
 
+/** One optional marketplace clip on a listing. `playbackUrl` is the
+ * compressed-but-complete derivative (audio kept) the gallery should play. */
+export interface ListingVideo {
+  id: string;
+  url: string;
+  publicId: string;
+  thumbnailUrl: string | null;
+  durationSeconds: number | null;
+  width: number | null;
+  height: number | null;
+  playbackUrl?: string | null;
+}
+
 // Per-category attribute definition (P4.1/P4.2). Returned by
 // GET /categories/:id/attributes — the category's own attributes plus
 // any inherited from its ancestors, already sorted leaf-first then by
@@ -376,6 +389,8 @@ export interface Listing {
   category: Category;
   seller: ListingSeller;
   images: ListingImage[];
+  /** One optional clip (marketplace video, added 2026-10-19). */
+  video?: ListingVideo | null;
   createdAt: string;
   updatedAt: string;
   /** Aggregated social-proof — how many users have saved this listing

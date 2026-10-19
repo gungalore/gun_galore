@@ -6,6 +6,7 @@ import { useAuth } from '../../../../lib/auth';
 import { Listing, CategoryAttributeDef } from '@/lib/types';
 import { CONDITION_LABELS, PROVINCE_LABELS } from '@/lib/utils';
 import { AddressAutocomplete, type ParsedAddressComponents } from '@/components/address-autocomplete';
+import { VideoDropzone } from '@/components/video-dropzone';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -65,6 +66,10 @@ export default function EditListingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newImages, setNewImages] = useState<File[]>([]);
+  // One optional clip. A replacement is uploaded on Save (screened server-
+  // side); removing the current one is queued like photo deletions.
+  const [newVideo, setNewVideo] = useState<File | null>(null);
+  const [removeExistingVideo, setRemoveExistingVideo] = useState(false);
   // Per-photo failure surfaces. Photo work runs AFTER the listing PATCH has
   // already committed, so a failure here can't be reported as "save failed" —
   // that would send the seller back to re-edit text that is safely stored.
@@ -465,6 +470,58 @@ export default function EditListingPage() {
       // retries exactly those and can't upload the successful ones twice.
       setNewImages(stillQueued);
       setUploadFailures(nextUploadFailures);
+
+      // Optional video. Removal and replacement are both applied on Save; a
+      // refusal from screening names its own reason and never silently
+      // drops the change.
+      try {
+        if (newVideo) {
+          const vfd = new FormData();
+          vfd.append('video', newVideo);
+          const vToken = await getToken();
+          const vres = await fetch(`${API_URL}/listings/${id}/video`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${vToken}` },
+            body: vfd,
+          });
+          if (!vres.ok) {
+            const body = await vres.json().catch(() => null);
+            const msg = (body as { message?: string | string[] } | null)?.message;
+            throw new Error(
+              Array.isArray(msg)
+                ? msg.join(', ')
+                : msg ??
+                    (vres.status === 413
+                      ? 'the video is too big (64 MB is the limit)'
+                      : `error ${vres.status}`),
+            );
+          }
+          setNewVideo(null);
+          setRemoveExistingVideo(false);
+        } else if (removeExistingVideo && listing?.video) {
+          const vToken = await getToken();
+          const vres = await fetch(`${API_URL}/listings/${id}/video`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${vToken}` },
+          });
+          if (!vres.ok) {
+            const body = await vres.json().catch(() => null);
+            const msg = (body as { message?: string | string[] } | null)?.message;
+            throw new Error(
+              Array.isArray(msg) ? msg.join(', ') : msg ?? `error ${vres.status}`,
+            );
+          }
+          setRemoveExistingVideo(false);
+        }
+      } catch (err) {
+        setError(
+          `Your listing details were saved, but the video change failed — ${
+            err instanceof Error ? err.message : 'try again'
+          }`,
+        );
+        setSubmitting(false);
+        return;
+      }
 
       if (nextUploadFailures.length > 0 || nextDeleteFailures.length > 0) {
         // Never redirect on photo trouble — the listing page would show the
@@ -1074,6 +1131,28 @@ export default function EditListingPage() {
                 different files (JPEG, PNG or WebP, up to 8 MB each).
               </p>
             </div>
+          )}
+        </Field>
+
+        <Field label="Listing video (optional)">
+          <VideoDropzone
+            file={newVideo}
+            onChange={(f) => {
+              setNewVideo(f);
+              if (f) setRemoveExistingVideo(false);
+            }}
+            existingUrl={
+              !removeExistingVideo && listing.video
+                ? listing.video.playbackUrl ?? listing.video.url
+                : null
+            }
+            existingThumbnailUrl={listing.video?.thumbnailUrl ?? null}
+            onRemoveExisting={() => setRemoveExistingVideo(true)}
+          />
+          {removeExistingVideo && (
+            <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+              The current video will be removed when you save.
+            </p>
           )}
         </Field>
 

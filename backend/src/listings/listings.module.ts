@@ -9,6 +9,11 @@ import {
   ListingQuestionsController,
   SellerQuestionsController,
 } from './listing-questions.controller';
+import { ListingInquiriesService } from './listing-inquiries.service';
+import {
+  ListingInquiriesController,
+  MyInquiriesController,
+} from './listing-inquiries.controller';
 import { CategoriesModule } from '../categories/categories.module';
 import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
@@ -24,6 +29,8 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
     ListingsController,
     ListingQuestionsController,
     SellerQuestionsController,
+    ListingInquiriesController,
+    MyInquiriesController,
   ],
   // PriceEstimateService (resale-value estimator) — exported. ⚠️ It was
   // exported for the Ask GG chat's estimateResaleValue tool, RETIRED
@@ -34,6 +41,7 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
     // the seller's ask at create/update time.
     FeeCalculator,
     ListingQuestionsService,
+    ListingInquiriesService,
     FirearmLicenceService,
     PriceEstimateService,
     // Optional-auth guard for the public-but-owner-aware GET /listings/:id.

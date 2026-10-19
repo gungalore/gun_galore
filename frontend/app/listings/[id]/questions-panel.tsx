@@ -1,81 +1,69 @@
-﻿'use client';
+'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { SignInButton, useAuth, useUser } from '../../../lib/auth';
-import { UserBadges } from '@/components/user-badges';
-import type { SubscriptionTier } from '@/lib/types';
+import { ImageLightbox } from '@/components/image-lightbox';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
-interface PublicQuestion {
+interface InquiryMedia {
   id: string;
-  question: string;
-  answer: string;
-  answeredAt: string;
-  status: 'ANSWERED_BY_SELLER' | 'AUTO_ANSWERED';
-  autoAnsweredFromQuestionId: string | null;
-  // Phase E1 — username + badge fields surfaced beside each answerer.
-  // A Pro-tier or verified-expert seller's reply is visually weightier
-  // than a FREE seller's, which is the whole point of the badge.
-  asker: {
-    username: string | null;
-    subscriptionTier?: SubscriptionTier;
-    isVerifiedExpert?: boolean;
-  };
-  answeredByUser: {
-    username: string | null;
-    subscriptionTier?: SubscriptionTier;
-    isVerifiedExpert?: boolean;
-  } | null;
+  kind: 'IMAGE' | 'VIDEO';
+  url: string;
+  playbackUrl: string | null;
+  thumbnailUrl: string | null;
+  durationSeconds: number | null;
+  width: number | null;
+  height: number | null;
 }
 
-interface AskResponse {
-  status: 'AUTO_ANSWERED' | 'AWAITING_SELLER_ANSWER' | 'REJECTED';
-  publicReason?: string;
-  questionId?: string;
-}
-
-// Seller-side row from GET /me/questions (the same endpoint the dashboard
-// card uses). Only the fields the owner banner needs.
-interface SellerQuestionRow {
+interface InquiryMessage {
   id: string;
-  question: string;
-  status: 'AWAITING_SELLER_ANSWER' | 'AUTO_ANSWERED' | 'ANSWERED_BY_SELLER';
+  senderId: string;
+  content: string;
+  wasModerated: boolean;
   createdAt: string;
-  listing: { id: string };
+  media: InquiryMedia[];
 }
 
-// How long a question has been sitting unanswered. Sellers respond to "3
-// days ago" in a way they don't respond to a bare count.
-function waitingFor(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(ms) || ms < 0) return 'just now';
-  const hours = Math.floor(ms / 3_600_000);
-  if (hours < 1) return 'less than an hour ago';
-  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
+interface InquiryThread {
+  id: string;
+  role: 'BUYER' | 'SELLER';
+  listing: { id: string; title: string; status: string };
+  buyer: { id: string; username: string | null };
+  seller: { id: string; username: string | null };
+  messages: InquiryMessage[];
 }
 
-// Public Q&A surfaces — username only, no @ prefix. Real names are
-// platform-policy off the public surface.
-function whoAsked(q: PublicQuestion): string {
-  return q.asker.username ?? 'Anonymous buyer';
+interface GetResponse {
+  inquiry: InquiryThread | null;
+  sellerInbox?: { open: number; unread: number };
 }
 
-function whoAnswered(q: PublicQuestion): string {
-  if (q.status === 'AUTO_ANSWERED') return 'ALL Outdoor AI';
-  return q.answeredByUser?.username ?? 'Seller';
-}
-
-function relativeDate(iso: string): string {
+function relativeTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' });
+  return d.toLocaleString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
+/**
+ * The private "Contact seller" panel on a listing.
+ *
+ * Replaced the public Q&A on 2026-10-19 (operator decision): buyers ask the
+ * seller directly, the conversation stays on ALL Outdoor, and the SELLER can
+ * answer with photos or a video. Text is auto-stripped of contact details;
+ * seller media is screened before it is stored.
+ *
+ * The listing's owner does not chat here -- they reply from the dashboard, so
+ * this panel shows them how many buyers are waiting instead.
+ */
 export function QuestionsPanel({
   listingId,
   sellerId,
@@ -87,129 +75,109 @@ export function QuestionsPanel({
   const { user } = useUser();
   const isOwner = isSignedIn && user?.id === sellerId;
 
-  const [items, setItems] = useState<PublicQuestion[] | null>(null);
+  const [thread, setThread] = useState<InquiryThread | null>(null);
+  const [sellerInbox, setSellerInbox] = useState<{
+    open: number;
+    unread: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [draft, setDraft] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [sending, setSending] = useState(false);
   const [toast, setToast] = useState<{
-    tone: 'ok' | 'err' | 'auto';
+    tone: 'ok' | 'err';
     text: string;
   } | null>(null);
-
-  // Owner-only: questions on THIS listing still waiting on the seller. The
-  // public list below only ever contains ANSWERED rows, so a seller standing
-  // on their own listing had no way to know buyers were waiting — and slow
-  // answers are the thing that kills the sale. null = not loaded yet.
-  const [pending, setPending] = useState<SellerQuestionRow[] | null>(null);
+  const [viewerIdx, setViewerIdx] = useState<number | null>(null);
 
   const load = useCallback(async () => {
+    if (!isSignedIn) return;
+    setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/listings/${listingId}/questions`, {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/listings/${listingId}/inquiry`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         cache: 'no-store',
       });
       if (!res.ok) {
-        setItems([]);
+        // A signed-out race or a transient failure must not erase an already
+        // rendered thread.
+        setFailed(true);
         return;
       }
-      setItems((await res.json()) as PublicQuestion[]);
+      setFailed(false);
+      const data = (await res.json()) as GetResponse;
+      setThread(data.inquiry ?? null);
+      setSellerInbox(data.sellerInbox ?? null);
     } catch {
-      setItems([]);
+      setFailed(true);
+    } finally {
+      setLoading(false);
     }
-  }, [listingId]);
+  }, [getToken, isSignedIn, listingId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // /me/questions returns every question across the seller's listings (it
-  // powers the dashboard card), so filter to this listing client-side —
-  // no new endpoint, no new query param.
+  // Poll while a thread is open so a seller's reply lands without a reload.
   useEffect(() => {
-    if (!isOwner) {
-      setPending(null);
-      return;
-    }
-    let alive = true;
-    (async () => {
-      try {
-        const token = await getToken();
-        const res = await fetch(`${API_URL}/me/questions`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          cache: 'no-store',
-        });
-        if (!res.ok) {
-          if (alive) setPending([]);
-          return;
-        }
-        const rows = (await res.json()) as SellerQuestionRow[];
-        if (alive) {
-          setPending(
-            rows.filter(
-              (q) =>
-                q.listing?.id === listingId &&
-                q.status === 'AWAITING_SELLER_ANSWER',
-            ),
-          );
-        }
-      } catch {
-        if (alive) setPending([]);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [isOwner, getToken, listingId]);
+    if (!isSignedIn || isOwner || !thread) return;
+    const t = setInterval(() => void load(), 15_000);
+    return () => clearInterval(t);
+  }, [isSignedIn, isOwner, thread, load]);
 
-  const onAsk = async () => {
-    const question = draft.trim();
-    if (!question) return;
-    setSubmitting(true);
+  const onSend = async () => {
+    const content = draft.trim();
+    if (!content || sending) return;
+    setSending(true);
     setToast(null);
     try {
       const token = await getToken();
-      const res = await fetch(`${API_URL}/listings/${listingId}/questions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      const res = await fetch(
+        `${API_URL}/listings/${listingId}/inquiry/messages`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ content }),
         },
-        body: JSON.stringify({ question }),
-      });
-      const data = (await res.json()) as AskResponse | { message?: string };
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string;
+      };
       if (!res.ok) {
-        const msg =
-          (data as { message?: string }).message ?? 'Could not submit question';
-        setToast({ tone: 'err', text: msg });
-        return;
-      }
-      const r = data as AskResponse;
-      if (r.status === 'REJECTED') {
         setToast({
           tone: 'err',
-          text:
-            r.publicReason ??
-            'Keep questions to product details — no contact info, please.',
+          text: data.message ?? 'Could not send your message.',
         });
         return;
       }
-      if (r.status === 'AUTO_ANSWERED') {
-        setToast({
-          tone: 'auto',
-          text: 'Answered using a previous reply from the seller.',
-        });
-      } else {
-        setToast({
-          tone: 'ok',
-          text: 'Submitted. The seller will be notified.',
-        });
-      }
       setDraft('');
-      void load();
+      await load();
     } catch {
-      setToast({ tone: 'err', text: 'Network error — please retry.' });
+      setToast({ tone: 'err', text: 'Network error - please retry.' });
     } finally {
-      setSubmitting(false);
+      setSending(false);
     }
   };
+
+  // All photos in the thread, in order, so the shared lightbox can page
+  // through them exactly like a listing gallery.
+  const threadImages = useMemo(
+    () =>
+      (thread?.messages ?? []).flatMap((m) =>
+        m.media
+          .filter((x) => x.kind === 'IMAGE')
+          .map((x) => ({ id: x.id, url: x.url })),
+      ),
+    [thread],
+  );
+
+  const imageIndexFor = (mediaId: string) =>
+    threadImages.findIndex((x) => x.id === mediaId);
 
   return (
     <div
@@ -219,236 +187,255 @@ export function QuestionsPanel({
         border: '0.5px solid var(--border)',
       }}
     >
-      <p
-        className="text-xs uppercase mb-3"
-        style={{
-          color: 'var(--text-tertiary)',
-          letterSpacing: '0.05em',
-        }}
-      >
-        Questions & answers
-      </p>
+      <div className="flex items-center justify-between mb-3">
+        <p
+          className="text-xs uppercase"
+          style={{
+            color: 'var(--text-tertiary)',
+            letterSpacing: '0.05em',
+          }}
+        >
+          Contact seller
+        </p>
+        {thread && (
+          <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+            Private | seller can send photos &amp; video
+          </span>
+        )}
+      </div>
 
-      {/* Owner nudge — sits ABOVE the public list because an unanswered
-          question is the seller's most conversion-critical to-do on this
-          page, and the list below can only ever show answered ones. */}
-      {isOwner && pending !== null && (
-        pending.length > 0 ? (
-          <div
-            className="rounded-[6px] px-3 py-2.5 mb-3 text-xs"
-            role="status"
-            style={{
-              background: 'rgba(245,158,11,0.10)',
-              border: '0.5px solid var(--warning)',
-              color: 'var(--text-secondary)',
-              lineHeight: 1.55,
-            }}
-          >
-            <p style={{ color: 'var(--warning)', fontWeight: 600 }}>
-              {pending.length} unanswered question
-              {pending.length === 1 ? '' : 's'} on this listing
-            </p>
-            <ul className="mt-1.5 space-y-1">
-              {pending.slice(0, 3).map((q) => (
-                <li key={q.id} style={{ color: 'var(--text-primary)' }}>
-                  &ldquo;{q.question}&rdquo;{' '}
-                  <span style={{ color: 'var(--text-tertiary)' }}>
-                    — asked {waitingFor(q.createdAt)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {pending.length > 3 && (
-              <p className="mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                + {pending.length - 3} more.
+      {/* Owner -- no self-chat. Show the inbox summary + dashboard link. */}
+      {isOwner ? (
+        <div className="text-xs" style={{ lineHeight: 1.6 }}>
+          {sellerInbox && sellerInbox.open > 0 ? (
+            <>
+              <p style={{ color: 'var(--warning)', fontWeight: 600 }}>
+                {sellerInbox.open} buyer conversation
+                {sellerInbox.open === 1 ? '' : 's'} on this listing
+                {sellerInbox.unread > 0
+                  ? ` | ${sellerInbox.unread} unread message${sellerInbox.unread === 1 ? '' : 's'}`
+                  : ''}
               </p>
-            )}
-            <Link
-              href="/dashboard#questions"
-              className="inline-block mt-2 px-3 py-1.5 rounded-[4px]"
+              <Link
+                href="/dashboard#inquiries"
+                className="inline-block mt-2 px-3 py-1.5 rounded-[4px]"
+                style={{
+                  background: 'var(--red)',
+                  color: '#fff',
+                  fontWeight: 500,
+                  textDecoration: 'none',
+                }}
+              >
+                Reply from your dashboard -&gt;
+              </Link>
+              <p className="mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                You can attach photos or a video when you reply. Buyers can
+                only send text.
+              </p>
+            </>
+          ) : (
+            <p style={{ color: 'var(--text-tertiary)' }}>
+              No buyer messages yet. Conversations arrive here and in your{' '}
+              <Link href="/dashboard#inquiries" style={{ color: 'var(--red)' }}>
+                dashboard
+              </Link>
+              .
+            </p>
+          )}
+        </div>
+      ) : !isSignedIn ? (
+        <div>
+          <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+            Ask the seller anything about this item -- they can reply with
+            photos or a video.
+          </p>
+          <SignInButton mode="modal">
+            <button
+              type="button"
+              className="text-xs px-3 py-1.5 rounded-[4px]"
               style={{
                 background: 'var(--red)',
                 color: '#fff',
                 fontWeight: 500,
-                textDecoration: 'none',
+                border: 'none',
+                cursor: 'pointer',
               }}
             >
-              Answer from your dashboard →
-            </Link>
-            <p className="mt-2" style={{ color: 'var(--text-tertiary)' }}>
-              Buyers only see a question once you&apos;ve answered it.
-            </p>
-          </div>
-        ) : (
-          <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-            Nothing waiting on you. New buyer questions arrive here and are
-            answered from your{' '}
-            <Link href="/dashboard" style={{ color: 'var(--red)' }}>
-              dashboard
-            </Link>
-            ; only answered ones show publicly.
-          </p>
-        )
-      )}
-
-      {/* Q&A list */}
-      {items === null ? (
-        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          Loading…
-        </p>
-      ) : items.length === 0 ? (
-        <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-          No questions yet. Ask the seller something about the product.
-        </p>
+              Sign in to contact seller
+            </button>
+          </SignInButton>
+        </div>
       ) : (
-        <ol className="space-y-3 mb-3">
-          {items.map((q) => (
-            <li key={q.id} className="space-y-1">
-              <p
-                className="leading-snug"
-                style={{ color: 'var(--text-primary)' }}
-              >
-                <span
-                  style={{ color: 'var(--text-tertiary)', marginRight: 6 }}
-                >
-                  Q.
-                </span>
-                {q.question}
-              </p>
-              <p
-                className="leading-snug"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                <span
-                  style={{ color: 'var(--text-tertiary)', marginRight: 6 }}
-                >
-                  A.
-                </span>
-                {q.answer}
-              </p>
-              <p
-                className="text-[11px]"
-                style={{ color: 'var(--text-tertiary)' }}
-              >
-                {whoAsked(q)}
-                {/* Buyer badges — usually nothing, but if the asker is
-                    a Pro / verified expert it shows they're an
-                    informed buyer (some sellers treat that signal
-                    as worth replying quickly to). */}
-                <UserBadges
-                  subscriptionTier={q.asker.subscriptionTier}
-                  isVerifiedExpert={q.asker.isVerifiedExpert}
-                />{' '}
-                · {whoAnswered(q)}
-                {q.status !== 'AUTO_ANSWERED' && q.answeredByUser && (
-                  <UserBadges
-                    subscriptionTier={q.answeredByUser.subscriptionTier}
-                    isVerifiedExpert={q.answeredByUser.isVerifiedExpert}
-                  />
-                )}{' '}
-                · {relativeDate(q.answeredAt)}
-                {q.status === 'AUTO_ANSWERED' && (
-                  <span
-                    className="ml-2"
-                    title="Answered automatically from a previous question on this listing."
-                    style={{ color: 'var(--text-tertiary)' }}
-                  >
-                    · from a previous question
-                  </span>
-                )}
-              </p>
-            </li>
-          ))}
-        </ol>
-      )}
-
-      {/* Composer — hidden for the listing owner. Sellers reply via the
-          dashboard, not by talking to themselves. */}
-      {!isOwner && (
         <>
-          {!isSignedIn ? (
-            // Asking a question is the commonest pre-purchase action for an
-            // anonymous browser — a line of grey text was a dead end. Every
-            // sibling panel (bid / offer / swap) offers a real modal sign-in
-            // CTA, so this one does too.
-            <SignInButton mode="modal">
-              <button
-                type="button"
-                className="text-xs px-3 py-1.5 rounded-[4px]"
-                style={{
-                  background: 'transparent',
-                  color: 'var(--text-secondary)',
-                  border: '0.5px solid var(--border)',
-                  cursor: 'pointer',
-                  fontWeight: 500,
-                }}
-              >
-                Sign in to ask a question
-              </button>
-            </SignInButton>
-          ) : (
-            <div>
-              <textarea
-                rows={2}
-                maxLength={500}
-                placeholder="Ask the seller about the product — no contact details, no price negotiation."
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                className="w-full rounded-[6px] px-3 py-2 text-sm resize-y"
-                style={{
-                  background: 'var(--bg-inset)',
-                  border: '0.5px solid var(--border)',
-                  color: 'var(--text-primary)',
-                  outline: 'none',
-                  fontFamily: 'inherit',
-                }}
-              />
-              <div className="flex items-center justify-between mt-2">
-                <span
-                  className="text-[11px]"
-                  style={{ color: 'var(--text-tertiary)' }}
-                >
-                  {draft.length}/500
-                </span>
-                <button
-                  type="button"
-                  onClick={onAsk}
-                  disabled={submitting || draft.trim().length === 0}
-                  className="text-xs px-3 py-1.5 rounded-[4px]"
-                  style={{
-                    background: 'var(--red)',
-                    color: '#fff',
-                    fontWeight: 500,
-                    opacity:
-                      submitting || draft.trim().length === 0 ? 0.5 : 1,
-                    cursor:
-                      submitting || draft.trim().length === 0
-                        ? 'not-allowed'
-                        : 'pointer',
-                    border: 'none',
-                  }}
-                >
-                  {submitting ? 'Sending…' : 'Ask seller'}
-                </button>
-              </div>
-              {toast && (
-                <p
-                  className="text-xs mt-2"
-                  style={{
-                    color:
-                      toast.tone === 'err'
-                        ? 'var(--red)'
-                        : toast.tone === 'auto'
-                          ? 'var(--info)'
-                          : 'var(--success)',
-                  }}
-                >
-                  {toast.text}
-                </p>
-              )}
-            </div>
+          {failed && (
+            <p className="text-xs mb-2" style={{ color: 'var(--red)' }}>
+              We could not load this conversation just now. Refresh to try
+              again.
+            </p>
+          )}
+
+          {loading && !thread && (
+            <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
+              Loading...
+            </p>
+          )}
+
+          {/* Messages */}
+          {thread && thread.messages.length > 0 && (
+            <ol className="space-y-2 mb-3 max-h-[340px] overflow-y-auto">
+              {thread.messages.map((m) => {
+                const mine = m.senderId === user?.id;
+                return (
+                  <li
+                    key={m.id}
+                    className="rounded-[6px] px-3 py-2"
+                    style={{
+                      background: mine ? 'var(--bg-inset)' : 'var(--bg-card)',
+                      border: '0.5px solid var(--border)',
+                      marginLeft: mine ? 24 : 0,
+                      marginRight: mine ? 0 : 24,
+                    }}
+                  >
+                    <p
+                      className="text-[10px] uppercase tracking-wide mb-1"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
+                      {mine ? 'You' : 'Seller'}
+                      {m.wasModerated ? ' | contact details removed' : ''}
+                      {' | '}
+                      {relativeTime(m.createdAt)}
+                    </p>
+                    {m.content && (
+                      <p
+                        className="whitespace-pre-wrap"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        {m.content}
+                      </p>
+                    )}
+                    {m.media.length > 0 && (
+                      <div className="mt-2 space-y-2">
+                        {m.media.map((x) =>
+                          x.kind === 'IMAGE' ? (
+                            <button
+                              key={x.id}
+                              type="button"
+                              onClick={() => setViewerIdx(imageIndexFor(x.id))}
+                              aria-label="Open photo"
+                              style={{
+                                display: 'block',
+                                padding: 0,
+                                border: 0,
+                                background: 'transparent',
+                                cursor: 'zoom-in',
+                                width: '100%',
+                              }}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={x.url}
+                                alt=""
+                                style={{
+                                  width: '100%',
+                                  borderRadius: 6,
+                                  display: 'block',
+                                }}
+                              />
+                            </button>
+                          ) : (
+                            <video
+                              key={x.id}
+                              src={x.playbackUrl ?? x.url}
+                              poster={x.thumbnailUrl ?? undefined}
+                              controls
+                              playsInline
+                              preload="metadata"
+                              style={{
+                                width: '100%',
+                                maxHeight: 320,
+                                background: '#000',
+                                borderRadius: 6,
+                                display: 'block',
+                              }}
+                            />
+                          ),
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+
+          {(!thread || thread.messages.length === 0) && !loading && (
+            <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+              Ask about condition, what&apos;s included, or anything you need
+              to see -- the seller can reply with more photos or a short video.
+            </p>
+          )}
+
+          {/* Composer */}
+          <textarea
+            rows={2}
+            maxLength={2000}
+            placeholder="Message the seller - no phone numbers, emails or links."
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="w-full rounded-[6px] px-3 py-2 text-sm resize-y"
+            style={{
+              background: 'var(--bg-inset)',
+              border: '0.5px solid var(--border)',
+              color: 'var(--text-primary)',
+              outline: 'none',
+              fontFamily: 'inherit',
+            }}
+          />
+          <div className="flex items-center justify-between mt-2">
+            <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+              {draft.length}/2000 | contact details are removed automatically
+            </span>
+            <button
+              type="button"
+              onClick={onSend}
+              disabled={sending || draft.trim().length === 0}
+              className="text-xs px-3 py-1.5 rounded-[4px]"
+              style={{
+                background: 'var(--red)',
+                color: '#fff',
+                fontWeight: 500,
+                opacity:
+                  sending || draft.trim().length === 0 ? 0.5 : 1,
+                cursor:
+                  sending || draft.trim().length === 0
+                    ? 'not-allowed'
+                    : 'pointer',
+                border: 'none',
+              }}
+            >
+              {sending ? 'Sending...' : 'Send message'}
+            </button>
+          </div>
+          {toast && (
+            <p
+              className="text-xs mt-2"
+              style={{
+                color: toast.tone === 'err' ? 'var(--red)' : 'var(--success)',
+              }}
+            >
+              {toast.text}
+            </p>
           )}
         </>
+      )}
+
+      {viewerIdx !== null && threadImages.length > 0 && (
+        <ImageLightbox
+          images={threadImages}
+          startIndex={Math.max(0, viewerIdx)}
+          title="Conversation photos"
+          onClose={() => setViewerIdx(null)}
+        />
       )}
     </div>
   );

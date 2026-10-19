@@ -390,7 +390,21 @@ export default async function ListingDetailPage({
             2× zoom on click inside the lightbox). Scrolls independently of
             the right at lg; plain stacked block below it. */}
         <div className="gg-twopane-main">
-          <ImageGallery images={allImages} title={listing.title} />
+          <ImageGallery
+            images={allImages}
+            video={
+              listing.video
+                ? {
+                    id: listing.video.id,
+                    url: listing.video.url,
+                    playbackUrl: listing.video.playbackUrl,
+                    thumbnailUrl: listing.video.thumbnailUrl,
+                    durationSeconds: listing.video.durationSeconds,
+                  }
+                : null
+            }
+            title={listing.title}
+          />
 
           {/* ⚠️ THE READING COLUMN — the description and spec table live here,
               moved out of the buy column on 2026-08-27. The right pane is
@@ -919,9 +933,9 @@ export default async function ListingDetailPage({
             )}
           </div>
 
-          {/* Q&A — Claude-moderated, product-only. Replaces buyer-seller
-              messaging entirely; sellers reply from /dashboard. Sits directly
-              below the bid/buy controls, at the point of decision. */}
+          {/* Contact seller - private 1-to-1 thread, moderated for contact
+              details. The seller can answer with photos or a video. Sits
+              directly below the bid/buy controls, at the point of decision. */}
           <QuestionsPanel
             listingId={listing.id}
             sellerId={sellerUserId}

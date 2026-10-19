@@ -385,4 +385,34 @@ export class ListingsController {
   ) {
     return this.listingsService.removeImage(id, imageId, userId);
   }
+
+  // One optional marketplace clip per listing. Screened BEFORE storage —
+  // a refused or uncertain clip deletes the Cloudinary asset and fails the
+  // upload (see ListingsService.addVideo).
+  @Post(':id/video')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseInterceptors(FileInterceptor('video', { storage: memoryStorage() }))
+  addVideo(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 64 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /video\/(mp4|quicktime|webm)/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.listingsService.addVideo(id, userId, file);
+  }
+
+  @Delete(':id/video')
+  @UseGuards(AuthGuard)
+  @HttpCode(204)
+  removeVideo(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.listingsService.removeVideo(id, userId);
+  }
 }

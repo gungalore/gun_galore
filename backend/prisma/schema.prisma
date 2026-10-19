@@ -497,6 +497,13 @@ model User {
   askedListingQuestions    ListingQuestion[] @relation("AskedQuestions")
   answeredListingQuestions ListingQuestion[] @relation("AnsweredQuestions")
 
+  // Private contact-seller threads (2026-10-19). A member may be the buyer on
+  // many listings and the seller on many others; both sides are named
+  // relations so Prisma can tell them apart.
+  listingInquiriesAsBuyer  ListingInquiry[] @relation("ListingInquiryBuyer")
+  listingInquiriesAsSeller ListingInquiry[] @relation("ListingInquirySeller")
+  listingInquiryMessages    ListingInquiryMessage[]
+
   // ── Zoho Books linkage ────────────────────────────────────────────
   // The user's Contact record in Zoho Books. Created lazily the first
   // time we need to invoice them (e.g. on their first sale that hits
@@ -1281,6 +1288,12 @@ model Listing {
   isDealListing Boolean @default(false)
 
   images               ListingImage[]
+  // One optional clip per listing (marketplace video, added 2026-10-19).
+  // Cloudinary stores it on the `video` resource type; thumbnailUrl is a
+  // derived poster frame so the gallery can render without a second upload.
+  video                ListingVideo?
+  // Private buyer↔seller "contact seller" threads on this listing.
+  inquiries            ListingInquiry[]
   valuationOutcome     ValuationOutcome?
   transactions         Transaction[]
   orderLineItems       OrderLineItem[]
@@ -1330,6 +1343,87 @@ model ListingImage {
   createdAt DateTime @default(now())
 
   @@index([listingId])
+}
+
+/// One optional video per marketplace listing, alongside its photos. Stored on
+/// Cloudinary's `video` resource type; `thumbnailUrl` is a derived poster frame.
+/// Mirrors PostVideo on the community feed.
+model ListingVideo {
+  id              String   @id @default(cuid())
+  listingId       String   @unique
+  listing         Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  url             String
+  publicId        String
+  thumbnailUrl    String?
+  durationSeconds Float?
+  width           Int?
+  height          Int?
+  createdAt       DateTime @default(now())
+}
+
+/// A private 1-to-1 "contact seller" thread between one buyer and one listing's
+/// seller. One thread per (listingId, buyerId) — created on the buyer's first
+/// message and reused thereafter. Public Q&A (ListingQuestion) stays in the DB
+/// for history but is no longer the pre-purchase surface.
+model ListingInquiry {
+  id            String   @id @default(cuid())
+  listingId     String
+  listing       Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerId       String
+  buyer         User     @relation("ListingInquiryBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  sellerId      String
+  seller        User     @relation("ListingInquirySeller", fields: [sellerId], references: [id], onDelete: Cascade)
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  messages      ListingInquiryMessage[]
+
+  @@unique([listingId, buyerId])
+  @@index([sellerId, lastMessageAt(sort: Desc)])
+  @@index([buyerId, lastMessageAt(sort: Desc)])
+}
+
+enum ListingInquiryMediaKind {
+  IMAGE
+  VIDEO
+}
+
+/// A message in a private listing inquiry. Text is moderated on send exactly
+/// like transaction messages: contact details are auto-stripped and stored in
+/// `originalContent`, abuse is blocked outright.
+model ListingInquiryMessage {
+  id              String   @id @default(cuid())
+  inquiryId       String
+  inquiry         ListingInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  senderId        String
+  sender          User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  content         String
+  originalContent String?
+  wasModerated    Boolean  @default(false)
+  readAt          DateTime?
+  createdAt       DateTime @default(now())
+  media           ListingInquiryMedia[]
+
+  @@index([inquiryId, createdAt])
+}
+
+/// Photos/video a SELLER attached to an inquiry reply to answer a buyer's
+/// request for more detail. Buyer attachments are refused by the service.
+/// Every row here has already passed media screening before it was stored.
+model ListingInquiryMedia {
+  id              String   @id @default(cuid())
+  messageId       String
+  message         ListingInquiryMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  kind            ListingInquiryMediaKind
+  url             String
+  publicId        String
+  thumbnailUrl    String?
+  durationSeconds Float?
+  width           Int?
+  height          Int?
+  createdAt       DateTime @default(now())
+
+  @@index([messageId])
 }
 
 model Dealer {

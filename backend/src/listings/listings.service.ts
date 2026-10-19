@@ -24,6 +24,7 @@ import { SettingsService, FLAGS } from '../settings/settings.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { haversineKm, roundKm } from '../common/geo';
 import { assertAccountNotClosed } from '../common/account-standing';
+import { optimizedVideoUrl } from '../common/image-url';
 import { FirearmLicenceService } from './firearm-licence.service';
 import { inventoryEligible } from '../payments/inventory';
 import { CategoriesService } from '../categories/categories.service';
@@ -138,6 +139,9 @@ export const PUBLIC_LISTING_SELECT = {
   createdAt: true,
   updatedAt: true,
   images: { orderBy: { order: 'asc' } },
+  // One optional marketplace clip. The delivery URL is optimised in
+  // findById() so cards/galleries never stream the original.
+  video: true,
   category: true,
   seller: {
     select: {
@@ -2720,7 +2724,21 @@ export class ListingsService {
         idVerified: kycIdVerifiedAt != null,
       },
     };
-    const enriched = { ...listing, seller };
+    const enriched = {
+      ...listing,
+      seller,
+      // Marketplace video — a compressed-but-complete playback derivative
+      // (audio kept), exactly like the community feed's PostVideo. Never the
+      // original upload.
+      ...(listing.video
+        ? {
+            video: {
+              ...listing.video,
+              playbackUrl: optimizedVideoUrl(listing.video.url, 720),
+            },
+          }
+        : {}),
+    };
 
     const isOwner = !!userId && seller.id === userId;
 
@@ -3419,6 +3437,79 @@ export class ListingsService {
         });
       }
     }
+  }
+
+  /**
+   * Upload/replace the one optional marketplace clip.
+   *
+   * The clip is screened BEFORE it is stored: a REJECT or an unclear verdict
+   * deletes the Cloudinary asset and refuses the upload, so unreviewed media
+   * can never reach a buyer. Same edit lock as photos — buyers commit on what
+   * they saw at bid/offer time.
+   */
+  async addVideo(id: string, userId: string, file: Express.Multer.File) {
+    const listing = await this.assertOwner(id, userId);
+    await this.assertEditable(listing);
+
+    const up = await this.cloudinary.uploadVideo(file.buffer, 'listings');
+    const verdict = await this.moderation.moderateVideo({
+      url: up.url,
+      thumbnailUrl: up.thumbnailUrl,
+    });
+
+    if (verdict.decision !== 'APPROVE') {
+      await this.cloudinary
+        .deleteVideo(up.publicId)
+        .catch((err) =>
+          this.logger.warn(
+            `Could not delete refused video ${up.publicId}: ${(err as Error).message}`,
+          ),
+        );
+      throw new BadRequestException(
+        verdict.decision === 'REJECT'
+          ? (verdict.publicReason ??
+            verdict.reasons[0] ??
+            'That video is not allowed on ALL Outdoor.')
+          : 'We could not verify that video automatically. Try a shorter clip with no on-screen text, contact details or QR codes.',
+      );
+    }
+
+    const existing = await this.prisma.listingVideo.findUnique({
+      where: { listingId: id },
+    });
+    if (existing) {
+      await this.cloudinary
+        .deleteVideo(existing.publicId)
+        .catch(() => undefined);
+      await this.prisma.listingVideo.delete({ where: { listingId: id } });
+    }
+
+    const video = await this.prisma.listingVideo.create({
+      data: {
+        listingId: id,
+        url: up.url,
+        publicId: up.publicId,
+        thumbnailUrl: up.thumbnailUrl ?? null,
+        durationSeconds: up.durationSeconds ?? null,
+        width: up.width ?? null,
+        height: up.height ?? null,
+      },
+    });
+    return { ...video, playbackUrl: optimizedVideoUrl(video.url, 720) };
+  }
+
+  async removeVideo(listingId: string, userId: string) {
+    const listing = await this.assertOwner(listingId, userId);
+    await this.assertEditable(listing);
+
+    const video = await this.prisma.listingVideo.findUnique({
+      where: { listingId },
+    });
+    if (!video) throw new NotFoundException('Video not found');
+
+    await this.cloudinary.deleteVideo(video.publicId);
+    await this.prisma.listingVideo.delete({ where: { listingId } });
+    return { deleted: true };
   }
 
   async findMine(userId: string) {

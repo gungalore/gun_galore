@@ -215,13 +215,14 @@ export default async function DashboardPage() {
             )}
           </div>
 
-          {/* Buyer questions on this seller's listings — spans the full
-              grid width because the answer composer needs the horizontal
-              room. Self-fetches via /me/questions on mount. */}
-          {/* id + scroll margin so the listing page's "you have unanswered
-              questions" prompt can deep-link straight to the composer
-              instead of dropping the seller at the top of the dashboard. */}
-          <div id="questions" className="lg:col-span-2" style={{ scrollMarginTop: 80 }}>
+          {/* Private listing inquiries ("Contact seller") — both directions,
+              spanning the full grid width because the reply composer and
+              seller-only media controls need the horizontal room. Self-fetches
+              via /me/inquiries on mount. */}
+          {/* id + scroll margin so the listing page's "buyers waiting" prompt
+              can deep-link straight to the inbox instead of dropping the
+              seller at the top of the dashboard. */}
+          <div id="inquiries" className="lg:col-span-2" style={{ scrollMarginTop: 80 }}>
             <SellerQuestionsCard />
           </div>
         </PageReveal>

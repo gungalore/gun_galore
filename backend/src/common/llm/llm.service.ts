@@ -234,6 +234,11 @@ export class LlmService {
     // because a global LLM_PROVIDER switch is set. An explicit per-purpose env
     // var still wins, above.
     if (purpose === 'feed.moderation.video') return this.gemini;
+    // ⚠️ EVERY `.video` MODERATION PURPOSE IS GEMINI-ONLY, for the same
+    // reason: DeepSeek and Anthropic both reject a `video` LlmPart. This
+    // covers marketplace video (`moderation.listing.video`) and seller
+    // replies in a listing inquiry (`moderation.inquiry.video`).
+    if (purpose.endsWith('.video')) return this.gemini;
     // ⚠️ IMAGE SCREENING AND THE ESCALATION SECOND OPINION ARE GEMINI-ONLY.
     // Operator decision 2026-10-12: moderation moved off DeepSeek. Every image
     // (listing, feed, uploaded document page) and the 60–80 % escalation are
@@ -325,6 +330,10 @@ export class LlmService {
     if (purpose === 'moderation.escalation' || purpose.endsWith('.images')) {
       return MODERATION_GEMINI_MODEL;
     }
+    // Video moderation shares the pinned budget. A caller that needs a
+    // specific video model (the feed's `videoModel()`) passes it explicitly,
+    // and `req.model` wins over this.
+    if (purpose.endsWith('.video')) return MODERATION_GEMINI_MODEL;
     // ⚠️ EVERY DOCUMENT PURPOSE STARTS ON THE CHEAP FLASH-LITE. Operator,
     // 2026-10-14 — see FAST_GEMINI_MODEL — and widened 2026-10-16 so no OCR or
     // extraction call is left on the 3.8-flash default: the Document Centre's

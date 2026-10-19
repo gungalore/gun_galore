@@ -40,7 +40,10 @@ export type NotificationLinkedType =
   // resolves these (the rows are dismissible); the link is carried for the
   // push TAG, so a later status on the same application replaces the earlier
   // alert rather than stacking a second one on the phone.
-  | 'tracked_application';
+  | 'tracked_application'
+  // Private listing inquiry ("Contact seller") — linkedId is the
+  // ListingInquiry id. Dismissible; the conversation lives in the dashboard.
+  | 'listing_inquiry';
 
 interface PersistOpts {
   userId: string;
@@ -4576,6 +4579,51 @@ export class NotificationsService {
       d.sellerPhone,
       `ALL Outdoor: New question on ${truncate(d.listingTitle, 30)}. Reply: ${url}`,
       `listing-question-${d.listingId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Private listing inquiry ("Contact seller") — a buyer asked about a
+  // listing, or the seller replied. In-app + email, never SMS: same
+  // high-frequency / low-stakes posture as transaction messages.
+  // ---------------------------------------------------------------
+  async listingInquiryMessage(d: {
+    recipientEmail: string;
+    recipientName: string;
+    listingTitle: string;
+    inquiryId: string;
+    senderIsBuyer: boolean;
+    /** Short, already-stripped message text for the body. */
+    preview: string;
+  }) {
+    const sender = d.senderIsBuyer ? 'Buyer' : 'Seller';
+    await this.persistByEmail(d.recipientEmail, {
+      category: d.senderIsBuyer ? 'SELLER' : 'BUYER',
+      type: 'listing_inquiry_message',
+      title: 'New message about a listing',
+      body: `${sender} sent you a message about ${d.listingTitle}.`,
+      url: `/dashboard#inquiries`,
+      iconKey: 'sold',
+      linkedType: 'listing_inquiry',
+      linkedId: d.inquiryId,
+      dismissible: true,
+    });
+
+    const html = this.email({
+      status: { tone: 'pending', label: 'New message' },
+      headline: d.senderIsBuyer
+        ? 'A buyer asked about your listing'
+        : 'The seller replied',
+      body: `Hi ${b(d.recipientName)}, ${b(sender)} messaged you about ${b(
+        d.listingTitle,
+      )}:<br><br><i>${b(d.preview)}</i><br><br>Reply from your dashboard — keep the conversation on ALL Outdoor.`,
+      cta: { label: 'Open the conversation', url: `${this.appUrl}/dashboard#inquiries` },
+      preheader: `New ${sender.toLowerCase()} message about ${d.listingTitle}`,
+    });
+    await this.send(
+      d.recipientEmail,
+      `New message about ${d.listingTitle}`,
+      html,
     );
   }
 

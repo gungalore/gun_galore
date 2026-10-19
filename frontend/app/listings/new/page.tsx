@@ -16,6 +16,7 @@ import { CategoryPicker } from '@/components/category-picker';
 import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
 import { PhotoDropzone } from '@/components/photo-dropzone';
+import { VideoDropzone } from '@/components/video-dropzone';
 import { FormSection } from '@/components/form-section';
 import { WizardFooter } from '@/components/wizard-footer';
 import { useShellStep } from '@/components/shell/shell-step';
@@ -503,6 +504,10 @@ export default function NewListingPage() {
   // with nothing selected and a Continue button that won't respond.
   const [categoryUnavailable, setCategoryUnavailable] = useState(false);
   const [images, setImages] = useState<File[]>([]);
+  // One optional marketplace clip (operator decision 2026-10-19). Uploaded
+  // AFTER the listing exists so the server can screen it and refuse it
+  // without ever storing unscreened media. Photos remain required.
+  const [video, setVideo] = useState<File | null>(null);
 
   // Description AI state — preview-box pattern (lifted from the old
   // project). When `suggestion` is non-null we render a "Suggested
@@ -2522,6 +2527,37 @@ export default function NewListingPage() {
         });
       }
 
+      // Optional marketplace clip. Uploaded after the photos so a refusal
+      // from media screening can roll the half-built listing back (the catch
+      // below deletes it) rather than leaving a listing with a missing video.
+      if (video) {
+        setPublishProgress({
+          label: 'Uploading your video — screening it now…',
+          done: images.length,
+          total: images.length + 1,
+        });
+        const vfd = new FormData();
+        vfd.append('video', video);
+        const vToken = await getToken();
+        const vres = await fetch(`${API_URL}/listings/${listing.id}/video`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${vToken}` },
+          body: vfd,
+        });
+        if (!vres.ok) {
+          const errBody = await vres.json().catch(() => ({}));
+          const detail =
+            (errBody && (errBody as { message?: string }).message) ||
+            `${vres.status}`;
+          throw new Error(`The video (${video.name}) was not accepted — ${detail}`);
+        }
+        setPublishProgress({
+          label: 'Video uploaded — finishing up…',
+          done: images.length + 1,
+          total: images.length + 1,
+        });
+      }
+
       // Successful publish — clear the localStorage draft so the
       // form starts fresh on the seller's next listing.
       try {
@@ -2788,8 +2824,8 @@ export default function NewListingPage() {
             and anything you&apos;d ticked, and every step is where you
             left it. Uploads can&apos;t be saved on
             this device, so re-select your photos
-            {isFirearm ? ' and your serial and licence photos' : ''} before
-            you publish.
+            {isFirearm ? ' and your serial and licence photos' : ''} (and any
+            video you added) before you publish.
           </span>
           <button
             type="button"
@@ -2896,7 +2932,7 @@ export default function NewListingPage() {
           <FormSection
             id={stepAnchor(1)}
             title="Photos"
-            description="Buyers click photos first. Bright, sharp, every angle. 1–10 photos, drag to reorder."
+            description="Buyers click photos first. Bright, sharp, every angle. 1–10 photos, plus an optional video, drag to reorder."
           >
             <PhotoDropzone
               files={images}
@@ -2919,6 +2955,37 @@ export default function NewListingPage() {
               from all sides mean fewer buyer questions and protect you if a
               buyer ever disputes the item.
             </p>
+            {/* One optional clip. Photos stay mandatory; the clip is a
+                seller's best answer to "can you show me it working?", and it
+                renders first in the listing gallery. */}
+            <div
+              className="mt-5 pt-4"
+              style={{ borderTop: '0.5px solid var(--border-divider)' }}
+            >
+              <p
+                className="text-xs uppercase mb-2"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                Video (optional)
+              </p>
+              <VideoDropzone file={video} onChange={setVideo} />
+              <p
+                style={{
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  color: 'var(--text-tertiary)',
+                  margin: '8px 2px 0',
+                }}
+              >
+                🎬 One short clip showing the item from a few angles, working
+                or cycling. Keep phone numbers, WhatsApp details, QR codes and
+                shop signage out of frame — video is screened before it is
+                stored.
+              </p>
+            </div>
             {/* (The "Help me describe this from the photos" photo helper
                 button stood here — removed by the operator 2026-08-28.
                 It read the staged photos and proposed a title,

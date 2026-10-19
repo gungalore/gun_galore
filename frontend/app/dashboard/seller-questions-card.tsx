@@ -1,25 +1,54 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useAuth } from '../../lib/auth';
 import Link from 'next/link';
+import { useAuth } from '../../lib/auth';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
-interface SellerQuestion {
+interface InquiryListRow {
   id: string;
-  question: string;
-  answer: string | null;
-  status:
-    | 'AWAITING_SELLER_ANSWER'
-    | 'AUTO_ANSWERED'
-    | 'ANSWERED_BY_SELLER';
-  answeredAt: string | null;
-  autoAnsweredFromQuestionId: string | null;
+  listing: { id: string; title: string; status: string };
+  role: 'BUYER' | 'SELLER';
+  counterparty: {
+    id: string;
+    username: string | null;
+    avatarUrl?: string | null;
+  };
+  lastMessageAt: string;
+  unread: number;
+  lastMessage: {
+    preview: string;
+    senderId: string;
+    createdAt: string;
+  } | null;
+}
+
+interface InquiryMedia {
+  id: string;
+  kind: 'IMAGE' | 'VIDEO';
+  url: string;
+  playbackUrl: string | null;
+  thumbnailUrl: string | null;
+}
+
+interface InquiryMessage {
+  id: string;
+  senderId: string;
+  content: string;
+  wasModerated: boolean;
   createdAt: string;
-  listing: { id: string; title: string };
-  asker: { firstName: string | null; username: string | null };
+  media: InquiryMedia[];
+}
+
+interface InquiryThread {
+  id: string;
+  role: 'BUYER' | 'SELLER';
+  listing: { id: string; title: string; status: string };
+  buyer: { id: string; username: string | null };
+  seller: { id: string; username: string | null };
+  messages: InquiryMessage[];
 }
 
 function whenLabel(iso: string): string {
@@ -28,38 +57,32 @@ function whenLabel(iso: string): string {
   return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' });
 }
 
-function statusBadge(s: SellerQuestion['status']) {
-  switch (s) {
-    case 'AWAITING_SELLER_ANSWER':
-      return { label: 'Needs you', color: 'var(--warning)' };
-    case 'AUTO_ANSWERED':
-      return { label: 'AI replied', color: '#6366f1' };
-    case 'ANSWERED_BY_SELLER':
-      return { label: 'Answered', color: 'var(--success)' };
-  }
-}
-
+/**
+ * Dashboard inbox for private listing inquiries ("Contact seller").
+ *
+ * Shows both directions (as buyer and as seller), oldest → newest per thread.
+ * Sellers can attach photos or a video when replying; buyers cannot. Text is
+ * moderated exactly like transaction messages — contact details auto-strip,
+ * abuse is blocked.
+ */
 export function SellerQuestionsCard() {
   const { getToken, isSignedIn } = useAuth();
-  const [items, setItems] = useState<SellerQuestion[] | null>(null);
-  /**
-   * Did the fetch fail?
-   *
-   * ⚠️ This card swallowed BOTH a non-OK response and a thrown error into
-   * `setItems([])`, so a 500 rendered "No questions on your listings yet" —
-   * a seller with unanswered buyer questions told they have none, which is
-   * exactly the message that stops them going to look.
-   */
+  const [items, setItems] = useState<InquiryListRow[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [thread, setThread] = useState<InquiryThread | null>(null);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [attachImages, setAttachImages] = useState<File[]>([]);
+  const [attachVideo, setAttachVideo] = useState<File | null>(null);
 
-  const load = useCallback(async () => {
+  const loadList = useCallback(async () => {
     if (!isSignedIn) return;
     try {
       const token = await getToken();
-      const res = await fetch(`${API_URL}/me/questions`, {
+      const res = await fetch(`${API_URL}/me/inquiries`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         cache: 'no-store',
       });
@@ -69,71 +92,126 @@ export function SellerQuestionsCard() {
         return;
       }
       setFailed(false);
-      setItems((await res.json()) as SellerQuestion[]);
+      setItems((await res.json()) as InquiryListRow[]);
     } catch {
       setFailed(true);
       setItems([]);
     }
   }, [getToken, isSignedIn]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const loadThread = useCallback(
+    async (id: string) => {
+      setThreadLoading(true);
+      try {
+        const token = await getToken();
+        const res = await fetch(`${API_URL}/me/inquiries/${id}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          cache: 'no-store',
+        });
+        if (!res.ok) {
+          setErr('Could not load that conversation.');
+          return;
+        }
+        setThread((await res.json()) as InquiryThread);
+        void loadList();
+      } catch {
+        setErr('Could not load that conversation.');
+      } finally {
+        setThreadLoading(false);
+      }
+    },
+    [getToken, loadList],
+  );
 
-  const answer = async (id: string) => {
-    const text = (draft[id] ?? '').trim();
-    if (!text) return;
-    setBusyId(id);
+  useEffect(() => {
+    void loadList();
+  }, [loadList]);
+
+  // Light polling so a new buyer message appears without a manual refresh.
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const t = setInterval(() => {
+      void loadList();
+      if (selectedId) void loadThread(selectedId);
+    }, 20_000);
+    return () => clearInterval(t);
+  }, [isSignedIn, loadList, loadThread, selectedId]);
+
+  const open = (id: string) => {
+    setSelectedId(id);
+    setThread(null);
+    setDraft('');
+    setAttachImages([]);
+    setAttachVideo(null);
+    setErr(null);
+    void loadThread(id);
+  };
+
+  const sendText = async () => {
+    const content = draft.trim();
+    if (!content || !selectedId || busy) return;
+    setBusy(true);
     setErr(null);
     try {
       const token = await getToken();
-      const res = await fetch(`${API_URL}/me/questions/${id}/answer`, {
+      const res = await fetch(`${API_URL}/me/inquiries/${selectedId}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ answer: text }),
+        body: JSON.stringify({ content }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as {
-          message?: string;
+          message?: string | string[];
         };
-        setErr(data.message ?? 'Could not save answer');
+        setErr(
+          Array.isArray(data.message)
+            ? data.message.join(', ')
+            : data.message ?? 'Could not send your reply.',
+        );
         return;
       }
-      setDraft((d) => ({ ...d, [id]: '' }));
-      void load();
+      setDraft('');
+      await loadThread(selectedId);
     } finally {
-      setBusyId(null);
+      setBusy(false);
     }
   };
 
-  const flagAi = async (id: string) => {
-    if (
-      !confirm(
-        'Mark this AI answer as not right? The original answer it was based on will stop being re-used, and the question will reappear for you to answer manually.',
-      )
-    )
-      return;
-    setBusyId(id);
+  const sendMedia = async () => {
+    if (!selectedId || busy) return;
+    if (attachImages.length === 0 && !attachVideo) return;
+    setBusy(true);
     setErr(null);
     try {
       const token = await getToken();
-      const res = await fetch(
-        `${API_URL}/me/questions/${id}/flag-auto-answer`,
-        {
-          method: 'POST',
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        },
-      );
+      const fd = new FormData();
+      for (const f of attachImages) fd.append('images', f);
+      if (attachVideo) fd.append('video', attachVideo);
+      const res = await fetch(`${API_URL}/me/inquiries/${selectedId}/media`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
       if (!res.ok) {
-        setErr('Could not flag');
+        const data = (await res.json().catch(() => ({}))) as {
+          message?: string | string[];
+        };
+        setErr(
+          Array.isArray(data.message)
+            ? data.message.join(', ')
+            : data.message ??
+                'That media was not accepted. Photos and video are screened for contact details.',
+        );
         return;
       }
-      void load();
+      setAttachImages([]);
+      setAttachVideo(null);
+      await loadThread(selectedId);
     } finally {
-      setBusyId(null);
+      setBusy(false);
     }
   };
 
@@ -153,7 +231,7 @@ export function SellerQuestionsCard() {
           letterSpacing: '0.05em',
         }}
       >
-        Buyer questions
+        Buyer inquiries
       </p>
 
       {items === null ? (
@@ -162,152 +240,361 @@ export function SellerQuestionsCard() {
         </p>
       ) : failed ? (
         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-          We could not load your questions just now — this is not the same as
+          We could not load your inquiries just now — this is not the same as
           having none. Refresh to try again.
         </p>
       ) : items.length === 0 ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-          No questions on your listings yet.
+          No buyer inquiries yet. When someone contacts you about a listing,
+          it lands here.
         </p>
-      ) : (
-        <ol className="space-y-4">
-          {items.map((q) => {
-            const badge = statusBadge(q.status);
-            return (
-              <li
-                key={q.id}
-                className="pb-3"
-                style={{ borderBottom: '0.5px solid var(--border-divider)' }}
+      ) : selectedId && thread ? (
+        <div>
+          {/* Thread header */}
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="min-w-0">
+              <Link
+                href={`/listings/${thread.listing.id}`}
+                className="text-sm"
+                style={{
+                  color: 'var(--text-primary)',
+                  fontWeight: 500,
+                  textDecoration: 'none',
+                }}
               >
-                <div className="flex items-center justify-between mb-1">
-                  <Link
-                    href={`/listings/${q.listing.id}`}
-                    className="text-xs"
-                    style={{
-                      color: 'var(--text-tertiary)',
-                      textDecoration: 'none',
-                    }}
+                {thread.listing.title.slice(0, 60)}
+                {thread.listing.title.length > 60 ? '…' : ''}
+              </Link>
+              <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                {thread.role === 'SELLER'
+                  ? `Buyer: ${thread.buyer.username ?? 'Anonymous'}`
+                  : `Seller: ${thread.seller.username ?? 'Anonymous'}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedId(null);
+                setThread(null);
+                setErr(null);
+              }}
+              className="text-[11px]"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-tertiary)',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              ← All inquiries
+            </button>
+          </div>
+
+          {threadLoading && (
+            <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
+              Loading…
+            </p>
+          )}
+
+          <ol className="space-y-2 mb-3 max-h-[340px] overflow-y-auto">
+            {thread.messages.map((m) => {
+              const mineByRole =
+                thread.role === 'SELLER'
+                  ? m.senderId === thread.seller.id
+                  : m.senderId === thread.buyer.id;
+              return (
+                <li
+                  key={m.id}
+                  className="rounded-[6px] px-3 py-2"
+                  style={{
+                    background: mineByRole ? 'var(--bg-inset)' : 'var(--bg-card)',
+                    border: '0.5px solid var(--border)',
+                    marginLeft: mineByRole ? 20 : 0,
+                    marginRight: mineByRole ? 0 : 20,
+                  }}
+                >
+                  <p
+                    className="text-[10px] uppercase tracking-wide mb-1"
+                    style={{ color: 'var(--text-tertiary)' }}
+                  >
+                    {mineByRole
+                      ? 'You'
+                      : thread.role === 'SELLER'
+                        ? 'Buyer'
+                        : 'Seller'}
+                    {m.wasModerated ? ' · contact details removed' : ''}
+                    {' · '}
+                    {whenLabel(m.createdAt)}
+                  </p>
+                  {m.content && (
+                    <p
+                      className="text-sm whitespace-pre-wrap"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      {m.content}
+                    </p>
+                  )}
+                  {m.media.length > 0 && (
+                    <div className="mt-2 space-y-2">
+                      {m.media.map((x) =>
+                        x.kind === 'IMAGE' ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={x.id}
+                            src={x.url}
+                            alt=""
+                            style={{
+                              width: '100%',
+                              borderRadius: 6,
+                              display: 'block',
+                            }}
+                          />
+                        ) : (
+                          <video
+                            key={x.id}
+                            src={x.playbackUrl ?? x.url}
+                            poster={x.thumbnailUrl ?? undefined}
+                            controls
+                            playsInline
+                            preload="metadata"
+                            style={{
+                              width: '100%',
+                              maxHeight: 280,
+                              background: '#000',
+                              borderRadius: 6,
+                              display: 'block',
+                            }}
+                          />
+                        ),
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+
+          <textarea
+            rows={2}
+            maxLength={2000}
+            placeholder={
+              thread.role === 'SELLER'
+                ? 'Reply to the buyer — no phone numbers, emails or links.'
+                : 'Message the seller — no phone numbers, emails or links.'
+            }
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="w-full rounded-[6px] px-3 py-2 text-sm resize-y"
+            style={{
+              background: 'var(--bg-inset)',
+              border: '0.5px solid var(--border)',
+              color: 'var(--text-primary)',
+              outline: 'none',
+              fontFamily: 'inherit',
+            }}
+          />
+          <div className="flex items-center justify-end gap-2 mt-2">
+            <button
+              type="button"
+              onClick={sendText}
+              disabled={busy || draft.trim().length === 0}
+              className="text-xs px-3 py-1.5 rounded-[4px]"
+              style={{
+                background: 'var(--red)',
+                color: '#fff',
+                fontWeight: 500,
+                border: 'none',
+                opacity: busy || draft.trim().length === 0 ? 0.5 : 1,
+                cursor:
+                  busy || draft.trim().length === 0
+                    ? 'not-allowed'
+                    : 'pointer',
+              }}
+            >
+              {busy ? 'Sending…' : 'Send'}
+            </button>
+          </div>
+
+          {/* Seller-only media reply */}
+          {thread.role === 'SELLER' && (
+            <div
+              className="mt-3 pt-3"
+              style={{ borderTop: '0.5px solid var(--border-divider)' }}
+            >
+              <p className="text-[11px] mb-2" style={{ color: 'var(--text-tertiary)' }}>
+                Answer with photos or a video (screened before sending):
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <label
+                  className="text-[11px] px-2 py-1 rounded-[4px]"
+                  style={{
+                    border: '0.5px solid var(--border)',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Photos
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={(e) =>
+                      setAttachImages(Array.from(e.target.files ?? []).slice(0, 4))
+                    }
+                  />
+                </label>
+                <label
+                  className="text-[11px] px-2 py-1 rounded-[4px]"
+                  style={{
+                    border: '0.5px solid var(--border)',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Video
+                  <input
+                    type="file"
+                    accept="video/mp4,video/quicktime,video/webm"
+                    style={{ display: 'none' }}
+                    onChange={(e) => setAttachVideo(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={sendMedia}
+                  disabled={
+                    busy || (attachImages.length === 0 && !attachVideo)
+                  }
+                  className="text-[11px] px-2 py-1 rounded-[4px]"
+                  style={{
+                    border: '0.5px solid var(--border)',
+                    background: 'transparent',
+                    color: 'var(--text-secondary)',
+                    cursor:
+                      busy || (attachImages.length === 0 && !attachVideo)
+                        ? 'not-allowed'
+                        : 'pointer',
+                    opacity:
+                      busy || (attachImages.length === 0 && !attachVideo)
+                        ? 0.5
+                        : 1,
+                  }}
+                >
+                  Attach &amp; send
+                </button>
+              </div>
+              {(attachImages.length > 0 || attachVideo) && (
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  {attachImages.length > 0
+                    ? `${attachImages.length} photo${attachImages.length === 1 ? '' : 's'}`
+                    : ''}
+                  {attachImages.length > 0 && attachVideo ? ' · ' : ''}
+                  {attachVideo ? attachVideo.name : ''}
+                </p>
+              )}
+            </div>
+          )}
+
+          {err && (
+            <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>
+              {err}
+            </p>
+          )}
+        </div>
+      ) : selectedId ? (
+        <div>
+          <p className="text-sm mb-2" style={{ color: 'var(--text-tertiary)' }}>
+            {threadLoading ? 'Opening the conversation…' : 'No conversation to show.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedId(null);
+              setThread(null);
+              setErr(null);
+            }}
+            className="text-[11px]"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--red)',
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            ← All inquiries
+          </button>
+          {err && (
+            <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>
+              {err}
+            </p>
+          )}
+        </div>
+      ) : (
+        <ol className="space-y-3">
+          {items.map((q) => (
+            <li
+              key={q.id}
+              className="pb-3"
+              style={{ borderBottom: '0.5px solid var(--border-divider)' }}
+            >
+              <button
+                type="button"
+                onClick={() => open(q.id)}
+                className="w-full text-left"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                }}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span
+                    className="text-xs truncate"
+                    style={{ color: 'var(--text-tertiary)' }}
                   >
                     {q.listing.title.slice(0, 40)}
                     {q.listing.title.length > 40 ? '…' : ''}
-                  </Link>
+                  </span>
                   <span
-                    className="text-[10px] uppercase px-1.5 py-0.5 rounded-[3px]"
+                    className="text-[10px] uppercase px-1.5 py-0.5 rounded-[3px] shrink-0"
                     style={{
-                      background: `color-mix(in srgb, ${badge.color} 9%, transparent)`,
-                      color: badge.color,
-                      border: `0.5px solid color-mix(in srgb, ${badge.color} 25%, transparent)`,
+                      background:
+                        q.role === 'SELLER'
+                          ? 'rgba(245,158,11,0.10)'
+                          : 'var(--bg-inset)',
+                      color:
+                        q.role === 'SELLER'
+                          ? 'var(--warning)'
+                          : 'var(--text-tertiary)',
+                      border: '0.5px solid var(--border)',
                       letterSpacing: '0.05em',
                     }}
                   >
-                    {badge.label}
+                    {q.role === 'SELLER' ? 'Buyer asked' : 'You asked'}
+                    {q.unread > 0 ? ` · ${q.unread} new` : ''}
                   </span>
                 </div>
-
                 <p
                   className="text-sm leading-snug mb-1"
                   style={{ color: 'var(--text-primary)' }}
                 >
-                  <span style={{ color: 'var(--text-tertiary)' }}>Q. </span>
-                  {q.question}
+                  {q.lastMessage?.preview || 'No messages yet'}
                 </p>
-
-                {q.answer && (
-                  <p
-                    className="text-sm leading-snug mb-1"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    <span style={{ color: 'var(--text-tertiary)' }}>A. </span>
-                    {q.answer}
-                  </p>
-                )}
-
-                <p
-                  className="text-[11px] mb-2"
-                  style={{ color: 'var(--text-tertiary)' }}
-                >
-                  Asked {whenLabel(q.createdAt)} ·{' '}
-                  {q.asker.username ?? 'Anonymous'}
+                <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                  {q.role === 'SELLER'
+                    ? q.counterparty.username ?? 'Anonymous buyer'
+                    : q.counterparty.username ?? 'Seller'}
+                  {' · '}
+                  {whenLabel(q.lastMessageAt)}
                 </p>
-
-                {q.status === 'AUTO_ANSWERED' && (
-                  <button
-                    type="button"
-                    onClick={() => flagAi(q.id)}
-                    disabled={busyId === q.id}
-                    className="text-[11px]"
-                    style={{
-                      color: 'var(--red)',
-                      background: 'transparent',
-                      border: 'none',
-                      padding: 0,
-                      cursor: busyId === q.id ? 'wait' : 'pointer',
-                    }}
-                  >
-                    The AI got this wrong — let me answer it
-                  </button>
-                )}
-
-                {q.status === 'AWAITING_SELLER_ANSWER' && (
-                  <div className="mt-1">
-                    <textarea
-                      rows={2}
-                      maxLength={1000}
-                      placeholder="Your answer — keep it factual about the product."
-                      value={draft[q.id] ?? ''}
-                      onChange={(e) =>
-                        setDraft((d) => ({ ...d, [q.id]: e.target.value }))
-                      }
-                      className="w-full rounded-[6px] px-3 py-2 text-sm resize-y"
-                      style={{
-                        background: 'var(--bg-inset)',
-                        border: '0.5px solid var(--border)',
-                        color: 'var(--text-primary)',
-                        outline: 'none',
-                        fontFamily: 'inherit',
-                      }}
-                    />
-                    <div className="flex justify-end mt-2">
-                      <button
-                        type="button"
-                        onClick={() => answer(q.id)}
-                        disabled={
-                          busyId === q.id ||
-                          (draft[q.id] ?? '').trim().length === 0
-                        }
-                        className="text-xs px-3 py-1.5 rounded-[4px]"
-                        style={{
-                          background: 'var(--red)',
-                          color: '#fff',
-                          fontWeight: 500,
-                          border: 'none',
-                          opacity:
-                            busyId === q.id ||
-                            (draft[q.id] ?? '').trim().length === 0
-                              ? 0.5
-                              : 1,
-                          cursor:
-                            busyId === q.id ||
-                            (draft[q.id] ?? '').trim().length === 0
-                              ? 'not-allowed'
-                              : 'pointer',
-                        }}
-                      >
-                        {busyId === q.id ? 'Saving…' : 'Send answer'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </li>
-            );
-          })}
+              </button>
+            </li>
+          ))}
         </ol>
-      )}
-
-      {err && (
-        <p className="text-xs mt-3" style={{ color: 'var(--red)' }}>
-          {err}
-        </p>
       )}
     </div>
   );
