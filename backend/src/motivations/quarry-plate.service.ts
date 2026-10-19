@@ -59,8 +59,17 @@ const PLATE_RATIO = `${PLATE_W}:${PLATE_H}`;
 const STORE_WIDTH = 1400;
 const STORE_QUALITY = 92;
 
-/** Long enough for a picture model, short enough not to stall a generation. */
-const TIMEOUT_MS = 60_000;
+/**
+ * Long enough for a 2K/medium picture model, short enough not to stall a
+ * generation.
+ *
+ * ⚠️ 60s WAS THE 1K/LOW BUDGET AND NO LONGER FITS. Measured on the box
+ * 2026-10-19, one 2K/medium plate takes ~100s; at 60s every call aborted,
+ * retried twice and gave up at ~181s, so the quarry plate was paid for as
+ * timeout ledger rows and never kept. 180s leaves headroom for a slow render
+ * and still bounds a failed one.
+ */
+const TIMEOUT_MS = 180_000;
 
 export interface QuarryPlateImage {
   bytes: Buffer;
