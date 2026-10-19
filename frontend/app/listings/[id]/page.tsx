@@ -28,6 +28,37 @@ import { SellerVerificationRing } from '@/components/seller-verification-ring';
 import { HelpText } from '@/components/help-text';
 import { WishlistButton } from '@/components/wishlist-button';
 import { UserBadges } from '@/components/user-badges';
+
+// Marketplace Platform Fee bands — mirrors backend/src/payments/fee.calculator.ts.
+// The fee is marginal and is charged last at checkout on (item + delivery); the
+// percentage shown beside the price is the effective rate on the item alone.
+const PLATFORM_BANDS: { limit: number; rate: number }[] = [
+  { limit: 2_500_000, rate: 0.1 },
+  { limit: 2_500_000, rate: 0.09 },
+  { limit: 2_500_000, rate: 0.08 },
+  { limit: Infinity, rate: 0.07 },
+];
+const MIN_PLATFORM_FEE_CENTS = 1_000;
+
+function platformFeePctOnItem(priceCents: number): number {
+  if (!priceCents || priceCents <= 0) return 0;
+  let fee = 0;
+  let remaining = priceCents;
+  for (const band of PLATFORM_BANDS) {
+    if (remaining <= 0) break;
+    const chunk = isFinite(band.limit)
+      ? Math.min(remaining, band.limit)
+      : remaining;
+    fee += chunk * band.rate;
+    remaining -= chunk;
+  }
+  const rounded = Math.max(0, Math.round(fee));
+  const charged =
+    rounded < MIN_PLATFORM_FEE_CENTS
+      ? Math.min(MIN_PLATFORM_FEE_CENTS, priceCents)
+      : rounded;
+  return (charged / priceCents) * 100;
+}
 import { ShareListingButton } from '@/components/share-listing-button';
 import { ReportButton } from '@/components/report-button';
 import { SocialProofPill } from '@/components/social-proof-pill';
@@ -252,6 +283,14 @@ export default async function ListingDetailPage({
   const compareAtPct =
     listing.listingType === 'BUY_NOW'
       ? discountPercent(listing.price, listing.compareAtPriceZarCents)
+      : null;
+
+  // The buyer pays the Platform Fee on top at checkout. Show the effective
+  // rate on the item beside the price; delivery is quoted later and the fee is
+  // charged on that too.
+  const platformFeePct =
+    listing.listingType === 'BUY_NOW' && listing.price
+      ? platformFeePctOnItem(listing.price)
       : null;
 
   // Product/Offer structured data so Google can show rich price/availability
@@ -633,7 +672,7 @@ export default async function ListingDetailPage({
               </span>
               <HelpTip title="Listing type" side="bottom">
                 {listing.listingType === 'BUY_NOW'
-                  ? 'Marketplace: pay the listed price and go. No bidding, no negotiation. Goes straight to checkout.'
+                  ? 'Marketplace: pay the listed price plus the Platform Fee and delivery at checkout. No bidding, no negotiation.'
                   : listing.listingType === 'AUCTION'
                     ? 'Auction: timed bidding with proxy bids and snipe protection. The highest bid at close wins, provided the reserve is met.'
                     : 'Take a Shot: make an offer below the listed price. The seller can accept, counter once, or decline. You get 48 hours to act on a counter.'}
@@ -698,6 +737,18 @@ export default async function ListingDetailPage({
                 >
                   {formatPrice(listing.price)}
                 </span>
+                {platformFeePct != null && (
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: 'var(--text-tertiary)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    + {platformFeePct.toFixed(platformFeePct % 1 === 0 ? 0 : 1)}%
+                    Platform Fee
+                  </span>
+                )}
               </div>
               {/* UX-7 — "% off" chip + seller-stated disclaimer. */}
               {compareAtPct != null && (

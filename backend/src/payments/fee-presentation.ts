@@ -3,15 +3,15 @@
 // ────────────────────────────────────────────────────────────────────
 // ONE PLACE THAT DECIDES HOW A SALE'S MONEY IS SHOWN.
 //
-// We run two economically opposite fee models that write IDENTICAL columns:
+// We run two fee models that write IDENTICAL columns:
 //
-//   BUYNOW_MARKUP  — commission and the gateway fee are built INTO
-//                    listingPrice. The buyer pays the listed number and
-//                    nothing else; the seller receives their full ask.
-//   SELLER_DEDUCT  — the older model, still correct for auction wins,
-//                    accepted offers, experiences and legacy rows. Fees sit
-//                    OUTSIDE listingPrice: the buyer may be charged the
-//                    gateway fee on top, and the seller really is deducted.
+//   BUYNOW_MARKUP  — the seller receives their full ask and pays nothing.
+//                    The buyer pays the Platform Fee at checkout on
+//                    (item + delivery). (The enum name is historical: the
+//                    fee is no longer baked into the listed price.)
+//   SELLER_DEDUCT  — auctions (and legacy/experience rows). The seller pays
+//                    a commission off the sale price, and the buyer pays a
+//                    buyer-side Platform Fee on top.
 //
 // Because the columns look the same, every surface that rendered them was
 // left to guess, and five of them guessed differently. The receipt printed
@@ -109,11 +109,11 @@ export function buyerBreakdown(f: FeeFacts): BuyerBreakdown {
   const delivery = f.shippingCost + f.shippingHandlingCents;
   if (delivery > 0) lines.push({ label: 'Delivery', cents: delivery });
 
-  // Buyer Protection Fee — the buyer always carries it (operator 2026-09),
-  // under BOTH fee models. It is added at checkout on (item + shipping), so
-  // it is never inside "Item price" any more and never double-counts.
+  // Buyer-paid Platform Fee — the single combined charge that replaced the
+  // old Buyer Protection Fee. It is calculated last on (item + delivery), so
+  // it is never inside "Item price" and never double-counts.
   if (f.processingFee > 0) {
-    lines.push({ label: 'Buyer Protection Fee', cents: f.processingFee });
+    lines.push({ label: 'Platform Fee', cents: f.processingFee });
   }
 
   return {
@@ -145,13 +145,16 @@ export function sellerBreakdown(f: FeeFacts): SellerBreakdown {
     };
   }
 
-  // Operator 2026-09: the seller is shown the sale price with our platform
-  // fee deducted, under BOTH models — the H&G-style statement. On a markup
-  // listing the seller still receives their full ask (the fee came from the
-  // buyer's marked-up price), but the document shows it as a deduction so the
-  // seller sees one consistent statement shape.
+  // Operator 2026-10: the seller is shown an honest statement.
+  //
+  // Buy Now: the buyer paid the Platform Fee, so there is NOTHING to deduct —
+  // showing a deduction would be a false statement about the seller's money.
+  // They asked for a number and receive that number.
+  //
+  // Auction: the 5% seller commission really is taken off the hammer, so it
+  // appears as one deduction.
   const deductions: MoneyLine[] = [];
-  if (f.commissionZar > 0) {
+  if (f.feeModel === FeeModel.SELLER_DEDUCT && f.commissionZar > 0) {
     deductions.push({ label: 'Platform Fee', cents: f.commissionZar });
   }
 
@@ -161,10 +164,10 @@ export function sellerBreakdown(f: FeeFacts): SellerBreakdown {
     deductions,
     netLabel: 'You receive',
     net: f.sellerPayout,
-    feesInPrice: false,
+    feesInPrice: f.feeModel === FeeModel.BUYNOW_MARKUP,
     note:
       f.feeModel === FeeModel.BUYNOW_MARKUP
-        ? 'The listed price included our platform fee; we invoice you for it and pay you the balance.'
+        ? 'The buyer paid the Platform Fee; you receive your full asking price.'
         : 'Our platform fee comes off the sale price.',
     balances: f.listingPrice - sum(deductions) === f.sellerPayout,
   };

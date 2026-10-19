@@ -148,7 +148,7 @@ const isPublicRoute = createRouteMatcher([
   '/aml-policy',
   '/acceptable-use',
   '/refund-policy',
-  '/buyer-protection',   // what the Buyer Protection Fee covers — linked from
+  '/buyer-protection',   // what buyer protection includes — linked from
                          // /fees and checkout, must be reachable signed-out.
   '/data-deletion',      // data-deletion instructions — Meta/POPIA require a
                          // public, sign-in-free page.

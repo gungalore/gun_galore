@@ -1,5 +1,7 @@
-﻿// Buyer Protection — what the Buyer Protection Fee actually buys. Public
-// (linked from /fees and checkout), so it must be reachable signed-out.
+﻿// Buyer Protection — the safeguards included in the platform. The separate
+// Buyer Protection Fee was retired in October 2026; protection is now funded
+// by the single Platform Fee. Public (linked from /fees and checkout), so it
+// must be reachable signed-out.
 //
 // House rules: never the word "escrow" (say "funds held" / "payment held");
 // no payment provider named; no promise the platform does not keep. Every
@@ -15,7 +17,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Buyer Protection',
   description:
-    'What the ALL Outdoor Buyer Protection Fee covers — funds held until completion, verified sellers, and dispute resolution.',
+    'The protections every ALL Outdoor buyer gets — funds held until completion, verified sellers, and dispute resolution — included in the Platform Fee.',
 };
 
 export default function BuyerProtectionPage() {
@@ -23,17 +25,17 @@ export default function BuyerProtectionPage() {
     <>
       <LegalDocHeader
         title="Buyer Protection"
-        lastUpdated="Effective 10 October 2026"
+        lastUpdated="Effective 19 October 2026"
       />
 
       <h2>What it is</h2>
       <p>
-        Every order on ALL Outdoor carries a{' '}
-        <strong>Buyer Protection Fee</strong> — <strong>3.28% + R1.15</strong>{' '}
-        (VAT included), charged at checkout on the item price and the
-        carrier&apos;s rate together. The fee funds the protections below, on
-        every sale, whether you buy at a fixed price, win an auction or have an
-        offer accepted.
+        Every order on ALL Outdoor includes the protections below. There is no
+        separate Buyer Protection Fee any more: protection is funded by the
+        single <strong>Platform Fee</strong> charged at checkout, whether you buy
+        at a fixed price, win an auction or have an offer accepted. See{' '}
+        <a href="/fees" style={{ color: 'var(--red)' }}>Fees</a> for how the
+        Platform Fee is calculated.
       </p>
 
       <h2>What you get</h2>
@@ -63,8 +65,9 @@ export default function BuyerProtectionPage() {
 
       <h2>What it is not</h2>
       <p>
-        The fee is not insurance, and it does not change the fact that the
-        agreement of sale is between you and the seller. It does not cover:
+        These protections are not insurance, and they do not change the fact
+        that the agreement of sale is between you and the seller. They do not
+        cover:
       </p>
       <ul>
         <li>buyer&apos;s remorse, or a change of mind after delivery;</li>

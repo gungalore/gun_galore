@@ -1,53 +1,32 @@
 import { Injectable } from '@nestjs/common';
 
-// Commission bands — ZAR cents. Tax-bracket style: each band's `limit`
+// Platform Fee bands — ZAR cents. Tax-bracket style: each band's `limit`
 // is the WIDTH of the slice (not a cumulative cap), so the marginal
 // rate only applies to the rand that fall inside that slice.
 //
-// Operator decision 2026-09: widened to 10 / 8 / 6 / 4 across R5,000 /
-// R15,000 / R25,000. The R10 minimum (MIN_COMMISSION_CENTS) still protects
+// Operator decision 2026-10: widened to 10 / 9 / 8 / 7 across R25,000
+// slices, with 7% running to Infinity. The R10 minimum still protects
 // small-ticket sales — 10% of a R50 item is R5, below the floor.
 export const BANDS: { limit: number; rate: number; label: string }[] = [
-  { limit: 500_000, rate: 0.10, label: 'First R5,000 at 10%' },
-  { limit: 1_000_000, rate: 0.08, label: 'R5,001–R15,000 at 8%' },
-  { limit: 1_000_000, rate: 0.06, label: 'R15,001–R25,000 at 6%' },
-  { limit: Infinity, rate: 0.04, label: 'Above R25,000 at 4%' },
+  { limit: 2_500_000, rate: 0.10, label: 'First R25,000 at 10%' },
+  { limit: 2_500_000, rate: 0.09, label: 'R25,001–R50,000 at 9%' },
+  { limit: 2_500_000, rate: 0.08, label: 'R50,001–R75,000 at 8%' },
+  { limit: Infinity, rate: 0.07, label: 'Above R75,000 at 7%' },
 ];
 
-// Floor on platform commission. The bands above are applied first, then
-// the result is bumped up to MIN_COMMISSION_CENTS if it falls below.
-// Surfaced to the seller in the Sell form so there are no surprises.
-//
-// LOWERED R30 -> R10 on 2026-08-15. The R30 floor existed to cover VerifyNow
-// KYC at ~R28 per seller; that cost is gone — identity checks now run through
-// the Claude-vision flow at roughly R3. Holding R30 was charging sellers for a
-// bill we no longer pay.
-//
-// It also became visible when the markup model shipped: the floor used to be a
-// quiet deduction, but it is now ON THE PRICE TAG. At R30 a R50 ask listed at
-// R84.94 — a ~70% markup a buyer can see. At R10 the same item lists at R64.14.
+// Floor on the platform fee. The bands above are applied first, then the
+// result is bumped up to MIN_COMMISSION_CENTS if it falls below. Surfaced
+// to the buyer at checkout and to the seller in the Sell form.
 export const MIN_COMMISSION_CENTS = 1_000; // R10
 
-// Top Seller discount — 0.5% off total price. LOCKED per CLAUDE.md.
-const TOP_SELLER_DISCOUNT = 0.005;
+// Auctions carry ONE flat 10% platform charge, split evenly between the
+// parties: the buyer pays 5% on (hammer + delivery), the seller pays 5%
+// of the hammer price.
+export const AUCTION_SPLIT_RATE = 0.05;
 
-// Buyer Protection Fee — the gateway cost, rebased as a buyer-facing service
-// (operator decision 2026-09). Ozow card pricing is 2.85% + R1.00 net; with
-// 15% VAT that is 3.28% + R1.15 inclusive, the figure the operator supplied
-// and the figure the buyer sees. Charged on (item + shipping). This replaced
-// the 1.5% Pay-by-Bank rate and is no longer VAT-grossed-up here — the
-// constant is already inclusive.
-const OZOW_RATE = 0.0328;
-const OZOW_FIXED_CENTS = 115; // R1.15 inclusive, per transaction
-
-// Manual EFT processing fee. While there is no card gateway, buyers pay
-// GG by bank EFT and a flat 1.5% handling fee is added to the order (no
-// fixed component). Operator decision 2026-06: manual mode = 1.5%, the
-// dormant paygate keeps the 3.5%+R1.50 card rate.
-const MANUAL_RATE = 0.015;
-
-// Which fee schedule to apply. 'paygate' = card gateway rate (default,
-// keeps every existing caller unchanged); 'manual' = flat 1.5% EFT fee.
+// Which fee schedule to apply. Kept so historical rows and callers still
+// type-check; the old gateway-rate switch no longer changes the maths —
+// the Platform Fee is the only buyer-side charge.
 export type PaymentMode = 'paygate' | 'manual';
 
 // P6.4 — flat GG shipping handling margin, ZAR cents. Charged ONCE per waybill
@@ -89,208 +68,157 @@ export function displayShippingCents(carrierRateCents: number): number {
 }
 
 export interface FeeBreakdown {
-  listingPrice: number;   // ZAR cents
+  listingPrice: number;   // ZAR cents — the item price (raw seller ask / hammer)
   shippingCost: number;   // ZAR cents — courier rate at checkout time (remitted to carrier)
   shippingHandlingCents: number; // ZAR cents — GG delivery margin (10% of the carrier rate; buyer-paid, GG-retained, never shown separately)
-  commissionZar: number;  // ZAR cents — platform commission off the listing price only
-  processingFee: number;  // ZAR cents — gateway/EFT fee, charged on (listing + shipping)
+  commissionZar: number;  // ZAR cents — SELLER-paid platform commission (auction only)
+  processingFee: number;  // ZAR cents — BUYER-paid Platform Fee (charged last on item + delivery)
   buyerTotal: number;     // ZAR cents — what the buyer pays
   sellerPayout: number;   // ZAR cents — what the seller actually receives
 }
 
 @Injectable()
 export class FeeCalculator {
-  calculateCommission(priceZarCents: number, isTopSeller: boolean): number {
-    let commission = 0;
-    let remaining = priceZarCents;
+  /**
+   * Marginal Platform Fee on a base amount (item + delivery).
+   *
+   * The R10 minimum is capped at the base itself so a corrupt row can never
+   * charge more than the thing being sold.
+   */
+  calculatePlatformFee(baseZarCents: number): number {
+    const base = Math.max(0, Math.round(baseZarCents));
+    if (base === 0) return 0;
 
+    let fee = 0;
+    let remaining = base;
     for (const band of BANDS) {
       if (remaining <= 0) break;
       const chunk = isFinite(band.limit)
         ? Math.min(remaining, band.limit)
         : remaining;
-      commission += chunk * band.rate;
+      fee += chunk * band.rate;
       remaining -= chunk;
     }
 
-    if (isTopSeller) {
-      commission -= priceZarCents * TOP_SELLER_DISCOUNT;
-    }
-
-    // R30 minimum platform fee — kicks in on low-ticket sales where the
-    // band rate alone would leave us underwater on processing. Skipped
-    // when there's no sale to begin with (priceZarCents === 0).
-    const rounded = Math.max(0, Math.round(commission));
-    if (priceZarCents > 0 && rounded < MIN_COMMISSION_CENTS) {
-      // Don't let the minimum exceed the price itself — that would mean
-      // the seller pays us more than the buyer paid them.
-      return Math.min(MIN_COMMISSION_CENTS, priceZarCents);
+    const rounded = Math.max(0, Math.round(fee));
+    if (rounded < MIN_COMMISSION_CENTS) {
+      return Math.min(MIN_COMMISSION_CENTS, base);
     }
     return rounded;
   }
 
   /**
-   * BUY NOW — turn what the SELLER wants to receive into the price the buyer
-   * sees. Operator decision 2026-08-15; fee stack changed 2026-09.
+   * The two halves of an auction's flat 10% platform charge.
    *
-   * The seller asks R1,000 and receives exactly R1,000. Our commission is
-   * built INTO the listed price, so the seller never sees a deduction from
-   * their ask. The Buyer Protection Fee is NOT baked in any more (operator
-   * 2026-09): it is added at checkout on (item + shipping), the same way the
-   * auction path charges it, so the listed number stays a clean
-   * "ask + commission".
+   * buyerFee  — 5% of (hammer + delivery), floored at R10 (capped at the base).
+   * sellerFee — 5% of the hammer price, deducted from the seller's payout.
+   */
+  calculateAuctionFees(
+    hammerZarCents: number,
+    deliveryZarCents = 0,
+  ): { buyerFee: number; sellerFee: number } {
+    const hammer = Math.max(0, Math.round(hammerZarCents));
+    const delivery = Math.max(0, Math.round(deliveryZarCents));
+    if (hammer === 0) return { buyerFee: 0, sellerFee: 0 };
+
+    const base = hammer + delivery;
+    const rawBuyer = Math.round(base * AUCTION_SPLIT_RATE);
+    const buyerFee =
+      rawBuyer < MIN_COMMISSION_CENTS
+        ? Math.min(MIN_COMMISSION_CENTS, base)
+        : rawBuyer;
+    const sellerFee = Math.round(hammer * AUCTION_SPLIT_RATE);
+    return { buyerFee, sellerFee };
+  }
+
+  /**
+   * BUY NOW — the seller asks for a number and receives exactly that.
+   *
+   * The listed price IS the seller's ask (operator 2026-10). The Platform Fee
+   * is added at checkout on (item + delivery), so the seller never sees a
+   * deduction and the buyer sees one explicit fee line.
    *
    *   ask                          R1,000   seller receives this
-   *   + commission (banded)        R  100   our margin
-   *   = LIST PRICE                 R1,100   the buyer sees this
-   *
-   * The buyer then pays LIST PRICE + Buyer Protection Fee + shipping.
-   *
-   * Shipping is not in this base — it is unknown until checkout.
+   *   + Platform Fee (banded)      R  100   our margin
+   *   + delivery                   R   79   carrier + handling
+   *   = BUYER TOTAL                R1,179
    */
-  listPriceFromSellerAsk(
-    sellerAskZarCents: number,
-    isTopSeller: boolean,
-    _mode: PaymentMode = 'paygate',
-  ): {
+  listPriceFromSellerAsk(sellerAskZarCents: number): {
     sellerAsk: number;
     commissionZar: number;
     listPrice: number;
   } {
     const sellerAsk = Math.max(0, Math.round(sellerAskZarCents));
-    if (sellerAsk === 0) {
-      return { sellerAsk: 0, commissionZar: 0, listPrice: 0 };
-    }
-    const commissionZar = this.calculateCommission(sellerAsk, isTopSeller);
+    const commissionZar = this.calculatePlatformFee(sellerAsk);
     return {
       sellerAsk,
+      // Estimated fee on the item alone — delivery is only known at checkout.
       commissionZar,
-      listPrice: sellerAsk + commissionZar,
+      // The seller's ask is the listed price; the fee is NOT baked in.
+      listPrice: sellerAsk,
     };
   }
 
   /**
-   * BUY NOW breakdown, from a listing whose price ALREADY carries the markup.
+   * BUY NOW breakdown, from the seller's ask plus the delivery quote.
    *
-   * The buyer pays the listed price full stop — nothing is added at checkout
-   * except shipping and the handling margin, neither of which can be known
-   * before an address exists.
-   *
-   * Takes the seller's ask rather than re-deriving it from the list price:
-   * the ask is what was agreed with the seller and is stored on the listing,
-   * and reversing a banded, minimum-floored, top-seller-discounted markup is
-   * not reliably invertible. Recomputing forward from the ask always agrees
-   * with what the seller was shown.
+   * The Platform Fee is calculated LAST, on the whole line (item × quantity)
+   * plus the delivery figure the buyer sees (carrier rate + handling margin).
+   * The seller receives their full ask; the buyer pays the fee.
    */
   breakdownBuyNow(
     sellerAskZarCents: number,
-    isTopSeller: boolean,
     shippingCostZarCents = 0,
-    mode: PaymentMode = 'paygate',
     handlingFeeCents = 0,
     quantity = 1,
+    _mode: PaymentMode = 'paygate',
   ): FeeBreakdown {
-    // PER UNIT, then multiplied — NOT marked up on the line subtotal.
-    //
-    // Commission bands are marginal and taper, so re-banding the whole line
-    // would make two units cost LESS than twice the price on the card (the
-    // second unit falls into a cheaper band and the R10 floor is charged
-    // once). The listed price is a promise: two of them cost exactly twice.
     const qty = Math.max(1, Math.round(quantity));
-    const unit = this.listPriceFromSellerAsk(
-      sellerAskZarCents,
-      isTopSeller,
-      mode,
-    );
-    const marked = {
-      sellerAsk: unit.sellerAsk * qty,
-      commissionZar: unit.commissionZar * qty,
-      listPrice: unit.listPrice * qty,
-    };
+    const item = Math.max(0, Math.round(sellerAskZarCents)) * qty;
     const shippingCost = Math.max(0, Math.round(shippingCostZarCents));
     const shippingHandlingCents = Math.max(0, Math.round(handlingFeeCents));
-    // Buyer Protection Fee — charged at checkout on (item + shipping), NOT
-    // baked into the listed price (operator 2026-09). The buyer always pays it.
-    const processingFee = this.calculateProcessingFee(
-      marked.listPrice + shippingCost,
-      mode,
-    );
+    const delivery = shippingCost + shippingHandlingCents;
+    // Calculated LAST: the fee base includes the delivery figure.
+    const processingFee = this.calculatePlatformFee(item + delivery);
 
     return {
-      // What the buyer is charged for the goods — the number on the card.
-      listingPrice: marked.listPrice,
+      listingPrice: item,
       shippingCost,
       shippingHandlingCents,
-      commissionZar: marked.commissionZar,
+      // The seller pays no commission on a Buy Now sale.
+      commissionZar: 0,
       processingFee,
-      buyerTotal:
-        marked.listPrice + processingFee + shippingCost + shippingHandlingCents,
-      // The whole point: the seller receives exactly what they asked for.
-      sellerPayout: marked.sellerAsk,
+      buyerTotal: item + delivery + processingFee,
+      sellerPayout: item,
     };
   }
 
   /**
-   * Buyer Protection Fee on a given base (listing price + shipping).
-   * - 'paygate': Ozow card, VAT-inclusive — base × 3.28% + R1.15.
-   * - 'manual': legacy flat 1.5% EFT handling fee, no fixed component.
+   * AUCTION (and an offer accepted on an auction) — flat 10% split 5/5.
+   *
+   * The buyer pays 5% of (hammer + delivery) at checkout; the seller pays 5%
+   * of the hammer, deducted from their payout.
    */
-  calculateProcessingFee(baseZarCents: number, mode: PaymentMode = 'paygate'): number {
-    if (!Number.isFinite(baseZarCents) || baseZarCents <= 0) return 0;
-    if (mode === 'manual') {
-      return Math.round(baseZarCents * MANUAL_RATE);
-    }
-    return Math.round(baseZarCents * OZOW_RATE + OZOW_FIXED_CENTS);
-  }
-
-  /**
-   * Full breakdown. `shippingCost` is the courier quote at checkout
-   * time, paid by the buyer on top of the listing price (per house
-   * standard — shipping is always passed to the buyer for marketplace
-   * sales). Zero for firearm DEALER_TRANSFER / PRIVATE_ARRANGE since
-   * those don't use the courier API.
-   */
-  breakdown(
-    listingPriceZarCents: number,
-    _passFeeToBuyer: boolean,
-    isTopSeller: boolean,
+  breakdownAuction(
+    hammerZarCents: number,
     shippingCostZarCents = 0,
-    mode: PaymentMode = 'paygate',
-    // P6.4 — flat GG handling margin for this line, ZAR cents. Non-zero ONLY
-    // for a courier line that produces its OWN waybill (the caller decides:
-    // courier and not a zero-cost consolidated sibling). Buyer-paid on top of
-    // everything else and GG-retained; it does NOT enter the protection-fee
-    // base (we don't charge the fee on our own margin) and never touches the
-    // seller payout. Defaults to 0 so every existing caller is unchanged.
     handlingFeeCents = 0,
+    _mode: PaymentMode = 'paygate',
   ): FeeBreakdown {
-    const listingPrice = listingPriceZarCents;
+    const hammer = Math.max(0, Math.round(hammerZarCents));
     const shippingCost = Math.max(0, Math.round(shippingCostZarCents));
     const shippingHandlingCents = Math.max(0, Math.round(handlingFeeCents));
-    const commissionZar = this.calculateCommission(listingPrice, isTopSeller);
-    // The Buyer Protection Fee is charged on whatever the buyer actually
-    // pays, which always includes shipping. The handling margin is EXCLUDED
-    // from the base.
-    const processingFee = this.calculateProcessingFee(
-      listingPrice + shippingCost,
-      mode,
-    );
-
-    // Operator 2026-09: the buyer ALWAYS carries the Buyer Protection Fee.
-    // The seller-absorb branch is retired — `_passFeeToBuyer` is kept only so
-    // existing call sites and stored rows still type-check, and is ignored.
-    const buyerTotal =
-      listingPrice + processingFee + shippingCost + shippingHandlingCents;
-    const sellerPayout = Math.max(0, listingPrice - commissionZar);
+    const delivery = shippingCost + shippingHandlingCents;
+    const { buyerFee, sellerFee } = this.calculateAuctionFees(hammer, delivery);
 
     return {
-      listingPrice,
+      listingPrice: hammer,
       shippingCost,
       shippingHandlingCents,
-      commissionZar,
-      processingFee,
-      buyerTotal,
-      sellerPayout,
+      commissionZar: sellerFee,
+      processingFee: buyerFee,
+      buyerTotal: hammer + delivery + buyerFee,
+      sellerPayout: Math.max(0, hammer - sellerFee),
     };
   }
 }

@@ -2363,12 +2363,11 @@ export class AdminService {
         processingFee: true,
         shippingCost: true,
         // Our waybill handling margin (GG-retained), kept as its own column.
-        // ⚠️ THE IDENTITY IT ONCE ASSERTED IS ONLY TRUE UNDER SELLER_DEDUCT.
-        // This comment used to claim "Gross = Item + Shipping + Shipping
-        // handling + Processing closes per courier row". Under BUYNOW_MARKUP
-        // the processing fee is already inside Item price, so adding it again
-        // overshoots Gross by exactly that fee. Read the Fee model column
-        // before reconciling; see payments/fee-presentation.ts.
+        // Under the 2026-10 model the identity is simple and universal:
+        // Item price + Shipping + Shipping handling + Processing fee =
+        // Gross (buyerTotal). `commissionZar` is the SELLER-paid share
+        // (auctions only); `processingFee` is the BUYER-paid Platform Fee.
+        // See payments/fee-presentation.ts.
         shippingHandlingCents: true,
         buyerTotal: true,
         sellerPayout: true,
@@ -2389,13 +2388,12 @@ export class AdminService {
       'Buyer', 'Buyer email', 'Seller', 'Seller email',
       'Item price', 'Gross (buyer paid)', 'Commission', 'Processing fee',
       'Shipping', 'Shipping handling (GG)', 'Net payout', 'Refunded',
-      // ⚠️ WITHOUT THIS COLUMN THE EXPORT CANNOT BE RECONCILED. The raw
-      // columns are identical under both fee models but mean opposite things:
-      // under BUYNOW_MARKUP the commission and processing fee are ALREADY
-      // INSIDE "Item price" and were charged to the buyer, so
-      // Item + Shipping + Handling + Processing double-counts the fee and the
-      // seller was never deducted anything. Under SELLER_DEDUCT they sit
-      // outside it and the seller really was. Raw values are kept as-is
+      // ⚠️ WITHOUT THIS COLUMN THE EXPORT CANNOT BE EXPLAINED. The columns are
+      // identical under both fee models but mean different things: under
+      // BUYNOW_MARKUP the processing fee is the buyer-paid Platform Fee and the
+      // seller is not deducted; under SELLER_DEDUCT `commissionZar` is the
+      // seller's 5% share and `processingFee` is the buyer's 5% share, so the
+      // two together are the auction's flat 10%. Raw values are kept as-is
       // (an accountant wants the actual columns) — this says how to read them.
       'Fee model',
     ];
@@ -2573,11 +2571,12 @@ export class AdminService {
   // buyerTotal — a partial refund leaves the order in its current state
   // (HELD/DISPUTED) so the remaining balance can still be released or
   // refunded later.
-  // Resolve a buyer's cancellation REQUEST: refund the order minus the
-  // irrecoverable costs (Buyer Protection Fee always; carrier cost only when a
-  // waybill exists), relist the item, and tell both parties. The maths lives in
-  // cancellationRefundableCents; the money/relist/notify flow is the shared
-  // terminal-refund path via `refundTransaction(..., { resolveCancellation })`.
+  // Resolve a buyer's cancellation REQUEST: refund the order less the
+  // irrecoverable costs (a flat 4% handling fee always; carrier cost + delivery
+  // margin only when a waybill exists), relist the item, and tell both parties.
+  // The maths lives in cancellationRefundableCents; the money/relist/notify
+  // flow is the shared terminal-refund path via
+  // `refundTransaction(..., { resolveCancellation })`.
   async resolveCancellationRequest(txId: string, adminId: string, note?: string) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: txId },
@@ -2588,7 +2587,10 @@ export class AdminService {
         buyerTotal: true,
         processingFee: true,
         shippingCost: true,
+        shippingHandlingCents: true,
         carrierShipmentId: true,
+        acceptedAt: true,
+        dispatchedAt: true,
       },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
@@ -2600,11 +2602,19 @@ export class AdminService {
         `Order is not frozen for cancellation (status: ${tx.paymentStatus}).`,
       );
     }
+    if (tx.dispatchedAt) {
+      throw new BadRequestException(
+        'This order has already been dispatched — it cannot be cancelled. Use the dispute process instead.',
+      );
+    }
     const { refundableCents } = cancellationRefundableCents({
       buyerTotal: tx.buyerTotal,
       processingFee: tx.processingFee,
       shippingCost: tx.shippingCost,
-      shipmentCommitted: isShipmentCommitted(tx),
+      shippingHandlingCents: tx.shippingHandlingCents,
+      // The delivery charge is committed only once the seller has accepted and
+      // a waybill exists. A lone waybill on a legacy row is not enough.
+      shipmentCommitted: !!tx.acceptedAt && isShipmentCommitted(tx),
     });
     return this.refundTransaction(
       txId,

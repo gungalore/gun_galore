@@ -26,34 +26,34 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   // ── Fees & payments ────────────────────────────────────────────────
   {
     sourceKey: 'fees-commission-bands',
-    title: 'What commission does All Outdoor charge?',
-    question: 'How much commission does All Outdoor take when I sell something?',
+    title: 'What Platform Fee does All Outdoor charge?',
+    question: 'How much does All Outdoor take when I sell something?',
     answer:
-      "Commission is charged only on a completed sale and works like tax brackets — each rate applies only to the rand inside its slice: 9% on the first R5,000, 7% on R5,001–R20,000, 5% on R20,001–R100,000, and 3% above R100,000. Example: a R8,000 sale = 9% of R5,000 (R450) + 7% of R3,000 (R210) = R660. A R30 minimum platform fee applies. The exact figure is always shown up front before you list — see [How selling works](/how-selling-works).",
-    tags: ['fees', 'commission', 'selling'],
+      'The Platform Fee is charged only on a completed sale and works like tax brackets — each rate applies only to the rand inside its slice: 10% on the first R25,000, 9% on R25,001–R50,000, 8% on R50,001–R75,000, and 7% above R75,000. On a marketplace (Buy Now) sale your asking price is the listed price and you receive it in full — the buyer pays the Platform Fee at checkout. On an auction the fee is a flat 10%, split 5% buyer / 5% seller. The exact figures are shown before you list — see [How selling works](/how-selling-works).',
+    tags: ['fees', 'platform fee', 'selling'],
   },
   {
     sourceKey: 'fees-minimum-commission',
-    title: 'Is there a minimum platform fee?',
-    question: 'Why was I charged R30 commission on a small sale?',
+    title: 'Is there a minimum Platform Fee?',
+    question: 'Why was I charged R10 on a small sale?',
     answer:
-      'Yes — R30. The commission bands are applied first; if the result comes to less than R30 (which happens on small-ticket sales), the commission is bumped up to R30 to cover processing overhead. The minimum never exceeds the sale price itself, and the fee you will pay is shown before you list, so there are no surprises.',
-    tags: ['fees', 'commission', 'minimum'],
+      'Yes — R10. The bands are applied first; if the result comes to less than R10 (which happens on small-ticket sales), the fee is bumped up to R10. The minimum never exceeds the amount it is charged on, and the fee is shown before you list, so there are no surprises.',
+    tags: ['fees', 'platform fee', 'minimum'],
   },
   {
     sourceKey: 'fees-top-seller-discount',
-    title: 'What is the Top Seller discount?',
+    title: 'Does Top Seller reduce my fees?',
     question: 'Do Top Sellers pay less commission?',
     answer:
-      "Yes. Top Sellers get 0.5% of the total sale price off their commission — on a R10,000 sale that is R50 off. It applies automatically once you hold Top Seller status, and the discounted figure shows in your fee preview when you list. The R10 minimum platform fee still applies.",
-    tags: ['fees', 'commission', 'top seller'],
+      'No. The Top Seller tier is a trust badge earned through completed sales and strong ratings; it no longer carries a fee discount. The Platform Fee is the same for every seller.',
+    tags: ['fees', 'platform fee', 'top seller'],
   },
   {
     sourceKey: 'fees-buyer-protection-fee',
-    title: 'What is the Buyer Protection Fee?',
-    question: 'Why is there a Buyer Protection Fee added at checkout?',
+    title: 'What is the Platform Fee?',
+    question: 'Why is there a Platform Fee added at checkout?',
     answer:
-      'Every order carries a Buyer Protection Fee (currently 3.28% + R1.15, VAT included). It is charged on the item price plus the carrier’s rate, and shown at checkout before you pay. The fee funds the protections every buyer gets: your payment is held until the order is safely completed, sellers are identity-checked before they can be paid, and disputes are handled by our team — with a refund where a claim is valid.',
+      'Every order carries one Platform Fee, calculated last on the item price plus delivery and shown at checkout before you pay. On a marketplace sale it is banded (10/9/8/7, minimum R10); on an auction it is a flat 10% split 5% buyer / 5% seller. It replaced the old Buyer Protection Fee. It funds secure payment handling, seller verification and dispute resolution, including a refund where a claim is valid.',
     tags: ['fees', 'payments', 'checkout'],
   },
   {
@@ -61,7 +61,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What does it cost to buy?',
     question: 'Are there fees for buyers on All Outdoor?',
     answer:
-      'Browsing and bidding are free. When you buy, your total is the item price + a live courier quote for delivery + a Buyer Protection Fee (currently 3.28% + R1.15, VAT included) charged on the item and the carrier’s rate together. Every line is itemised at checkout before you pay — no hidden charges.',
+      'Browsing and bidding are free. When you buy, your total is the item price + a live courier quote for delivery + the Platform Fee, charged on the item and delivery together. Every line is itemised at checkout before you pay — no hidden charges.',
     tags: ['fees', 'buying', 'checkout'],
   },
   {
@@ -448,7 +448,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How do I become a Top Seller?',
     question: 'What do I need to do to qualify for Top Seller status?',
     answer:
-      'Top Seller is earned, not bought — it reflects a track record of completed sales and strong buyer ratings, with your KYC and profile complete and no recent strikes for late dispatch. Keep delivering on time and keeping buyers happy and you climb toward it. The reward is real: Top Sellers pay less commission (0.5% of the sale off) and it signals trust to buyers. Track your progress on your [Dashboard](/dashboard).',
+      'Top Seller is earned, not bought — it reflects a track record of completed sales and strong buyer ratings, with your KYC and profile complete and no recent strikes for late dispatch. Keep delivering on time and keeping buyers happy and you climb toward it. The reward is trust and visibility: it signals reliability to buyers. Track your progress on your [Dashboard](/dashboard).',
     tags: ['top seller', 'selling', 'tiers'],
   },
   {

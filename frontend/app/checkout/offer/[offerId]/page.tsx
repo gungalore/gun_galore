@@ -101,6 +101,7 @@ export default async function OfferCheckoutPage({
             listingId={offer.listingId}
             settledAmount={settledAmount}
             isFirearm={offer.listing.isFirearm ?? false}
+            listingType={offer.listing.listingType ?? 'BUY_NOW'}
             vicinity={vicinityLabel(offer.listing)}
           />
         </div>

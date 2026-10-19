@@ -6,7 +6,7 @@ import { BuyerTermsAck } from '@/components/buyer-terms-ack';
 import { formatPrice } from '@/lib/utils';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
-import { FeeBreakdown, ShippingMethod, Address } from '@/lib/types';
+import { FeeBreakdown, ListingType, ShippingMethod, Address } from '@/lib/types';
 import {
   DeliveryOptionsPicker,
   type DeliveryOption,
@@ -42,26 +42,43 @@ const inputStyle: React.CSSProperties = {
 };
 
 // ─── What the buyer pays on an accepted offer ────────────────────────────
-// An offer DISCOVERS the price the same way a bid does: the seller pays the
-// platform commission out of the agreed price, and the BUYER carries the
-// Buyer Protection Fee — shown as its own "Buyer Protection Fee" row
-// (operator 2026-09). This is not conditional on the listing's legacy
-// passFeeToBuyer flag: the buyer always pays it now, on every rail.
+// Operator 2026-10: an offer on a Buy Now listing uses the marketplace
+// Platform Fee (marginal 10/9/8/7 on item + delivery, buyer-paid). An offer
+// accepted on an auction uses the flat 5% buyer share. The seller keeps the
+// agreed price on a Buy Now listing, or pays 5% of it on an auction.
 //
-// Formulas mirror the backend FeeCalculator exactly:
-//   paygate — base × 3.28% + R1.15, the VAT-inclusive Buyer Protection Fee
-//   manual  — flat 1.5% EFT handling, no fixed component
 // Presentation only; the amount actually charged is recomputed server-side on
 // POST /transactions.
-const OZOW_RATE = 0.0328;
-const OZOW_FIXED_CENTS = 115; // R1.15 inclusive
-const MANUAL_RATE = 0.015;
-const PAYMENT_MODE =
-  process.env.NEXT_PUBLIC_PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
-function transactionFee(baseZarCents: number): number {
-  return PAYMENT_MODE === 'manual'
-    ? Math.round(baseZarCents * MANUAL_RATE)
-    : Math.round(baseZarCents * OZOW_RATE + OZOW_FIXED_CENTS);
+const PLATFORM_BANDS: { limit: number; rate: number }[] = [
+  { limit: 2_500_000, rate: 0.1 },
+  { limit: 2_500_000, rate: 0.09 },
+  { limit: 2_500_000, rate: 0.08 },
+  { limit: Infinity, rate: 0.07 },
+];
+const MIN_PLATFORM_FEE_CENTS = 1_000;
+
+function platformFeeCents(baseZarCents: number, isAuction: boolean): number {
+  if (baseZarCents <= 0) return 0;
+  if (isAuction) {
+    return Math.max(
+      MIN_PLATFORM_FEE_CENTS,
+      Math.round(baseZarCents * 0.05),
+    );
+  }
+  let fee = 0;
+  let remaining = baseZarCents;
+  for (const band of PLATFORM_BANDS) {
+    if (remaining <= 0) break;
+    const chunk = isFinite(band.limit)
+      ? Math.min(remaining, band.limit)
+      : remaining;
+    fee += chunk * band.rate;
+    remaining -= chunk;
+  }
+  const rounded = Math.max(0, Math.round(fee));
+  return rounded < MIN_PLATFORM_FEE_CENTS
+    ? Math.min(MIN_PLATFORM_FEE_CENTS, baseZarCents)
+    : rounded;
 }
 
 // FLOW-F5 — the 9 SA provinces, values matching the Prisma Province enum.
@@ -96,12 +113,14 @@ export function OfferCheckoutForm({
   listingId,
   settledAmount,
   isFirearm,
+  listingType,
   vicinity,
 }: {
   offerId: string;
   listingId: string;
   settledAmount: number;
   isFirearm: boolean;
+  listingType: ListingType;
   /** Town + province (or the planned dealer for a firearm) — the exact string
    *  the server snapshots onto the transaction as evidence of what this buyer
    *  was shown before paying. */
@@ -176,12 +195,15 @@ export function OfferCheckoutForm({
   ]);
 
   // Courier routes carry a shipping leg the server only prices at payment
-  // time, and the transaction fee is charged on (item + shipping) — so on
+  // time, and the Platform Fee is charged last on (item + delivery) — so on
   // those neither the fee nor the final total can be stated honestly here.
   // A dealer transfer has no courier leg and no waybill, so its total is
-  // knowable in full: agreed price + transaction fee, nothing else.
+  // knowable in full: agreed price + Platform Fee, nothing else.
   const isCourier = effectiveMethod === 'COURIER';
-  const feeOnAgreedPrice = transactionFee(settledAmount);
+  const feeOnAgreedPrice = platformFeeCents(
+    settledAmount,
+    listingType === 'AUCTION',
+  );
   const knownTotal = isCourier ? null : settledAmount + feeOnAgreedPrice;
 
   function buildPayload() {
@@ -451,12 +473,11 @@ export function OfferCheckoutForm({
 
       {/* What the buyer actually pays. The agreed price is the price — an
           offer discovers it, so nothing is marked up on top of it — and the
-          gateway cost sits on the buyer as its own "Buyer Protection Fee" row.
-          Our delivery handling margin is folded into the courier's own quoted
-          figure, never itemised as a row of its own. Shipping
-          (and therefore the exact fee, which is charged on item + shipping) is
-          only priced server-side at payment, so those rows say so rather than
-          show a number we'd have to guess at. */}
+          buyer-paid Platform Fee is calculated last on item + delivery. Our
+          delivery handling margin is folded into the courier's own quoted
+          figure, never itemised as a row of its own. Shipping (and therefore
+          the exact fee) is only priced server-side at payment, so those rows
+          say so rather than show a number we'd have to guess at. */}
       <div
         className="rounded-[8px] p-4"
         style={{
@@ -487,14 +508,14 @@ export function OfferCheckoutForm({
               muted={!deliveryOption}
             />
             <SummaryLine
-              label="Buyer Protection Fee"
+              label="Platform Fee"
               value="Calculated at payment"
               muted
             />
           </>
         ) : (
           <SummaryLine
-            label="Buyer Protection Fee"
+            label="Platform Fee"
             value={formatPrice(feeOnAgreedPrice)}
             muted
           />

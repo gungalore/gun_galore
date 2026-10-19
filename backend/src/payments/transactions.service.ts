@@ -362,14 +362,12 @@ export class TransactionsService {
         : (listing.price ?? 0);
     if (!agreedPrice) throw new BadRequestException('Could not determine listing price');
 
-    const isTopSeller = listing.seller.sellerTier === 'TOP_SELLER';
+    const isAuctionListing = listing.listingType === 'AUCTION';
 
-    // A straight BUY_NOW purchase of a listing priced under the markup model.
-    // Offers and auction wins are excluded: their price was negotiated or bid,
-    // not listed. sellerAskCents is null on anything created before the model
-    // existed, which falls back to the old deduct-from-seller behaviour.
-    const isMarkedUpBuyNow =
-      !offerRecord && !auctionWin && listing.sellerAskCents != null;
+    // A straight marketplace purchase (Buy Now, or an offer accepted on a
+    // Buy Now listing): the seller receives the agreed price and the buyer
+    // pays the Platform Fee. Auctions use the flat 5% / 5% split instead.
+    const isMarkedUpBuyNow = !isAuctionListing;
 
     // ─── The two facts every downstream document needs ────────────────
     // Both fee models below write the SAME columns, so without recording
@@ -377,20 +375,11 @@ export class TransactionsService {
     // describe the sale truthfully — and five of them described it three
     // different ways. Snapshotted here, beside the money they explain.
     const feeModel = feeModelFor({ isExperience: false, isMarkedUpBuyNow });
-    // Operator 2026-09: the buyer ALWAYS carries the Buyer Protection Fee, on
-    // every rail. The old listing-level choice is retired; the column is kept
-    // (and stored true) so historical rows and every consumer still read a
-    // meaningful value.
+    // Operator 2026-09: the buyer ALWAYS carries the buyer-side Platform Fee,
+    // on every rail. The old listing-level choice is retired; the column is
+    // kept (and stored true) so historical rows and every consumer still read
+    // a meaningful value.
     const buyerPaysProcessingFee = true;
-    // ⚠️ The null fallback below is a SAFETY NET, not a supported state. The
-    // buyer's checkout cannot tell a marked-up BUY_NOW from a legacy one —
-    // sellerAskCents is owner-gated and never reaches a buyer — so it assumes
-    // every BUY_NOW is marked up and shows no fee line. A legacy row with
-    // passFeeToBuyer=true would therefore be CHARGED a processing fee the
-    // buyer was never shown. That is safe today only because production has
-    // zero listings and every new one records an ask. If listings ever predate
-    // the markup model (a restore, an import), backfill sellerAskCents before
-    // they can be bought.
 
     // Quantity (Phase 8a). For every legacy/single-item listing
     // (trackInventory=false — the default) this resolves to exactly 1, so
@@ -495,40 +484,24 @@ export class TransactionsService {
       processingFee,
       buyerTotal,
       sellerPayout,
-    } = isMarkedUpBuyNow
-      ? // BUY NOW — our cut is already inside listing.price. The seller
-        // receives the ask they typed and NOTHING is added at checkout but
-        // shipping and the handling margin. Recomputed FORWARD from the ask
-        // rather than reversed out of the price: the markup is banded,
-        // floored and Top-Seller-discounted, so it is not reliably
-        // invertible, and forward always reproduces what the seller was shown.
-        this.fees.breakdownBuyNow(
-          listing.sellerAskCents!,
-          isTopSeller,
+    } = isAuctionListing
+      ? // AUCTION — flat 10% platform charge: the buyer pays 5% of
+        // (hammer + delivery) at checkout, the seller pays 5% of the hammer.
+        this.fees.breakdownAuction(
+          agreedPrice,
           shippingCostCents,
+          handlingFeeCents,
           PAYMENT_MODE,
+        )
+      : // MARKETPLACE (Buy Now, or an offer accepted on a Buy Now listing) —
+        // the seller receives the agreed price in full. The Platform Fee is
+        // calculated LAST on (item + delivery) and paid by the buyer.
+        this.fees.breakdownBuyNow(
+          agreedPrice,
+          shippingCostCents,
           handlingFeeCents,
           quantity,
-        )
-      : this.fees.breakdown(
-          agreedPrice * quantity, // line subtotal — commission bands apply to the line
-          // AUCTIONS AND OFFERS: the buyer pays the gateway fee, surfaced as
-          // a "Transaction fee" (operator 2026-08-15). A bid discovers the
-          // price, so there is nothing to mark up — the commission comes out
-          // of the seller as it always did, and the gateway cost is the
-          // buyer's. Anything else (a legacy BUY_NOW with no ask recorded)
-          // keeps the seller's own passFeeToBuyer choice.
-          // ⚠️ When a buy-now-on-auction flow is built (Listing.buyNowPrice
-          // is stored but nothing purchases it yet), it belongs on THIS
-          // branch too — operator 2026-08-15: buy now on an auction follows
-          // the AUCTION rules, not the marked-up BUY_NOW ones. Widen this to
-          // cover it rather than letting it fall through to the listing's
-          // legacy passFeeToBuyer flag.
-          buyerPaysProcessingFee,
-          isTopSeller,
-          shippingCostCents,
-          PAYMENT_MODE, // manual = flat 1.5% EFT fee; paygate = card rate
-          handlingFeeCents,
+          PAYMENT_MODE,
         );
 
     // Claim the checkout hold AFTER every validation (the live shipping quote
@@ -3174,7 +3147,8 @@ export class TransactionsService {
   // support resolves it via AdminService.resolveCancellationRequest. Nothing
   // calls this method any more; it is kept only until its spec is removed.
   // Do NOT re-wire it — a full self-refund contradicts the cancellation
-  // policy (Buyer Protection Fee is never refunded on a buyer's choice).
+  // policy (a buyer-choice cancellation retains only the 4% handling fee and
+  // any committed delivery cost).
   // ------------------------------------------------------------------
   // Buyer-initiated cancellation (Phase 4 P4.2)
   // ------------------------------------------------------------------

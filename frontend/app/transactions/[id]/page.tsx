@@ -727,6 +727,24 @@ export default async function TransactionPage({
             </div>
           )}
 
+          {/* Buyer: once the item is dispatched the order can no longer be
+              cancelled — the remedy is the dispute process below. */}
+          {isBuyer &&
+            !!tx.dispatchedAt &&
+            tx.paymentStatus === 'HELD' &&
+            !tx.confirmedDeliveryAt && (
+              <div className="rounded-lg border border-[var(--border)] p-4">
+                <p className="text-sm font-medium text-[var(--text-primary)] mb-1">
+                  This item has shipped
+                </p>
+                <p className="text-xs text-[var(--text-tertiary)]">
+                  Cancellation is no longer available after dispatch. If
+                  something is wrong with the order, raise a dispute instead —
+                  payment stays held while we review.
+                </p>
+              </div>
+            )}
+
           {/* Buyer: request a cancellation of a paid-but-undispatched order
               (Phase 4 rework). Freezes the order; support resolves it. */}
           {canRequestCancel && <BuyerCancelPanel txId={tx.id} />}

@@ -82,13 +82,10 @@ export default function HowPaymentsWorkPage() {
           <strong>The seller is paid.</strong> The seller's proceeds are
           paid into the seller's bank account. On a{' '}
           <strong>Buy Now</strong> sale that is the seller's full asking
-          price — our commission is built into the price the buyer saw, so
-          nothing comes off what the seller receives. At checkout the buyer
-          also pays the Buyer Protection Fee and delivery. On an{' '}
-          <strong>auction</strong> or an accepted{' '}
-          <strong>Take-a-Shot offer</strong> the price is whatever the bid
-          or offer settled at, and the proceeds are that price less our
-          commission.
+          price — the buyer pays the Platform Fee on top at checkout, so
+          nothing comes off what the seller receives. On an{' '}
+          <strong>auction</strong> the buyer pays a 5% Platform Fee on the
+          hammer plus delivery, and the seller pays a 5% share from the hammer.
         </li>
       </ol>
 
@@ -116,16 +113,15 @@ export default function HowPaymentsWorkPage() {
         make sure money is only ever paid to the verified account holder.
       </p>
       <p>
-        ALL Outdoor earns a <strong>commission</strong> on completed sales
+        ALL Outdoor earns a <strong>Platform Fee</strong> on completed sales
         and nothing more — no spread, and no interest earned on money that
-        is not ours. On a Buy Now listing our commission is built into the
-        price the buyer sees rather than deducted from the seller; on an
-        auction or accepted offer the commission comes out of the settled
-        price. The buyer always pays the <strong>Buyer Protection Fee</strong>{' '}
-        and delivery on top. Both numbers — what the seller receives and what
-        the buyer will see — are shown to the seller before a listing is
-        published. The full fee schedule is on our{' '}
-        <a href="/fees" style={{ color: 'var(--red)' }}>Fees</a> page.
+        is not ours. On a Buy Now listing the seller receives their full asking
+        price and the buyer pays the Platform Fee at checkout; on an auction
+        the buyer pays 5% on the hammer plus delivery and the seller pays 5%
+        of the hammer. Delivery is quoted separately. Both numbers — what the
+        seller receives and what the buyer will pay — are shown before a
+        listing is published and again at checkout. The full fee schedule is on
+        our <a href="/fees" style={{ color: 'var(--red)' }}>Fees</a> page.
       </p>
 
       <h2>4. Refunds</h2>

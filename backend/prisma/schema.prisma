@@ -941,24 +941,18 @@ model Listing {
   description            String
   // ZAR cents. THE PRICE THE BUYER SEES AND PAYS. Null for TAKE_A_SHOT.
   //
-  // For BUY_NOW this is a MARKED-UP figure (operator 2026-08-15): the seller
-  // names what they want to receive in sellerAskCents, and our commission plus
-  // the Peach fee are built on top to produce this. Everything downstream —
-  // cards, search, the PDP, cart, checkout — keeps reading `price` and needs no
-  // change, because this has always been "the buyer-facing price" and still is.
+  // For BUY_NOW this is the seller's asking price and the listed price.
+  // The buyer-paid Platform Fee is calculated at checkout on (item +
+  // delivery); it is NOT included here (operator 2026-10).
   //
   // For AUCTION / SWOP it is the plain starting price: a bid discovers the
-  // price, so there is nothing to mark up, and the commission is deducted from
-  // the seller as it always was.
+  // price, so there is nothing to mark up, and the flat 5% seller commission
+  // is deducted from the seller.
   price                  Int?
   // ZAR cents the SELLER receives on a BUY_NOW sale — what they typed in the
-  // sell form. Null on auctions, swaps, take-a-shot, and on any listing created
-  // before the markup model.
-  //
-  // Stored rather than derived because reversing the markup is not reliably
-  // invertible: the commission is banded, floored at R30 and can carry a Top
-  // Seller discount. Recomputing FORWARD from this always reproduces the number
-  // the seller was shown, which is the one that matters if it is ever disputed.
+  // sell form. Under the 2026-10 model it equals `price` (the ask IS the
+  // listed price). Null on auctions, swaps, take-a-shot, and on any listing
+  // created before the field existed.
   sellerAskCents         Int?
   // UX-7 — optional compare-at / "was" price (ZAR cents). DISPLAY-ONLY:
   // rendered as a strikethrough + "% off" chip on cards + the PDP. It NEVER
@@ -1528,7 +1522,7 @@ model Transaction {
   // Pricing — all ZAR cents, snapshot at point of sale
   listingPrice             Int // snapshot of listing.price × quantity
   commissionZar            Int
-  processingFee            Int // Peach fee (3.5% + R1.50 fixed, ×1.15 VAT)
+  processingFee            Int // BUYER-paid Platform Fee, calculated last on (item + delivery)
   // Shipping cost the buyer paid, sourced from a live Bob Go door rate
   // quote at checkout. Zero for firearm listings (DEALER_TRANSFER and
   // PRIVATE_ARRANGE don't use the courier API). Stored separately from
@@ -1596,22 +1590,21 @@ model Transaction {
   // and every consumer reads it for exactly that. Now it records what the fee
   // maths was actually run with.
   //
-  // MEANINGLESS ON A BUYNOW_MARKUP ROW: there the fee is inside listingPrice
-  // and was never a separate charge. Read feeModel FIRST — see fee-presentation.ts.
+  // ALWAYS TRUE TODAY: the buyer carries the Platform Fee on every rail.
+  // Read feeModel FIRST — see fee-presentation.ts.
   passFeeToBuyer           Boolean
   // Which of the two economic models priced this sale. Both produce the same
   // columns, so without this nothing downstream can render them truthfully:
   //
-  //   BUYNOW_MARKUP — commissionZar and processingFee are ALREADY INSIDE
-  //     listingPrice. The buyer pays the listed price; the seller receives
-  //     their full ask (sellerPayout). Adding the fee to the item price
-  //     double-counts it, and showing commission as a seller deduction is
-  //     simply false — nothing was deducted from them.
+  //   BUYNOW_MARKUP — a marketplace sale. The seller receives their full ask
+  //     (sellerPayout == listingPrice) and commissionZar is 0. The buyer pays
+  //     the Platform Fee, stored in processingFee, on top at checkout. Adding
+  //     it again to the item price double-counts it, and showing a seller
+  //     deduction is simply false — nothing was deducted from them.
   //
-  //   SELLER_DEDUCT — the original model, still used for auction wins,
-  //     accepted offers, experiences and legacy listings. Fees sit OUTSIDE
-  //     listingPrice: the buyer may be charged processingFee on top, and the
-  //     seller is genuinely deducted commission.
+  //   SELLER_DEDUCT — auctions, experiences and legacy listings. The seller
+  //     pays commissionZar off the sale, and the buyer pays their own
+  //     processingFee share on top.
   //
   // Defaults to SELLER_DEDUCT so any row predating this column reads as the
   // older model, which is what those rows are.
@@ -2040,7 +2033,7 @@ model Transaction {
   //   - zohoCreditNoteId: only set on refund — credit note against
   //     the original commission invoice.
   //   - zohoBuyerInvoiceId: All Outdoor → Buyer invoice for the platform's
-  //     own supplies to the buyer (Buyer Protection Fee + delivery). Created
+  //     own supplies to the buyer (Platform Fee + delivery). Created
   //     when the sale completes. Separate from the seller invoice because it
   //     is a different counterparty and a different supply.
   //

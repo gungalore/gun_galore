@@ -42,10 +42,10 @@ interface Statement {
     listingTitle: string;
     buyerUsername: string | null;
     status: string;
-    /** What the buyer was charged for the item. Under the markup model this is
-     *  BIGGER than the seller's own price, because our fees are inside it. */
+    /** What the buyer was charged for the item. On a marketplace sale this is
+     *  the same as the seller's price; the buyer pays the Platform Fee on top. */
     buyerPaid: number;
-    /** The seller's own figure, which the deductions below come off. */
+    /** The seller's own figure, which any deduction comes off. */
     yourPrice: number;
     commission: number;
     processingFee: number;
@@ -213,17 +213,15 @@ export default function EarningsPage() {
                     <td className="p-3 text-[var(--text-tertiary)]">{o.date.slice(0, 10)}</td>
                     <td className="p-3 text-right text-[var(--text-tertiary)]">{rand(o.buyerPaid)}</td>
                     <td className="p-3 text-right text-[var(--text-secondary)]">{rand(o.yourPrice)}</td>
-                    {/* ⚠️ THE ROW HAS TO SUBTRACT. This used to show
-                        commission + processingFee + SHIPPING against the
-                        listing price — shipping is buyer-paid and remitted to
-                        the carrier, never a seller deduction, so the arithmetic
-                        could not work. And under the markup model none of it is
-                        deducted at all: the seller receives their full price.
-                        Now "Your price" − "Fees" = "Net", both models. */}
+                    {/* ⚠️ THE ROW HAS TO SUBTRACT. On a marketplace sale the
+                        buyer pays the Platform Fee, so nothing is deducted from
+                        the seller. On an auction the seller's 5% is deducted.
+                        Shipping is buyer-paid and remitted to the carrier,
+                        never a seller deduction. "Your price" − "Fees" = "Net". */}
                     <td className="p-3 text-right text-[var(--text-secondary)]">
                       {o.feesInPrice ? (
-                        <span className="text-[var(--text-tertiary)]" title="Our fees were built into the price the buyer paid, so nothing is deducted from you.">
-                          in price
+                        <span className="text-[var(--text-tertiary)]" title="The buyer paid the Platform Fee, so nothing is deducted from you.">
+                          buyer-paid
                         </span>
                       ) : (
                         rand(o.commission + o.processingFee)

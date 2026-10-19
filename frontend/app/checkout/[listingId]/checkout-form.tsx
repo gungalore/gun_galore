@@ -712,55 +712,64 @@ export function CheckoutForm({
     return false;
   }
 
-  // ─── Which fee model is this checkout under? ──────────────────────
-  // Mirrors the branch TransactionsService.create() takes, because the order
-  // summary below has to foot to what the server will actually charge.
-  //
-  // Operator 2026-09: the BUYER always carries the Buyer Protection Fee, on
-  // both a Buy Now and an auction win. It is charged at checkout on
-  // (item + carrier rate) and shown as its own "Buyer Protection Fee" row —
-  // it is no longer baked into the listed price. The platform fee still comes
-  // out of the seller on auctions/offers, and is built into the listed price
-  // on Buy Now; the seller never sees the Protection Fee.
-  //
-  // The page only routes two listing kinds into this form: an ACTIVE BUY_NOW,
-  // or an AUCTION already flipped to PAYMENT_PENDING (i.e. this buyer won it).
-  // Live preview of what the buyer will pay. Mirrors the backend
-  // FeeCalculator math. The actual numbers the buyer is charged are
-  // re-computed server-side on Pay so this is presentation-only.
-  const OZOW_RATE = 0.0328;
-  const OZOW_FIXED_CENTS = 115; // R1.15 inclusive
-  const PAYMENT_MODE =
-    process.env.NEXT_PUBLIC_PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
-  const MANUAL_RATE = 0.015;
+  // ─── Fee preview (mirrors the backend FeeCalculator) ──────────────
+  // Operator 2026-10: the listing price is the seller's raw ask. The buyer
+  // pays ONE Platform Fee, calculated LAST on (item + delivery). Marketplace
+  // fees are marginal 10/9/8/7; auctions are a flat 5% buyer share.
+  // The actual numbers are re-computed server-side on Pay; this is display.
+  const PLATFORM_BANDS = [
+    { limit: 2_500_000, rate: 0.1 },
+    { limit: 2_500_000, rate: 0.09 },
+    { limit: 2_500_000, rate: 0.08 },
+    { limit: Infinity, rate: 0.07 },
+  ] as const;
+  const MIN_PLATFORM_FEE_CENTS = 1_000;
+  function platformFeeCents(baseCents: number): number {
+    if (baseCents <= 0) return 0;
+    let fee = 0;
+    let remaining = baseCents;
+    for (const band of PLATFORM_BANDS) {
+      if (remaining <= 0) break;
+      const chunk = isFinite(band.limit)
+        ? Math.min(remaining, band.limit)
+        : remaining;
+      fee += chunk * band.rate;
+      remaining -= chunk;
+    }
+    const rounded = Math.max(0, Math.round(fee));
+    return rounded < MIN_PLATFORM_FEE_CENTS
+      ? Math.min(MIN_PLATFORM_FEE_CENTS, baseCents)
+      : rounded;
+  }
   function previewBreakdown(): {
     listing: number;
     shipping: number;
     handling: number;
-    processing: number;
+    platform: number;
     total: number;
   } | null {
     if (!listing.price) return null;
     const item = listing.price * (listing.trackInventory ? quantity : 1);
-    const isCourier = method === 'COURIER';
     const shipping =
       quoteState.kind === 'ready' ? quoteState.quote.priceCents : 0;
-    // NO separate handling row — our delivery margin is folded into the
-    // quoted shipping figure.
+    // Our delivery margin is already folded into the quoted shipping figure.
     const handling = 0;
-    // The Buyer Protection Fee is charged on (item + CARRIER rate), never on
-    // our own delivery margin, matching FeeCalculator on the server.
-    const base = item + (deliveryOption?.carrierRateCents ?? shipping);
-    const processing =
-      PAYMENT_MODE === 'manual'
-        ? Math.round(base * MANUAL_RATE)
-        : Math.round(base * OZOW_RATE + OZOW_FIXED_CENTS);
+    const delivery = shipping + handling;
+    // Auctions: 5% of (hammer + delivery), floored at R10.
+    // Marketplace: marginal bands on (item + delivery), floored at R10.
+    const platform =
+      listing.listingType === 'AUCTION'
+        ? Math.max(
+            MIN_PLATFORM_FEE_CENTS,
+            Math.round((item + delivery) * 0.05),
+          )
+        : platformFeeCents(item + delivery);
     return {
       listing: item,
       shipping,
       handling,
-      processing,
-      total: item + shipping + handling + processing,
+      platform,
+      total: item + delivery + platform,
     };
   }
 
@@ -1400,8 +1409,8 @@ export function CheckoutForm({
           // must see the whole total before committing, or they pay the wrong
           // amount. Courier-only rows (shipping) are gated on isCourier.
           //
-          // The buyer always pays the Buyer Protection Fee on top, under both
-          // fee models (operator 2026-09), shown as its own row.
+          // The buyer pays ONE Platform Fee on top, calculated last on the
+          // item plus delivery (operator 2026-10), shown as its own row.
           const b = previewBreakdown();
           if (!b) return null;
           const isCourier = method === 'COURIER';
@@ -1453,15 +1462,13 @@ export function CheckoutForm({
                 />
               )}
               {/* No handling row: our delivery margin is inside the shipping
-                  figure above, the same way our commission is inside the item
-                  price. One number per thing the buyer is buying. */}
-              {/* Operator wording (2026-09): the buyer-paid gateway fee is the
-                  "Buyer Protection Fee". The buyer always carries it, under
-                  both fee models. */}
-              {b.processing > 0 && (
+                  figure above. One number per thing the buyer is buying. */}
+              {/* Operator wording (2026-10): one combined "Platform Fee",
+                  calculated last on item + delivery. */}
+              {b.platform > 0 && (
                 <BreakdownLine
-                  label="Buyer Protection Fee"
-                  value={formatPrice(b.processing)}
+                  label="Platform Fee"
+                  value={formatPrice(b.platform)}
                   muted
                 />
               )}
@@ -1490,15 +1497,16 @@ export function CheckoutForm({
                   </span>
                 </div>
               )}
-              {/* The buyer always sees the Buyer Protection Fee; explain what
-                  it covers rather than leaving them to wonder. */}
-              {b.processing > 0 && (
+              {/* The Platform Fee covers payment handling and the safeguards
+                  every buyer gets; explain it rather than leaving them to
+                  wonder. */}
+              {b.platform > 0 && (
                 <p
                   className="text-xs mt-2"
                   style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
                 >
-                  The Buyer Protection Fee covers secure payment handling,
-                  seller verification and dispute resolution on this order.
+                  The Platform Fee covers secure payment handling, seller
+                  verification and dispute resolution on this order.
                 </p>
               )}
             </div>

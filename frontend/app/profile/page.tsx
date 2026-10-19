@@ -563,8 +563,7 @@ export default async function ProfilePage() {
               Established (3+ clean sales), Trusted (10+ clean sales
               with good ratings), Top Seller (25+ sales with top
               ratings), Dealer (licensed firearms dealer). Higher tiers
-              earn buyer confidence, and Top Seller gets a commission
-              discount.
+              earn buyer confidence and visibility.
             </>
           }
         />

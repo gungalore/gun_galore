@@ -25,7 +25,7 @@ export default function RefundPolicyPage() {
     <>
       <LegalDocHeader
         title="Refund & Dispute Policy"
-        lastUpdated="Effective 24 June 2026 · Updated 16 July 2026"
+        lastUpdated="Effective 24 June 2026 · Updated 19 October 2026"
       />
 
       <h2>Quick reference</h2>
@@ -164,35 +164,50 @@ export default function RefundPolicyPage() {
 
       <h2>5. Cancelling an order, and what is not refundable</h2>
       <p>
-        You cannot self-cancel a paid order. To cancel, use{' '}
+        You cannot self-cancel a paid order, and you cannot cancel it at all
+        once the seller has marked it dispatched. To cancel before dispatch, use{' '}
         <strong>Request cancellation</strong> on the order page (or email{' '}
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
           {SUPPORT_EMAIL}
         </a>
         ). This <strong>freezes the order</strong> — the seller is told not to
-        dispatch and no payment is released while our team reviews it. If the
-        cancellation is approved, we refund you, less the costs below.
+        dispatch and no payment is released while our team reviews it. If a
+        cancellation for your convenience is approved, we refund you, less the
+        costs below.
       </p>
       <ul>
         <li>
-          <strong>The Buyer Protection Fee is not refundable.</strong> It covers
-          the payment-processing cost of taking and reversing your payment, which
-          our payment provider keeps — so it is money already spent, on every
-          order.
+          <strong>A 4% transaction handling fee is retained.</strong> It is
+          calculated on the item price plus delivery and recovers the
+          non-recoverable payment-gateway, interchange and electronic-funds
+          reversal costs already incurred in taking and reversing your payment.
+          It is a reasonable cancellation charge under section 17(3) of the
+          Consumer Protection Act, not a penalty. The Platform Fee itself is
+          refunded to you.
         </li>
         <li>
-          <strong>Delivery is not refundable once the parcel is on its way.</strong>{' '}
-          If the courier has been booked or has already collected the parcel, the
-          delivery cost stands. Delivery is fully refunded if it hadn&rsquo;t
-          started.
+          <strong>Delivery is not refundable once the parcel is committed.</strong>{' '}
+          If the seller has accepted the order and a courier waybill has been
+          booked, the delivery charge stands, because the carrier charge cannot
+          be reliably voided. Delivery is fully refunded if no waybill was
+          booked.
         </li>
         <li>
-          <strong>This does not apply when the cancellation is the seller&rsquo;s
-          fault.</strong> If the seller declines the sale, never dispatches (our
-          automatic refund), or the item never arrives, arrives damaged or is not
-          what was listed, you are refunded{' '}
-          <strong>in full — including the fee</strong> — through the dispute route
-          in sections&nbsp;2 and&nbsp;3.
+          <strong>Once the item has been dispatched, the order cannot be
+          cancelled.</strong> Use the dispute process in sections&nbsp;2
+          and&nbsp;3 instead. If the item never arrives, arrives damaged, or is
+          not what was listed, the dispute route applies in full.
+        </li>
+        <li>
+          <strong>The 4% fee does not apply when the cancellation is the
+          seller&rsquo;s fault.</strong> If the seller declines the sale, never
+          dispatches (our automatic refund), or the item never arrives, you are
+          refunded <strong>in full — including the Platform Fee and delivery</strong>.
+        </li>
+        <li>
+          <strong>No cancellation fee applies on death or hospitalisation of the
+          buyer.</strong> This is required by section 17(5) of the Consumer
+          Protection Act.
         </li>
         <li>
           <strong>Where the item is, or how far you have to travel to it.</strong>{' '}

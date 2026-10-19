@@ -28,9 +28,8 @@ const SECTIONS: { q: string; a: React.ReactNode }[] = [
         </p>
         <p>
           Sell it your way: at a fixed price, by auction, or by taking offers.
-          On a fixed-price sale you receive
-          exactly the price you set — our commission is added on top for the
-          buyer, never taken out of your price.
+          On a fixed-price sale you receive exactly the price you set — the
+          buyer pays the Platform Fee on top, never out of your price.
         </p>
         <p>
           When it sells we book the courier and send you the waybill. Once
@@ -61,15 +60,16 @@ const SECTIONS: { q: string; a: React.ReactNode }[] = [
     a: (
       <>
         <p>
-          Browsing, bidding and listing are free. On a fixed-price listing our
-          commission is built into the price the buyer sees, so nothing is
-          deducted from you. On an auction or an accepted offer, commission
-          comes out of the settled price and the buyer pays the Buyer
-          Protection Fee and delivery.
+          Browsing, bidding and listing are free. On a fixed-price listing your
+          asking price is the listed price and you receive it in full — the
+          buyer pays the Platform Fee on top at checkout, so nothing is
+          deducted from you. On an auction the Platform Fee is a flat 10%,
+          split 5% buyer / 5% seller, and the buyer pays delivery.
         </p>
         <p>
-          Commission is banded — 10% on the first R5,000, then 8%, 6% and 4% on
-          higher portions. The full schedule and a worked example are on the{' '}
+          Marketplace Platform Fees are banded — 10% on the first R25,000, then
+          9%, 8% and 7% on higher portions, with a R10 minimum. The full
+          schedule and a worked example are on the{' '}
           <Link href="/fees" style={{ color: 'var(--red)' }}>Fees</Link> page.
         </p>
       </>

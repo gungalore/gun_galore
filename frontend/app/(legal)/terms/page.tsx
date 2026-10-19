@@ -37,7 +37,7 @@ export const metadata = {
 export default function TermsPage() {
   return (
     <>
-      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 10 October 2026" />
+      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 19 October 2026" />
 
       <h2>1. About us</h2>
       <p>
@@ -247,37 +247,39 @@ export default function TermsPage() {
 
       <h2>8. Fees, commission and payouts</h2>
       <p>
-        ALL Outdoor charges a <strong>banded commission</strong> on each
-        completed sale, and a <strong>Buyer Protection Fee</strong> is
-        charged to the Buyer on each order. How they are collected depends
-        on the sale mode:
+        ALL Outdoor charges a single <strong>Platform Fee</strong> on each
+        completed sale. It replaced the former Buyer Protection Fee; no separate
+        buyer protection charge applies. How it is charged depends on the sale
+        mode:
       </p>
       <ul>
         <li>
-          <strong>Buy Now.</strong> The amount the Seller enters when
-          creating the listing is the amount the Seller is to{' '}
-          <strong>receive</strong>. ALL Outdoor adds the commission to
-          that amount and publishes the result as the listing price. The
-          Seller is paid the amount the Seller entered, without deduction.
-          At checkout the Buyer pays the listing price plus the Buyer
-          Protection Fee and delivery charges (paragraph 9).
+          <strong>Marketplace (Buy Now).</strong> The amount the Seller enters
+          when creating the listing is the listed price and the amount the
+          Seller is to <strong>receive</strong>. The Buyer pays the Platform Fee
+          on top at checkout, calculated last on the item price plus delivery.
+          Nothing is deducted from the Seller.
         </li>
         <li>
-          <strong>Auction and Take-a-Shot.</strong> The sale price is the
-          price established by the winning bid or the accepted offer. The
-          commission is deducted from that price and the balance is the
-          Seller's proceeds; the Buyer Protection Fee and delivery are
-          payable by the Buyer in addition to the sale price.
+          <strong>Auction.</strong> The sale price is the winning bid. The
+          Platform Fee is a flat 10%, split equally: the Buyer pays 5% of the
+          hammer price plus delivery at checkout, and the Seller pays 5% of the
+          hammer price, deducted from the Seller&apos;s proceeds.
+        </li>
+        <li>
+          <strong>Private arrangement.</strong> No delivery charge applies. The
+          Platform Fee is calculated on the item price alone; the Buyer pays it
+          and the Seller receives the agreed price (less the 5% auction share
+          where the sale arose from an auction).
         </li>
       </ul>
       <p>
-        Both figures — the amount the Seller receives and the price the
-        Buyer will see — are displayed to the Seller on the Sell form
-        before a listing is published, and are snapshotted onto each
-        Transaction record at the point of sale. Sellers may review the
-        current fee schedule at any time via the in-product fee explainer.
-        Our current commission bands and the Buyer Protection Fee are
-        published at{' '}
+        The marketplace Platform Fee is banded: 10% on the first R25,000, 9%
+        from R25,001 to R50,000, 8% from R50,001 to R75,000, and 7% above
+        R75,000, with a R10 minimum. Only the portion inside each band is
+        charged at that band&apos;s rate. The figures shown at listing and at
+        checkout are snapshotted onto each Transaction record at the point of
+        sale. Our current rates are published at{' '}
         <a href="/fees" style={{ color: 'var(--red)' }}>alloutdoor.co.za/fees</a>.
       </p>
       <p>
@@ -384,24 +386,52 @@ export default function TermsPage() {
         particular Section 56 (which gives Buyers a 6-month right to
         return defective goods).
       </p>
-      <p>
+      <p
+        style={{
+          border: '1px solid var(--red)',
+          borderRadius: 8,
+          padding: 16,
+          background: 'rgba(227,6,19,0.04)',
+        }}
+      >
         <strong>Cancelling an order.</strong> A Buyer may not cancel a paid
-        order themselves. To cancel, a Buyer must use the{' '}
+        order themselves, and may not cancel at all once the Seller has marked
+        the order dispatched. To cancel before dispatch, a Buyer must use the{' '}
         <strong>Request cancellation</strong> action on the order, or email{' '}
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
           {SUPPORT_EMAIL}
         </a>
         . Requesting a cancellation <strong>freezes</strong> the order — the
         Seller is told not to dispatch and no payment is released while the
-        request is reviewed. If the cancellation is approved, we refund the Buyer
-        less (i) the <strong>Buyer Protection Fee</strong>, which covers the
-        non-refundable payment-processing cost of taking and reversing the
-        payment, and (ii) any <strong>delivery cost already incurred</strong>{' '}
-        where the parcel has been booked with, or collected by, the courier.
-        Where the order ends because of the Seller's failure — a declined sale,
-        a failure to dispatch, or the item never arriving — the Buyer is refunded
-        in full, including the Buyer Protection Fee. This paragraph does not
-        limit the Buyer's statutory rights.
+        request is reviewed.
+      </p>
+      <p>
+        If a cancellation for the Buyer&apos;s convenience is approved before
+        dispatch, we refund the amount paid less a{' '}
+        <strong>4% transaction handling fee</strong>, calculated on the item
+        price plus delivery. This fee is a reasonable cancellation charge under
+        section 17(3) of the Consumer Protection Act: it recovers direct,
+        non-recoverable payment-gateway, interchange and electronic-funds
+        reversal costs we have already incurred in taking and reversing the
+        payment. The Platform Fee itself is refunded. Where the Seller has
+        accepted the order <strong>and</strong> a courier waybill has been
+        booked, the delivery charge is also non-refundable, because the carrier
+        charge is committed and cannot be reliably voided.
+      </p>
+      <p>
+        <strong>Once the item has been dispatched, the order cannot be
+        cancelled.</strong> The Buyer&apos;s remedy is the dispute process in
+        this paragraph and the{' '}
+        <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>.
+      </p>
+      <p>
+        Where the order ends because of the Seller&apos;s failure — a declined
+        sale, a failure to dispatch, or the item never arriving — the Buyer is
+        refunded <strong>in full</strong>, including the Platform Fee and
+        delivery, with no 4% deduction. <strong>No cancellation fee is charged
+        where the cancellation results from the death or hospitalisation of the
+        Buyer</strong> (CPA s17(5)). This paragraph does not limit the
+        Buyer&apos;s statutory rights.
       </p>
 
       <h2>12. Suspension and termination</h2>

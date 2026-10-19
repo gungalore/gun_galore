@@ -454,12 +454,10 @@ export default function RegulatedItemsAnnexPage() {
         <li>
           <strong>Buy Now — the seller receives the asking price in
           full.</strong> On a fixed-price listing the amount the seller
-          enters is what the seller receives; our commission is included in
-          the price the buyer sees, and nothing is deducted from the seller.
-          On an auction or an accepted offer the price is whatever the
-          bidding or the offer settled at, our commission comes out of that
-          price, and the buyer pays the Buyer Protection Fee and delivery on
-          top.
+          enters is both the listed price and what the seller receives; the
+          buyer pays the Platform Fee on top at checkout, and nothing is
+          deducted from the seller. On an auction the Platform Fee is a flat
+          10%, split 5% buyer / 5% seller, and the buyer pays delivery on top.
         </li>
         <li>
           <strong>No platform shipping fee.</strong> A firearm dealer

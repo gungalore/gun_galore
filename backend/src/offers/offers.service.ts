@@ -671,6 +671,7 @@ export class OffersService {
           select: {
             id: true,
             title: true,
+            listingType: true,
             autoAcceptThreshold: true,
             passFeeToBuyer: true,
             // isFirearm + shippingMethods drive the offer-checkout form:

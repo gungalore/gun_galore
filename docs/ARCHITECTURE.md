@@ -598,13 +598,12 @@ release can still stop the cash leaving.
 
 ### Fees
 
-`backend/src/payments/fee.calculator.ts`. Marginal bands, tax-bracket style:
-10% on the first R5,000, 8% to R15,000, 6% to R25,000, 4% above; R10 minimum,
-never exceeding the listing price. On Buy Now the commission is built INTO the
-listed price (the seller keeps their full ask); on auctions/offers it comes out
-of the settled price. The **buyer** always pays the **Buyer Protection Fee**
-(3.28% + R1.15 inclusive) on (item + carrier rate). Top Seller tier gets 0.5%
-off.
+`backend/src/payments/fee.calculator.ts`. ONE buyer-paid **Platform Fee**,
+calculated last on (item + delivery). Marketplace: marginal 10% on the first
+R25,000, 9% to R50,000, 8% to R75,000, 7% above; R10 minimum, never exceeding the
+amount charged. The seller's ask is the listed price and they receive it in full.
+Auctions: flat 10% split 5% buyer / 5% seller. Private arrangement: delivery is
+zero, so the fee is on the item only. There is **no Top Seller fee discount**.
 
 All money is stored as **integer ZAR cents**. (Ozow's One API pay-in takes
 decimal ZAR while the Payouts API hash takes integer cents; the adapter handles

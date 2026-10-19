@@ -956,16 +956,13 @@ export class ListingsService {
           'A compare-at (original) price is only available on Buy Now listings.',
         );
       }
-      // Validate against the price the BUYER WILL SEE, not the number the
-      // seller typed. Under the markup model those differ by our commission
-      // plus the card fee (~13.8%), so comparing to the raw ask would let a
-      // seller set a "was" price BELOW their own listed price — a strikethrough
-      // under the live figure, and a misleading discount claim under CPA s41.
+      // Validate against the price the BUYER WILL SEE. The listed price is
+      // now the seller's raw ask — the Platform Fee is shown separately and
+      // calculated at checkout — so the compare-at price must exceed the ask.
       const salePrice =
         this.priceFieldsFor(
           dto.listingType,
           dto.price,
-          user.sellerTier === 'TOP_SELLER',
         ).price ?? 0;
       if (dto.compareAtPriceZarCents <= salePrice) {
         throw new BadRequestException(
@@ -1170,27 +1167,27 @@ export class ListingsService {
   /**
    * What to store for a listing's price, given the number the seller typed.
    *
-   * BUY_NOW is now a MARKED-UP price (operator 2026-08-15): the seller types
-   * what they want to RECEIVE, and we build our commission plus the Ozow fee
-   * on top to get the figure the buyer sees. `Listing.price` keeps meaning "the
-   * buyer-facing price", so nothing downstream changes; `sellerAskCents`
-   * carries the other half.
+   * BUY_NOW (operator 2026-10): the seller types the price they want to
+   * RECEIVE and that number is stored and displayed. The buyer-paid Platform
+   * Fee is calculated at checkout on (item + delivery); it is NOT built into
+   * `Listing.price`. `sellerAskCents` mirrors the ask so the checkout can
+   * reproduce the stored price without a reverse calculation.
    *
-   * Everything else is untouched. An AUCTION price is a STARTING price that a
-   * bid then discovers, so there is nothing to mark up — the commission comes
-   * out of the seller on those, exactly as it always did. TAKE_A_SHOT has no
-   * sale price at all.
+   * An AUCTION price is a STARTING price that a bid then discovers; the flat
+   * 5% seller commission comes off the hammer. TAKE_A_SHOT has no sale price.
    */
   private priceFieldsFor(
     listingType: ListingType,
     typedPriceCents: number | null | undefined,
-    isTopSeller: boolean,
   ): { price: number | null; sellerAskCents: number | null } {
     if (typedPriceCents == null) return { price: null, sellerAskCents: null };
     if (listingType !== ListingType.BUY_NOW) {
       return { price: typedPriceCents, sellerAskCents: null };
     }
-    const marked = this.fees.listPriceFromSellerAsk(typedPriceCents, isTopSeller);
+    // Operator 2026-10: the seller's ask IS the listed price. The Platform
+    // Fee is added at checkout on (item + delivery), so nothing is marked up
+    // into the number on the card.
+    const marked = this.fees.listPriceFromSellerAsk(typedPriceCents);
     return { price: marked.listPrice, sellerAskCents: marked.sellerAsk };
   }
 
@@ -1250,16 +1247,13 @@ export class ListingsService {
           'A compare-at (original) price is only available on Buy Now listings.',
         );
       }
-      // Validate against the price the BUYER WILL SEE, not the number the
-      // seller typed. Under the markup model those differ by our commission
-      // plus the card fee (~13.8%), so comparing to the raw ask would let a
-      // seller set a "was" price BELOW their own listed price — a strikethrough
-      // under the live figure, and a misleading discount claim under CPA s41.
+      // Validate against the price the BUYER WILL SEE. The listed price is
+      // now the seller's raw ask — the Platform Fee is shown separately and
+      // calculated at checkout — so the compare-at price must exceed the ask.
       const salePrice =
         this.priceFieldsFor(
           dto.listingType,
           dto.price,
-          user.sellerTier === 'TOP_SELLER',
         ).price ?? 0;
       if (dto.compareAtPriceZarCents <= salePrice) {
         throw new BadRequestException(
@@ -1624,7 +1618,6 @@ export class ListingsService {
     const pricing = this.priceFieldsFor(
       dto.listingType,
       dto.price,
-      user.sellerTier === 'TOP_SELLER',
     );
 
     const listing = await this.prisma.listing.create({
@@ -1634,9 +1627,9 @@ export class ListingsService {
         categoryId: dto.categoryId,
         title: dto.title,
         description: finalDescription,
-        // BUY_NOW: dto.price is what the SELLER WANTS TO RECEIVE; the stored
-        // price is that marked up by commission + the Ozow fee. Other types
-        // store the typed number as-is.
+        // BUY_NOW: dto.price is the seller's asking price and is stored
+        // as-is. The buyer-paid Platform Fee is added at checkout. Other
+        // types store the typed number as-is.
         price: pricing.price,
         sellerAskCents: pricing.sellerAskCents,
         // UX-7 — display-only "was" price (validated above; BUY_NOW only).
@@ -3214,6 +3207,11 @@ export class ListingsService {
       where: { id },
       data: {
         ...listingUpdate,
+        // The ask and the listed price are the same number on a Buy Now
+        // listing (operator 2026-10); keep the mirror in step on a price edit.
+        ...(dto.price !== undefined && listing.listingType === 'BUY_NOW'
+          ? { sellerAskCents: dto.price ?? null }
+          : {}),
         ...locationUpdate,
         ...(editDescription !== undefined
           ? { description: editDescription }

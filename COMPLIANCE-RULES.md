@@ -217,14 +217,16 @@ The buyer can only pick a method the seller offered. (`validateShipping`, `shipp
 ### 5.5 Fees (code values)
 | Item | Value |
 |---|---|
-| Commission (marginal bands) | First R5,000 at 10%; R5,001 to R15,000 at 8%; R15,001 to R25,000 at 6%; above R25,000 at 4% |
-| Minimum commission | R10, never more than the price |
-| Top Seller discount | 0.5% of price |
-| Buyer Protection Fee (Ozow) | 3.28% + R1.15 on (item + carrier rate), always paid by the buyer |
-| Manual rail fee | 1.5% |
-| Delivery margin | 10% of the carrier rate, folded into one inclusive delivery price (never shown separately, not included in the gateway fee base) |
-| Buy Now fee model | `BUYNOW_MARKUP`: listed price = seller ask + commission; seller receives the full ask |
-| Auctions and offers | `SELLER_DEDUCT`: commission comes out of the seller |
+| Platform Fee (marketplace, marginal) | First R25,000 at 10%; R25,001–R50,000 at 9%; R50,001–R75,000 at 8%; above R75,000 at 7% |
+| Minimum Platform Fee | R10, never more than the amount charged |
+| Top Seller discount | **None** — the tier is badge-only |
+| Buyer-paid fee | One **Platform Fee**, calculated last on (item + delivery); the old Buyer Protection Fee is retired |
+| Auction split | Flat 10% total: 5% buyer on (hammer + delivery), 5% seller on the hammer |
+| Manual rail fee | Retired (included in the Platform Fee) |
+| Delivery margin | 10% of the carrier rate, folded into one inclusive delivery price (never shown separately) |
+| Marketplace fee model | `BUYNOW_MARKUP`: listed price = seller ask; seller receives the full ask; buyer pays the Platform Fee |
+| Auctions | `SELLER_DEDUCT`: seller pays 5% off the hammer; buyer pays 5% on top |
+| Buyer cancellation | 4% transaction handling fee; delivery retained once a waybill is booked; no cancellation after dispatch |
 (`payments/fee.calculator.ts`, `transactions.service.ts`)
 
 ### 5.6 Seller obligations after payment

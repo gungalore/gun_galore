@@ -60,26 +60,18 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 // MIN_COMMISSION_CENTS constants on the backend.
 
 const COMMISSION_BANDS: { limit: number; rate: number; label: string }[] = [
-  { limit: 500_000, rate: 0.10, label: 'First R5,000 at 10%' },
-  { limit: 1_000_000, rate: 0.08, label: 'R5,001–R15,000 at 8%' },
-  { limit: 1_000_000, rate: 0.06, label: 'R15,001–R25,000 at 6%' },
-  { limit: Infinity, rate: 0.04, label: 'Above R25,000 at 4%' },
+  { limit: 2_500_000, rate: 0.10, label: 'First R25,000 at 10%' },
+  { limit: 2_500_000, rate: 0.09, label: 'R25,001–R50,000 at 9%' },
+  { limit: 2_500_000, rate: 0.08, label: 'R50,001–R75,000 at 8%' },
+  { limit: Infinity, rate: 0.07, label: 'Above R75,000 at 7%' },
 ];
-// R10 floor — see backend fee.calculator.ts. Lowered from R30 on 2026-08-15:
-// that figure existed to cover VerifyNow KYC at ~R28 per seller, a cost that no
-// longer exists (Claude-vision KYC is ~R3), and under the markup model the floor
-// is visible on the price tag rather than a quiet deduction.
+// R10 floor — see backend fee.calculator.ts. The fee is charged to the buyer
+// on (item + delivery); the floor never exceeds the amount it is charged on.
 const MIN_COMMISSION_CENTS = 1_000;
 
-// Top Seller discount — 0.5% off the ask, applied BEFORE the R10 floor.
-// Mirrors TOP_SELLER_DISCOUNT in fee.calculator.ts.
-const TOP_SELLER_DISCOUNT = 0.005;
-
-// Buyer Protection Fee (Ozow card). 2.85% + R1.00 net, i.e. 3.28% + R1.15
-// VAT-inclusive — the same constants the backend uses. Charged to the BUYER
-// at checkout on (item + shipping); never part of the listed price.
-const OZOW_RATE = 0.0328;
-const OZOW_FIXED_CENTS = 115; // R1.15 inclusive
+// The auction split: the buyer pays 5% of (hammer + delivery), the seller
+// pays 5% of the hammer.
+const AUCTION_SPLIT_RATE = 0.05;
 
 // Our handling margin on delivery, as a share of the courier's rate —
 // mirrors SHIPPING_HANDLING_RATE in fee.calculator.ts. It is folded into the
@@ -136,7 +128,7 @@ const RELISTABLE_DURATIONS = ['3', '5', '7', '14'];
 // the day pills, the Continue gate and the backend's refusal all read the
 // same numbers. See that file for why the floor is on the reserve / typed
 // starting bid and never on the derived 30%-under starting bid.
-function calcCommissionCents(priceCents: number, isTopSeller = false): number {
+function calcCommissionCents(priceCents: number): number {
   let commission = 0;
   let remaining = priceCents;
   for (const band of COMMISSION_BANDS) {
@@ -147,38 +139,23 @@ function calcCommissionCents(priceCents: number, isTopSeller = false): number {
     commission += chunk * band.rate;
     remaining -= chunk;
   }
-  // Top Seller's 0.5% comes off BEFORE the round + floor, same order as
-  // the backend — otherwise the discount can vanish into the rounding.
-  if (isTopSeller) {
-    commission -= priceCents * TOP_SELLER_DISCOUNT;
-  }
   const rounded = Math.max(0, Math.round(commission));
-  // R10 minimum platform fee — surfaced in the breakdowns below so the
-  // seller knows up-front. Floor never exceeds the price itself.
+  // R10 minimum Platform Fee — surfaced in the breakdowns below so the
+  // seller knows up-front. Floor never exceeds the amount it applies to.
   if (priceCents > 0 && rounded < MIN_COMMISSION_CENTS) {
     return Math.min(MIN_COMMISSION_CENTS, priceCents);
   }
   return rounded;
 }
 
-// BUY NOW — turn what the seller wants to RECEIVE into the price the buyer
-// sees. Mirror of FeeCalculator.listPriceFromSellerAsk (operator 2026-08-15;
-// fee stack changed 2026-09): our commission is built into the listed price,
-// so the seller receives their full ask. The Buyer Protection Fee is NOT in
-// the listed price — the buyer pays it at checkout on (item + shipping).
+// MARKETPLACE — the seller's ask IS the listed price. The buyer-paid Platform
+// Fee is calculated last at checkout on (item + delivery); nothing is marked
+// up into the number on the card. This mirrors
+// FeeCalculator.listPriceFromSellerAsk and must never drift from it.
 //
-// This exists so the seller sees their payout AND the buyer-facing price
-// live as they type, before they publish. A seller who asks R1,000 and then
-// finds their listing showing R1,100 with no warning will believe they were
-// cheated, so this must never drift from the backend.
-//
-// AUCTION and TAKE_A_SHOT are NOT marked up: a bid or an offer discovers the
-// price, so there is nothing to mark up. Commission still comes off the sale
-// price on those, and the buyer pays the Buyer Protection Fee on top.
-function listPriceFromSellerAsk(
-  askCents: number,
-  isTopSeller = false,
-): {
+// AUCTION and offers on auctions are NOT marked up either: a bid discovers the
+// price and the flat 5% seller commission comes off it.
+function listPriceFromSellerAsk(askCents: number): {
   sellerAsk: number;
   commissionZar: number;
   listPrice: number;
@@ -187,11 +164,11 @@ function listPriceFromSellerAsk(
   if (sellerAsk === 0) {
     return { sellerAsk: 0, commissionZar: 0, listPrice: 0 };
   }
-  const commissionZar = calcCommissionCents(sellerAsk, isTopSeller);
+  const commissionZar = calcCommissionCents(sellerAsk);
   return {
     sellerAsk,
     commissionZar,
-    listPrice: sellerAsk + commissionZar,
+    listPrice: sellerAsk,
   };
 }
 
@@ -688,11 +665,8 @@ export default function NewListingPage() {
     categoryId: '',
     condition: 'GOOD',
     province: 'GAUTENG',
-    // The BUYER always carries the card fee, never the seller. On Buy Now it
-    // is built into the listed price (see listPriceFromSellerAsk); on auctions
-    // and offers it is added to their checkout total as the transaction fee.
-    // Either way it never comes off the payout. Hardcoded so the API receives
-    // the right flag.
+    // The BUYER always carries the Platform Fee, never the seller. The flag
+    // is kept for API compatibility; the fee is calculated at checkout.
     passFeeToBuyer: true,
     autoAcceptThreshold: '',
     autoDeclineThreshold: '',
@@ -910,15 +884,8 @@ export default function NewListingPage() {
           province: l.province ?? f.province,
           // Rand strings for the inputs (state stores rand, submit multiplies).
           //
-          // BUY_NOW is the exception: `l.price` is the BUYER-FACING price,
-          // which already carries our commission and the card fee, while this
-          // input now means the seller's take-home. Seeding one with the other
-          // would mark an already-marked-up number up a second time and quietly
-          // inflate every relist. `sellerAskCents` is the right source — it is
-          // not on the detail response yet, so until it is we leave the field
-          // blank and say so in the relist notice rather than seed a wrong
-          // number (the markup is banded and floored, so it can't be reversed
-          // reliably either).
+          // BUY_NOW: `l.price` is now the seller's raw ask, and `sellerAskCents`
+          // mirrors it. Seed from the ask so a relist never invents a number.
           price:
             relistType === 'BUY_NOW'
               ? l.sellerAskCents != null
@@ -1299,18 +1266,10 @@ export default function NewListingPage() {
     null,
   );
 
-  // Top Seller pays 0.5% less commission, which changes the buyer-facing
-  // price on a Buy Now listing. Read off the /users/me snapshot the form
-  // already fetches; until it lands we show the standard (higher) figure,
-  // which then corrects itself downward — never the other way around, so
-  // the seller is never shown a price lower than the one that publishes.
-  const isTopSeller = currentMe?.sellerTier === 'TOP_SELLER';
-  // Live Buy Now markup quote. `form.price` is the seller's ASK — what they
-  // want to receive — so this is what turns it into the listed price. Only
-  // meaningful for BUY_NOW; every use site is guarded on the listing type.
+  // Live marketplace quote. `form.price` is the seller's ASK and is also the
+  // listed price — the buyer-paid Platform Fee is added at checkout.
   const buyNowQuote = listPriceFromSellerAsk(
     Math.round((parseFloat(form.price) || 0) * 100),
-    isTopSeller,
   );
 
   const selectedCategory = categories.find((c) => c.id === form.categoryId);
@@ -2148,11 +2107,10 @@ export default function NewListingPage() {
         ? { attributes: collectedAttributes }
         : {}),
     };
-    // `price` is sent exactly as the seller typed it. For BUY_NOW the server
-    // reads this field as the seller's ASK (what they want to receive) and
-    // applies the markup itself, storing it as Listing.sellerAskCents — so
-    // never send a marked-up number here or the fee would be charged twice.
-    // For AUCTION it is the starting bid, unchanged and unmarked-up.
+    // `price` is sent exactly as the seller typed it. For BUY_NOW that IS the
+    // listed price; the buyer-paid Platform Fee is calculated at checkout, so
+    // never add a fee here or it would be charged twice.
+    // For AUCTION it is the starting bid, unchanged.
     if (!isPriceless) {
       body.price = Math.round(parseFloat(form.price) * 100);
     }
@@ -3576,17 +3534,15 @@ export default function NewListingPage() {
               </div>
             )}
 
-            {/* The Buy Now price field asks for the seller's TAKE-HOME, not
-                the shelf price. Our commission and the card fee are added on
-                top and built into what the buyer sees, so the label has to be
-                unambiguous and the breakdown below has to be impossible to
-                miss — a seller who types R450 and finds a R511.97 listing
-                with no warning will think they were cheated. */}
+            {/* The Buy Now price field is the seller's asking price and the
+                listed price. The buyer pays the Platform Fee on top at
+                checkout, so the label is unambiguous and the breakdown below
+                shows exactly what the buyer will be charged. */}
             {form.listingType === 'BUY_NOW' && (
               <Field
-                label="What you want to receive"
+                label="Your asking price"
                 required
-                hint="Type your take-home. This exact amount is paid out to you in full — our commission and the card fee are added on top, not taken off it."
+                hint="This is the listed price and the exact amount paid out to you. The buyer pays the Platform Fee on top at checkout — nothing is taken off your side."
               >
                 <div style={{ position: 'relative' }}>
                   <span
@@ -3614,7 +3570,6 @@ export default function NewListingPage() {
                 </div>
                 <SellerAskBreakdown
                   askCents={Math.round((parseFloat(form.price) || 0) * 100)}
-                  isTopSeller={isTopSeller}
                 />
               </Field>
             )}
@@ -3750,7 +3705,6 @@ export default function NewListingPage() {
                         </p>
                         <PriceBreakdown
                           priceCents={reserveCents}
-                          isTopSeller={isTopSeller}
                         />
                       </div>
                     );
@@ -3790,7 +3744,6 @@ export default function NewListingPage() {
                       priceCents={Math.round(
                         (parseFloat(form.price) || 0) * 100,
                       )}
-                      isTopSeller={isTopSeller}
                     />
                   </Field>
                 )}
@@ -4633,8 +4586,8 @@ export default function NewListingPage() {
                   style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
                 >
                   {form.listingType === 'AUCTION'
-                    ? 'Bidding opens here. Our fees come off what the item sells for — you never pay to list.'
-                    : 'This is what buyers pay. Our fees are already inside it, so nothing is added at their checkout and nothing comes off your side.'}
+                    ? 'Bidding opens here. Your 5% commission comes off what the item sells for — you never pay to list.'
+                    : 'This is the price buyers see. The buyer pays the Platform Fee and delivery on top at checkout; nothing comes off your side.'}
                 </p>
               </div>
             )}
@@ -4727,17 +4680,17 @@ export default function NewListingPage() {
                   <strong style={{ color: 'var(--text-primary)' }}>
                     Money in your bank.
                   </strong>{' '}
-                  {/* Buy Now is a markup, not a deduction — saying "fees are
+                  {/* Buy Now is buyer-paid, not a deduction — saying "fees are
                       deducted" here would contradict the breakdown under the
                       price field and undo the trust it's there to build.
-                      Auctions and offers still deduct commission off the
+                      Auctions still deduct the 5% seller commission off the
                       sale, so they keep the deduction wording. Neither is
                       automatic: release queues the payout and it is paid out
                       in a batch, hence "queued" and "allow 2-3 business
                       days". */}
                   {form.listingType === 'BUY_NOW'
-                    ? 'Once released it is queued for payout to your bank account — allow 2-3 business days. You receive your full asking price: our commission and the card fee are built into what the buyer pays, never taken off your side. Payouts need a verified account with bank details on file.'
-                    : 'Once released it is queued for payout to your bank account — allow 2-3 business days. Our commission comes off the sale and the buyer covers the card fee. Payouts need a verified account with bank details on file.'}
+                    ? 'Once released it is queued for payout to your bank account — allow 2-3 business days. You receive your full asking price: the buyer pays the Platform Fee, so nothing is taken off your side. Payouts need a verified account with bank details on file.'
+                    : 'Once released it is queued for payout to your bank account — allow 2-3 business days. Our 5% commission comes off the sale and the buyer pays their Platform Fee. Payouts need a verified account with bank details on file.'}
                 </li>
               </ol>
             </div>
@@ -4871,29 +4824,15 @@ export default function NewListingPage() {
 
 // ─────────────────────────── Small sub-components ────────────────────
 
-// AUCTION breakdown — the old, deduct-from-the-seller model, which still
-// applies wherever a price is DISCOVERED rather than set: a bid finds the
-// price, so there is nothing to mark up. Commission comes off the sale price
-// and the seller keeps the rest. The buyer pays the transaction fee on top at
+// AUCTION breakdown — the seller pays a flat 5% of the hammer price and keeps
+// the rest. The buyer pays a separate 5% Platform Fee on (item + delivery) at
 // checkout, so it never touches this payout.
 //
 // Buy Now does NOT use this — see SellerAskBreakdown below.
-function PriceBreakdown({
-  priceCents,
-  isTopSeller,
-}: {
-  priceCents: number;
-  isTopSeller?: boolean;
-}) {
+function PriceBreakdown({ priceCents }: { priceCents: number }) {
   if (priceCents <= 0) return null;
-  const commission = calcCommissionCents(priceCents, isTopSeller);
+  const commission = Math.round(priceCents * AUCTION_SPLIT_RATE);
   const payout = Math.max(0, priceCents - commission);
-  const commissionPct = ((commission / priceCents) * 100).toFixed(1);
-  // Tell the seller when the R10 minimum kicked in so they don't think
-  // the band rate is broken — common on cheap (< ~R350) listings.
-  const hitMinimum =
-    commission === MIN_COMMISSION_CENTS &&
-    commission > calcUnflooredCommissionCents(priceCents, isTopSeller);
 
   return (
     <div
@@ -4914,11 +4853,7 @@ function PriceBreakdown({
       </p>
       <BreakdownRow label="Sale price" value={formatRand(priceCents)} />
       <BreakdownRow
-        label={
-          hitMinimum
-            ? 'Platform commission (R10 minimum)'
-            : `Platform commission (~${commissionPct}%, tiered)`
-        }
+        label="Platform commission (5% of hammer)"
         value={`− ${formatRand(commission)}`}
         muted
       />
@@ -4958,24 +4893,23 @@ function PriceBreakdown({
         </p>
         <ul style={{ listStyle: 'disc', paddingLeft: 18, margin: 0 }}>
           <li>
-            Bidding sets the price, so nothing is added to it — our
+            Bidding sets the price, so nothing is added to it — your 5%
             commission comes off the winning bid.
           </li>
-          {COMMISSION_BANDS.map((b) => (
-            <li key={b.label}>{b.label}</li>
-          ))}
           <li>
-            Minimum platform fee:{' '}
-            <span style={{ color: 'var(--text-secondary)' }}>
-              R{(MIN_COMMISSION_CENTS / 100).toFixed(0)} per sale
-            </span>
+            The buyer pays a separate 5% Platform Fee on the item plus delivery
+            at checkout, so it never comes out of your payout.
           </li>
           <li>
-            Top Seller tier gets a 0.5% discount once you qualify.
+            The buyer&apos;s Platform Fee has a R
+            {(MIN_COMMISSION_CENTS / 100).toFixed(0)} minimum per sale.
           </li>
           <li>
-            The buyer pays the Buyer Protection Fee and delivery on top at
-            checkout — it never comes out of your payout.
+            Courier shipping is added for the buyer at checkout, quoted at the
+            courier&apos;s live rate — our{' '}
+            {Math.round(SHIPPING_HANDLING_RATE * 100)}% handling is folded into
+            that one figure. A firearm handed over through a dealer has no
+            waybill, so none applies.
           </li>
         </ul>
       </div>
@@ -4983,33 +4917,20 @@ function PriceBreakdown({
   );
 }
 
-// BUY NOW breakdown — the markup model. The seller types what they want to
-// RECEIVE; our commission is added on top to produce the price buyers see.
-// "Buyers see" is deliberately the loudest thing in the box: it is the number
-// that will appear on their listing, and a seller surprised by it is the
-// single biggest risk in this whole change. The Buyer Protection Fee is NOT
-// shown here — the buyer pays it at checkout, not in the listing price.
-//
-// Mirrors listPriceFromSellerAsk above (which mirrors the backend), so the
-// figure shown here is the figure that publishes.
-function SellerAskBreakdown({
-  askCents,
-  isTopSeller,
-}: {
-  askCents: number;
-  isTopSeller?: boolean;
-}) {
+// MARKETPLACE breakdown — the seller's ask IS the listed price. The buyer
+// pays the Platform Fee at checkout, calculated last on (item + delivery), so
+// nothing is added to the number on the card and nothing is deducted from the
+// seller. The fee shown here is an estimate on the item alone; delivery can
+// raise it slightly because the fee is charged on both.
+function SellerAskBreakdown({ askCents }: { askCents: number }) {
   if (askCents <= 0) return null;
-  const { commissionZar, listPrice } = listPriceFromSellerAsk(
-    askCents,
-    isTopSeller,
-  );
+  const { commissionZar, listPrice } = listPriceFromSellerAsk(askCents);
   const commissionPct = ((commissionZar / askCents) * 100).toFixed(1);
   // Same R10-floor callout as the auction breakdown — without it the
   // percentage label reads as broken on cheap items.
   const hitMinimum =
     commissionZar === MIN_COMMISSION_CENTS &&
-    commissionZar > calcUnflooredCommissionCents(askCents, isTopSeller);
+    commissionZar > calcUnflooredCommissionCents(askCents);
 
   return (
     <div
@@ -5032,8 +4953,8 @@ function SellerAskBreakdown({
       <BreakdownRow
         label={
           hitMinimum
-            ? 'Our commission (R10 minimum)'
-            : `Our commission (~${commissionPct}%, tiered)`
+            ? 'Estimated Platform Fee (R10 minimum)'
+            : `Estimated Platform Fee (~${commissionPct}%, tiered)`
         }
         value={`+ ${formatRand(commissionZar)}`}
         muted
@@ -5046,7 +4967,7 @@ function SellerAskBreakdown({
           className="text-sm"
           style={{ color: 'var(--text-primary)', fontWeight: 600 }}
         >
-          Buyers see
+          Listed price
         </span>
         <span
           style={{
@@ -5064,13 +4985,13 @@ function SellerAskBreakdown({
         className="text-xs mt-2"
         style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
       >
-        That is the price on your listing. You still receive{' '}
+        That is the price on your listing, and you receive{' '}
         <strong style={{ color: 'var(--text-primary)' }}>
           {formatRand(askCents)}
         </strong>{' '}
-        in full — our commission is built into what the buyer pays, not
-        deducted from your payout. The buyer also pays a Buyer Protection Fee
-        and delivery at checkout.
+        in full. At checkout the buyer pays the Platform Fee — calculated last
+        on your price plus delivery — and the delivery charge. Nothing is
+        deducted from your payout.
       </p>
       <div
         className="text-xs mt-3 pt-3"
@@ -5087,23 +5008,18 @@ function SellerAskBreakdown({
           How the fees work
         </p>
         <ul style={{ listStyle: 'disc', paddingLeft: 18, margin: 0 }}>
+          <li>
+            The fee is charged to the buyer at checkout, last, on the item plus
+            delivery.
+          </li>
           {COMMISSION_BANDS.map((b) => (
             <li key={b.label}>{b.label}</li>
           ))}
           <li>
-            Minimum platform fee:{' '}
+            Minimum Platform Fee:{' '}
             <span style={{ color: 'var(--text-secondary)' }}>
               R{(MIN_COMMISSION_CENTS / 100).toFixed(0)} per sale
             </span>
-          </li>
-          <li>
-            Top Seller tier gets a 0.5% discount once you qualify.
-          </li>
-          <li>
-            Buyer Protection Fee: the buyer pays{' '}
-            {(OZOW_RATE * 100).toFixed(2)}% + R
-            {(OZOW_FIXED_CENTS / 100).toFixed(2)} at checkout, on the item plus
-            shipping. It is not part of your listed price.
           </li>
           <li>
             Courier shipping is added for the buyer at checkout, quoted at the
@@ -5123,10 +5039,7 @@ function SellerAskBreakdown({
 // used by both breakdowns to detect when the floor kicked in (so we can
 // surface "R10 minimum" instead of a percentage label that looks weird
 // for tiny listings).
-function calcUnflooredCommissionCents(
-  priceCents: number,
-  isTopSeller = false,
-): number {
+function calcUnflooredCommissionCents(priceCents: number): number {
   let commission = 0;
   let remaining = priceCents;
   for (const band of COMMISSION_BANDS) {
@@ -5136,9 +5049,6 @@ function calcUnflooredCommissionCents(
       : remaining;
     commission += chunk * band.rate;
     remaining -= chunk;
-  }
-  if (isTopSeller) {
-    commission -= priceCents * TOP_SELLER_DISCOUNT;
   }
   return Math.max(0, Math.round(commission));
 }

@@ -214,7 +214,7 @@ export class AdminAnalyticsService {
       SELECT
         date_trunc($1, "releasedAt") AS bucket,
         COALESCE(SUM("buyerTotal"), 0)    AS gmv,
-        COALESCE(SUM("commissionZar"), 0) AS revenue,
+        COALESCE(SUM("commissionZar" + "processingFee"), 0) AS revenue,
         COUNT(*)                          AS count
       FROM "Transaction"
       WHERE "paymentStatus" = 'RELEASED'
@@ -588,7 +588,7 @@ export class AdminAnalyticsService {
           paymentStatus: 'RELEASED',
           releasedAt: { gte: from, lt: to },
         },
-        _sum: { buyerTotal: true, commissionZar: true },
+        _sum: { buyerTotal: true, commissionZar: true, processingFee: true },
         _count: true,
         _avg: { buyerTotal: true },
       }),
@@ -615,7 +615,11 @@ export class AdminAnalyticsService {
 
     return {
       gmvCents: released._sum.buyerTotal ?? 0,
-      revenueCents: released._sum.commissionZar ?? 0,
+      // Platform revenue = the seller-paid commission (auctions) PLUS the
+      // buyer-paid Platform Fee (every sale). Both are ours.
+      revenueCents:
+        (released._sum.commissionZar ?? 0) +
+        (released._sum.processingFee ?? 0),
       txCount: released._count,
       // `_avg` is null when the period matched no rows — that is "no
       // orders", not "the average was nought". Same for the two rates: the

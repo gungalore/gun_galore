@@ -29,8 +29,8 @@ const MODES: {
       'Selling several identical units (set a quantity and the listing stays live until they all sell)',
     ],
     how: [
-      'You set one price — what you want to RECEIVE. Our commission is added on top, and that total is the price buyers see. You are shown both numbers before you publish, and you receive your asking price in full: nothing is deducted from your payout.',
-      'The buyer taps Buy and pays the listed price, plus the Buyer Protection Fee and delivery — no waiting, no negotiation.',
+      'You set one price — that is both the listed price and what you RECEIVE. The buyer pays the Platform Fee on top at checkout, so nothing is deducted from your payout.',
+      'The buyer taps Buy and pays the listed price, plus the Platform Fee and delivery — no waiting, no negotiation.',
       'You are paid out once the buyer confirms delivery.',
       'List more than one unit by setting the quantity; the listing stays up until every unit is sold.',
     ],
@@ -47,7 +47,7 @@ const MODES: {
       'You set a duration and a starting bid. Buyers bid; the highest bid at the end wins.',
       'Set a hidden reserve to protect yourself — the item only sells if bidding reaches your minimum.',
       'Bids in the final 2 minutes extend the end time by 2 minutes, so nobody wins by sniping at the last second.',
-      'Because the bidding sets the price, there is nothing to build our fee into: the sale price is the winning bid, our commission comes out of it, and the buyer pays the Buyer Protection Fee and delivery on top.',
+      'Because the bidding sets the price, the winning bid is the sale price. Our Platform Fee is a flat 10%, split 5% / 5%: the buyer pays 5% of the hammer plus delivery at checkout, and you pay 5% of the hammer from your payout.',
     ],
   },
   {
@@ -61,7 +61,7 @@ const MODES: {
     how: [
       'Buyers send you an offer. You can accept, decline, or counter once.',
       'Set an optional hidden auto-accept price — offers at or above it are flagged to you for one-tap confirmation. Declining any offer needs a reason and records a strike (genuine buyer concerns go to admin review instead); keep your listings accurate — three strikes suspends selling on your account. Countering is always penalty-free.',
-      'The offer sets the price, so — as with an auction — our commission comes out of the agreed price and the buyer pays the Buyer Protection Fee and delivery on top.',
+      'The offer sets the price. The Platform Fee follows the listing: on a marketplace listing the buyer pays the banded fee at checkout and you receive the agreed price; on an auction the flat 5% / 5% split applies.',
       'As with every sale, you are paid out once delivery is confirmed.',
     ],
   },

@@ -53,10 +53,9 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'What does it cost to buy or sell?',
-    // Operator decision 2026-08-15: on Buy Now our cut is built INTO the
-    // listed price instead of deducted from the seller, so this answer must
-    // separate the two modes. Full detail (bands, worked example) on /fees.
-    a: 'Listing is free, and browsing and bidding cost nothing. On a Buy Now listing you enter what you want to receive and get exactly that — our commission is included in the price buyers see, so nothing is deducted from you. On an auction or an accepted offer the price is whatever the bid or offer settled at, and our commission comes out of that. The buyer always pays a Buyer Protection Fee and delivery at checkout. Commission is banded (10% on the first R5,000, then 8%, 6% and 4% on higher portions, minimum R10). See the Fees page for a worked example.',
+    // Operator decision 2026-10: one buyer-paid Platform Fee, calculated last
+    // on item + delivery. Full detail (bands, worked example) on /fees.
+    a: 'Listing is free, and browsing and bidding cost nothing. On a Buy Now listing your asking price is the listed price and you receive it in full — the buyer pays the Platform Fee on top at checkout, so nothing is deducted from you. On an auction the Platform Fee is a flat 10%, split 5% buyer / 5% seller. The buyer always pays delivery at checkout. Marketplace Platform Fees are banded (10% on the first R25,000, then 9%, 8% and 7% on higher portions, minimum R10). See the Fees page for a worked example.',
   },
   {
     q: 'How can I pay?',

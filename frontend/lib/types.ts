@@ -680,6 +680,10 @@ export interface Offer {
   listing: {
     id: string;
     title: string;
+    // Drives the offer-checkout fee split: an offer on a Buy Now listing pays
+    // the tiered buyer Platform Fee; an offer on an auction uses the flat 5/5
+    // auction split.
+    listingType?: ListingType;
     images: { url: string; isPrimary: boolean }[];
     // Drives the offer-checkout form's shipping routing. A firearm offer
     // must go DEALER_TRANSFER; the form hides courier options for it.

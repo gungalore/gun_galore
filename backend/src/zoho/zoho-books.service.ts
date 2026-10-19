@@ -453,7 +453,7 @@ export class ZohoBooksService {
         message?: string;
       };
 
-      // Operator 2026-09: the Buyer Protection Fee is the BUYER's charge and
+      // Operator 2026-10: the Platform Fee is the BUYER's charge and
       // is documented on the buyer's invoice, not the seller's. The seller's
       // invoice carries exactly one line: our platform fee (commission).
       const lineItems: Array<{
@@ -515,7 +515,7 @@ export class ZohoBooksService {
 
   /**
    * Buyer invoice: ALL Outdoor → Buyer for the platform's OWN supplies on this
-   * transaction — the Buyer Protection Fee and the delivery charge. The item
+   * transaction — the Platform Fee and the delivery charge. The item
    * price is the seller's supply (collected on their behalf), so it is shown
    * in the reference, not raised as our revenue. Operator 2026-09: buyer and
    * seller paperwork both live in Books, so an audit has one accounting
@@ -543,6 +543,7 @@ export class ZohoBooksService {
       }
 
       const feeAccountId =
+        (await this.getAccountIdByName('Platform Fee Revenue')) ??
         (await this.getAccountIdByName('Buyer Protection Fee Revenue')) ??
         (await this.getAccountIdByName('Processing Fee Revenue')) ??
         (await this.getAccountIdByName('Commission Revenue'));
@@ -570,8 +571,8 @@ export class ZohoBooksService {
       }> = [];
       if (tx.processingFee > 0) {
         lineItems.push({
-          name: 'Buyer Protection Fee',
-          description: `${orderRef} — payment protection`,
+          name: 'Platform Fee',
+          description: `${orderRef} — platform fee`,
           rate: feeRand,
           quantity: 1,
           account_id: feeAccountId,
@@ -597,7 +598,7 @@ export class ZohoBooksService {
       const today = new Date().toISOString().slice(0, 10);
       const reference =
         `Item ${this.formatRand(itemRand)} collected on the seller's behalf; ` +
-        `our charges: Buyer Protection Fee ${this.formatRand(feeRand)}` +
+        `our charges: Platform Fee ${this.formatRand(feeRand)}` +
         ` + Delivery ${this.formatRand(deliveryRand)}`;
 
       type CreateInvoiceResp = {
@@ -966,7 +967,7 @@ export class ZohoBooksService {
       const orderRef = tx.listing.referenceNumber ?? tx.id.slice(-8).toUpperCase();
       const reason = (refundReason ?? 'Transaction refunded by admin').slice(0, 200);
       // Operator 2026-09: the seller invoice carries only the Platform Fee
-      // line — the Buyer Protection Fee is the buyer's and lives on the
+      // line — the Platform Fee is the buyer's and lives on the
       // buyer's document — so the credit note reverses exactly that.
       const reference = `Refund — ${orderRef} (reversing commission of ${this.formatRand(commissionRand)})`;
       const today = new Date().toISOString().slice(0, 10);

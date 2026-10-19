@@ -153,9 +153,9 @@ export class SellerToolsService {
         (s, p) => s + ded(p.b, 'Platform Fee'),
         0,
       ),
-      // Operator 2026-09: the Buyer Protection Fee is the BUYER's charge, so
-      // the seller carries no processing fee any more. Kept at 0 for the
-      // statement shape the desk UI consumes.
+      // Operator 2026-10: the Platform Fee is the BUYER's charge on a
+      // marketplace sale, so the seller carries no processing fee. Kept at 0
+      // for the statement shape the desk UI consumes.
       totalProcessingFees: 0,
       totalShipping: released.reduce((s, p) => s + p.r.shippingCost, 0),
       netPayout: released.reduce((s, p) => s + p.b.net, 0),

@@ -20,8 +20,8 @@ const REASONS: { value: string; label: string }[] = [
 // Buyer-initiated cancellation REQUEST (Phase 4 rework). Buyers can no longer
 // self-refund: this POSTs to /transactions/:id/cancel-request, which FREEZES
 // the order (no accept/dispatch/payout), notifies the seller, and hands it to
-// support. The Buyer Protection Fee (payment cost already incurred) is
-// non-refundable; delivery is non-refundable once the parcel is committed.
+// support. A 4% transaction handling fee is retained, delivery is retained
+// once a waybill is booked, and no cancellation is possible after dispatch.
 // Only rendered when the order is actually requestable (gates on the parent).
 export default function BuyerCancelPanel({ txId }: { txId: string }) {
   const { getToken } = useAuth();
@@ -90,9 +90,11 @@ export default function BuyerCancelPanel({ txId }: { txId: string }) {
       </p>
       <p className="text-xs text-[var(--text-tertiary)] mb-3">
         We&apos;ll freeze the order and review your request. Any refund is
-        processed by our team — the payment processing fee we&apos;ve already
-        paid is not refundable, and neither is delivery once the parcel is on
-        its way. Tell us why:
+        processed by our team — a <strong>4% transaction handling fee</strong>{' '}
+        is retained to cover payment costs we have already paid, and delivery
+        is also retained once a courier waybill has been booked. Once the item
+        has been dispatched you cannot cancel; raise a dispute instead. Tell us
+        why:
       </p>
       <div className="space-y-1.5 mb-3">
         {REASONS.map((r) => (

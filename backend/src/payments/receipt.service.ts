@@ -154,7 +154,7 @@ export class ReceiptService {
     // ⚠️ THE LINES COME FROM ONE SHARED BUILDER, and they FOOT.
     //
     // buyerBreakdown() decides the lines from the fee model recorded on the
-    // row. Operator 2026-09: the Buyer Protection Fee is a line on every
+    // row. Operator 2026-10: the buyer-paid Platform Fee is a line on every
     // receipt, and the delivery margin is folded into a single "Delivery"
     // figure — never itemised as its own "Handling" line.
     const shown = buyerBreakdown(tx);

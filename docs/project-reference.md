@@ -492,40 +492,38 @@ Marginal tiers, tax-bracket style (`backend/src/payments/fee.calculator.ts`):
 
 | Band | Rate |
 |------|------|
-| First R5,000 | 9% |
-| R5,001 – R20,000 | 7% |
-| R20,001 – R100,000 | 5% |
-| Above R100,000 | 3% |
+| First R25,000 | 10% |
+| R25,001 – R50,000 | 9% |
+| R50,001 – R75,000 | 8% |
+| Above R75,000 | 7% |
 
-Minimum platform fee **R10** per sale, never more than the listing price itself.
-Top Seller tier gets a 0.5% discount.
+Minimum platform fee **R10** per sale, never more than the amount it is charged on.
+There is **no Top Seller fee discount** (tier is badge-only).
 
-⚠️ **Commission runs in TWO directions on the same columns, so read
+⚠️ **Fee income has TWO directions on the same columns, so read
 `Transaction.feeModel` before describing any sale.** `feeModelFor()` snapshots it
 at checkout.
 
-- **`BUYNOW_MARKUP`** — the seller lists for free and receives their full asking
-  price; commission and the gateway fee are added ON TOP to make the buyer-facing
-  price. `Listing.price` is what the buyer sees and pays. `Listing.sellerAskCents`
-  is the seller's take-home and is **owner-gated — never add it to
-  `PUBLIC_LISTING_SELECT`**, it is our margin per item. Checkout recomputes
-  FORWARD from the ask (the markup is banded, floored and discounted, so it is not
-  reliably invertible). Multi-buy is priced per unit and multiplied. **Nothing is
-  added at checkout but delivery** and the **Buyer Protection Fee** — the fee is
-  NOT inside the listed price, it is charged to the buyer on (item + carrier rate).
-  The compare-at "was" price validates against the listed price, or a "was" could
-  sit below the live price, which is a misleading discount claim under CPA s41.
-- **`SELLER_DEDUCT`** — auctions and offers. A bid discovers the price, so there
-  is nothing to mark up: commission comes out of the seller and the **buyer** pays
-  the **Buyer Protection Fee** on top. Buy Now *on an auction* follows the auction
-  rules.
+- **`BUYNOW_MARKUP`** — a marketplace sale (enum name is historical). The seller's
+  ask IS the listed price; the seller receives it in full (`commissionZar = 0`).
+  The buyer pays ONE **Platform Fee**, calculated last at checkout on (item +
+  delivery) and stored in `processingFee`. `Listing.price` is the ask, not a
+  marked-up figure. Multi-buy: the fee is calculated on the whole line after
+  quantity. The compare-at "was" price validates against the listed price.
+- **`SELLER_DEDUCT`** — auctions. A flat 10% Platform Fee split 5% / 5%: the
+  buyer pays 5% of (hammer + delivery) at checkout (`processingFee`) and the
+  seller pays 5% of the hammer (`commissionZar`, deducted from `sellerPayout`).
+  An offer accepted on a Buy Now listing uses the marketplace model; an offer on
+  an auction uses the split.
+- **Private arrangement** — delivery and handling are zero; the fee is calculated
+  on the item price only.
 
 **Delivery carries a 10% margin, quoted INCLUSIVE** — the buyer sees one figure
 and pays exactly that. Never render it as "quote + 10%" or a separate handling
 row. The split is server-side only (`Transaction.shippingCost` = carrier
 remittance, `shippingHandlingCents` = ours) because they are different obligations
-at payout. The gateway fee is charged on the item plus the **carrier** rate, never
-on our own delivery margin.
+at payout. The Platform Fee is charged on the item plus the **delivery figure the
+buyer sees** (carrier rate + handling).
 
 ### Payments (Ozow) — live for money-in
 
@@ -773,9 +771,9 @@ provider must point at **alloutdoor.co.za**.
   strike-free sale-decline route is a buyer-concern, which now rides the custom
   `OTHER` reason (strikes + admin review). **There is no fine system** — no
   Penalty model, no admin approval step, no paygate deduction.
-- **Seller tiers** (badge only; no listing-volume cap, no deposit): New (0 sales),
-  Established (3+ / 50+ score), Trusted (10+ / 70+), Top Seller (25+ / 85+, 0.5%
-  commission discount). The legacy `DEALER` tier is **retired** (never assigned,
+- **Seller tiers** (badge only; no listing-volume cap, no deposit, no fee
+  discount): New (0 sales), Established (3+ / 50+ score), Trusted (10+ / 70+),
+  Top Seller (25+ / 85+). The legacy `DEALER` tier is **retired** (never assigned,
   no longer sticky) — the platform has no dealer *sellers*; dealers survive only
   as the `DEALER_TRANSFER` handover registry. The **private Trust Score** (0–100)
   is visible only on the seller's own dashboard, never publicly.
