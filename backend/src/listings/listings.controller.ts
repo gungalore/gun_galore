@@ -12,6 +12,7 @@ import {
   UploadedFile,
   UploadedFiles,
   HttpCode,
+  Header,
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
@@ -154,6 +155,28 @@ export class ListingsController {
   @UseGuards(AuthGuard)
   mine(@CurrentUser() userId: string) {
     return this.listingsService.findMine(userId);
+  }
+
+  // Live browse refresh token. Polled by the discovery grids; one small,
+  // viewer-scoped string, so a changed catalogue or a new save can trigger a
+  // silent re-render without re-sending the whole browse payload. MUST stay
+  // above @Get(':id') so 'live-version' isn't captured as an id.
+  @Get('live-version')
+  @SkipThrottle()
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(OptionalAuthGuard)
+  liveVersion(@CurrentUser() userId?: string) {
+    return this.listingsService.liveVersion(userId);
+  }
+
+  // Live PDP stats — saved count + listing status. Applies the same
+  // owner/public gates (and the same 404) as the detail endpoint.
+  @Get(':id/stats')
+  @SkipThrottle()
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(OptionalAuthGuard)
+  stats(@Param('id') id: string, @CurrentUser() userId?: string) {
+    return this.listingsService.stats(id, userId);
   }
 
   // Coarse buyer-distance to a listing (W3). PUBLIC, but returns only a 5 km-

@@ -8,6 +8,7 @@ import { BrowseResponse, BrandSummary } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { Pagination } from '@/components/pagination';
 import { BrowseUnavailable } from '@/components/browse-unavailable';
+import { LiveCatalogRefresh } from '@/components/live-catalog-refresh';
 
 const PAGE_SIZE = 24;
 
@@ -74,6 +75,7 @@ export default async function BrandPage({
 
   return (
     <main className="max-w-[var(--page-max)] mx-auto px-4 py-8">
+      <LiveCatalogRefresh />
       <BrowseRailShell>
       {/* Breadcrumb */}
       <nav

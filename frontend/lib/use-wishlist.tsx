@@ -131,6 +131,15 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
         else next.delete(listingId);
         return next;
       });
+      // Social-proof counts elsewhere on the page (the PDP pill) follow the
+      // optimistic state too, then reconcile with the next live poll.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('gg:wishlist', {
+            detail: { listingId, saved: willAdd },
+          }),
+        );
+      }
       // Mild tap haptic on supported devices (Android Chrome, etc.).
       // iOS doesn't expose vibration to web apps but the no-op is
       // safe.
@@ -159,6 +168,13 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
           else next.add(listingId);
           return next;
         });
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('gg:wishlist', {
+              detail: { listingId, saved: !willAdd },
+            }),
+          );
+        }
         throw new Error('Wishlist toggle failed');
       }
     },

@@ -135,6 +135,9 @@ export class WishlistService {
           include: {
             images: { orderBy: { order: 'asc' } },
             category: true,
+            // Same social-proof aggregate the browse cards get, so a saved
+            // listing's count is identical on /wishlist and in the grid.
+            _count: { select: { wishlistedBy: true } },
             seller: {
               select: {
                 id: true,

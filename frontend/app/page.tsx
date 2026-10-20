@@ -12,6 +12,7 @@ import { HomeInfoPanel } from '@/components/home-info-panel';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
 import { Pagination } from '@/components/pagination';
+import { LiveCatalogRefresh } from '@/components/live-catalog-refresh';
 
 interface SearchParams {
   q?: string;
@@ -242,6 +243,7 @@ export default async function HomePage({
 
   return (
     <main className="relative">
+      <LiveCatalogRefresh />
       {/* ⚠️ THE PER-SURFACE SCENERY IS GONE, SITE-WIDE AND ON PURPOSE.
           Each shopping surface used to drop its own photograph behind the
           grid — marketplace.jpg here, auction.jpg, take-a-shot.jpg — under a

@@ -1789,6 +1789,81 @@ export class ListingsService {
   }
 
   /**
+   * Cheap change token for the live browse refresh.
+   *
+   * Polled by the discovery grids (home / category / brand / seller) to decide
+   * whether a silent `router.refresh()` is worth doing. It is deliberately NOT
+   * the browse payload: two aggregates and a count are indexed lookups, while
+   * re-sending 24 listings and their images every 20 seconds is not.
+   *
+   * The wishlist count is scoped through the same visibility filter as the
+   * listings it accompanies, so an anonymous poller cannot infer saves on
+   * members-only stock from a changing number.
+   */
+  async liveVersion(userId?: string): Promise<{ v: string }> {
+    const where: Prisma.ListingWhereInput = {
+      status: ListingStatus.ACTIVE,
+      isDealListing: false,
+      ...this.publicOnly(userId),
+    };
+    const [catalog, saves] = await Promise.all([
+      this.prisma.listing.aggregate({
+        where,
+        _count: { _all: true },
+        _max: { updatedAt: true },
+      }),
+      this.prisma.watchedListing.count({ where: { listing: where } }),
+    ]);
+    return {
+      v: [
+        catalog._count._all,
+        catalog._max.updatedAt?.getTime() ?? 0,
+        saves,
+      ].join(':'),
+    };
+  }
+
+  /**
+   * Live PDP stats: the two facts that change under a buyer on a listing they
+   * are already looking at. The count is an aggregate; the status is the
+   * sold / payment-pending transition that should make the page re-render.
+   *
+   * Visibility mirrors findById exactly - the same 404 for a missing row, a
+   * non-public status, or a members-only listing without a session - so this
+   * cannot be used to probe a hidden listing by id.
+   */
+  async stats(
+    id: string,
+    userId?: string,
+  ): Promise<{ status: ListingStatus; wishlistCount: number }> {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        publicVisible: true,
+        sellerId: true,
+        _count: { select: { wishlistedBy: true } },
+      },
+    });
+    if (!listing) throw new NotFoundException('Listing not found');
+
+    const isOwner = !!userId && listing.sellerId === userId;
+    if (!isOwner) {
+      if (!PUBLICLY_VISIBLE_STATUSES.includes(listing.status)) {
+        throw new NotFoundException('Listing not found');
+      }
+      if (!userId && !listing.publicVisible) {
+        throw new NotFoundException('Listing not found');
+      }
+    }
+
+    return {
+      status: listing.status,
+      wishlistCount: listing._count.wishlistedBy,
+    };
+  }
+
+  /**
    * P4.3a — parse the JSON-encoded `attrs` filter blob. Returns an empty
    * object for anything malformed (bad JSON, non-object, null, array) so the
    * dispatcher/filter builder can treat "no attr filters" and "garbage attr
@@ -2247,6 +2322,8 @@ export class ListingsService {
       include: {
         images: { where: { isPrimary: true }, take: 1 },
         category: { select: { id: true, name: true, slug: true } },
+        // Social-proof count for the recently-viewed rail's cards.
+        _count: { select: { wishlistedBy: true } },
         seller: {
           select: { id: true, username: true, sellerTier: true },
         },
@@ -2518,12 +2595,15 @@ export class ListingsService {
       include: {
         images: { where: { isPrimary: true }, take: 1 },
         category: { select: { id: true, name: true, slug: true } },
+        // Social-proof count - same aggregate the Prisma path returns, so a
+        // card renders the same saved-count whichever path ranked it.
+        _count: { select: { wishlistedBy: true } },
         seller: {
           select: {
             id: true,
             username: true,
             sellerTier: true,
-            // UX-1b — seller rating shown on cards. averageRating is a
+            // UX-1b - seller rating shown on cards. averageRating is a
             // cached denormalised field on User; the review count is a
             // cheap joined aggregate (same query, no N+1). Both public.
             averageRating: true,
@@ -2641,10 +2721,14 @@ export class ListingsService {
         include: {
           images: { where: { isPrimary: true }, take: 1 },
           category: { select: { id: true, name: true, slug: true } },
+          // Social-proof: how many people saved this listing. Aggregate only
+          // - names are never exposed, and the rows themselves are already
+          // gated by the same publicVisible filter as the listing.
+          _count: { select: { wishlistedBy: true } },
           seller: {
             select: {
               id: true,
-              // Public listings show username only — never firstName /
+              // Public listings show username only - never firstName /
               // lastName. Real names exist only inside KYC + paid-
               // transaction internals. See feedback memory:
               // username-not-real-name.

@@ -394,9 +394,9 @@ export interface Listing {
   createdAt: string;
   updatedAt: string;
   /** Aggregated social-proof — how many users have saved this listing
-   * to their wishlist. Set by ListingsService.findById via Prisma's
-   * `_count: { wishlistedBy: true }`. Only present on listing detail
-   * responses (browse responses omit it for the smaller payload). */
+   * to their wishlist. Set by the backend's `_count: { wishlistedBy: true }`
+   * on listing detail AND every browse/collection path, so cards can render
+   * the same count as the PDP. Aggregate only; the savers are never named. */
   _count?: { wishlistedBy?: number };
 }
 

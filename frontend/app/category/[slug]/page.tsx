@@ -9,6 +9,7 @@ import { ListingCard } from '@/components/listing-card';
 import { Pagination } from '@/components/pagination';
 import { SoldCompsStrip } from '@/components/sold-comps';
 import { BrowseUnavailable } from '@/components/browse-unavailable';
+import { LiveCatalogRefresh } from '@/components/live-catalog-refresh';
 
 interface CategoryTree {
   category: Category;
@@ -100,6 +101,7 @@ export default async function CategoryPage({
 
   return (
     <main className="max-w-[var(--page-max)] mx-auto px-4 py-8">
+      <LiveCatalogRefresh />
       <BrowseRailShell>
       {/* Breadcrumb */}
       <nav

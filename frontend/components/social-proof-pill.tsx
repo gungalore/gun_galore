@@ -1,10 +1,10 @@
 // SocialProofPill — small chip surfacing "X people saved this" on
 // listing detail pages.
 //
-// Threshold: we only render when count >= 3. Below that the signal
-// reads sadder than no signal at all ("1 person saved this" implies
-// nobody else cares). 3 is the established e-commerce threshold for
-// "this is starting to be interesting".
+// Threshold: the caller decides. Cards and the PDP show the count from 1
+// (the operator asked for the real number on every item); `minCount` exists
+// for surfaces that would rather hide a cold-start "1 person" signal. A
+// zero count is never rendered - "0 saved" is anti-proof.
 //
 // The pill is intentionally subtle — slim border, no fill, no
 // shadow. It's a *signal*, not a call to action. The Wishlist button
@@ -15,12 +15,14 @@ import type { CSSProperties } from 'react';
 interface Props {
   /** How many users saved/watch this listing. */
   count: number;
+  /** Lowest count that renders. Defaults to 1 (zero never renders). */
+  minCount?: number;
   /** Optional override style — used to place the pill inline next
    * to the price block. */
   style?: CSSProperties;
-  /** Optional copy override. Defaults to "saved by N people".
-   * Auction listings can override to "N watching" since the same
-   * WatchedListing table doubles as the auction-watcher count. */
+  /** Optional copy override. Defaults to "Saved by N people". The
+   * number is always Wishlist (WatchedListing) saves - not auction
+   * `AuctionWatch` opt-ins - so do not relabel it "watching". */
   label?: (n: number) => string;
 }
 
@@ -28,12 +30,13 @@ const DEFAULT_LABEL = (n: number) => `Saved by ${n} ${n === 1 ? 'person' : 'peop
 
 export function SocialProofPill({
   count,
+  minCount = 1,
   style,
   label = DEFAULT_LABEL,
 }: Props) {
-  // Threshold gate — under 3 we render nothing. Returning null is
-  // intentional; callers don't need to wrap in conditionals.
-  if (!Number.isFinite(count) || count < 3) return null;
+  // Threshold gate — below the caller's floor we render nothing. Returning
+  // null is intentional; callers don't need to wrap in conditionals.
+  if (!Number.isFinite(count) || count < Math.max(1, minCount)) return null;
 
   return (
     <span

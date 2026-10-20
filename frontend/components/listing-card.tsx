@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Listing } from '@/lib/types';
@@ -11,6 +11,7 @@ import { useCountdown, formatCountdown } from '@/lib/use-countdown';
 import { UserBadges } from './user-badges';
 import { UrgencyChip } from './urgency-chip';
 import { SellerRating } from './seller-rating';
+import { SavedCount } from './saved-count';
 
 /**
  * The height of a card's photograph, as a percentage of its width.
@@ -27,6 +28,17 @@ export const CARD_PHOTO_ASPECT = '75%';
 export function ListingCard({ listing }: { listing: Listing }) {
   // See the fade note on the <Image> below.
   const [imgLoaded, setImgLoaded] = useState(false);
+  // Social-proof count. The server is the source of truth, but the viewer's
+  // own heart press must move the number immediately - waiting for the next
+  // catalogue refresh to add 1 would make the card look broken at the exact
+  // moment the buyer interacted with it. The delta is reset whenever the
+  // server hands us a new count, so a refresh can never leave a stale +1.
+  const serverSaved = listing._count?.wishlistedBy ?? 0;
+  const [savedDelta, setSavedDelta] = useState(0);
+  useEffect(() => {
+    setSavedDelta(0);
+  }, [serverSaved]);
+  const savedCount = Math.max(0, serverSaved + savedDelta);
   // Seeds the fade from the element itself. A cached image can finish loading
   // BEFORE React attaches onLoad — without this the photo would sit at
   // opacity 0 permanently on every second page view.
@@ -167,7 +179,12 @@ export function ListingCard({ listing }: { listing: Listing }) {
               dark background so it reads against any photo. Tapping
               the heart stops propagation so the parent <Link> doesn't
               navigate to the listing detail. */}
-          <WishlistButton listingId={listing.id} />
+          <WishlistButton
+            listingId={listing.id}
+            onChange={(saved) =>
+              setSavedDelta((d) => d + (saved ? 1 : -1))
+            }
+          />
         </div>
 
         {/* Card body.
@@ -277,10 +294,17 @@ export function ListingCard({ listing }: { listing: Listing }) {
           {/* Town, not province — matches listing detail, cart and checkout,
               which all read this through the same vicinityLabel() helper.
               It falls back to province (or "the seller's area") on its own,
-              so this line is never blank. */}
-          <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)' }}>
-            {vicinityLabel(listing)}
-          </p>
+              so this line is never blank. The save count shares the line so
+              the card gains urgency without gaining another row. */}
+          <div className="flex items-center justify-between gap-2 mt-1.5">
+            <p
+              className="text-xs min-w-0 truncate"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              {vicinityLabel(listing)}
+            </p>
+            <SavedCount count={savedCount} />
+          </div>
         </div>
       </Link>
 

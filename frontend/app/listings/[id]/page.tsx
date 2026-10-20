@@ -61,7 +61,7 @@ function platformFeePctOnItem(priceCents: number): number {
 }
 import { ShareListingButton } from '@/components/share-listing-button';
 import { ReportButton } from '@/components/report-button';
-import { SocialProofPill } from '@/components/social-proof-pill';
+import { LiveListingStats } from '@/components/live-listing-stats';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
 import { RecordVisit } from '@/components/record-visit';
@@ -1012,20 +1012,16 @@ export default async function ListingDetailPage({
             </div>
           )}
 
-          {/* Social-proof pill. Self-hides below 3 saves so the
-              cold-start case (first day a listing is up, nobody has
-              saved it yet) doesn't render a sad "0 saves" signal.
-              Auctions get a slightly different label since the same
-              WatchedListing count doubles as a watcher signal. */}
+          {/* Live social-proof. The count is the real Wishlist total, moves
+              immediately when this viewer saves, and reconciles on a 15s
+              poll; a status change (sold / payment pending) refreshes the
+              page so the CTAs and banners are not left stale. Zero saves
+              still renders nothing. */}
           {listing.status === 'ACTIVE' && (
             <div className="mb-5">
-              <SocialProofPill
-                count={listing._count?.wishlistedBy ?? 0}
-                label={
-                  listing.listingType === 'AUCTION'
-                    ? (n) => `${n} watching this auction`
-                    : undefined
-                }
+              <LiveListingStats
+                listingId={listing.id}
+                initialCount={listing._count?.wishlistedBy ?? 0}
               />
             </div>
           )}
