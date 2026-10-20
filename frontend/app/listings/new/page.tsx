@@ -497,21 +497,6 @@ export default function NewListingPage() {
   // the seller knows where the "From the photos" bullets came from.
   const [enhancePhotosUsed, setEnhancePhotosUsed] = useState(0);
 
-  // Resale-value estimator (RVE) — button-triggered "Suggest a price" that
-  // returns an INDICATIVE range from recent sales / typical retail. Button, not
-  // auto-fetch, so it only spends an AI/web-search call on explicit seller intent.
-  const [estimating, setEstimating] = useState(false);
-  const [estimateError, setEstimateError] = useState<string | null>(null);
-  const [estimate, setEstimate] = useState<{
-    available: boolean;
-    low?: number;
-    high?: number;
-    midpoint?: number;
-    confidence?: 'low' | 'medium' | 'high';
-    note?: string;
-    disclaimer: string;
-  } | null>(null);
-
   // Preview / soft-block moderation flow.
   // `previewResult` drives the modal display; null = modal closed.
   // `auditResult` holds the latest moderation pass result — updated
@@ -1941,47 +1926,6 @@ export default function NewListingPage() {
     }
   }
 
-  // RVE — fetch an indicative resale-price range for this item. Uses the
-  // title + category + condition the seller has entered so far; the server
-  // leads with recent ALL Outdoor sales and falls back to a web-anchored SA
-  // retail price depreciated for condition when local data is thin.
-  async function handleEstimatePrice() {
-    if (estimating) return;
-    const title = form.title.trim();
-    if (!title && !form.categoryId) {
-      setEstimateError('Add a title and category first.');
-      return;
-    }
-    setEstimateError(null);
-    setEstimate(null);
-    setEstimating(true);
-    try {
-      const token = await getToken();
-      const res = await fetch(`${API_URL}/listings/estimate-price`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          title: title || undefined,
-          categoryId: form.categoryId || undefined,
-          categorySlug: selectedCategory?.slug || undefined,
-          condition: form.condition || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
-      setEstimate(data);
-    } catch (err) {
-      setEstimateError(
-        err instanceof Error ? err.message : 'Could not estimate a price',
-      );
-    } finally {
-      setEstimating(false);
-    }
-  }
-
   // Seller accepted the AI's suggestion — copy it into the description
   // and dismiss the preview box.
   function handleUseSuggestion() {
@@ -3368,15 +3312,6 @@ export default function NewListingPage() {
                   );
                 })}
               </div>
-              <a
-                href="/how-selling-works"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block text-xs mt-2"
-                style={{ color: 'var(--red)' }}
-              >
-                Not sure which to pick? See how selling works →
-              </a>
             </Field>
 
 
@@ -3386,154 +3321,6 @@ export default function NewListingPage() {
                            either typed (no-reserve) or derived from
                            the reserve at 70% (with-reserve).
                 TAKE_A_SHOT → handled separately under its own block. */}
-            {/* RVE — "Suggest a price" (indicative resale estimate). Renders
-                for the single-price Buy-Now flow. Button-triggered so it only
-                spends an AI/web lookup on explicit intent. */}
-            {form.listingType === 'BUY_NOW' && (
-              <div
-                style={{
-                  marginBottom: 16,
-                  padding: 12,
-                  borderRadius: 8,
-                  background: 'var(--bg-inset)',
-                  border: '0.5px solid var(--border)',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 12,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                    Not sure what to charge?
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleEstimatePrice}
-                    disabled={estimating || (!form.title.trim() && !form.categoryId)}
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 500,
-                      padding: '6px 12px',
-                      borderRadius: 6,
-                      border: '0.5px solid var(--border)',
-                      background: 'var(--bg-card)',
-                      color: 'var(--text-primary)',
-                      cursor:
-                        estimating || (!form.title.trim() && !form.categoryId)
-                          ? 'not-allowed'
-                          : 'pointer',
-                      opacity:
-                        estimating || (!form.title.trim() && !form.categoryId)
-                          ? 0.6
-                          : 1,
-                    }}
-                  >
-                    {estimating ? 'Estimating…' : '💡 Suggest a price'}
-                  </button>
-                </div>
-                {estimateError && (
-                  <p style={{ fontSize: 12, color: 'var(--danger)', marginTop: 8 }}>
-                    {estimateError}
-                  </p>
-                )}
-                {estimate &&
-                  (estimate.available &&
-                  estimate.low != null &&
-                  estimate.high != null ? (
-                    <div style={{ marginTop: 10 }}>
-                      <div
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 600,
-                          color: 'var(--text-primary)',
-                        }}
-                      >
-                        R{Math.round(estimate.low / 100).toLocaleString('en-ZA')} –
-                        R{Math.round(estimate.high / 100).toLocaleString('en-ZA')}
-                      </div>
-                      {estimate.note && (
-                        <p
-                          style={{
-                            fontSize: 12,
-                            color: 'var(--text-tertiary)',
-                            marginTop: 4,
-                          }}
-                        >
-                          {estimate.note}
-                        </p>
-                      )}
-                      {estimate.midpoint != null && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            set(
-                              'price',
-                              String(Math.round(estimate.midpoint! / 100)),
-                            )
-                          }
-                          style={{
-                            marginTop: 8,
-                            fontSize: 12,
-                            fontWeight: 500,
-                            padding: '5px 10px',
-                            borderRadius: 6,
-                            border: 'none',
-                            background: 'var(--accent, #1a7f5a)',
-                            color: '#fff',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Use R
-                          {Math.round(estimate.midpoint / 100).toLocaleString('en-ZA')}
-                        </button>
-                      )}
-                      {/* The estimate is what the item SELLS for. The price
-                          field takes the seller's take-home, so dropping the
-                          estimate straight in lists it slightly above the
-                          range — say so here rather than let them find out
-                          from the breakdown and assume it's a bug. */}
-                      <p
-                        style={{
-                          fontSize: 11,
-                          color: 'var(--text-tertiary)',
-                          marginTop: 8,
-                        }}
-                      >
-                        This is what similar items sell for. It goes into the
-                        field as what you&apos;d receive, so buyers will see a
-                        little more — the breakdown under the price shows
-                        exactly how much.
-                      </p>
-                      <p
-                        style={{
-                          fontSize: 11,
-                          color: 'var(--text-tertiary)',
-                          marginTop: 8,
-                        }}
-                      >
-                        {estimate.disclaimer}
-                      </p>
-                    </div>
-                  ) : (
-                    <p
-                      style={{
-                        fontSize: 12,
-                        color: 'var(--text-tertiary)',
-                        marginTop: 8,
-                      }}
-                    >
-                      {estimate.note ??
-                        'Not enough data to estimate this item yet.'}
-                    </p>
-                  ))}
-              </div>
-            )}
-
             {/* The Buy Now price field is the seller's asking price and the
                 listed price. The buyer pays the Platform Fee on top at
                 checkout, so the label is unambiguous and the breakdown below
@@ -4473,6 +4260,7 @@ export default function NewListingPage() {
                   >
                     Finish all four steps on the rail above to enable
                     review. We&apos;ll check your listing before it goes live.
+                    Reviews can take up to 3 hours during business hours.
                   </p>
                 )}
                 {previousAttemptHashes.length > 0 && (
