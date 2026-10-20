@@ -7,6 +7,36 @@ overwritten.
 
 Last updated: **2026-10-20**.
 
+## 2026-10-20 - PWA VIDEO PLAYBACK AND IOS SIGN-IN (FRONTEND-ONLY DEPLOY)
+
+**Video playback was being swallowed by the service worker.** The Cloudinary
+cache matched the whole host, videos included, and the default runtime cache
+also treated `.mp4/.webm` as cache-first. WebKit plays with Range requests, so
+a SW-cached response left the poster visible but the controls dead in the
+installed iOS PWA. Fixed: video requests (`destination === 'video'` or
+`.mp4/.webm/.m3u8`) are NetworkOnly before every cache rule, and the
+Cloudinary cache is image-destination only. The installed PWA must take the new
+SW via the update banner/reload.
+
+**iOS Chrome sign-in was a client-side bounce, not a session conflict.** The
+server logged five `POST /api/auth/login` 200s and five separate CriOS sessions,
+none revoked; the PWA's session is a separate cookie jar and multiple device
+sessions are allowed. The form now hard-navigates (`window.location.assign`)
+after `adopt(...)` instead of `router.push` + `router.refresh`, so the fresh
+httpOnly cookie is used rather than a prefetched unauthenticated RSC redirect.
+
+Commit **`0b4180b5`**. Frontend-only deploy at 21:23 SAST: rollback
+`alloutdoor-20261020-212335.dump` (35 637 190 bytes), frontend health x2 OK,
+public 200 x2, backend/warden untouched and online.
+
+Gates: frontend `tsc` clean + production build exit 0; full suite
+**1 763 / 1 765** with the known `design-picker` pdf.js timeout, which passes
+alone (7/7). Backend unchanged: tsc clean + **370 suites / 5 726 tests**.
+
+**Still open (not built):** the listing video is not part of Preview — it is
+moderated only at upload; the admin review queue has a 60s tab badge but no
+popup, and the latest turret-tags listing is ACTIVE/APPROVE with no pending row.
+
 ## 2026-10-20 - VIDEO SOUND CHOICE AND AUDIO MODERATION (FULL DEPLOY)
 
 **Marketplace clips can now be published with or without sound.** The Sell and
