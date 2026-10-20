@@ -2,8 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { Icon, type AdminIconName } from '@/components/admin/admin-ui';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Icon,
+  useAdminToast,
+  type AdminIconName,
+} from '@/components/admin/admin-ui';
 import { useAdminSession } from '@/components/admin/admin-session';
 import { useAdminPoll } from '@/lib/use-admin-poll';
 import {
@@ -37,6 +41,27 @@ export function AdminTabBar() {
     () => adminFetch<AlertCount>('/admin/alerts/count'),
     60_000,
   );
+  // The tab badge is easy to miss while working another board. Raise one toast
+  // when a listing actually enters the review queue; the first poll is only a
+  // baseline, so opening the panel on an existing queue stays quiet.
+  const { toast } = useAdminToast();
+  const lastPendingListings = useRef<number | null>(null);
+  const pendingListings = data?.pendingListings;
+  useEffect(() => {
+    if (pendingListings === undefined) return;
+    if (lastPendingListings.current === null) {
+      lastPendingListings.current = pendingListings;
+      return;
+    }
+    if (pendingListings > lastPendingListings.current) {
+      const added = pendingListings - lastPendingListings.current;
+      toast(
+        `${added} new listing${added === 1 ? '' : 's'} waiting — open Operate`,
+        'cyan',
+      );
+    }
+    lastPendingListings.current = pendingListings;
+  }, [pendingListings, toast]);
 
   function badgeFor(tab: (typeof TABS)[number]): number {
     if (tab.badge === 'kycStalled') {
