@@ -5,7 +5,42 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-19**.
+Last updated: **2026-10-20**.
+
+## 2026-10-20 - LIVE LISTINGS AND SAVED COUNTS (FULL DEPLOY)
+
+**The browse grids stayed stale until the buyer pulled to refresh.** Home,
+category, brand and seller pages now poll `GET /api/listings/live-version`
+every 20s and call `router.refresh()` only when the token actually moves
+(active count + newest `updatedAt` + visible wishlist saves). The poll pauses
+on a hidden tab, offline, and while a field/dialog has focus, and never
+refreshes more than once a minute. The PDP polls `GET /api/listings/:id/stats`
+every 15s for the saved count and refreshes itself when the listing sells or
+goes payment-pending. Both endpoints use the same optional-auth and
+`publicVisible`/status gates as the detail endpoint and answer
+`Cache-Control: private, no-store`.
+
+**Items now show how many people saved them.** The real Wishlist count rides
+on every browse/search/recently-viewed/wishlist payload and renders as
+`N saved` on cards from the first save (zero renders nothing); the PDP pill
+drops its old >=3 floor. The viewer's own heart press moves the number
+immediately and reconciles on the next poll. This is Wishlist saves, not
+`AuctionWatch` opt-ins, so do not relabel it "watching".
+
+Gates: backend `tsc` clean + **367 suites / 5 704 tests** (1 suite / 8
+skipped); frontend `tsc` clean + **145 files / 1 764 tests** (1 skipped) +
+production build exit 0.
+
+Commit **`c75dd0ff`**. Full deploy at 14:49 SAST: rollback
+`alloutdoor-20261020-144952.dump` (35 628 420 bytes), no pending migrations,
+health x2 OK, public 200 x2, backend/frontend/warden online.
+
+**Know.** Worst-case lag is the poll interval (20s browse, 15s PDP), not
+instant push. A brand-new listing can appear in the token before Meilisearch
+indexes it, so a search-results page may miss it until the next catalogue
+change. The one ACTIVE listing in production is members-only, so anonymous
+`live-version` currently returns `0:0:0` - that is the visibility gate, not a
+bug. The `backend/package.json` motivation-golden scripts remain uncommitted.
 
 ## 2026-10-19 - GROK PLATE TIMEOUT FIX (BACKEND DEPLOY)
 
