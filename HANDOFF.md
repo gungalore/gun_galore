@@ -7,6 +7,40 @@ overwritten.
 
 Last updated: **2026-10-20**.
 
+## 2026-10-20 - PREVIEW VIDEO MODERATION AND ADMIN REVIEW TOAST (FULL DEPLOY)
+
+**The sell Preview now screens the selected clip before the listing exists.**
+`POST /listings/video-preflight` (auth, 64 MB, MP4/MOV/WebM, 10/min) uploads
+the clip to a throwaway Cloudinary `preflight` folder, runs the same
+image/audio moderation as publish (honouring the Without sound / With sound
+choice), deletes the asset in `finally`, and returns the verdict only. Preview
+runs it in parallel with the photo audit and merges the worst verdict: a
+REJECT blocks publish with a red "Video issue" chip; HUMAN_REVIEW keeps publish
+enabled but marks the listing as going to admin review; APPROVE leaves the
+photo verdict alone. The verdict is cached per file + sound choice and
+invalidated when either changes. Publish still re-uploads and re-screens the
+attached file, so the final moderation is authoritative — the trade-off is a
+second upload of the same clip.
+
+**Admins now get a popup, not just a tab badge, when a listing enters review.**
+`AdminTabBar` tracks `pendingListings` from the existing 60s attention poll and
+raises the shared admin toast when the count increases: "N new listing(s)
+waiting — open Operate". The first poll is a baseline, so opening the panel
+with an existing queue stays quiet. Worst-case lag is the 60s poll.
+
+Commits **`8ae96430`** (listings) and **`205ecb6d`** (admin). Full deploy at
+21:43 SAST: rollback `alloutdoor-20261020-214308.dump` (35 637 847 bytes), no
+pending migrations, backend/frontend health x2 OK, public 200 x2, all three
+pm2 services online. New preflight route answers 401 without auth (mounted).
+
+Gates: backend `tsc` clean + **370 suites / 5 729 tests** (8 skipped);
+frontend `tsc` clean + **145 files / 1 764 tests** (1 skipped) + production
+build exit 0.
+
+**Next:** upload a clip with a visible contact detail and confirm Preview
+blocks it; upload a clean muted clip and confirm it publishes; create a
+pending review listing and confirm the admin toast appears within one poll.
+
 ## 2026-10-20 - PWA VIDEO PLAYBACK AND IOS SIGN-IN (FRONTEND-ONLY DEPLOY)
 
 **Video playback was being swallowed by the service worker.** The Cloudinary
