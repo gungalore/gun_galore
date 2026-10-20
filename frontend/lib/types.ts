@@ -26,15 +26,17 @@ export interface ListingImage {
 }
 
 /** One optional marketplace clip on a listing. `playbackUrl` is the
- * compressed-but-complete derivative (audio kept) the gallery should play. */
+ * compressed-but-complete derivative the gallery should play. When
+ * `audioEnabled` is false the delivered file has no audio track. */
 export interface ListingVideo {
   id: string;
   url: string;
-  publicId: string;
+  publicId?: string;
   thumbnailUrl: string | null;
   durationSeconds: number | null;
   width: number | null;
   height: number | null;
+  audioEnabled?: boolean;
   playbackUrl?: string | null;
 }
 

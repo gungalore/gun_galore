@@ -485,6 +485,9 @@ export default function NewListingPage() {
   // AFTER the listing exists so the server can screen it and refuse it
   // without ever storing unscreened media. Photos remain required.
   const [video, setVideo] = useState<File | null>(null);
+  // New clips default to muted; the seller can opt into sound, which runs the
+  // audio-inclusive screen on upload.
+  const [videoAudioEnabled, setVideoAudioEnabled] = useState(false);
 
   // Description AI state — preview-box pattern (lifted from the old
   // project). When `suggestion` is non-null we render a "Suggested
@@ -2440,6 +2443,7 @@ export default function NewListingPage() {
         });
         const vfd = new FormData();
         vfd.append('video', video);
+        vfd.append('audioEnabled', String(videoAudioEnabled));
         const vToken = await getToken();
         const vres = await fetch(`${API_URL}/listings/${listing.id}/video`, {
           method: 'POST',
@@ -2873,7 +2877,12 @@ export default function NewListingPage() {
               >
                 Video (optional)
               </p>
-              <VideoDropzone file={video} onChange={setVideo} />
+              <VideoDropzone
+                file={video}
+                onChange={setVideo}
+                audioEnabled={videoAudioEnabled}
+                onAudioChange={setVideoAudioEnabled}
+              />
               <p
                 style={{
                   fontSize: 12,

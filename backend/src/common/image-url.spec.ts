@@ -1,4 +1,9 @@
-import { boundedImageUrl, IMAGE_EDGE } from './image-url';
+import {
+  boundedImageUrl,
+  boundedVideoUrl,
+  IMAGE_EDGE,
+  optimizedVideoUrl,
+} from './image-url';
 
 describe('boundedImageUrl', () => {
   const original =
@@ -26,7 +31,9 @@ describe('boundedImageUrl', () => {
         'https://res.cloudinary.com/demo/image/upload/c_fill,w_400/v1/a.jpg',
         IMAGE_EDGE.photo,
       ),
-    ).toBe('https://res.cloudinary.com/demo/image/upload/c_fill,w_400/v1/a.jpg');
+    ).toBe(
+      'https://res.cloudinary.com/demo/image/upload/c_fill,w_400/v1/a.jpg',
+    );
   });
 
   it('leaves any other host alone', () => {
@@ -38,5 +45,30 @@ describe('boundedImageUrl', () => {
 
   it('has exactly three edges, one per kind of picture', () => {
     expect(IMAGE_EDGE).toEqual({ photo: 1280, document: 1600, face: 1024 });
+  });
+});
+
+describe('video delivery transformations', () => {
+  const video =
+    'https://res.cloudinary.com/demo/video/upload/v1712345678/listings/clip.mp4';
+
+  it('strips audio for visual-only moderation by default', () => {
+    expect(boundedVideoUrl(video, 720)).toBe(
+      'https://res.cloudinary.com/demo/video/upload/w_720,c_limit,q_auto:eco,f_mp4,ac_none/v1712345678/listings/clip.mp4',
+    );
+  });
+
+  it('keeps audio for moderation when the seller chose sound', () => {
+    const withAudio = boundedVideoUrl(video, 720, true);
+    expect(withAudio).toContain('w_720,c_limit,q_auto:eco,f_mp4');
+    expect(withAudio).not.toContain('ac_none');
+  });
+
+  it('keeps audio for normal playback by default', () => {
+    expect(optimizedVideoUrl(video, 720)).not.toContain('ac_none');
+  });
+
+  it('removes audio from the delivered file when the listing is muted', () => {
+    expect(optimizedVideoUrl(video, 720, false)).toContain('ac_none');
   });
 });

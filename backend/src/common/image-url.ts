@@ -69,30 +69,38 @@ const VIDEO_UPLOAD_SEGMENT = '/video/upload/';
  * `f_mp4` pins the container (Gemini accepts mp4/webm/mov) and `c_limit`
  * never upscales.
  */
-export function boundedVideoUrl(url: string, maxEdge: number): string {
+export function boundedVideoUrl(
+  url: string,
+  maxEdge: number,
+  keepAudio = false,
+): string {
   if (!url || !url.includes(VIDEO_UPLOAD_SEGMENT)) return url;
   const at = url.indexOf(VIDEO_UPLOAD_SEGMENT) + VIDEO_UPLOAD_SEGMENT.length;
   const rest = url.slice(at);
   const firstSegment = rest.split('/')[0] ?? '';
   if (/(^|,)w_\d+/.test(firstSegment)) return url;
-  // ⚠️ `ac_none` STRIPS THE AUDIO. Moderation is visual-only (gore), so the
-  // soundtrack is dead weight — dropping it shrinks the clip and keeps it under
-  // Gemini's inline cap. Playback uses optimizedVideoUrl, which keeps audio.
-  const bound = `w_${Math.max(1, Math.round(maxEdge))},c_limit,q_auto:eco,f_mp4,ac_none`;
+  // Default strips the audio: visual-only moderation (feed, muted listings).
+  // `keepAudio` is the seller's "with sound" choice, so the model can hear it.
+  const bound = `w_${Math.max(1, Math.round(maxEdge))},c_limit,q_auto:eco,f_mp4${keepAudio ? '' : ',ac_none'}`;
   return url.slice(0, at) + bound + '/' + rest;
 }
 
 /**
- * A compressed-but-complete delivery URL for PLAYBACK — audio kept, only the
- * cost trimmed. Never used for moderation.
+ * A compressed-but-complete delivery URL for PLAYBACK — only the cost trimmed.
+ * `audioEnabled: false` removes the audio track from the delivered file, so a
+ * muted listing is genuinely silent rather than merely muted in the player.
  */
-export function optimizedVideoUrl(url: string, maxEdge: number): string {
+export function optimizedVideoUrl(
+  url: string,
+  maxEdge: number,
+  audioEnabled = true,
+): string {
   if (!url || !url.includes(VIDEO_UPLOAD_SEGMENT)) return url;
   const at = url.indexOf(VIDEO_UPLOAD_SEGMENT) + VIDEO_UPLOAD_SEGMENT.length;
   const rest = url.slice(at);
   const firstSegment = rest.split('/')[0] ?? '';
   if (/(^|,)w_\d+/.test(firstSegment)) return url;
-  const bound = `w_${Math.max(1, Math.round(maxEdge))},c_limit,q_auto,f_mp4`;
+  const bound = `w_${Math.max(1, Math.round(maxEdge))},c_limit,q_auto,f_mp4${audioEnabled ? '' : ',ac_none'}`;
   return url.slice(0, at) + bound + '/' + rest;
 }
 

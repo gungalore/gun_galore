@@ -19,6 +19,8 @@ export interface GalleryVideo {
   playbackUrl?: string | null;
   thumbnailUrl?: string | null;
   durationSeconds?: number | null;
+  /** False when the seller published the clip without sound. */
+  audioEnabled?: boolean;
 }
 
 // Self-contained gallery for the listing detail page.
@@ -101,6 +103,7 @@ export function ImageGallery({
             src={video.playbackUrl || video.url}
             poster={video.thumbnailUrl ?? undefined}
             controls
+            muted={video.audioEnabled === false}
             playsInline
             preload="metadata"
             aria-label={`${title} video`}

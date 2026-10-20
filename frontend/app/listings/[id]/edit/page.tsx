@@ -70,6 +70,13 @@ export default function EditListingPage() {
   // side); removing the current one is queued like photo deletions.
   const [newVideo, setNewVideo] = useState<File | null>(null);
   const [removeExistingVideo, setRemoveExistingVideo] = useState(false);
+  // null = follow the clip on the listing; a boolean is the seller's change.
+  const [videoAudioEnabled, setVideoAudioEnabled] = useState<boolean | null>(
+    null,
+  );
+  const effectiveVideoAudio =
+    videoAudioEnabled ??
+    (listing?.video ? (listing.video.audioEnabled ?? true) : false);
   // Per-photo failure surfaces. Photo work runs AFTER the listing PATCH has
   // already committed, so a failure here can't be reported as "save failed" —
   // that would send the seller back to re-edit text that is safely stored.
@@ -478,6 +485,7 @@ export default function EditListingPage() {
         if (newVideo) {
           const vfd = new FormData();
           vfd.append('video', newVideo);
+          vfd.append('audioEnabled', String(effectiveVideoAudio));
           const vToken = await getToken();
           const vres = await fetch(`${API_URL}/listings/${id}/video`, {
             method: 'POST',
@@ -512,6 +520,31 @@ export default function EditListingPage() {
             );
           }
           setRemoveExistingVideo(false);
+        } else if (listing?.video) {
+          // Sound changed on the clip already attached. Sound-on re-runs the
+          // audio screen server-side; unsure holds the listing for admin.
+          const currentAudio = listing.video.audioEnabled ?? true;
+          if (effectiveVideoAudio !== currentAudio) {
+            const vToken = await getToken();
+            const vres = await fetch(`${API_URL}/listings/${id}/video`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${vToken}`,
+              },
+              body: JSON.stringify({ audioEnabled: effectiveVideoAudio }),
+            });
+            if (!vres.ok) {
+              const body = await vres.json().catch(() => null);
+              const msg = (body as { message?: string | string[] } | null)
+                ?.message;
+              throw new Error(
+                Array.isArray(msg)
+                  ? msg.join(', ')
+                  : msg ?? `error ${vres.status}`,
+              );
+            }
+          }
         }
       } catch (err) {
         setError(
@@ -1139,8 +1172,14 @@ export default function EditListingPage() {
             file={newVideo}
             onChange={(f) => {
               setNewVideo(f);
-              if (f) setRemoveExistingVideo(false);
+              if (f) {
+                setRemoveExistingVideo(false);
+                // A replacement clip starts muted by default.
+                setVideoAudioEnabled(false);
+              }
             }}
+            audioEnabled={effectiveVideoAudio}
+            onAudioChange={setVideoAudioEnabled}
             existingUrl={
               !removeExistingVideo && listing.video
                 ? listing.video.playbackUrl ?? listing.video.url

@@ -1380,6 +1380,9 @@ model ListingVideo {
   durationSeconds Float?
   width           Int?
   height          Int?
+  /// Whether the clip is published with its audio track. New uploads default
+  /// to muted; enabling sound runs an audio-inclusive moderation pass.
+  audioEnabled    Boolean  @default(false)
   createdAt       DateTime @default(now())
 }
 

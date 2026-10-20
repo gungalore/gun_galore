@@ -428,8 +428,31 @@ export class ListingsController {
       }),
     )
     file: Express.Multer.File,
+    @Body('audioEnabled') audioEnabled?: string,
   ) {
-    return this.listingsService.addVideo(id, userId, file);
+    return this.listingsService.addVideo(
+      id,
+      userId,
+      file,
+      audioEnabled === 'true',
+    );
+  }
+
+  // Change the sound choice on an existing clip without re-uploading. Sound-on
+  // re-runs the audio-inclusive screen; unsure holds the listing for admin.
+  @Patch(':id/video')
+  @UseGuards(AuthGuard)
+  @HttpCode(200)
+  setVideoAudio(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+    @Body() body: { audioEnabled?: boolean },
+  ) {
+    return this.listingsService.setVideoAudio(
+      id,
+      userId,
+      body.audioEnabled === true,
+    );
   }
 
   @Delete(':id/video')

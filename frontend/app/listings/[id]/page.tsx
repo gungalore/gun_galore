@@ -439,6 +439,7 @@ export default async function ListingDetailPage({
                     playbackUrl: listing.video.playbackUrl,
                     thumbnailUrl: listing.video.thumbnailUrl,
                     durationSeconds: listing.video.durationSeconds,
+                    audioEnabled: listing.video.audioEnabled,
                   }
                 : null
             }

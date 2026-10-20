@@ -12,7 +12,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { BrowseListingsDto } from './dto/browse-listings.dto';
-import { Listing, ListingStatus, ListingType, Province, ShippingMethod } from '@prisma/client';
+import { ClaudeDecision, Listing, ListingStatus, ListingType, Province, ShippingMethod } from '@prisma/client';
 import {
   ListingModerationService,
   ListingModerationResult,
@@ -140,8 +140,20 @@ export const PUBLIC_LISTING_SELECT = {
   updatedAt: true,
   images: { orderBy: { order: 'asc' } },
   // One optional marketplace clip. The delivery URL is optimised in
-  // findById() so cards/galleries never stream the original.
-  video: true,
+  // findById() so cards/galleries never stream the original. `publicId` is
+  // deliberately NOT selected: a muted listing must not expose the handle
+  // that would let a caller construct the original audio URL.
+  video: {
+    select: {
+      id: true,
+      url: true,
+      thumbnailUrl: true,
+      durationSeconds: true,
+      width: true,
+      height: true,
+      audioEnabled: true,
+    },
+  },
   category: true,
   seller: {
     select: {
@@ -2804,16 +2816,27 @@ export class ListingsService {
     const enriched = {
       ...listing,
       seller,
-      // Marketplace video — a compressed-but-complete playback derivative
-      // (audio kept), exactly like the community feed's PostVideo. Never the
-      // original upload.
+      // Marketplace video - a compressed-but-complete playback derivative,
+      // exactly like the community feed's PostVideo. Never the original upload.
+      // A muted listing exposes only the audio-stripped derivative; the
+      // original stays in Cloudinary/DB for the owner.
       ...(listing.video
-        ? {
-            video: {
-              ...listing.video,
-              playbackUrl: optimizedVideoUrl(listing.video.url, 720),
-            },
-          }
+        ? (() => {
+            const playbackUrl = optimizedVideoUrl(
+              listing.video.url,
+              720,
+              listing.video.audioEnabled,
+            );
+            return {
+              video: {
+                ...listing.video,
+                url: listing.video.audioEnabled
+                  ? listing.video.url
+                  : playbackUrl,
+                playbackUrl,
+              },
+            };
+          })()
         : {}),
     };
 
@@ -3529,7 +3552,12 @@ export class ListingsService {
    * can never reach a buyer. Same edit lock as photos — buyers commit on what
    * they saw at bid/offer time.
    */
-  async addVideo(id: string, userId: string, file: Express.Multer.File) {
+  async addVideo(
+    id: string,
+    userId: string,
+    file: Express.Multer.File,
+    audioEnabled = false,
+  ) {
     const listing = await this.assertOwner(id, userId);
     await this.assertEditable(listing);
 
@@ -3537,9 +3565,11 @@ export class ListingsService {
     const verdict = await this.moderation.moderateVideo({
       url: up.url,
       thumbnailUrl: up.thumbnailUrl,
+      audioEnabled,
     });
 
-    if (verdict.decision !== 'APPROVE') {
+    // Positive for banned content: never store it, never attach it.
+    if (verdict.decision === 'REJECT') {
       await this.cloudinary
         .deleteVideo(up.publicId)
         .catch((err) =>
@@ -3548,12 +3578,25 @@ export class ListingsService {
           ),
         );
       throw new BadRequestException(
-        verdict.decision === 'REJECT'
-          ? (verdict.publicReason ??
-            verdict.reasons[0] ??
-            'That video is not allowed on ALL Outdoor.')
-          : 'We could not verify that video automatically. Try a shorter clip with no on-screen text, contact details or QR codes.',
+        verdict.publicReason ??
+          verdict.reasons[0] ??
+          'That video is not allowed on ALL Outdoor.',
       );
+    }
+
+    // Unsure (or unreadable audio): store the clip but hold the listing for an
+    // admin. The seller sees it as Pending review; a human decides.
+    const heldForReview = verdict.decision === 'HUMAN_REVIEW';
+    if (heldForReview) {
+      await this.prisma.listing.update({
+        where: { id },
+        data: {
+          status: ListingStatus.PENDING_REVIEW,
+          claudeDecision: ClaudeDecision.HUMAN_REVIEW,
+          claudeConfidence: 0.5,
+          claudeReasons: verdict.reasons,
+        },
+      });
     }
 
     const existing = await this.prisma.listingVideo.findUnique({
@@ -3575,9 +3618,82 @@ export class ListingsService {
         durationSeconds: up.durationSeconds ?? null,
         width: up.width ?? null,
         height: up.height ?? null,
+        audioEnabled,
       },
     });
-    return { ...video, playbackUrl: optimizedVideoUrl(video.url, 720) };
+    const playbackUrl = optimizedVideoUrl(video.url, 720, audioEnabled);
+    return {
+      ...video,
+      url: audioEnabled ? video.url : playbackUrl,
+      playbackUrl,
+      heldForReview,
+    };
+  }
+
+  /**
+   * Change the sound choice on an existing clip without re-uploading.
+   *
+   * Turning sound ON is a publication decision: the audio has not been
+   * screened yet, so run the audio-inclusive pass. Positive -> refuse the
+   * change; unsure -> enable it but hold the listing for an admin. Turning
+   * sound OFF needs no screen - the delivery URL simply strips the audio.
+   */
+  async setVideoAudio(
+    id: string,
+    userId: string,
+    audioEnabled: boolean,
+  ) {
+    const listing = await this.assertOwner(id, userId);
+    await this.assertEditable(listing);
+
+    const video = await this.prisma.listingVideo.findUnique({
+      where: { listingId: id },
+    });
+    if (!video) throw new NotFoundException('Video not found');
+
+    let heldForReview = false;
+    if (audioEnabled && !video.audioEnabled) {
+      const verdict = await this.moderation.moderateVideo({
+        url: video.url,
+        thumbnailUrl: video.thumbnailUrl,
+        audioEnabled: true,
+      });
+      if (verdict.decision === 'REJECT') {
+        throw new BadRequestException(
+          verdict.publicReason ??
+            verdict.reasons[0] ??
+            'That video sound is not allowed on ALL Outdoor.',
+        );
+      }
+      heldForReview = verdict.decision === 'HUMAN_REVIEW';
+      if (heldForReview) {
+        await this.prisma.listing.update({
+          where: { id },
+          data: {
+            status: ListingStatus.PENDING_REVIEW,
+            claudeDecision: ClaudeDecision.HUMAN_REVIEW,
+            claudeConfidence: 0.5,
+            claudeReasons: verdict.reasons,
+          },
+        });
+      }
+    }
+
+    const updated = await this.prisma.listingVideo.update({
+      where: { listingId: id },
+      data: { audioEnabled },
+    });
+    const playbackUrl = optimizedVideoUrl(
+      updated.url,
+      720,
+      updated.audioEnabled,
+    );
+    return {
+      ...updated,
+      url: updated.audioEnabled ? updated.url : playbackUrl,
+      playbackUrl,
+      heldForReview,
+    };
   }
 
   async removeVideo(listingId: string, userId: string) {
