@@ -183,7 +183,7 @@ export function ListingPreviewModal({
       : preview.decision === 'AUTO_FIX_AND_APPROVE'
         ? 'We removed some contact info from your description. Review the cleaned version below.'
         : preview.decision === 'HUMAN_REVIEW'
-          ? 'Your listing will be visible to buyers after an admin double-checks it. Usually under an hour.'
+          ? 'An admin will review it before it goes live. Reviews can take up to 3 hours during business hours.'
           : preview.hardBlocked
             ? `We can’t auto-publish this. Email ${SUPPORT_EMAIL} if you believe this is a mistake.`
             : (preview.publicReason ??
@@ -287,8 +287,14 @@ export function ListingPreviewModal({
           </button>
         </header>
 
-        {/* Issues panel — only when something needs attention */}
-        {preview.reasonCategories.length > 0 && preview.decision !== 'APPROVE' && (
+        {/* Issues panel — only when something needs attention. A HUMAN_REVIEW
+            verdict is deliberately excluded: the model's raw reasons can read
+            as an accusation ("third-party advertising") before an admin has
+            judged the context, and the seller's next step is simply to wait.
+            The detailed reasons still reach the admin queue. */}
+        {preview.reasonCategories.length > 0 &&
+          preview.decision !== 'APPROVE' &&
+          preview.decision !== 'HUMAN_REVIEW' && (
           <div
             className="px-6 py-4"
             style={{ borderBottom: '0.5px solid var(--border)' }}

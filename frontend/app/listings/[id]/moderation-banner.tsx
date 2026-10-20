@@ -52,7 +52,7 @@ export default function ModerationBanner({
     color = 'var(--warning)';
     title = 'Pending review';
     body =
-      'Your listing has been flagged for human review and will go live once an admin approves it. Editing it now will trigger a fresh moderation review and pause the current one.';
+      'Your listing has been flagged for human review and will go live once an admin approves it. Reviews can take up to 3 hours during business hours. Editing it now will trigger a fresh moderation review and pause the current one.';
   } else if (showRejected) {
     color = 'var(--danger)';
     title = 'Listing rejected';
@@ -82,7 +82,7 @@ export default function ModerationBanner({
       <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
         {body}
       </p>
-      {reasons.length > 0 && (
+      {!showPending && reasons.length > 0 && (
         <ul
           className="mt-2 text-xs leading-relaxed"
           style={{ color: 'var(--text-tertiary)' }}
