@@ -7,6 +7,40 @@ overwritten.
 
 Last updated: **2026-10-20**.
 
+## 2026-10-20 - VIDEO SOUND CHOICE AND AUDIO MODERATION (FULL DEPLOY)
+
+**Marketplace clips can now be published with or without sound.** The Sell and
+Edit forms default to **Without sound**; muted delivery uses a Cloudinary
+`ac_none` derivative, so the audio is actually removed from the file. The public
+listing payload no longer exposes the original `url`/`publicId` for a muted clip.
+With sound keeps the audio and runs a second, audio-inclusive moderation pass.
+
+**Audio is screened when the seller opts in.** Gemini receives a 720p
+(fallback 480p) derivative with audio and is asked to listen for spoken phone
+numbers, emails, URLs, social handles, "WhatsApp/call me/come to my shop" and
+advertising in any SA language; ordinary narration, ambience, music, shots and
+manufacturer names pass. Positive for banned content -> the clip is deleted and
+the upload refused (a new listing's publish cleanup removes the half-built
+listing). Unsure/unreadable audio -> the clip is stored, the listing moves to
+PENDING_REVIEW and the reasons land in `claudeReasons` for `/admin/operate`.
+Muted clips stay visual-only and never reach the audio screen.
+
+**Existing clips backfilled as sound-on.** Migration
+`20261020193500_listing_video_audio` adds `ListingVideo.audioEnabled` (default
+false) and sets existing rows true. Sound can be changed later via
+`PATCH /listings/:id/video`; turning sound on re-runs the audio screen, turning
+it off only switches delivery to the muted derivative.
+
+Commit **`3c6146ef`**. Full deploy at 20:40 SAST: rollback
+`alloutdoor-20261020-204025.dump` (35 633 651 bytes), migration applied, health
+x2 OK, public 200 x2, backend/frontend/warden online.
+
+Gates: backend `tsc` clean + **370 suites / 5 726 tests** (1 skipped);
+frontend `tsc` clean + **145 files / 1 764 tests** + production build exit 0.
+
+**Next:** upload one muted and one sound-on clip to verify delivery and the
+audio prompt in production; an unsure clip should appear in `/admin/operate`.
+
 ## 2026-10-20 - PHOTO MODERATION TO ADMIN REVIEW (FULL DEPLOY)
 
 **A legitimate product-photo URL was being auto-blocked.** The vision screener
