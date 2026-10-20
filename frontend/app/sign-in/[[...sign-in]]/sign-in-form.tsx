@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useSession } from '../../../lib/auth';
 import { authErrorMessage } from '@/lib/auth-error';
 
@@ -31,7 +31,6 @@ function safeRedirect(raw: string | null): string {
 }
 
 export function SignInForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const { adopt } = useSession();
 
@@ -88,8 +87,14 @@ export function SignInForm() {
       if (data.accessToken && data.expiresAt) {
         await adopt(data.accessToken, data.expiresAt);
       }
-      router.push(safeRedirect(params.get('redirect_url')));
-      router.refresh();
+      // ⚠️ HARD NAVIGATION, NOT router.push + router.refresh. The destination
+      // is a server-rendered page that reads the httpOnly access cookie set by
+      // this response. A client-side RSC navigation can reuse a prefetched
+      // unauthenticated redirect and bounce straight back to /sign-in — the
+      // loop seen on iOS Chrome, where the login POST returns 200 but the
+      // member never lands signed in. A full document load always sends the
+      // cookie that was just set.
+      window.location.assign(safeRedirect(params.get('redirect_url')));
     } catch {
       setError('We could not reach the server. Check your connection.');
     } finally {

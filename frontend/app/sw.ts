@@ -84,6 +84,17 @@ const networkOnlyRoutes: RuntimeCaching[] = [
     handler: new NetworkOnly(),
   },
   {
+    // ⚠️ VIDEO MUST NEVER BE CACHED BY THE SW. Safari/WebKit plays a clip with
+    // Range requests, and a service-worker cache cannot reliably answer those
+    // — a cached 200/partial response makes the poster show but the controls
+    // never play (observed in the installed iOS PWA). Cloudinary already
+    // serves range/CORS; let it answer directly.
+    matcher: ({ request, url }) =>
+      request.destination === 'video' ||
+      /\.(mp4|webm|m3u8)$/i.test(url.pathname),
+    handler: new NetworkOnly(),
+  },
+  {
     // ⚠️ KEPT FOR THE DESK THAT WILL RETURN. The operator is rebuilding the
     // admin surface, so there is no /admin route today and this matcher is
     // dormant; it stays because a cached control panel is a number the
@@ -137,7 +148,12 @@ const imageCaching: RuntimeCaching[] = [
   {
     // Cloudinary — every listing photo, KYC doc preview, hero
     // imagery, etc. Single biggest bandwidth saver in the SW.
-    matcher: ({ url }) => url.hostname === 'res.cloudinary.com',
+    // IMAGE DESTINATION ONLY: this matcher used to take every request to the
+    // Cloudinary host, videos included, and swallow playback into the image
+    // cache. The video NetworkOnly rule above now wins, but keep the test
+    // explicit so a future reorder cannot re-break it.
+    matcher: ({ request, url }) =>
+      url.hostname === 'res.cloudinary.com' && request.destination === 'image',
     handler: new StaleWhileRevalidate({
       cacheName: 'gg-cloudinary-images',
       plugins: [
