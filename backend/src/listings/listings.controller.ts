@@ -409,6 +409,32 @@ export class ListingsController {
     return this.listingsService.removeImage(id, imageId, userId);
   }
 
+  // Preview-only video screen. Uploads to a throwaway Cloudinary folder,
+  // runs the same image/audio verdict as publish, then deletes the asset.
+  // No listing id is needed, so the seller can see video issues in the same
+  // Preview pass as the photos. MUST stay above @Post(':id/video').
+  @Post('video-preflight')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseInterceptors(FileInterceptor('video', { storage: memoryStorage() }))
+  preflightVideo(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 64 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /video\/(mp4|quicktime|webm)/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+    @Body('audioEnabled') audioEnabled?: string,
+  ) {
+    return this.listingsService.preflightVideo(
+      file,
+      audioEnabled === 'true',
+    );
+  }
+
   // One optional marketplace clip per listing. Screened BEFORE storage —
   // a refused or uncertain clip deletes the Cloudinary asset and fails the
   // upload (see ListingsService.addVideo).

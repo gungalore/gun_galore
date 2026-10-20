@@ -147,6 +147,49 @@ describe('listing video sound choice', () => {
   });
 });
 
+describe('preview-only video preflight', () => {
+  it('uploads, screens with the audio choice, deletes, and returns the verdict', async () => {
+    const { svc, uploadVideo, deleteVideo, moderateVideo } = makeService({
+      verdict: { decision: 'APPROVE', reasons: [] },
+    });
+    const r = await svc.preflightVideo(file, true);
+
+    expect(r).toEqual({ decision: 'APPROVE', reasons: [] });
+    expect(uploadVideo).toHaveBeenCalledWith(expect.any(Buffer), 'preflight');
+    expect(moderateVideo).toHaveBeenCalledWith(
+      expect.objectContaining({ audioEnabled: true }),
+    );
+    expect(deleteVideo).toHaveBeenCalledWith('p1');
+  });
+
+  it('returns a banned verdict and still deletes the temporary asset', async () => {
+    const { svc, deleteVideo } = makeService({
+      verdict: {
+        decision: 'REJECT',
+        reasons: ['Phone number on screen'],
+        publicReason: 'Remove the contact details.',
+      },
+    });
+    const r = await svc.preflightVideo(file, true);
+
+    expect(r).toMatchObject({
+      decision: 'REJECT',
+      publicReason: 'Remove the contact details.',
+    });
+    expect(deleteVideo).toHaveBeenCalledWith('p1');
+  });
+
+  it('deletes the asset even when screening throws', async () => {
+    const { svc, deleteVideo, moderateVideo } = makeService();
+    moderateVideo.mockRejectedValueOnce(new Error('provider down'));
+
+    await expect(svc.preflightVideo(file, false)).rejects.toThrow(
+      'provider down',
+    );
+    expect(deleteVideo).toHaveBeenCalledWith('p1');
+  });
+});
+
 describe('changing sound on an existing clip', () => {
   const existing = {
     id: 'v1',

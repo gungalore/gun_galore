@@ -55,6 +55,7 @@ const SIN_LABELS: Record<string, { label: string; tone: 'red' | 'amber' | 'grey'
   'photo-contact-info': { label: 'Contact info in photo', tone: 'red' },
   'qr-code': { label: 'QR code in photo', tone: 'red' },
   'photo-address': { label: 'Address / signage in photo', tone: 'red' },
+  'video-flag': { label: 'Video issue', tone: 'red' },
   'prohibited-content': { label: 'Prohibited content', tone: 'red' },
   'fake-photo': { label: 'Stock or stolen photo', tone: 'red' },
   'no-photo': { label: 'Missing photo', tone: 'red' },

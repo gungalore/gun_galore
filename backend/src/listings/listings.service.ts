@@ -3631,6 +3631,46 @@ export class ListingsService {
   }
 
   /**
+   * Screen a clip BEFORE the listing exists, so the seller sees the video
+   * verdict in the same Preview pass as the photos.
+   *
+   * The asset is uploaded to a throwaway `preflight` folder, screened, and
+   * deleted in every outcome. The publish path re-uploads and re-screens the
+   * file it actually attaches; this gives the Preview an answer, not a stored
+   * media row, and leaves no orphan when the seller abandons the form.
+   */
+  async preflightVideo(
+    file: Express.Multer.File,
+    audioEnabled = false,
+  ): Promise<{
+    decision: 'APPROVE' | 'REJECT' | 'HUMAN_REVIEW';
+    reasons: string[];
+    publicReason?: string;
+  }> {
+    const up = await this.cloudinary.uploadVideo(file.buffer, 'preflight');
+    try {
+      const verdict = await this.moderation.moderateVideo({
+        url: up.url,
+        thumbnailUrl: up.thumbnailUrl,
+        audioEnabled,
+      });
+      return {
+        decision: verdict.decision,
+        reasons: verdict.reasons,
+        ...(verdict.publicReason
+          ? { publicReason: verdict.publicReason }
+          : {}),
+      };
+    } finally {
+      await this.cloudinary.deleteVideo(up.publicId).catch((err) => {
+        this.logger.warn(
+          `Could not delete preflight video ${up.publicId}: ${(err as Error).message}`,
+        );
+      });
+    }
+  }
+
+  /**
    * Change the sound choice on an existing clip without re-uploading.
    *
    * Turning sound ON is a publication decision: the audio has not been

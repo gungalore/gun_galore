@@ -459,6 +459,68 @@ function humaniseApiError(err: unknown): string {
   return "Some of the listing details didn't pass our checks. Step back through the four steps above — each one lists anything still missing — then try Preview again";
 }
 
+// Preview-only video verdict. The clip is screened by the backend before the
+// listing exists; the publish path re-uploads and re-screens the file it
+// actually attaches, so this is the same answer the seller sees here.
+type VideoPreflightResult = {
+  decision: 'APPROVE' | 'REJECT' | 'HUMAN_REVIEW';
+  reasons: string[];
+  publicReason?: string;
+};
+
+const PREVIEW_RANK: Record<PreviewResult['decision'], number> = {
+  APPROVE: 0,
+  AUTO_FIX_AND_APPROVE: 1,
+  HUMAN_REVIEW: 2,
+  REJECT: 3,
+};
+
+/**
+ * Fold the video verdict into the photo/moderation verdict. The worst verdict
+ * wins: a banned clip must block publishing even when every photo is clean,
+ * and an unsure clip must send the listing to admin review.
+ */
+function mergeVideoVerdict(
+  preview: PreviewResult,
+  video: VideoPreflightResult | null,
+): PreviewResult {
+  if (!video || video.decision === 'APPROVE') return preview;
+  const reasons = [...preview.reasons, ...video.reasons];
+  const reasonCategories = [
+    ...preview.reasonCategories,
+    ...video.reasons.map((reason) => ({ reason, category: 'video-flag' })),
+  ];
+
+  if (
+    video.decision === 'REJECT' &&
+    PREVIEW_RANK[preview.decision] < PREVIEW_RANK.REJECT
+  ) {
+    return {
+      ...preview,
+      reasons,
+      reasonCategories,
+      decision: 'REJECT',
+      canPublish: false,
+      hardBlocked: false,
+      publicReason: video.publicReason ?? preview.publicReason,
+    };
+  }
+  if (
+    video.decision === 'HUMAN_REVIEW' &&
+    PREVIEW_RANK[preview.decision] < PREVIEW_RANK.HUMAN_REVIEW
+  ) {
+    return {
+      ...preview,
+      reasons,
+      reasonCategories,
+      decision: 'HUMAN_REVIEW',
+      canPublish: true,
+      hardBlocked: false,
+    };
+  }
+  return { ...preview, reasons, reasonCategories };
+}
+
 export default function NewListingPage() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
   // Viewer-aware fetch for the category tree. See the effect below for WHY
@@ -488,6 +550,14 @@ export default function NewListingPage() {
   // New clips default to muted; the seller can opt into sound, which runs the
   // audio-inclusive screen on upload.
   const [videoAudioEnabled, setVideoAudioEnabled] = useState(false);
+  // The Preview must not re-upload the same clip every time the seller opens
+  // the modal. Key the cached verdict to the file itself and the audio choice;
+  // either one changing invalidates it.
+  const videoPreflightRef = useRef<{
+    file: File;
+    audioEnabled: boolean;
+    result: VideoPreflightResult;
+  } | null>(null);
 
   // Description AI state — preview-box pattern (lifted from the old
   // project). When `suggestion` is non-null we render a "Suggested
@@ -2205,18 +2275,70 @@ export default function NewListingPage() {
     }
   }
 
-  // "Preview listing" — opens the modal with the latest audit result.
-  // If we haven't audited yet (rare — should auto-fire on Step 1
-  // continue), kick one off and open the modal when it lands.
+  /**
+   * Preview-only screen for the selected clip. Same auth/size rules as the
+   * publish upload; the temporary asset is deleted server-side.
+   */
+  async function runVideoPreflight(): Promise<VideoPreflightResult | null> {
+    if (!video) return null;
+    const cached = videoPreflightRef.current;
+    if (
+      cached &&
+      cached.file === video &&
+      cached.audioEnabled === videoAudioEnabled
+    ) {
+      return cached.result;
+    }
+    const token = await getToken();
+    if (!token) throw new Error('Sign in again to screen the video.');
+    const fd = new FormData();
+    fd.append('video', video);
+    fd.append('audioEnabled', String(videoAudioEnabled));
+    const res = await fetch(`${API_URL}/listings/video-preflight`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      message?: string | string[];
+    };
+    if (!res.ok) {
+      const msg = Array.isArray(data.message)
+        ? data.message.join(', ')
+        : (data.message ?? `Error ${res.status}`);
+      throw new Error(msg);
+    }
+    const result = data as VideoPreflightResult;
+    videoPreflightRef.current = {
+      file: video,
+      audioEnabled: videoAudioEnabled,
+      result,
+    };
+    return result;
+  }
+
+  // "Preview listing" — opens the modal with the latest audit result. The
+  // selected clip is screened in parallel so video issues are visible before
+  // publish, not only after the listing has been created.
   async function handlePreview(e: FormEvent) {
     e.preventDefault();
     if (!allComplete) return;
     setPreviewLoading(true);
     setError(null);
     setPublishError(null);
+    setAuditError(null);
     try {
-      const result = auditResult ?? (await runAudit());
-      if (result) setPreviewResult(result);
+      const [result, videoResult] = await Promise.all([
+        auditResult ?? runAudit(),
+        runVideoPreflight(),
+      ]);
+      if (result) setPreviewResult(mergeVideoVerdict(result, videoResult));
+    } catch (err) {
+      setAuditError(
+        err instanceof Error
+          ? `We could not screen the video - ${err.message}`
+          : 'We could not screen the video. Try again.',
+      );
     } finally {
       setPreviewLoading(false);
     }
@@ -2879,9 +3001,15 @@ export default function NewListingPage() {
               </p>
               <VideoDropzone
                 file={video}
-                onChange={setVideo}
+                onChange={(f) => {
+                  setVideo(f);
+                  videoPreflightRef.current = null;
+                }}
                 audioEnabled={videoAudioEnabled}
-                onAudioChange={setVideoAudioEnabled}
+                onAudioChange={(next) => {
+                  setVideoAudioEnabled(next);
+                  videoPreflightRef.current = null;
+                }}
               />
               <p
                 style={{
