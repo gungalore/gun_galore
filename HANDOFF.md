@@ -7,6 +7,40 @@ overwritten.
 
 Last updated: **2026-10-20**.
 
+## 2026-10-20 - PHOTO MODERATION TO ADMIN REVIEW (FULL DEPLOY)
+
+**A legitimate product-photo URL was being auto-blocked.** The vision screener
+returned a hard REJECT for any image violation, so a packaging/shop URL
+(ppprsa.shop) blocked the listing before an admin could judge it. Image flags
+now return HUMAN_REVIEW: the seller publishes into the admin queue, the detailed
+model reasons stay on the queue, and the seller sees a neutral "A photo needs an
+admin check" line instead of "third-party advertising". Live ammunition remains
+the one hard REJECT (with a reason-text fallback when the model omits the
+category). QR codes, signage and contact details are now admin-judged too.
+
+**Review SLA is visible.** The preview modal, pending-review banner,
+`/my/listings` status hint and the sell form now say reviews can take up to 3
+hours during business hours.
+
+**Sell form helpers removed.** The "Not sure which to pick? See how selling
+works" link and the "Not sure what to charge? / Suggest a price" box (and its
+dead RVE state/handler) are gone. The backend estimate-price endpoint remains
+unused by the form.
+
+Commits **`c723a814`** (moderation) and **`39afbeb6`** (sell form). Full deploy
+at 19:29 SAST: rollback `alloutdoor-20261020-192909.dump` (35 631 212 bytes),
+no pending migrations, health x2 OK, public 200 x2, backend/frontend/warden
+online.
+
+Gates: backend `tsc` clean + **368 suites / 5 710 tests** (1 suite / 8 skipped);
+frontend `tsc` clean + **145 files / 1 764 tests** (1 skipped) + production
+build exit 0.
+
+**Next:** re-run Preview on the Distance Turret Tags listing; it should publish
+as Pending review. The listing-submitted email preview still says "2 business
+hours" in `backend/data/email-previews/listing-submitted.html`; the runtime
+template source is not in this repo.
+
 ## 2026-10-20 - LIVE LISTINGS AND SAVED COUNTS (FULL DEPLOY)
 
 **The browse grids stayed stale until the buyer pulled to refresh.** Home,
