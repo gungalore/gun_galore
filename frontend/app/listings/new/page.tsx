@@ -465,6 +465,10 @@ const PREVIEW_RANK: Record<PreviewResult['decision'], number> = {
   REJECT: 3,
 };
 
+// Temporarily hidden from the Sell header while the valuation flow is being
+// reworked. Flip this back on to restore the cross-link.
+const SHOW_VALUE_CTA = false;
+
 export default function NewListingPage() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
   // Viewer-aware fetch for the category tree. See the effect below for WHY
@@ -2872,13 +2876,15 @@ export default function NewListingPage() {
           Honest titles and crisp photos sell faster. Required fields marked{' '}
           <span style={{ color: 'var(--red)' }}>*</span>.
         </p>
-        <Link
-          href="/value"
-          className="inline-block mt-3 text-sm font-medium"
-          style={{ color: 'var(--red)', textDecoration: 'none' }}
-        >
-          Not sure what it&apos;s worth? Value it first →
-        </Link>
+        {SHOW_VALUE_CTA && (
+          <Link
+            href="/value"
+            className="inline-block mt-3 text-sm font-medium"
+            style={{ color: 'var(--red)', textDecoration: 'none' }}
+          >
+            Not sure what it&apos;s worth? Value it first
+          </Link>
+        )}
       </header>
 
       {/* Draft restored notice — appears when a previous session's
