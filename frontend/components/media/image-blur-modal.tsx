@@ -107,6 +107,8 @@ export function ImageBlurModal({
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [boxes, setBoxes] = useState<Box[]>([]);
   const [selection, setSelection] = useState<Box | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const selectionRef = useRef<Box | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -171,25 +173,37 @@ export function ImageBlurModal({
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     const p = point(e);
-    setSelection({ x: p.x, y: p.y, w: 0, h: 0 });
+    dragStartRef.current = p;
+    const next = { x: p.x, y: p.y, w: 0, h: 0 };
+    selectionRef.current = next;
+    setSelection(next);
   }
 
   function move(e: PointerEvent<HTMLCanvasElement>) {
-    if (!selection) return;
+    const start = dragStartRef.current;
+    if (!start) return;
     const p = point(e);
-    setSelection({
-      x: Math.min(selection.x, p.x),
-      y: Math.min(selection.y, p.y),
-      w: Math.abs(p.x - selection.x),
-      h: Math.abs(p.y - selection.y),
-    });
+    const next = {
+      x: Math.min(start.x, p.x),
+      y: Math.min(start.y, p.y),
+      w: Math.abs(p.x - start.x),
+      h: Math.abs(p.y - start.y),
+    };
+    selectionRef.current = next;
+    setSelection(next);
   }
 
-  function up() {
-    if (selection && selection.w > 6 && selection.h > 6) {
-      setBoxes((prev) => [...prev, selection]);
+  function up(e?: PointerEvent<HTMLCanvasElement>) {
+    const done = selectionRef.current;
+    if (done && done.w > 6 && done.h > 6) {
+      setBoxes((prev) => [...prev, done]);
     }
+    dragStartRef.current = null;
+    selectionRef.current = null;
     setSelection(null);
+    if (e && e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
   }
 
   async function apply() {
@@ -284,7 +298,14 @@ export function ImageBlurModal({
           </p>
         </div>
 
-        <div style={{ padding: 16, background: 'var(--bg-inset)' }}>
+        <div
+          style={{
+            padding: 16,
+            background: 'var(--bg-inset)',
+            display: 'flex',
+            justifyContent: 'center',
+          }}
+        >
           <canvas
             ref={canvasRef}
             onPointerDown={down}
@@ -293,10 +314,10 @@ export function ImageBlurModal({
             onPointerCancel={up}
             style={{
               display: 'block',
-              width: '100%',
+              width: 'auto',
               height: 'auto',
+              maxWidth: '100%',
               maxHeight: '56vh',
-              objectFit: 'contain',
               touchAction: 'none',
               cursor: 'crosshair',
               background: '#000',
