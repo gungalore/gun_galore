@@ -7,6 +7,32 @@ overwritten.
 
 Last updated: **2026-10-21**.
 
+## 2026-10-21 - MEDIA, DESCRIPTION AND VERIFICATION POLISH (COMMITTED)
+
+Commit **`59b922be`**. Deployment follows this entry; apply migration
+`20261021110000_listing_video_hero`.
+
+- Upload progress for video no longer claims it is screening again; the clip
+  was already screened on selection.
+- A replaced/blurred photo keeps its preview. `PhotoDropzone` now creates and
+  revokes one object URL per thumbnail instead of holding a stale map.
+- Video is no longer the cover by default. Sell/Edit has **Use the video as
+  the cover**; only a ticked clip leads the gallery. A ticked clip's thumbnail
+  is a live muted loop. New migration:
+  `20261021110000_listing_video_hero` (`ListingVideo.isHero`).
+- AI-tidied descriptions are normalised to `- ` bullets server-side, including
+  AUTO_FIX contact redactions. Seller-typed text is untouched.
+- Public usernames now carry three green trust ticks (ID / Phone / Email) on
+  listing cards/detail, seller profiles, buyer reviews, community posts,
+  comments, profiles, followers and likers. APIs expose booleans only.
+- `backend/package.json` remains an unrelated uncommitted change (motivation
+  golden scripts); do not include it.
+
+Verification: backend 371 suites / 5 740 tests, frontend 149 files / 1 771
+tests, both `tsc` clean, backend `nest build` clean, frontend production build
+clean. Lint is noisy on pre-existing CRLF/Prettier issues; no new frontend
+errors beyond the pre-existing unused `TIER_COLOR`.
+
 ## 2026-10-21 - SELLER-BLURRED AREAS PASS RE-SCAN (IMAGE REDACTION HOTFIX)
 
 **A blurred phone number or email was still being flagged.** The re-scan sent
