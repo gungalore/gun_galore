@@ -7,6 +7,23 @@ overwritten.
 
 Last updated: **2026-10-21**.
 
+## 2026-10-21 - DELIVERY / HANDOVER OPTIONS (DEPLOYED)
+
+**Firearms:** Dealer transfer stays mandatory and is shown on the listing;
+sellers may additionally offer Arrange privately, with the required contact
+consent.
+
+**Other goods:** sellers now offer Courier delivery (always) plus optional
+Arrange privately. The listing detail shows the routes before the CTA, and
+checkout renders the seller's actual subset. The private-arrangement consent
+copy adapts for goods (in-person handover / courier fallback) instead of
+assuming a firearm dealer meet.
+
+Commit **`4928e65c`**. Full deploy at 18:27 SAST: rollback
+`alloutdoor-20261021-182754.dump` (35 782 399 bytes), box HEAD matches,
+backend/frontend health x2 OK, public 200 x2, all three PM2 services online.
+No migration. `backend/package.json` was stashed and restored.
+
 ## 2026-10-21 - COVER VIDEO ON CARDS AND PREVIEW (DEPLOYED)
 
 **Sell Preview now shows the clip**, as the hero when it is ticked as the
