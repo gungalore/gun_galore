@@ -88,6 +88,62 @@ describe('ListingsService — browse filters & brand facet', () => {
     expect(arg.where).toMatchObject({ status: 'ACTIVE' });
     expect(arg.orderBy).toEqual({ _count: { make: 'desc' } });
   });
+
+  it('shapes an approved cover video onto browse cards', async () => {
+    prisma.listing.findMany.mockResolvedValue([
+      {
+        id: 'l-video',
+        seller: {
+          id: 's1',
+          username: 'seller',
+          phoneVerified: false,
+          emailVerifiedAt: null,
+          kycIdVerifiedAt: null,
+        },
+        video: {
+          id: 'v1',
+          url: 'https://res.cloudinary.com/demo/video/upload/v1/listings/clip.mp4',
+          thumbnailUrl:
+            'https://res.cloudinary.com/demo/video/upload/so_0/clip.jpg',
+          durationSeconds: 8,
+          width: 720,
+          height: 1280,
+          audioEnabled: false,
+          isHero: true,
+          status: 'APPROVED',
+        },
+      },
+    ]);
+    const res = await service.browse({} as never);
+    expect(res.listings[0].video).toMatchObject({
+      id: 'v1',
+      isHero: true,
+    });
+    expect(res.listings[0].video?.playbackUrl).toContain('listings/clip.mp4');
+  });
+
+  it('drops a pending video from browse cards', async () => {
+    prisma.listing.findMany.mockResolvedValue([
+      {
+        id: 'l-pending',
+        seller: {
+          id: 's1',
+          username: 'seller',
+          phoneVerified: false,
+          emailVerifiedAt: null,
+          kycIdVerifiedAt: null,
+        },
+        video: {
+          id: 'v2',
+          url: 'https://signed.example/pending',
+          audioEnabled: false,
+          status: 'PENDING_REVIEW',
+        },
+      },
+    ]);
+    const res = await service.browse({} as never);
+    expect(res.listings[0].video).toBeNull();
+  });
 });
 
 /**
@@ -438,4 +494,3 @@ describe('ListingsService — cancel status guard', () => {
     expect(search.deleteDocument).not.toHaveBeenCalled();
   });
 });
-

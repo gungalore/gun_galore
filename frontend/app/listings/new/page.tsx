@@ -2743,6 +2743,18 @@ export default function NewListingPage() {
     };
   }, [imageBlobs]);
 
+  // The same local preview for the optional clip, so the seller can confirm
+  // what they picked before publishing. Nothing is uploaded for the preview.
+  const videoBlob = useMemo(
+    () => (video ? URL.createObjectURL(video) : null),
+    [video],
+  );
+  useEffect(() => {
+    return () => {
+      if (videoBlob) URL.revokeObjectURL(videoBlob);
+    };
+  }, [videoBlob]);
+
   // Re-audit whenever the seller's photos change. Debounced 900ms so
   // rapid-fire uploads (drag of 3 files at once) collapse into a single
   // audit. Only fires once basics (Step 2 after re-order) is complete —
@@ -4797,6 +4809,8 @@ export default function NewListingPage() {
               calibre: '',
               category: selectedCategory,
               imageBlobs,
+              videoUrl: videoBlob,
+              videoIsHero,
             } satisfies PreviewSnapshot
           }
           publishing={submitting}

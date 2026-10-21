@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Listing } from '@/lib/types';
@@ -53,6 +53,9 @@ export function ListingCard({ listing }: { listing: Listing }) {
   // is the user-visible signal that data is missing.
   const images = listing.images ?? [];
   const primaryImage = images.find((i) => i.isPrimary) ?? images[0];
+  // Only a seller-ticked video replaces the cover. It is muted and plays when
+  // the card is on screen, so the grid stays calm and data-light off-screen.
+  const heroVideo = listing.video?.isHero ? listing.video : null;
   // UX-7 — compare-at ("was") price discount, BUY_NOW only.
   const compareAtPct =
     listing.listingType === 'BUY_NOW'
@@ -93,7 +96,13 @@ export function ListingCard({ listing }: { listing: Listing }) {
             from it IS the buying decision, and 93pt is not enough to judge
             anything. 4:3 takes it to 133pt. */}
         <div className="relative" style={{ paddingBottom: CARD_PHOTO_ASPECT }}>
-          {primaryImage ? (
+          {heroVideo ? (
+            <CardVideo
+              src={heroVideo.playbackUrl || heroVideo.url}
+              poster={heroVideo.thumbnailUrl}
+              title={listing.title}
+            />
+          ) : primaryImage ? (
             <Image
               src={primaryImage.url}
               alt={listing.title}
@@ -403,5 +412,60 @@ function AuctionTimeChip({ endTime }: { endTime: string | null | undefined }) {
     >
       Ends in {label}
     </span>
+  );
+}
+
+function CardVideo({
+  src,
+  poster,
+  title,
+}: {
+  src: string;
+  poster?: string | null;
+  title: string;
+}) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const play = () => {
+      void el.play().catch(() => undefined);
+    };
+    const pause = () => el.pause();
+
+    if (typeof IntersectionObserver === 'undefined') {
+      play();
+      return () => pause();
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.35) play();
+        else pause();
+      },
+      { threshold: [0, 0.35, 1] },
+    );
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      pause();
+    };
+  }, []);
+
+  return (
+    <video
+      ref={ref}
+      src={src}
+      poster={poster ?? undefined}
+      aria-label={`${title} video`}
+      muted
+      loop
+      autoPlay
+      playsInline
+      preload="metadata"
+      className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+    />
   );
 }

@@ -43,6 +43,10 @@ export interface PreviewSnapshot {
   calibre: string;
   category: Category | undefined;
   imageBlobs: string[]; // object URLs created from the seller's File[]
+  /** Local object URL for the optional clip; null when none was picked. */
+  videoUrl?: string | null;
+  /** True when the seller ticked the clip as the listing cover. */
+  videoIsHero?: boolean;
 }
 
 interface Props {
@@ -444,9 +448,26 @@ export function ListingPreviewModal({
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-[280px_minmax(0,1fr)] gap-5">
-            {/* Hero photo + thumbs */}
+            {/* Hero video / photo + thumbs */}
             <div>
-              {snapshot.imageBlobs.length > 0 ? (
+              {snapshot.videoUrl && snapshot.videoIsHero ? (
+                <video
+                  src={snapshot.videoUrl}
+                  controls
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                  aria-label={`${snapshot.title || 'Listing'} video`}
+                  className="rounded-[8px] overflow-hidden mb-2"
+                  style={{
+                    aspectRatio: '4/3',
+                    width: '100%',
+                    objectFit: 'cover',
+                    background: '#000',
+                  }}
+                />
+              ) : snapshot.imageBlobs.length > 0 ? (
                 <>
                   <div
                     className="rounded-[8px] overflow-hidden mb-2"
@@ -487,6 +508,25 @@ export function ListingPreviewModal({
                 >
                   No photo
                 </div>
+              )}
+
+              {snapshot.videoUrl && !snapshot.videoIsHero && (
+                <video
+                  src={snapshot.videoUrl}
+                  controls
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                  aria-label={`${snapshot.title || 'Listing'} video`}
+                  className="rounded-[8px] overflow-hidden mt-2"
+                  style={{
+                    aspectRatio: '4/3',
+                    width: '100%',
+                    objectFit: 'cover',
+                    background: '#000',
+                  }}
+                />
               )}
             </div>
 

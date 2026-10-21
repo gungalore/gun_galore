@@ -211,6 +211,44 @@ function withSellerVerification<T extends { seller: SellerVerificationRow }>(
   };
 }
 
+// Cards need enough video to autoplay a seller-chosen cover, but nothing that
+// exposes a pending/private asset. Status is selected only to filter it out.
+const PUBLIC_CARD_VIDEO_SELECT = {
+  id: true,
+  url: true,
+  thumbnailUrl: true,
+  durationSeconds: true,
+  width: true,
+  height: true,
+  audioEnabled: true,
+  isHero: true,
+  status: true,
+} as const;
+
+type PublicCardVideoRow = {
+  url: string;
+  audioEnabled: boolean;
+  status?: string | null;
+};
+
+function withPublicCardVideo<T extends { video?: PublicCardVideoRow | null }>(
+  listing: T,
+) {
+  const video = listing.video;
+  if (!video || (video.status != null && video.status !== 'APPROVED')) {
+    return { ...listing, video: null };
+  }
+  const playbackUrl = optimizedVideoUrl(video.url, 720, video.audioEnabled);
+  return {
+    ...listing,
+    video: {
+      ...video,
+      url: video.audioEnabled ? video.url : playbackUrl,
+      playbackUrl,
+    },
+  };
+}
+
 // The extra fields the OWNER of a listing is allowed to see on top of the
 // public projection: their own hidden reserve + auto-accept threshold (needed
 // to pre-fill the edit form) and the three moderation-banner fields (so the
@@ -2414,6 +2452,7 @@ export class ListingsService {
       include: {
         images: { where: { isPrimary: true }, take: 1 },
         category: { select: { id: true, name: true, slug: true } },
+        video: { select: PUBLIC_CARD_VIDEO_SELECT },
         // Social-proof count for the recently-viewed rail's cards.
         _count: { select: { wishlistedBy: true } },
         seller: {
@@ -2431,7 +2470,8 @@ export class ListingsService {
     const listings = ids
       .map((id) => byId.get(id))
       .filter((r): r is NonNullable<typeof r> => !!r)
-      .map(withSellerVerification);
+      .map(withSellerVerification)
+      .map(withPublicCardVideo);
     return {
       listings,
       total: listings.length,
@@ -2693,6 +2733,7 @@ export class ListingsService {
       include: {
         images: { where: { isPrimary: true }, take: 1 },
         category: { select: { id: true, name: true, slug: true } },
+        video: { select: PUBLIC_CARD_VIDEO_SELECT },
         // Social-proof count - same aggregate the Prisma path returns, so a
         // card renders the same saved-count whichever path ranked it.
         _count: { select: { wishlistedBy: true } },
@@ -2721,7 +2762,8 @@ export class ListingsService {
     const listings = ids
       .map((id) => byId.get(id))
       .filter((r): r is NonNullable<typeof r> => !!r)
-      .map(withSellerVerification);
+      .map(withSellerVerification)
+      .map(withPublicCardVideo);
 
     return {
       listings,
@@ -2823,6 +2865,7 @@ export class ListingsService {
         include: {
           images: { where: { isPrimary: true }, take: 1 },
           category: { select: { id: true, name: true, slug: true } },
+          video: { select: PUBLIC_CARD_VIDEO_SELECT },
           // Social-proof: how many people saved this listing. Aggregate only
           // - names are never exposed, and the rows themselves are already
           // gated by the same publicVisible filter as the listing.
@@ -2856,7 +2899,9 @@ export class ListingsService {
     ]);
 
     return {
-      listings: listings.map(withSellerVerification),
+      listings: listings
+        .map(withSellerVerification)
+        .map(withPublicCardVideo),
       total,
       page,
       limit,
