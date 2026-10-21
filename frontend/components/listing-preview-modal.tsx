@@ -21,6 +21,11 @@ export interface PreviewResult {
   isRepeatOffense: boolean;
   canPublish: boolean;
   hardBlocked: boolean;
+  /** A flagged video was sent to admin review; it is hidden until approved. */
+  videoPendingReview?: boolean;
+  /** An image still needs an admin check after the blur/rescan attempt. */
+  imageReviewRequired?: boolean;
+  photoFlags?: { index: number; categories: string[]; reason: string }[];
 }
 
 // Mirror of the form snapshot we pass into the modal. Lets us render a
@@ -56,6 +61,8 @@ const SIN_LABELS: Record<string, { label: string; tone: 'red' | 'amber' | 'grey'
   'qr-code': { label: 'QR code in photo', tone: 'red' },
   'photo-address': { label: 'Address / signage in photo', tone: 'red' },
   'video-flag': { label: 'Video issue', tone: 'red' },
+  'photo-flag': { label: 'Photo needs a check', tone: 'amber' },
+  advertising: { label: 'Advertising in photo', tone: 'red' },
   'prohibited-content': { label: 'Prohibited content', tone: 'red' },
   'fake-photo': { label: 'Stock or stolen photo', tone: 'red' },
   'no-photo': { label: 'Missing photo', tone: 'red' },
@@ -159,7 +166,9 @@ export function ListingPreviewModal({
 
   // The header colour reflects the verdict.
   const verdictColor =
-    preview.decision === 'APPROVE'
+    preview.imageReviewRequired
+      ? 'var(--warning)'
+      : preview.decision === 'APPROVE'
       ? 'var(--success)'
       : preview.decision === 'AUTO_FIX_AND_APPROVE'
         ? 'var(--success)'
@@ -168,27 +177,35 @@ export function ListingPreviewModal({
           : 'var(--red)';
 
   const verdictTitle =
-    preview.decision === 'APPROVE'
-      ? 'Looks good — ready to publish'
-      : preview.decision === 'AUTO_FIX_AND_APPROVE'
-        ? 'Cleaned up — review and publish'
-        : preview.decision === 'HUMAN_REVIEW'
-          ? 'Will go to admin review'
-          : preview.hardBlocked
-            ? 'Blocked — same issues twice'
-            : 'Issues found — please fix';
+    preview.imageReviewRequired
+      ? 'Will go to admin review'
+      : preview.decision === 'APPROVE'
+        ? preview.videoPendingReview
+          ? 'Looks good — video under review'
+          : 'Looks good — ready to publish'
+        : preview.decision === 'AUTO_FIX_AND_APPROVE'
+          ? 'Cleaned up — review and publish'
+          : preview.decision === 'HUMAN_REVIEW'
+            ? 'Will go to admin review'
+            : preview.hardBlocked
+              ? 'Blocked — same issues twice'
+              : 'Issues found — please fix';
 
   const verdictBlurb =
-    preview.decision === 'APPROVE'
-      ? 'Your listing passed our checks — looks ready to publish.'
-      : preview.decision === 'AUTO_FIX_AND_APPROVE'
-        ? 'We removed some contact info from your description. Review the cleaned version below.'
-        : preview.decision === 'HUMAN_REVIEW'
-          ? 'An admin will review it before it goes live. Reviews can take up to 3 hours during business hours.'
-          : preview.hardBlocked
-            ? `We can’t auto-publish this. Email ${SUPPORT_EMAIL} if you believe this is a mistake.`
-            : (preview.publicReason ??
-              'Fix the issues below and try again — most of the time this is one quick edit.');
+    preview.imageReviewRequired
+      ? "A photo still needs an admin check after blurring. It won't be public until approved; reviews can take up to 24 hours."
+      : preview.decision === 'APPROVE'
+        ? preview.videoPendingReview
+          ? 'Your listing can go live now. The video will appear once approved — up to 24 hours.'
+          : 'Your listing passed our checks — looks ready to publish.'
+        : preview.decision === 'AUTO_FIX_AND_APPROVE'
+          ? 'We removed some contact info from your description. Review the cleaned version below.'
+          : preview.decision === 'HUMAN_REVIEW'
+            ? 'An admin will review it before it goes live. Reviews can take up to 24 hours.'
+            : preview.hardBlocked
+              ? `We can’t auto-publish this. Email ${SUPPORT_EMAIL} if you believe this is a mistake.`
+              : (preview.publicReason ??
+                'Fix the issues below and try again — most of the time this is one quick edit.');
 
   return (
     <div
@@ -236,12 +253,13 @@ export function ListingPreviewModal({
               fontWeight: 500,
             }}
           >
-            {preview.decision === 'APPROVE' || preview.decision === 'AUTO_FIX_AND_APPROVE'
-              ? '✓'
-              : preview.decision === 'HUMAN_REVIEW'
-                ? '?'
-                : preview.hardBlocked
-                  ? '!'
+            {preview.imageReviewRequired
+              ? '?'
+              : preview.decision === 'APPROVE' ||
+                  preview.decision === 'AUTO_FIX_AND_APPROVE'
+                ? '✓'
+                : preview.decision === 'HUMAN_REVIEW'
+                  ? '?'
                   : '!'}
           </span>
           <div className="flex-1 min-w-0">
@@ -353,6 +371,25 @@ export function ListingPreviewModal({
         )}
 
         {/* AUTO_FIX diff — show original vs cleaned so the seller knows what changed */}
+        {(preview.imageReviewRequired || preview.videoPendingReview) && (
+          <div
+            className="px-6 py-4"
+            style={{
+              borderBottom: '0.5px solid var(--border)',
+              background: 'rgba(245,158,11,0.06)',
+            }}
+          >
+            <p
+              className="text-sm"
+              style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+            >
+              {preview.imageReviewRequired
+                ? "A photo still needs an admin check after blurring. The listing won't be public until it is approved (up to 24 hours)."
+                : 'Your listing can go live now. The video will appear once an admin approves it (up to 24 hours).'}
+            </p>
+          </div>
+        )}
+
         {preview.decision === 'AUTO_FIX_AND_APPROVE' && preview.cleanedDescription && (
           <div
             className="px-6 py-4"
@@ -604,7 +641,8 @@ export function ListingPreviewModal({
                   ? 'Publishing…'
                   : noPhotos
                     ? 'Add a photo to publish'
-                    : preview.decision === 'HUMAN_REVIEW'
+                    : preview.decision === 'HUMAN_REVIEW' ||
+                        preview.imageReviewRequired
                       ? 'Submit for admin review'
                       : 'Publish listing'}
               </button>

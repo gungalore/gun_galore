@@ -1,4 +1,4 @@
-﻿import { notFound, redirect } from 'next/navigation';
+﻿import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { serverAuth as auth } from '../../../lib/auth-server';
 import { apiFetch } from '@/lib/api';
@@ -8,7 +8,6 @@ import { AddToCartButton } from '@/components/add-to-cart-button';
 import {
   formatPrice,
   CONDITION_LABELS,
-  PROVINCE_LABELS,
   TIER_LABELS,
   LISTING_TYPE_LABELS,
   discountPercent,
@@ -445,6 +444,16 @@ export default async function ListingDetailPage({
             }
             title={listing.title}
           />
+
+          {listing.video?.status === 'PENDING_REVIEW' && (
+            <p
+              className="text-xs mt-2"
+              style={{ color: 'var(--warning)', lineHeight: 1.5 }}
+            >
+              Your video is under review and is hidden from buyers until it is
+              approved (up to 24 hours).
+            </p>
+          )}
 
           {/* ⚠️ THE READING COLUMN — the description and spec table live here,
               moved out of the buy column on 2026-08-27. The right pane is

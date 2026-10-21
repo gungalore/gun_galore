@@ -577,6 +577,20 @@ export interface ListingRow {
   [key: string]: unknown;
 }
 
+export interface ListingVideoRow {
+  id: string;
+  listingId: string;
+  title: string;
+  referenceNumber: string | null;
+  seller: string;
+  reasons: string[];
+  audioEnabled: boolean;
+  durationSeconds: number | null;
+  createdAt: string;
+  url: string;
+  thumbnailUrl: string;
+}
+
 export interface PostRow {
   id: string;
   title?: string;

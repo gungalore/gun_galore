@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../lib/auth';
 import { Category, CategoryAttributeDef, Me } from '@/lib/types';
-import { BRAND_NAME } from '@/lib/brand';
 import { CONDITION_LABELS } from '@/lib/utils';
 import {
   AUCTION_DURATIONS,
@@ -46,10 +45,10 @@ import {
 } from '@/components/profile-completion-modal';
 import { HelpTip } from '@/components/help-tip';
 import { ListingDescription } from '@/components/listing-description';
-
-// Mirrors MAX_VISION_PHOTOS in the backend's moderation service — sending a
-// sixth photo just wastes the upload, the server drops it.
-const ENHANCE_PHOTO_LIMIT = 5;
+import { useMediaReview } from '@/lib/use-media-review';
+import { ImageBlurModal } from '@/components/media/image-blur-modal';
+import { VideoDecisionModal } from '@/components/media/video-decision-modal';
+import { MediaNoticeModal } from '@/components/media/media-notice-modal';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -459,67 +458,12 @@ function humaniseApiError(err: unknown): string {
   return "Some of the listing details didn't pass our checks. Step back through the four steps above — each one lists anything still missing — then try Preview again";
 }
 
-// Preview-only video verdict. The clip is screened by the backend before the
-// listing exists; the publish path re-uploads and re-screens the file it
-// actually attaches, so this is the same answer the seller sees here.
-type VideoPreflightResult = {
-  decision: 'APPROVE' | 'REJECT' | 'HUMAN_REVIEW';
-  reasons: string[];
-  publicReason?: string;
-};
-
 const PREVIEW_RANK: Record<PreviewResult['decision'], number> = {
   APPROVE: 0,
   AUTO_FIX_AND_APPROVE: 1,
   HUMAN_REVIEW: 2,
   REJECT: 3,
 };
-
-/**
- * Fold the video verdict into the photo/moderation verdict. The worst verdict
- * wins: a banned clip must block publishing even when every photo is clean,
- * and an unsure clip must send the listing to admin review.
- */
-function mergeVideoVerdict(
-  preview: PreviewResult,
-  video: VideoPreflightResult | null,
-): PreviewResult {
-  if (!video || video.decision === 'APPROVE') return preview;
-  const reasons = [...preview.reasons, ...video.reasons];
-  const reasonCategories = [
-    ...preview.reasonCategories,
-    ...video.reasons.map((reason) => ({ reason, category: 'video-flag' })),
-  ];
-
-  if (
-    video.decision === 'REJECT' &&
-    PREVIEW_RANK[preview.decision] < PREVIEW_RANK.REJECT
-  ) {
-    return {
-      ...preview,
-      reasons,
-      reasonCategories,
-      decision: 'REJECT',
-      canPublish: false,
-      hardBlocked: false,
-      publicReason: video.publicReason ?? preview.publicReason,
-    };
-  }
-  if (
-    video.decision === 'HUMAN_REVIEW' &&
-    PREVIEW_RANK[preview.decision] < PREVIEW_RANK.HUMAN_REVIEW
-  ) {
-    return {
-      ...preview,
-      reasons,
-      reasonCategories,
-      decision: 'HUMAN_REVIEW',
-      canPublish: true,
-      hardBlocked: false,
-    };
-  }
-  return { ...preview, reasons, reasonCategories };
-}
 
 export default function NewListingPage() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
@@ -550,14 +494,23 @@ export default function NewListingPage() {
   // New clips default to muted; the seller can opt into sound, which runs the
   // audio-inclusive screen on upload.
   const [videoAudioEnabled, setVideoAudioEnabled] = useState(false);
-  // The Preview must not re-upload the same clip every time the seller opens
-  // the modal. Key the cached verdict to the file itself and the audio choice;
-  // either one changing invalidates it.
-  const videoPreflightRef = useRef<{
-    file: File;
-    audioEnabled: boolean;
-    result: VideoPreflightResult;
+
+  // Early media moderation: photos and video are screened as soon as they are
+  // picked, and the failure queue opens the right fixing tool immediately.
+  const media = useMediaReview(getToken, API_URL);
+  const replaceInputRef = useRef<HTMLInputElement | null>(null);
+  const [replaceTarget, setReplaceTarget] = useState<
+    { kind: 'image'; file: File } | { kind: 'video' } | null
+  >(null);
+  const [manualRedact, setManualRedact] = useState<File | null>(null);
+  const [fixHidden, setFixHidden] = useState(false);
+  const [strippedVideoNotice, setStrippedVideoNotice] = useState<{
+    listingId: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (media.queue.length > 0) setFixHidden(false);
+  }, [media.queue.length]);
 
   // Description AI state — preview-box pattern (lifted from the old
   // project). When `suggestion` is non-null we render a "Suggested
@@ -566,9 +519,7 @@ export default function NewListingPage() {
   const [enhancing, setEnhancing] = useState(false);
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<string | null>(null);
-  // How many photos the assistant actually read — shown on the suggestion so
-  // the seller knows where the "From the photos" bullets came from.
-  const [enhancePhotosUsed, setEnhancePhotosUsed] = useState(0);
+
 
   // Preview / soft-block moderation flow.
   // `previewResult` drives the modal display; null = modal closed.
@@ -1982,9 +1933,6 @@ export default function NewListingPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
       const enhanced = typeof data.enhanced === 'string' ? data.enhanced : '';
-      setEnhancePhotosUsed(
-        typeof data.photosUsed === 'number' ? data.photosUsed : 0,
-      );
       if (enhanced && enhanced.trim() !== form.description.trim()) {
         setSuggestion(enhanced);
       } else {
@@ -2275,69 +2223,121 @@ export default function NewListingPage() {
     }
   }
 
-  /**
-   * Preview-only screen for the selected clip. Same auth/size rules as the
-   * publish upload; the temporary asset is deleted server-side.
-   */
-  async function runVideoPreflight(): Promise<VideoPreflightResult | null> {
-    if (!video) return null;
-    const cached = videoPreflightRef.current;
-    if (
-      cached &&
-      cached.file === video &&
-      cached.audioEnabled === videoAudioEnabled
-    ) {
-      return cached.result;
-    }
-    const token = await getToken();
-    if (!token) throw new Error('Sign in again to screen the video.');
-    const fd = new FormData();
-    fd.append('video', video);
-    fd.append('audioEnabled', String(videoAudioEnabled));
-    const res = await fetch(`${API_URL}/listings/video-preflight`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: fd,
-    });
-    const data = (await res.json().catch(() => ({}))) as {
-      message?: string | string[];
-    };
-    if (!res.ok) {
-      const msg = Array.isArray(data.message)
-        ? data.message.join(', ')
-        : (data.message ?? `Error ${res.status}`);
-      throw new Error(msg);
-    }
-    const result = data as VideoPreflightResult;
-    videoPreflightRef.current = {
-      file: video,
-      audioEnabled: videoAudioEnabled,
-      result,
-    };
-    return result;
+  function handleImagesChange(next: File[]) {
+    setImages(next);
+    media.syncImages(next);
+    setAuditResult(null);
+    setPreviewResult(null);
   }
 
-  // "Preview listing" — opens the modal with the latest audit result. The
-  // selected clip is screened in parallel so video issues are visible before
+  function handleVideoChange(next: File | null) {
+    setVideo(next);
+    media.syncVideo(next, videoAudioEnabled);
+  }
+
+  function handleVideoAudioChange(next: boolean) {
+    setVideoAudioEnabled(next);
+    media.syncVideo(video, next);
+  }
+
+  function handleBlurApplied(nextFile: File) {
+    const current = media.current;
+    if (!current || current.kind !== 'image') return;
+    const oldFile = current.review.file;
+    const idx = images.indexOf(oldFile);
+    if (idx < 0) return;
+    media.applyBlur(oldFile, nextFile);
+    const next = [...images];
+    next[idx] = nextFile;
+    setImages(next);
+    media.syncImages(next);
+    setAuditResult(null);
+    setPreviewResult(null);
+  }
+
+  function requestReplaceImage(file: File) {
+    setReplaceTarget({ kind: 'image', file });
+    replaceInputRef.current?.click();
+  }
+
+  function handleReplacementFile(file: File) {
+    const target = replaceTarget;
+    setReplaceTarget(null);
+    if (!target) return;
+    if (target.kind === 'video') {
+      handleVideoChange(file);
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      setAuditError('Choose a JPEG, PNG or WebP replacement photo.');
+      return;
+    }
+    const idx = images.indexOf(target.file);
+    if (idx < 0) return;
+    const next = [...images];
+    next[idx] = file;
+    handleImagesChange(next);
+  }
+
+  // "Preview listing" - the media was screened when it was picked. If
   // publish, not only after the listing has been created.
   async function handlePreview(e: FormEvent) {
     e.preventDefault();
     if (!allComplete) return;
+    if (!media.allSettled || media.queue.length > 0) {
+      setFixHidden(false);
+      setAuditError(
+        'Finish the photo or video check first - use the fixing window to resolve it.',
+      );
+      return;
+    }
+    if (media.hasBlocked) {
+      setAuditError(
+        'A photo shows live ammunition and cannot be published. Remove or replace that photo first.',
+      );
+      return;
+    }
     setPreviewLoading(true);
     setError(null);
     setPublishError(null);
     setAuditError(null);
     try {
-      const [result, videoResult] = await Promise.all([
-        auditResult ?? runAudit(),
-        runVideoPreflight(),
-      ]);
-      if (result) setPreviewResult(mergeVideoVerdict(result, videoResult));
+      const result = await (auditResult ?? runAudit());
+      if (!result) return;
+      let next = result;
+      if (
+        media.imageReviewRequired &&
+        PREVIEW_RANK[next.decision] < PREVIEW_RANK.HUMAN_REVIEW
+      ) {
+        next = {
+          ...next,
+          decision: 'HUMAN_REVIEW',
+          canPublish: true,
+          hardBlocked: false,
+          reasons: [
+            ...next.reasons,
+            'A photo still needs an admin check after blurring.',
+          ],
+          reasonCategories: [
+            ...next.reasonCategories,
+            {
+              reason: 'A photo still needs an admin check after blurring.',
+              category: 'photo-flag',
+            },
+          ],
+          publicReason:
+            'A photo needs an admin check before this listing can go live.',
+        };
+      }
+      if (media.videoAction === 'review') {
+        next = { ...next, videoPendingReview: true };
+      }
+      setPreviewResult(next);
     } catch (err) {
       setAuditError(
         err instanceof Error
-          ? `We could not screen the video - ${err.message}`
-          : 'We could not screen the video. Try again.',
+          ? `We could not finish the review - ${err.message}`
+          : 'We could not finish the review. Try again.',
       );
     } finally {
       setPreviewLoading(false);
@@ -2423,12 +2423,14 @@ export default function NewListingPage() {
     setPublishError(null);
     setPublishProgress({ label: 'Preparing your listing…', done: 0, total: 0 });
     let createdListingId: string | null = null;
+    let videoStripped = false;
     try {
       const body = buildListingPayload();
       // imageCount tells the backend the seller declared intent to
       // upload N photos. The @Min(1) DTO rule blocks zero-photo
       // submissions. Photos themselves stream up below.
       body.imageCount = images.length;
+      if (media.imageReviewRequired) body.forceReview = true;
       if (useCleanedDescription && previewResult.cleanedDescription) {
         body.description = previewResult.cleanedDescription;
       }
@@ -2554,18 +2556,19 @@ export default function NewListingPage() {
         });
       }
 
-      // Optional marketplace clip. Uploaded after the photos so a refusal
-      // from media screening can roll the half-built listing back (the catch
-      // below deletes it) rather than leaving a listing with a missing video.
+      // Optional marketplace clip. A video failure must never delete a
+      // listing that already has its photos: the add is the seller's primary
+      // commitment, so a refused or failed clip is stripped and reported.
       if (video) {
         setPublishProgress({
-          label: 'Uploading your video — screening it now…',
+          label: 'Uploading your video - screening it now.',
           done: images.length,
           total: images.length + 1,
         });
         const vfd = new FormData();
         vfd.append('video', video);
         vfd.append('audioEnabled', String(videoAudioEnabled));
+        if (media.videoAction === 'review') vfd.append('reviewRequested', 'true');
         const vToken = await getToken();
         const vres = await fetch(`${API_URL}/listings/${listing.id}/video`, {
           method: 'POST',
@@ -2573,17 +2576,26 @@ export default function NewListingPage() {
           body: vfd,
         });
         if (!vres.ok) {
-          const errBody = await vres.json().catch(() => ({}));
-          const detail =
-            (errBody && (errBody as { message?: string }).message) ||
-            `${vres.status}`;
-          throw new Error(`The video (${video.name}) was not accepted — ${detail}`);
+          const errBody = (await vres.json().catch(() => ({}))) as {
+            message?: string | string[];
+            code?: string;
+          };
+          const detail = Array.isArray(errBody.message)
+            ? errBody.message.join(', ')
+            : errBody.message ?? `Error ${vres.status}`;
+          videoStripped = true;
+          setVideo(null);
+          media.chooseVideoDelete();
+          setPublishError(
+            `Your listing was published with its photos. The video was removed: ${detail}`,
+          );
+        } else {
+          setPublishProgress({
+            label: 'Video uploaded - finishing up.',
+            done: images.length + 1,
+            total: images.length + 1,
+          });
         }
-        setPublishProgress({
-          label: 'Video uploaded — finishing up…',
-          done: images.length + 1,
-          total: images.length + 1,
-        });
       }
 
       // Successful publish — clear the localStorage draft so the
@@ -2617,6 +2629,16 @@ export default function NewListingPage() {
         }
       } catch {
         // ignore
+      }
+
+      // A refused/failed video must not hide the successful listing. Keep the
+      // seller on a clear notice so they can view the listing or add another
+      // video from the edit page.
+      if (videoStripped) {
+        setStrippedVideoNotice({ listingId: listing.id });
+        setSubmitting(false);
+        setPublishProgress(null);
+        return;
       }
 
       // Gate: if the seller still owes us the post-publish profile
@@ -2964,9 +2986,11 @@ export default function NewListingPage() {
           >
             <PhotoDropzone
               files={images}
-              onChange={setImages}
+              onChange={handleImagesChange}
               minFiles={1}
               maxFiles={10}
+              statusFor={media.imageStatusFor}
+              onRedact={(idx) => setManualRedact(images[idx] ?? null)}
             />
             {/* Multi-angle nudge — the single biggest thing a seller can do
                 to avoid "not as described" disputes later. */}
@@ -2987,6 +3011,7 @@ export default function NewListingPage() {
                 seller's best answer to "can you show me it working?", and it
                 renders first in the listing gallery. */}
             <div
+              id="sell-video"
               className="mt-5 pt-4"
               style={{ borderTop: '0.5px solid var(--border-divider)' }}
             >
@@ -3001,15 +3026,18 @@ export default function NewListingPage() {
               </p>
               <VideoDropzone
                 file={video}
-                onChange={(f) => {
-                  setVideo(f);
-                  videoPreflightRef.current = null;
-                }}
+                onChange={handleVideoChange}
                 audioEnabled={videoAudioEnabled}
-                onAudioChange={(next) => {
-                  setVideoAudioEnabled(next);
-                  videoPreflightRef.current = null;
-                }}
+                onAudioChange={handleVideoAudioChange}
+                status={
+                  media.videoReview?.status === 'checking'
+                    ? 'Checking…'
+                    : media.videoReview?.status === 'needs-fix'
+                      ? 'Needs attention'
+                      : media.videoReview?.status === 'review'
+                        ? 'Pending review'
+                        : undefined
+                }
               />
               <p
                 style={{
@@ -4397,7 +4425,7 @@ export default function NewListingPage() {
                   >
                     Finish all four steps on the rail above to enable
                     review. We&apos;ll check your listing before it goes live.
-                    Reviews can take up to 3 hours during business hours.
+                    Reviews can take up to 24 hours.
                   </p>
                 )}
                 {previousAttemptHashes.length > 0 && (
@@ -4625,6 +4653,98 @@ export default function NewListingPage() {
       </PageReveal>
 
       {/* Preview modal — driven by previewResult from POST /listings/preview */}
+      {/* Early media checks: one fixing window at a time. */}
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) handleReplacementFile(file);
+        }}
+      />
+      {!fixHidden &&
+        media.current &&
+        !manualRedact &&
+        !media.notice &&
+        (media.current.kind === 'image' ? (
+          <ImageBlurModal
+            file={media.current.review.file}
+            reason={
+              media.current.review.reason ??
+              'A detail in this photo needs hiding.'
+            }
+            onApply={handleBlurApplied}
+            onReplace={() => requestReplaceImage(media.current!.review.file)}
+            onCancel={() => setFixHidden(true)}
+          />
+        ) : (
+          <VideoDecisionModal
+            reason={
+              media.current.review.reason ??
+              'It shows contact details or advertising.'
+            }
+            onReupload={() => {
+              setVideo(null);
+              media.chooseVideoReupload();
+              setTimeout(() => {
+                document
+                  .getElementById('sell-video')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }, 0);
+            }}
+            onReview={() => media.chooseVideoReview()}
+            onDelete={() => {
+              setVideo(null);
+              media.chooseVideoDelete();
+            }}
+          />
+        ))}
+      {manualRedact && (
+        <ImageBlurModal
+          file={manualRedact}
+          reason="Hide an address, number or website before publishing."
+          onApply={(next) => {
+            const idx = images.indexOf(manualRedact);
+            if (idx >= 0) {
+              const nextImages = [...images];
+              nextImages[idx] = next;
+              handleImagesChange(nextImages);
+            }
+            setManualRedact(null);
+          }}
+          onReplace={() => {
+            requestReplaceImage(manualRedact);
+            setManualRedact(null);
+          }}
+          onCancel={() => setManualRedact(null)}
+        />
+      )}
+      {media.notice && (
+        <MediaNoticeModal
+          title={
+            media.notice.startsWith('A photo shows live ammunition')
+              ? 'Remove that photo'
+              : 'This photo still needs a review'
+          }
+          body={media.notice}
+          onClose={media.dismissNotice}
+        />
+      )}
+      {strippedVideoNotice && (
+        <MediaNoticeModal
+          title="Listing published without the video"
+          body="Your listing is live with its photos. The video was removed. You can add another video from the listing's edit page."
+          onClose={() => {
+            const id = strippedVideoNotice.listingId;
+            setStrippedVideoNotice(null);
+            router.push(`/listings/${id}`);
+          }}
+        />
+      )}
+
       {previewResult && (
         <ListingPreviewModal
           preview={previewResult}

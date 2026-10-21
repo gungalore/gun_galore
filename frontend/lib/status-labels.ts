@@ -113,7 +113,7 @@ export const LISTING_STATUS: Record<string, StatusEntry> = {
   PENDING_REVIEW: {
     label: 'Awaiting review',
     tone: 'pending',
-    hint: 'Our team is reviewing this listing. Reviews can take up to 3 hours during business hours.',
+    hint: 'Our team is reviewing this listing. Reviews can take up to 24 hours.',
   },
   DRAFT: { label: 'Draft', tone: 'neutral', hint: 'Not yet published.' },
   REJECTED: {

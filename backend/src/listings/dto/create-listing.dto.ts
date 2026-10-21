@@ -249,6 +249,12 @@ export class CreateListingDto {
   // no photos at all. The frontend uploads each file one-by-one
   // POST'ing to /listings/:id/images and is responsible for surfacing
   // any per-file failures.
+  // The seller's photo still failed the post-blur screen. Safe by design:
+  // it can only keep the listing hidden in the admin queue, never publish it.
+  @IsOptional()
+  @IsBoolean()
+  forceReview?: boolean;
+
   @IsInt()
   @Min(1, { message: 'Add at least one photo before publishing.' })
   imageCount: number;

@@ -8,7 +8,6 @@ import {
   Pill,
   SkeletonRows,
   useAdminToast,
-  type AdminTone,
 } from '@/components/admin/admin-ui';
 import { AdminDrawer } from '@/components/admin/admin-drawer';
 import { ReasonDialog } from '@/components/admin/admin-confirm';
@@ -18,6 +17,7 @@ import {
   adminFetch,
   formatWhen,
   type ListingRow,
+  type ListingVideoRow,
   type Paginated,
   type PostRow,
 } from '@/lib/admin-api';
@@ -28,9 +28,11 @@ export default function OperatePage() {
 
   const [listing, setListing] = useState<ListingRow | null>(null);
   const [post, setPost] = useState<PostRow | null>(null);
+  const [video, setVideo] = useState<ListingVideoRow | null>(null);
   const [review, setReview] = useState<
     | { kind: 'listing'; id: string; action: 'APPROVE' | 'REJECT' }
     | { kind: 'post'; id: string; action: 'APPROVE' | 'REJECT' }
+    | { kind: 'video'; id: string; action: 'APPROVE' | 'REJECT' }
     | null
   >(null);
 
@@ -43,6 +45,10 @@ export default function OperatePage() {
   );
   const community = useAdminPoll<PostRow[]>(
     () => adminFetch<PostRow[]>('/admin/community/queue'),
+    30_000,
+  );
+  const videos = useAdminPoll<ListingVideoRow[]>(
+    () => adminFetch<ListingVideoRow[]>('/admin/listing-videos?limit=20'),
     30_000,
   );
   const complaints = useAdminPoll<Paginated<Record<string, unknown>>>(
@@ -61,20 +67,27 @@ export default function OperatePage() {
   const postRows: PostRow[] = Array.isArray(community.data)
     ? community.data
     : ((community.data as unknown as Paginated<PostRow>)?.rows ?? []);
+  const videoRows: ListingVideoRow[] = Array.isArray(videos.data)
+    ? videos.data
+    : [];
   const complaintTotal = (complaints.data?.total as number | undefined) ?? 0;
   const supportTotal = (support.data?.total as number | undefined) ?? 0;
 
   const reviewCopy = useMemo(() => {
     if (!review) return null;
+    const noun =
+      review.kind === 'listing' ? 'listing' : review.kind === 'post' ? 'post' : 'video';
     return {
       title:
         review.action === 'APPROVE'
-          ? `Approve this ${review.kind === 'listing' ? 'listing' : 'post'}?`
-          : `Reject this ${review.kind === 'listing' ? 'listing' : 'post'}?`,
+          ? `Approve this ${noun}?`
+          : `Reject this ${noun}?`,
       body:
         review.kind === 'listing'
           ? 'Approving publishes it and re-indexes it in search. Rejecting notifies the seller with the reason.'
-          : 'Approving publishes it to the community feed. Rejecting hides it from the member.',
+          : review.kind === 'post'
+            ? 'Approving publishes it to the community feed. Rejecting hides it from the member.'
+            : 'Approving makes the video visible on its live listing. Rejecting removes it and notifies the seller.',
       label: review.action === 'APPROVE' ? 'Approve' : 'Reject',
       danger: review.action === 'REJECT',
     };
@@ -88,6 +101,12 @@ export default function OperatePage() {
         body: JSON.stringify({ action: review.action, reason }),
       });
       listings.refresh();
+    } else if (review.kind === 'video') {
+      await adminFetch(`/admin/listing-videos/${review.id}/review`, {
+        method: 'POST',
+        body: JSON.stringify({ action: review.action, reason }),
+      });
+      videos.refresh();
     } else {
       await adminFetch(`/admin/community/posts/${review.id}/review`, {
         method: 'POST',
@@ -98,6 +117,7 @@ export default function OperatePage() {
     toast(review.action === 'APPROVE' ? 'Approved.' : 'Rejected.');
     setListing(null);
     setPost(null);
+    setVideo(null);
   }
 
   return (
@@ -140,6 +160,39 @@ export default function OperatePage() {
                 </>
               }
               onClick={() => setListing(row)}
+            />
+          ))
+        )}
+      </NeonCard>
+
+      <NeonCard
+        tone={videoRows.length > 0 ? 'amber' : undefined}
+        title="Video review queue"
+        action={
+          <Pill tone={videoRows.length > 0 ? 'amber' : 'green'}>
+            {videoRows.length} PENDING
+          </Pill>
+        }
+      >
+        {videos.loading && !videos.data ? (
+          <SkeletonRows rows={2} />
+        ) : videos.error ? (
+          <EmptyState icon="alert" title="Video queue unavailable" caption={videos.error} />
+        ) : videoRows.length === 0 ? (
+          <EmptyState
+            title="No videos waiting"
+            caption="Clips a seller sent for review appear here; the listing itself can stay live."
+          />
+        ) : (
+          videoRows.map((row) => (
+            <ActionRow
+              key={row.id}
+              icon="eye"
+              tone="amber"
+              title={row.title}
+              caption={`${row.referenceNumber ?? row.listingId.slice(0, 8)} · ${row.seller} · ${row.reasons[0] ?? 'flagged clip'}`}
+              trailing={<Pill tone="amber">REVIEW</Pill>}
+              onClick={() => setVideo(row)}
             />
           ))
         )}
@@ -293,6 +346,61 @@ export default function OperatePage() {
             Reject
           </button>
         </div>
+      </AdminDrawer>
+
+      {/* Pending video drawer */}
+      <AdminDrawer
+        open={video !== null}
+        onClose={() => setVideo(null)}
+        title={video?.title ?? 'Video review'}
+        subtitle={
+          video
+            ? `${video.referenceNumber ?? video.listingId.slice(0, 8)} · ${video.seller} · ${formatWhen(video.createdAt)}`
+            : undefined
+        }
+        badge="VIDEO"
+        badgeTone="amber"
+      >
+        {video ? (
+          <video
+            src={video.url}
+            poster={video.thumbnailUrl}
+            controls
+            playsInline
+            preload="metadata"
+            style={{ width: '100%', maxHeight: 340, background: '#000', borderRadius: 6 }}
+          />
+        ) : null}
+        <p className="adm-sub" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+          {video?.reasons?.join('\n') || 'No moderation reason stored.'}
+        </p>
+        <div className="adm-grid-2">
+          <button
+            type="button"
+            className="adm-btn"
+            data-tone="green"
+            disabled={!isGod || !video}
+            onClick={() =>
+              video && setReview({ kind: 'video', id: video.id, action: 'APPROVE' })
+            }
+          >
+            Approve video
+          </button>
+          <button
+            type="button"
+            className="adm-btn"
+            data-tone="red"
+            disabled={!isGod || !video}
+            onClick={() =>
+              video && setReview({ kind: 'video', id: video.id, action: 'REJECT' })
+            }
+          >
+            Reject
+          </button>
+        </div>
+        {!isGod ? (
+          <p className="adm-sub">Read-only admin tier — no review controls.</p>
+        ) : null}
       </AdminDrawer>
 
       {reviewCopy ? (

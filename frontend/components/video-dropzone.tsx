@@ -24,6 +24,7 @@ export function VideoDropzone({
   existingThumbnailUrl = null,
   onRemoveExisting,
   maxBytes = MAX_SELL_VIDEO_BYTES,
+  status,
 }: {
   file: File | null;
   onChange: (next: File | null) => void;
@@ -35,6 +36,8 @@ export function VideoDropzone({
   existingThumbnailUrl?: string | null;
   onRemoveExisting?: () => void;
   maxBytes?: number;
+  /** Early moderation status, shown under the file name. */
+  status?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -193,6 +196,7 @@ export function VideoDropzone({
           <div className="flex items-center justify-between mt-2">
             <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
               {file ? `${file.name} · ${humanMb(file.size)}` : 'Current listing video'}
+              {status ? ` · ${status}` : ''}
             </span>
             <button
               type="button"

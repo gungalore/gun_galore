@@ -38,6 +38,8 @@ export interface ListingVideo {
   height: number | null;
   audioEnabled?: boolean;
   playbackUrl?: string | null;
+  /** Owner-only when not APPROVED; public listings only receive APPROVED. */
+  status?: 'APPROVED' | 'PENDING_REVIEW' | 'REJECTED';
 }
 
 // Per-category attribute definition (P4.1/P4.2). Returned by

@@ -1370,6 +1370,12 @@ model ListingImage {
 /// One optional video per marketplace listing, alongside its photos. Stored on
 /// Cloudinary's `video` resource type; `thumbnailUrl` is a derived poster frame.
 /// Mirrors PostVideo on the community feed.
+enum ListingVideoStatus {
+  APPROVED
+  PENDING_REVIEW
+  REJECTED
+}
+
 model ListingVideo {
   id              String   @id @default(cuid())
   listingId       String   @unique
@@ -1383,7 +1389,16 @@ model ListingVideo {
   /// Whether the clip is published with its audio track. New uploads default
   /// to muted; enabling sound runs an audio-inclusive moderation pass.
   audioEnabled    Boolean  @default(false)
+  /// A flagged clip can be kept for admin review without holding the listing.
+  /// Public payloads only expose APPROVED rows.
+  status          ListingVideoStatus @default(APPROVED)
+  /// Internal moderation reasons for the admin video queue.
+  moderationReasons String[] @default([])
+  reviewedAt      DateTime?
+  reviewedById    String?
   createdAt       DateTime @default(now())
+
+  @@index([status, createdAt])
 }
 
 /// A private 1-to-1 "contact seller" thread between one buyer and one listing's

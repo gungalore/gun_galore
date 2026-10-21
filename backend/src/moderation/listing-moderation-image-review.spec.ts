@@ -80,6 +80,48 @@ describe('image moderation - admin review instead of auto-reject', () => {
     expect(r.decision).toBe('HUMAN_REVIEW');
     expect(r.reasons[0]).toMatch(/website URL/i);
     expect(r.publicReason).toMatch(/admin check/i);
+    expect(r.photoFlags?.[0]).toMatchObject({
+      index: 1,
+      categories: ['photo-contact-info'],
+    });
+  });
+
+  it('uses the model photo index when it is supplied', async () => {
+    const { svc } = makeService({
+      violation: true,
+      unsure: false,
+      categories: ['contact-info'],
+      reasons: ['Phone number visible in photo 2'],
+      photos: [
+        {
+          index: 2,
+          categories: ['contact-info'],
+          reason: 'Phone number visible in photo 2',
+        },
+      ],
+    });
+    const r = await (
+      svc as unknown as {
+        moderateImageAxis: (input: unknown) => Promise<ListingModerationResult>;
+      }
+    ).moderateImageAxis({
+      title: 'Tags',
+      description: 'Tags.',
+      categoryName: 'Accessories',
+      categoryIsFirearm: false,
+      priceCents: 1,
+      imageUrls: ['https://x/1.jpg', 'https://x/2.jpg'],
+      imagesBase64: [],
+      imageCount: 2,
+      sellerFirstFirearmListings: false,
+    });
+    expect(r.photoFlags).toEqual([
+      {
+        index: 2,
+        categories: ['photo-contact-info'],
+        reason: 'Phone number visible in photo 2',
+      },
+    ]);
   });
 
   it('sends third-party advertising to HUMAN_REVIEW', async () => {
@@ -134,5 +176,20 @@ describe('image moderation - admin review instead of auto-reject', () => {
     });
     const r = await screen(svc);
     expect(r.decision).toBe('APPROVE');
+  });
+
+  it('exposes the single-image early screen', async () => {
+    const { svc } = makeService({
+      violation: true,
+      unsure: false,
+      categories: ['photo-address'],
+      reasons: ['Street address visible in the photo'],
+    });
+    const r = await svc.screenImage('image/jpeg', 'abc');
+    expect(r.decision).toBe('HUMAN_REVIEW');
+    expect(r.photoFlags?.[0]).toMatchObject({
+      index: 1,
+      categories: ['photo-address'],
+    });
   });
 });

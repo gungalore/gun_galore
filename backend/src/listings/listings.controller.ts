@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   Param,
@@ -379,6 +380,28 @@ export class ListingsController {
     return this.listingsService.renew(id, userId);
   }
 
+  // Screen ONE staged photo as soon as the seller picks it. The sell form
+  // uses the verdict to open the blur tool immediately; the final
+  // preview/create pass still screens the files that are actually published.
+  @Post('image-screen')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
+  screenImage(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 8 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /image\/(jpeg|png|webp)/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.listingsService.screenImage(file);
+  }
+
   @Post(':id/images')
   @UseGuards(AuthGuard)
   @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
@@ -396,6 +419,41 @@ export class ListingsController {
     file: Express.Multer.File,
   ) {
     return this.listingsService.addImage(id, userId, file);
+  }
+
+  @Put(':id/images/:imageId')
+  @UseGuards(AuthGuard)
+  @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
+  replaceImage(
+    @Param('id') id: string,
+    @Param('imageId') imageId: string,
+    @CurrentUser() userId: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 8 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /image\/(jpeg|png|webp)/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.listingsService.replaceImage(id, imageId, userId, file);
+  }
+
+  @Post(':id/request-review')
+  @UseGuards(AuthGuard)
+  @HttpCode(200)
+  requestReview(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+    @Body() body: { reasons?: string[] },
+  ) {
+    return this.listingsService.requestReview(
+      id,
+      userId,
+      Array.isArray(body.reasons) ? body.reasons.slice(0, 8) : [],
+    );
   }
 
   @Delete(':id/images/:imageId')
@@ -455,12 +513,14 @@ export class ListingsController {
     )
     file: Express.Multer.File,
     @Body('audioEnabled') audioEnabled?: string,
+    @Body('reviewRequested') reviewRequested?: string,
   ) {
     return this.listingsService.addVideo(
       id,
       userId,
       file,
       audioEnabled === 'true',
+      reviewRequested === 'true',
     );
   }
 

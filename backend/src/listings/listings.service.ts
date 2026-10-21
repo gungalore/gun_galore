@@ -12,7 +12,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { BrowseListingsDto } from './dto/browse-listings.dto';
-import { ClaudeDecision, Listing, ListingStatus, ListingType, Province, ShippingMethod } from '@prisma/client';
+import { ClaudeDecision, Listing, ListingStatus, ListingType, ListingVideoStatus, Province, ShippingMethod } from '@prisma/client';
 import {
   ListingModerationService,
   ListingModerationResult,
@@ -152,6 +152,7 @@ export const PUBLIC_LISTING_SELECT = {
       width: true,
       height: true,
       audioEnabled: true,
+      status: true,
     },
   },
   category: true,
@@ -775,6 +776,9 @@ export interface PreviewResult {
   canPublish: boolean;
   // True when we should refuse further self-publish attempts.
   hardBlocked: boolean;
+  // Per-photo findings for the seller-facing blur queue. 1-based indexes
+  // refer to the order of the submitted images.
+  photoFlags?: { index: number; categories: string[]; reason: string }[];
 };
 
 @Injectable()
@@ -905,6 +909,33 @@ export class ListingsService {
       imageUrls: context.imageUrls,
       imagesBase64: context.imagesBase64 as never,
     });
+  }
+
+  /**
+   * Screen one staged photo immediately, before a listing exists. This is the
+   * sell form's early-warning path; previewDraft/create still run the
+   * authoritative pass on the final files.
+   */
+  async screenImage(file: Express.Multer.File) {
+    const mediaType = file.mimetype as
+      | 'image/jpeg'
+      | 'image/png'
+      | 'image/webp';
+    const verdict = await this.moderation.screenImage(
+      mediaType,
+      file.buffer.toString('base64'),
+    );
+    const photoFlags = verdict.photoFlags ?? [];
+    return {
+      decision: verdict.decision,
+      confidence: verdict.confidence,
+      reasons: verdict.reasons,
+      publicReason: verdict.publicReason,
+      photoFlags,
+      categories: Array.from(
+        new Set(photoFlags.flatMap((flag) => flag.categories)),
+      ),
+    };
   }
 
   // Dry-run a moderation pass against draft listing data WITHOUT writing
@@ -1064,6 +1095,7 @@ export class ListingsService {
       isRepeatOffense,
       canPublish,
       hardBlocked,
+      photoFlags: moderation.photoFlags ?? [],
     };
   }
 
@@ -1579,12 +1611,16 @@ export class ListingsService {
     // keep the branch defensive in case an older response shape slips
     // through.
     let status: ListingStatus;
+    const forceReview = dto.forceReview === true;
     if (
+      forceReview ||
       !moderation ||
       moderation.decision === 'APPROVE' ||
       moderation.decision === 'AUTO_FIX_AND_APPROVE'
     ) {
-      status = ListingStatus.ACTIVE;
+      status = forceReview
+        ? ListingStatus.PENDING_REVIEW
+        : ListingStatus.ACTIVE;
     } else {
       status = ListingStatus.PENDING_REVIEW;
     }
@@ -1727,10 +1763,19 @@ export class ListingsService {
         widthCm: dto.widthCm ?? null,
         heightCm: dto.heightCm ?? null,
         // Claude moderation fields
-        claudeDecision: moderation?.decision ?? null,
-        claudeConfidence: moderation?.confidence ?? null,
-        claudeReasons: moderation?.reasons ?? [],
-        claudeReviewedAt: moderation ? new Date() : null,
+        claudeDecision: forceReview
+          ? ClaudeDecision.HUMAN_REVIEW
+          : moderation?.decision ?? null,
+        claudeConfidence: forceReview
+          ? 0.5
+          : moderation?.confidence ?? null,
+        claudeReasons: forceReview
+          ? [
+              ...(moderation?.reasons ?? []),
+              'A photo still needs an admin check after blurring',
+            ]
+          : moderation?.reasons ?? [],
+        claudeReviewedAt: moderation || forceReview ? new Date() : null,
         claudeOriginalDescription: originalDescription,
         claudeAutoFixApplied: autoFixApplied,
       },
@@ -2813,6 +2858,7 @@ export class ListingsService {
         idVerified: kycIdVerifiedAt != null,
       },
     };
+    const isOwner = !!userId && seller.id === userId;
     const enriched = {
       ...listing,
       seller,
@@ -2820,27 +2866,34 @@ export class ListingsService {
       // exactly like the community feed's PostVideo. Never the original upload.
       // A muted listing exposes only the audio-stripped derivative; the
       // original stays in Cloudinary/DB for the owner.
-      ...(listing.video
+      ...(listing.video &&
+      (listing.video.status == null ||
+        listing.video.status === 'APPROVED' ||
+        (isOwner && listing.video.status === 'PENDING_REVIEW'))
         ? (() => {
-            const playbackUrl = optimizedVideoUrl(
-              listing.video.url,
-              720,
-              listing.video.audioEnabled,
-            );
+            const approved =
+              listing.video.status == null ||
+              listing.video.status === 'APPROVED';
+            const playbackUrl = approved
+              ? optimizedVideoUrl(
+                  listing.video.url,
+                  720,
+                  listing.video.audioEnabled,
+                )
+              : listing.video.url;
             return {
               video: {
                 ...listing.video,
-                url: listing.video.audioEnabled
-                  ? listing.video.url
-                  : playbackUrl,
+                url:
+                  approved && listing.video.audioEnabled
+                    ? listing.video.url
+                    : playbackUrl,
                 playbackUrl,
               },
             };
           })()
         : {}),
     };
-
-    const isOwner = !!userId && seller.id === userId;
 
     // Insights — a listing view (fire-and-forget; owner previews still record
     // but the operator's own views are filtered out by ActivityService).
@@ -3515,6 +3568,37 @@ export class ListingsService {
     });
   }
 
+  /**
+   * Replace an existing photo in place. Used by the seller redaction tool on
+   * the edit page: the row keeps its order and primary flag, and the old
+   * Cloudinary asset is deleted only after the new one is stored.
+   */
+  async replaceImage(
+    listingId: string,
+    imageId: string,
+    userId: string,
+    file: Express.Multer.File,
+  ) {
+    const listing = await this.assertOwner(listingId, userId);
+    await this.assertEditable(listing);
+
+    const image = await this.prisma.listingImage.findFirst({
+      where: { id: imageId, listingId },
+    });
+    if (!image) throw new NotFoundException('Image not found');
+
+    const { url, publicId } = await this.cloudinary.uploadImage(
+      file.buffer,
+      'listings',
+    );
+    const updated = await this.prisma.listingImage.update({
+      where: { id: imageId },
+      data: { url, publicId },
+    });
+    await this.cloudinary.deleteImage(image.publicId).catch(() => undefined);
+    return updated;
+  }
+
   async removeImage(listingId: string, imageId: string, userId: string) {
     const listing = await this.assertOwner(listingId, userId);
     // Same lock — removing a photo after commitment would let the
@@ -3547,56 +3631,74 @@ export class ListingsService {
   /**
    * Upload/replace the one optional marketplace clip.
    *
-   * The clip is screened BEFORE it is stored: a REJECT or an unclear verdict
-   * deletes the Cloudinary asset and refuses the upload, so unreviewed media
-   * can never reach a buyer. Same edit lock as photos — buyers commit on what
-   * they saw at bid/offer time.
+   * A clean clip is stored public. A flagged clip is only stored when the
+   * seller asked for admin review; it goes to a private/authenticated asset
+   * with status PENDING_REVIEW and is never exposed on the public listing.
+   * Without that consent, a flagged clip is deleted and the upload refused.
    */
   async addVideo(
     id: string,
     userId: string,
     file: Express.Multer.File,
     audioEnabled = false,
+    reviewRequested = false,
   ) {
     const listing = await this.assertOwner(id, userId);
     await this.assertEditable(listing);
 
-    const up = await this.cloudinary.uploadVideo(file.buffer, 'listings');
+    let up = await this.cloudinary.uploadVideo(
+      file.buffer,
+      'listings',
+      undefined,
+      reviewRequested ? 'authenticated' : 'public',
+    );
     const verdict = await this.moderation.moderateVideo({
-      url: up.url,
+      url: reviewRequested
+        ? this.cloudinary.signedVideoUrl(
+            up.publicId,
+            false,
+            720,
+            audioEnabled,
+          )
+        : up.url,
       thumbnailUrl: up.thumbnailUrl,
       audioEnabled,
     });
 
-    // Positive for banned content: never store it, never attach it.
-    if (verdict.decision === 'REJECT') {
+    if (verdict.decision !== 'APPROVE' && !reviewRequested) {
       await this.cloudinary
-        .deleteVideo(up.publicId)
+        .deleteVideo(
+          up.publicId,
+          reviewRequested ? 'authenticated' : 'public',
+        )
         .catch((err) =>
           this.logger.warn(
             `Could not delete refused video ${up.publicId}: ${(err as Error).message}`,
           ),
         );
-      throw new BadRequestException(
-        verdict.publicReason ??
+      throw new BadRequestException({
+        code:
+          verdict.decision === 'REJECT'
+            ? 'VIDEO_REFUSED'
+            : 'VIDEO_REVIEW_REQUIRED',
+        message:
+          verdict.publicReason ??
           verdict.reasons[0] ??
           'That video is not allowed on ALL Outdoor.',
-      );
+        reasons: verdict.reasons,
+      });
     }
 
-    // Unsure (or unreadable audio): store the clip but hold the listing for an
-    // admin. The seller sees it as Pending review; a human decides.
-    const heldForReview = verdict.decision === 'HUMAN_REVIEW';
-    if (heldForReview) {
-      await this.prisma.listing.update({
-        where: { id },
-        data: {
-          status: ListingStatus.PENDING_REVIEW,
-          claudeDecision: ClaudeDecision.HUMAN_REVIEW,
-          claudeConfidence: 0.5,
-          claudeReasons: verdict.reasons,
-        },
-      });
+    const pending = verdict.decision !== 'APPROVE';
+
+    // A seller-requested review clip was uploaded private. If the re-screen
+    // actually approved it, promote it to a normal public marketplace asset.
+    if (!pending && reviewRequested) {
+      const published = await this.cloudinary.publishPrivateVideo(up.publicId);
+      await this.cloudinary
+        .deleteVideo(up.publicId, 'authenticated')
+        .catch(() => undefined);
+      up = published;
     }
 
     const existing = await this.prisma.listingVideo.findUnique({
@@ -3604,7 +3706,12 @@ export class ListingsService {
     });
     if (existing) {
       await this.cloudinary
-        .deleteVideo(existing.publicId)
+        .deleteVideo(
+          existing.publicId,
+          existing.status === ListingVideoStatus.APPROVED
+            ? 'public'
+            : 'authenticated',
+        )
         .catch(() => undefined);
       await this.prisma.listingVideo.delete({ where: { listingId: id } });
     }
@@ -3612,21 +3719,39 @@ export class ListingsService {
     const video = await this.prisma.listingVideo.create({
       data: {
         listingId: id,
-        url: up.url,
+        url: pending
+          ? this.cloudinary.signedVideoUrl(
+              up.publicId,
+              false,
+              720,
+              audioEnabled,
+            )
+          : up.url,
         publicId: up.publicId,
         thumbnailUrl: up.thumbnailUrl ?? null,
         durationSeconds: up.durationSeconds ?? null,
         width: up.width ?? null,
         height: up.height ?? null,
         audioEnabled,
+        status: pending
+          ? ListingVideoStatus.PENDING_REVIEW
+          : ListingVideoStatus.APPROVED,
+        moderationReasons: verdict.reasons,
       },
     });
-    const playbackUrl = optimizedVideoUrl(video.url, 720, audioEnabled);
+    const playbackUrl =
+      video.status === ListingVideoStatus.APPROVED
+        ? optimizedVideoUrl(video.url, 720, audioEnabled)
+        : video.url;
     return {
       ...video,
-      url: audioEnabled ? video.url : playbackUrl,
+      url:
+        video.status === ListingVideoStatus.APPROVED && audioEnabled
+          ? video.url
+          : playbackUrl,
       playbackUrl,
-      heldForReview,
+      heldForReview: pending,
+      pendingReview: pending,
     };
   }
 
@@ -3675,8 +3800,8 @@ export class ListingsService {
    *
    * Turning sound ON is a publication decision: the audio has not been
    * screened yet, so run the audio-inclusive pass. Positive -> refuse the
-   * change; unsure -> enable it but hold the listing for an admin. Turning
-   * sound OFF needs no screen - the delivery URL simply strips the audio.
+   * change. Unsure -> keep/hide the clip for admin review without taking the
+   * listing down. Turning sound OFF needs no screen.
    */
   async setVideoAudio(
     id: string,
@@ -3691,48 +3816,65 @@ export class ListingsService {
     });
     if (!video) throw new NotFoundException('Video not found');
 
-    let heldForReview = false;
+    let status = video.status;
+    let reasons = video.moderationReasons;
     if (audioEnabled && !video.audioEnabled) {
       const verdict = await this.moderation.moderateVideo({
-        url: video.url,
+        url:
+          video.status === ListingVideoStatus.APPROVED
+            ? video.url
+            : this.cloudinary.signedVideoUrl(video.publicId, false, 720, true),
         thumbnailUrl: video.thumbnailUrl,
         audioEnabled: true,
       });
       if (verdict.decision === 'REJECT') {
-        throw new BadRequestException(
-          verdict.publicReason ??
+        throw new BadRequestException({
+          code: 'VIDEO_REFUSED',
+          message:
+            verdict.publicReason ??
             verdict.reasons[0] ??
             'That video sound is not allowed on ALL Outdoor.',
-        );
-      }
-      heldForReview = verdict.decision === 'HUMAN_REVIEW';
-      if (heldForReview) {
-        await this.prisma.listing.update({
-          where: { id },
-          data: {
-            status: ListingStatus.PENDING_REVIEW,
-            claudeDecision: ClaudeDecision.HUMAN_REVIEW,
-            claudeConfidence: 0.5,
-            claudeReasons: verdict.reasons,
-          },
+          reasons: verdict.reasons,
         });
+      }
+      const approved =
+        video.status == null ||
+        video.status === ListingVideoStatus.APPROVED;
+      if (verdict.decision === 'HUMAN_REVIEW' && approved) {
+        // The existing asset is public. Do not flip it to a pending row:
+        // the admin queue expects a private asset it can promote later.
+        throw new BadRequestException({
+          code: 'VIDEO_REVIEW_REQUIRED',
+          message:
+            'That sound needs an admin check. Keep the video muted or replace it.',
+          reasons: verdict.reasons,
+        });
+      }
+      if (
+        verdict.decision === 'HUMAN_REVIEW' ||
+        video.status === ListingVideoStatus.PENDING_REVIEW
+      ) {
+        status = ListingVideoStatus.PENDING_REVIEW;
+        reasons = verdict.reasons;
       }
     }
 
     const updated = await this.prisma.listingVideo.update({
       where: { listingId: id },
-      data: { audioEnabled },
+      data: { audioEnabled, status, moderationReasons: reasons },
     });
-    const playbackUrl = optimizedVideoUrl(
-      updated.url,
-      720,
-      updated.audioEnabled,
-    );
+    const approved =
+      updated.status == null ||
+      updated.status === ListingVideoStatus.APPROVED;
+    const playbackUrl = approved
+      ? optimizedVideoUrl(updated.url, 720, updated.audioEnabled)
+      : updated.url;
     return {
       ...updated,
-      url: updated.audioEnabled ? updated.url : playbackUrl,
+      url: approved && updated.audioEnabled ? updated.url : playbackUrl,
       playbackUrl,
-      heldForReview,
+      heldForReview: updated.status === ListingVideoStatus.PENDING_REVIEW,
+      pendingReview: updated.status === ListingVideoStatus.PENDING_REVIEW,
     };
   }
 
@@ -3745,9 +3887,159 @@ export class ListingsService {
     });
     if (!video) throw new NotFoundException('Video not found');
 
-    await this.cloudinary.deleteVideo(video.publicId);
+    await this.cloudinary.deleteVideo(
+      video.publicId,
+      video.status === ListingVideoStatus.APPROVED
+        ? 'public'
+        : 'authenticated',
+    );
     await this.prisma.listingVideo.delete({ where: { listingId } });
     return { deleted: true };
+  }
+
+  /**
+   * Seller-triggered hold: an image still failed its post-blur screen, so the
+   * listing must not stay public while an admin decides. Used by the edit
+   * flow, where there is no create/preview pass to set the status.
+   */
+  async requestReview(id: string, userId: string, reasons: string[] = []) {
+    const listing = await this.assertOwner(id, userId);
+    await this.assertEditable(listing);
+    const updated = await this.prisma.listing.update({
+      where: { id },
+      data: {
+        status: ListingStatus.PENDING_REVIEW,
+        claudeDecision: ClaudeDecision.HUMAN_REVIEW,
+        claudeConfidence: 0.5,
+        claudeReasons: reasons.length
+          ? reasons
+          : ['A photo still needs an admin check'],
+        claudeReviewedAt: new Date(),
+      },
+    });
+    void this.removeFromIndex(id);
+    return updated;
+  }
+
+  /** Admin queue: clips the seller asked us to review. */
+  async listPendingVideoReviews(limit = 20) {
+    const rows = await this.prisma.listingVideo.findMany({
+      where: { status: ListingVideoStatus.PENDING_REVIEW },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(limit, 1), 50),
+      include: {
+        listing: {
+          select: {
+            id: true,
+            title: true,
+            referenceNumber: true,
+            seller: { select: { username: true } },
+          },
+        },
+      },
+    });
+    return rows.map((video) => ({
+      id: video.id,
+      listingId: video.listingId,
+      title: video.listing.title,
+      referenceNumber: video.listing.referenceNumber,
+      seller: video.listing.seller.username,
+      reasons: video.moderationReasons,
+      audioEnabled: video.audioEnabled,
+      durationSeconds: video.durationSeconds,
+      createdAt: video.createdAt,
+      url: this.cloudinary.signedVideoUrl(
+        video.publicId,
+        false,
+        720,
+        video.audioEnabled,
+      ),
+      thumbnailUrl: this.cloudinary.signedVideoUrl(video.publicId, true),
+    }));
+  }
+
+  /** Approve or reject a pending clip. Approval promotes it to public. */
+  async reviewPendingVideo(
+    id: string,
+    adminId: string,
+    action: 'APPROVE' | 'REJECT',
+    reason?: string,
+  ) {
+    const video = await this.prisma.listingVideo.findUnique({
+      where: { id },
+      include: {
+        listing: {
+          select: {
+            id: true,
+            title: true,
+            seller: {
+              select: { email: true, firstName: true, lastName: true },
+            },
+          },
+        },
+      },
+    });
+    if (!video) throw new NotFoundException('Video not found');
+    if (video.status !== ListingVideoStatus.PENDING_REVIEW) {
+      throw new BadRequestException('Video is not pending review');
+    }
+
+    if (action === 'APPROVE') {
+      const published = await this.cloudinary.publishPrivateVideo(
+        video.publicId,
+      );
+      await this.cloudinary
+        .deleteVideo(video.publicId, 'authenticated')
+        .catch(() => undefined);
+      const updated = await this.prisma.listingVideo.update({
+        where: { id },
+        data: {
+          url: published.url,
+          publicId: published.publicId,
+          thumbnailUrl: published.thumbnailUrl ?? null,
+          durationSeconds: published.durationSeconds ?? null,
+          width: published.width ?? null,
+          height: published.height ?? null,
+          status: ListingVideoStatus.APPROVED,
+          moderationReasons: [],
+          reviewedAt: new Date(),
+          reviewedById: adminId,
+        },
+      });
+      void this.notifications.listingVideoApproved({
+        sellerEmail: video.listing.seller.email,
+        sellerName:
+          [video.listing.seller.firstName, video.listing.seller.lastName]
+            .filter(Boolean)
+            .join(' ') || 'Seller',
+        listingTitle: video.listing.title,
+        listingId: video.listing.id,
+      });
+      return { ...updated, approved: true };
+    }
+
+    await this.cloudinary
+      .deleteVideo(video.publicId, 'authenticated')
+      .catch(() => undefined);
+    const updated = await this.prisma.listingVideo.update({
+      where: { id },
+      data: {
+        status: ListingVideoStatus.REJECTED,
+        reviewedAt: new Date(),
+        reviewedById: adminId,
+      },
+    });
+    void this.notifications.listingVideoRejected({
+      sellerEmail: video.listing.seller.email,
+      sellerName:
+        [video.listing.seller.firstName, video.listing.seller.lastName]
+          .filter(Boolean)
+          .join(' ') || 'Seller',
+      listingTitle: video.listing.title,
+      listingId: video.listing.id,
+      reason: reason?.trim() || 'The video did not meet our content rules.',
+    });
+    return { ...updated, approved: false };
   }
 
   async findMine(userId: string) {

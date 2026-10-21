@@ -61,7 +61,16 @@ function makeService(
         update: videoUpdate,
       },
     },
-    cloudinary: { uploadVideo, deleteVideo },
+    cloudinary: {
+      uploadVideo,
+      deleteVideo,
+      signedVideoUrl: jest.fn(() => VIDEO),
+      publishPrivateVideo: jest.fn().mockResolvedValue({
+        url: VIDEO,
+        publicId: 'p2',
+        thumbnailUrl: null,
+      }),
+    },
     moderation: { moderateVideo },
     logger: { warn: jest.fn(), error: jest.fn(), log: jest.fn() },
     assertOwner: jest.fn().mockResolvedValue({
@@ -114,21 +123,37 @@ describe('listing video sound choice', () => {
     expect(r.url).toBe(VIDEO);
   });
 
-  it('holds the listing for admin when the verdict is unsure', async () => {
-    const { svc, listingUpdate, videoCreate } = makeService({
+  it('keeps a flagged clip as a hidden pending row when review is requested', async () => {
+    const { svc, listingUpdate, videoCreate, uploadVideo } = makeService({
       verdict: { decision: 'HUMAN_REVIEW', reasons: ['Audio unclear'] },
     });
-    const r = await svc.addVideo('l1', 'u1', file, true);
+    const r = await svc.addVideo('l1', 'u1', file, true, true);
 
     expect(r.heldForReview).toBe(true);
-    expect(videoCreate).toHaveBeenCalled();
-    const heldData: unknown = expect.objectContaining({
-      status: 'PENDING_REVIEW',
-      claudeDecision: 'HUMAN_REVIEW',
-    });
-    expect(listingUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: heldData }),
+    expect(r.pendingReview).toBe(true);
+    expect(uploadVideo).toHaveBeenCalledWith(
+      expect.any(Buffer),
+      'listings',
+      undefined,
+      'authenticated',
     );
+    expect(videoCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        status: 'PENDING_REVIEW',
+        moderationReasons: ['Audio unclear'],
+      }),
+    });
+    expect(listingUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unsure clip when the seller did not ask for review', async () => {
+    const { svc, videoCreate } = makeService({
+      verdict: { decision: 'HUMAN_REVIEW', reasons: ['Audio unclear'] },
+    });
+    await expect(
+      svc.addVideo('l1', 'u1', file, true, false),
+    ).rejects.toMatchObject({ response: { code: 'VIDEO_REVIEW_REQUIRED' } });
+    expect(videoCreate).not.toHaveBeenCalled();
   });
 
   it('deletes and refuses a positive banned-content verdict', async () => {
@@ -142,7 +167,7 @@ describe('listing video sound choice', () => {
     await expect(svc.addVideo('l1', 'u1', file, true)).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    expect(deleteVideo).toHaveBeenCalledWith('p1');
+    expect(deleteVideo).toHaveBeenCalledWith('p1', 'public');
     expect(videoCreate).not.toHaveBeenCalled();
   });
 });
@@ -203,25 +228,35 @@ describe('changing sound on an existing clip', () => {
     audioEnabled: false,
   };
 
-  it('re-screens and holds when sound-on is unsure', async () => {
-    const { svc, moderateVideo, listingUpdate, videoUpdate } = makeService({
-      existingVideo: existing,
+  it('refuses sound-on on a public clip when the audio is unsure', async () => {
+    const { svc, moderateVideo, videoUpdate } = makeService({
+      existingVideo: { ...existing, status: 'APPROVED' },
+      verdict: { decision: 'HUMAN_REVIEW', reasons: ['Audio unclear'] },
+    });
+
+    await expect(svc.setVideoAudio('l1', 'u1', true)).rejects.toMatchObject({
+      response: { code: 'VIDEO_REVIEW_REQUIRED' },
+    });
+    expect(moderateVideo).toHaveBeenCalledWith(
+      expect.objectContaining({ audioEnabled: true }),
+    );
+    expect(videoUpdate).not.toHaveBeenCalled();
+  });
+
+  it('keeps an already pending clip pending when sound-on is unsure', async () => {
+    const { svc, videoUpdate } = makeService({
+      existingVideo: { ...existing, status: 'PENDING_REVIEW' },
       verdict: { decision: 'HUMAN_REVIEW', reasons: ['Audio unclear'] },
     });
     const r = await svc.setVideoAudio('l1', 'u1', true);
 
-    expect(moderateVideo).toHaveBeenCalledWith(
-      expect.objectContaining({ audioEnabled: true }),
-    );
-    const heldData: unknown = expect.objectContaining({
-      status: 'PENDING_REVIEW',
-    });
-    expect(listingUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: heldData }),
-    );
     expect(videoUpdate).toHaveBeenCalledWith({
       where: { listingId: 'l1' },
-      data: { audioEnabled: true },
+      data: {
+        audioEnabled: true,
+        status: 'PENDING_REVIEW',
+        moderationReasons: ['Audio unclear'],
+      },
     });
     expect(r.heldForReview).toBe(true);
   });
@@ -246,7 +281,7 @@ describe('changing sound on an existing clip', () => {
     expect(moderateVideo).not.toHaveBeenCalled();
     expect(videoUpdate).toHaveBeenCalledWith({
       where: { listingId: 'l1' },
-      data: { audioEnabled: false },
+      data: expect.objectContaining({ audioEnabled: false }),
     });
     expect(r.playbackUrl).toContain('ac_none');
   });

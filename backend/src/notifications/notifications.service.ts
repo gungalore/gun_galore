@@ -2166,6 +2166,70 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Seller: marketplace video review outcome
+  // ---------------------------------------------------------------
+  async listingVideoApproved(d: {
+    sellerEmail: string;
+    sellerName: string;
+    listingTitle: string;
+    listingId: string;
+  }) {
+    const listingUrl = `${this.appUrl}/listings/${d.listingId}`;
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'listing_video_approved',
+      title: 'Video approved',
+      body: `The video on ${d.listingTitle} is now visible.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'sold',
+      linkedType: 'listing',
+      linkedId: d.listingId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'success', label: 'Approved' },
+      headline: 'Video approved',
+      body: `Hi ${b(d.sellerName)}, the video on your listing ${b(d.listingTitle)} has been reviewed and is now visible.`,
+      cta: { label: 'View listing', url: listingUrl },
+      preheader: `${d.listingTitle} video is live`,
+    });
+    await this.send(d.sellerEmail, 'Video approved: ' + d.listingTitle, html);
+  }
+
+  async listingVideoRejected(d: {
+    sellerEmail: string;
+    sellerName: string;
+    listingTitle: string;
+    listingId: string;
+    reason: string;
+  }) {
+    const editUrl = `${this.appUrl}/listings/${d.listingId}/edit`;
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'listing_video_rejected',
+      title: 'Video not approved',
+      body: `${d.listingTitle} — ${d.reason}`,
+      url: `/listings/${d.listingId}/edit`,
+      iconKey: 'sold',
+      linkedType: 'listing',
+      linkedId: d.listingId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'error', label: 'Not approved' },
+      headline: 'Video not approved',
+      body: `Hi ${b(d.sellerName)}, the video on your listing ${b(d.listingTitle)} was not approved. Reason: ${b(d.reason)}<br><br>Your listing is still live with its photos. You can upload another video from the edit page.`,
+      cta: { label: 'Edit listing', url: editUrl },
+      preheader: `${d.listingTitle} video was not approved`,
+    });
+    await this.send(
+      d.sellerEmail,
+      'Video not approved: ' + d.listingTitle,
+      html,
+    );
+  }
+
+  // ---------------------------------------------------------------
   // Seller: listing approved
   // ---------------------------------------------------------------
   async listingApproved(d: ListingDecisionDetails) {

@@ -5,8 +5,10 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '../../../../lib/auth';
 import { Listing, CategoryAttributeDef } from '@/lib/types';
 import { CONDITION_LABELS, PROVINCE_LABELS } from '@/lib/utils';
-import { AddressAutocomplete, type ParsedAddressComponents } from '@/components/address-autocomplete';
+import { AddressAutocomplete } from '@/components/address-autocomplete';
 import { VideoDropzone } from '@/components/video-dropzone';
+import { ImageBlurModal } from '@/components/media/image-blur-modal';
+import { VideoDecisionModal } from '@/components/media/video-decision-modal';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -77,6 +79,18 @@ export default function EditListingPage() {
   const effectiveVideoAudio =
     videoAudioEnabled ??
     (listing?.video ? (listing.video.audioEnabled ?? true) : false);
+
+  const [redactTarget, setRedactTarget] = useState<
+    | { kind: 'existing'; imageId: string; file: File }
+    | { kind: 'new'; index: number; file: File }
+    | null
+  >(null);
+  const [videoDecision, setVideoDecision] = useState<{
+    file: File;
+    reason: string;
+  } | null>(null);
+  const [videoReviewRequested, setVideoReviewRequested] = useState(false);
+  const [videoChecking, setVideoChecking] = useState(false);
   // Per-photo failure surfaces. Photo work runs AFTER the listing PATCH has
   // already committed, so a failure here can't be reported as "save failed" —
   // that would send the seller back to re-edit text that is safely stored.
@@ -244,6 +258,162 @@ export default function EditListingPage() {
 
   function set(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function loadPhotoFile(url: string, name: string): Promise<File> {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Could not open that photo.');
+    const blob = await res.blob();
+    return new File([blob], name, { type: blob.type || 'image/jpeg' });
+  }
+
+  async function openExistingRedact(image: Listing['images'][number]) {
+    try {
+      const file = await loadPhotoFile(
+        image.url,
+        `listing-photo-${image.id}.jpg`,
+      );
+      setRedactTarget({ kind: 'existing', imageId: image.id, file });
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Could not open that photo.',
+      );
+    }
+  }
+
+  function openNewRedact(file: File, index: number) {
+    setRedactTarget({ kind: 'new', index, file });
+  }
+
+  async function applyRedaction(next: File) {
+    const target = redactTarget;
+    setRedactTarget(null);
+    if (!target) return;
+    if (target.kind === 'new') {
+      setNewImages((prev) =>
+        prev.map((file, index) => (index === target.index ? next : file)),
+      );
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Sign in again to save this photo.');
+      const fd = new FormData();
+      fd.append('image', next);
+      const res = await fetch(
+        `${API_URL}/listings/${id}/images/${target.imageId}`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        },
+      );
+      if (!res.ok) throw new Error(await failureReason(res));
+      const updated = (await res.json()) as Listing['images'][number];
+      setListing((prev) =>
+        prev
+          ? {
+              ...prev,
+              images: prev.images.map((image) =>
+                image.id === target.imageId ? updated : image,
+              ),
+            }
+          : prev,
+      );
+
+      // The edit form has no separate Preview pass. Re-screen the redacted
+      // bytes; if the detail is still there, take the live listing down until
+      // an admin approves it.
+      try {
+        const screenFd = new FormData();
+        screenFd.append('image', next);
+        const screenRes = await fetch(`${API_URL}/listings/image-screen`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: screenFd,
+        });
+        const screen = (await screenRes.json().catch(() => ({}))) as {
+          decision?: string;
+          reasons?: string[];
+        };
+        if (screenRes.ok && screen.decision && screen.decision !== 'APPROVE') {
+          await fetch(`${API_URL}/listings/${id}/request-review`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ reasons: screen.reasons ?? [] }),
+          });
+          setListing((prev) =>
+            prev ? { ...prev, status: 'PENDING_REVIEW' } : prev,
+          );
+          setError(
+            'The photo still needs an admin check. The listing is hidden until it is approved (up to 24 hours).',
+          );
+        }
+      } catch {
+        // The replacement itself succeeded; the normal next save/preview will
+        // screen it again if this check could not complete.
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Could not save the redacted photo.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function checkNewVideo(file: File, audioEnabled = effectiveVideoAudio) {
+    setVideoChecking(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Sign in again to check the video.');
+      const fd = new FormData();
+      fd.append('video', file);
+      fd.append('audioEnabled', String(audioEnabled));
+      const res = await fetch(`${API_URL}/listings/video-preflight`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (!res.ok) throw new Error(await failureReason(res));
+      const data = (await res.json()) as {
+        decision?: string;
+        reasons?: string[];
+        publicReason?: string;
+      };
+      if (data.decision && data.decision !== 'APPROVE') {
+        setVideoDecision({
+          file,
+          reason:
+            data.publicReason ??
+            data.reasons?.[0] ??
+            'The video shows contact details or advertising.',
+        });
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `We could not check the video - ${err.message}`
+          : 'We could not check the video.',
+      );
+    } finally {
+      setVideoChecking(false);
+    }
+  }
+
+  function handleNewVideo(file: File | null) {
+    setNewVideo(file);
+    setVideoReviewRequested(false);
+    if (file) {
+      setRemoveExistingVideo(false);
+      setVideoAudioEnabled(false);
+      void checkNewVideo(file, false);
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -486,6 +656,7 @@ export default function EditListingPage() {
           const vfd = new FormData();
           vfd.append('video', newVideo);
           vfd.append('audioEnabled', String(effectiveVideoAudio));
+          if (videoReviewRequested) vfd.append('reviewRequested', 'true');
           const vToken = await getToken();
           const vres = await fetch(`${API_URL}/listings/${id}/video`, {
             method: 'POST',
@@ -493,18 +664,33 @@ export default function EditListingPage() {
             body: vfd,
           });
           if (!vres.ok) {
-            const body = await vres.json().catch(() => null);
-            const msg = (body as { message?: string | string[] } | null)?.message;
-            throw new Error(
-              Array.isArray(msg)
-                ? msg.join(', ')
-                : msg ??
-                    (vres.status === 413
-                      ? 'the video is too big (64 MB is the limit)'
-                      : `error ${vres.status}`),
-            );
+            const body = (await vres.json().catch(() => null)) as {
+              message?: string | string[];
+              code?: string;
+            } | null;
+            const msg = body?.message;
+            const detail = Array.isArray(msg)
+              ? msg.join(', ')
+              : msg ??
+                (vres.status === 413
+                  ? 'the video is too big (64 MB is the limit)'
+                  : `error ${vres.status}`);
+            if (
+              body?.code === 'VIDEO_REFUSED' ||
+              body?.code === 'VIDEO_REVIEW_REQUIRED'
+            ) {
+              // Listing details/photos are already saved. The new clip was not
+              // attached; keep that separate from the saved listing.
+              setNewVideo(null);
+              setVideoReviewRequested(false);
+              setError(`Your listing was saved without the new video: ${detail}`);
+              setSubmitting(false);
+              return;
+            }
+            throw new Error(detail);
           }
           setNewVideo(null);
+          setVideoReviewRequested(false);
           setRemoveExistingVideo(false);
         } else if (removeExistingVideo && listing?.video) {
           const vToken = await getToken();
@@ -715,6 +901,24 @@ export default function EditListingPage() {
               .map((img) => (
                 <div key={img.id} style={{ position: 'relative' }}>
                   <img src={img.url} alt="" className="w-20 h-20 rounded-[4px] object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => void openExistingRedact(img)}
+                    style={{
+                      position: 'absolute',
+                      left: 2,
+                      bottom: 2,
+                      padding: '2px 5px',
+                      borderRadius: 3,
+                      background: 'rgba(10,10,10,0.85)',
+                      color: '#fff',
+                      border: '0.5px solid rgba(255,255,255,0.15)',
+                      fontSize: 9,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Hide details
+                  </button>
                   <button
                     type="button"
                     onClick={() =>
@@ -1130,9 +1334,29 @@ export default function EditListingPage() {
             style={{ ...inputStyle, padding: '6px 12px', cursor: 'pointer' }}
           />
           {newImages.length > 0 && (
-            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-              {newImages.length} new file{newImages.length !== 1 ? 's' : ''} to upload
-            </p>
+            <div className="mt-1">
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                {newImages.length} new file{newImages.length !== 1 ? 's' : ''} to upload
+              </p>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {newImages.map((file, index) => (
+                  <button
+                    key={`${file.name}-${index}`}
+                    type="button"
+                    onClick={() => openNewRedact(file, index)}
+                    className="text-xs px-2 py-1 rounded-[4px]"
+                    style={{
+                      background: 'transparent',
+                      color: 'var(--text-secondary)',
+                      border: '0.5px solid var(--border)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Hide details in {file.name}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Per-file upload failures. The files that failed are still staged
@@ -1170,16 +1394,18 @@ export default function EditListingPage() {
         <Field label="Listing video (optional)">
           <VideoDropzone
             file={newVideo}
-            onChange={(f) => {
-              setNewVideo(f);
-              if (f) {
-                setRemoveExistingVideo(false);
-                // A replacement clip starts muted by default.
-                setVideoAudioEnabled(false);
-              }
-            }}
+            onChange={handleNewVideo}
             audioEnabled={effectiveVideoAudio}
             onAudioChange={setVideoAudioEnabled}
+            status={
+              videoChecking
+                ? 'Checking…'
+                : videoDecision
+                  ? 'Needs attention'
+                  : videoReviewRequested
+                    ? 'Pending review'
+                    : undefined
+            }
             existingUrl={
               !removeExistingVideo && listing.video
                 ? listing.video.playbackUrl ?? listing.video.url
@@ -1188,6 +1414,23 @@ export default function EditListingPage() {
             existingThumbnailUrl={listing.video?.thumbnailUrl ?? null}
             onRemoveExisting={() => setRemoveExistingVideo(true)}
           />
+          {videoChecking && (
+            <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+              Checking the video...
+            </p>
+          )}
+          {videoReviewRequested && (
+            <p className="text-xs mt-2" style={{ color: 'var(--warning)' }}>
+              This video will be sent for admin review and will appear once approved
+              (up to 24 hours).
+            </p>
+          )}
+          {listing.video?.status === 'PENDING_REVIEW' && (
+            <p className="text-xs mt-2" style={{ color: 'var(--warning)' }}>
+              The current video is under review and is hidden from buyers until
+              approved.
+            </p>
+          )}
           {removeExistingVideo && (
             <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
               The current video will be removed when you save.
@@ -1213,6 +1456,36 @@ export default function EditListingPage() {
           </a>
         </div>
       </form>
+
+      {redactTarget && (
+        <ImageBlurModal
+          file={redactTarget.file}
+          reason="Drag over the address, number or website you want to hide."
+          onApply={(next) => void applyRedaction(next)}
+          onReplace={() => {
+            setRedactTarget(null);
+            setError('Use Add more photos to choose a replacement photo.');
+          }}
+          onCancel={() => setRedactTarget(null)}
+        />
+      )}
+      {videoDecision && (
+        <VideoDecisionModal
+          reason={videoDecision.reason}
+          onReupload={() => {
+            setVideoDecision(null);
+            setNewVideo(null);
+          }}
+          onReview={() => {
+            setVideoReviewRequested(true);
+            setVideoDecision(null);
+          }}
+          onDelete={() => {
+            setVideoDecision(null);
+            setNewVideo(null);
+          }}
+        />
+      )}
     </main>
   );
 }

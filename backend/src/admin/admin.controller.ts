@@ -1766,3 +1766,47 @@ export class AdminCreditsController {
     return this.credits.testService(service);
   }
 }
+
+@Controller('admin/listing-videos')
+@UseGuards(AdminJwtGuard)
+export class AdminListingVideosController {
+  constructor(
+    private readonly listings: ListingsService,
+    private readonly audit: AdminAuditService,
+  ) {}
+
+  @Get()
+  list(@Query('limit') limit?: string) {
+    return this.listings.listPendingVideoReviews(Number(limit) || 20);
+  }
+
+  @Post(':id/review')
+  @HttpCode(200)
+  async review(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { action?: string; reason?: string },
+  ) {
+    if (body.action !== 'APPROVE' && body.action !== 'REJECT') {
+      throw new BadRequestException('action must be APPROVE or REJECT');
+    }
+    const result = await this.listings.reviewPendingVideo(
+      id,
+      admin.sub,
+      body.action,
+      body.reason,
+    );
+    await this.audit.record({
+      adminUserId: admin.sub,
+      action: `LISTING_VIDEO_${body.action}`,
+      resourceType: 'ListingVideo',
+      resourceId: id,
+      reason:
+        body.reason?.trim() ||
+        (body.action === 'APPROVE'
+          ? 'Approved after video review'
+          : 'Rejected after video review'),
+    });
+    return result;
+  }
+}
