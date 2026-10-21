@@ -7,6 +7,29 @@ overwritten.
 
 Last updated: **2026-10-21**.
 
+## 2026-10-21 - SELLER-BLURRED AREAS PASS RE-SCAN (IMAGE REDACTION HOTFIX)
+
+**A blurred phone number or email was still being flagged.** The re-scan sent
+only the pixels; the model could still read the blurred shape as "hidden
+contact details" and refused it. The screen now receives an explicit
+`redacted` flag for seller-blurred photos, and the image prompt treats that
+area as intentionally removed while still flagging readable text elsewhere.
+The final uploaded file is still screened authoritatively.
+
+`POST /listings/image-screen` accepts `redacted=true`; `/listings/preview`
+accepts `images[].redacted`; the Sell and Edit blur flows send it. A new
+regression spec covers the prompt contract.
+
+Commit **`9d09f6c4`**. Full deploy at 10:14 SAST: box HEAD matches, rollback
+`alloutdoor-20261021-101453.dump` (35 772 856 bytes), backend/frontend health
+x2 OK, public 200, backend/frontend/warden online. `image-screen` still answers
+401 without auth (mounted). Gates before deploy: backend **371 suites / 5 737
+tests**, frontend **147 files / 1 768 tests**, tsc and production build clean.
+
+**Next:** repeat the `ppprsa.shop` photo through blur -> re-scan -> publish.
+The listing should pass without admin review now. Then run a flagged video
+through Reupload, Admin review, and Delete.
+
 ## 2026-10-21 - BLUR TOOL POINTER ALIGNMENT (FRONTEND-ONLY HOTFIX)
 
 **The blur selection box did not follow the cursor.** The canvas was styled
