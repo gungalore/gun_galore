@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-10-21**.
 
+## 2026-10-21 - COVER VIDEO ON CARDS AND PREVIEW (DEPLOYED)
+
+**Sell Preview now shows the clip**, as the hero when it is ticked as the
+cover and below the photos when it is not. Browse/search/recently-viewed card
+payloads now include approved video metadata. A ticked cover video renders in
+the card's 4:3 photo slot, muted and looping, and plays/pauses from an
+IntersectionObserver as the card scrolls in and out of view. Pending/rejected
+video rows are stripped from card payloads server-side.
+
+Commit **`f544a0f2`**. Full deploy at 11:27 SAST: rollback
+`alloutdoor-20261021-112700.dump` (35 775 587 bytes), box HEAD matches,
+backend/frontend health x2 OK, public 200 x2, all three PM2 services online.
+No migration in this deploy. `backend/package.json` was stashed and restored.
+
 ## 2026-10-21 - MEDIA, DESCRIPTION AND VERIFICATION POLISH (COMMITTED)
 
 Commit **`59b922be`**; docs **`5ee6af35`**. Full deploy at 11:07 SAST:
