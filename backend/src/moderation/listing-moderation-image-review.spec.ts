@@ -192,4 +192,23 @@ describe('image moderation - admin review instead of auto-reject', () => {
       categories: ['photo-address'],
     });
   });
+
+  it('tells the model to ignore an intentional seller redaction', async () => {
+    const { svc, complete } = makeService({
+      violation: false,
+      unsure: false,
+      categories: [],
+      reasons: [],
+    });
+    await svc.screenImage('image/jpeg', 'abc', true);
+
+    const request = complete.mock.calls[0][0] as {
+      messages: { content: { type: string; text?: string }[] }[];
+    };
+    const text = request.messages[0].content
+      .map((part) => part.text ?? '')
+      .join(' ');
+    expect(text).toMatch(/intentionally blurred or pixelated/i);
+    expect(text).toMatch(/not contact information/i);
+  });
 });

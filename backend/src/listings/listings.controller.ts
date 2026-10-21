@@ -398,8 +398,9 @@ export class ListingsController {
       }),
     )
     file: Express.Multer.File,
+    @Body('redacted') redacted?: string,
   ) {
-    return this.listingsService.screenImage(file);
+    return this.listingsService.screenImage(file, redacted === 'true');
   }
 
   @Post(':id/images')

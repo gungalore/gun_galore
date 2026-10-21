@@ -329,6 +329,7 @@ export default function EditListingPage() {
       try {
         const screenFd = new FormData();
         screenFd.append('image', next);
+        screenFd.append('redacted', 'true');
         const screenRes = await fetch(`${API_URL}/listings/image-screen`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },

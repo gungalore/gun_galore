@@ -498,6 +498,7 @@ export default function NewListingPage() {
   // Early media moderation: photos and video are screened as soon as they are
   // picked, and the failure queue opens the right fixing tool immediately.
   const media = useMediaReview(getToken, API_URL);
+  const redactedImagesRef = useRef<Set<File>>(new Set());
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
   const [replaceTarget, setReplaceTarget] = useState<
     { kind: 'image'; file: File } | { kind: 'video' } | null
@@ -2125,7 +2126,8 @@ export default function NewListingPage() {
   // Returns { mediaType, data } in the shape the backend expects.
   async function fileToBase64(
     file: File,
-  ): Promise<{ mediaType: string; data: string }> {
+    redacted = false,
+  ): Promise<{ mediaType: string; data: string; redacted?: boolean }> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
@@ -2140,7 +2142,11 @@ export default function NewListingPage() {
           reject(new Error('Unexpected data URL format'));
           return;
         }
-        resolve({ mediaType: match[1], data: match[2] });
+        resolve({
+          mediaType: match[1],
+          data: match[2],
+          ...(redacted ? { redacted: true } : {}),
+        });
       };
       reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
       reader.readAsDataURL(file);
@@ -2184,7 +2190,11 @@ export default function NewListingPage() {
     setAuditError(null);
     try {
       const token = await getToken();
-      const encodedImages = await Promise.all(images.map(fileToBase64));
+      const encodedImages = await Promise.all(
+        images.map((file) =>
+          fileToBase64(file, redactedImagesRef.current.has(file)),
+        ),
+      );
       const body = {
         ...buildListingPayload(),
         previousAttemptHashes,
@@ -2224,6 +2234,10 @@ export default function NewListingPage() {
   }
 
   function handleImagesChange(next: File[]) {
+    const keep = new Set(next);
+    for (const file of Array.from(redactedImagesRef.current)) {
+      if (!keep.has(file)) redactedImagesRef.current.delete(file);
+    }
     setImages(next);
     media.syncImages(next);
     setAuditResult(null);
@@ -2246,6 +2260,8 @@ export default function NewListingPage() {
     const oldFile = current.review.file;
     const idx = images.indexOf(oldFile);
     if (idx < 0) return;
+    redactedImagesRef.current.delete(oldFile);
+    redactedImagesRef.current.add(nextFile);
     media.applyBlur(oldFile, nextFile);
     const next = [...images];
     next[idx] = nextFile;
@@ -4709,6 +4725,9 @@ export default function NewListingPage() {
           onApply={(next) => {
             const idx = images.indexOf(manualRedact);
             if (idx >= 0) {
+              redactedImagesRef.current.delete(manualRedact);
+              redactedImagesRef.current.add(next);
+              media.applyBlur(manualRedact, next);
               const nextImages = [...images];
               nextImages[idx] = next;
               handleImagesChange(nextImages);

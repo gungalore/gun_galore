@@ -916,7 +916,7 @@ export class ListingsService {
    * sell form's early-warning path; previewDraft/create still run the
    * authoritative pass on the final files.
    */
-  async screenImage(file: Express.Multer.File) {
+  async screenImage(file: Express.Multer.File, redacted = false) {
     const mediaType = file.mimetype as
       | 'image/jpeg'
       | 'image/png'
@@ -924,6 +924,7 @@ export class ListingsService {
     const verdict = await this.moderation.screenImage(
       mediaType,
       file.buffer.toString('base64'),
+      redacted,
     );
     const photoFlags = verdict.photoFlags ?? [];
     return {

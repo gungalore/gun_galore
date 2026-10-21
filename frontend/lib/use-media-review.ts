@@ -120,6 +120,7 @@ export function useMediaReview(
         if (!token) throw new Error('Sign in again to check this photo.');
         const fd = new FormData();
         fd.append('image', file);
+        if (wasBlur) fd.append('redacted', 'true');
         const res = await fetch(`${apiRef.current}/listings/image-screen`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
