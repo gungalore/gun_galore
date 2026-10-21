@@ -94,6 +94,11 @@ describe('FeedService.listPostLikes', () => {
         avatarUrl: 'https://img/2',
         sellerTier: null,
         isVerifiedExpert: true,
+        verification: {
+          phoneVerified: false,
+          emailVerified: false,
+          idVerified: false,
+        },
       },
       {
         id: 'u1',
@@ -101,6 +106,11 @@ describe('FeedService.listPostLikes', () => {
         avatarUrl: null,
         sellerTier: 'GOLD',
         isVerifiedExpert: false,
+        verification: {
+          phoneVerified: false,
+          emailVerified: false,
+          idVerified: false,
+        },
       },
     ]);
     expect(res.nextBefore).toBeNull();

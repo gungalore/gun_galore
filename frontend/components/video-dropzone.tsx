@@ -25,6 +25,8 @@ export function VideoDropzone({
   onRemoveExisting,
   maxBytes = MAX_SELL_VIDEO_BYTES,
   status,
+  isHero = false,
+  onHeroChange,
 }: {
   file: File | null;
   onChange: (next: File | null) => void;
@@ -38,6 +40,9 @@ export function VideoDropzone({
   maxBytes?: number;
   /** Early moderation status, shown under the file name. */
   status?: string;
+  /** Show the clip first, as the listing cover, instead of after the photos. */
+  isHero?: boolean;
+  onHeroChange?: (next: boolean) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -169,6 +174,62 @@ export function VideoDropzone({
             : 'The audio is removed before the clip is published.'}
         </p>
       </div>
+
+      {hasAny && onHeroChange && (
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={isHero}
+          onClick={() => onHeroChange(!isHero)}
+          className="mt-3 flex w-full items-start gap-3 rounded-[6px] px-3 py-2.5 text-left"
+          style={{
+            background: isHero ? 'rgba(227,6,19,0.06)' : 'var(--bg-inset)',
+            border: `0.5px solid ${isHero ? 'var(--red)' : 'var(--border)'}`,
+            cursor: 'pointer',
+          }}
+        >
+          <span
+            aria-hidden
+            className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px]"
+            style={{
+              background: isHero ? 'var(--red)' : 'transparent',
+              border: `1px solid ${isHero ? 'var(--red)' : 'var(--border-hover)'}`,
+              color: '#fff',
+              fontSize: 10,
+              lineHeight: 1,
+            }}
+          >
+            {isHero && (
+              <svg width="9" height="9" viewBox="0 0 12 12" aria-hidden>
+                <path
+                  d="M2 6.5 4.7 9 10 3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </span>
+          <span>
+            <span
+              className="text-xs block"
+              style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+            >
+              Use the video as the cover
+            </span>
+            <span
+              className="text-xs block mt-0.5"
+              style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+            >
+              {isHero
+                ? 'Buyers see the video first and can play it from the cover thumbnail.'
+                : 'Your first photo stays the cover; the video follows it.'}
+            </span>
+          </span>
+        </button>
+      )}
 
       {error && (
         <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>

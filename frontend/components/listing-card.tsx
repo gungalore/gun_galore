@@ -9,6 +9,7 @@ import { vicinityLabel } from '@/lib/vicinity';
 import { WishlistButton } from './wishlist-button';
 import { useCountdown, formatCountdown } from '@/lib/use-countdown';
 import { UserBadges } from './user-badges';
+import { VerificationBadges } from './verification-badges';
 import { UrgencyChip } from './urgency-chip';
 import { SellerRating } from './seller-rating';
 import { SavedCount } from './saved-count';
@@ -242,6 +243,7 @@ export function ListingCard({ listing }: { listing: Listing }) {
               subscriptionTier={listing.seller.subscriptionTier}
               isVerifiedExpert={listing.seller.isVerifiedExpert}
             />
+            <VerificationBadges verification={listing.seller.verification} />
           </div>
 
           {/* Title, now BELOW the price. min-height reserves two lines

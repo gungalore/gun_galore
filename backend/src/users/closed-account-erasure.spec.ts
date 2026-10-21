@@ -103,17 +103,24 @@ describe('RatingsService.findForSeller — reviews received follow the profile',
     expect(prisma.rating.findMany).not.toHaveBeenCalled();
   });
 
-  it('selects the rater by username only, so a closed REVIEWER degrades to null', async () => {
+  it('selects only the rater handle and boolean verification ticks', async () => {
     // The other direction: a review a closed member WROTE stays on the
     // seller's profile (deleting it would silently move another seller's
-    // average). Nothing here needs to change for that — the select has only
-    // ever asked for `username`, which closure sets to null, and every render
-    // site already falls back. This test is what stops someone "helpfully"
-    // adding firstName to the include later.
+    // average). The public handle and three yes/no trust ticks are safe;
+    // closure sets the handle to null and every render site already falls
+    // back. This test is what stops someone "helpfully" adding firstName,
+    // email or phone to the include later.
     const { service, prisma } = make({ id: 'U1' });
     await service.findForSeller('user_live');
     const args = prisma.rating.findMany.mock.calls[0][0];
-    expect(args.include.rater).toEqual({ select: { username: true } });
+    expect(args.include.rater).toEqual({
+      select: {
+        username: true,
+        phoneVerified: true,
+        emailVerifiedAt: true,
+        kycIdVerifiedAt: true,
+      },
+    });
   });
 });
 

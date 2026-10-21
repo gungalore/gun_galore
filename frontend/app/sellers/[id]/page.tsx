@@ -3,6 +3,7 @@ import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { ListingCard } from '@/components/listing-card';
 import { PageReveal } from '@/components/page-reveal';
 import { UserBadgesWithTooltip } from '@/components/user-badges';
+import { VerificationBadges } from '@/components/verification-badges';
 import { ReportButton } from '@/components/report-button';
 import { ClickableAvatar } from '@/components/avatar-lightbox';
 import { FilterBar } from '@/components/filter-bar';
@@ -44,7 +45,14 @@ interface SellerRating {
   sellerResponse: string | null;
   createdAt: string;
   // Public-facing reviews — username only per platform policy.
-  rater: { username: string | null };
+  rater: {
+    username: string | null;
+    verification?: {
+      phoneVerified: boolean;
+      emailVerified: boolean;
+      idVerified: boolean;
+    };
+  };
   transaction: { listing: { title: string } };
 }
 
@@ -174,7 +182,10 @@ export default async function SellerProfilePage({
                 subscriptionTier={profile.subscriptionTier}
                 isVerifiedExpert={profile.isVerifiedExpert}
                 expertBadgeReason={profile.expertBadgeReason}
-                idVerified={profile.idVerified}
+              />
+              <VerificationBadges
+                verification={profile.verification}
+                size="md"
               />
             </p>
             {avgRating && (
@@ -270,7 +281,10 @@ export default async function SellerProfilePage({
                 <div key={r.id}>
                   <div className="flex items-center justify-between mb-0.5">
                     <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      {r.rater.username ?? 'Anonymous'} · {r.transaction.listing.title.slice(0, 28)}
+                      {r.rater.username ?? 'Anonymous'}
+                      <VerificationBadges verification={r.rater.verification} />
+                      {' · '}
+                      {r.transaction.listing.title.slice(0, 28)}
                     </span>
                     <span style={{ color: 'var(--warning)', fontSize: '12px' }}>
                       {'★'.repeat(r.stars)}{'☆'.repeat(5 - r.stars)}

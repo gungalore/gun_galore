@@ -37,6 +37,7 @@ import {
   looksLikeSerial,
   normaliseMuteList,
   normaliseTags,
+  publicVerification,
   sanitisePostDetails,
   PUBLIC_AUTHOR_SELECT,
   POST_TYPE_LABELS,
@@ -261,6 +262,7 @@ export class FeedService {
             : (post.author?.avatarUrl ?? null),
         sellerTier: post.author?.sellerTier ?? null,
         isVerifiedExpert: post.author?.isVerifiedExpert ?? false,
+        verification: publicVerification(post.author ?? {}),
       },
       images: post.images.map((i) => ({ id: i.id, url: i.url, order: i.order })),
       video: post.video
@@ -491,6 +493,7 @@ export class FeedService {
         avatarUrl: l.user.feedShowAvatar === false ? null : (l.user.avatarUrl ?? null),
         sellerTier: l.user.sellerTier,
         isVerifiedExpert: l.user.isVerifiedExpert,
+        verification: publicVerification(l.user),
       })),
       nextBefore: hasMore
         ? page[page.length - 1].createdAt.toISOString()
@@ -510,6 +513,9 @@ export class FeedService {
       avatarUrl: string | null;
       sellerTier: string | null;
       isVerifiedExpert: boolean;
+      phoneVerified: boolean;
+      emailVerifiedAt: Date | null;
+      kycIdVerifiedAt: Date | null;
       feedShowAvatar: boolean;
     },
     extra: { isFollowing?: boolean } = {},
@@ -520,6 +526,7 @@ export class FeedService {
       avatarUrl: u.feedShowAvatar === false ? null : (u.avatarUrl ?? null),
       sellerTier: u.sellerTier,
       isVerifiedExpert: u.isVerifiedExpert,
+      verification: publicVerification(u),
       ...extra,
     };
   }
@@ -638,6 +645,9 @@ export class FeedService {
         id: c.authorId,
         username: authorName(c.author),
         avatarUrl: c.author?.avatarUrl ?? null,
+        sellerTier: c.author?.sellerTier ?? null,
+        isVerifiedExpert: c.author?.isVerifiedExpert ?? false,
+        verification: publicVerification(c.author ?? {}),
       },
     }));
   }
@@ -653,6 +663,9 @@ export class FeedService {
         avatarUrl: true,
         sellerTier: true,
         isVerifiedExpert: true,
+        phoneVerified: true,
+        emailVerifiedAt: true,
+        kycIdVerifiedAt: true,
         feedShowAvatar: true,
         createdAt: true,
       },
@@ -694,6 +707,7 @@ export class FeedService {
         avatarUrl: profile.feedShowAvatar ? profile.avatarUrl : null,
         sellerTier: profile.sellerTier,
         isVerifiedExpert: profile.isVerifiedExpert,
+        verification: publicVerification(profile),
         memberSince: profile.createdAt,
       },
       isFollowing: !!following,

@@ -7,6 +7,7 @@ import { SUPPORT_EMAIL } from '@/lib/brand';
 import { PageReveal } from '@/components/page-reveal';
 import { HelpTip } from '@/components/help-tip';
 import { SellerVerificationProgress } from '@/components/seller-verification-progress';
+import { VerificationBadges } from '@/components/verification-badges';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -599,6 +600,7 @@ export default async function ProfilePage() {
                       style={{ color: 'var(--text-primary)', fontWeight: 500 }}
                     >
                       {r.rater.username ?? 'Anonymous'}
+                      <VerificationBadges verification={r.rater.verification} />
                     </span>
                     <span
                       className="text-xs"

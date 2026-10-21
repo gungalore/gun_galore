@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useRef, useState, DragEvent } from 'react';
+import { useEffect, useRef, useState, DragEvent } from 'react';
 
 // Drag-and-drop photo dropzone with thumbnail previews, drag-to-reorder,
 // set-as-hero, and remove buttons. Files are kept in the parent's state;
@@ -24,6 +24,28 @@ interface Props {
   onRedact?: (index: number) => void;
 }
 
+function Thumbnail({ file }: { file: File }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const next = URL.createObjectURL(file);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [file]);
+
+  if (!url) return null;
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt=""
+      className="w-full h-full object-cover pointer-events-none"
+      draggable={false}
+    />
+  );
+}
+
 export function PhotoDropzone({
   files,
   onChange,
@@ -38,33 +60,15 @@ export function PhotoDropzone({
   const [dragSourceIdx, setDragSourceIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
-  // Cache object URLs across renders so we don't re-create them every time
-  // (which would cause a flash) and revoke them when the file goes away.
-  const [previews, setPreviews] = useState<Map<File, string>>(new Map());
-
-  function syncPreviews(list: File[]) {
-    const next = new Map<File, string>();
-    for (const f of list) {
-      const existing = previews.get(f);
-      next.set(f, existing ?? URL.createObjectURL(f));
-    }
-    for (const [f, url] of previews) {
-      if (!next.has(f)) URL.revokeObjectURL(url);
-    }
-    setPreviews(next);
-  }
-
   function addFiles(incoming: FileList | File[]) {
     const arr = Array.from(incoming).filter((f) => f.type.startsWith('image/'));
     if (arr.length === 0) return;
     const merged = [...files, ...arr].slice(0, maxFiles);
-    syncPreviews(merged);
     onChange(merged);
   }
 
   function removeAt(idx: number) {
     const next = files.filter((_, i) => i !== idx);
-    syncPreviews(next);
     onChange(next);
   }
 
@@ -218,13 +222,7 @@ export function PhotoDropzone({
                   transition: 'opacity 0.15s, border-color 0.15s',
                 }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={previews.get(file)}
-                  alt=""
-                  className="w-full h-full object-cover pointer-events-none"
-                  draggable={false}
-                />
+                <Thumbnail file={file} />
 
                 {/* Cover badge */}
                 {isHero && (

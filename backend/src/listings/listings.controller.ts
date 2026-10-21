@@ -515,6 +515,7 @@ export class ListingsController {
     file: Express.Multer.File,
     @Body('audioEnabled') audioEnabled?: string,
     @Body('reviewRequested') reviewRequested?: string,
+    @Body('isHero') isHero?: string,
   ) {
     return this.listingsService.addVideo(
       id,
@@ -522,6 +523,7 @@ export class ListingsController {
       file,
       audioEnabled === 'true',
       reviewRequested === 'true',
+      isHero === 'true',
     );
   }
 
@@ -533,12 +535,13 @@ export class ListingsController {
   setVideoAudio(
     @Param('id') id: string,
     @CurrentUser() userId: string,
-    @Body() body: { audioEnabled?: boolean },
+    @Body() body: { audioEnabled?: boolean; isHero?: boolean },
   ) {
     return this.listingsService.setVideoAudio(
       id,
       userId,
       body.audioEnabled === true,
+      typeof body.isHero === 'boolean' ? body.isHero : undefined,
     );
   }
 

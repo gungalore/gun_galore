@@ -152,6 +152,7 @@ export const PUBLIC_LISTING_SELECT = {
       width: true,
       height: true,
       audioEnabled: true,
+      isHero: true,
       status: true,
     },
   },
@@ -176,6 +177,39 @@ export const PUBLIC_LISTING_SELECT = {
   // Social-proof: how many people saved this listing (names never exposed).
   _count: { select: { wishlistedBy: true } },
 } satisfies Prisma.ListingSelect;
+
+// Public, boolean-only trust ticks. Kept as a select fragment so every card
+// path returns the same shape as listing detail; the timestamps are converted
+// below and never leave the server.
+const PUBLIC_SELLER_VERIFICATION_SELECT = {
+  phoneVerified: true,
+  emailVerifiedAt: true,
+  kycIdVerifiedAt: true,
+} as const;
+
+type SellerVerificationRow = {
+  phoneVerified: boolean;
+  emailVerifiedAt: Date | null;
+  kycIdVerifiedAt: Date | null;
+};
+
+function withSellerVerification<T extends { seller: SellerVerificationRow }>(
+  listing: T,
+) {
+  const { phoneVerified, emailVerifiedAt, kycIdVerifiedAt, ...seller } =
+    listing.seller;
+  return {
+    ...listing,
+    seller: {
+      ...seller,
+      verification: {
+        phoneVerified,
+        emailVerified: emailVerifiedAt != null,
+        idVerified: kycIdVerifiedAt != null,
+      },
+    },
+  };
+}
 
 // The extra fields the OWNER of a listing is allowed to see on top of the
 // public projection: their own hidden reserve + auto-accept threshold (needed
@@ -2383,7 +2417,12 @@ export class ListingsService {
         // Social-proof count for the recently-viewed rail's cards.
         _count: { select: { wishlistedBy: true } },
         seller: {
-          select: { id: true, username: true, sellerTier: true },
+          select: {
+            id: true,
+            username: true,
+            sellerTier: true,
+            ...PUBLIC_SELLER_VERIFICATION_SELECT,
+          },
         },
       },
     });
@@ -2391,7 +2430,8 @@ export class ListingsService {
     const byId = new Map(rows.map((r) => [r.id, r]));
     const listings = ids
       .map((id) => byId.get(id))
-      .filter((r): r is NonNullable<typeof r> => !!r);
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .map(withSellerVerification);
     return {
       listings,
       total: listings.length,
@@ -2661,6 +2701,9 @@ export class ListingsService {
             id: true,
             username: true,
             sellerTier: true,
+            subscriptionTier: true,
+            isVerifiedExpert: true,
+            ...PUBLIC_SELLER_VERIFICATION_SELECT,
             // UX-1b - seller rating shown on cards. averageRating is a
             // cached denormalised field on User; the review count is a
             // cheap joined aggregate (same query, no N+1). Both public.
@@ -2677,7 +2720,8 @@ export class ListingsService {
     const byId = new Map(rows.map((r) => [r.id, r]));
     const listings = ids
       .map((id) => byId.get(id))
-      .filter((r): r is NonNullable<typeof r> => !!r);
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .map(withSellerVerification);
 
     return {
       listings,
@@ -2798,7 +2842,8 @@ export class ListingsService {
               // + OD2 locked).
               subscriptionTier: true,
               isVerifiedExpert: true,
-              // UX-1b — seller rating on cards. averageRating is a cached
+              ...PUBLIC_SELLER_VERIFICATION_SELECT,
+              // UX-1b - seller rating on cards. averageRating is a cached
               // denormalised field; the count is a cheap joined aggregate
               // (same query, no N+1). Both public.
               averageRating: true,
@@ -2810,7 +2855,12 @@ export class ListingsService {
       this.prisma.listing.count({ where }),
     ]);
 
-    return { listings, total, page, limit };
+    return {
+      listings: listings.map(withSellerVerification),
+      total,
+      page,
+      limit,
+    };
   }
 
   // Public listing detail (GET /listings/:id). This endpoint is unguarded by
@@ -3643,6 +3693,7 @@ export class ListingsService {
     file: Express.Multer.File,
     audioEnabled = false,
     reviewRequested = false,
+    isHero = false,
   ) {
     const listing = await this.assertOwner(id, userId);
     await this.assertEditable(listing);
@@ -3734,6 +3785,7 @@ export class ListingsService {
         width: up.width ?? null,
         height: up.height ?? null,
         audioEnabled,
+        isHero,
         status: pending
           ? ListingVideoStatus.PENDING_REVIEW
           : ListingVideoStatus.APPROVED,
@@ -3808,6 +3860,7 @@ export class ListingsService {
     id: string,
     userId: string,
     audioEnabled: boolean,
+    isHero?: boolean,
   ) {
     const listing = await this.assertOwner(id, userId);
     await this.assertEditable(listing);
@@ -3862,7 +3915,12 @@ export class ListingsService {
 
     const updated = await this.prisma.listingVideo.update({
       where: { listingId: id },
-      data: { audioEnabled, status, moderationReasons: reasons },
+      data: {
+        audioEnabled,
+        ...(isHero === undefined ? {} : { isHero }),
+        status,
+        moderationReasons: reasons,
+      },
     });
     const approved =
       updated.status == null ||

@@ -15,6 +15,7 @@ import {
   unlikePost,
 } from '../../lib/community-api';
 import { PostCard } from './post-card';
+import { VerificationBadges } from '../verification-badges';
 
 export function PostDetailClient({ id }: { id: string }) {
   const { isLoaded, isSignedIn } = useUser();
@@ -229,6 +230,7 @@ function CommentRow({
           <span className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
             {comment.author.username}
           </span>
+          <VerificationBadges verification={comment.author.verification} />
           {onReport && (
             <button
               type="button"

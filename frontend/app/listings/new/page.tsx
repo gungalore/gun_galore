@@ -494,6 +494,9 @@ export default function NewListingPage() {
   // New clips default to muted; the seller can opt into sound, which runs the
   // audio-inclusive screen on upload.
   const [videoAudioEnabled, setVideoAudioEnabled] = useState(false);
+  // The seller must opt in to making the clip the listing cover. Photos stay
+  // the default so a video never jumps ahead of them unannounced.
+  const [videoIsHero, setVideoIsHero] = useState(false);
 
   // Early media moderation: photos and video are screened as soon as they are
   // picked, and the failure queue opens the right fixing tool immediately.
@@ -2246,6 +2249,7 @@ export default function NewListingPage() {
 
   function handleVideoChange(next: File | null) {
     setVideo(next);
+    if (!next) setVideoIsHero(false);
     media.syncVideo(next, videoAudioEnabled);
   }
 
@@ -2577,13 +2581,14 @@ export default function NewListingPage() {
       // commitment, so a refused or failed clip is stripped and reported.
       if (video) {
         setPublishProgress({
-          label: 'Uploading your video - screening it now.',
+          label: 'Uploading your video.',
           done: images.length,
           total: images.length + 1,
         });
         const vfd = new FormData();
         vfd.append('video', video);
         vfd.append('audioEnabled', String(videoAudioEnabled));
+        vfd.append('isHero', String(videoIsHero));
         if (media.videoAction === 'review') vfd.append('reviewRequested', 'true');
         const vToken = await getToken();
         const vres = await fetch(`${API_URL}/listings/${listing.id}/video`, {
@@ -2601,6 +2606,7 @@ export default function NewListingPage() {
             : errBody.message ?? `Error ${vres.status}`;
           videoStripped = true;
           setVideo(null);
+          setVideoIsHero(false);
           media.chooseVideoDelete();
           setPublishError(
             `Your listing was published with its photos. The video was removed: ${detail}`,
@@ -3045,6 +3051,8 @@ export default function NewListingPage() {
                 onChange={handleVideoChange}
                 audioEnabled={videoAudioEnabled}
                 onAudioChange={handleVideoAudioChange}
+                isHero={videoIsHero}
+                onHeroChange={setVideoIsHero}
                 status={
                   media.videoReview?.status === 'checking'
                     ? 'Checking…'

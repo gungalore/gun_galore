@@ -1389,6 +1389,9 @@ model ListingVideo {
   /// Whether the clip is published with its audio track. New uploads default
   /// to muted; enabling sound runs an audio-inclusive moderation pass.
   audioEnabled    Boolean  @default(false)
+  /// Seller opt-in: show the clip as the listing cover, ahead of the photos.
+  /// Default false so a video never displaces the first photo unannounced.
+  isHero          Boolean  @default(false)
   /// A flagged clip can be kept for admin review without holding the listing.
   /// Public payloads only expose APPROVED rows.
   status          ListingVideoStatus @default(APPROVED)

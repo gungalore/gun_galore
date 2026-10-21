@@ -221,7 +221,7 @@ export class RatingsService {
     });
     if (!user) throw new NotFoundException('User not found');
 
-    return this.prisma.rating.findMany({
+    const rows = await this.prisma.rating.findMany({
       where: {
         ratedId: user.id,
         // A review embeds the listing TITLE ("Great seller - Glock 19 arrived
@@ -242,11 +242,34 @@ export class RatingsService {
       },
       orderBy: { createdAt: 'desc' },
       include: {
-        // Username only — reviews are publicly visible on the seller
-        // profile, so we must not expose the rater's real name.
-        rater: { select: { username: true } },
+        // Username only �?" reviews are publicly visible on the seller
+        // profile, so we must not expose the rater's real name. Verification
+        // is three booleans, never the underlying contact rows.
+        rater: {
+          select: {
+            username: true,
+            phoneVerified: true,
+            emailVerifiedAt: true,
+            kycIdVerifiedAt: true,
+          },
+        },
         transaction: { select: { listing: { select: { title: true } } } },
       },
+    });
+    return rows.map(({ rater, ...row }) => {
+      const { phoneVerified, emailVerifiedAt, kycIdVerifiedAt, ...publicRater } =
+        rater;
+      return {
+        ...row,
+        rater: {
+          ...publicRater,
+          verification: {
+            phoneVerified,
+            emailVerified: emailVerifiedAt != null,
+            idVerified: kycIdVerifiedAt != null,
+          },
+        },
+      };
     });
   }
 
@@ -263,11 +286,37 @@ export class RatingsService {
       orderBy: { createdAt: 'desc' },
       take: 10,
       include: {
-        // Username only — reviews are publicly visible on the seller
+        // Username only �?" reviews are publicly visible on the seller
         // profile, so we must not expose the rater's real name.
-        rater: { select: { username: true } },
+        rater: {
+          select: {
+            username: true,
+            phoneVerified: true,
+            emailVerifiedAt: true,
+            kycIdVerifiedAt: true,
+          },
+        },
         transaction: { select: { listing: { select: { title: true } } } },
       },
+    });
+    const shapedRatings = recentRatings.map(({ rater, ...row }) => {
+      const {
+        phoneVerified,
+        emailVerifiedAt,
+        kycIdVerifiedAt,
+        ...publicRater
+      } = rater;
+      return {
+        ...row,
+        rater: {
+          ...publicRater,
+          verification: {
+            phoneVerified,
+            emailVerified: emailVerifiedAt != null,
+            idVerified: kycIdVerifiedAt != null,
+          },
+        },
+      };
     });
 
     // Total ratings the cached averageRating is computed over — recentRatings
@@ -283,7 +332,7 @@ export class RatingsService {
       sellerTier: user.sellerTier,
       totalSales: user.totalSales,
       averageRating: user.averageRating,
-      recentRatings,
+      recentRatings: shapedRatings,
       totalRatings,
     };
   }

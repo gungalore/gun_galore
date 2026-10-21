@@ -12,6 +12,7 @@ import {
   unlikePost,
 } from '../../lib/community-api';
 import { PostCard } from './post-card';
+import { VerificationBadges } from '../verification-badges';
 
 interface ProfileData {
   profile: {
@@ -20,6 +21,11 @@ interface ProfileData {
     avatarUrl: string | null;
     sellerTier: string | null;
     isVerifiedExpert: boolean;
+    verification?: {
+      phoneVerified: boolean;
+      emailVerified: boolean;
+      idVerified: boolean;
+    };
     memberSince: string;
   };
   isFollowing: boolean;
@@ -142,6 +148,7 @@ export function ProfileClient({ username }: { username: string }) {
             >
               {data.profile.username}
             </span>
+            <VerificationBadges verification={data.profile.verification} />
             {data.profile.isVerifiedExpert && (
               <span
                 className="text-[10px] font-medium px-1.5 py-0.5 rounded"

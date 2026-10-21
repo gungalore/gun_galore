@@ -85,6 +85,11 @@ describe('FeedService social lists', () => {
           avatarUrl: 'https://img/2',
           sellerTier: null,
           isVerifiedExpert: true,
+          verification: {
+            phoneVerified: false,
+            emailVerified: false,
+            idVerified: false,
+          },
           isFollowing: true,
         },
         {
@@ -93,6 +98,11 @@ describe('FeedService social lists', () => {
           avatarUrl: null,
           sellerTier: 'GOLD',
           isVerifiedExpert: false,
+          verification: {
+            phoneVerified: false,
+            emailVerified: false,
+            idVerified: false,
+          },
           isFollowing: false,
         },
       ]);
@@ -174,6 +184,11 @@ describe('FeedService social lists', () => {
           avatarUrl: null,
           sellerTier: null,
           isVerifiedExpert: false,
+          verification: {
+            phoneVerified: false,
+            emailVerified: false,
+            idVerified: false,
+          },
           isFollowing: true,
         },
       ]);

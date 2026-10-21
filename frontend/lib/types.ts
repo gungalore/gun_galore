@@ -37,6 +37,8 @@ export interface ListingVideo {
   width: number | null;
   height: number | null;
   audioEnabled?: boolean;
+  /** Seller opted in to showing the clip as the listing cover. */
+  isHero?: boolean;
   playbackUrl?: string | null;
   /** Owner-only when not APPROVED; public listings only receive APPROVED. */
   status?: 'APPROVED' | 'PENDING_REVIEW' | 'REJECTED';
@@ -164,6 +166,11 @@ export interface PublicSellerProfile {
   expertBadgeReason: string | null;
   // Identity (KYC) verified — boolean trust tick, no PII.
   idVerified?: boolean;
+  verification?: {
+    phoneVerified: boolean;
+    emailVerified: boolean;
+    idVerified: boolean;
+  };
 }
 
 export interface Address {
@@ -647,7 +654,14 @@ export interface Rating {
   // Username-only on public review surfaces (platform policy — real
   // names never on public-facing screens). Backend ratings.service.ts
   // selects only username.
-  rater: { username: string | null };
+  rater: {
+    username: string | null;
+    verification?: {
+      phoneVerified: boolean;
+      emailVerified: boolean;
+      idVerified: boolean;
+    };
+  };
   transaction: { listing: { title: string } };
 }
 

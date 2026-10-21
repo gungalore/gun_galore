@@ -399,6 +399,9 @@ export interface PublicAuthor {
   avatarUrl: string | null;
   sellerTier: string;
   isVerifiedExpert: boolean;
+  phoneVerified: boolean;
+  emailVerifiedAt: Date | null;
+  kycIdVerifiedAt: Date | null;
   /** Member preference: when false the avatar is withheld from the API. */
   feedShowAvatar: boolean;
 }
@@ -409,8 +412,23 @@ export const PUBLIC_AUTHOR_SELECT = {
   avatarUrl: true,
   sellerTier: true,
   isVerifiedExpert: true,
+  phoneVerified: true,
+  emailVerifiedAt: true,
+  kycIdVerifiedAt: true,
   feedShowAvatar: true,
 } as const;
+
+export function publicVerification(author: {
+  phoneVerified?: boolean | null;
+  emailVerifiedAt?: Date | null;
+  kycIdVerifiedAt?: Date | null;
+}) {
+  return {
+    phoneVerified: author.phoneVerified === true,
+    emailVerified: author.emailVerifiedAt != null,
+    idVerified: author.kycIdVerifiedAt != null,
+  };
+}
 
 export function authorName(author: { username?: string | null } | null | undefined): string {
   return author?.username ?? 'Anonymous';

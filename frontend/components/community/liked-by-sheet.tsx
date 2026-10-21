@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '../../lib/auth';
 import { type FeedLiker, fetchPostLikes } from '../../lib/community-api';
 import { useScrollLock } from '../../lib/use-scroll-lock';
+import { VerificationBadges } from '../verification-badges';
 
 /**
  * "Liked by" — the list of members who liked a post, newest first. Opens from
@@ -180,6 +181,7 @@ export function LikedBySheet({
                   >
                     {l.username}
                   </span>
+                  <VerificationBadges verification={l.verification} />
                   {l.isVerifiedExpert && (
                     <span
                       className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0"

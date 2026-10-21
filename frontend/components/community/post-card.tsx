@@ -7,6 +7,7 @@ import { postTypeLabel } from '../../lib/post-types';
 import { ImageLightbox } from '../image-lightbox';
 import PostDetails from './post-details';
 import { LikedBySheet } from './liked-by-sheet';
+import { VerificationBadges } from '../verification-badges';
 
 interface PostCardProps {
   post: FeedPost;
@@ -169,6 +170,7 @@ export function PostCard({
             >
               {post.author.username}
             </span>
+            <VerificationBadges verification={post.author.verification} />
             <span
               className="text-[12px] px-1.5 py-0.5 rounded"
               style={{ background: 'var(--bg-inset)', color: 'var(--text-secondary)' }}

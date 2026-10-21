@@ -14,12 +14,19 @@ export class CommunityApiError extends Error {
   }
 }
 
+export interface PublicVerification {
+  phoneVerified: boolean;
+  emailVerified: boolean;
+  idVerified: boolean;
+}
+
 export interface FeedAuthor {
   id: string;
   username: string;
   avatarUrl: string | null;
   sellerTier?: string | null;
   isVerifiedExpert?: boolean;
+  verification?: PublicVerification;
 }
 
 export interface FeedImage {
@@ -98,7 +105,14 @@ export interface FeedComment {
   likeCount: number;
   createdAt: string;
   liked: boolean;
-  author: { id: string; username: string; avatarUrl: string | null };
+  author: {
+    id: string;
+    username: string;
+    avatarUrl: string | null;
+    sellerTier?: string | null;
+    isVerifiedExpert?: boolean;
+    verification?: PublicVerification;
+  };
 }
 
 export interface FeedPage {
@@ -193,6 +207,7 @@ export interface FeedLiker {
   avatarUrl: string | null;
   sellerTier: string | null;
   isVerifiedExpert: boolean;
+  verification?: PublicVerification;
 }
 
 /** Members who liked a post, newest first. Cursor-paged via `before`. */
@@ -215,6 +230,7 @@ export function fetchProfile(
     avatarUrl: string | null;
     sellerTier: string | null;
     isVerifiedExpert: boolean;
+    verification?: PublicVerification;
     memberSince: string;
   };
   isFollowing: boolean;
@@ -452,6 +468,7 @@ export interface SocialUser {
   avatarUrl: string | null;
   sellerTier: string | null;
   isVerifiedExpert: boolean;
+  verification?: PublicVerification;
   /** Whether the viewer follows this member. Always true in the following list. */
   isFollowing?: boolean;
 }

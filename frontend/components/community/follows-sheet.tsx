@@ -11,6 +11,7 @@ import {
   unfollowUser,
 } from '../../lib/community-api';
 import { useScrollLock } from '../../lib/use-scroll-lock';
+import { VerificationBadges } from '../verification-badges';
 
 export type FollowsMode = 'followers' | 'following';
 
@@ -222,6 +223,7 @@ export function FollowsSheet({
                     >
                       {u.username}
                     </span>
+                    <VerificationBadges verification={u.verification} />
                     {u.isVerifiedExpert && (
                       <span
                         className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0"

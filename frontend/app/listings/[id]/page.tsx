@@ -27,6 +27,7 @@ import { SellerVerificationRing } from '@/components/seller-verification-ring';
 import { HelpText } from '@/components/help-text';
 import { WishlistButton } from '@/components/wishlist-button';
 import { UserBadges } from '@/components/user-badges';
+import { VerificationBadges } from '@/components/verification-badges';
 
 // Marketplace Platform Fee bands — mirrors backend/src/payments/fee.calculator.ts.
 // The fee is marginal and is charged last at checkout on (item + delivery); the
@@ -439,6 +440,7 @@ export default async function ListingDetailPage({
                     thumbnailUrl: listing.video.thumbnailUrl,
                     durationSeconds: listing.video.durationSeconds,
                     audioEnabled: listing.video.audioEnabled,
+                    isHero: listing.video.isHero,
                   }
                 : null
             }
@@ -1132,6 +1134,10 @@ export default async function ListingDetailPage({
                     subscriptionTier={listing.seller.subscriptionTier}
                     isVerifiedExpert={listing.seller.isVerifiedExpert}
                     expertBadgeReason={listing.seller.expertBadgeReason}
+                    size="md"
+                  />
+                  <VerificationBadges
+                    verification={listing.seller.verification}
                     size="md"
                   />
                 </p>

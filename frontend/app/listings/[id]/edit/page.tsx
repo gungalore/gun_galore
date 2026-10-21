@@ -79,6 +79,10 @@ export default function EditListingPage() {
   const effectiveVideoAudio =
     videoAudioEnabled ??
     (listing?.video ? (listing.video.audioEnabled ?? true) : false);
+  // null = follow the clip on the listing; a boolean is the seller's change.
+  const [videoIsHero, setVideoIsHero] = useState<boolean | null>(null);
+  const effectiveVideoHero =
+    videoIsHero ?? (listing?.video ? (listing.video.isHero ?? false) : false);
 
   const [redactTarget, setRedactTarget] = useState<
     | { kind: 'existing'; imageId: string; file: File }
@@ -413,6 +417,7 @@ export default function EditListingPage() {
     if (file) {
       setRemoveExistingVideo(false);
       setVideoAudioEnabled(false);
+      setVideoIsHero(false);
       void checkNewVideo(file, false);
     }
   }
@@ -657,6 +662,7 @@ export default function EditListingPage() {
           const vfd = new FormData();
           vfd.append('video', newVideo);
           vfd.append('audioEnabled', String(effectiveVideoAudio));
+          vfd.append('isHero', String(effectiveVideoHero));
           if (videoReviewRequested) vfd.append('reviewRequested', 'true');
           const vToken = await getToken();
           const vres = await fetch(`${API_URL}/listings/${id}/video`, {
@@ -711,7 +717,11 @@ export default function EditListingPage() {
           // Sound changed on the clip already attached. Sound-on re-runs the
           // audio screen server-side; unsure holds the listing for admin.
           const currentAudio = listing.video.audioEnabled ?? true;
-          if (effectiveVideoAudio !== currentAudio) {
+          const currentHero = listing.video.isHero ?? false;
+          if (
+            effectiveVideoAudio !== currentAudio ||
+            effectiveVideoHero !== currentHero
+          ) {
             const vToken = await getToken();
             const vres = await fetch(`${API_URL}/listings/${id}/video`, {
               method: 'PATCH',
@@ -719,7 +729,10 @@ export default function EditListingPage() {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${vToken}`,
               },
-              body: JSON.stringify({ audioEnabled: effectiveVideoAudio }),
+              body: JSON.stringify({
+                audioEnabled: effectiveVideoAudio,
+                isHero: effectiveVideoHero,
+              }),
             });
             if (!vres.ok) {
               const body = await vres.json().catch(() => null);
@@ -1398,6 +1411,8 @@ export default function EditListingPage() {
             onChange={handleNewVideo}
             audioEnabled={effectiveVideoAudio}
             onAudioChange={setVideoAudioEnabled}
+            isHero={effectiveVideoHero}
+            onHeroChange={setVideoIsHero}
             status={
               videoChecking
                 ? 'Checking…'

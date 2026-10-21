@@ -1,4 +1,7 @@
-import { ListingModerationService } from './listing-moderation.service';
+import {
+  ListingModerationService,
+  ensureBulletDescription,
+} from './listing-moderation.service';
 import { LlmError, type LlmResponse } from '../common/llm/llm.types';
 
 // "Describe & polish" — the prompt is the product here, so these tests assert
@@ -302,5 +305,28 @@ describe('moderate fails closed, never open, when it cannot see', () => {
     });
     const r = await svc.moderate(moderationInput());
     expect(r.decision).toBe('APPROVE');
+  });
+});
+
+describe('AI-tidied descriptions are bullet form', () => {
+  it('turns prose into one bullet per sentence', () => {
+    expect(
+      ensureBulletDescription('New condition. UV resistant. Water resistant.'),
+    ).toBe(
+      ['- New condition.', '- UV resistant.', '- Water resistant.'].join('\n'),
+    );
+  });
+
+  it('keeps the model bullets and normalises the marker', () => {
+    expect(ensureBulletDescription('\u2022 New condition\n* UV resistant')).toBe(
+      ['- New condition', '- UV resistant'].join('\n'),
+    );
+  });
+
+  it('does not invent content or alter a single fact', () => {
+    const text = 'Only one owner. Includes hard case.';
+    expect(ensureBulletDescription(text)).toBe(
+      '- Only one owner.\n- Includes hard case.',
+    );
   });
 });
