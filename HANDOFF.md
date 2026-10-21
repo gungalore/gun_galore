@@ -7,6 +7,21 @@ overwritten.
 
 Last updated: **2026-10-21**.
 
+## 2026-10-21 - BLUR TOOL POINTER ALIGNMENT (FRONTEND-ONLY HOTFIX)
+
+**The blur selection box did not follow the cursor.** The canvas was styled
+`width:100%` with a `maxHeight` and `object-fit:contain`; the element box and
+the rendered image were therefore not the same rectangle, so pointer
+coordinates were scaled against the wrong width. Fixed by auto-sizing the
+canvas inside a centred flex container (`max-width:100%`, `max-height:56vh`,
+no `object-fit`), and by tracking drag start/current in refs so fast pointer
+moves cannot commit a stale box.
+
+Commit **`ad371eed`**. Frontend-only deploy at 09:40 SAST: rollback
+`alloutdoor-20261021-094022.dump` (35 772 368 bytes), frontend health x2 OK,
+public 200 x2; backend/warden untouched and online. tsc clean, targeted media
+specs green, production build exit 0.
+
 ## 2026-10-21 - EARLY MEDIA SCREENING, IMAGE BLUR, PENDING VIDEO REVIEW (FULL DEPLOY)
 
 **Sell starts media moderation at selection.** Every photo is sent to the new
