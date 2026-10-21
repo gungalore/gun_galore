@@ -5,7 +5,52 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-20**.
+Last updated: **2026-10-21**.
+
+## 2026-10-21 - EARLY MEDIA SCREENING, IMAGE BLUR, PENDING VIDEO REVIEW (FULL DEPLOY)
+
+**Sell starts media moderation at selection.** Every photo is sent to the new
+`POST /listings/image-screen` as soon as it is picked; the selected video uses
+the existing `video-preflight`. Failures open one fixing window at a time, in a
+queue, without waiting for Preview.
+
+**Image failures open the seller's blur tool.** The model's detected reason is
+shown, the seller draws over the photo, and applies one fixed Gaussian blur
+strength/padded band. The redacted file is re-screened immediately. Clear ->
+continue; still flagged or unreadable -> the listing is forced to
+`PENDING_REVIEW`. `forceReview` on create means it cannot become public before
+an admin approves it. "Replace photo" remains the secondary action, and a
+manual "Hide details" control is on every thumbnail.
+
+**A flagged video gets three paths:** upload another, send for admin review, or
+delete. Admin review stores the clip privately, publishes the listing with its
+photos, and hides the video until approved. Approval promotes it to a public
+asset; rejection deletes it and notifies the seller. A video failure at publish
+never rolls back a listing that already has photos. Admin review now has a
+Video review queue in `/admin/operate` with audit logging.
+
+**Edit has the same manual blur/replace tool** for existing and new photos, plus
+early video preflight and the three video paths. Edited photos are re-screened;
+if they still flag, the live listing is moved to `PENDING_REVIEW`. New edit
+photos are not auto-screened on selection; the edit form still has no image
+screen of its own.
+
+Review SLA copy is now **up to 24 hours** across the seller surfaces and the
+submitted-listing email preview.
+
+Commit **`a9f1ea55`**. Full deploy at 09:11 SAST: migration
+`20261020233000_listing_video_review` applied, rollback
+`alloutdoor-20261021-091059.dump` (35 770 724 bytes), backend/frontend health
+x2 OK, public 200 x2, backend/frontend/warden online. New routes answer 401
+without auth (mounted).
+
+Gates: backend `tsc` clean + **371 suites / 5 736 tests** (1 skipped);
+frontend `tsc` clean + **147 files / 1 768 tests** (1 skipped) + production
+build exit 0.
+
+**Next:** manually run a flagged photo through blur -> rescan -> publish, and a
+flagged video through each of the three paths. Confirm the admin Video review
+queue approves a private clip and that it appears on the live listing.
 
 ## 2026-10-20 - PREVIEW VIDEO MODERATION AND ADMIN REVIEW TOAST (FULL DEPLOY)
 
