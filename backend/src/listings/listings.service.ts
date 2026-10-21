@@ -1276,7 +1276,7 @@ export class ListingsService {
     if (consent) return new Date();
     if (existingConsentAt) return existingConsentAt;
     throw new BadRequestException(
-      'To offer Private Arrangement you must consent to share your phone number and email with the buyer so they can arrange the firearm transfer.',
+      'To offer Private Arrangement you must consent to share your phone number and email with the buyer so you can arrange the handover.',
     );
   }
 

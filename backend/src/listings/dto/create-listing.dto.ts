@@ -169,9 +169,9 @@ export class CreateListingDto {
   shippingMethods?: ShippingMethod[];
 
   // Seller's consent to share their phone + email with the buyer for a
-  // PRIVATE_ARRANGE firearm transfer. REQUIRED (must be true) when
-  // shippingMethods includes PRIVATE_ARRANGE — the service rejects the
-  // listing otherwise.
+  // PRIVATE_ARRANGE handover (firearm transfer or goods). REQUIRED (must be
+  // true) when shippingMethods includes PRIVATE_ARRANGE - the service
+  // rejects the listing otherwise.
   @IsOptional()
   @IsBoolean()
   privateArrangeConsent?: boolean;

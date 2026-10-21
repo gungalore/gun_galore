@@ -1322,6 +1322,7 @@ export function CheckoutForm({
         <PrivateArrangeConsent
           accepted={paConsentAccepted}
           onChange={setPaConsentAccepted}
+          isFirearm={listing.isFirearm}
         />
       )}
 
@@ -1985,9 +1986,11 @@ function DealerTransferConsent({
 function PrivateArrangeConsent({
   accepted,
   onChange,
+  isFirearm,
 }: {
   accepted: boolean;
   onChange: (v: boolean) => void;
+  isFirearm: boolean;
 }) {
   const [box1, setBox1] = useState(false);
   const [box2, setBox2] = useState(false);
@@ -2042,11 +2045,16 @@ function PrivateArrangeConsent({
         </li>
         <li>
           We will share both parties&apos; name, phone, and email so you
-          can coordinate the SAPS dealer meet between yourselves.
+          can coordinate the{' '}
+          {isFirearm ? 'SAPS dealer meet' : 'in-person handover'} between
+          yourselves.
         </li>
         <li>
           If you want full payment protection, cancel and pick{' '}
-          <strong style={{ color: 'var(--text-primary)' }}>Dealer Transfer</strong> instead.
+          <strong style={{ color: 'var(--text-primary)' }}>
+            {isFirearm ? 'Dealer Transfer' : 'Courier delivery'}
+          </strong>{' '}
+          instead.
         </li>
       </ul>
 

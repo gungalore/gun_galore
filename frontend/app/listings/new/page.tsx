@@ -1483,15 +1483,20 @@ export default function NewListingPage() {
     };
   }, [parcel]);
 
-  // Non-firearm listings ride the single Bob Go door-to-door rail. Keep
-  // shippingMethods pinned to ['COURIER'] for them, regardless of what a
-  // legacy draft / relist restored — those rails no longer exist. Firearms
-  // and collection-only categories are handled by their own effects below and
-  // are excluded here so the two never fight.
+  // Non-firearm listings always offer the Bob Go door-to-door rail; the
+  // seller may also opt into a private handover. Keep COURIER present, drop
+  // any firearm-only method a stale draft carried, and never invent a third.
   useEffect(() => {
     if (isFirearm || effectiveCollectionOnly) return;
-    if (shippingMethods.length !== 1 || shippingMethods[0] !== 'COURIER') {
-      setShippingMethods(['COURIER']);
+    const next = shippingMethods.filter(
+      (m) => m === 'COURIER' || m === 'PRIVATE_ARRANGE',
+    );
+    if (!next.includes('COURIER')) next.unshift('COURIER');
+    if (
+      next.length !== shippingMethods.length ||
+      next.some((m, i) => m !== shippingMethods[i])
+    ) {
+      setShippingMethods(next);
     }
   }, [isFirearm, effectiveCollectionOnly, shippingMethods]);
 
@@ -3845,7 +3850,7 @@ export default function NewListingPage() {
                 ? 'Buyers collect this one from you — in person, or with a transporter they arrange themselves. No courier. Add your pickup address so buyers know where they’re collecting from.'
                 : isFirearm
                 ? 'Firearms must move through a SAPS-licensed dealer. Pick one or both arrangement options below, then add your pickup address.'
-                : 'Add the parcel size and the address a courier collects it from. Delivery is door-to-door at checkout.'
+                : 'Add the parcel size and the address a courier collects it from. Buyers can pay for courier delivery, or arrange a private handover if you offer it.'
             }
           >
             {/* Parcel info — required so Bob Go can quote the door rate.
@@ -3894,7 +3899,84 @@ export default function NewListingPage() {
               </Field>
             )}
 
-            {/* Collection-only info panel — replaces the whole courier
+            {!isFirearm && !effectiveCollectionOnly && (
+              <Field
+                label="Delivery options"
+                required
+                tipTitle="Delivery options"
+                tip={
+                  <>
+                    <strong>Courier delivery:</strong> we collect from you and
+                    deliver to the buyer's door, tracked. <br />
+                    <strong>Arrange privately:</strong> you and the buyer
+                    coordinate an in-person handover. No courier.
+                  </>
+                }
+              >
+                <MultiSelectPillGroup<ShippingMethod>
+                  value={shippingMethods}
+                  onChange={(next) => {
+                    if (!next.includes('COURIER')) {
+                      setShippingMethods([
+                        'COURIER',
+                        ...next.filter((m) => m !== 'COURIER'),
+                      ]);
+                      return;
+                    }
+                    setShippingMethods(next);
+                  }}
+                  options={[
+                    {
+                      value: 'COURIER',
+                      label: 'Courier delivery — required',
+                      description:
+                        'Door-to-door, tracked. The buyer pays the live courier rate at checkout.',
+                      disabled: true,
+                    },
+                    {
+                      value: 'PRIVATE_ARRANGE',
+                      label: 'Also offer: Arrange privately',
+                      description:
+                        'Optional. You and the buyer agree a handover in person; no courier.',
+                    },
+                  ]}
+                />
+                {shippingMethods.includes('PRIVATE_ARRANGE') && (
+                  <label
+                    className="mt-3 flex items-start gap-2 rounded-[8px] p-3 cursor-pointer"
+                    style={{
+                      background: paConsent
+                        ? 'rgba(227,6,19,0.06)'
+                        : 'var(--bg-inset)',
+                      border: `0.5px solid ${paConsent ? 'var(--red)' : 'var(--border)'}`,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={paConsent}
+                      onChange={(e) => setPaConsent(e.target.checked)}
+                      style={{ marginTop: 3, flexShrink: 0 }}
+                    />
+                    <span
+                      className="text-xs"
+                      style={{
+                        color: 'var(--text-secondary)',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      <strong style={{ color: 'var(--text-primary)' }}>
+                        I agree to share my phone number and email with the
+                        buyer
+                      </strong>{' '}
+                      once they&apos;ve paid, so we can arrange the in-person
+                      handover. Required to offer private arrangement.
+                    </span>
+                  </label>
+                )}
+              </Field>
+            )}
+
+            {/* Collection-only info panel - replaces the whole courier
                 picker. There's nothing for the seller to choose: the item
                 is collected in person from them, so we just explain the
                 flow and force shippingMethods = ['COLLECTION'] (see the

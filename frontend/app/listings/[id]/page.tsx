@@ -3,7 +3,12 @@ import Link from 'next/link';
 import { serverAuth as auth } from '../../../lib/auth-server';
 import { apiFetch } from '@/lib/api';
 import { BRAND_NAME } from '@/lib/brand';
-import { Listing, CategoryAttributeDef, Me } from '@/lib/types';
+import {
+  Listing,
+  CategoryAttributeDef,
+  Me,
+  ShippingMethod,
+} from '@/lib/types';
 import { AddToCartButton } from '@/components/add-to-cart-button';
 import {
   formatPrice,
@@ -234,6 +239,32 @@ export default async function ListingDetailPage({
   // UX-1c — pre-purchase delivery estimate line (computed from the listing's
   // shipping shape; no extra fetch).
   const deliveryEstimate = getListingDeliveryEstimate(listing);
+
+  // What the seller actually offered. Firearms always retain the dealer route
+  // (server-enforced); goods always retain the courier. PRIVATE_ARRANGE is the
+  // seller's opt-in on both classes.
+  const offeredShipping = listing.shippingMethods ?? [];
+  const isCollectionOnly =
+    listing.collectionOnly || offeredShipping.includes('COLLECTION');
+  const handoverMethods: ShippingMethod[] = isCollectionOnly
+    ? []
+    : listing.isFirearm
+      ? Array.from(
+          new Set<ShippingMethod>([
+            'DEALER_TRANSFER',
+            ...offeredShipping.filter(
+              (m): m is ShippingMethod => m === 'PRIVATE_ARRANGE',
+            ),
+          ]),
+        )
+      : Array.from(
+          new Set<ShippingMethod>([
+            'COURIER',
+            ...offeredShipping.filter(
+              (m): m is ShippingMethod => m === 'PRIVATE_ARRANGE',
+            ),
+          ]),
+        );
 
   // Board review — reference-row "Listed…" line (see listedAgoLabel above).
   const listedLabel = listedAgoLabel(listing.createdAt);
@@ -820,6 +851,85 @@ export default async function ListingDetailPage({
                   collection and delivery.
                 </>
               )}
+            </div>
+          )}
+
+          {/* The seller's offered handover routes, shown before the CTA so a
+              buyer knows what choices exist before entering checkout. */}
+          {handoverMethods.length > 0 && (
+            <div className="mb-5">
+              <p
+                className="text-xs uppercase mb-2"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  letterSpacing: '0.1em',
+                  fontWeight: 500,
+                }}
+              >
+                {listing.isFirearm ? 'Handover options' : 'Delivery options'}
+              </p>
+              <ul
+                style={{
+                  listStyle: 'none',
+                  margin: 0,
+                  padding: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                {handoverMethods.map((method) => {
+                  const label =
+                    method === 'DEALER_TRANSFER'
+                      ? 'Dealer transfer'
+                      : method === 'PRIVATE_ARRANGE'
+                        ? 'Arrange privately'
+                        : 'Courier delivery';
+                  const detail =
+                    method === 'DEALER_TRANSFER'
+                      ? 'Licensed dealer to licensed dealer. Payment stays held until the firearm is stocked in.'
+                      : method === 'PRIVATE_ARRANGE'
+                        ? listing.isFirearm
+                          ? 'Meet the seller at a licensed dealer to complete the transfer in person.'
+                          : 'Agree an in-person handover with the seller. No courier.'
+                        : 'Door-to-door, tracked. The live courier rate is shown at checkout.';
+                  return (
+                    <li
+                      key={method}
+                      className="rounded-[6px] px-3 py-2"
+                      style={{
+                        background: 'var(--bg-card)',
+                        border: '0.5px solid var(--border)',
+                      }}
+                    >
+                      <span
+                        className="text-sm block"
+                        style={{
+                          color: 'var(--text-primary)',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {label}
+                      </span>
+                      <span
+                        className="text-xs block mt-0.5"
+                        style={{
+                          color: 'var(--text-tertiary)',
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {detail}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p
+                className="text-xs mt-2"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                Choose one of these at checkout.
+              </p>
             </div>
           )}
 

@@ -25,14 +25,24 @@ function HandshakeIcon() {
     </svg>
   );
 }
+function CourierIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z" />
+      <circle cx="7" cy="18" r="1.6" />
+      <circle cx="17" cy="18" r="1.6" />
+    </svg>
+  );
+}
 
 const META: Record<string, { title: string; subtitle: string; icon: ReactNode }> = {
-  // Firearms have exactly TWO hand-over options and both go through a licensed
-  // dealer. Never describe either as a "private collection" — a firearm is
-  // never simply handed over, and copy that implies otherwise misdescribes what
-  // the platform does.
+  // Firearms have TWO hand-over options and both go through a licensed dealer.
+  // Never describe either as a "private collection" - a firearm is never simply
+  // handed over, and copy that implies otherwise misdescribes what the platform
+  // does. Goods can pair the courier with a private in-person handover.
   DEALER_TRANSFER: { title: 'Dealer stock', subtitle: 'Seller books it in at their dealer, you collect from yours', icon: <DealerIcon /> },
   PRIVATE_ARRANGE: { title: 'Arrange privately', subtitle: 'Meet at a dealer to do the licence transfer', icon: <HandshakeIcon /> },
+  COURIER: { title: 'Courier delivery', subtitle: 'Door-to-door, tracked, with a delivery estimate at payment', icon: <CourierIcon /> },
 };
 
 export function DeliveryMethodCards({
@@ -54,6 +64,10 @@ export function DeliveryMethodCards({
       <div style={{ display: 'grid', gap: 8 }}>
         {methods.map((m) => {
           const meta = META[m] ?? { title: m, subtitle: '', icon: null };
+          const subtitle =
+            m === 'PRIVATE_ARRANGE' && !isFirearm
+              ? 'Agree an in-person handover with the seller'
+              : meta.subtitle;
           const active = selected === m;
           return (
             <button
@@ -76,7 +90,7 @@ export function DeliveryMethodCards({
                   {meta.title}
                 </span>
                 <span className="block text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-                  {meta.subtitle}
+                  {subtitle}
                 </span>
               </span>
             </button>
