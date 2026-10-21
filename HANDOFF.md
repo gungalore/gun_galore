@@ -9,8 +9,11 @@ Last updated: **2026-10-21**.
 
 ## 2026-10-21 - MEDIA, DESCRIPTION AND VERIFICATION POLISH (COMMITTED)
 
-Commit **`59b922be`**. Deployment follows this entry; apply migration
-`20261021110000_listing_video_hero`.
+Commit **`59b922be`**; docs **`5ee6af35`**. Full deploy at 11:07 SAST:
+migration `20261021110000_listing_video_hero` applied, rollback
+`alloutdoor-20261021-110752.dump` (35 774 206 bytes), box HEAD matches,
+backend/frontend health x2 OK, public 200 x2, all three PM2 services online.
+`backend/package.json` was stashed before deploy and restored after.
 
 - Upload progress for video no longer claims it is screening again; the clip
   was already screened on selection.
