@@ -14,6 +14,7 @@ import {
   DEFAULT_THRESHOLDS,
 } from '../admin/admin-credits.service';
 import { AdminHealthService } from '../admin/admin-health.service';
+import { AdminAlertReconcilerService } from '../admin/admin-alert-reconciler.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
@@ -73,6 +74,7 @@ export class TasksService {
     private readonly settings: SettingsService,
     private readonly wishlistAlerts: WishlistAlertsService,
     private readonly health: AdminHealthService,
+    private readonly alertReconciler: AdminAlertReconcilerService,
     private readonly listings: ListingsService,
     private readonly feed: FeedService,
   ) {}
@@ -1286,28 +1288,31 @@ export class TasksService {
     try {
       if (Date.now() - this.bootAt.getTime() < STARTUP_GRACE_MS) return;
       const statuses = await this.health.cronStatuses();
-      // ⚠️ CLEAR ALERTS FOR JOBS THAT ARE NO LONGER MONITORED AT ALL. When a
-      // job is deleted (the VerifyNow balance poll went with the Didit
-      // cut-over) its CRON_STALE alert can never be raised again — and so can
-      // never be resolved by a fresh pass either. Left alone it sat in the
-      // inbox forever, unfixable and unexplained. Match on the label the
-      // watchdog writes, which is what referenceId holds.
+      const stale = statuses.filter((c) => c.status === 'stale');
+      const staleNames = new Set(stale.map((c) => c.name));
       const monitoredLabels = new Set(statuses.map((c) => c.name));
-      const orphaned = await this.prisma.adminAlert.findMany({
+      // ⚠️ AN ALERT THAT ONLY EVER GETS RAISED IS A QUEUE THAT ONLY GROWS. Two
+      // cases are resolved here, and they are different facts:
+      //   · the job is monitored and now runs on time (it recovered), and
+      //   · the job is no longer monitored at all (it was deleted, as the
+      //     VerifyNow balance poll was), so no fresh pass could ever clear it.
+      // Both are matched on the label the watchdog writes into referenceId.
+      const openCronAlerts = await this.prisma.adminAlert.findMany({
         where: { type: 'CRON_STALE', resolved: false },
         select: { id: true, referenceId: true },
       });
-      for (const alert of orphaned) {
-        if (alert.referenceId && monitoredLabels.has(alert.referenceId)) continue;
+      for (const alert of openCronAlerts) {
+        if (alert.referenceId && staleNames.has(alert.referenceId)) continue;
         await this.prisma.adminAlert.updateMany({
           where: { id: alert.id, resolved: false },
           data: { resolved: true, resolvedAt: new Date() },
         });
         this.logger.log(
-          `Auto-resolved CRON_STALE for a job that is no longer monitored: ${alert.referenceId ?? '(no job)'}`,
+          alert.referenceId && monitoredLabels.has(alert.referenceId)
+            ? `Auto-resolved CRON_STALE — "${alert.referenceId}" is running on time again`
+            : `Auto-resolved CRON_STALE for a job that is no longer monitored: ${alert.referenceId ?? '(no job)'}`,
         );
       }
-      const stale = statuses.filter((c) => c.status === 'stale');
       for (const c of stale) {
         const existing = await this.prisma.adminAlert.count({
           where: { type: 'CRON_STALE', referenceId: c.name, resolved: false },
@@ -1335,6 +1340,27 @@ export class TasksService {
       this.logger.warn(`cronWatchdog failed: ${(err as Error).message}`);
     } finally {
       await this.recordCronRun('cron-watchdog');
+    }
+  }
+
+  // ─── Alert reconciler ───────────────────────────────────────────
+  // Closes AdminAlert rows whose cause has verifiably gone (a parcel that
+  // arrived, a payout that succeeded, a seller who verified, an AI outage that
+  // later produced a successful call). See AdminAlertReconcilerService for the
+  // rule set and, more importantly, for what it REFUSES to close.
+  //
+  // Registered in the cron registry so a wedged reconciler shows up on the
+  // Warden board like every other job.
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async reconcileAdminAlerts() {
+    try {
+      await this.alertReconciler.reconcile();
+    } catch (err) {
+      this.logger.warn(
+        `AdminAlert reconciler failed: ${(err as Error).message}`,
+      );
+    } finally {
+      await this.recordCronRun('alert-reconcile');
     }
   }
 

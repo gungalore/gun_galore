@@ -273,6 +273,19 @@ export class SmsService {
         recent.length < OUTAGE_STREAK ||
         !recent.every((r) => r.status === 'FAILED')
       ) {
+        // ⚠️ RECOVERY MUST CLOSE THE ALERT. The streak broken by a SENT means
+        // the rail is delivering again; leaving the red row behind would tell
+        // the operator an outage is ongoing when the evidence in this very
+        // query says otherwise. Only a SENT counts — a shorter FAILED streak
+        // is still an undecided sample, not a recovery.
+        if (recent.some((r) => r.status === 'SENT')) {
+          await this.prisma.adminAlert
+            .updateMany({
+              where: { type: 'SMS_OUTAGE', resolved: false },
+              data: { resolved: true, resolvedAt: new Date() },
+            })
+            .catch(() => undefined);
+        }
         return;
       }
       const since = new Date(Date.now() - OUTAGE_DEDUP_MS);

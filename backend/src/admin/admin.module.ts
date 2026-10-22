@@ -11,6 +11,7 @@ import { AdminCommandCenterService } from './admin-command-center.service';
 import { AdminTrustSafetyService } from './admin-trust-safety.service';
 import { AdminHealthService } from './admin-health.service';
 import { AdminCreditsService } from './admin-credits.service';
+import { AdminAlertReconcilerService } from './admin-alert-reconciler.service';
 import { AdminDealersService } from './admin-dealers.service';
 import { AdminCategoriesService } from './admin-categories.service';
 import { AdminCategoryAttributesService } from './admin-category-attributes.service';
@@ -87,6 +88,10 @@ import { UsersModule } from '../users/users.module';
     AdminTrustSafetyService,
     AdminHealthService,
     AdminCreditsService,
+    // Closes AdminAlert rows whose cause has provably gone (cron recovery,
+    // delivered parcel, completed payout, verified seller). Export-only: the
+    // cron lives in TasksService.
+    AdminAlertReconcilerService,
     AdminDealersService,
     AdminCategoriesService,
     AdminCategoryAttributesService,
@@ -125,6 +130,6 @@ import { UsersModule } from '../users/users.module';
   // two places (which would create two instances + risk drift).
   // AdminHealthService is exported for the cron watchdog (TasksService
   // reuses cronStatuses() to detect stale/wedged crons).
-  exports: [AdminCreditsService, AdminHealthService],
+  exports: [AdminCreditsService, AdminHealthService, AdminAlertReconcilerService],
 })
 export class AdminModule {}

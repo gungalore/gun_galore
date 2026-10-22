@@ -446,6 +446,16 @@ export class WhatsappService {
         recent.length < OUTAGE_STREAK ||
         !recent.every((r) => r.status === 'FAILED')
       ) {
+        // Same recovery rule as SMS: one delivered message proves the rail is
+        // back, and an alert left open would contradict it.
+        if (recent.some((r) => r.status === 'SENT')) {
+          await this.prisma.adminAlert
+            .updateMany({
+              where: { type: 'WHATSAPP_OUTAGE', resolved: false },
+              data: { resolved: true, resolvedAt: new Date() },
+            })
+            .catch(() => undefined);
+        }
         return;
       }
       const since = new Date(Date.now() - OUTAGE_DEDUP_MS);
