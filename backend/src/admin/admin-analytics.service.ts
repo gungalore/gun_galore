@@ -77,6 +77,57 @@ export interface UserDrilldown {
   }[];
 }
 
+// ── Dwell + login series (2026-10-23) ───────────────────────────────
+export interface LoginsSeriesPoint {
+  bucket: string; // YYYY-MM-DD, Africa/Johannesburg
+  logins: number;
+  uniqueUsers: number;
+  newUsers: number;
+  /** Mean session length in seconds for sessions that closed or were touched. */
+  avgSessionSec: number | null;
+}
+
+export interface DwellSectionRow {
+  section: string;
+  seconds: number;
+  visits: number;
+  users: number;
+  avgSeconds: number;
+  sharePct: number;
+}
+
+export interface DwellCategoryRow {
+  categoryName: string;
+  seconds: number;
+  views: number;
+  users: number;
+}
+
+export interface DwellListingRow {
+  listingId: string;
+  title: string | null;
+  priceCents: number | null;
+  seconds: number;
+  views: number;
+  users: number;
+}
+
+export interface DwellBreakdown {
+  totalSeconds: number;
+  totalVisits: number;
+  avgSecondsPerVisit: number;
+  sections: DwellSectionRow[];
+  categories: DwellCategoryRow[];
+  topListings: DwellListingRow[];
+}
+
+export interface FeatureAdoptionRow {
+  key: string;
+  label: string;
+  users: number;
+  events: number;
+}
+
 export interface TimeSeriesPoint {
   bucket: string; // ISO date — day/week/month start
   gmvCents: number;
@@ -912,6 +963,303 @@ export class AdminAnalyticsService {
         createdAt: r.createdAt.toISOString(),
       })),
     };
+  }
+
+  // ── Login series (daily) ────────────────────────────────────────────
+  //
+  // Answers "how many came back, and did they stay?". LoginEvent is the only
+  // honest source for sign-ins; DailyUserStats would be cheaper but is a
+  // nightly rollup and therefore always a day behind.
+  async loginsSeries(period: AnalyticsPeriod): Promise<LoginsSeriesPoint[]> {
+    const { from, to } = this.periodRange(period);
+    const [logins, signups] = await Promise.all([
+      this.prisma.$queryRawUnsafe<
+        {
+          day: string;
+          logins: bigint;
+          users: bigint;
+          avgsec: number | null;
+        }[]
+      >(
+        `SELECT to_char(date_trunc('day', ("startedAt" ${this.TZ})), 'YYYY-MM-DD') AS day,
+                COUNT(*) AS logins,
+                COUNT(DISTINCT "userId") AS users,
+                AVG(EXTRACT(EPOCH FROM (COALESCE("endedAt", "lastActiveAt") - "startedAt")))::float AS avgsec
+         FROM "LoginEvent"
+         WHERE "startedAt" >= $1 AND "startedAt" < $2
+         GROUP BY 1 ORDER BY 1`,
+        from,
+        to,
+      ),
+      this.prisma.$queryRawUnsafe<{ day: string; c: bigint }[]>(
+        `SELECT to_char(date_trunc('day', ("createdAt" ${this.TZ})), 'YYYY-MM-DD') AS day,
+                COUNT(*) AS c
+         FROM "User"
+         WHERE "createdAt" >= $1 AND "createdAt" < $2
+         GROUP BY 1`,
+        from,
+        to,
+      ),
+    ]);
+
+    const byDay = new Map<
+      string,
+      { logins: number; users: number; avgsec: number | null }
+    >();
+    for (const r of logins) {
+      byDay.set(r.day, {
+        logins: Number(r.logins),
+        users: Number(r.users),
+        avgsec: r.avgsec === null ? null : Number(r.avgsec),
+      });
+    }
+    const signupsByDay = new Map(signups.map((r) => [r.day, Number(r.c)]));
+
+    const make = (day: string): LoginsSeriesPoint => {
+      const hit = byDay.get(day);
+      return {
+        bucket: day,
+        logins: hit?.logins ?? 0,
+        uniqueUsers: hit?.users ?? 0,
+        newUsers: signupsByDay.get(day) ?? 0,
+        avgSessionSec:
+          hit?.avgsec === null || hit?.avgsec === undefined
+            ? null
+            : Math.round(hit.avgsec),
+      };
+    };
+
+    // Fill quiet days so the chart reads as a timeline, not a sparse list.
+    // "All time" is left as-is: filling from 1970 would be nonsense.
+    if (period === 'all') return logins.map((r) => make(r.day));
+
+    const out: LoginsSeriesPoint[] = [];
+    const cursor = new Date(from);
+    cursor.setUTCHours(0, 0, 0, 0);
+    while (cursor < to) {
+      out.push(make(this.saDayKey(cursor)));
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    return out;
+  }
+
+  // ── Time spent on what ──────────────────────────────────────────────
+  //
+  // page_dwell carries the active foreground seconds in metadata; the API
+  // allowlists the section and clamps the duration, so this only has to be
+  // defensive about rows written before that guard existed.
+  async dwellBreakdown(period: AnalyticsPeriod): Promise<DwellBreakdown> {
+    const { from, to } = this.periodRange(period);
+
+    const base = `
+      SELECT COALESCE("metadata"->>'section', 'other') AS section,
+             "userId", "deviceId", "listingId",
+             CASE WHEN ("metadata"->>'durationSec') ~ '^[0-9]{1,5}$'
+                  THEN ("metadata"->>'durationSec')::int ELSE 0 END AS sec
+      FROM "UserEvent"
+      WHERE "eventType" = 'page_dwell'
+        AND "createdAt" >= $1 AND "createdAt" < $2`;
+
+    const [sections, categories, listings] = await Promise.all([
+      this.prisma.$queryRawUnsafe<
+        { section: string; visits: bigint; users: bigint; seconds: bigint }[]
+      >(
+        `WITH d AS (${base})
+         SELECT section, COUNT(*) AS visits,
+                COUNT(DISTINCT COALESCE("userId", "deviceId")) AS users,
+                COALESCE(SUM(sec), 0) AS seconds
+         FROM d GROUP BY 1 ORDER BY seconds DESC`,
+        from,
+        to,
+      ),
+      this.prisma.$queryRawUnsafe<
+        { categoryName: string; seconds: bigint; views: bigint; users: bigint }[]
+      >(
+        `WITH d AS (${base})
+         SELECT c.name AS "categoryName",
+                COALESCE(SUM(d.sec), 0) AS seconds,
+                COUNT(*) AS views,
+                COUNT(DISTINCT COALESCE(d."userId", d."deviceId")) AS users
+         FROM d
+         JOIN "Listing" l ON l.id = d."listingId"
+         JOIN "Category" c ON c.id = l."categoryId"
+         WHERE d."listingId" IS NOT NULL
+         GROUP BY c.name ORDER BY seconds DESC LIMIT 12`,
+        from,
+        to,
+      ),
+      this.prisma.$queryRawUnsafe<
+        {
+          listingId: string;
+          title: string | null;
+          price: number | null;
+          seconds: bigint;
+          views: bigint;
+          users: bigint;
+        }[]
+      >(
+        `WITH d AS (${base})
+         SELECT l.id AS "listingId", l.title, l.price,
+                COALESCE(SUM(d.sec), 0) AS seconds,
+                COUNT(*) AS views,
+                COUNT(DISTINCT COALESCE(d."userId", d."deviceId")) AS users
+         FROM d
+         JOIN "Listing" l ON l.id = d."listingId"
+         WHERE d."listingId" IS NOT NULL
+         GROUP BY l.id, l.title, l.price
+         ORDER BY seconds DESC LIMIT 10`,
+        from,
+        to,
+      ),
+    ]);
+
+    const totalSeconds = sections.reduce((n, r) => n + Number(r.seconds), 0);
+    const totalVisits = sections.reduce((n, r) => n + Number(r.visits), 0);
+
+    return {
+      totalSeconds,
+      totalVisits,
+      avgSecondsPerVisit:
+        totalVisits > 0 ? Math.round(totalSeconds / totalVisits) : 0,
+      sections: sections.map((r) => {
+        const seconds = Number(r.seconds);
+        const visits = Number(r.visits);
+        return {
+          section: r.section,
+          seconds,
+          visits,
+          users: Number(r.users),
+          avgSeconds: visits > 0 ? Math.round(seconds / visits) : 0,
+          sharePct:
+            totalSeconds > 0
+              ? Math.round((seconds / totalSeconds) * 1000) / 10
+              : 0,
+        };
+      }),
+      categories: categories.map((r) => ({
+        categoryName: r.categoryName,
+        seconds: Number(r.seconds),
+        views: Number(r.views),
+        users: Number(r.users),
+      })),
+      topListings: listings.map((r) => ({
+        listingId: r.listingId,
+        title: r.title,
+        priceCents: r.price === null ? null : Number(r.price),
+        seconds: Number(r.seconds),
+        views: Number(r.views),
+        users: Number(r.users),
+      })),
+    };
+  }
+
+  // ── Feature adoption ────────────────────────────────────────────────
+  //
+  // Which pillars people actually reach for. Browsing counts come from the
+  // allowlisted page_view section; intent rows come from the server-side
+  // money events; the application rows are row counts in their own tables
+  // (a Motivation draft touches no UserEvent).
+  async featureAdoption(period: AnalyticsPeriod): Promise<FeatureAdoptionRow[]> {
+    const { from, to } = this.periodRange(period);
+
+    const [sectionRows, eventRows, motivations, valuations, posts] =
+      await Promise.all([
+        this.prisma.$queryRawUnsafe<
+          { section: string; users: bigint; events: bigint }[]
+        >(
+          `SELECT COALESCE("metadata"->>'section', 'other') AS section,
+                  COUNT(DISTINCT COALESCE("userId", "deviceId")) AS users,
+                  COUNT(*) AS events
+           FROM "UserEvent"
+           WHERE "eventType" = 'page_view'
+             AND "metadata"->>'section' IS NOT NULL
+             AND "createdAt" >= $1 AND "createdAt" < $2
+           GROUP BY 1`,
+          from,
+          to,
+        ),
+        this.prisma.$queryRawUnsafe<
+          { eventType: string; users: bigint; events: bigint }[]
+        >(
+          `SELECT "eventType",
+                  COUNT(DISTINCT COALESCE("userId", "deviceId")) AS users,
+                  COUNT(*) AS events
+           FROM "UserEvent"
+           WHERE "eventType" IN ('wishlist_add','offer_placed','bid_placed','checkout_started')
+             AND "createdAt" >= $1 AND "createdAt" < $2
+           GROUP BY 1`,
+          from,
+          to,
+        ),
+        this.prisma.motivation.groupBy({
+          by: ['userId'],
+          where: { createdAt: { gte: from, lt: to } },
+          _count: { _all: true },
+        }),
+        this.prisma.valuation.groupBy({
+          by: ['userId'],
+          where: { createdAt: { gte: from, lt: to } },
+          _count: { _all: true },
+        }),
+        this.prisma.post.groupBy({
+          by: ['authorId'],
+          where: { createdAt: { gte: from, lt: to } },
+          _count: { _all: true },
+        }),
+      ]);
+
+    const sections = new Map(sectionRows.map((r) => [r.section, r]));
+    const events = new Map(eventRows.map((r) => [r.eventType, r]));
+    const section = (key: string, label: string): FeatureAdoptionRow => {
+      const r = sections.get(key);
+      return { key, label, users: Number(r?.users ?? 0), events: Number(r?.events ?? 0) };
+    };
+    const event = (key: string, label: string): FeatureAdoptionRow => {
+      const r = events.get(key);
+      return { key, label, users: Number(r?.users ?? 0), events: Number(r?.events ?? 0) };
+    };
+
+    return [
+      section('marketplace', 'Marketplace browsers'),
+      section('auctions', 'Auction browsers'),
+      section('community', 'Community browsers'),
+      section('bench', 'The Bench browsers'),
+      event('wishlist_add', 'Saved an item'),
+      event('offer_placed', 'Placed an offer'),
+      event('bid_placed', 'Placed a bid'),
+      event('checkout_started', 'Started checkout'),
+      {
+        key: 'motivations',
+        label: 'Motivation applications',
+        users: motivations.length,
+        events: motivations.reduce((n, r) => n + r._count._all, 0),
+      },
+      {
+        key: 'valuations',
+        label: 'Item valuations',
+        users: valuations.length,
+        events: valuations.reduce((n, r) => n + r._count._all, 0),
+      },
+      {
+        key: 'posts',
+        label: 'Community posts authored',
+        users: posts.length,
+        events: posts.reduce((n, r) => n + r._count._all, 0),
+      },
+    ];
+  }
+
+  /** YYYY-MM-DD in SA local time, for filling a daily series. */
+  private saDayKey(d: Date): string {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Africa/Johannesburg',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(d);
+    const get = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((p) => p.type === type)?.value ?? '';
+    return `${get('year')}-${get('month')}-${get('day')}`;
   }
 
   // Dormant re-engagement segment size — total with a marketing opt-in, and

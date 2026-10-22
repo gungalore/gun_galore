@@ -389,6 +389,246 @@ export interface TopMakeModel {
   [key: string]: unknown;
 }
 
+// ── Insights (behavioural + marketing) ────────────────────────────────
+
+export interface InsightsPulse {
+  dau: number;
+  wau: number;
+  mau: number;
+  loginsToday: number;
+  loginsWeek: number;
+  activeListings: number;
+  newUsers7d: number;
+  salesWeek: number;
+}
+
+/** dow: 0 = Sunday … 6 = Saturday; hour: 0–23 in SA local time. */
+export interface HeatCell {
+  dow: number;
+  hour: number;
+  value: number;
+}
+
+export interface SearchIntel {
+  topTerms: { term: string; count: number; maxResults?: number }[];
+  zeroResult: { term: string; count: number }[];
+}
+
+export interface FunnelStage {
+  key: string;
+  label: string;
+  count: number;
+  users: number;
+}
+
+export interface ActiveUserRow {
+  userId: string;
+  username: string | null;
+  events: number;
+  lastSeen: string;
+}
+
+export interface UserDrilldown {
+  userId: string;
+  username: string | null;
+  createdAt: string | null;
+  lastLoginAt: string | null;
+  logins: { day: number; week: number; month: number; total: number };
+  peakHours: { hour: number; value: number }[];
+  totalsByType: { eventType: string; count: number }[];
+  recent: {
+    eventType: string;
+    listingId: string | null;
+    query: string | null;
+    createdAt: string;
+  }[];
+}
+
+export interface DormantSegment {
+  total: number;
+  smsReachable: number;
+}
+
+export interface InsightsDigestRow {
+  id: string;
+  generatedAt: string;
+  periodDays: number;
+  data: Record<string, unknown>;
+  narrative: string | null;
+  model: string | null;
+}
+
+export interface LoginsSeriesPoint {
+  bucket: string;
+  logins: number;
+  uniqueUsers: number;
+  newUsers: number;
+  avgSessionSec: number | null;
+}
+
+export interface DwellSectionRow {
+  section: string;
+  seconds: number;
+  visits: number;
+  users: number;
+  avgSeconds: number;
+  sharePct: number;
+}
+
+export interface DwellCategoryRow {
+  categoryName: string;
+  seconds: number;
+  views: number;
+  users: number;
+}
+
+export interface DwellListingRow {
+  listingId: string;
+  title: string | null;
+  priceCents: number | null;
+  seconds: number;
+  views: number;
+  users: number;
+}
+
+export interface DwellBreakdown {
+  totalSeconds: number;
+  totalVisits: number;
+  avgSecondsPerVisit: number;
+  sections: DwellSectionRow[];
+  categories: DwellCategoryRow[];
+  topListings: DwellListingRow[];
+}
+
+export interface FeatureAdoptionRow {
+  key: string;
+  label: string;
+  users: number;
+  events: number;
+}
+
+export interface ByListingType {
+  listingType: string;
+  count: number;
+  gmvCents: number;
+}
+
+export interface TimeToSaleRow {
+  categoryName: string;
+  medianDays: number;
+  sold: number;
+}
+
+export interface KycFunnelStage {
+  stage: string;
+  count: number;
+}
+
+export interface DispatchSlaBucket {
+  bucket: string;
+  count: number;
+}
+
+export interface RefundRiskRow {
+  sellerId: string;
+  username: string | null;
+  email: string;
+  totalSales: number;
+  refundCount: number;
+  refundRate: number;
+  ppDifference: number;
+}
+
+export interface FreshnessGraveyardRow {
+  id: string;
+  referenceNumber: string | null;
+  title: string;
+  priceCents: number | null;
+  ageDays: number;
+  staleScore: number;
+  sellerId: string;
+  sellerUsername: string | null;
+  sellerEmail: string;
+  categoryName: string;
+  listingType: string;
+}
+
+const insightPath = (path: string, period: string) =>
+  `/admin/analytics/insights/${path}?period=${encodeURIComponent(period)}`;
+
+export const analyticsInsights = {
+  pulse: () => adminFetch<InsightsPulse>('/admin/analytics/insights/pulse'),
+  activityHeatmap: (period: string) =>
+    adminFetch<HeatCell[]>(insightPath('activity-heatmap', period)),
+  salesHeatmap: (period: string) =>
+    adminFetch<HeatCell[]>(insightPath('sales-heatmap', period)),
+  search: (period: string) =>
+    adminFetch<SearchIntel>(insightPath('search', period)),
+  funnel: (period: string) =>
+    adminFetch<FunnelStage[]>(insightPath('funnel', period)),
+  activeUsers: (period: string) =>
+    adminFetch<ActiveUserRow[]>(insightPath('active-users', period)),
+  userDrilldown: (userId: string) =>
+    adminFetch<UserDrilldown>(`/admin/analytics/insights/user/${encodeURIComponent(userId)}`),
+  dormant: () => adminFetch<DormantSegment>('/admin/analytics/insights/dormant'),
+  digest: () => adminFetch<InsightsDigestRow | null>('/admin/analytics/insights/digest'),
+  loginsSeries: (period: string) =>
+    adminFetch<LoginsSeriesPoint[]>(insightPath('logins-series', period)),
+  dwell: (period: string) =>
+    adminFetch<DwellBreakdown>(insightPath('dwell', period)),
+  featureAdoption: (period: string) =>
+    adminFetch<FeatureAdoptionRow[]>(insightPath('feature-adoption', period)),
+};
+
+export function generateInsightsDigest(): Promise<InsightsDigestRow> {
+  return adminFetch<InsightsDigestRow>('/admin/analytics/insights/digest/generate', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export function analyticsByListingType(period: string): Promise<ByListingType[]> {
+  return adminFetch<ByListingType[]>(
+    `/admin/analytics/by-listing-type?period=${encodeURIComponent(period)}`,
+  );
+}
+
+export function analyticsTimeToSale(period: string): Promise<TimeToSaleRow[]> {
+  return adminFetch<TimeToSaleRow[]>(
+    `/admin/analytics/time-to-sale?period=${encodeURIComponent(period)}`,
+  );
+}
+
+export function analyticsKycFunnel(): Promise<KycFunnelStage[]> {
+  return adminFetch<KycFunnelStage[]>('/admin/analytics/kyc-funnel');
+}
+
+export function analyticsDispatchSla(): Promise<DispatchSlaBucket[]> {
+  return adminFetch<DispatchSlaBucket[]>('/admin/analytics/dispatch-sla');
+}
+
+export function analyticsRefundRisk(): Promise<RefundRiskRow[]> {
+  return adminFetch<RefundRiskRow[]>('/admin/analytics/refund-risk');
+}
+
+export function analyticsFreshnessGraveyard(): Promise<FreshnessGraveyardRow[]> {
+  return adminFetch<FreshnessGraveyardRow[]>(
+    '/admin/analytics/freshness-graveyard?minAgeDays=30&limit=30',
+  );
+}
+
+/** Human duration for dwell rows: "2m 14s", "1h 06m", "0s". */
+export function formatDuration(seconds: number | null | undefined): string {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) {
+    return '0s';
+  }
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const mins = Math.floor(seconds / 60);
+  if (mins < 60) return `${mins}m ${Math.round(seconds % 60)}s`;
+  const hours = Math.floor(mins / 60);
+  return `${hours}h ${String(mins % 60).padStart(2, '0')}m`;
+}
+
 export interface AlertCount {
   unresolved: number;
   urgent: number;

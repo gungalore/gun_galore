@@ -128,6 +128,89 @@ describe('the install labels', () => {
   });
 });
 
+describe('page_dwell', () => {
+  it('keeps an allowlisted section and a rounded duration', () => {
+    const { controller, record } = build();
+    controller.ingest(undefined, {
+      events: [
+        {
+          eventType: 'page_dwell',
+          path: '/community',
+          durationSec: 61.6,
+          section: 'community',
+        },
+      ],
+    });
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record.mock.calls[0][0].metadata).toEqual({
+      durationSec: 62,
+      section: 'community',
+    });
+  });
+
+  it('folds an unknown section into "other"', () => {
+    const { controller, record } = build();
+    controller.ingest(undefined, {
+      events: [
+        {
+          eventType: 'page_dwell',
+          path: '/',
+          durationSec: 10,
+          section: '<script>x</script>',
+        },
+      ],
+    });
+    expect(record.mock.calls[0][0].metadata).toEqual({
+      durationSec: 10,
+      section: 'other',
+    });
+  });
+
+  it('clamps a long-lived tab to 30 minutes', () => {
+    const { controller, record } = build();
+    controller.ingest(undefined, {
+      events: [
+        {
+          eventType: 'page_dwell',
+          path: '/',
+          durationSec: 60 * 60 * 12,
+          section: 'marketplace',
+        },
+      ],
+    });
+    expect(record.mock.calls[0][0].metadata).toEqual({
+      durationSec: 1800,
+      section: 'marketplace',
+    });
+  });
+
+  it('drops a dwell with no usable duration', () => {
+    const { controller, record } = build();
+    controller.ingest(undefined, {
+      events: [
+        { eventType: 'page_dwell', path: '/', section: 'marketplace' },
+        {
+          eventType: 'page_dwell',
+          path: '/',
+          durationSec: NaN,
+          section: 'marketplace',
+        },
+      ],
+    });
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('carries the session id from the request', () => {
+    const { controller, record } = build();
+    controller.ingest(
+      undefined,
+      { events: [{ eventType: 'page_view' }] },
+      { sessionId: 's1' } as never,
+    );
+    expect(record.mock.calls[0][0].sessionId).toBe('s1');
+  });
+});
+
 describe('the limits that stop it being a firehose', () => {
   it('takes at most 30 events from one call', () => {
     const { controller, record } = build();

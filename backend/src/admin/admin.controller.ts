@@ -1310,6 +1310,21 @@ export class AdminAnalyticsController {
     return this.analytics.dormantSegment();
   }
 
+  @Get('insights/logins-series')
+  loginsSeries(@Query('period') period?: string) {
+    return this.analytics.loginsSeries(this.resolvePeriod(period));
+  }
+
+  @Get('insights/dwell')
+  dwell(@Query('period') period?: string) {
+    return this.analytics.dwellBreakdown(this.resolvePeriod(period));
+  }
+
+  @Get('insights/feature-adoption')
+  featureAdoption(@Query('period') period?: string) {
+    return this.analytics.featureAdoption(this.resolvePeriod(period));
+  }
+
   @Get('insights/digest')
   latestDigest() {
     return this.digest.getLatest();

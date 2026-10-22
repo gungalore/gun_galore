@@ -21,6 +21,11 @@ export interface RecordInput {
     | 'cart_add'
     | 'checkout_started'
     | 'page_view'
+    // Foreground time spent on one route. `metadata.durationSec` is the
+    // active (visible-tab) seconds, clamped at the API boundary; `section`
+    // is an allowlisted product area, never free text. This is what powers
+    // "time spent on what" in the admin Insights board.
+    | 'page_dwell'
     // Install funnel. The PWA is the only "app" we have, and until these
     // landed nothing anywhere recorded whether the install popup was ever
     // seen — an operator reporting "it works on Android but not iPhone" could
@@ -73,10 +78,16 @@ export class ActivityService implements OnModuleInit, OnModuleDestroy {
   private adminUserIds = new Set<string>();
   private flushTimer: NodeJS.Timeout | null = null;
   private adminTimer: NodeJS.Timeout | null = null;
+  // Session id → last time we wrote LoginEvent.lastActiveAt. Without a
+  // throttle every page view would become an UPDATE; at most one per session
+  // per five minutes is enough to bound an open session's length honestly
+  // without turning analytics into a write amplifier.
+  private readonly touchedSessions = new Map<string, number>();
 
   private readonly MAX_BUFFER = 5000;
   private readonly FLUSH_MS = 3000;
   private readonly ADMIN_REFRESH_MS = 5 * 60 * 1000;
+  private readonly SESSION_TOUCH_MS = 5 * 60 * 1000;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -136,6 +147,41 @@ export class ActivityService implements OnModuleInit, OnModuleDestroy {
       // Best-effort — drop the batch rather than retry-loop or backpressure.
       this.logger.warn(
         `activity flush dropped ${batch.length} events: ${(err as Error).message}`,
+      );
+    }
+    await this.touchSessions(batch);
+  }
+
+  /**
+   * Keep `LoginEvent.lastActiveAt` roughly current so an unclosed session
+   * still has a measurable length. Best-effort and throttled per session:
+   * a failure here must never affect event capture.
+   */
+  private async touchSessions(batch: BufferedEvent[]): Promise<void> {
+    const now = Date.now();
+    const due: string[] = [];
+    for (const e of batch) {
+      if (!e.sessionId) continue;
+      const last = this.touchedSessions.get(e.sessionId) ?? 0;
+      if (now - last < this.SESSION_TOUCH_MS) continue;
+      this.touchedSessions.set(e.sessionId, now);
+      due.push(e.sessionId);
+    }
+    if (due.length === 0) return;
+    // The map must not grow forever in a long-lived process.
+    if (this.touchedSessions.size > 20_000) {
+      for (const [id, at] of this.touchedSessions) {
+        if (now - at > this.SESSION_TOUCH_MS) this.touchedSessions.delete(id);
+      }
+    }
+    try {
+      await this.prisma.loginEvent.updateMany({
+        where: { sessionId: { in: due }, endedAt: null },
+        data: { lastActiveAt: new Date(now) },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `login-event lastActiveAt touch failed: ${(err as Error).message}`,
       );
     }
   }

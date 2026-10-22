@@ -3,8 +3,10 @@ import {
   Controller,
   HttpCode,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ActivityService } from './activity.service';
@@ -18,6 +20,10 @@ interface ClientEvent {
   platform?: string;
   /** Install events only. Which surface fired it. Allowlisted below. */
   surface?: string;
+  /** page_dwell only. Active foreground seconds, clamped below. */
+  durationSec?: number;
+  /** page_dwell only. Product area, allowlisted below. */
+  section?: string;
 }
 
 // Client beacon. The browser fires navigator.sendBeacon here for events that
@@ -33,6 +39,7 @@ export class ActivityController {
 
   private static readonly CLIENT_TYPES = new Set<string>([
     'page_view',
+    'page_dwell',
     'cart_add',
     'listing_view',
     'search',
@@ -64,6 +71,30 @@ export class ActivityController {
     'footer',
   ]);
 
+  // Product areas the admin "time spent on what" board reports. A closed set
+  // for the same reason as the install labels: this endpoint is
+  // unauthenticated, so metadata must never be a free-text write.
+  private static readonly SECTIONS = new Set<string>([
+    'marketplace',
+    'auctions',
+    'listing',
+    'community',
+    'bench',
+    'motivations',
+    'valuations',
+    'checkout',
+    'account',
+    'other',
+  ]);
+
+  /**
+   * The dwell cap. A tab left open all day would otherwise report a single
+   * 12-hour "visit" and skew every average; 30 minutes is long enough for a
+   * genuine deep read and short enough to bound a forgotten tab.
+   */
+  private static readonly MAX_DWELL_SEC = 30 * 60;
+  private static readonly MIN_DWELL_SEC = 1;
+
   // Deliberately NOT @SkipThrottle: this is an unauthenticated write — the
   // default per-IP rate limit is ample for legit use (~1 event per page nav)
   // and stops anyone flooding the UserEvent table.
@@ -73,6 +104,7 @@ export class ActivityController {
   ingest(
     @CurrentUser() userId: string | undefined,
     @Body() body: { deviceId?: string; events?: ClientEvent[] },
+    @Req() req?: Request & { sessionId?: string },
   ): void {
     const deviceId =
       typeof body?.deviceId === 'string' ? body.deviceId.slice(0, 64) : null;
@@ -85,9 +117,35 @@ export class ActivityController {
       const surface = ActivityController.SURFACES.has(e.surface ?? '')
         ? e.surface
         : undefined;
+      const section = ActivityController.SECTIONS.has(e.section ?? '')
+        ? e.section
+        : undefined;
+
+      let metadata: Record<string, unknown> | null = null;
+      if (e.eventType === 'page_dwell') {
+        const raw = Number(e.durationSec);
+        // A dwell with no usable duration answers no question; drop it rather
+        // than storing a zero that would drag every average down.
+        if (!Number.isFinite(raw)) continue;
+        metadata = {
+          durationSec: Math.min(
+            ActivityController.MAX_DWELL_SEC,
+            Math.max(ActivityController.MIN_DWELL_SEC, Math.round(raw)),
+          ),
+          section: section ?? 'other',
+        };
+      } else if (platform || surface || section) {
+        metadata = {
+          ...(platform ? { platform } : {}),
+          ...(surface ? { surface } : {}),
+          ...(section ? { section } : {}),
+        };
+      }
+
       this.activity.record({
         eventType: e.eventType as
           | 'page_view'
+          | 'page_dwell'
           | 'cart_add'
           | 'listing_view'
           | 'search'
@@ -99,8 +157,8 @@ export class ActivityController {
         listingId: e.listingId ?? null,
         query: e.query ?? null,
         path: e.path ?? null,
-        metadata:
-          platform || surface ? { platform, surface } : null,
+        sessionId: req?.sessionId ?? null,
+        metadata,
       });
     }
   }

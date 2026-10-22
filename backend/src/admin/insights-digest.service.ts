@@ -2,8 +2,7 @@
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
-import { AdminAnalyticsService, AnalyticsPeriod } from './admin-analytics.service';
-import { sanitizePromptValue } from '../common/prompt-sanitize';
+import { AdminAnalyticsService, AnalyticsPeriod } from './admin-analytics.service';import { sanitizePromptValue } from '../common/prompt-sanitize';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -18,6 +17,10 @@ interface DigestData {
   topCategories: { name: string; count: number }[];
   topSearches: { term: string; count: number; maxResults: number }[];
   zeroResultSearches: { term: string; count: number }[];
+  // Attention: where members actually spend foreground time, so the narrative
+  // can weigh interest against revenue rather than reading sales alone.
+  dwellSections: { section: string; seconds: number; sharePct: number }[];
+  dwellCategories: { name: string; seconds: number }[];
   // Marketing-consented dormant users (mirrors the /admin/broadcast 'dormant'
   // segment) + the subset lawfully reachable by SMS.
   dormantUsers: number;
@@ -72,7 +75,7 @@ export class InsightsDigestService {
   private async buildDataPack(periodDays: number): Promise<DigestData> {
     const period: AnalyticsPeriod =
       periodDays <= 7 ? '7d' : periodDays <= 30 ? '30d' : '90d';
-    const [pulse, actHeat, salesHeat, cats, search, dormant] =
+    const [pulse, actHeat, salesHeat, cats, search, dormant, dwell] =
       await Promise.all([
         this.analytics.insightsPulse(),
         this.analytics.activityHeatmap(period),
@@ -83,6 +86,7 @@ export class InsightsDigestService {
         // uses — so the digest never recommends messaging people we can't
         // lawfully reach.
         this.analytics.dormantSegment(),
+        this.analytics.dwellBreakdown(period),
       ]);
 
     const topCells = (
@@ -116,6 +120,15 @@ export class InsightsDigestService {
       zeroResultSearches: search.zeroResult
         .slice(0, 8)
         .map((t) => ({ term: sanitizePromptValue(t.term, 60), count: t.count })),
+      dwellSections: dwell.sections.slice(0, 6).map((s) => ({
+        section: sanitizePromptValue(s.section, 40),
+        seconds: s.seconds,
+        sharePct: s.sharePct,
+      })),
+      dwellCategories: dwell.categories.slice(0, 6).map((c) => ({
+        name: sanitizePromptValue(c.categoryName ?? '?', 60),
+        seconds: c.seconds,
+      })),
       dormantUsers: dormant.total,
       dormantSmsReachable: dormant.smsReachable,
       weeklyActiveUsers: pulse.wau,
@@ -134,7 +147,9 @@ export class InsightsDigestService {
           'numbers in the JSON provided — never invent figures. Be specific and ' +
           'actionable: name the best day+hour windows to advertise (from peakActivity ' +
           'and peakSales), what to stock or promote (from topSearches and especially ' +
-          'zeroResultSearches = demand we are not meeting), and one user-engagement ' +
+          'zeroResultSearches = demand we are not meeting; dwellSections and ' +
+          'dwellCategories show where attention actually goes, so weigh interest ' +
+          'against sales when recommending a focus), and one user-engagement ' +
           'action (dormantUsers = marketing-opted-in users inactive 14+ days; ' +
           'dormantSmsReachable = the subset reachable by SMS — only recommend ' +
           'messaging that subset). All times are SA local. Output plain text: a one-line ' +

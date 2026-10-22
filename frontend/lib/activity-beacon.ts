@@ -41,6 +41,7 @@ export type InstallSurface = 'popup' | 'bar' | 'help' | 'nav' | 'footer';
 interface BeaconEvent {
   eventType:
     | 'page_view'
+    | 'page_dwell'
     | 'cart_add'
     | 'install_shown'
     | 'install_clicked'
@@ -48,8 +49,65 @@ interface BeaconEvent {
     | 'install_completed';
   path?: string;
   listingId?: string;
+  /** page_dwell only: active foreground seconds. */
+  durationSec?: number;
+  /** page_dwell only: the product area, from the closed set below. */
+  section?: ActivitySection;
   platform?: InstallPlatform;
   surface?: InstallSurface;
+}
+
+/** The product areas the admin "time spent on what" board reports. Must stay
+ *  in step with the backend ActivityController allowlist. */
+export type ActivitySection =
+  | 'marketplace'
+  | 'auctions'
+  | 'listing'
+  | 'community'
+  | 'bench'
+  | 'motivations'
+  | 'valuations'
+  | 'checkout'
+  | 'account'
+  | 'other';
+
+/** Map a route to the section the admin board groups it under. */
+export function sectionForPath(path: string): ActivitySection {
+  const [pathname, search = ''] = path.split('?');
+  if (pathname.startsWith('/listings')) return 'listing';
+  if (pathname.startsWith('/community')) return 'community';
+  if (pathname.startsWith('/bench')) return 'bench';
+  if (pathname.startsWith('/motivations')) return 'motivations';
+  if (pathname.startsWith('/value') || pathname.startsWith('/valuations')) {
+    return 'valuations';
+  }
+  if (pathname.startsWith('/checkout')) return 'checkout';
+  if (
+    pathname.startsWith('/dashboard') ||
+    pathname.startsWith('/my') ||
+    pathname.startsWith('/account') ||
+    pathname.startsWith('/profile') ||
+    pathname.startsWith('/settings') ||
+    pathname.startsWith('/wishlist') ||
+    pathname.startsWith('/orders')
+  ) {
+    return 'account';
+  }
+  if (pathname.startsWith('/auctions')) return 'auctions';
+  if (pathname === '/' || pathname === '') {
+    return /(^|&)listingType=AUCTION(&|$)/.test(search)
+      ? 'auctions'
+      : 'marketplace';
+  }
+  return 'other';
+}
+
+/** Listing id for a detail route, or undefined everywhere else. */
+export function listingIdForPath(path: string): string | undefined {
+  const pathname = path.split('?')[0];
+  const m = pathname.match(/^\/listings\/([A-Za-z0-9_-]{6,})/);
+  if (!m) return undefined;
+  return m[1] === 'new' ? undefined : m[1];
 }
 
 function send(events: BeaconEvent[]): void {
@@ -71,8 +129,29 @@ function send(events: BeaconEvent[]): void {
   }
 }
 
-export function trackPageView(path: string): void {
-  send([{ eventType: 'page_view', path }]);
+export function trackPageView(path: string, section?: ActivitySection): void {
+  send([{ eventType: 'page_view', path, ...(section ? { section } : {}) }]);
+}
+
+/**
+ * Active foreground time on one route. Fired on the NEXT navigation (and on
+ * tab-hide / page-hide), never on a timer, so one visit produces one event.
+ */
+export function trackPageDwell(input: {
+  path: string;
+  durationSec: number;
+  section: ActivitySection;
+  listingId?: string;
+}): void {
+  send([
+    {
+      eventType: 'page_dwell',
+      path: input.path,
+      durationSec: input.durationSec,
+      section: input.section,
+      ...(input.listingId ? { listingId: input.listingId } : {}),
+    },
+  ]);
 }
 
 export function trackCartAdd(listingId: string): void {
