@@ -26,6 +26,7 @@ export function HelpTip({
   children,
   side = 'bottom',
   width = 260,
+  label,
 }: {
   // Optional label shown above the body (e.g. "Reserve price").
   title?: string;
@@ -35,6 +36,9 @@ export function HelpTip({
   side?: 'top' | 'bottom' | 'left' | 'right';
   // Cap the popover width — keeps mobile sane.
   width?: number;
+  // When set, renders a small labelled pill instead of the bare ⓘ icon.
+  // Used beside field labels where a plain icon is too easy to miss.
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [locked, setLocked] = useState(false);
@@ -166,21 +170,28 @@ export function HelpTip({
         aria-label={title ? `${title} — more info` : 'More info'}
         aria-expanded={open}
         style={{
-          background: 'transparent',
-          border: 'none',
-          padding: 0,
-          marginLeft: 5,
+          background: label ? 'var(--bg-inset)' : 'transparent',
+          border: label ? '0.5px solid var(--border)' : 'none',
+          borderRadius: label ? 999 : undefined,
+          padding: label ? '2px 9px' : 0,
+          marginLeft: label ? 8 : 5,
           cursor: 'pointer',
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
+          gap: 4,
           color: 'var(--text-tertiary)',
+          fontSize: label ? 10 : undefined,
+          fontWeight: label ? 500 : undefined,
+          letterSpacing: label ? '0.05em' : undefined,
+          textTransform: label ? 'uppercase' : undefined,
           lineHeight: 1,
         }}
       >
+        {label && <span>{label}</span>}
         <svg
-          width="13"
-          height="13"
+          width={label ? 11 : 13}
+          height={label ? 11 : 13}
           viewBox="0 0 16 16"
           fill="none"
           aria-hidden

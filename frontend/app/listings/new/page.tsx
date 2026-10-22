@@ -230,6 +230,7 @@ function Field({
   hint,
   tip,
   tipTitle,
+  tipLabel,
   required,
   children,
 }: {
@@ -240,6 +241,8 @@ function Field({
   // on touch.
   tip?: React.ReactNode;
   tipTitle?: string;
+  // Renders the tip as a small labelled pill instead of a bare icon.
+  tipLabel?: string;
   required?: boolean;
   children: React.ReactNode;
 }) {
@@ -255,7 +258,7 @@ function Field({
             <span style={{ color: 'var(--red)', marginLeft: 4 }}>*</span>
           )}
           {tip && (
-            <HelpTip title={tipTitle ?? label} side="right">
+            <HelpTip title={tipTitle ?? label} side="right" label={tipLabel}>
               {tip}
             </HelpTip>
           )}
@@ -3082,7 +3085,11 @@ export default function NewListingPage() {
       <form
         data-reveal
         onSubmit={handlePreview}
-        className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6"
+        className={`grid grid-cols-1 gap-6 ${
+          form.title.trim().length > 0
+            ? 'lg:grid-cols-[minmax(0,1fr)_320px]'
+            : ''
+        }`}
       >
         {/* ───── Form column ───── */}
         <div className="space-y-3 max-w-[820px]">
@@ -3093,6 +3100,17 @@ export default function NewListingPage() {
           <FormSection
             id={stepAnchor(1)}
             title="Photos"
+            titleAccessory={
+              <HelpTip
+                label="Tip"
+                title="Photograph in daylight"
+                side="right"
+              >
+                Plain background, several angles, any flaws shown clearly.
+                Daylight shows colour and wear far more honestly than indoor
+                light.
+              </HelpTip>
+            }
             description="Show every angle, markings and any wear. Keep contact details and shop signage out of frame."
           >
             <PhotoDropzone
@@ -3146,7 +3164,13 @@ export default function NewListingPage() {
             title="About this item"
             description="Tell buyers what it is, what shape it's in, and what makes it interesting."
           >
-            <Field label="Title" required>
+            <Field
+              label="Title"
+              required
+              tipLabel="Tip"
+              tipTitle="Write a specific title"
+              tip="Detailed titles beat generic ones — include the make, model, year and condition where relevant."
+            >
               <input
                 type="text"
                 required
@@ -3211,7 +3235,8 @@ export default function NewListingPage() {
                   <br />
                   An accurate <strong>Fair</strong> with the fault described
                   sells faster than an optimistic <strong>Good</strong> that
-                  arrives and disappoints.{' '}
+                  arrives and disappoints. Disclose wear, scratches or missing
+                  parts upfront — it builds trust and avoids returns.{' '}
                   <a
                     href="/condition-guide"
                     target="_blank"
@@ -3243,7 +3268,13 @@ export default function NewListingPage() {
                 from the title + description when it polishes the listing,
                 and the backend infers isFirearm from the category. */}
 
-            <Field label="Description" required>
+            <Field
+              label="Description"
+              required
+              tipLabel="Tip"
+              tipTitle="No contact info in the description"
+              tip="Phone numbers and emails are auto-stripped to keep every sale on-platform and protected."
+            >
               <textarea
                 required
                 minLength={10}
@@ -3526,6 +3557,17 @@ export default function NewListingPage() {
               <Field
                 label="Your asking price"
                 required
+                tipLabel="How you get paid"
+                tipTitle="How you get paid"
+                tip={
+                  <>
+                    The buyer pays and the money is held for you. Accept the
+                    order within 48 hours, then hand the item over within 5
+                    days. Once the buyer confirms delivery your payout is
+                    released — allow 2-3 business days to reach your bank.
+                    Payouts need a verified account with bank details on file.
+                  </>
+                }
                 hint="This is the listed price and the exact amount paid out to you. The buyer pays the Platform Fee on top at checkout — nothing is taken off your side."
               >
                 <div style={{ position: 'relative' }}>
@@ -3698,6 +3740,17 @@ export default function NewListingPage() {
                   <Field
                     label="Starting bid"
                     required
+                    tipLabel="How you get paid"
+                    tipTitle="How you get paid"
+                    tip={
+                      <>
+                        Bidding sets the final price and our 5% commission
+                        comes off it. Accept the order within 48 hours, then
+                        hand the item over within 5 days. Your payout is
+                        released once delivery is confirmed — allow 2-3
+                        business days to reach your bank.
+                      </>
+                    }
                     hint="Whole rands. Bidding sets the final price, so nothing is added on top of it — our commission comes off the winning bid."
                   >
                     <div style={{ position: 'relative' }}>
@@ -3895,6 +3948,11 @@ export default function NewListingPage() {
                     deliver to the buyer's door, tracked. <br />
                     <strong>Arrange privately:</strong> you and the buyer
                     coordinate an in-person handover. No courier.
+                    <br />
+                    <br />
+                    After it sells: accept within 48 hours, then hand over
+                    within 5 days. Your payout is released once delivery is
+                    confirmed.
                   </>
                 }
               >
@@ -4112,6 +4170,11 @@ export default function NewListingPage() {
                   <strong>Arrange privately:</strong> you and the buyer
                   meet at a dealer to do the licence transfer in person.
                   Use this for local sales.
+                  <br />
+                  <br />
+                  After it sells: accept within 48 hours, then hand the
+                  firearm over within 5 days. Your payout is released once the
+                  receiving dealer&apos;s paperwork is verified.
                 </>
               }
             >
@@ -4552,6 +4615,7 @@ export default function NewListingPage() {
         </div>
 
         {/* ───── Sidebar ───── */}
+        {form.title.trim().length > 0 && (
         <aside className="hidden lg:block">
           <div
             className="sticky top-20 rounded-[8px] p-5 space-y-5"
@@ -4653,111 +4717,9 @@ export default function NewListingPage() {
                 </p>
               </div>
             )}
-
-            <div>
-              <p
-                className="text-xs uppercase mb-3"
-                style={{
-                  color: 'var(--text-tertiary)',
-                  letterSpacing: '0.1em',
-                }}
-              >
-                Tips for a faster sale
-              </p>
-              <ul
-                className="text-xs space-y-2"
-                style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}
-              >
-                <li>
-                  <strong style={{ color: 'var(--text-primary)' }}>
-                    Be specific.
-                  </strong>{' '}
-                  Detailed titles beat generic ones — include the make,
-                  model, year, and condition where relevant.
-                </li>
-                <li>
-                  <strong style={{ color: 'var(--text-primary)' }}>
-                    Photograph in daylight.
-                  </strong>{' '}
-                  Plain background, several angles, any flaws shown clearly.
-                </li>
-                <li>
-                  <strong style={{ color: 'var(--text-primary)' }}>
-                    Be honest about condition.
-                  </strong>{' '}
-                  Disclose wear, scratches, or missing parts upfront — it
-                  builds trust and avoids returns.
-                </li>
-                <li>
-                  <strong style={{ color: 'var(--text-primary)' }}>
-                    No contact info in the description.
-                  </strong>{' '}
-                  Phone numbers and emails are auto-stripped to keep
-                  every sale on-platform and protected.
-                </li>
-              </ul>
-            </div>
-
-            <hr style={{ border: 'none', borderTop: '0.5px solid var(--border)' }} />
-
-            <div>
-              <p
-                className="text-xs uppercase mb-3"
-                style={{
-                  color: 'var(--text-tertiary)',
-                  letterSpacing: '0.1em',
-                }}
-              >
-                How you get paid
-              </p>
-              <ol
-                className="text-xs space-y-2"
-                style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}
-              >
-                <li>
-                  <strong style={{ color: 'var(--text-primary)' }}>
-                    It sells.
-                  </strong>{' '}
-                  The buyer pays and the money is held for you. Accept the
-                  order within 48 hours — buyers can only cancel before you
-                  dispatch.
-                </li>
-                <li>
-                  <strong style={{ color: 'var(--text-primary)' }}>
-                    You dispatch.
-                  </strong>{' '}
-                  Once you accept, you have 5 days to hand the item over —
-                  courier or locker for most goods, in person for a collection,
-                  or to the receiving dealer for a firearm transfer.
-                </li>
-                <li>
-                  <strong style={{ color: 'var(--text-primary)' }}>
-                    Delivery is confirmed.
-                  </strong>{' '}
-                  The buyer confirms they received the item — for a firearm
-                  transfer, the receiving dealer&apos;s paperwork is verified
-                  instead — and your payout is released.
-                </li>
-                <li>
-                  <strong style={{ color: 'var(--text-primary)' }}>
-                    Money in your bank.
-                  </strong>{' '}
-                  {/* Buy Now is buyer-paid, not a deduction — saying "fees are
-                      deducted" here would contradict the breakdown under the
-                      price field and undo the trust it's there to build.
-                      Auctions still deduct the 5% seller commission off the
-                      sale, so they keep the deduction wording. Neither is
-                      automatic: release queues the payout and it is paid out
-                      in a batch, hence "queued" and "allow 2-3 business
-                      days". */}
-                  {form.listingType === 'BUY_NOW'
-                    ? 'Once released it is queued for payout to your bank account — allow 2-3 business days. You receive your full asking price: the buyer pays the Platform Fee, so nothing is taken off your side. Payouts need a verified account with bank details on file.'
-                    : 'Once released it is queued for payout to your bank account — allow 2-3 business days. Our 5% commission comes off the sale and the buyer pays their Platform Fee. Payouts need a verified account with bank details on file.'}
-                </li>
-              </ol>
-            </div>
           </div>
         </aside>
+        )}
       </form>
       </PageReveal>
 

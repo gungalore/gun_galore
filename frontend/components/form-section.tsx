@@ -24,10 +24,18 @@ interface Props {
   id: string;
   title: string;
   description?: ReactNode;
+  /** Optional pill / control rendered beside the section heading. */
+  titleAccessory?: ReactNode;
   children: ReactNode;
 }
 
-export function FormSection({ id, title, description, children }: Props) {
+export function FormSection({
+  id,
+  title,
+  description,
+  titleAccessory,
+  children,
+}: Props) {
   return (
     <section
       id={id}
@@ -44,9 +52,14 @@ export function FormSection({ id, title, description, children }: Props) {
           color: 'var(--text-primary)',
           fontWeight: 500,
           letterSpacing: '-0.01em',
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 4,
         }}
       >
         {title}
+        {titleAccessory}
       </h2>
       {description && (
         <p
