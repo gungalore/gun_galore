@@ -46,6 +46,7 @@ import {
 import { HelpTip } from '@/components/help-tip';
 import { ListingDescription } from '@/components/listing-description';
 import { useMediaReview } from '@/lib/use-media-review';
+import { requiresAdminReview } from '@/lib/listing-publish-review';
 import { ImageBlurModal } from '@/components/media/image-blur-modal';
 import { VideoDecisionModal } from '@/components/media/video-decision-modal';
 import { MediaNoticeModal } from '@/components/media/media-notice-modal';
@@ -2522,7 +2523,13 @@ export default function NewListingPage() {
       // upload N photos. The @Min(1) DTO rule blocks zero-photo
       // submissions. Photos themselves stream up below.
       body.imageCount = images.length;
-      if (media.imageReviewRequired) body.forceReview = true;
+      // The preview can hold a listing for photos the client-side screen let
+      // through. Create re-moderates TEXT ONLY (images upload afterwards), so
+      // without this bridge the modal says "admin review" and the listing goes
+      // live anyway. See lib/listing-publish-review.ts.
+      if (requiresAdminReview(previewResult?.decision, media.imageReviewRequired)) {
+        body.forceReview = true;
+      }
       if (useCleanedDescription && previewResult.cleanedDescription) {
         body.description = previewResult.cleanedDescription;
       }
