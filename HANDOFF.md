@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-10-22**.
 
+## 2026-10-22 - PHOTO-FLAGGED LISTINGS STAY IN REVIEW (DEPLOYED)
+
+**Preview can hold a listing for a photo, but create re-moderates text only**
+(images are uploaded after the row exists). `forceReview` was set only from the
+separate client-side photo screen, so a preview verdict of `HUMAN_REVIEW` from
+the server vision pass still published `ACTIVE` — the modal said admin review
+and the listing never entered the queue. `requiresAdminReview()` now carries
+the preview verdict into `forceReview`; spec covers both sources.
+
+Commit **`864bbd0d`**. Frontend-only deploy at 13:50 SAST: rollback
+`alloutdoor-20261022-135043.dump` (35 915 510 bytes), box HEAD matches,
+frontend health x2 OK, public 200 x2, all three PM2 services online. No
+migration. Unrelated Zoho/payments work was stashed and restored.
+
 ## 2026-10-22 - STALE-SESSION GRIDS AND OVERSIZED SELL PREVIEW (DEPLOYED)
 
 **Discovery grids after an idle tab.** The 15-minute access-token cookie can
