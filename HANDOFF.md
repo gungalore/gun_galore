@@ -7,6 +7,32 @@ overwritten.
 
 Last updated: **2026-10-22**.
 
+## 2026-10-22 - IN-PERSON HANDOVER EVERYWHERE, PARGO-ONLY PICKUP (DEPLOYED)
+
+**In-person handover (`PRIVATE_ARRANGE`) is now offered on every non-collection
+listing**, firearm or goods, regardless of the seller's listing options. Funds
+stay HELD until the buyer confirms the handover (or 5 days after payment when
+there is no dispute); both parties get WhatsApp/SMS/email/in-app confirmation
+links at payment. On any refund or upheld dispute **ALL Outdoor keeps the
+Platform Fee** — only the item price is refunded.
+
+**Every cart item now has its own Courier / Arrange privately choice**
+(firearms: Dealer stock / Arrange privately). Only courier lines go to the Bob
+Go quote, and same-seller courier lines still consolidate into one parcel. The
+offer checkout gained the same delivery-method choice.
+
+**Pargo is the only pickup-point network** — Bob Box locker rates are filtered
+out (`pargoPickupRates`). Pargo cards read `Pargo – <store>`, show the distance,
+and reveal the address/trading hours only once selected. The checkout's
+"Before you pay" bullet block was replaced by the single acknowledgement
+checkbox, with the detail in the Terms/Refund Policy (Pargo-only and
+non-refundable Platform Fee now explicit).
+
+Commit **`f1803e86`**. Full deploy at 23:54 SAST: rollback
+`alloutdoor-20261022-235405.dump` (35 930 753 bytes), box HEAD matches,
+backend/frontend health x2 OK, public 200 x2, all three PM2 services online.
+No pending migrations. Unrelated Zoho/payments work was stashed and restored.
+
 ## 2026-10-22 - PHOTO-FLAGGED LISTINGS STAY IN REVIEW (DEPLOYED)
 
 **Preview can hold a listing for a photo, but create re-moderates text only**
