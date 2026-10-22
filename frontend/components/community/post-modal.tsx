@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth';
 import {
   type FeedComment,
@@ -45,8 +45,26 @@ export function PostModal({
   const [failed, setFailed] = useState(false);
   const [idx, setIdx] = useState(photoIndex ?? 0);
   const photoMode = photoIndex !== null;
+  const ZOOM_SCALE = 2;
+  const [zoomed, setZoomed] = useState(false);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const dragRef = useRef({
+    active: false,
+    startX: 0,
+    startY: 0,
+    startPanX: 0,
+    startPanY: 0,
+    moved: false,
+  });
 
   useScrollLock(true);
+
+  useEffect(() => {
+    setPan({ x: 0, y: 0 });
+    setZoomed(false);
+  }, [idx]);
 
   const load = useCallback(async () => {
     const token = await getToken();
@@ -306,12 +324,110 @@ export function PostModal({
             </>
           )}
           {image && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={image.url}
-              alt={`Photo ${idx + 1} of ${post.images.length}`}
-              style={{ maxWidth: '92%', maxHeight: '92%', objectFit: 'contain' }}
-            />
+            <div
+              ref={wrapperRef}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (dragRef.current.moved) {
+                  dragRef.current.moved = false;
+                  return;
+                }
+                setZoomed((z) => !z);
+              }}
+              onPointerDown={(e) => {
+                if (!zoomed) return;
+                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                dragRef.current = {
+                  active: true,
+                  startX: e.clientX,
+                  startY: e.clientY,
+                  startPanX: pan.x,
+                  startPanY: pan.y,
+                  moved: false,
+                };
+              }}
+              onPointerMove={(e) => {
+                if (!dragRef.current.active) return;
+                const dx = e.clientX - dragRef.current.startX;
+                const dy = e.clientY - dragRef.current.startY;
+                if (Math.abs(dx) + Math.abs(dy) > 4) dragRef.current.moved = true;
+                const wrapper = wrapperRef.current;
+                const img = imgRef.current;
+                if (!wrapper || !img) return;
+                const wr = wrapper.getBoundingClientRect();
+                const overX = Math.max(
+                  0,
+                  (img.naturalWidth * ZOOM_SCALE - wr.width) / 2,
+                );
+                const overY = Math.max(
+                  0,
+                  (img.naturalHeight * ZOOM_SCALE - wr.height) / 2,
+                );
+                const maxX = Math.max(overX, (wr.width * (ZOOM_SCALE - 1)) / 2);
+                const maxY = Math.max(overY, (wr.height * (ZOOM_SCALE - 1)) / 2);
+                setPan({
+                  x: Math.max(-maxX, Math.min(maxX, dragRef.current.startPanX + dx)),
+                  y: Math.max(-maxY, Math.min(maxY, dragRef.current.startPanY + dy)),
+                });
+              }}
+              onPointerUp={() => {
+                dragRef.current.active = false;
+              }}
+              onPointerCancel={() => {
+                dragRef.current.active = false;
+                dragRef.current.moved = false;
+              }}
+              style={{
+                maxWidth: '92%',
+                maxHeight: '92%',
+                overflow: 'hidden',
+                cursor: zoomed
+                  ? dragRef.current.active
+                    ? 'grabbing'
+                    : 'grab'
+                  : 'zoom-in',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                touchAction: zoomed ? 'none' : 'auto',
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                ref={imgRef}
+                src={image.url}
+                alt={`Photo ${idx + 1} of ${post.images.length}`}
+                draggable={false}
+                style={{
+                  maxWidth: '92vw',
+                  maxHeight: '92vh',
+                  objectFit: 'contain',
+                  transform: zoomed
+                    ? `translate(${pan.x}px, ${pan.y}px) scale(${ZOOM_SCALE})`
+                    : 'none',
+                  transformOrigin: 'center center',
+                  transition: dragRef.current.active
+                    ? 'none'
+                    : 'transform 0.18s ease-out',
+                  userSelect: 'none',
+                  willChange: 'transform',
+                }}
+              />
+            </div>
+          )}
+          {!zoomed && (
+            <div
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 text-center px-3"
+              style={{
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: 11,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                pointerEvents: 'none',
+              }}
+            >
+              Click to zoom 2× · drag to pan · ← → to navigate · Esc to close
+            </div>
           )}
         </div>
 
