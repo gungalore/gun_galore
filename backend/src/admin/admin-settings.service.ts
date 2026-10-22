@@ -121,18 +121,12 @@ const FLAGS: SettingFlag[] = [
   },
 
   // ─── Verification ─────────────────────────────────────────────
-  // The cheap Claude-vision ID flow: ~R3/seller (1-credit VerifyNow SA
-  // ID Basic + Claude vision doc+selfie match) vs the legacy ~R59.80
-  // Home Affairs photo pull + facematch. OFF = legacy flow runs
-  // unchanged; flipping ON routes every new /kyc/verify session (whether
-  // proactive from the profile page or forced at first payout) through
-  // the wizard. Reversible — flip OFF and any mid-flow seller resumes the
-  // legacy flow at the consent step. Keep VerifyNow credits funded before
-  // turning ON for real seller volume.
+  // Didit is the identity rail. This flag selects the AI-document review
+  // posture for sellers; it no longer depends on any prepaid ID lookup.
   {
     key: 'kyc_claude_flow_enabled',
-    label: 'Cheap Claude-vision ID verification',
-    hint: 'ON = the ~R3/seller Claude-vision ID flow (1-credit SA ID Basic + selfie/document match, human review for borderline matches). OFF = the legacy ~R59.80 Home Affairs photo + facematch. Ensure VerifyNow credits are topped up before enabling for seller volume.',
+    label: 'AI document-review verification',
+    hint: 'ON = the seller uploads an ID document and a live selfie, judged by an AI review with human review for borderline matches. OFF = the hosted Didit verification flow. No prepaid credit balance is involved either way.',
     group: 'Verification',
     type: 'boolean',
     default: 'false',
@@ -143,7 +137,7 @@ const FLAGS: SettingFlag[] = [
   {
     key: 'kyc_anchored_threshold_cents',
     label: 'Anchored KYC value threshold (cents)',
-    hint: 'Sellers whose highest listing or pending payout is at/above this (in CENTS — 1000000 = R10,000) also get the official Home Affairs photo pulled (+10 credits) as a stronger high-value gate. Invisible to the seller; only applies while the Claude-vision flow is ON.',
+    hint: 'Sellers whose highest listing or pending payout is at/above this (in CENTS — 1000000 = R10,000) also get the official Home Affairs photo pulled as a stronger high-value gate. Invisible to the seller; only applies while the AI document-review flow is ON.',
     group: 'Verification',
     type: 'number',
     default: '1000000',

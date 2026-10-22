@@ -26,7 +26,7 @@ const FILTERS: Array<{ id: string; label: string; param?: string }> = [
   { id: 'all', label: 'All users' },
   { id: 'kyc-outstanding', label: 'KYC outstanding', param: 'kyc-outstanding' },
   { id: 'kyc-stalled', label: 'KYC stalled', param: 'kyc-stalled' },
-  { id: 'dealers', label: 'Dealers', param: 'dealers' },
+  { id: 'kyc-review', label: 'KYC review', param: 'kyc-review' },
   { id: 'banned', label: 'Banned', param: 'banned' },
   { id: 'closed', label: 'Closed', param: 'closed' },
 ];
@@ -51,6 +51,25 @@ export default function PeoplePage() {
     const id = window.setTimeout(() => setDebounced(search.trim()), 350);
     return () => window.clearTimeout(id);
   }, [search]);
+
+  // Deep link from Warden ("Seller verifications stalled") and from a KYC
+  // alert. Read once on mount rather than through useSearchParams so this
+  // page needs no Suspense boundary.
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get('filter');
+    if (!param) return;
+    const match = FILTERS.find((f) => f.param === param);
+    if (match) setFilter(match);
+  }, []);
+
+  function chooseFilter(next: (typeof FILTERS)[number]) {
+    setFilter(next);
+    setPage(1);
+    const url = new URL(window.location.href);
+    if (next.param) url.searchParams.set('filter', next.param);
+    else url.searchParams.delete('filter');
+    window.history.replaceState({}, '', url);
+  }
 
   const users = useAdminPoll<Paginated<AdminUserRow>>(
     () =>
@@ -92,10 +111,7 @@ export default function PeoplePage() {
             type="button"
             className="adm-chip"
             data-active={filter.id === f.id}
-            onClick={() => {
-              setFilter(f);
-              setPage(1);
-            }}
+            onClick={() => chooseFilter(f)}
           >
             {f.label}
           </button>

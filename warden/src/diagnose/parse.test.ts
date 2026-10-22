@@ -143,16 +143,16 @@ test('a validated red gate has no command field at all — rule 6 is a type, not
     reply([
       {
         kind: 'red_gate',
-        headline: 'VERIFYNOW_MODE is sandbox on a production box.',
+        headline: 'DIDIT_MODE is sandbox on a production box.',
         diagnosis: 'Sandbox passes fake identities. Clearing this is a config change, not a command.',
-        gateKey: 'VERIFYNOW_MODE',
+        gateKey: 'DIDIT_MODE',
         fix: { type: 'none' },
       },
     ]),
   );
   assert.equal(item.kind, 'red_gate');
   assert.equal('command' in item, false);
-  assert.equal(item.gateKey, 'VERIFYNOW_MODE');
+  assert.equal(item.gateKey, 'DIDIT_MODE');
 });
 
 test('a proposal carrying fix.type "none" is refused — that form belongs to a red gate', () => {

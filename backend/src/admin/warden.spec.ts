@@ -48,13 +48,13 @@ const PROPOSAL = {
 };
 
 const RED_GATE = {
-  id: 'gate_verifynow',
+  id: 'gate_didit',
   kind: 'red_gate',
   status: 'pending',
   headline: 'Red gate: identity checks are running in sandbox',
-  diagnosis: 'VERIFYNOW_MODE=sandbox on a public site.',
+  diagnosis: 'DIDIT_MODE=sandbox on a public site.',
   command: null,
-  gateKey: 'VERIFYNOW_MODE',
+  gateKey: 'DIDIT_MODE',
   raisedAt: '2026-09-03T06:40:00.000Z',
 };
 
@@ -354,10 +354,10 @@ describe('approving a fix', () => {
   it('REFUSES to approve a red gate — it has no fix, and clearing one is a commit', async () => {
     configure();
     const { service, audit } = makeService();
-    const fetchMock = stubDaemon({ '/proposals/gate_verifynow': { body: RED_GATE } });
+    const fetchMock = stubDaemon({ '/proposals/gate_didit': { body: RED_GATE } });
 
     await expect(
-      service.approve('admin_1', 'gate_verifynow', { expectedCommand: '' }),
+      service.approve('admin_1', 'gate_didit', { expectedCommand: '' }),
     ).rejects.toThrow(BadRequestException);
 
     expect(fetchMock).toHaveBeenCalledTimes(1); // the read only, never an apply
@@ -439,9 +439,9 @@ describe('declining a fix', () => {
   it('refuses to decline a red gate — a dismissable red gate stops nagging', async () => {
     configure();
     const { service, audit } = makeService();
-    stubDaemon({ '/proposals/gate_verifynow': { body: RED_GATE } });
+    stubDaemon({ '/proposals/gate_didit': { body: RED_GATE } });
 
-    await expect(service.decline('admin_1', 'gate_verifynow', {})).rejects.toThrow(
+    await expect(service.decline('admin_1', 'gate_didit', {})).rejects.toThrow(
       BadRequestException,
     );
     expect(audit.record).not.toHaveBeenCalled();

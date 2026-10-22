@@ -89,7 +89,7 @@ export interface WardenAuditRecord {
 
 /** Env var NAMES worth a blanket value sweep. This decides which env VALUES get
  *  checked for a literal hit in output; it does not by itself declare anything
- *  a secret. Shaped after the families this box actually holds (VERIFYNOW_*,
+ *  a secret. Shaped after the families this box actually holds (DIDIT_*,
  *  PEACH_*, ZOHO_*, WARDEN_TOKEN) plus the usual *_SECRET/*_TOKEN/*_KEY family. */
 const SENSITIVE_ENV_NAME = /(SECRET|TOKEN|PASSWORD|_KEY$|API_KEY|DATABASE_URL)/i;
 

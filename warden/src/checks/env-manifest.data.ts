@@ -52,8 +52,6 @@ export const BACKEND_ENV_MANIFEST: readonly EnvVar[] = [
 
   // ── feature-level ─────────────────────────────────────────────────────
   { name: 'NODE_ENV', tier: 'feature', disables: 'production guards do not engage' },
-  { name: 'VERIFYNOW_API_KEY', tier: 'feature', disables: 'VerifyNow KYC lookups' },
-  { name: 'VERIFYNOW_MODE', tier: 'feature', disables: 'defaults to sandbox — sandbox in production passes fake identities and only WARNs at boot' },
   { name: 'CLOUDINARY_CLOUD_NAME', tier: 'feature', disables: 'every image upload throws — and a listing cannot be created without photos' },
   { name: 'CLOUDINARY_API_KEY', tier: 'feature', disables: 'every image upload throws' },
   { name: 'CLOUDINARY_API_SECRET', tier: 'feature', disables: 'every image upload throws' },
@@ -117,7 +115,7 @@ export const FRONTEND_ENV_MANIFEST: readonly EnvVar[] = [
  * The ONLY keys whose VALUE may appear in evidence. Every one is a mode
  * flag or a public URL that is already visible to any visitor or already
  * shown on the Desk's own gates board — and in every case the value is the
- * finding ("VERIFYNOW_MODE=sandbox in production"), which presence alone
+ * finding ("DIDIT_MODE=sandbox in production"), which presence alone
  * cannot express.
  *
  * ⚠️ Adding a key here is a deliberate decision to print it in a chat
@@ -128,7 +126,7 @@ export const NON_SECRET_ENV_KEYS: ReadonlySet<string> = new Set([
   'NODE_ENV',
   'PAYMENT_MODE',
   'PAYMENTS_LIVE',
-  'VERIFYNOW_MODE',
+  'DIDIT_MODE',
   'PEACH_ENV',
   'ZOHO_BOOKS_ENABLED',
   'ALLOW_LOCAL_ORIGINS',

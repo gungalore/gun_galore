@@ -14,6 +14,7 @@ import {
 } from '@/components/admin/admin-ui';
 import { useAdminPoll } from '@/lib/use-admin-poll';
 import {
+  adminCreditsSnapshot,
   adminFetch,
   formatRand,
   formatWhen,
@@ -22,6 +23,7 @@ import {
   type ActivityEvent,
   type AlertCount,
   type AttentionQueue,
+  type CreditSnapshotRow,
   type CronStatus,
   type ServiceProbe,
   type TodayPulse,
@@ -83,7 +85,7 @@ export default function WardenPage() {
         label: 'Listings awaiting review',
         caption: 'Regulated or flagged stock held out of the catalogue',
         count: q.pendingListings,
-        href: '/admin/operate',
+        href: '/admin/operate#listings',
         tone: 'amber',
         icon: 'doc',
       },
@@ -91,7 +93,7 @@ export default function WardenPage() {
         label: 'Seller verifications stalled',
         caption: 'Identity started but not finished more than 24h ago',
         count: q.kycStalled,
-        href: '/admin/people',
+        href: '/admin/people?filter=kyc-stalled',
         tone: 'cyan',
         icon: 'users',
       },
@@ -99,7 +101,7 @@ export default function WardenPage() {
         label: 'Firearm dealer verifications waiting',
         caption: 'SAPS 534 / stock register needs a human decision — money held',
         count: q.dealerVerificationsPendingReview,
-        href: '/admin/money',
+        href: '/admin/money?filter=dealer-review',
         tone: 'red',
         icon: 'shield',
       },
@@ -107,7 +109,7 @@ export default function WardenPage() {
         label: 'Disputed payments',
         caption: 'Buyer and seller in dispute — funds frozen mid-flow',
         count: q.disputedPayments,
-        href: '/admin/money',
+        href: '/admin/money?status=DISPUTED',
         tone: 'red',
         icon: 'alert',
       },
@@ -115,7 +117,7 @@ export default function WardenPage() {
         label: 'Dispatch SLA at risk',
         caption: 'Paid more than 24h ago and still not dispatched',
         count: q.dispatchSlaAtRisk,
-        href: '/admin/money',
+        href: '/admin/money?filter=dispatch-overdue',
         tone: 'amber',
         icon: 'truck',
       },
@@ -123,7 +125,7 @@ export default function WardenPage() {
         label: 'Sales awaiting seller acceptance',
         caption: 'Buyer paid, seller past the 48h accept window',
         count: q.salesAwaitingAccept,
-        href: '/admin/money',
+        href: '/admin/money?filter=accept-stalled',
         tone: 'amber',
         icon: 'clock',
       },
@@ -131,7 +133,7 @@ export default function WardenPage() {
         label: 'Unresolved alerts',
         caption: 'Ops alerts raised by crons, webhooks and payments',
         count: q.unresolvedAlerts,
-        href: '/admin/operate',
+        href: '/admin/operate#alerts',
         tone: alerts.data?.urgent ? 'red' : 'amber',
         icon: 'flag',
       },
@@ -139,9 +141,7 @@ export default function WardenPage() {
         label: 'Services below alarm threshold',
         caption: 'Prepaid rail running toward empty (SMS, media, AI)',
         count: q.creditsBelowAlarm,
-        // ⚠️ NO LINK. This pointed at /admin/insights, whose flag table was
-        // removed — the only surface that ever addressed service balances. The
-        // count stays visible until a credits board exists to land on.
+        href: '#credits',
         tone: 'amber',
         icon: 'server',
       },
@@ -346,6 +346,10 @@ export default function WardenPage() {
         )}
       </NeonCard>
 
+      {/* ── Service credits ──────────────────────────────────────── */}
+      <div id="credits" />
+      <CreditsCard />
+
       {/* ── Jobs ─────────────────────────────────────────────────── */}
       <NeonCard
         title="Scheduled jobs"
@@ -455,6 +459,93 @@ export default function WardenPage() {
         )}
       </NeonCard>
     </>
+  );
+}
+
+/**
+ * Live balances for every prepaid rail.
+ *
+ * ⚠️ THE THRESHOLDS BELOW MIRROR DEFAULT_THRESHOLDS IN
+ * backend/src/admin/admin-credits.service.ts, and they are DISPLAY ONLY. The
+ * attention count is computed on the server; this copy exists so the operator
+ * landing on the card can see which service tripped instead of a bare number
+ * with no explanation. If the defaults change there, change them here.
+ */
+const CREDIT_FLOORS: Record<string, { warn: number; alarm: number; spend?: boolean; unit: string }> = {
+  smsportal: { warn: 200, alarm: 100, unit: 'credits' },
+  cloudinary: { warn: 15, alarm: 5, unit: 'credits' },
+  gemini: { warn: 10, alarm: 25, spend: true, unit: 'USD today' },
+};
+
+function creditTone(row: CreditSnapshotRow): AdminTone {
+  const floor = CREDIT_FLOORS[row.service];
+  if (!floor || row.balance == null) return 'muted';
+  if (floor.spend) {
+    if (row.balance >= floor.alarm) return 'red';
+    if (row.balance >= floor.warn) return 'amber';
+    return 'green';
+  }
+  if (row.balance <= floor.alarm) return 'red';
+  if (row.balance <= floor.warn) return 'amber';
+  return 'green';
+}
+
+function creditValue(row: CreditSnapshotRow): string {
+  if (row.balance == null) return row.error ?? 'unavailable';
+  const floor = CREDIT_FLOORS[row.service];
+  if (floor?.spend) return `$${row.balance.toFixed(2)} ${floor.unit}`;
+  return `${row.balance.toLocaleString('en-ZA')} ${row.unit ?? ''}`.trim();
+}
+
+function CreditsCard() {
+  const credits = useAdminPoll<CreditSnapshotRow[]>(
+    () => adminCreditsSnapshot(),
+    120_000,
+  );
+  const rows = credits.data ?? [];
+  const tripped = rows.filter((r) => {
+    const tone = creditTone(r);
+    return tone === 'red' || tone === 'amber';
+  }).length;
+
+  return (
+    <NeonCard
+      tone={tripped > 0 ? 'amber' : undefined}
+      title="Service credits"
+      action={
+        <Pill tone={tripped > 0 ? 'amber' : 'green'}>
+          {tripped > 0 ? `${tripped} NEED ATTENTION` : 'FUNDED'}
+        </Pill>
+      }
+    >
+      {credits.loading && !credits.data ? (
+        <SkeletonRows rows={3} />
+      ) : credits.error ? (
+        <EmptyState icon="alert" title="Balances unavailable" caption={credits.error} />
+      ) : rows.length === 0 ? (
+        <EmptyState title="No services configured" />
+      ) : (
+        <div className="adm-grid-2">
+          {rows.map((row) => {
+            const tone = creditTone(row);
+            return (
+              <ActionRow
+                key={row.service}
+                icon="server"
+                tone={tone}
+                title={row.service.toUpperCase()}
+                caption={creditValue(row)}
+                trailing={<Pill tone={tone}>{tone === 'green' ? 'OK' : tone === 'muted' ? '—' : tone.toUpperCase()}</Pill>}
+              />
+            );
+          })}
+        </div>
+      )}
+      <p className="adm-sub" style={{ margin: 0 }}>
+        A failed fetch is shown as unavailable, never as a healthy balance.
+        Balances refresh every 15 minutes; this card reads the latest snapshot.
+      </p>
+    </NeonCard>
   );
 }
 

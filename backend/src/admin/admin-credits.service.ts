@@ -8,8 +8,8 @@ import { LlmService } from '../common/llm/llm.service';
  *
  * Why this lives in /admin and not next to each service:
  *   - Operator monitoring is a cross-cutting concern. Spreading the
- *     fetch logic across each module (SmsService, VerifyNowService,
- *     CloudinaryService, etc.) makes it hard for the operator to see
+ *     fetch logic across each module (SmsService, CloudinaryService,
+ *     etc.) makes it hard for the operator to see
  *     "what does my pool look like right now?" in one place.
  *   - The cron in TasksService.pollCreditBalances() calls one method
  *     here (fetchAll()) and gets back a uniform array. Threshold
@@ -42,9 +42,10 @@ export interface CreditSnapshotResult {
   // ⚠️ 'anthropic' is KEPT alongside 'gemini' only so historical
   // CreditSnapshot rows written before 2026-09-07 still type-check when
   // read back for the trend chart. Nothing WRITES 'anthropic' any more.
+  // 'verifynow' was retired with the KYC cut-over to Didit; old rows still
+  // exist but nothing fetches or alerts on them any more.
   service:
     | 'smsportal'
-    | 'verifynow'
     | 'cloudinary'
     | 'gemini'
     | 'anthropic';
@@ -142,106 +143,6 @@ export class AdminCreditsService {
         service: 'smsportal',
         balance: null,
         unit: 'credits',
-        metadata: null,
-        fetchedAt,
-        error: (err as Error).message,
-      };
-    }
-  }
-
-  // -------------------------------------------------------------------
-  // VerifyNow — KYC credit balance (one credit per ID lookup + selfie).
-  // -------------------------------------------------------------------
-  // Reuses the existing VerifyNowService.getCreditBalance shape rather
-  // than duplicating the auth + parsing. We re-implement the fetch
-  // here instead of injecting VerifyNowService because:
-  //   - Adding KycModule to AdminModule's imports creates a circular
-  //     reference path (KycModule already depends on a few admin-side
-  //     services indirectly via NotificationsModule).
-  //   - This service must NEVER throw — VerifyNowService throws
-  //     KycException on failure, which would break the fetchAll
-  //     Promise.allSettled contract.
-  //
-  // Endpoint: GET {VERIFYNOW_BASE_URL}/my_credits  (free — no credit
-  // consumed). Returns either:
-  //   Sandbox:    { "available_credits": 1000 }
-  //   Production: { "Status": "Success",
-  //                 "Result": { "credits": "1500",
-  //                             "last_refresh": "..." } }
-  // We map both to balance=credits, unit='lookup'.
-  async fetchVerifyNow(): Promise<CreditSnapshotResult> {
-    const fetchedAt = new Date();
-    const apiKey = process.env.VERIFYNOW_API_KEY;
-    const baseUrl =
-      process.env.VERIFYNOW_BASE_URL ??
-      'https://www.verifynow.co.za/api/external';
-
-    if (!apiKey) {
-      return {
-        service: 'verifynow',
-        balance: null,
-        unit: 'lookup',
-        metadata: null,
-        fetchedAt,
-        error: 'VERIFYNOW_API_KEY not configured',
-      };
-    }
-
-    try {
-      const res = await fetch(`${baseUrl}/my_credits`, {
-        method: 'GET',
-        headers: {
-          'x-api-key': apiKey,
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-
-      const text = await res.text();
-      let data: Record<string, unknown> = {};
-      try {
-        data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
-      } catch {
-        data = { rawBody: text };
-      }
-
-      if (!res.ok) {
-        return {
-          service: 'verifynow',
-          balance: null,
-          unit: 'lookup',
-          metadata: { httpStatus: res.status, raw: data },
-          fetchedAt,
-          error: `HTTP ${res.status}`,
-        };
-      }
-
-      // Normalise both sandbox + production shapes.
-      const result = (data.Result ?? {}) as Record<string, unknown>;
-      const rawCredits =
-        (data.available_credits as number | string | undefined) ??
-        (result.credits as number | string | undefined);
-      const balance =
-        typeof rawCredits === 'number'
-          ? rawCredits
-          : typeof rawCredits === 'string'
-            ? Number(rawCredits) || 0
-            : null;
-
-      return {
-        service: 'verifynow',
-        balance,
-        unit: 'lookup',
-        metadata: { raw: data, lastRefresh: result.last_refresh ?? null },
-        fetchedAt,
-        error:
-          balance == null ? 'Credits field missing in response' : undefined,
-      };
-    } catch (err) {
-      return {
-        service: 'verifynow',
-        balance: null,
-        unit: 'lookup',
         metadata: null,
         fetchedAt,
         error: (err as Error).message,
@@ -483,14 +384,12 @@ export class AdminCreditsService {
   async fetchAll(): Promise<CreditSnapshotResult[]> {
     const settled = await Promise.allSettled([
       this.fetchSmsPortal(),
-      this.fetchVerifyNow(),
       this.fetchCloudinary(),
       this.fetchGemini(),
     ]);
 
     const services: CreditSnapshotResult['service'][] = [
       'smsportal',
-      'verifynow',
       'cloudinary',
       'gemini',
     ];
@@ -543,9 +442,11 @@ export class AdminCreditsService {
   // creates a DB row that overrides the default.
   // -------------------------------------------------------------------
   async listThresholds() {
-    const rows = await this.prisma.creditThreshold.findMany({
-      orderBy: { service: 'asc' },
-    });
+    const rows = (
+      await this.prisma.creditThreshold.findMany({
+        orderBy: { service: 'asc' },
+      })
+    ).filter((r) => !RETIRED_CREDIT_SERVICES.has(r.service));
     // Merge in defaults for services with no custom row so the credits
     // page (which computes warn/alarm client-side from this list) and
     // the command-center count agree on one effective threshold set.
@@ -641,13 +542,6 @@ export class AdminCreditsService {
           return { ok: false, detail: (err as Error).message };
         }
       }
-      case 'verifynow': {
-        const r = await this.fetchVerifyNow();
-        return {
-          ok: r.balance !== null,
-          detail: r.error ?? `Balance OK: ${r.balance} ${r.unit}`,
-        };
-      }
       case 'gemini': {
         // A REAL one-token completion through the adapter, so this button
         // proves exactly what a feature call proves: key, network, model id
@@ -690,6 +584,12 @@ export class AdminCreditsService {
         effective.delete(r.service);
       }
     }
+    // ⚠️ A RETIRED SERVICE CANNOT ALARM ON ITS LAST SNAPSHOT FOREVER. VerifyNow
+    // was cut over to Didit and its cron deleted, but a CreditThreshold row and
+    // a low historical CreditSnapshot are still in the database. Without this
+    // the attention queue reported "1 service below alarm" with no surface able
+    // to clear it — a permanently unexplained red item.
+    for (const service of RETIRED_CREDIT_SERVICES) effective.delete(service);
 
     let count = 0;
     for (const [service, alarm] of effective) {
@@ -734,11 +634,21 @@ export const DEFAULT_THRESHOLDS: Record<
   string,
   { warn: number | null; alarm: number | null }
 > = {
-  verifynow: { warn: 100, alarm: 50 },
   smsportal: { warn: 200, alarm: 100 },
   cloudinary: { warn: 15, alarm: 5 },
   gemini: { warn: 10, alarm: 25 },
 };
+
+/**
+ * Services that no longer have a fetcher. Their historical CreditSnapshot and
+ * CreditThreshold rows are kept (the audit trail and the trend chart still read
+ * them), but they must never contribute to a live alarm count — otherwise a
+ * retired provider's last balance sits in the attention queue forever with no
+ * way to clear it.
+ */
+export const RETIRED_CREDIT_SERVICES: ReadonlySet<string> = new Set([
+  'verifynow',
+]);
 
 /**
  * Services whose `balance` is SPEND (compare upward against a ceiling)

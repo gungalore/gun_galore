@@ -70,7 +70,7 @@
 // boundary, not an oversight — these are red gates or operator-approved
 // commands instead): `prisma migrate deploy` or any schema change; any DB row
 // write; any secret/env rotation (rotating ID_HASH_SECRET destroys every
-// stored KYC file); any PAYMENT_MODE / PAYMENTS_LIVE / VERIFYNOW_MODE flip;
+// stored KYC file); any PAYMENT_MODE / PAYMENTS_LIVE / DIDIT_MODE flip;
 // RESTARTING POSTGRES (ending one session is not restarting the server, and
 // that distinction is the whole reason the two database operations below are
 // allowed at all); any git operation on the deploy branch; anything that sends

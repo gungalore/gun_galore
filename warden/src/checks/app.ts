@@ -33,7 +33,7 @@ export const paymentGateCheck: CheckModule = {
     const nodeEnv = value('NODE_ENV');
     const paymentMode = value('PAYMENT_MODE');
     const paymentsLive = value('PAYMENTS_LIVE');
-    const verifynowMode = value('VERIFYNOW_MODE');
+    const diditMode = value('DIDIT_MODE');
     const allowLocal = value('ALLOW_LOCAL_ORIGINS');
     const production = nodeEnv === 'production';
 
@@ -41,7 +41,7 @@ export const paymentGateCheck: CheckModule = {
       ev('NODE_ENV', nodeEnv ?? 'unset', ctx.config.backendEnvPath),
       ev('PAYMENT_MODE', paymentMode ?? 'unset'),
       ev('PAYMENTS_LIVE', paymentsLive ?? 'unset'),
-      ev('VERIFYNOW_MODE', verifynowMode ?? 'unset (defaults to sandbox)'),
+      ev('DIDIT_MODE', diditMode ?? 'unset (defaults to sandbox)'),
       ev('ALLOW_LOCAL_ORIGINS', allowLocal ?? 'unset'),
     ];
 
@@ -56,14 +56,15 @@ export const paymentGateCheck: CheckModule = {
       evidence.push(notMeasured('NEXT_PUBLIC_PAYMENT_MODE', frontend.error));
     }
 
-    // Sandbox KYC in production passes fake identities, and the app only
-    // WARNs about it at boot — nothing blocks it, which is why it is worth
-    // a red row of its own here.
-    if (production && (verifynowMode ?? 'sandbox').toLowerCase() !== 'production') {
+    // Sandbox identity checks approve canned data. The API hard-throws at
+    // boot in production when DIDIT_MODE is not "live", so a running box
+    // should never fail this — which is exactly why it stays: it is the
+    // independent check that the boot guard was not bypassed.
+    if (production && (diditMode ?? 'sandbox').toLowerCase() !== 'live') {
       return {
         status: 'bad',
-        gateKey: 'VERIFYNOW_MODE',
-        verdict: `NODE_ENV is production but VERIFYNOW_MODE is ${verifynowMode ?? 'unset (sandbox)'} — identity checks pass fake identities.`,
+        gateKey: 'DIDIT_MODE',
+        verdict: `NODE_ENV is production but DIDIT_MODE is ${diditMode ?? 'unset (sandbox)'} — identity checks would approve canned data.`,
         evidence,
       };
     }
@@ -73,7 +74,7 @@ export const paymentGateCheck: CheckModule = {
     if (mirrorMismatch) {
       return warn(`PAYMENT_MODE and NEXT_PUBLIC_PAYMENT_MODE disagree — the UI offers a path the API refuses.`, evidence);
     }
-    return ok(`Payment mode ${paymentMode ?? 'unset'}, payments ${paymentsLive === 'true' ? 'LIVE' : 'inert'}, KYC ${verifynowMode ?? 'sandbox'}.`, evidence);
+    return ok(`Payment mode ${paymentMode ?? 'unset'}, payments ${paymentsLive === 'true' ? 'LIVE' : 'inert'}, identity ${diditMode ?? 'sandbox'}.`, evidence);
   },
 };
 

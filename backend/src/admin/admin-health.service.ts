@@ -121,13 +121,6 @@ export class AdminHealthService {
         requiresEnv: ['BOBGO_API_KEY'],
       },
       {
-        name: 'VerifyNow (KYC)',
-        url: process.env.VERIFYNOW_BASE_URL ?? 'https://api.verifynow.co.za',
-        category: 'kyc',
-        method: 'HEAD',
-        requiresEnv: ['VERIFYNOW_API_KEY'],
-      },
-      {
         name: 'Cloudinary (images)',
         url: 'https://api.cloudinary.com/v1_1',
         category: 'media',
@@ -359,7 +352,6 @@ export class AdminHealthService {
       { key: 'auction-end', label: 'Auction end sweep', schedule: 'every 1 min', expectedIntervalSec: 60 },
       { key: 'offer-expire', label: 'Offer expiry sweep', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'dispatch-sla', label: 'Dispatch SLA enforcer', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
-      { key: 'verifynow-balance', label: 'VerifyNow balance refresh', schedule: 'every 5 min', expectedIntervalSec: 300 },
       { key: 'push-prune', label: 'Push subscription cleanup', schedule: 'every 1 week', expectedIntervalSec: 604800 },
       { key: 'saved-search-match', label: 'Saved-search alert matcher', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'stuck-held-funds', label: 'Stuck-held-funds admin alert', schedule: 'every 1 hour', expectedIntervalSec: 3600 },

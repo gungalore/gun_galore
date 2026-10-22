@@ -838,6 +838,205 @@ export async function wardenResume(): Promise<{
   return adminFetch('/admin/warden/resume', { method: 'POST' });
 }
 
+// ── Alerts inbox ──────────────────────────────────────────────────────
+
+export interface AdminAlertRow {
+  id: string;
+  type: string;
+  referenceId?: string | null;
+  context?: string | null;
+  urgent: boolean;
+  resolved: boolean;
+  createdAt: string;
+  resolvedAt?: string | null;
+  [key: string]: unknown;
+}
+
+export interface AlertTypeFacet {
+  type: string;
+  unresolved: number;
+}
+
+export async function adminAlerts(
+  opts: { resolved?: boolean; limit?: number; type?: string; urgent?: boolean } = {},
+): Promise<AdminAlertRow[]> {
+  const params = new URLSearchParams();
+  if (opts.resolved !== undefined) params.set('resolved', String(opts.resolved));
+  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.type) params.set('type', opts.type);
+  if (opts.urgent !== undefined) params.set('urgent', String(opts.urgent));
+  const qs = params.toString();
+  return adminFetch<AdminAlertRow[]>(`/admin/alerts${qs ? `?${qs}` : ''}`);
+}
+
+export async function adminAlertTypes(): Promise<AlertTypeFacet[]> {
+  return adminFetch<AlertTypeFacet[]>('/admin/alerts/types');
+}
+
+/** One click, no reason dialog — the backend records the default reason. */
+export async function resolveAdminAlert(id: string): Promise<{ ok: boolean }> {
+  return adminFetch<{ ok: boolean }>(`/admin/alerts/${encodeURIComponent(id)}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export interface BulkResolveResult {
+  resolved: number;
+  skipped: number;
+  skippedIds: string[];
+  failed: { id: string; message: string }[];
+}
+
+export async function bulkResolveAdminAlerts(
+  alertIds: string[],
+  reason?: string,
+): Promise<BulkResolveResult> {
+  return adminFetch<BulkResolveResult>('/admin/alerts/bulk-resolve', {
+    method: 'POST',
+    body: JSON.stringify({ alertIds, ...(reason ? { reason } : {}) }),
+  });
+}
+
+// ── Complaints register ───────────────────────────────────────────────
+
+export interface ComplaintPhoto {
+  id: string;
+  url: string;
+  mediaType?: string;
+  thumbnailUrl?: string | null;
+  durationSeconds?: number | null;
+}
+
+export interface ComplaintRow {
+  id: string;
+  referenceNumber: string;
+  role?: string;
+  category: string;
+  subject: string;
+  body: string;
+  status: string;
+  outcome?: string | null;
+  drovePayoutHold?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  resolvedAt?: string | null;
+  user?: { username: string | null; email: string } | null;
+  photos?: ComplaintPhoto[];
+  transaction?: {
+    id: string;
+    paymentStatus?: string;
+    listing?: { title: string; referenceNumber?: string | null } | null;
+  } | null;
+  [key: string]: unknown;
+}
+
+export async function adminComplaints(
+  status?: string,
+  page = 1,
+  limit = 10,
+): Promise<Paginated<ComplaintRow>> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (status) params.set('status', status);
+  return adminFetch<Paginated<ComplaintRow>>(`/admin/complaints?${params.toString()}`);
+}
+
+export async function adminComplaint(id: string): Promise<ComplaintRow> {
+  return adminFetch<ComplaintRow>(`/admin/complaints/${encodeURIComponent(id)}`);
+}
+
+export async function updateComplaint(
+  id: string,
+  body: { status?: string; outcome?: string; assignedAdminId?: string },
+): Promise<{ id: string; referenceNumber: string; status: string; outcome?: string | null }> {
+  return adminFetch(`/admin/complaints/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+}
+
+// ── Support tickets ───────────────────────────────────────────────────
+
+export interface SupportReply {
+  id: string;
+  body: string;
+  fromAdmin: boolean;
+  authorId?: string | null;
+  adminId?: string | null;
+  createdAt: string;
+}
+
+export interface SupportTicketRow {
+  id: string;
+  subject: string;
+  category: string;
+  status: string;
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string | null;
+  user?: { id: string; username: string | null; email: string } | null;
+  replies?: SupportReply[];
+  _count?: { replies: number };
+  [key: string]: unknown;
+}
+
+export async function adminSupportTickets(
+  status?: string,
+  page = 1,
+  limit = 10,
+): Promise<Paginated<SupportTicketRow>> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (status) params.set('status', status);
+  return adminFetch<Paginated<SupportTicketRow>>(`/admin/support?${params.toString()}`);
+}
+
+export async function adminSupportTicket(id: string): Promise<SupportTicketRow> {
+  return adminFetch<SupportTicketRow>(`/admin/support/${encodeURIComponent(id)}`);
+}
+
+export async function replySupportTicket(id: string, body: string): Promise<SupportTicketRow> {
+  return adminFetch<SupportTicketRow>(`/admin/support/${encodeURIComponent(id)}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  });
+}
+
+export async function resolveSupportTicket(id: string): Promise<{ ok: boolean }> {
+  return adminFetch<{ ok: boolean }>(`/admin/support/${encodeURIComponent(id)}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+// ── Credits snapshot (live balances) ──────────────────────────────────
+
+export interface CreditSnapshotRow {
+  service: string;
+  balance: number | null;
+  unit: string | null;
+  metadata?: Record<string, unknown> | null;
+  fetchedAt: string;
+  error?: string;
+}
+
+export async function adminCreditsSnapshot(): Promise<CreditSnapshotRow[]> {
+  return adminFetch<CreditSnapshotRow[]>('/admin/credits/snapshot');
+}
+
+// ── Global search ─────────────────────────────────────────────────────
+
+export interface AdminSearchResults {
+  users: Array<Record<string, unknown>>;
+  listings: Array<Record<string, unknown>>;
+  transactions: Array<Record<string, unknown>>;
+  orders: Array<Record<string, unknown>>;
+}
+
+export async function adminSearch(q: string): Promise<AdminSearchResults> {
+  return adminFetch<AdminSearchResults>(`/admin/search?q=${encodeURIComponent(q)}`);
+}
+
 // ── Formatters ────────────────────────────────────────────────────────
 
 export function formatRand(cents: number | null | undefined): string {

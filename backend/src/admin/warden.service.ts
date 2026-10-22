@@ -290,7 +290,7 @@ export class WardenService {
    * order, and each of them has a reason worth keeping:
    *
    *   1. A RED GATE CANNOT BE APPROVED. It has no command. The only thing
-   *      that clears `VERIFYNOW_MODE=sandbox` is a commit, and an Approve
+   *      that clears `DIDIT_MODE=sandbox` is a commit, and an Approve
    *      button that appeared to clear one would be a lie about the running
    *      configuration of a firearms marketplace.
    *   2. A SETTLED PROPOSAL CANNOT BE RE-APPROVED. Two operators on two

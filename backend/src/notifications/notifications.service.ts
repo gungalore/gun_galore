@@ -3596,37 +3596,6 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
-  // Admin: VerifyNow credit balance dropped below threshold
-  // ---------------------------------------------------------------
-  // Outbound nudge so the operator can top up credits before sellers
-  // get blocked. Sent to every active admin's User.email — the same
-  // function returns the body so we can also push it through SMS.
-  async adminLowVerifyNowCredits(
-    adminEmail: string,
-    adminName: string,
-    available: number,
-    threshold: number,
-  ) {
-    const url = `${this.appUrl}/admin/kyc`;
-    const html = this.email({
-      status: { tone: 'pending', label: 'Action needed' },
-      headline: 'VerifyNow credits low',
-      body: `Hi ${b(adminName)}, your VerifyNow account has ${b(String(available))} credits remaining — below the ${b(String(threshold))}-credit alert threshold. New KYC verifications will start failing once you hit zero. Top up via the VerifyNow dashboard before that happens.`,
-      rows: [
-        { label: 'Available', value: String(available) },
-        { label: 'Threshold', value: String(threshold) },
-      ],
-      cta: { label: 'View KYC credits panel', url },
-      preheader: `${available} VerifyNow credits remaining`,
-    });
-    await this.send(
-      adminEmail,
-      `VerifyNow credits low — ${available} remaining`,
-      html,
-    );
-  }
-
-  // ---------------------------------------------------------------
   // Admin: generic credit-low alert (any monitored service).
   // ---------------------------------------------------------------
   // Driven by the /admin/credits monitoring system (CreditThreshold
@@ -5690,15 +5659,13 @@ function prettyCourier(method: string | null | undefined): string {
 }
 
 // Pretty service name for credit-alert emails/SMS. We store the
-// service key as a lowercase slug ('smsportal', 'verifynow', etc.) in
+// service key as a lowercase slug ('smsportal', 'cloudinary', etc.) in
 // CreditSnapshot.service for stable joins, but the operator should
 // see the brand name in their inbox / SMS.
 function prettyServiceName(slug: string): string {
   switch (slug) {
     case 'smsportal':
       return 'SMSPortal';
-    case 'verifynow':
-      return 'VerifyNow';
     case 'cloudinary':
       return 'Cloudinary';
     case 'anthropic':

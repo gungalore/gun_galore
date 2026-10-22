@@ -466,6 +466,8 @@ export class AdminService {
       }
       if (filter === 'banned') return { isBanned: true };
       if (filter === 'closed') return { accountClosedAt: { not: null } };
+      // Manual AI-review queue: identity submitted and awaiting a human verdict.
+      if (filter === 'kyc-review') return { kycStatus: 'UNDER_REVIEW' };
       return {};
     })();
 
@@ -2282,6 +2284,13 @@ export class AdminService {
     if (filter === 'dispatch-overdue') {
       where.dispatchedAt = null;
       where.paidAt = { lt: new Date(Date.now() - 24 * 3600_000) };
+    }
+    // Dealer-verification queue — firearm transfers whose automated scan was
+    // inconclusive, so a human must check the SAPS 534 / register / serial.
+    // Mirrors the attention-queue count (PENDING_ADMIN_REVIEW + HELD).
+    if (filter === 'dealer-review') {
+      where.dealerVerificationStatus = 'PENDING_ADMIN_REVIEW';
+      where.paymentStatus = 'HELD';
     }
     const [transactions, total] = await Promise.all([
       this.prisma.transaction.findMany({

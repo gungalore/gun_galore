@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActionRow,
   EmptyState,
@@ -25,9 +25,6 @@ import {
   type TransactionRow,
 } from '@/lib/admin-api';
 
-const STATUS_FILTERS = ['HELD', 'ALL', 'RELEASED', 'DISPUTED', 'REFUNDED'] as const;
-type StatusFilter = (typeof STATUS_FILTERS)[number];
-
 const STATUS_TONE: Record<string, AdminTone> = {
   HELD: 'amber',
   RELEASED: 'green',
@@ -35,6 +32,27 @@ const STATUS_TONE: Record<string, AdminTone> = {
   REFUNDED: 'purple',
   PENDING_ADMIN_VERIFICATION: 'amber',
 };
+
+/**
+ * The queues an operator actually works, each one a (status, filter) pair the
+ * backend already supports. They are not decorative: every chip reproduces its
+ * rows exactly, which is what makes the Warden deep links land somewhere useful.
+ */
+const QUEUE_FILTERS: Array<{
+  id: string;
+  label: string;
+  status: 'HELD' | 'ALL' | 'RELEASED' | 'DISPUTED' | 'REFUNDED';
+  filter?: string;
+}> = [
+  { id: 'held', label: 'Held', status: 'HELD' },
+  { id: 'disputed', label: 'Disputed', status: 'DISPUTED' },
+  { id: 'accept-stalled', label: 'Accept stalled 48h+', status: 'HELD', filter: 'accept-stalled' },
+  { id: 'dispatch-overdue', label: 'Dispatch overdue 24h+', status: 'HELD', filter: 'dispatch-overdue' },
+  { id: 'dealer-review', label: 'Dealer review', status: 'HELD', filter: 'dealer-review' },
+  { id: 'released', label: 'Released', status: 'RELEASED' },
+  { id: 'refunded', label: 'Refunded', status: 'REFUNDED' },
+  { id: 'all', label: 'All', status: 'ALL' },
+];
 
 interface MoneyRow {
   count?: number;
@@ -47,16 +65,43 @@ type MoneyLever =
   | { kind: 'refund'; id: string }
   | { kind: 'hold'; id: string }
   | { kind: 'release-hold'; id: string }
+  | { kind: 'resolve-release'; id: string }
   | { kind: 'dealer'; id: string; decision: 'APPROVE' | 'REJECT' };
 
 export default function MoneyPage() {
   const { isGod } = useAdminSession();
   const { toast } = useAdminToast();
-  const [status, setStatus] = useState<StatusFilter>('HELD');
+  const [queue, setQueue] = useState(QUEUE_FILTERS[0]);
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState<string | null>(null);
   const [runOpen, setRunOpen] = useState(false);
   const [lever, setLever] = useState<MoneyLever | null>(null);
+  const status = queue.status;
+  const filter = queue.filter;
+
+  // Deep links from Warden: ?status=DISPUTED or ?filter=dispatch-overdue.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const wantedFilter = params.get('filter');
+    const wantedStatus = params.get('status');
+    const match = wantedFilter
+      ? QUEUE_FILTERS.find((q) => q.filter === wantedFilter)
+      : wantedStatus
+        ? QUEUE_FILTERS.find((q) => !q.filter && q.status === wantedStatus)
+        : undefined;
+    if (match) setQueue(match);
+  }, []);
+
+  function chooseQueue(next: (typeof QUEUE_FILTERS)[number]) {
+    setQueue(next);
+    setPage(1);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('filter');
+    url.searchParams.delete('status');
+    if (next.filter) url.searchParams.set('filter', next.filter);
+    else if (next.status !== 'HELD') url.searchParams.set('status', next.status);
+    window.history.replaceState({}, '', url);
+  }
 
   const due = useAdminPoll<PayoutsDue>(
     () => adminFetch<PayoutsDue>('/admin/manual-payments/payouts-due'),
@@ -73,10 +118,12 @@ export default function MoneyPage() {
   const txns = useAdminPoll<Paginated<TransactionRow>>(
     () =>
       adminFetch<Paginated<TransactionRow>>(
-        `/admin/transactions?status=${status}&page=${page}&limit=30`,
+        `/admin/transactions?status=${status}&page=${page}&limit=30${
+          filter ? `&filter=${filter}` : ''
+        }`,
       ),
     30_000,
-    [status, page],
+    [status, page, filter],
   );
 
   const payouts = due.data?.payouts ?? [];
@@ -91,8 +138,6 @@ export default function MoneyPage() {
       ['heldAwaitingRelease', 'Held from buyers'],
       ['owedToSellers', 'Owed to sellers'],
       ['owedToBuyerRefunds', 'Owed to buyers (refunds)'],
-      ['swapCashHeld', 'Swap cash held'],
-      ['swapFundingInFlight', 'Swap funding in flight'],
     ];
     return keys
       .map(([key, label]) => {
@@ -188,6 +233,23 @@ export default function MoneyPage() {
             });
             toast('Payout hold released.');
             txns.refresh();
+          },
+        };
+      case 'resolve-release':
+        return {
+          title: 'Release the funds to the seller?',
+          body: 'This resolves a DISPUTED order in the seller’s favour and queues their payout. Refunding the buyer instead is the other lever and closes the dispute the opposite way.',
+          confirmLabel: 'Release to seller',
+          danger: true,
+          minLength: 5,
+          run: async (reason) => {
+            await adminFetch(`/admin/transactions/${id}/resolve-dispute-release`, {
+              method: 'POST',
+              body: JSON.stringify({ reason }),
+            });
+            toast('Dispute resolved in the seller’s favour.');
+            txns.refresh();
+            due.refresh();
           },
         };
       case 'dealer':
@@ -298,18 +360,15 @@ export default function MoneyPage() {
 
       {/* Filters */}
       <div className="adm-scroll-x">
-        {STATUS_FILTERS.map((f) => (
+        {QUEUE_FILTERS.map((f) => (
           <button
-            key={f}
+            key={f.id}
             type="button"
             className="adm-chip"
-            data-active={status === f}
-            onClick={() => {
-              setStatus(f);
-              setPage(1);
-            }}
+            data-active={queue.id === f.id}
+            onClick={() => chooseQueue(f)}
           >
-            {f === 'ALL' ? 'All' : f.charAt(0) + f.slice(1).toLowerCase()}
+            {f.label}
           </button>
         ))}
       </div>
@@ -319,7 +378,7 @@ export default function MoneyPage() {
         title="Transactions"
         action={
           <Pill tone="muted">
-            {total} {status === 'ALL' ? 'TOTAL' : status}
+            {total} {queue.id === 'all' ? 'TOTAL' : queue.label.toUpperCase()}
           </Pill>
         }
       >
@@ -536,6 +595,17 @@ function TransactionDrawer({
           >
             Refund buyer
           </button>
+          {status === 'DISPUTED' ? (
+            <button
+              type="button"
+              className="adm-btn"
+              data-tone="green"
+              disabled={!isGod}
+              onClick={() => onLever({ kind: 'resolve-release', id })}
+            >
+              Release to seller
+            </button>
+          ) : null}
           <button
             type="button"
             className="adm-btn"

@@ -1286,6 +1286,27 @@ export class TasksService {
     try {
       if (Date.now() - this.bootAt.getTime() < STARTUP_GRACE_MS) return;
       const statuses = await this.health.cronStatuses();
+      // ⚠️ CLEAR ALERTS FOR JOBS THAT ARE NO LONGER MONITORED AT ALL. When a
+      // job is deleted (the VerifyNow balance poll went with the Didit
+      // cut-over) its CRON_STALE alert can never be raised again — and so can
+      // never be resolved by a fresh pass either. Left alone it sat in the
+      // inbox forever, unfixable and unexplained. Match on the label the
+      // watchdog writes, which is what referenceId holds.
+      const monitoredLabels = new Set(statuses.map((c) => c.name));
+      const orphaned = await this.prisma.adminAlert.findMany({
+        where: { type: 'CRON_STALE', resolved: false },
+        select: { id: true, referenceId: true },
+      });
+      for (const alert of orphaned) {
+        if (alert.referenceId && monitoredLabels.has(alert.referenceId)) continue;
+        await this.prisma.adminAlert.updateMany({
+          where: { id: alert.id, resolved: false },
+          data: { resolved: true, resolvedAt: new Date() },
+        });
+        this.logger.log(
+          `Auto-resolved CRON_STALE for a job that is no longer monitored: ${alert.referenceId ?? '(no job)'}`,
+        );
+      }
       const stale = statuses.filter((c) => c.status === 'stale');
       for (const c of stale) {
         const existing = await this.prisma.adminAlert.count({

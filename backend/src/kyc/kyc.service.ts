@@ -510,16 +510,6 @@ export class KycService {
     }
   }
 
-  // ─────────────────── VerifyNow credit balance ─────────────────────
-  // Cached in the Settings table (key: verifynow.balance, JSON-encoded).
-  // The 5-min cron in TasksService keeps it fresh; admins can also force
-  // a refresh from the panel. The /my_credits endpoint doesn't burn a
-  // credit itself so polling is free.
-  //
-  // VerifyNow doesn't expose a "buy credits" API — the admin UI surfaces
-  // a deep-link to verifynow.co.za's billing page instead.
-
-
   // ─────────────────── The Didit verification session ───────────────────
 
   /**
