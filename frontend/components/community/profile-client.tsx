@@ -4,14 +4,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth, useUser } from '../../lib/auth';
 import {
   type FeedPost,
+  dislikePost,
   fetchConfig,
   fetchProfile,
   followUser,
   likePost,
+  undislikePost,
   unfollowUser,
   unlikePost,
 } from '../../lib/community-api';
 import { PostCard } from './post-card';
+import { PostModal } from './post-modal';
 import { VerificationBadges } from '../verification-badges';
 
 interface ProfileData {
@@ -44,6 +47,10 @@ export function ProfileClient({ username }: { username: string }) {
   const [data, setData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [forceBlur, setForceBlur] = useState(false);
+  const [modal, setModal] = useState<{
+    postId: string;
+    photoIndex: number | null;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,6 +108,34 @@ export function ProfileClient({ username }: { username: string }) {
       else await likePost(token, post.id);
     } catch {
       /* ignore */
+    }
+  }
+
+  async function toggleDislike(post: FeedPost) {
+    if (!data) return;
+    const token = await getToken();
+    if (!token) return;
+    const wasDisliked = post.disliked;
+    setData({
+      ...data,
+      posts: data.posts.map((p) =>
+        p.id === post.id
+          ? {
+              ...p,
+              disliked: !wasDisliked,
+              liked: wasDisliked ? p.liked : false,
+              dislikeCount: p.dislikeCount + (wasDisliked ? -1 : 1),
+              likeCount:
+                !wasDisliked && p.liked ? Math.max(0, p.likeCount - 1) : p.likeCount,
+            }
+          : p,
+      ),
+    });
+    try {
+      if (wasDisliked) await undislikePost(token, post.id);
+      else await dislikePost(token, post.id);
+    } catch {
+      await load();
     }
   }
 
@@ -191,12 +226,24 @@ export function ProfileClient({ username }: { username: string }) {
             post={post}
             forceBlur={forceBlur}
             onToggleLike={toggleLike}
+            onToggleDislike={toggleDislike}
             onHideType={() => undefined}
             onMuteAuthor={() => undefined}
             onMuteTag={() => undefined}
+            onOpen={(p) => setModal({ postId: p.id, photoIndex: null })}
+            onOpenPhoto={(p, i) => setModal({ postId: p.id, photoIndex: i })}
           />
         ))}
       </div>
+
+      {modal && (
+        <PostModal
+          postId={modal.postId}
+          photoIndex={modal.photoIndex}
+          onClose={() => setModal(null)}
+          onChanged={() => void load()}
+        />
+      )}
     </div>
   );
 }

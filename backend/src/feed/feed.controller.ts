@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
+import { ReactionKind } from '@prisma/client';
 import { memoryStorage } from 'multer';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -139,15 +140,64 @@ export class FeedController {
     return this.feed.getPost(userId, id);
   }
 
-  // Who liked a post. Visible to any signed-in member (operator 2026-10-10).
+  // Who liked (or disliked) a post. Visible to any signed-in member
+  // (operator 2026-10-10). `kind` selects the reaction; default LIKE.
   @Get('posts/:id/likes')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   postLikes(
     @CurrentUser() userId: string,
     @Param('id') id: string,
     @Query('before') before?: string,
+    @Query('kind') kind?: string,
   ) {
-    return this.feed.listPostLikes(userId, id, before);
+    return this.feed.listPostLikes(
+      userId,
+      id,
+      before,
+      kind === 'dislike' ? ReactionKind.DISLIKE : ReactionKind.LIKE,
+    );
+  }
+
+  @Get('posts/:id/dislikes')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  postDislikes(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Query('before') before?: string,
+  ) {
+    return this.feed.listPostLikes(userId, id, before, ReactionKind.DISLIKE);
+  }
+
+  // Who liked (or disliked) a comment.
+  @Get('comments/:id/likes')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  commentLikes(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Query('before') before?: string,
+    @Query('kind') kind?: string,
+  ) {
+    return this.feed.listCommentLikes(
+      userId,
+      id,
+      before,
+      kind === 'dislike' ? ReactionKind.DISLIKE : ReactionKind.LIKE,
+    );
+  }
+
+  @Get('comments/:id/dislikes')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  commentDislikes(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Query('before') before?: string,
+  ) {
+    return this.feed.listCommentLikes(
+      userId,
+      id,
+      before,
+      ReactionKind.DISLIKE,
+    );
   }
 
   // ── Writes ───────────────────────────────────────────────────────
@@ -251,6 +301,16 @@ export class FeedController {
     return this.feed.unlikePost(userId, id);
   }
 
+  @Post('posts/:id/dislike')
+  dislikePost(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.feed.dislikePost(userId, id);
+  }
+
+  @Delete('posts/:id/dislike')
+  undislikePost(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.feed.undislikePost(userId, id);
+  }
+
   @Post('comments/:id/like')
   likeComment(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.likeComment(userId, id);
@@ -259,6 +319,16 @@ export class FeedController {
   @Delete('comments/:id/like')
   unlikeComment(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.unlikeComment(userId, id);
+  }
+
+  @Post('comments/:id/dislike')
+  dislikeComment(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.feed.dislikeComment(userId, id);
+  }
+
+  @Delete('comments/:id/dislike')
+  undislikeComment(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.feed.undislikeComment(userId, id);
   }
 
   @Post('users/:id/follow')

@@ -37,6 +37,9 @@ export interface FeedImage {
 
 export type GraphicTier = 'NONE' | 'FIELD' | 'EXTREME';
 
+/** A member's reaction. Like and dislike are mutually exclusive. */
+export type ReactionKind = 'like' | 'dislike';
+
 export interface FeedPost {
   id: string;
   type: string;
@@ -70,6 +73,8 @@ export interface FeedPost {
   graphicTier: GraphicTier;
   isOfficial: boolean;
   likeCount: number;
+  /** Thumbs-down count. Like and dislike are mutually exclusive per member. */
+  dislikeCount: number;
   commentCount: number;
   createdAt: string;
   editedAt: string | null;
@@ -90,6 +95,8 @@ export interface FeedPost {
     listingType: string;
   } | null;
   liked: boolean;
+  /** The viewer's reaction is a dislike (never both). */
+  disliked: boolean;
   muted?: boolean;
   /** Only meaningful on the author's own not-yet-live posts. */
   moderationState?: 'PROCESSING' | 'IN_REVIEW' | 'BLOCKED' | 'PUBLISHED';
@@ -103,8 +110,10 @@ export interface FeedComment {
   parentId: string | null;
   body: string;
   likeCount: number;
+  dislikeCount: number;
   createdAt: string;
   liked: boolean;
+  disliked: boolean;
   author: {
     id: string;
     username: string;
@@ -215,9 +224,30 @@ export function fetchPostLikes(
   token: string,
   id: string,
   before?: string,
-): Promise<{ likers: FeedLiker[]; nextBefore: string | null }> {
-  const q = before ? `?before=${encodeURIComponent(before)}` : '';
-  return jsonFetch(`/community/posts/${id}/likes${q}`, token);
+  kind: ReactionKind = 'like',
+): Promise<{ likers: FeedLiker[]; kind: ReactionKind; nextBefore: string | null }> {
+  const qs = new URLSearchParams();
+  if (before) qs.set('before', before);
+  if (kind === 'dislike') qs.set('kind', 'dislike');
+  const q = qs.toString();
+  return jsonFetch(`/community/posts/${id}/likes${q ? `?${q}` : ''}`, token);
+}
+
+/** Members who liked or disliked a comment, newest first. */
+export function fetchCommentLikes(
+  token: string,
+  commentId: string,
+  before?: string,
+  kind: ReactionKind = 'like',
+): Promise<{ likers: FeedLiker[]; kind: ReactionKind; nextBefore: string | null }> {
+  const qs = new URLSearchParams();
+  if (before) qs.set('before', before);
+  if (kind === 'dislike') qs.set('kind', 'dislike');
+  const q = qs.toString();
+  return jsonFetch(
+    `/community/comments/${commentId}/likes${q ? `?${q}` : ''}`,
+    token,
+  );
 }
 
 export function fetchProfile(
@@ -409,6 +439,7 @@ export function removePostVideo(
 export interface FeedPostCount {
   id: string;
   likeCount: number;
+  dislikeCount: number;
   commentCount: number;
 }
 
@@ -421,19 +452,48 @@ export function fetchPostCounts(
   return jsonFetch(`/community/counts?ids=${q}`, token);
 }
 
-export function likePost(token: string, id: string): Promise<{ liked: boolean }> {
+export function likePost(token: string, id: string): Promise<{ liked: boolean; disliked: boolean }> {
   return jsonFetch(`/community/posts/${id}/like`, token, { method: 'POST' });
 }
 
-export function unlikePost(token: string, id: string): Promise<{ liked: boolean }> {
+export function unlikePost(token: string, id: string): Promise<{ liked: boolean; disliked: boolean }> {
   return jsonFetch(`/community/posts/${id}/like`, token, { method: 'DELETE' });
+}
+
+export function dislikePost(token: string, id: string): Promise<{ liked: boolean; disliked: boolean }> {
+  return jsonFetch(`/community/posts/${id}/dislike`, token, { method: 'POST' });
+}
+
+export function undislikePost(token: string, id: string): Promise<{ liked: boolean; disliked: boolean }> {
+  return jsonFetch(`/community/posts/${id}/dislike`, token, { method: 'DELETE' });
 }
 
 export function likeComment(
   token: string,
   id: string,
-): Promise<{ liked: boolean }> {
+): Promise<{ liked: boolean; disliked: boolean }> {
   return jsonFetch(`/community/comments/${id}/like`, token, { method: 'POST' });
+}
+
+export function unlikeComment(
+  token: string,
+  id: string,
+): Promise<{ liked: boolean; disliked: boolean }> {
+  return jsonFetch(`/community/comments/${id}/like`, token, { method: 'DELETE' });
+}
+
+export function dislikeComment(
+  token: string,
+  id: string,
+): Promise<{ liked: boolean; disliked: boolean }> {
+  return jsonFetch(`/community/comments/${id}/dislike`, token, { method: 'POST' });
+}
+
+export function undislikeComment(
+  token: string,
+  id: string,
+): Promise<{ liked: boolean; disliked: boolean }> {
+  return jsonFetch(`/community/comments/${id}/dislike`, token, { method: 'DELETE' });
 }
 
 export function addComment(

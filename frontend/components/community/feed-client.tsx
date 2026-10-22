@@ -9,6 +9,7 @@ import {
   type FeedPost,
   type FeedPreferences,
   deletePost,
+  dislikePost,
   fetchConfig,
   fetchFeed,
   fetchPostCounts,
@@ -17,11 +18,13 @@ import {
   reportPost,
   savePreferences,
   searchFeed,
+  undislikePost,
   unlikePost,
 } from '../../lib/community-api';
 import { POST_TYPE_LABELS, POST_TYPE_ORDER } from '../../lib/post-types';
 import { AdCard } from './ad-card';
 import { PostCard } from './post-card';
+import { PostModal } from './post-modal';
 import { ChipRail, type Chip } from '../ui/ChipRail';
 
 /** Insert a featured ad after every Nth post. */
@@ -127,6 +130,10 @@ export function FeedClient() {
     feedShowGraphic: true,
   });
   const requestId = useRef(0);
+  const [modal, setModal] = useState<{
+    postId: string;
+    photoIndex: number | null;
+  } | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setSearchQuery(searchText.trim()), 300);
@@ -245,6 +252,7 @@ export function FeedClient() {
             if (!c) return p;
             if (
               c.likeCount === p.likeCount &&
+              c.dislikeCount === p.dislikeCount &&
               c.commentCount === p.commentCount
             ) {
               return p;
@@ -252,6 +260,7 @@ export function FeedClient() {
             return {
               ...p,
               likeCount: c.likeCount,
+              dislikeCount: c.dislikeCount,
               commentCount: c.commentCount,
             };
           }),
@@ -408,6 +417,34 @@ export function FeedClient() {
     }
   }
 
+  async function toggleDislike(post: FeedPost) {
+    const token = await getToken();
+    if (!token) return;
+    const wasDisliked = post.disliked;
+    const wasLiked = post.liked;
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === post.id
+          ? {
+              ...p,
+              disliked: !wasDisliked,
+              liked: wasDisliked ? p.liked : false,
+              dislikeCount: p.dislikeCount + (wasDisliked ? -1 : 1),
+              likeCount: !wasDisliked && wasLiked ? Math.max(0, p.likeCount - 1) : p.likeCount,
+            }
+          : p,
+      ),
+    );
+    try {
+      if (wasDisliked) await undislikePost(token, post.id);
+      else await dislikePost(token, post.id);
+    } catch {
+      setPosts((prev) =>
+        prev.map((p) => (p.id === post.id ? post : p)),
+      );
+    }
+  }
+
   async function updatePrefs(
     mutate: (p: FeedPreferences) => FeedPreferences,
   ) {
@@ -474,13 +511,15 @@ export function FeedClient() {
           forceBlur={forceBlur}
           showGraphic={prefs.feedShowGraphic}
           onToggleLike={toggleLike}
+          onToggleDislike={toggleDislike}
           onHideType={hideType}
           onMuteAuthor={muteAuthor}
           onMuteTag={muteTag}
           onReport={report}
           onEditPost={(p) => router.push(`/community/me?edit=${p.id}`)}
           onDeletePost={deleteOwnPost}
-          onOpen={(p) => router.push(`/community/p/${p.id}`)}
+          onOpen={(p) => setModal({ postId: p.id, photoIndex: null })}
+          onOpenPhoto={(p, i) => setModal({ postId: p.id, photoIndex: i })}
         />
       </div>,
     );
@@ -602,6 +641,15 @@ export function FeedClient() {
         >
           {loadingMore ? 'Loading…' : 'Load more'}
         </button>
+      )}
+
+      {modal && (
+        <PostModal
+          postId={modal.postId}
+          photoIndex={modal.photoIndex}
+          onClose={() => setModal(null)}
+          onChanged={() => void loadFirst({ silent: true })}
+        />
       )}
     </div>
   );

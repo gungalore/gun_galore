@@ -13,6 +13,7 @@ import {
   PostStatus,
   PostType,
   Prisma,
+  ReactionKind,
 } from '@prisma/client';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { optimizedVideoUrl } from '../common/image-url';
@@ -75,7 +76,7 @@ type PostWithRelations = Post & {
     listingType: string;
     status: string;
   } | null;
-  likes: { id: string }[];
+  likes: { id: string; kind: ReactionKind }[];
 };
 
 @Injectable()
@@ -144,7 +145,7 @@ export class FeedService {
           status: true,
         },
       },
-      likes: { where: { userId }, select: { id: true } },
+      likes: { where: { userId }, select: { id: true, kind: true } },
       video: {
         select: {
           id: true,
@@ -236,6 +237,7 @@ export class FeedService {
       graphicTier: post.graphicTier,
       isOfficial: post.isOfficial,
       likeCount: post.likeCount,
+      dislikeCount: post.dislikeCount,
       commentCount: post.commentCount,
       createdAt: post.createdAt,
       editedAt: post.editedAt,
@@ -274,7 +276,8 @@ export class FeedService {
           }
         : null,
       listing: post.listing,
-      liked: post.likes.length > 0,
+      liked: post.likes[0]?.kind === ReactionKind.LIKE,
+      disliked: post.likes[0]?.kind === ReactionKind.DISLIKE,
       ...(includeFiltered ? { muted: this.isMuted(post, v) } : {}),
     };
   }
@@ -459,7 +462,12 @@ export class FeedService {
    * base, exactly like the like count on the card. Only username + the
    * privacy-gated avatar are ever exposed — never a real name.
    */
-  async listPostLikes(userId: string, postId: string, before?: string) {
+  async listPostLikes(
+    userId: string,
+    postId: string,
+    before?: string,
+    kind: ReactionKind = ReactionKind.LIKE,
+  ) {
     await this.assertEnabled();
     await this.viewer(userId);
     const post = await this.prisma.post.findUnique({
@@ -474,6 +482,7 @@ export class FeedService {
     const likes = await this.prisma.postLike.findMany({
       where: {
         postId,
+        kind,
         ...(before ? { createdAt: { lt: new Date(before) } } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -495,6 +504,58 @@ export class FeedService {
         isVerifiedExpert: l.user.isVerifiedExpert,
         verification: publicVerification(l.user),
       })),
+      kind,
+      nextBefore: hasMore
+        ? page[page.length - 1].createdAt.toISOString()
+        : null,
+    };
+  }
+
+  /**
+   * Members who liked or disliked a COMMENT, newest reaction first. Same
+   * privacy contract as the post list: username + privacy-gated avatar only.
+   */
+  async listCommentLikes(
+    userId: string,
+    commentId: string,
+    before?: string,
+    kind: ReactionKind = ReactionKind.LIKE,
+  ) {
+    await this.assertEnabled();
+    await this.viewer(userId);
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { id: true, status: true },
+    });
+    if (!comment || comment.status !== PostStatus.PUBLISHED) {
+      throw new NotFoundException();
+    }
+    const limit = FEED_PAGE_MAX;
+    const likes = await this.prisma.commentLike.findMany({
+      where: {
+        commentId,
+        kind,
+        ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1,
+      select: {
+        createdAt: true,
+        user: { select: { id: true, ...PUBLIC_AUTHOR_SELECT } },
+      },
+    });
+    const hasMore = likes.length > limit;
+    const page = hasMore ? likes.slice(0, limit) : likes;
+    return {
+      likers: page.map((l) => ({
+        id: l.user.id,
+        username: authorName(l.user),
+        avatarUrl: l.user.feedShowAvatar === false ? null : (l.user.avatarUrl ?? null),
+        sellerTier: l.user.sellerTier,
+        isVerifiedExpert: l.user.isVerifiedExpert,
+        verification: publicVerification(l.user),
+      })),
+      kind,
       nextBefore: hasMore
         ? page[page.length - 1].createdAt.toISOString()
         : null,
@@ -619,7 +680,12 @@ export class FeedService {
     if (!capped.length) return { counts: [] };
     const counts = await this.prisma.post.findMany({
       where: { id: { in: capped }, status: PostStatus.PUBLISHED },
-      select: { id: true, likeCount: true, commentCount: true },
+      select: {
+        id: true,
+        likeCount: true,
+        dislikeCount: true,
+        commentCount: true,
+      },
     });
     return { counts };
   }
@@ -631,7 +697,7 @@ export class FeedService {
       take: 500,
       include: {
         author: { select: PUBLIC_AUTHOR_SELECT },
-        likes: { where: { userId }, select: { id: true } },
+        likes: { where: { userId }, select: { id: true, kind: true } },
       },
     });
     return comments.map((c) => ({
@@ -639,12 +705,16 @@ export class FeedService {
       parentId: c.parentId,
       body: c.body,
       likeCount: c.likeCount,
+      dislikeCount: c.dislikeCount,
       createdAt: c.createdAt,
-      liked: c.likes.length > 0,
+      liked: c.likes[0]?.kind === ReactionKind.LIKE,
+      disliked: c.likes[0]?.kind === ReactionKind.DISLIKE,
       author: {
         id: c.authorId,
         username: authorName(c.author),
-        avatarUrl: c.author?.avatarUrl ?? null,
+        // Withheld when the member turned their profile picture off.
+        avatarUrl:
+          c.author?.feedShowAvatar === false ? null : (c.author?.avatarUrl ?? null),
         sellerTier: c.author?.sellerTier ?? null,
         isVerifiedExpert: c.author?.isVerifiedExpert ?? false,
         verification: publicVerification(c.author ?? {}),
@@ -1197,15 +1267,27 @@ export class FeedService {
         parentId: comment.parentId,
         body: comment.body,
         likeCount: comment.likeCount,
+        dislikeCount: comment.dislikeCount,
         createdAt: comment.createdAt,
         liked: false,
+        disliked: false,
         author: { id: userId, username: v.username, avatarUrl: null },
       },
       moderation: { decision: status, reasons: verdict.reasons },
     };
   }
 
-  async likePost(userId: string, postId: string) {
+  /**
+   * Set (or flip) the viewer's reaction on a post. Like and dislike are
+   * mutually exclusive: a flips the single row's `kind` and moves the counter,
+   * so a member can never hold both at once. A brand-new LIKE notifies the
+   * author and awards points; a flip does neither (so toggling cannot farm).
+   */
+  private async setPostReaction(
+    userId: string,
+    postId: string,
+    kind: ReactionKind,
+  ) {
     await this.assertEnabled();
     await this.viewer(userId);
     const post = await this.prisma.post.findUnique({
@@ -1217,16 +1299,21 @@ export class FeedService {
     }
     const existing = await this.prisma.postLike.findUnique({
       where: { postId_userId: { postId, userId } },
+      select: { id: true, kind: true },
     });
+
     if (!existing) {
       await this.prisma.$transaction([
-        this.prisma.postLike.create({ data: { postId, userId } }),
+        this.prisma.postLike.create({ data: { postId, userId, kind } }),
         this.prisma.post.update({
           where: { id: postId },
-          data: { likeCount: { increment: 1 } },
+          data:
+            kind === ReactionKind.LIKE
+              ? { likeCount: { increment: 1 } }
+              : { dislikeCount: { increment: 1 } },
         }),
       ]);
-      if (post.authorId !== userId) {
+      if (kind === ReactionKind.LIKE && post.authorId !== userId) {
         const v = await this.viewer(userId);
         await this.notifications.postLiked({
           recipientId: post.authorId,
@@ -1240,28 +1327,78 @@ export class FeedService {
           postId,
         );
       }
+    } else if (existing.kind !== kind) {
+      await this.prisma.$transaction([
+        this.prisma.postLike.update({
+          where: { id: existing.id },
+          data: { kind },
+        }),
+        this.prisma.post.update({
+          where: { id: postId },
+          data:
+            kind === ReactionKind.LIKE
+              ? { likeCount: { increment: 1 }, dislikeCount: { decrement: 1 } }
+              : { likeCount: { decrement: 1 }, dislikeCount: { increment: 1 } },
+        }),
+      ]);
     }
-    return { liked: true };
+
+    return {
+      liked: kind === ReactionKind.LIKE,
+      disliked: kind === ReactionKind.DISLIKE,
+    };
   }
 
-  async unlikePost(userId: string, postId: string) {
+  /** Remove the viewer's reaction, but only when it is the given kind. */
+  private async clearPostReaction(
+    userId: string,
+    postId: string,
+    kind: ReactionKind,
+  ) {
     await this.assertEnabled();
     const existing = await this.prisma.postLike.findUnique({
       where: { postId_userId: { postId, userId } },
+      select: { id: true, kind: true },
     });
-    if (existing) {
+    if (existing && existing.kind === kind) {
       await this.prisma.$transaction([
         this.prisma.postLike.delete({ where: { id: existing.id } }),
         this.prisma.post.update({
           where: { id: postId },
-          data: { likeCount: { decrement: 1 } },
+          data:
+            kind === ReactionKind.LIKE
+              ? { likeCount: { decrement: 1 } }
+              : { dislikeCount: { decrement: 1 } },
         }),
       ]);
     }
-    return { liked: false };
+    return {
+      liked: existing ? existing.kind === ReactionKind.LIKE && existing.kind !== kind : false,
+      disliked: existing ? existing.kind === ReactionKind.DISLIKE && existing.kind !== kind : false,
+    };
   }
 
-  async likeComment(userId: string, commentId: string) {
+  async likePost(userId: string, postId: string) {
+    return this.setPostReaction(userId, postId, ReactionKind.LIKE);
+  }
+
+  async dislikePost(userId: string, postId: string) {
+    return this.setPostReaction(userId, postId, ReactionKind.DISLIKE);
+  }
+
+  async unlikePost(userId: string, postId: string) {
+    return this.clearPostReaction(userId, postId, ReactionKind.LIKE);
+  }
+
+  async undislikePost(userId: string, postId: string) {
+    return this.clearPostReaction(userId, postId, ReactionKind.DISLIKE);
+  }
+
+  private async setCommentReaction(
+    userId: string,
+    commentId: string,
+    kind: ReactionKind,
+  ) {
     await this.assertEnabled();
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
@@ -1272,34 +1409,82 @@ export class FeedService {
     }
     const existing = await this.prisma.commentLike.findUnique({
       where: { commentId_userId: { commentId, userId } },
+      select: { id: true, kind: true },
     });
     if (!existing) {
       await this.prisma.$transaction([
-        this.prisma.commentLike.create({ data: { commentId, userId } }),
+        this.prisma.commentLike.create({ data: { commentId, userId, kind } }),
         this.prisma.comment.update({
           where: { id: commentId },
-          data: { likeCount: { increment: 1 } },
+          data:
+            kind === ReactionKind.LIKE
+              ? { likeCount: { increment: 1 } }
+              : { dislikeCount: { increment: 1 } },
+        }),
+      ]);
+    } else if (existing.kind !== kind) {
+      await this.prisma.$transaction([
+        this.prisma.commentLike.update({
+          where: { id: existing.id },
+          data: { kind },
+        }),
+        this.prisma.comment.update({
+          where: { id: commentId },
+          data:
+            kind === ReactionKind.LIKE
+              ? { likeCount: { increment: 1 }, dislikeCount: { decrement: 1 } }
+              : { likeCount: { decrement: 1 }, dislikeCount: { increment: 1 } },
         }),
       ]);
     }
-    return { liked: true };
+    return {
+      liked: kind === ReactionKind.LIKE,
+      disliked: kind === ReactionKind.DISLIKE,
+    };
   }
 
-  async unlikeComment(userId: string, commentId: string) {
+  private async clearCommentReaction(
+    userId: string,
+    commentId: string,
+    kind: ReactionKind,
+  ) {
     await this.assertEnabled();
     const existing = await this.prisma.commentLike.findUnique({
       where: { commentId_userId: { commentId, userId } },
+      select: { id: true, kind: true },
     });
-    if (existing) {
+    if (existing && existing.kind === kind) {
       await this.prisma.$transaction([
         this.prisma.commentLike.delete({ where: { id: existing.id } }),
         this.prisma.comment.update({
           where: { id: commentId },
-          data: { likeCount: { decrement: 1 } },
+          data:
+            kind === ReactionKind.LIKE
+              ? { likeCount: { decrement: 1 } }
+              : { dislikeCount: { decrement: 1 } },
         }),
       ]);
     }
-    return { liked: false };
+    return {
+      liked: existing ? existing.kind === ReactionKind.LIKE && existing.kind !== kind : false,
+      disliked: existing ? existing.kind === ReactionKind.DISLIKE && existing.kind !== kind : false,
+    };
+  }
+
+  async likeComment(userId: string, commentId: string) {
+    return this.setCommentReaction(userId, commentId, ReactionKind.LIKE);
+  }
+
+  async dislikeComment(userId: string, commentId: string) {
+    return this.setCommentReaction(userId, commentId, ReactionKind.DISLIKE);
+  }
+
+  async unlikeComment(userId: string, commentId: string) {
+    return this.clearCommentReaction(userId, commentId, ReactionKind.LIKE);
+  }
+
+  async undislikeComment(userId: string, commentId: string) {
+    return this.clearCommentReaction(userId, commentId, ReactionKind.DISLIKE);
   }
 
   async follow(userId: string, targetId: string) {

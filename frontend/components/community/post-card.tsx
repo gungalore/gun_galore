@@ -7,15 +7,19 @@ import { postTypeLabel } from '../../lib/post-types';
 import { ImageLightbox } from '../image-lightbox';
 import PostDetails from './post-details';
 import { LikedBySheet } from './liked-by-sheet';
+import { PostCollage } from './post-collage';
 import { VerificationBadges } from '../verification-badges';
 
 interface PostCardProps {
   post: FeedPost;
   onToggleLike: (post: FeedPost) => void;
+  onToggleDislike: (post: FeedPost) => void;
   onHideType: (type: string, label: string) => void;
   onMuteAuthor: (author: FeedPost['author']) => void;
   onMuteTag: (tag: string) => void;
   onOpen?: (post: FeedPost) => void;
+  /** Opens the photo viewer at an index. Falls back to the plain lightbox. */
+  onOpenPhoto?: (post: FeedPost, index: number) => void;
   onReport?: (post: FeedPost) => void;
   /** Shown on the member's OWN posts (the ⋯ menu). */
   onEditPost?: (post: FeedPost) => void;
@@ -55,10 +59,12 @@ function timeAgo(iso: string): string {
 export function PostCard({
   post,
   onToggleLike,
+  onToggleDislike,
   onHideType,
   onMuteAuthor,
   onMuteTag,
   onOpen,
+  onOpenPhoto,
   onReport,
   onEditPost,
   onDeletePost,
@@ -74,6 +80,7 @@ export function PostCard({
   const [disputing, setDisputing] = useState(false);
   const [viewer, setViewer] = useState<number | null>(null);
   const [likersOpen, setLikersOpen] = useState(false);
+  const [likersKind, setLikersKind] = useState<'like' | 'dislike'>('like');
 
   // The ⋯ menu carries owner actions only on your own post; everyone else sees
   // the mute/report options.
@@ -432,98 +439,17 @@ export function PostCard({
         )}
       </div>
 
-      {(post.images.length > 0 || post.video) && (
-        <div className="mt-3 px-4">
-          <div className="relative rounded-lg overflow-hidden">
-            <div
-              className="flex flex-col gap-1"
-              style={{
-                filter: gated && !revealed ? 'blur(28px)' : 'none',
-              }}
-            >
-              {post.video && (
-                <video
-                  src={post.video.playbackUrl || post.video.url}
-                  poster={post.video.thumbnailUrl ?? undefined}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  className="w-full"
-                  style={{
-                    maxHeight: 640,
-                    background: 'var(--bg-inset)',
-                    display: 'block',
-                  }}
-                />
-              )}
-              {post.images.map((img, i) => (
-                <button
-                  key={img.id}
-                  type="button"
-                  onClick={() => setViewer(i)}
-                  aria-label={`Open photo ${i + 1}`}
-                  style={{
-                    border: 0,
-                    padding: 0,
-                    background: 'transparent',
-                    cursor: 'zoom-in',
-                    display: 'block',
-                    width: '100%',
-                  }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={img.url}
-                    alt=""
-                    className="w-full"
-                    style={{
-                      // ⚠️ CONTAIN, NOT COVER. object-cover cropped the member's
-                      // photo to fill the box. A feed must show the picture they
-                      // posted, whole.
-                      height: 'auto',
-                      maxHeight: 640,
-                      objectFit: 'contain',
-                      background: 'var(--bg-inset)',
-                      display: 'block',
-                    }}
-                  />
-                </button>
-              ))}
-            </div>
-            {gated && !revealed && (
-              <div
-                className="absolute inset-0 flex items-center justify-center text-center px-4"
-                style={{
-                  background: 'rgba(0,0,0,0.35)',
-                  backdropFilter: 'blur(28px)',
-                }}
-              >
-                <div className="flex flex-col items-center gap-3 px-6 text-center">
-                  <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  </div>
-                  <span className="text-white text-base font-semibold">Graphic content</span>
-                  <span className="text-white/80 text-sm">
-                    {post.graphicTier === 'EXTREME' ? 'This post shows a harvested animal.' : 'Tap to reveal'}
-                  </span>
-                  {!hiddenForever && (
-                    <button
-                      type="button"
-                      onClick={() => setRevealed(true)}
-                      className="bg-white text-[var(--stone-900)] px-4 py-2 rounded-full text-sm font-medium"
-                    >
-                      {post.graphicTier === 'EXTREME' ? 'Show image' : 'Tap to reveal'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <PostCollage
+        post={post}
+        onOpen={(i) => {
+          if (onOpenPhoto) onOpenPhoto(post, i);
+          else setViewer(i);
+        }}
+        gated={gated}
+        revealed={revealed}
+        hiddenForever={hiddenForever}
+        onReveal={() => setRevealed(true)}
+      />
 
       {post.listing && (
         <div className="mx-4 mt-3">
@@ -553,22 +479,26 @@ export function PostCard({
         </div>
       )}
 
-      <footer className="flex items-center gap-1 px-2 py-2 mt-1">
+      <footer className="flex items-center gap-1 px-2 py-2 mt-1 flex-wrap">
         <button
           type="button"
           onClick={() => onToggleLike(post)}
-          className="gg-press flex items-center px-2 py-2 rounded text-[13px]"
+          className="gg-press flex items-center gap-1.5 px-2.5 py-2 rounded text-[13px] font-medium"
           style={{ color: post.liked ? 'var(--red)' : 'var(--text-tertiary)' }}
           aria-pressed={post.liked}
-          aria-label={post.liked ? 'Unlike' : 'Like'}
+          aria-label={post.liked ? 'Remove like' : 'Like'}
         >
-          <span>{post.liked ? '♥' : '♡'}</span>
+          <span aria-hidden="true">👍</span>
+          <span>Like</span>
         </button>
         {post.likeCount > 0 ? (
           <button
             type="button"
-            onClick={() => setLikersOpen(true)}
-            className="gg-press px-2 py-2 rounded text-[13px]"
+            onClick={() => {
+              setLikersKind('like');
+              setLikersOpen(true);
+            }}
+            className="gg-press px-1.5 py-2 rounded text-[13px]"
             style={{ color: post.liked ? 'var(--red)' : 'var(--text-tertiary)' }}
             aria-label={`See who liked this post (${post.likeCount})`}
           >
@@ -576,7 +506,7 @@ export function PostCard({
           </button>
         ) : (
           <span
-            className="px-2 py-2 text-[13px]"
+            className="px-1.5 py-2 text-[13px]"
             style={{ color: 'var(--text-tertiary)' }}
           >
             0
@@ -584,9 +514,47 @@ export function PostCard({
         )}
         <button
           type="button"
+          onClick={() => onToggleDislike(post)}
+          className="gg-press flex items-center gap-1.5 px-2.5 py-2 rounded text-[13px] font-medium"
+          style={{
+            color: post.disliked ? 'var(--red)' : 'var(--text-tertiary)',
+          }}
+          aria-pressed={post.disliked}
+          aria-label={post.disliked ? 'Remove dislike' : 'Dislike'}
+        >
+          <span aria-hidden="true">👎</span>
+          <span>Dislike</span>
+        </button>
+        {post.dislikeCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              setLikersKind('dislike');
+              setLikersOpen(true);
+            }}
+            className="gg-press px-1.5 py-2 rounded text-[13px]"
+            style={{
+              color: post.disliked ? 'var(--red)' : 'var(--text-tertiary)',
+            }}
+            aria-label={`See who disliked this post (${post.dislikeCount})`}
+          >
+            {post.dislikeCount}
+          </button>
+        ) : (
+          <span
+            className="px-1.5 py-2 text-[13px]"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            0
+          </span>
+        )}
+        <span className="flex-1" />
+        <button
+          type="button"
           onClick={() => onOpen?.(post)}
           className="gg-press flex items-center gap-1.5 px-3 py-2 rounded text-[13px]"
           style={{ color: 'var(--text-tertiary)' }}
+          aria-label={`Comments (${post.commentCount})`}
         >
           💬 {post.commentCount}
         </button>
@@ -610,7 +578,11 @@ export function PostCard({
       )}
 
       {likersOpen && (
-        <LikedBySheet postId={post.id} onClose={() => setLikersOpen(false)} />
+        <LikedBySheet
+          postId={post.id}
+          kind={likersKind}
+          onClose={() => setLikersOpen(false)}
+        />
       )}
     </article>
   );

@@ -3,21 +3,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../lib/auth';
-import { type FeedLiker, fetchPostLikes } from '../../lib/community-api';
+import {
+  type FeedLiker,
+  type ReactionKind,
+  fetchCommentLikes,
+  fetchPostLikes,
+} from '../../lib/community-api';
 import { useScrollLock } from '../../lib/use-scroll-lock';
 import { VerificationBadges } from '../verification-badges';
 
 /**
- * "Liked by" — the list of members who liked a post, newest first. Opens from
- * the like count on any post (operator decision 2026-10-10: visible to the
- * whole member base). Only the username and privacy-gated avatar are shown;
- * every row links to that member's community profile.
+ * "Liked by" / "Disliked by" — the members who reacted to a post or a comment,
+ * newest first. Opens from the reaction count. Only the username and the
+ * privacy-gated avatar are shown; every row links to that member's profile.
  */
 export function LikedBySheet({
   postId,
+  commentId,
+  kind = 'like',
   onClose,
 }: {
-  postId: string;
+  postId?: string;
+  commentId?: string;
+  kind?: ReactionKind;
   onClose: () => void;
 }) {
   const { getToken } = useAuth();
@@ -41,11 +49,13 @@ export function LikedBySheet({
     async (before?: string) => {
       const token = await getTokenRef.current();
       if (!token) return;
-      const res = await fetchPostLikes(token, postId, before);
+      const res = commentId
+        ? await fetchCommentLikes(token, commentId, before, kind)
+        : await fetchPostLikes(token, postId ?? '', before, kind);
       setLikers((prev) => (before ? [...prev, ...res.likers] : res.likers));
       setNextBefore(res.nextBefore);
     },
-    [postId],
+    [commentId, kind, postId],
   );
 
   useEffect(() => {
@@ -85,6 +95,10 @@ export function LikedBySheet({
     }
   }
 
+  const title = kind === 'dislike' ? 'Disliked by' : 'Liked by';
+  const empty =
+    kind === 'dislike' ? 'No dislikes yet.' : 'No likes yet.';
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
@@ -95,7 +109,7 @@ export function LikedBySheet({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Liked by"
+        aria-label={title}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className="w-full sm:max-w-sm max-h-[70vh] flex flex-col rounded-t-2xl sm:rounded-2xl outline-none"
@@ -112,7 +126,7 @@ export function LikedBySheet({
             className="text-[15px] font-medium"
             style={{ color: 'var(--text-primary)' }}
           >
-            Liked by
+            {title}
           </h2>
           <button
             type="button"
@@ -138,14 +152,14 @@ export function LikedBySheet({
               className="px-3 py-6 text-center text-[13px]"
               style={{ color: 'var(--text-tertiary)' }}
             >
-              Could not load likes.
+              Could not load reactions.
             </p>
           ) : likers.length === 0 ? (
             <p
               className="px-3 py-6 text-center text-[13px]"
               style={{ color: 'var(--text-tertiary)' }}
             >
-              No likes yet.
+              {empty}
             </p>
           ) : (
             <>

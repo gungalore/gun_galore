@@ -75,6 +75,7 @@ const post = {
   graphicTier: 'NONE',
   isOfficial: false,
   likeCount: 0,
+  dislikeCount: 0,
   commentCount: 0,
   createdAt: '2026-09-24T12:00:00.000Z',
   editedAt: null,
@@ -83,6 +84,7 @@ const post = {
   video: null,
   listing: null,
   liked: false,
+  disliked: false,
 } satisfies FeedPost;
 
 describe('Community feed search', () => {

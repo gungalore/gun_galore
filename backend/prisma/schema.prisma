@@ -6787,6 +6787,7 @@ model Post {
   /// Google Places place_id, so the tag opens THAT place instead of a text search.
   locationPlaceId  String?
   likeCount        Int          @default(0)
+  dislikeCount     Int          @default(0)
   commentCount     Int          @default(0)
   reportedCount    Int          @default(0)
   publishedAt      DateTime?
@@ -6838,6 +6839,7 @@ model Comment {
   status           PostStatus @default(PENDING_MODERATION)
   moderationReason String?
   likeCount        Int        @default(0)
+  dislikeCount     Int        @default(0)
   reportedCount    Int        @default(0)
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
@@ -6848,13 +6850,22 @@ model Comment {
   @@index([authorId])
 }
 
+/// One reaction per member per post. `kind` makes like and dislike mutually
+/// exclusive at the database level: a member either likes or dislikes a post,
+/// never both.
+enum ReactionKind {
+  LIKE
+  DISLIKE
+}
+
 model PostLike {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   postId    String
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post      Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation("UserPostLikes", fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  user      User         @relation("UserPostLikes", fields: [userId], references: [id], onDelete: Cascade)
+  kind      ReactionKind @default(LIKE)
+  createdAt DateTime     @default(now())
 
   @@unique([postId, userId])
   @@index([userId, createdAt(sort: Desc)])
@@ -6862,12 +6873,13 @@ model PostLike {
 }
 
 model CommentLike {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   commentId String
-  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  comment   Comment      @relation(fields: [commentId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation("UserCommentLikes", fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  user      User         @relation("UserCommentLikes", fields: [userId], references: [id], onDelete: Cascade)
+  kind      ReactionKind @default(LIKE)
+  createdAt DateTime     @default(now())
 
   @@unique([commentId, userId])
   @@index([commentId])

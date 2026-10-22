@@ -66,7 +66,7 @@ describe('LikedBySheet', () => {
 
     await waitFor(() => expect(screen.getByText('sipho')).toBeTruthy());
     expect(screen.getByText('jane')).toBeTruthy();
-    expect(fetchPostLikes).toHaveBeenLastCalledWith('t', 'p1', 'cursor-1');
+    expect(fetchPostLikes).toHaveBeenLastCalledWith('t', 'p1', 'cursor-1', 'like');
     expect(screen.queryByText('Load more')).toBeNull();
   });
 

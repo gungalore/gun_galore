@@ -138,8 +138,7 @@ describe('FeedService.listPostLikes', () => {
     expect(calls[0]?.take).toBe(51);
   });
 
-  it('passes the cursor through as a strict "before" bound', async () => {
-    const calls: FindManyArgs[] = [];
+  it('passes the cursor through as a strict "before" bound', async () => {    const calls: FindManyArgs[] = [];
     const service = makeService(prismaWith({ calls }));
     const cursor = '2026-10-10T09:00:00.000Z';
 
@@ -147,6 +146,7 @@ describe('FeedService.listPostLikes', () => {
 
     expect(calls[0]?.where).toEqual({
       postId: 'p1',
+      kind: 'LIKE',
       createdAt: { lt: new Date(cursor) },
     });
   });

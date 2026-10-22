@@ -40,6 +40,7 @@ const post: FeedPost = {
   graphicTier: 'NONE',
   isOfficial: false,
   likeCount: 0,
+  dislikeCount: 0,
   commentCount: 0,
   createdAt: '2026-09-23T20:00:00.000Z',
   editedAt: null,
@@ -48,6 +49,7 @@ const post: FeedPost = {
   video: null,
   listing: null,
   liked: false,
+  disliked: false,
 };
 
 function renderCard() {
@@ -55,6 +57,7 @@ function renderCard() {
     <PostCard
       post={post}
       onToggleLike={vi.fn()}
+      onToggleDislike={vi.fn()}
       onHideType={vi.fn()}
       onMuteAuthor={vi.fn()}
       onMuteTag={vi.fn()}
@@ -97,6 +100,7 @@ function renderGraphic(
     <PostCard
       post={graphicPost}
       onToggleLike={vi.fn()}
+      onToggleDislike={vi.fn()}
       onHideType={vi.fn()}
       onMuteAuthor={vi.fn()}
       onMuteTag={vi.fn()}
@@ -150,6 +154,7 @@ describe('PostCard — the tagged place', () => {
       <PostCard
         post={{ ...post, locationPlaceId: null }}
         onToggleLike={vi.fn()}
+        onToggleDislike={vi.fn()}
         onHideType={vi.fn()}
         onMuteAuthor={vi.fn()}
         onMuteTag={vi.fn()}
