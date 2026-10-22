@@ -458,6 +458,78 @@ function humaniseApiError(err: unknown): string {
   return "Some of the listing details didn't pass our checks. Step back through the four steps above — each one lists anything still missing — then try Preview again";
 }
 
+/**
+ * Preview photos travel as base64 inside a JSON body, and that ceiling is the
+ * reason a seller with a phone full of 8MP shots got "request entity too
+ * large" before anything was published.
+ *
+ * The backend's vision pass reads at most five photos at 1280px on the long
+ * edge (MAX_VISION_PHOTOS / IMAGE_EDGE.photo), so sending originals was both
+ * over the body limit and wasted tokens. Downscale to exactly what the model
+ * can see, and send only the five it reviews.
+ */
+const PREVIEW_MAX_IMAGES = 5;
+const PREVIEW_MAX_EDGE = 1280;
+const PREVIEW_JPEG_QUALITY = 0.82;
+
+function readAsDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === 'string') resolve(result);
+      else reject(new Error('FileReader returned non-string'));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function dataUrlParts(dataUrl: string): { mediaType: string; data: string } {
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) throw new Error('Unexpected data URL format');
+  return { mediaType: match[1], data: match[2] };
+}
+
+/**
+ * Decode, fit within PREVIEW_MAX_EDGE and re-encode as JPEG. Any browser that
+ * cannot do that (or an animated GIF) falls back to the untouched file — the
+ * cap on how many photos are sent still applies. A transparent PNG is painted
+ * onto white so it does not turn into a black rectangle in the JPEG.
+ */
+async function encodePreviewImage(
+  file: File,
+): Promise<{ mediaType: string; data: string }> {
+  if (file.type === 'image/gif' || typeof createImageBitmap === 'undefined') {
+    return dataUrlParts(await readAsDataUrl(file));
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(
+      1,
+      PREVIEW_MAX_EDGE / Math.max(bitmap.width, bitmap.height),
+    );
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D unavailable');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close?.();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', PREVIEW_JPEG_QUALITY),
+    );
+    if (!blob) throw new Error('Image encode failed');
+    return { mediaType: 'image/jpeg', data: dataUrlParts(await readAsDataUrl(blob)).data };
+  } catch {
+    return dataUrlParts(await readAsDataUrl(file));
+  }
+}
+
 const PREVIEW_RANK: Record<PreviewResult['decision'], number> = {
   APPROVE: 0,
   AUTO_FIX_AND_APPROVE: 1,
@@ -2140,29 +2212,8 @@ export default function NewListingPage() {
     file: File,
     redacted = false,
   ): Promise<{ mediaType: string; data: string; redacted?: boolean }> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result;
-        if (typeof result !== 'string') {
-          reject(new Error('FileReader returned non-string'));
-          return;
-        }
-        // `data:image/jpeg;base64,XXXX` → { mediaType: 'image/jpeg', data: 'XXXX' }
-        const match = result.match(/^data:([^;]+);base64,(.+)$/);
-        if (!match) {
-          reject(new Error('Unexpected data URL format'));
-          return;
-        }
-        resolve({
-          mediaType: match[1],
-          data: match[2],
-          ...(redacted ? { redacted: true } : {}),
-        });
-      };
-      reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
-      reader.readAsDataURL(file);
-    });
+    const encoded = await encodePreviewImage(file);
+    return { ...encoded, ...(redacted ? { redacted: true } : {}) };
   }
 
   // Shared audit routine. POSTs the current draft to /listings/preview
@@ -2203,9 +2254,11 @@ export default function NewListingPage() {
     try {
       const token = await getToken();
       const encodedImages = await Promise.all(
-        images.map((file) =>
-          fileToBase64(file, redactedImagesRef.current.has(file)),
-        ),
+        images
+          .slice(0, PREVIEW_MAX_IMAGES)
+          .map((file) =>
+            fileToBase64(file, redactedImagesRef.current.has(file)),
+          ),
       );
       const body = {
         ...buildListingPayload(),
@@ -2221,13 +2274,23 @@ export default function NewListingPage() {
         },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        const msg = Array.isArray(data.message)
+        // A 413 arrives before Nest ever validates the body, so its message is
+        // the transport's ("request entity too large") and means nothing to a
+        // seller. The payload is downscaled now, but a browser without canvas
+        // support still sends originals — say what to do.
+        if (res.status === 413) {
+          throw new Error(
+            'Those photos are too large to check together. Remove one or two, then try Preview again',
+          );
+        }
+        const msg = Array.isArray(data?.message)
           ? data.message.join(', ')
-          : (data.message ?? `Error ${res.status}`);
+          : (data?.message ?? `Error ${res.status}`);
         throw new Error(msg);
       }
+      if (!data) throw new Error('The review check returned no answer');
       const result = data as PreviewResult;
       // Only cache a verdict that still describes the current text. If the
       // seller edited the title/description while this was in flight, the
