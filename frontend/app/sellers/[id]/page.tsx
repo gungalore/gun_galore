@@ -11,7 +11,7 @@ import { Pagination } from '@/components/pagination';
 import { viewerFetch } from '@/lib/api-viewer';
 import { serverAuth as auth } from '../../../lib/auth-server';
 import type { BrowseResponse, PublicSellerProfile, Category } from '@/lib/types';
-import { LiveCatalogRefresh } from '@/components/live-catalog-refresh';
+import { CatalogLiveRefresh } from '@/components/catalog-live-refresh';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -151,7 +151,7 @@ export default async function SellerProfilePage({
 
   return (
     <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
-      <LiveCatalogRefresh />
+      <CatalogLiveRefresh />
       <BrowseRailShell>
       <PageReveal variant="scale-in">
       {/* Profile header */}

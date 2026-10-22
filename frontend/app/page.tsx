@@ -12,7 +12,7 @@ import { HomeInfoPanel } from '@/components/home-info-panel';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
 import { Pagination } from '@/components/pagination';
-import { LiveCatalogRefresh } from '@/components/live-catalog-refresh';
+import { CatalogLiveRefresh } from '@/components/catalog-live-refresh';
 
 interface SearchParams {
   q?: string;
@@ -101,7 +101,10 @@ export default async function HomePage({
   // "Shop by mode" row's Armory tile — which now lives in the shell
   // (components/shop-mode-tiles.tsx) and reads the viewer there. The page is
   // still dynamic regardless, because every fetch below goes through
-  // viewerFetch; never cache a response that varies by viewer.
+  // viewerFetch; never cache a response that varies by viewer. The one
+  // session-aware bit is <CatalogLiveRefresh/>, which only asks whether the
+  // server could resolve a member so it can re-run the page after a stale
+  // access-token cookie has been renewed client-side.
   // Pick the header copy that matches the current view:
   //   * listingType param → that surface's copy (Marketplace / Auctions / Take a Shot)
   //   * sort param without listingType → ALL_LISTINGS_SURFACE
@@ -243,7 +246,7 @@ export default async function HomePage({
 
   return (
     <main className="relative">
-      <LiveCatalogRefresh />
+      <CatalogLiveRefresh />
       {/* ⚠️ THE PER-SURFACE SCENERY IS GONE, SITE-WIDE AND ON PURPOSE.
           Each shopping surface used to drop its own photograph behind the
           grid — marketplace.jpg here, auction.jpg, take-a-shot.jpg — under a

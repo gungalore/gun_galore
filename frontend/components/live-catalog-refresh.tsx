@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useLivePoll } from '@/lib/use-live-poll';
@@ -28,11 +28,28 @@ const MIN_REFRESH_MS = 60_000;
  * The token deliberately includes SAVES: the cards' social-proof counts are
  * part of what must stay current.
  */
-export function LiveCatalogRefresh() {
+export function LiveCatalogRefresh({
+  serverSignedIn = true,
+}: {
+  /**
+   * Whether the server that rendered this page could resolve a member. False
+   * after the access-token cookie expired: the page's data fetches ran
+   * anonymously, while the browser still has a refresh cookie and renews the
+   * session on mount. Re-run the page once that renewal lands.
+   */
+  serverSignedIn?: boolean;
+}) {
   const router = useRouter();
   const { isLoaded, isSignedIn, getToken } = useAuth();
   const version = useRef<string | null>(null);
   const lastRefresh = useRef(Date.now());
+  const authRechecked = useRef(false);
+
+  useEffect(() => {
+    if (!isLoaded || authRechecked.current) return;
+    authRechecked.current = true;
+    if (isSignedIn && !serverSignedIn) router.refresh();
+  }, [isLoaded, isSignedIn, router, serverSignedIn]);
 
   useLivePoll(
     async () => {
