@@ -115,9 +115,7 @@ export function VideoDropzone({
           {hasAny ? 'Replace video' : 'Add a video (optional)'}
         </div>
         <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          MP4, MOV or WebM · one clip up to {humanMb(maxBytes)} · choose
-          whether it is published with sound. We screen the picture either
-          way; a sound-on clip is screened for spoken contact details too.
+          MP4, MOV or WebM · up to {humanMb(maxBytes)} · screened before publishing
         </div>
         <input
           ref={inputRef}
@@ -132,48 +130,50 @@ export function VideoDropzone({
         />
       </div>
 
-      <div className="mt-3">
-        <div
-          className="text-xs"
-          style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
-        >
-          Sound
+      {hasAny && (
+        <div className="mt-3">
+          <div
+            className="text-xs"
+            style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
+          >
+            Sound
+          </div>
+          <div role="group" aria-label="Video sound" className="flex gap-2 mt-1.5">
+            {[
+              { on: false, label: 'Without sound' },
+              { on: true, label: 'With sound' },
+            ].map((opt) => {
+              const selected = audioEnabled === opt.on;
+              return (
+                <button
+                  key={opt.label}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => onAudioChange?.(opt.on)}
+                  className="text-xs px-3 py-1.5 rounded-[6px]"
+                  style={{
+                    background: selected ? 'var(--red)' : 'var(--bg-inset)',
+                    color: selected ? '#fff' : 'var(--text-secondary)',
+                    border: `0.5px solid ${selected ? 'var(--red)' : 'var(--border)'}`,
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+          <p
+            className="text-xs mt-1.5"
+            style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+          >
+            {audioEnabled
+              ? 'We screen the audio for spoken contact details and advertising. Only include sound if you have consent from anyone audible.'
+              : 'The audio is removed before the clip is published.'}
+          </p>
         </div>
-        <div role="group" aria-label="Video sound" className="flex gap-2 mt-1.5">
-          {[
-            { on: false, label: 'Without sound' },
-            { on: true, label: 'With sound' },
-          ].map((opt) => {
-            const selected = audioEnabled === opt.on;
-            return (
-              <button
-                key={opt.label}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => onAudioChange?.(opt.on)}
-                className="text-xs px-3 py-1.5 rounded-[6px]"
-                style={{
-                  background: selected ? 'var(--red)' : 'var(--bg-inset)',
-                  color: selected ? '#fff' : 'var(--text-secondary)',
-                  border: `0.5px solid ${selected ? 'var(--red)' : 'var(--border)'}`,
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-        <p
-          className="text-xs mt-1.5"
-          style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
-        >
-          {audioEnabled
-            ? 'We screen the audio for spoken contact details and advertising. Only include sound if you have consent from anyone audible.'
-            : 'The audio is removed before the clip is published.'}
-        </p>
-      </div>
+      )}
 
       {hasAny && onHeroChange && (
         <button

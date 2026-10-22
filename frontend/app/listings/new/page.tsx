@@ -3097,31 +3097,15 @@ export default function NewListingPage() {
           <FormSection
             id={stepAnchor(1)}
             title="Photos"
-            description="Buyers click photos first. Bright, sharp, every angle. 1–10 photos, plus an optional video, drag to reorder."
+            description="Show every angle, markings and any wear. Keep contact details and shop signage out of frame."
           >
             <PhotoDropzone
               files={images}
               onChange={handleImagesChange}
-              minFiles={1}
               maxFiles={10}
               statusFor={media.imageStatusFor}
               onRedact={(idx) => setManualRedact(images[idx] ?? null)}
             />
-            {/* Multi-angle nudge — the single biggest thing a seller can do
-                to avoid "not as described" disputes later. */}
-            <p
-              style={{
-                fontSize: 12,
-                lineHeight: 1.5,
-                color: 'var(--text-tertiary)',
-                margin: '8px 2px 0',
-              }}
-            >
-              📸 Show every angle — front, back, both sides, any serial number
-              or markings, and a close-up of any wear or damage. Honest photos
-              from all sides mean fewer buyer questions and protect you if a
-              buyer ever disputes the item.
-            </p>
             {/* One optional clip. Photos stay mandatory; the clip is a
                 seller's best answer to "can you show me it working?", and it
                 renders first in the listing gallery. */}
@@ -3130,15 +3114,6 @@ export default function NewListingPage() {
               className="mt-5 pt-4"
               style={{ borderTop: '0.5px solid var(--border-divider)' }}
             >
-              <p
-                className="text-xs uppercase mb-2"
-                style={{
-                  color: 'var(--text-tertiary)',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Video (optional)
-              </p>
               <VideoDropzone
                 file={video}
                 onChange={handleVideoChange}
@@ -3156,19 +3131,6 @@ export default function NewListingPage() {
                         : undefined
                 }
               />
-              <p
-                style={{
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                  color: 'var(--text-tertiary)',
-                  margin: '8px 2px 0',
-                }}
-              >
-                🎬 One short clip showing the item from a few angles, working
-                or cycling. Keep phone numbers, WhatsApp details, QR codes and
-                shop signage out of frame — video is screened before it is
-                stored.
-              </p>
             </div>
             {/* (The "Help me describe this from the photos" photo helper
                 button stood here — removed by the operator 2026-08-28.

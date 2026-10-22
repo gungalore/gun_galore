@@ -50,7 +50,6 @@ export function PhotoDropzone({
   files,
   onChange,
   accept = 'image/jpeg,image/png,image/webp',
-  minFiles = 1,
   maxFiles = 5,
   statusFor,
   onRedact,
@@ -127,7 +126,7 @@ export function PhotoDropzone({
   }
 
   const slotsLeft = maxFiles - files.length;
-  const belowMin = files.length < minFiles;
+  const atLimit = files.length >= maxFiles;
 
   return (
     <div>
@@ -143,9 +142,7 @@ export function PhotoDropzone({
           background: dragOverDrop ? 'rgba(227,6,19,0.06)' : 'var(--bg-inset)',
           border: dragOverDrop
             ? '0.5px dashed var(--red)'
-            : belowMin
-              ? '0.5px dashed var(--red)'
-              : '0.5px dashed var(--border-hover)',
+            : '0.5px dashed var(--border-hover)',
         }}
       >
         <div
@@ -158,7 +155,7 @@ export function PhotoDropzone({
           {dragOverDrop ? 'Drop to upload' : 'Drop photos here or click to upload'}
         </div>
         <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          JPG, PNG, or WebP · {minFiles}–{maxFiles} photos · first photo is the cover · drag to reorder
+          JPG, PNG or WebP · up to {maxFiles} photos · first photo is the cover
         </div>
 
         {/* NO `capture` attribute — deliberately. With `capture` set,
@@ -182,16 +179,6 @@ export function PhotoDropzone({
           }}
         />
       </div>
-
-      {/* Min-photo nag */}
-      {belowMin && (
-        <p
-          className="text-xs mt-2"
-          style={{ color: 'var(--red)' }}
-        >
-          At least {minFiles} photo is required before you can publish.
-        </p>
-      )}
 
       {/* Thumbnail grid */}
       {files.length > 0 && (
@@ -354,15 +341,18 @@ export function PhotoDropzone({
       )}
 
       {/* Slot counter */}
-      <p
-        className="text-xs mt-2"
-        style={{ color: 'var(--text-tertiary)' }}
-      >
-        {files.length} of {maxFiles} photo{files.length === 1 ? '' : 's'}
-        {slotsLeft > 0
-          ? ` · ${slotsLeft} slot${slotsLeft === 1 ? '' : 's'} left`
-          : ' · limit reached'}
-      </p>
+      {files.length > 0 && (
+        <p
+          className="text-xs mt-2"
+          style={{ color: 'var(--text-tertiary)' }}
+        >
+          {files.length} of {maxFiles} photo{files.length === 1 ? '' : 's'}
+          {atLimit
+            ? ' · limit reached'
+            : ` · ${slotsLeft} slot${slotsLeft === 1 ? '' : 's'} left`}
+          {' · drag to reorder'}
+        </p>
+      )}
     </div>
   );
 }
