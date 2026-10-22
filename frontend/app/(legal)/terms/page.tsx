@@ -227,22 +227,30 @@ export default function TermsPage() {
       </p>
       <p>
         Where a Buyer and Seller elect to use the{' '}
-        <strong>"private arrangement"</strong> handover option (the parties
-        arrange and complete the handover themselves rather than through a
-        courier or an authorised third party), the Buyer's payment is still
-        collected at checkout and <strong>held</strong>. For a private-arrangement
-        order, settlement to the Seller is released when the{' '}
+        <strong>in-person handover</strong> option (the parties arrange and
+        complete the handover themselves rather than through a courier or an
+        authorised third party), the Buyer&rsquo;s payment is collected at
+        checkout and <strong>held</strong>. For an in-person handover,
+        settlement to the Seller is released when the{' '}
         <strong>Buyer confirms receipt</strong> of the item, or{' '}
         <strong>automatically five (5) days after payment</strong> if the order
-        is not disputed before then. Either party may raise a dispute before
-        release, which holds the payment for review by the admin team. The
-        private-arrangement option is available on any listing the Seller makes
-        it available for; where an item requires a licence or permit, the
-        additional handover conditions in the{' '}
+        is not disputed before then. Both parties receive a WhatsApp, SMS, email
+        and in-app notification with a one-tap confirmation link when the
+        handover is due. Either party may raise a dispute before release, which
+        holds the payment for review by the admin team. The in-person handover
+        option is available on every listing that is not collection-only,
+        including firearms (where the handover must happen through a licensed
+        dealer). The additional handover conditions in the{' '}
         <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
           Regulated Items Annex
         </a>{' '}
-        apply.
+        apply to regulated items.
+      </p>
+      <p>
+        <strong>The Platform Fee is non-refundable on an in-person handover.</strong>{' '}
+        If a dispute is upheld and refunded, the Buyer is refunded the item price
+        only; ALL Outdoor retains the Platform Fee regardless of the reason for
+        the dispute.
       </p>
 
       <h2>8. Fees, commission and payouts</h2>
@@ -303,6 +311,12 @@ export default function TermsPage() {
         themselves — see paragraph 7, where the payment is held until the Buyer
         confirms receipt). Shipping costs are quoted
         live at checkout and paid by the Buyer.
+      </p>
+      <p>
+        <strong>Pickup-point delivery is Pargo only.</strong> Where a pickup
+        point is offered, the Buyer chooses from the nearby Pargo counters shown
+        at checkout and collects the parcel from that counter. We do not offer
+        any other locker or counter network.
       </p>
       <p>
         <strong>Some items cannot be sent by courier at all.</strong> Trailers

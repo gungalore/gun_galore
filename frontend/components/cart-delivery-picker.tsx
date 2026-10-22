@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { pargoDistanceLabel, pargoOptionLabel } from '@/lib/pargo-pickup';
 
 /**
  * The cart's delivery line — one door rate per parcel the cart will ship as.
@@ -95,7 +96,7 @@ function toOptions(g: ApiGroup): CartDeliveryOption[] {
     providerSlug: rate.providerSlug,
     serviceLevelCode: rate.serviceLevelCode,
     label: 'Store Pickup',
-    detail: `${rate.serviceName}${rate.pickupPointDistanceKm != null ? ` · ${rate.pickupPointDistanceKm.toFixed(1)} km` : ''}`,
+    detail: rate.serviceName,
     priceCents: rate.priceCents,
     carrierRateCents: rate.carrierRateCents,
     pickupPointLocationId: rate.pickupPointLocationId,
@@ -280,6 +281,10 @@ export function CartDeliveryPicker({
             g.options.map((o) => {
               const active = chosen[g.groupKey]?.kind === o.kind &&
                 (o.kind !== 'STORE_PICKUP' || chosen[g.groupKey]?.pickupPointLocationId === o.pickupPointLocationId);
+              const isPargo = o.kind === 'STORE_PICKUP';
+              const distance = isPargo
+                ? pargoDistanceLabel(o.pickupPointDistanceKm)
+                : null;
               return (
                 <button
                   key={`${o.kind}:${o.pickupPointLocationId ?? o.serviceCode}`}
@@ -294,10 +299,22 @@ export function CartDeliveryPicker({
                 >
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                      {o.label}
+                      {isPargo ? pargoOptionLabel(o.detail) : o.label}
                     </span>
-                    {o.detail && <span className="block text-xs" style={{ color: 'var(--text-tertiary)' }}>{o.detail}</span>}
-                    {o.kind === 'STORE_PICKUP' && o.description && <span className="block text-xs" style={{ color: 'var(--text-tertiary)' }}>{o.description}</span>}
+                    {isPargo ? (
+                      <span className="block text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        {`Store pickup${distance ? ` · ${distance}` : ''}`}
+                      </span>
+                    ) : (
+                      o.detail && <span className="block text-xs" style={{ color: 'var(--text-tertiary)' }}>{o.detail}</span>
+                    )}
+                    {/* Directions + trading hours only once this counter is
+                        the chosen one. */}
+                    {isPargo && active && o.description && (
+                      <span className="block text-xs mt-1" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+                        {o.description}
+                      </span>
+                    )}
                   </span>
                   <span className="text-sm gg-nums" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
                     {rand(o.priceCents)}

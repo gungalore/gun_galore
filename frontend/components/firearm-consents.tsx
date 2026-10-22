@@ -153,10 +153,10 @@ export function DealerTransferConsent({
         />
         <span style={{ color: 'var(--text-secondary)' }}>
           I understand ALL Outdoor holds my funds until the
-          seller&apos;s dealer stock-in is verified, after which Gun
-          Galore notifies me which dealer has the firearm and
-          releases the funds — the inter-dealer transfer onwards is
-          arranged between me and the seller directly.
+          seller&apos;s dealer stock-in is verified, after which ALL Outdoor
+          notifies me which dealer has the firearm and releases the funds — the
+          inter-dealer transfer onwards is arranged between me and the seller
+          directly.
         </span>
       </label>
 
@@ -174,21 +174,25 @@ export function DealerTransferConsent({
   );
 }
 
-// Hard-consent gate for PRIVATE_ARRANGE. Two checkboxes + the literal
-// phrase "I UNDERSTAND" typed into a text field. Until all three pass,
-// `accepted` stays false and the parent's isReady() returns false.
+// Hard-consent gate for PRIVATE_ARRANGE / in-person handover. Two checkboxes
+// plus the literal phrase "I UNDERSTAND". Until all three pass, `accepted`
+// stays false and the parent's isReady() returns false.
 //
-// Why this level of friction: PRIVATE_ARRANGE waives payment protection
-// — the seller is paid the moment Peach confirms the card. We need an
-// unmistakable opt-in so a buyer can't later claim they didn't know
-// what they were giving up. The screen also doubles as documentation
-// for support if a dispute lands.
+// Why this level of friction: there is no courier, no delivery guarantee, and
+// the Platform Fee is kept even if a dispute is refunded. We need an
+// unmistakable opt-in so a buyer can't later claim they didn't know what they
+// were agreeing to. The screen also doubles as documentation for support if a
+// dispute lands. Works for firearms (meet at a licensed dealer) and goods
+// (meet the seller in person).
 export function PrivateArrangeConsent({
   accepted,
   onChange,
+  isFirearm = false,
 }: {
   accepted: boolean;
   onChange: (v: boolean) => void;
+  /** Firearm handovers still go through a SAPS-licensed dealer. */
+  isFirearm?: boolean;
 }) {
   const [box1, setBox1] = useState(false);
   const [box2, setBox2] = useState(false);
@@ -220,11 +224,12 @@ export function PrivateArrangeConsent({
           fontWeight: 600,
         }}
       >
-        Private arrangement — you waive ALL Outdoor&apos;s payment protection
+        {isFirearm ? 'Arrange privately' : 'Meet in person'} — Platform Fee is
+        non-refundable
       </p>
 
       <p style={{ color: 'var(--text-secondary)' }}>
-        Choosing Private Arrangement means:
+        Choosing an in-person handover means:
       </p>
       <ul
         className="space-y-1.5 pl-5"
@@ -234,20 +239,31 @@ export function PrivateArrangeConsent({
         }}
       >
         <li>
-          The seller will be paid <strong style={{ color: 'var(--text-primary)' }}>immediately</strong> once
-          your payment is confirmed — funds are not held.
+          Your payment is <strong style={{ color: 'var(--text-primary)' }}>held by ALL Outdoor</strong>{' '}
+          until you confirm the handover — or automatically 5 days after payment
+          if there is no dispute.
         </li>
         <li>
-          You will <strong style={{ color: 'var(--text-primary)' }}>not</strong> be able to
-          refund or dispute this transaction.
+          We send both of you a WhatsApp, SMS, email and notification with a
+          confirmation link to press when the handover is done.
         </li>
         <li>
-          We will share both parties&apos; name, phone, and email so you
-          can coordinate the SAPS dealer meet between yourselves.
+          We share both parties&apos; name, phone and email after payment so you
+          can arrange the meet {isFirearm ? 'at a SAPS-licensed dealer' : 'in person'}.
         </li>
         <li>
-          If you want full payment protection, cancel and pick{' '}
-          <strong style={{ color: 'var(--text-primary)' }}>Dealer Transfer</strong> instead.
+          <strong style={{ color: 'var(--text-primary)' }}>
+            The Platform Fee is kept by ALL Outdoor even if a dispute is refunded.
+          </strong>{' '}
+          Only the item price can be refunded.
+        </li>
+        <li>
+          There is no courier tracking or delivery guarantee. If you want that,
+          choose{' '}
+          <strong style={{ color: 'var(--text-primary)' }}>
+            {isFirearm ? 'Dealer stock' : 'Courier delivery'}
+          </strong>{' '}
+          instead.
         </li>
       </ul>
 
@@ -259,9 +275,9 @@ export function PrivateArrangeConsent({
           style={{ marginTop: 3, accentColor: 'var(--red)' }}
         />
         <span style={{ color: 'var(--text-secondary)' }}>
-          I understand that the seller is paid immediately, so All
-          Outdoor is not holding the payment and cannot reverse it if
-          something goes wrong at the hand-over.
+          I understand my payment is held until I confirm the handover (or 5
+          days after payment), and that ALL Outdoor keeps the Platform Fee even
+          if a dispute is refunded.
         </span>
       </label>
 
@@ -273,8 +289,8 @@ export function PrivateArrangeConsent({
           style={{ marginTop: 3, accentColor: 'var(--red)' }}
         />
         <span style={{ color: 'var(--text-secondary)' }}>
-          I agree to my name, phone, and email being shared with the
-          seller so we can complete the legal transfer at a SAPS dealer.
+          I agree to my name, phone and email being shared with the seller so we
+          can complete the handover.
         </span>
       </label>
 

@@ -241,30 +241,17 @@ export default async function ListingDetailPage({
   const deliveryEstimate = getListingDeliveryEstimate(listing);
 
   // What the seller actually offered. Firearms always retain the dealer route
-  // (server-enforced); goods always retain the courier. PRIVATE_ARRANGE is the
-  // seller's opt-in on both classes.
+  // (server-enforced); goods always retain the courier. An in-person handover
+  // is always shown too on any non-collection listing — it books no courier and
+  // the buyer may prefer it (the checkout consent spells out the terms).
   const offeredShipping = listing.shippingMethods ?? [];
   const isCollectionOnly =
     listing.collectionOnly || offeredShipping.includes('COLLECTION');
   const handoverMethods: ShippingMethod[] = isCollectionOnly
     ? []
     : listing.isFirearm
-      ? Array.from(
-          new Set<ShippingMethod>([
-            'DEALER_TRANSFER',
-            ...offeredShipping.filter(
-              (m): m is ShippingMethod => m === 'PRIVATE_ARRANGE',
-            ),
-          ]),
-        )
-      : Array.from(
-          new Set<ShippingMethod>([
-            'COURIER',
-            ...offeredShipping.filter(
-              (m): m is ShippingMethod => m === 'PRIVATE_ARRANGE',
-            ),
-          ]),
-        );
+      ? ['DEALER_TRANSFER', 'PRIVATE_ARRANGE']
+      : ['COURIER', 'PRIVATE_ARRANGE'];
 
   // Board review — reference-row "Listed…" line (see listedAgoLabel above).
   const listedLabel = listedAgoLabel(listing.createdAt);
@@ -883,7 +870,9 @@ export default async function ListingDetailPage({
                     method === 'DEALER_TRANSFER'
                       ? 'Dealer transfer'
                       : method === 'PRIVATE_ARRANGE'
-                        ? 'Arrange privately'
+                        ? listing.isFirearm
+                          ? 'Arrange privately'
+                          : 'Meet in person'
                         : 'Courier delivery';
                   const detail =
                     method === 'DEALER_TRANSFER'
@@ -891,7 +880,7 @@ export default async function ListingDetailPage({
                       : method === 'PRIVATE_ARRANGE'
                         ? listing.isFirearm
                           ? 'Meet the seller at a licensed dealer to complete the transfer in person.'
-                          : 'Agree an in-person handover with the seller. No courier.'
+                          : 'Arrange an in-person handover with the seller. No courier — payment is held until you confirm.'
                         : 'Door-to-door, tracked. The live courier rate is shown at checkout.';
                   return (
                     <li

@@ -2655,11 +2655,23 @@ export class AdminService {
     }
 
     // ─── Resolve + validate the refund amount ────────────────────────
-    const remaining = tx.buyerTotal - tx.refundedAmount;
+    // IN-PERSON HANDOVER (PRIVATE_ARRANGE): the Platform Fee is NEVER
+    // refundable. ALL Outdoor keeps it regardless of the dispute reason, so
+    // the refundable balance is capped at buyerTotal - processingFee (the item
+    // price; there is no courier leg on this method). Reaching that cap is a
+    // TERMINAL refund even though refundedAmount < buyerTotal.
+    const platformFeeKept =
+      tx.shippingMethod === 'PRIVATE_ARRANGE' ? tx.processingFee : 0;
+    const refundCap = tx.buyerTotal - platformFeeKept;
+    const remaining = refundCap - tx.refundedAmount;
     if (remaining <= 0) {
-      throw new BadRequestException('This order has already been fully refunded.');
+      throw new BadRequestException(
+        platformFeeKept > 0
+          ? 'This in-person order has already been refunded in full (the Platform Fee is non-refundable).'
+          : 'This order has already been fully refunded.',
+      );
     }
-    // No amount → full refund of whatever balance is left.
+    // No amount → refund whatever balance is left.
     const amount =
       amountZarCents == null ? remaining : Math.floor(amountZarCents);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -2670,10 +2682,10 @@ export class AdminService {
     }
     if (amount > remaining) {
       throw new BadRequestException(
-        `Refund of ${amount}c exceeds the remaining balance of ${remaining}c (buyerTotal ${tx.buyerTotal}c, already refunded ${tx.refundedAmount}c).`,
+        `Refund of ${amount}c exceeds the remaining refundable balance of ${remaining}c (buyerTotal ${tx.buyerTotal}c, Platform Fee kept ${platformFeeKept}c, already refunded ${tx.refundedAmount}c).`,
       );
     }
-    const willBeFullyRefunded = tx.refundedAmount + amount >= tx.buyerTotal;
+    const willBeFullyRefunded = tx.refundedAmount + amount >= refundCap;
     // resolveCancellation is a TERMINAL partial: the buyer keeps the fee but
     // the order is over — it must relist + notify the seller just like a full
     // refund, even though refundedAmount < buyerTotal.
@@ -2698,7 +2710,7 @@ export class AdminService {
     // ─── Atomic claim (concurrency + over-refund lock) ───────────────
     // Reserve the amount in a single conditional update BEFORE the gateway
     // call. The guards make it the lock: two near-simultaneous refunds
-    // can't both pass because `refundedAmount <= buyerTotal - amount`
+    // can't both pass because `refundedAmount <= refundCap - amount`
     // (a constant) plus the increment means the second sees count===0 and
     // aborts before moving money. Only flip to REFUNDED when this refund
     // settles the whole balance; a partial leaves paymentStatus untouched.
@@ -2725,7 +2737,7 @@ export class AdminService {
           where: {
             id: txId,
             paymentStatus: { in: ['HELD', 'DISPUTED'] },
-            refundedAmount: { lte: tx.buyerTotal - amount },
+            refundedAmount: { lte: refundCap - amount },
           },
           data: {
             refundedAmount: { increment: amount },
@@ -2743,7 +2755,7 @@ export class AdminService {
           select: { refundedAmount: true },
         });
         const cumulative = live?.refundedAmount ?? tx.refundedAmount + amount;
-        const full = resolveCancellation || cumulative >= tx.buyerTotal;
+        const full = resolveCancellation || cumulative >= refundCap;
         if (full) {
           await txc.transaction.updateMany({
             where: { id: txId, paymentStatus: { in: ['HELD', 'DISPUTED'] } },
@@ -2778,7 +2790,7 @@ export class AdminService {
         where: {
           id: txId,
           paymentStatus: { in: ['HELD', 'DISPUTED'] },
-          refundedAmount: { lte: tx.buyerTotal - amount },
+          refundedAmount: { lte: refundCap - amount },
         },
         data: {
           refundedAmount: { increment: amount },
@@ -2848,7 +2860,13 @@ export class AdminService {
     if (terminal) {
       void this.prisma.adminAlert.updateMany({
         where: {
-          type: { in: ['BUYER_DISPUTE_RAISED', 'CANCELLATION_REQUESTED'] },
+          type: {
+            in: [
+              'BUYER_DISPUTE_RAISED',
+              'PRIVATE_ARRANGE_DISPUTED',
+              'CANCELLATION_REQUESTED',
+            ],
+          },
           referenceId: txId,
           resolved: false,
         },

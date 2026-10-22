@@ -18,7 +18,9 @@ import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { BuyerTermsAck } from '@/components/buyer-terms-ack';
+import { PrivateArrangeConsent } from '@/components/firearm-consents';
 import { vicinityLabel } from '@/lib/vicinity';
+import { pargoOptionLabel } from '@/lib/pargo-pickup';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import {
   DeliveryOptionsPicker,
@@ -225,13 +227,25 @@ export function CheckoutForm({
   // empty shippingMethods array fall back to the full legal set so old
   // rows don't break. Phase 4 W2 — PRIVATE_ARRANGE (a peer handover) is now
   // legal for non-firearms too.
+  //
+  // MEET IN PERSON IS ALWAYS OFFERED. A handover books no courier and costs
+  // the seller nothing, so the buyer may choose it on any listing class. The
+  // hard-consent screen below spells out the held-funds and non-refundable
+  // Platform Fee terms.
   const legalForClass: ShippingMethod[] = listing.isFirearm
     ? ['DEALER_TRANSFER', 'PRIVATE_ARRANGE']
     : ['COURIER', 'PRIVATE_ARRANGE'];
-  const allowedMethods: ShippingMethod[] =
-    listing.shippingMethods && listing.shippingMethods.length > 0
-      ? legalForClass.filter((m) => listing.shippingMethods.includes(m))
-      : legalForClass;
+  const offeredMethods = listing.shippingMethods ?? [];
+  const sellerAllows = (m: ShippingMethod) =>
+    offeredMethods.length === 0 || offeredMethods.includes(m);
+  const allowedMethods: ShippingMethod[] = isCollection
+    ? []
+    : listing.isFirearm
+      ? legalForClass
+      : [
+          ...(sellerAllows('COURIER') ? (['COURIER'] as const) : []),
+          'PRIVATE_ARRANGE' as const,
+        ];
 
   // Non-firearm goods default to the courier rail (Bob Go door-to-door); when
   // the seller also offers PRIVATE_ARRANGE the buyer can pick it and skip the
@@ -500,9 +514,13 @@ export function CheckoutForm({
         serviceCode: option.serviceCode,
         providerSlug: option.providerSlug,
         serviceLevelCode: option.serviceLevelCode,
-        // What the "Shipping (…)" line in the order summary names: Bob Go's
-        // own service name for the door rate.
-        serviceName: option.detail ?? 'Door delivery',
+        // What the "Shipping (…)" line in the order summary names. Door rates
+        // keep Bob Go's own service name; a Pargo counter is named by store,
+        // never by Bob Go's "Click & Collect" product wording.
+        serviceName:
+          option.kind === 'STORE_PICKUP'
+            ? pargoOptionLabel(option.detail)
+            : (option.detail ?? 'Door delivery'),
         priceCents: option.priceCents,
       },
     });
@@ -1974,158 +1992,6 @@ function DealerTransferConsent({
   );
 }
 
-// Hard-consent gate for PRIVATE_ARRANGE. Two checkboxes + the literal
-// phrase "I UNDERSTAND" typed into a text field. Until all three pass,
-// `accepted` stays false and the parent's isReady() returns false.
-//
-// Why this level of friction: PRIVATE_ARRANGE waives payment protection
-// — the seller is paid the moment Ozow confirms the payment. We need an
-// unmistakable opt-in so a buyer can't later claim they didn't know
-// what they were giving up. The screen also doubles as documentation
-// for support if a dispute lands.
-function PrivateArrangeConsent({
-  accepted,
-  onChange,
-  isFirearm,
-}: {
-  accepted: boolean;
-  onChange: (v: boolean) => void;
-  isFirearm: boolean;
-}) {
-  const [box1, setBox1] = useState(false);
-  const [box2, setBox2] = useState(false);
-  const [phrase, setPhrase] = useState('');
-
-  const phraseOk = phrase.trim().toUpperCase() === 'I UNDERSTAND';
-  const allOk = box1 && box2 && phraseOk;
-
-  // Push the derived `allOk` upward so the parent's isReady() sees it.
-  useEffect(() => {
-    if (allOk !== accepted) onChange(allOk);
-  }, [allOk, accepted, onChange]);
-
-  return (
-    <div
-      className="rounded-[6px] p-4 text-sm space-y-3"
-      style={{
-        background: 'rgba(227,6,19,0.06)',
-        border: '0.5px solid var(--red)',
-        color: 'var(--text-primary)',
-        lineHeight: 1.55,
-      }}
-    >
-      <p
-        className="text-xs uppercase"
-        style={{
-          color: 'var(--red)',
-          letterSpacing: '0.05em',
-          fontWeight: 600,
-        }}
-      >
-        Private arrangement — you waive ALL Outdoor&apos;s payment protection
-      </p>
-
-      <p style={{ color: 'var(--text-secondary)' }}>
-        Choosing Private Arrangement means:
-      </p>
-      <ul
-        className="space-y-1.5 pl-5"
-        style={{
-          listStyle: 'disc',
-          color: 'var(--text-secondary)',
-        }}
-      >
-        <li>
-          The seller will be paid <strong style={{ color: 'var(--text-primary)' }}>immediately</strong> once
-          your payment is confirmed — funds are not held.
-        </li>
-        <li>
-          You will <strong style={{ color: 'var(--text-primary)' }}>not</strong> be able to
-          refund or dispute this transaction.
-        </li>
-        <li>
-          We will share both parties&apos; name, phone, and email so you
-          can coordinate the{' '}
-          {isFirearm ? 'SAPS dealer meet' : 'in-person handover'} between
-          yourselves.
-        </li>
-        <li>
-          If you want full payment protection, cancel and pick{' '}
-          <strong style={{ color: 'var(--text-primary)' }}>
-            {isFirearm ? 'Dealer Transfer' : 'Courier delivery'}
-          </strong>{' '}
-          instead.
-        </li>
-      </ul>
-
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={box1}
-          onChange={(e) => setBox1(e.target.checked)}
-          style={{ marginTop: 3, accentColor: 'var(--red)' }}
-        />
-        <span style={{ color: 'var(--text-secondary)' }}>
-          I understand that the seller is paid immediately, so All
-          Outdoor is not holding the payment and cannot reverse it if
-          something goes wrong at the hand-over.
-        </span>
-      </label>
-
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={box2}
-          onChange={(e) => setBox2(e.target.checked)}
-          style={{ marginTop: 3, accentColor: 'var(--red)' }}
-        />
-        <span style={{ color: 'var(--text-secondary)' }}>
-          I agree to my name, phone, and email being shared with the
-          seller so we can complete the legal transfer at a SAPS dealer.
-        </span>
-      </label>
-
-      <div>
-        <label
-          className="block text-xs mb-1.5"
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          Type <strong style={{ color: 'var(--text-primary)' }}>I UNDERSTAND</strong> to confirm:
-        </label>
-        <input
-          type="text"
-          value={phrase}
-          onChange={(e) => setPhrase(e.target.value)}
-          placeholder="I UNDERSTAND"
-          style={{
-            ...inputStyle,
-            border: phraseOk
-              ? '0.5px solid var(--success)'
-              : '0.5px solid var(--border)',
-          }}
-        />
-      </div>
-
-      <p
-        className="text-xs"
-        style={{
-          color: allOk ? 'var(--success)' : 'var(--text-tertiary)',
-        }}
-      >
-        {allOk
-          ? '✓ Consent recorded. You can proceed to payment below.'
-          : 'Tick both boxes and type the phrase to enable payment.'}
-      </p>
-    </div>
-  );
-}
-
-// AUDIT M33 — single-checkbox firearm attestation. The backend HARD-
-// refuses any firearm transaction without `firearmAttestation18Plus:
-// true`, so this is both a regulatory consent and a server-enforced
-// gate. The wording captures the two things SA firearms law cares
-// about at the point of sale: minimum age and (where applicable)
-// competency for the calibre/type being bought.
 function FirearmAttestation({
   accepted,
   onChange,

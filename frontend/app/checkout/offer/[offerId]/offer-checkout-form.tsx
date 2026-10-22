@@ -12,6 +12,8 @@ import {
   type DeliveryOption,
 } from '@/components/delivery-options-picker';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
+import { DeliveryMethodCards } from '@/components/delivery-method-cards';
+import { PrivateArrangeConsent } from '@/components/firearm-consents';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -128,9 +130,15 @@ export function OfferCheckoutForm({
 }) {
   const { getToken } = useAuth();
 
-  // Only meaningful for a firearm now - an ordinary item rides the single
-  // Bob Go door courier rail (see effectiveMethod).
-  const [method] = useState<ShippingMethod>(isFirearm ? 'DEALER_TRANSFER' : 'COURIER');
+  // Every listing class offers the courier/dealer rail plus an in-person
+  // handover. The offer checkout is a purchase like any other, so the buyer
+  // gets the same choice here as on the single-item checkout.
+  const [method, setMethod] = useState<ShippingMethod>(
+    isFirearm ? 'DEALER_TRANSFER' : 'COURIER',
+  );
+  const allowedMethods: ShippingMethod[] = isFirearm
+    ? ['DEALER_TRANSFER', 'PRIVATE_ARRANGE']
+    : ['COURIER', 'PRIVATE_ARRANGE'];
   // The door rate priced for this parcel + address.
   const [deliveryOption, setDeliveryOption] = useState<DeliveryOption | null>(null);
   // M33 — 18+/competency attestation. Backend hard-refuses firearm
@@ -143,6 +151,11 @@ export function OfferCheckoutForm({
   const [dtConsentAccepted, setDtConsentAccepted] = useState(false);
   useEffect(() => {
     if (method !== 'DEALER_TRANSFER') setDtConsentAccepted(false);
+  }, [method]);
+  // In-person handover hard consent (two boxes + "I UNDERSTAND").
+  const [paConsentAccepted, setPaConsentAccepted] = useState(false);
+  useEffect(() => {
+    if (method !== 'PRIVATE_ARRANGE') setPaConsentAccepted(false);
   }, [method]);
   const [deliveryAddress, setDeliveryAddress] = useState({
     streetAddress: '',
@@ -163,8 +176,8 @@ export function OfferCheckoutForm({
   const [comingSoon, setComingSoon] = useState(false);
 
   // Bob Go door-to-door is the only courier rail. A firearm never rides a
-  // courier at all and keeps its own route.
-  const effectiveMethod: ShippingMethod = isFirearm ? method : 'COURIER';
+  // courier at all and keeps its own route. An in-person handover skips both.
+  const effectiveMethod: ShippingMethod = method;
 
   // The address the menu is priced against, in the picker's shape.
   const addressComplete =
@@ -234,6 +247,9 @@ export function OfferCheckoutForm({
     // No dealerId — see /checkout/[listingId]/checkout-form.tsx for
     // the full rationale. Buyer picks any SAPS-licensed dealer
     // themselves and verifies via the 3-photo upload after delivery.
+    if (method === 'PRIVATE_ARRANGE') {
+      return { ...base, privateArrangeConsent: true };
+    }
     if (method === 'DEALER_TRANSFER') return base;
     return base;
   }
@@ -244,7 +260,7 @@ export function OfferCheckoutForm({
     if (!buyerTermsAck) return false;
     // M33 — firearm offers gated on the attestation checkbox.
     if (isFirearm && !firearmAttestation) return false;
-    if (!isFirearm) {
+    if (method === 'COURIER') {
       // Not "an address exists" - a CHOSEN, PRICED option. Otherwise the
       // buyer can reach Pay without us knowing what delivery costs.
       return !!(
@@ -255,7 +271,7 @@ export function OfferCheckoutForm({
       );
     }
     if (method === 'DEALER_TRANSFER') return dtConsentAccepted;
-    if (method === 'PRIVATE_ARRANGE') return true;
+    if (method === 'PRIVATE_ARRANGE') return paConsentAccepted;
     return false;
   }
 
@@ -322,7 +338,14 @@ export function OfferCheckoutForm({
         </div>
       )}
 
-      {!isFirearm && (
+      <DeliveryMethodCards
+        methods={allowedMethods}
+        selected={method}
+        onSelect={setMethod}
+        isFirearm={isFirearm}
+      />
+
+      {method === 'COURIER' && (
         <div className="space-y-3">
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Delivery address</p>
           {/* UX-3 — saved-address picker (2+ book addresses only). Fills the
@@ -413,6 +436,14 @@ export function OfferCheckoutForm({
         <DealerTransferConsent
           accepted={dtConsentAccepted}
           onChange={setDtConsentAccepted}
+        />
+      )}
+
+      {method === 'PRIVATE_ARRANGE' && (
+        <PrivateArrangeConsent
+          accepted={paConsentAccepted}
+          onChange={setPaConsentAccepted}
+          isFirearm={isFirearm}
         />
       )}
 

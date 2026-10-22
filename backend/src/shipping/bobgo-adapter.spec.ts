@@ -4,6 +4,7 @@ import {
   doorRates,
   fastestDoorRate,
   isDoorRate,
+  pargoPickupRates,
   pickupPointRates,
   randToCents,
   rateToQuote,
@@ -150,5 +151,47 @@ describe('doorRates / pickupPointRates', () => {
     const pp = rate({ id: 2, type: 'pickup-point' });
     expect(doorRates([door, pp]).map((r) => r.id)).toEqual([1]);
     expect(pickupPointRates([door, pp]).map((r) => r.id)).toEqual([2]);
+  });
+});
+
+describe('pargoPickupRates', () => {
+  const door = rate({ id: 1, type: 'door' });
+  const pargo = rate({
+    id: 2,
+    type: 'pickup-point',
+    providerSlug: 'pargo',
+    serviceName: 'Pargo Click & Collect – Clicks – Pinehurst',
+  });
+  const bobBox = rate({
+    id: 3,
+    type: 'pickup-point',
+    providerSlug: 'bobbox',
+    serviceName: 'Bob Box Locker – Glengarry',
+  });
+
+  it('keeps Pargo counters and drops Bob Box lockers', () => {
+    expect(pargoPickupRates([door, pargo, bobBox]).map((r) => r.id)).toEqual([
+      2,
+    ]);
+  });
+
+  it('recognises a Pargo counter by name when the slug is unscoped', () => {
+    const named = rate({
+      id: 4,
+      type: 'pickup-point',
+      providerSlug: 'demo',
+      serviceName: 'Pargo pickup point – Store',
+    });
+    expect(pargoPickupRates([named]).map((r) => r.id)).toEqual([4]);
+  });
+
+  it('never admits a Bob Box locker, whatever its slug', () => {
+    const mislabelled = rate({
+      id: 5,
+      type: 'pickup-point',
+      providerSlug: 'pargo',
+      serviceName: 'Bob Box Locker – Glengarry',
+    });
+    expect(pargoPickupRates([mislabelled])).toEqual([]);
   });
 });

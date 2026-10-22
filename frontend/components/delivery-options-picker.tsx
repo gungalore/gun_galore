@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatPrice } from '@/lib/utils';
+import { pargoDistanceLabel, pargoOptionLabel } from '@/lib/pargo-pickup';
 
 // Same convention as every other browse fetch — the API is a separate origin, so a
 // bare '/api/...' path would hit the Next server instead of the backend.
@@ -255,6 +256,10 @@ export function DeliveryOptionsPicker({
           selectedOption?.kind === option.kind &&
           (option.kind !== 'STORE_PICKUP' ||
             selectedOption.pickupPointLocationId === option.pickupPointLocationId);
+        const isPargo = option.kind === 'STORE_PICKUP';
+        const distance = isPargo
+          ? pargoDistanceLabel(option.pickupPointDistanceKm)
+          : null;
         return (
           <button
             key={`${option.kind}:${option.pickupPointLocationId ?? option.serviceCode}`}
@@ -273,14 +278,24 @@ export function DeliveryOptionsPicker({
           >
             <span aria-hidden className="text-neutral-500"><TruckIcon /></span>
             <span className="min-w-0 flex-1">
-              <span className="block font-medium">{option.label}</span>
-              <span className="block truncate text-sm" style={{ color: 'var(--text-secondary)' }}>
-                {option.kind === 'STORE_PICKUP'
-                  ? `${option.detail ?? 'Pargo counter'}${option.pickupPointDistanceKm != null ? ` · ${option.pickupPointDistanceKm.toFixed(1)} km` : ''}`
+              <span className="block font-medium">
+                {isPargo ? pargoOptionLabel(option.detail) : option.label}
+              </span>
+              <span className="block text-sm" style={{ color: 'var(--text-secondary)' }}>
+                {isPargo
+                  ? `Store pickup${distance ? ` · ${distance}` : ''}`
                   : option.detail}
               </span>
-              {option.kind === 'STORE_PICKUP' && option.description && (
-                <span className="block text-xs" style={{ color: 'var(--text-tertiary)' }}>{option.description}</span>
+              {/* Directions + trading hours stay collapsed until the buyer
+                  picks this counter — the list is a price/choice view, not a
+                  wall of addresses. */}
+              {isPargo && selected && option.description && (
+                <span
+                  className="block text-xs mt-1"
+                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+                >
+                  {option.description}
+                </span>
               )}
             </span>
             <span className="shrink-0 font-semibold tabular-nums">{formatPrice(option.priceCents)}</span>

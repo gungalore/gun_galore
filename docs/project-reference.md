@@ -50,8 +50,8 @@ revisiting.
    `shipping.service.ts`. Two lawful routes: `DEALER_TRANSFER` (buyer picks the
    receiving SAPS-licensed dealer at checkout) and `PRIVATE_ARRANGE` (both parties
    attend a dealer in person, no pre-picked dealer). Every firearm listing must
-   offer DEALER_TRANSFER; PRIVATE_ARRANGE is opt-in by the seller and sits behind
-   a hard consent screen.
+   offer DEALER_TRANSFER; PRIVATE_ARRANGE is always available too, behind a hard
+   consent screen.
 3. **Air rifles are NOT firearms** under SA law. No licence; they ship as a normal
    accessory. Category slug `air-rifles`.
 4. **Live ammunition, primers and propellant are banned platform-wide.** Empty and
@@ -680,7 +680,10 @@ One API (pay-in + refunds) + Payouts API (seller disbursement).
   server-side. Never by courier.
 - **Non-firearms:** the buyer chooses one of **three options** from ONE Bob Go
   quote — **Cheapest Door Delivery**, **Fastest Door Delivery**, or **Store
-  Pickup** (the nearest Pargo counters; the buyer picks one). Every option is
+  Pickup** (the nearest Pargo counters; the buyer picks one). **Pargo is the
+  only pickup-point network**; Bob Box locker rates arrive in the same Bob Go
+  reply and are filtered out (`pargoPickupRates`) so they are never offered or
+  bookable. Every option is
   re-quoted **server-side** at Pay (`ShippingService.quoteForSelection`): the
   browser sends only the option kind and, for Store Pickup, the counter id — never
   a price/carrier/service code. The 10% delivery margin is folded into each
@@ -689,6 +692,14 @@ One API (pay-in + refunds) + Payouts API (seller disbursement).
   `pickupPointSnapshot` the counter. `shippingMethod` names the **shape** of the
   delivery, not the company — route post-booking work on
   `Transaction.carrierProvider`.
+- **In-person handover (`PRIVATE_ARRANGE`)** is always offered on any listing
+  that is not collection-only, firearm or not, whether or not the seller
+  enabled it in the Sell form: it books no courier and the checkout
+  hard-consent screen spells out the terms. Funds stay HELD until the buyer
+  confirms the handover (or auto-release 5 days after payment); both parties
+  get WhatsApp/SMS/email/in-app confirmation links. On any refund or upheld
+  dispute, **ALL Outdoor keeps the Platform Fee** — the buyer is refunded the
+  item price only.
 - **Seller pickup scheduling:** on accept the seller picks a collection day
   (soonest business day, or the following business day) and an optional window
   (`08:00-11:00` / `11:00-14:00` / `14:00-17:00`). Stored on

@@ -31,6 +31,23 @@ export function pickupPointRates(rates: BobGoRate[]): BobGoRate[] {
 }
 
 /**
+ * The Pargo counters in a quote.
+ *
+ * Bob Go also returns Bob Box locker rates; those are NOT a supported rail
+ * (the locker network was retired with Pudo), so they must never reach the
+ * buyer-facing menu or the booking replay. Match on the provider slug first,
+ * then fall back to the service name because a sandbox/production slug can be
+ * unprefixed while the name is still explicit.
+ */
+export function pargoPickupRates(rates: BobGoRate[]): BobGoRate[] {
+  return pickupPointRates(rates).filter((r) => {
+    if (/bob\s*box/i.test(r.serviceName ?? '')) return false;
+    const slug = (r.providerSlug ?? '').trim().toLowerCase();
+    return slug === 'pargo' || /^pargo\b/i.test(r.serviceName ?? '');
+  });
+}
+
+/**
  * Bob Go prices in RAND; every price in this codebase is integer CENTS.
  *
  * Math.round, not floor or ceil: a half-cent rounding down would under-collect

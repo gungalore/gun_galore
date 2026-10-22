@@ -12,4 +12,4 @@
  * POLICY_VERSION ended up frozen at 2026-07-17 while /terms and /privacy both
  * moved underneath it.
  */
-export const REFUND_TERMS_VERSION = '2026-10-10';
+export const REFUND_TERMS_VERSION = '2026-10-22';

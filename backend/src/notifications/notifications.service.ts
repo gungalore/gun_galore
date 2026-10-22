@@ -4485,6 +4485,9 @@ export class NotificationsService {
   async privateArrangeContactReveal(d: {
     listingTitle: string;
     transactionId: string;
+    isFirearm: boolean;
+    /** Buyer's one-tap "Item received / Collected" link. */
+    actionUrl?: string;
     buyer: {
       email: string;
       firstName: string | null;
@@ -4500,6 +4503,8 @@ export class NotificationsService {
     sellerPayout: number;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const url = d.actionUrl ?? txUrl;
+    const where = d.isFirearm ? 'at a SAPS-licensed dealer' : 'in person';
     const buyerName =
       [d.buyer.firstName, d.buyer.lastName].filter(Boolean).join(' ') ||
       'Buyer';
@@ -4507,7 +4512,9 @@ export class NotificationsService {
       [d.seller.firstName, d.seller.lastName].filter(Boolean).join(' ') ||
       'Seller';
 
-    // Email to the BUYER — reveals SELLER details.
+    // Email to the BUYER — reveals SELLER details, and carries the buyer's own
+    // one-tap confirmation link so the handover can be completed from either
+    // side without waiting for the other party.
     const buyerRows: { label: string; value: string }[] = [
       { label: 'Seller name', value: sellerName },
     ];
@@ -4516,25 +4523,42 @@ export class NotificationsService {
     }
     buyerRows.push({ label: 'Seller email', value: d.seller.email });
     const buyerHtml = this.email({
-      status: { tone: 'success', label: 'Contact revealed' },
-      headline: 'Contact details revealed',
-      body: `Hi ${b(buyerName)}, your purchase of ${b(d.listingTitle)} is confirmed and the seller has been paid. To complete the legal transfer, contact the seller and arrange a date + SAPS-licensed dealer between you both. Remember: the dealer paperwork is what transfers ownership legally — don't hand over cash or take possession outside a licensed dealer's premises.`,
+      status: { tone: 'pending', label: 'Awaiting handover' },
+      headline: 'Arrange the handover',
+      body: `Hi ${b(buyerName)}, your purchase of ${b(d.listingTitle)} is confirmed. Your payment is held by ALL Outdoor until you confirm the handover (or 5 days after payment if there is no dispute). Contact the seller and arrange to meet ${where}. Tap the button when the item is in your hands — that releases the seller's payment. The Platform Fee is non-refundable, even if a dispute is refunded.`,
       rows: buyerRows,
-      cta: { label: 'View order', url: txUrl },
+      cta: { label: 'Confirm received or dispute', url },
       preheader: `Seller contact details for ${d.listingTitle}`,
     });
     await this.send(
       d.buyer.email,
-      'Contact details for your purchase — ' + d.listingTitle,
+      'Arrange the handover — ' + d.listingTitle,
       buyerHtml,
     );
     await this.sendSms(
       d.buyer.phone,
-      `ALL Outdoor: Contact ${sellerName}${d.seller.phone ? ' on ' + d.seller.phone : ''} to arrange the dealer meet for ${truncate(d.listingTitle, 30)}.`,
+      `ALL Outdoor: Contact ${sellerName}${d.seller.phone ? ' on ' + d.seller.phone : ''} to arrange the handover for ${truncate(d.listingTitle, 30)}. Confirm when collected.${d.actionUrl ? ` Open: ${d.actionUrl}` : ''}`,
       `pa-buyer-${d.transactionId}`,
+      {
+        whatsapp: {
+          templateKey: 'private_arrange_buyer_confirm',
+          vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+        },
+      },
     );
+    await this.persistByEmail(d.buyer.email, {
+      category: 'BUYER',
+      type: 'private_arrange_handover',
+      title: 'Arrange the handover',
+      body: `${d.listingTitle} — contact the seller and confirm once you have received it.`,
+      url,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
 
-    // Email to the SELLER — reveals BUYER details + payout note.
+    // Email to the SELLER — reveals BUYER details + the held-payout note.
     const sellerRows: { label: string; value: string }[] = [
       { label: 'Buyer name', value: buyerName },
     ];
@@ -4542,23 +4566,23 @@ export class NotificationsService {
       sellerRows.push({ label: 'Buyer phone', value: d.buyer.phone });
     }
     sellerRows.push({ label: 'Buyer email', value: d.buyer.email });
-    sellerRows.push({ label: 'Payout', value: formatRand(d.sellerPayout) });
+    sellerRows.push({ label: 'Payout on handover', value: formatRand(d.sellerPayout) });
     const sellerHtml = this.email({
-      status: { tone: 'success', label: 'Contact revealed' },
-      headline: 'Contact details revealed',
-      body: `Hi ${b(sellerName)}, ${b(buyerName)} has bought your listing ${b(d.listingTitle)} as a Private Arrangement. Payment of ${b(formatRand(d.sellerPayout))} has been released to your account immediately (no payment-protection hold). Coordinate a SAPS-licensed dealer between you and complete the legal transfer paperwork — don't hand the item over outside a licensed dealer's premises.`,
+      status: { tone: 'pending', label: 'Awaiting handover' },
+      headline: 'Arrange the handover',
+      body: `Hi ${b(sellerName)}, ${b(buyerName)} has bought your listing ${b(d.listingTitle)}. Payment of ${b(formatRand(d.sellerPayout))} is held by ALL Outdoor until the buyer confirms the handover (or 5 days after payment if there is no dispute). Contact the buyer and arrange to meet ${where}. Tap the handover link when you have handed the item over.`,
       rows: sellerRows,
       cta: { label: 'View sale', url: txUrl },
-      preheader: `${buyerName} bought ${d.listingTitle} — payment released`,
+      preheader: `${buyerName} bought ${d.listingTitle} — payment held until handover`,
     });
     await this.send(
       d.seller.email,
-      'New sale (Private Arrangement) — ' + d.listingTitle,
+      'New sale (in-person handover) — ' + d.listingTitle,
       sellerHtml,
     );
     await this.sendSms(
       d.seller.phone,
-      `ALL Outdoor: ${truncate(d.listingTitle, 30)} sold to ${buyerName}${d.buyer.phone ? ' (' + d.buyer.phone + ')' : ''}. Payment released. Arrange the dealer meet.`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 30)} sold to ${buyerName}${d.buyer.phone ? ' (' + d.buyer.phone + ')' : ''}. Payment is held until the buyer confirms the handover. Arrange the meet.`,
       `pa-seller-${d.transactionId}`,
     );
 
@@ -4566,12 +4590,12 @@ export class NotificationsService {
     // it must NOT create the courier 'new_sale — accept within 48h'
     // (dismissible:false) inbox row. Instead drop a truthful, DISMISSIBLE
     // seller row so the inbox isn't silent and nothing becomes a permanent
-    // nag (nothing resolves rows on a healthy PA — funds are already out).
+    // nag.
     await this.persistByEmail(d.seller.email, {
       category: 'SELLER',
       type: 'new_sale',
       title: 'Your listing sold',
-      body: `${d.listingTitle} sold — payment released. Arrange the SAPS dealer meet with the buyer.`,
+      body: `${d.listingTitle} sold — payment is held until the buyer confirms the handover. Arrange the meet with the buyer.`,
       url: `/transactions/${d.transactionId}`,
       iconKey: 'sold',
       linkedType: 'transaction',

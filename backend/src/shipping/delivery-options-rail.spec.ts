@@ -185,6 +185,19 @@ describe('three buyer options', () => {
     expect(opts.storePickup).toEqual([]);
   });
 
+  it('offers Pargo counters only — Bob Box lockers are not supported', async () => {
+    const bobBox = {
+      ...PP(8, 0.2),
+      id: 8,
+      serviceCode: 'bobgo_PP_8',
+      serviceName: 'Bob Box Locker – Glengarry',
+      providerSlug: 'bobbox',
+    };
+    const { svc } = makeService({ rates: [PP(7, 0.7), bobBox] });
+    const opts = await svc.deliveryOptions('L1', DELIVERY);
+    expect(opts.storePickup.map((p) => p.pickupPointLocationId)).toEqual([7]);
+  });
+
   it('server re-quotes and resolves the selected Store Pickup counter', async () => {
     const { svc } = makeService({ rates: [PP(7, 0.7, 98.39)] });
     const quote = await svc.quoteForSelection('L1', DELIVERY, {

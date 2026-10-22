@@ -3895,13 +3895,16 @@ export class TransactionsService {
     }
 
     // Contact-detail strip — phone + the seller-side email are only
-    // revealed when this is a paid PRIVATE_ARRANGE transaction. For
-    // any other shipping method we blank them so a curious buyer
+    // revealed when this is a PAID PRIVATE_ARRANGE transaction. Both parties
+    // need each other's details during the handover, so the reveal starts at
+    // payment (HELD) and survives the later RELEASED flip — not only after
+    // release. For any other shipping method we blank them so a curious buyer
     // can't pluck the seller's phone out of the JSON.
     const isPaidPrivateArrange =
       tx.shippingMethod === 'PRIVATE_ARRANGE' &&
       !!tx.privateArrangeAcceptedAt &&
-      tx.paymentStatus === 'RELEASED';
+      !!tx.paidAt &&
+      (tx.paymentStatus === 'HELD' || tx.paymentStatus === 'RELEASED');
     // P3 — collection orders reveal contact once paid (HELD or RELEASED) so
     // the buyer + seller can coordinate the in-person pickup. Payment is
     // still HELD until the buyer confirms collection, so this is a
@@ -5098,9 +5101,18 @@ export class TransactionsService {
         include: { listing: true, buyer: true, seller: true },
       });
       if (!tx) return;
+      // Buyer's own one-tap "Item received / Collected" link, sent with the
+      // contact reveal so they don't have to wait for the seller to tap first.
+      const buyerAction = await this.mintPrivateArrangeAction(
+        txId,
+        tx.buyerId,
+        'buyer',
+      );
       await this.notifications.privateArrangeContactReveal({
         listingTitle: tx.listing.title,
         transactionId: txId,
+        isFirearm: tx.listing.isFirearm,
+        actionUrl: buyerAction.actionUrl,
         buyer: {
           email: tx.buyer.email,
           firstName: tx.buyer.firstName,
@@ -5519,7 +5531,19 @@ export class TransactionsService {
     // 2. Seller's offered subset — if the seller didn't pick this method
     //    in the Sell form, the buyer can't choose it. Empty array means
     //    "any legal option" for backwards compat with older listings.
-    if (sellerOffered.length > 0 && !sellerOffered.includes(chosen)) {
+    //
+    //    EXCEPTION — an in-person handover (PRIVATE_ARRANGE) is always
+    //    available on any listing that is not collection-only, firearm or not.
+    //    It doesn't book a courier or cost the seller anything, and the buyer
+    //    must be able to meet the seller and accept the in-person terms if they
+    //    prefer. The checkout hard-consent screen is the gate, not the seller's
+    //    listing options.
+    const buyerMayChoosePrivateArrange = chosen === 'PRIVATE_ARRANGE';
+    if (
+      sellerOffered.length > 0 &&
+      !sellerOffered.includes(chosen) &&
+      !buyerMayChoosePrivateArrange
+    ) {
       throw new BadRequestException(
         `Seller is not offering ${chosen.replace('_', ' ')} for this listing`,
       );

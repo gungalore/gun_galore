@@ -46,6 +46,7 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 type FirearmRoute = 'DEALER_TRANSFER' | 'PRIVATE_ARRANGE';
+type GoodsRoute = 'COURIER' | 'PRIVATE_ARRANGE';
 
 // Per-firearm state — route + the two required confirmations, keyed by
 // listingId. Both attestation and the route's consent must be accepted
@@ -90,6 +91,12 @@ export default function CartPage() {
   const [addr, setAddr] = useState<ManualAddressValue>(emptyManualAddress);
   // Per-firearm route + consent state, keyed by listingId.
   const [firearmState, setFirearmState] = useState<Record<string, FirearmState>>({});
+  // Per-non-firearm fulfilment choice. Every item gets its own Courier /
+  // Arrange privately toggle; the default is the courier rail.
+  const [goodsRoute, setGoodsRoute] = useState<Record<string, GoodsRoute>>({});
+  // One hard-consent gate covers every non-firearm item the buyer switches to
+  // an in-person handover. It resets when the buyer switches back to courier.
+  const [goodsPaConsent, setGoodsPaConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Phase-1 payment gate — card payments aren't live yet, so the cart
@@ -221,7 +228,8 @@ export default function CartPage() {
   );
   const unitCount = items.reduce((s, i) => s + qtyOf(i.quantity), 0);
 
-  // Split shippable (courier) items from firearms — firearms branch to a
+  // Split shippable (courier) items from firearms and from non-firearm items
+  // the buyer has switched to an in-person handover. Firearms branch to a
   // dealer-transfer / in-person route and never touch the courier picker.
   // Collection-only lines (trailers / oversized goods / >100Wh lithium) can't
   // ride the cart rail at all — the backend rejects a courier method for them
@@ -229,12 +237,23 @@ export default function CartPage() {
   // Add-to-cart for these, but a stale localStorage cart written before that
   // fix may still carry one, so belt-and-braces here: surface + block them by
   // name rather than letting the whole basket hard-fail with an unnamed error.
+  const goodsRouteFor = (listingId: string): GoodsRoute =>
+    goodsRoute[listingId] ?? 'COURIER';
+  const isGoodsPa = (i: (typeof items)[number]) =>
+    !i.isFirearm &&
+    !i.shippingMethods?.includes('COLLECTION') &&
+    goodsRouteFor(i.listingId) === 'PRIVATE_ARRANGE';
+
   const collectionItems = items.filter(
     (i) => !i.isFirearm && i.shippingMethods?.includes('COLLECTION'),
   );
   const shippableItems = items.filter(
-    (i) => !i.isFirearm && !i.shippingMethods?.includes('COLLECTION'),
+    (i) =>
+      !i.isFirearm &&
+      !i.shippingMethods?.includes('COLLECTION') &&
+      !isGoodsPa(i),
   );
+  const goodsPaItems = items.filter((i) => isGoodsPa(i));
   const firearmItems = items.filter((i) => i.isFirearm);
 
   // The per-firearm state for a listing, defaulting to DEALER_TRANSFER with
@@ -311,10 +330,13 @@ export default function CartPage() {
   // Delivery for the whole cart: the sum of the chosen options. Each figure is
   // already margin-inclusive (one number for the buyer), and a consolidated
   // group contributes ONE charge, not one per line.
-  const deliveryTotalCents = deliveryGroups.reduce(
-    (sum, g) => sum + (chosenDelivery[g.groupKey]?.priceCents ?? 0),
-    0,
-  );
+  const deliveryTotalCents =
+    shippableItems.length === 0
+      ? 0
+      : deliveryGroups.reduce(
+          (sum, g) => sum + (chosenDelivery[g.groupKey]?.priceCents ?? 0),
+          0,
+        );
 
   // Every firearm must have a chosen route, its 18+ attestation, and the
   // consent for the chosen route accepted.
@@ -322,6 +344,10 @@ export default function CartPage() {
     const s = stateFor(i.listingId);
     return s.route && s.attestationAccepted && s.consentAccepted;
   });
+
+  // Every non-firearm item switched to an in-person handover needs the hard
+  // consent once. Switching all of them back to courier releases the gate.
+  const goodsPaReady = goodsPaItems.length === 0 || goodsPaConsent;
 
   // One acknowledgement for the whole cart — the buyer ticks once, over a list
   // naming each item's town. It rides on CreateOrderDto, not per line.
@@ -331,6 +357,7 @@ export default function CartPage() {
     buyerTermsAck &&
     courierReady &&
     firearmsReady &&
+    goodsPaReady &&
     collectionItems.length === 0 &&
     // UX-M24 — a sold-out line poisons the whole order server-side, so gate on
     // it here. Only ever true off a SUCCESSFUL stock read; a failed fetch
@@ -379,6 +406,15 @@ export default function CartPage() {
         // always did. The server re-resolves against live stock and reserves
         // that many units atomically before the order exists.
         const units = qtyOf(i.quantity);
+        // In-person handover: no courier leg, no address, no delivery quote.
+        if (isGoodsPa(i)) {
+          return {
+            listingId: i.listingId,
+            shippingMethod: 'PRIVATE_ARRANGE' as const,
+            privateArrangeConsent: true,
+            ...(units > 1 ? { quantity: units } : {}),
+          };
+        }
         const deliveryGroup = deliveryGroups.find((g) =>
           g.listingIds.includes(i.listingId),
         );
@@ -503,7 +539,12 @@ export default function CartPage() {
         // lines to the same method + destination, so any such group consolidates
         // at checkout. Flag it here so the buyer knows the per-parcel handling
         // fee is charged once, not once per item.
-        const shippableInGroup = g.items.filter((i) => !i.isFirearm).length;
+        const shippableInGroup = g.items.filter(
+          (i) =>
+            !i.isFirearm &&
+            !i.shippingMethods?.includes('COLLECTION') &&
+            goodsRouteFor(i.listingId) === 'COURIER',
+        ).length;
         return (
         <div
           // ⚠️ sellerId, never the handle. This was `key={g.username}`, and a
@@ -590,6 +631,47 @@ export default function CartPage() {
                   >
                     Firearm — dealer / in-person
                   </span>
+                )}
+
+                {!i.isFirearm && !i.shippingMethods?.includes('COLLECTION') && (
+                  <div className="mt-2 flex gap-2">
+                    {(['COURIER', 'PRIVATE_ARRANGE'] as GoodsRoute[]).map(
+                      (route) => {
+                        const active = goodsRouteFor(i.listingId) === route;
+                        return (
+                          <button
+                            key={route}
+                            type="button"
+                            onClick={() => {
+                              setGoodsRoute((prev) => ({
+                                ...prev,
+                                [i.listingId]: route,
+                              }));
+                              // A different parcel mix changes every courier
+                              // price; drop the stale selection so the total
+                              // can't survive the switch.
+                              setChosenDelivery({});
+                              setDeliveryGroups([]);
+                            }}
+                            aria-pressed={active}
+                            className="px-2.5 py-1 rounded-[6px] text-xs"
+                            style={{
+                              background: active
+                                ? 'var(--red)'
+                                : 'var(--bg-inset)',
+                              color: active ? '#fff' : 'var(--text-secondary)',
+                              border: '0.5px solid var(--border)',
+                              fontWeight: 500,
+                            }}
+                          >
+                            {route === 'COURIER'
+                              ? 'Courier'
+                              : 'Arrange privately'}
+                          </button>
+                        );
+                      },
+                    )}
+                  </div>
                 )}
 
                 {/* Sold out beats the stepper — there's nothing to choose a
@@ -764,6 +846,16 @@ export default function CartPage() {
         </div>
       ))}
 
+      {/* In-person handover consent for non-firearm items. One gate covers
+          every item the buyer switched away from the courier rail. */}
+      {goodsPaItems.length > 0 && (
+        <PrivateArrangeConsent
+          accepted={goodsPaConsent}
+          onChange={setGoodsPaConsent}
+          isFirearm={false}
+        />
+      )}
+
       {/* Delivery — courier picker only when there ARE shippable (non-firearm)
           items. A firearm-only cart hides this entirely. */}
       {shippableItems.length > 0 && (
@@ -826,7 +918,6 @@ export default function CartPage() {
           </p>
           {firearmItems.map((i) => {
             const s = stateFor(i.listingId);
-            const offersPrivate = i.shippingMethods.includes('PRIVATE_ARRANGE');
             return (
               <div
                 key={i.listingId}
@@ -837,10 +928,9 @@ export default function CartPage() {
                   {i.title}
                 </p>
 
-                {/* Route toggle — DEALER_TRANSFER always; PRIVATE_ARRANGE only
-                    if the seller offered it. */}
+                {/* Route toggle — every firearm offers both routes. */}
                 <div className="flex gap-2">
-                  {(['DEALER_TRANSFER', ...(offersPrivate ? ['PRIVATE_ARRANGE'] : [])] as FirearmRoute[]).map(
+                  {(['DEALER_TRANSFER', 'PRIVATE_ARRANGE'] as FirearmRoute[]).map(
                     (route) => (
                       <button
                         key={route}
@@ -861,7 +951,7 @@ export default function CartPage() {
                       >
                         {route === 'DEALER_TRANSFER'
                           ? 'Dealer transfer — funds held until verified'
-                          : 'Arrange in person — released immediately'}
+                          : 'Arrange in person — payment held until confirmed'}
                       </button>
                     ),
                   )}
@@ -883,6 +973,7 @@ export default function CartPage() {
                   <PrivateArrangeConsent
                     accepted={s.consentAccepted}
                     onChange={(v) => setFirearm(i.listingId, { consentAccepted: v })}
+                    isFirearm
                   />
                 )}
               </div>

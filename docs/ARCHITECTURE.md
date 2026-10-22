@@ -579,11 +579,12 @@ rail-agnostic.
 
 ### Branches that skip the normal release
 
-- **`PRIVATE_ARRANGE`** (buyer and seller take a firearm to a dealer
-  themselves): funds are released **immediately at payment capture**, because
-  there is no delivery event the platform can observe. The buyer has explicitly
-  waived payment protection, and this requires the seller's prior consent
-  (`Listing.privateArrangeConsentAt`). See `maybeImmediatePayout()`.
+- **`PRIVATE_ARRANGE`** (in-person handover, firearm or goods): funds stay
+  **HELD** after payment. Both parties receive WhatsApp/SMS/email/in-app links;
+  the seller marks the item delivered and the buyer confirms receipt, which
+  releases the payout. If neither acts, it auto-releases 5 days after payment
+  when there is no dispute. The Platform Fee is retained by ALL Outdoor on any
+  refund. See `onPrivateArrangePaid()` / `releasePrivateArrange()`.
 - **`DEALER_TRANSFER`** (the normal firearm path): confirm-delivery is *not*
   enough. `dealerVerificationStatus` must be `APPROVED` — the SAPS 534 form,
   stock register page and firearm photos must have passed, either via Claude
@@ -830,10 +831,9 @@ stock-register page plus the firearm, verified by Claude vision or an admin,
 before it will release the seller's money. See
 `backend/src/payments/saps534.service.ts` and `dealer-verification.service.ts`.
 
-**`PRIVATE_ARRANGE`** — buyer and seller go to a dealer together and handle the
-paperwork themselves. Legal, but the platform cannot observe it, so payment
-protection is waived and funds release at capture. Requires the seller's
-recorded consent before it can even be offered.
+**`PRIVATE_ARRANGE`** — in-person handover, firearm or goods. Legal, and the
+platform holds the funds until the buyer confirms the handover (or auto-releases
+5 days after payment). The Platform Fee is non-refundable on this rail.
 
 **Air rifles are not firearms** under South African law. No licence, ships as an
 ordinary accessory. Category slug `air-rifles`. Do not fold them into firearm

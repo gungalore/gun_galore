@@ -241,8 +241,48 @@ describe('AdminService.refundTransaction (manual rail)', () => {
     await expect(
       service.refundTransaction('TX1', 'admin1', 'raced', 30_000),
     ).rejects.toBeInstanceOf(BadRequestException);
-    // Claim lost → no child, no buyer notification.
+    // Claim lost — no child, no buyer notification.
     expect(txc.transaction.create).not.toHaveBeenCalled();
     expect(notifications.refundIssuedBuyer).not.toHaveBeenCalled();
+  });
+
+  it('in-person handover: refunds the item price but keeps the Platform Fee', async () => {
+    const { service, txc } = makeService({
+      tx: {
+        ...baseTx,
+        shippingMethod: 'PRIVATE_ARRANGE',
+        processingFee: 15_000,
+      },
+    });
+    // No amount supplied = the full refundable balance: R1 000 - R150 fee.
+    await service.refundTransaction('TX1', 'admin1', 'dispute upheld');
+
+    expect(txc.transaction.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        buyerTotal: 85_000,
+        refundedAmount: 85_000,
+        paymentStatus: 'REFUNDED',
+      }),
+    });
+    // Reaching the cap is terminal even though refundedAmount < buyerTotal.
+    expect(txc.transaction.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ paymentStatus: 'REFUNDED' }),
+      }),
+    );
+  });
+
+  it('in-person handover: refuses an amount above the item price', async () => {
+    const { service, txc } = makeService({
+      tx: {
+        ...baseTx,
+        shippingMethod: 'PRIVATE_ARRANGE',
+        processingFee: 15_000,
+      },
+    });
+    await expect(
+      service.refundTransaction('TX1', 'admin1', 'too much', 90_000),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(txc.transaction.create).not.toHaveBeenCalled();
   });
 });

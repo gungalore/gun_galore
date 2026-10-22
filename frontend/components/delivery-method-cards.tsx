@@ -64,9 +64,11 @@ export function DeliveryMethodCards({
       <div style={{ display: 'grid', gap: 8 }}>
         {methods.map((m) => {
           const meta = META[m] ?? { title: m, subtitle: '', icon: null };
+          const title =
+            m === 'PRIVATE_ARRANGE' && !isFirearm ? 'Meet in person' : meta.title;
           const subtitle =
             m === 'PRIVATE_ARRANGE' && !isFirearm
-              ? 'Agree an in-person handover with the seller'
+              ? 'Meet the seller in person. Payment is held until you confirm; the Platform Fee is non-refundable.'
               : meta.subtitle;
           const active = selected === m;
           return (
@@ -87,7 +89,7 @@ export function DeliveryMethodCards({
               </span>
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span className="block text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                  {meta.title}
+                  {title}
                 </span>
                 <span className="block text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
                   {subtitle}

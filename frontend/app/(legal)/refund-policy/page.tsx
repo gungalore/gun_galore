@@ -74,13 +74,14 @@ export default function RefundPolicyPage() {
       </p>
       <p>
         Where a transaction uses the{' '}
-        <strong>Private Arrangement</strong> transfer option for an item
-        that requires a licence or permit (buyer and seller attend a
-        licensed dealer together and complete the transfer in person),
-        payment captures and is paid over to the seller immediately.
-        Delivery-confirmation protection does not apply, because the
-        buyer expressly waives it at checkout
-        and physical possession happens face-to-face. See our{' '}
+        <strong>in-person handover</strong> option (the buyer and seller meet
+        and complete the handover themselves, at a licensed dealer for a
+        firearm), the payment is captured and <strong>held</strong>. It is
+        released when the buyer confirms the handover, or automatically five
+        days after payment if there is no dispute. Both parties receive a
+        WhatsApp, SMS, email and in-app confirmation link. If a dispute is
+        upheld and refunded, the buyer is refunded the item price only — the
+        Platform Fee is non-refundable on this option. See our{' '}
         <a href="/terms" style={{ color: 'var(--red)' }}>Terms of Service</a>{' '}
         paragraph 7 for the binding text. Additional terms apply to
         regulated categories. See the{' '}
@@ -221,6 +222,16 @@ export default function RefundPolicyPage() {
           arrives, arrives damaged, is not what was listed, or the seller never
           hands it over, the dispute route in sections&nbsp;2 and&nbsp;3 applies
           in full.
+        </li>
+        <li>
+          <strong>The Platform Fee on an in-person handover.</strong> If you
+          chose an in-person handover (arrange privately / meet the seller), the
+          Platform Fee is non-refundable. Where a dispute is upheld and refunded,
+          you are refunded the item price only; ALL Outdoor retains the Platform
+          Fee regardless of the reason for the dispute. This does not affect a
+          refund owed because the item never arrived or was not as described
+          under the courier rail, where the Platform Fee is refunded with the
+          item price.
         </li>
       </ul>
 

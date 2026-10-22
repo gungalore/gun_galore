@@ -16,7 +16,7 @@ import type { BobGoAddress, BobGoRate } from './bobgo.types';
 import {
   cheapestDoorRate,
   fastestDoorRate,
-  pickupPointRates,
+  pargoPickupRates,
   rateToQuote,
 } from './bobgo-adapter';
 import { deliveryDaysFor } from './service-levels';
@@ -581,7 +581,9 @@ export class ShippingService {
       fastestDoor: this.doorOption(fastestDoorRate(rates)),
       // Nearest first (the buyer travels), capped at 5. Price is shown too;
       // Pargo prices are usually flat across counters near one address.
-      storePickup: [...pickupPointRates(rates)]
+      // Pargo ONLY: Bob Box locker rates ride in the same Bob Go reply but are
+      // not a rail we support, so they must never be offered or bookable.
+      storePickup: [...pargoPickupRates(rates)]
         .sort(
           (a, b) =>
             (a.pickupPointDistanceKm ?? Infinity) -

@@ -199,15 +199,8 @@ const SERVICE_LEVELS: readonly ServiceLevelInfo[] = [
     deliveryDaysMin: 3,
     deliveryDaysMax: 5,
   },
-  // Bob Box (pickup point) — cut-off 14:00.
-  {
-    providerSlug: 'bobbox',
-    label: 'Bob Box',
-    collectionCutoff: '14:00',
-    deliveryDaysMin: 1,
-    deliveryDaysMax: 3,
-    requirements: 'Parcel is delivered to a Bob Box locker.',
-  },
+  // Bob Box (locker) was retired with Pudo. Pargo is the only pickup-point
+  // rail; a Bob Box rate must never be offered (see pargoPickupRates).
   // Sandbox stub — no real cut-off semantics.
   {
     providerSlug: 'sandbox',

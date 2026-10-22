@@ -713,15 +713,10 @@ export class OffersService {
       offer.listing.autoAcceptThreshold = null;
     }
 
-    // PRIVATE_ARRANGE is legal only for firearms (SAPS inter-dealer
-    // peer transfer). Strip it from the offer-checkout options on
-    // non-firearm listings so the buyer never sees a method the
-    // transaction layer would reject at submit (validateShipping).
-    if (!offer.listing.isFirearm && Array.isArray(offer.listing.shippingMethods)) {
-      offer.listing.shippingMethods = offer.listing.shippingMethods.filter(
-        (m) => m !== 'PRIVATE_ARRANGE',
-      );
-    }
+    // PRIVATE_ARRANGE is available on every listing class now (a peer
+    // in-person handover), so the offer checkout may show it for goods too.
+    // The transaction layer still validates it and the hard-consent gate is on
+    // the checkout screen.
 
     return offer;
   }
