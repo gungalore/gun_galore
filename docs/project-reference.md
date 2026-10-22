@@ -1490,16 +1490,19 @@ warning somebody before a licence expires, silence is the worst outcome availabl
 
 ### Category seeding
 
-⚠️ **DO NOT RUN `backend/scripts/seed-categories.mjs` until it is reconciled with
-`prisma/seed.ts`.** The script deactivates **every** category and re-activates only
-its own list, and its list is four parents short — Overlanding, Hunting, Outdoor
-Clothing & Footwear and Archery & Bowhunting would be left `isActive=false` along
-with everything under them. Its usage comment also still says `ssh gungalore`,
-which is the alias that was deleted precisely because it could resolve to the
-retired box. Production currently holds 189 Category rows.
+The taxonomy lives in **`backend/prisma/category-tree.ts`** and nowhere else. Both
+`prisma/seed.ts` and `backend/scripts/seed-categories.ts` import it, and
+`backend/scripts/generate-category-migration.ts` emits the SQL that ships it to
+production through `prisma migrate deploy`.
+
+To change the tree: edit `category-tree.ts`, run the generator, review the
+generated migration, then deploy. Production is changed by migrations, not by the
+seed.
 
 `prisma/seed.ts` re-introduces test dealers and a seed admin, so it is **not** safe
-against production either.
+against production. `seed-categories.ts` touches categories only and is the repair
+tool for a database whose rows have drifted from the tree; it deactivates every
+category and reactivates only what the tree declares.
 
 ### Profile-completion verify-success fallback
 

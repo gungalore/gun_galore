@@ -22,7 +22,7 @@ const INELIGIBLE_NAMES = ['Ammo'];
 
 // Directional complements: [fromName, toName, requireExactMatch].
 // requireExactMatch=true → narrow by calibre (reloading: a .308 die ≠ 9mm).
-// false → soft pairing (rod → line). Names match scripts/seed-categories.mjs.
+// false → soft pairing (rod → line). Names match prisma/category-tree.ts.
 const RELATIONS = [
   // ── Reloading (calibre-matched) ──
   ['Rifle Brass Cases', 'Rifle Bullets', true],
