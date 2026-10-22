@@ -44,7 +44,6 @@ import {
   shouldSuppressProfileModal,
 } from '@/components/profile-completion-modal';
 import { HelpTip } from '@/components/help-tip';
-import { ListingDescription } from '@/components/listing-description';
 import { useMediaReview } from '@/lib/use-media-review';
 import { requiresAdminReview } from '@/lib/listing-publish-review';
 import { ImageBlurModal } from '@/components/media/image-blur-modal';
@@ -593,13 +592,16 @@ export default function NewListingPage() {
     if (media.queue.length > 0) setFixHidden(false);
   }, [media.queue.length]);
 
-  // Description AI state — preview-box pattern (lifted from the old
-  // project). When `suggestion` is non-null we render a "Suggested
-  // description" box below the textarea with Use / Keep original buttons.
-  // We do NOT auto-replace the seller's text — they have to opt in.
+  // Description AI state — apply-in-place pattern. Clicking "Tidy up my
+  // wording" writes the tidied text straight into the description box so it
+  // can't be lost by walking to the next step without pressing a second
+  // button, while `previousDescription` keeps the seller's own wording so
+  // they can revert with one click.
   const [enhancing, setEnhancing] = useState(false);
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
-  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [previousDescription, setPreviousDescription] = useState<string | null>(
+    null,
+  );
 
 
   // Preview / soft-block moderation flow.
@@ -2020,7 +2022,9 @@ export default function NewListingPage() {
       if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
       const enhanced = typeof data.enhanced === 'string' ? data.enhanced : '';
       if (enhanced && enhanced.trim() !== form.description.trim()) {
-        setSuggestion(enhanced);
+        // Apply in place. Keep the seller's own wording so they can revert.
+        setPreviousDescription(form.description);
+        set('description', enhanced);
       } else {
         setEnhanceError('Description already reads clearly. No changes suggested.');
       }
@@ -2033,19 +2037,11 @@ export default function NewListingPage() {
     }
   }
 
-  // Seller accepted the AI's suggestion — copy it into the description
-  // and dismiss the preview box.
-  function handleUseSuggestion() {
-    if (suggestion === null) return;
-    set('description', suggestion);
-    setSuggestion(null);
-    setEnhanceError(null);
-  }
-
-  // Seller dismissed the AI's suggestion — drop the preview, keep the
-  // existing description as-is.
-  function handleKeepOriginal() {
-    setSuggestion(null);
+  // Seller wants their own wording back — restore the text the AI replaced.
+  function handleRevertDescription() {
+    if (previousDescription === null) return;
+    set('description', previousDescription);
+    setPreviousDescription(null);
     setEnhanceError(null);
   }
 
@@ -3256,65 +3252,63 @@ export default function NewListingPage() {
                 value={form.description}
                 onChange={(e) => {
                   set('description', e.target.value);
-                  // If the seller starts editing again, drop the AI
-                  // suggestion preview — they're going their own way.
-                  if (suggestion !== null) setSuggestion(null);
+                  // The seller is editing the wording themselves — drop the
+                  // revert offer so it can't overwrite what they just typed.
+                  if (previousDescription !== null) setPreviousDescription(null);
                 }}
                 style={{ ...inputStyle, resize: 'vertical' }}
                 placeholder="Tell us as much as you can — wear, modifications, round count, what's included, anything a serious buyer would ask. Don't worry about how it reads; we'll tidy it up for you."
               />
 
-              {/* AI tools row — only show the Refine button when there's
-                  no active suggestion (the suggestion box has its own
-                  Use this / Keep original buttons). */}
-              {suggestion === null && (
-                <div className="flex flex-wrap items-center gap-2 mt-3">
-                  <button
-                    type="button"
-                    onClick={handleEnhance}
-                    disabled={enhancing || form.description.trim().length < 10}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-[6px] text-xs transition-opacity"
-                    style={{
-                      background: 'transparent',
-                      color: 'var(--red)',
-                      border: '0.5px solid var(--red)',
-                      fontWeight: 500,
-                      cursor:
-                        enhancing || form.description.trim().length < 10
-                          ? 'not-allowed'
-                          : 'pointer',
-                      opacity:
-                        enhancing || form.description.trim().length < 10
-                          ? 0.5
-                          : 1,
-                    }}
+              {/* AI tools row — always visible so the option is easy to
+                  spot. Clicking it writes the tidied wording straight into
+                  the description box above. */}
+              <div className="flex flex-wrap items-center gap-3 mt-3">
+                <button
+                  type="button"
+                  onClick={handleEnhance}
+                  disabled={enhancing || form.description.trim().length < 10}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-[6px] text-sm transition-opacity"
+                  style={{
+                    background: 'var(--red)',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 600,
+                    cursor:
+                      enhancing || form.description.trim().length < 10
+                        ? 'not-allowed'
+                        : 'pointer',
+                    opacity:
+                      enhancing || form.description.trim().length < 10
+                        ? 0.5
+                        : 1,
+                  }}
+                >
+                  {/* Sparkle icon */}
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden
                   >
-                    {/* Sparkle icon */}
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden
-                    >
-                      <path d="M10 1l1.6 4.4L16 7l-4.4 1.6L10 13l-1.6-4.4L4 7l4.4-1.6L10 1zM4 13l.8 2.2L7 16l-2.2.8L4 19l-.8-2.2L1 16l2.2-.8L4 13zM16 12l.5 1.5L18 14l-1.5.5L16 16l-.5-1.5L14 14l1.5-.5L16 12z" />
-                    </svg>
-                    {enhancing ? 'Tidying…' : 'Tidy up my wording'}
-                  </button>
-                  {/* ⚠️ SAYS WHAT IT DOES AND WHAT IT DOES NOT. This line
-                      used to promise researched specs and photo-reading, and
-                      a seller who believed it would leave detail out expecting
-                      the tool to supply it — which it no longer does, and the
-                      gap would land in a live listing under their name. */}
-                  <span
-                    className="text-xs"
-                    style={{ color: 'var(--text-tertiary)' }}
-                  >
-                    Fixes the spelling, grammar and layout of what you wrote.
-                    It never adds anything you didn&apos;t say.
-                  </span>
-                </div>
-              )}
+                    <path d="M10 1l1.6 4.4L16 7l-4.4 1.6L10 13l-1.6-4.4L4 7l4.4-1.6L10 1zM4 13l.8 2.2L7 16l-2.2.8L4 19l-.8-2.2L1 16l2.2-.8L4 13zM16 12l.5 1.5L18 14l-1.5.5L16 16l-.5-1.5L14 14l1.5-.5L16 12z" />
+                  </svg>
+                  {enhancing ? 'Tidying…' : 'Tidy up my wording'}
+                </button>
+                {/* ⚠️ SAYS WHAT IT DOES AND WHAT IT DOES NOT. This line
+                    used to promise researched specs and photo-reading, and
+                    a seller who believed it would leave detail out expecting
+                    the tool to supply it — which it no longer does, and the
+                    gap would land in a live listing under their name. */}
+                <span
+                  className="text-xs"
+                  style={{ color: 'var(--text-tertiary)' }}
+                >
+                  Fixes the spelling, grammar and layout of what you wrote.
+                  It never adds anything you didn&apos;t say.
+                </span>
+              </div>
 
               {enhanceError && (
                 <p
@@ -3329,80 +3323,39 @@ export default function NewListingPage() {
                 </p>
               )}
 
-              {/* Suggestion preview — only when Claude returned something
-                  different from the seller's draft. Two bullet sections
-                  (seller bullets + Specs & details) shown verbatim. */}
-              {suggestion && (
+              {/* Applied-in-place notice. The tidied text is already in the
+                  box above; this row exists only so the seller can put their
+                  own wording back. */}
+              {previousDescription !== null && (
                 <div
-                  className="mt-3 rounded-[6px] p-4"
+                  className="mt-3 rounded-[6px] px-4 py-3 flex flex-wrap items-center justify-between gap-3"
                   style={{
                     background: 'var(--bg-inset)',
                     border: '0.5px solid var(--border)',
                   }}
                 >
-                  <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
-                    <p
-                      className="text-xs uppercase"
-                      style={{
-                        color: 'var(--text-tertiary)',
-                        letterSpacing: '0.1em',
-                        fontWeight: 500,
-                      }}
-                    >
-                      Suggested wording
-                    </p>
-                    {/* (A "Read N photos" badge sat here. The form stopped
-                        sending photos to this endpoint on 2026-08-28, so
-                        enhancePhotosUsed is always 0 and it could only ever
-                        have been a claim we no longer make.) */}
-                  </div>
-                  <ListingDescription className="text-sm" text={suggestion} />
-                  {/* The old warning here told the seller to check researched
-                      specs against their item. There are no researched specs
-                      any more — nothing in this box came from anywhere but
-                      their own draft — so the warning would now be describing
-                      a risk that does not exist, which teaches them to ignore
-                      the next one that does. Replaced with what actually
-                      happened. */}
                   <p
-                    className="text-xs mt-3"
+                    className="text-xs"
+                    style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
+                  >
+                    Tidied wording applied above. Same facts you wrote, nothing
+                    added — read it over, or revert to your original.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleRevertDescription}
+                    className="px-3 py-1.5 rounded-[6px] text-xs"
                     style={{
-                      color: 'var(--text-tertiary)',
-                      lineHeight: 1.5,
+                      background: 'transparent',
+                      color: 'var(--text-secondary)',
+                      border: '0.5px solid var(--border)',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    Same facts you wrote, tidied up. Nothing has been added —
-                    read it over and make sure it still says what you meant.
-                  </p>
-                  <div className="flex gap-2 mt-3">
-                    <button
-                      type="button"
-                      onClick={handleUseSuggestion}
-                      className="px-4 py-2 rounded-[6px] text-xs"
-                      style={{
-                        background: 'var(--red)',
-                        color: '#fff',
-                        border: 'none',
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Use this
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleKeepOriginal}
-                      className="px-4 py-2 rounded-[6px] text-xs"
-                      style={{
-                        background: 'transparent',
-                        color: 'var(--text-secondary)',
-                        border: '0.5px solid var(--border)',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Keep original
-                    </button>
-                  </div>
+                    Revert to original
+                  </button>
                 </div>
               )}
             </Field>
