@@ -5,7 +5,27 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-21**.
+Last updated: **2026-10-22**.
+
+## 2026-10-22 - STALE-SESSION GRIDS AND OVERSIZED SELL PREVIEW (DEPLOYED)
+
+**Discovery grids after an idle tab.** The 15-minute access-token cookie can
+expire while the refresh cookie still looks signed-in to middleware. A hard
+load in that window rendered the page anonymously, so a members-only grid came
+back empty until the next navigation. `<CatalogLiveRefresh>` now passes the
+server's verdict to the client heartbeat, which re-runs the page once the
+client session has been renewed. Home, category, brand and seller grids.
+
+**Sell Preview 413.** Full-resolution base64 photos for up to ten staged images
+exceeded the backend's 15 MB preview body, failing with a raw "request entity
+too large" before anything was published. The form now downscales to the
+vision pass's 1280px working size and sends only the five photos it reads, and
+a 413 is translated into an actionable message.
+
+Commits **`35b0da48`** and **`0a66ca3c`**. Frontend-only deploy at 13:28 SAST:
+rollback `alloutdoor-20261022-132835.dump` (35 913 550 bytes), box HEAD matches,
+frontend health x2 OK, public 200 x2, all three PM2 services online. No
+migration. Unrelated Zoho/payments work was stashed and restored.
 
 ## 2026-10-21 - DELIVERY / HANDOVER OPTIONS (DEPLOYED)
 
