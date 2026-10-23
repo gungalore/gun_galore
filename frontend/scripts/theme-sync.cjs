@@ -3,7 +3,7 @@
  * THE SHOP'S LAUNCH COLOUR — two values, named in three files each.
  *
  * Light arm: `--bg` in `:root` of app/globals.css == `background_color` +
- *   `theme_color` in app/manifest.ts == light `themeColor` in app/layout.tsx.
+ *   `theme_color` in app/manifest.webmanifest/route.ts == light `themeColor` in app/layout.tsx.
  * Dark arm:  `--bg` in `[data-theme="dark"]` of app/globals.css == dark
  *   `themeColor` in app/layout.tsx.
  *
@@ -11,7 +11,7 @@
  * into another — a visible flash on every single launch, on the surface a
  * user sees before anything else.
  *
- * 🚨 WHY THIS IS A SCRIPT AND NOT A COMMENT. It was a comment. manifest.ts
+ * 🚨 WHY THIS IS A SCRIPT AND NOT A COMMENT. It was a comment. manifest.webmanifest/route.ts
  * said, in capitals, "Three places name this colour; they must not disagree
  * again" — and nineteen hours later --bg moved to #FFFFFF for "white
  * background only on the whole website" while the manifest and the viewport
@@ -64,17 +64,17 @@ function extract(label, file, re, opts = {}) {
   return distinct[0];
 }
 
-// Light arm — globals.css :root --bg, manifest.ts, layout.tsx light themeColor.
+// Light arm — globals.css :root --bg, manifest.webmanifest/route.ts, layout.tsx light themeColor.
 const bgLight = extract('globals.css :root --bg', 'app/globals.css', /:root\s*\{[\s\S]*?--bg:\s*(#[0-9a-fA-F]{3,8})\s*;/g);
 const manifestBg = extract(
-  'manifest.ts background_color',
-  'app/manifest.ts',
+  'manifest.webmanifest/route.ts background_color',
+  'app/manifest.webmanifest/route.ts',
   /background_color:\s*'(#[0-9a-fA-F]{3,8})'/g,
   { expect: 1 },
 );
 const manifestTheme = extract(
-  'manifest.ts theme_color',
-  'app/manifest.ts',
+  'manifest.webmanifest/route.ts theme_color',
+  'app/manifest.webmanifest/route.ts',
   /theme_color:\s*'(#[0-9a-fA-F]{3,8})'/g,
   { expect: 1 },
 );
