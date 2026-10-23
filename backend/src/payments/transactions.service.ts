@@ -4552,8 +4552,8 @@ export class TransactionsService {
   // funds immediately, increments totalSales, and triggers the
   // contact-reveal notification. Skips if the row isn't a
   // PRIVATE_ARRANGE or if the consent stamp is missing (defence in
-  // depth — a missing stamp means the buyer didn't go through the
-  // consent screen so we MUST not auto-release).
+  // depth — a missing stamp means the buyer never accepted the in-person
+  // handover terms, so we MUST not auto-release).
   // ------------------------------------------------------------------
   // Reconcile sweep — re-run the PRIVATE_ARRANGE immediate payout for any row
   // that is paid + HELD + consent-stamped but never got released (a crash /
@@ -5536,8 +5536,8 @@ export class TransactionsService {
     //    available on any listing that is not collection-only, firearm or not.
     //    It doesn't book a courier or cost the seller anything, and the buyer
     //    must be able to meet the seller and accept the in-person terms if they
-    //    prefer. The checkout hard-consent screen is the gate, not the seller's
-    //    listing options.
+    //    prefer. The Terms accepted at sign-up gate the in-person handover,
+    //    not the seller's listing options.
     const buyerMayChoosePrivateArrange = chosen === 'PRIVATE_ARRANGE';
     if (
       sellerOffered.length > 0 &&

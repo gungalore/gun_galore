@@ -13,7 +13,6 @@ import {
 } from '@/components/delivery-options-picker';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
-import { PrivateArrangeConsent } from '@/components/firearm-consents';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -152,11 +151,6 @@ export function OfferCheckoutForm({
   useEffect(() => {
     if (method !== 'DEALER_TRANSFER') setDtConsentAccepted(false);
   }, [method]);
-  // In-person handover hard consent (two boxes + "I UNDERSTAND").
-  const [paConsentAccepted, setPaConsentAccepted] = useState(false);
-  useEffect(() => {
-    if (method !== 'PRIVATE_ARRANGE') setPaConsentAccepted(false);
-  }, [method]);
   const [deliveryAddress, setDeliveryAddress] = useState({
     streetAddress: '',
     suburb: '',
@@ -248,6 +242,7 @@ export function OfferCheckoutForm({
     // the full rationale. Buyer picks any SAPS-licensed dealer
     // themselves and verifies via the 3-photo upload after delivery.
     if (method === 'PRIVATE_ARRANGE') {
+      // In-person handover terms are accepted with the Terms at sign-up.
       return { ...base, privateArrangeConsent: true };
     }
     if (method === 'DEALER_TRANSFER') return base;
@@ -271,7 +266,7 @@ export function OfferCheckoutForm({
       );
     }
     if (method === 'DEALER_TRANSFER') return dtConsentAccepted;
-    if (method === 'PRIVATE_ARRANGE') return paConsentAccepted;
+    if (method === 'PRIVATE_ARRANGE') return true;
     return false;
   }
 
@@ -436,14 +431,6 @@ export function OfferCheckoutForm({
         <DealerTransferConsent
           accepted={dtConsentAccepted}
           onChange={setDtConsentAccepted}
-        />
-      )}
-
-      {method === 'PRIVATE_ARRANGE' && (
-        <PrivateArrangeConsent
-          accepted={paConsentAccepted}
-          onChange={setPaConsentAccepted}
-          isFirearm={isFirearm}
         />
       )}
 

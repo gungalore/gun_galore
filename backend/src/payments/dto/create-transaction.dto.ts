@@ -105,16 +105,18 @@ export class CreateTransactionDto {
   @IsString()
   dealerId?: string;
 
-  // PRIVATE_ARRANGE: explicit consent flag — the buyer ticked both
-  // boxes and typed "I UNDERSTAND" on the consent screen. Must be
-  // `true` (not just present) for PRIVATE_ARRANGE submissions. The
-  // controller / service refuses the transaction without it, so a
-  // direct API caller can't accidentally trigger an immediate payout.
+  // PRIVATE_ARRANGE: explicit consent flag. The buyer accepts the in-person
+  // handover terms (payment held until confirmation, contact sharing and the
+  // non-refundable Platform Fee) with the Terms of Service at registration, so
+  // checkout carries no consent screen; the client still sends `true` on every
+  // PRIVATE_ARRANGE line. Must be `true` (not just present) for PRIVATE_ARRANGE
+  // submissions: the controller / service refuses the transaction without it,
+  // so a direct API caller can't accidentally trigger an immediate payout.
   @ValidateIf((o) => o.shippingMethod === 'PRIVATE_ARRANGE')
   @IsBoolean()
   @Equals(true, {
     message:
-      'Private arrangement requires explicit consent — tick the boxes on the checkout screen.',
+      'Private arrangement requires acceptance of the Terms of Service.',
   })
   privateArrangeConsent?: boolean;
 

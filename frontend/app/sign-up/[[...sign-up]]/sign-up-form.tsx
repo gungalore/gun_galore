@@ -25,7 +25,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 // Version stamp recorded with each consent so we can prove WHICH Terms /
 // Privacy Policy a user accepted (POPIA accountability). Bump when the
 // policies materially change.
-const POLICY_VERSION = '2026-07-17';
+const POLICY_VERSION = '2026-10-23';
 // ⚠️ THE PASSWORD RULE IS NOT DEFINED HERE ANY MORE — it is in
 // lib/password-rule.ts, alongside the reset form's copy and a spec that
 // checks both against the backend DTO. It has been 15 (the old hosted
@@ -724,7 +724,8 @@ export default function SignUpForm() {
                 <Link href="/terms" style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}>
                   Terms
                 </Link>{' '}
-                and{' '}
+                (including the in-person handover, contact-sharing and Platform
+                Fee terms) and{' '}
                 <Link href="/privacy" style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}>
                   Privacy Policy
                 </Link>

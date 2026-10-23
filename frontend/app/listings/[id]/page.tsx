@@ -243,7 +243,8 @@ export default async function ListingDetailPage({
   // What the seller actually offered. Firearms always retain the dealer route
   // (server-enforced); goods always retain the courier. An in-person handover
   // is always shown too on any non-collection listing — it books no courier and
-  // the buyer may prefer it (the checkout consent spells out the terms).
+  // the buyer may prefer it (its terms live in the Terms of Service and are
+  // accepted at sign-up).
   const offeredShipping = listing.shippingMethods ?? [];
   const isCollectionOnly =
     listing.collectionOnly || offeredShipping.includes('COLLECTION');

@@ -202,7 +202,7 @@ The buyer can only pick a method the seller offered. (`validateShipping`, `shipp
 ### 5.3 Private arrangement (firearms)
 | Rule | Where |
 |---|---|
-| Buyer must tick both consent boxes and type "I UNDERSTAND"; API requires `privateArrangeConsent === true`. Stamped `privateArrangeAcceptedAt`. | `create-transaction.dto.ts` |
+| Buyer accepts the in-person handover terms with the Terms of Service at registration (no checkout consent screen); the client sends `privateArrangeConsent === true` and the API requires it. Stamped `privateArrangeAcceptedAt`. | `create-transaction.dto.ts`, Terms §7 |
 | Funds are released to the seller **immediately on payment** (buyer waives payment protection); contact details are revealed. No release without the consent stamp. | `maybeImmediatePayout` |
 | Private-arrange orders cannot be seller-rejected, buyer-cancelled or disputed after payment (payment is no longer HELD). | `transactions.service.ts` |
 

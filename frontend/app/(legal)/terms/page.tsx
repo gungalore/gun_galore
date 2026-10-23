@@ -37,7 +37,7 @@ export const metadata = {
 export default function TermsPage() {
   return (
     <>
-      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 19 October 2026" />
+      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 23 October 2026" />
 
       <h2>1. About us</h2>
       <p>
@@ -115,6 +115,10 @@ export default function TermsPage() {
         <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>{' '}
         and{' '}
         <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>.
+        Your acceptance at registration applies to every later transaction,
+        including the in-person handover terms in paragraph 7 (payment held
+        until confirmation or five days after payment, contact details shared
+        with the other party, and the non-refundable Platform Fee).
       </p>
       <p>
         We may amend these Terms from time to time. Material amendments
@@ -251,6 +255,19 @@ export default function TermsPage() {
         If a dispute is upheld and refunded, the Buyer is refunded the item price
         only; ALL Outdoor retains the Platform Fee regardless of the reason for
         the dispute.
+      </p>
+      <p>
+        <strong>Contact details for an in-person handover.</strong> When you
+        choose an in-person handover, you agree that we may share your name,
+        phone number and email address with the other party after payment so
+        that you can arrange and complete the handover (for a firearm, at a
+        SAPS-licensed dealer). Each party may use those details only for that
+        purpose. There is no courier tracking and no delivery guarantee on an
+        in-person handover: if you want tracking or a delivery guarantee,
+        choose courier delivery (or dealer transfer for a firearm) instead.
+        These terms apply whether the handover is for a firearm or for other
+        goods, and your acceptance of them at registration (paragraph 3) covers
+        every in-person handover you later choose at checkout.
       </p>
 
       <h2>8. Fees, commission and payouts</h2>

@@ -55,15 +55,16 @@ export class CreateOrderLineDto {
   @IsString()
   dealerId?: string;
 
-  // PRIVATE_ARRANGE ("arrange in person"): explicit consent flag. Must be
-  // `true` for a firearm in-person line — the service refuses the line and its
-  // immediate payout without it (defence in depth over the frontend consent
-  // screen). Mirrors CreateTransactionDto.privateArrangeConsent.
+  // PRIVATE_ARRANGE ("arrange in person"): explicit consent flag. The in-person
+  // handover terms are accepted with the Terms of Service at registration, so
+  // checkout carries no consent screen; the client still sends `true`. Must be
+  // `true` for an in-person line — the service refuses the line and its
+  // immediate payout without it (defence in depth).
   @ValidateIf((o) => o.shippingMethod === 'PRIVATE_ARRANGE')
   @IsBoolean()
   @Equals(true, {
     message:
-      'Private arrangement requires explicit consent — tick the boxes on the checkout screen.',
+      'Private arrangement requires acceptance of the Terms of Service.',
   })
   privateArrangeConsent?: boolean;
 

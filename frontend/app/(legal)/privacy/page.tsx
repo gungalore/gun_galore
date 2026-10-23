@@ -221,7 +221,7 @@ export default function PrivacyPage() {
         <li><strong>Compliance with legal obligation:</strong> identity verification, the statutory records we must keep for licence- and age-restricted categories, tax (§ 11(1)(c)). The particular legislation imposing that obligation, and the records kept under it, are identified in our{' '}
           <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>, which is publicly available and which we also give you as the notification required by § 18(1)(f).</li>
         <li><strong>Legitimate interest:</strong> fraud prevention, user safety, dispute investigation (§ 11(1)(f)) — balanced against your rights.</li>
-        <li><strong>Consent:</strong> the identity-verification check, direct marketing, and the sharing of contact details where you agree that hand-over of an item that requires a licence or permit will be arranged directly between the parties or through an authorised third party (§ 11(1)(a)).</li>
+        <li><strong>Consent:</strong> the identity-verification check, direct marketing, and the sharing of your name, phone number and email address with the other party to a transaction where you choose an in-person handover or another arrangement completed directly between the parties (§ 11(1)(a)). You give that consent by accepting these documents at registration, and it applies to every such transaction you later choose.</li>
       </ul>
       <p>
         Additional terms apply to regulated categories. See the{' '}
@@ -266,6 +266,14 @@ export default function PrivacyPage() {
           ))}
         </tbody>
       </table>
+      <p>
+        <strong>The other party to a transaction.</strong> Where you choose an
+        in-person handover (for a firearm, at a SAPS-licensed dealer), we share
+        your name, phone number and email address with the buyer or seller
+        after payment so the two of you can arrange and complete the handover.
+        The recipient may use those details only for that purpose. We do not
+        share contact details for courier deliveries.
+      </p>
       <p>
         We do not sell personal information. We will share information
         with law enforcement or regulators only when compelled to do so

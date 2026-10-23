@@ -29,7 +29,6 @@ import {
 import {
   FirearmAttestation,
   DealerTransferConsent,
-  PrivateArrangeConsent,
 } from '@/components/firearm-consents';
 import { TrustBullets } from '@/components/trust-bullets';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
@@ -94,9 +93,6 @@ export default function CartPage() {
   // Per-non-firearm fulfilment choice. Every item gets its own Courier /
   // Arrange privately toggle; the default is the courier rail.
   const [goodsRoute, setGoodsRoute] = useState<Record<string, GoodsRoute>>({});
-  // One hard-consent gate covers every non-firearm item the buyer switches to
-  // an in-person handover. It resets when the buyer switches back to courier.
-  const [goodsPaConsent, setGoodsPaConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Phase-1 payment gate — card payments aren't live yet, so the cart
@@ -338,16 +334,13 @@ export default function CartPage() {
           0,
         );
 
-  // Every firearm must have a chosen route, its 18+ attestation, and the
-  // consent for the chosen route accepted.
+  // Every firearm must have its 18+ attestation, plus the consent for the
+  // chosen route where that route has one. In-person handover has no
+  // checkout consent: those terms are accepted with the Terms at sign-up.
   const firearmsReady = firearmItems.every((i) => {
     const s = stateFor(i.listingId);
-    return s.route && s.attestationAccepted && s.consentAccepted;
+    return s.attestationAccepted && (s.route === 'PRIVATE_ARRANGE' || s.consentAccepted);
   });
-
-  // Every non-firearm item switched to an in-person handover needs the hard
-  // consent once. Switching all of them back to courier releases the gate.
-  const goodsPaReady = goodsPaItems.length === 0 || goodsPaConsent;
 
   // One acknowledgement for the whole cart — the buyer ticks once, over a list
   // naming each item's town. It rides on CreateOrderDto, not per line.
@@ -357,7 +350,6 @@ export default function CartPage() {
     buyerTermsAck &&
     courierReady &&
     firearmsReady &&
-    goodsPaReady &&
     collectionItems.length === 0 &&
     // UX-M24 — a sold-out line poisons the whole order server-side, so gate on
     // it here. Only ever true off a SUCCESSFUL stock read; a failed fetch
@@ -846,15 +838,9 @@ export default function CartPage() {
         </div>
       ))}
 
-      {/* In-person handover consent for non-firearm items. One gate covers
-          every item the buyer switched away from the courier rail. */}
-      {goodsPaItems.length > 0 && (
-        <PrivateArrangeConsent
-          accepted={goodsPaConsent}
-          onChange={setGoodsPaConsent}
-          isFirearm={false}
-        />
-      )}
+      {/* In-person handover terms live in the Terms of Service and are
+          accepted at sign-up; the payload below still carries the consent
+          flag the backend requires. */}
 
       {/* Delivery — courier picker only when there ARE shippable (non-firearm)
           items. A firearm-only cart hides this entirely. */}
@@ -963,19 +949,14 @@ export default function CartPage() {
                   onChange={(v) => setFirearm(i.listingId, { attestationAccepted: v })}
                 />
 
-                {/* Route-specific consent. */}
+                {/* Route-specific consent. In-person handover has none at
+                    checkout — its terms are accepted at sign-up. */}
                 {s.route === 'DEALER_TRANSFER' ? (
                   <DealerTransferConsent
                     accepted={s.consentAccepted}
                     onChange={(v) => setFirearm(i.listingId, { consentAccepted: v })}
                   />
-                ) : (
-                  <PrivateArrangeConsent
-                    accepted={s.consentAccepted}
-                    onChange={(v) => setFirearm(i.listingId, { consentAccepted: v })}
-                    isFirearm
-                  />
-                )}
+                ) : null}
               </div>
             );
           })}

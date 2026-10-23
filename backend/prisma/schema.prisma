@@ -1911,14 +1911,13 @@ model Transaction {
   // cron raising the same flag every 10 min.
   acceptEscalatedAt DateTime?
 
-  // PRIVATE_ARRANGE explicit consent. The buyer ticked two checkboxes
-  // and typed "I UNDERSTAND" at checkout to acknowledge that payment
-  // protection ends at payment capture — the seller is paid
-  // immediately and contact details are revealed to both parties so
-  // they can coordinate the dealer meet. Without this column being
-  // set, the immediate-payout branch in markPaid() refuses to fire
-  // (defence in depth against a buyer hitting the API without going
-  // through the consent screen).
+  // PRIVATE_ARRANGE consent stamp. The buyer accepts the in-person handover
+  // terms (payment protection ends at payment capture, contact details are
+  // shared with the other party, and the Platform Fee is non-refundable) with
+  // the Terms of Service at registration; checkout sends the consent flag
+  // without a separate screen. Without this column being set, the
+  // immediate-payout branch in markPaid() refuses to fire (defence in depth
+  // against a buyer hitting the API without having accepted the Terms).
   privateArrangeAcceptedAt DateTime?
 
   // M33 — set when the buyer ticks the 18+/SAPS-competency attestation at

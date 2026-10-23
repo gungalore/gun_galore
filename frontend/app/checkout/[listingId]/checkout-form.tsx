@@ -18,7 +18,6 @@ import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { BuyerTermsAck } from '@/components/buyer-terms-ack';
-import { PrivateArrangeConsent } from '@/components/firearm-consents';
 import { vicinityLabel } from '@/lib/vicinity';
 import { pargoOptionLabel } from '@/lib/pargo-pickup';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
@@ -229,9 +228,9 @@ export function CheckoutForm({
   // legal for non-firearms too.
   //
   // MEET IN PERSON IS ALWAYS OFFERED. A handover books no courier and costs
-  // the seller nothing, so the buyer may choose it on any listing class. The
-  // hard-consent screen below spells out the held-funds and non-refundable
-  // Platform Fee terms.
+  // the seller nothing, so the buyer may choose it on any listing class. Its
+  // held-funds, contact-sharing and non-refundable Platform Fee terms are in
+  // the Terms of Service and accepted at sign-up.
   const legalForClass: ShippingMethod[] = listing.isFirearm
     ? ['DEALER_TRANSFER', 'PRIVATE_ARRANGE']
     : ['COURIER', 'PRIVATE_ARRANGE'];
@@ -328,15 +327,6 @@ export function CheckoutForm({
   // UX-3 — set true once an address-book entry is picked, so the /users/me
   // mount prefill below can't race-overwrite the picked address.
   const addrPinnedRef = useRef(false);
-
-  // PRIVATE_ARRANGE consent — gated state for the hard-consent screen
-  // (two checkboxes + literal "I UNDERSTAND" typed). Reset when the
-  // buyer changes shipping method, so they can't tick → switch away
-  // → switch back to PRIVATE_ARRANGE without re-consenting.
-  const [paConsentAccepted, setPaConsentAccepted] = useState(false);
-  useEffect(() => {
-    if (method !== 'PRIVATE_ARRANGE') setPaConsentAccepted(false);
-  }, [method]);
 
   // AUDIT M33 — 18+/competency attestation for firearm checkouts. The
   // backend HARD-refuses any firearm transaction without the explicit
@@ -679,11 +669,11 @@ export function CheckoutForm({
     // a dealerId (DealerVerificationService gates payout instead).
     if (method === 'DEALER_TRANSFER') return base;
     if (method === 'PRIVATE_ARRANGE') {
-      // The consent flag tells the backend to set
-      // Transaction.privateArrangeAcceptedAt and unlocks the
-      // immediate-payout branch in markPaid(). The backend rejects
-      // PRIVATE_ARRANGE submissions without this flag — defence in
-      // depth against a buyer hitting the API directly.
+      // The in-person handover terms (payment held until confirmation,
+      // contact sharing and the non-refundable Platform Fee) are accepted
+      // with the Terms at sign-up. This flag tells the backend to set
+      // Transaction.privateArrangeAcceptedAt and unlocks the payout branch
+      // in markPaid(); the server refuses PRIVATE_ARRANGE without it.
       return { ...base, privateArrangeConsent: true };
     }
     return base;
@@ -726,7 +716,9 @@ export function CheckoutForm({
       return !!deliveryOption && hasCoords && quoteState.kind === 'ready';
     }
     if (method === 'DEALER_TRANSFER') return dtConsentAccepted;
-    if (method === 'PRIVATE_ARRANGE') return paConsentAccepted;
+    // The in-person handover carries no checkout gate of its own: those
+    // terms are accepted with the Terms at sign-up.
+    if (method === 'PRIVATE_ARRANGE') return true;
     return false;
   }
 
@@ -1329,20 +1321,11 @@ export function CheckoutForm({
         />
       )}
 
-      {/* Private arrangement — HARD consent. The buyer is opting out of
-          payment protection: on payment capture the seller is paid
-          immediately and both parties get each other's contact details
-          so they can coordinate the dealer meet themselves. Two
-          checkboxes + the literal phrase "I UNDERSTAND" are required
-          before Pay enables. Without this consent the backend refuses
-          the PRIVATE_ARRANGE method. */}
-      {method === 'PRIVATE_ARRANGE' && (
-        <PrivateArrangeConsent
-          accepted={paConsentAccepted}
-          onChange={setPaConsentAccepted}
-          isFirearm={listing.isFirearm}
-        />
-      )}
+      {/* Private arrangement — the handover terms (payment held until
+          confirmation, contact sharing, non-refundable Platform Fee) are in
+          the Terms of Service and accepted at sign-up, so there is no
+          per-checkout consent block. The payload still carries the consent
+          flag the backend requires. */}
 
       {/* M33 — 18+/competency attestation. Required by the backend
           for every firearm transaction. Rendered last in the consent
