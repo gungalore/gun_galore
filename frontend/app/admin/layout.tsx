@@ -19,7 +19,13 @@ import './admin.css';
 export const metadata: Metadata = {
   title: 'Warden — ALL Outdoor',
   description: 'Operations console for ALL Outdoor.',
-  manifest: '/admin/manifest.webmanifest',
+  // ⚠️ THE `?v=` IS A CACHE-BUSTER FOR iOS. Safari caches the manifest it
+  // associates with an origin, and the shop manifest had already been installed
+  // from this domain before the admin override existed. A fresh manifest URL
+  // makes "Add to Home Screen" re-fetch this one instead of reusing that
+  // cache. The `id` below is what identifies the installed app, so changing
+  // the query does not create a second identity.
+  manifest: '/admin/manifest.webmanifest?v=2',
   robots: { index: false, follow: false },
   appleWebApp: {
     capable: true,
