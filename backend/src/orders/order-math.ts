@@ -29,11 +29,13 @@ export interface OrderLineBreakdown {
   /** Line subtotal = unitPrice × quantity (FeeCalculator's listingPrice). */
   listingPrice: number;
   shippingCost: number;
-  /** P6.4 — the GG delivery handling margin on this line, 10% of the
-   *  carrier rate (0 for firearm / collection / consolidated-sibling lines). */
+  /**
+   * Legacy GG delivery handling margin on this line (0 for sales after
+   * 2026-10-23; historical rows keep theirs).
+   */
   shippingHandlingCents: number;
   processingFee: number;
-  /** What the buyer pays for this line (incl. shipping + handling + any passed fee). */
+  /** What the buyer pays for this line (shipping + legacy handling + any passed fee). */
   buyerTotal: number;
 }
 
@@ -41,7 +43,7 @@ export interface OrderLineBreakdown {
 export interface OrderTotals {
   itemsSubtotal: number;
   shippingSubtotal: number;
-  /** P6.4 — sum of the line handling margins (GG-retained). */
+  /** P6.4 — sum of the line handling margins (legacy; 0 for new sales). */
   handlingSubtotal: number;
   processingFee: number;
   buyerTotal: number;

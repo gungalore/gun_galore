@@ -178,22 +178,14 @@ const STATUS_RANK: Record<ShippingStatus, number> = {
 
 
 /**
- * What a courier option COSTS THE BUYER: the carrier's rate with our 10%
- * delivery margin already folded in.
+ * What a courier option COSTS THE BUYER: the carrier's live rate.
  *
- * ONE figure, never "quote + 10%". The margin has always been charged — it was
- * just added at checkout, after the buyer had chosen from a list showing the
- * bare carrier rate, so the delivery line jumped at the last step. That is the
- * same surprise the built-in-markup item pricing exists to remove, and it is
- * removed the same way: quote the real number.
+ * The 10% delivery margin was retired on 2026-10-23 (operator decision). The
+ * buyer now pays exactly what the courier quotes; the Platform Fee is then
+ * calculated on the item price plus that rate. No markup is hidden in delivery.
  *
- * The split is preserved SERVER-SIDE (Transaction.shippingCost is the pure
- * carrier remittance, shippingHandlingCents is ours) because those are two
- * different obligations at payout time. This only changes what is displayed;
- * checkout recomputes both parts itself, so the figures agree without
- * double-counting.
- *
- * Applies to door and collection point alike — both produce a waybill.
+ * The Transaction still carries shippingHandlingCents for historical rows; new
+ * sales store 0.
  */
 function withHandling(carrierRateCents: number): number {
   return displayShippingCents(carrierRateCents);
@@ -558,8 +550,8 @@ export class ShippingService {
     return {
       serviceCode: door.serviceCode,
       serviceName: door.serviceName,
-      // ShippingQuote.priceCents is the pure carrier rate. The handling margin
-      // is stored separately on Transaction and only added for buyer display.
+      // ShippingQuote.priceCents is the pure carrier rate. The legacy
+      // shippingHandlingCents column is 0 for new sales.
       priceCents: door.carrierRateCents,
       providerSlug: door.providerSlug,
       serviceLevelCode: door.serviceLevelCode,

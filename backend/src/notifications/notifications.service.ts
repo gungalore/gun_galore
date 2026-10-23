@@ -373,7 +373,7 @@ export interface SaleDetails {
    * Your payout" line did not subtract to the payout it printed.
    */
   feeModel: FeeModel;
-  /** Carrier rate and our delivery margin — shown to the buyer as ONE figure. */
+  /** Carrier rate — shown to the buyer as ONE figure (no margin since 2026-10-23). */
   shippingCost: number;
   shippingHandlingCents: number;
   shippingMethod: string | null;

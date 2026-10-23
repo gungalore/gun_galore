@@ -192,11 +192,11 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   },
   {
     sourceKey: 'ship-handling-fee',
-    title: 'What is the shipping handling fee?',
-    question: 'Why is there a handling fee on my delivery?',
+    title: 'Is there a handling fee on delivery?',
+    question: 'Why is delivery charged on top of the item?',
     answer:
-      'Delivery carries a handling margin of 10% of the courier’s rate, folded into the single delivery figure you are quoted at checkout — it covers arranging the courier, the label, tracking and delivery support. Multiple items consolidated into one parcel produce one waybill. It never applies where no parcel is booked: firearm dealer transfers and in-person collection carry no delivery charge.',
-    tags: ['shipping', 'fees', 'handling'],
+      "No handling fee is added. Delivery is the courier's live rate for the parcel, quoted at checkout and paid by the buyer. Multiple items consolidated into one parcel produce one waybill. It never applies where no parcel is booked: firearm dealer transfers and in-person collection carry no delivery charge.",
+    tags: ['shipping', 'fees'],
   },
   {
     sourceKey: 'ship-dispatch-window',

@@ -518,12 +518,10 @@ at checkout.
 - **Private arrangement** — delivery and handling are zero; the fee is calculated
   on the item price only.
 
-**Delivery carries a 10% margin, quoted INCLUSIVE** — the buyer sees one figure
-and pays exactly that. Never render it as "quote + 10%" or a separate handling
-row. The split is server-side only (`Transaction.shippingCost` = carrier
-remittance, `shippingHandlingCents` = ours) because they are different obligations
-at payout. The Platform Fee is charged on the item plus the **delivery figure the
-buyer sees** (carrier rate + handling).
+**Delivery carries no margin** (retired 2026-10-23) — the buyer pays the
+courier's live rate. Never render it as "quote + 10%" or a separate handling
+row. `shippingHandlingCents` remains on historical rows only. The Platform Fee
+is charged on the item plus that rate.
 
 ### Payments (Ozow) — live for money-in
 
@@ -686,8 +684,9 @@ One API (pay-in + refunds) + Payouts API (seller disbursement).
   bookable. Every option is
   re-quoted **server-side** at Pay (`ShippingService.quoteForSelection`): the
   browser sends only the option kind and, for Store Pickup, the counter id — never
-  a price/carrier/service code. The 10% delivery margin is folded into each
-  displayed price. Firearms/barrels never see these (dealer/private only).
+  a price/carrier/service code. The displayed price is the courier's live
+  rate (no delivery margin since 2026-10-23). Firearms/barrels never see
+  these (dealer/private only).
   `Transaction.deliveryOption` records the pick; `pickupPointLocationId` +
   `pickupPointSnapshot` the counter. `shippingMethod` names the **shape** of the
   delivery, not the company — route post-booking work on

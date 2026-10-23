@@ -72,14 +72,6 @@ const MIN_COMMISSION_CENTS = 1_000;
 // pays 5% of the hammer.
 const AUCTION_SPLIT_RATE = 0.05;
 
-// Our handling margin on delivery, as a share of the courier's rate —
-// mirrors SHIPPING_HANDLING_RATE in fee.calculator.ts. It is folded into the
-// one delivery figure the buyer sees (never a separate line), so it only
-// qualifies the "what gets added at checkout" note here; it is never part of
-// the list price. There is no waybill until there is an address, and a
-// firearm handed over through a dealer never gets one.
-const SHIPPING_HANDLING_RATE = 0.1; // 10% of the carrier rate
-
 // The two ways to list — rendered as descriptive choice cards in Step 3
 // so sellers can compare and know where to list before picking. Take a
 // Shot is no longer a mode of its own (operator decision 2026-08-27): it's
@@ -5027,10 +5019,8 @@ function PriceBreakdown({ priceCents }: { priceCents: number }) {
           </li>
           <li>
             Courier shipping is added for the buyer at checkout, quoted at the
-            courier&apos;s live rate — our{' '}
-            {Math.round(SHIPPING_HANDLING_RATE * 100)}% handling is folded into
-            that one figure. A firearm handed over through a dealer has no
-            waybill, so none applies.
+            courier&apos;s live rate — no handling margin is added. A firearm
+            handed over through a dealer has no waybill, so none applies.
           </li>
         </ul>
       </div>
@@ -5143,12 +5133,11 @@ function SellerAskBreakdown({ askCents }: { askCents: number }) {
             </span>
           </li>
           <li>
-            Courier shipping is added for the buyer at checkout, quoted at the
-            courier&apos;s live rate — our{' '}
-            {Math.round(SHIPPING_HANDLING_RATE * 100)}% handling is folded into
-            that one figure, so the buyer sees a single delivery charge. It
-            can&apos;t be known until there&apos;s a delivery address. A firearm
-            handed over through a dealer has no waybill, so none applies.
+            Courier shipping is added for the buyer at checkout at the
+            courier&apos;s live rate — no handling margin, so the buyer sees a
+            single delivery charge. It can&apos;t be known until there&apos;s a
+            delivery address. A firearm handed over through a dealer has no
+            waybill, so none applies.
           </li>
         </ul>
       </div>

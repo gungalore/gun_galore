@@ -95,13 +95,9 @@ const isHouseOrRefundRow = (f: FeeFacts) =>
 /**
  * What the BUYER was charged, as lines that foot to what they actually paid.
  *
- * ⚠️ DELIVERY IS ONE LINE. The carrier rate and our handling margin are
- * stored apart because they are different obligations at payout time, but
- * fee.calculator.ts is explicit that the margin "IS NEVER SHOWN SEPARATELY —
- * the buyer sees ONE delivery figure, already inclusive". The receipt was
- * itemising "Shipping" and "Handling" as two lines, which published our
- * delivery margin to the buyer. Same principle as the item price carrying
- * its own markup.
+ * DELIVERY IS ONE LINE: the courier's live rate (there is no margin since
+ * 2026-10-23) plus any legacy shippingHandlingCents on a historical row. The
+ * receipt must never itemise a "Handling" line.
  */
 export function buyerBreakdown(f: FeeFacts): BuyerBreakdown {
   const lines: MoneyLine[] = [{ label: 'Item price', cents: f.listingPrice }];

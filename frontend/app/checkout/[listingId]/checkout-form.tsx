@@ -762,7 +762,7 @@ export function CheckoutForm({
     const item = listing.price * (listing.trackInventory ? quantity : 1);
     const shipping =
       quoteState.kind === 'ready' ? quoteState.quote.priceCents : 0;
-    // Our delivery margin is already folded into the quoted shipping figure.
+    // Delivery is quoted at the courier's live rate (no margin since 2026-10-23).
     const handling = 0;
     const delivery = shipping + handling;
     // Auctions: 5% of (hammer + delivery), floored at R10.
@@ -1463,8 +1463,8 @@ export function CheckoutForm({
                   value={formatPrice(b.shipping)}
                 />
               )}
-              {/* No handling row: our delivery margin is inside the shipping
-                  figure above. One number per thing the buyer is buying. */}
+              {/* No handling row: there is no delivery margin since
+                  2026-10-23; shipping is the courier's figure above. */}
               {/* Operator wording (2026-10): one combined "Platform Fee",
                   calculated last on item + delivery. */}
               {b.platform > 0 && (

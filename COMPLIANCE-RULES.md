@@ -223,7 +223,7 @@ The buyer can only pick a method the seller offered. (`validateShipping`, `shipp
 | Buyer-paid fee | One **Platform Fee**, calculated last on (item + delivery); the old Buyer Protection Fee is retired |
 | Auction split | Flat 10% total: 5% buyer on (hammer + delivery), 5% seller on the hammer |
 | Manual rail fee | Retired (included in the Platform Fee) |
-| Delivery margin | 10% of the carrier rate, folded into one inclusive delivery price (never shown separately) |
+| Delivery margin | **None** (retired 2026-10-23); the buyer pays the courier's live rate |
 | Marketplace fee model | `BUYNOW_MARKUP`: listed price = seller ask; seller receives the full ask; buyer pays the Platform Fee |
 | Auctions | `SELLER_DEDUCT`: seller pays 5% off the hammer; buyer pays 5% on top |
 | Buyer cancellation | 4% transaction handling fee; delivery retained once a waybill is booked; no cancellation after dispatch |

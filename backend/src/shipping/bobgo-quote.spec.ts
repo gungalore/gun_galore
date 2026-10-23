@@ -196,17 +196,14 @@ describe('quoteCombined on the Bob Go rail', () => {
 });
 
 describe('deliveryOptions — the buyer decides', () => {
-  it('returns the door option with our 10% delivery margin folded in', async () => {
+  it('returns the door option at the carrier rate with no delivery margin', async () => {
     const { svc } = makeService({ rates: [DOOR, PICKUP] });
 
     const opts = await svc.deliveryOptions('L1', DELIVERY);
 
-    // The buyer sees ONE figure: the carrier rate plus our 10% delivery
-    // margin, quoted up front rather than added at checkout. quoteForListing
-    // (above) still returns the BARE carrier rate — only the buyer-facing menu
-    // folds the margin in.
-    const withMargin = (c: number) => c + Math.round(c * 0.1);
-    expect(opts.door?.priceCents).toBe(withMargin(11495));
+    // The 10% delivery margin was retired on 2026-10-23. The buyer sees ONE
+    // figure — the courier's live rate. quoteForListing returns the same rate.
+    expect(opts.door?.priceCents).toBe(11495);
     expect(opts.door?.carrierRateCents).toBe(11495);
     expect(opts.door?.serviceCode).toBe('bobgo_3082_34_0');
   });

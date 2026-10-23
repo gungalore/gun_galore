@@ -6,7 +6,6 @@
 //   - Auction split (5% buyer / 5% seller): AUCTION_SPLIT_RATE
 //   - Marketplace direction: FeeCalculator.listPriceFromSellerAsk() — the
 //     seller's ask IS the listed price; the fee is added at checkout.
-//   - Shipping handling (10% of the carrier rate): SHIPPING_HANDLING_RATE
 //   - Cancellation: 4% handling fee (CANCELLATION_HANDLING_RATE)
 //
 // Operator decision 2026-10: the Buyer Protection Fee is retired. There is ONE
@@ -45,10 +44,10 @@ const money = (cents: number) =>
   })}`;
 
 export default function FeesPage() {
-  // Marketplace example: R1,000 ask + a R79 courier rate (10% handling → R86.90).
+  // Marketplace example: R1,000 ask + the courier's R79 live rate.
   const ask = 100_000;
   const carrier = 7_900;
-  const delivery = carrier + Math.round(carrier * 0.1);
+  const delivery = carrier;
   const marketplaceFee = Math.round((ask + delivery) * 0.1);
   const buyerPays = ask + delivery + marketplaceFee;
 
@@ -153,15 +152,14 @@ export default function FeesPage() {
       </p>
       <p>
         <strong>A worked example.</strong> A seller asks {money(ask)} for a camp
-        stove, and the courier quotes {money(carrier)} to deliver it (the
-        buyer-facing delivery figure is {money(delivery)} including our 10%
-        handling):
+        stove, and the courier quotes {money(carrier)} to deliver it (the buyer
+        pays that live rate, {money(delivery)}):
       </p>
       <table style={{ width: '100%', fontSize: 14, borderCollapse: 'collapse', marginBottom: 16 }}>
         <tbody>
           {[
             ['Your asking price — the listed price and what you receive', money(ask)],
-            ['Delivery (courier rate + 10% handling)', money(delivery)],
+            ['Delivery (courier live rate)', money(delivery)],
             ['Platform Fee (10% of item + delivery)', money(marketplaceFee)],
           ].map(([label, amount], i) => (
             <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
@@ -182,8 +180,8 @@ export default function FeesPage() {
       <p>
         The buyer pays {money(buyerPays)}. The seller receives{' '}
         <strong>{money(ask)}</strong>. Nothing is deducted from that amount.
-        Delivery is the courier&apos;s live rate plus our 10% handling margin,
-        and the Platform Fee is charged on the two figures together.
+        Delivery is the courier&apos;s live rate with no margin, and the
+        Platform Fee is charged on the item price and that rate together.
       </p>
       <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16 }}>
         Because the R10 minimum applies to small sales, a low asking price
@@ -285,15 +283,14 @@ export default function FeesPage() {
       <p>
         Delivery is quoted at checkout at the courier&apos;s live rate for the
         parcel and is paid by the buyer. Delivery is either to your door or to
-        a pickup point near you, whichever you choose. Our{' '}
-        <strong>handling margin is 10% of the courier&apos;s rate</strong>,
-        folded into the single delivery figure the buyer sees (items combined
-        into one parcel produce one waybill). An item handed over through a
-        licensed dealer, or a hand-over the parties arrange privately, creates
-        no waybill and carries no ALL Outdoor delivery or handling charge. Any
-        charge a dealer levies for receiving, storing or processing an item is
-        that dealer&apos;s own charge, is payable directly to them, and is not
-        collected or refunded by ALL Outdoor.
+        a pickup point near you, whichever you choose. The buyer pays the
+        courier&apos;s live rate with <strong>no handling margin</strong> (items
+        combined into one parcel produce one waybill). An item handed over
+        through a licensed dealer, or a hand-over the parties arrange privately,
+        creates no waybill and carries no ALL Outdoor delivery or handling
+        charge. Any charge a dealer levies for receiving, storing or processing
+        an item is that dealer&apos;s own charge, is payable directly to them,
+        and is not collected or refunded by ALL Outdoor.
       </p>
 
       <h2>8. Currency and VAT</h2>

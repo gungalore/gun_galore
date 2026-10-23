@@ -491,9 +491,9 @@ export function OfferCheckoutForm({
 
       {/* What the buyer actually pays. The agreed price is the price — an
           offer discovers it, so nothing is marked up on top of it — and the
-          buyer-paid Platform Fee is calculated last on item + delivery. Our
-          delivery handling margin is folded into the courier's own quoted
-          figure, never itemised as a row of its own. Shipping (and therefore
+          buyer-paid Platform Fee is calculated last on item + delivery.
+          Delivery is the courier's live rate (no handling margin), never
+          itemised as a row of its own. Shipping (and therefore
           the exact fee) is only priced server-side at payment, so those rows
           say so rather than show a number we'd have to guess at. */}
       <div

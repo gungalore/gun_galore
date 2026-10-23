@@ -907,7 +907,7 @@ export class AdminTransactionsController {
   }
 
   // Resolve a buyer's cancellation REQUEST: refund minus the irrecoverable
-  // costs (a flat 4% handling fee always; carrier cost + delivery margin only
+  // costs (a flat 4% handling fee always; carrier cost only
   // when a waybill exists), relist the item, notify both parties. Body: { note? }.
   @Post(':id/resolve-cancellation')
   @HttpCode(200)

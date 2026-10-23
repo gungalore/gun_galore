@@ -31,11 +31,9 @@ interface OrderDetail {
   orderReference: string | null;
   itemsSubtotal: number;
   shippingSubtotal: number;
-  // Our delivery handling margin, 10% of the carrier rate. It is kept apart
-  // from shipping server-side (carrier remittance and our margin are different
-  // payout obligations) but folded into ONE Delivery figure in the UI. The
-  // backend GET /orders/:id spreads the whole Order row, so this is always
-  // present.
+  // Legacy delivery handling margin. 0 for sales after 2026-10-23; kept
+  // because the backend Order row still carries it. The UI folds shipping and
+  // this into ONE Delivery figure.
   handlingSubtotal: number;
   processingFee: number;
   buyerTotal: number;
@@ -169,14 +167,10 @@ export default function OrderDetailPage() {
           <span style={{ color: 'var(--text-tertiary)' }}>Items</span>
           <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{formatPrice(order.itemsSubtotal)}</span>
         </div>
-        {/* ⚠️ ONE DELIVERY FIGURE. Our handling margin was itemised as its
-            own "Handling" row, which publishes it to the buyer —
-            fee.calculator.ts is explicit that it "IS NEVER SHOWN SEPARATELY:
-            the buyer sees ONE delivery figure, already inclusive". Same rule
-            the receipt and the order page now follow; the split stays
-            server-side because carrier remittance and our margin are
-            different obligations at payout, not because the buyer needs the
-            arithmetic. */}
+        {/* ONE DELIVERY FIGURE. Delivery is the courier's live rate with no
+            handling margin since 2026-10-23. The legacy handlingSubtotal is
+            folded in for old orders; it stays server-side because it is a
+            separate payout obligation on historical rows. */}
         {order.shippingSubtotal + order.handlingSubtotal > 0 && (
           <div className="flex justify-between text-sm py-1">
             <span style={{ color: 'var(--text-tertiary)' }}>Delivery</span>

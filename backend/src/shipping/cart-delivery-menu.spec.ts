@@ -110,15 +110,11 @@ describe('cart delivery menu', () => {
 
     expect(menu.door).not.toBeNull();
     expect(charged).not.toBeNull();
-    // The identity is on the CARRIER rate: the menu quotes
-    // handling-inclusive (one figure for the buyer, margin folded in), while
-    // quoteCombined returns the bare rate because checkout stores the margin
-    // as its own column. Same rate for the same parcel is the property; the
-    // margin is applied once, on one side or the other, never twice.
+    // No delivery margin since 2026-10-23: the menu and the charged quote are
+    // the same carrier rate for the same parcel.
     expect(menu.door!.carrierRateCents).toBe(charged!.priceCents);
     expect(menu.door!.serviceCode).toBe(charged!.serviceCode);
-    // And the buyer-facing figure is that rate plus the margin.
-    expect(menu.door!.priceCents).toBeGreaterThan(menu.door!.carrierRateCents);
+    expect(menu.door!.priceCents).toBe(menu.door!.carrierRateCents);
   });
 
   it('reports a group it cannot courier instead of failing the whole cart', async () => {

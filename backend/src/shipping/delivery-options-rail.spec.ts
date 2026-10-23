@@ -4,16 +4,12 @@ import { ShippingService } from './shipping.service';
 
 // Delivery is door-to-door only, through Bob Go.
 //
-// This file used to be about the two-rail swap; there is one rail now, so what
-// it pins down is the SHAPE of the buyer-facing menu and the pricing rule that
-// used to be split across the checkout: the 10% delivery margin is folded into
-// the one figure the buyer sees, rather than sprung as a separate line at the
-// Pay button. Bob Go returns every provider's door rates together, and our
+// This file pins down the SHAPE of the buyer-facing menu and the pricing rule:
+// the buyer pays the courier's live rate with NO delivery margin (retired
+// 2026-10-23). Bob Go returns every provider's door rates together, and our
 // policy is to show the buyer the cheapest.
 //
-// Every price here is the CARRIER RATE with our 10% delivery margin folded in.
-
-const withMargin = (carrier: number) => carrier + Math.round(carrier * 0.1);
+// Every price here is the CARRIER RATE.
 
 const LISTING = {
   id: 'L1',
@@ -87,7 +83,7 @@ describe('deliveryOptions is door-only', () => {
     const { svc, bobgo } = makeService({ rates: [DOOR_RATE, CHEAPER_DOOR_RATE] });
     const opts = await svc.deliveryOptions('L1', DELIVERY);
 
-    expect(opts.door?.priceCents).toBe(withMargin(9999));
+    expect(opts.door?.priceCents).toBe(9999);
     expect(opts.door?.serviceCode).toBe('bobgo_3083_34_0');
     expect(bobgo.getRates).toHaveBeenCalled();
   });
@@ -107,22 +103,20 @@ describe('deliveryOptions is door-only', () => {
   });
 });
 
-describe('the 10% delivery margin is quoted, not sprung at checkout', () => {
-  it('is included in the door price the buyer picks from', async () => {
+describe('the buyer is quoted the courier rate with no delivery margin', () => {
+  it('shows the carrier rate itself in the door price', async () => {
     const { svc } = makeService({ rates: [DOOR_RATE] });
     const opts = await svc.deliveryOptions('L1', DELIVERY);
-    // R114.95 carrier + 10%. Showing the bare rate and adding the margin
-    // later is the surprise the built-in-markup model exists to remove.
-    expect(opts.door?.priceCents).toBe(withMargin(11495));
+    // The 10% delivery margin was retired on 2026-10-23. The buyer pays the
+    // courier's live rate; the Platform Fee is calculated on item + rate.
+    expect(opts.door?.priceCents).toBe(11495);
   });
 
-  it('exposes the carrier rate separately so fees are not charged on our margin', async () => {
+  it('exposes the same carrier rate as the buyer price', async () => {
     const { svc } = makeService({ rates: [DOOR_RATE] });
     const opts = await svc.deliveryOptions('L1', DELIVERY);
-    // The transaction fee is charged on the CARRIER rate only; the checkout
-    // preview needs both numbers to agree with the server to the cent.
     expect(opts.door?.carrierRateCents).toBe(11495);
-    expect(opts.door?.priceCents).toBeGreaterThan(opts.door!.carrierRateCents);
+    expect(opts.door?.priceCents).toBe(opts.door!.carrierRateCents);
   });
 });
 

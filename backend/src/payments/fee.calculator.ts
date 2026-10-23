@@ -29,39 +29,27 @@ export const AUCTION_SPLIT_RATE = 0.05;
 // the Platform Fee is the only buyer-side charge.
 export type PaymentMode = 'paygate' | 'manual';
 
-// P6.4 — flat GG shipping handling margin, ZAR cents. Charged ONCE per waybill
-// the platform creates (a courier parcel). Buyer-paid and GG-RETAINED
-// (not remitted to the carrier), so shipping stops being pure cost pass-through.
-// A consolidated multi-item parcel books ONE waybill, so it is charged ONCE (on
-// the carrier line only). Firearm dealer/in-person transfers and collection
-// create no waybill and are never charged this. Operator decision 2026-07-03:
-// R15/waybill.
-// Our margin on delivery, as a share of the carrier's own rate.
+// P6.4 — GG shipping handling margin. RETIRED 2026-10-23.
 //
-// Replaced a flat R15 per waybill on 2026-08-15. A flat fee is regressive on
-// cheap legs and invisible on dear ones — R15 was 19% of a R79 collection-point
-// leg but only 6% of a R250 one. A percentage tracks the cost of the thing we
-// are actually carrying risk and admin on.
-//
-// IT IS NEVER SHOWN SEPARATELY. The buyer sees ONE delivery figure, already
-// inclusive — same principle as the item price carrying its own markup. The
-// split is preserved server-side (Transaction.shippingCost is the pure carrier
-// remittance, shippingHandlingCents is ours) because those are two different
-// obligations at payout time, not because the buyer needs the arithmetic.
-export const SHIPPING_HANDLING_RATE = 0.1; // 10% of the carrier rate
+// It used to add 10% of the carrier rate to the buyer's delivery figure, and
+// that figure was then part of the Platform Fee base. Operator decision: the
+// buyer pays the courier's live rate with no margin, and the Platform Fee is
+// calculated on item + that rate. The rate is 0 and the helpers are kept so the
+// historical Transaction.shippingHandlingCents column still reads correctly
+// (old rows carry their margin; new rows are zero).
+export const SHIPPING_HANDLING_RATE = 0;
 
 /**
- * Our delivery margin in cents, from the carrier's quoted rate.
+ * The delivery margin in cents. Always 0 for sales priced after 2026-10-23.
  *
- * Rounded, and never negative — a carrier rate of zero (a firearm dealer
- * transfer, a collection, a consolidated sibling riding another parcel's
- * waybill) earns nothing, which is correct: there is no waybill to service.
+ * Kept as a function so every caller passes the same number into the snapshot,
+ * and so old rows can still be read with their original margin.
  */
 export function shippingHandlingCentsFor(carrierRateCents: number): number {
   return Math.max(0, Math.round(Math.max(0, carrierRateCents) * SHIPPING_HANDLING_RATE));
 }
 
-/** What the buyer sees for delivery: the carrier rate with our margin folded in. */
+/** What the buyer sees for delivery: the courier's live rate, no margin. */
 export function displayShippingCents(carrierRateCents: number): number {
   const rate = Math.max(0, Math.round(carrierRateCents));
   return rate + shippingHandlingCentsFor(rate);
@@ -70,7 +58,7 @@ export function displayShippingCents(carrierRateCents: number): number {
 export interface FeeBreakdown {
   listingPrice: number;   // ZAR cents — the item price (raw seller ask / hammer)
   shippingCost: number;   // ZAR cents — courier rate at checkout time (remitted to carrier)
-  shippingHandlingCents: number; // ZAR cents — GG delivery margin (10% of the carrier rate; buyer-paid, GG-retained, never shown separately)
+  shippingHandlingCents: number; // ZAR cents — legacy delivery margin (0 for sales after 2026-10-23; old rows keep theirs)
   commissionZar: number;  // ZAR cents — SELLER-paid platform commission (auction only)
   processingFee: number;  // ZAR cents — BUYER-paid Platform Fee (charged last on item + delivery)
   buyerTotal: number;     // ZAR cents — what the buyer pays
@@ -163,7 +151,8 @@ export class FeeCalculator {
    * BUY NOW breakdown, from the seller's ask plus the delivery quote.
    *
    * The Platform Fee is calculated LAST, on the whole line (item × quantity)
-   * plus the delivery figure the buyer sees (carrier rate + handling margin).
+   * plus the delivery figure (the courier's live rate; no margin since
+   * 2026-10-23, legacy rows may still carry a handling value).
    * The seller receives their full ask; the buyer pays the fee.
    */
   breakdownBuyNow(

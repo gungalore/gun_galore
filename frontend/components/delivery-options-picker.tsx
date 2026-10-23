@@ -26,10 +26,9 @@ export interface DeliveryAddressInput {
 export interface DeliveryOption {
   kind: 'DOOR_CHEAPEST' | 'DOOR_FASTEST' | 'STORE_PICKUP';
   /**
-   * The carrier's own rate, our delivery margin excluded. NEVER displayed —
-   * the buyer sees one delivery figure (priceCents). It exists because the
-   * transaction fee is charged on the carrier rate only, so the checkout
-   * preview needs it to match the server to the cent.
+   * The carrier's own rate. There is no delivery margin since 2026-10-23, so
+   * this equals priceCents; kept because older quotes and rows carry both.
+   * NEVER displayed on its own — the buyer sees one delivery figure.
    */
   carrierRateCents: number;
   /** Echoed back at checkout so the booking replays the exact rate chosen. */

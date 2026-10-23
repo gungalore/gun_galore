@@ -458,7 +458,7 @@ export class TransactionsService {
       pickupPointSnapshot = quote.pickupPointSnapshot ?? null;
     }
 
-    // P6.4 — handling margin (10% of the carrier rate) charged ONCE per
+    // P6.4 — handling margin (retired 2026-10-23; always 0) charged ONCE per
     // waybill GG creates.
     // A line produces its own waybill iff it's a courier line that is
     // NOT a zero-cost consolidated sibling (siblings ship free inside the
@@ -470,8 +470,8 @@ export class TransactionsService {
     const producesWaybill =
       dto.shippingMethod === 'COURIER' &&
       !isConsolidatedSibling;
-    // 10% of the carrier's rate, not a flat fee. Folded into the single
-    // delivery figure the buyer was quoted — never itemised to them.
+    // Retired 2026-10-23: the buyer pays the courier's live rate.
+    // Kept as 0 so the snapshot column stays consistent for historical rows.
     const handlingFeeCents = producesWaybill
       ? shippingHandlingCentsFor(shippingCostCents)
       : 0;
@@ -660,7 +660,7 @@ export class TransactionsService {
       commissionZar,
       processingFee,
       shippingCost,
-      shippingHandlingCents, // P6.4 — 10%-of-carrier-rate GG margin (0 for firearm/collection/sibling)
+      shippingHandlingCents, // P6.4 — delivery margin, retired 2026-10-23 (always 0)
       shippingServiceCode,
       shippingProviderSlug,
       shippingServiceLevelCode,
@@ -1427,7 +1427,7 @@ export class TransactionsService {
             quantity: core.quantity,
             listingPrice: core.listingPrice,
             shippingCost: core.shippingCost,
-            shippingHandlingCents: core.shippingHandlingCents, // P6.4 — 10%-of-carrier-rate margin
+            shippingHandlingCents: core.shippingHandlingCents, // P6.4 — delivery margin, retired 2026-10-23 (always 0)
             // BUYER-PAID processing fee only (0 when the seller absorbs it), so
             // the Order snapshot identity items + shipping + handling +
             // processingFee == buyerTotal always holds. Handling is subtracted
@@ -1536,7 +1536,7 @@ export class TransactionsService {
         breakdown: {
           listingPrice: totals.itemsSubtotal,
           shippingCost: totals.shippingSubtotal,
-          shippingHandlingCents: totals.handlingSubtotal, // P6.4 — 10%-of-carrier-rate GG margin
+          shippingHandlingCents: totals.handlingSubtotal, // P6.4 — delivery margin, retired 2026-10-23 (always 0)
           commissionZar: created.reduce((s, c) => s + c.commissionZar, 0),
           processingFee: totals.processingFee,
           buyerTotal: totals.buyerTotal,
