@@ -7,6 +7,33 @@ overwritten.
 
 Last updated: **2026-10-23**.
 
+## 2026-10-23 - PRINCIPAL/AGENT SPLIT ON ZOHO INVOICES (DEPLOYED)
+
+**The buyer invoice now states the whole checkout, with the principal/agent
+split in the ledger.** Item price and delivery post to **Client Funds Payable**
+(third-party money); only the Platform Fee posts to revenue. Because Zoho cannot
+split one line across two accounts and the buyer must still see one Delivery
+figure, the delivery handling margin is moved out of the liability by a
+**manual journal** (`zohoHandlingJournalId`, new migration
+`20261023120000_zoho_handling_journal`) leaving the carrier's pure rate to be
+cleared by the Bob Go expense. The invoice refuses to post if its lines do not
+equal `buyerTotal`.
+
+Auctions keep the split fee: the buyer pays a 5% Platform Fee on the invoice and
+the seller is invoiced the other 5% against their hammer, settled from the same
+held funds. Sellers can now request their Zoho accounting statement from
+`POST /api/sellers/me/statement/email`.
+
+The previously uncommitted Zoho shipping-expense work (schema field, migration
+`20261021193000`, release hooks, retry wiring) shipped with it, because the
+deployed schema and code depend on each other.
+
+Commit **`83d94a86`**. Full deploy at 12:51 SAST: rollback
+`alloutdoor-20261023-125108.dump` (36 069 720 bytes), box HEAD matches,
+migrations applied, backend/frontend health x2 OK, public 200 x2, all three PM2
+services online. Unrelated Terms/listing-description/motivation WIP was stashed
+and restored unchanged.
+
 ## 2026-10-23 - HANDOVER CONSENT MOVED TO THE TERMS (DEPLOYED)
 
 **The in-person handover consent block is gone from checkout.** Single-item,
