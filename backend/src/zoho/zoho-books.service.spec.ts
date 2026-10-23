@@ -36,6 +36,8 @@ function buyerTx(overrides: Record<string, unknown> = {}) {
     sellerPayout: 100_000,
     buyerTotal: 127_545,
     zohoBuyerInvoiceId: null,
+    zohoBuyerInvoiceEmailedAt: null,
+    zohoSellerInvoiceEmailedAt: null,
     zohoHandlingJournalId: null,
     zohoShippingJournalId: null,
     zohoCommissionSettleJournalId: null,
@@ -74,7 +76,7 @@ describe('ZohoBooksService buyer paperwork', () => {
         findUnique: jest
           .fn()
           .mockResolvedValueOnce(buyerTx())
-          .mockResolvedValue(buyerTx()),
+          .mockResolvedValue(buyerTx({ zohoBuyerInvoiceId: 'inv1' })),
         update: jest.fn().mockResolvedValue({}),
       },
       user: {
@@ -101,6 +103,9 @@ describe('ZohoBooksService buyer paperwork', () => {
         });
       }
       if (u.includes('/status/sent')) {
+        return response({ code: 0 });
+      }
+      if (u.includes('/invoices/inv1/email') && init?.method === 'POST') {
         return response({ code: 0 });
       }
       if (/\/invoices\/inv1/.test(u) && init?.method === 'GET') {
@@ -198,6 +203,22 @@ describe('ZohoBooksService buyer paperwork', () => {
       expect.objectContaining({
         where: { id: 'tx1' },
         data: expect.objectContaining({ zohoHandlingJournalId: 'jr1' }),
+      }),
+    );
+
+    const buyerEmail = calls.find(
+      (c) => c.url.includes('/invoices/inv1/email') && c.init?.method === 'POST',
+    );
+    expect(JSON.parse(String(buyerEmail?.init?.body))).toEqual({
+      to_mail_ids: ['buyer@example.com'],
+      subject: 'Your ALL Outdoor invoice',
+      body: expect.any(String),
+    });
+    expect(db.transaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          zohoBuyerInvoiceEmailedAt: expect.any(Date),
+        }),
       }),
     );
   });
@@ -473,6 +494,73 @@ describe('ZohoBooksService buyer paperwork', () => {
         }),
       }),
     );
+  });
+
+  it('emails the seller their document once', async () => {
+    const calls: FetchCall[] = [];
+    const db = {
+      transaction: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'tx-s',
+          seller: { email: 'seller@example.com' },
+          listing: { referenceNumber: 'GG-1' },
+          zohoCommissionInvoiceId: 'inv-s',
+          zohoSellerInvoiceEmailedAt: null,
+        }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      user: { findUnique: jest.fn(), update: jest.fn() },
+    };
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      const u = String(url);
+      if (u.includes('/oauth/v2/token')) {
+        return response({ access_token: 'token', expires_in: 3600 });
+      }
+      if (u.includes('/invoices/inv-s/email') && init?.method === 'POST') {
+        return response({ code: 0 });
+      }
+      throw new Error(`unexpected ${init?.method ?? 'GET'} ${u}`);
+    }) as unknown as typeof fetch;
+
+    const svc = new ZohoBooksService(db as never);
+    await svc.emailSellerInvoiceIfNeeded('tx-s');
+
+    const email = calls.find((c) => c.url.includes('/invoices/inv-s/email'));
+    expect(JSON.parse(String(email?.init?.body))).toEqual({
+      to_mail_ids: ['seller@example.com'],
+      subject: 'Your ALL Outdoor seller document',
+      body: expect.any(String),
+    });
+    expect(db.transaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          zohoSellerInvoiceEmailedAt: expect.any(Date),
+        }),
+      }),
+    );
+  });
+
+  it('never emails the same seller document twice', async () => {
+    const db = {
+      transaction: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'tx-s',
+          seller: { email: 'seller@example.com' },
+          zohoCommissionInvoiceId: 'inv-s',
+          zohoSellerInvoiceEmailedAt: new Date(),
+        }),
+        update: jest.fn(),
+      },
+      user: { findUnique: jest.fn(), update: jest.fn() },
+    };
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    const svc = new ZohoBooksService(db as never);
+    await svc.emailSellerInvoiceIfNeeded('tx-s');
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(db.transaction.update).not.toHaveBeenCalled();
   });
 
   it('does not try to settle a zero-fee settlement advice at payout', async () => {

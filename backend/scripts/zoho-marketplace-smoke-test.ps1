@@ -46,7 +46,7 @@ $apiDomain      = if ($creds['ZOHO_BOOKS_API_DOMAIN']) { $creds['ZOHO_BOOKS_API_
 $accountsDomain = if ($creds['ZOHO_BOOKS_ACCOUNTS_DOMAIN']) { $creds['ZOHO_BOOKS_ACCOUNTS_DOMAIN'] } else { 'https://accounts.zoho.com' }
 $orgId          = $creds['ZOHO_BOOKS_ORG_ID']
 $q              = "organization_id=$orgId"
-$inbox          = 'support@alloutdoor.co.za'
+$inbox          = 'gerhard.fourie@alloutdoor.co.za'
 
 # ─── Auth ──────────────────────────────────────────────────────────────
 Write-Host "-> Refreshing access token..." -ForegroundColor Cyan
@@ -236,8 +236,8 @@ $created  = @()
 function Run-BuyNow {
     Write-Host ""
     Write-Host "=== BUY NOW: R1,000 + R159.50 delivery + R115.95 fee ===" -ForegroundColor Magenta
-    $buyerEmail  = "support+smoke-bn-buyer-$ts@alloutdoor.co.za"
-    $sellerEmail = "support+smoke-bn-seller-$ts@alloutdoor.co.za"
+    $buyerEmail  = "gerhard.fourie+smoke-bn-buyer-$ts@alloutdoor.co.za"
+    $sellerEmail = "gerhard.fourie+smoke-bn-seller-$ts@alloutdoor.co.za"
     $buyerId  = New-Contact 'SMOKETEST -- DELETE ME -- BUYER BN' $buyerEmail
     $sellerId = New-Contact 'SMOKETEST -- DELETE ME -- SELLER BN' $sellerEmail
     $script:created += "contact buyer $buyerId", "contact seller $sellerId"
@@ -273,7 +273,7 @@ function Run-BuyNow {
 
     Send-Invoice $buyerInv.invoice_id 'buyer'
     Send-Invoice $sellerAdvice.invoice_id 'seller'
-    Send-Statement $sellerId 'seller' $sellerEmail
+    Send-Statement $sellerId 'seller' $inbox
 
     $fresh = (Api 'GET' "/invoices/$($buyerInv.invoice_id)").invoice
     if ([Math]::Abs([double]$fresh.total - ($totalC / 100)) -gt 0.001) { $script:failures += "BN buyer invoice total $($fresh.total) != $(Zar $totalC)" }
@@ -294,8 +294,8 @@ function Run-BuyNow {
 function Run-Auction {
     Write-Host ""
     Write-Host "=== AUCTION: hammer R1,000 + R159.50 delivery, 5% / 5% split ===" -ForegroundColor Magenta
-    $buyerEmail  = "support+smoke-au-buyer-$ts@alloutdoor.co.za"
-    $sellerEmail = "support+smoke-au-seller-$ts@alloutdoor.co.za"
+    $buyerEmail  = "gerhard.fourie+smoke-au-buyer-$ts@alloutdoor.co.za"
+    $sellerEmail = "gerhard.fourie+smoke-au-seller-$ts@alloutdoor.co.za"
     $buyerId  = New-Contact 'SMOKETEST -- DELETE ME -- BUYER AU' $buyerEmail
     $sellerId = New-Contact 'SMOKETEST -- DELETE ME -- SELLER AU' $sellerEmail
     $script:created += "contact buyer $buyerId", "contact seller $sellerId"
@@ -348,7 +348,7 @@ function Run-Auction {
 
     Send-Invoice $buyerInv.invoice_id 'buyer'
     Send-Invoice $sellerInv.invoice_id 'seller'
-    Send-Statement $sellerId 'seller' $sellerEmail
+    Send-Statement $sellerId 'seller' $inbox
 
     $buyerFresh = (Api 'GET' "/invoices/$($buyerInv.invoice_id)").invoice
     $sellerFresh = (Api 'GET' "/invoices/$($sellerInv.invoice_id)").invoice

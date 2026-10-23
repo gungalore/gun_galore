@@ -617,6 +617,10 @@ export class ZohoBooksService {
           ? `Created commission invoice ${resp.invoice?.invoice_number ?? invoiceId} for tx ${transactionId} (R${commissionRand.toFixed(2)})`
           : `Created seller settlement advice ${resp.invoice?.invoice_number ?? invoiceId} for tx ${transactionId} (R0.00)`,
       );
+
+      // The seller must actually receive their paperwork, not just have it
+      // sitting in Books.
+      await this.emailSellerInvoiceIfNeeded(transactionId);
     } catch (err) {
       await this.markFailed(transactionId, err as Error);
     }
@@ -805,6 +809,9 @@ export class ZohoBooksService {
 
       // Move the delivery margin out of the liability into delivery income.
       await this.createHandlingJournal(transactionId);
+
+      // The buyer must actually receive their invoice.
+      await this.emailBuyerInvoiceIfNeeded(transactionId);
     } catch (err) {
       await this.markFailed(transactionId, err as Error);
     }
@@ -1040,6 +1047,8 @@ export class ZohoBooksService {
       // The invoice may have posted before the margin journal existed (e.g.
       // the journal call failed on the first pass). Idempotent.
       await this.createHandlingJournal(transactionId);
+      // A prior pass may have settled the invoice but failed to email it.
+      await this.emailBuyerInvoiceIfNeeded(transactionId);
     } catch (err) {
       await this.markFailed(transactionId, err as Error);
     }
@@ -1234,14 +1243,47 @@ export class ZohoBooksService {
         await this.createShippingCostJournal(t.id);
       }
 
+      // Documents that exist but were never delivered. The create methods
+      // email inline; this catches a crash between create and send (status OK,
+      // stamp null) and a send that failed.
+      const unemailedBuyer = await this.prisma.transaction.findMany({
+        where: {
+          zohoBuyerInvoiceId: { not: null },
+          zohoBuyerInvoiceEmailedAt: null,
+          zohoSyncStatus: { in: ['OK', 'FAILED'] },
+          zohoSyncLastAttemptAt: { lt: staleFloor },
+        },
+        select: { id: true },
+        take: limit,
+      });
+      for (const t of unemailedBuyer) {
+        await this.emailBuyerInvoiceIfNeeded(t.id);
+      }
+
+      const unemailedSeller = await this.prisma.transaction.findMany({
+        where: {
+          zohoCommissionInvoiceId: { not: null },
+          zohoSellerInvoiceEmailedAt: null,
+          zohoSyncStatus: { in: ['OK', 'FAILED'] },
+          zohoSyncLastAttemptAt: { lt: staleFloor },
+        },
+        select: { id: true },
+        take: limit,
+      });
+      for (const t of unemailedSeller) {
+        await this.emailSellerInvoiceIfNeeded(t.id);
+      }
+
       if (
         failedInvoices.length ||
         failedBuyerInvoices.length ||
         unsettledBuyerInvoices.length ||
-        failedShippingExpenses.length
+        failedShippingExpenses.length ||
+        unemailedBuyer.length ||
+        unemailedSeller.length
       ) {
         this.logger.log(
-          `retryFailedRevenueDocs: re-fired ${failedInvoices.length} commission + ${failedBuyerInvoices.length} new buyer + ${unsettledBuyerInvoices.length} unsettled buyer + ${failedShippingExpenses.length} carrier expense(s)`,
+          `retryFailedRevenueDocs: re-fired ${failedInvoices.length} commission + ${failedBuyerInvoices.length} new buyer + ${unsettledBuyerInvoices.length} unsettled buyer + ${failedShippingExpenses.length} carrier expense(s) + ${unemailedBuyer.length} buyer email(s) + ${unemailedSeller.length} seller email(s)`,
         );
       }
     } catch (err) {
@@ -1728,6 +1770,117 @@ export class ZohoBooksService {
       `Emailed Books statement to seller ${userId} (contact ${contactId})`,
     );
     return true;
+  }
+
+  // ─── Invoice email delivery ──────────────────────────────────────
+
+  /**
+   * Emails a Zoho invoice/document to its recipient.
+   *
+   * `to_mail_ids` must be supplied explicitly: Books' recipient resolution is
+   * unreliable across contact records, and a duplicate/missing address fails
+   * with code 1007.
+   */
+  private async emailInvoiceDocument(
+    invoiceId: string,
+    toEmail: string,
+    subject: string,
+    body: string,
+  ): Promise<void> {
+    await this.request<{ code?: number; message?: string }>(
+      'POST',
+      `/invoices/${invoiceId}/email`,
+      { to_mail_ids: [toEmail], subject, body },
+    );
+  }
+
+  /**
+   * Sends the buyer their invoice, once.
+   *
+   * Idempotent via zohoBuyerInvoiceEmailedAt. Never throws — a failed send is
+   * written as FAILED so the hourly sweep can retry it without re-creating the
+   * invoice.
+   */
+  async emailBuyerInvoiceIfNeeded(transactionId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        buyer: { select: { email: true } },
+        listing: { select: { referenceNumber: true } },
+      },
+    });
+    if (!tx || !tx.zohoBuyerInvoiceId || tx.zohoBuyerInvoiceEmailedAt) return;
+    if (!tx.buyer?.email) {
+      this.logger.warn(
+        `Buyer invoice ${tx.zohoBuyerInvoiceId} not emailed — buyer has no email`,
+      );
+      return;
+    }
+    const orderRef =
+      tx.listing?.referenceNumber ?? tx.id.slice(-8).toUpperCase();
+    try {
+      await this.emailInvoiceDocument(
+        tx.zohoBuyerInvoiceId,
+        tx.buyer.email,
+        'Your ALL Outdoor invoice',
+        `Thank you for your order ${orderRef}. Your invoice is attached.`,
+      );
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: { zohoBuyerInvoiceEmailedAt: new Date() },
+      });
+      this.logger.log(
+        `Emailed buyer invoice ${tx.zohoBuyerInvoiceId} for tx ${transactionId}`,
+      );
+    } catch (err) {
+      await this.markFailed(transactionId, err as Error);
+    }
+  }
+
+  /**
+   * Sends the seller their document — the auction fee invoice or the Buy Now
+   * settlement advice — once.
+   *
+   * Idempotent via zohoSellerInvoiceEmailedAt. Never throws.
+   */
+  async emailSellerInvoiceIfNeeded(transactionId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        seller: { select: { email: true } },
+        listing: { select: { referenceNumber: true } },
+      },
+    });
+    if (!tx || !tx.zohoCommissionInvoiceId || tx.zohoSellerInvoiceEmailedAt) {
+      return;
+    }
+    if (!tx.seller?.email) {
+      this.logger.warn(
+        `Seller invoice ${tx.zohoCommissionInvoiceId} not emailed — seller has no email`,
+      );
+      return;
+    }
+    const orderRef =
+      tx.listing?.referenceNumber ?? tx.id.slice(-8).toUpperCase();
+    try {
+      await this.emailInvoiceDocument(
+        tx.zohoCommissionInvoiceId,
+        tx.seller.email,
+        'Your ALL Outdoor seller document',
+        `Your document for sale ${orderRef} is attached.`,
+      );
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: { zohoSellerInvoiceEmailedAt: new Date() },
+      });
+      this.logger.log(
+        `Emailed seller invoice ${tx.zohoCommissionInvoiceId} for tx ${transactionId}`,
+      );
+    } catch (err) {
+      await this.markFailed(transactionId, err as Error);
+    }
   }
 
   // ─── Health check ────────────────────────────────────────────────

@@ -2091,6 +2091,10 @@ model Transaction {
   zohoHandlingJournalId   String?
   zohoShippingJournalId   String?
   zohoShippingExpenseId   String?
+  // Email delivery stamps. Both parties receive their document; these make the
+  // send idempotent so a retry cannot email the same invoice twice.
+  zohoBuyerInvoiceEmailedAt  DateTime?
+  zohoSellerInvoiceEmailedAt DateTime?
   // ── Legacy first-party-sale Zoho fields ─────────────────────────────
   // For a first-party sale (GG as seller) there is no commission invoice +
   // payout. Instead a
