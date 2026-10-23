@@ -176,6 +176,22 @@ function New-Carrier-Journal([string]$reference, [int]$cents) {
         @{ account_id = $bank.account_id; debit_or_credit = 'credit'; amount = $cents / 100; description = "Carrier freight -- $reference" }
     )
 }
+function New-Seller-Advice([string]$contactId, [string]$reference, [string]$saleRef, [string]$title, [int]$saleC, [int]$payoutC) {
+    # Buy Now seller paperwork: a zero-total settlement advice. Zoho accepts a
+    # zero invoice and marks it paid once sent; it has no ledger effect.
+    $body = @{
+        customer_id = $contactId; reference_number = $reference; date = $today; due_date = $today
+        line_items = @(@{
+            name = 'Sale settlement advice (not a tax invoice)'
+            description = "$saleRef -- $title. Sold by @smoke_seller on ALL Outdoor as agent. Sale price $(Zar $saleC); Platform Fee $(Zar 0); paid to seller $(Zar $payoutC)."
+            rate = 0; quantity = 1; account_id = $trust.account_id
+        })
+        notes = "$reference.`nALL Outdoor acted as agent for the seller. The Platform Fee on this sale was paid by the buyer, so no fee is deducted from the seller. This is a settlement advice, not a tax invoice.`nALL Outdoor transaction reference: $saleRef"
+    }
+    $r = (Api 'POST' '/invoices' $body).invoice
+    Api 'POST' "/invoices/$($r.invoice_id)/status/sent" @{} | Out-Null
+    return $r
+}
 function Send-Invoice([string]$invoiceId, [string]$party) {
     if ($NoEmails) { Write-Host "  email skipped (-NoEmails): $party invoice" -ForegroundColor Yellow; return }
     try {
@@ -236,6 +252,9 @@ function Run-BuyNow {
     ) "ALL Outdoor acts as agent for the seller. Item and delivery are held in Client Funds Payable; only the Platform Fee is our revenue. Reference: $ref"
     $script:created += "buyer invoice $($buyerInv.invoice_number) $($buyerInv.invoice_id)"
 
+    $sellerAdvice = New-Seller-Advice $sellerId "Sold for $(Zar $item) - $(Zar 0) (Platform Fee) = $(Zar $payoutC) Due to you" $ref 'Smoke test item' $item $payoutC
+    $script:created += "seller advice $($sellerAdvice.invoice_number) $($sellerAdvice.invoice_id)"
+
     $buyerPay = Pay-Invoice $buyerId $buyerInv $bank.account_id "Platform charges -- $ref" 'Buyer payment received into the bank'
     $script:created += "buyer payment $buyerPay"
 
@@ -253,6 +272,7 @@ function Run-BuyNow {
     $script:created += "payout journal $($pJournal.journal_id)"
 
     Send-Invoice $buyerInv.invoice_id 'buyer'
+    Send-Invoice $sellerAdvice.invoice_id 'seller'
     Send-Statement $sellerId 'seller' $sellerEmail
 
     $fresh = (Api 'GET' "/invoices/$($buyerInv.invoice_id)").invoice
@@ -262,9 +282,13 @@ function Run-BuyNow {
     if ($lineAccts[0] -ne $trust.account_id -or $lineAccts[1] -ne $trust.account_id -or $lineAccts[2] -ne $fee.account_id) {
         $script:failures += "BN line accounts wrong: $($lineAccts -join ',')"
     }
+    $adviceFresh = (Api 'GET' "/invoices/$($sellerAdvice.invoice_id)").invoice
+    if ([Math]::Abs([double]$adviceFresh.total) -gt 0.001) { $script:failures += "BN seller advice total $($adviceFresh.total) != R0" }
+    if ([double]$adviceFresh.balance -ne 0) { $script:failures += "BN seller advice balance $($adviceFresh.balance) != 0" }
+    if (@($adviceFresh.line_items)[0].rate -ne 0) { $script:failures += "BN seller advice line is not zero-rated" }
     $cfp = ($item + $deliveryC) - $handlingC - $carrierC - $payoutC
     if ($cfp -ne 0) { $script:failures += "BN trust arithmetic leaves $cfp cents" }
-    Write-Host "  buyer invoice $($fresh.invoice_number) total $(Zar ([int]($fresh.total * 100))) paid; trust leaves $(Zar $cfp)" -ForegroundColor Green
+    Write-Host "  buyer invoice $($fresh.invoice_number) total $(Zar ([int]($fresh.total * 100))) paid; seller advice $($adviceFresh.invoice_number) R0; trust leaves $(Zar $cfp)" -ForegroundColor Green
 }
 
 function Run-Auction {

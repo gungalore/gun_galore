@@ -2046,10 +2046,13 @@ model Transaction {
 
   // ── Zoho Books linkage ────────────────────────────────────────────
   // Documents created in Books for this transaction:
-  //   - zohoCommissionInvoiceId: Gun Galore → Seller invoice for the
-  //     platform commission. Created on verification APPROVED.
-  //   - zohoCommissionPaymentId: the payment record that marks the
-  //     invoice paid. Created when the seller payout fires.
+  //   - zohoCommissionInvoiceId: ALL Outdoor → Seller document. A fee-bearing
+  //     sale (auction) gets a tax invoice for the commission; a zero-fee sale
+  //     (Buy Now) gets a zero-total SETTLEMENT ADVICE, clearly marked as not a
+  //     tax invoice. Created at release.
+  //   - zohoCommissionPaymentId: the payment record that marks the fee invoice
+  //     paid. Created when the seller payout fires. 'NOT_APPLICABLE' on a
+  //     zero-fee settlement advice.
   //   - zohoCreditNoteId: only set on refund — credit note against
   //     the original commission invoice.
   //   - zohoBuyerInvoiceId: All Outdoor → Buyer invoice for the WHOLE checkout.
