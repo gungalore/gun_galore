@@ -7,6 +7,27 @@ overwritten.
 
 Last updated: **2026-10-23**.
 
+## 2026-10-23 - DELIVERY HANDLING MARGIN REMOVED (DEPLOYED)
+
+**The buyer no longer pays a 10% margin on shipping, and the Platform Fee is no
+longer charged on one.** `SHIPPING_HANDLING_RATE` is 0 and
+`displayShippingCents` returns the bare courier rate.
+`Transaction.shippingHandlingCents` stays on the row so historical sales keep
+their original margin; new sales store 0. Example: a R145 carrier used to be
+R159.50 delivery with the fee on R159.50; now delivery is R145 and the fee base
+is item + R145.
+
+- Updated: shipping specs (no `withMargin`), `/fees` example and delivery
+  section, sell-form notes, help-centre `ship-handling-fee`,
+  `COMPLIANCE-RULES.md`, `docs/project-reference.md`.
+- Verification: backend `tsc`, 5,787 backend tests, frontend `tsc`, 1,802
+  frontend tests, production build.
+
+Deploy at 16:00 SAST (commit `18620e7c`): rollback
+`alloutdoor-20261023-155902.dump` (36 071 929 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Unrelated
+Terms/listing/motivation WIP stashed and restored unchanged.
+
 ## 2026-10-23 - BOTH PARTIES RECEIVE THEIR ZOHO PAPERWORK (DEPLOYED)
 
 **Creating the document was not enough: the emails were never sent.** Buyer
