@@ -7,6 +7,33 @@ overwritten.
 
 Last updated: **2026-10-23**.
 
+## 2026-10-23 - BUY NOW SELLER PAPERWORK + SMOKE (DEPLOYED)
+
+**A Buy Now seller had no Zoho document at all** (zero commission was marked
+SKIPPED). `createCommissionInvoice` now branches: a fee-bearing sale (auction)
+gets the 5% Platform Fee invoice; a zero-fee sale (Buy Now) gets a **zero-total
+settlement advice** — clearly named "Sale settlement advice (not a tax
+invoice)", a balance-sheet line, no ledger effect — created, marked sent and
+stored in `zohoCommissionInvoiceId`. The payout batch stamps zero-fee rows
+`NOT_APPLICABLE` instead of re-reading them every run, and refunds skip the
+credit note when there is no fee.
+
+**Live smoke (R1,000 + R145 freight, commit `39870c49`):**
+
+| | Buyer | Seller |
+|---|---|---|
+| Buy Now | INV-000035 · R1,275.45 paid | INV-000036 · R0 settlement advice |
+| Auction | INV-000037 · R1,217.48 paid | INV-000038 · R50.00 paid |
+
+Both parties' documents were emailed, both seller statements were emailed, and
+the ledger closed at **trust R0.00 / Undeposited Funds R0.00**.
+
+Deploy at 14:44 SAST: rollback `alloutdoor-20261023-144418.dump`
+(36 070 929 bytes), no pending migrations, health x2 OK, public 200 x2, three
+PM2 services online. Unrelated Terms/listing/motivation WIP stashed and
+restored unchanged. Clean up the smoke records with
+`backend/scripts/zoho-smoke-cleanup.ps1 -Apply`.
+
 ## 2026-10-23 - ZOHO LEDGER CORRECTION + LIVE SMOKE TEST (DEPLOYED)
 
 **The first principal/agent recipe could not reconcile, and the live smoke test
