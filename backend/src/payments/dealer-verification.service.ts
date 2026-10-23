@@ -1,4 +1,4 @@
-﻿import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 import type { LlmPart } from '../common/llm/llm.types';
@@ -693,6 +693,7 @@ export class DealerVerificationService {
       // and surface in the admin panel for manual retry.
       await this.zohoBooks.createCommissionInvoice(transactionId);
       await this.zohoBooks.createBuyerInvoice(transactionId);
+      await this.zohoBooks.createShippingExpense(transactionId);
       await this.zohoBooks.markCommissionInvoicePaid(transactionId);
     } catch (err) {
       this.logger.error(

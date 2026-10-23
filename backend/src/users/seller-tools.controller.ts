@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Query,
   Res,
   UseGuards,
@@ -24,6 +25,16 @@ export class SellerToolsController {
     @Query('to') to?: string,
   ) {
     return this.tools.payoutStatement(userId, from, to);
+  }
+
+  // Emails the seller their Zoho Books accounting statement for the period.
+  @Post('statement/email')
+  emailStatement(
+    @CurrentUser() userId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.tools.emailAccountingStatement(userId, from, to);
   }
 
   @Get('statement.csv')

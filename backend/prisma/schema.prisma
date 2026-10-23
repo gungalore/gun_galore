@@ -2052,10 +2052,18 @@ model Transaction {
   //     invoice paid. Created when the seller payout fires.
   //   - zohoCreditNoteId: only set on refund — credit note against
   //     the original commission invoice.
-  //   - zohoBuyerInvoiceId: All Outdoor → Buyer invoice for the platform's
-  //     own supplies to the buyer (Platform Fee + delivery). Created
-  //     when the sale completes. Separate from the seller invoice because it
-  //     is a different counterparty and a different supply.
+  //   - zohoBuyerInvoiceId: All Outdoor → Buyer invoice for the WHOLE checkout.
+  //     The item price and delivery are posted to Client Funds Payable (they
+  //     are collected for the seller/carrier); only the Platform Fee posts to
+  //     revenue. Separate from the seller invoice because it is a different
+  //     counterparty and a different supply.
+  //   - zohoHandlingJournalId: manual journal that moves the delivery handling
+  //     margin out of Client Funds Payable into delivery income, so the buyer
+  //     invoice can show ONE delivery figure.
+  //   - zohoShippingExpenseId: Bob Go → All Outdoor expense for the carrier's
+  //     cost on a courier sale. Created at release from the quoted carrier
+  //     rate (shippingCost, excluding our handling margin). An Expense (not a
+  //     Bill) because this Books plan does not include Bills.
   //
   // zohoSyncStatus tracks the most recent attempt:
   //   - null / 'IDLE': nothing has tried to sync yet
@@ -2067,6 +2075,8 @@ model Transaction {
   zohoCommissionPaymentId String?
   zohoCreditNoteId        String?
   zohoBuyerInvoiceId      String?
+  zohoHandlingJournalId   String?
+  zohoShippingExpenseId   String?
   // ── Legacy first-party-sale Zoho fields ─────────────────────────────
   // For a first-party sale (GG as seller) there is no commission invoice +
   // payout. Instead a

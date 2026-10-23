@@ -11,6 +11,7 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { MotivationsModule } from '../motivations/motivations.module';
 import { LicenceCentreModule } from '../licence-centre/licence-centre.module';
 import { KycModule } from '../kyc/kyc.module';
+import { ZohoBooksModule } from '../zoho/zoho-books.module';
 
 // Global because the AuthGuard depends on UsersService — and the guard is
 // instantiated per-controller-module by Nest. Making this global means any
@@ -33,6 +34,7 @@ import { KycModule } from '../kyc/kyc.module';
     MotivationsModule,
     LicenceCentreModule,
     KycModule,
+    ZohoBooksModule,
   ],
   // Public controller listed BEFORE the auth-guarded one so its routes
   // are matched first (Nest resolves by registration order).
