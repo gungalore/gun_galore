@@ -7,6 +7,34 @@ overwritten.
 
 Last updated: **2026-10-23**.
 
+## 2026-10-23 - BOTH PARTIES RECEIVE THEIR ZOHO PAPERWORK (DEPLOYED)
+
+**Creating the document was not enough: the emails were never sent.** Buyer
+invoices and seller documents were marked sent and left in Books. Now:
+- the buyer invoice is emailed to the buyer after settlement;
+- the seller fee invoice (auction) or settlement advice (Buy Now) is emailed to
+  the seller on creation;
+- `zohoBuyerInvoiceEmailedAt` / `zohoSellerInvoiceEmailedAt` (migration
+  `20261023150000_zoho_invoice_emails`) make each send idempotent;
+- the hourly sweep retries a missed send without re-creating the document.
+
+**Live smoke (R1,000 + R145 freight, commit `151a820d`), every email sent to
+gerhard.fourie@alloutdoor.co.za:**
+
+| | Buyer document | Seller document |
+|---|---|---|
+| Buy Now | INV-000039 · R1,275.45 · emailed | INV-000040 · R0 advice · emailed |
+| Auction | INV-000041 · R1,217.48 · emailed | INV-000042 · R50.00 · emailed |
+
+Both seller statements were emailed too. Ledger closed at **trust R0.00 /
+Undeposited Funds R0.00**.
+
+Deploy at 15:02 SAST: rollback `alloutdoor-20261023-150238.dump`
+(36 071 115 bytes), migrations applied, health x2 OK, public 200 x2, three PM2
+services online. Unrelated Terms/listing/motivation WIP stashed and restored
+unchanged. Remove the smoke records with
+`backend/scripts/zoho-smoke-cleanup.ps1 -Apply`.
+
 ## 2026-10-23 - BUY NOW SELLER PAPERWORK + SMOKE (DEPLOYED)
 
 **A Buy Now seller had no Zoho document at all** (zero commission was marked
