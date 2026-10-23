@@ -5,7 +5,25 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-22**.
+Last updated: **2026-10-23**.
+
+## 2026-10-23 - HANDOVER CONSENT MOVED TO THE TERMS (DEPLOYED)
+
+**The in-person handover consent block is gone from checkout.** Single-item,
+offer and cart checkout no longer render the bullets, the two tickboxes and the
+typed "I UNDERSTAND". The held-funds, contact-sharing, no-delivery-guarantee
+and non-refundable Platform Fee terms now live in Terms sections 3 and 7 (with
+contact sharing named in Privacy sections 6 and 7) and are accepted with the
+Terms at registration. The checkout payload still sends
+`privateArrangeConsent: true`, so `privateArrangeAcceptedAt` is still stamped.
+The firearm 18+/SAPS-competency attestation stays at checkout. Sign-up copy now
+names the handover/contact-sharing/fee terms and `POLICY_VERSION` is
+`2026-10-23`.
+
+Commit **`330435fa`**. Full deploy at 10:34 SAST: rollback
+`alloutdoor-20261023-103445.dump` (36 068 477 bytes), box HEAD matches,
+backend/frontend health x2 OK, public 200 x2, all three PM2 services online.
+No pending migrations. The Zoho shipping-expense WIP was stashed and restored.
 
 ## 2026-10-22 - IN-PERSON HANDOVER EVERYWHERE, PARGO-ONLY PICKUP (DEPLOYED)
 
