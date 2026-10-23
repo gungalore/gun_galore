@@ -1,4 +1,4 @@
-﻿# =====================================================================
+# =====================================================================
 # Zoho Books integration smoke test
 # =====================================================================
 # Exercises the same API patterns ZohoBooksService uses, against your
@@ -13,7 +13,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-# ─── Load credentials from backend/.env ────────────────────────────────
+# --- Load credentials from backend/.env --------------------------------
 $envPath = Join-Path $PSScriptRoot '..\.env'
 if (-not (Test-Path $envPath)) {
     Write-Error "Can't find .env at $envPath"
@@ -40,7 +40,7 @@ foreach ($k in 'ZOHO_BOOKS_CLIENT_ID','ZOHO_BOOKS_CLIENT_SECRET','ZOHO_BOOKS_REF
     }
 }
 
-# ─── Step 1: Get access token ──────────────────────────────────────────
+# --- Step 1: Get access token ------------------------------------------
 Write-Host "-> Refreshing access token..." -ForegroundColor Cyan
 $tokenResp = Invoke-RestMethod -Method Post -Uri "$accountsDomain/oauth/v2/token" -Body @{
     grant_type    = 'refresh_token'
@@ -58,7 +58,7 @@ Write-Host "  Access token: $($accessToken.Substring(0,20))... (expires in $($to
 
 $authHeader = @{ Authorization = "Zoho-oauthtoken $accessToken" }
 
-# ─── Step 2: Look up the accounts we need ──────────────────────────────
+# --- Step 2: Look up the accounts we need ------------------------------
 Write-Host "-> Looking up Books accounts..." -ForegroundColor Cyan
 $accounts = (Invoke-RestMethod -Uri "$apiDomain/books/v3/chartofaccounts?organization_id=$orgId" -Headers $authHeader).chartofaccounts
 $commissionAcc = $accounts | Where-Object { $_.account_name -eq 'Commission Revenue' }
@@ -68,7 +68,7 @@ if (-not $cfpAcc) { Write-Error "Client Funds Payable account not found"; exit 1
 Write-Host "  Commission Revenue: $($commissionAcc.account_id)" -ForegroundColor Green
 Write-Host "  Client Funds Payable: $($cfpAcc.account_id) (type: $($cfpAcc.account_type))" -ForegroundColor Green
 
-# ─── Step 3: Create a test contact ─────────────────────────────────────
+# --- Step 3: Create a test contact -------------------------------------
 # Suffix the contact name with a timestamp so re-running the script
 # doesn't collide with the previous run's contact (Books rejects
 # duplicate contact_name).
@@ -96,7 +96,7 @@ if (-not $contactId) {
 }
 Write-Host "  Contact created: $contactId" -ForegroundColor Green
 
-# ─── Step 4: Create the test invoice (commission) ──────────────────────
+# --- Step 4: Create the test invoice (commission) ----------------------
 # Sample numbers -- R10,000 listing, R500 commission, R9,500 payout --
 # matches the worked example from the accounting flow doc.
 $listingPrice  = 10000.00
@@ -140,7 +140,7 @@ Write-Host "  Invoice created: $invoiceNumber (id $invoiceId)" -ForegroundColor 
 Write-Host "    Total: R $commission" -ForegroundColor DarkGray
 Write-Host "    Status: $($invResp.invoice.status)" -ForegroundColor DarkGray
 
-# ─── Step 5: Mark invoice paid against Client Funds Payable ────────────
+# --- Step 5: Mark invoice paid against Client Funds Payable ------------
 # This is THE test -- does Books accept a Liability account as the
 # deposit_to_account? If yes, our ZB-5 design works as-is. If no, we
 # need to switch to a Manual Journal posting pattern.
@@ -151,7 +151,7 @@ $paymentBody = @{
     amount                   = $commission
     date                     = $today
     reference_number         = 'Settled from buyer funds -- SMOKETEST-001'
-    deposit_to_account_id    = $cfpAcc.account_id
+    account_id               = $cfpAcc.account_id
     invoices                 = @(@{
         invoice_id     = $invoiceId
         amount_applied = $commission
@@ -185,11 +185,11 @@ try {
     exit 2
 }
 
-# ─── Summary ───────────────────────────────────────────────────────────
+# --- Summary -----------------------------------------------------------
 Write-Host ""
-Write-Host "─────────────────────────────────────────────────────────" -ForegroundColor Green
+Write-Host "---------------------------------------------------------" -ForegroundColor Green
 Write-Host "  SMOKE TEST PASSED" -ForegroundColor Green
-Write-Host "─────────────────────────────────────────────────────────" -ForegroundColor Green
+Write-Host "---------------------------------------------------------" -ForegroundColor Green
 Write-Host ""
 Write-Host "Created in your Books account:" -ForegroundColor White
 Write-Host "  Contact:  $contactId" -ForegroundColor White

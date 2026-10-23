@@ -5,7 +5,10 @@ const ACCOUNTS = [
   { account_id: 'acc-handling', account_name: 'Shipping Handling Revenue' },
   { account_id: 'acc-shipping', account_name: 'Shipping Charge' },
   { account_id: 'acc-carrier', account_name: 'Courier and Delivery Costs' },
+  { account_id: 'acc-trust', account_name: 'Client Funds Payable (Trust)' },
   { account_id: 'acc-cfp', account_name: 'Client Funds Payable' },
+  { account_id: 'acc-bank', account_name: 'Bank - FNB Business' },
+  { account_id: 'acc-uf', account_name: 'Undeposited Funds' },
 ];
 
 type FetchCall = { url: string; init?: RequestInit };
@@ -34,6 +37,8 @@ function buyerTx(overrides: Record<string, unknown> = {}) {
     buyerTotal: 127_545,
     zohoBuyerInvoiceId: null,
     zohoHandlingJournalId: null,
+    zohoShippingJournalId: null,
+    zohoCommissionSettleJournalId: null,
     zohoShippingExpenseId: null,
     zohoSyncStatus: null,
     listing: { title: 'Test item', referenceNumber: 'GG-BN-1234' },
@@ -133,12 +138,12 @@ describe('ZohoBooksService buyer paperwork', () => {
     // Item price and the whole delivery figure are third-party money.
     expect(body.line_items[0]).toMatchObject({
       rate: 1_000,
-      account_id: 'acc-cfp',
+      account_id: 'acc-trust',
     });
     expect(body.line_items[1]).toMatchObject({
       name: 'Delivery',
       rate: 159.5,
-      account_id: 'acc-cfp',
+      account_id: 'acc-trust',
     });
     // Only our platform fee is revenue.
     expect(body.line_items[2]).toMatchObject({
@@ -162,7 +167,7 @@ describe('ZohoBooksService buyer paperwork', () => {
     const payment = calls.find((c) => c.url.includes('/customerpayments'));
     const paymentBody = JSON.parse(String(payment?.init?.body));
     expect(paymentBody.amount).toBe(1_275.45);
-    expect(paymentBody.deposit_to_account_id).toBe('acc-cfp');
+    expect(paymentBody.account_id).toBe('acc-bank');
     expect(paymentBody.invoices[0].invoice_id).toBe('inv1');
 
     // The buyer sees one Delivery figure; the margin is moved to income.
@@ -172,7 +177,7 @@ describe('ZohoBooksService buyer paperwork', () => {
     const journalBody = JSON.parse(String(journalPost?.init?.body));
     expect(journalBody.line_items).toEqual([
       expect.objectContaining({
-        account_id: 'acc-cfp',
+        account_id: 'acc-trust',
         debit_or_credit: 'debit',
         amount: 14.5,
       }),
@@ -197,7 +202,7 @@ describe('ZohoBooksService buyer paperwork', () => {
     );
   });
 
-  it('records a Bob Go expense for the carrier share only', async () => {
+  it('clears the carrier freight out of the liability with a journal', async () => {
     const calls: FetchCall[] = [];
     const db = {
       transaction: {
@@ -216,39 +221,43 @@ describe('ZohoBooksService buyer paperwork', () => {
       if (u.includes('/chartofaccounts')) {
         return response({ chartofaccounts: ACCOUNTS });
       }
-      if (u.includes('/contacts?contact_type=vendor')) {
-        return response({ contacts: [] });
-      }
-      if (/\/contacts(\?|$)/.test(u) && init?.method === 'POST') {
-        return response({ contact: { contact_id: 'vendor-bobgo' } });
-      }
-      if (/\/expenses(\?|$)/.test(u) && init?.method === 'POST') {
-        return response({ expense: { expense_id: 'exp1' } });
+      if (/\/journals(\?|$)/.test(u) && init?.method === 'POST') {
+        return response({
+          journal: { journal_id: 'jr-ship', journal_number: 'JRN-2' },
+        });
       }
       throw new Error(`unexpected ${init?.method ?? 'GET'} ${u}`);
     }) as unknown as typeof fetch;
 
     const svc = new ZohoBooksService(db as never);
-    await svc.createShippingExpense('tx1');
+    await svc.createShippingCostJournal('tx1');
 
-    const expensePost = calls.find(
-      (c) => /\/expenses(\?|$)/.test(c.url) && c.init?.method === 'POST',
+    const journalPost = calls.find(
+      (c) => /\/journals(\?|$)/.test(c.url) && c.init?.method === 'POST',
     );
-    const body = JSON.parse(String(expensePost?.init?.body));
-    expect(body.vendor_id).toBe('vendor-bobgo');
-    expect(body.amount).toBe(145);
-    expect(body.account_id).toBe('acc-carrier');
-    expect(body.paid_through_account_id).toBe('acc-cfp');
+    const body = JSON.parse(String(journalPost?.init?.body));
+    expect(body.line_items).toEqual([
+      expect.objectContaining({
+        account_id: 'acc-trust',
+        debit_or_credit: 'debit',
+        amount: 145,
+      }),
+      expect.objectContaining({
+        account_id: 'acc-bank',
+        debit_or_credit: 'credit',
+        amount: 145,
+      }),
+    ]);
 
     expect(db.transaction.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'tx1' },
-        data: expect.objectContaining({ zohoShippingExpenseId: 'exp1' }),
+        data: expect.objectContaining({ zohoShippingJournalId: 'jr-ship' }),
       }),
     );
   });
 
-  it('creates no carrier bill when there is no waybill', async () => {
+  it('creates no carrier journal when there is no waybill', async () => {
     const db = {
       transaction: {
         findUnique: jest
@@ -261,7 +270,7 @@ describe('ZohoBooksService buyer paperwork', () => {
     global.fetch = jest.fn() as unknown as typeof fetch;
 
     const svc = new ZohoBooksService(db as never);
-    await svc.createShippingExpense('tx1');
+    await svc.createShippingCostJournal('tx1');
 
     expect(global.fetch).not.toHaveBeenCalled();
     expect(db.transaction.update).not.toHaveBeenCalled();
@@ -274,7 +283,7 @@ describe('ZohoBooksService buyer paperwork', () => {
       user: {
         findUnique: jest
           .fn()
-          .mockResolvedValue({ id: 'seller1', zohoContactId: 'contact-seller' }),
+          .mockResolvedValue({ id: 'seller1', zohoContactId: 'contact-seller', email: 'seller@example.com' }),
         update: jest.fn(),
       },
     };
@@ -302,7 +311,82 @@ describe('ZohoBooksService buyer paperwork', () => {
       send_mail: true,
       from_date: '2026-06-01',
       to_date: '2026-06-30',
+      to_mail_ids: ['seller@example.com'],
+      subject: 'ALL Outdoor account statement',
+      body: 'Your ALL Outdoor account statement for the selected period is attached.',
     });
+  });
+
+  it('settles an auction seller fee from the liability, then clears the A/R via Undeposited Funds', async () => {
+    const calls: FetchCall[] = [];
+    const db = {
+      transaction: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'tx-au',
+          sellerId: 'seller1',
+          seller: { id: 'seller1' },
+          commissionZar: 5_000,
+          zohoCommissionInvoiceId: 'inv-seller',
+          zohoCommissionPaymentId: null,
+          zohoCommissionSettleJournalId: null,
+        }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'seller1', zohoContactId: 'contact-seller' }),
+        update: jest.fn(),
+      },
+    };
+
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      const u = String(url);
+      if (u.includes('/oauth/v2/token')) {
+        return response({ access_token: 'token', expires_in: 3600 });
+      }
+      if (u.includes('/chartofaccounts')) {
+        return response({ chartofaccounts: ACCOUNTS });
+      }
+      if (/\/invoices\/inv-seller/.test(u) && init?.method === 'GET') {
+        return response({ invoice: { balance: 50, total: 50 } });
+      }
+      if (/\/journals(\?|$)/.test(u) && init?.method === 'POST') {
+        return response({ journal: { journal_id: 'jr-fee' } });
+      }
+      if (u.includes('/customerpayments')) {
+        return response({ payment: { payment_id: 'pay-fee' } });
+      }
+      throw new Error(`unexpected ${init?.method ?? 'GET'} ${u}`);
+    }) as unknown as typeof fetch;
+
+    const svc = new ZohoBooksService(db as never);
+    await svc.markCommissionInvoicePaid('tx-au');
+
+    const journal = calls.find(
+      (c) => /\/journals(\?|$)/.test(c.url) && c.init?.method === 'POST',
+    );
+    expect(JSON.parse(String(journal?.init?.body)).line_items).toEqual([
+      expect.objectContaining({
+        account_id: 'acc-trust',
+        debit_or_credit: 'debit',
+        amount: 50,
+      }),
+      expect.objectContaining({
+        account_id: 'acc-uf',
+        debit_or_credit: 'credit',
+        amount: 50,
+      }),
+    ]);
+
+    const payment = calls.find((c) => c.url.includes('/customerpayments'));
+    expect(JSON.parse(String(payment?.init?.body))).toEqual(
+      expect.objectContaining({
+        amount: 50,
+        account_id: 'acc-uf',
+      }),
+    );
   });
 });
 

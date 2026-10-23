@@ -2060,6 +2060,15 @@ model Transaction {
   //   - zohoHandlingJournalId: manual journal that moves the delivery handling
   //     margin out of Client Funds Payable into delivery income, so the buyer
   //     invoice can show ONE delivery figure.
+  //   - zohoShippingJournalId: journal that pays Bob Go's carrier freight out
+  //     of Client Funds Payable and the bank (Dr trust / Cr bank).
+  //   - zohoCommissionSettleJournalId: journal that drains the auction seller's
+  //     commission out of Client Funds Payable (Dr trust / Cr Undeposited
+  //     Funds), paired with the customer payment that clears the seller invoice.
+  //   - zohoShippingExpenseId: LEGACY (pre-2026-10-23). The carrier cost used to
+  //     be an Expense paid through the liability, which CREDITED the liability
+  //     instead of clearing it. Kept only for historical rows; new rows use
+  //     zohoShippingJournalId.
   //   - zohoShippingExpenseId: Bob Go → All Outdoor expense for the carrier's
   //     cost on a courier sale. Created at release from the quoted carrier
   //     rate (shippingCost, excluding our handling margin). An Expense (not a
@@ -2073,9 +2082,11 @@ model Transaction {
   //   - 'SKIPPED': feature flag was off when the event fired
   zohoCommissionInvoiceId String?
   zohoCommissionPaymentId String?
+  zohoCommissionSettleJournalId String?
   zohoCreditNoteId        String?
   zohoBuyerInvoiceId      String?
   zohoHandlingJournalId   String?
+  zohoShippingJournalId   String?
   zohoShippingExpenseId   String?
   // ── Legacy first-party-sale Zoho fields ─────────────────────────────
   // For a first-party sale (GG as seller) there is no commission invoice +

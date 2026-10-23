@@ -693,7 +693,7 @@ export class DealerVerificationService {
       // and surface in the admin panel for manual retry.
       await this.zohoBooks.createCommissionInvoice(transactionId);
       await this.zohoBooks.createBuyerInvoice(transactionId);
-      await this.zohoBooks.createShippingExpense(transactionId);
+      await this.zohoBooks.createShippingCostJournal(transactionId);
       await this.zohoBooks.markCommissionInvoicePaid(transactionId);
     } catch (err) {
       this.logger.error(

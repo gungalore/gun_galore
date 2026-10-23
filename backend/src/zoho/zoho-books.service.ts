@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { FeeModel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Chart-of-accounts names. The first match wins; the fallbacks keep the
@@ -12,7 +11,15 @@ const BUYER_FEE_ACCOUNT_NAMES = [
 // The one liability account that holds every rand a buyer pays on the
 // seller's or carrier's behalf (item price + courier freight). It must never
 // post to the P&L: only our own fees are revenue.
+//
+// ⚠️ MUST BE A LIABILITY ("other_current_liability"). A cash-type account is
+// rejected by Books on an invoice line (code 11016, "Involved account types
+// are not applicable"). "Client Funds Payable (Trust)" is the live account;
+// the older cash-type "Client Funds Payable" is kept only as a name fallback
+// so a rename cannot strand the integration.
 const CLIENT_FUNDS_ACCOUNT_NAMES = [
+  'Client Funds Payable (Trust)',
+  'Client Funds Payable Liability',
   'Client Funds Payable',
   'Client Funds',
   'Trust Funds Payable',
@@ -26,12 +33,11 @@ const HANDLING_ACCOUNT_NAMES = [
   'Shipping Charge',
   'Delivery Revenue',
 ];
-const CARRIER_COST_ACCOUNT_NAMES = [
-  'Courier and Delivery Costs',
-  'Cost of Goods Sold',
-  'Postage',
-];
-const BOBGO_VENDOR_NAME = 'Bob Go';
+// Where buyer cash actually lands. A liability cannot be a payment deposit
+// account (Books silently reroutes it to Undeposited Funds), so the buyer
+// payment must hit the bank and the liability is cleared by journals.
+const BANK_ACCOUNT_NAMES = ['Bank - FNB Business'];
+const UNDEPOSITED_FUNDS_NAMES = ['Undeposited Funds'];
 
 /**
  * Zoho Books integration — accounting backend for ALL Outdoor.
@@ -368,6 +374,13 @@ export class ZohoBooksService {
     const cached = this.accountIdCache.get(accountName);
     if (cached) return cached;
 
+    await this.loadAccountCache();
+    return this.accountIdCache.get(accountName) ?? null;
+  }
+
+  private async loadAccountCache(): Promise<void> {
+    if (this.accountIdCache.size > 0) return;
+
     type ChartOfAccountsResp = {
       chartofaccounts?: Array<{
         account_id?: string;
@@ -386,7 +399,6 @@ export class ZohoBooksService {
         this.accountIdCache.set(acc.account_name, acc.account_id);
       }
     }
-    return this.accountIdCache.get(accountName) ?? null;
   }
 
   /** First configured account name that exists in the Books chart. */
@@ -399,49 +411,20 @@ export class ZohoBooksService {
   }
 
   /**
-   * Find-or-create a vendor contact (Bob Go). Cached in memory; Books
-   * rejects a duplicate contact name, so this checks before creating.
+   * The bank account buyer cash is deposited into.
+   *
+   * The live Books org names it "Bank - FNB Business" but the separator is
+   * not the ASCII hyphen this file can rely on, so an exact-name lookup misses
+   * and Books would silently default the payment to Undeposited Funds. Match
+   * any account containing "FNB" before falling back to Undeposited Funds.
    */
-  private vendorIdCache: Map<string, string> = new Map();
-
-  private async ensureVendor(vendorName: string): Promise<string | null> {
-    if (!this.isEnabled()) return null;
-    const cached = this.vendorIdCache.get(vendorName);
-    if (cached) return cached;
-
-    type ContactsResp = {
-      contacts?: Array<{ contact_id?: string; contact_name?: string }>;
-    };
-    const list = await this.request<ContactsResp>(
-      'GET',
-      '/contacts?contact_type=vendor&per_page=200',
-    );
-    const existing = (list.contacts ?? []).find(
-      (c) => c.contact_name?.toLowerCase() === vendorName.toLowerCase(),
-    );
-    if (existing?.contact_id) {
-      this.vendorIdCache.set(vendorName, existing.contact_id);
-      return existing.contact_id;
-    }
-
-    type CreateContactResp = {
-      contact?: { contact_id?: string };
-      message?: string;
-    };
-    const resp = await this.request<CreateContactResp>('POST', '/contacts', {
-      contact_name: vendorName,
-      contact_type: 'vendor',
-      notes: 'Courier rail supplier — auto-created by ALL Outdoor',
-    });
-    const id = resp.contact?.contact_id;
-    if (!id) {
-      throw new Error(
-        `Books vendor create returned no contact_id: ${resp.message ?? 'unknown'}`,
-      );
-    }
-    this.vendorIdCache.set(vendorName, id);
-    this.logger.log(`Created Books vendor ${id} (${vendorName})`);
-    return id;
+  private async resolveBankAccountId(): Promise<string | null> {
+    const exact = await this.resolveAccountId(['Bank - FNB Business']);
+    if (exact) return exact;
+    await this.loadAccountCache();
+    const fnb = [...this.accountIdCache.keys()].find((n) => /fnb/i.test(n));
+    if (fnb) return this.accountIdCache.get(fnb) ?? null;
+    return this.getAccountIdByName('Undeposited Funds');
   }
 
   // ─── Public document-creation methods ────────────────────────────
@@ -934,12 +917,15 @@ export class ZohoBooksService {
     );
     const balance = Number(after.invoice?.balance ?? 0);
     if (balance > 0) {
-      const cfpAccountId = await this.getAccountIdByName(
-        'Client Funds Payable',
-      );
-      if (!cfpAccountId) {
+      // ⚠️ THE CASH LANDS IN THE BANK, NOT IN THE LIABILITY. Books refuses a
+      // liability as a payment deposit account and silently falls back to
+      // Undeposited Funds, which strands the buyer's cash away from the bank
+      // the payout journals credit. The liability is cleared by those
+      // journals, not by this payment.
+      const bankAccountId = await this.resolveBankAccountId();
+      if (!bankAccountId) {
         throw new Error(
-          'Client Funds Payable account not found in Books chart-of-accounts',
+          'No bank account found in Books chart-of-accounts for buyer payment',
         );
       }
       const today = new Date().toISOString().slice(0, 10);
@@ -960,10 +946,9 @@ export class ZohoBooksService {
           amount: balance,
           date: today,
           reference_number: ref.slice(0, 50),
-          deposit_to_account_id: cfpAccountId,
+          account_id: bankAccountId,
           invoices: [{ invoice_id: invoiceId, amount_applied: balance }],
-          description:
-            'Platform fee and delivery settled from buyer funds held in trust',
+          description: 'Buyer payment received into the business bank account',
         },
       );
       if (!payment.payment?.payment_id) {
@@ -982,7 +967,7 @@ export class ZohoBooksService {
       },
     });
     this.logger.log(
-      `Buyer invoice ${invoiceId} sent and settled from buyer funds for tx ${transactionId}`,
+      `Buyer invoice ${invoiceId} sent and settled into the bank for tx ${transactionId}`,
     );
   }
 
@@ -1022,21 +1007,27 @@ export class ZohoBooksService {
   }
 
   /**
-   * Bob Go expense for the carrier's cost on a courier sale.
+   * Bob Go carrier freight on a courier sale, paid from the bank on the
+   * seller's behalf.
    *
    * The buyer pays carrier rate + our handling margin as ONE delivery figure;
-   * this expense books only the carrier's share (Transaction.shippingCost) so
-   * the margin is the gross profit on delivery. Non-courier sales (collection,
-   * dealer transfer, private arrangement) have shippingCost = 0 and no expense.
+   * only the carrier's share (Transaction.shippingCost) is a third-party
+   * obligation, and the margin is moved to delivery income separately. The
+   * freight sits in Client Funds Payable and leaves it through this journal:
    *
-   * Why an Expense and not a Bill: this Books org's plan does not include
-   * Bills (API returns code 13036), while Expenses are available. The expense
-   * is paid through Client Funds Payable — the buyer's delivery money we are
-   * holding — so the carrier cost leaves the same pool it was collected into.
+   *   Dr Client Funds Payable   (clears what we collected for the carrier)
+   *   Cr Bank - FNB Business    (the cash we actually paid Bob Go)
    *
-   * Idempotent: skips if zohoShippingExpenseId already set. Never throws.
+   * ⚠️ NOT an Expense: an Expense's paid-through account is CREDITED, which
+   * would increase a liability instead of clearing it. The vendor document was
+   * also the reason the old recipe could never close the trust account.
+   *
+   * Non-courier sales (collection, dealer transfer, private arrangement) have
+   * shippingCost = 0 and no journal.
+   *
+   * Idempotent: skips if zohoShippingJournalId is set. Never throws.
    */
-  async createShippingExpense(transactionId: string): Promise<void> {
+  async createShippingCostJournal(transactionId: string): Promise<void> {
     if (!this.isEnabled()) return;
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -1045,72 +1036,69 @@ export class ZohoBooksService {
       },
     });
     if (!tx) return;
-    if (tx.zohoShippingExpenseId) return; // already recorded
+    if (tx.zohoShippingJournalId) return; // already recorded
     const carrierCents = Math.max(0, tx.shippingCost ?? 0);
     if (carrierCents <= 0) return; // no waybill on this sale
 
     try {
-      const vendorId = await this.ensureVendor(BOBGO_VENDOR_NAME);
-      if (!vendorId) {
-        throw new Error('Could not resolve Bob Go vendor contact');
-      }
-      const costAccountId = await this.resolveAccountId(
-        CARRIER_COST_ACCOUNT_NAMES,
+      const trustAccountId = await this.resolveAccountId(
+        CLIENT_FUNDS_ACCOUNT_NAMES,
       );
-      if (!costAccountId) {
+      const bankAccountId = await this.resolveBankAccountId();
+      if (!trustAccountId || !bankAccountId) {
         throw new Error(
-          'No carrier cost account found in Books chart-of-accounts',
-        );
-      }
-      const paymentAccountId =
-        (await this.getAccountIdByName('Client Funds Payable')) ??
-        (await this.resolveAccountId([
-          'Bank - FNB Business',
-          'Undeposited Funds',
-        ]));
-      if (!paymentAccountId) {
-        throw new Error(
-          'No payment account found in Books chart-of-accounts for carrier expense',
+          'Client Funds Payable or bank account missing from Books',
         );
       }
 
       const orderRef =
         tx.listing?.referenceNumber ?? tx.id.slice(-8).toUpperCase();
       const today = new Date().toISOString().slice(0, 10);
-      type CreateExpenseResp = {
-        expense?: { expense_id?: string };
-        code?: number;
+      const amount = carrierCents / 100;
+      type CreateJournalResp = {
+        journal?: { journal_id?: string; journal_number?: string };
         message?: string;
       };
-      const resp = await this.request<CreateExpenseResp>('POST', '/expenses', {
-        vendor_id: vendorId,
-        account_id: costAccountId,
-        paid_through_account_id: paymentAccountId,
-        date: today,
-        amount: carrierCents / 100,
-        reference_number: orderRef.slice(0, 100),
-        description:
-          `Courier delivery — ${orderRef} — ` +
-          `${tx.listing?.title ?? 'Marketplace delivery'}`.slice(0, 200),
+      const resp = await this.request<CreateJournalResp>('POST', '/journals', {
+        journal_date: today,
+        reference_number: `Carrier freight — ${orderRef}`.slice(0, 100),
+        notes:
+          'Bob Go carrier freight paid from the business bank on the ' +
+          "seller's behalf. Clears the freight collected in Client Funds " +
+          'Payable.',
+        line_items: [
+          {
+            account_id: trustAccountId,
+            debit_or_credit: 'debit',
+            amount,
+            description: `Carrier freight — ${orderRef}`,
+          },
+          {
+            account_id: bankAccountId,
+            debit_or_credit: 'credit',
+            amount,
+            description: `Carrier freight — ${orderRef}`,
+          },
+        ],
       });
-      const expenseId = resp.expense?.expense_id;
-      if (!expenseId) {
+      const journalId = resp.journal?.journal_id;
+      if (!journalId) {
         throw new Error(
-          `Books expense create returned no expense_id: ${resp.message ?? 'unknown'}`,
+          `Books carrier journal create returned no journal_id: ${resp.message ?? 'unknown'}`,
         );
       }
 
       await this.prisma.transaction.update({
         where: { id: transactionId },
         data: {
-          zohoShippingExpenseId: expenseId,
+          zohoShippingJournalId: journalId,
           zohoSyncStatus: 'OK',
           zohoSyncError: null,
           zohoSyncLastAttemptAt: new Date(),
         },
       });
       this.logger.log(
-        `Created Bob Go expense ${expenseId} for tx ${transactionId} (R${(carrierCents / 100).toFixed(2)})`,
+        `Created carrier-freight journal ${resp.journal?.journal_number ?? journalId} for tx ${transactionId} (R${amount.toFixed(2)})`,
       );
     } catch (err) {
       await this.markFailed(transactionId, err as Error);
@@ -1191,7 +1179,7 @@ export class ZohoBooksService {
       // Carrier bills that never reached Books.
       const failedShippingExpenses = await this.prisma.transaction.findMany({
         where: {
-          zohoShippingExpenseId: null,
+          zohoShippingJournalId: null,
           OR: [
             { zohoSyncStatus: 'FAILED' },
             {
@@ -1204,7 +1192,7 @@ export class ZohoBooksService {
         take: limit,
       });
       for (const t of failedShippingExpenses) {
-        await this.createShippingExpense(t.id);
+        await this.createShippingCostJournal(t.id);
       }
 
       if (
@@ -1248,7 +1236,9 @@ export class ZohoBooksService {
     });
     if (!tx) return;
     if (!tx.zohoCommissionInvoiceId) return; // invoice must exist first
-    if (tx.zohoCommissionPaymentId) return; // already marked paid
+    const needsJournal = !tx.zohoCommissionSettleJournalId;
+    const needsPayment = !tx.zohoCommissionPaymentId;
+    if (!needsJournal && !needsPayment) return; // already settled
 
     try {
       const sellerContactId = await this.ensureContact(tx.seller.id);
@@ -1256,21 +1246,22 @@ export class ZohoBooksService {
         throw new Error('Could not resolve seller contact for payment');
       }
 
-      const cfpAccountId = await this.getAccountIdByName(
-        'Client Funds Payable',
+      const trustAccountId = await this.resolveAccountId(
+        CLIENT_FUNDS_ACCOUNT_NAMES,
       );
-      if (!cfpAccountId) {
+      const undepositedId = await this.resolveAccountId(
+        UNDEPOSITED_FUNDS_NAMES,
+      );
+      if (!trustAccountId || !undepositedId) {
         throw new Error(
-          'Client Funds Payable account not found in Books chart-of-accounts',
+          'Client Funds Payable or Undeposited Funds account missing from Books',
         );
       }
 
       // P0.7 (review fix) — settle what the INVOICE actually says, not a
       // recomputation from tx fields. Legacy pre-deploy invoices carry a
-      // single commission-only line; recomputing commission+fee here would
-      // over-apply, Zoho would reject the payment, and every retry would
-      // fail identically (permanent FAILED loop). Reading the live balance
-      // is correct for both cohorts and for any future line changes.
+      // single commission-only line; reading the live balance is correct for
+      // both cohorts and for any future line changes.
       type GetInvoiceResp = {
         invoice?: { balance?: number; total?: number; status?: string };
       };
@@ -1278,81 +1269,132 @@ export class ZohoBooksService {
         'GET',
         `/invoices/${tx.zohoCommissionInvoiceId}`,
       );
-      const invoiceTotalRand = inv.invoice?.balance ?? 0;
-      if (invoiceTotalRand <= 0) {
-        // Nothing outstanding (already settled in Books, e.g. by hand).
-        // Stamp a sentinel so the idempotency guard stops re-running this.
-        await this.prisma.transaction.update({
-          where: { id: transactionId },
-          data: {
-            zohoCommissionPaymentId: 'SETTLED_EXTERNALLY',
-            zohoSyncStatus: 'OK',
-            zohoSyncError: null,
-            zohoSyncLastAttemptAt: new Date(),
-          },
-        });
-        this.logger.log(
-          `Commission invoice for tx ${transactionId} already has zero balance — stamped settled`,
-        );
-        return;
+      let settleAmount = Number(inv.invoice?.balance ?? 0);
+      if (settleAmount <= 0) {
+        if (!needsJournal) {
+          // Nothing outstanding and the liability was already cleared.
+          await this.prisma.transaction.update({
+            where: { id: transactionId },
+            data: {
+              zohoSyncStatus: 'OK',
+              zohoSyncError: null,
+              zohoSyncLastAttemptAt: new Date(),
+            },
+          });
+          this.logger.log(
+            `Commission invoice for tx ${transactionId} already has zero balance — nothing to do`,
+          );
+          return;
+        }
+        // Already paid externally, but the trust drain is missing (legacy row
+        // from the broken deposit-account recipe). The commission is the only
+        // line on the seller invoice.
+        settleAmount = tx.commissionZar / 100;
+        if (settleAmount <= 0) return;
       }
+
       const today = new Date().toISOString().slice(0, 10);
       const orderRef = tx.id.slice(-8).toUpperCase();
 
-      type CreatePaymentResp = {
-        payment?: { payment_id?: string };
-        code?: number;
-        message?: string;
-      };
-      const payload = {
-        customer_id: sellerContactId,
-        // Books' enum is lowercase 'others' (not 'Other').
-        payment_mode: 'others',
-        amount: invoiceTotalRand,
-        date: today,
-        reference_number: `Settled from buyer funds — ${orderRef}`.slice(0, 50),
-        // The deposit_to_account is where the money "came from" —
-        // in our case from the Client Funds Payable liability, NOT
-        // from a real bank account. Books may need this set up as
-        // a "Bank" type account in their CoA for this to work; if
-        // it errors here we'll know to either reclassify CFP or
-        // switch to a manual-journal posting pattern.
-        deposit_to_account_id: cfpAccountId,
-        invoices: [
+      // 1. Clear the held-funds liability first: Dr Client Funds Payable,
+      //    Cr Undeposited Funds. If the payment then fails, the retry picks
+      //    up with the journal already guarded.
+      if (needsJournal) {
+        type CreateJournalResp = {
+          journal?: { journal_id?: string; journal_number?: string };
+          message?: string;
+        };
+        const journal = await this.request<CreateJournalResp>('POST', '/journals', {
+          journal_date: today,
+          reference_number: `Commission from held funds — ${orderRef}`.slice(0, 100),
+          notes:
+            'Auction seller commission settled from funds collected on the ' +
+            "seller's behalf (Client Funds Payable).",
+          line_items: [
+            {
+              account_id: trustAccountId,
+              debit_or_credit: 'debit',
+              amount: settleAmount,
+              description: `Commission from held funds — ${orderRef}`,
+            },
+            {
+              account_id: undepositedId,
+              debit_or_credit: 'credit',
+              amount: settleAmount,
+              description: `Commission from held funds — ${orderRef}`,
+            },
+          ],
+        });
+        const journalId = journal.journal?.journal_id;
+        if (!journalId) {
+          throw new Error(
+            `Books commission-settle journal returned no journal_id: ${journal.message ?? 'unknown'}`,
+          );
+        }
+        await this.prisma.transaction.update({
+          where: { id: transactionId },
+          data: { zohoCommissionSettleJournalId: journalId },
+        });
+        this.logger.log(
+          `Settled commission liability ${journalId} for tx ${transactionId} (R${settleAmount.toFixed(2)})`,
+        );
+      }
+
+      // 2. Clear the seller's A/R with a customer payment. Books refuses a
+      //    liability as a deposit account and reroutes it to Undeposited
+      //    Funds, so name that account explicitly; the journal above took the
+      //    same amount out of the liability, so the pair nets to Dr trust /
+      //    Cr A/R with no bank movement.
+      if (needsPayment && settleAmount > 0) {
+        type CreatePaymentResp = {
+          payment?: { payment_id?: string };
+          code?: number;
+          message?: string;
+        };
+        const resp = await this.request<CreatePaymentResp>(
+          'POST',
+          '/customerpayments',
           {
-            invoice_id: tx.zohoCommissionInvoiceId,
-            amount_applied: invoiceTotalRand,
+            customer_id: sellerContactId,
+            // Books' enum is lowercase 'others' (not 'Other').
+            payment_mode: 'others',
+            amount: settleAmount,
+            date: today,
+            reference_number: `Commission from held funds — ${orderRef}`.slice(0, 50),
+            account_id: undepositedId,
+            invoices: [
+              {
+                invoice_id: tx.zohoCommissionInvoiceId,
+                amount_applied: settleAmount,
+              },
+            ],
+            description:
+              'Commission settled by draining buyer funds held in trust',
           },
-        ],
-        description:
-          'Commission settled by draining buyer funds held in trust',
-      };
-
-      const resp = await this.request<CreatePaymentResp>(
-        'POST',
-        '/customerpayments',
-        payload,
-      );
-
-      const paymentId = resp.payment?.payment_id;
-      if (!paymentId) {
-        throw new Error(
-          `Books payment create returned no payment_id: ${resp.message ?? 'unknown'}`,
+        );
+        const paymentId = resp.payment?.payment_id;
+        if (!paymentId) {
+          throw new Error(
+            `Books payment create returned no payment_id: ${resp.message ?? 'unknown'}`,
+          );
+        }
+        await this.prisma.transaction.update({
+          where: { id: transactionId },
+          data: { zohoCommissionPaymentId: paymentId },
+        });
+        this.logger.log(
+          `Marked commission invoice paid for tx ${transactionId} (R${settleAmount.toFixed(2)})`,
         );
       }
 
       await this.prisma.transaction.update({
         where: { id: transactionId },
         data: {
-          zohoCommissionPaymentId: paymentId,
           zohoSyncStatus: 'OK',
           zohoSyncError: null,
           zohoSyncLastAttemptAt: new Date(),
         },
       });
-      this.logger.log(
-        `Marked commission invoice paid for tx ${transactionId} (R${invoiceTotalRand.toFixed(2)})`,
-      );
     } catch (err) {
       await this.markFailed(transactionId, err as Error);
     }
@@ -1592,9 +1634,24 @@ export class ZohoBooksService {
     if (!contactId) {
       throw new Error('Could not resolve Books contact for seller');
     }
-    const body: Record<string, unknown> = { send_mail: true };
-    if (fromDate) body.from_date = fromDate;
-    if (toDate) body.to_date = toDate;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+    if (!user?.email) {
+      throw new Error('Seller has no email address on file');
+    }
+    const body: Record<string, unknown> = {
+      send_mail: true,
+      from_date: fromDate,
+      to_date: toDate,
+      // Required even though the contact carries an email: without
+      // to_mail_ids Books answers 1007 "email address ... not found".
+      to_mail_ids: [user.email],
+      // Books rejects the call without a Subject (code 4).
+      subject: 'ALL Outdoor account statement',
+      body: 'Your ALL Outdoor account statement for the selected period is attached.',
+    };
     await this.request<{ code?: number; message?: string }>(
       'POST',
       `/contacts/${contactId}/statements/email`,

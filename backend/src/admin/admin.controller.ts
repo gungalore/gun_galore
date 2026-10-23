@@ -1000,7 +1000,7 @@ export class AdminTransactionsController {
     await this.zohoBooks.createCommissionInvoice(id);
     await this.zohoBooks.createBuyerInvoice(id);
     await this.zohoBooks.finalizeExistingBuyerInvoice(id);
-    await this.zohoBooks.createShippingExpense(id);
+    await this.zohoBooks.createShippingCostJournal(id);
     await this.zohoBooks.markCommissionInvoicePaid(id);
     return { triggered: true };
   }

@@ -29,7 +29,7 @@ function makeService(opts: {
   const zoho = {
     createCommissionInvoice: jest.fn().mockResolvedValue(undefined),
     createBuyerInvoice: jest.fn().mockResolvedValue(undefined),
-    createShippingExpense: jest.fn().mockResolvedValue(undefined),
+    createShippingCostJournal: jest.fn().mockResolvedValue(undefined),
   };
   const tracking = { recordInternal: jest.fn().mockResolvedValue(undefined) };
   const service = new TransactionsService(

@@ -4092,7 +4092,7 @@ export class TransactionsService {
       for (const sid of siblingIds) {
         void this.zohoBooks.createCommissionInvoice(sid);
         void this.zohoBooks.createBuyerInvoice(sid);
-        void this.zohoBooks.createShippingExpense(sid);
+        void this.zohoBooks.createShippingCostJournal(sid);
         void this.tracking.recordInternal(sid, 'BUYER_CONFIRMED_DELIVERY', {
           occurredAt: now,
         });
@@ -4110,7 +4110,7 @@ export class TransactionsService {
     // markCommissionInvoicePaid no-oped. Idempotent + never throws.
     void this.zohoBooks.createCommissionInvoice(transactionId);
     void this.zohoBooks.createBuyerInvoice(transactionId);
-    void this.zohoBooks.createShippingExpense(transactionId);
+    void this.zohoBooks.createShippingCostJournal(transactionId);
     // Two INTERNAL timeline rows back-to-back: the buyer's explicit
     // confirmation and the resulting payout. The carrier's tracking
     // events may also land a COLLECTED_BY_BUYER row but we mark this
@@ -4844,7 +4844,7 @@ export class TransactionsService {
     // FLOW-F4 (H21) — release is the commission-invoice point.
     void this.zohoBooks.createCommissionInvoice(txId);
     void this.zohoBooks.createBuyerInvoice(txId);
-    void this.zohoBooks.createShippingExpense(txId);
+    void this.zohoBooks.createShippingCostJournal(txId);
     void this.tracking.recordInternal(txId, 'PAYOUT_RELEASED', { occurredAt: now });
     // Confirm-receipt is the member's action on the private-arrange delivered
     // / reminder rows (both non-dismissible, linked to the transaction). The

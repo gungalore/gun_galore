@@ -1,4 +1,4 @@
-﻿# =====================================================================
+# =====================================================================
 # Zoho Books buyer + carrier smoke test
 # =====================================================================
 # Mirrors the production BUY_NOW paperwork for one sale:
@@ -12,7 +12,7 @@
 #
 # Creates, against the live Books org:
 #   1. buyer contact
-#   2. buyer invoice — item + delivery to Client Funds Payable, fee to revenue
+#   2. buyer invoice � item + delivery to Client Funds Payable, fee to revenue
 #   3. customer payment settling that invoice from Client Funds Payable
 #   4. delivery-margin journal (CFP -> Shipping Handling Revenue)
 #   5. Bob Go vendor (if absent) + carrier expense for R145
@@ -65,7 +65,7 @@ if ($creds['ZOHO_BOOKS_ENABLED'] -ne 'true') {
     Write-Host "WARNING: ZOHO_BOOKS_ENABLED is not 'true' in .env. The app itself would skip these API calls." -ForegroundColor Yellow
 }
 
-# ─── Auth ──────────────────────────────────────────────────────────────
+# --- Auth --------------------------------------------------------------
 Write-Host "-> Refreshing access token..." -ForegroundColor Cyan
 $tokenResp = Invoke-RestMethod -Method Post -Uri "$accountsDomain/oauth/v2/token" -Body @{
     grant_type    = 'refresh_token'
@@ -96,7 +96,7 @@ function Find-Account([string[]]$names) {
     return $null
 }
 
-# ─── Optional: remove the failed iteration artefacts ───────────────────
+# --- Optional: remove the failed iteration artefacts -------------------
 # Keeps the final INV-000010 / contact 136287000000252001 / expense
 # 136287000000254001 and the Bob Go vendor.
 if ($CleanupRuns) {
@@ -139,7 +139,7 @@ if ($CleanupRuns) {
     exit 0
 }
 
-# ─── Optional: fetch one invoice ───────────────────────────────────────
+# --- Optional: fetch one invoice ---------------------------------------
 if ($GetInvoiceId) {
     $url = "$apiDomain/books/v3/invoices/${GetInvoiceId}?organization_id=$orgId"
     Write-Host "GET $url" -ForegroundColor Cyan
@@ -154,7 +154,7 @@ if ($GetInvoiceId) {
     exit 0
 }
 
-# ─── Optional: inspect invoices only ───────────────────────────────────
+# --- Optional: inspect invoices only -----------------------------------
 if ($ListInvoices) {
     Write-Host "RECENT INVOICES" -ForegroundColor Cyan
     (Invoke-RestMethod -Uri "$apiDomain/books/v3/invoices?per_page=20&organization_id=$orgId" -Headers $authHeader).invoices |
@@ -163,7 +163,7 @@ if ($ListInvoices) {
     exit 0
 }
 
-# ─── Optional: inspect only ────────────────────────────────────────────
+# --- Optional: inspect only --------------------------------------------
 if ($ListAccounts) {
     Write-Host "INCOME / EXPENSE ACCOUNTS" -ForegroundColor Cyan
     $accounts |
@@ -186,7 +186,7 @@ if ($ListAccounts) {
     exit 0
 }
 
-# ─── Optional: remove the first broken run ─────────────────────────────
+# --- Optional: remove the first broken run -----------------------------
 if ($CleanupOld) {
     Write-Host "-> Removing first-run artefacts..." -ForegroundColor Cyan
     foreach ($invId in '136287000000235001') {
@@ -208,7 +208,7 @@ if ($CleanupOld) {
     exit 0
 }
 
-# ─── Resolve the accounts the service uses ─────────────────────────────
+# --- Resolve the accounts the service uses -----------------------------
 Write-Host "-> Looking up Books accounts..." -ForegroundColor Cyan
 $feeAcc = Find-Account @('Platform Fee Revenue','Processing Fee Revenue','Commission Revenue')
 if (-not $feeAcc) { Write-Error "No fee revenue account found in Books"; exit 1 }
@@ -256,7 +256,7 @@ if ($TestExpense) {
 }
 
 
-# ─── Exact maths from fee.calculator.ts ────────────────────────────────
+# --- Exact maths from fee.calculator.ts --------------------------------
 $itemCents       = 100000
 $carrierCents    = 14500
 $handlingCents   = [int][Math]::Round($carrierCents * 0.10)
@@ -282,7 +282,7 @@ Write-Host "  Seller payout: $(Format-Zar $itemCents) (BUY_NOW commission = R0 -
 $orderRef = 'SMOKE-BN-001'
 $ts = Get-Date -Format 'yyyyMMdd-HHmmss'
 
-# ─── Buyer contact ─────────────────────────────────────────────────────
+# --- Buyer contact -----------------------------------------------------
 Write-Host "-> Creating buyer test contact (suffix $ts)..." -ForegroundColor Cyan
 $contactBody = @{
     contact_name = "SMOKETEST -- DELETE ME -- BUYER -- $ts"
@@ -302,7 +302,7 @@ $contactId = $contactResp.contact.contact_id
 if (-not $contactId) { Write-Error "Contact creation failed"; $contactResp | Format-List; exit 1 }
 Write-Host "  Contact created: $contactId" -ForegroundColor Green
 
-# ─── Bob Go vendor ─────────────────────────────────────────────────────
+# --- Bob Go vendor -----------------------------------------------------
 $vendors = (Invoke-RestMethod -Uri "$apiDomain/books/v3/contacts?contact_type=vendor&per_page=200&organization_id=$orgId" -Headers $authHeader).contacts
 $vendor = $vendors | Where-Object { $_.contact_name -eq 'Bob Go' } | Select-Object -First 1
 if (-not $vendor) {
@@ -320,7 +320,7 @@ if (-not $vendor) {
     Write-Host "  Bob Go vendor exists: $($vendor.contact_id)" -ForegroundColor Green
 }
 
-# ─── Buyer invoice ─────────────────────────────────────────────────────
+# --- Buyer invoice -----------------------------------------------------
 $itemRand     = $itemCents / 100
 $feeRand      = $feeCents / 100
 $deliveryRand = $deliveryCents / 100
@@ -409,7 +409,7 @@ $paymentBody = @{
     amount                = $balance
     date                  = $today
     reference_number      = "Platform charges -- $orderRef"
-    deposit_to_account_id = $cfpAcc.account_id
+    account_id = $cfpAcc.account_id
     invoices              = @(@{
         invoice_id     = $invoiceId
         amount_applied = $balance
@@ -435,7 +435,7 @@ $paymentId = $payResp.payment.payment_id
 if (-not $paymentId) { Write-Error "Buyer payment creation failed"; $payResp | Format-List; exit 1 }
 Write-Host "  Payment recorded: $paymentId" -ForegroundColor Green
 
-# ─── Delivery-margin journal ───────────────────────────────────────────
+# --- Delivery-margin journal -------------------------------------------
 # The buyer sees one Delivery figure (freight + margin) which the invoice
 # posts to Client Funds Payable. This journal moves only the margin slice to
 # delivery income, leaving the carrier's pure rate as the remaining liability.
@@ -475,7 +475,7 @@ try {
     throw
 }
 
-# ─── Bob Go carrier expense ────────────────────────────────────────────
+# --- Bob Go carrier expense --------------------------------------------
 # This Books plan has Bills disabled (code 13036), so the carrier cost is an
 # Expense paid through Client Funds Payable (the delivery money we hold).
 Write-Host "-> Creating Bob Go carrier expense..." -ForegroundColor Cyan
@@ -507,7 +507,7 @@ $expenseId = $expenseResp.expense.expense_id
 if (-not $expenseId) { Write-Error "Carrier expense creation failed"; $expenseResp | Format-List; exit 1 }
 Write-Host "  Expense created: $expenseId for $(Format-Zar $carrierCents)" -ForegroundColor Green
 
-# ─── Read back + assertions ────────────────────────────────────────────
+# --- Read back + assertions --------------------------------------------
 $invAfter = Get-Invoice $invoiceId
 $expenseAfter = Get-Expense $expenseId
 
@@ -564,9 +564,9 @@ if ($failures.Count -gt 0) {
     exit 2
 }
 
-Write-Host "─────────────────────────────────────────────────────────" -ForegroundColor Green
+Write-Host "---------------------------------------------------------" -ForegroundColor Green
 Write-Host "  SMOKE TEST PASSED" -ForegroundColor Green
-Write-Host "─────────────────────────────────────────────────────────" -ForegroundColor Green
+Write-Host "---------------------------------------------------------" -ForegroundColor Green
 Write-Host ""
 Write-Host "Created in Books:" -ForegroundColor White
 Write-Host "  Contact:        $contactId" -ForegroundColor White
