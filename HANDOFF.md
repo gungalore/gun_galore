@@ -7,6 +7,42 @@ overwritten.
 
 Last updated: **2026-10-23**.
 
+## 2026-10-23 - ZOHO LEDGER CORRECTION + LIVE SMOKE TEST (DEPLOYED)
+
+**The first principal/agent recipe could not reconcile, and the live smoke test
+proved it.** Books ignores `deposit_to_account_id` on a customer payment and
+silently deposits into **Undeposited Funds**; an **Expense credits** its
+paid-through account, so the Bob Go freight *increased* the trust liability; and
+the seller commission payment likewise never touched the liability. Net effect
+on a two-scenario run: trust R630 credit, Undeposited Funds R2,492.93.
+
+Corrected recipe (commit **`aebe598d`**, migration
+`20261023133000_zoho_ledger_correction`):
+- Buyer payment uses **`account_id`** and lands in **Bank - FNB Business**.
+- Carrier freight is a **journal** Dr Client Funds Payable / Cr bank
+  (`zohoShippingJournalId`), not an Expense.
+- Auction seller fee: invoice stays, then a **journal** Dr trust / Cr
+  Undeposited Funds (`zohoCommissionSettleJournalId`) paired with the seller's
+  customer payment into Undeposited Funds.
+- The FNB bank is resolved by name fragment: the live name's dash is not ASCII,
+  so an exact match silently missed and Books defaulted to Undeposited Funds.
+
+**Live verification (R1,000 + R145 freight, Buy Now and Auction):**
+- Buy Now: buyer invoice R1,275.45 paid; seller statement emailed.
+- Auction: buyer invoice R1,217.48 paid; seller commission invoice **R50.00**
+  paid; seller statement emailed.
+- Closing ledger: **trust R0.00, Undeposited Funds R0.00**.
+- Scripts: `backend/scripts/zoho-marketplace-smoke-test.ps1` (both flows,
+  `-NoEmails` supported) and `backend/scripts/zoho-smoke-cleanup.ps1`
+  (dry-run by default, `-Apply` to delete SMOKETEST artefacts).
+- The passing run's documents were left in Books for inspection; remove with
+  the cleanup script when done.
+
+Deploy at 13:39 SAST: rollback `alloutdoor-20261023-133925.dump`
+(36 070 341 bytes), migrations applied, health x2 OK, public 200 x2, all three
+PM2 services online. Unrelated Terms/listing/motivation WIP stashed and
+restored unchanged.
+
 ## 2026-10-23 - PRINCIPAL/AGENT SPLIT ON ZOHO INVOICES (DEPLOYED)
 
 **The buyer invoice now states the whole checkout, with the principal/agent
