@@ -5,7 +5,29 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-23**.
+Last updated: **2026-10-24**.
+
+## 2026-10-24 - BUYER INVOICE NO LONGER SPILLS A BLANK PAGE 2 (DEPLOYED)
+
+**Every paid buyer invoice PDF had a second page containing only the footer
+page number.** The cause was page-1 height, not the template: page 1 finished
+at y=54-65 of an 842pt page (footer number at y=33), so OpenPDF split the last
+block and emitted an empty page. Invoices that ended at y=144+ were one page.
+
+Fix in `createBuyerInvoice`: reference shortened to `ref: total` (the 77-char
+"item + delivery + fee" reference wrapped to four lines in the narrow P.O.#
+column), one-line line-item descriptions, and a two-line agent/disclosure note
+(four lines before). The smoke script mirrors the same shape so the next run is
+representative.
+
+**Not yet re-verified against a live invoice** - re-run
+`backend/scripts/zoho-marketplace-smoke-test.ps1` and download INV-0000xx to
+confirm one page, then clean up with `zoho-smoke-cleanup.ps1 -Apply`.
+
+Deploy at 09:31 SAST (commit `85175324`): rollback
+`alloutdoor-20261024-093134.dump` (36 199 490 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Unrelated
+Terms/listing/motivation WIP stashed and restored unchanged.
 
 ## 2026-10-23 - DELIVERY HANDLING MARGIN REMOVED (DEPLOYED)
 
