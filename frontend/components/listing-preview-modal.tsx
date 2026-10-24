@@ -7,6 +7,7 @@ import { SUPPORT_EMAIL } from '@/lib/brand';
 import { modalIn } from '@/lib/anim';
 import { gsap } from 'gsap';
 import { useScrollLock } from '@/lib/use-scroll-lock';
+import { ListingDescription } from './listing-description';
 
 // Result shape returned by POST /listings/preview. Keep in sync with
 // backend/src/listings/listings.service.ts → PreviewResult.
@@ -416,10 +417,9 @@ export function ListingPreviewModal({
                 border: '0.5px solid rgba(34,197,94,0.4)',
                 color: 'var(--text-primary)',
                 lineHeight: 1.55,
-                whiteSpace: 'pre-wrap',
               }}
             >
-              {preview.cleanedDescription}
+              <ListingDescription text={preview.cleanedDescription} />
             </div>
           </div>
         )}
@@ -594,16 +594,10 @@ export function ListingPreviewModal({
                   <FactRow label="Calibre" value={snapshot.calibre} />
                 )}
               </dl>
-              <p
+              <ListingDescription
                 className="text-sm"
-                style={{
-                  color: 'var(--text-secondary)',
-                  lineHeight: 1.55,
-                  whiteSpace: 'pre-wrap',
-                }}
-              >
-                {snapshot.description || 'No description'}
-              </p>
+                text={snapshot.description || 'No description'}
+              />
             </div>
           </div>
         </div>

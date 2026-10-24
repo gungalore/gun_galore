@@ -31,7 +31,28 @@ type Block =
 
 export function parseDescriptionBlocks(text: string): Block[] {
   const blocks: Block[] = [];
-  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const normalised = text.replace(/\r\n/g, '\n');
+  const lines = normalised.split('\n');
+
+  // Listings written as ordinary sentences still read like the AI-tidied
+  // version: one fact per bullet. This only applies when the seller used no
+  // bullet markers and no section heading, so a deliberately structured
+  // description is never rewritten.
+  const hasStructure =
+    lines.some((line) => BULLET_RE.test(line)) ||
+    lines.some((line) =>
+      SECTION_HEADINGS.includes(line.trim().toLowerCase()),
+    );
+  if (!hasStructure) {
+    const items = normalised
+      .split(/\n+/)
+      .flatMap((line) =>
+        line.split(/(?<=[.!?])\s+(?=[A-Z0-9])/),
+      )
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (items.length > 1) return [{ kind: 'bullets', items }];
+  }
 
   let para: string[] = [];
   let bullets: string[] = [];
