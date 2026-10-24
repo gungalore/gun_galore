@@ -7,6 +7,36 @@ overwritten.
 
 Last updated: **2026-10-24**.
 
+## 2026-10-24 - SELLER REMITTANCE ADVICE; R0 SELLER INVOICE RETIRED (DEPLOYED)
+
+**Every paid-out sale now has a remittance advice** — the document a seller
+shows SARS against the credit on their bank statement.
+
+- `GET /api/transactions/:id/remittance` (seller-only) returns a one-page PDF:
+  payout date, order reference, sale type, paid-to/paid-from, the item, gross
+  sale, any Platform Fee deduction, and the exact net paid. It refuses until
+  `Transaction.paidOutAt` is set, so the figure is money that reached the bank.
+- `/my/earnings` has a **PDF** button per paid row (the payout statement
+  payload now carries `paidOutAt`).
+- When the Ozow payout completes, the seller gets a "payout paid" email
+  pointing at the advice (`payoutRemittanceReadySeller`).
+
+**The Buy Now zero-total settlement advice is retired.** `createCommissionInvoice`
+now returns immediately when `commissionZar <= 0`; a Buy Now seller has no
+seller-side Books document (the remittance advice is their paperwork). Auction
+sellers keep the 5% Platform Fee invoice. `markCommissionInvoicePaid` still
+stamps legacy zero-fee advice rows `NOT_APPLICABLE`.
+
+**Live smoke re-run after deploy:** INV-000055 (Buy Now buyer) with **no**
+seller advice, INV-000056/57 (Auction buyer + R50 seller invoice), CFP and
+Undeposited Funds at R0.00. The remittance PDF itself is covered by unit tests
+(auth, one page, paid-only) — not yet exercised by a live payout.
+
+Deploy at 13:55 SAST (commit `cfdafb26`): rollback
+`alloutdoor-20261024-135505.dump` (36 201 420 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Unrelated
+Terms/listing/motivation WIP stashed and restored unchanged.
+
 ## 2026-10-24 - BUYER INVOICES USE FOOTNOTE MARKERS (DEPLOYED)
 
 **Line descriptions are gone; the markers explain the supplies.** Buyer
