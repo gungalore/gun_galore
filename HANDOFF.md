@@ -7,6 +7,24 @@ overwritten.
 
 Last updated: **2026-10-24**.
 
+## 2026-10-24 - ZOHO CASH NOW LANDS IN ABSA 5183 (DEPLOYED)
+
+**ABSA (account ending 5183) handles every transaction.** `resolveBankAccountId`
+now prefers the ABSA account by name, then by `account_number` ending `5183`,
+then by name containing `5183`; the retired FNB account is only a fallback (then
+any `bank`-type account, then Undeposited Funds). That resolver drives buyer
+receipts, the Bob Go carrier-freight journal and seller payout journals, so all
+three credit ABSA. The smoke script resolves the bank in the same order, and the
+unit-test chart carries both ABSA (40505183) and the old FNB row so ABSA wins.
+
+**Verify on the next smoke run:** the buyer payment, carrier journal and payout
+journal should show ABSA in Books, not FNB.
+
+Deploy at 12:29 SAST (commit `8acb5214`): rollback
+`alloutdoor-20261024-122929.dump` (36 200 881 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Unrelated
+Terms/listing/motivation WIP stashed and restored unchanged.
+
 ## 2026-10-24 - INVOICE LINES RENAMED, P.O.# GONE (DEPLOYED)
 
 **Supersedes the earlier reference-shortening fix.** The buyer and seller
