@@ -330,6 +330,10 @@ export default function TermsPage() {
         live at checkout and paid by the Buyer.
       </p>
       <p>
+        Delivery can take up to 10 business days from payment. We always
+        push for the quickest possible collection and delivery.
+      </p>
+      <p>
         <strong>Pickup-point delivery is Pargo only.</strong> Where a pickup
         point is offered, the Buyer chooses from the nearby Pargo counters shown
         at checkout and collects the parcel from that counter. We do not offer

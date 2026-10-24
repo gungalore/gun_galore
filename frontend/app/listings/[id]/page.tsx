@@ -804,41 +804,35 @@ export default async function ListingDetailPage({
           {/* UX-1c — pre-purchase delivery estimate. A range/method line,
               never a hard promise. Null (hidden) for experiences and any
               listing with no platform-estimable shipping. */}
-          {deliveryEstimate && (
+          {deliveryEstimate?.kind === 'FIREARM' && (
             <div
               className="text-sm mb-5"
               style={{ color: 'var(--text-secondary)' }}
             >
-              {deliveryEstimate.kind === 'FIREARM' ? (
-                <>
-                  Transfer via licensed dealer —{' '}
-                  <Link
-                    href="/members/regulated-items"
-                    style={{
-                      color: 'var(--text-secondary)',
-                      textDecoration: 'underline',
-                    }}
-                  >
-                    see how it works
-                  </Link>
-                </>
-              ) : deliveryEstimate.kind === 'COLLECTION' ? (
-                <>
-                  Collection from the seller in {vicinityLabel(listing)}
-                  {/* Big-4 copy interim — the half-sentence that stops an
-                      out-of-province buyer bouncing off "collection only".
-                      Suppressed for the dangerous-goods battery case, where
-                      no transporter is a legitimate option. */}
-                  {collectionMode === 'FREIGHT_OK' &&
-                    ' — collect yourself or send your own transporter'}
-                </>
-              ) : (
-                <>
-                  Delivery can take up to {deliveryEstimate.maxDays} business
-                  days from payment. We always push for the quickest possible
-                  collection and delivery.
-                </>
-              )}
+              Transfer via licensed dealer —{' '}
+              <Link
+                href="/members/regulated-items"
+                style={{
+                  color: 'var(--text-secondary)',
+                  textDecoration: 'underline',
+                }}
+              >
+                see how it works
+              </Link>
+            </div>
+          )}
+          {deliveryEstimate?.kind === 'COLLECTION' && (
+            <div
+              className="text-sm mb-5"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              Collection from the seller in {vicinityLabel(listing)}
+              {/* Big-4 copy interim — the half-sentence that stops an
+                  out-of-province buyer bouncing off "collection only".
+                  Suppressed for the dangerous-goods battery case, where
+                  no transporter is a legitimate option. */}
+              {collectionMode === 'FREIGHT_OK' &&
+                ' — collect yourself or send your own transporter'}
             </div>
           )}
 
