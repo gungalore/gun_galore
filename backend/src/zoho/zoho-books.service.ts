@@ -545,7 +545,7 @@ export class ZohoBooksService {
         ? [
             {
               name: 'Platform Fee',
-              description: `${orderRef} — ${tx.listing.title}`,
+              description: 'All Outdoor (Agent)',
               rate: commissionRand,
               quantity: 1,
               account_id: commissionAccountId,
@@ -568,7 +568,6 @@ export class ZohoBooksService {
 
       const payload = {
         customer_id: contactId,
-        reference_number: reference,
         date: today,
         due_date: today,
         line_items: lineItems,
@@ -649,7 +648,6 @@ export class ZohoBooksService {
       where: { id: transactionId },
       include: {
         buyer: { select: { id: true, email: true } },
-        seller: { select: { username: true } },
         listing: { select: { title: true, referenceNumber: true } },
       },
     });
@@ -696,9 +694,6 @@ export class ZohoBooksService {
         );
       }
 
-      const sellerHandle = tx.seller?.username
-        ? `@${tx.seller.username}`
-        : 'the seller';
       const title = tx.listing?.title ?? 'Marketplace item';
 
       const lineItems: Array<{
@@ -710,7 +705,7 @@ export class ZohoBooksService {
       }> = [
         {
           name: title.length > 100 ? title.slice(0, 97) + '…' : title,
-          description: `Sold by ${sellerHandle}; ALL Outdoor acts as agent.`,
+          description: 'Seller of item (Principal)',
           rate: itemRand,
           quantity: 1,
           account_id: cfpAccountId,
@@ -719,7 +714,7 @@ export class ZohoBooksService {
       if (deliveryCents > 0) {
         lineItems.push({
           name: 'Delivery',
-          description: `Courier freight and delivery.`,
+          description: 'Courier (Principal)',
           rate: deliveryRand,
           quantity: 1,
           account_id: cfpAccountId,
@@ -728,7 +723,7 @@ export class ZohoBooksService {
       if (tx.processingFee > 0) {
         lineItems.push({
           name: 'Platform Fee',
-          description: `ALL Outdoor agency service.`,
+          description: 'All Outdoor (Agent)',
           rate: feeRand,
           quantity: 1,
           account_id: feeAccountId,
@@ -736,14 +731,9 @@ export class ZohoBooksService {
       }
 
       const today = new Date().toISOString().slice(0, 10);
-      // Keep the reference short: the P.O.# column on Zoho's template is
-      // narrow, and a long reference wraps to four lines and pushes the
-      // notes block onto a second page. The line items carry the breakdown.
-      const reference = `${orderRef}: ${this.formatRand(
-        itemRand + deliveryRand + feeRand,
-      )}`;
-      // Short by design: every extra wrapped line at the foot of the page
-      // pushes the block past the body area and Zoho emits a blank page 2.
+      // No reference_number: Zoho prints it as a P.O.# block, which the
+      // operator does not want on the invoice. The order reference stays in
+      // the notes, and dropping both lines also keeps the PDF to one page.
       const notes =
         `ALL Outdoor acts as agent for the seller: the item price and ` +
         `delivery are held in Client Funds Payable, not revenue; only the ` +
@@ -756,7 +746,6 @@ export class ZohoBooksService {
       };
       const payload = {
         customer_id: contactId,
-        reference_number: reference,
         date: today,
         line_items: lineItems,
         notes,

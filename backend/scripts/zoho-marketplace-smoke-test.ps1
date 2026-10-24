@@ -142,10 +142,10 @@ function New-Contact([string]$name, [string]$email) {
     return (Api 'POST' '/contacts' $body).contact.contact_id
 }
 function New-Invoice([string]$contactId, [string]$reference, $lines, [string]$notes) {
-    $body = @{
-        customer_id = $contactId; reference_number = $reference; date = $today
-        line_items = $lines; notes = $notes
-    }
+    $body = @{ customer_id = $contactId; date = $today; line_items = $lines; notes = $notes }
+    # No reference_number: Zoho renders it as the P.O.# block, which the
+    # production invoices deliberately omit.
+    if ($reference) { $body.reference_number = $reference }
     $r = (Api 'POST' '/invoices' $body).invoice
     Api 'POST' "/invoices/$($r.invoice_id)/status/sent" @{} | Out-Null
     return $r
@@ -180,7 +180,7 @@ function New-Seller-Advice([string]$contactId, [string]$reference, [string]$sale
     # Buy Now seller paperwork: a zero-total settlement advice. Zoho accepts a
     # zero invoice and marks it paid once sent; it has no ledger effect.
     $body = @{
-        customer_id = $contactId; reference_number = $reference; date = $today; due_date = $today
+        customer_id = $contactId; date = $today; due_date = $today
         line_items = @(@{
             name = 'Sale settlement advice (not a tax invoice)'
             description = "$saleRef -- $title. Sold by @smoke_seller on ALL Outdoor as agent. Sale price $(Zar $saleC); Platform Fee $(Zar 0); paid to seller $(Zar $payoutC)."
@@ -245,10 +245,10 @@ function Run-BuyNow {
     $item = 100000; $carrierC = 14500; $handlingC = 1450; $deliveryC = 15950
     $feeC = 11595; $totalC = 127545; $payoutC = 100000
     $ref = "SMOKE-BN-$ts"
-    $buyerInv = New-Invoice $buyerId "$ref`: $(Zar $totalC)" @(
-        @{ name = 'Smoke test item'; description = 'Sold by @smoke_seller; ALL Outdoor acts as agent.'; rate = $item / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Delivery'; description = 'Courier freight and delivery.'; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Platform Fee'; description = 'ALL Outdoor agency service.'; rate = $feeC / 100; quantity = 1; account_id = $fee.account_id }
+    $buyerInv = New-Invoice $buyerId '' @(
+        @{ name = 'Smoke test item'; description = 'Seller of item (Principal)'; rate = $item / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Delivery'; description = 'Courier (Principal)'; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Platform Fee'; description = 'All Outdoor (Agent)'; rate = $feeC / 100; quantity = 1; account_id = $fee.account_id }
     ) "ALL Outdoor acts as agent for the seller: the item price and delivery are held in Client Funds Payable, not revenue; only the Platform Fee is ours. Ref: $ref"
     $script:created += "buyer invoice $($buyerInv.invoice_number) $($buyerInv.invoice_id)"
 
@@ -307,10 +307,10 @@ function Run-Auction {
     $payoutC = $hammer - $sellerFeeC
     $ref = "SMOKE-AU-$ts"
 
-    $buyerInv = New-Invoice $buyerId "$ref`: $(Zar $buyerTotalC)" @(
-        @{ name = 'Smoke test lot'; description = 'Winning bid; sold by @smoke_seller. ALL Outdoor acts as agent.'; rate = $hammer / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Delivery'; description = 'Courier freight and delivery.'; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Platform Fee (5%)'; description = 'Buyer share of the auction Platform Fee.'; rate = $buyerFeeC / 100; quantity = 1; account_id = $fee.account_id }
+    $buyerInv = New-Invoice $buyerId '' @(
+        @{ name = 'Smoke test lot'; description = 'Seller of item (Principal)'; rate = $hammer / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Delivery'; description = 'Courier (Principal)'; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Platform Fee (5%)'; description = 'All Outdoor (Agent)'; rate = $buyerFeeC / 100; quantity = 1; account_id = $fee.account_id }
     ) "ALL Outdoor acts as agent for the seller: the hammer and delivery are held in Client Funds Payable, not revenue; only the buyer's 5% Platform Fee is ours. Ref: $ref"
     $script:created += "buyer invoice $($buyerInv.invoice_number) $($buyerInv.invoice_id)"
     $buyerPay = Pay-Invoice $buyerId $buyerInv $bank.account_id "Platform charges -- $ref" 'Auction buyer payment received into the bank'
@@ -325,9 +325,9 @@ function Run-Auction {
     $script:created += "carrier journal $($carrierJournal.journal_id)"
 
     # Seller's 5% commission invoice (production shape: one Platform Fee line).
-    $sellerInv = New-Invoice $sellerId "Sold for $(Zar $hammer) - $(Zar $sellerFeeC) (Platform Fee) = $(Zar $payoutC) Due to you" @(
-        @{ name = 'Platform Fee'; description = "$ref -- auction seller fee (5% of hammer)"; rate = $sellerFeeC / 100; quantity = 1; account_id = $fee.account_id }
-    ) "Auction seller commission. ALL Outdoor acts as agent. Reference: $ref"
+    $sellerInv = New-Invoice $sellerId '' @(
+        @{ name = 'Platform Fee'; description = 'All Outdoor (Agent)'; rate = $sellerFeeC / 100; quantity = 1; account_id = $fee.account_id }
+    ) "Sold for $(Zar $hammer) - $(Zar $sellerFeeC) (Platform Fee) = $(Zar $payoutC) Due to you.`nALL Outdoor acts as agent. Reference: $ref"
     $script:created += "seller invoice $($sellerInv.invoice_number) $($sellerInv.invoice_id)"
     $sellerPay = Pay-Invoice $sellerId $sellerInv $uf.account_id "Commission from held funds -- $ref" 'Auction seller fee settled from held funds'
     $script:created += "seller payment $sellerPay"
@@ -356,6 +356,16 @@ function Run-Auction {
     if ([double]$buyerFresh.balance -ne 0) { $script:failures += "AU buyer invoice balance $($buyerFresh.balance) != 0" }
     if ([Math]::Abs([double]$sellerFresh.total - ($sellerFeeC / 100)) -gt 0.001) { $script:failures += "AU seller invoice total $($sellerFresh.total) != $(Zar $sellerFeeC)" }
     if ([double]$sellerFresh.balance -ne 0) { $script:failures += "AU seller invoice balance $($sellerFresh.balance) != 0" }
+    # Item and delivery are third-party money (liability); the Platform Fee is
+    # income. Guard the links so a bad account mapping fails the smoke run.
+    $auLineAccts = @($buyerFresh.line_items | ForEach-Object { $_.account_id })
+    if ($auLineAccts[0] -ne $trust.account_id -or $auLineAccts[1] -ne $trust.account_id -or $auLineAccts[2] -ne $fee.account_id) {
+        $script:failures += "AU buyer line accounts wrong: $($auLineAccts -join ',')"
+    }
+    $auSellerAccts = @($sellerFresh.line_items | ForEach-Object { $_.account_id })
+    if ($auSellerAccts[0] -ne $fee.account_id) {
+        $script:failures += "AU seller line account wrong: $($auSellerAccts -join ',')"
+    }
     $cfp = ($hammer + $deliveryC) - $handlingC - $carrierC - $sellerFeeC - $payoutC
     if ($cfp -ne 0) { $script:failures += "AU trust arithmetic leaves $cfp cents" }
     Write-Host "  buyer invoice $($buyerFresh.invoice_number) $(Zar ([int]($buyerFresh.total * 100))) paid; seller invoice $($sellerFresh.invoice_number) $(Zar ([int]($sellerFresh.total * 100))) paid; trust leaves $(Zar $cfp)" -ForegroundColor Green

@@ -12,7 +12,7 @@
 #
 # Creates, against the live Books org:
 #   1. buyer contact
-#   2. buyer invoice — item + delivery to Client Funds Payable, fee to revenue
+#   2. buyer invoice ï¿½ item + delivery to Client Funds Payable, fee to revenue
 #   3. customer payment settling that invoice from Client Funds Payable
 #   4. delivery-margin journal (CFP -> Shipping Handling Revenue)
 #   5. Bob Go vendor (if absent) + carrier expense for R145
@@ -332,21 +332,21 @@ $notes = "ALL Outdoor acts as agent for the seller. The item price $(Format-Zar 
 $lineItems = @(
     @{
         name        = 'Test item'
-        description = "$orderRef -- sold by @smoke_seller (principal). ALL Outdoor acts as agent."
+        description = 'Seller of item (Principal)'
         rate        = $itemRand
         quantity    = 1
         account_id  = $cfpAcc.account_id
     },
     @{
         name        = 'Delivery'
-        description = "$orderRef -- courier freight and delivery"
+        description = 'Courier (Principal)'
         rate        = $deliveryRand
         quantity    = 1
         account_id  = $cfpAcc.account_id
     },
     @{
         name        = 'Platform Fee'
-        description = "$orderRef -- marketplace facilitation (ALL Outdoor agency service)"
+        description = 'All Outdoor (Agent)'
         rate        = $feeRand
         quantity    = 1
         account_id  = $feeAcc.account_id
@@ -358,7 +358,6 @@ Write-Host "-> Creating buyer invoice..." -ForegroundColor Cyan
 Write-Host "  Reference: $reference" -ForegroundColor DarkGray
 $invoiceBody = @{
     customer_id      = $contactId
-    reference_number = $reference
     date             = $today
     line_items       = $lineItems
     notes            = $notes

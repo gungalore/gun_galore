@@ -135,25 +135,25 @@ describe('ZohoBooksService buyer paperwork', () => {
       (c) => /\/invoices(\?|$)/.test(c.url) && c.init?.method === 'POST',
     );
     const body = JSON.parse(String(invoicePost?.init?.body));
-    expect(body.reference_number.length).toBeLessThanOrEqual(100);
-    // Short reference: the P.O.# column is narrow and wraps onto the notes
-    // block, which used to spill onto a blank second page.
-    expect(body.reference_number).toContain('R 1,275.45');
+    expect(body.reference_number).toBeUndefined();
     expect(body.notes).toContain('acts as agent');
     expect(body.line_items).toHaveLength(3);
     // Item price and the whole delivery figure are third-party money.
     expect(body.line_items[0]).toMatchObject({
+      description: 'Seller of item (Principal)',
       rate: 1_000,
       account_id: 'acc-trust',
     });
     expect(body.line_items[1]).toMatchObject({
       name: 'Delivery',
+      description: 'Courier (Principal)',
       rate: 159.5,
       account_id: 'acc-trust',
     });
     // Only our platform fee is revenue.
     expect(body.line_items[2]).toMatchObject({
       name: 'Platform Fee',
+      description: 'All Outdoor (Agent)',
       rate: 115.95,
       account_id: 'acc-fee',
     });
@@ -474,7 +474,9 @@ describe('ZohoBooksService buyer paperwork', () => {
       (c) => /\/invoices(\?|$)/.test(c.url) && c.init?.method === 'POST',
     );
     const body = JSON.parse(String(invoicePost?.init?.body));
-    expect(body.reference_number).toContain('R 0 (Platform Fee)');
+    expect(body.reference_number).toBeUndefined();
+    // The settlement maths now lives in the notes, not a P.O.# field.
+    expect(body.notes).toContain('R 0 (Platform Fee)');
     expect(body.line_items).toHaveLength(1);
     expect(body.line_items[0]).toMatchObject({
       name: 'Sale settlement advice (not a tax invoice)',
