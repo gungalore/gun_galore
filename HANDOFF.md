@@ -7,6 +7,35 @@ overwritten.
 
 Last updated: **2026-10-24**.
 
+## 2026-10-24 - PRECINCT CARD ON THE LICENCE SHEET (DEPLOYED)
+
+**The SAPS quarterly figures are now shown on the motivation sheet.**
+`PrecinctCard` was built and tested but mounted by nothing since Phase 4 deleted
+the wizard, so the member only ever saw the figures in the finished pack. It now
+renders in the Licence Centre's "Your circumstances" section for S13/S14, under
+the association rows and above "Where you travel". `DangerAreas` still owns the
+press clippings.
+
+Production check before deploy: the public Maps key returns Places predictions
+and Geocoder results; the backend `GOOGLE_MAPS_API_KEY` (39 chars) returns
+Geocoding `OK`; `CrimeStatsRelease` / `Figure` / `Station` hold 5 / 1 290 300 /
+1 179 rows; no geocode failures in recent backend logs; no `GENERATING`
+motivations in flight.
+
+Deploy at 16:58 SAST (commit `afbd916f`, frontend-only): rollback
+`alloutdoor-20261024-165838.dump` (36 202 697 bytes), no migrations,
+health x2 OK, public 200 x2, three PM2 services online.
+
+⚠️ **Open:** the community post composer still builds
+`google.maps.places.Autocomplete` itself instead of using `AddressAutocomplete`,
+and only tries once when the modal opens — if the async Maps script has not
+loaded yet, its location autocomplete silently does nothing. It also uses a
+controlled input, the pattern `address-autocomplete.tsx` says breaks the binding.
+
+Environment note: the Playwright MCP default is now Firefox
+(`~/.config/opencode/opencode.json`), so a new session checks production in
+Firefox; this session still ran Chromium.
+
 ## 2026-10-24 - LISTING COPY + MOTIVATION GOLDEN SET (DEPLOYED)
 
 **Three completed workstreams that had been sitting uncommitted.**
