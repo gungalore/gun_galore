@@ -26,6 +26,8 @@
     "saps271:checksum": "node scripts/saps271-checksum.js",
       "crime-stats:load": "ts-node --transpile-only --project tsconfig.json scripts/crime-stats-load.ts",
       "motivation:eval": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/motivation-eval.ts",
+      "motivation:golden": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/motivation-golden.ts",
+      "motivation:golden:init": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/motivation-golden.ts --init",
     "crime-stats:fixture": "node scripts/crime-stats-make-fixture.cjs",
     "news:poll": "ts-node --transpile-only --project tsconfig.json scripts/news-poll.ts",
     "test:e2e:setup": "node scripts/e2e-db.mjs"
