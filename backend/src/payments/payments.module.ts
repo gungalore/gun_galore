@@ -4,6 +4,7 @@ import { TransactionsService } from './transactions.service';
 import { DispatchSlaService } from './dispatch-sla.service';
 import { DealerVerificationService } from './dealer-verification.service';
 import { ReceiptService } from './receipt.service';
+import { RemittanceService } from './remittance.service';
 import { FraudRiskService } from './fraud-risk.service';
 import { TransactionsController, PaymentsWebhookController } from './transactions.controller';
 import { KycModule } from '../kyc/kyc.module';
@@ -26,6 +27,7 @@ import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module'
     DispatchSlaService,
     DealerVerificationService,
     ReceiptService,
+    RemittanceService,
     FraudRiskService,
   ],
   controllers: [TransactionsController, PaymentsWebhookController],

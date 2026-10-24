@@ -1873,6 +1873,38 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Seller: payout actually paid + remittance advice available
+  // ---------------------------------------------------------------
+  // Fires when the bank payout completes (Transaction.paidOutAt). The PDF
+  // itself is generated on demand from /transactions/:id/remittance and from
+  // /my/earnings, so this mail only points the seller at it.
+  async payoutRemittanceReadySeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    listingTitle: string;
+    sellerPayout: number;
+    reference: string | null;
+    transactionId: string;
+  }) {
+    const url = `${this.appUrl}/my/earnings`;
+    const html = this.email({
+      status: { tone: 'success', label: 'Paid out' },
+      headline: 'Your payout has been paid',
+      body: `Hi ${b(d.sellerName)}, ${b(formatRand(d.sellerPayout))} for ${b(d.listingTitle)} has been paid to your bank account. Your remittance advice is ready — download and keep it as the record of this payment.`,
+      rows: [
+        {
+          label: 'Reference',
+          value: d.reference ?? d.transactionId.slice(-8).toUpperCase(),
+        },
+        { label: 'Amount paid', value: formatRand(d.sellerPayout) },
+      ],
+      cta: { label: 'Download remittance advice', url },
+      preheader: `Payout of ${formatRand(d.sellerPayout)} paid to your bank`,
+    });
+    await this.send(d.sellerEmail, 'Payout paid — ' + d.listingTitle, html);
+  }
+
+  // ---------------------------------------------------------------
   // Seller: shipment booked by the platform (P5.2)
   // ---------------------------------------------------------------
   // Fires when the seller accepts a courier sale and we've booked the

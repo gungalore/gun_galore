@@ -53,6 +53,8 @@ interface Statement {
     netPayout: number;
     /** True when our fees were inside the buyer's price, so nothing was deducted. */
     feesInPrice: boolean;
+    /** Set once the payout reached the seller's bank (remittance advice exists). */
+    paidOutAt: string | null;
   }[];
 }
 
@@ -99,6 +101,21 @@ export default function EarningsPage() {
     const a = document.createElement('a');
     a.href = url;
     a.download = 'all-outdoor-payout-statement.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function downloadRemittance(transactionId: string, reference: string | null) {
+    const token = await getToken();
+    const res = await fetch(`${API_URL}/transactions/${transactionId}/remittance`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `remittance-${reference ?? transactionId}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -195,6 +212,7 @@ export default function EarningsPage() {
                   <th className="p-3 text-right">Your price</th>
                   <th className="p-3 text-right">Fees</th>
                   <th className="p-3 text-right">Net</th>
+                  <th className="p-3 text-right">Remittance</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,11 +248,25 @@ export default function EarningsPage() {
                     <td className="p-3 text-right text-[var(--text-primary)] font-medium">
                       {rand(o.netPayout)}
                     </td>
+                    <td className="p-3 text-right">
+                      {o.paidOutAt ? (
+                        <button
+                          type="button"
+                          onClick={() => void downloadRemittance(o.id, o.reference)}
+                          className="text-xs px-2 py-1 rounded-md border border-[var(--border)] text-[var(--text-secondary)]"
+                          title="Download the remittance advice for your bank records"
+                        >
+                          PDF
+                        </button>
+                      ) : (
+                        <span className="text-xs text-[var(--text-tertiary)]">pending</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {statement.orders.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="p-6 text-center text-[var(--text-tertiary)]">
+                    <td colSpan={7} className="p-6 text-center text-[var(--text-tertiary)]">
                       No payouts in this window yet.
                     </td>
                   </tr>

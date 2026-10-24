@@ -25,6 +25,7 @@ function makeController(
     {} as never, // tracking
     {} as never, // dealerVerification
     {} as never, // receipts
+    {} as never, // remittances
     tokens as never,
   );
   return { controller, txService, tokens };

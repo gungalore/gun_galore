@@ -424,7 +424,7 @@ describe('ZohoBooksService buyer paperwork', () => {
     );
   });
 
-  it('creates a zero-total settlement advice for a Buy Now seller (no fee)', async () => {
+  it('raises no seller document when there is no fee (Buy Now)', async () => {
     const calls: FetchCall[] = [];
     const db = {
       transaction: {
@@ -447,69 +447,21 @@ describe('ZohoBooksService buyer paperwork', () => {
         }),
         update: jest.fn().mockResolvedValue({}),
       },
-      user: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: 'seller1',
-          zohoContactId: 'contact-seller',
-          email: 'seller@example.com',
-          username: 'scope_seller',
-          firstName: 'Scope',
-          lastName: 'Seller',
-        }),
-        update: jest.fn(),
-      },
+      user: { findUnique: jest.fn(), update: jest.fn() },
     };
 
     global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url: String(url), init });
-      const u = String(url);
-      if (u.includes('/oauth/v2/token')) {
-        return response({ access_token: 'token', expires_in: 3600 });
-      }
-      if (u.includes('/chartofaccounts')) {
-        return response({ chartofaccounts: ACCOUNTS });
-      }
-      if (/\/invoices(\?|$)/.test(u) && init?.method === 'POST') {
-        return response({
-          invoice: { invoice_id: 'inv-advice', invoice_number: 'INV-ADV' },
-        });
-      }
-      if (u.includes('/status/sent')) {
-        return response({ code: 0 });
-      }
-      throw new Error(`unexpected ${init?.method ?? 'GET'} ${u}`);
+      throw new Error(`unexpected ${init?.method ?? 'GET'} ${url}`);
     }) as unknown as typeof fetch;
 
     const svc = new ZohoBooksService(db as never);
     await svc.createCommissionInvoice('tx-bn');
 
-    const invoicePost = calls.find(
-      (c) => /\/invoices(\?|$)/.test(c.url) && c.init?.method === 'POST',
-    );
-    const body = JSON.parse(String(invoicePost?.init?.body));
-    expect(body.reference_number).toBeUndefined();
-    // The settlement maths now lives in the notes, not a P.O.# field.
-    expect(body.notes).toContain('R 0 (Platform Fee)');
-    expect(body.line_items).toHaveLength(1);
-    expect(body.line_items[0]).toMatchObject({
-      name: 'Sale settlement advice (not a tax invoice)',
-      rate: 0,
-      account_id: 'acc-trust',
-    });
-    expect(body.notes).toContain('not a tax invoice');
-    expect(
-      calls.some(
-        (c) => c.url.includes('/status/sent') && c.init?.method === 'POST',
-      ),
-    ).toBe(true);
-    expect(db.transaction.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          zohoCommissionInvoiceId: 'inv-advice',
-          zohoSyncStatus: 'OK',
-        }),
-      }),
-    );
+    // A Buy Now seller pays no fee, so there is no seller-side tax document.
+    // Their paperwork is the remittance advice issued at payout.
+    expect(calls).toHaveLength(0);
+    expect(db.transaction.update).not.toHaveBeenCalled();
   });
 
   it('emails the seller their document once', async () => {
@@ -579,7 +531,7 @@ describe('ZohoBooksService buyer paperwork', () => {
     expect(db.transaction.update).not.toHaveBeenCalled();
   });
 
-  it('does not try to settle a zero-fee settlement advice at payout', async () => {
+  it('stamps a legacy zero-fee advice invoice as NOT_APPLICABLE at payout', async () => {
     const db = {
       transaction: {
         findUnique: jest.fn().mockResolvedValue({

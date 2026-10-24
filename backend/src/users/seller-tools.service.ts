@@ -154,6 +154,9 @@ export class SellerToolsService {
         buyerTotal: true,
         passFeeToBuyer: true,
         feeModel: true,
+        // Held payout rows have no remittance advice yet; the UI only offers
+        // the document once the money has actually left.
+        paidOutAt: true,
         listing: { select: { title: true } },
         buyer: { select: { username: true } },
       },
@@ -225,6 +228,9 @@ export class SellerToolsService {
         // True when our fees were inside the buyer's price, so the UI can say
         // so instead of showing two mysterious zeroes.
         feesInPrice: b.feesInPrice,
+        // When the payout hit the seller's bank; the remittance PDF is only
+        // available from that point on.
+        paidOutAt: r.paidOutAt?.toISOString() ?? null,
       })),
     };
   }

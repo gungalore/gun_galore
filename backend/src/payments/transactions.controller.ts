@@ -26,6 +26,7 @@ import { TrackingService } from '../shipping/tracking.service';
 import { parseAcceptSchedule } from '../shipping/pickup-dates';
 import { DealerVerificationService } from './dealer-verification.service';
 import { ReceiptService } from './receipt.service';
+import { RemittanceService } from './remittance.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { StreamableFile } from '@nestjs/common';
 import type { Response } from 'express';
@@ -43,6 +44,7 @@ export class TransactionsController {
     private readonly tracking: TrackingService,
     private readonly dealerVerification: DealerVerificationService,
     private readonly receipts: ReceiptService,
+    private readonly remittances: RemittanceService,
     private readonly tokens: ActionTokensService,
   ) {}
 
@@ -236,9 +238,28 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
-  // Seller prints the platform-booked waybill/label (PDF). Seller-only,
-  // key-safe proxy — carrier auth is applied server-side in the service.
+  // Seller downloads the remittance advice for a paid-out sale (PDF).
+  // Seller-only, and only once the payout has actually been paid — the
+  // document is proof of the money that reached their bank.
   // ---------------------------------------------------------------
+  @Get(':id/remittance')
+  @UseGuards(AuthGuard)
+  async remittance(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { pdf, filename } = await this.remittances.generateForTransaction(
+      id,
+      userId,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': String(pdf.length),
+    });
+    return new StreamableFile(Buffer.from(pdf));
+  }
   // Seller re-books a shipment that failed. The service refuses until they
   // have actually corrected whatever broke it (see rebookShipment) — a parcel
   // that did not fit will not fit the second time.
@@ -262,6 +283,10 @@ export class TransactionsController {
     return this.txService.shipmentFailureForSeller(id, userId);
   }
 
+  // ---------------------------------------------------------------
+  // Seller prints the platform-booked waybill/label (PDF). Seller-only,
+  // key-safe proxy — carrier auth is applied server-side in the service.
+  // ---------------------------------------------------------------
   @Get(':id/waybill')
   @UseGuards(AuthGuard)
   async waybill(

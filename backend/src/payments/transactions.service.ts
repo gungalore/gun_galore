@@ -2371,6 +2371,8 @@ export class TransactionsService {
       void this.tracking.recordInternal(txId, 'PAYOUT_SETTLED', {
         message: 'Ozow reports the payout complete; a later return notification is still possible.',
       });
+      // The money has left: the seller's remittance advice now exists.
+      void this.sendRemittanceReadyNotice(txId);
       return;
     }
 
@@ -5487,6 +5489,36 @@ export class TransactionsService {
       });
     } catch (err) {
       this.logger.error(`sendReleasedNotification failed for ${txId}: ${(err as Error).message}`);
+    }
+  }
+
+  // The bank payout completed: tell the seller their remittance advice is
+  // ready. Best-effort — the PDF is downloadable whether or not the mail lands.
+  private async sendRemittanceReadyNotice(txId: string) {
+    try {
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: txId },
+        include: {
+          listing: { select: { title: true } },
+          seller: { select: { email: true, firstName: true, lastName: true } },
+          order: { select: { orderReference: true } },
+        },
+      });
+      if (!tx?.seller.email) return;
+      await this.notifications.payoutRemittanceReadySeller({
+        sellerEmail: tx.seller.email,
+        sellerName:
+          [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
+          'Seller',
+        listingTitle: tx.listing.title,
+        sellerPayout: tx.sellerPayout,
+        reference: tx.orderReference ?? tx.order?.orderReference ?? null,
+        transactionId: txId,
+      });
+    } catch (err) {
+      this.logger.error(
+        `sendRemittanceReadyNotice failed for ${txId}: ${(err as Error).message}`,
+      );
     }
   }
 

@@ -507,17 +507,17 @@ export class ZohoBooksService {
     if (!tx) return;
     // Idempotency — if we've already created the invoice, no-op.
     if (tx.zohoCommissionInvoiceId) return;
+    // A Buy Now seller pays no fee, so there is no seller-side tax document
+    // to raise. Their paperwork is the platform remittance advice, issued to
+    // them once the payout actually leaves the bank. (The zero-total
+    // settlement advice this used to create is retired.)
+    if (tx.commissionZar <= 0) return;
     // FLOW-F4 (H21) — PRIVATE_ARRANGE was skipped here on the false premise
     // that "we don't hold funds / take commission on that flow". We DO:
     // fee.calculator charges the same commission on PA sales, so skipping the
     // invoice left every PA commission uninvoiced (revenue collected, never
     // recorded in Books). Operator decision: keep the commission AND invoice
     // it — PA now falls through to the standard commission-invoice path below.
-    //
-    // A zero-fee sale (BUYNOW_MARKUP) still gets seller paperwork: a
-    // zero-total SETTLEMENT ADVICE. The seller asked for a number and received
-    // it; without a document the seller portal and the Zoho customer statement
-    // show nothing at all for the sale.
 
     await this.markPending(transactionId);
 
@@ -530,7 +530,6 @@ export class ZohoBooksService {
       const commissionRand = tx.commissionZar / 100;
       const listingPriceRand = tx.listingPrice / 100;
       const sellerPayoutRand = tx.sellerPayout / 100;
-      const hasFee = tx.commissionZar > 0;
       const orderRef =
         tx.listing.referenceNumber ?? tx.id.slice(-8).toUpperCase();
 
@@ -553,12 +552,6 @@ export class ZohoBooksService {
           'No platform fee revenue account found in Books chart-of-accounts',
         );
       }
-      // A zero-rate advice line is balance-sheet only; keep it away from
-      // income so it can never distort turnover if the rate is ever edited.
-      const adviceAccountId =
-        (await this.resolveAccountId(CLIENT_FUNDS_ACCOUNT_NAMES)) ??
-        commissionAccountId;
-
       const today = new Date().toISOString().slice(0, 10);
 
       type CreateInvoiceResp = {
@@ -567,53 +560,30 @@ export class ZohoBooksService {
         message?: string;
       };
 
-      // Operator 2026-10: on a fee-bearing auction the seller's invoice
-      // carries exactly one line — our platform fee (commission). On a
-      // Buy Now sale the seller pays nothing, so the document is a zero-total
-      // settlement advice (clearly not a tax invoice) that still records the
-      // sale, the nil fee and the payout.
+      // The seller's invoice carries exactly one line: our platform fee
+      // (commission) on the hammer.
       const lineItems: Array<{
         name: string;
         description: string;
         rate: number;
         quantity: number;
         account_id: string;
-      }> = hasFee
-        ? [
-            {
-              name: 'Platform Fee',
-              description: 'All Outdoor (Agent)',
-              rate: commissionRand,
-              quantity: 1,
-              account_id: commissionAccountId,
-            },
-          ]
-        : [
-            {
-              name: 'Sale settlement advice (not a tax invoice)',
-              description:
-                `${orderRef} — ${tx.listing.title}. Sold by ` +
-                `@${tx.seller.username ?? 'seller'} on ALL Outdoor as agent. ` +
-                `Sale price ${this.formatRand(listingPriceRand)}; ` +
-                `Platform Fee ${this.formatRand(0)}; ` +
-                `paid to seller ${this.formatRand(sellerPayoutRand)}.`,
-              rate: 0,
-              quantity: 1,
-              account_id: adviceAccountId,
-            },
-          ];
+      }> = [
+        {
+          name: 'Platform Fee',
+          description: 'All Outdoor (Agent)',
+          rate: commissionRand,
+          quantity: 1,
+          account_id: commissionAccountId,
+        },
+      ];
 
       const payload = {
         customer_id: contactId,
         date: today,
         due_date: today,
         line_items: lineItems,
-        notes: hasFee
-          ? `${reference}.\nALL Outdoor transaction reference: ${orderRef}`
-          : `${reference}.\nALL Outdoor acted as agent for the seller. ` +
-            `The Platform Fee on this sale was paid by the buyer, so no fee ` +
-            `is deducted from the seller. This is a settlement advice, not a ` +
-            `tax invoice.\nALL Outdoor transaction reference: ${orderRef}`,
+        notes: `${reference}.\nALL Outdoor transaction reference: ${orderRef}`,
         // Skip tax — we're pre-VAT. When VAT-registered this flips
         // to is_inclusive_tax: false + tax_id on each line.
       };
@@ -649,9 +619,7 @@ export class ZohoBooksService {
         },
       });
       this.logger.log(
-        hasFee
-          ? `Created commission invoice ${resp.invoice?.invoice_number ?? invoiceId} for tx ${transactionId} (R${commissionRand.toFixed(2)})`
-          : `Created seller settlement advice ${resp.invoice?.invoice_number ?? invoiceId} for tx ${transactionId} (R0.00)`,
+        `Created commission invoice ${resp.invoice?.invoice_number ?? invoiceId} for tx ${transactionId} (R${commissionRand.toFixed(2)})`,
       );
 
       // The seller must actually receive their paperwork, not just have it
