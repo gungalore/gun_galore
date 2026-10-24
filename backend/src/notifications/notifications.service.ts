@@ -1873,11 +1873,11 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
-  // Seller: payout actually paid + remittance advice available
+  // Seller: payout actually paid — remittance advice attached
   // ---------------------------------------------------------------
-  // Fires when the bank payout completes (Transaction.paidOutAt). The PDF
-  // itself is generated on demand from /transactions/:id/remittance and from
-  // /my/earnings, so this mail only points the seller at it.
+  // Fires when the bank payout completes (Transaction.paidOutAt). The PDF is
+  // attached; the same document is downloadable from /my/earnings and
+  // /transactions/:id/remittance, so a failed attachment is recoverable.
   async payoutRemittanceReadySeller(d: {
     sellerEmail: string;
     sellerName: string;
@@ -1885,12 +1885,14 @@ export class NotificationsService {
     sellerPayout: number;
     reference: string | null;
     transactionId: string;
+    pdf: Uint8Array;
+    filename: string;
   }) {
     const url = `${this.appUrl}/my/earnings`;
     const html = this.email({
       status: { tone: 'success', label: 'Paid out' },
       headline: 'Your payout has been paid',
-      body: `Hi ${b(d.sellerName)}, ${b(formatRand(d.sellerPayout))} for ${b(d.listingTitle)} has been paid to your bank account. Your remittance advice is ready — download and keep it as the record of this payment.`,
+      body: `Hi ${b(d.sellerName)}, ${b(formatRand(d.sellerPayout))} for ${b(d.listingTitle)} has been paid to your bank account. Your remittance advice is attached — keep it as the record of this payment.`,
       rows: [
         {
           label: 'Reference',
@@ -1898,10 +1900,12 @@ export class NotificationsService {
         },
         { label: 'Amount paid', value: formatRand(d.sellerPayout) },
       ],
-      cta: { label: 'Download remittance advice', url },
+      cta: { label: 'Download it again', url },
       preheader: `Payout of ${formatRand(d.sellerPayout)} paid to your bank`,
     });
-    await this.send(d.sellerEmail, 'Payout paid — ' + d.listingTitle, html);
+    await this.send(d.sellerEmail, 'Payout paid — ' + d.listingTitle, html, [
+      { filename: d.filename, content: Buffer.from(d.pdf) },
+    ]);
   }
 
   // ---------------------------------------------------------------
@@ -4994,18 +4998,38 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   // Internal send — always fails open
   // ---------------------------------------------------------------
-  private async send(to: string, subject: string, html: string) {
+  private async send(
+    to: string,
+    subject: string,
+    html: string,
+    attachments?: { filename: string; content: Buffer }[],
+  ) {
     if (!this.resend) return;
     if (await this.emailMuted(to)) {
       this.logger.debug(`Email muted by preference → ${to} "${subject}"`);
       return;
     }
     try {
-      await this.resend.emails.send({ from: FROM, to, subject, html });
+      await this.resend.emails.send({
+        from: FROM,
+        to,
+        subject,
+        html,
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
+      });
       this.logger.debug(`Email sent → ${to} "${subject}"`);
     } catch (err) {
       // Don't lose the email — park it in the outbox; the 10-min retry
       // cron re-attempts with backoff (max 5 tries, then admin alert).
+      // The outbox stores HTML only, so an attachment cannot be replayed;
+      // every attachment mail also carries a link to the document.
+      if (attachments && attachments.length > 0) {
+        this.logger.warn(
+          `Attachment dropped for retry → ${to} "${subject}" (${attachments
+            .map((a) => a.filename)
+            .join(', ')})`,
+        );
+      }
       this.logger.error(
         `Email failed → ${to} "${subject}": ${(err as Error).message} — queued for retry`,
       );

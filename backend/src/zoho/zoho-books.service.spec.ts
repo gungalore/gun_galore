@@ -311,47 +311,6 @@ describe('ZohoBooksService buyer paperwork', () => {
     expect(db.transaction.update).not.toHaveBeenCalled();
   });
 
-  it('emails the seller statement for the requested period', async () => {
-    const calls: FetchCall[] = [];
-    const db = {
-      transaction: { findUnique: jest.fn(), update: jest.fn() },
-      user: {
-        findUnique: jest
-          .fn()
-          .mockResolvedValue({ id: 'seller1', zohoContactId: 'contact-seller', email: 'seller@example.com' }),
-        update: jest.fn(),
-      },
-    };
-
-    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
-      calls.push({ url: String(url), init });
-      const u = String(url);
-      if (u.includes('/oauth/v2/token')) {
-        return response({ access_token: 'token', expires_in: 3600 });
-      }
-      if (u.includes('/statements/email') && init?.method === 'POST') {
-        return response({ code: 0, message: 'Statement sent' });
-      }
-      throw new Error(`unexpected ${init?.method ?? 'GET'} ${u}`);
-    }) as unknown as typeof fetch;
-
-    const svc = new ZohoBooksService(db as never);
-    await expect(
-      svc.emailSellerStatement('seller1', '2026-06-01', '2026-06-30'),
-    ).resolves.toBe(true);
-
-    const post = calls.find((c) => c.url.includes('/statements/email'));
-    expect(post?.url).toContain('/contacts/contact-seller/statements/email');
-    expect(JSON.parse(String(post?.init?.body))).toEqual({
-      send_mail: true,
-      from_date: '2026-06-01',
-      to_date: '2026-06-30',
-      to_mail_ids: ['seller@example.com'],
-      subject: 'ALL Outdoor account statement',
-      body: 'Your ALL Outdoor account statement for the selected period is attached.',
-    });
-  });
-
   it('settles an auction seller fee from the liability, then clears the A/R via Undeposited Funds', async () => {
     const calls: FetchCall[] = [];
     const db = {

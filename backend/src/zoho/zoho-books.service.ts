@@ -1708,58 +1708,6 @@ export class ZohoBooksService {
     }
   }
 
-  // ─── Seller statements ───────────────────────────────────────────
-
-  /**
-   * Emails the seller their Zoho Books customer statement for a period.
-   *
-   * The statement is the accounting side of the relationship: the platform-fee
-   * invoices raised against the seller (auctions) and the payments that settle
-   * them from Client Funds Payable. The transaction-level sale/payout
-   * breakdown remains the platform's own payout statement.
-   *
-   * Returns false when the integration is disabled (nothing was sent);
-   * throws when Books rejects the call, so the caller can surface it.
-   */
-  async emailSellerStatement(
-    userId: string,
-    fromDate?: string,
-    toDate?: string,
-  ): Promise<boolean> {
-    if (!this.isEnabled()) return false;
-    const contactId = await this.ensureContact(userId);
-    if (!contactId) {
-      throw new Error('Could not resolve Books contact for seller');
-    }
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true },
-    });
-    if (!user?.email) {
-      throw new Error('Seller has no email address on file');
-    }
-    const body: Record<string, unknown> = {
-      send_mail: true,
-      from_date: fromDate,
-      to_date: toDate,
-      // Required even though the contact carries an email: without
-      // to_mail_ids Books answers 1007 "email address ... not found".
-      to_mail_ids: [user.email],
-      // Books rejects the call without a Subject (code 4).
-      subject: 'ALL Outdoor account statement',
-      body: 'Your ALL Outdoor account statement for the selected period is attached.',
-    };
-    await this.request<{ code?: number; message?: string }>(
-      'POST',
-      `/contacts/${contactId}/statements/email`,
-      body,
-    );
-    this.logger.log(
-      `Emailed Books statement to seller ${userId} (contact ${contactId})`,
-    );
-    return true;
-  }
-
   // ─── Invoice email delivery ──────────────────────────────────────
 
   /**

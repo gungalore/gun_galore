@@ -191,18 +191,6 @@ function Send-Invoice([string]$invoiceId, [string]$party) {
         Write-Host "  emailed $party invoice -> $inbox" -ForegroundColor Green
     } catch { Fail "email $party invoice" $_ }
 }
-function Send-Statement([string]$contactId, [string]$party, [string]$email) {
-    if ($NoEmails) { Write-Host "  email skipped (-NoEmails): $party statement" -ForegroundColor Yellow; return }
-    try {
-        Api 'POST' "/contacts/$contactId/statements/email" @{
-            send_mail = $true; from_date = $from; to_date = $today
-            to_mail_ids = @($email)
-            subject = "SMOKETEST $party account statement"
-            body = 'Smoke-test statement. Please ignore.'
-        } | Out-Null
-        Write-Host "  emailed $party statement -> $inbox" -ForegroundColor Green
-    } catch { Fail "email $party statement" $_ }
-}
 function Invoice-Total($inv) {
     $fresh = (Api 'GET' "/invoices/$($inv.invoice_id)").invoice
     return [double]$fresh.total
@@ -255,7 +243,6 @@ function Run-BuyNow {
     $script:created += "payout journal $($pJournal.journal_id)"
 
     Send-Invoice $buyerInv.invoice_id 'buyer'
-    Send-Statement $sellerId 'seller' $inbox
 
     $fresh = (Api 'GET' "/invoices/$($buyerInv.invoice_id)").invoice
     if ([Math]::Abs([double]$fresh.total - ($totalC / 100)) -gt 0.001) { $script:failures += "BN buyer invoice total $($fresh.total) != $(Zar $totalC)" }
@@ -321,7 +308,6 @@ function Run-Auction {
 
     Send-Invoice $buyerInv.invoice_id 'buyer'
     Send-Invoice $sellerInv.invoice_id 'seller'
-    Send-Statement $sellerId 'seller' $inbox
 
     $buyerFresh = (Api 'GET' "/invoices/$($buyerInv.invoice_id)").invoice
     $sellerFresh = (Api 'GET' "/invoices/$($sellerInv.invoice_id)").invoice

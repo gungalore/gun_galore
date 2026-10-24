@@ -5,7 +5,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { csvCell } from '../common/csv.util';
 import {
   sellerBreakdown,
@@ -51,10 +50,7 @@ function periodDays(period: SellerPeriod): number | null {
 export class SellerToolsService {
   private readonly logger = new Logger(SellerToolsService.name);
 
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly zoho: ZohoBooksService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private async sellerId(userId: string): Promise<string> {
     const user = await this.prisma.user.findUnique({
@@ -63,43 +59,6 @@ export class SellerToolsService {
     });
     if (!user) throw new NotFoundException('User not found');
     return user.id;
-  }
-
-  // ------------------------------------------------------------------
-  // Accounting statement — the Zoho Books customer statement emailed to
-  // the seller. Complements (does not replace) the payout statement below:
-  // Books carries the platform-fee invoices and their settlement, while the
-  // payout statement carries the per-sale trust maths.
-  // ------------------------------------------------------------------
-  async emailAccountingStatement(
-    userId: string,
-    fromISO?: string,
-    toISO?: string,
-  ): Promise<{ sent: boolean }> {
-    const to = toISO ? new Date(toISO) : undefined;
-    const from = fromISO ? new Date(fromISO) : undefined;
-    if (from && Number.isNaN(from.getTime())) {
-      throw new BadRequestException('Invalid "from" date');
-    }
-    if (to && Number.isNaN(to.getTime())) {
-      throw new BadRequestException('Invalid "to" date');
-    }
-    if (from && to && from.getTime() > to.getTime()) {
-      throw new BadRequestException('"from" must be before "to"');
-    }
-
-    await this.sellerId(userId); // 404s for an unknown member
-    const sent = await this.zoho.emailSellerStatement(
-      userId,
-      fromISO,
-      toISO,
-    );
-    if (!sent) {
-      throw new BadRequestException(
-        'Accounting statements are not available right now',
-      );
-    }
-    return { sent: true };
   }
 
   // ------------------------------------------------------------------

@@ -6,8 +6,7 @@ function makeService(rows: Record<string, unknown>[], user: { id: string } | nul
     user: { findUnique: jest.fn().mockResolvedValue(user) },
     transaction: { findMany: jest.fn().mockResolvedValue(rows) },
   };
-  const zoho = { emailSellerStatement: jest.fn().mockResolvedValue(true) };
-  return { service: new SellerToolsService(prisma as never, zoho as never), prisma, zoho };
+  return { service: new SellerToolsService(prisma as never), prisma };
 }
 
 const releasedRow = (over: Partial<Record<string, unknown>> = {}) => ({
@@ -60,32 +59,5 @@ describe('SellerToolsService.payoutStatement', () => {
     // Title contains a comma — must be quoted
     expect(lines[1]).toContain('"Leupold scope, 3-9x40"');
     expect(lines[lines.length - 1]).toMatch(/^TOTAL,/);
-  });
-});
-
-describe('SellerToolsService.emailAccountingStatement', () => {
-  it('emails the Zoho statement for the requested window', async () => {
-    const { service, zoho } = makeService([]);
-    await expect(
-      service.emailAccountingStatement('user_s', '2026-06-01', '2026-06-30'),
-    ).resolves.toEqual({ sent: true });
-    expect(zoho.emailSellerStatement).toHaveBeenCalledWith(
-      'user_s',
-      '2026-06-01',
-      '2026-06-30',
-    );
-  });
-
-  it('rejects from>to and a disabled integration', async () => {
-    const { service, zoho } = makeService([]);
-    await expect(
-      service.emailAccountingStatement('user_s', '2026-06-30', '2026-06-01'),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(zoho.emailSellerStatement).not.toHaveBeenCalled();
-
-    zoho.emailSellerStatement.mockResolvedValue(false);
-    await expect(
-      service.emailAccountingStatement('user_s'),
-    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

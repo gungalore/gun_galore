@@ -13,6 +13,7 @@ import {
   SHIPMENT_FAILURE_LABEL,
 } from '../common/shipment-failure-policy';
 import { FeeCalculator, shippingHandlingCentsFor } from './fee.calculator';
+import { RemittanceService } from './remittance.service';
 import {
   buyerBreakdown,
   feeModelFor,
@@ -5492,19 +5493,32 @@ export class TransactionsService {
     }
   }
 
-  // The bank payout completed: tell the seller their remittance advice is
-  // ready. Best-effort — the PDF is downloadable whether or not the mail lands.
+  // The bank payout completed: email the seller their remittance advice.
+  // Best-effort — the PDF stays downloadable whether or not the mail lands.
+  //
+  // RemittanceService is stateless and takes only PrismaService, so it is
+  // built here rather than widening this constructor (which dozens of specs
+  // instantiate positionally).
   private async sendRemittanceReadyNotice(txId: string) {
     try {
       const tx = await this.prisma.transaction.findUnique({
         where: { id: txId },
         include: {
           listing: { select: { title: true } },
-          seller: { select: { email: true, firstName: true, lastName: true } },
+          seller: {
+            select: {
+              email: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+            },
+          },
           order: { select: { orderReference: true } },
         },
       });
       if (!tx?.seller.email) return;
+      const remittances = new RemittanceService(this.prisma);
+      const { pdf, filename } = await remittances.buildPdf(tx);
       await this.notifications.payoutRemittanceReadySeller({
         sellerEmail: tx.seller.email,
         sellerName:
@@ -5514,6 +5528,8 @@ export class TransactionsService {
         sellerPayout: tx.sellerPayout,
         reference: tx.orderReference ?? tx.order?.orderReference ?? null,
         transactionId: txId,
+        pdf,
+        filename,
       });
     } catch (err) {
       this.logger.error(
