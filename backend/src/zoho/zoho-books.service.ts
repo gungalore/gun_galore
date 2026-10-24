@@ -741,8 +741,9 @@ export class ZohoBooksService {
         account_id: string;
       }> = [
         {
-          name: title.length > 100 ? title.slice(0, 97) + '…' : title,
-          description: 'Seller of item (Principal)',
+          name:
+            (title.length > 98 ? title.slice(0, 95) + '…' : title) + ' *',
+          description: '',
           rate: itemRand,
           quantity: 1,
           account_id: cfpAccountId,
@@ -750,8 +751,8 @@ export class ZohoBooksService {
       ];
       if (deliveryCents > 0) {
         lineItems.push({
-          name: 'Delivery',
-          description: 'Courier (Principal)',
+          name: 'Delivery *',
+          description: '',
           rate: deliveryRand,
           quantity: 1,
           account_id: cfpAccountId,
@@ -759,8 +760,8 @@ export class ZohoBooksService {
       }
       if (tx.processingFee > 0) {
         lineItems.push({
-          name: 'Platform Fee',
-          description: 'All Outdoor (Agent)',
+          name: 'Platform Fee **',
+          description: '',
           rate: feeRand,
           quantity: 1,
           account_id: feeAccountId,
@@ -769,12 +770,13 @@ export class ZohoBooksService {
 
       const today = new Date().toISOString().slice(0, 10);
       // No reference_number: Zoho prints it as a P.O.# block, which the
-      // operator does not want on the invoice. The order reference stays in
-      // the notes, and dropping both lines also keeps the PDF to one page.
+      // operator does not want on the invoice. The legend below explains the
+      // * / ** markers that replace the wordy line descriptions.
       const notes =
-        `ALL Outdoor acts as agent for the seller: the item price and ` +
-        `delivery are held in Client Funds Payable, not revenue; only the ` +
-        `Platform Fee is ours. Ref: ${orderRef}`;
+        `* Principal Supplies - Fees collected on behalf of unrelated ` +
+        `third parties (Item Seller and Courier Service)\n` +
+        `** Agent Supplies - All Outdoor Platform Fee\n` +
+        `Ref: ${orderRef}`;
 
       type CreateInvoiceResp = {
         invoice?: { invoice_id?: string; invoice_number?: string };

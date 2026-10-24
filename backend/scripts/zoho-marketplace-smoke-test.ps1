@@ -1,15 +1,17 @@
 # =====================================================================
 # Zoho Books marketplace smoke test - Buy Now + Auction
 # =====================================================================
-# Proves, against the LIVE Books org, that one R1,000 item with R145
+# Proves, against the LIVE Books org, that one R1,000 X-BAG item with R150
 # courier freight produces the correct principal/agent paperwork:
 #
 #   item price        -> Client Funds Payable (Trust)   [liability]
 #   courier freight   -> Client Funds Payable (Trust)   [liability]
-#   delivery margin   -> delivery income (journal out of trust)
 #   buyer platform fee-> Platform/Processing Fee Revenue
 #   carrier expense   -> paid from trust
 #   seller payout     -> journal out of trust to the bank
+#
+# There is no delivery margin (retired 2026-10-23): the buyer pays the
+# courier's live R150 rate.
 #
 # BUY NOW : buyer invoice + seller statement
 # AUCTION : buyer invoice + seller commission invoice + seller statement
@@ -237,34 +239,29 @@ $created  = @()
 
 function Run-BuyNow {
     Write-Host ""
-    Write-Host "=== BUY NOW: R1,000 + R159.50 delivery + R115.95 fee ===" -ForegroundColor Magenta
+    Write-Host "=== BUY NOW: R1,000 X-BAG + R150 delivery + R115 fee ===" -ForegroundColor Magenta
     $buyerEmail  = "gerhard.fourie+smoke-bn-buyer-$ts@alloutdoor.co.za"
     $sellerEmail = "gerhard.fourie+smoke-bn-seller-$ts@alloutdoor.co.za"
     $buyerId  = New-Contact 'SMOKETEST -- DELETE ME -- BUYER BN' $buyerEmail
     $sellerId = New-Contact 'SMOKETEST -- DELETE ME -- SELLER BN' $sellerEmail
     $script:created += "contact buyer $buyerId", "contact seller $sellerId"
 
-    $item = 100000; $carrierC = 14500; $handlingC = 1450; $deliveryC = 15950
-    $feeC = 11595; $totalC = 127545; $payoutC = 100000
+    $item = 100000; $carrierC = 15000; $handlingC = 0; $deliveryC = 15000
+    $feeC = 11500; $totalC = 126500; $payoutC = 100000
     $ref = "SMOKE-BN-$ts"
     $buyerInv = New-Invoice $buyerId '' @(
-        @{ name = 'Smoke test item'; description = 'Seller of item (Principal)'; rate = $item / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Delivery'; description = 'Courier (Principal)'; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Platform Fee'; description = 'All Outdoor (Agent)'; rate = $feeC / 100; quantity = 1; account_id = $fee.account_id }
-    ) "ALL Outdoor acts as agent for the seller: the item price and delivery are held in Client Funds Payable, not revenue; only the Platform Fee is ours. Ref: $ref"
+        @{ name = 'X-BAG *'; description = ''; rate = $item / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Delivery *'; description = ''; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Platform Fee **'; description = ''; rate = $feeC / 100; quantity = 1; account_id = $fee.account_id }
+    ) "* Principal Supplies - Fees collected on behalf of unrelated third parties (Item Seller and Courier Service)`n** Agent Supplies - All Outdoor Platform Fee`nRef: $ref"
     $script:created += "buyer invoice $($buyerInv.invoice_number) $($buyerInv.invoice_id)"
 
-    $sellerAdvice = New-Seller-Advice $sellerId "Sold for $(Zar $item) - $(Zar 0) (Platform Fee) = $(Zar $payoutC) Due to you" $ref 'Smoke test item' $item $payoutC
+    $sellerAdvice = New-Seller-Advice $sellerId "Sold for $(Zar $item) - $(Zar 0) (Platform Fee) = $(Zar $payoutC) Due to you" $ref 'X-BAG' $item $payoutC
     $script:created += "seller advice $($sellerAdvice.invoice_number) $($sellerAdvice.invoice_id)"
 
     $buyerPay = Pay-Invoice $buyerId $buyerInv $bank.account_id "Platform charges -- $ref" 'Buyer payment received into the bank'
     $script:created += "buyer payment $buyerPay"
 
-    $mJournal = New-Journal "Delivery margin -- $ref" 'Delivery handling margin stripped from courier freight.' @(
-        @{ account_id = $trust.account_id; debit_or_credit = 'debit'; amount = $handlingC / 100; description = "Delivery margin -- $ref" },
-        @{ account_id = $deliv.account_id; debit_or_credit = 'credit'; amount = $handlingC / 100; description = "Delivery margin -- $ref" }
-    )
-    $script:created += "margin journal $($mJournal.journal_id)"
     $carrierJournal = New-Carrier-Journal $ref $carrierC
     $script:created += "carrier journal $($carrierJournal.journal_id)"
     $pJournal = New-Journal "Seller payout -- $ref" 'Seller payout from held funds.' @(
@@ -295,34 +292,29 @@ function Run-BuyNow {
 
 function Run-Auction {
     Write-Host ""
-    Write-Host "=== AUCTION: hammer R1,000 + R159.50 delivery, 5% / 5% split ===" -ForegroundColor Magenta
+    Write-Host "=== AUCTION: hammer R1,000 X-BAG + R150 delivery, 5% / 5% split ===" -ForegroundColor Magenta
     $buyerEmail  = "gerhard.fourie+smoke-au-buyer-$ts@alloutdoor.co.za"
     $sellerEmail = "gerhard.fourie+smoke-au-seller-$ts@alloutdoor.co.za"
     $buyerId  = New-Contact 'SMOKETEST -- DELETE ME -- BUYER AU' $buyerEmail
     $sellerId = New-Contact 'SMOKETEST -- DELETE ME -- SELLER AU' $sellerEmail
     $script:created += "contact buyer $buyerId", "contact seller $sellerId"
 
-    $hammer = 100000; $carrierC = 14500; $handlingC = 1450; $deliveryC = 15950
-    $buyerFeeC = [int][Math]::Round(($hammer + $deliveryC) * 0.05)  # 5798
+    $hammer = 100000; $carrierC = 15000; $handlingC = 0; $deliveryC = 15000
+    $buyerFeeC = [int][Math]::Round(($hammer + $deliveryC) * 0.05)  # 5750
     $sellerFeeC = [int][Math]::Round($hammer * 0.05)                # 5000
     $buyerTotalC = $hammer + $deliveryC + $buyerFeeC
     $payoutC = $hammer - $sellerFeeC
     $ref = "SMOKE-AU-$ts"
 
     $buyerInv = New-Invoice $buyerId '' @(
-        @{ name = 'Smoke test lot'; description = 'Seller of item (Principal)'; rate = $hammer / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Delivery'; description = 'Courier (Principal)'; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Platform Fee (5%)'; description = 'All Outdoor (Agent)'; rate = $buyerFeeC / 100; quantity = 1; account_id = $fee.account_id }
-    ) "ALL Outdoor acts as agent for the seller: the hammer and delivery are held in Client Funds Payable, not revenue; only the buyer's 5% Platform Fee is ours. Ref: $ref"
+        @{ name = 'X-BAG *'; description = ''; rate = $hammer / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Delivery *'; description = ''; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Platform Fee (5%) **'; description = ''; rate = $buyerFeeC / 100; quantity = 1; account_id = $fee.account_id }
+    ) "* Principal Supplies - Fees collected on behalf of unrelated third parties (Item Seller and Courier Service)`n** Agent Supplies - All Outdoor Platform Fee`nRef: $ref"
     $script:created += "buyer invoice $($buyerInv.invoice_number) $($buyerInv.invoice_id)"
     $buyerPay = Pay-Invoice $buyerId $buyerInv $bank.account_id "Platform charges -- $ref" 'Auction buyer payment received into the bank'
     $script:created += "buyer payment $buyerPay"
 
-    $mJournal = New-Journal "Delivery margin -- $ref" 'Delivery handling margin stripped from courier freight.' @(
-        @{ account_id = $trust.account_id; debit_or_credit = 'debit'; amount = $handlingC / 100; description = "Delivery margin -- $ref" },
-        @{ account_id = $deliv.account_id; debit_or_credit = 'credit'; amount = $handlingC / 100; description = "Delivery margin -- $ref" }
-    )
-    $script:created += "margin journal $($mJournal.journal_id)"
     $carrierJournal = New-Carrier-Journal $ref $carrierC
     $script:created += "carrier journal $($carrierJournal.journal_id)"
 

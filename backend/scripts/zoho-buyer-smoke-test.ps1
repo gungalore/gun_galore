@@ -327,26 +327,26 @@ $deliveryRand = $deliveryCents / 100
 
 $fullReference = "$orderRef`: item $(Format-Zar $itemCents) + delivery $(Format-Zar $deliveryCents) + fee $(Format-Zar $feeCents)"
 $reference = if ($fullReference.Length -le 100) { $fullReference } else { "$orderRef`: item $(Format-Zar $itemCents) + fee $(Format-Zar $feeCents)" }
-$notes = "ALL Outdoor acts as agent for the seller. The item price $(Format-Zar $itemCents) and courier delivery $(Format-Zar $deliveryCents) are collected on behalf of the seller and carrier and are held in Client Funds Payable; they are not revenue of ALL Outdoor. Only the Platform Fee $(Format-Zar $feeCents) is charged by ALL Outdoor.`nALL Outdoor transaction reference: $orderRef"
+$notes = "* Principal Supplies - Fees collected on behalf of unrelated third parties (Item Seller and Courier Service)`n** Agent Supplies - All Outdoor Platform Fee`nRef: $orderRef"
 
 $lineItems = @(
     @{
-        name        = 'Test item'
-        description = 'Seller of item (Principal)'
+        name        = 'Test item *'
+        description = ''
         rate        = $itemRand
         quantity    = 1
         account_id  = $cfpAcc.account_id
     },
     @{
-        name        = 'Delivery'
-        description = 'Courier (Principal)'
+        name        = 'Delivery *'
+        description = ''
         rate        = $deliveryRand
         quantity    = 1
         account_id  = $cfpAcc.account_id
     },
     @{
-        name        = 'Platform Fee'
-        description = 'All Outdoor (Agent)'
+        name        = 'Platform Fee **'
+        description = ''
         rate        = $feeRand
         quantity    = 1
         account_id  = $feeAcc.account_id
