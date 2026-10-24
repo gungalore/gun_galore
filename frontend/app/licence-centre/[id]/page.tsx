@@ -25,6 +25,7 @@ import SourceActions from '@/components/licence-centre/source-actions';
 import CompetencyLines from '@/components/licence-centre/competency-lines';
 import CredentialPair from '@/components/licence-centre/credential-pair';
 import DangerAreas from '@/components/licence-centre/danger-areas';
+import { PrecinctCard } from '@/components/motivation/precinct-card';
 import LibraryPicker from '@/components/library-picker';
 import PlaceConfirm from '@/components/motivation/place-confirm';
 import PackSummary from '@/components/licence-centre/pack-summary';
@@ -125,6 +126,19 @@ const SECTION_ORDER = [
   'declarations',
   'pack',
 ] as const;
+
+/**
+ * The licence types whose pack annexes crime evidence.
+ *
+ * ⚠️ THE SERVER IS STILL THE GATE. `precinctFor` answers null and `areasFor`
+ * an empty list for anything else; this only stops the sheet from drawing a
+ * crime section on a hunting application and then telling the member there
+ * are no figures for their station.
+ */
+const SELF_DEFENCE_TYPES = new Set([
+  'S13_SELF_DEFENCE',
+  'S14_RESTRICTED_SELF_DEFENCE',
+]);
 
 /** A history question's detail box and its four form boxes. */
 function declarationParts(items: SheetItem[], key: string) {
@@ -1251,18 +1265,24 @@ export default function LicenceCentreSheetPage() {
         </button>
       ) : null;
 
-      if (!areas) {
-        return (
-          <>
-            {shown.map(row)}
-            {associationBlock}
-          </>
-        );
-      }
+      const policeStation =
+        items.find((i) => i.key === 'police_station')?.value ?? '';
+      const precinctCard = SELF_DEFENCE_TYPES.has(
+        sheet.application.licenceType,
+      ) ? (
+        <PrecinctCard
+          motivationId={id}
+          policeStation={policeStation}
+          getToken={getToken}
+        />
+      ) : null;
+
       return (
         <>
           {shown.map(row)}
           {associationBlock}
+          {precinctCard}
+          {areas ? (
           <DangerAreas
             areas={areas.areas}
             station={areas.station}
@@ -1297,6 +1317,7 @@ export default function LicenceCentreSheetPage() {
               }
             }}
           />
+          ) : null}
         </>
       );
     }
