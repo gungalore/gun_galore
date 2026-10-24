@@ -7,7 +7,17 @@ const ACCOUNTS = [
   { account_id: 'acc-carrier', account_name: 'Courier and Delivery Costs' },
   { account_id: 'acc-trust', account_name: 'Client Funds Payable (Trust)' },
   { account_id: 'acc-cfp', account_name: 'Client Funds Payable' },
-  { account_id: 'acc-bank', account_name: 'Bank - FNB Business' },
+  {
+    account_id: 'acc-bank',
+    account_name: 'ABSA Business Account',
+    account_number: '40505183',
+    account_type: 'bank',
+  },
+  {
+    account_id: 'acc-fnb',
+    account_name: 'Bank - FNB Business',
+    account_type: 'bank',
+  },
   { account_id: 'acc-uf', account_name: 'Undeposited Funds' },
 ];
 

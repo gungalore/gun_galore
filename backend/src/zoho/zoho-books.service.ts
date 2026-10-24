@@ -33,10 +33,19 @@ const HANDLING_ACCOUNT_NAMES = [
   'Shipping Charge',
   'Delivery Revenue',
 ];
-// Where buyer cash actually lands. A liability cannot be a payment deposit
-// account (Books silently reroutes it to Undeposited Funds), so the buyer
-// payment must hit the bank and the liability is cleared by journals.
-const BANK_ACCOUNT_NAMES = ['Bank - FNB Business'];
+// Where buyer cash actually lands. ABSA (account ending 5183) handles every
+// transaction; the last four digits are the reliable identifier if the org
+// renames it. The FNB account is the retired rail and only remains as a
+// last-resort fallback. A liability cannot be a payment deposit account
+// (Books silently reroutes it to Undeposited Funds), so the buyer payment
+// must hit the bank and the liability is cleared by journals.
+const BANK_ACCOUNT_NAMES = [
+  'ABSA Business Account',
+  'ABSA Business Cheque Account',
+  'ABSA - 5183',
+  'ABSA 5183',
+];
+const BANK_ACCOUNT_LAST4 = '5183';
 const UNDEPOSITED_FUNDS_NAMES = ['Undeposited Funds'];
 
 /**
@@ -368,6 +377,12 @@ export class ZohoBooksService {
    * Cached in-memory after first lookup (account IDs don't change).
    */
   private accountIdCache: Map<string, string> = new Map();
+  private accountRows: Array<{
+    account_id?: string;
+    account_name?: string;
+    account_number?: string;
+    account_type?: string;
+  }> = [];
 
   async getAccountIdByName(accountName: string): Promise<string | null> {
     if (!this.isEnabled()) return null;
@@ -385,6 +400,8 @@ export class ZohoBooksService {
       chartofaccounts?: Array<{
         account_id?: string;
         account_name?: string;
+        account_number?: string;
+        account_type?: string;
       }>;
     };
     const resp = await this.request<ChartOfAccountsResp>(
@@ -393,6 +410,7 @@ export class ZohoBooksService {
     );
 
     const accounts = resp.chartofaccounts ?? [];
+    this.accountRows = accounts;
     // Cache them all while we have the list — we'll need several.
     for (const acc of accounts) {
       if (acc.account_id && acc.account_name) {
@@ -411,19 +429,38 @@ export class ZohoBooksService {
   }
 
   /**
-   * The bank account buyer cash is deposited into.
-   *
-   * The live Books org names it "Bank - FNB Business" but the separator is
-   * not the ASCII hyphen this file can rely on, so an exact-name lookup misses
-   * and Books would silently default the payment to Undeposited Funds. Match
-   * any account containing "FNB" before falling back to Undeposited Funds.
+   * The bank account buyer cash is deposited into: the ABSA business account
+   * ending 5183. Resolution is deliberately generous — exact names first, then
+   * any name containing "ABSA", then the account number's last four digits —
+   * because Books account names get renamed while the account number does not.
+   * The retired FNB account is only a fallback; Undeposited Funds is the last
+   * resort (Books silently defaults there anyway).
    */
   private async resolveBankAccountId(): Promise<string | null> {
-    const exact = await this.resolveAccountId(['Bank - FNB Business']);
+    const exact = await this.resolveAccountId(BANK_ACCOUNT_NAMES);
     if (exact) return exact;
+
     await this.loadAccountCache();
-    const fnb = [...this.accountIdCache.keys()].find((n) => /fnb/i.test(n));
-    if (fnb) return this.accountIdCache.get(fnb) ?? null;
+
+    const byBankName = this.accountRows.find((a) => /absa/i.test(a.account_name ?? ''));
+    if (byBankName?.account_id) return byBankName.account_id;
+
+    const byNumber = this.accountRows.find(
+      (a) =>
+        (a.account_number ?? '').replace(/\s+/g, '').endsWith(
+          BANK_ACCOUNT_LAST4,
+        ) || (a.account_name ?? '').includes(BANK_ACCOUNT_LAST4),
+    );
+    if (byNumber?.account_id) return byNumber.account_id;
+
+    const legacyFnb = this.accountRows.find((a) =>
+      /fnb/i.test(a.account_name ?? ''),
+    );
+    if (legacyFnb?.account_id) return legacyFnb.account_id;
+
+    const anyBank = this.accountRows.find((a) => a.account_type === 'bank');
+    if (anyBank?.account_id) return anyBank.account_id;
+
     return this.getAccountIdByName('Undeposited Funds');
   }
 
@@ -1045,7 +1082,7 @@ export class ZohoBooksService {
    * freight sits in Client Funds Payable and leaves it through this journal:
    *
    *   Dr Client Funds Payable   (clears what we collected for the carrier)
-   *   Cr Bank - FNB Business    (the cash we actually paid Bob Go)
+   *   Cr ABSA business account   (the cash we actually paid Bob Go)
    *
    * ⚠️ NOT an Expense: an Expense's paid-through account is CREDITED, which
    * would increase a liability instead of clearing it. The vendor document was

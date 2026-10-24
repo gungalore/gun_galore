@@ -96,7 +96,9 @@ function Find-Account([string[]]$names) {
 $trust   = Find-Account @('Client Funds Payable (Trust)','Client Funds Payable Liability','Client Funds Payable','Trust Funds Payable')
 $fee     = Find-Account @('Platform Fee Revenue','Processing Fee Revenue','Commission Revenue')
 $deliv   = Find-Account @('Shipping Handling Revenue','Delivery Handling Revenue','Shipping Charge','Delivery Revenue')
-$bank    = Find-Account @('Bank - FNB Business')
+$bank    = Find-Account @('ABSA Business Account','ABSA Business Cheque Account','ABSA - 5183','ABSA 5183')
+if (-not $bank) { $bank = $accounts | Where-Object { $_.account_name -like '*ABSA*' -or $_.account_number -like '*5183*' } | Select-Object -First 1 }
+if (-not $bank) { $bank = Find-Account @('Bank - FNB Business') }
 if (-not $bank) { $bank = $accounts | Where-Object { $_.account_name -like '*FNB*' } | Select-Object -First 1 }
 $uf      = Find-Account @('Undeposited Funds')
 foreach ($pair in @(
