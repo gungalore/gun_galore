@@ -245,11 +245,11 @@ function Run-BuyNow {
     $item = 100000; $carrierC = 14500; $handlingC = 1450; $deliveryC = 15950
     $feeC = 11595; $totalC = 127545; $payoutC = 100000
     $ref = "SMOKE-BN-$ts"
-    $buyerInv = New-Invoice $buyerId "$ref`: item $(Zar $item) + delivery $(Zar $deliveryC) + fee $(Zar $feeC)" @(
-        @{ name = 'Smoke test item'; description = "$ref -- sold by @smoke_seller (principal). ALL Outdoor acts as agent."; rate = $item / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Delivery'; description = "$ref -- courier freight and delivery"; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Platform Fee'; description = "$ref -- marketplace facilitation (ALL Outdoor agency service)"; rate = $feeC / 100; quantity = 1; account_id = $fee.account_id }
-    ) "ALL Outdoor acts as agent for the seller. Item and delivery are held in Client Funds Payable; only the Platform Fee is our revenue. Reference: $ref"
+    $buyerInv = New-Invoice $buyerId "$ref`: $(Zar $totalC)" @(
+        @{ name = 'Smoke test item'; description = 'Sold by @smoke_seller; ALL Outdoor acts as agent.'; rate = $item / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Delivery'; description = 'Courier freight and delivery.'; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Platform Fee'; description = 'ALL Outdoor agency service.'; rate = $feeC / 100; quantity = 1; account_id = $fee.account_id }
+    ) "ALL Outdoor acts as agent for the seller: the item price and delivery are held in Client Funds Payable, not revenue; only the Platform Fee is ours. Ref: $ref"
     $script:created += "buyer invoice $($buyerInv.invoice_number) $($buyerInv.invoice_id)"
 
     $sellerAdvice = New-Seller-Advice $sellerId "Sold for $(Zar $item) - $(Zar 0) (Platform Fee) = $(Zar $payoutC) Due to you" $ref 'Smoke test item' $item $payoutC
@@ -307,11 +307,11 @@ function Run-Auction {
     $payoutC = $hammer - $sellerFeeC
     $ref = "SMOKE-AU-$ts"
 
-    $buyerInv = New-Invoice $buyerId "$ref`: hammer $(Zar $hammer) + delivery $(Zar $deliveryC) + buyer fee $(Zar $buyerFeeC)" @(
-        @{ name = 'Smoke test lot'; description = "$ref -- winning bid, sold by @smoke_seller (principal). ALL Outdoor acts as agent."; rate = $hammer / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Delivery'; description = "$ref -- courier freight and delivery"; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
-        @{ name = 'Platform Fee (5%)'; description = "$ref -- buyer share of the auction platform fee"; rate = $buyerFeeC / 100; quantity = 1; account_id = $fee.account_id }
-    ) "ALL Outdoor acts as agent for the seller. Hammer and delivery are held in Client Funds Payable; only the buyer's 5% Platform Fee is our revenue. Reference: $ref"
+    $buyerInv = New-Invoice $buyerId "$ref`: $(Zar $buyerTotalC)" @(
+        @{ name = 'Smoke test lot'; description = 'Winning bid; sold by @smoke_seller. ALL Outdoor acts as agent.'; rate = $hammer / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Delivery'; description = 'Courier freight and delivery.'; rate = $deliveryC / 100; quantity = 1; account_id = $trust.account_id },
+        @{ name = 'Platform Fee (5%)'; description = 'Buyer share of the auction Platform Fee.'; rate = $buyerFeeC / 100; quantity = 1; account_id = $fee.account_id }
+    ) "ALL Outdoor acts as agent for the seller: the hammer and delivery are held in Client Funds Payable, not revenue; only the buyer's 5% Platform Fee is ours. Ref: $ref"
     $script:created += "buyer invoice $($buyerInv.invoice_number) $($buyerInv.invoice_id)"
     $buyerPay = Pay-Invoice $buyerId $buyerInv $bank.account_id "Platform charges -- $ref" 'Auction buyer payment received into the bank'
     $script:created += "buyer payment $buyerPay"

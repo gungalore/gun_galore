@@ -710,9 +710,7 @@ export class ZohoBooksService {
       }> = [
         {
           name: title.length > 100 ? title.slice(0, 97) + '…' : title,
-          description:
-            `${orderRef} — sold by ${sellerHandle} (principal). ` +
-            `ALL Outdoor acts as agent and collects this on the seller's behalf.`,
+          description: `Sold by ${sellerHandle}; ALL Outdoor acts as agent.`,
           rate: itemRand,
           quantity: 1,
           account_id: cfpAccountId,
@@ -721,7 +719,7 @@ export class ZohoBooksService {
       if (deliveryCents > 0) {
         lineItems.push({
           name: 'Delivery',
-          description: `${orderRef} — courier freight and delivery`,
+          description: `Courier freight and delivery.`,
           rate: deliveryRand,
           quantity: 1,
           account_id: cfpAccountId,
@@ -730,7 +728,7 @@ export class ZohoBooksService {
       if (tx.processingFee > 0) {
         lineItems.push({
           name: 'Platform Fee',
-          description: `${orderRef} — marketplace facilitation (ALL Outdoor agency service)`,
+          description: `ALL Outdoor agency service.`,
           rate: feeRand,
           quantity: 1,
           account_id: feeAccountId,
@@ -738,24 +736,18 @@ export class ZohoBooksService {
       }
 
       const today = new Date().toISOString().slice(0, 10);
-      // Books caps reference_number at 100 chars. Keep every amount intact:
-      // build a compact line first and only drop the explanatory tail (never
-      // the numbers) if it still does not fit.
-      const fullReference =
-        `${orderRef}: item ${this.formatRand(itemRand)} + delivery ` +
-        `${this.formatRand(deliveryRand)} + fee ${this.formatRand(feeRand)}`;
-      const reference =
-        fullReference.length <= 100
-          ? fullReference
-          : `${orderRef}: item ${this.formatRand(itemRand)} + fee ${this.formatRand(feeRand)}`;
+      // Keep the reference short: the P.O.# column on Zoho's template is
+      // narrow, and a long reference wraps to four lines and pushes the
+      // notes block onto a second page. The line items carry the breakdown.
+      const reference = `${orderRef}: ${this.formatRand(
+        itemRand + deliveryRand + feeRand,
+      )}`;
+      // Short by design: every extra wrapped line at the foot of the page
+      // pushes the block past the body area and Zoho emits a blank page 2.
       const notes =
-        `ALL Outdoor acts as agent for the seller. The item price ` +
-        `(${this.formatRand(itemRand)}) and courier delivery ` +
-        `(${this.formatRand(deliveryRand)}) are collected on behalf of the ` +
-        `seller and carrier and are held in Client Funds Payable; they are ` +
-        `not revenue of ALL Outdoor. Only the Platform Fee ` +
-        `(${this.formatRand(feeRand)}) is charged by ALL Outdoor.\n` +
-        `ALL Outdoor transaction reference: ${orderRef}`;
+        `ALL Outdoor acts as agent for the seller: the item price and ` +
+        `delivery are held in Client Funds Payable, not revenue; only the ` +
+        `Platform Fee is ours. Ref: ${orderRef}`;
 
       type CreateInvoiceResp = {
         invoice?: { invoice_id?: string; invoice_number?: string };

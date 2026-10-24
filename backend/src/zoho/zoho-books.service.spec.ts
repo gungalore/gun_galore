@@ -136,8 +136,9 @@ describe('ZohoBooksService buyer paperwork', () => {
     );
     const body = JSON.parse(String(invoicePost?.init?.body));
     expect(body.reference_number.length).toBeLessThanOrEqual(100);
-    expect(body.reference_number).toContain('R 115.95');
-    expect(body.reference_number).toContain('R 159.50');
+    // Short reference: the P.O.# column is narrow and wraps onto the notes
+    // block, which used to spill onto a blank second page.
+    expect(body.reference_number).toContain('R 1,275.45');
     expect(body.notes).toContain('acts as agent');
     expect(body.line_items).toHaveLength(3);
     // Item price and the whole delivery figure are third-party money.
