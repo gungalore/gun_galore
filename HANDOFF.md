@@ -7,6 +7,24 @@ overwritten.
 
 Last updated: **2026-10-24**.
 
+## 2026-10-24 - SMOKE NOW RENDERS THE REMITTANCE ADVICE (DEPLOYED)
+
+**The Books smoke could not see the payout document, because the app builds
+it.** `RemittanceService.buildPdf` is now pure (no database access) and
+`backend/scripts/remittance-smoke.ts` renders the same Auction and Buy Now
+samples the flows use, writing them to `%TEMP%\alloutdoor-remittance-smoke`
+and asserting one page each. `zoho-marketplace-smoke-test.ps1` runs it before
+the verdict and fails the run if either document is malformed.
+
+Verified output: Auction — Sale price R1 000,00, Platform Fee R50,00, You
+receive R950,00; Buy Now — Sale price R1 000,00, You receive R1 000,00. Both
+one page, both carry the disclosed-agent note.
+
+Deploy at 15:36 SAST (commit `0711ccf5`): rollback
+`alloutdoor-20261024-153617.dump` (36 202 022 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Unrelated
+Terms/listing/motivation WIP stashed and restored unchanged.
+
 ## 2026-10-24 - SELLER REMITTANCE ADVICE; R0 SELLER INVOICE RETIRED (DEPLOYED)
 
 **Every paid-out sale now has a remittance advice** — the document a seller
