@@ -7,6 +7,36 @@ overwritten.
 
 Last updated: **2026-10-24**.
 
+## 2026-10-24 - INVOICE LINES RENAMED, P.O.# GONE (DEPLOYED)
+
+**Supersedes the earlier reference-shortening fix.** The buyer and seller
+invoices now read, on every Buy Now and Auction document:
+
+| Line | Description | Zoho account |
+|---|---|---|
+| Item (listing title) | `Seller of item (Principal)` | Client Funds Payable (Trust) |
+| Delivery | `Courier (Principal)` | Client Funds Payable (Trust) |
+| Platform Fee | `All Outdoor (Agent)` | Platform Fee Revenue |
+
+`reference_number` is no longer sent on any invoice, so Zoho stops printing the
+`P.O.#` block entirely (that block wrapped to four lines and pushed paid buyer
+invoices onto a blank page 2). The order reference remains in the notes. The
+auction seller's Platform Fee line uses the same `All Outdoor (Agent)` wording,
+and the sale maths moved into its notes.
+
+Both smoke scripts mirror the shape and now fail if a line posts to the wrong
+account (Buy Now and Auction, buyer and seller).
+
+**Not yet re-verified live** - run
+`backend/scripts/zoho-marketplace-smoke-test.ps1`, download a buyer and seller
+invoice, and confirm one page, no P.O.#, and the new labels. Clean up with
+`zoho-smoke-cleanup.ps1 -Apply`.
+
+Deploy at 12:05 SAST (commit `1a662c37`): rollback
+`alloutdoor-20261024-120535.dump` (36 200 738 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Unrelated
+Terms/listing/motivation WIP stashed and restored unchanged.
+
 ## 2026-10-24 - BUYER INVOICE NO LONGER SPILLS A BLANK PAGE 2 (DEPLOYED)
 
 **Every paid buyer invoice PDF had a second page containing only the footer
