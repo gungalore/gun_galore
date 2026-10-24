@@ -7,6 +7,29 @@ overwritten.
 
 Last updated: **2026-10-24**.
 
+## 2026-10-24 - LISTING COPY + MOTIVATION GOLDEN SET (DEPLOYED)
+
+**Three completed workstreams that had been sitting uncommitted.**
+
+- **Plain-sentence descriptions render as bullets.** `parseDescriptionBlocks`
+  splits hand-typed sentences into one fact per bullet when the seller used
+  no bullet markers or section headings; authored structure is untouched.
+  The preview modal now uses `ListingDescription` like the listing page.
+- **The 10-business-day delivery window moved to Terms 9.** Listing pages no
+  longer print it on every item; the firearm dealer-transfer note and the
+  collection lead-in stay.
+- **Motivation golden set.** `backend/scripts/motivation-golden.ts` +
+  `test/fixtures/motivation-golden.json` + the `motivation:golden` /
+  `:init` npm scripts. Reads stored text only; the fixture is empty until
+  `--init` is run against a database with COMPLETED packs.
+
+Deploy at 16:09 SAST (commit `22cc6d8e`): rollback
+`alloutdoor-20261024-160925.dump` (36 202 217 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. (`backend/package.json`
+and the listing/terms WIP that had been stashed for earlier deploys is now
+committed rather than stashed.) Untracked `.opencode/`, `.playwright-mcp/`
+and a stray root `package.json` were left alone.
+
 ## 2026-10-24 - REMITTANCE EMAILED; SELLER STATEMENTS RETIRED (DEPLOYED)
 
 **The seller's payout paperwork is the remittance advice, sent as a PDF
