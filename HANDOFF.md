@@ -7,6 +7,39 @@ overwritten.
 
 Last updated: **2026-10-24**.
 
+## 2026-10-24 - BUYER INVOICES USE FOOTNOTE MARKERS (DEPLOYED)
+
+**Line descriptions are gone; the markers explain the supplies.** Buyer
+invoices (Buy Now and Auction) now read:
+
+| Line | Heading | Posts to |
+|---|---|---|
+| Item | `X-BAG *` | Client Funds Payable (Trust) |
+| Delivery | `Delivery *` | Client Funds Payable (Trust) |
+| Platform Fee | `Platform Fee **` (auction: `Platform Fee (5%) **`) | Platform Fee Revenue |
+
+with the notes legend:
+
+```
+* Principal Supplies - Fees collected on behalf of unrelated third parties (Item Seller and Courier Service)
+** Agent Supplies - All Outdoor Platform Fee
+Ref: <order reference>
+```
+
+Dropping the description lines keeps the PDF to one page (the P.O.# block stays
+gone). Smoke scripts mirror the shape and the X-BAG / R150 fixture.
+
+**Live smoke (INV-000051/52/53/54) passed:** both flows one page, markers and
+legend render, CFP and Undeposited Funds close at R0.00, bank is ABSA.
+
+**Still open:** the seller Remittance Advice (Payment Voucher) discussed for
+auctions/Buy Now, and retiring the R0 Buy Now settlement advice. Not built.
+
+Deploy at 13:38 SAST (commit `35e0dffe`): rollback
+`alloutdoor-20261024-133848.dump` (36 201 322 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Unrelated
+Terms/listing/motivation WIP stashed and restored unchanged.
+
 ## 2026-10-24 - ZOHO CASH NOW LANDS IN ABSA 5183 (DEPLOYED)
 
 **ABSA (account ending 5183) handles every transaction.** `resolveBankAccountId`
