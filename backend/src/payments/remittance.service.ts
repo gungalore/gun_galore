@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { FeeModel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BRAND_NAME, SUPPORT_EMAIL } from '../common/brand';
 import { sellerBreakdown } from './fee-presentation';
@@ -26,6 +27,25 @@ const NAVY = rgb(0.06, 0.16, 0.29);
 const GREY = rgb(0.4, 0.43, 0.52);
 const BLACK = rgb(0.1, 0.1, 0.12);
 const RULE = rgb(0.8, 0.82, 0.86);
+
+/** The row fields the document needs. Structural, so the smoke can build one. */
+export interface RemittanceTx {
+  id: string;
+  listingPrice: number;
+  shippingCost: number;
+  shippingHandlingCents: number;
+  processingFee: number;
+  buyerTotal: number;
+  passFeeToBuyer: boolean;
+  commissionZar: number;
+  sellerPayout: number;
+  feeModel: FeeModel;
+  paidOutAt: Date | null;
+  orderReference: string | null;
+  order: { orderReference: string | null } | null;
+  listing: { title: string };
+  seller: { username: string | null };
+}
 
 function money(cents: number): string {
   return (
@@ -77,8 +97,21 @@ export class RemittanceService {
       );
     }
 
+    return this.buildPdf(tx);
+  }
+
+  /**
+   * Renders the document from a row. No database access, so the smoke test
+   * can prove the layout without a live payout.
+   */
+  async buildPdf(
+    tx: RemittanceTx,
+  ): Promise<{ pdf: Uint8Array; filename: string }> {
     const ref = tx.orderReference ?? tx.order?.orderReference ?? tx.id;
     const paid = tx.paidOutAt;
+    if (!paid) {
+      throw new Error('Remittance advice requires a paid-out transaction');
+    }
     const shown = sellerBreakdown(tx);
     if (!shown.balances) {
       // Never print a document that disagrees with itself. The row should be
@@ -143,7 +176,7 @@ export class RemittanceService {
     };
     meta('Payout date', ymd(paid));
     meta('Order reference', ref);
-    meta('Sale type', tx.feeModel === 'SELLER_DEDUCT' ? 'Auction' : 'Buy Now');
+    meta('Sale type', tx.feeModel === FeeModel.SELLER_DEDUCT ? 'Auction' : 'Buy Now');
     meta(
       'Paid to',
       tx.seller.username ? `@${tx.seller.username}` : 'ALL Outdoor seller',
@@ -163,7 +196,11 @@ export class RemittanceService {
     // auction fee (if any) and the payout always agree with the ledger.
     const line = (label: string, cents: number, b = false) => {
       text(label, { b, color: b ? BLACK : GREY });
-      right(b ? money(cents) : cents < 0 ? `(${money(-cents)})` : money(cents), 10, b);
+      right(
+        b ? money(cents) : cents < 0 ? `(${money(-cents)})` : money(cents),
+        10,
+        b,
+      );
       y -= 16;
     };
     line(shown.grossLabel, shown.gross);
