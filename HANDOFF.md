@@ -7,6 +7,35 @@ overwritten.
 
 Last updated: **2026-10-24**.
 
+## 2026-10-24 - REMITTANCE EMAILED; SELLER STATEMENTS RETIRED (DEPLOYED)
+
+**The seller's payout paperwork is the remittance advice, sent as a PDF
+attachment.** On Ozow payout completion the seller receives
+`payoutRemittanceReadySeller` with the advice attached (the mail links to
+`/my/earnings` as a fallback; the outbox stores HTML only, so a retried send
+loses the attachment but keeps the link).
+
+**Statements are gone end to end:** the `POST /sellers/me/statement/email`
+route, `SellerToolsService.emailAccountingStatement`, the Zoho
+`emailSellerStatement` call, and the smoke's statement emails. The payout
+statement (JSON/CSV on `/my/earnings`) is a data view only and is never sent.
+
+What each party gets:
+
+| Flow | Buyer | Seller |
+|---|---|---|
+| Buy Now | invoice | remittance advice (no invoice) |
+| Auction | invoice | 5% Platform Fee invoice + remittance advice |
+
+Live smoke after deploy: INV-000064 (Buy Now buyer, no seller invoice),
+INV-000065/66 (Auction buyer + R50 seller invoice), no statements emailed,
+CFP/UF at R0.00, remittance PDFs one page each (R1,000 / R950).
+
+Deploy at 15:58 SAST (commit `852d4968`): rollback
+`alloutdoor-20261024-155810.dump` (36 202 130 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Unrelated
+Terms/listing/motivation WIP stashed and restored unchanged.
+
 ## 2026-10-24 - SMOKE NOW RENDERS THE REMITTANCE ADVICE (DEPLOYED)
 
 **The Books smoke could not see the payout document, because the app builds
