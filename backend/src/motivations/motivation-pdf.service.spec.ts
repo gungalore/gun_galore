@@ -826,6 +826,38 @@ describe('template choice', () => {
     expect(t).toContain(squash('This is a first application'));
   });
 
+  it('⚠️ prints the first-application battery at heading 6, not after heading 11', async () => {
+    // MO000100's plan omitted `held_firearms` (first application), so no writer
+    // heading existed and the empty battery fell through to `drawDeferredBody`
+    // — which printed it after heading 11 and just before the declaration. The
+    // section is a nil return, not the conclusion of the argument.
+    const body = [
+      '1. Introduction',
+      'I apply under section 13 and hold no other licence for this purpose.',
+      '5. The firearm applied for and why it suits the purpose',
+      'FIREARM-MARKER I have applied for a handgun.',
+      '7. My competency and training',
+      'COMPETENCY-MARKER I completed the prescribed training.',
+      '11. Section 13 applied to my application',
+      'STATUTE-MARKER The firearm is a handgun which is not fully automatic.',
+      '12. Declaration and request',
+      'DECLARATION-MARKER The contents of this motivation are true and correct.',
+    ].join('\n\n');
+    const { pdf } = await svc.render({
+      ...withTables({ format: 'standard', ownedFirearms: [], body }),
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+    const at = (s: string) => t.indexOf(s);
+    expect(at('This is a first application')).toBeGreaterThanOrEqual(0);
+    expect(at('COMPETENCY-MARKER')).toBeGreaterThanOrEqual(0);
+    expect(at('STATUTE-MARKER')).toBeGreaterThanOrEqual(0);
+    // Heading 6 sits between heading 5 and heading 7, not after heading 11.
+    expect(at('This is a first application')).toBeLessThan(
+      at('COMPETENCY-MARKER'),
+    );
+    expect(at('COMPETENCY-MARKER')).toBeLessThan(at('STATUTE-MARKER'));
+  }, 30000);
+
   it('drops the Purpose column when no held firearm states one', async () => {
     // ⚠️ A COLUMN OF EM DASHES READS AS A FAILED LOOKUP. heldStatus() returned
     // an em dash for a purpose nothing supplied, which made the hasPurpose
@@ -1930,10 +1962,12 @@ describe('the cartridge drawing', () => {
     expect(flat(pages[dim - 1] ?? '').length).toBeGreaterThan(100);
   }, 30000);
 
-  it('⚠️ FALLS BACK TO THE EXHIBITS, NOT GENERIC C.I.P. PLATITUDES (2026-10-17)', async () => {
+  it('⚠️ FALLS BACK TO THE EXHIBITS WITHOUT REPRINTING THEM (2026-10-24)', async () => {
     // MO000098's 5.2 printed ten standardisation bullets while its own exhibits
-    // named kudu, gemsbok and blue wildebeest. If the calibre research failed,
-    // the page must still argue the applicant's purpose.
+    // named kudu, gemsbok and blue wildebeest. The 2026-10-17 fix pasted the
+    // whole captions in; MO000100 then printed heading 3's four scene
+    // descriptions again, word for word, and argued nothing about the
+    // cartridge. The page names the exhibits once and still argues the round.
     const image = {
       png: hero.png,
       widthMm: hero.widthMm,
@@ -1951,6 +1985,7 @@ describe('the cartridge drawing', () => {
       suitabilitySheet: {
         label: 'Why .30-06 Springfield suits this purpose',
       },
+      purposeKind: 'hunting',
       purposeNotes: [
         'Kudu: Kudu is medium to large plains game, typically taken at 150 to 250 metres. The cartridge applied for is matched to this class of game.',
       ],
@@ -1962,8 +1997,56 @@ describe('the cartridge drawing', () => {
           p.replace(/\s+/g, '').toLowerCase().includes('suitsthis') &&
           !p.includes('CONTENTS'),
       ) ?? '';
-    expect(sheet).toContain('Kudu is medium to large plains game');
-    expect(sheet).not.toContain('standardised cartridge: its case dimensions');
+    expect(sheet).toContain('The purpose is the one the exhibits set out: Kudu');
+    expect(sheet).toContain('matched to that class of game');
+    // The caption's own sentence stays under heading 3 where it belongs.
+    expect(sheet).not.toContain('Kudu is medium to large plains game');
+    // And no spec sheet or ballistics table takes its place.
+    expect(sheet).not.toContain('maximum average pressure');
+    expect(sheet).not.toContain('muzzle velocity');
+  }, 30000);
+
+  it('⚠️ argues the calibre-to-purpose match, not a spec sheet (2026-10-24)', async () => {
+    // Operator: "I don't care about the specs and velocity. We need to explain
+    // to the CFR and DFO why this calibre and gun is perfect for the purpose."
+    const image = {
+      png: hero.png,
+      widthMm: hero.widthMm,
+      heightMm: hero.heightMm,
+      texts: hero.texts,
+    };
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      firearmLine: 'CZ Handgun, serial 81815',
+      cartridgeArticle: undefined,
+      cartridgeDrawing: hero,
+      dimensionSheet: {
+        label: 'The cartridge — 6.35mm Browning — dimensions',
+        image,
+      },
+      suitabilitySheet: {
+        label: 'Why 6.35mm Browning suits this purpose',
+      },
+      purposeKind: 'self_defence',
+      purposeNotes: [
+        'The driveway gate: A vehicle stopped at an automated gate is stationary and boxed in, waiting for a gate to open or close — the moment at home when a resident is least able to move.',
+        'A home at night: A break-in at a home happens at night, when the occupants are asleep and the first alarm is the sound of an intruder already inside.',
+      ],
+    } as never);
+    const pages = await pageTexts(pdf);
+    const sheet =
+      pages.find(
+        (p) =>
+          p.replace(/\s+/g, '').toLowerCase().includes('suitsthis') &&
+          !p.includes('CONTENTS'),
+      ) ?? '';
+    expect(sheet).toContain(
+      'The purpose is the one the exhibits set out: The driveway gate, A home at night',
+    );
+    expect(sheet).toContain('a handgun in 6.35mm Browning');
+    expect(sheet).toContain('brought into use in the confined space');
+    expect(sheet).not.toContain('maximum average pressure');
+    expect(sheet).not.toContain('muzzle velocity');
   }, 30000);
 
   it('⚠️ NAMES THE EXHIBITS WHEN AN OLD ARTICLE DOES NOT', async () => {

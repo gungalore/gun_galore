@@ -21,6 +21,7 @@ import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
 import { QuarryPlateService } from './quarry-plate.service';
 import { MotivationPlatesService } from './motivation-plates.service';
+import { purposeFor } from './motivation-plates';
 
 import { displayCalibre } from './saps-vocabulary';
 import { asLayout } from './motivation-pdf-layouts';
@@ -1600,9 +1601,12 @@ export class MotivationRenderService {
                 cartridge?.name ||
                 'this cartridge'
               } suits this purpose`,
-              specs: cartridge?.specs,
             }
           : undefined,
+      // Which purpose the fallback argues, from the same resolver the exhibits
+      // use — a self-defence page, a hunting page and a sport page make
+      // different cases even when the cartridge is the same.
+      purposeKind: purposeFor(row.licenceType, answers) ?? undefined,
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
       // ⚠️ THE APPLICANT'S PAGE, NOT THE REGISTRAR'S. See MotivationPdfInput.

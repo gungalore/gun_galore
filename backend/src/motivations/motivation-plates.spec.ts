@@ -104,6 +104,18 @@ describe('the self-defence scenarios', () => {
     expect(flat).toContain('Communal access');
   });
 
+  it('⚠️ does not hand an urban premises the rural road and perimeter', () => {
+    // MO000100 lived in a townhouse complex in Durbanville, but its exhibit
+    // pages argued "An unlit regional road" and "A rural perimeter".
+    const titles = buildPlateSpecs({
+      licenceType: S13,
+      answers: { premises_type: 'townhouse complex' },
+    }).map((p) => p.title);
+    expect(titles).not.toContain('A rural perimeter');
+    expect(titles).not.toContain('An unlit regional road');
+    expect(titles).toContain('The driveway gate');
+  });
+
   it('⚠️ NEVER NAMES A WEAPON, A PERSON OR AN ACT IN THE PROMPT', () => {
     // The review a picture model runs is a violence filter; a self-defence
     // prompt that reads as a scene of violence is refused, and a refused plate
@@ -167,7 +179,9 @@ describe('the hunting plates come from the research', () => {
     expect(plates.map((p) => p.plateIndex)).toEqual([1, 2, 1, 2]);
     for (const p of plates) {
       expect(p.description).toMatch(/matched to this class of game/);
-      expect(p.prompt).toMatch(/Photorealistic/);
+      // Operator, 2026-10-25: the exhibits must look like unedited phone
+      // snapshots rather than supplied stock photographs.
+      expect(p.prompt).toMatch(/unedited and straight out of camera/i);
     }
   });
 
@@ -277,12 +291,13 @@ describe('the sport plates are the courses of fire for the firearm', () => {
       licenceType: S16_SPORT,
       answers: { firearm_type: 'Handgun' },
     })[0];
-    // The layout is what the picture is for: a wide, elevated view of the
-    // whole stage, the painted fault lines, the shooting box and the target
-    // distances. "No markings of any kind" used to ban the very fault lines
-    // the prompt asked for.
-    expect(ipsc.prompt).toMatch(/elevated three-quarter/i);
-    expect(ipsc.prompt).toMatch(/whole stage/i);
+    // The layout is what the picture is for: the painted fault lines, the
+    // shooting box and the target distances. "No markings of any kind" used to
+    // ban the very fault lines the prompt asked for. Since 2026-10-25 the
+    // viewpoint is an imperfect handheld snapshot rather than an elevated
+    // architectural shot, but every layout detail still has to be there.
+    expect(ipsc.prompt).toMatch(/behind the firing line/i);
+    expect(ipsc.prompt).toMatch(/roughly in frame/i);
     expect(ipsc.prompt).toMatch(/shooting box/i);
     expect(ipsc.prompt).toMatch(/fault lines/i);
     expect(ipsc.prompt).toMatch(/10 to 15 metres/i);
@@ -342,7 +357,7 @@ describe('the sport plates are the courses of fire for the firearm', () => {
       })) {
         expect(plate.title.trim()).not.toBe('');
         expect(plate.description.trim().length).toBeGreaterThan(20);
-        expect(plate.prompt).toContain('Photorealistic');
+        expect(plate.prompt).toMatch(/unedited and straight out of camera/i);
         expect(plate.prompt).toMatch(/no firearms/i);
       }
     }

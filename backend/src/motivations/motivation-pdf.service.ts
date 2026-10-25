@@ -444,6 +444,7 @@ export type Scheme =
   | 'burgundy';
 
 import type { DrawingText } from './motivation-cartridge-drawing';
+import type { PlatePurpose } from './motivation-plates';
 
 export interface SchemeColours {
   deep: string;
@@ -1225,6 +1226,16 @@ export interface MotivationPdfInput {
    */
   purposeNotes?: string[];
   /**
+   * Which purpose the pack argues — the same answer the exhibits use.
+   *
+   * ⚠️ THE FALLBACK'S ARGUMENT TURNS ON THIS. A self-defence page is about a
+   * handgun carried on the person in a sudden close encounter; a hunting page
+   * is about the quarry and the range; a sport page is about the course of
+   * fire. The researched article already knows this from its ask; the fallback
+   * needs it stated.
+   */
+  purposeKind?: PlatePurpose;
+  /**
    * The plan's heading 3 — "3. My hunting" and its alternates. The exhibits are
    * drawn when this heading's section ends. Undefined prints them as their own
    * block before the declaration.
@@ -1267,10 +1278,13 @@ export interface MotivationPdfInput {
    * a full page why this cartridge fits the applied for purpose." The
    * researched advantages (`cartridgeArticle`) fill two columns; no picture
    * competes with them for the page.
+   *
+   * ⚠️ NO `specs` HERE. Operator, 2026-10-24: the page is the argument for the
+   * calibre and the gun, not a dimensions table. The held figures belong on the
+   * 5.1 sheet, which already carries them.
    */
   suitabilitySheet?: {
     label: string;
-    specs?: { label: string; value: string }[];
   };
   /**
    * What the applicant physically carries to the DFO.
@@ -3146,34 +3160,73 @@ export class MotivationPdfService {
     /**
      * The suitability sheet when the research article is absent.
      *
-     * ⚠️ NOT THE GENERIC STANDARDISATION LIST WHEN WE KNOW THE EXHIBITS. The
-     * operator's MO000098 printed ten C.I.P. platitudes under "why .30-06
-     * Springfield suits this purpose" while the pack's own exhibits named kudu,
-     * gemsbok and blue wildebeest. The exhibit captions already state what the
-     * class of quarry demands; using them here keeps page 5.2 about THIS
-     * application even when the research call failed. No figure is invented —
-     * the only measurements are the held ones in `specs`, and the notes are the
-     * same words printed under heading 3.
+     * ⚠️ THE PAGE IS AN ARGUMENT, NOT A SPEC SHEET. Operator, 2026-10-24:
+     * "that calibre needs to be matched to suit the purpose. I don't care about
+     * the specs and velocity. We need to explain to the CFR and DFO why this
+     * calibre and gun is perfect for the purpose we are getting it for." So the
+     * fallback argues the match to the purpose — naming the exhibits and the
+     * calibre — and prints no dimensions, velocity or energy figures.
      */
     const purposeFallback = (): string[] => {
       const notes = input.purposeNotes ?? [];
-      if (!notes.length) return CARTRIDGE_STANDALONE;
-      const specs = input.suitabilitySheet?.specs ?? [];
-      const held = specs
-        .slice(0, 4)
-        .map((s) => `${s.label.toLowerCase()} ${s.value}`)
-        .join(', ');
-      return [
-        `- The cartridge is a standardised centrefire round${held ? `: ${held}` : ''}. Its dimensions and pressure ceiling are fixed by standard, so factory ammunition is interchangeable in the firearm applied for.`,
+      const titles = notes.map((n) => n.split(':')[0]?.trim()).filter(Boolean);
+      const calibre =
+        input.suitabilitySheet?.label
+          ?.replace(/^Why\s+/i, '')
+          .replace(/\s+suits this purpose\.?$/i, '')
+          .trim() || 'the cartridge applied for';
+      const purpose = input.purposeKind;
+      const exhibits = titles.length
+        ? `- The purpose is the one the exhibits set out: ${titles.join(', ')}.`
+        : '';
+
+      if (purpose === 'self_defence') {
         /**
-         * ⚠️ NO DANGLING LEAD-IN. This used to be a bullet ending in a colon
-         * ("The purpose exhibits ... are checked against:") with the actual
-         * notes as separate bullets underneath, which prints as a sentence
-         * that never finishes (MO000099, 5.2). Each note is already a complete
-         * statement; let them stand.
+         * ⚠️ THE ARGUMENT FOLLOWS THE CLASS ON THE COVER. Section 13 admits a
+         * handgun or a non-semi-automatic shotgun; "a handgun can be carried on
+         * the person" is the strongest sentence for one and false for the other.
          */
-        ...notes.map((n) => `- ${n}`),
-      ];
+        const carries = /handgun|pistol|revolver/i.test(
+          input.firearmLine ?? '',
+        );
+        return [
+          exhibits,
+          '- Each of those is a sudden encounter at close quarters in which the applicant is alone and cannot withdraw — at a vehicle door, a gate, a passage or inside the home.',
+          carries
+            ? `- The firearm applied for is a handgun in ${calibre}. A handgun is the class of firearm that can be carried on the person through the working day and brought into use in the confined space where those encounters happen.`
+            : `- The firearm applied for is chambered in ${calibre}. It is the class of firearm kept at hand at the place the risk occurs, and it is used at the short distance at which those encounters happen.`,
+          ...(carries
+            ? [
+                "- A rifle or a shotgun cannot be carried on the person during the applicant's work and cannot be brought to bear in a vehicle, a doorway or a passage. It does not meet this purpose, however capable it is at distance.",
+              ]
+            : []),
+          `- The calibre is the round the firearm is chambered for. The applicant has chosen the firearm and calibre together for the use described: a combination he can keep secure and bring into use at the moment the need arises.`,
+        ].filter(Boolean);
+      }
+
+      if (purpose === 'hunting') {
+        return [
+          exhibits,
+          `- The cartridge applied for, ${calibre}, is matched to that class of game and to the ranges and conditions at which it is taken. The rifle is the firearm the applicant will carry in that terrain.`,
+          '- The choice is the fit between the quarry, the range and the conditions — not a general-purpose calibre used for everything.',
+          '- The firearm and calibre are the combination the applicant will use for this hunting, and the purpose exhibits are the quarry that use is for.',
+        ].filter(Boolean);
+      }
+
+      if (purpose === 'sport') {
+        return [
+          exhibits,
+          `- The firearm applied for, chambered in ${calibre}, is the combination the applicant will use in those courses of fire.`,
+          '- The choice is the fit between the course of fire, the firearm the rules admit and the way the applicant will shoot it — not a general-purpose firearm used for everything.',
+          '- The purpose exhibits are the courses that use is for, and the firearm and calibre are chosen to match them.',
+        ].filter(Boolean);
+      }
+
+      return [
+        exhibits,
+        '- The firearm and calibre applied for are chosen for the purpose set out above, and the pages that follow explain that use.',
+        `- The cartridge applied for is ${calibre}; it is the round the firearm is chambered for, and the applicant has chosen the two together for the use described.`,
+      ].filter(Boolean);
     };
 
     /**
@@ -3737,11 +3790,13 @@ export class MotivationPdfService {
         spill.push(group);
       }
 
-      const specs = input.suitabilitySheet?.specs ?? [];
-      if (specs.length && ry < floor - K.mm(24)) {
-        drawSpecTable(rightX, Math.max(ry, top) + K.mm(2), colW, specs);
-      }
-
+      /**
+       * ⚠️ NO DIMENSIONS BLOCK ON THIS PAGE. Operator, 2026-10-24: "that
+       * calibre needs to be matched to suit the purpose. I don't care about the
+       * specs and velocity. We need to explain to the CFR and DFO why this
+       * calibre and gun is perfect for the purpose." The held figures print on
+       * the dimension sheet (5.1); this sheet is the argument alone.
+       */
       doc.x = MARGIN;
       doc.y = Math.max(ly, ry) + PARA_GAP;
       if (spill.length) {
@@ -4146,6 +4201,34 @@ export class MotivationPdfService {
          * The colon is still stripped, for documents written before the
          * headings stopped carrying one.
          */
+        /**
+         * ⚠️ A FIRST-APPLICATION BATTERY BELONGS AT HEADING 6, NOT AT THE END.
+         *
+         * When the plan omits `held_firearms` (a first application) there is no
+         * writer heading to match, so the section was left to `drawDeferredBody`
+         * — which prints it after heading 11 and just before the declaration.
+         * MO000100 therefore filed "6. Firearms already licensed to me" on page
+         * 11, out of numerical order. Draw it as soon as the body reaches the
+         * first numbered heading past 6, so the heading and its contents line
+         * land where a DFO expects them.
+         *
+         * ⚠️ ONLY WHEN THE PLAN OMITS THE SECTION. If `batteryHeading` exists,
+         * the writer owns the heading; inserting a second one here would print
+         * section 6 twice on a draft that emitted it late.
+         */
+        const headingNumber = splitHeading(block).number;
+        if (
+          feat.ownedTable &&
+          !input.batteryHeading &&
+          !batteryDrawn &&
+          !printedNumbers.has('6') &&
+          headingNumber &&
+          Number(headingNumber) > 6
+        ) {
+          if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 140) doc.addPage();
+          renderHeading('6. Firearms already licensed to me');
+          drawBattery();
+        }
         renderHeading(block.replace(/:\s*$/, ''));
         inStatutorySection = /^11\.\s/.test(block.trim());
         if (wantsCartridge) drawCartridge();

@@ -117,7 +117,7 @@ export const RESEARCH_TTL_DAYS = 180;
  * out of its own firearm research; rewording the ask without this would have
  * shipped, looked right, and still handed the writer the same marketing.
  */
-export const RESEARCH_ASK_VERSION = '2026-10-17d';
+export const RESEARCH_ASK_VERSION = '2026-10-24a';
 
 export function cacheKeyFor(
   target: ResearchTarget,
@@ -187,21 +187,22 @@ export function targetsFor(
       .map((p) => p.title)
       .filter(Boolean);
     /**
-     * ⚠️ THE EVIDENCE FOLLOWS THE PURPOSE. "Impact energy" is the right
-     * question for a kudu and the wrong one for a steel course; a sport brief
-     * that asks for terminal performance invites a hunting page beside four
-     * sport exhibits. Ask for the facts the exhibits actually test.
+     * ⚠️ THE PAGE IS AN ARGUMENT, NOT A SPEC SHEET. Operator, 2026-10-24:
+     * "that calibre needs to be matched to suit the purpose. I don't care
+     * about the specs and velocity. We need to explain to the CFR and DFO why
+     * this calibre and gun is perfect for the purpose." So the facts asked for
+     * are the facts of the match — the situations, the space, the way the
+     * firearm is carried — and the ballistics table is expressly refused.
      */
     const suitabilityFacts =
       useClass === 'sport shooting'
-        ? 'recoil and sight recovery, accuracy, velocity and power factor, ' +
-          'magazine/feeding behaviour, and the distances and target types the courses use'
+        ? 'the courses of fire, the distances and target types, and why this round and firearm suit them'
         : useClass === 'hunting'
-          ? 'typical bullet weights and impact energy at the ranges those species are taken at, trajectory, penetration and where it is marginal'
-          : 'recoil and sight recovery, accuracy, typical bullet weights and impact energy at the ranges involved, trajectory, and where it is marginal';
+          ? 'the species, the ranges and conditions they are taken in, and why this round and firearm suit them'
+          : 'the kind of encounter described, the space it happens in, how the firearm is carried, and why this round and firearm suit it';
     const exhibitAsk = exhibits.length
       ? `The purpose exhibits in this application are: ${exhibits.join(', ')}. ` +
-        `Explain why this cartridge suits EACH of them specifically — ${suitabilityFacts} — not merely why it is a standardised round.`
+        `Explain why this cartridge and firearm suit EACH of them specifically — ${suitabilityFacts} — not merely why the round is standardised.`
       : '';
     out.push({
       target: 'calibre',
@@ -218,30 +219,32 @@ export function targetsFor(
         exhibits.join('+'),
       ]),
       ask: [
-        `THE CARTRIDGE: ${calibre}.`,
-        'Find its origin and character — recoil, typical factory loads,',
-        'effective range — and what it is commonly used for in South Africa.',
-        // ⚠️ THE ADVANTAGES ARE NOW THE POINT OF THE PAGE. Operator, 2026-10-15:
-        // "the dimensions with the advantages of the cartridge for the applied
-        // for purpose ... we can have the researcher research that." The page
-        // is a whole sheet of its own now, and what a DFO reads is why THIS
-        // round suits THIS purpose. Ask for it as fact with sources; never as
-        // sales copy, and never as terminal effect we hold no sheet for.
+        `THE CARTRIDGE: ${calibre}${type ? `, in a ${type}` : ''}.`,
+        `THE PURPOSE: ${useClass}.`,
         /**
-         * ⚠️ BULLET STYLE, BECAUSE THAT IS THE PAGE. Operator, 2026-10-16:
-         * "Let the writer write all the advantages in bullete style why the
-         * cartridge is suited for the chosen role." Each bullet is one reason
-         * THIS round suits THIS application, printed as a bullet list down two
-         * columns. Ask for fact with sources, never sales copy, and never
-         * terminal effect we hold no sheet for.
+         * ⚠️ THE ARGUMENT IS THE MATCH, NOT THE NUMBERS. Operator, 2026-10-24:
+         * "I don't care about the specs and velocity. We need to explain to the
+         * CFR and DFO why this calibre and gun is perfect for the purpose."
+         * The old ask opened with origin, recoil, loads and effective range and
+         * got a ballistics table back; this asks for the case the applicant
+         * needs to make and refuses the table.
          */
-        `Then set out the ADVANTAGES this cartridge has for ${useClass}, as a`,
-        'BULLET LIST: one bullet per advantage, each one to three sentences,',
-        'each a reason this round is well matched to this purpose (and, where',
-        'it matters, what it is over- or under-matched to). Ground every claim',
-        'in published fact and name the source of a figure. Figures with',
-        'sources, never impressions.',
+        'Explain why THIS calibre and THIS firearm are suited to that purpose.',
+        'Write for the Registrar and the Designated Firearms Officer deciding',
+        'whether the firearm is necessary and appropriate: what the round and',
+        'the firearm let the applicant do in the situations described, why they',
+        'are matched to that use, and where a different calibre or class of',
+        'firearm would fall short.',
+        '⚠️ NOT A SPECIFICATION SHEET AND NOT A BALLISTICS TABLE. Do not lead',
+        'with muzzle velocity, muzzle energy, bullet weight, pressure,',
+        'dimensions or chamber measurements, and give no figure unless it is',
+        'needed to make a suitability point. Argue the match to the purpose.',
         exhibitAsk,
+        `Then set out the MATCH to ${useClass} as a BULLET LIST: one bullet per`,
+        'reason, each one to three sentences, each a reason this round and this',
+        'firearm are well matched to this purpose (and, where it matters, what',
+        'they are over- or under-matched to). Ground every claim in published',
+        'fact and name the source of a figure.',
         'BULLET FORMAT: begin every bullet with "- " at the start of its own',
         'line, one bullet per line, no numbering and no sub-headings.',
         /**
@@ -279,13 +282,6 @@ export function targetsFor(
         'points, write nothing for it and let the page be short. This text is',
         'printed in a document the applicant signs and lodges; an invented',
         'sentence there is worse than a gap.',
-        // ⚠️ METRIC, BECAUSE THE DOCUMENT IS. This brief is printed as the
-        // cartridge feature beside a drawing dimensioned in millimetres and a
-        // pressure in bar; a range quoted in yards on the same page reads as
-        // two documents. The first render of that page said "1,000 to 1,300
-        // yards" under a drawing marked 71.76 mm.
-        'METRIC ONLY: metres, millimetres, grams, joules, bar. Never yards,',
-        'inches, grains, feet per second or foot-pounds.',
         // ⚠️ AND SOUTH AFRICAN SPELLING, for the same reason as the units. The
         // first render of the feature page said "widely utilized" and "heavier
         // calibers" in a letter to the Registrar of Firearms.

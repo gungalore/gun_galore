@@ -113,31 +113,29 @@ describe('what gets researched', () => {
       firearm_action: 'Bolt action',
     }).find((t) => t.target === 'calibre')!;
     expect(sport.cacheKey).not.toBe(hunt.cacheKey);
-    expect(sport.ask).toContain('for sport shooting');
-    expect(hunt.ask).toContain('for hunting');
+    expect(sport.ask).toContain('THE PURPOSE: sport shooting');
+    expect(hunt.ask).toContain('THE PURPOSE: hunting');
   });
 
-  it('⚠️ ASKS THE CARTRIDGE IN THE UNITS AND THE SPELLING OF THE DOCUMENT', () => {
+  it('⚠️ ASKS FOR THE MATCH TO PURPOSE, NOT A BALLISTICS TABLE', () => {
     /**
-     * This brief is not background — it is sliced out and PRINTED as the
-     * cartridge feature, beside a drawing dimensioned in millimetres. The
-     * first one rendered said "1,000 to 1,300 yards", "widely utilized" and
-     * "heavier calibers" in a letter to the Registrar of Firearms.
+     * Operator, 2026-10-24: "I don't care about the specs and velocity. We
+     * need to explain to the CFR and DFO why this calibre and gun is perfect
+     * for the purpose we are getting it for." The brief keeps the document's
+     * spelling but refuses the spec sheet and the velocity/energy figures.
      */
     const ask = targetsFor(SPORT, ANSWERS).find(
       (t) => t.target === 'calibre',
     )!.ask;
-    expect(ask).toContain('METRIC ONLY');
-    expect(ask).toMatch(/never yards/i);
     expect(ask).toContain('SOUTH AFRICAN ENGLISH');
+    expect(ask).toContain('NOT A SPECIFICATION SHEET');
+    expect(ask).toMatch(/not a ballistics table/i);
   });
 
-  it('⚠️ ASKS FOR THE CARTRIDGE ADVANTAGES FOR THE APPLIED-FOR PURPOSE', () => {
+  it('⚠️ ASKS FOR THE CARTRIDGE’S MATCH TO THE APPLIED-FOR PURPOSE', () => {
     /**
-     * Operator, 2026-10-15: "the dimensions with the advantages of the
-     * cartridge for the applied for purpose ... we can have the researcher
-     * research that." The feature is a whole page of its own now, and the
-     * reason a DFO reads it is the match between the round and the purpose.
+     * Operator, 2026-10-24: the page must explain why this calibre and firearm
+     * are perfect for the purpose, not reproduce a cartridge specification.
      */
     const sport = targetsFor(SPORT, {
       ...ANSWERS,
@@ -151,10 +149,10 @@ describe('what gets researched', () => {
       firearm_action: 'Bolt action',
       firearm_calibre: '.30-06 SPRINGFIELD',
     }).find((t) => t.target === 'calibre')!.ask;
-    expect(sport).toContain('ADVANTAGES');
-    expect(hunt).toContain('ADVANTAGES');
-    // ⚠️ The advantages are asked for as a bullet list (operator, 2026-10-16:
-    // "bullet style"), because the page is a two-column bullet article.
+    expect(sport).toContain('Explain why THIS calibre');
+    expect(hunt).toContain('Explain why THIS calibre');
+    // ⚠️ The match is asked for as a bullet list, because the page is a
+    // two-column bullet article.
     expect(sport).toContain('BULLET');
     // The purpose itself, not a generic paragraph: the use class is named.
     expect(sport).not.toBe(hunt);
@@ -168,7 +166,7 @@ describe('what gets researched', () => {
       (t) => t.target === 'calibre',
     )!.ask;
     expect(ask).toContain('purpose exhibits in this application are');
-    expect(ask).toContain('Explain why this cartridge suits EACH');
+    expect(ask).toContain('Explain why this cartridge and firearm suit EACH');
   });
 
   it('keys a discipline to its registry slug, not to what was typed', () => {

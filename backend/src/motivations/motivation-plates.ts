@@ -43,7 +43,7 @@ import { coursesFor, type CourseSpec } from './motivation-courses';
  * wording with no way to tell which is which — the same trap
  * QUARRY_PROMPT_VERSION and researchAskVersion were written to close.
  */
-export const PLATES_PROMPT_VERSION = '2026-10-19a';
+export const PLATES_PROMPT_VERSION = '2026-10-25a';
 
 /** Which of the purposes a pack's exhibits serve. */
 export type PlatePurpose = 'hunting' | 'sport' | 'both' | 'self_defence';
@@ -117,15 +117,20 @@ export function purposeFor(
 /**
  * The shared close of every prompt.
  *
- * ⚠️ A PHOTOGRAPH, AND NOTHING DRAWN ON IT. The same rule the quarry plate
- * learned the hard way (see motivation-quarry.ts): a field-guide illustration
- * with a marked vital zone is an anatomical claim this platform has no
- * business making in a document somebody signs. And "no text, no watermark"
- * keeps a caption or a logo out of a page that prints under our own.
+ * ⚠️ AN UNEDITED PHONE SNAPSHOT, NOT A PHOTOGRAPH. Operator, 2026-10-25: the
+ * exhibit pages must "look like unedited raw pictures taken to make it more
+ * realistic and authentic". A polished stock photograph reads as something
+ * supplied for the file; a slightly crooked, grainy, badly lit snapshot reads
+ * as the applicant's own record of the place. The safety and no-overlay rules
+ * are unchanged — the picture is still of a PLACE or an ANIMAL, never a person,
+ * a firearm or an act, and it carries no text or mark of ours.
  */
 const NEGATIVES = [
-  'Photorealistic documentary photograph, sharp focus across the subject, bright readable exposure.',
-  'No people, no firearms, no weapons, no vehicles in motion, no text, no watermark, no logo, no overlay, no borders.',
+  'Amateur handheld phone snapshot, unedited and straight out of camera, the kind of picture somebody takes quickly without composing it.',
+  'Imperfect framing: the subject sits slightly off-centre or is clipped at an edge, the horizon is a degree or two off level, and everyday clutter is left in frame.',
+  'Natural uneven lighting with blown highlights and crushed shadows, visible sensor noise in the dark areas, mild JPEG compression, a little motion blur or soft focus, and dust or a smudge on the lens.',
+  'No professional or studio lighting, no colour grading, no HDR, no deliberate shallow-depth-of-field effect, no posed composition, no text, no watermark, no logo, no overlay, no borders.',
+  'No people, no firearms, no weapons, no vehicles in motion.',
 ].join(' ');
 
 // ── hunting ───────────────────────────────────────────────────────────
@@ -205,15 +210,15 @@ function speciesPlate(species: QuarrySpecies): Omit<PlateSpec, 'pageIndex' | 'pl
       `matched to this class of game, and this is why: ${why}. It is pictured ` +
       `in ${habitat}, the setting a licence for this purpose is intended for.`,
     prompt:
-      `Wildlife photograph of ${species.subject} standing in full broadside ` +
-      `profile in ${habitat}, whole body in frame, all four hooves on dry ` +
-      'earth. Natural coat texture, distinct horn or body detail, shot at eye ' +
-      'level from a three-quarter front-side angle. Scattered acacia thorn ' +
-      'trees and bushveld scrub in the background. Warm early-morning sunlight ' +
-      'from the left with bright, clear fill on the animal and open shadow ' +
-      'detail. Natural warm tan, russet and earth tones against golden veld ' +
-      'grass and pale blue sky, 300 mm telephoto lens with the animal sharp in ' +
-      `the centre of the frame and the background softly out of focus. ${NEGATIVES}`,
+      `A quick handheld phone photo of ${species.subject} in ${habitat}, taken ` +
+      'by somebody who stopped a vehicle or paused on foot and snapped it before ' +
+      'the animal moved on. The animal is side-on but not perfectly centred, ' +
+      'partly obscured by grass, scrub or a fence post, with its head turned or ' +
+      'one leg lifted as it walks. Long grass and a few twigs sit in the ' +
+      'foreground, and a vehicle window frame, wing mirror or fence wire may ' +
+      'intrude at the edge of the frame. Harsh or flat natural daylight, heat ' +
+      'haze and dust in the air, the sky blown out in places, the animal a ' +
+      `little soft from distance and handheld shake. ${NEGATIVES}`,
   };
 }
 
@@ -236,11 +241,14 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'and a fence line stretches further than a single person can watch. A ' +
       'resident is on their own for the whole of that response time.',
     prompt:
-      'A galvanized steel farm gate and taut wire-and-post perimeter fence stretching across open veld on a South African smallholding at early twilight, shot from an eye-level three-quarter angle along the gravel farm track. ' +
-      'Weathered timber strainer posts, red-brown compacted gravel road, dry highveld grass on both sides, and a single white-plastered farmhouse with a lit veranda porch in the far distance. ' +
-      'Warm golden horizon light from the right paired with a bright overhead gate floodlight illuminating the gravel and steel bars, clear readable shadows. ' +
-      'Steel grey, red ochre earth, pale gold grass and deep cobalt twilight sky, wide composition with the gate sharp in the foreground. ' +
-      `${NEGATIVES}`,
+      'A hurried phone photo taken from beside a vehicle on a gravel farm track ' +
+      'at dusk: a galvanised steel farm gate and a long wire-and-post fence ' +
+      'running away across dry veld, the gate slightly off-centre and the ' +
+      'horizon a little crooked. Weathered timber strainer posts, red-brown ' +
+      'compacted gravel, dry highveld grass, a white-plastered farmhouse with ' +
+      'one lit porch far off, and a single harsh floodlight over the gate that ' +
+      'leaves the rest of the frame in deep shadow. Low light, grainy, a little ' +
+      `blurred at the edges, dust on the lens, the sky blown out near the horizon. ${NEGATIVES}`,
   },
   {
     when: (a) => /apartment|flat|communal|block/i.test(a.premises_type ?? ''),
@@ -250,11 +258,13 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'to, and a dim passage between a vehicle and a front door is where a ' +
       'resident is most exposed.',
     prompt:
-      'The communal pedestrian entrance gate and covered parking bays of a modern low-rise brick apartment block in South Africa at twilight, shot at eye level looking down the paved walkway toward a solid timber apartment door. ' +
-      'Face-brick columns, painted black steel palisade gate, concrete interlocking pavers, and numbered parking bays under a corrugated steel carport roof. ' +
-      'Bright white bulkhead LED wall lights mounted along the walkway casting crisp pools of light across the pavers and brick walls, well-exposed and clearly readable. ' +
-      'Warm red-brown brick, charcoal steel, pale grey concrete pavers and cool white security lighting, framed symmetrically along the passage. ' +
-      `${NEGATIVES}`,
+      'A quick phone snap from the car park of a low-rise brick apartment block ' +
+      'at night: the communal palisade gate and the paved walkway leading to a ' +
+      'solid timber door, angled slightly up and off-centre, with a security ' +
+      'light glaring into the lens. Face-brick columns, numbered parking bays ' +
+      'under a corrugated-steel carport, a wheelie bin and a parked car at the ' +
+      'edge of the frame, paving that looks damp. Harsh pools of white light ' +
+      `and deep shadow, noise in the dark areas, a little smeared highlight. ${NEGATIVES}`,
   },
   {
     when: (a) =>
@@ -267,11 +277,12 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'hours each day, is a predictable and stationary exposure that no ' +
       'alarm or wall can cover.',
     prompt:
-      'A multi-lane urban arterial road and intersection in South Africa at late afternoon golden hour, shot from an elevated roadside viewpoint looking along the asphalt lanes. ' +
-      'Painted white lane markings, concrete kerbs, traffic signal poles, corrugated-iron and plastered commercial shopfronts with roller shutters along the pavement, and overhead streetlamps. ' +
-      'Low golden afternoon sunlight from the left casting long crisp shadows across the tar road while streetlamps glow warmly overhead, bright and vivid exposure. ' +
-      'Charcoal asphalt, white road paint, warm ochre and grey building facades under a clear amber-and-blue sky, wide 35 mm framing. ' +
-      `${NEGATIVES}`,
+      'A phone photo taken from the pavement or through a windscreen at a busy ' +
+      'urban intersection in late afternoon: several lanes of stained tar, a red ' +
+      'traffic signal, plastered shopfronts with roller shutters, a few cars and ' +
+      'a minibus taxi waiting at the light at the edge of the frame, and the ' +
+      'corner of the dashboard or window pillar intruding. Low sun flaring ' +
+      `across the lens, uneven exposure, patchy road repairs, some motion blur. ${NEGATIVES}`,
   },
   {
     when: (a) => /gate|driveway|house|home|suburb|wall/i.test(a.premises_type ?? ''),
@@ -281,49 +292,86 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'waiting for a gate to open or close — the moment at home when a ' +
       'resident is least able to move.',
     prompt:
-      'A closed sliding steel automated driveway gate set into a high plastered perimeter wall on a suburban residential street in South Africa at early evening, shot at eye level from the paved driveway apron. ' +
-      'Charcoal powder-coated steel gate slats, cream painted boundary wall with electric-fence brackets along the coping, brick-paved driveway, and a suburban house roof and front gables visible beyond the gate. ' +
-      'Two bright warm-white pillar security lights flanking the gate and an overhead streetlamp illuminating the paving and gate rails clearly, crisp highlights and open shadow detail. ' +
-      'Cream plaster, charcoal steel, terracotta brick pavers and deep blue evening sky, 35 mm architectural framing with the gate centred and sharp. ' +
-      `${NEGATIVES}`,
+      "A phone snap taken from the driver's seat of a car stopped at a closed " +
+      'sliding steel gate at dusk: the gate fills most of the frame, slightly ' +
+      'off-centre, with the top of the boundary wall clipped and the wing mirror ' +
+      'or A-pillar intruding at one edge. Charcoal powder-coated slats, a cream ' +
+      'plastered wall with electric-fence brackets, brick paving, a suburban ' +
+      'roof beyond, two harsh security lights flaring. Washed-out sky, grain in ' +
+      `the shadows, a touch of handheld blur. ${NEGATIVES}`,
   },
 ];
+
+/**
+ * The two fallback scenes that are not in the matched pool.
+ *
+ * ⚠️ SEPARATE SO THE DEFAULTS CAN BE CHOSEN BY PREMISES. See
+ * `selfDefenceDefaults`.
+ */
+const UNLIT_REGIONAL_ROAD: Scene = {
+  title: 'An unlit regional road',
+  description:
+    'Regional routes between towns run through open veld with no lighting ' +
+    'and long gaps between police stations. A breakdown or a forced stop ' +
+    'there leaves a motorist entirely without help.',
+  prompt:
+    'A phone photo taken from the road shoulder or through a windscreen at ' +
+    'last light: a straight two-lane tar road running toward distant ' +
+    'flat-topped hills, the horizon off level and the road slightly ' +
+    'off-centre, a reflector post clipped at the edge. Weathered asphalt with ' +
+    'faded paint, a graded red-gravel verge, low karoo scrub, the sky blown ' +
+    `out and the foreground in shadow. Grain and a slight blur in low light. ${NEGATIVES}`,
+};
+
+const HOME_AT_NIGHT: Scene = {
+  title: 'A home at night',
+  description:
+    'A break-in at a home happens at night, when the occupants are asleep ' +
+    'and the first alarm is the sound of an intruder already inside. ' +
+    'Response times make the first minutes the occupant\u2019s own.',
+  prompt:
+    'A phone snap from the pavement outside a suburban house at night: the ' +
+    'front boundary wall, steel gate and lit windows, framed a little crooked ' +
+    'with the roof or a gatepost cut off. Cream plaster, a steel pedestrian ' +
+    'gate and burglar bars, a bright floodlight flaring over the garage, deep ' +
+    'shadows, a garden bin or hose lying in the foreground. Noise and smeared ' +
+    `highlights, the sky black and empty. ${NEGATIVES}`,
+};
 
 /**
  * The generic fallbacks, used for any slot the applicant's answers did not
  * fill. Always enough to reach two pages, because a self-defence pack always
  * has a purpose section.
  */
-const SELF_DEFENCE_DEFAULTS: readonly Scene[] = [
-  {
-    title: 'An unlit regional road',
-    description:
-      'Regional routes between towns run through open veld with no lighting ' +
-      'and long gaps between police stations. A breakdown or a forced stop ' +
-      'there leaves a motorist entirely without help.',
-    prompt:
-      'A straight two-lane tarred regional highway cutting through open South African karoo veld at sunset, shot at eye level from the gravel road shoulder looking down the empty road toward distant flat-topped hills. ' +
-      'Weathered dark asphalt with painted white centre and edge lines, graded red-gravel verge, roadside reflectors on short white posts, and low karoo scrub stretching to the horizon. ' +
-      'Low golden sunset light from the west raking across the road surface and gravel shoulder, bright and clear enough to read the road texture and horizon line. ' +
-      'Dark slate asphalt, crisp white road lines, rust-red gravel, olive-green scrub and warm amber-orange sky, wide 35 mm landscape composition. ' +
-      `${NEGATIVES}`,
-  },
+const SELF_DEFENCE_RURAL_DEFAULTS: readonly Scene[] = [
+  UNLIT_REGIONAL_ROAD,
   SELF_DEFENCE_SCENES[0],
   SELF_DEFENCE_SCENES[3],
-  {
-    title: 'A home at night',
-    description:
-      'A break-in at a home happens at night, when the occupants are asleep ' +
-      'and the first alarm is the sound of an intruder already inside. ' +
-      'Response times make the first minutes the occupant\u2019s own.',
-    prompt:
-      'The front exterior of a single-storey South African suburban home behind a plastered boundary wall and steel security gate at twilight, shot at eye level from the quiet street pavement. ' +
-      'Painted masonry perimeter wall, steel pedestrian gate, neat lawn and paved front path leading to a timber front door fitted with a steel security gate and burglar bars on the windows. ' +
-      'A bright LED floodlight above the garage and warm porch sconces illuminating the entire front facade, path and perimeter wall clearly against the deep twilight sky. ' +
-      'Warm cream walls, charcoal steel gates, green lawn, terracotta roof tiles and deep indigo sky, sharp 35 mm architectural photograph. ' +
-      `${NEGATIVES}`,
-  },
+  HOME_AT_NIGHT,
 ];
+
+/**
+ * ⚠️ AN URBAN APPLICANT DOES NOT GET RURAL EXHIBITS. MO000100 lived in a
+ * townhouse complex in Durbanville but its plate pages argued "An unlit
+ * regional road" and "A rural perimeter" — the defaults were drawn whatever
+ * the premises. Keep the rural pair for rural premises; fill an urban pack
+ * from the communal, commute and driveway scenes plus the home at night.
+ */
+const SELF_DEFENCE_URBAN_DEFAULTS: readonly Scene[] = [
+  SELF_DEFENCE_SCENES[1],
+  SELF_DEFENCE_SCENES[2],
+  SELF_DEFENCE_SCENES[3],
+  HOME_AT_NIGHT,
+];
+
+function selfDefenceDefaults(
+  answers: Record<string, string>,
+): readonly Scene[] {
+  const rural = /farm|smallholding|plot|rural|plaas/i.test(
+    answers.premises_type ?? '',
+  );
+  return rural ? SELF_DEFENCE_RURAL_DEFAULTS : SELF_DEFENCE_URBAN_DEFAULTS;
+}
 
 function pickScenes(
   pool: readonly Scene[],
@@ -506,7 +554,12 @@ export function buildPlateSpecs(ctx: PlateContext): PlateSpec[] {
 
   if (purpose === 'self_defence') {
     return withSlots(
-      pickScenes(SELF_DEFENCE_SCENES, SELF_DEFENCE_DEFAULTS, ctx.answers, MAX_PLATES),
+      pickScenes(
+        SELF_DEFENCE_SCENES,
+        selfDefenceDefaults(ctx.answers),
+        ctx.answers,
+        MAX_PLATES,
+      ),
     );
   }
 

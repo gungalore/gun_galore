@@ -37,16 +37,20 @@ import type { WeaponClass } from './motivation-plates';
  * not of somebody doing it.
  */
 const EMPTY = [
-  'Photorealistic documentary photograph of an empty course of fire, shot from',
-  'an elevated three-quarter viewpoint just behind the firing line with a 35 mm',
-  'lens, so the whole stage is in frame: foreground shooting box and painted',
-  'fault lines, mid-ground barricades and props, downrange targets and the back',
-  'berm. Crisp morning South African sunlight from the left casting clean shadows,',
-  'bright readable exposure, realistic wood grain, weathered steel, compacted earth',
-  'and brown cardboard textures, sharp focus from foreground to berm, consistent',
-  'scale and clear spacing between targets. No people, no shooter, no hands, no',
-  'firearms, no muzzle, no muzzle flash, no motion or action, no vehicles, no',
-  'text overlays, no logos, no watermarks.',
+  'Amateur handheld phone snapshot of an empty course of fire, taken by a club',
+  'member standing behind the firing line, unedited and straight out of camera.',
+  'The stage is roughly in frame but the framing is imperfect: the shooting box',
+  'and painted fault lines in the foreground, barricades, props and steel targets',
+  'mid-ground, cardboard targets and the back berm downrange, with a corner of',
+  'the range shed, a water bottle, a range bag, a weed patch or a parked bakkie',
+  'intruding at the edge. Harsh or flat natural daylight, uneven exposure with a',
+  'blown sky and shadowed berms, visible grain, a little motion blur or soft',
+  'focus, dust in the air, worn paint, scuffed timber and patched, stained earth.',
+  'Scale and spacing between targets are roughly right but not textbook.',
+  'No professional lighting, no colour grading, no HDR, no text, no watermark,',
+  'no logo, no overlay, no borders. No people, no shooter, no hands, no',
+  'firearms, no muzzle, no muzzle flash, no motion or action, no vehicles in',
+  'motion.',
 ].join(' ');
 
 export interface CourseSpec {
