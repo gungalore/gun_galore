@@ -1,12 +1,13 @@
 ﻿// Regulated Items Annex — the members-only half of the legal split.
 //
 // The public policies (/terms, /privacy, /paia, /aml-policy, /acceptable-use,
-// /refund-policy, /fees, /how-payments-work, /about, /complaints,
+// /refund-policy, /fees, /about, /complaints,
 // /how-selling-works, /condition-guide, /legal) keep every obligation that
-// binds ALL users, worded generically. The category-specific statutory
-// procedure lives HERE, and the public Terms incorporate this Annex by
-// reference. A member is bound by the public documents PLUS this one; nothing
-// may fall between the two.
+// binds ALL users, worded generically. (/how-payments-work and
+// /buyer-protection are retired and 308 to /terms.) The category-specific
+// statutory procedure lives HERE, and the public Terms incorporate this Annex
+// by reference. A member is bound by the public documents PLUS this one;
+// nothing may fall between the two.
 //
 // This route is sign-in gated in middleware (absent from isPublicRoute) and
 // Disallow'd in robots.txt, and ../layout.tsx sets robots:{index:false}. It is

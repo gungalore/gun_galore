@@ -196,7 +196,7 @@ export default function TermsPage() {
         monitoring may result in suspension or a permanent ban.
       </p>
 
-      <h2>7. Payments and settlement</h2>
+      <h2 id="payments">7. Payments and settlement</h2>
       {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
         All payments on ALL Outdoor are processed by{' '}
@@ -331,7 +331,9 @@ export default function TermsPage() {
       </p>
       <p>
         Delivery can take up to 10 business days from payment. We always
-        push for the quickest possible collection and delivery.
+        push for the quickest possible collection and delivery. Delivery is
+        available within the Republic of South Africa only: we do not ship
+        cross-border and we do not deliver to addresses outside South Africa.
       </p>
       <p>
         <strong>Pickup-point delivery is Pargo only.</strong> Where a pickup
@@ -404,7 +406,7 @@ export default function TermsPage() {
         must meet it.
       </p>
 
-      <h2>11. Disputes and refunds</h2>
+      <h2 id="disputes">11. Disputes and refunds</h2>
       <p>
         If you believe a Buyer or Seller has not met their obligations
         — for example, an item arrived damaged or never arrived — you
@@ -431,6 +433,21 @@ export default function TermsPage() {
         rights you have under the Consumer Protection Act, in
         particular Section 56 (which gives Buyers a 6-month right to
         return defective goods).
+      </p>
+      <p id="buyer-protection">
+        <strong>Buyer protection.</strong> Every order includes the following
+        safeguards, funded by the single Platform Fee: the Seller is paid only
+        once delivery is confirmed or a dealer transfer is verified; Sellers are
+        identity-verified, and their bank details are reviewed against that
+        identity, before any payout; raising an issue instead of confirming
+        delivery freezes the payment and puts the order in front of our team;
+        and where a claim is upheld the Buyer is refunded and the Seller is not
+        paid. These safeguards are not insurance, and they do not change the
+        fact that the agreement of sale is between the Buyer and the Seller.
+        They do not cover buyer&rsquo;s remorse or a change of mind after
+        delivery, an item the Buyer inspected and accepted where the fault was
+        apparent at the time, or losses caused by something outside our control
+        after a correct delivery.
       </p>
       <p
         style={{

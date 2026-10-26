@@ -1,109 +1,19 @@
-﻿// Buyer Protection — the safeguards included in the platform. The separate
-// Buyer Protection Fee was retired in October 2026; protection is now funded
-// by the single Platform Fee. Public (linked from /fees and checkout), so it
-// must be reachable signed-out.
+﻿import { permanentRedirect, redirect } from 'next/navigation';
+
+// /buyer-protection — RETIRED EXPLAINER.
 //
-// House rules: never the word "escrow" (say "funds held" / "payment held");
-// no payment provider named; no promise the platform does not keep. Every
-// protection described here is one the platform actually performs: funds are
-// held until delivery is confirmed (or a dealer transfer is verified), seller
-// identity is checked before payout, and disputes route to a human with a
-// refund where the claim is valid.
-
-import { SUPPORT_EMAIL } from '@/lib/support-contact';
-
-import { LegalDocHeader } from '../legal-frame';
-
-export const metadata = {
-  title: 'Buyer Protection',
-  description:
-    'The protections every ALL Outdoor buyer gets — funds held until completion, verified sellers, and dispute resolution — included in the Platform Fee.',
-};
-
-export default function BuyerProtectionPage() {
-  return (
-    <>
-      <LegalDocHeader
-        title="Buyer Protection"
-        lastUpdated="Effective 19 October 2026"
-      />
-
-      <h2>What it is</h2>
-      <p>
-        Every order on ALL Outdoor includes the protections below. There is no
-        separate Buyer Protection Fee any more: protection is funded by the
-        single <strong>Platform Fee</strong> charged at checkout, whether you buy
-        at a fixed price, win an auction or have an offer accepted. See{' '}
-        <a href="/fees" style={{ color: 'var(--red)' }}>Fees</a> for how the
-        Platform Fee is calculated.
-      </p>
-
-      <h2>What you get</h2>
-      <ul>
-        <li>
-          <strong>Your payment is held until the sale completes.</strong> We do
-          not release the seller&apos;s money when you pay. It is held until you
-          confirm the item arrived as described — or, for an item that changes
-          hands through a licensed dealer, until we have verified that transfer
-          is complete.
-        </li>
-        <li>
-          <strong>Verified sellers.</strong> A seller must pass an identity
-          check, and have their bank details reviewed against that identity,
-          before they can be paid out.
-        </li>
-        <li>
-          <strong>Dispute resolution.</strong> If the item does not arrive, or
-          is not as described, raise an issue instead of confirming delivery.
-          That freezes the payment and puts the order in front of our team.
-        </li>
-        <li>
-          <strong>A refund where a claim is valid.</strong> If we find in your
-          favour, the payment is refunded to you and the seller is not paid.
-        </li>
-      </ul>
-
-      <h2>What it is not</h2>
-      <p>
-        These protections are not insurance, and they do not change the fact
-        that the agreement of sale is between you and the seller. They do not
-        cover:
-      </p>
-      <ul>
-        <li>buyer&apos;s remorse, or a change of mind after delivery;</li>
-        <li>
-          an item you inspected and accepted, where the fault was apparent at
-          the time;
-        </li>
-        <li>
-          losses caused by something outside our control after a correct
-          delivery.
-        </li>
-      </ul>
-
-      <h2>How to raise a claim</h2>
-      <p>
-        Open the order and choose <strong>raise an issue</strong> — do not
-        confirm delivery. Tell us what is wrong and attach any photographs or
-        documents. We hold the payment while we look into it, and we tell both
-        parties the outcome. If you are unsure, contact us at{' '}
-        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
-          {SUPPORT_EMAIL}
-        </a>{' '}
-        before confirming.
-      </p>
-
-      <h2>Related</h2>
-      <p>
-        See <a href="/fees" style={{ color: 'var(--red)' }}>Fees</a> for the
-        full fee schedule,{' '}
-        <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refunds</a>{' '}
-        for how refunds are processed, and{' '}
-        <a href="/how-payments-work" style={{ color: 'var(--red)' }}>
-          How payments work
-        </a>{' '}
-        for the payment lifecycle.
-      </p>
-    </>
-  );
+// Nothing on the live site linked here, and every protection it described
+// (deferred settlement, verified sellers, dispute freeze, refund on a valid
+// claim) plus the exclusions it listed are now set out in the binding Buyer
+// protection paragraph of the Terms of Service, paragraph 11.
+//
+// Kept as a 308 rather than deleted because the URL may be bookmarked or linked
+// from older emails.
+export default function BuyerProtectionRedirect(): never {
+  // permanentRedirect issues a 308 so search engines transfer and then drop the
+  // old URL; fall back to a 307 on older Next runtimes.
+  if (typeof permanentRedirect === 'function') {
+    permanentRedirect('/terms#buyer-protection');
+  }
+  redirect('/terms#buyer-protection');
 }

@@ -150,7 +150,6 @@ export function SiteFooter() {
             <li><Link href="/contact" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Contact</Link></li>
             <li><Link href="/complaints" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Complaints</Link></li>
             <li><Link href="/fees" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Fees</Link></li>
-            <li><Link href="/how-payments-work" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>How payments work</Link></li>
           </ul>
         </div>
 

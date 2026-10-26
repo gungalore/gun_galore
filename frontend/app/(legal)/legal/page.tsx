@@ -70,12 +70,6 @@ const DOCS: { href: string; title: string; description: string }[] = [
       'The fees we charge buyers and sellers, when they apply, and how they are calculated.',
   },
   {
-    href: '/how-payments-work',
-    title: 'How Payments Work',
-    description:
-      'How your money moves from checkout to payout, including funds held until delivery is confirmed.',
-  },
-  {
     href: '/contact',
     title: 'Contact',
     description:

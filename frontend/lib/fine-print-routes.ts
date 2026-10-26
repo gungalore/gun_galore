@@ -27,7 +27,6 @@ export const FINE_PRINT_PATHS = new Set([
   '/aml-policy',
   '/acceptable-use',
   '/refund-policy',
-  '/buyer-protection',
   '/data-deletion',
   '/cookies',
   '/legal',
@@ -38,7 +37,6 @@ export const FINE_PRINT_PATHS = new Set([
   '/regulated-categories',
   '/fees',
   '/about',
-  '/how-payments-work',
   '/firearms-compliance',
   '/members/regulated-items',
 ]);

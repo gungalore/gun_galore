@@ -43,7 +43,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: '/about', priority: 0.5, changeFrequency: 'monthly' },
     { url: '/faq', priority: 0.5, changeFrequency: 'monthly' },
     { url: '/how-selling-works', priority: 0.5, changeFrequency: 'monthly' },
-    { url: '/how-payments-work', priority: 0.5, changeFrequency: 'monthly' },
     { url: '/fees', priority: 0.5, changeFrequency: 'monthly' },
     { url: '/brands', priority: 0.5, changeFrequency: 'weekly' },
     { url: '/contact', priority: 0.4, changeFrequency: 'monthly' },
@@ -56,7 +55,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     '/privacy',
     '/aml-policy',
     '/refund-policy',
-    '/buyer-protection',
     '/data-deletion',
     '/acceptable-use',
     // '/firearms-compliance' deliberately ABSENT — it is the members-only

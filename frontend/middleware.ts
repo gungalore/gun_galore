@@ -121,7 +121,9 @@ const isPublicRoute = createRouteMatcher([
                    // every listing's condition chip, and it is the definition
                    // buyers are held to, so it must be readable signed-out
                    // (and crawlable) rather than 307ing to sign-in.
-  '/how-payments-work', // public "how payments work" explainer
+  '/how-payments-work', // legacy explainer — now a 308 to /terms#payments.
+                   // Kept public so an old bookmarked/signed-out URL reaches
+                   // the redirect instead of a bare sign-in screen.
   '/contact',      // public contact page
   '/support',      // public support page
   '/complaints',   // public complaints-handling page
@@ -152,8 +154,9 @@ const isPublicRoute = createRouteMatcher([
   '/aml-policy',
   '/acceptable-use',
   '/refund-policy',
-  '/buyer-protection',   // what buyer protection includes — linked from
-                         // /fees and checkout, must be reachable signed-out.
+  '/buyer-protection',   // legacy explainer — now a 308 to
+                         // /terms#buyer-protection. Kept public so an old
+                         // bookmarked/signed-out URL reaches the redirect.
   '/data-deletion',      // data-deletion instructions — Meta/POPIA require a
                          // public, sign-in-free page.
   // '/firearms-compliance' is members-only now and lives at

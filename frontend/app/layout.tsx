@@ -21,7 +21,6 @@ import { WishlistProvider } from '@/lib/use-wishlist';
 import { BugReportProvider } from '@/components/bug-report/bug-report-context';
 import { BugReportFab } from '@/components/bug-report/bug-report-fab';
 import { WelcomeBanner } from '@/components/welcome-banner';
-import { TrustGuaranteeModal } from '@/components/trust-guarantee-modal';
 import './globals.css';
 
 // Inline script that runs BEFORE first paint and:
@@ -436,10 +435,6 @@ export default function RootLayout({
           {/* SMS-arrival welcome banner â€” self-gates: renders only when the
               URL carries an active campaign key (?c=KEY), once per session. */}
           <WelcomeBanner />
-          {/* Safe Trade Guarantee pop-up â€” self-gates on the URL query
-              param (?why=alloutdoor / ?guarantee=true) and renders null
-              otherwise. Attach the param to any URL to open it. */}
-          <TrustGuaranteeModal />
           {/* Desktop-only hovering report button; hidden under 768px where the
               bottom tray tab carries the same action. */}
           <BugReportFab />

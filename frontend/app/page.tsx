@@ -273,7 +273,7 @@ export default async function HomePage({
 
               {/* ─── Bare landing page: no filter, no pagination ───
                   When the user lands on "/" with no filters, the page shows the
-                  "Good to know" panel, the recently-viewed rail, then the 24
+                  "Good to know" link strip, the recently-viewed rail, then the 24
                   newest listings — intentionally curated, not a filtered
                   browse. */}
               <section className="max-w-[var(--page-max)] mx-auto px-4 pt-5 pb-10 sm:py-10">
@@ -351,14 +351,15 @@ export default async function HomePage({
               </div>
             </div>
           )}
-          {/* Good to know — the selling / buying / fees answers, folded
-              away behind disclosure rows so the page above stays a
-              storefront. No JavaScript; native <details>. */}
+          {/* Good to know — one-tap links to the selling guide, FAQ, fees
+              and condition guide. The duplicate explanations that used to be
+              folded away here now live only on those pages (and the binding
+              rules in the Terms of Service). */}
           <HomeInfoPanel />
 
           {/* Recently viewed — self-hides if the user has < 2 entries
               on this device, so cold-start visitors don't see an empty
-              rail. Sits below the "Good to know" panel so returning
+              rail. Sits below the "Good to know" strip so returning
               users get a quick re-entry into things they were looking
               at. */}
           <RecentlyViewedRail />

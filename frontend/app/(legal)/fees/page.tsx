@@ -275,8 +275,8 @@ export default function FeesPage() {
         Before a seller&apos;s <strong>first</strong> payout, our team carries
         out a manual review of the seller&apos;s bank details against their
         verified identity. This is a person-checked review, not an
-        automated one. Full detail is on{' '}
-        <a href="/how-payments-work" style={{ color: 'var(--red)' }}>How payments work</a>.
+        automated one. Full detail is in our{' '}
+        <a href="/terms#payments" style={{ color: 'var(--red)' }}>Terms of Service</a>.
       </p>
 
       <h2>7. Delivery</h2>
@@ -313,9 +313,7 @@ export default function FeesPage() {
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
           {SUPPORT_EMAIL}
         </a>
-        {' '}or call {SUPPORT_PHONE_DISPLAY}. See also{' '}
-        <a href="/how-payments-work" style={{ color: 'var(--red)' }}>How payments work</a>
-        {' '}and our{' '}
+        {' '}or call {SUPPORT_PHONE_DISPLAY}. See also our{' '}
         <a href="/terms" style={{ color: 'var(--red)' }}>Terms of Service</a>.
       </p>
     </>

@@ -49,23 +49,20 @@ export default function AboutPage() {
 
       <h2>How it works</h2>
       <p>
-        Items that require a licence or permit are never couriered to a
-        residential address. Where the law requires it, they are handed
-        over through an authorised dealer and you collect them there
-        once the required paperwork is complete. For every order, the
-        seller is only paid after delivery is confirmed — or, where an
-        item is handed over through a dealer, after that hand-over is
-        verified — so you are not out of pocket if something goes
-        wrong. Everything else ships by courier, to your door or to a
-        pickup point near you, with tracking on the order page. Every
-        seller&apos;s identity is verified before they can be paid out.
-      </p>
-      <p>
-        For the full detail on how money moves, see{' '}
-        <a href="/how-payments-work" style={{ color: 'var(--red)' }}>
-          How payments work
+        The rules that govern a purchase — payment and settlement, delivery,
+        refunds and the additional terms that apply to regulated categories —
+        are set out in our{' '}
+        <a href="/terms" style={{ color: 'var(--red)' }}>
+          Terms of Service
         </a>
-        . Additional terms apply to regulated categories. See the{' '}
+        . The short version: the seller is paid once delivery is confirmed (or,
+        for an item handed over through a dealer, once that transfer is
+        verified), and every seller&apos;s identity is verified before they can
+        be paid out. What we charge is set out on our{' '}
+        <a href="/fees" style={{ color: 'var(--red)' }}>
+          Fees
+        </a>{' '}
+        page. Additional terms apply to regulated categories. See the{' '}
         <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
           Regulated Items Annex
         </a>

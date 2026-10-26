@@ -1,171 +1,20 @@
-﻿// How payments work — the canonical payments explainer. Pulls the story
-// that otherwise lives scattered across /how-selling-works, /faq and
-// /refund-policy into one page a buyer, a seller, or a due-diligence
-// reviewer can read end to end.
+﻿import { permanentRedirect, redirect } from 'next/navigation';
+
+// /how-payments-work — RETIRED EXPLAINER.
 //
-// Mapped to the actual implementation: payment collected at checkout by the
-// licensed PSP, seller paid on confirm-delivery / verified dealer transfer
-// (SAPS 534 for firearms), manual bank-detail review before a seller is
-// first paid, commission-only revenue.
+// The substance of this page (payment collected at checkout, deferred
+// settlement, the manual bank-detail review before a first payout, the fee
+// direction and the refund/dispute route) is the binding text in the Terms of
+// Service, paragraphs 7, 8, 9 and 11. Keeping a second copy here meant two
+// documents to keep in step, and the copy had already drifted from the Terms.
 //
-//   PUBLIC PAGE — the regulated-category detail lives in the members-only
-//   Regulated Items Annex (/members/regulated-items). Keep the copy here
-//   generic ("items that require a licence or permit").
-//
-// House rules baked in:
-//   NEVER name a payment provider here until a contract is signed (TPPP).
-//   NEVER use the word "escrow", and — while the TPPP application is
-//   pending — never say ALL Outdoor HOLDS funds. The sanctioned framing is
-//   settlement timing: payment is COLLECTED by the licensed PSP; the seller
-//   is PAID once delivery is confirmed. See memory feedback_no_escrow_term.
-//   NEVER claim automated bank-account verification — it is a MANUAL review.
-
-import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
-
-import { LegalDocHeader } from '../legal-frame';
-
-export const metadata = {
-  title: 'How Payments Work',
-  description:
-    'How checkout, delivery confirmation and seller payment work on ALL Outdoor — and how regulated items, refunds and disputes are handled.',
-};
-
-export default function HowPaymentsWorkPage() {
-  return (
-    <>
-      <LegalDocHeader
-        title="How payments work"
-        lastUpdated="Effective 15 August 2026"
-      />
-
-      <p>
-        When you buy something on ALL Outdoor, the seller is{' '}
-        <strong>only paid once the sale has safely completed</strong>. Your
-        payment is collected at checkout by our appointed payment service
-        provider, and the seller receives their proceeds after delivery is
-        confirmed. That single step is what protects both sides of every
-        sale — the buyer isn't paying a stranger directly, and the seller
-        knows the sale is fully paid before they part with the goods.
-      </p>
-      <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 24 }}>
-        Card payments are launching soon. This page explains how a payment
-        flows once you check out; you can browse and list in the meantime.
-      </p>
-
-      <h2>1. The flow, step by step</h2>
-      {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
-      <p>
-        Payments are handled by our appointed third-party payment service
-        provider (a licensed South African payment service provider). Here
-        is what happens on an ordinary couriered sale:
-      </p>
-      <ol>
-        <li>
-          <strong>The buyer pays.</strong> At checkout the payment is
-          collected by the payment service provider and the order is locked
-          in. It is <em>not</em> paid straight to the seller.
-        </li>
-        <li>
-          <strong>The seller dispatches.</strong> The seller confirms
-          dispatch, which starts the delivery clock. For
-          courier orders we book the waybill and share tracking.
-        </li>
-        <li>
-          <strong>The buyer receives and inspects the item.</strong>
-        </li>
-        <li>
-          <strong>Delivery is confirmed.</strong> Once the buyer confirms
-          delivery (or the item is confirmed delivered), the sale is
-          complete.
-        </li>
-        <li>
-          <strong>The seller is paid.</strong> The seller's proceeds are
-          paid into the seller's bank account. On a{' '}
-          <strong>Buy Now</strong> sale that is the seller's full asking
-          price — the buyer pays the Platform Fee on top at checkout, so
-          nothing comes off what the seller receives. On an{' '}
-          <strong>auction</strong> the buyer pays a 5% Platform Fee on the
-          hammer plus delivery, and the seller pays a 5% share from the hammer.
-        </li>
-      </ol>
-
-      <h2>2. Items that require a licence or permit are held to a stricter step</h2>
-      <p>
-        An item that requires a licence or permit is never shipped directly
-        between private individuals. It is handed over through a licensed
-        dealer, and both buyer and seller must hold every authorisation the
-        relevant authority requires for that category. The seller is only
-        paid once the{' '}
-        <strong>transfer is verified as complete</strong> — not merely when
-        the parcel is handed over. Additional terms apply to regulated categories. See the{' '}
-        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>
-        , available to registered members.
-      </p>
-
-      <h2>3. How sellers are paid</h2>
-      <p>
-        Sellers are paid into their own South African bank account. Before
-        a seller is paid for the <strong>first</strong> time, our team
-        carries out a <strong>manual review</strong> of the seller's bank
-        details against their verified identity. This is a person-checked
-        review — it is{' '}
-        <strong>not</strong> an automated bank-account check. It exists to
-        make sure money is only ever paid to the verified account holder.
-      </p>
-      <p>
-        ALL Outdoor earns a <strong>Platform Fee</strong> on completed sales
-        and nothing more — no spread, and no interest earned on money that
-        is not ours. On a Buy Now listing the seller receives their full asking
-        price and the buyer pays the Platform Fee at checkout; on an auction
-        the buyer pays 5% on the hammer plus delivery and the seller pays 5%
-        of the hammer. Delivery is quoted separately. Both numbers — what the
-        seller receives and what the buyer will pay — are shown before a
-        listing is published and again at checkout. The full fee schedule is on
-        our <a href="/fees" style={{ color: 'var(--red)' }}>Fees</a> page.
-      </p>
-
-      <h2>4. Refunds</h2>
-      <p>
-        Because the seller is only paid after delivery is confirmed, a
-        refund before then is straightforward: the amount is returned to
-        the buyer's original payment method and nothing is paid to the
-        seller. When and how refunds happen — including your
-        statutory rights under the Consumer Protection Act — is set out in
-        full in our{' '}
-        <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>.
-      </p>
-
-      <h2>5. Disputes</h2>
-      <p>
-        If an item never arrives, arrives damaged, or is not what was
-        listed, raise a dispute on the transaction page{' '}
-        <em>before</em> confirming delivery. Confirming delivery triggers
-        payment to the seller and is final. While a dispute is open the
-        seller is not paid, and our team reviews it. The dispute timeline and
-        escalation routes are covered in the{' '}
-        <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>
-        {' '}and our{' '}
-        <a href="/complaints" style={{ color: 'var(--red)' }}>Complaints procedure</a>.
-      </p>
-
-      <h2>6. Where we operate</h2>
-      <p>
-        ALL Outdoor serves <strong>South Africa only</strong>, and all
-        payments are made in <strong>South African Rand (ZAR)</strong>.
-        We do not support cross-border payments or other currencies.
-      </p>
-
-      <h2>7. Questions</h2>
-      <p>
-        For anything about payments, email{' '}
-        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
-          {SUPPORT_EMAIL}
-        </a>
-        {' '}or call {SUPPORT_PHONE_DISPLAY}. See also our{' '}
-        <a href="/terms" style={{ color: 'var(--red)' }}>Terms of Service</a>
-        {' '}and{' '}
-        <a href="/legal" style={{ color: 'var(--red)' }}>Legal &amp; Company Information</a>.
-      </p>
-    </>
-  );
+// Kept as a 308 rather than deleted because the URL is in the footer of older
+// deployments, in outbound emails and in the sitemap history.
+export default function HowPaymentsWorkRedirect(): never {
+  // permanentRedirect issues a 308 so search engines transfer and then drop the
+  // old URL; fall back to a 307 on older Next runtimes.
+  if (typeof permanentRedirect === 'function') {
+    permanentRedirect('/terms#payments');
+  }
+  redirect('/terms#payments');
 }
