@@ -83,7 +83,7 @@ import {
 } from './motivation-fields';
 import { resolveSportingPurpose, s15Purpose } from './motivation-purpose';
 import { packableIncidents } from './motivation-incident-filter';
-import { displayCalibre } from './saps-vocabulary';
+import { displayAction, displayCalibre } from './saps-vocabulary';
 import {
   ownedFirearmCardTypes,
   ownedFirearmSections,
@@ -1390,21 +1390,28 @@ export class MotivationGenerationService {
         answers: {
           ...packAnswers,
           firearm_calibre: displayCalibre(packAnswers.firearm_calibre),
+          /**
+           * ⚠️ AND THE ACTION, FOR THE SAME REASON AND TO STOP A BLEND.
+           * "Semi-automatic (self-loading)" is a choice label carrying two
+           * terms for one thing; handed over verbatim the model wrote
+           * "semi-loading" three times in one pack. See displayAction.
+           */
+          firearm_action: displayAction(packAnswers.firearm_action),
         },
         arsenal,
         intendedUses,
         draftedReason,
         /**
-         * ⚠️ `calibre_fact_sheet` IS THE ONLY BASIS FOR THE S13 "COMMON
-         * SERVICE CALIBRE" CLAIM. The brief may assert readily available
-         * ammunition ONLY where we actually hold a dimension sheet for this
-         * calibre; for a scarce calibre (6.35mm, .32 S&W) the claim is false,
-         * and the fact tells the writer which case it is in.
+         * ⚠️ THE "COMMON SERVICE CALIBRE" FACT IS GONE WITH THE CLAIM IT
+         * SUPPORTED. It read `calibre_fact_sheet: 'held'` whenever The Bench
+         * held a dimension sheet for the round, and the S13 brief treated that
+         * as licence to say ammunition is readily available — which is true of
+         * 9mm Parabellum and false of 6.35mm Browning, a round nobody stocks
+         * for practice. A dimension sheet proves the cartridge is
+         * standardised; it proves nothing about what is on a dealer's shelf,
+         * and the document may not assert what the pack cannot establish.
          */
-        derived: {
-          ...this.deriveFacts(answers),
-          ...(cartridge ? { calibre_fact_sheet: 'held' } : {}),
-        },
+        derived: { ...this.deriveFacts(answers) },
         // Only when there is genuinely an overlap. Passing a note otherwise
         // would have the document argue against a problem it does not have.
         overlapNote: overlap.writerNote ?? undefined,

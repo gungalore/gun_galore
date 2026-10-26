@@ -93,15 +93,25 @@ describe('the self-defence scenarios', () => {
   it('picks the rural, communal or driveway scene from the premises', () => {
     const titles = buildPlateSpecs({
       licenceType: S13,
-      answers: { premises_type: 'rural smallholding' },
+      answers: { residence_type: 'Smallholding' },
     }).map((p) => p.title);
     expect(titles).toContain('A rural perimeter');
 
     const flat = buildPlateSpecs({
       licenceType: S13,
-      answers: { premises_type: 'apartment' },
+      answers: { residence_type: 'Flat' },
     }).map((p) => p.title);
     expect(flat).toContain('Communal access');
+  });
+
+  it('⚠️ still reads the retired premises key, for a stored draft', () => {
+    // `premises_type` is not in the registry any more; a draft saved before the
+    // rename still carries it, and its answer is still the truth about the home.
+    const titles = buildPlateSpecs({
+      licenceType: S13,
+      answers: { premises_type: 'rural smallholding' },
+    }).map((p) => p.title);
+    expect(titles).toContain('A rural perimeter');
   });
 
   it('⚠️ does not hand an urban premises the rural road and perimeter', () => {
@@ -109,11 +119,18 @@ describe('the self-defence scenarios', () => {
     // pages argued "An unlit regional road" and "A rural perimeter".
     const titles = buildPlateSpecs({
       licenceType: S13,
-      answers: { premises_type: 'townhouse complex' },
+      answers: { residence_type: 'Townhouse or complex' },
     }).map((p) => p.title);
     expect(titles).not.toContain('A rural perimeter');
     expect(titles).not.toContain('An unlit regional road');
     expect(titles).toContain('The driveway gate');
+    /**
+     * ⚠️ AND IT LEADS THE PAGE. The matcher read `premises_type`, which the
+     * wizard never asks, so the townhouse matched nothing and the exhibits fell
+     * through to the urban DEFAULTS — whose first scene is the communal
+     * entrance, pictured as an apartment block with numbered parking bays.
+     */
+    expect(titles[0]).toBe('The driveway gate');
   });
 
   it('⚠️ NEVER NAMES A WEAPON, A PERSON OR AN ACT IN THE PROMPT', () => {

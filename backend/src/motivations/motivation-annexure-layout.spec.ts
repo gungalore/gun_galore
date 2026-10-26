@@ -3,6 +3,7 @@ import {
   CAPTION_H,
   GAP,
   captionFor,
+  compactCaption,
   imageSize,
   isEmbeddable,
   planAnnexurePages,
@@ -186,6 +187,49 @@ describe('planSafePhotoPages', () => {
     expect(pages).toHaveLength(1);
     expect(pages[0]).toHaveLength(4);
     expect(new Set(pages[0].map((p) => `${p.x}:${p.y}`)).size).toBe(4);
+  });
+
+  it('⚠️ GIVES EACH PHOTOGRAPH ITS OWN CAPTION COLUMN', () => {
+    // Both cells of a row share one caption y, so a caption drawn at the page
+    // margin printed the LEFT cell's caption twice — overpressed on itself —
+    // and left the right cell with no caption at all. MO000100, page 20.
+    const pages = planSafePhotoPages(
+      Array.from({ length: 4 }, (_, index) =>
+        card({ index: index + 1, total: 4, label: 'Photographs of the safe' }),
+      ),
+      BOX,
+    );
+    const page = pages[0];
+    const row = page.filter((p) => p.captionY === page[0].captionY);
+    expect(row.length).toBe(2);
+    // Two captions on one line, each inside the half of the page it labels.
+    expect(row[0].captionX).toBeCloseTo(BOX.x, 6);
+    expect(row[1].captionX).toBeGreaterThan(BOX.x + BOX.width / 2);
+    for (const p of row) {
+      expect(p.captionW).toBeLessThan(BOX.width / 2 + 0.01);
+      expect(p.captionX + p.captionW).toBeLessThanOrEqual(BOX.x + BOX.width + 1e-6);
+    }
+  });
+
+  it('⚠️ AN ORDINARY COPY CAPTIONS THE FULL CONTENT WIDTH', () => {
+    const [page] = planAnnexurePages([a4()], BOX);
+    expect(page[0].captionX).toBeCloseTo(BOX.x, 6);
+    expect(page[0].captionW).toBeCloseTo(BOX.width, 6);
+  });
+});
+
+describe('compactCaption', () => {
+  it('⚠️ SAYS NOTHING WHEN THE HEADING ABOVE ALREADY NAMES IT', () => {
+    // A one-item annexure prints "Annexure A — Copy of the applicant's identity
+    // document" as its heading; the caption used to repeat the identical
+    // sentence directly below it.
+    expect(compactCaption(card())).toBe('');
+  });
+
+  it('keeps the position when one letter has several copies', () => {
+    expect(compactCaption(card({ index: 2, total: 3 }))).toBe(
+      'Annexure A (2 of 3)',
+    );
   });
 });
 

@@ -23,7 +23,7 @@ import { QuarryPlateService } from './quarry-plate.service';
 import { MotivationPlatesService } from './motivation-plates.service';
 import { purposeFor } from './motivation-plates';
 
-import { displayCalibre } from './saps-vocabulary';
+import { displayAction, displayCalibre } from './saps-vocabulary';
 import { asLayout } from './motivation-pdf-layouts';
 import { consentFormFor } from './motivation-consent-statement';
 import {
@@ -315,7 +315,19 @@ export function existingFirearms(
 }
 
 /**
- * "Howa 1500 bolt-action rifle, serial B742119" — the firearm, named once.
+ * "CZ 6.35mm Browning, serial 81815" — the firearm, named once.
+ *
+ * ⚠️ MAKE, MODEL, CALIBRE AND SERIAL, IN THAT ORDER. It was make + TYPE +
+ * serial, so the PAJA letter read "for CZ Handgun, serial 81815" — a firearm
+ * identified by the word every firearm on the form shares, with the two facts
+ * that actually distinguish it (the model and the cartridge) missing. A request
+ * to the Registrar that cannot name the firearm it is about is a request about
+ * a category.
+ *
+ * ⚠️ AND A FIELD THE CARD PRINTS AS "NONE" STAYS OUT OF THE LINE. The make and
+ * model are joined for prose; "CZ NONE" is a licence card's placeholder read
+ * aloud, not a model name. The 271 and the cover still print NONE verbatim —
+ * this is only the running sentence, where the word is noise.
  *
  * Extracted because three surfaces need the identical string and were about
  * to hold three copies of it: the running footer of every page, the cover's
@@ -324,12 +336,30 @@ export function existingFirearms(
  * inconsistency a reviewer notices and nobody testing would.
  */
 function firearmLine(answers: Record<string, string>): string | undefined {
-  const base = [answers.firearm_make, answers.firearm_type]
-    .map((v) => (v ?? '').trim())
+  const clean = (v: string | undefined) =>
+    /^(none|n\/?a|-+)$/i.test((v ?? '').trim()) ? '' : (v ?? '').trim();
+  const makeModel = [clean(answers.firearm_make), clean(answers.firearm_model)]
     .filter(Boolean)
     .join(' ');
-  if (!base) return undefined;
-  const serial = answers.firearm_serial?.trim();
+  const calibre = displayCalibre(clean(answers.firearm_calibre));
+  const base = [
+    makeModel,
+    // ⚠️ NOT TWICE. "Browning" is both a model and part of the calibre's name
+    // ("6.35mm Browning"); a line reading "CZ Browning 6.35mm Browning" is the
+    // same fact said twice.
+    calibre && !makeModel.toLowerCase().includes(calibre.toLowerCase())
+      ? calibre
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  if (!base) {
+    // No make and no calibre is still not nothing: a serial with no firearm
+    // named is better than dropping the identification entirely.
+    const onlySerial = clean(answers.firearm_serial);
+    return onlySerial ? `firearm, serial ${onlySerial}` : undefined;
+  }
+  const serial = clean(answers.firearm_serial);
   return serial ? `${base}, serial ${serial}` : base;
 }
 
@@ -428,7 +458,13 @@ function coverParticulars(
   generatedAt: Date,
 ): [string, string][] {
   const v = (k: string) => (answers[k] ?? '').trim();
-  const typeAndAction = [v('firearm_type'), v('firearm_action')]
+  /**
+   * ⚠️ THE ACTION IS NOT A CHOICE LABEL ON PAPER. "Semi-automatic
+   * (self-loading)" on the cover's identification row reads as two different
+   * things listed under one heading; the SAPS 271's own word is what the row
+   * should say. See displayAction.
+   */
+  const typeAndAction = [v('firearm_type'), displayAction(v('firearm_action'))]
     .filter(Boolean)
     .join(', ');
   const rows: [string, string][] = [];
@@ -1854,8 +1890,31 @@ export class MotivationRenderService {
       seen.add(key);
       if (out.length >= 3) break;
       try {
-        const f = await this.crimeStats.precinct(name, province);
-        if (!f) continue;
+        /**
+         * ⚠️ A PROVINCE THAT DOES NOT MATCH MUST NOT COST THE TABLE. The
+         * figures were cited in the body from a lookup that resolved, and the
+         * render then asks the same question with the same answer — so a table
+         * that silently disappears between generation and download is either
+         * a changed station answer or a province string that no longer matches
+         * the workbook ("Western Cape" against "WC"). The name alone is enough
+         * to resolve a station, so a province-filtered miss retries without it
+         * rather than printing a page of prose citing figures with no table
+         * under them.
+         */
+        const f =
+          (await this.crimeStats.precinct(name, province)) ??
+          (province ? await this.crimeStats.precinct(name) : null);
+        if (!f) {
+          // ⚠️ THE HOME STATION IS THE LOAD-BEARING ONE and the one a reviewer
+          // checks against the address; a travelled area the workbook cannot
+          // place is the member's tick, not a defect, so it stays quiet.
+          if (name === home) {
+            this.logger.warn(
+              `Precinct table: no SAPS figures for the home station "${name}"${province ? ` in ${province}` : ''} — the pack prints without its table`,
+            );
+          }
+          continue;
+        }
         out.push({
           station: `${f.station.name} — ${f.station.district}, ${f.station.province}`,
           source: `SAPS quarterly crime statistics, ${f.release.periodLabel} release`,

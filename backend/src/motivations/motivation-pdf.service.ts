@@ -3,6 +3,7 @@ import PDFDocument from 'pdfkit';
 import {
   GAP,
   captionFor,
+  compactCaption,
   planAnnexurePages,
   planSafePhotoPages,
 } from './motivation-annexure-layout';
@@ -22,6 +23,7 @@ import { coverMasthead, edgeBar, EDGE_BAR_W } from './motivation-pdf-cover';
 import { closingRule, drawMark, type MarkName } from './motivation-pdf-marks';
 import * as K from './motivation-pdf-chrome';
 import { renderStatementForm } from './motivation-pdf-form';
+import { purposeFallback } from './motivation-suitability-fallback';
 import type { CharacterStatementForm } from './motivation-character-statement';
 import {
   LAYOUTS,
@@ -1390,7 +1392,49 @@ export function runningLabelFor(heading: string): string {
    */
   const annexure = /^Annexure\s+([A-Za-z])\b/.exec(title);
   if (annexure) return `Annexure ${annexure[1].toUpperCase()}`;
-  return RUNNING_LABELS[title] ?? title;
+  return RUNNING_LABELS_BY_UPPER.get(title.toUpperCase()) ?? title;
+}
+
+/**
+ * RUNNING_LABELS keyed in upper case.
+ *
+ * ⚠️ THE LOOKUP IS CASE-INSENSITIVE, AND IT WAS NOT. The PAJA letter's title
+ * arrives as "REQUEST FOR PRIOR NOTICE AND WRITTEN REASONS" — its own heading
+ * style, already shouting — while RUNNING_LABELS is keyed in sentence case. A
+ * case-sensitive lookup therefore missed, fell back to the full title, and every
+ * page of the letter carried "REQUEST FOR PRIOR NOTICE AND WRITTEN REASO…"
+ * wrapped across two lines of the running banner.
+ */
+const RUNNING_LABELS_BY_UPPER = new Map(
+  Object.entries(RUNNING_LABELS).map(([k, v]) => [k.toUpperCase(), v]),
+);
+
+/**
+ * The heading numbers the pack did NOT print, so the contents can name them.
+ *
+ * ⚠️ DERIVED, BECAUSE THE HARD-CODED LIST WAS WRONG ON THIS PACK. The note read
+ * "A gap — 2, 4 or 10 — means that part is not required" on a section 13
+ * application, whose gaps are 8 and 10 and which prints 2 and 4 at the top of
+ * the page. A note explaining a gap that is not there, and omitting the ones
+ * that are, reads as a template nobody checked.
+ *
+ * The skeleton's numbers are the book's own twelve (motivation-structure.ts)
+ * and do not re-sequence when a section is omitted, so the gaps are simply the
+ * numbers between 1 and 12 that never appeared.
+ */
+export function gapNumbers(printed: ReadonlySet<string>): number[] {
+  const out: number[] = [];
+  for (let n = 1; n <= 12; n++) {
+    if (!printed.has(String(n))) out.push(n);
+  }
+  return out;
+}
+
+/** "8 and 10", for the contents note. Empty string when there are no gaps. */
+function gapListText(numbers: readonly number[]): string {
+  if (!numbers.length) return '';
+  if (numbers.length === 1) return String(numbers[0]);
+  return `${numbers.slice(0, -1).join(', ')} and ${numbers[numbers.length - 1]}`;
 }
 
 /** Millimetres, for the section spacing. Same unit the handoff is written in. */
@@ -3173,78 +3217,6 @@ export class MotivationPdfService {
     ];
 
     /**
-     * The suitability sheet when the research article is absent.
-     *
-     * ⚠️ THE PAGE IS AN ARGUMENT, NOT A SPEC SHEET. Operator, 2026-10-24:
-     * "that calibre needs to be matched to suit the purpose. I don't care about
-     * the specs and velocity. We need to explain to the CFR and DFO why this
-     * calibre and gun is perfect for the purpose we are getting it for." So the
-     * fallback argues the match to the purpose — naming the exhibits and the
-     * calibre — and prints no dimensions, velocity or energy figures.
-     */
-    const purposeFallback = (): string[] => {
-      const notes = input.purposeNotes ?? [];
-      const titles = notes.map((n) => n.split(':')[0]?.trim()).filter(Boolean);
-      const calibre =
-        input.suitabilitySheet?.label
-          ?.replace(/^Why\s+/i, '')
-          .replace(/\s+suits this purpose\.?$/i, '')
-          .trim() || 'the cartridge applied for';
-      const purpose = input.purposeKind;
-      const exhibits = titles.length
-        ? `- The purpose is the one the exhibits set out: ${titles.join(', ')}.`
-        : '';
-
-      if (purpose === 'self_defence') {
-        /**
-         * ⚠️ THE ARGUMENT FOLLOWS THE CLASS ON THE COVER. Section 13 admits a
-         * handgun or a non-semi-automatic shotgun; "a handgun can be carried on
-         * the person" is the strongest sentence for one and false for the other.
-         */
-        const carries = /handgun|pistol|revolver/i.test(
-          input.firearmLine ?? '',
-        );
-        return [
-          exhibits,
-          '- Each of those is a sudden encounter at close quarters in which the applicant is alone and cannot withdraw — at a vehicle door, a gate, a passage or inside the home.',
-          carries
-            ? `- The firearm applied for is a handgun in ${calibre}. A handgun is the class of firearm that can be carried on the person through the working day and brought into use in the confined space where those encounters happen.`
-            : `- The firearm applied for is chambered in ${calibre}. It is the class of firearm kept at hand at the place the risk occurs, and it is used at the short distance at which those encounters happen.`,
-          ...(carries
-            ? [
-                "- A rifle or a shotgun cannot be carried on the person during the applicant's work and cannot be brought to bear in a vehicle, a doorway or a passage. It does not meet this purpose, however capable it is at distance.",
-              ]
-            : []),
-          `- The calibre is the round the firearm is chambered for. The applicant has chosen the firearm and calibre together for the use described: a combination he can keep secure and bring into use at the moment the need arises.`,
-        ].filter(Boolean);
-      }
-
-      if (purpose === 'hunting') {
-        return [
-          exhibits,
-          `- The cartridge applied for, ${calibre}, is matched to that class of game and to the ranges and conditions at which it is taken. The rifle is the firearm the applicant will carry in that terrain.`,
-          '- The choice is the fit between the quarry, the range and the conditions — not a general-purpose calibre used for everything.',
-          '- The firearm and calibre are the combination the applicant will use for this hunting, and the purpose exhibits are the quarry that use is for.',
-        ].filter(Boolean);
-      }
-
-      if (purpose === 'sport') {
-        return [
-          exhibits,
-          `- The firearm applied for, chambered in ${calibre}, is the combination the applicant will use in those courses of fire.`,
-          '- The choice is the fit between the course of fire, the firearm the rules admit and the way the applicant will shoot it — not a general-purpose firearm used for everything.',
-          '- The purpose exhibits are the courses that use is for, and the firearm and calibre are chosen to match them.',
-        ].filter(Boolean);
-      }
-
-      return [
-        exhibits,
-        '- The firearm and calibre applied for are chosen for the purpose set out above, and the pages that follow explain that use.',
-        `- The cartridge applied for is ${calibre}; it is the round the firearm is chambered for, and the applicant has chosen the two together for the use described.`,
-      ].filter(Boolean);
-    };
-
-    /**
      * The dimensions block, under the picture in the right column.
      *
      * ⚠️ IT FILLS THE COLUMN THE BULLETS DO NOT REACH. Operator, 2026-10-16,
@@ -3693,7 +3665,12 @@ export class MotivationPdfService {
           : [];
       const source = researched
         ? [...lead, ...researched]
-        : purposeFallback();
+        : purposeFallback({
+            purposeKind: input.purposeKind,
+            purposeNotes: input.purposeNotes,
+            suitabilityLabel: input.suitabilitySheet?.label,
+            firearmLine: input.firearmLine,
+          });
       const paras: string[] = [];
       for (const raw of source) {
         if (isBulletLine(raw)) {
@@ -5231,7 +5208,8 @@ export class MotivationPdfService {
       for (const page of pages) {
         doc.addPage();
         const opening = page[0]?.letter;
-        if (opening && !placedLetters.has(opening)) {
+        const drawsHeading = !!opening && !placedLetters.has(opening);
+        if (opening && drawsHeading) {
           // ⚠️ THE HEADING GOES ON THE CONTENT PAGE, NOT A DIVIDER BEFORE IT.
           // The planner reserved HEADING_H at the top of this page, so the
           // copies below sit clear of it. See drawAnnexureHeading.
@@ -5247,14 +5225,30 @@ export class MotivationPdfService {
         for (const place of page) {
           const src = sourceByBytes.get(place.bytes!);
           if (!src) continue;
-          doc
-            .font(F.sansBold)
-            .fontSize(9.5)
-            .fillColor(C.ink)
-            .text(captionFor(place), MARGIN, place.captionY, {
-              width: contentWidth,
-              lineBreak: false,
-            });
+          /**
+           * ⚠️ THE CAPTION SITS IN ITS OWN COLUMN, NEVER AT THE PAGE MARGIN.
+           * A 2x2 safe sheet puts two copies on one caption line; drawing both
+           * at MARGIN printed the left cell's caption twice, on top of itself,
+           * and left the right cell with none. See PlacedImage.captionX.
+           *
+           * ⚠️ AND THE HEADERED PAGE DOES NOT REPEAT ITS OWN HEADING. The
+           * letter was just printed above the copy, so the full caption below
+           * it was the identical sentence a second time. See compactCaption.
+           */
+          const caption =
+            drawsHeading && place.letter === opening
+              ? compactCaption(place)
+              : captionFor(place);
+          if (caption) {
+            doc
+              .font(F.sansBold)
+              .fontSize(9.5)
+              .fillColor(C.ink)
+              .text(caption, place.captionX, place.captionY, {
+                width: place.captionW,
+                lineBreak: false,
+              });
+          }
           try {
             doc.image(src.bytes, place.x, place.y, {
               width: place.w,
@@ -5271,9 +5265,9 @@ export class MotivationPdfService {
               .fillColor(C.mut)
               .text(
                 'This copy could not be printed — bring your own.',
-                MARGIN,
+                place.captionX,
                 place.y,
-                { width: contentWidth },
+                { width: place.captionW },
               );
           }
           // A hairline BETWEEN two copies on one page, so they read as two
@@ -5703,43 +5697,55 @@ export class MotivationPdfService {
         doc.y = y + K.px(13.5) * 1.15 + K.mm(3);
       }
 
-      // ⚠️ THE BACK MATTER IS NAMED HERE, NOT LISTED. The take-with-you sheets
-      // are deliberately outside the index, and a contents page that simply
-      // stops implies there is nothing after the last line.
-      doc.y += K.mm(4);
-      doc
-        .font(B.bodyItalic)
-        .fontSize(K.px(11.5))
-        .fillColor(C.sub)
-        .text(
-          'The last sheets are yours rather than the Registrar’s: a checklist ' +
-            'of what to take with you to the police station.',
-          MARGIN,
-          doc.y,
-          { width: contentWidth, lineGap: K.px(2) },
-        );
+      /**
+       * ⚠️ THE BACK MATTER IS NAMED ONLY WHEN IT EXISTS. The take-with-you
+       * sheets were removed from the rendered pack on 2026-10-15 (operator:
+       * "remove the before you go pages at the end"), so this sentence was
+       * promising a checklist the last page does not carry — on the page a
+       * reviewer reads first.
+       */
+      if ((input.takeWithYou?.length ?? 0) > 0) {
+        doc.y += K.mm(4);
+        doc
+          .font(B.bodyItalic)
+          .fontSize(K.px(11.5))
+          .fillColor(C.sub)
+          .text(
+            'The last sheets are yours rather than the Registrar’s: a checklist ' +
+              'of what to take with you to the police station.',
+            MARGIN,
+            doc.y,
+            { width: contentWidth, lineGap: K.px(2) },
+          );
+      }
       /**
        * ⚠️ THE GAPS ARE DELIBERATE, AND THE CONTENTS NEVER SAID SO. The headings
        * are numbered to the SAPS 271's own sections and do NOT re-sequence when a
        * section is omitted (motivation-structure.ts). Read cold, "1 · Introduction
        * … 3 · My hunting … 11 ·" looks like pages were lost. The line below is the
        * explanation the reader would otherwise have to guess at — and it is what
-       * lets the gaps do their job (showing at a glance that heading 2, 4 or 10
-       * does not apply) instead of reading as an error.
+       * lets the gaps do their job (showing at a glance that a heading does not
+       * apply) instead of reading as an error.
+       *
+       * ⚠️ THE NUMBERS ARE THIS PACK'S OWN. See gapNumbers(): the fixed
+       * "2, 4 or 10" was on a document that prints 2 and 4 and omits 8 and 10.
        */
-      doc.y += K.mm(4);
-      doc
-        .font(F.sans)
-        .fontSize(K.px(9.5))
-        .fillColor(C.mut)
-        .text(
-          'Headings are numbered to the SAPS 271 and do not renumber when a part ' +
-            'does not apply. A gap — 2, 4 or 10 — means that part is not required ' +
-            'for this application.',
-          MARGIN,
-          doc.y,
-          { width: contentWidth, lineGap: K.px(2) },
-        );
+      const gaps = gapListText(gapNumbers(printedNumbers));
+      if (gaps) {
+        doc.y += K.mm(4);
+        doc
+          .font(F.sans)
+          .fontSize(K.px(9.5))
+          .fillColor(C.mut)
+          .text(
+            'Headings are numbered to the SAPS 271 and do not renumber when a part ' +
+              `does not apply. A gap — ${gaps} — means that part is not required ` +
+              'for this application.',
+            MARGIN,
+            doc.y,
+            { width: contentWidth, lineGap: K.px(2) },
+          );
+      }
       doc.x = MARGIN;
     }
 

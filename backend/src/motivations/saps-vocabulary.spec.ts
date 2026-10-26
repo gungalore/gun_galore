@@ -1,4 +1,4 @@
-import { displayCalibre } from './saps-vocabulary';
+import { displayAction, displayCalibre } from './saps-vocabulary';
 
 // ────────────────────────────────────────────────────────────────────
 // HOW A CALIBRE IS PRINTED.
@@ -38,5 +38,39 @@ describe('displayCalibre', () => {
     expect(displayCalibre('')).toBe('');
     expect(displayCalibre(undefined)).toBe('');
     expect(displayCalibre(null)).toBe('');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// HOW AN ACTION IS PRINTED.
+//
+// The choice label carries two terms for one thing — "Semi-automatic
+// (self-loading)" — and handed over verbatim a writer blended them into
+// "semi-loading" three times in MO000100.
+// ────────────────────────────────────────────────────────────────────
+describe('displayAction', () => {
+  it('unwraps the parenthetical the wizard stores', () => {
+    expect(displayAction('Semi-automatic (self-loading)')).toBe(
+      'Semi-automatic',
+    );
+  });
+
+  it('leaves every other action exactly as it is', () => {
+    for (const a of [
+      'Bolt action',
+      'Lever action',
+      'Pump action',
+      'Single shot',
+      'Revolver',
+      'Break action',
+    ]) {
+      expect(displayAction(a)).toBe(a);
+    }
+  });
+
+  it('does not invent an action for nothing', () => {
+    expect(displayAction('')).toBe('');
+    expect(displayAction(undefined)).toBe('');
+    expect(displayAction(null)).toBe('');
   });
 });

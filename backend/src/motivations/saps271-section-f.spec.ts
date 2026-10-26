@@ -67,6 +67,21 @@ describe('section F', () => {
     expect(out.ticks.filter((t) => t.startsWith('f_'))).toEqual([]);
   });
 
+  it('⚠️ NAMES THE ONE BOX A PRIVATE SALE STILL NEEDS A PEN FOR', () => {
+    /**
+     * The tick is the applicant's own true statement about the route; the
+     * particulars below it are the current owner's to write and sign. So the
+     * form goes in with a ticked block and nobody named under it — which is
+     * correct, and is also the one state a DFO has to query. MO000100 shipped
+     * exactly that with nothing anywhere saying why.
+     */
+    const out = build({ licenceType: S16, answers: {} });
+    expect(out.leftBlank).toContainEqual({
+      field: 'section_f_current_owner',
+      because: expect.stringContaining('section F'),
+    });
+  });
+
   it('marks the owner as a private person and fills what he gave', () => {
     const out = build({ licenceType: S16, answers: {}, seller: SELLER });
 

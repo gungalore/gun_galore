@@ -107,6 +107,28 @@ export function displayCalibre(raw: string | undefined | null): string {
 }
 
 /**
+ * The action as a sentence or a form row should print it.
+ *
+ * ⚠️ THE WIZARD'S VALUE IS A CHOICE, NOT PROSE. `firearm_action` is one of
+ * seven choice strings, and the first is "Semi-automatic (self-loading)" —
+ * written that way so the SAPS 271's own word leads the label. Handed to a
+ * writer, to the cover or to a footer, the parenthetical is a second term
+ * beside the first, and the model duly blended them into "semi-loading" in
+ * three places on one pack.
+ *
+ * ⚠️ IT ONLY UNWRAPS, AND ONLY WHERE THE PARENTHETICAL IS A SYNONYM. Every
+ * other action ("Bolt action", "Revolver", …) is returned untouched, because
+ * there is no bracket to remove and nothing to choose between. It never
+ * rewords an action into a different one — that is `classifyAction`'s job.
+ */
+export function displayAction(raw: string | undefined | null): string {
+  const v = (raw ?? '').trim();
+  if (!v) return '';
+  const m = /^Semi-automatic\s*\(\s*self-loading\s*\)$/i.exec(v);
+  return m ? 'Semi-automatic' : v;
+}
+
+/**
  * Every way the SAME calibre may honestly be written in the document.
  *
  * ⚠️ MO000074 FAILED THE WHOLE PACK OVER THIS, AND THE WRITER WAS RIGHT.

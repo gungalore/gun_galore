@@ -75,6 +75,22 @@ export interface PlacedImage extends AnnexureImage {
   h: number;
   /** Baseline box for the caption, directly above the image. */
   captionY: number;
+  /**
+   * Where the caption starts, and how wide it may run.
+   *
+   * ⚠️ NOT THE IMAGE'S OWN x/w. A copy is centred inside its cell when it is
+   * height-limited, so a caption drawn at the image's x and width would sit
+   * off-centre in a column that is wider than the picture. These are the
+   * COLUMN's edges instead — the full content width for an ordinary copy, one
+   * cell for a 2x2 safe sheet.
+   *
+   * ⚠️ AND THE SAFE SHEET IS WHY IT EXISTS. Two cells share one `captionY` row,
+   * and the renderer used to draw every caption at the page margin — so the
+   * left cell's caption printed twice, overprinted, and the right cell had
+   * none at all.
+   */
+  captionX: number;
+  captionW: number;
   /** Top of the reserved certification block, when one was asked for. */
   stampY?: number;
 }
@@ -191,6 +207,8 @@ export function planAnnexurePages(
     page.push({
       ...img,
       captionY: cursor,
+      captionX: box.x,
+      captionW: box.width,
       // Centred horizontally, which matters for the height-limited case where
       // the image is narrower than the content area.
       x: box.x + (box.width - w) / 2,
@@ -240,6 +258,11 @@ export function planSafePhotoPages(
         w,
         h,
         captionY: cellY,
+        // ⚠️ THE CELL, NOT THE PAGE. See PlacedImage.captionX: both cells of a
+        // row share the caption's y, so a page-margin x printed the left
+        // cell's caption twice and left the right cell unlabelled.
+        captionX: cellX,
+        captionW: cellW,
       });
     }
     pages.push(page);
@@ -263,6 +286,29 @@ export function planSafePhotoPages(
 export function captionFor(img: AnnexureImage): string {
   const of = img.total > 1 ? ` (${img.index} of ${img.total})` : '';
   return `Annexure ${img.letter} — ${img.label}${of}`;
+}
+
+/**
+ * The caption for a copy sitting directly UNDER its annexure's own heading.
+ *
+ * ⚠️ THE FULL CAPTION REPEATS THE HEADING, WORD FOR WORD, FOUR MILLIMETRES
+ * BELOW IT. `drawAnnexureHeading` prints "Annexure A — Copy of the applicant's
+ * identity document" at the top of the letter's first page; `captionFor` then
+ * printed the identical line above the copy. On a one-item annexure the page
+ * carried the same sentence twice, which reads as a layout fault rather than an
+ * index.
+ *
+ * So the headered page prints the compact form: the letter and the position
+ * only, and nothing at all where there is one copy and the heading already
+ * says everything.
+ *
+ * Continuation pages — and every page of a 2x2 safe sheet that does not open
+ * the letter — keep the full caption, because there the heading is not on the
+ * sheet to identify what the reader is looking at.
+ */
+export function compactCaption(img: AnnexureImage): string {
+  if (img.total <= 1) return '';
+  return `Annexure ${img.letter} (${img.index} of ${img.total})`;
 }
 
 // ── image headers ───────────────────────────────────────────────────

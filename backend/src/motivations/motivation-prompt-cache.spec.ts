@@ -277,6 +277,25 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * The system-prompt edits (the published filler / outcome lists) do not appear
  * here at all: this identity is the user message.
  */
+/**
+ * ⚠️ RE-BASELINED ON 2026-10-26 — the MO000100 pack review. Two content
+ * changes, both deliberate and both recorded here rather than quietly:
+ *   - `the_firearm`'s section 13 override lost the "common service calibre /
+ *     readily available ammunition" allowance. It was conditional on a derived
+ *     fact that only proved we hold a dimension sheet, and 6.35mm Browning is
+ *     the counter-example: standardised, and stocked by nobody. The same line
+ *     now also refuses a recital of the dimension sheet's figures.
+ *   - `storage_safety` gained the ban on naming who currently holds the firearm
+ *     or how the transfer will happen. MO000100 wrote "formal transfer to occur
+ *     via a licensed dealer" into a pack whose own SAPS 271 ticks the private
+ *     owner's block — a claim nothing supplied, about paperwork that is not an
+ *     argument for the licence.
+ *
+ * Line counts held for five types; the section 13 override lost one line of
+ * prompt text to keep the ban and gained another, so its count is unchanged and
+ * only the hash moved — which is the signature of a rewording, exactly as the
+ * rule at the top of this file says.
+ */
 const BEFORE_THE_REORDER: Record<
   MotivationLicenceType,
   { lines: number; sha: string }
@@ -306,27 +325,27 @@ const BEFORE_THE_REORDER: Record<
    */
   S14_RESTRICTED_SELF_DEFENCE: {
     lines: 117,
-    sha: '64de96970384949988dff0e4cc86649ab573412863c36f22a9b4d7661ac01c11',
+    sha: 'b96a67342cd68a6f6928eeeee690b18796848653ea3d014b7dc19bc6245e437b',
   },
   S13_SELF_DEFENCE: {
     lines: 118,
-    sha: 'e4f859b73a9fde1d852091be423bd01e93b48631fa864b906898daf114dbd79d',
+    sha: '5900e592c92bd5d9afc19ea18a591abae09fafcb0720881258d8b81435e232b7',
   },
   S15_OCCASIONAL_HUNTER: {
     lines: 118,
-    sha: '386c8df7b6080550316434d5ed8044005b3195594a19aec80408a269586724f9',
+    sha: 'cfd99b57e97103a9d98fc17147861f85db168a4612bdf482b7643acd14cd30ee',
   },
   S16_DEDICATED_HUNTER: {
     lines: 118,
-    sha: '1dcefc43aa11c4ac9fc1ac56d1dda49dfb5472ed110f9295bfa24ff91fe9890e',
+    sha: '586f8aee809f73c07e2809fb44b669482831add7fb29e8d25beeaae8ae13ca1d',
   },
   S16_DEDICATED_SPORT: {
     lines: 118,
-    sha: 'e60111c8c9cff457fe35bc2799cc9b3fd2d46ac246f060f3aab777134c2b4c79',
+    sha: '30b3f672fd17ba2524ed9ff9cde2f3bbddcdebb004f89ff30869a7fdc83514c9',
   },
   S24_RENEWAL: {
     lines: 112,
-    sha: 'b59360ee5bbc3aa0ea0b3a93f3dd23015502d6e796edaf4be218af4ec9786ef0',
+    sha: '5d0697411695a935e9ab48a506bab58516a44643a79f27b02cc90a8caefc15ef',
   },
 };
 

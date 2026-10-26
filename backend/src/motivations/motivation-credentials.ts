@@ -527,7 +527,19 @@ export function credentialOffer(
     if (!v || !keys.has(key)) return;
     // See the note above: a document whose dates nobody stands behind may fill
     // a fact, never a date.
-    if (!settledById.get(credentialId) && isDateKey(key)) return;
+    //
+    // ⚠️ ONE EXCEPTION, AND IT IS ABOUT WHAT THE DATE IS FOR. The settled gate
+    // exists so the REMINDER SWEEP never acts on an expiry nobody checked — the
+    // sweep reads Credential.expiresOn, and nothing here writes it. An ISSUE
+    // date cannot arm anything: it is printed in ink on the certificate, it is
+    // in the past by definition, and it is box 1.6 on a form the applicant
+    // signs. Gating it on the expiry's settlement left the date blank on a
+    // 271 whose certificate plainly prints it (MO000100, 2026-10-26), while
+    // the number beside it filled — a half-read certificate is what a DFO
+    // queries. Only `competency_issued` is exempted; `competency_expiry` and
+    // every other date stay gated exactly as before.
+    const printedDate = key === 'competency_issued';
+    if (!settledById.get(credentialId) && isDateKey(key) && !printedDate) return;
     if ((answered[key] ?? '').trim()) return; // theirs wins, always
     if (values[key]) return; // first document to claim a slot keeps it
     values[key] = v;

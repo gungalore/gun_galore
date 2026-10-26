@@ -868,6 +868,25 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
   if (routed) tick(routed);
 
   const seller = source === SOURCE_PRIVATE ? input.seller : undefined;
+  /**
+   * ⚠️ A PRIVATE SALE WITH NO SIGNED CONSENT LEAVES A TICKED BLOCK EMPTY, AND
+   * NOTHING SAYS SO. Type A is the applicant's own true statement about the
+   * route, so it is ticked; the current owner's particulars are his to write,
+   * so they stay blank. That is correct and it is also the one state a DFO has
+   * to query — a form that ticks a private owner and then names nobody.
+   *
+   * ⚠️ IT IS NOT A HINT TO SKIP THE CONSENT. `sellerConsent.sectionF()` returns
+   * nothing until the current owner has actually signed, deliberately — a
+   * half-filled block reads as complete and is not. This line only says which
+   * pen finishes it, so the applicant is not discovering it at the counter.
+   */
+  if (source === SOURCE_PRIVATE && !seller) {
+    leftBlank.push({
+      field: 'section_f_current_owner',
+      because:
+        'the current owner completes section F himself and signs it in black ink when you hand the form over — we tick that he is a private owner and leave his particulars for him. His signed consent and licence, where you have them, are attached instead',
+    });
+  }
   if (input.seller && !seller) {
     // We hold a current owner's details and are deliberately not printing
     // them, so say which it is rather than leaving a silent blank.

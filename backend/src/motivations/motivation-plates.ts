@@ -232,9 +232,25 @@ interface Scene {
   prompt: string;
 }
 
+/**
+ * The applicant's home, as the exhibit picker needs it.
+ *
+ * ⚠️ `residence_type` IS THE FIELD THE WIZARD ACTUALLY ASKS. Every matcher below
+ * read `premises_type`, which is not in the registry at all — so the condition
+ * was never true on a real application, every self-defence pack fell through to
+ * the urban defaults in catalogue order, and MO000100's townhouse complex led
+ * its exhibits with "Communal access" and a page about an apartment block.
+ *
+ * `premises_type` is still read first so a draft saved before the field was
+ * renamed keeps its answer.
+ */
+function premisesOf(answers: Record<string, string>): string {
+  return `${answers.premises_type ?? ''} ${answers.residence_type ?? ''}`.trim();
+}
+
 const SELF_DEFENCE_SCENES: readonly Scene[] = [
   {
-    when: (a) => /farm|smallholding|plot|rural|plaas/i.test(a.premises_type ?? ''),
+    when: (a) => /farm|smallholding|plot|rural|plaas/i.test(premisesOf(a)),
     title: 'A rural perimeter',
     description:
       'On a rural property the nearest police station is many minutes away, ' +
@@ -251,7 +267,7 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       `blurred at the edges, dust on the lens, the sky blown out near the horizon. ${NEGATIVES}`,
   },
   {
-    when: (a) => /apartment|flat|communal|block/i.test(a.premises_type ?? ''),
+    when: (a) => /apartment|flat|communal|block/i.test(premisesOf(a)),
     title: 'Communal access',
     description:
       'A shared entrance and parking area is a door many people hold a key ' +
@@ -285,7 +301,10 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       `across the lens, uneven exposure, patchy road repairs, some motion blur. ${NEGATIVES}`,
   },
   {
-    when: (a) => /gate|driveway|house|home|suburb|wall/i.test(a.premises_type ?? ''),
+    when: (a) =>
+      /gate|driveway|house|home|suburb|wall|townhouse|complex|cottage/i.test(
+        premisesOf(a),
+      ),
     title: 'The driveway gate',
     description:
       'A vehicle stopped at an automated gate is stationary and boxed in, ' +
@@ -367,9 +386,7 @@ const SELF_DEFENCE_URBAN_DEFAULTS: readonly Scene[] = [
 function selfDefenceDefaults(
   answers: Record<string, string>,
 ): readonly Scene[] {
-  const rural = /farm|smallholding|plot|rural|plaas/i.test(
-    answers.premises_type ?? '',
-  );
+  const rural = /farm|smallholding|plot|rural|plaas/i.test(premisesOf(answers));
   return rural ? SELF_DEFENCE_RURAL_DEFAULTS : SELF_DEFENCE_URBAN_DEFAULTS;
 }
 

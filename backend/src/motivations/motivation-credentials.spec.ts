@@ -682,6 +682,33 @@ describe('the confirmed contract, enforced PER VALUE', () => {
     expect(offer.values.competency_number).toBe('C-999');
   });
 
+  it('⚠️ AND ITS PRINTED ISSUE DATE, WHICH IS BOX 1.6 ON THE 271', () => {
+    /**
+     * MO000100 (2026-10-26) shipped a 271 with the certificate number filled
+     * and "Date of issue" blank, off a certificate that prints one. The gate is
+     * about the expiry the reminder sweep acts on; an issue date is printed in
+     * ink, is in the past, and arms nothing. Only that one key is exempt.
+     */
+    const offer = offerWith(
+      'S16_DEDICATED_SPORT',
+      [
+        {
+          id: 'a',
+          kind: 'COMPETENCY_CERTIFICATE',
+          title: 'Fresh off the phone',
+          expiresOn: null,
+          issuedOn: '2024-04-02',
+          details: { competency_number: 'C-999' },
+          confirmed: false,
+        },
+      ],
+      {},
+    );
+    expect(offer.values.competency_issued).toBe('2024-04-02');
+    // ⚠️ THE EXPIRY IS STILL REFUSED. This is the half the sweep depends on.
+    expect(offer.values.competency_expiry).toBeUndefined();
+  });
+
   it('⚠️ STILL REFUSES A DATE OFF AN UNCONFIRMED DOCUMENT', () => {
     // The half of the old contract that must never be relaxed. A date nobody
     // has checked is the one thing the confirmation gate exists for.
@@ -1557,9 +1584,15 @@ describe('what the competency certificate now fills', () => {
     expect(o.values.competency_expiry).toBe('2030-06-30');
   });
 
-  it('H12 — withholds both dates while nobody stands behind them', () => {
-    // Facts may come off an unsettled row; dates may not. The number still
-    // carries, which is the per-value gate working as intended.
+  it('H12 — withholds the EXPIRY while nobody stands behind it', () => {
+    /**
+     * Facts may come off an unsettled row; dates may not — with ONE exception,
+     * added 2026-10-26: the printed ISSUE date. That gate exists so the
+     * reminder sweep never acts on an unchecked expiry, and the sweep reads
+     * Credential.expiresOn, which this function never writes. An issue date is
+     * printed in ink, is in the past, and arms nothing; withholding it left
+     * box 1.6 blank on a 271 whose certificate prints one (MO000100).
+     */
     const o = offerWith(
       'S16_DEDICATED_HUNTER',
       [cert({ confirmed: false, dateSettled: false })],
@@ -1567,7 +1600,7 @@ describe('what the competency certificate now fills', () => {
       NEEDS,
     );
     expect(o.values.competency_number).toBe('C-123');
-    expect(o.values.competency_issued).toBeUndefined();
+    expect(o.values.competency_issued).toBe('2025-06-06');
     expect(o.values.competency_expiry).toBeUndefined();
   });
 

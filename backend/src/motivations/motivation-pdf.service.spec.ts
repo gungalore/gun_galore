@@ -6,6 +6,7 @@ import {
   MotivationPdfService,
   asFormat,
   asScheme,
+  gapNumbers,
   isQuotedSubsection,
   runInOf,
   runningLabelFor,
@@ -204,6 +205,58 @@ describe('titleCase, which sets the contents and the running head', () => {
     expect(titleCase('Character reference — form 1 of 2')).toBe(
       'Character reference — form 1 of 2',
     );
+  });
+});
+
+describe('the running head', () => {
+  it('⚠️ SHORTENS THE PAJA LETTER, WHATEVER CASE ITS TITLE ARRIVES IN', () => {
+    // ⚠️ THE LOOKUP WAS CASE-SENSITIVE AND THE PAJA TITLE IS ALREADY SHOUTING.
+    // MO000100 carried "REQUEST FOR PRIOR NOTICE AND WRITTEN REASO…" wrapped
+    // across two lines of the banner on every page of the letter.
+    expect(
+      runningLabelFor('REQUEST FOR PRIOR NOTICE AND WRITTEN REASONS'),
+    ).toBe('Prior notice request');
+    expect(runningLabelFor('Request for prior notice and written reasons')).toBe(
+      'Prior notice request',
+    );
+  });
+
+  it('keeps an annexure to its letter, and the cartridge to one word', () => {
+    expect(runningLabelFor('Annexure C - Proficiency / training certificate')).toBe(
+      'Annexure C',
+    );
+    expect(runningLabelFor('5.1 The cartridge — 6.35mm Browning — dimensions')).toBe(
+      'The cartridge',
+    );
+  });
+});
+
+describe('gapNumbers — what the contents explains', () => {
+  it('⚠️ NAMES THE HEADINGS THIS PACK ACTUALLY OMITS', () => {
+    // A section 15 prints 1, 3, 5, 6, 7, 8, 9, 11, 12 — no circumstances (2),
+    // no existing measures (4), nothing to declare (10).
+    expect(
+      gapNumbers(new Set(['1', '3', '5', '6', '7', '8', '9', '11', '12'])),
+    ).toEqual([2, 4, 10]);
+  });
+
+  it('⚠️ AND THE SECTION 13 GAPS, WHICH THE HARD-CODED LIST GOT WRONG', () => {
+    // A section 13 prints 1, 2, 3, 4, 5, 6, 7, 9, 11, 12 and omits 8 and 10.
+    // The contents used to say "A gap — 2, 4 or 10 — …" on exactly this pack:
+    // two headings it prints, and only one of the two it omits.
+    expect(
+      gapNumbers(
+        new Set(['1', '2', '3', '4', '5', '5.1', '6', '7', '9', '11', '12']),
+      ),
+    ).toEqual([8, 10]);
+  });
+
+  it('says nothing when every number was printed', () => {
+    expect(
+      gapNumbers(
+        new Set(Array.from({ length: 12 }, (_, i) => String(i + 1))),
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -533,6 +586,79 @@ describe('the annexure index', () => {
     const opening = pages.find((p) => /Annexure A\s*\u2014\s*Copy/.test(p));
     expect(opening).toBeDefined();
     expect(opening).toMatch(/\(1 of 2\)/);
+  });
+
+  it('⚠️ DOES NOT PRINT AN ANNEXURE’S NAME TWICE ON ITS OPENING PAGE', async () => {
+    /**
+     * MO000100, 2026-10-26: every one-item annexure carried the heading and,
+     * four millimetres under it, the identical sentence as a caption. The page
+     * read as a layout fault. The caption is now the compact form — nothing at
+     * all where the heading already says it.
+     */
+    const png = await sharp({
+      create: { width: 4, height: 3, channels: 3, background: '#ffffff' },
+    })
+      .png()
+      .toBuffer();
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      annexures: buildAnnexures([MotivationUploadKind.IDENTITY_DOCUMENT]),
+      annexureImages: [
+        {
+          letter: 'A',
+          label: 'Copy of the applicant’s identity document',
+          index: 1,
+          total: 1,
+          bytes: png,
+          width: 4,
+          height: 3,
+          certification: 'required' as const,
+        },
+      ],
+    });
+    const pages = await pageTexts(pdf);
+    // The heading page, not the contents line (which uses a hyphen and a count).
+    const opening =
+      pages.find((p) => /Annexure A\s*\u2014\s*Copy of the applicant/.test(p)) ??
+      '';
+    const occurrences =
+      opening.match(/Annexure A\s*\u2014\s*Copy of the applicant/gi) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it('⚠️ GIVES EACH SAFE PHOTOGRAPH ITS OWN ONE-LINE CAPTION', async () => {
+    // The three shots share one letter and a 2x2 sheet. Every caption used to
+    // be drawn at the page margin, so the two on the first row overprinted and
+    // the right-hand one vanished.
+    const png = await sharp({
+      create: { width: 4, height: 3, channels: 3, background: '#ffffff' },
+    })
+      .png()
+      .toBuffer();
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      annexures: buildAnnexures([MotivationUploadKind.SAFE_PHOTOGRAPHS]),
+      annexureImages: [1, 2, 3].map((index) => ({
+        letter: 'A',
+        label: 'Photographs of the safe',
+        index,
+        total: 3,
+        bytes: png,
+        width: 4,
+        height: 3,
+        safe: true,
+        certification: 'none' as const,
+      })),
+    });
+    const pages = await pageTexts(pdf);
+    // The sheet that carries the copies, not the contents line.
+    const sheet = pages.find((p) => /\(1 of 3\)/.test(p)) ?? '';
+    expect(sheet).toContain('Photographs of the safe');
+    for (const n of [1, 2, 3]) {
+      // Each position appears exactly once — none is overprinted on another.
+      const hits = sheet.match(new RegExp(`\\(${n} of 3\\)`, 'g')) ?? [];
+      expect(hits).toHaveLength(1);
+    }
   });
 
   it('prints the safe sheet in letter order, not after the last annexure', async () => {
@@ -2044,7 +2170,10 @@ describe('the cartridge drawing', () => {
       'The purpose is the one the exhibits set out: The driveway gate, A home at night',
     );
     expect(sheet).toContain('a handgun in 6.35mm Browning');
-    expect(sheet).toContain('brought into use in the confined space');
+    expect(sheet).toContain('bring into use in the confined space');
+    // ⚠️ AND IN THE FIRST PERSON. This page is a continuation of a letter the
+    // applicant signs; "the applicant is alone" was the version that shipped.
+    expect(sheet).not.toMatch(/\bthe applicant\b/i);
     expect(sheet).not.toContain('maximum average pressure');
     expect(sheet).not.toContain('muzzle velocity');
   }, 30000);
