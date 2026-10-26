@@ -690,83 +690,98 @@ export default function SettingsPage() {
             )}
 
             <div className="flex flex-col gap-2">
-              {addresses.map((a) => (
-                <div
-                  key={a.id}
-                  className="p-3 rounded-[8px] flex items-start justify-between gap-3"
-                  style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)' }}
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                      {a.label || a.street}
-                      {a.isDefault && (
-                        <span
-                          className="ml-2 text-xs px-1.5 py-0.5 rounded"
-                          style={{ background: 'var(--success)', color: '#fff' }}
-                        >
-                          Default
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                      {[a.building, a.street, a.address2, a.suburb, a.city, a.postalCode, PROVINCE_LABELS[a.province]]
-                        .filter(Boolean)
-                        .join(', ')}
-                    </p>
-                    <div className="flex gap-3 mt-2">
-                      {!a.isDefault && (
+              {addresses.map((a) => {
+                // The profile address is a read-through entry (id "profile"),
+                // not a book row: it can be edited and made default here, but
+                // never deleted — it is changed from Edit profile.
+                const isProfile = a.id === 'profile';
+                return (
+                  <div
+                    key={a.id}
+                    className="p-3 rounded-[8px] flex items-start justify-between gap-3"
+                    style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)' }}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                        {a.label || a.street}
+                        {a.isDefault && (
+                          <span
+                            className="ml-2 text-xs px-1.5 py-0.5 rounded"
+                            style={{ background: 'var(--success)', color: '#fff' }}
+                          >
+                            Default
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                        {[a.building, a.street, a.address2, a.suburb, a.city, a.postalCode, PROVINCE_LABELS[a.province]]
+                          .filter(Boolean)
+                          .join(', ')}
+                      </p>
+                      <div className="flex gap-3 mt-2">
+                        {!a.isDefault && (
+                          <button
+                            type="button"
+                            onClick={() => setDefault(a.id)}
+                            className="text-xs"
+                            style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', textDecoration: 'underline' }}
+                          >
+                            Set default
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => setDefault(a.id)}
+                          onClick={() =>
+                            setForm({
+                              id: a.id,
+                              label: a.label ?? '',
+                              building: a.building ?? '',
+                              street: a.street,
+                              address2: a.address2 ?? '',
+                              suburb: a.suburb ?? '',
+                              city: a.city,
+                              postalCode: a.postalCode,
+                              province: a.province,
+                            })
+                          }
                           className="text-xs"
-                          style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', textDecoration: 'underline' }}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', textDecoration: 'underline' }}
                         >
-                          Set default
+                          Edit
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setForm({
-                            id: a.id,
-                            label: a.label ?? '',
-                            building: a.building ?? '',
-                            street: a.street,
-                            address2: a.address2 ?? '',
-                            suburb: a.suburb ?? '',
-                            city: a.city,
-                            postalCode: a.postalCode,
-                            province: a.province,
-                          })
-                        }
-                        className="text-xs"
-                        style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', textDecoration: 'underline' }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => remove(a.id)}
-                        className="text-xs"
-                        style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', textDecoration: 'underline' }}
-                      >
-                        Delete
-                      </button>
+                        {!isProfile && (
+                          <button
+                            type="button"
+                            onClick={() => remove(a.id)}
+                            className="text-xs"
+                            style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', textDecoration: 'underline' }}
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Add / edit form */}
             {form && (
               <div className="mt-4 flex flex-col gap-2">
-                <input
-                  style={input}
-                  placeholder="Label (e.g. Home, Work)"
-                  value={form.label}
-                  onChange={(e) => setForm({ ...form, label: e.target.value })}
-                />
+                {form.id === 'profile' ? (
+                  <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    This is the address saved on your profile — saving here
+                    updates it there too.
+                  </p>
+                ) : (
+                  <input
+                    style={input}
+                    placeholder="Label (e.g. Home, Work)"
+                    value={form.label}
+                    onChange={(e) => setForm({ ...form, label: e.target.value })}
+                  />
+                )}
                 <input
                   style={input}
                   placeholder="Complex / building (optional)"

@@ -346,6 +346,7 @@ export function OfferCheckoutForm({
           {/* UX-3 — saved-address picker (2+ book addresses only). Fills the
               address fields; contact name/phone stay for the buyer. */}
           <SavedAddressPicker
+            minToShow={1}
             onSelect={(a: Address) =>
               setDeliveryAddress((prev) => ({
                 ...prev,

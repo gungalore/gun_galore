@@ -859,6 +859,7 @@ export default function CartPage() {
             {/* UX-3 — saved-address picker (2+ book addresses only).
                 Picking one fills the same `addr` state the payload reads. */}
             <SavedAddressPicker
+              minToShow={1}
               onSelect={(a: Address) =>
                 setAddr({
                   building: a.building ?? '',

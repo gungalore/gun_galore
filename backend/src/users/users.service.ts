@@ -18,6 +18,13 @@ import { KycService } from '../kyc/kyc.service';
 import { AccountClosureService } from './account-closure.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
 
+/**
+ * The profile address (User.addr*) joins GET /users/me/addresses as a
+ * read-through entry under this id. It is not a row in `Address`, so it can
+ * never be deleted from the address book; edits are routed to the User row.
+ */
+export const PROFILE_ADDRESS_ID = 'profile';
+
 // Address-book create/update payload (Phase 2).
 export interface AddressInput {
   label?: string | null;
@@ -1042,7 +1049,7 @@ export class UsersService {
     });
 
     const minutes = Math.round(PHONE_OTP_TTL_MS / 60_000);
-    let result: { success: boolean };
+    let result: { success: boolean; stub?: boolean };
     try {
       result = await this.sms.sendSms({
         to: e164,
@@ -1065,7 +1072,7 @@ export class UsersService {
       );
     }
 
-    return { sent: true };
+    return { sent: true, stub: result.stub };
   }
 
   // Submit the 6-digit code. On success: phoneVerified=true, OTP wiped.
@@ -1193,20 +1200,105 @@ export class UsersService {
     if (!u) throw new NotFoundException('User not found');
   }
 
+  /** Columns the profile address is read from / written back to. */
+  private static readonly PROFILE_ADDRESS_SELECT = {
+    id: true,
+    addrBuilding: true,
+    addrStreet: true,
+    addrAddress2: true,
+    addrSuburb: true,
+    addrCity: true,
+    addrPostalCode: true,
+    addrProvince: true,
+    addrLat: true,
+    addrLng: true,
+  } as const;
+
+  /**
+   * The profile address as an address-book entry, or null when it is not
+   * complete enough to deliver to. It is a read-through view of User.addr*,
+   * so the book, checkout and /profile/edit never disagree about it.
+   */
+  private profileAddressEntry(
+    user: {
+      addrBuilding: string | null;
+      addrStreet: string | null;
+      addrAddress2: string | null;
+      addrSuburb: string | null;
+      addrCity: string | null;
+      addrPostalCode: string | null;
+      addrProvince: Province | null;
+      addrLat: number | null;
+      addrLng: number | null;
+    } | null,
+    isDefault: boolean,
+  ) {
+    if (
+      !user?.addrStreet?.trim() ||
+      !user.addrCity?.trim() ||
+      !user.addrPostalCode?.trim() ||
+      !user.addrProvince
+    ) {
+      return null;
+    }
+    return {
+      id: PROFILE_ADDRESS_ID,
+      label: 'Profile address',
+      building: user.addrBuilding,
+      street: user.addrStreet,
+      address2: user.addrAddress2,
+      suburb: user.addrSuburb,
+      city: user.addrCity,
+      postalCode: user.addrPostalCode,
+      province: user.addrProvince,
+      lat: user.addrLat,
+      lng: user.addrLng,
+      isDefault,
+    };
+  }
+
+  private async hasDefaultBookAddress(userId: string): Promise<boolean> {
+    const row = await this.prisma.address.findFirst({
+      where: { userId, isDefault: true },
+      select: { id: true },
+    });
+    return !!row;
+  }
+
   async listAddresses(userId: string) {
-    await this.assertUserExists(userId);
-    return this.prisma.address.findMany({
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: UsersService.PROFILE_ADDRESS_SELECT,
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const rows = await this.prisma.address.findMany({
       where: { userId },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
     });
+    // The profile address is the fallback default only while no book address
+    // has been marked default — the same rule checkout has always applied.
+    const profile = this.profileAddressEntry(
+      user,
+      !rows.some((r) => r.isDefault),
+    );
+    return profile ? [profile, ...rows] : rows;
   }
 
   async createAddress(userId: string, input: AddressInput) {
-    await this.assertUserExists(userId);
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: UsersService.PROFILE_ADDRESS_SELECT,
+    });
+    if (!user) throw new NotFoundException('User not found');
     this.assertAddress(input);
     const count = await this.prisma.address.count({ where: { userId } });
-    // First saved address is the default; otherwise honour the flag.
-    const makeDefault = count === 0 ? true : !!input.isDefault;
+    // The profile address already supplies a usable default, so adding the
+    // first book address must not silently take that over — only an explicit
+    // isDefault (or a member with no profile address at all) makes it default.
+    const makeDefault =
+      input.isDefault === true ||
+      (count === 0 && !this.profileAddressEntry(user, false));
     return this.prisma.$transaction(async (tx) => {
       if (makeDefault) {
         await tx.address.updateMany({
@@ -1233,6 +1325,10 @@ export class UsersService {
     id: string,
     input: Partial<AddressInput>,
   ) {
+    if (id === PROFILE_ADDRESS_ID) {
+      return this.updateProfileAddress(userId, input);
+    }
+
     await this.assertUserExists(userId);
     const existing = await this.prisma.address.findFirst({
       where: { id, userId },
@@ -1251,7 +1347,78 @@ export class UsersService {
     });
   }
 
+  /** Edits the profile address through the same PATCH the book uses. */
+  private async updateProfileAddress(
+    userId: string,
+    input: Partial<AddressInput>,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: UsersService.PROFILE_ADDRESS_SELECT,
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const data = this.cleanAddress(input);
+    const columns: Record<string, string> = {
+      building: 'addrBuilding',
+      street: 'addrStreet',
+      address2: 'addrAddress2',
+      suburb: 'addrSuburb',
+      city: 'addrCity',
+      postalCode: 'addrPostalCode',
+      province: 'addrProvince',
+      lat: 'addrLat',
+      lng: 'addrLng',
+    };
+    const patch: Record<string, unknown> = {};
+    for (const [field, column] of Object.entries(columns)) {
+      if (field in data) patch[column] = data[field];
+    }
+
+    // A partial edit must not blank a required line and leave the profile
+    // address undeliverable — validate the merged result whenever one of the
+    // four required lines is being touched.
+    const touchesRequired = ['street', 'city', 'postalCode', 'province'].some(
+      (field) => field in input,
+    );
+    if (touchesRequired) {
+      this.assertAddress({
+        street: (input.street ?? user.addrStreet ?? '').toString(),
+        city: (input.city ?? user.addrCity ?? '').toString(),
+        postalCode: (input.postalCode ?? user.addrPostalCode ?? '').toString(),
+        province: (input.province ?? user.addrProvince ?? undefined) as Province,
+      });
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: patch as Prisma.UserUpdateInput,
+      });
+    }
+    if (input.isDefault === true) {
+      await this.prisma.address.updateMany({
+        where: { userId, isDefault: true },
+        data: { isDefault: false },
+      });
+    }
+
+    const fresh = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: UsersService.PROFILE_ADDRESS_SELECT,
+    });
+    return this.profileAddressEntry(
+      fresh,
+      !(await this.hasDefaultBookAddress(userId)),
+    );
+  }
+
   async deleteAddress(userId: string, id: string) {
+    if (id === PROFILE_ADDRESS_ID) {
+      throw new BadRequestException(
+        "Your profile address can't be deleted here — change it from Edit profile.",
+      );
+    }
     await this.assertUserExists(userId);
     const existing = await this.prisma.address.findFirst({
       where: { id, userId },

@@ -124,6 +124,90 @@ describe('UsersService — address book & notification prefs', () => {
     });
   });
 
+  // ── The profile address joins the book ──────────────────────────────
+  const profileColumns = {
+    addrBuilding: 'Unit 4',
+    addrStreet: '9 Profile Rd',
+    addrAddress2: null,
+    addrSuburb: 'Rondebosch',
+    addrCity: 'Cape Town',
+    addrPostalCode: '7700',
+    addrProvince: 'WESTERN_CAPE',
+    addrLat: -33.9,
+    addrLng: 18.4,
+  };
+
+  it('lists the complete profile address as a book entry and default', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'u1', ...profileColumns });
+    prisma.address.findMany.mockResolvedValue([
+      { id: 'a1', userId: 'u1', isDefault: false },
+    ]);
+    const rows = await service.listAddresses('u1');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      id: 'profile',
+      label: 'Profile address',
+      street: '9 Profile Rd',
+      isDefault: true,
+    });
+  });
+
+  it('does not mark the profile address default when a book address is default', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'u1', ...profileColumns });
+    prisma.address.findMany.mockResolvedValue([
+      { id: 'a1', userId: 'u1', isDefault: true },
+    ]);
+    const rows = await service.listAddresses('u1');
+    expect(
+      rows.find((r) => r.id === 'profile')?.isDefault,
+    ).toBe(false);
+  });
+
+  it('omits an incomplete profile address from the book', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'u1',
+      ...profileColumns,
+      addrStreet: null,
+    });
+    await expect(service.listAddresses('u1')).resolves.toEqual([]);
+  });
+
+  it('does not auto-default the first book address when a profile address exists', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'u1', ...profileColumns });
+    prisma.address.count.mockResolvedValue(0);
+    const created = await service.createAddress('u1', validAddr as never);
+    expect(created.isDefault).toBe(false);
+  });
+
+  it('making the profile address default clears the book default', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'u1', ...profileColumns });
+    prisma.address.findFirst.mockResolvedValue(null);
+    await service.updateAddress('u1', 'profile', { isDefault: true } as never);
+    expect(prisma.address.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'u1', isDefault: true },
+      data: { isDefault: false },
+    });
+  });
+
+  it('edits the profile address through the address-book PATCH', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'u1', ...profileColumns });
+    prisma.address.findFirst.mockResolvedValue(null);
+    await service.updateAddress('u1', 'profile', {
+      street: '11 New Rd',
+      label: 'Ignored',
+    } as never);
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'u1' },
+      data: { addrStreet: '11 New Rd' },
+    });
+  });
+
+  it('refuses to delete the profile address', async () => {
+    await expect(
+      service.deleteAddress('u1', 'profile'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   // ⚠️ THE FLOOR LIVES IN THE `where`, so these assert on updateMany, not
   // update. Turning SMS off is only allowed while email is still on, and that
   // condition rides along in the WHERE rather than being decided by an earlier
