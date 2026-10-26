@@ -66,6 +66,28 @@ const nextConfig = {
       { source: '/licence-services/new', destination: '/licence-centre/applications', permanent: true },
       { source: '/motivations/:id', destination: '/licence-centre/:id', permanent: true },
       { source: '/licence-services/:id', destination: '/licence-centre/:id', permanent: true },
+      /**
+       * The retired payment explainers.
+       *
+       * ⚠️ CONFIGURED HERE, NOT AS A PAGE THAT CALLS permanentRedirect(). A
+       * redirect-only page under a static layout is prerendered, so the
+       * response is a 200 whose RSC payload carries the redirect digest — a
+       * crawler sees a soft 200 and the URL stays indexable. A config redirect
+       * answers with a real 308 before Next renders anything.
+       *
+       * The destinations carry the anchors of the paragraphs that now hold the
+       * binding text (Terms 7 and 11).
+       */
+      {
+        source: '/how-payments-work',
+        destination: '/terms#payments',
+        permanent: true,
+      },
+      {
+        source: '/buyer-protection',
+        destination: '/terms#buyer-protection',
+        permanent: true,
+      },
     ];
   },
   async rewrites() {
