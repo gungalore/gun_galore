@@ -167,6 +167,23 @@ function loadMapsOnce(): Promise<void> {
   if (!apiKey || apiKey === 'placeholder') return Promise.resolve();
 
   patchConsoleErrorOnce();
+  // The script's `load` event can fire a beat before the `places` library is
+  // attached to `google.maps`, especially when several autocompletes mount at
+  // once. Resolving on `load` alone let the wiring effect see no PlacesLib,
+  // return for good, and leave the field dead until a remount (the reported
+  // "toggle Manual Entry and back" workaround). Wait for the library itself,
+  // with a deadline so a key/API failure cannot hang the promise.
+  const waitForPlaces = (resolve: () => void) => {
+    const deadline = Date.now() + 10_000;
+    const check = () => {
+      if (w.google?.maps?.places || mapsAuthFailed || Date.now() > deadline) {
+        resolve();
+      } else {
+        setTimeout(check, 50);
+      }
+    };
+    check();
+  };
   type GMWindow = Window & { gm_authFailure?: () => void };
   (window as GMWindow).gm_authFailure = () => notifyAuthFailure();
 
@@ -176,17 +193,11 @@ function loadMapsOnce(): Promise<void> {
   );
   if (existing) {
     mapsScriptPromise = new Promise((resolve) => {
-      const check = () => {
-        if ((window as GWindow).google?.maps?.places) resolve();
-        else if (mapsAuthFailed) resolve();
-        else setTimeout(check, 50);
-      };
-      existing.addEventListener('load', () => resolve());
       existing.addEventListener('error', () => {
         notifyAuthFailure();
         resolve();
       });
-      check();
+      waitForPlaces(resolve);
     });
     return mapsScriptPromise;
   }
@@ -195,7 +206,7 @@ function loadMapsOnce(): Promise<void> {
     const s = document.createElement('script');
     s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
     s.async = true;
-    s.onload = () => resolve();
+    s.onload = () => waitForPlaces(resolve);
     s.onerror = () => {
       notifyAuthFailure();
       resolve();
@@ -248,6 +259,10 @@ export function AddressAutocomplete({
   const onComponentsRef = useRef(onComponents);
   const onPlaceSelectedRef = useRef(onPlaceSelected);
   const [scriptLoaded, setScriptLoaded] = useState(false);
+  // Bounded retry while the Places library attaches after the script's
+  // `load` event (see the wiring effect). Reset on a successful wire.
+  const [placesTick, setPlacesTick] = useState(0);
+  const placesTriesRef = useRef(0);
   const [authFailed, setAuthFailed] = useState(mapsAuthFailed);
   const [locating, setLocating] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
@@ -307,7 +322,18 @@ export function AddressAutocomplete({
 
     const w = window as GWindow;
     const PlacesLib = w.google?.maps?.places;
-    if (!PlacesLib) return;
+    if (!PlacesLib) {
+      // Do NOT return for good here. A remount used to be the only way to
+      // recover, which is why toggling Manual Entry and back "fixed" the
+      // field. Poll for ~10s instead.
+      if (placesTriesRef.current < 100) {
+        placesTriesRef.current += 1;
+        const t = setTimeout(() => setPlacesTick((n) => n + 1), 100);
+        return () => clearTimeout(t);
+      }
+      return;
+    }
+    placesTriesRef.current = 0;
 
     let autocompleteInstance: GAutocomplete | null = null;
     try {
@@ -364,7 +390,7 @@ export function AddressAutocomplete({
       removeStalePacContainers();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scriptLoaded, authFailed]);
+  }, [scriptLoaded, authFailed, placesTick]);
 
   // Also sweep stale dropdowns when the input itself is hidden by a parent
   // (e.g. switching from Physical address → Security inside Clerk's modal)
