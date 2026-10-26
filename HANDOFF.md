@@ -8069,3 +8069,29 @@ diagnosable from the UI next time.
   identify-batch spec pins it to 1 so its positional model mock is
   deterministic.
 
+---
+
+## A competency with no linked firearm now defaults to five years — 2026-10-26
+
+Operator: *"If a competency does not have a firearm linked to it to determine
+the expiry date, set the default date to 5 years from the date of issue. so that
+it stop give the change date notification"*.
+
+`deriveCertificateExpiry` already produced issue + five years when the
+certificate's categories had no licence behind them. The date was shown but
+deliberately left **unarmed** (`mayArmDerivedExpiry` refused `fallback`), so the
+row stayed in the Document Centre's "dates to check" banner and review queue and
+kept asking for a date the certificate does not print. `fallback` is now armed,
+written as `dateSource: 'derived'` with the existing basis note.
+
+Existing rows backfill themselves: `recomputeDerivedCompetencies` runs on every
+Document Centre `list()` and selects unconfirmed competencies with
+`dateSource: 'derived'` or `null`. No script and no migration. A certificate
+whose `covers` line could not be read (`unknown`) still gets no date — that is
+not a no-licence case and has no honest basis.
+
+Deployed `8a7a5f08` (full). Rollback point:
+`alloutdoor-20261026-202403.dump` (32,055,861 bytes). Verification: backend
+5,820 passed / 8 skipped, frontend 1,807 passed / 1 skipped, both type-checks
+clean, production build clean, health ×2 and public ×2 all 200.
+
