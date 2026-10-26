@@ -7,6 +7,33 @@ overwritten.
 
 Last updated: **2026-10-26**.
 
+## 2026-10-26 - ADDRESS AUTOCOMPLETE NOW GOES THROUGH THE BACKEND (DEPLOYED)
+
+**Root cause found: the browser Maps key cannot use Places Autocomplete.**
+Calling `places:autocomplete` with the public key returns
+`403 API_KEY_SERVICE_BLOCKED`, so the legacy `google.maps.places.Autocomplete`
+widget returned no predictions. The earlier mount/retry fix (b39b8085) was a
+real race but not the cause.
+
+- `GooglePlacesService.autocomplete()` and `.address()` call Places API (New)
+  with the backend key (which works: "wildman ca" returns Wildman Cape Gate).
+- New routes `GET /listings/place-autocomplete?input=&types=` and
+  `GET /listings/place/:placeId` (optional auth, 60/min throttle). The first
+  is public because the seller-consent page is token-based.
+- `AddressAutocomplete` now renders its own dropdown from those endpoints
+  (debounced, keyboard-navigable, theme-token styled). The Maps JS library is
+  used only by "use my current location" (Geocoder). This applies to every
+  address field: sell form, dealer search, checkout, profile, Licence Centre.
+- The post composer still builds the legacy widget itself; it has the same
+  key limitation and should move to this component/endpoints next.
+
+Deploy at 17:58 SAST (commit `4d02caca`): rollback
+`alloutdoor-20261026-175839.dump` (33 826 431 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Gates: backend tsc
+clean, 379 suites / 5 811 tests; frontend tsc + build clean, 156 files /
+1 804 tests. Live check: `place-autocomplete` returned 5 Wildman suggestions
+and `place/:id` returned the Cape Gate address/components.
+
 ## 2026-10-26 - DEALER PLACES SEARCH ON FIRST MOUNT (DEPLOYED)
 
 **The dealer auto-search field no longer needs the Manual Entry toggle to start
