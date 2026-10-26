@@ -28,6 +28,25 @@ const labelStyle = {
   marginBottom: 4,
 } as const;
 
+// `npm run dealer-form:test` links here. It renders the same form with sample
+// data and no network call, so the operator can review the template without a
+// real transaction or a live dealer token.
+const TEST_TOKEN = 'test-preview';
+const TEST_SUMMARY: PortalSummary = {
+  status: 'SENT',
+  requiresIdentity: true,
+  dealerEmail: 'test@example.com',
+  dealerName: 'Wildman Cape Gate (test dealer)',
+  listing: {
+    title: 'Example bolt-action rifle (test listing)',
+    make: 'Example',
+    model: 'Bolt Action',
+    calibre: '.308 Win',
+    serialNumber: 'TEST-1234',
+    firearmType: 'Rifle',
+  },
+};
+
 const fieldStyle = {
   width: '100%',
   boxSizing: 'border-box' as const,
@@ -43,6 +62,7 @@ const fieldStyle = {
 export default function DealerPortalPage() {
   const params = useParams<{ token: string }>();
   const token = params?.token;
+  const isPreview = token === TEST_TOKEN;
   const [summary, setSummary] = useState<PortalSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [serial, setSerial] = useState('');
@@ -58,6 +78,12 @@ export default function DealerPortalPage() {
 
   useEffect(() => {
     if (!token) return;
+    if (token === TEST_TOKEN) {
+      setSummary(TEST_SUMMARY);
+      setSerial(TEST_SUMMARY.listing.serialNumber ?? '');
+      setDealerName(TEST_SUMMARY.dealerName ?? '');
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -92,6 +118,7 @@ export default function DealerPortalPage() {
 
   async function submit() {
     if (!token || !summary) return;
+    if (token === TEST_TOKEN) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -180,6 +207,22 @@ export default function DealerPortalPage() {
         Confirm the details below and acknowledge that it is in your stock.
       </p>
 
+      {isPreview && (
+        <div
+          className="rounded-[8px] p-3 mb-5 text-xs"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--red)',
+            color: 'var(--text-secondary)',
+            lineHeight: 1.55,
+          }}
+        >
+          <strong style={{ color: 'var(--red)' }}>Test preview.</strong>{' '}
+          This is the dealer form template with sample data. It is not connected
+          to a sale and nothing can be submitted from this page.
+        </div>
+      )}
+
       <div
         className="rounded-[8px] p-4 mb-5 text-sm"
         style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', lineHeight: 1.6 }}
@@ -265,17 +308,33 @@ export default function DealerPortalPage() {
       <button
         type="button"
         onClick={() => void submit()}
-        disabled={submitting || !ack || !serial.trim() || (summary.requiresIdentity && !stamp)}
+        disabled={
+          submitting ||
+          isPreview ||
+          !ack ||
+          !serial.trim() ||
+          (summary.requiresIdentity && !stamp)
+        }
         className="w-full py-3 rounded-[8px] text-sm"
         style={{
-          background: submitting || !ack ? 'var(--bg-inset)' : 'var(--red)',
-          color: submitting || !ack ? 'var(--text-tertiary)' : '#fff',
+          background:
+            submitting || isPreview || !ack
+              ? 'var(--bg-inset)'
+              : 'var(--red)',
+          color:
+            submitting || isPreview || !ack
+              ? 'var(--text-tertiary)'
+              : '#fff',
           border: 'none',
           fontWeight: 500,
           cursor: submitting ? 'wait' : 'pointer',
         }}
       >
-        {submitting ? 'Submitting…' : 'Confirm dealership and stock'}
+        {isPreview
+          ? 'Preview only — submission disabled'
+          : submitting
+            ? 'Submitting…'
+            : 'Confirm dealership and stock'}
       </button>
     </main>
   );
