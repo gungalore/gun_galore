@@ -28,6 +28,18 @@ health x2 OK, public 200 x2, three PM2 services online. Notifications suites
 gerhard.fourie@alloutdoor.co.za at 18:12; no outbox row, so Resend accepted
 it. Re-send any time with `npm run dealer-form:test -- <email>` on the box.
 
+**The test link now works, and a real dealer-link bug was found.**
+`/dealer-portal/*` was missing from the middleware's public-route list, so a
+signed-out dealer — the normal case — was 307'd to sign-in. It is now public
+(token in the URL is the credential), matching `/consent` and `/witness`.
+`/dealer-portal/test-preview` also renders the real form with sample data,
+a "Test preview" banner and a disabled submit button.
+
+Deployed frontend-only at 18:16/18:19 SAST (`27f76a9c`, `ad5ada61`), rollback
+`alloutdoor-20261026-181624.dump` then `alloutdoor-20261026-181911.dump`, no
+migrations, health x2 OK, public 200 x2, three services online. Anonymous
+request to `/dealer-portal/test-preview` now returns 200.
+
 ## 2026-10-26 - ADDRESS AUTOCOMPLETE NOW GOES THROUGH THE BACKEND (DEPLOYED)
 
 **Root cause found: the browser Maps key cannot use Places Autocomplete.**
