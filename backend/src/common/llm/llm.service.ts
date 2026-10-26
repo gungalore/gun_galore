@@ -129,7 +129,10 @@ function isDocumentPurpose(purpose: string): boolean {
   return (
     DOCUMENT_PURPOSES.has(purpose) ||
     purpose.startsWith('licence.card.') ||
-    purpose.startsWith('motivation.extract')
+    purpose.startsWith('motivation.extract') ||
+    // The firearm-listing verifier reads a serial stamp + a licence card;
+    // it is an OCR job like the rest and belongs on the cheap flash-lite.
+    purpose === 'listing.licence-read'
   );
 }
 

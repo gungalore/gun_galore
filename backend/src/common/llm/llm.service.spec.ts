@@ -262,7 +262,10 @@ describe('LlmService', () => {
     await svc.complete({ messages: [], maxTokens: 10, purpose: 'licence.card.read.id' });
     await svc.complete({ messages: [], maxTokens: 10, purpose: 'vault.classify' });
     await svc.complete({ messages: [], maxTokens: 10, purpose: 'vault.read' });
+    // The firearm-listing serial + licence verifier is an OCR job too.
+    await svc.complete({ messages: [], maxTokens: 10, purpose: 'listing.licence-read' });
     expect(gemini.calls.map((c) => c.model)).toEqual([
+      'gemini-3.1-flash-lite',
       'gemini-3.1-flash-lite',
       'gemini-3.1-flash-lite',
       'gemini-3.1-flash-lite',
