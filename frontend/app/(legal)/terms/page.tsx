@@ -37,7 +37,7 @@ export const metadata = {
 export default function TermsPage() {
   return (
     <>
-      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 23 October 2026" />
+      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 26 October 2026" />
 
       <h2>1. About us</h2>
       <p>
@@ -391,6 +391,17 @@ export default function TermsPage() {
         bid, offer or Buy Now purchase constitutes a binding offer to
         purchase the listed item at the stated price, subject only to
         the Seller's response window where applicable.
+      </p>
+      <p>
+        <strong>Minimum auction values.</strong> Because a longer
+        auction costs more to operate, each duration carries a minimum
+        committed value: <strong>3 days — R2,500</strong>;{' '}
+        <strong>5 days — R5,000</strong>; <strong>7 days — R7,500</strong>;
+        and <strong>14 days — R10,000</strong>. The minimum applies to the
+        reserve where one is set, or otherwise to the starting bid. Where a
+        reserve is set, the starting bid is calculated at 70% of the reserve
+        and may therefore sit below the minimum — it is the reserve that
+        must meet it.
       </p>
 
       <h2>11. Disputes and refunds</h2>
