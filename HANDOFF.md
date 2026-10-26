@@ -7,6 +7,25 @@ overwritten.
 
 Last updated: **2026-10-26**.
 
+## 2026-10-26 - DEALER PLACES SEARCH ON FIRST MOUNT (DEPLOYED)
+
+**The dealer auto-search field no longer needs the Manual Entry toggle to start
+working.** `loadMapsOnce()` resolved on the script's `load` event, which can
+fire before `google.maps.places` is attached; the wiring effect then saw no
+`PlacesLib`, returned for good, and the field stayed dead until a remount (the
+reported toggle workaround).
+
+- `frontend/components/address-autocomplete.tsx`: the loader now polls until
+  `google.maps.places` exists (10s deadline, auth failure short-circuits), and
+  the wiring effect retries ~10s instead of giving up. Applies to every
+  autocomplete on the site, including the pickup address.
+
+Deploy at 17:42 SAST, frontend-only (commit `b39b8085`): rollback
+`alloutdoor-20261026-174225.dump` (33 824 903 bytes), no migrations, health x2
+OK, public 200 x2, three PM2 services online. Backend 378 suites / 5,808 tests
+green; frontend 1,801 passed (same flaky tree-scan timeout, green standalone
+2/2); tsc + production build clean.
+
 ## 2026-10-26 - FIREARM LICENCE EXPIRY IS INFORMATIONAL (DEPLOYED)
 
 **Licence expiry no longer blocks or delists a firearm listing.** The vision
