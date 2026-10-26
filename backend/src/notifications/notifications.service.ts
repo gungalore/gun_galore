@@ -1630,7 +1630,17 @@ export class NotificationsService {
       footnote:
         'This link is for this sale only and expires in 14 days. If you were not expecting this, contact support.',
     });
-    await this.send(d.to, `Dealer stock confirmation — ${d.listingTitle}`, html);
+    // Operator copy: every dealer form is BCC'd to the ops mailbox so the
+    // team can see the exact form the dealer was sent. Configurable, and
+    // silent when unset.
+    const copy = (process.env.DEALER_FORM_COPY_EMAIL ?? '').trim();
+    await this.send(
+      d.to,
+      `Dealer stock confirmation — ${d.listingTitle}`,
+      html,
+      undefined,
+      copy || undefined,
+    );
   }
 
   // ---------------------------------------------------------------
@@ -5002,6 +5012,7 @@ export class NotificationsService {
     subject: string,
     html: string,
     attachments?: { filename: string; content: Buffer }[],
+    bcc?: string,
   ) {
     if (!this.resend) return;
     if (await this.emailMuted(to)) {
@@ -5014,6 +5025,7 @@ export class NotificationsService {
         to,
         subject,
         html,
+        ...(bcc ? { bcc } : {}),
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
       });
       this.logger.debug(`Email sent → ${to} "${subject}"`);
