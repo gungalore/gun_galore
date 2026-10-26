@@ -92,6 +92,10 @@ const isPublicRoute = createRouteMatcher([
   // The previous owner opening a consent link. Same reasoning as /witness:
   // they are not a member and cannot be sent to a sign-in page.
   '/consent(.*)',
+  // A nominated DEALER confirming the firearm is stocked with them. Same
+  // reasoning again: the dealer is not a member, and the token in the URL is
+  // the credential. Signed-out is the NORMAL case here.
+  '/dealer-portal(.*)',
   '/',
   '/sign-in(.*)',
   '/sign-up(.*)',
