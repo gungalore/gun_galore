@@ -7,6 +7,32 @@ overwritten.
 
 Last updated: **2026-10-26**.
 
+## 2026-10-26 - LISTING AREA FROM POSTAL CODE (DEPLOYED)
+
+**Listings now show the postal AREA, not Google's metro locality.** A
+Kraaifontein address used to render as "Cape Town"; code 7570 now resolves to
+"Kraaifontein, Western Cape".
+
+- `backend/src/listings/postal-locality.ts` resolves
+  `pickupPostalCode` against the bundled GeoNames dataset
+  (`backend/data/sa-postal-codes-geonames.tsv`). Order: exact `pickupSuburb`
+  match when a code carries several names, then a unique name, then the name
+  nearest `pickupLat`/`pickupLng`; otherwise it falls back to the sanitised
+  town (`locality.ts`).
+- Wired into listing create and edit. `pickupPostalCode` / `pickupSuburb`
+  remain off `PUBLIC_LISTING_SELECT`; only the resolved area label is public.
+- Firearm listings still show `plannedDealerLocation`, not the seller's postal
+  code.
+- Existing rows: `npm run listings:backfill-locality` on the box — checked 10,
+  updated 10, unresolved 0. Verified 7570 -> Kraaifontein (9 rows) and
+  7110 -> Somerset West.
+
+Deploy at 17:15 SAST (commit `d88376da`): rollback
+`alloutdoor-20261026-171502.dump` (33 823 235 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Frontend suite again
+timed out `lib/no-self-recursive-callbacks.spec.ts` under parallel load; it
+passes standalone (2/2).
+
 ## 2026-10-26 - AUCTION MINIMUM VALUES RAISED (DEPLOYED)
 
 **Floors are now 3 days R2,500; 5 days R5,000; 7 days R7,500; 14 days
