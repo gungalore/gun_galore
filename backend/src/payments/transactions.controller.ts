@@ -481,12 +481,20 @@ export class TransactionsController {
   accept(
     @Param('id') id: string,
     @CurrentUser() userId: string,
-    @Body() body: { collectionNotBefore?: string; collectionWindow?: string },
+    @Body()
+    body: {
+      collectionNotBefore?: string;
+      collectionWindow?: string;
+      dealerEmail?: string;
+    },
   ) {
     return this.txService.acceptTransaction(
       id,
       userId,
-      parseAcceptSchedule(body ?? {}),
+      {
+        ...parseAcceptSchedule(body ?? {}),
+        dealerEmail: body?.dealerEmail?.trim() || undefined,
+      },
     );
   }
 

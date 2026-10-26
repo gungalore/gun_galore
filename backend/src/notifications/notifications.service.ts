@@ -1607,6 +1607,33 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Dealer: prove the dealership and confirm the firearm is in stock
+  // ---------------------------------------------------------------
+  async dealerPortalRequest(d: {
+    to: string;
+    dealerName: string;
+    listingTitle: string;
+    serial: string;
+    link: string;
+  }) {
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Confirm the firearm is stocked with you',
+      body:
+        `Hi ${b(d.dealerName)}, ${b(d.listingTitle)} has sold through ALL Outdoor and the seller has nominated you as the stocking dealer. ` +
+        `Open the secure link to upload a photo of your <strong>dealer stamp showing your business name and SAPS number</strong>, confirm the firearm details and acknowledge that the firearm is in your stock.`,
+      rows: [
+        { label: 'Firearm', value: d.listingTitle },
+        { label: 'Serial', value: d.serial || '—' },
+      ],
+      cta: { label: 'Open the dealer form', url: d.link },
+      footnote:
+        'This link is for this sale only and expires in 14 days. If you were not expecting this, contact support.',
+    });
+    await this.send(d.to, `Dealer stock confirmation — ${d.listingTitle}`, html);
+  }
+
+  // ---------------------------------------------------------------
   // Seller: dealer-verification approved (payout will release)
   // ---------------------------------------------------------------
   async dealerVerificationApproved(d: {

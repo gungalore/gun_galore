@@ -3,6 +3,8 @@ import { FeeCalculator } from './fee.calculator';
 import { TransactionsService } from './transactions.service';
 import { DispatchSlaService } from './dispatch-sla.service';
 import { DealerVerificationService } from './dealer-verification.service';
+import { DealerPortalService } from './dealer-portal.service';
+import { DealerPortalController } from './dealer-portal.controller';
 import { ReceiptService } from './receipt.service';
 import { RemittanceService } from './remittance.service';
 import { FraudRiskService } from './fraud-risk.service';
@@ -26,11 +28,12 @@ import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module'
     TransactionsService,
     DispatchSlaService,
     DealerVerificationService,
+    DealerPortalService,
     ReceiptService,
     RemittanceService,
     FraudRiskService,
   ],
-  controllers: [TransactionsController, PaymentsWebhookController],
+  controllers: [TransactionsController, PaymentsWebhookController, DealerPortalController],
   // OzowService is provided globally by OzowModule — admin / featured /
   // dispatch-SLA / manual-payments inject it directly without importing
   // PaymentsModule. DealerVerificationService exported so AdminModule can

@@ -271,6 +271,12 @@ const OWNER_LISTING_EXTRAS_SELECT = {
   claudeDecision: true,
   claudeReasons: true,
   claudeAutoFixApplied: true,
+  // Dealer contact captured at listing time. OWNER-ONLY: phone/email/website
+  // are for dealer verification and the portal link, never the public page.
+  plannedDealerAddress: true,
+  plannedDealerPhone: true,
+  plannedDealerWebsite: true,
+  plannedDealerEmail: true,
 } satisfies Prisma.ListingSelect;
 
 // Statuses whose detail page is visible to the public. DRAFT /
@@ -1185,6 +1191,10 @@ export class ListingsService {
       plannedDealerPlaceId?: string;
       plannedDealerLat?: number;
       plannedDealerLng?: number;
+      plannedDealerAddress?: string;
+      plannedDealerPhone?: string;
+      plannedDealerWebsite?: string;
+      plannedDealerEmail?: string;
     },
     isFirearm: boolean,
   ): {
@@ -1195,6 +1205,10 @@ export class ListingsService {
     plannedDealerPlaceId: string | null;
     plannedDealerLat: number | null;
     plannedDealerLng: number | null;
+    plannedDealerAddress: string | null;
+    plannedDealerPhone: string | null;
+    plannedDealerWebsite: string | null;
+    plannedDealerEmail: string | null;
   } {
     if (!isFirearm) {
       return {
@@ -1205,6 +1219,10 @@ export class ListingsService {
         plannedDealerPlaceId: null,
         plannedDealerLat: null,
         plannedDealerLng: null,
+        plannedDealerAddress: null,
+        plannedDealerPhone: null,
+        plannedDealerWebsite: null,
+        plannedDealerEmail: null,
       };
     }
     const name = (dto.plannedDealerName ?? '').trim();
@@ -1259,6 +1277,14 @@ export class ListingsService {
       plannedDealerPlaceId: placeId,
       plannedDealerLat: lat ?? null,
       plannedDealerLng: lng ?? null,
+      plannedDealerAddress:
+        (dto.plannedDealerAddress ?? '').trim().slice(0, 300) || null,
+      plannedDealerPhone:
+        (dto.plannedDealerPhone ?? '').trim().slice(0, 40) || null,
+      plannedDealerWebsite:
+        (dto.plannedDealerWebsite ?? '').trim().slice(0, 300) || null,
+      plannedDealerEmail:
+        (dto.plannedDealerEmail ?? '').trim().slice(0, 200) || null,
     };
   }
 
@@ -3270,9 +3296,30 @@ export class ListingsService {
       dto.plannedDealerArea !== undefined ||
       dto.plannedDealerPlaceId !== undefined ||
       dto.plannedDealerLat !== undefined ||
-      dto.plannedDealerLng !== undefined;
+      dto.plannedDealerLng !== undefined ||
+      dto.plannedDealerAddress !== undefined ||
+      dto.plannedDealerPhone !== undefined ||
+      dto.plannedDealerWebsite !== undefined ||
+      dto.plannedDealerEmail !== undefined;
     const plannedDealerUpdate = plannedDealerProvided
-      ? this.buildPlannedDealer(dto, listing.isFirearm)
+      ? {
+          ...this.buildPlannedDealer(dto, listing.isFirearm),
+          // Older clients send the original four fields but not the new
+          // contact ones. Preserve what the row already holds rather than
+          // wiping the dealer's phone/email on a routine edit.
+          ...(dto.plannedDealerAddress === undefined
+            ? { plannedDealerAddress: listing.plannedDealerAddress }
+            : {}),
+          ...(dto.plannedDealerPhone === undefined
+            ? { plannedDealerPhone: listing.plannedDealerPhone }
+            : {}),
+          ...(dto.plannedDealerWebsite === undefined
+            ? { plannedDealerWebsite: listing.plannedDealerWebsite }
+            : {}),
+          ...(dto.plannedDealerEmail === undefined
+            ? { plannedDealerEmail: listing.plannedDealerEmail }
+            : {}),
+        }
       : undefined;
     // Take a Shot thresholds must not cross post-edit (mirrors create()).
     // Compare the EFFECTIVE values — an edit may change only one side.
@@ -3304,6 +3351,13 @@ export class ListingsService {
       plannedDealerProvince: _omitPdProvince,
       plannedDealerArea: _omitPdArea,
       plannedDealerLocation: _omitPdLocation,
+      plannedDealerPlaceId: _omitPdPlaceId,
+      plannedDealerLat: _omitPdLat,
+      plannedDealerLng: _omitPdLng,
+      plannedDealerAddress: _omitPdAddress,
+      plannedDealerPhone: _omitPdPhone,
+      plannedDealerWebsite: _omitPdWebsite,
+      plannedDealerEmail: _omitPdEmail,
       // privateArrangeConsent is a boolean INTENT flag; the column is the
       // timestamp privateArrangeConsentAt, computed below. Never pass raw.
       privateArrangeConsent: _omitPaConsent,

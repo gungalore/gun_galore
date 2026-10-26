@@ -313,6 +313,12 @@ export interface Listing {
   plannedDealerPlaceId?: string | null;
   plannedDealerLat?: number | null;
   plannedDealerLng?: number | null;
+  // Dealer contact, owner-only. Phone/email/website are for verification and
+  // the dealer portal; never rendered on the public listing.
+  plannedDealerPhone?: string | null;
+  plannedDealerWebsite?: string | null;
+  plannedDealerEmail?: string | null;
+  plannedDealerAddress?: string | null;
   status: ListingStatus;
   condition: Condition;
   province: Province;

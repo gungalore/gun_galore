@@ -24,6 +24,7 @@ import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express
 import { memoryStorage } from 'multer';
 import { ListingsService } from './listings.service';
 import { PriceEstimateService } from './price-estimate.service';
+import { GooglePlacesService } from './google-places.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { BrowseListingsDto } from './dto/browse-listings.dto';
@@ -38,6 +39,7 @@ export class ListingsController {
   constructor(
     private readonly listingsService: ListingsService,
     private readonly priceEstimate: PriceEstimateService,
+    private readonly googlePlaces: GooglePlacesService,
   ) {}
 
   // --- Public ---
@@ -203,6 +205,16 @@ export class ListingsController {
       return { distanceKm: null };
     }
     return this.listingsService.distanceToBuyer(id, la, ln);
+  }
+
+  // Dealer lookup for the sell form. MUST be above @Get(':id') so
+  // 'dealer-place' isn't captured as an id. Auth-only: the backend key is
+  // IP-restricted and the result carries contact details.
+  @Get('dealer-place/:placeId')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async dealerPlace(@Param('placeId') placeId: string) {
+    return { place: await this.googlePlaces.details(placeId) };
   }
 
   // Public listing detail. OptionalAuthGuard makes this owner-aware without

@@ -140,6 +140,10 @@ export default function EditListingPage() {
     plannedDealerPlaceId: '',
     plannedDealerLat: null as number | null,
     plannedDealerLng: null as number | null,
+    plannedDealerPhone: '',
+    plannedDealerWebsite: '',
+    plannedDealerEmail: '',
+    dealerManual: false,
     // Auction-specific
     reservePrice: '',
     buyNowPrice: '',
@@ -237,10 +241,14 @@ export default function EditListingPage() {
           plannedDealerName: l.plannedDealerName ?? '',
           plannedDealerProvince: l.plannedDealerProvince ?? '',
           plannedDealerArea: l.plannedDealerArea ?? '',
-          plannedDealerAddress: l.plannedDealerLocation ?? '',
+          plannedDealerAddress: l.plannedDealerAddress ?? l.plannedDealerLocation ?? '',
           plannedDealerPlaceId: l.plannedDealerPlaceId ?? '',
           plannedDealerLat: l.plannedDealerLat ?? null,
           plannedDealerLng: l.plannedDealerLng ?? null,
+          plannedDealerPhone: l.plannedDealerPhone ?? '',
+          plannedDealerWebsite: l.plannedDealerWebsite ?? '',
+          plannedDealerEmail: l.plannedDealerEmail ?? '',
+          dealerManual: !l.plannedDealerPlaceId,
           reservePrice: l.reservePrice ? String(l.reservePrice / 100) : '',
           buyNowPrice: l.buyNowPrice ? String(l.buyNowPrice / 100) : '',
           autoAcceptThreshold: l.autoAcceptThreshold
@@ -436,14 +444,16 @@ export default function EditListingPage() {
     if (
       listing?.category.isFirearm &&
       (!form.plannedDealerName.trim() ||
-        !form.plannedDealerPlaceId ||
-        form.plannedDealerLat == null ||
-        form.plannedDealerLng == null ||
+        (!form.dealerManual &&
+          (!form.plannedDealerPlaceId ||
+            form.plannedDealerLat == null ||
+            form.plannedDealerLng == null)) ||
+        (form.dealerManual && !form.plannedDealerAddress.trim()) ||
         !form.plannedDealerProvince ||
         !form.plannedDealerArea.trim())
     ) {
       setError(
-        'Firearm listings need a gunshop selected from Google Places, plus its name and area.',
+        'Firearm listings need a nominated gunshop — pick one from Google Places or add the dealer details manually — with its name, province and area.',
       );
       setSubmitting(false);
       return;
@@ -484,6 +494,10 @@ export default function EditListingPage() {
         body.plannedDealerPlaceId = form.plannedDealerPlaceId;
         body.plannedDealerLat = form.plannedDealerLat;
         body.plannedDealerLng = form.plannedDealerLng;
+        body.plannedDealerAddress = form.plannedDealerAddress.trim();
+        body.plannedDealerPhone = form.plannedDealerPhone.trim();
+        body.plannedDealerWebsite = form.plannedDealerWebsite.trim();
+        body.plannedDealerEmail = form.plannedDealerEmail.trim();
       }
       // Auction + Take-a-Shot type-specific fields. We send them
       // regardless of listingType — backend ignores irrelevant ones.
@@ -1159,14 +1173,32 @@ export default function EditListingPage() {
                   placeholder="Area / town — e.g. Centurion"
                   aria-label="Dealer area or town"
                 />
+                <input
+                  type="tel"
+                  maxLength={40}
+                  value={form.plannedDealerPhone}
+                  onChange={(e) => set('plannedDealerPhone', e.target.value)}
+                  style={inputStyle}
+                  placeholder="Dealer phone (optional)"
+                  aria-label="Dealer phone"
+                />
+                <input
+                  type="email"
+                  maxLength={200}
+                  value={form.plannedDealerEmail}
+                  onChange={(e) => set('plannedDealerEmail', e.target.value)}
+                  style={inputStyle}
+                  placeholder="Dealer email — used to send the stock form"
+                  aria-label="Dealer email"
+                />
               </div>
               <p
                 className="text-xs mt-1"
                 style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
               >
-                Required for firearms — select the gunshop in Google Places so
-                buyers can gauge the collection drive. This nominated location
-                is used for the dealer transfer.
+                Required for firearms — search the gunshop, or use the manual
+                details. Buyers see the address and area; phone and email stay
+                private and are only used to verify the dealer.
               </p>
             </Field>
           </>

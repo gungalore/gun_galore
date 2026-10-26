@@ -1214,6 +1214,14 @@ model Listing {
   plannedDealerPlaceId  String?
   plannedDealerLat      Float?
   plannedDealerLng      Float?
+  // Contact details for the nominated dealer, captured from Google Places
+  // (New) or typed manually. Used to verify the dealer and to send the
+  // dealer-portal link; never published on the listing. Null for
+  // non-firearm listings.
+  plannedDealerAddress  String?
+  plannedDealerPhone    String?
+  plannedDealerWebsite  String?
+  plannedDealerEmail    String?
 
   // Seller pickup address (where the courier collects from, or where the
   // private/dealer-transfer hand-off originates). Captured at listing
@@ -1486,6 +1494,10 @@ model Dealer {
   lng           Float?
   phone         String?
   email         String?
+  // The Google Place this dealer was nominated from, and their website.
+  // placeId links the listing's Google pick to the trusted directory row.
+  placeId       String?   @unique
+  website       String?
   // Offered to buyers at checkout. AUTO entries land isActive=false so OCR
   // alone can never route a live firearm transfer through an unvetted dealer.
   isActive      Boolean   @default(true)
@@ -1507,10 +1519,41 @@ model Dealer {
   updatedAt     DateTime  @updatedAt
 
   transactions Transaction[]
+  dealerPortalRequests DealerPortalRequest[]
 
   @@index([province])
   @@index([isActive])
   @@index([source])
+}
+
+/**
+ * One dealer-portal invitation: the email that carries a one-time link to
+ * the nominated stocking dealer. The dealer proves their identity with a
+ * dealer stamp carrying their name and SAPS number, then completes the
+ * stock form (firearm details + acknowledgement) and uploads the SAP 534.
+ *
+ * Status: SENT -> APPROVED | PENDING_ADMIN_REVIEW | REJECTED.
+ */
+model DealerPortalRequest {
+  id              String      @id @default(cuid())
+  transactionId   String
+  transaction     Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  dealerEmail     String
+  tokenHash       String      @unique
+  status          String      @default("SENT")
+  expiresAt       DateTime
+  stampPhotoUrl   String?
+  saps534PhotoUrl String?
+  form            Json?
+  aiFindings      Json?
+  aiConfidence    Float?
+  dealerId        String?
+  dealer          Dealer?     @relation(fields: [dealerId], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([transactionId])
+  @@index([status])
 }
 
 model Transaction {
@@ -2032,6 +2075,10 @@ model Transaction {
   // SAPS audit cross-reference. Optional — not always available at
   // upload time.
   dealerStockRegisterRef     String?
+  // When the dealer-portal invitation was sent (idempotency for the
+  // accept-time trigger). Null until a dealer-transfer acceptance fires it.
+  dealerVerificationRequestedAt DateTime?
+  dealerPortalRequests DealerPortalRequest[]
 
   // ── Stocked-at dealer contact (sent to buyer on payout release) ──
   // When verification approves, Gun Galore's job ends. We notify the

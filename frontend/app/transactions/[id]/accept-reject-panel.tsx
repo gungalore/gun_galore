@@ -60,6 +60,10 @@ export function AcceptRejectPanel({
   const router = useRouter();
   const { getToken } = useAuth();
   const [view, setView] = useState<View>({ kind: 'idle' });
+  // Dealer-transfer sales collect the stocking dealer's email inline: the
+  // dealer portal invitation is sent the moment the seller accepts.
+  const [dealerEmail, setDealerEmail] = useState('');
+  const dealerEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dealerEmail.trim());
 
   async function authedFetch(
     path: string,
@@ -79,7 +83,10 @@ export function AcceptRejectPanel({
   async function doAccept() {
     setView({ kind: 'submitting-accept' });
     try {
-      const res = await authedFetch(`/transactions/${transactionId}/accept`);
+      const res = await authedFetch(
+        `/transactions/${transactionId}/accept`,
+        isDealerTransfer ? { dealerEmail: dealerEmail.trim() } : undefined,
+      );
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { message?: string };
         setView({
@@ -349,17 +356,58 @@ export function AcceptRejectPanel({
         </p>
       )}
 
+      {isDealerTransfer && (
+        <label className="block mb-3">
+          <span
+            className="block text-xs mb-1"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            Stocking dealer&apos;s email
+          </span>
+          <input
+            type="email"
+            value={dealerEmail}
+            onChange={(e) => setDealerEmail(e.target.value)}
+            placeholder="dealer@example.co.za"
+            autoComplete="email"
+            className="w-full p-2 rounded-[6px] text-sm"
+            style={{
+              background: 'var(--bg-inset)',
+              border: '0.5px solid var(--border)',
+              color: 'var(--text-primary)',
+            }}
+          />
+          <span
+            className="block mt-1 text-[11px]"
+            style={{ color: 'var(--text-tertiary)', lineHeight: 1.45 }}
+          >
+            We&apos;ll email the dealer a secure form to confirm the firearm is
+            stocked with them. Ask them for the address if you don&apos;t have
+            it.
+          </span>
+        </label>
+      )}
+
       <button
         type="button"
-        disabled={isBusy}
+        disabled={isBusy || (isDealerTransfer && !dealerEmailValid)}
         onClick={() => void doAccept()}
         className="w-full py-3 px-4 rounded-[8px] text-sm mb-2"
         style={{
-          background: isBusy ? 'var(--bg-inset)' : 'var(--red)',
-          color: isBusy ? 'var(--text-tertiary)' : '#fff',
+          background:
+            isBusy || (isDealerTransfer && !dealerEmailValid)
+              ? 'var(--bg-inset)'
+              : 'var(--red)',
+          color:
+            isBusy || (isDealerTransfer && !dealerEmailValid)
+              ? 'var(--text-tertiary)'
+              : '#fff',
           border: 'none',
           fontWeight: 500,
-          cursor: isBusy ? 'not-allowed' : 'pointer',
+          cursor:
+            isBusy || (isDealerTransfer && !dealerEmailValid)
+              ? 'not-allowed'
+              : 'pointer',
         }}
       >
         {isSubmittingAccept ? 'Accepting…' : 'Accept this sale'}

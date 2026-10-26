@@ -4,6 +4,7 @@ import { ListingsService } from './listings.service';
 import { ListingsController } from './listings.controller';
 import { FirearmLicenceService } from './firearm-licence.service';
 import { PriceEstimateService } from './price-estimate.service';
+import { GooglePlacesService } from './google-places.service';
 import { ListingQuestionsService } from './listing-questions.service';
 import {
   ListingQuestionsController,
@@ -44,6 +45,7 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
     ListingInquiriesService,
     FirearmLicenceService,
     PriceEstimateService,
+    GooglePlacesService,
     // Optional-auth guard for the public-but-owner-aware GET /listings/:id.
     OptionalAuthGuard,
   ],

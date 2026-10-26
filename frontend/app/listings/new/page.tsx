@@ -652,6 +652,48 @@ export default function NewListingPage() {
   const [plannedDealerPlaceId, setPlannedDealerPlaceId] = useState('');
   const [plannedDealerLat, setPlannedDealerLat] = useState<number | null>(null);
   const [plannedDealerLng, setPlannedDealerLng] = useState<number | null>(null);
+  // Dealer contact captured from Places (New) or typed manually. Used to
+  // verify the dealer and send the stock-confirmation form; never public.
+  const [plannedDealerPhone, setPlannedDealerPhone] = useState('');
+  const [plannedDealerWebsite, setPlannedDealerWebsite] = useState('');
+  const [plannedDealerEmail, setPlannedDealerEmail] = useState('');
+  const [dealerManual, setDealerManual] = useState(false);
+
+  // Enrich a Google place pick with the dealer's contact details. The new
+  // Places API is called server-side (the backend key is IP-restricted) and
+  // the email is best-effort: Google has none, so it comes from the site.
+  async function lookupDealer(placeId: string) {
+    try {
+      const token = await getToken();
+      const res = await fetch(
+        `${API_URL}/listings/dealer-place/${encodeURIComponent(placeId)}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+      if (!res.ok) return;
+      const j = (await res.json()) as {
+        place?: {
+          name?: string | null;
+          address?: string | null;
+          phone?: string | null;
+          website?: string | null;
+          email?: string | null;
+          province?: string | null;
+          city?: string | null;
+        } | null;
+      };
+      const p = j.place;
+      if (!p) return;
+      if (p.name) setPlannedDealerName(p.name);
+      if (p.address) setPlannedDealerAddress(p.address);
+      if (p.phone) setPlannedDealerPhone(p.phone);
+      if (p.website) setPlannedDealerWebsite(p.website);
+      if (p.email) setPlannedDealerEmail(p.email);
+      if (p.province) setPlannedDealerProvince(p.province);
+      if (p.city) setPlannedDealerArea(p.city);
+    } catch {
+      /* manual entry remains available */
+    }
+  }
   // Collection-only papers attestation — required for requiresPapers
   // categories (trailers / caravans). Seller confirms they hold valid
   // registration + roadworthy papers and will hand them over at
@@ -1045,6 +1087,10 @@ export default function NewListingPage() {
         plannedDealerPlaceId?: string;
         plannedDealerLat?: number | null;
         plannedDealerLng?: number | null;
+        plannedDealerPhone?: string;
+        plannedDealerWebsite?: string;
+        plannedDealerEmail?: string;
+        dealerManual?: boolean;
         // Everything below used to be left out of the draft, which meant a
         // PWA reload silently reset it: required specifications came back
         // blank, a multi-unit seller's quantity fell back to 1 (they could
@@ -1116,6 +1162,10 @@ export default function NewListingPage() {
       if (d.plannedDealerPlaceId !== undefined) setPlannedDealerPlaceId(d.plannedDealerPlaceId);
       if (d.plannedDealerLat !== undefined) setPlannedDealerLat(d.plannedDealerLat);
       if (d.plannedDealerLng !== undefined) setPlannedDealerLng(d.plannedDealerLng);
+      if (typeof d.plannedDealerPhone === 'string') setPlannedDealerPhone(d.plannedDealerPhone);
+      if (typeof d.plannedDealerWebsite === 'string') setPlannedDealerWebsite(d.plannedDealerWebsite);
+      if (typeof d.plannedDealerEmail === 'string') setPlannedDealerEmail(d.plannedDealerEmail);
+      if (typeof d.dealerManual === 'boolean') setDealerManual(d.dealerManual);
       if (typeof d.stock === 'string') setStock(d.stock);
       if (typeof d.serialNumber === 'string') setSerialNumber(d.serialNumber);
       // Consents restore as the seller left them — same device, same seller,
@@ -1157,6 +1207,10 @@ export default function NewListingPage() {
           plannedDealerPlaceId,
           plannedDealerLat,
           plannedDealerLng,
+          plannedDealerPhone,
+          plannedDealerWebsite,
+          plannedDealerEmail,
+          dealerManual,
           // Specifications / quantity / serial / consents — all plain data,
           // all previously lost on a reload. attrValues is saved as-is
           // (strings + booleans) and re-applied via pendingAttrValuesRef on
@@ -1185,6 +1239,10 @@ export default function NewListingPage() {
     plannedDealerPlaceId,
     plannedDealerLat,
     plannedDealerLng,
+    plannedDealerPhone,
+    plannedDealerWebsite,
+    plannedDealerEmail,
+    dealerManual,
     attrValues,
     stock,
     serialNumber,
@@ -1781,8 +1839,16 @@ export default function NewListingPage() {
     // mandatory before publish (2026-07-13). Non-firearm listings skip it.
     if (isFirearm) {
       if (!plannedDealerName.trim()) step4.push('Dealer for the transfer');
-      if (!plannedDealerPlaceId || plannedDealerLat == null || plannedDealerLng == null) {
+      if (
+        !dealerManual &&
+        (!plannedDealerPlaceId ||
+          plannedDealerLat == null ||
+          plannedDealerLng == null)
+      ) {
         step4.push('Gunshop selected from Google Places');
+      }
+      if (dealerManual && !plannedDealerAddress.trim()) {
+        step4.push('Dealer address');
       }
       if (!plannedDealerProvince) step4.push('Dealer province');
       if (!plannedDealerArea.trim()) step4.push('Dealer area');
@@ -2103,6 +2169,10 @@ export default function NewListingPage() {
             plannedDealerPlaceId,
             plannedDealerLat,
             plannedDealerLng,
+            plannedDealerAddress: plannedDealerAddress.trim(),
+            plannedDealerPhone: plannedDealerPhone.trim(),
+            plannedDealerWebsite: plannedDealerWebsite.trim(),
+            plannedDealerEmail: plannedDealerEmail.trim(),
           }
         : {}),
       // Collection papers attestation — only meaningful for requiresPapers
@@ -2462,14 +2532,16 @@ export default function NewListingPage() {
     if (
       isFirearm &&
       (!plannedDealerName.trim() ||
-        !plannedDealerPlaceId ||
-        plannedDealerLat == null ||
-        plannedDealerLng == null ||
+        (!dealerManual &&
+          (!plannedDealerPlaceId ||
+            plannedDealerLat == null ||
+            plannedDealerLng == null)) ||
+        (dealerManual && !plannedDealerAddress.trim()) ||
         !plannedDealerProvince ||
         !plannedDealerArea.trim())
     ) {
       setPublishError(
-        'Firearm listings need a gunshop selected from Google Places, plus its name and area, in the Delivery & address step.',
+        'Firearm listings need a nominated gunshop — pick one from Google Places or add the dealer details manually — with its name, province and area, in the Delivery & address step.',
       );
       return;
     }
@@ -4266,40 +4338,84 @@ export default function NewListingPage() {
                         outline: 'none',
                       }}
                     />
-                    <AddressAutocomplete
-                      value={plannedDealerAddress}
-                      placeTypes={['establishment']}
-                      onChange={(address, placeId) => {
-                        setPlannedDealerAddress(address);
-                        setPlannedDealerPlaceId(placeId ?? '');
-                        if (!placeId) {
-                          setPlannedDealerLat(null);
-                          setPlannedDealerLng(null);
+                    {dealerManual ? (
+                      <input
+                        type="text"
+                        maxLength={300}
+                        value={plannedDealerAddress}
+                        onChange={(e) =>
+                          setPlannedDealerAddress(e.target.value)
                         }
+                        placeholder="Dealer street address"
+                        aria-label="Dealer address"
+                        style={{
+                          width: '100%',
+                          background: 'var(--bg-inset)',
+                          border: '0.5px solid var(--border)',
+                          color: 'var(--text-primary)',
+                          borderRadius: '6px',
+                          padding: '8px 12px',
+                          fontSize: '14px',
+                          outline: 'none',
+                        }}
+                      />
+                    ) : (
+                      <AddressAutocomplete
+                        value={plannedDealerAddress}
+                        placeTypes={['establishment']}
+                        onChange={(address, placeId) => {
+                          setPlannedDealerAddress(address);
+                          setPlannedDealerPlaceId(placeId ?? '');
+                          if (!placeId) {
+                            setPlannedDealerLat(null);
+                            setPlannedDealerLng(null);
+                          }
+                        }}
+                        onPlaceSelected={(place) => {
+                          if (place.name) setPlannedDealerName(place.name);
+                          if (place.placeId) {
+                            setPlannedDealerPlaceId(place.placeId);
+                            void lookupDealer(place.placeId);
+                          }
+                          setPlannedDealerLat(place.components.lat ?? null);
+                          setPlannedDealerLng(place.components.lng ?? null);
+                          if (place.components.province) {
+                            setPlannedDealerProvince(place.components.province);
+                          }
+                          const area =
+                            place.components.city || place.components.suburb;
+                          if (area) setPlannedDealerArea(area);
+                        }}
+                        onComponents={(components) => {
+                          setPlannedDealerLat(components.lat ?? null);
+                          setPlannedDealerLng(components.lng ?? null);
+                          if (components.province) {
+                            setPlannedDealerProvince(components.province);
+                          }
+                          const area = components.city || components.suburb;
+                          if (area) setPlannedDealerArea(area);
+                        }}
+                        placeholder="Search for the gunshop address…"
+                        hideLocate
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setDealerManual((m) => !m)}
+                      className="text-xs"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 0,
+                        color: 'var(--red)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
                       }}
-                      onPlaceSelected={(place) => {
-                        if (place.name) setPlannedDealerName(place.name);
-                        if (place.placeId) setPlannedDealerPlaceId(place.placeId);
-                        setPlannedDealerLat(place.components.lat ?? null);
-                        setPlannedDealerLng(place.components.lng ?? null);
-                        if (place.components.province) {
-                          setPlannedDealerProvince(place.components.province);
-                        }
-                        const area = place.components.city || place.components.suburb;
-                        if (area) setPlannedDealerArea(area);
-                      }}
-                      onComponents={(components) => {
-                        setPlannedDealerLat(components.lat ?? null);
-                        setPlannedDealerLng(components.lng ?? null);
-                        if (components.province) {
-                          setPlannedDealerProvince(components.province);
-                        }
-                        const area = components.city || components.suburb;
-                        if (area) setPlannedDealerArea(area);
-                      }}
-                      placeholder="Search for the gunshop address…"
-                      hideLocate
-                    />
+                    >
+                      {dealerManual
+                        ? 'Search Google Places instead'
+                        : 'Add the dealer details manually'}
+                    </button>
                     <select
                       value={plannedDealerProvince}
                       onChange={(e) =>
@@ -4358,14 +4474,50 @@ export default function NewListingPage() {
                         outline: 'none',
                       }}
                     />
+                    <input
+                      type="tel"
+                      maxLength={40}
+                      value={plannedDealerPhone}
+                      onChange={(e) => setPlannedDealerPhone(e.target.value)}
+                      placeholder="Dealer phone (optional)"
+                      aria-label="Dealer phone"
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-inset)',
+                        border: '0.5px solid var(--border)',
+                        color: 'var(--text-primary)',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        fontSize: '14px',
+                        outline: 'none',
+                      }}
+                    />
+                    <input
+                      type="email"
+                      maxLength={200}
+                      value={plannedDealerEmail}
+                      onChange={(e) => setPlannedDealerEmail(e.target.value)}
+                      placeholder="Dealer email — used to send the stock form"
+                      aria-label="Dealer email"
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-inset)',
+                        border: '0.5px solid var(--border)',
+                        color: 'var(--text-primary)',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        fontSize: '14px',
+                        outline: 'none',
+                      }}
+                    />
                   </div>
                   <p
                     className="text-xs mt-1"
                     style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
                   >
-                  Required — choose the gunshop in Google Places so buyers can
-                  see its distance from them. Dealer transfer and stock-in
-                  verification will use this nominated location.
+                    We use this dealer for the transfer and stock-in check. The
+                    address and area are shown to buyers; the phone and email
+                    stay private and are only used to verify the dealer.
                   </p>
                 </div>
               )}

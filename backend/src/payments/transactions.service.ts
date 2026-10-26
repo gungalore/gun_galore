@@ -5,6 +5,7 @@ import {
   NotFoundException,
   ForbiddenException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -36,6 +37,7 @@ import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { resolvePurchaseQuantity, reversalListingData } from './inventory';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Saps534Service, Saps534Data } from './saps534.service';
+import { DealerPortalService } from './dealer-portal.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {
@@ -150,6 +152,10 @@ export class TransactionsService {
     // P5.2 — wishlist "your saved item sold" fan-out.
     private readonly wishlistAlerts: WishlistAlertsService,
     private readonly saps534: Saps534Service,
+    // Dealer-portal invitation on a dealer-transfer acceptance. Optional so
+    // existing positional test harnesses keep working.
+    @Optional()
+    private readonly dealerPortal?: DealerPortalService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -2601,7 +2607,12 @@ export class TransactionsService {
   async acceptTransaction(
     transactionId: string,
     sellerId: string,
-    opts?: { collectionNotBefore?: Date; collectionWindow?: string },
+    opts?: {
+      collectionNotBefore?: Date;
+      collectionWindow?: string;
+      /** Dealer email collected inline on the accept panel (dealer transfer). */
+      dealerEmail?: string;
+    },
   ) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -2686,6 +2697,18 @@ export class TransactionsService {
     this.logger.log(
       `Transaction ${transactionId} accepted by seller ${seller.id}; dispatch deadline ${stamp.dispatchDeadlineAt.toISOString()}`,
     );
+    /**
+     * Dealer-transfer sale: the seller nominated a gunshop and the buyer chose
+     * dealer transfer. Send the dealer the one-time portal link now. The
+     * portal's own guard checks firearm + DEALER_TRANSFER, so this is safe on
+     * every rail. Fire-and-forget: a mail failure never un-accepts the sale.
+     */
+    if (tx.shippingMethod === 'DEALER_TRANSFER') {
+      void this.dealerPortal?.requestForTransaction(
+        transactionId,
+        opts?.dealerEmail ?? null,
+      );
+    }
     return updated;
   }
 

@@ -190,6 +190,13 @@ export class CreateListingDto {
   @IsOptional() @IsString() @MaxLength(200) plannedDealerPlaceId?: string;
   @IsOptional() @IsNumber() plannedDealerLat?: number;
   @IsOptional() @IsNumber() plannedDealerLng?: number;
+  // Dealer contact details, captured from Google Places (New) or typed
+  // manually. Used to verify the dealer and send the dealer-portal link;
+  // never published on the listing.
+  @IsOptional() @IsString() @MaxLength(300) plannedDealerAddress?: string;
+  @IsOptional() @IsString() @MaxLength(40) plannedDealerPhone?: string;
+  @IsOptional() @IsString() @MaxLength(300) plannedDealerWebsite?: string;
+  @IsOptional() @IsString() @MaxLength(200) plannedDealerEmail?: string;
   // Legacy/derived display string. Server-composed from the three parts
   // above; accepted but ignored on input (kept for backward compat).
   @IsOptional() @IsString() @MaxLength(200) plannedDealerLocation?: string;
