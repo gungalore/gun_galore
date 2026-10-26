@@ -7,6 +7,26 @@ overwritten.
 
 Last updated: **2026-10-26**.
 
+## 2026-10-26 - CREDENTIAL REMINDERS OPEN THE DOCUMENT (DEPLOYED)
+
+**"Tap to act" now opens the document that is expiring.** Two defects:
+
+- The `Act` pill on an action-required inbox row was a plain `<span>` beside the
+  `<Link>`, so tapping the pill itself did nothing. It is inside the link now.
+- Credential reminders persisted `url: '/documents'`; the Centre opens folded and
+  selects its first row, so the member landed beside the document the reminder
+  was about. The expiry sweep and the confirm-date nudge now write
+  `/documents?doc=<credentialId>`; legacy rows derive the same target from
+  `linkedId` (`notificationHref`), and the Centre opens that row's section and
+  selects it (`deepLinkedDocument`). The email CTA and SMS carry the deep link
+  too.
+
+Commit `ad175ef0`. Deploy at 20:57 SAST, full: rollback
+`alloutdoor-20261026-205631.dump` (32,057,397 bytes), no migrations,
+backend/frontend health ×2 OK, public 200 ×2, three PM2 services online.
+Gates: backend tsc + 380 suites / 5,821 tests (8 skipped); frontend tsc + 158
+files / 1,815 tests (1 skipped); production build clean.
+
 ## 2026-10-26 - EXPLAINERS FOLDED INTO THE TERMS, SITE TIDIED (DEPLOYED)
 
 **The payment explainers are gone; the binding text is in the Terms.** A sweep
