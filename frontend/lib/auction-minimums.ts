@@ -41,9 +41,9 @@ export type AuctionDuration = {
 };
 
 export const AUCTION_DURATIONS: AuctionDuration[] = [
-  { days: 3, minCents: 100_000 },
-  { days: 5, minCents: 250_000 },
-  { days: 7, minCents: 600_000 },
+  { days: 3, minCents: 250_000 },
+  { days: 5, minCents: 500_000 },
+  { days: 7, minCents: 750_000 },
   { days: 14, minCents: 1_000_000 },
 ].map((d) => ({
   ...d,

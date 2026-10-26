@@ -302,9 +302,9 @@ const PRICELESS_LISTING_TYPES = new Set<ListingType>([
 // A longer run costs the platform more in exposure and carries more risk
 // (a stale listing, a withdrawn item), so the value the auction advertises
 // has to justify the days. Mirrored in the sell form
-// (frontend/app/listings/new/page.tsx, AUCTION_MIN_VALUE_CENTS) so the
-// seller sees the floor before they hit Publish — the check here is the
-// one that actually holds, because the price fields are client-supplied.
+// (frontend/lib/auction-minimums.ts, AUCTION_DURATIONS) so the seller sees
+// the floor before they hit Publish — the check here is the one that
+// actually holds, because the price fields are client-supplied.
 //
 // ⚠️ THE FLOOR IS ON THE RESERVE, NOT ON THE STARTING BID. The starting
 // bid is DERIVED at 30% under the reserve — applying the minimum to it
@@ -313,9 +313,9 @@ const PRICELESS_LISTING_TYPES = new Set<ListingType>([
 // seller's typed starting bid stand in as the committed value and take
 // the floor.
 export const AUCTION_MIN_VALUE_CENTS: Record<number, number> = {
-  3: 100_000, // R1,000
-  5: 250_000, // R2,500
-  7: 600_000, // R6,000
+  3: 250_000, // R2,500
+  5: 500_000, // R5,000
+  7: 750_000, // R7,500
   14: 1_000_000, // R10,000
 };
 

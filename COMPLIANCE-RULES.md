@@ -163,7 +163,7 @@ Ban threshold `BAN_AT = 2` strikes: sets `sellingBannedAt` and cancels all ACTIV
 
 | Rule | Where |
 |---|---|
-| Duration required. Minimum committed value by length: 3 days R1,000; 5 days R2,500; 7 days R6,000; 14 days R10,000. The floor applies to the reserve if set, else the starting bid. | `AUCTION_MIN_VALUE_CENTS` |
+| Duration required. Minimum committed value by length: 3 days R2,500; 5 days R5,000; 7 days R7,500; 14 days R10,000. The floor applies to the reserve if set, else the starting bid. | `AUCTION_MIN_VALUE_CENTS` |
 | With a reserve, starting bid is forced server-side to 70% of the reserve (floor). Without one, the seller's starting bid stands (must be > 0). | `listings.service.ts` |
 | Buy Now price must exceed the starting bid; Buy Now only while there are zero bids. | `listings.service.ts`, `auctions.service.ts` |
 | Reserve amount never exposed; only `hasReserve` and `reserveMet`. Proxy `maxAmount` never public. | `auctions.service.ts` |

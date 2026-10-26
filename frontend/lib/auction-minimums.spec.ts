@@ -12,16 +12,16 @@ import {
 // floor is measured against: the reserve (or the starting bid the seller
 // typed when there is no reserve), NEVER the derived 30%-under starting
 // bid. The operator was explicit that the 30% figure "can fall below the
-// value" — so a set reserve of R1,000 with the resulting R700 start must
-// pass a 3-day floor of R1,000.
+// value" — so a set reserve of R2,500 with the resulting R1,750 start must
+// pass a 3-day floor of R2,500.
 // ────────────────────────────────────────────────────────────────────
 
 describe('auction minimums — the numbers', () => {
   it('prints the four durations with their floors', () => {
     expect(AUCTION_DURATIONS.map((d) => [d.days, d.minCents])).toEqual([
-      [3, 100_000],
-      [5, 250_000],
-      [7, 600_000],
+      [3, 250_000],
+      [5, 500_000],
+      [7, 750_000],
       [14, 1_000_000],
     ]);
   });
@@ -30,9 +30,9 @@ describe('auction minimums — the numbers', () => {
     // The sublabel is what the seller reads; a mismatch between it and the
     // enforced figure is a claim the gate does not honour.
     expect(AUCTION_DURATIONS.map((d) => d.sublabel)).toEqual([
-      'min R1,000',
       'min R2,500',
-      'min R6,000',
+      'min R5,000',
+      'min R7,500',
       'min R10,000',
     ]);
     for (const d of AUCTION_DURATIONS) {
@@ -41,7 +41,7 @@ describe('auction minimums — the numbers', () => {
   });
 
   it('resolves a floor from a string or a number, and null when unset', () => {
-    expect(auctionMinValueCents('3')).toBe(100_000);
+    expect(auctionMinValueCents('3')).toBe(250_000);
     expect(auctionMinValueCents(14)).toBe(1_000_000);
     expect(auctionMinValueCents('')).toBeNull();
     expect(auctionMinValueCents(null)).toBeNull();
@@ -58,14 +58,14 @@ describe('auction minimums — the numbers', () => {
 
 describe('auction minimums — the floor is on the reserve, not the derived bid', () => {
   it('passes when the reserve clears the floor even though the 30% start is below it', () => {
-    // Reserve R1,000 on a 3-day run → derived start R700 (30% under).
-    // The start is below R1,000 by design; the reserve is what counts.
-    const start = Math.floor(100_000 * 0.7);
-    expect(start).toBeLessThan(100_000);
+    // Reserve R2,500 on a 3-day run → derived start R1,750 (30% under).
+    // The start is below R2,500 by design; the reserve is what counts.
+    const start = Math.floor(250_000 * 0.7);
+    expect(start).toBeLessThan(250_000);
     expect(
       auctionFloorViolation({
         durationDays: '3',
-        reserveCents: 100_000,
+        reserveCents: 250_000,
         startingBidCents: start,
       }),
     ).toBeNull();
@@ -75,10 +75,10 @@ describe('auction minimums — the floor is on the reserve, not the derived bid'
     expect(
       auctionFloorViolation({
         durationDays: '3',
-        reserveCents: 99_999,
+        reserveCents: 249_999,
         startingBidCents: 0,
       }),
-    ).toEqual({ field: 'reserve', minCents: 100_000 });
+    ).toEqual({ field: 'reserve', minCents: 250_000 });
   });
 
   it('blocks a typed starting bid below the floor when there is no reserve', () => {
@@ -86,9 +86,9 @@ describe('auction minimums — the floor is on the reserve, not the derived bid'
       auctionFloorViolation({
         durationDays: '7',
         reserveCents: 0,
-        startingBidCents: 599_999,
+        startingBidCents: 749_999,
       }),
-    ).toEqual({ field: 'startingBid', minCents: 600_000 });
+    ).toEqual({ field: 'startingBid', minCents: 750_000 });
   });
 
   it('lets a typed starting bid clear the floor when there is no reserve', () => {
@@ -96,7 +96,7 @@ describe('auction minimums — the floor is on the reserve, not the derived bid'
       auctionFloorViolation({
         durationDays: '7',
         reserveCents: 0,
-        startingBidCents: 600_000,
+        startingBidCents: 750_000,
       }),
     ).toBeNull();
   });
