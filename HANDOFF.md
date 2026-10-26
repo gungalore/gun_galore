@@ -7,6 +7,43 @@ overwritten.
 
 Last updated: **2026-10-26**.
 
+## 2026-10-26 - EXPLAINERS FOLDED INTO THE TERMS, SITE TIDIED (DEPLOYED)
+
+**The payment explainers are gone; the binding text is in the Terms.** A sweep
+of every explanation surface found five places repeating the same rules. What
+was duplication is retired; what earns its place stayed.
+
+- `/how-payments-work` and `/buyer-protection` no longer render. Both answer
+  with a config redirect (308) to `/terms#payments` and
+  `/terms#buyer-protection`. ⚠️ NOT page-level `permanentRedirect()`: a
+  redirect-only page under a static layout is prerendered, so the response is a
+  200 with the redirect digest in the RSC payload and the URL stays indexable.
+  Config redirects run before middleware and render nothing.
+- Terms additions: South-Africa-only delivery in §9, and a §11 Buyer protection
+  paragraph carrying the scope AND the exclusions (remorse, accepted fault,
+  post-delivery losses) that used to live on the retired page. Anchors added to
+  §7 and §11.
+- Removed the dead `TrustGuaranteeModal` (mounted in the root layout, but
+  nothing ever linked `?why=alloutdoor`/`?guarantee=true`) and its public
+  mockup HTML.
+- Homepage "Good to know" is now a one-line link strip (selling guide, FAQ,
+  fees, condition guide, contact) instead of three duplicate accordions.
+- `/about` keeps the company/ECT § 43 block and points at the Terms and Fees in
+  place of its procedural "How it works" copy.
+- Retired routes removed from the footer, `/legal` index, sitemap and
+  `fine-print-routes`; middleware no longer lists them as public paths.
+- Kept: `/faq` (SERP JSON-LD), `/fees` (worked examples),
+  `/condition-guide` (grading rubric), `/how-selling-works`, cart
+  `TrustBullets`, PDP `HelpTip`s, firearm checkout "How this works".
+
+Commits `7728ab3c` + `4c6d5fc7`. Deploy at 19:53 SAST, full: rollback
+`alloutdoor-20261026-195331.dump` (32 054 362 bytes), no migrations,
+backend/frontend health x2 OK, public 200 x2, three PM2 services online.
+Live verified: both old URLs return `308` with the anchored `Location`.
+Gates: frontend tsc + prod build clean, 156 files / 1 806 tests (one unrelated
+`design-picker` canvas test timed out in the full run and passes in isolation);
+backend tsc + 379 suites / 5 818 tests.
+
 ## 2026-10-26 - SIGN-UP NAMES + CELL OTP, PROFILE ADDRESS IN THE BOOK (DEPLOYED)
 
 **Sign-up now actually keeps the name and proves the cell number.** The form
