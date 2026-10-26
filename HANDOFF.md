@@ -21,10 +21,12 @@ Dealer invitations go to the dealer and nowhere else.
 - The `DEALER_FORM_COPY_EMAIL` line was removed from the box's `backend/.env`
   (backup `.env.bak-dealer-copy-removed-20261026`).
 
-Deploy at 18:09 SAST, backend-only (commit `...`): rollback
-`alloutdoor-20261026-...dump`, no migrations, health x2 OK, public 200 x2,
-three PM2 services online. Notifications suites 8 files / 62 tests green;
-backend tsc clean.
+Deploy at 18:11 SAST, backend-only (commit `6c96ce36`, script in `9e1964d5`):
+rollback `alloutdoor-20261026-181151.dump` (32 051 297 bytes), no migrations,
+health x2 OK, public 200 x2, three PM2 services online. Notifications suites
+8 files / 62 tests green; backend tsc clean. Test email sent to
+gerhard.fourie@alloutdoor.co.za at 18:12; no outbox row, so Resend accepted
+it. Re-send any time with `npm run dealer-form:test -- <email>` on the box.
 
 ## 2026-10-26 - ADDRESS AUTOCOMPLETE NOW GOES THROUGH THE BACKEND (DEPLOYED)
 
