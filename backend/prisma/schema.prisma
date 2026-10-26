@@ -972,15 +972,17 @@ model Listing {
   // The province of the seller's pickup address; `province` above is derived
   // from it. Nullable only for rows created before this column existed.
   pickupProvince Province?
-  // PUBLIC, COARSE vicinity — town/city only, derived from pickupCity at write
-  // time and normalised. This is the ONLY sub-province location a buyer ever
+  // PUBLIC, COARSE vicinity — the postal AREA a buyer sees ("Kraaifontein"),
+  // resolved from pickupPostalCode at write time, falling back to the town when
+  // the code is unknown. This is the ONLY sub-province location a buyer ever
   // sees, and it is what makes "you knew where it was before you paid" true.
   //
-  // Never the street, unit, building or suburb: in a small town, suburb + town
-  // narrows a residential address to a handful of properties. pickupSuburb is
-  // on PUBLIC_LISTING_SELECT's explicit NEVER list and there is a regression
-  // test holding it there — this column exists so that stays true while buyers
-  // still learn which town they would be driving to.
+  // Never the street, unit, building or a raw pickupSuburb: in a small town,
+  // suburb + town narrows a residential address to a handful of properties.
+  // pickupSuburb is only used internally to choose between the several place
+  // names a postal code can carry, and pickupSuburb itself stays on
+  // PUBLIC_LISTING_SELECT's explicit NEVER list — there is a regression test
+  // holding it there.
   publicLocality String?   @db.VarChar(80)
 
   isFirearm               Boolean   @default(false)

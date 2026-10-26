@@ -29,6 +29,7 @@
       "motivation:golden": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/motivation-golden.ts",
       "motivation:golden:init": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/motivation-golden.ts --init",
     "crime-stats:fixture": "node scripts/crime-stats-make-fixture.cjs",
+    "listings:backfill-locality": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/backfill-public-locality.ts",
     "news:poll": "ts-node --transpile-only --project tsconfig.json scripts/news-poll.ts",
     "test:e2e:setup": "node scripts/e2e-db.mjs"
   },

@@ -32,6 +32,7 @@ import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.servic
 import { ActivityService } from '../activity/activity.service';
 import { validateAndCleanAttributes } from './attribute-validation';
 import { toPublicLocality } from './locality';
+import { resolvePostalArea } from './postal-locality';
 import { Prisma } from '@prisma/client';
 import { FeeCalculator } from '../payments/fee.calculator';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -79,10 +80,10 @@ export const PUBLIC_LISTING_SELECT = {
   status: true,
   condition: true,
   province: true,
-  // Town/city only — NEVER a street, unit, building or suburb. This is the
-  // vicinity a buyer must see before paying, and it is the factual basis for
-  // "location is not a refund ground". See listings/locality.ts for why the
-  // granularity stops at town.
+  // Postal area, falling back to town/city — NEVER a street, unit, building or
+  // a raw suburb. This is the vicinity a buyer must see before paying, and it
+  // is the factual basis for "location is not a refund ground". See
+  // listings/postal-locality.ts for the resolution order.
   publicLocality: true,
   isFirearm: true,
   // Needed by findById to decide whether an ANONYMOUS caller may see this row
@@ -1481,7 +1482,15 @@ export class ListingsService {
     // also stamped onto the courier collection address — when the two could
     // drift, a courier could be sent to the right street in the wrong province.
     const pickupProvince = dto.pickupProvince ?? dto.province;
-    const publicLocality = toPublicLocality(dto.pickupCity);
+    // Prefer the postal area ("Kraaifontein") over Google's metro locality
+    // ("Cape Town"); fall back to the town when the code is unknown.
+    const publicLocality =
+      resolvePostalArea({
+        postalCode: dto.pickupPostalCode,
+        suburb: dto.pickupSuburb,
+        lat: dto.pickupLat,
+        lng: dto.pickupLng,
+      }) ?? toPublicLocality(dto.pickupCity);
 
     // A pickup address is required on EVERY path. The sell form has always
     // enforced this, under a comment saying it must stay that way, but the API
@@ -3509,8 +3518,20 @@ export class ListingsService {
         locationUpdate.pickupProvince = p;
       }
     }
-    if (dto.pickupCity !== undefined) {
-      locationUpdate.publicLocality = toPublicLocality(dto.pickupCity);
+    if (
+      dto.pickupCity !== undefined ||
+      dto.pickupSuburb !== undefined ||
+      dto.pickupPostalCode !== undefined ||
+      dto.pickupLat !== undefined ||
+      dto.pickupLng !== undefined
+    ) {
+      locationUpdate.publicLocality =
+        resolvePostalArea({
+          postalCode: dto.pickupPostalCode ?? listing.pickupPostalCode,
+          suburb: dto.pickupSuburb ?? listing.pickupSuburb,
+          lat: dto.pickupLat ?? listing.pickupLat,
+          lng: dto.pickupLng ?? listing.pickupLng,
+        }) ?? toPublicLocality(dto.pickupCity ?? listing.pickupCity);
     }
 
     const updated = await this.prisma.listing.update({
