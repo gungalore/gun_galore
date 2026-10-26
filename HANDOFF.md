@@ -7,6 +7,34 @@ overwritten.
 
 Last updated: **2026-10-26**.
 
+## 2026-10-26 - FIREARM LICENCE EXPIRY IS INFORMATIONAL (DEPLOYED)
+
+**Licence expiry no longer blocks or delists a firearm listing.** The vision
+read still extracts and stores `licenceExpiresAt`, and the date is now shown to
+buyers.
+
+- `FirearmLicenceService.verify()` keeps the serial / holder / legibility /
+  "is this an SA firearm licence" BLOCKs. Expired, <30-day and unreadable dates
+  all return OK (operator: "read it, but not a block").
+- The 06:00 `checkFirearmLicenceExpiry` cron no longer flips listings to
+  `EXPIRED`. It still sends the one-time 31–90-day warning; the email/inbox copy
+  no longer promises a delist. The `firearmLicenceExpiry` notification lost its
+  `kind`/`delisted` branch.
+- `licenceExpiresAt` is now in `PUBLIC_LISTING_SELECT` and the `Listing` type.
+  The detail page renders it as a `Licence expiry` row in the Specifications
+  block below the description (only for firearms with a readable date). Holder
+  name, serial and licence photos stay private.
+- `COMPLIANCE-RULES.md` §2.5 updated.
+
+Deploy at 17:32 SAST (commit `4b58af0f`): rollback
+`alloutdoor-20261026-173245.dump` (33 823 689 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Gates: backend tsc
+clean, 378 suites / 5,807 passed (one load-related timeout in
+`motivation-pdf.service.spec.ts`, green standalone 94/94); frontend tsc + build
+clean, 1,801 passed (`no-self-recursive-callbacks` timeout under parallel load,
+green standalone 2/2). Live API now returns `licenceExpiresAt` (null on the
+non-firearm listing currently public).
+
 ## 2026-10-26 - LISTING AREA FROM POSTAL CODE (DEPLOYED)
 
 **Listings now show the postal AREA, not Google's metro locality.** A
