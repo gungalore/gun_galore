@@ -64,19 +64,30 @@ function safeRelativePath(raw: string | null | undefined): string | null {
 // OAuth-only: stash the consent (tagged with a timestamp) in per-tab
 // sessionStorage so <ConsentSync/> can record it after the redirect completes.
 
-type Step = 'form' | 'verify' | 'channel-prefs';
+type Step = 'form' | 'verify' | 'phone' | 'channel-prefs';
 
-// This two-screen flow (details → verify) is hand-rolled by us — Clerk only
-// supplies the imperative signUp.create / attemptEmailAddressVerification
-// calls, not any UI — so it gets the house step rail like every other
-// multi-step setup. Desktop only: /sign-up is a NO_SHELL route
-// (lib/shell-routes.ts) with no mobile header at any width, so there is no
-// shell surface for useShellStep to publish a mobile-row counterpart to.
-function signupSteps(current: 1 | 2): StepRailStep[] {
+// The sign-up wizard is hand-rolled — the identity-provider SDK supplies no
+// UI — so it gets the house step rail like every other multi-step setup.
+// Desktop only: /sign-up is a NO_SHELL route (lib/shell-routes.ts) with no
+// mobile header at any width, so there is no shell surface for
+// useShellStep to publish a mobile-row counterpart to.
+function signupSteps(current: 1 | 2 | 3): StepRailStep[] {
   return [
     { label: 'Your details', complete: current > 1 },
-    { label: 'Verify email' },
+    { label: 'Verify email', complete: current > 2 },
+    { label: 'Verify phone' },
   ];
+}
+
+// Build the SA E.164 number: strip non-digits AND a single leading 0
+// (users type "082…" but E.164 is +27 82…), then prefix +27. Accepts an
+// already-international form ("+27 82…" / "2782…") without doubling the
+// country code.
+function phoneToE164(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  const national =
+    digits.startsWith('27') && digits.length > 10 ? digits.slice(2) : digits;
+  return '+27' + national.replace(/^0/, '');
 }
 
 type UsernameStatus =
@@ -266,13 +277,7 @@ export default function SignUpForm() {
 
   const consentOk = agreedTerms && agreedAge;
 
-  // Build the SA E.164 number: strip non-digits AND a single leading 0
-  // (users type "082…" but E.164 is +27 82…), then prefix +27.
-  function phoneToE164(raw: string): string {
-    return '+27' + raw.replace(/\D/g, '').replace(/^0/, '');
-  }
-
-  // ── Step 1: create the Clerk SignUp + send verification email ──────
+  // ── Step 1: create the account + send verification email ───────────
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError('');
@@ -288,6 +293,8 @@ export default function SignUpForm() {
         // unsafeMetadata and reach us through a webhook, which meant the
         // account and the POPIA record could exist apart.
         body: JSON.stringify({
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
           email: form.email.trim(),
           password: form.password,
           username: form.username.trim().toLowerCase(),
@@ -320,7 +327,7 @@ export default function SignUpForm() {
     }
   }
 
-  // ── Step 2: verify the 6-digit code Clerk emailed the user ────────
+  // ── Step 2: verify the 6-digit code emailed to the user ───────────
   async function handleVerify(e: FormEvent) {
     e.preventDefault();
     setVerifyError('');
@@ -353,10 +360,9 @@ export default function SignUpForm() {
       if (data.accessToken && data.expiresAt) {
         await adopt(data.accessToken, data.expiresAt);
       }
-      // The channel-preferences sheet decides for itself (via /users/me)
-      // whether it has anything to show; either way it calls
-      // finishSignUp() exactly once, which is what actually navigates.
-      setStep('channel-prefs');
+      // The cell number is verified before the member reaches the app, so
+      // every sale/dispatch SMS from day one goes to a number they control.
+      setStep('phone');
     } catch (err) {
       setVerifyError(prettyAuthError(err));
     } finally {
@@ -430,6 +436,15 @@ export default function SignUpForm() {
 
   if (step === 'channel-prefs') {
     return <ChannelPrefsSheet onDone={finishSignUp} />;
+  }
+
+  if (step === 'phone') {
+    return (
+      <PhoneVerifyStep
+        initialPhone={form.phone}
+        onDone={() => setStep('channel-prefs')}
+      />
+    );
   }
 
   if (step === 'verify') {
@@ -801,6 +816,362 @@ export default function SignUpForm() {
             Sign in
           </Link>
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────── Phone verification step ──────────────────────
+
+function PhoneVerifyStep({
+  initialPhone,
+  onDone,
+}: {
+  initialPhone: string;
+  onDone: () => void;
+}) {
+  const { getToken } = useSession();
+  const ids = { code: useId(), phone: useId() };
+  const [phone, setPhone] = useState(initialPhone);
+  const [draft, setDraft] = useState(initialPhone);
+  const [changing, setChanging] = useState(false);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [cooldown, setCooldown] = useState(30);
+  const sentOnMount = useRef(false);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  async function sendCode(rawPhone: string): Promise<boolean> {
+    setError('');
+    setNotice('');
+    setBusy(true);
+    setCooldown(30);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/users/me/phone/request-otp`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ phone: phoneToE164(rawPhone) }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string | string[];
+        stub?: boolean;
+      };
+      if (!res.ok) {
+        setCooldown(0);
+        setError(
+          authErrorMessage(
+            res,
+            data,
+            'We could not send the code. Please try again.',
+          ),
+        );
+        return false;
+      }
+      setPhone(rawPhone);
+      setNotice(
+        data.stub
+          ? 'Code sent (dev stub — check the server log).'
+          : `A 6-digit code is on its way to ${phoneToE164(rawPhone)}.`,
+      );
+      return true;
+    } catch (err) {
+      setCooldown(0);
+      setError(prettyAuthError(err));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Send once, automatically, when the member lands here. A ref rather than
+  // state so a StrictMode double-mount cannot bill us for two SMSes.
+  useEffect(() => {
+    if (sentOnMount.current) return;
+    sentOnMount.current = true;
+    void sendCode(initialPhone);
+    // Mount-only — the number is fixed unless the member changes it below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleChangeNumber(e: FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    if (await sendCode(draft)) {
+      setChanging(false);
+      setCode('');
+    }
+  }
+
+  async function handleVerify(e: FormEvent) {
+    e.preventDefault();
+    if (code.length !== 6 || busy) return;
+    setError('');
+    setNotice('');
+    setBusy(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/users/me/phone/verify`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ code }),
+      });
+      const data = (await res.json().catch(() => ({}))) as unknown;
+      if (!res.ok) {
+        setError(
+          authErrorMessage(
+            res,
+            data,
+            'That code was not accepted. Try again, or resend a new one.',
+          ),
+        );
+        return;
+      }
+      onDone();
+    } catch (err) {
+      setError(prettyAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="w-full max-w-[480px]">
+      <div className="flex justify-center mb-6">
+        <Link href="/" aria-label="ALL Outdoor">
+          <Logo height={48} priority />
+        </Link>
+      </div>
+
+      <StepRail steps={signupSteps(3)} current={3} className="mb-6" />
+
+      <div
+        className="rounded-[8px] p-6 sm:p-8"
+        style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+      >
+        <h1
+          className="text-xl mb-1"
+          style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+        >
+          Verify your cell number
+        </h1>
+        <p className="text-sm mb-6" style={{ color: 'var(--text-tertiary)' }}>
+          We use this number for delivery and dispute SMS. Verify it now so
+          nothing about a future sale is missed.
+        </p>
+
+        {error && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="mb-4 px-3 py-2 rounded-[6px] text-xs"
+            style={{
+              background: 'rgba(227,6,19,0.08)',
+              border: '0.5px solid var(--red)',
+              color: 'var(--red)',
+            }}
+          >
+            {error}
+          </div>
+        )}
+        {!error && notice && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-4 px-3 py-2 rounded-[6px] text-xs"
+            style={{
+              background: 'rgba(34,197,94,0.08)',
+              border: '0.5px solid rgba(34,197,94,0.4)',
+              color: 'var(--success)',
+            }}
+          >
+            {notice}
+          </div>
+        )}
+
+        {changing ? (
+          <form onSubmit={handleChangeNumber} className="space-y-4">
+            <Field
+              label="Cell number"
+              required
+              htmlFor={ids.phone}
+              hint="South African mobile, without the country code."
+            >
+              <div className="flex gap-2">
+                <span
+                  className="flex items-center px-3 text-sm rounded-[6px]"
+                  style={{
+                    background: 'var(--bg-inset)',
+                    border: '0.5px solid var(--border)',
+                    color: 'var(--text-tertiary)',
+                  }}
+                  aria-hidden
+                >
+                  +27
+                </span>
+                <input
+                  id={ids.phone}
+                  type="tel"
+                  required
+                  aria-required
+                  aria-label="Cell number (South African, without the country code)"
+                  pattern="0?[0-9 ]{8,12}"
+                  value={draft}
+                  onChange={(e) =>
+                    setDraft(e.target.value.replace(/[^\d ]/g, ''))
+                  }
+                  style={inputStyle}
+                  autoComplete="tel"
+                  placeholder="82 000 0000"
+                  autoFocus
+                />
+              </div>
+            </Field>
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={busy || draft.trim().length === 0}
+                className="px-5 py-2.5 rounded-[6px] text-sm"
+                style={{
+                  background: 'var(--red)',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: 500,
+                  cursor:
+                    busy || draft.trim().length === 0
+                      ? 'not-allowed'
+                      : 'pointer',
+                  opacity: busy || draft.trim().length === 0 ? 0.5 : 1,
+                }}
+              >
+                {busy ? 'Sending…' : 'Send code'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setChanging(false);
+                  setDraft(phone);
+                  setError('');
+                  setNotice('');
+                }}
+                className="px-4 py-2 rounded-[6px] text-sm"
+                style={{
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border: '0.5px solid var(--border)',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleVerify} className="space-y-4">
+            <Field
+              label="Verification code"
+              required
+              htmlFor={ids.code}
+              hint={`Enter the 6-digit code we sent to ${phoneToE164(phone)}.`}
+            >
+              <input
+                id={ids.code}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                required
+                aria-required
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                style={{
+                  ...inputStyle,
+                  fontSize: '20px',
+                  letterSpacing: '0.4em',
+                  textAlign: 'center',
+                  fontFamily: 'monospace',
+                }}
+                placeholder="000000"
+                autoComplete="one-time-code"
+                autoFocus
+              />
+            </Field>
+
+            <button
+              type="submit"
+              disabled={code.length !== 6 || busy}
+              className="w-full py-3 rounded-[6px] text-sm font-medium"
+              style={{
+                background: 'var(--red)',
+                color: '#fff',
+                border: 'none',
+                cursor:
+                  code.length === 6 && !busy ? 'pointer' : 'not-allowed',
+                opacity: code.length === 6 && !busy ? 1 : 0.5,
+              }}
+            >
+              {busy ? 'Verifying…' : 'Verify and continue'}
+            </button>
+
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => void sendCode(phone)}
+                disabled={cooldown > 0 || busy}
+                className="text-xs"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color:
+                    cooldown > 0 || busy
+                      ? 'var(--text-tertiary)'
+                      : 'var(--red)',
+                  cursor:
+                    cooldown > 0 || busy ? 'not-allowed' : 'pointer',
+                  padding: 0,
+                }}
+              >
+                {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setChanging(true);
+                  setDraft(phone);
+                  setError('');
+                  setNotice('');
+                }}
+                disabled={busy}
+                className="text-xs"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-tertiary)',
+                  cursor: busy ? 'not-allowed' : 'pointer',
+                  padding: 0,
+                  textDecoration: 'underline',
+                }}
+              >
+                Wrong number?
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

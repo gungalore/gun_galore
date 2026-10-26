@@ -63,6 +63,8 @@ describe('the brute-force caps', () => {
     const codes: number[] = [];
     for (let i = 0; i < 7; i++) {
       const res = await http.post('/api/auth/register').send({
+        firstName: 'Throttle',
+        lastName: `User${i}`,
         username: `throttle${i}${Date.now()}`,
         email: `throttle-${i}-${Date.now()}@example.test`,
         password: 'a-long-enough-password-1',

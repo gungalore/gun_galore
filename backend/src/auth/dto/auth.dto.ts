@@ -95,6 +95,18 @@ const USERNAME_RE = /^[A-Za-z0-9_-]+$/;
 
 export class RegisterDto {
   @IsString()
+  @MinLength(1)
+  @MaxLength(60)
+  @Matches(/\S/, { message: 'First name is required' })
+  firstName: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(60)
+  @Matches(/\S/, { message: 'Last name is required' })
+  lastName: string;
+
+  @IsString()
   @MinLength(3)
   @MaxLength(30)
   @Matches(USERNAME_RE, {

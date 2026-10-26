@@ -132,6 +132,8 @@ let seq = 0;
 function freshUser() {
   seq += 1;
   return {
+    firstName: 'E2e',
+    lastName: `User${seq}`,
     username: `e2euser${seq}`,
     email: `e2e-${seq}@example.test`,
     password: PASSWORD,
@@ -205,6 +207,8 @@ describe('sign-up', () => {
 
     const row = await prisma.user.findUnique({ where: { email: user.email } });
     expect(row?.emailVerifiedAt).toBeNull();
+    expect(row?.firstName).toBe(user.firstName);
+    expect(row?.lastName).toBe(user.lastName);
     expect(row?.usernameLower).toBe(user.username.toLowerCase());
     // The credential is hashed, and recognisably by bcrypt.
     expect(row?.passwordHash).toMatch(/^\$2[aby]\$/);

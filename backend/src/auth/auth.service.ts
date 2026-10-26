@@ -162,6 +162,8 @@ export class AuthService {
       ? await this.prisma.user.update({
           where: { id: byEmail.id },
           data: {
+            firstName: dto.firstName.trim(),
+            lastName: dto.lastName.trim(),
             username: dto.username.trim(),
             usernameLower,
             passwordHash,
@@ -175,6 +177,8 @@ export class AuthService {
       : await this.prisma.user.create({
           data: {
             email,
+            firstName: dto.firstName.trim(),
+            lastName: dto.lastName.trim(),
             username: dto.username.trim(),
             usernameLower,
             passwordHash,

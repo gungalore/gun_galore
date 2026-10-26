@@ -679,9 +679,15 @@ export class KycService {
         kycFaceMatchScore: decision.face_matches?.[0]?.score ?? undefined,
         kycFaceMatchStatus: decision.face_matches?.[0]?.status ?? undefined,
         // Names come off the document Didit read — the only source we have
-        // for them now. Never overwrite with an empty read.
-        ...(read?.first_name ? { firstName: read.first_name } : {}),
-        ...(read?.last_name ? { lastName: read.last_name } : {}),
+        // for them now. Never overwrite with an empty read, and only adopt
+        // them once the identity is CONFIRMED: a rejected or in-review
+        // session must not rename the account.
+        ...(finalStatus === 'VERIFIED' && read?.first_name
+          ? { firstName: read.first_name }
+          : {}),
+        ...(finalStatus === 'VERIFIED' && read?.last_name
+          ? { lastName: read.last_name }
+          : {}),
       },
     });
     if (guarded.count === 0) {

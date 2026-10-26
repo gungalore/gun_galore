@@ -902,7 +902,7 @@ export default function EditProfilePage() {
                 hint={
                   me?.kycStatus === 'VERIFIED'
                     ? 'Verified from your ID. Email support to correct.'
-                    : 'Editable until your first sale triggers KYC. Locks to the Home Affairs name then.'
+                    : 'Editable until your first sale triggers KYC. Locks to the name on your ID then.'
                 }
               >
                 <input
@@ -931,7 +931,7 @@ export default function EditProfilePage() {
                 hint={
                   me?.kycStatus === 'VERIFIED'
                     ? 'Verified from your ID. Email support to correct.'
-                    : 'Editable until your first sale triggers KYC. Locks to the Home Affairs name then.'
+                    : 'Editable until your first sale triggers KYC. Locks to the name on your ID then.'
                 }
               >
                 <input
