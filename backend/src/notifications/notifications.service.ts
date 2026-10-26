@@ -5441,6 +5441,74 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // "Is your proof of address still valid?"
+  //
+  // ⚠️ NOT AN EXPIRY. A proof of address is judged on the date PRINTED on it
+  // against the three months a DFO accepts. The old sweep read a payment due
+  // date or a statement period end and told the member their proof of address
+  // would expire — this asks the only useful question instead.
+  //
+  // ⚠️ THE SMS NEVER NAMES THE DOCUMENT. A lock screen is read by whoever is
+  // standing nearby; "a document in your Document Centre" says enough.
+  // ---------------------------------------------------------------
+  async credentialStillValid(d: {
+    userId: string;
+    phone: string | null;
+    name: string;
+    email: string;
+    credentialId: string;
+    title: string;
+    issuedOn: Date;
+    daysOld: number;
+    daysLeft: number;
+    smsEnabled: boolean;
+    emailEnabled: boolean;
+  }) {
+    const docPath = `/documents?doc=${encodeURIComponent(d.credentialId)}`;
+    const url = `${this.appUrl}${docPath}`;
+    const on = d.issuedOn.toISOString().slice(0, 10);
+    const headline = 'Is your proof of address still valid?';
+
+    await this.persist({
+      userId: d.userId,
+      category: 'ACCOUNT',
+      type: 'licence_centre_address_check',
+      title: headline,
+      body:
+        `${d.title} is dated ${on}, ${d.daysOld} days ago. A DFO wants one from the last three months, ` +
+        `so it will be too old for a new application in about ${d.daysLeft} days. ` +
+        'Make sure it is still the one you would use, and add a newer one if it is not.',
+      url: docPath,
+      iconKey: 'kyc',
+      linkedType: 'credential',
+      linkedId: d.credentialId,
+      dismissible: true,
+    });
+
+    if (d.smsEnabled) {
+      await this.sendSms(
+        d.phone,
+        `ALL Outdoor: please check the proof of address in your Document Centre is still valid. Check it: ${url}`,
+        `lc-address-${d.credentialId}`,
+      );
+    }
+
+    if (d.emailEnabled) {
+      const html = this.email({
+        status: { tone: 'pending', label: 'Check it' },
+        headline,
+        body:
+          `Hi ${b(d.name)}, the proof of address you keep on file is dated ${b(on)} (${d.daysOld} days ago). ` +
+          'A DFO accepts a proof of address from the last three months, so it will be too old for a new application soon. ' +
+          'Make sure it is still the one you would use, and add a newer one in your Document Centre if it is not.',
+        cta: { label: 'Open Document Centre', url },
+        preheader: `${d.title}: still valid?`,
+      });
+      await this.send(d.email, headline, html);
+    }
+  }
+
+  // ---------------------------------------------------------------
   // The SAPS application tracker read a status it had not seen before.
   //
   // ⚠️ NEUTRAL WORDING IS THE WHOLE COPY BRIEF. We are reading a PUBLIC

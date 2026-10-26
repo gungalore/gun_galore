@@ -106,6 +106,7 @@ import {
 import {
   LICENCE_TYPE_LABELS,
   OWNED_ROWS,
+  isSelfDefence,
   ownedFirearmSerial,
   PRESS_CLIPPINGS_KEY,
   parsePressClippingIds,
@@ -1328,7 +1329,7 @@ export class MotivationRenderService {
     // collapse to "no clippings" — the pack renders exactly as it would have
     // before this feature existed, never a failed download.
     let pressIncidents: NewsIncident[] = [];
-    if (row.licenceType === MotivationLicenceType.S13_SELF_DEFENCE) {
+    if (isSelfDefence(row.licenceType)) {
       const ids = parsePressClippingIds(answers[PRESS_CLIPPINGS_KEY]);
       if (ids.length) {
         try {
@@ -1490,7 +1491,11 @@ export class MotivationRenderService {
       // annexure carried only the three — so a reviewer checking the claim had
       // nowhere to turn. Empty for a non-S13, for a station we cannot place,
       // or when there are no cuttings to head.
-      precinctTables: (pressClippings ?? []).length
+      // ⚠️ KEYED ON THE SELF-DEFENCE QUESTION, NOT ON WHETHER THERE ARE
+      // CUTTINGS. The body cites the SAPS quarterly figures on S13 AND S14;
+      // gating this on press clippings dropped the table from every S14 pack
+      // and from any S13 where the member picked no cuttings.
+      precinctTables: isSelfDefence(row.licenceType)
         ? await this.precinctTablesFor(answers)
         : undefined,
       // ⚠️ KEYED ON THE HEADING AS IT IS PRINTED — uppercased, colon stripped —

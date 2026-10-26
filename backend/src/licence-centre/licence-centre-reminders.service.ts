@@ -5,6 +5,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
 import { decryptJson } from '../common/blob-crypto';
+import { ADDRESS_FRESH_DAYS } from '../motivations/motivation-credentials';
+import { DATELESS_DOCUMENT_KINDS } from './credential-kinds';
 import { competencyRenewalAdvice } from './credential-derive-recompute';
 import {
   REMINDER_STAGES,
@@ -108,6 +110,15 @@ export class LicenceCentreRemindersService {
       if (sent > 0) {
         this.logger.log(`Licence Centre: sent ${sent} expiry reminder(s)`);
       }
+
+      // ⚠️ A PROOF OF ADDRESS IS NOT A RENEWAL. It has no expiry; it ages. A
+      // DFO accepts one from the last three months, so the useful thing to say
+      // is "check it is still valid" shortly before it goes stale — never
+      // "your document expires on <a payment due date>".
+      sent += await this.checkAddressProofs(smsOn);
+      if (sent > 0) {
+        this.logger.log(`Licence Centre: sent ${sent} reminder(s) in total`);
+      }
     } catch (err) {
       this.logger.error(
         `Licence Centre reminder sweep failed: ${(err as Error).message}`,
@@ -134,6 +145,12 @@ export class LicenceCentreRemindersService {
         OR: [{ confirmedAt: { not: null } }, { dateSource: { not: null } }],
         remindersMuted: false,
         purgedAt: null,
+        // ⚠️ NEVER FOR A KIND WHOSE DATE IS NOT AN EXPIRY. A proof of address,
+        // an employment letter and an activity log carry dates that are not
+        // renewal deadlines; the address gets its own check below. Existing
+        // rows may still hold a false read date, so this filter is the guard
+        // that does not depend on the migration having run.
+        kind: { notIn: [...DATELESS_DOCUMENT_KINDS] },
         expiresOn: { not: null, lte: cutoff },
         [stage.column]: null,
         // Every TIGHTER stage must also be unfired. Without this, a document
@@ -258,6 +275,105 @@ export class LicenceCentreRemindersService {
         .catch((err) =>
           this.logger.warn(
             `Licence reminder for credential ${c.id} did not send: ${(err as Error).message}`,
+          ),
+        );
+    }
+    return sent;
+  }
+
+  /**
+   * "Is your proof of address still valid?"
+   *
+   * ⚠️ THIS IS NOT AN EXPIRY REMINDER AND MUST NOT BECOME ONE. A proof of
+   * address is judged on the date PRINTED on it against the three months a DFO
+   * accepts, not on a renewal date. The useful nudge is a month before that
+   * freshness window closes, so the member can replace it without an
+   * application being held up.
+   *
+   * ⚠️ IT READS `issuedOn`, NEVER `expiresOn`. The old sweep armed itself on a
+   * payment due date or statement period end that vision read off a municipal
+   * bill, and told the member to renew their proof of address in 100 days.
+   *
+   * The claim column is `remind30SentAt`: "we have already said this once for
+   * this document". Correcting the printed date re-arms it through
+   * confirmExpiry's dateChanged reset.
+   */
+  private async checkAddressProofs(smsOn: boolean): Promise<number> {
+    const now = new Date();
+    const leadDays = ADDRESS_FRESH_DAYS - 30;
+    const cutoff = new Date(now.getTime() - leadDays * 24 * 60 * 60 * 1000);
+
+    const rows = await this.prisma.credential.findMany({
+      where: {
+        kind: CredentialKind.ADDRESS_CONFIRMATION,
+        remindersMuted: false,
+        purgedAt: null,
+        issuedOnUnknown: false,
+        issuedOn: { not: null, lte: cutoff },
+        remind30SentAt: null,
+      },
+      select: {
+        id: true,
+        title: true,
+        issuedOn: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            phoneVerified: true,
+            notifySmsEnabled: true,
+            notifyEmailEnabled: true,
+            firstName: true,
+          },
+        },
+      },
+      take: BATCH,
+      orderBy: { issuedOn: 'asc' },
+    });
+
+    let sent = 0;
+    for (const c of rows) {
+      if (!c.issuedOn) continue;
+
+      const claim = await this.prisma.credential.updateMany({
+        where: {
+          id: c.id,
+          remindersMuted: false,
+          remind30SentAt: null,
+          issuedOn: { lte: cutoff },
+        },
+        data: { remind30SentAt: now },
+      });
+      if (claim.count === 0) continue;
+
+      sent += 1;
+      const age = Math.max(
+        0,
+        Math.floor((now.getTime() - c.issuedOn.getTime()) / 86_400_000),
+      );
+
+      await this.notifications
+        .credentialStillValid({
+          userId: c.user.id,
+          phone: c.user.phone,
+          name: c.user.firstName ?? 'there',
+          email: c.user.email,
+          credentialId: c.id,
+          title: c.title,
+          issuedOn: c.issuedOn,
+          daysOld: age,
+          daysLeft: Math.max(0, ADDRESS_FRESH_DAYS - age),
+          smsEnabled:
+            smsOn &&
+            c.user.phoneVerified &&
+            c.user.notifySmsEnabled &&
+            Boolean(c.user.phone),
+          emailEnabled: c.user.notifyEmailEnabled !== false,
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `Proof-of-address check for credential ${c.id} did not send: ${(err as Error).message}`,
           ),
         );
     }

@@ -104,8 +104,29 @@ export const NO_VISION_KINDS = PHOTOGRAPH_KINDS;
  * The default is now the SA ID book and card this Centre actually collects;
  * somebody filing a passport unticks it in one tap.
  */
+/**
+ * Documents that carry a date but never a RENEWAL deadline.
+ *
+ * ⚠️ A PROOF OF ADDRESS IS THE CASE THAT CAUSED THIS LIST. A municipal bill
+ * prints a payment due date, a statement prints its period end, a lease prints
+ * its end date — none of which is an expiry the member has to renew. Reading
+ * one of those into `expiresOn` armed a licence-style renewal reminder against
+ * a date nobody had set. A proof of address ages instead: it is judged on the
+ * date printed on it, and the Centre asks the member to check it is still valid
+ * when it passes three months (see licence-centre-reminders.service.ts).
+ *
+ * An employment letter goes wrong when the member changes jobs, and an activity
+ * log is a record of what happened; neither runs out on a date either.
+ */
+export const DATELESS_DOCUMENT_KINDS: readonly CredentialKind[] = [
+  CredentialKind.ADDRESS_CONFIRMATION,
+  CredentialKind.EMPLOYMENT_CONFIRMATION,
+  CredentialKind.SHOOTING_ACTIVITY_LOG,
+];
+
 const NEVER_EXPIRES: ReadonlySet<CredentialKind> = new Set<CredentialKind>([
   ...PHOTOGRAPH_KINDS,
+  ...DATELESS_DOCUMENT_KINDS,
   CredentialKind.PROFICIENCY,
   CredentialKind.IDENTITY_DOCUMENT,
 ]);
@@ -202,6 +223,14 @@ export function settledByNature(kind: CredentialKind): {
       dateSource: 'none',
       dateSourceNote:
         'A proficiency does not run out, so we have marked this one as never expiring. Change it if you want a reminder about it.',
+    };
+  }
+  if (DATELESS_DOCUMENT_KINDS.includes(kind)) {
+    return {
+      neverExpires: true,
+      dateSource: 'none',
+      dateSourceNote:
+        'This kind of document does not run out on a date, so we have marked it as never expiring. We will still remind you to check it is current.',
     };
   }
   return null;

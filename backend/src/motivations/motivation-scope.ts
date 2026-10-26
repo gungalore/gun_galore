@@ -681,14 +681,24 @@ const MEASURE_CAPTURE = new RegExp(
 function compoundToNumber(phrase: string): number {
   let total = 0;
   let current = 0;
+  let previous = 0;
   for (const token of phrase.split(/[\s-]+/)) {
-    const value = WORD_VALUE[token.toLowerCase()];
-    if (value === undefined || token.toLowerCase() === 'and') continue;
+    const lower = token.toLowerCase();
+    if (lower === 'and') {
+      // ⚠️ "AND" ONLY JOINS AFTER A HUNDRED OR A THOUSAND. "One hundred and
+      // twenty" is one number; "between five and ten metres" is two, and
+      // treating it as one turned the range into "15 metres".
+      if (previous !== 100 && previous !== 1000) break;
+      continue;
+    }
+    const value = WORD_VALUE[lower];
+    if (value === undefined) continue;
     if (value === 100) current = (current || 1) * 100;
     else if (value === 1000) {
       total += (current || 1) * 1000;
       current = 0;
     } else current += value;
+    previous = value;
   }
   return total + current;
 }

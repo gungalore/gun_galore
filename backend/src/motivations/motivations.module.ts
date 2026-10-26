@@ -173,8 +173,11 @@ import { DocumentFilingModule } from '../common/document-filing/document-filing.
     // JPEG before the vision paths (OCR/classify/orient) read it — the same
     // one-way edge. See LicenceCentreService.uprightForVision.
     DocumentPageRasterService,
-    // Exported so the vault's upload path can fire the monitoring screen.
+    // Exported so the vault can fire the monitoring screen.
     DocumentScreeningService,
+    // Exported so the vault can forget a deleted document's cached OCR text
+    // and page rasters. A deletion must take both with it.
+    DocumentReadCacheService,
   ],
 })
 export class MotivationsModule {}

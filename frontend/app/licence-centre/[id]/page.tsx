@@ -220,6 +220,26 @@ export default function LicenceCentreSheetPage() {
   } | null>(null);
 
   /**
+   * The operator-set retention window, so the in-place consent notice names the
+   * real period instead of falling back to "after the application is finished".
+   */
+  const [retentionDays, setRetentionDays] = useState<number | null>(null);
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+  useEffect(() => {
+    let live = true;
+    void licenceCentreApi
+      .consent(getTokenRef.current)
+      .then((c) => {
+        if (live) setRetentionDays(c.retentionDays ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  /**
    * Which sections are folded open. Null until the sheet has arrived.
    *
    * ⚠️ COMPUTED ONCE, THEN THE MEMBER OWNS IT. The sheet is refetched after
@@ -575,13 +595,25 @@ export default function LicenceCentreSheetPage() {
   const flush = useCallback(
     async (patch: Record<string, string>) => {
       try {
-        await motivationsApi.saveAnswers(getToken, id, patch);
+        const res = await motivationsApi.saveAnswers(getToken, id, patch);
         await load();
-        // ⚠️ THE PENDING MAP IS CLEARED ONLY AFTER THE REFETCH LANDS. Clearing
-        // it on the save's response would blank the member's text for the one
-        // frame between the two, which reads as the form eating what they
-        // typed.
-        setPending({});
+        // ⚠️ ONLY THE KEYS THIS SAVE CARRIED, AND ONLY WHERE THEY STILL MATCH.
+        // `setPending({})` after the round trip wiped every character typed
+        // while the request was in flight, so the input jumped backwards.
+        setPending((p) => {
+          const next = { ...p };
+          for (const [k, v] of Object.entries(patch)) {
+            if (next[k] === v) delete next[k];
+          }
+          return next;
+        });
+        // ⚠️ A 200 WITH `refused` IS NOT A SAVE. The values were rejected by
+        // the registry's own rules; saying nothing loses an answer silently.
+        if (res?.refused?.length) {
+          setToast(
+            `We could not keep ${res.refused.length === 1 ? 'that answer' : `${res.refused.length} answers`}. Please check the value and try again.`,
+          );
+        }
       } catch (err) {
         setError((err as Error).message);
       }
@@ -751,6 +783,14 @@ export default function LicenceCentreSheetPage() {
     async ({ testimonialConsent }: { testimonialConsent: boolean }) => {
       setBusy(true);
       try {
+        // ⚠️ THE LAST KEYSTROKES MUST LAND BEFORE THE GATE RUNS. `pending` is
+        // debounced by 600ms; clicking Write inside that window sent the
+        // generation without the edit, so the pack was written from the value
+        // before the member's last correction.
+        if (Object.keys(pending).length) {
+          if (timer.current) clearTimeout(timer.current);
+          await flush(pending);
+        }
         await motivationsApi.acceptDeclaration(getToken, id, testimonialConsent);
         await motivationsApi.generate(getToken, id);
         router.push(`/licence-centre/${id}/pack`);
@@ -762,7 +802,7 @@ export default function LicenceCentreSheetPage() {
         setBusy(false);
       }
     },
-    [getToken, id, router],
+    [getToken, id, router, pending, flush],
   );
 
   /** The items as the member sees them — server values under pending edits. */
@@ -936,9 +976,16 @@ export default function LicenceCentreSheetPage() {
               onAdd={() => setAdding(true)}
               onChange={onChange}
             />
-          ) : (
-            visible.map(row)
-          )}
+          ) : null}
+          {/*
+            ⚠️ THE UNANSWERED FIELDS STILL NEED A BOX. CompetencyLines shows only
+            what the vault already filled, so rendering it INSTEAD of the rows
+            hid every `needs_you` item in this section behind a certificate
+            that happened to be present — the member could never answer it.
+          */}
+          {visible
+            .filter((i) => i.state !== 'filled' && i.state !== 'suggested')
+            .map(row)}
           <CredentialPair
             credentials={sheet.credentials}
             onScan={() => {
@@ -1452,7 +1499,7 @@ export default function LicenceCentreSheetPage() {
         {keepConsent ? (
           <div className="mx-4 mt-3 rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
             <VaultConsentBody
-              retentionDays={null}
+              retentionDays={retentionDays}
               onAnswer={answerKeepConsent}
               busy={keepConsent.busy}
             />
@@ -1471,12 +1518,38 @@ export default function LicenceCentreSheetPage() {
             motivationId={id}
             onAdd={onAddFile}
             onHandoffArrived={(count) => {
-              void load();
-              setToast(
-                count === 1
-                  ? 'Your phone sent one document.'
-                  : `Your phone sent ${count} documents.`,
-              );
+              void (async () => {
+                try {
+                  // ⚠️ THE PHONE'S READING WAS NEVER APPLIED. This only called
+                  // load(), so a licence card scanned by QR appeared on the
+                  // shelf with every form field still empty. `readingFor` is the
+                  // stored reading — no second vision call.
+                  const r = await motivationsApi.uploads(getToken, id);
+                  const fresh = r.files.slice(-Math.max(1, count));
+                  const answers: Record<string, string> = {};
+                  for (const f of fresh) {
+                    const reading = await motivationsApi.readingFor(
+                      getToken,
+                      id,
+                      f.id,
+                    );
+                    for (const s of reading.suggestions) {
+                      if (s.key && s.value) answers[s.key] = s.value;
+                    }
+                  }
+                  if (Object.keys(answers).length) {
+                    await motivationsApi.applyExtraction(getToken, id, answers);
+                  }
+                } catch {
+                  // The document is stored either way; the member can type.
+                }
+                await load();
+                setToast(
+                  count === 1
+                    ? 'Your phone sent one document.'
+                    : `Your phone sent ${count} documents.`,
+                );
+              })();
             }}
             onClose={() => setAdding(false)}
           />

@@ -128,6 +128,16 @@ export function documentFingerprints(s: DuplicateSubject): string[] {
       if (addr.length >= 8 && s.issuedOn) out.push(`address:${addr.slice(0, 40)}@${s.issuedOn}`);
       break;
     }
+    case 'ASSOCIATION_ENDORSEMENT': {
+      // An endorsement names ONE firearm. The endorsement's own number is the
+      // strongest identity; where it has none, the serial plus the association
+      // (and the date, where printed) is the same letter.
+      out.push(tag('endorsement', d.endorsement_number));
+      const serial = tag('serial', d.serial);
+      const who = norm(d.association);
+      if (serial && who) out.push(`${serial}@${who}${s.issuedOn ? `@${s.issuedOn}` : ''}`);
+      break;
+    }
     case 'DEDICATED_DISCIPLINE':
     case 'DEDICATED_STATUS':
     case 'DEDICATED_HUNTER':

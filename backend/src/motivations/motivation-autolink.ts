@@ -273,6 +273,16 @@ export interface AutolinkOptions {
    */
   needed?: Endorsement | null;
   /**
+   * A firearm that needs MORE THAN ONE endorsement (a combination gun).
+   *
+   * ⚠️ `needed` IS A SINGLE VALUE AND A COMBINATION GUN HAS TWO. The old
+   * caller passed null for it, which disabled the endorsement test entirely —
+   * so a handgun-only competency was a valid candidate for a combination-gun
+   * application. A certificate is refused only where it is readable AND covers
+   * none of these.
+   */
+  neededAny?: readonly Endorsement[];
+  /**
    * "These are the safe at the address on this application."
    *
    * ⚠️ THE ONLY THING THAT LETS A SAFE PHOTOGRAPH THROUGH, and it must come
@@ -510,13 +520,22 @@ export function decideAutolink(
     // refuse as an ambiguity — when in fact only one of them can lawfully back
     // this application, so there is no ambiguity to protect them from.
     // Filtering first turns an unanswerable question into an answer.
-    const covered = group.filter((c) =>
-      c.kind === MotivationUploadKind.COMPETENCY_CERTIFICATE
+    const covered = group.filter((c) => {
+      if (opts.neededAny?.length) {
+        return opts.neededAny.some((e) =>
+          c.kind === MotivationUploadKind.COMPETENCY_CERTIFICATE
+            ? competencyCovers(c.covers ?? '', e)
+            : c.kind === MotivationUploadKind.PROFICIENCY_CERTIFICATE
+              ? proficiencyCovers(c.covers ?? '', e)
+              : true,
+        );
+      }
+      return c.kind === MotivationUploadKind.COMPETENCY_CERTIFICATE
         ? competencyCovers(c.covers ?? '', opts.needed ?? null)
         : c.kind === MotivationUploadKind.PROFICIENCY_CERTIFICATE
           ? proficiencyCovers(c.covers ?? '', opts.needed ?? null)
-          : true,
-    );
+          : true;
+    });
     for (const c of group) {
       if (!covered.includes(c)) {
         skipped.push({ candidate: c, why: 'endorsement-mismatch' });

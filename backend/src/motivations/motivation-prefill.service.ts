@@ -36,6 +36,7 @@ import {
   FIELD_REGISTRY_VERSION,
   fieldByKey,
   fieldsFor,
+  isSelfDefence,
   missingRequired,
   sanitiseAnswers,
 } from './motivation-fields';
@@ -484,7 +485,10 @@ export class MotivationPrefillService {
     licenceType: MotivationLicenceType,
     answers: Record<string, string>,
   ): Promise<{ station: string; province: string; from: string } | null> {
-    if (licenceType !== MotivationLicenceType.S13_SELF_DEFENCE) return null;
+    // ⚠️ S14 IS A SELF-DEFENCE APPLICATION TOO. Checking only S13 meant a
+    // restricted-firearm applicant — where SAPS 271 section K asks for the
+    // distance to the nearest station — never got the station prefill.
+    if (!isSelfDefence(licenceType)) return null;
     if ((answers.police_station ?? '').trim()) return null;
     const address = (answers.residential_address ?? '').trim();
     if (!address) return null;
@@ -1267,7 +1271,7 @@ export class MotivationPrefillService {
    * is why the amber "check this" state has never once appeared on a real
    * application.
    */
-  private stampVault(
+  stampVault(
     map: ProvenanceMap,
     written: Record<string, string>,
     items: readonly { key: string; from: string; credentialId: string }[],

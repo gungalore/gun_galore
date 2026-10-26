@@ -473,7 +473,7 @@ export const licenceCentreApi = {
     ),
 
   answerConsent: (t: TokenGetter, agreed: boolean) =>
-    request<{ state: ConsentState }>(t, '/consent', {
+    request<{ state: ConsentState; retentionDays: number }>(t, '/consent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agreed }),
@@ -481,7 +481,9 @@ export const licenceCentreApi = {
 
   /** ⚠️ Deletes nothing — it stops us keeping anything NEW. */
   withdrawConsent: (t: TokenGetter) =>
-    request<{ state: ConsentState }>(t, '/consent', { method: 'DELETE' }),
+    request<{ state: ConsentState; retentionDays: number }>(t, '/consent', {
+      method: 'DELETE',
+    }),
 
   /** One bounded batch of the older documents. The caller loops until done. */
   backfillStep: (t: TokenGetter) =>

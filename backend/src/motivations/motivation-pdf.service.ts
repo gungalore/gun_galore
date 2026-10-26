@@ -2296,7 +2296,22 @@ export class MotivationPdfService {
         (input.priorNotice ? 1 : 0) +
         // The cartridge feature's own heading(s): the new spread takes two
         // (5.1 dimensions and 5.2 suitability), the legacy feature one.
-        (input.dimensionSheet ? 2 : input.cartridgeDrawing ? 1 : 0);
+        (input.dimensionSheet ? 2 : input.cartridgeDrawing ? 1 : 0) +
+        /**
+         * ⚠️ THE DEFERRED SECTIONS TOOK HEADINGS THE TOC DID NOT COUNT. Purpose
+         * exhibits add one heading per plate page, the activity photographs add
+         * "My activities and evidence", and a first-time application's battery
+         * table adds "6. Firearms already licensed to me" when the plan has no
+         * heading of its own. The estimate below reserved one contents page and
+         * the TOC then overflowed its last sheet.
+         */
+        new Set(
+          (input.purposePlates ?? [])
+            .filter((p) => (p.title ?? '').trim() || (p.description ?? '').trim())
+            .map((p) => p.pageIndex),
+        ).size +
+        ((input.evidencePages?.length ?? 0) > 0 ? 1 : 0) +
+        (input.batteryHeading ? 0 : 1);
       const contentsPages = Math.max(1, Math.ceil(estimatedEntries / 24));
       for (let page = 1; page < contentsPages; page++) {
         doc.addPage();

@@ -260,6 +260,8 @@ function DocumentCentre() {
    */
   const [consent, setConsent] = useState<ConsentState | null>(null);
   const [consentBusy, setConsentBusy] = useState(false);
+  /** The operator-set retention window, so the notice can name it. */
+  const [retentionDays, setRetentionDays] = useState<number | null>(null);
 
   // ── SECTIONS, ROWS, DETAIL ─────────────────────────────────────
   //
@@ -426,13 +428,21 @@ function DocumentCentre() {
    */
   const openFromBanner = useCallback(
     (id: string) => {
+      // ⚠️ OPEN THE ROW'S SECTION. On desktop the list and the detail are two
+      // columns; opening the detail without unfolding the section left it
+      // hidden behind a closed heading, so the panel changed with no visible
+      // reason.
+      const row = rowsById.get(id);
+      if (row) {
+        setOpenSections((prev) => ({ ...prev, [placeRow(row)]: true }));
+      }
       if (!visible.some((r) => r.id === id)) {
         setChips([]);
         setQuery('');
       }
       select(id);
     },
-    [visible, select],
+    [visible, select, rowsById],
   );
 
   /** An empty section's Add link. See the note on `addRef`. */
@@ -526,7 +536,10 @@ function DocumentCentre() {
     // the refresh every other write already runs.
     licenceCentreApi
       .consent(token)
-      .then((c) => setConsent(c.state))
+      .then((c) => {
+        setConsent(c.state);
+        setRetentionDays(c.retentionDays ?? null);
+      })
       .catch(() => undefined);
     // ⚠️ THE FINISHED MOTIVATIONS, WHICH THE VAULT NEVER LISTED. Fail-soft:
     // the documents were read first and the page is already usable.
@@ -543,6 +556,7 @@ function DocumentCentre() {
       try {
         const c = await licenceCentreApi.answerConsent(token, agreed);
         setConsent(c.state);
+        setRetentionDays(c.retentionDays ?? null);
       } catch {
         // Fail-soft, like every other write here: the notice stays and they
         // can answer again.
@@ -686,7 +700,10 @@ function DocumentCentre() {
       {consent !== null && consent !== 'given' ? (
         <div className="mt-6 rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
           <VaultConsentBody
-            retentionDays={null}
+            // ⚠️ THE SERVER'S WINDOW, NOT NULL. `retentionDays={null}` fell back
+            // to "after the application is finished" on a notice that exists to
+            // state the operator's real retention period.
+            retentionDays={retentionDays}
             onAnswer={answerVaultConsent}
             busy={consentBusy}
           />
@@ -1028,7 +1045,13 @@ function DocumentCentre() {
                     <CredentialCard
                       key={shown.id}
                       row={shown}
-                      copies={selectedCopies}
+                      copies={
+                        // ⚠️ THE COPIES BELONG TO THE ROW ON SCREEN. On the
+                        // partner tab this was the lead's copies, offering to
+                        // "keep this version" of the partner from the other
+                        // page's duplicate.
+                        shown.id === selected.id ? selectedCopies : []
+                      }
                       usedIn={usage[shown.id] ?? []}
                       token={token}
                       onChanged={refresh}
@@ -1173,6 +1196,12 @@ function AddPanel({
   useEffect(() => {
     onPreviewChange?.(previewing);
   }, [previewing, onPreviewChange]);
+  // ⚠️ REMOVING THE LAST CARD MUST END THE PREVIEW. BatchReview returns null on
+  // an empty list, but `previewing` stayed true — the detail column then sat on
+  // "Check the files above" with nothing above.
+  useEffect(() => {
+    if (previewing && batch.length === 0) setPreviewing(false);
+  }, [previewing, batch.length]);
   /** The picture the strip was asked to open, with the URL it made. */
   const [batchLightbox, setBatchLightbox] = useState<{ url: string; name: string } | null>(
     null,
@@ -1485,7 +1514,14 @@ function AddPanel({
    */
   async function describeCard(id: string, description: string) {
     const card = batch.find((c) => c.id === id);
-    if (!card?.rowId) return;
+    if (!card) return;
+    // ⚠️ NOT STORED YET. `rowId` is only set once the batch is committed, so
+    // the old early return made the textarea permanently unusable. Until then
+    // the words are kept on the card and travel with the commit.
+    if (!card.rowId) {
+      patchCard(id, { description });
+      return;
+    }
     patchCard(id, { state: 'working', err: null });
     try {
       const r = await licenceCentreApi.redescribeEvidence(

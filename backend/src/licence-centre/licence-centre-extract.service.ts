@@ -349,6 +349,14 @@ const NO_EXPIRY_ON_THE_PAGE: ReadonlySet<string> = new Set([
   'COMPETENCY_CERTIFICATE',
   'PROFICIENCY',
   'IDENTITY_DOCUMENT',
+  // ⚠️ THESE CARRY DATES, BUT NOT AN EXPIRY. A municipal bill prints a payment
+  // due date, a statement its period end, a lease its end date. Reading one of
+  // those into expiresOn armed a renewal reminder against a date nobody set.
+  // Kept in step with DATELESS_DOCUMENT_KINDS / defaultsToNeverExpires in
+  // credential-kinds.ts.
+  'ADDRESS_CONFIRMATION',
+  'EMPLOYMENT_CONFIRMATION',
+  'SHOOTING_ACTIVITY_LOG',
 ]);
 
 /**

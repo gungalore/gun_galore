@@ -57,6 +57,7 @@ import {
   firearmFacets,
 } from './credential-firearm-facets';
 import {
+  DATELESS_DOCUMENT_KINDS,
   defaultsToNeverExpires,
   isPhotograph,
   settledByNature,
@@ -89,7 +90,10 @@ import { MotivationsService } from '../motivations/motivations.service';
 // MotivationsModule and must stay one-way; the export is the only way across.
 import { MotivationExtractService } from '../motivations/motivation-extract.service';
 import { DocumentPageRasterService } from '../motivations/document-page-raster.service';
+import { DocumentReadCacheService } from '../motivations/document-read-cache.service';
 import { DocumentScreeningService } from '../motivations/document-screening.service';
+import { sniffMime } from '../common/sniff-mime';
+import { UPLOAD_MIME } from './upload-limits';
 import {
   competencyRenewalSeed,
   REFUSAL_COPY,
@@ -124,6 +128,28 @@ import {
 // ────────────────────────────────────────────────────────────────────
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/**
+ * ⚠️ THE BATCH DOORS BYPASSED THE MIME ALLOWLIST. The single-upload routes
+ * carry FILE_PIPE (MaxFileSizeValidator + FileTypeValidator), but
+ * `/identify` and `/commit` take `@UploadedFiles()` with no pipe — so an
+ * authenticated caller could store `text/html` and have it served back inline
+ * from the download route, which is stored XSS on the API origin.
+ *
+ * The DECLARED type is a claim; the magic bytes are the fact. This checks the
+ * bytes and returns the type to store.
+ */
+function readableUploadMime(file: { mimetype: string; buffer: Buffer }): string {
+  const sniffed = sniffMime(file.buffer, '');
+  const actual = sniffed || (file.mimetype ?? '');
+  if (!UPLOAD_MIME.test(actual)) {
+    throw new BadRequestException(
+      'We can read a JPG, PNG, WebP or PDF. On an iPhone, choose the photo from your library rather than from Files.',
+    );
+  }
+  return actual;
+}
+
 const MAX_TITLE = 120;
 /**
  * How long the member's own description of an evidence item may be.
@@ -309,6 +335,9 @@ export class LicenceCentreService {
     // same reason as pageRaster; fire-and-forget so it never delays an upload
     // and never fails one.
     private readonly documentScreening?: DocumentScreeningService,
+    // Cached OCR text for the same bytes. Optional for the same reason as
+    // pageRaster; forgetting is best effort and never fails a deletion.
+    private readonly readCache?: DocumentReadCacheService,
   ) {}
 
   /**
@@ -349,6 +378,33 @@ export class LicenceCentreService {
       // fall through to the raw bytes
     }
     return { bytes: buffer, mimeType, rotated: false };
+  }
+
+  /**
+   * Forget the OCR text and page rasters derived from these bytes.
+   *
+   * ⚠️ A DELETION MUST TAKE THE DERIVATIVES WITH IT. A PDF upload rasterises
+   * every page into 300-dpi JPEGs (DocumentPageImage) and the vision paths
+   * cache their reading (DocumentReadCache), both keyed by the file's sha256.
+   * Deleting the Credential row left those behind for their 30-day TTL, because
+   * the page images count as "referenced" to the orphan sweep.
+   *
+   * Best effort: the erasure the member asked for has already happened.
+   */
+  private async forgetDocumentCaches(sha256: string | null | undefined): Promise<void> {
+    if (!sha256) return;
+    await Promise.all([
+      this.pageRaster?.forget(sha256).catch((err: unknown) =>
+        this.logger.warn(
+          `Could not forget page rasters for ${sha256.slice(0, 8)}: ${(err as Error).message}`,
+        ),
+      ),
+      this.readCache?.forget(sha256).catch((err: unknown) =>
+        this.logger.warn(
+          `Could not forget read cache for ${sha256.slice(0, 8)}: ${(err as Error).message}`,
+        ),
+      ),
+    ]);
   }
 
   /**
@@ -1254,12 +1310,13 @@ export class LicenceCentreService {
     if (file.buffer.length > MAX_UPLOAD_BYTES) {
       throw new BadRequestException('That file is larger than 10 MB.');
     }
+    const acceptedMime = readableUploadMime(file);
 
     // ⚠️ UPRIGHT ONCE, HERE, BEFORE ANYTHING LOOKS AT IT. An iPhone portrait
     // photograph arrives as landscape pixels plus an EXIF tag the model may not
     // apply; baking it in means the classifier, the reader and the stored copy
     // all see the same upright page. No-op and never throws — see upright-image.
-    const upright = await this.uprightForVision(file.buffer, file.mimetype);
+    const upright = await this.uprightForVision(file.buffer, acceptedMime);
     const bytes = upright.bytes;
     const mimeType = upright.mimeType;
     this.screenDocument(bytes, mimeType, user.id, title);
@@ -1374,6 +1431,21 @@ export class LicenceCentreService {
       if (guarded !== resolved) {
         resolved = guarded;
         alsoCovers = [];
+      }
+    }
+
+    // ⚠️ THE EVIDENCE SUB-CAP WAS ONLY CHECKED ON THE EVIDENCE DOOR. A batch
+    // upload that the classifier filed as EVIDENCE walked past EVIDENCE_VAULT_MAX
+    // through the document door, so a member could exceed the 30-item cap the
+    // operator asked for. Same answer, same words.
+    if (resolved === CredentialKind.EVIDENCE) {
+      const heldEvidence = await this.prisma.credential.count({
+        where: { userId: user.id, kind: 'EVIDENCE' },
+      });
+      if (heldEvidence >= EVIDENCE_VAULT_MAX) {
+        throw new ConflictException(
+          `You can keep ${EVIDENCE_VAULT_MAX} evidence items here. Remove one before adding another.`,
+        );
       }
     }
 
@@ -1899,8 +1971,16 @@ export class LicenceCentreService {
       }
       if (otherSide) {
         // Both rows point at each other; the partner also learns who joined it.
+        //
+        // ⚠️ ONLY IF IT IS STILL UNPAIRED. Under two concurrent uploads the
+        // partner can already have been claimed by the other side; overwriting
+        // it leaves one row pointing at a partner that points elsewhere, and a
+        // later delete then removes the wrong document.
         await this.prisma.credential
-          .update({ where: { id: otherSide.id }, data: { otherSideId: created.id, ...(partnerCleared ?? {}) } })
+          .updateMany({
+            where: { id: otherSide.id, otherSideId: null },
+            data: { otherSideId: created.id, ...(partnerCleared ?? {}) },
+          })
           .catch((err) =>
             this.logger.warn(`Could not pair credential ${otherSide?.id}: ${(err as Error).message}`),
           );
@@ -2189,6 +2269,8 @@ export class LicenceCentreService {
       if (file.buffer.length > MAX_UPLOAD_BYTES) {
         throw new BadRequestException('One of those files is larger than 10 MB.');
       }
+      // ⚠️ THE BATCH DOOR HAS NO FILE_PIPE. See readableUploadMime.
+      readableUploadMime(file);
     }
 
     // See IDENTIFY_CONCURRENCY: sequentially here is what made a five-file
@@ -2259,6 +2341,13 @@ export class LicenceCentreService {
         results.push({ ok: false, error: 'That file is larger than 10 MB.' });
         continue;
       }
+      // ⚠️ THE BATCH DOOR HAS NO FILE_PIPE. See readableUploadMime.
+      try {
+        readableUploadMime(item);
+      } catch (err) {
+        results.push({ ok: false, error: (err as Error).message });
+        continue;
+      }
       if (!identifyId) {
         results.push({
           ok: false,
@@ -2296,7 +2385,15 @@ export class LicenceCentreService {
         }
 
         let confirmed = false;
-        if (!isPhotograph(created.kind as CredentialKind)) {
+        // ⚠️ NOT A COMPETENCY. Its `expiresOn` is DERIVED from the member's
+        // licences, not read off the card, so `proposed.expiresOn` is null and
+        // confirmExpiry throws — every batch upload logged a false failure.
+        // Confirming it here would also clear `dateSource: 'derived'`, which is
+        // exactly what stops it rolling forward when a licence is renewed.
+        if (
+          !isPhotograph(created.kind as CredentialKind) &&
+          created.kind !== CredentialKind.COMPETENCY_CERTIFICATE
+        ) {
           try {
             await this.confirmExpiry(user.id, created.id, {
               expiresOn: created.proposed.expiresOn ?? '',
@@ -2496,11 +2593,12 @@ export class LicenceCentreService {
     if (file.buffer.length > MAX_UPLOAD_BYTES) {
       throw new BadRequestException('That file is larger than 10 MB.');
     }
+    const acceptedMime = readableUploadMime(file);
 
     // ⚠️ UPRIGHT BEFORE THE MODEL SEES IT. An evidence photograph is never
     // cropped or retouched, but it must still be the right way up for the
     // classifier — see upright-image; still a no-op unless EXIF says otherwise.
-    const upright = await this.uprightForVision(file.buffer, file.mimetype);
+    const upright = await this.uprightForVision(file.buffer, acceptedMime);
     const bytes = upright.bytes;
     const mimeType = upright.mimeType;
     this.screenDocument(bytes, mimeType, user.id, description);
@@ -2807,6 +2905,7 @@ export class LicenceCentreService {
       select: {
         id: true,
         expiresOn: true,
+        issuedOn: true,
         coversKinds: true,
         kind: true,
         title: true,
@@ -2838,6 +2937,22 @@ export class LicenceCentreService {
       (before.expiresOn !== null &&
         expiry !== null &&
         before.expiresOn.getTime() !== expiry.getTime());
+
+    // ⚠️ A CORRECTED ISSUE DATE RE-ARMS THE PROOF-OF-ADDRESS CHECK. That
+    // reminder runs off `issuedOn` (a proof of address ages rather than
+    // expiring) and claims `remind30SentAt`. Without this the member could fix
+    // the printed date and never be reminded again about the newer one.
+    const priorIssuedOn = before.issuedOn ?? null;
+    const nextIssuedOn = issuedOnUnknown
+      ? null
+      : issuedOn === undefined
+        ? priorIssuedOn
+        : parseIsoDate(issuedOn ?? null);
+    const issuedOnChanged =
+      (priorIssuedOn === null) !== (nextIssuedOn === null) ||
+      (priorIssuedOn !== null &&
+        nextIssuedOn !== null &&
+        priorIssuedOn.getTime() !== nextIssuedOn.getTime());
 
     await this.prisma.credential.update({
       where: { id: before.id },
@@ -2927,7 +3042,7 @@ export class LicenceCentreService {
         ...((title ?? '').trim()
           ? { title: (title ?? '').trim().slice(0, MAX_TITLE) }
           : {}),
-        ...(dateChanged
+        ...(dateChanged || issuedOnChanged
           ? {
               remind180SentAt: null,
               remind120SentAt: null,
@@ -3131,7 +3246,7 @@ export class LicenceCentreService {
 
     const row = await this.prisma.credential.findFirst({
       where: { id, userId: user.id },
-      select: { id: true, storageKey: true, mimeType: true, purgedAt: true },
+      select: { id: true, storageKey: true, mimeType: true, purgedAt: true, sha256: true },
     });
     if (!row) throw new NotFoundException('Document not found');
     if (!row.storageKey || row.purgedAt) {
@@ -3207,7 +3322,10 @@ export class LicenceCentreService {
       );
     });
 
-    await this.rotateAttachedCopies(id, turned);
+    await this.rotateAttachedCopies(id, turned, row.sha256);
+    // The old bytes' rasters and readings are now unreachable; a rotated PDF
+    // would otherwise keep serving the sideways page from the 30-day cache.
+    await this.forgetDocumentCaches(row.sha256);
 
     this.vaultLog?.note({
       stage: 'member',
@@ -3239,10 +3357,18 @@ export class LicenceCentreService {
   private async rotateAttachedCopies(
     credentialId: string,
     turned: { bytes: Buffer; mimeType: string },
+    oldSha256: string | null,
   ): Promise<void> {
+    // ⚠️ MATCH BY HASH AS WELL AS BY POINTER. A copy saved from inside a
+    // motivation has `sourceCredentialId: null`, and an older copy adopted into
+    // the vault may predate the column. Both are the same page and both will
+    // otherwise keep the sideways bytes — and silently drop off "Used in",
+    // which matches by sha256.
     const copies = await this.prisma.motivationUpload.findMany({
       where: {
-        sourceCredentialId: credentialId,
+        ...(oldSha256
+          ? { OR: [{ sourceCredentialId: credentialId }, { sha256: oldSha256 }] }
+          : { sourceCredentialId: credentialId }),
         storageKey: { not: null },
         purgedAt: null,
       },
@@ -3297,7 +3423,7 @@ export class LicenceCentreService {
   private async removeOtherSide(userId: string, id: string): Promise<void> {
     const other = await this.prisma.credential.findFirst({
       where: { id, userId },
-      select: { id: true, storageKey: true, kind: true },
+      select: { id: true, storageKey: true, kind: true, sha256: true },
     });
     if (!other) return;
     if (other.storageKey) await this.files.remove(other.storageKey);
@@ -3308,6 +3434,7 @@ export class LicenceCentreService {
       })
       .catch(() => undefined);
     await this.prisma.credential.delete({ where: { id: other.id } });
+    await this.forgetDocumentCaches(other.sha256);
     this.vaultLog?.note({
       stage: 'member',
       outcome: 'corrected',
@@ -3338,7 +3465,7 @@ export class LicenceCentreService {
       where: { id, userId: user.id },
       // ⚠️ kind AND coversKinds ARE READ FOR THE RE-DATE BELOW, and they must
       // be read BEFORE the delete — after it there is no row left to ask.
-      select: { id: true, storageKey: true, kind: true, coversKinds: true, attention: true, otherSideId: true },
+      select: { id: true, storageKey: true, kind: true, coversKinds: true, attention: true, otherSideId: true, sha256: true },
     });
     if (!row) throw new NotFoundException('Document not found');
     this.vaultLog?.note({
@@ -3411,6 +3538,7 @@ export class LicenceCentreService {
       );
 
     await this.prisma.credential.delete({ where: { id: row.id } });
+    await this.forgetDocumentCaches(row.sha256);
     await this.notifications
       .resolveByEntity('credential', id, { userId: user.id })
       .catch(() => undefined);
@@ -3447,7 +3575,15 @@ export class LicenceCentreService {
      */
     try {
       if (row.otherSideId) {
-        await this.removeOtherSide(user.id, row.otherSideId);
+        // ⚠️ ONLY DELETE A PARTNER THAT POINTS BACK. A pairing race can leave
+        // `row.otherSideId` naming a document that now belongs to somebody
+        // else's pair; deleting on the one-way pointer threw away a page the
+        // member still had.
+        const partner = await this.prisma.credential.findFirst({
+          where: { id: row.otherSideId, userId: user.id, otherSideId: row.id },
+          select: { id: true },
+        });
+        if (partner) await this.removeOtherSide(user.id, row.otherSideId);
       }
       await this.prisma.credential.updateMany({
         where: { userId: user.id, otherSideId: row.id },
@@ -3864,7 +4000,15 @@ export class LicenceCentreService {
      * (It has a member-facing twin: those same rows read "Date not confirmed"
      * in the member's own Centre. That belongs to vault-adoption, not here.)
      */
-    const dateless = allKinds.filter(isPhotograph);
+    const dateless = allKinds.filter(
+      (k) => isPhotograph(k) || DATELESS_DOCUMENT_KINDS.includes(k),
+    );
+
+    // ⚠️ SETTLED IS `confirmedAt` OR `dateSource`, not `confirmedAt` alone. The
+    // "Automate It" change arms a read/derived date with `dateSource` and no
+    // human confirm, so counting only `confirmedAt` reported armed licences as
+    // unconfirmed and omitted them from expiring/expired.
+    const settled = [{ OR: [{ confirmedAt: { not: null } }, { dateSource: { not: null } }] }];
 
     const [byKind, total, unconfirmed, expiring30, expired, muted] =
       await Promise.all([
@@ -3876,18 +4020,18 @@ export class LicenceCentreService {
         this.prisma.credential.count({
           where: {
             confirmedAt: null,
+            dateSource: null,
             neverExpires: false,
             kind: { notIn: dateless },
           },
         }),
         this.prisma.credential.count({
           where: {
-            confirmedAt: { not: null },
-            expiresOn: { gt: now, lte: in30 },
+            AND: [...settled, { expiresOn: { gt: now, lte: in30 } }],
           },
         }),
         this.prisma.credential.count({
-          where: { confirmedAt: { not: null }, expiresOn: { lt: now } },
+          where: { AND: [...settled, { expiresOn: { lt: now } }] },
         }),
         this.prisma.credential.count({ where: { remindersMuted: true } }),
       ]);

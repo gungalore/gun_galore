@@ -436,7 +436,19 @@ export function deepLinkedDocument(
 ): { row: CredentialRow; section: DocSectionId } | null {
   if (!rows || !id) return null;
   const row = rows.find((r) => r.id === id);
-  return row ? { row, section: placeRow(row) } : null;
+  if (!row) return null;
+  /**
+   * ⚠️ RESOLVE TO THE PAGE THAT STANDS FOR THE DOCUMENT. A two-sided
+   * proficiency is folded into ONE list entry led by its back page, so a deep
+   * link to the front page (`?doc=<frontId>`, and every legacy reminder about
+   * it) named a row that is not in `visible`. The page then snapped the
+   * selection back to the first row in the vault.
+   */
+  const partner = row.otherSide
+    ? rows.find((r) => r.id === row.otherSide!.id)
+    : undefined;
+  const lead = partner && !leadsPair(row, partner) ? partner : row;
+  return { row: lead, section: placeRow(lead) };
 }
 
 function groupKey(row: CredentialRow, section: DocSection): string {

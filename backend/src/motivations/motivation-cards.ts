@@ -319,6 +319,9 @@ export const SPORT_FORMATS: readonly CardOption[] = [
  */
 export const OWNED_SECTION_HELD: readonly CardOption[] = [
   { key: 'section_13', sentence: 'I hold it under section 13, for self-defence.' },
+  // ⚠️ SECTION 14 WAS MISSING, so a restricted firearm's card could never be
+  // described and the s14-cap warning could never fire from the vault.
+  { key: 'section_14', sentence: 'I hold it under section 14, a restricted firearm for self-defence.' },
   { key: 'section_15', sentence: 'I hold it under section 15, as an occasional hunter or sports shooter.' },
   { key: 'section_16', sentence: 'I hold it under section 16, as a dedicated hunter or dedicated sports shooter.' },
   { key: 'section_17', sentence: 'I hold it under section 17, as part of a private collection.' },

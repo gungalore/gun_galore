@@ -22,6 +22,7 @@ import { endorsementMoved } from './motivation-autolink';
 import { selfLoadingFromText } from '../common/sa-competency';
 import { UPLOAD_MAX_BYTES, UPLOAD_MIME } from '../licence-centre/upload-limits';
 import { NotificationsService } from '../notifications/notifications.service';
+import { MotivationPrefillService } from './motivation-prefill.service';
 
 // ────────────────────────────────────────────────────────────────────
 // THE PREVIOUS OWNER'S CONSENT.
@@ -610,6 +611,9 @@ export class MotivationSellerConsentService {
     private readonly tokens: ActionTokensService,
     // @Global, so nothing has to change in motivations.module.ts to reach it.
     private readonly notifications: NotificationsService,
+    // ⚠️ THE THIRD DOOR A FIREARM ARRIVES THROUGH. Typing it and confirming a
+    // document both re-derive the competency; this consent never did.
+    private readonly prefill?: MotivationPrefillService,
   ) {}
 
   /**
@@ -1561,7 +1565,13 @@ export class MotivationSellerConsentService {
 
       const row = await this.prisma.motivation.findUnique({
         where: { id: motivationId },
-        select: { id: true, answersEncrypted: true, answerProvenance: true },
+        select: {
+          id: true,
+          userId: true,
+          licenceType: true,
+          answersEncrypted: true,
+          answerProvenance: true,
+        },
       });
       if (!row) return;
 
@@ -1599,6 +1609,33 @@ export class MotivationSellerConsentService {
         from: 'the seller\u2019s licence card',
         sourceId: consentId,
       });
+
+      // ⚠️ AND THE COMPETENCY, WHICH THIS DOOR NEVER RE-DERIVED. A private sale
+      // is the commonest way a firearm arrives; without this the competency
+      // boxes stay blank even though the right certificate is in the vault, and
+      // the eligibility check later tells the member their own certificate does
+      // not cover their own firearm.
+      try {
+        const competency = await this.prefill?.competencyOffer(
+          row.licenceType,
+          row.userId,
+          answers,
+          provenance,
+        );
+        if (competency) {
+          for (const [key, value] of Object.entries(competency.values)) {
+            if (provenance[key]?.source === 'MEMBER') continue;
+            answers[key] = value;
+            const entry = competency.provenance[key];
+            if (entry) provenance[key] = entry;
+            else delete provenance[key];
+          }
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Seller consent ${consentId}: competency re-derivation skipped — ${(err as Error).message}`,
+        );
+      }
 
       await this.prisma.motivation.update({
         where: { id: row.id },

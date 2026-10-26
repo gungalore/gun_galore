@@ -1,5 +1,6 @@
 import { CredentialKind } from '@prisma/client';
 import {
+  DATELESS_DOCUMENT_KINDS,
   NO_VISION_KINDS,
   defaultsToNeverExpires,
   isPhotograph,
@@ -134,10 +135,21 @@ describe('when the never-expires box starts already ticked', () => {
     ).toBe(false);
   });
 
+  it('ON a proof of address, an employment letter and an activity log', () => {
+    // ⚠️ THESE PRINT DATES, BUT NOT A RENEWAL DEADLINE. Vision read a payment
+    // due date off a municipal bill and armed a licence-style renewal reminder
+    // against it. A proof of address ages (the 90-day freshness check and its
+    // own validity reminder handle that), and the other two do not run out.
+    for (const k of DATELESS_DOCUMENT_KINDS) {
+      expect(defaultsToNeverExpires(k)).toBe(true);
+    }
+  });
+
   it('NOT on anything else we actually read', () => {
     const exempt = new Set<CredentialKind>([
       CredentialKind.IDENTITY_DOCUMENT,
       CredentialKind.PROFICIENCY,
+      ...DATELESS_DOCUMENT_KINDS,
     ]);
     for (const k of Object.values(CredentialKind)) {
       if (isPhotograph(k) || exempt.has(k)) continue;

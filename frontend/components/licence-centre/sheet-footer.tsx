@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 // ────────────────────────────────────────────────────────────────────
 // THE ONE RED BUTTON ON THE SHEET, AND THE DECLARATION IN FRONT OF IT.
@@ -56,6 +56,12 @@ export default function SheetFooter({
 }: SheetFooterProps) {
   const [agreed, setAgreed] = useState(declared);
   const [testimonial, setTestimonial] = useState(false);
+  // ⚠️ THE SERVER CAN SETTLE THE DECLARATION AFTER THIS MOUNTED (a reload, or
+  // another tab). Without this the tick stayed unticked on a declaration the
+  // row already carries.
+  useEffect(() => {
+    if (declared) setAgreed(true);
+  }, [declared]);
   const blocked = missingCount > 0 || !agreed;
 
   return (

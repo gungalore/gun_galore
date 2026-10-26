@@ -294,7 +294,7 @@ function Card({
                   What does it show?
                   <textarea
                     value={card.description}
-                    disabled={working || card.rowId === null}
+                    disabled={working}
                     rows={2}
                     maxLength={500}
                     onChange={(e) =>
@@ -310,7 +310,6 @@ function Card({
                     disabled={
                       working ||
                       busy ||
-                      !card.rowId ||
                       !card.description.trim()
                     }
                     onClick={() =>

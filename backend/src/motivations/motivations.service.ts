@@ -44,6 +44,7 @@ import {
   LICENCE_TYPE_LABELS,
   fieldByKey,
   fieldsFor,
+  isSelfDefence,
   missingRequired,
   sanitiseAnswers,
 } from './motivation-fields';
@@ -69,6 +70,8 @@ import {
   splitByScope,
 } from './member-profile-answers.service';
 import { VaultAdoptionService } from './vault-adoption.service';
+import { DocumentReadCacheService } from './document-read-cache.service';
+import { DocumentPageRasterService } from './document-page-raster.service';
 
 // Re-exported so every existing importer keeps working: both moved to
 // motivation-shared.service.ts when this file was split, and nothing about
@@ -117,6 +120,10 @@ export class MotivationsService {
     private readonly witnesses: MotivationWitnessesService,
     private readonly profileAnswers: MemberProfileAnswersService,
     private readonly vaultAdoption: VaultAdoptionService,
+    // ⚠️ DERIVED ARTEFACTS ARE KEYED BY sha256 AND DO NOT CASCADE. Optional so
+    // hand-built specs keep compiling.
+    private readonly readCache?: DocumentReadCacheService,
+    private readonly pageRaster?: DocumentPageRasterService,
   ) {}
 
   /** Remove vault-sourced material from drafts without rewriting completed packs. */
@@ -418,7 +425,7 @@ export class MotivationsService {
     // chain has already produced its answer, not before it.
     let stationValues: Record<string, string> = {};
     let stationFrom = '';
-    if (licenceType === MotivationLicenceType.S13_SELF_DEFENCE) {
+    if (isSelfDefence(licenceType)) {
       const station = await this.prefill.stationOffer(licenceType, seeded);
       if (station) {
         stationValues = {
@@ -755,7 +762,7 @@ export class MotivationsService {
     // return statement: a server-side write the client is not told about is a
     // write the client's next autosave undoes.
     if (
-      row.licenceType === MotivationLicenceType.S13_SELF_DEFENCE &&
+      isSelfDefence(row.licenceType) &&
       changed.includes('residential_address')
     ) {
       const station = await this.prefill.stationOffer(row.licenceType, merged);
@@ -1033,28 +1040,86 @@ export class MotivationsService {
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
-      select: { id: true, uploads: { select: { id: true, storageKey: true } } },
+      select: {
+        id: true,
+        coverPhotoKey: true,
+        uploads: { select: { storageKey: true, sha256: true } },
+        // ⚠️ SIGNATURES AND SELLER PAPERWORK HANG OFF THE SAME APPLICATION.
+        // This walked `uploads` only, so a witness's or seller's drawn
+        // signature, the seller's two licence photographs and every consent
+        // document survived the row — encrypted bytes with nothing left
+        // pointing at them, and exactly the third-party material an erasure
+        // must reach.
+        witnesses: { select: { signatureKey: true } },
+        sellerConsent: {
+          select: {
+            signatureKey: true,
+            licenceFrontKey: true,
+            licenceBackKey: true,
+            documents: { select: { storageKey: true } },
+          },
+        },
+      },
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
+    const keys = [
+      row.coverPhotoKey,
+      ...(row.uploads ?? []).map((u) => u.storageKey),
+      // ⚠️ Defensive: a hand-built spec and an older row may carry no relation
+      // keys, and a missing relation must not turn an erasure into a 500.
+      ...(row.witnesses ?? []).map((w) => w.signatureKey),
+      ...(row.sellerConsent
+        ? [
+            row.sellerConsent.signatureKey,
+            row.sellerConsent.licenceFrontKey,
+            row.sellerConsent.licenceBackKey,
+            ...(row.sellerConsent.documents ?? []).map((d) => d.storageKey),
+          ]
+        : []),
+    ].filter((k): k is string => Boolean(k));
+
     let filesRemoved = 0;
-    for (const up of row.uploads) {
-      if (!up.storageKey) continue;
+    for (const key of keys) {
       try {
-        await this.files.remove(up.storageKey);
+        await this.files.remove(key);
         filesRemoved++;
       } catch (err) {
         // Keep going: one unreadable key must not strand the rest of an
         // erasure request. Logged loudly — a file we failed to delete is a
         // POPIA problem an operator has to know about.
         this.logger.error(
-          `Erasure of motivation ${row.id}: could not remove ${up.storageKey}: ${(err as Error).message}`,
+          `Erasure of motivation ${row.id}: could not remove ${key}: ${(err as Error).message}`,
         );
       }
     }
 
-    // Cascades take messages and uploads with it.
+    // Cascades take messages, uploads, witnesses and the consent with it.
     await this.prisma.motivation.delete({ where: { id: row.id } });
+
+    // ⚠️ AFTER THE ROWS, BECAUSE THE HASH LIVES ON THE UPLOAD. Cached OCR text
+    // and 300-dpi page rasters are copies of the member's documents.
+    const sha256s = (row.uploads ?? [])
+      .map((u) => u.sha256)
+      .filter((s): s is string => Boolean(s));
+    if (sha256s.length) {
+      await Promise.all([
+        this.readCache
+          ?.forgetMany(sha256s)
+          .catch((err: unknown) =>
+            this.logger.warn(
+              `Erasure of motivation ${row.id}: could not forget read cache: ${(err as Error).message}`,
+            ),
+          ),
+        this.pageRaster
+          ?.forgetMany(sha256s)
+          .catch((err: unknown) =>
+            this.logger.warn(
+              `Erasure of motivation ${row.id}: could not forget page rasters: ${(err as Error).message}`,
+            ),
+          ),
+      ]);
+    }
 
     return { erased: true, filesRemoved };
   }

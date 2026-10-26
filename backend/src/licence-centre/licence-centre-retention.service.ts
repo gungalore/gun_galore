@@ -5,6 +5,8 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
 // From MotivationsModule, which this module already imports (and exports it
 // from). It is not @Global, so it must be injected through that edge.
 import { DocumentIdentifyService } from '../common/document-identify.service';
+import { DocumentPageRasterService } from '../motivations/document-page-raster.service';
+import { DocumentReadCacheService } from '../motivations/document-read-cache.service';
 
 // ────────────────────────────────────────────────────────────────────
 // LC0 — RETENTION AND ERASURE.
@@ -56,6 +58,12 @@ export class LicenceCentreRetentionService {
     // vault's own crons exist for exactly this class of leftover. A member who
     // identifies ten files and uploads none must leave nothing behind.
     private readonly identify: DocumentIdentifyService,
+    // ⚠️ THE DERIVATIVES MUST GO WITH THE ROWS. A PDF's page rasters and the
+    // cached OCR text are keyed by sha256 and outlive a credential delete
+    // unless they are forgotten here. Optional so hand-built specs still
+    // compile; Nest injects both through MotivationsModule.
+    private readonly pageRaster?: DocumentPageRasterService,
+    private readonly readCache?: DocumentReadCacheService,
   ) {}
 
   /**
@@ -198,7 +206,7 @@ export class LicenceCentreRetentionService {
 
       const rows = await this.prisma.credential.findMany({
         where: { userId },
-        select: { id: true, storageKey: true },
+        select: { id: true, storageKey: true, sha256: true },
       });
       out.credentials = rows.length;
       if (!rows.length) return out;
@@ -220,6 +228,24 @@ export class LicenceCentreRetentionService {
       // erased, and a stuck file is our problem to clean up by hand, not a
       // reason to keep their records.
       await this.prisma.credential.deleteMany({ where: { userId } });
+      // ⚠️ AFTER THE ROWS, AND BEST EFFORT. Cached OCR text and 300-dpi page
+      // rasters are copies of the member's documents; erasure means erasure.
+      await Promise.all([
+        this.pageRaster
+          ?.forgetMany(rows.map((c) => c.sha256))
+          .catch((err: unknown) =>
+            this.logger.warn(
+              `Erasure: could not forget page rasters: ${(err as Error).message}`,
+            ),
+          ),
+        this.readCache
+          ?.forgetMany(rows.map((c) => c.sha256))
+          .catch((err: unknown) =>
+            this.logger.warn(
+              `Erasure: could not forget read cache: ${(err as Error).message}`,
+            ),
+          ),
+      ]);
     } catch (err) {
       this.logger.error(
         `Licence Centre purge for user ${userId} failed: ${(err as Error).message}`,

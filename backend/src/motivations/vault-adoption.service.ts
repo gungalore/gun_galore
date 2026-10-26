@@ -3,7 +3,7 @@ import { CredentialKind, MotivationUploadKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { decryptJson } from '../common/blob-crypto';
-import { categoryFromText } from '../common/sa-competency';
+import { categoryFromText, selfLoadingFromText } from '../common/sa-competency';
 import { FLAGS, SettingsService } from '../settings/settings.service';
 import { VaultConsentService } from '../users/vault-consent.service';
 import { documentLabel } from './motivation-documents';
@@ -22,7 +22,11 @@ import { parseIsoDate } from '../licence-centre/licence-dates';
 // upload path applies, or the two disagree about which row is the original and
 // the copy gets offered for reuse. Pure functions, so no module edge: see the
 // header on why a SERVICE from the Licence Centre cannot be injected here.
-import { duplicateNote, findDuplicate } from '../licence-centre/credential-duplicates';
+import {
+  duplicateNote,
+  findDuplicate,
+  findOtherSide,
+} from '../licence-centre/credential-duplicates';
 import { isPhotograph, settledByNature } from '../licence-centre/credential-kinds';
 
 // ────────────────────────────────────────────────────────────────────
@@ -379,7 +383,13 @@ export class VaultAdoptionService {
         // type lives in the encrypted details, which SQL cannot open, and the
         // whole derivation is a group-by on this column.
         ...(kind === CredentialKind.FIREARM_LICENCE
-          ? { firearmCategory: categoryFromText(details.firearm_type ?? '') }
+          ? {
+              firearmCategory: categoryFromText(details.firearm_type ?? ''),
+              // ⚠️ THE ACTION IS PART OF A COMPETENCY'S ENDORSEMENT. Leaving it
+              // out meant an adopted semi-auto rifle licence could re-date a
+              // manual-rifle competency before list() ever repaired the row.
+              firearmSelfLoading: selfLoadingFromText(details.firearm_type ?? ''),
+            }
           : {}),
         ...(armed.arm
           ? {
@@ -507,13 +517,15 @@ export class VaultAdoptionService {
      * and `attention: ['duplicate']` is a "look at this", not a refusal — see
      * credential-duplicates.ts.
      */
+    // ⚠️ READ ONCE, OUTSIDE THE DUPLICATE TRY, so the pairing pass below can
+    // use the same details. A failed duplicate check must not cost the pair.
+    const details = this.readDetails(u.extractionEncrypted);
+    const issuedOn = parseIsoDate(
+      details.issued_on ?? details.issue_date ?? null,
+    );
     let duplicateOf: { id: string; title: string; createdAt: Date } | null =
       null;
     try {
-      const details = this.readDetails(u.extractionEncrypted);
-      const issuedOn = parseIsoDate(
-        details.issued_on ?? details.issue_date ?? null,
-      );
       const others = await this.prisma.credential.findMany({
         where: { userId, kind: adoptedKind, purgedAt: null },
         select: {
@@ -552,7 +564,7 @@ export class VaultAdoptionService {
     }
 
     try {
-      await this.prisma.credential.create({
+      const created = await this.prisma.credential.create({
         data: {
           userId,
           kind: adoptedKind,
@@ -616,6 +628,21 @@ export class VaultAdoptionService {
           this.logger,
         );
       }
+
+      /**
+       * ⚠️ A TWO-SIDED PROFICIENCY MUST ARRIVE PAIRED. This path copied the
+       * two pages as two independent credentials. The Centre only repairs the
+       * pair when its list is opened, so a member who saved both sides here and
+       * started another application first saw "several candidates" and neither
+       * page auto-attached.
+       */
+      if (adoptedKind === CredentialKind.PROFICIENCY) {
+        await this.pairAdoptedProficiency(userId, created.id, {
+          details,
+          issuedOn: issuedOn ? issuedOn.toISOString().slice(0, 10) : null,
+        });
+      }
+
       return true;
     } catch (err) {
       // The bytes must not outlive a failed row.
@@ -628,6 +655,60 @@ export class VaultAdoptionService {
         return false;
       }
       throw err;
+    }
+  }
+
+  /**
+   * Link the page just adopted to its opposite side, if the member already has
+   * it. Best effort: the Centre repairs pairs on list anyway.
+   */
+  private async pairAdoptedProficiency(
+    userId: string,
+    createdId: string,
+    subject: { details: Record<string, string>; issuedOn: string | null },
+  ): Promise<void> {
+    try {
+      const others = await this.prisma.credential.findMany({
+        where: {
+          userId,
+          kind: CredentialKind.PROFICIENCY,
+          purgedAt: null,
+          id: { not: createdId },
+          otherSideId: null,
+        },
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          issuedOn: true,
+          detailsEncrypted: true,
+        },
+      });
+      const match = findOtherSide(
+        { kind: 'PROFICIENCY', details: subject.details, issuedOn: subject.issuedOn },
+        others.map((o) => ({
+          id: o.id,
+          title: o.title,
+          createdAt: o.createdAt,
+          kind: 'PROFICIENCY' as const,
+          details: this.readDetails(o.detailsEncrypted),
+          issuedOn: o.issuedOn ? o.issuedOn.toISOString().slice(0, 10) : null,
+          otherSideId: null,
+        })),
+      );
+      if (!match) return;
+      await this.prisma.credential.updateMany({
+        where: { id: createdId, otherSideId: null },
+        data: { otherSideId: match.id },
+      });
+      await this.prisma.credential.updateMany({
+        where: { id: match.id, otherSideId: null },
+        data: { otherSideId: createdId },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Adopted proficiency ${createdId}: could not pair it: ${(err as Error).message}`,
+      );
     }
   }
 

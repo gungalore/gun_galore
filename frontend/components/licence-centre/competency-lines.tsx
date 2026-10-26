@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { SheetItem } from './contract';
 import { sourceLine } from './source-line';
 
@@ -50,6 +51,12 @@ export default function CompetencyLines({
     (i) => i.state === 'filled' || i.state === 'suggested',
   );
 
+  // ⚠️ "CHANGE" USED TO SAVE THE VALUE IT WAS SHOWING. It called
+  // onChange(i.key, i.value) and nothing else, so the button did nothing and
+  // the member had no way to correct a number we had read wrong.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+
   return (
     <div>
       {known.map((i) => (
@@ -57,26 +64,61 @@ export default function CompetencyLines({
           key={i.key}
           className="flex items-start justify-between gap-3 border-b border-[var(--border-divider)] py-[11px] last:border-b-0"
         >
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="text-[12.5px] leading-[1.3] text-[var(--text-secondary)]">
               {i.label}
             </div>
-            <div className="mt-[2px] text-[14.5px] font-medium leading-[1.3] text-[var(--text-primary)]">
-              {i.value}
-            </div>
-            {i.provenance ? (
-              <div className="mt-1 text-[12px] text-[var(--text-tertiary)]">
-                from {sourceLine(i.provenance.from)}
+            {editing === i.key ? (
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <input
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  className="min-h-[40px] min-w-[12rem] flex-1 rounded-[6px] border border-[var(--border)] bg-[var(--bg-card)] px-2 text-[14px] text-[var(--text-primary)]"
+                  aria-label={i.label}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(i.key, draft);
+                    setEditing(null);
+                  }}
+                  className="min-h-[40px] rounded-[6px] bg-[var(--red)] px-3 text-[13px] font-medium text-white"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(null)}
+                  className="min-h-[40px] rounded-[6px] px-2 text-[13px] text-[var(--text-tertiary)]"
+                >
+                  Cancel
+                </button>
               </div>
-            ) : null}
+            ) : (
+              <>
+                <div className="mt-[2px] text-[14.5px] font-medium leading-[1.3] text-[var(--text-primary)]">
+                  {i.value}
+                </div>
+                {i.provenance ? (
+                  <div className="mt-1 text-[12px] text-[var(--text-tertiary)]">
+                    from {sourceLine(i.provenance.from)}
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() => onChange(i.key, i.value)}
-            className="min-h-[44px] flex-shrink-0 rounded-[6px] px-2 text-[13px] font-medium text-[var(--red)] hover:underline"
-          >
-            Change
-          </button>
+          {editing !== i.key ? (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(i.key);
+                setDraft(i.value);
+              }}
+              className="min-h-[44px] flex-shrink-0 rounded-[6px] px-2 text-[13px] font-medium text-[var(--red)] hover:underline"
+            >
+              Change
+            </button>
+          ) : null}
         </div>
       ))}
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DangerArea } from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
@@ -81,6 +81,24 @@ export default function DangerAreas({
     }
     return seed;
   });
+
+  /**
+   * ⚠️ RE-SEED WHEN THE STATION CHANGES. This was seeded once on mount with no
+   * key and no sync, so changing `police_station` loaded a new list of areas
+   * while the old station's ticks stayed — showing the wrong places ticked and
+   * ignoring the new station's pre-ticks.
+   */
+  const seedSignature = `${station ?? ''}|${areas.map((a) => a.key).join(',')}`;
+  const lastSeed = useRef(seedSignature);
+  useEffect(() => {
+    if (lastSeed.current === seedSignature) return;
+    lastSeed.current = seedSignature;
+    const seed: Record<string, string | true> = {};
+    for (const a of areas) {
+      if (a.ticked || (!answered && a.onRoute)) seed[a.key] = a.reason ?? true;
+    }
+    setTicks(seed);
+  }, [seedSignature, areas, answered]);
 
   const chosen = useMemo(
     () =>

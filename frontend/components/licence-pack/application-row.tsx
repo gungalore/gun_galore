@@ -53,7 +53,15 @@ export default function ApplicationRow({
       */}
       <div className="flex items-stretch">
         <Link
-          href={`/licence-centre/${row.id}`}
+          // ⚠️ A FINISHED APPLICATION OPENS ITS PACK. This linked to the form
+          // sheet, which is locked after generation and has no link to the
+          // finished PDF — the member could only get back by pressing "Write
+          // my motivation" again.
+          href={
+            row.status === 'COMPLETED'
+              ? `/licence-centre/${row.id}/pack`
+              : `/licence-centre/${row.id}`
+          }
           className="flex min-w-0 flex-1 items-center justify-between gap-3 px-[14px] py-3 no-underline"
         >
           <span className="min-w-0">

@@ -103,6 +103,8 @@ export default function PackPage() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  /** The poll gave up waiting; the run may still be going. */
+  const [takingLonger, setTakingLonger] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -127,6 +129,9 @@ export default function PackPage() {
 
   const preparing = status !== null && PREPARING_STATUSES.has(status);
   const ready = status === 'COMPLETED';
+  useEffect(() => {
+    if (!preparing) setTakingLonger(false);
+  }, [preparing]);
 
   /**
    * Follow the writer until it stops.
@@ -142,12 +147,27 @@ export default function PackPage() {
     const timer = setInterval(() => {
       if (Date.now() > deadline) {
         clearInterval(timer);
+        // ⚠️ STOPPING QUIETLY LEFT THE SPINNER RUNNING FOR EVER. Nothing changed
+        // `status`, so the member waited on a page that had stopped checking.
+        if (live) setTakingLonger(true);
         return;
       }
       void (async () => {
         try {
           const d = await motivationsApi.get(getToken, id);
-          if (live && d.status !== status) setStatus(d.status);
+          if (!live) return;
+          if (d.status !== status) setStatus(d.status);
+          if (d.status === 'COMPLETED') {
+            setTakingLonger(false);
+            // The sheet was read while the run was still GENERATING; refresh
+            // it so the summary and coverage describe the finished pack.
+            void motivationsApi
+              .sheet(getToken, id)
+              .then((s) => {
+                if (live) setSheet(s);
+              })
+              .catch(() => undefined);
+          }
         } catch {
           /* A poll that fails is not news; keep waiting for the next one. */
         }
@@ -296,6 +316,13 @@ export default function PackPage() {
       {preparing ? (
         <section className="mt-5">
           <PreparingMotivation />
+          {takingLonger ? (
+            <p className="mt-3 text-[13px] leading-[1.5] text-[var(--gold-strong)]">
+              This is taking longer than usual. Nothing is lost — open your
+              answers to check them, and the pack will appear here when it is
+              ready.
+            </p>
+          ) : null}
         </section>
       ) : ready ? (
         <>

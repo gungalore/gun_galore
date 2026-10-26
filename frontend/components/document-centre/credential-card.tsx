@@ -186,6 +186,27 @@ export default function CredentialCard({
 
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(row.title);
+  // ⚠️ THE DESCRIPTION HAD NO HOME. The card told the member to "say in a few
+  // words what it is", and the only text box was in AddPanel's strip — which
+  // never gets a row id. An evidence item whose container could not be decided
+  // was therefore stuck forever.
+  const [describeDraft, setDescribeDraft] = useState('');
+  const [describing, setDescribing] = useState(false);
+  const saveDescription = async () => {
+    const words = describeDraft.trim();
+    if (!words) return;
+    setDescribing(true);
+    onError(null);
+    try {
+      await licenceCentreApi.redescribeEvidence(token, row.id, words);
+      setDescribeDraft('');
+      await onChanged();
+    } catch (err) {
+      onError((err as Error).message || 'We could not file that one.');
+    } finally {
+      setDescribing(false);
+    }
+  };
   const saveName = async () => {
     const next = draftName.trim();
     setRenaming(false);
@@ -758,6 +779,39 @@ export default function CredentialCard({
           </div>
         </div>
       )}
+
+      {wordsNeeded ? (
+        <div className="mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--bg-card)] p-3">
+          <label
+            htmlFor={`describe-${row.id}`}
+            className="block text-[12.5px] font-medium text-[var(--text-primary)]"
+          >
+            What does this show?
+          </label>
+          <textarea
+            id={`describe-${row.id}`}
+            value={describeDraft}
+            onChange={(e) => setDescribeDraft(e.target.value)}
+            rows={2}
+            maxLength={280}
+            placeholder="For example: me and my son on a hunt in Limpopo, 2019."
+            className="mt-2 w-full rounded-[6px] border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[13px] text-[var(--text-primary)]"
+          />
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void saveDescription()}
+              disabled={describing || !describeDraft.trim()}
+              className="min-h-[40px] rounded-[6px] bg-[var(--red)] px-3 text-[13px] font-medium text-white disabled:opacity-50"
+            >
+              {describing ? 'Filing…' : 'File it'}
+            </button>
+            <span className="text-[12px] text-[var(--text-tertiary)]">
+              A sentence is enough. We use it to file the item.
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
         {/* ⚠️ NO PRIMARY BUTTON ON AN EVIDENCE ITEM WE COULD NOT PLACE. Its only

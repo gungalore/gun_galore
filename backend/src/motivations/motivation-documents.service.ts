@@ -38,7 +38,7 @@ import {
 import { parseProvenance, stamp } from '../common/answer-provenance';
 import { printedAnswerValue } from '../common/card-placeholder';
 import { MotivationQuotaService } from './motivation-quota.service';
-import { requiredEndorsement } from './motivation-eligibility';
+import { endorsementNeed, requiredEndorsement } from './motivation-eligibility';
 import { decideAutolink, endorsementMoved } from './motivation-autolink';
 import {
   primaryUploadKind,
@@ -687,7 +687,13 @@ export class MotivationDocumentsService {
      */
     const hereSha = new Set(uploads.map((u) => u.sha256));
 
-    const needed = requiredEndorsement(answersNow);
+    // ⚠️ A COMBINATION GUN NEEDS TWO ENDORSEMENTS. `requiredEndorsement`
+    // collapses a 'several' answer to null, which disables the endorsement
+    // filter and let a handgun-only certificate attach to a combination-gun
+    // application. Pass the set so the filter can still refuse the wrong one.
+    const need = endorsementNeed(answersNow);
+    const needed = need.kind === 'one' ? need.endorsement : null;
+    const neededAny = need.kind === 'several' ? need.endorsements : undefined;
 
     // ⚠️ A TWO-SIDED PROFICIENCY IS ONE CANDIDATE, NOT TWO. The certificate
     // and its statement of results both cover the same firearm, so both
@@ -802,6 +808,7 @@ export class MotivationDocumentsService {
       new Date(),
       {
         needed,
+        neededAny,
         placeConfirmed,
         attachedProficiencyCovers,
         attachedCompetencyCovers,
@@ -3500,11 +3507,61 @@ export class MotivationDocumentsService {
 
     // Ownership through the parent, in the WHERE clause — never a post-fetch
     // check.
+    const row = await this.prisma.motivationUpload.findFirst({
+      where: { id: uploadId, motivation: { id, userId: user.id } },
+      select: {
+        id: true,
+        sha256: true,
+        extractedFields: true,
+        kind: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Document not found');
+
+    /**
+     * ⚠️ RE-FILING MUST CLEAR WHAT THE OLD KIND CONCLUDED. An endorsement the
+     * reader judged to be for a different firearm was demoted to OTHER with
+     * ENDORSEMENT_FIREARM_MISMATCH in `extractedFields`. Changing the kind
+     * alone left that sentinel in place, so the mismatch warning stayed on
+     * screen for ever. The coversKinds of an ASSOCIATION_CARD are recomputed
+     * the same way addUpload does.
+     */
+    const extractedFields = (row.extractedFields ?? []).filter(
+      (f) => f !== ENDORSEMENT_FIREARM_MISMATCH,
+    );
+    let coversKinds: MotivationUploadKind[] | undefined;
+    if (kind === MotivationUploadKind.ASSOCIATION_CARD && row.sha256) {
+      const vaultRow = await this.prisma.credential.findFirst({
+        where: { userId: user.id, sha256: row.sha256, purgedAt: null },
+        select: { kind: true, expiresOn: true },
+      });
+      coversKinds = vaultRow
+        ? effectiveUploadKinds(
+            {
+              kind: vaultRow.kind,
+              expiresOn: vaultRow.expiresOn ? toIsoDay(vaultRow.expiresOn) : null,
+            },
+            new Date(),
+          ).filter((k) => k !== kind)
+        : [];
+    }
+
     const claim = await this.prisma.motivationUpload.updateMany({
       where: { id: uploadId, motivation: { id, userId: user.id } },
-      data: { kind },
+      data: {
+        kind,
+        extractedFields,
+        ...(coversKinds === undefined ? {} : { coversKinds }),
+      },
     });
     if (claim.count === 0) throw new NotFoundException('Document not found');
+
+    // The re-file can change what the form should now offer.
+    await this.reapplyOffer(user.id, id).catch((err) =>
+      this.logger.warn(
+        `Re-filed upload ${uploadId}: could not reapply the offer: ${(err as Error).message}`,
+      ),
+    );
     return { kind };
   }
 }

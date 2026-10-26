@@ -119,7 +119,10 @@ const COMPETENCY_KINDS = new Set(['COMPETENCY_CERTIFICATE']);
  * would reinstate exactly the failure the field was added to stop.
  */
 export function sectionCardKey(raw: string): string {
-  const m = /\b(?:s(?:ection)?\s*)?(13|15|16|17|20)\b/i.exec(raw ?? '');
+  // ⚠️ 14 BELONGS HERE. A section 14 (restricted self-defence) card was read
+  // as no section at all, so `section_held` stayed empty and the s14-cap
+  // warning could not see a firearm the member already holds.
+  const m = /\b(?:s(?:ection)?\s*)?(13|14|15|16|17|20)\b/i.exec(raw ?? '');
   return m ? `section_${m[1]}` : '';
 }
 

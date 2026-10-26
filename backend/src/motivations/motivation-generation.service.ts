@@ -274,14 +274,21 @@ const COMMUTE_TIMEOUT_MS = 6_000;
  * 10-per-hour throttle.
  */
 /**
- * How long a GENERATING row may sit untouched before it is treated as dead.
+ * How long a GENERATING row may sit untouched before a RETRY may claim it.
  *
- * ⚠️ GENEROUS ON PURPOSE. The slowest real pass observed was about two
- * minutes — three drafts, a gate at 38 s and a verify at 52 s — so ten minutes
- * cannot collide with a live one, and a member whose deploy-killed generation
- * stranded them waits ten minutes rather than forever.
+ * ⚠️ IT MUST NOT BE SHORTER THAN A LEGITIMATE RUN. Three draft attempts at
+ * GENERATE_TIMEOUT_MS, plus research, plates and grading, can outlast ten
+ * minutes — and a retry inside a live pass starts a SECOND pipeline on the same
+ * motivation. Fifteen is the ceiling this repo already sets for a stranded
+ * member: long enough for a bad provider day, short enough that a
+ * deploy-killed generation does not wait on an admin.
+ *
+ * ⚠️ THE NIGHTLY SWEEP DELIBERATELY WAITS LONGER (25 min). It clears a run no
+ * member is watching, so it is sized to the worst derived run and must never
+ * take a row out from under a live writer. The two numbers answer different
+ * questions and must not be collapsed.
  */
-export const STALE_GENERATION_MS = 10 * 60 * 1000;
+export const STALE_GENERATION_MS = 15 * 60 * 1000;
 
 export const REGENERABLE: MotivationStatus[] = [
   ...EDITABLE,
@@ -432,9 +439,25 @@ export class MotivationGenerationService {
 
       for (const [k, v] of owned) answers[k] = v;
 
+      // ⚠️ AND THE PROVENANCE, OR THE SHEET PRETENDS THE MEMBER TYPED IT.
+      // Without this the review sheet strips "NONE" values and shows no "From
+      // your Document Centre" chip on any firearm topped up here.
+      const stored = await this.prisma.motivation.findUnique({
+        where: { id: row.id },
+        select: { answerProvenance: true },
+      });
+      const provenance = this.prefill.stampVault(
+        parseProvenance(stored?.answerProvenance),
+        Object.fromEntries(owned),
+        offer.items,
+      );
+
       await this.prisma.motivation.update({
         where: { id: row.id },
-        data: { answersEncrypted: encryptJson(answers) },
+        data: {
+          answersEncrypted: encryptJson(answers),
+          answerProvenance: provenance as unknown as object,
+        },
       });
       return owned.length;
     } catch (err) {

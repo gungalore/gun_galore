@@ -3,7 +3,7 @@
 // it — the constructor only assigns — so the collaborators are stubs.
 import { CredentialKind } from '@prisma/client';
 import { LicenceCentreService } from './licence-centre.service';
-import { NO_VISION_KINDS } from './credential-kinds';
+import { NO_VISION_KINDS, DATELESS_DOCUMENT_KINDS } from './credential-kinds';
 import type { PrismaService } from '../prisma/prisma.service';
 
 // WHAT THE OPERATOR'S HEALTH PANEL IS ALLOWED TO CALL A PROBLEM.
@@ -71,12 +71,14 @@ describe('the unconfirmed metric', () => {
     expect(where.neverExpires).toBe(false);
   });
 
-  it('excludes the photographs, which have no date in any sense', async () => {
+  it('excludes the photographs and the kinds with no expiry', async () => {
     const { service, calls } = makeService([]);
     await service.adminHealth();
     const where = unconfirmedWhere(calls);
     const notIn = (where.kind as { notIn: CredentialKind[] }).notIn;
-    expect([...notIn].sort()).toEqual([...NO_VISION_KINDS].sort());
+    expect([...notIn].sort()).toEqual(
+      [...NO_VISION_KINDS, ...DATELESS_DOCUMENT_KINDS].sort(),
+    );
   });
 
   it('does NOT excuse an ID copy, because a passport is one', async () => {
@@ -88,7 +90,6 @@ describe('the unconfirmed metric', () => {
     const notIn = (unconfirmedWhere(calls).kind as { notIn: CredentialKind[] })
       .notIn;
     expect(notIn).not.toContain(CredentialKind.IDENTITY_DOCUMENT);
-    expect(notIn).not.toContain(CredentialKind.SHOOTING_ACTIVITY_LOG);
   });
 });
 
