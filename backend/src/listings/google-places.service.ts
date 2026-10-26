@@ -32,6 +32,24 @@ export interface DealerPlaceDetails {
   city: string | null;
 }
 
+export interface PlaceSuggestion {
+  placeId: string;
+  text: string;
+}
+
+export interface PlaceAddress {
+  placeId: string;
+  name: string | null;
+  address: string | null;
+  street: string | null;
+  suburb: string | null;
+  city: string | null;
+  province: string | null;
+  postalCode: string | null;
+  lat: number | null;
+  lng: number | null;
+}
+
 interface CacheRow {
   at: number;
   value: DealerPlaceDetails;
@@ -49,11 +67,161 @@ const FIELD_MASK = [
   'addressComponents',
   'businessStatus',
 ].join(',');
+const ADDRESS_FIELD_MASK = [
+  'displayName',
+  'formattedAddress',
+  'location',
+  'addressComponents',
+].join(',');
 
 @Injectable()
 export class GooglePlacesService {
   private readonly logger = new Logger(GooglePlacesService.name);
   private readonly cache = new Map<string, CacheRow>();
+  private readonly addressCache = new Map<
+    string,
+    { at: number; value: PlaceAddress }
+  >();
+
+  /**
+   * Autocomplete (New). The BROWSER key cannot use Places Autocomplete (its
+   * API restrictions block `places.googleapis.com`), so the address fields
+   * call this through the backend, whose key already serves Place Details.
+   * Returns [] on any failure — the field stays a plain text input.
+   */
+  async autocomplete(
+    input: string,
+    type: 'address' | 'establishment' = 'address',
+  ): Promise<PlaceSuggestion[]> {
+    const q = (input ?? '').trim();
+    if (q.length < 2) return [];
+
+    const key = process.env.GOOGLE_MAPS_API_KEY;
+    if (!key) {
+      this.logger.warn('GOOGLE_MAPS_API_KEY is not set — autocomplete unavailable.');
+      return [];
+    }
+
+    try {
+      const res = await fetch(
+        'https://places.googleapis.com/v1/places:autocomplete',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': key,
+          },
+          body: JSON.stringify({
+            input: q.slice(0, 120),
+            includedRegionCodes: ['za'],
+            ...(type === 'establishment'
+              ? { includedPrimaryTypes: ['establishment'] }
+              : {}),
+          }),
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        },
+      );
+      if (!res.ok) {
+        this.logger.warn(`Places autocomplete ${res.status}.`);
+        return [];
+      }
+      const body = (await res.json()) as {
+        suggestions?: {
+          placePrediction?: {
+            placeId?: string;
+            text?: { text?: string };
+          };
+        }[];
+      };
+      const out: PlaceSuggestion[] = [];
+      for (const s of body.suggestions ?? []) {
+        const p = s.placePrediction;
+        if (!p?.placeId || !p.text?.text) continue;
+        out.push({ placeId: p.placeId, text: p.text.text });
+        if (out.length >= 8) break;
+      }
+      return out;
+    } catch (err) {
+      this.logger.warn(
+        `Places autocomplete failed: ${(err as Error).message}`,
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Address-shaped Place Details (New): no phone/website/email, so a typed
+   * address lookup stays cheap and carries nothing the address field needs.
+   */
+  async address(placeId: string): Promise<PlaceAddress | null> {
+    const id = (placeId ?? '').trim();
+    if (!id) return null;
+
+    const hit = this.addressCache.get(id);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
+
+    const key = process.env.GOOGLE_MAPS_API_KEY;
+    if (!key) return null;
+
+    try {
+      const res = await fetch(
+        `https://places.googleapis.com/v1/places/${encodeURIComponent(id)}`,
+        {
+          headers: {
+            'X-Goog-Api-Key': key,
+            'X-Goog-FieldMask': ADDRESS_FIELD_MASK,
+          },
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        },
+      );
+      if (!res.ok) {
+        this.logger.warn(`Places address ${res.status}.`);
+        return null;
+      }
+      const body = (await res.json()) as {
+        displayName?: { text?: string };
+        formattedAddress?: string;
+        location?: { latitude?: number; longitude?: number };
+        addressComponents?: {
+          longText?: string;
+          shortText?: string;
+          types?: string[];
+        }[];
+      };
+      const comp = (type: string) =>
+        body.addressComponents?.find((c) => c.types?.includes(type))?.longText ??
+        null;
+      const street = [
+        comp('street_number'),
+        comp('route'),
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+      const value: PlaceAddress = {
+        placeId: id,
+        name: body.displayName?.text ?? null,
+        address: body.formattedAddress ?? null,
+        street: street || null,
+        suburb:
+          comp('sublocality_level_1') ??
+          comp('sublocality') ??
+          comp('neighborhood'),
+        city: comp('locality') ?? comp('administrative_area_level_2'),
+        province: comp('administrative_area_level_1'),
+        postalCode: comp('postal_code'),
+        lat: body.location?.latitude ?? null,
+        lng: body.location?.longitude ?? null,
+      };
+      this.addressCache.set(id, { at: Date.now(), value });
+      return value;
+    } catch (err) {
+      this.logger.warn(
+        `Places address failed: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
 
   /**
    * Place Details (New). Returns null when the key is absent, the place is

@@ -207,6 +207,37 @@ export class ListingsController {
     return this.listingsService.distanceToBuyer(id, la, ln);
   }
 
+  // Address autocomplete for the sell form and every other address field.
+  //
+  // ⚠️ THE BROWSER KEY CANNOT USE PLACES AUTOCOMPLETE. Its API restrictions
+  // block `places.googleapis.com` (API_KEY_SERVICE_BLOCKED), and the legacy
+  // Maps widget returns no predictions. The backend key already serves Place
+  // Details, so the browser asks us and we ask Google. Auth is optional
+  // because the seller-consent page is public; the throttle keeps a public
+  // paid-API proxy from being farmed.
+  @Get('place-autocomplete')
+  @UseGuards(OptionalAuthGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async placeAutocomplete(
+    @Query('input') input?: string,
+    @Query('types') types?: string,
+  ) {
+    const q = (input ?? '').trim();
+    if (q.length < 2 || q.length > 120) return { suggestions: [] };
+    const type = types === 'establishment' ? 'establishment' : 'address';
+    return { suggestions: await this.googlePlaces.autocomplete(q, type) };
+  }
+
+  // Place details for a picked suggestion. Same story as autocomplete: the
+  // address field needs components + coordinates, and the browser key cannot
+  // ask Places API (New) directly.
+  @Get('place/:placeId')
+  @UseGuards(OptionalAuthGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async placeAddress(@Param('placeId') placeId: string) {
+    return { place: await this.googlePlaces.address(placeId) };
+  }
+
   // Dealer lookup for the sell form. MUST be above @Get(':id') so
   // 'dealer-place' isn't captured as an id. Auth-only: the backend key is
   // IP-restricted and the result carries contact details.

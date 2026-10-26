@@ -1,18 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
-// Google Places Autocomplete wrapped to fit our dark design tokens.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
+// Address autocomplete with OUR dropdown, fed by the backend.
 //
-// PORT NOTE: this file is a near-verbatim port of the OLD project's
-// frontend/src/components/ui/AddressAutocomplete.tsx — only the styling
-// is swapped for our CSS variables and we layer a gm_authFailure handler
-// on top so a bad API key no longer crashes the Next.js dev overlay.
-// Do NOT "improve" the script-load / cleanup logic without going back to
-// the old script first — every clever tweak we tried (removing cleanup,
-// switching clearInstanceListeners(instance → input), etc.) silently
-// broke the Autocomplete binding under React 18 StrictMode in dev. The
-// old version worked. Keep it that way.
+// ⚠️ WHY NOT THE GOOGLE MAPS WIDGET. The browser Maps key's API restrictions
+// block `places.googleapis.com` (`API_KEY_SERVICE_BLOCKED`), so the legacy
+// `google.maps.places.Autocomplete` widget returned no predictions and the
+// field stayed a plain text box. The backend key can call Places API (New),
+// so we ask our own endpoint and render the list. The Maps JS library is now
+// used only by "Use my current location" (Geocoder).
 
 export interface ParsedAddressComponents {
   street?: string;
@@ -28,7 +27,7 @@ interface Props {
   value: string;
   onChange: (address: string, placeId?: string) => void;
   onComponents?: (components: ParsedAddressComponents) => void;
-  /** Optional: choose a Google Places type for non-address place pickers. */
+  /** Optional: choose a Places primary type for non-address place pickers. */
   placeTypes?: string[];
   /** Full selected place details for use cases such as a gunshop nomination. */
   onPlaceSelected?: (place: {
@@ -51,33 +50,28 @@ interface Props {
   hideLocate?: boolean;
 }
 
-// Minimal local types — avoids requiring @types/google.maps at build time.
+type Suggestion = { placeId: string; text: string };
+
+interface PlaceDetail {
+  placeId: string;
+  name: string | null;
+  address: string | null;
+  street: string | null;
+  suburb: string | null;
+  city: string | null;
+  province: string | null;
+  postalCode: string | null;
+  lat: number | null;
+  lng: number | null;
+}
+
+// ── Minimal Geocoder types (the Maps script still supplies this) ─────
 interface AddressComponent {
   long_name: string;
   types: string[];
 }
 interface GGeometry {
   location?: { lat: () => number; lng: () => number };
-}
-interface GPlace {
-  name?: string;
-  formatted_address?: string;
-  place_id?: string;
-  address_components?: AddressComponent[];
-  geometry?: GGeometry;
-}
-interface GAutocomplete {
-  addListener: (event: string, handler: () => void) => void;
-  getPlace: () => GPlace;
-}
-interface GMapsEvent {
-  clearInstanceListeners: (instance: unknown) => void;
-}
-interface GPlacesLib {
-  Autocomplete: new (
-    input: HTMLInputElement,
-    options?: object,
-  ) => GAutocomplete;
 }
 interface GGeocoderResult {
   formatted_address?: string;
@@ -91,30 +85,26 @@ interface GGeocoder {
   }) => Promise<{ results: GGeocoderResult[] }>;
 }
 interface GMapsLib {
-  places?: GPlacesLib;
-  event?: GMapsEvent;
   Geocoder?: new () => GGeocoder;
 }
 interface GWindow {
   google?: { maps?: GMapsLib };
 }
 
-// ── Singleton script loader ──────────────────────────────────────────
-// Avoids re-injecting the Maps script on every component remount, which
-// used to leave behind orphaned <script> tags and stale .pac-container
-// dropdowns.
+// ── Singleton Maps loader, for the Geocoder only ─────────────────────
 let mapsScriptPromise: Promise<void> | null = null;
 
-// Global flag flipped by gm_authFailure when the user's API key is bad /
-// restricted / billing disabled. Lets every AddressAutocomplete instance
-// fall back to "fill manually" without crashing the dev error overlay.
 let mapsAuthFailed = false;
 const authFailureListeners = new Set<() => void>();
 
 function notifyAuthFailure() {
   mapsAuthFailed = true;
   for (const fn of authFailureListeners) {
-    try { fn(); } catch { /* noop */ }
+    try {
+      fn();
+    } catch {
+      /* noop */
+    }
   }
 }
 
@@ -126,28 +116,17 @@ function patchConsoleErrorOnce() {
   window.console.error = function (...args: unknown[]) {
     const first = args[0];
     const text = typeof first === 'string' ? first : '';
-    // Match ONLY the specific fatal auth-error classes. The old code also
-    // matched the bare phrase 'Google Maps JavaScript API', which Google
-    // prints in benign console messages too (loading-pattern + deprecation
-    // notices) — that false-matched and flipped the whole widget into
-    // "auth failed", hiding suggestions and disabling "use my location"
-    // even though the key works fine.
     if (
       text.includes('ApiTargetBlockedMapError') ||
       text.includes('InvalidKeyMapError') ||
       text.includes('RefererNotAllowedMapError') ||
       text.includes('BillingNotEnabledMapError') ||
-      // Places API isn't enabled/activated for the project — the script
-      // itself loads fine (Maps JS + Geocoding can be enabled independently),
-      // so "use my current location" keeps working via the Geocoder while
-      // typed autocomplete silently returns zero predictions. Without this,
-      // the widget looked broken with no error shown anywhere.
       text.includes('ApiNotActivatedMapError')
     ) {
       if (!mapsAuthFailed) {
         original.call(
           window.console,
-          '[AddressAutocomplete] Google Maps disabled — address autocomplete will be unavailable. Check that your NEXT_PUBLIC_GOOGLE_MAPS_API_KEY has Maps JS + Places APIs enabled.',
+          '[AddressAutocomplete] Google Maps disabled — "use my location" is unavailable. Address suggestions come from our server and still work.',
         );
         notifyAuthFailure();
       }
@@ -160,23 +139,20 @@ function patchConsoleErrorOnce() {
 function loadMapsOnce(): Promise<void> {
   if (typeof window === 'undefined') return Promise.resolve();
   const w = window as GWindow;
-  if (w.google?.maps?.places) return Promise.resolve();
+  if (w.google?.maps?.Geocoder) return Promise.resolve();
   if (mapsScriptPromise) return mapsScriptPromise;
 
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   if (!apiKey || apiKey === 'placeholder') return Promise.resolve();
 
   patchConsoleErrorOnce();
-  // The script's `load` event can fire a beat before the `places` library is
-  // attached to `google.maps`, especially when several autocompletes mount at
-  // once. Resolving on `load` alone let the wiring effect see no PlacesLib,
-  // return for good, and leave the field dead until a remount (the reported
-  // "toggle Manual Entry and back" workaround). Wait for the library itself,
-  // with a deadline so a key/API failure cannot hang the promise.
-  const waitForPlaces = (resolve: () => void) => {
+  type GMWindow = Window & { gm_authFailure?: () => void };
+  (window as GMWindow).gm_authFailure = () => notifyAuthFailure();
+
+  const waitForGeocoder = (resolve: () => void) => {
     const deadline = Date.now() + 10_000;
     const check = () => {
-      if (w.google?.maps?.places || mapsAuthFailed || Date.now() > deadline) {
+      if (w.google?.maps?.Geocoder || mapsAuthFailed || Date.now() > deadline) {
         resolve();
       } else {
         setTimeout(check, 50);
@@ -184,10 +160,7 @@ function loadMapsOnce(): Promise<void> {
     };
     check();
   };
-  type GMWindow = Window & { gm_authFailure?: () => void };
-  (window as GMWindow).gm_authFailure = () => notifyAuthFailure();
 
-  // Reuse existing script tag if one is already on the page
   const existing = document.querySelector<HTMLScriptElement>(
     'script[src*="maps.googleapis.com/maps/api/js"]',
   );
@@ -197,16 +170,16 @@ function loadMapsOnce(): Promise<void> {
         notifyAuthFailure();
         resolve();
       });
-      waitForPlaces(resolve);
+      waitForGeocoder(resolve);
     });
     return mapsScriptPromise;
   }
 
   mapsScriptPromise = new Promise((resolve) => {
     const s = document.createElement('script');
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
     s.async = true;
-    s.onload = () => waitForPlaces(resolve);
+    s.onload = () => waitForGeocoder(resolve);
     s.onerror = () => {
       notifyAuthFailure();
       resolve();
@@ -216,14 +189,6 @@ function loadMapsOnce(): Promise<void> {
   return mapsScriptPromise;
 }
 
-function removeStalePacContainers() {
-  if (typeof document === 'undefined') return;
-  document.querySelectorAll('.pac-container').forEach((el) => el.remove());
-}
-
-// Parse Google address_components (same shape from Places AND the Geocoder)
-// into our flat ParsedAddressComponents. Shared by autocomplete-pick and
-// reverse-geocode-from-GPS so both fill the form identically.
 function parseAddressComponents(
   comps: AddressComponent[],
   geometry?: GGeometry,
@@ -254,40 +219,36 @@ export function AddressAutocomplete({
   hideLocate = false,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const autocompleteRef = useRef<GAutocomplete | null>(null);
   const onChangeRef = useRef(onChange);
   const onComponentsRef = useRef(onComponents);
   const onPlaceSelectedRef = useRef(onPlaceSelected);
-  const [scriptLoaded, setScriptLoaded] = useState(false);
-  // Bounded retry while the Places library attaches after the script's
-  // `load` event (see the wiring effect). Reset on a successful wire.
-  const [placesTick, setPlacesTick] = useState(0);
-  const placesTriesRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listId = useId();
+
   const [authFailed, setAuthFailed] = useState(mapsAuthFailed);
   const [locating, setLocating] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const [searching, setSearching] = useState(false);
 
-  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
-  useEffect(() => { onComponentsRef.current = onComponents; }, [onComponents]);
-  useEffect(() => { onPlaceSelectedRef.current = onPlaceSelected; }, [onPlaceSelected]);
+  const typeKey = placeTypes?.join(',') ?? '';
 
-  // UNCONTROLLED input — sync parent's value into input.value via the
-  // ref instead of through React's controlled-input value prop. React's
-  // controlled-input mechanism patches the input's value getter/setter
-  // to track changes, which fights Google's autocomplete listener: the
-  // listener fires but reads a stale value because React's tracker is
-  // ahead of the DOM. Going uncontrolled means Google sees real
-  // input.value on every keystroke and fires its prediction query. We
-  // still sync programmatic parent changes (e.g. after picking a
-  // suggestion) by writing directly to the DOM node.
-  //
-  // CRITICAL — only sync when the input is NOT focused. Otherwise
-  // every keystroke triggers a parent re-render → this effect →
-  // overwrite of what the user is mid-typing. Symptom: the box
-  // freezes after the first character, Google Places never gets
-  // enough chars to fire a request, and no dropdown appears. The
-  // focus check lets programmatic updates (post-pick, initial mount)
-  // still flow through while keeping the user's typing untouched.
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+  useEffect(() => {
+    onComponentsRef.current = onComponents;
+  }, [onComponents]);
+  useEffect(() => {
+    onPlaceSelectedRef.current = onPlaceSelected;
+  }, [onPlaceSelected]);
+
+  // Uncontrolled input — the parent's value is written straight to the DOM
+  // node. Only when the field is NOT focused, so typing is never overwritten.
   useEffect(() => {
     if (!inputRef.current) return;
     if (document.activeElement === inputRef.current) return;
@@ -296,146 +257,138 @@ export function AddressAutocomplete({
     }
   }, [value]);
 
-  // Subscribe to the global auth-failure flag so we re-render to "fill
-  // manually" mode the moment Maps fails.
+  // Subscribe to the Maps auth flag — only the locate button depends on it.
   useEffect(() => {
     if (mapsAuthFailed) setAuthFailed(true);
     const fn = () => setAuthFailed(true);
     authFailureListeners.add(fn);
-    return () => { authFailureListeners.delete(fn); };
+    return () => {
+      authFailureListeners.delete(fn);
+    };
   }, []);
 
-  // Load the Google Maps script (once, globally)
+  // Debounced server-side autocomplete. Every address field uses this, so it
+  // does not depend on the browser key or the Maps Places library.
   useEffect(() => {
-    let cancelled = false;
-    loadMapsOnce().then(() => {
-      if (!cancelled) setScriptLoaded(true);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  // Wire up the Autocomplete widget once the script is ready.
-  // VERBATIM from the old project — including the cleanup. Do not edit.
-  useEffect(() => {
-    if (authFailed) return;
-    if (!scriptLoaded || !inputRef.current || autocompleteRef.current) return;
-
-    const w = window as GWindow;
-    const PlacesLib = w.google?.maps?.places;
-    if (!PlacesLib) {
-      // Do NOT return for good here. A remount used to be the only way to
-      // recover, which is why toggling Manual Entry and back "fixed" the
-      // field. Poll for ~10s instead.
-      if (placesTriesRef.current < 100) {
-        placesTriesRef.current += 1;
-        const t = setTimeout(() => setPlacesTick((n) => n + 1), 100);
-        return () => clearTimeout(t);
-      }
+    const q = query.trim();
+    if (q.length < 2) {
+      setSuggestions([]);
+      setOpen(false);
+      setSearching(false);
       return;
     }
-    placesTriesRef.current = 0;
 
-    let autocompleteInstance: GAutocomplete | null = null;
-    try {
-      autocompleteInstance = new PlacesLib.Autocomplete(inputRef.current, {
-        componentRestrictions: { country: 'za' },
-        fields: ['name', 'formatted_address', 'place_id', 'address_components', 'geometry'],
-        types: placeTypes ?? ['address'],
-      });
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      try {
+        const type = typeKey.split(',').includes('establishment')
+          ? 'establishment'
+          : 'address';
+        const res = await fetch(
+          `${API_URL}/listings/place-autocomplete?input=${encodeURIComponent(q)}&types=${type}`,
+          { signal: ctrl.signal, cache: 'no-store' },
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { suggestions?: Suggestion[] };
+        if (ctrl.signal.aborted) return;
+        const list = Array.isArray(data.suggestions) ? data.suggestions : [];
+        setSuggestions(list);
+        setOpen(list.length > 0);
+        setActive(-1);
+      } catch {
+        /* aborted or offline — leave the typed value */
+      } finally {
+        if (!ctrl.signal.aborted) setSearching(false);
+      }
+    }, 220);
 
-      autocompleteInstance.addListener('place_changed', () => {
-        try {
-          const place = autocompleteInstance!.getPlace();
-          if (place.formatted_address) {
-            // Write the picked address straight to the DOM (uncontrolled
-            // input) AND tell the parent via onChange. The parent's
-            // value prop will follow on next render and the ref-sync
-            // effect will no-op because the values match.
-            if (inputRef.current) {
-              inputRef.current.value = place.formatted_address;
-            }
-            onChangeRef.current(place.formatted_address, place.place_id);
-
-            const components = place.address_components
-              ? parseAddressComponents(place.address_components, place.geometry)
-              : {};
-            onComponentsRef.current?.(components);
-            onPlaceSelectedRef.current?.({
-              name: place.name,
-              formattedAddress: place.formatted_address,
-              placeId: place.place_id,
-              components,
-            });
-          }
-        } catch {
-          // place_changed handler failed — ignore silently
-        }
-      });
-
-      autocompleteRef.current = autocompleteInstance;
-    } catch {
-      setScriptLoaded(false);
-    }
-
-    // ── Cleanup on unmount ────────────────────────────────────────────
-    // Without this, .pac-container dropdowns get orphaned on document.body
-    // (e.g. when the user switches tabs inside the Clerk UserProfile modal)
-    // and float visibly over the next view at their last computed position.
     return () => {
-      const w2 = window as GWindow;
-      if (autocompleteInstance && w2.google?.maps?.event) {
-        try { w2.google.maps.event.clearInstanceListeners(autocompleteInstance); } catch { /* noop */ }
-      }
-      autocompleteRef.current = null;
-      removeStalePacContainers();
+      clearTimeout(timer);
+      abortRef.current?.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scriptLoaded, authFailed, placesTick]);
+  }, [query, typeKey]);
 
-  // Also sweep stale dropdowns when the input itself is hidden by a parent
-  // (e.g. switching from Physical address → Security inside Clerk's modal)
-  useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined' || !inputRef.current) return;
-    const node = inputRef.current;
-    const observer = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        // Sweep orphaned dropdowns ONLY when the field is not the active
-        // input. Google's predictions dropdown appearing (and its layout
-        // shift) can momentarily flip the field out of the viewport
-        // intersection — sweeping then removes the very dropdown the user
-        // is typing into, which reads as "autocomplete never proposes
-        // addresses". Guarding on activeElement keeps the fix for the
-        // real case (field hidden by a parent, e.g. Clerk modal tab
-        // switch) while never nuking a live, in-use dropdown.
-        if (!e.isIntersecting && document.activeElement !== node) {
-          removeStalePacContainers();
-        }
+  async function choose(s: Suggestion) {
+    setOpen(false);
+    setSuggestions([]);
+    setActive(-1);
+    setQuery('');
+    if (blurTimer.current) clearTimeout(blurTimer.current);
+
+    try {
+      const res = await fetch(
+        `${API_URL}/listings/place/${encodeURIComponent(s.placeId)}`,
+        { cache: 'no-store' },
+      );
+      const data = res.ok
+        ? ((await res.json()) as { place?: PlaceDetail | null })
+        : { place: null };
+      const p = data.place;
+      if (!p) {
+        // Details failed — keep the label Google gave, with its place id.
+        if (inputRef.current) inputRef.current.value = s.text;
+        onChangeRef.current(s.text, s.placeId);
+        return;
       }
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
 
-  // "Use my current location" — ask the browser for a GPS fix, then reverse-
-  // geocode it to a street address via the already-loaded Google Geocoder and
-  // fill the same fields an autocomplete pick would. Works in any HTTPS context
-  // incl. the installed PWA. Every failure path degrades to a typed-address
-  // hint (incl. a Geocoder REQUEST_DENIED when the Geocoding API isn't enabled).
+      const address = p.address || s.text;
+      if (inputRef.current) inputRef.current.value = address;
+      onChangeRef.current(address, p.placeId);
+
+      const components: ParsedAddressComponents = {
+        street: p.street ?? undefined,
+        suburb: p.suburb ?? undefined,
+        city: p.city ?? undefined,
+        province: p.province ?? undefined,
+        postalCode: p.postalCode ?? undefined,
+        lat: p.lat ?? undefined,
+        lng: p.lng ?? undefined,
+      };
+      onComponentsRef.current?.(components);
+      onPlaceSelectedRef.current?.({
+        name: p.name ?? undefined,
+        formattedAddress: address,
+        placeId: p.placeId,
+        components,
+      });
+    } catch {
+      if (inputRef.current) inputRef.current.value = s.text;
+      onChangeRef.current(s.text, s.placeId);
+    }
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open || suggestions.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActive((i) => Math.min(i + 1, suggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActive((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      if (active >= 0) {
+        e.preventDefault();
+        void choose(suggestions[active]);
+      }
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  }
+
+  // "Use my current location" — GPS fix, then reverse-geocode via the Maps
+  // Geocoder. Suggestions no longer depend on Maps, so a broken key only
+  // affects this button.
   async function useMyLocation() {
     setGeoError(null);
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setGeoError('Location isn’t available on this device — please type your address.');
       return;
     }
-    if (authFailed) {
-      setGeoError('Address lookup is unavailable — please type your address.');
-      return;
-    }
     setLocating(true);
 
-    // Step 1 — get the GPS fix. Its OWN try/catch so a geolocation failure
-    // (permission / timeout / unavailable) is reported accurately and never
-    // conflated with the address-lookup step below.
     let lat: number;
     let lng: number;
     try {
@@ -461,12 +414,8 @@ export function AddressAutocomplete({
       return;
     }
 
-    // Step 2 — we HAVE the coordinates. Turn them into a street address via
-    // the Google Geocoder. If reverse-geocoding fails (most commonly the
-    // Geocoding API isn’t enabled / authorised on the Maps key), we must NOT
-    // say "couldn’t get your location" — we got it. Keep the coordinates
-    // (shipping distance still works) and ask the user to type the street.
     try {
+      await loadMapsOnce();
       const Geocoder = (window as GWindow).google?.maps?.Geocoder;
       if (!Geocoder) throw new Error('geocoder-not-ready');
       const { results } = await new Geocoder().geocode({ location: { lat, lng } });
@@ -480,10 +429,10 @@ export function AddressAutocomplete({
         );
       }
     } catch {
-      // Record the coordinates anyway so distance/shipping still works,
-      // then tell the user honestly that only the street needs typing.
       if (onComponentsRef.current) onComponentsRef.current({ lat, lng });
-      setGeoError('Got your location, but address lookup isn’t available right now — please fill in the street below.');
+      setGeoError(
+        'Got your location, but address lookup isn’t available right now — please fill in the street below.',
+      );
     } finally {
       setLocating(false);
     }
@@ -499,18 +448,28 @@ export function AddressAutocomplete({
         <input
           ref={inputRef}
           type="text"
-          // Uncontrolled — see useEffect above for the ref-sync rationale.
-          // defaultValue runs once on mount; programmatic updates from
-          // the parent come through the ref-write in the effect, never
-          // through a value prop.
+          // Uncontrolled — see the ref-sync effect above.
           defaultValue={value}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-activedescendant={
+            active >= 0 ? `${listId}-${active}` : undefined
+          }
           onChange={(e) => {
-            onChange(e.target.value);
+            const v = e.target.value;
+            setQuery(v);
+            setOpen(true);
+            onChange(v);
             if (geoError) setGeoError(null);
           }}
+          onKeyDown={onKeyDown}
+          onFocus={() => {
+            if (suggestions.length > 0) setOpen(true);
+          }}
           onBlur={() => {
-            // Give Google's place_changed click a tick to fire, then sweep.
-            setTimeout(removeStalePacContainers, 250);
+            blurTimer.current = setTimeout(() => setOpen(false), 150);
           }}
           placeholder={placeholder}
           style={{
@@ -544,8 +503,69 @@ export function AddressAutocomplete({
           <circle cx="6.5" cy="6.5" r="4.5" />
           <path d="M10.5 10.5l3 3" strokeLinecap="round" />
         </svg>
+
+        {open && (
+          <ul
+            id={listId}
+            role="listbox"
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 4px)',
+              left: 0,
+              right: 0,
+              zIndex: 80,
+              margin: 0,
+              padding: 4,
+              listStyle: 'none',
+              background: 'var(--bg-card)',
+              border: '0.5px solid var(--border)',
+              borderRadius: 6,
+              boxShadow: '0 10px 28px rgba(0,0,0,0.22)',
+              maxHeight: 280,
+              overflowY: 'auto',
+            }}
+          >
+            {suggestions.map((s, i) => (
+              <li
+                key={s.placeId}
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={i === active}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  void choose(s);
+                }}
+                onMouseEnter={() => setActive(i)}
+                style={{
+                  padding: '8px 10px',
+                  fontSize: 13,
+                  lineHeight: 1.35,
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  color: 'var(--text-primary)',
+                  background:
+                    i === active ? 'var(--bg-inset)' : 'transparent',
+                }}
+              >
+                {s.text}
+              </li>
+            ))}
+            {suggestions.length === 0 && searching && (
+              <li
+                style={{
+                  padding: '8px 10px',
+                  fontSize: 12,
+                  color: 'var(--text-tertiary)',
+                }}
+              >
+                Searching…
+              </li>
+            )}
+          </ul>
+        )}
       </div>
-      {!noKey && !authFailed && scriptLoaded && !hideLocate && (
+
+      {!noKey && !hideLocate && (
         <button
           type="button"
           onClick={useMyLocation}
@@ -582,24 +602,18 @@ export function AddressAutocomplete({
           {locating ? 'Locating…' : 'Use my current location'}
         </button>
       )}
+
       {geoError && (
         <p className="mt-1" style={{ fontSize: 11, color: 'var(--warning)' }}>
           {geoError}
         </p>
       )}
-      {(authFailed || noKey || !scriptLoaded) && (
+      {authFailed && !hideLocate && !noKey && (
         <p
-          className="mt-1.5"
-          style={{
-            fontSize: 11,
-            color: authFailed ? 'var(--warning)' : 'var(--text-tertiary)',
-          }}
+          className="mt-1"
+          style={{ fontSize: 11, color: 'var(--text-tertiary)' }}
         >
-          {authFailed
-            ? '⚠ Address suggestions unavailable — enable Maps JavaScript + Places APIs on your key. Fill in the fields below in the meantime.'
-            : noKey
-              ? '⚠ Autocomplete not configured — fill in the fields below'
-              : 'Loading address suggestions…'}
+          Location lookup is unavailable — address suggestions still work.
         </p>
       )}
     </div>

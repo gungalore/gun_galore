@@ -444,7 +444,7 @@ describe('every address gets Google’s picker, not just the home one', () => {
       />,
     );
     expect(document.querySelector('textarea')).toBeNull();
-    expect(screen.getByRole('textbox')).toBeDefined();
+    expect(screen.getByRole('combobox')).toBeDefined();
   });
 });
 
@@ -465,7 +465,7 @@ describe('the residential address gets Google’s picker', () => {
       />,
     );
     expect(document.querySelector('textarea')).toBeNull();
-    expect(screen.getByRole('textbox')).toBeDefined();
+    expect(screen.getByRole('combobox')).toBeDefined();
   });
 
   it('prefills with the address already held, so Change does not blank it', () => {
@@ -481,7 +481,7 @@ describe('the residential address gets Google’s picker', () => {
       />,
     );
     expect(
-      (screen.getByRole('textbox') as HTMLInputElement).value,
+      (screen.getByRole('combobox') as HTMLInputElement).value,
     ).toBe('36 Sterappel Crescent, Cape Town');
   });
 
@@ -495,7 +495,7 @@ describe('the residential address gets Google’s picker', () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByRole('textbox')).toBeDefined();
+    expect(screen.getByRole('combobox')).toBeDefined();
   });
 });
 
