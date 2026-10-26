@@ -1003,10 +1003,10 @@ export class LicenceCentreService {
      * ⚠️ THE BACKFILL ABOVE IS A WRITE, AND NOTHING ACTED ON IT. A licence
      * with a null category is EXCLUDED from the derivation, never defaulted —
      * so before this repair ran, every competency it should have dated fell to
-     * the five-year assumption, which is never armed, which means no date and
-     * no reminder. The category then arrived on the first list() and nothing
-     * recomputed, so the competency stayed undated until some later write
-     * happened to trigger one.
+     * the five-year assumption instead. That date is now armed, but it is the
+     * wrong answer once a real licence exists. The category then arrived on
+     * the first list() and nothing recomputed, so the competency kept the
+     * fallback date until some later write happened to trigger one.
      *
      * Guarded on `categorised.size`, so this is a once-per-member event on the
      * first load after the migration and costs nothing on every load after it.
@@ -1966,10 +1966,10 @@ export class LicenceCentreService {
      * date we can be MOST certain about was the one guaranteed to remind on
      * nothing.
      *
-     * ⚠️ ARMED ONLY WHERE A REAL LICENCE BACKS IT. mayArmDerivedExpiry
-     * refuses the five-year no-licence figure, which is the repealed s10(2)
-     * applied from habit and which the reference forbids stating as the legal
-     * position. It is still shown, still explained, still asks.
+     * ⚠️ ARMED ON EVERY DERIVED DATE. The five-year no-licence figure used to
+     * be shown but never armed, so the row kept asking. Operator, 2026-10-26:
+     * default it to five years from issue and stop asking. The note still
+     * explains that it is an operating assumption, not statute.
      *
      * ⚠️ AND IT IS A SNAPSHOT OF SOMETHING THAT MOVES. The date rolls forward
      * with every licence renewed in the same category, so this is only correct
@@ -4017,10 +4017,10 @@ export function derivedExpiryFor(
    * genuinely the rule: endorsements read, and no licence behind any category
    * they name. That is now the only place the five years is stated.
    *
-   * ⚠️ DISPLAY ONLY, so nothing that gets WRITTEN changed. Both write paths
-   * (create() below, and recomputeDerivedCompetencies) call
-   * deriveCertificateExpiry directly, and mayArmDerivedExpiry has always
-   * refused anything but a licence-backed or statutory basis.
+   * ⚠️ DISPLAY ONLY. Both write paths (create() below, and
+   * recomputeDerivedCompetencies) call deriveCertificateExpiry directly and
+   * arm its date. This function only answers the proposal the confirm panel
+   * shows.
    */
   return { on: null, why: derived.why };
 }

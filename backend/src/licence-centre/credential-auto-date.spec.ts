@@ -276,13 +276,17 @@ describe('arming a date we derived', () => {
     expect(mayArmDerivedExpiry('statute').arm).toBe(true);
   });
 
-  it('⚠️ NEVER arms the five-year no-licence assumption', () => {
-    // It is the REPEALED s10(2), applied from habit where the current rule has
-    // nothing to bite on. The reference instructs it must "never be presented
-    // to a user as the legal position", and a countdown notification is the
-    // loudest way to present something. It is still shown and still explained
-    // — it just asks rather than tells.
-    expect(mayArmDerivedExpiry('fallback').arm).toBe(false);
+  it('⚠️ ARMS the five-year no-licence assumption', () => {
+    // Operator, 2026-10-26: a competency with no firearm linked gets five
+    // years from issue by default, so it stops asking for a date the
+    // certificate does not print. It remains a planning assumption rather
+    // than statute, which the stored note still says.
+    expect(mayArmDerivedExpiry('fallback').arm).toBe(true);
+  });
+
+  it('⚠️ NEVER arms a date we could not work out at all', () => {
+    // `unknown` means we could not read which firearms the certificate covers.
+    // There is no date and no honest basis to give one.
     expect(mayArmDerivedExpiry('unknown').arm).toBe(false);
   });
 });

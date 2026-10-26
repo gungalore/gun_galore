@@ -319,11 +319,12 @@ export interface CredentialProposal {
   details: Record<string, string>;
   lowConfidence: string[];
   /**
-   * An expiry worked out from a statute rather than read off the page.
+   * An expiry worked out rather than read off the page.
    *
-   * Only where the law fixes it — a competency certificate lapses five years
-   * after issue — and always with the reason, because a date with no reason
-   * behind it is indistinguishable from one we claim to have read.
+   * A competency follows the latest licence it covers; where it covers no
+   * licensed firearm it defaults to five years from issue. Always with the
+   * reason, because a date with no reason behind it is indistinguishable from
+   * one we claim to have read.
    */
   derivedExpiry?: { on: string | null; why: string } | null;
 }

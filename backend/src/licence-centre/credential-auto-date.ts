@@ -210,17 +210,25 @@ export function mayArmReadExpiry(args: {
 /**
  * May we arm a competency date we DERIVED?
  *
- * ⚠️ ONLY WHERE A REAL LICENCE BACKS IT. The derivation has two outcomes that
- * both produce a date: one inherited from a licence the member holds, and the
- * five-year no-licence assumption. The first is a fact about a document they
- * can read for themselves. The second is a rule the reference marks
- * [UNVERIFIED] and instructs must "never be presented to a user as the legal
- * position" — it is the REPEALED s10(2), applied from habit. A push
- * notification counting down to it is the loudest way to present something.
+ * ⚠️ EVERY DATE THE DERIVATION PRODUCES IS NOW ARMED. There are three
+ * outcomes: one inherited from a licence the member holds, the statutory
+ * muzzle-loader period, and the five-year no-licence assumption. The first two
+ * have always been armed.
  *
- * The statutory muzzle-loader period is a fact and may be armed.
+ * Operator, 2026-10-26: "If a competency does not have a firearm linked to it
+ * to determine the expiry date, set the default date to 5 years from the date
+ * of issue. so that it stop give the change date notification." So the
+ * five-year fallback is armed too. It is still a planning assumption rather
+ * than statute (see FALLBACK_YEARS), and the stored note still says so — but
+ * it no longer leaves the row asking the member to go and supply a date the
+ * certificate does not print.
+ *
+ * `unknown` stays unarmed: that is "we could not read which firearms this
+ * certificate covers", which is not a no-licence case and has no honest date.
  */
 export function mayArmDerivedExpiry(basis: string): AutoDateVerdict {
-  if (basis === 'licence' || basis === 'statute') return { arm: true };
-  return { arm: false, reason: `derivation was ${basis}, not licence-backed` };
+  if (basis === 'licence' || basis === 'statute' || basis === 'fallback') {
+    return { arm: true };
+  }
+  return { arm: false, reason: `derivation was ${basis}` };
 }

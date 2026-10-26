@@ -77,10 +77,9 @@ export async function recomputeDerivedCompetencies(
            * exactly the row this function exists to date: the operator's five
            * certificates all sat `expiresOn = null, dateSource = null`. They
            * were uploaded before the licences, when there was nothing to
-           * derive from, so only the fallback was available and the fallback
-           * is never armed — leaving `dateSource` null. When the licences
-           * landed the recompute fired and could not see a single one of them,
-           * because a null dateSource is not 'derived'.
+           * derive from, so only the five-year fallback was available. When
+           * the licences landed the recompute fired and could not see a single
+           * one of them, because a null dateSource is not 'derived'.
            *
            * ⚠️ `confirmedAt: null` IS WHAT MAKES THE WIDENING SAFE. A date the
            * member settled carries a confirmedAt and is excluded; a date we
@@ -150,10 +149,13 @@ export async function recomputeDerivedCompetencies(
       });
       const ok = mayArmDerivedExpiry(d.basis);
 
-      // ⚠️ THE DERIVATION STOPPED QUALIFYING — the last licence in a category
-      // it covers has gone, so the answer is now the five-year assumption we
-      // refuse to arm. The row gives its date back and returns to asking,
-      // rather than keeping a number whose basis has disappeared.
+      // ⚠️ THE DERIVATION HAS NO HONEST DATE — we could not read what the
+      // certificate covers, so there is nothing to fall back to. The row gives
+      // its date back rather than keeping a number whose basis has disappeared.
+      //
+      // A certificate that HAD a licence and lost it does qualify: the
+      // five-year fallback is a real answer now (operator, 2026-10-26), and
+      // the date moves to issue + five years instead of going blank.
       if (!d.on || !ok.arm) {
         if (c.expiresOn !== null) {
           await prisma.credential.update({

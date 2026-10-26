@@ -6,7 +6,7 @@ import { recomputeDerivedCompetencies } from './credential-derive-recompute';
 // The bug this file exists for: the operator emptied their vault and
 // re-uploaded in three batches — competencies first, then licences. Every
 // competency landed while there was nothing to derive from, so only the
-// never-armed fallback was available and its dateSource stayed NULL. When the
+// five-year fallback was available and its dateSource stayed NULL. When the
 // licences arrived the recompute fired and could not see a single competency,
 // because it selected `dateSource: 'derived'` — and a never-dated row is not
 // 'derived'. Five certificates sat undated until the member went back and
@@ -132,12 +132,35 @@ describe('re-dating competencies when a licence lands', () => {
     expect(certQuery.where.confirmedAt).toBeNull();
   });
 
-  it('hands the date back when the basis disappears', async () => {
+  it('falls back to five years from issue when the licence goes', async () => {
+    // Operator, 2026-10-26: a competency with no firearm linked gets five
+    // years from its issue date by default, armed, so the row stops asking.
+    // Issue was 2021-01-01 in this fixture.
     const { prisma, updates } = build({
       certs: [
         cert({
           id: 'c1',
           covers: 'hand',
+          expiresOn: new Date('2030-01-01T00:00:00Z'),
+        }),
+      ],
+      licences: [],
+    });
+    await recomputeDerivedCompetencies(prisma as never, 'u1', readCovers);
+    expect(updates[0].data.expiresOn).toEqual(
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    expect(updates[0].data.dateSource).toBe('derived');
+  });
+
+  it('hands the date back when we cannot read what it covers', async () => {
+    // No endorsements means no categories, which is not the no-licence case —
+    // it is "we could not read the certificate". There is no date to give.
+    const { prisma, updates } = build({
+      certs: [
+        cert({
+          id: 'c1',
+          covers: 'UNREADABLE',
           expiresOn: new Date('2030-01-01T00:00:00Z'),
         }),
       ],
