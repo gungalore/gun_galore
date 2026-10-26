@@ -4320,102 +4320,237 @@ export default function NewListingPage() {
                     <span style={{ color: 'var(--red)' }}>*required</span>
                   </label>
                   <div className="space-y-2">
-                    <input
-                      type="text"
-                      maxLength={120}
-                      value={plannedDealerName}
-                      onChange={(e) => setPlannedDealerName(e.target.value)}
-                      placeholder="Dealer name — e.g. Pretoria Arms"
-                      aria-label="Dealer name"
-                      style={{
-                        width: '100%',
-                        background: 'var(--bg-inset)',
-                        border: '0.5px solid var(--border)',
-                        color: 'var(--text-primary)',
-                        borderRadius: '6px',
-                        padding: '8px 12px',
-                        fontSize: '14px',
-                        outline: 'none',
-                      }}
-                    />
-                    {dealerManual ? (
-                      <input
-                        type="text"
-                        maxLength={300}
-                        value={plannedDealerAddress}
-                        onChange={(e) =>
-                          setPlannedDealerAddress(e.target.value)
-                        }
-                        placeholder="Dealer street address"
-                        aria-label="Dealer address"
-                        style={{
-                          width: '100%',
-                          background: 'var(--bg-inset)',
-                          border: '0.5px solid var(--border)',
-                          color: 'var(--text-primary)',
-                          borderRadius: '6px',
-                          padding: '8px 12px',
-                          fontSize: '14px',
-                          outline: 'none',
-                        }}
-                      />
-                    ) : (
-                      <AddressAutocomplete
-                        value={plannedDealerAddress}
-                        placeTypes={['establishment']}
-                        onChange={(address, placeId) => {
-                          setPlannedDealerAddress(address);
-                          setPlannedDealerPlaceId(placeId ?? '');
-                          if (!placeId) {
-                            setPlannedDealerLat(null);
-                            setPlannedDealerLng(null);
-                          }
-                        }}
-                        onPlaceSelected={(place) => {
-                          if (place.name) setPlannedDealerName(place.name);
-                          if (place.placeId) {
-                            setPlannedDealerPlaceId(place.placeId);
-                            void lookupDealer(place.placeId);
-                          }
-                          setPlannedDealerLat(place.components.lat ?? null);
-                          setPlannedDealerLng(place.components.lng ?? null);
-                          if (place.components.province) {
-                            setPlannedDealerProvince(place.components.province);
-                          }
-                          const area =
-                            place.components.city || place.components.suburb;
-                          if (area) setPlannedDealerArea(area);
-                        }}
-                        onComponents={(components) => {
-                          setPlannedDealerLat(components.lat ?? null);
-                          setPlannedDealerLng(components.lng ?? null);
-                          if (components.province) {
-                            setPlannedDealerProvince(components.province);
-                          }
-                          const area = components.city || components.suburb;
-                          if (area) setPlannedDealerArea(area);
-                        }}
-                        placeholder="Search for the gunshop address…"
-                        hideLocate
-                      />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setDealerManual((m) => !m)}
-                      className="text-xs"
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        padding: 0,
-                        color: 'var(--red)',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                      }}
+                    {/* One visible mode switch. Auto search is the primary
+                        path: the seller picks the gunshop once and every
+                        detail is resolved from Google. Manual Entry is the
+                        fallback for a dealer Google does not know. */}
+                    <div
+                      className="grid grid-cols-2 gap-2"
+                      role="group"
+                      aria-label="Dealer entry mode"
                     >
-                      {dealerManual
-                        ? 'Search Google Places instead'
-                        : 'Add the dealer details manually'}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setDealerManual(false)}
+                        aria-pressed={!dealerManual}
+                        style={{
+                          padding: '9px 12px',
+                          borderRadius: 6,
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          border: '1px solid var(--border)',
+                          background: !dealerManual
+                            ? 'var(--red)'
+                            : 'var(--bg-inset)',
+                          color: !dealerManual ? '#fff' : 'var(--text-secondary)',
+                        }}
+                      >
+                        Auto search
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDealerManual(true)}
+                        aria-pressed={dealerManual}
+                        style={{
+                          padding: '9px 12px',
+                          borderRadius: 6,
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          border: '1px solid var(--border)',
+                          background: dealerManual
+                            ? 'var(--red)'
+                            : 'var(--bg-inset)',
+                          color: dealerManual ? '#fff' : 'var(--text-secondary)',
+                        }}
+                      >
+                        Manual Entry
+                      </button>
+                    </div>
+
+                    {dealerManual ? (
+                      <>
+                        <input
+                          type="text"
+                          maxLength={120}
+                          value={plannedDealerName}
+                          onChange={(e) => setPlannedDealerName(e.target.value)}
+                          placeholder="Dealer name — e.g. Pretoria Arms"
+                          aria-label="Dealer name"
+                          style={{
+                            width: '100%',
+                            background: 'var(--bg-inset)',
+                            border: '0.5px solid var(--border)',
+                            color: 'var(--text-primary)',
+                            borderRadius: '6px',
+                            padding: '8px 12px',
+                            fontSize: '14px',
+                            outline: 'none',
+                          }}
+                        />
+                        <input
+                          type="text"
+                          maxLength={300}
+                          value={plannedDealerAddress}
+                          onChange={(e) =>
+                            setPlannedDealerAddress(e.target.value)
+                          }
+                          placeholder="Dealer street address"
+                          aria-label="Dealer address"
+                          style={{
+                            width: '100%',
+                            background: 'var(--bg-inset)',
+                            border: '0.5px solid var(--border)',
+                            color: 'var(--text-primary)',
+                            borderRadius: '6px',
+                            padding: '8px 12px',
+                            fontSize: '14px',
+                            outline: 'none',
+                          }}
+                        />
+                        <input
+                          type="tel"
+                          maxLength={40}
+                          value={plannedDealerPhone}
+                          onChange={(e) => setPlannedDealerPhone(e.target.value)}
+                          placeholder="Dealer phone (optional)"
+                          aria-label="Dealer phone"
+                          style={{
+                            width: '100%',
+                            background: 'var(--bg-inset)',
+                            border: '0.5px solid var(--border)',
+                            color: 'var(--text-primary)',
+                            borderRadius: '6px',
+                            padding: '8px 12px',
+                            fontSize: '14px',
+                            outline: 'none',
+                          }}
+                        />
+                        <input
+                          type="email"
+                          maxLength={200}
+                          value={plannedDealerEmail}
+                          onChange={(e) => setPlannedDealerEmail(e.target.value)}
+                          placeholder="Dealer email — used to send the stock form"
+                          aria-label="Dealer email"
+                          style={{
+                            width: '100%',
+                            background: 'var(--bg-inset)',
+                            border: '0.5px solid var(--border)',
+                            color: 'var(--text-primary)',
+                            borderRadius: '6px',
+                            padding: '8px 12px',
+                            fontSize: '14px',
+                            outline: 'none',
+                          }}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <AddressAutocomplete
+                          value={plannedDealerAddress}
+                          placeTypes={['establishment']}
+                          onChange={(address, placeId) => {
+                            setPlannedDealerAddress(address);
+                            setPlannedDealerPlaceId(placeId ?? '');
+                            if (!placeId) {
+                              setPlannedDealerLat(null);
+                              setPlannedDealerLng(null);
+                            }
+                          }}
+                          onPlaceSelected={(place) => {
+                            if (place.name) setPlannedDealerName(place.name);
+                            if (place.placeId) {
+                              setPlannedDealerPlaceId(place.placeId);
+                              void lookupDealer(place.placeId);
+                            }
+                            setPlannedDealerLat(place.components.lat ?? null);
+                            setPlannedDealerLng(place.components.lng ?? null);
+                            if (place.components.province) {
+                              setPlannedDealerProvince(place.components.province);
+                            }
+                            const area =
+                              place.components.city || place.components.suburb;
+                            if (area) setPlannedDealerArea(area);
+                          }}
+                          onComponents={(components) => {
+                            setPlannedDealerLat(components.lat ?? null);
+                            setPlannedDealerLng(components.lng ?? null);
+                            if (components.province) {
+                              setPlannedDealerProvince(components.province);
+                            }
+                            const area = components.city || components.suburb;
+                            if (area) setPlannedDealerArea(area);
+                          }}
+                          placeholder="Search the gunshop by name or address…"
+                          hideLocate
+                        />
+                        {(plannedDealerName || plannedDealerAddress) && (
+                          <div
+                            className="rounded-[6px] p-3"
+                            style={{
+                              background: 'var(--bg-inset)',
+                              border: '0.5px solid var(--border)',
+                            }}
+                          >
+                            <p
+                              className="text-[10px] uppercase mb-1"
+                              style={{
+                                color: 'var(--text-tertiary)',
+                                letterSpacing: '0.05em',
+                                fontWeight: 600,
+                              }}
+                            >
+                              Auto-resolved dealer
+                            </p>
+                            <p
+                              className="text-sm"
+                              style={{
+                                color: 'var(--text-primary)',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {plannedDealerName || 'Dealer'}
+                            </p>
+                            {plannedDealerAddress && (
+                              <p
+                                className="text-xs mt-0.5"
+                                style={{ color: 'var(--text-secondary)' }}
+                              >
+                                {plannedDealerAddress}
+                              </p>
+                            )}
+                            {(plannedDealerPhone || plannedDealerEmail) && (
+                              <p
+                                className="text-xs mt-1"
+                                style={{ color: 'var(--text-tertiary)' }}
+                              >
+                                {[plannedDealerPhone, plannedDealerEmail]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </p>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setDealerManual(true)}
+                              className="text-xs mt-2"
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                padding: 0,
+                                color: 'var(--red)',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                              }}
+                            >
+                              Edit these details
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+
                     <select
                       value={plannedDealerProvince}
                       onChange={(e) =>
@@ -4474,50 +4609,14 @@ export default function NewListingPage() {
                         outline: 'none',
                       }}
                     />
-                    <input
-                      type="tel"
-                      maxLength={40}
-                      value={plannedDealerPhone}
-                      onChange={(e) => setPlannedDealerPhone(e.target.value)}
-                      placeholder="Dealer phone (optional)"
-                      aria-label="Dealer phone"
-                      style={{
-                        width: '100%',
-                        background: 'var(--bg-inset)',
-                        border: '0.5px solid var(--border)',
-                        color: 'var(--text-primary)',
-                        borderRadius: '6px',
-                        padding: '8px 12px',
-                        fontSize: '14px',
-                        outline: 'none',
-                      }}
-                    />
-                    <input
-                      type="email"
-                      maxLength={200}
-                      value={plannedDealerEmail}
-                      onChange={(e) => setPlannedDealerEmail(e.target.value)}
-                      placeholder="Dealer email — used to send the stock form"
-                      aria-label="Dealer email"
-                      style={{
-                        width: '100%',
-                        background: 'var(--bg-inset)',
-                        border: '0.5px solid var(--border)',
-                        color: 'var(--text-primary)',
-                        borderRadius: '6px',
-                        padding: '8px 12px',
-                        fontSize: '14px',
-                        outline: 'none',
-                      }}
-                    />
                   </div>
                   <p
                     className="text-xs mt-1"
                     style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
                   >
-                    We use this dealer for the transfer and stock-in check. The
-                    address and area are shown to buyers; the phone and email
-                    stay private and are only used to verify the dealer.
+                    Pick the gunshop once and we resolve its address, phone and
+                    email. Buyers see the area; the phone and email stay private
+                    and are used to verify the dealer.
                   </p>
                 </div>
               )}
