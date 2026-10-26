@@ -5468,6 +5468,13 @@ export class NotificationsService {
     const url = `${this.appUrl}${docPath}`;
     const on = d.issuedOn.toISOString().slice(0, 10);
     const headline = 'Is your proof of address still valid?';
+    // ⚠️ A DOCUMENT CAN ALREADY BE PAST THREE MONTHS when this fires (the row
+    // was filed before this check existed). "Too old in about 0 days" is not a
+    // sentence; say what is actually true.
+    const ageLine =
+      d.daysLeft > 0
+        ? `so it will be too old for a new application in about ${d.daysLeft} days.`
+        : 'so it is already older than the three months a DFO accepts.';
 
     await this.persist({
       userId: d.userId,
@@ -5476,7 +5483,7 @@ export class NotificationsService {
       title: headline,
       body:
         `${d.title} is dated ${on}, ${d.daysOld} days ago. A DFO wants one from the last three months, ` +
-        `so it will be too old for a new application in about ${d.daysLeft} days. ` +
+        `${ageLine} ` +
         'Make sure it is still the one you would use, and add a newer one if it is not.',
       url: docPath,
       iconKey: 'kyc',
@@ -5499,7 +5506,10 @@ export class NotificationsService {
         headline,
         body:
           `Hi ${b(d.name)}, the proof of address you keep on file is dated ${b(on)} (${d.daysOld} days ago). ` +
-          'A DFO accepts a proof of address from the last three months, so it will be too old for a new application soon. ' +
+          'A DFO accepts a proof of address from the last three months, ' +
+          (d.daysLeft > 0
+            ? `so it will be too old for a new application in about ${d.daysLeft} days. `
+            : 'so it is already older than that. ') +
           'Make sure it is still the one you would use, and add a newer one in your Document Centre if it is not.',
         cta: { label: 'Open Document Centre', url },
         preheader: `${d.title}: still valid?`,
