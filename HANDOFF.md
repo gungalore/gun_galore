@@ -7,6 +7,45 @@ overwritten.
 
 Last updated: **2026-10-26**.
 
+## 2026-10-26 - SIGN-UP NAMES + CELL OTP, PROFILE ADDRESS IN THE BOOK (DEPLOYED)
+
+**Sign-up now actually keeps the name and proves the cell number.** The form
+already collected first/surname but discarded them, and phone verification only
+existed on `/profile/edit`.
+
+- `RegisterDto` requires `firstName`/`lastName` (trimmed, whitespace-only
+  rejected); `AuthService.register` persists them. Public surfaces still show
+  username only.
+- Sign-up is now details → email code → cell OTP → channel prefs. The phone step
+  reuses `POST /users/me/phone/request-otp` + `/verify` (SMSPortal), auto-sends
+  once, and offers resend/change-number. ⚠️ It is wizard-enforced, not
+  session-enforced: closing the tab after email verification leaves an account
+  with an unverified phone, which can still be verified later from the profile.
+  The request route is capped at 3/10 min per IP, so shared-IP sign-ups can hit
+  429.
+- KYC adopts the ID-read names only when the Didit verdict is `VERIFIED` (a
+  rejected/in-review session no longer renames the account); `/profile/edit`
+  keeps the fields locked once verified, and the stale "Home Affairs" hint is
+  gone.
+
+**The profile address is now part of the saved-address book.**
+`GET /users/me/addresses` prepends a read-through entry (id `profile`) built
+from `User.addr*`, only when street/city/postal/province are complete.
+
+- Settings can edit it (writes back to the User row) and make it default, but
+  cannot delete it. Book rows keep normal CRUD.
+- Default rule: a book default wins; otherwise the profile address is default.
+  Adding the first extra address no longer silently takes the default over.
+- Cart and offer checkout now show the picker from one address up and prefill
+  from the default; single-listing checkout keeps the chip for one address and
+  the picker for 2+.
+
+Gates: backend tsc clean, 379 suites / 5 818 tests; frontend tsc + production
+build clean, 157 files / 1 807 tests. Deploy at 18:55 SAST (full, commits
+`3658c2dc` + `7757e0ff`): rollback `alloutdoor-20261026-185459.dump`
+(32 053 466 bytes), no pending migrations, backend/frontend health x2 OK,
+public 200 x2, three PM2 services online.
+
 ## 2026-10-26 - DEALER FORM TEST EMAIL, NOT A BCC (DEPLOYED)
 
 **The BCC copy was removed; the operator only wants on-demand test emails.**
