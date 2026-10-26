@@ -1616,7 +1616,22 @@ export class NotificationsService {
     serial: string;
     link: string;
   }) {
-    const html = this.email({
+    const html = this.dealerPortalRequestEmail(d);
+    await this.send(d.to, `Dealer stock confirmation — ${d.listingTitle}`, html);
+  }
+
+  /**
+   * The dealer-form template, shared by the real invitation and the
+   * admin/test send. Kept separate so a test email cannot drift from the
+   * production copy.
+   */
+  private dealerPortalRequestEmail(d: {
+    dealerName: string;
+    listingTitle: string;
+    serial: string;
+    link: string;
+  }): string {
+    return this.email({
       status: { tone: 'pending', label: 'Action needed' },
       headline: 'Confirm the firearm is stocked with you',
       body:
@@ -1630,17 +1645,22 @@ export class NotificationsService {
       footnote:
         'This link is for this sale only and expires in 14 days. If you were not expecting this, contact support.',
     });
-    // Operator copy: every dealer form is BCC'd to the ops mailbox so the
-    // team can see the exact form the dealer was sent. Configurable, and
-    // silent when unset.
-    const copy = (process.env.DEALER_FORM_COPY_EMAIL ?? '').trim();
-    await this.send(
-      d.to,
-      `Dealer stock confirmation — ${d.listingTitle}`,
-      html,
-      undefined,
-      copy || undefined,
-    );
+  }
+
+  /**
+   * Send the real dealer-form template to an operator address, on demand.
+   * Used by `npm run dealer-form:test` — never by the sale flow.
+   */
+  async sendDealerFormTest(to: string): Promise<void> {
+    const email = (to ?? '').trim();
+    if (!email) throw new Error('A recipient email is required.');
+    await this.dealerPortalRequest({
+      to: email,
+      dealerName: 'Wildman Cape Gate (test dealer)',
+      listingTitle: 'Example bolt-action rifle (test listing)',
+      serial: 'TEST-1234',
+      link: `${this.appUrl}/dealer-portal/test-preview`,
+    });
   }
 
   // ---------------------------------------------------------------
@@ -5012,7 +5032,6 @@ export class NotificationsService {
     subject: string,
     html: string,
     attachments?: { filename: string; content: Buffer }[],
-    bcc?: string,
   ) {
     if (!this.resend) return;
     if (await this.emailMuted(to)) {
@@ -5025,7 +5044,6 @@ export class NotificationsService {
         to,
         subject,
         html,
-        ...(bcc ? { bcc } : {}),
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
       });
       this.logger.debug(`Email sent → ${to} "${subject}"`);
