@@ -149,12 +149,12 @@ export class TasksService {
   // no FNB bulk-payment batch). Seller payouts / buyer refunds are still
   // surfaced read-only via the admin payouts-due preview.
 
-  // ─── Firearm licence expiry — auto-delist + warnings ─────────────
-  // Daily: any ACTIVE firearm listing whose licence is ≤30 days from
-  // expiry (or already expired) is delisted (status EXPIRED) and the
-  // seller is told to renew + relist. Listings in the 31–90-day window
-  // get a one-time "expiring soon" warning (licenceExpiryWarnedAt guards
-  // against re-warning daily).
+  // ─── Firearm licence expiry — warning only ──────────────────────
+  // Expiry never blocks or delists a listing (operator 2026-10-26): the date
+  // is read, stored and shown on the listing, and the dealer checks the
+  // licence at hand-over. Listings in the 31–90-day window still get a
+  // one-time "expiring soon" notice (licenceExpiryWarnedAt guards against
+  // re-warning daily).
   @Cron(CronExpression.EVERY_DAY_AT_6AM)
   async checkFirearmLicenceExpiry() {
     const now = new Date();
@@ -163,36 +163,6 @@ export class TasksService {
     const fullName = (f?: string | null, l?: string | null) =>
       [f, l].filter(Boolean).join(' ') || 'there';
     try {
-      // (1) Delist anything ≤30 days from expiry (or already expired).
-      const toDelist = await this.prisma.listing.findMany({
-        where: {
-          isFirearm: true,
-          status: 'ACTIVE',
-          licenceExpiresAt: { not: null, lte: in30 },
-        },
-        select: {
-          id: true,
-          title: true,
-          seller: { select: { email: true, firstName: true, lastName: true } },
-        },
-      });
-      for (const l of toDelist) {
-        await this.prisma.listing.update({
-          where: { id: l.id },
-          data: { status: 'EXPIRED' },
-        });
-        if (l.seller?.email) {
-          await this.notifications.firearmLicenceExpiry({
-            sellerEmail: l.seller.email,
-            sellerName: fullName(l.seller.firstName, l.seller.lastName),
-            listingTitle: l.title,
-            listingId: l.id,
-            kind: 'delisted',
-          });
-        }
-      }
-
-      // (2) One-time warning for the 31–90-day window.
       const toWarn = await this.prisma.listing.findMany({
         where: {
           isFirearm: true,
@@ -225,15 +195,14 @@ export class TasksService {
             sellerName: fullName(l.seller.firstName, l.seller.lastName),
             listingTitle: l.title,
             listingId: l.id,
-            kind: 'warn',
             daysLeft,
           });
         }
       }
 
-      if (toDelist.length || toWarn.length) {
+      if (toWarn.length) {
         this.logger.log(
-          `firearm licence expiry: delisted ${toDelist.length}, warned ${toWarn.length}`,
+          `firearm licence expiry: warned ${toWarn.length}`,
         );
       }
     } catch (err) {
@@ -246,8 +215,8 @@ export class TasksService {
   }
 
   // ─── Stale-listing expiry + refresh ─────────────────────────────
-  // Only FIREARM listings were ever auto-delisted (licence-expiry cron above).
-  // Every other listing stayed ACTIVE forever: no expiry, no "is this still
+  // Firearm listings used to be auto-delisted on licence expiry; that cron is
+  // now warning-only (see above). Every other listing stayed ACTIVE forever: no expiry, no "is this still
   // for sale?" check. Dead inventory accumulated, buyers wasted offers/bids on
   // items sold elsewhere months ago — and under the reject-strike policy the
   // seller then ate a strike for declining an offer on a listing they'd

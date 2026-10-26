@@ -395,6 +395,20 @@ export default async function ListingDetailPage({
     }
   }
 
+  // The licence expiry read from the seller's licence photo. Shown with the
+  // specifications below the description so a buyer can see the validity
+  // before paying; never a gate on the listing itself.
+  const licenceExpiryLabel = (() => {
+    if (!listing.isFirearm || !listing.licenceExpiresAt) return null;
+    const d = new Date(listing.licenceExpiresAt);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString('en-ZA', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  })();
+
   return (
     // At lg this page stops scrolling and its two columns scroll instead
     // (see .gg-twopane in globals.css). <main> owns the height — one viewport
@@ -513,7 +527,7 @@ export default async function ListingDetailPage({
               joined to their definitions for human labels + units. Only
               rendered when at least one attribute has a value; the rows are
               already ordered by the definition order (leaf-first). */}
-          {specRows.length > 0 && (
+          {specRows.length > 0 || licenceExpiryLabel ? (
             <div
               className="rounded-[6px] p-3 mb-4 text-sm"
               style={{
@@ -547,9 +561,22 @@ export default async function ListingDetailPage({
                     </dd>
                   </div>
                 ))}
+                {licenceExpiryLabel && (
+                  <div className="flex items-baseline justify-between gap-4">
+                    <dt style={{ color: 'var(--text-tertiary)' }}>
+                      Licence expiry
+                    </dt>
+                    <dd
+                      className="text-right"
+                      style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+                    >
+                      {licenceExpiryLabel}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </div>
-          )}
+          ) : null}
 
           </div>
         </div>

@@ -48,8 +48,9 @@ import { NotificationsService } from '../notifications/notifications.service';
 //     only ever exposes the derived `reserveMet` boolean.
 //   • currentBidderId — reveals the identity of the current high bidder.
 //   • serialNumber / serialPhotoUrl / licencePhotoUrl / licenceHolderName
-//     (the seller's real name!) / licenceExpiresAt / licenceExpiryWarnedAt /
-//     firearmType — SAP-534 firearm serial + licence capture.
+//     (the seller's real name!) / licenceExpiryWarnedAt / firearmType —
+//     SAP-534 firearm serial + licence capture. `licenceExpiresAt` is the
+//     one exception: it is shown to buyers on the listing (see below).
 //   • pickup* (building/street/address2/suburb/city/postalCode/lat/lng) —
 //     the seller's private pickup address & geolocation.
 //   • adminReviewedById / adminReviewedAt / adminOverrideReason — internal
@@ -86,6 +87,11 @@ export const PUBLIC_LISTING_SELECT = {
   // listings/postal-locality.ts for the resolution order.
   publicLocality: true,
   isFirearm: true,
+  // Read from the licence photo and shown on the detail page below the
+  // description, so a buyer can see the licence validity before paying.
+  // Null for non-firearms or when the date was not legible. The holder name,
+  // serial and photos stay private.
+  licenceExpiresAt: true,
   // Needed by findById to decide whether an ANONYMOUS caller may see this row
   // at all (members-only categories 404 without a session). Harmless to
   // expose: by the time a caller holds this object they are either signed in
@@ -1571,9 +1577,9 @@ export class ListingsService {
     // For licence-controlled categories the seller must supply a typed
     // serial + a serial photo + a licence photo (uploaded to Cloudinary
     // first via POST /listings/firearm-docs). Claude vision confirms the
-    // serials match, the holder matches the seller, and reads the expiry —
-    // BLOCKing expired/≤30-day/mismatched licences. A 31–90-day licence is
-    // allowed; the frontend surfaces that warning from licenceExpiresAt.
+    // serials match and the holder matches the seller. The expiry date is
+    // read and stored for display on the listing; it never blocks — the
+    // dealer checks the licence at hand-over.
     let firearmLicenceExpiresAt: Date | null = null;
     let firearmLicenceHolderName: string | null = null;
     if (category.isFirearm) {

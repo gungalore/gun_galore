@@ -328,6 +328,11 @@ export interface Listing {
   // column existed; render the province alone in that case.
   publicLocality?: string | null;
   isFirearm: boolean;
+  // The licence expiry read from the seller's licence photo, shown on the
+  // detail page below the description so a buyer can see the licence
+  // validity before paying. Null for non-firearms or when unreadable.
+  // The holder name and licence photos stay private.
+  licenceExpiresAt?: string | null;
   // False for a members-only (regulated / weapon-adjacent) listing. The API
   // 404s these for anonymous callers, so a listing carrying `false` here has
   // by definition been served to a signed-in member — the flag exists so the

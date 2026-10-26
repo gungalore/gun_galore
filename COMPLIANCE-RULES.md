@@ -100,9 +100,9 @@ Checks only two things: (1) personal contact details, (2) ammunition/primers/pro
 |---|---|
 | Firearm categories: Firearms tree (`isFirearm`, `requiresLicence`) and Barrels (licensed part). | `prisma/seed.ts` |
 | Seller must give typed serial + serial photo + licence photo. | `listings.service.ts` |
-| AI licence verification BLOCKs if: serial photo illegible, licence unreadable or not an SA firearm licence, serial photo does not match typed serial, licence serial does not match, **licence holder does not match the seller's account name**, expiry unreadable, licence expired or under 30 days to expiry. 31 to 90 days = WARN (listed with warning). No model configured = BLOCK all firearm listings. Match floor 80/100. | `listings/firearm-licence.service.ts` |
+| AI licence verification BLOCKs if: serial photo illegible, licence unreadable or not an SA firearm licence, serial photo does not match typed serial, licence serial does not match, or **licence holder does not match the seller's account name**. The expiry date is read and stored for display on the listing but never gates publishing (expired, near-expiry and unreadable dates all pass). No model configured = BLOCK all firearm listings. Match floor 80/100. | `listings/firearm-licence.service.ts` |
 | Every firearm listing must offer `DEALER_TRANSFER`. `PRIVATE_ARRANGE` may be added, never on its own. | `listings.service.ts` |
-| Daily 06:00: ACTIVE firearm listings with licence expired or within 30 days are delisted (EXPIRED) and the seller told to renew; 31 to 90 days gets a one-time warning. | `tasks.service.ts checkFirearmLicenceExpiry` |
+| Daily 06:00: 31 to 90 days before licence expiry, send the seller a one-time warning. Expiry does not delist a listing. | `tasks.service.ts checkFirearmLicenceExpiry` |
 | Air rifles are not firearms; they list and ship as ordinary goods. | seed / shipping |
 
 ### 2.6 Collection-only and dangerous goods

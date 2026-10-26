@@ -18,12 +18,13 @@ import { sanitizePromptValue } from '../common/prompt-sanitize';
  *   3. The licence HOLDER name matches the seller.
  *   4. The licence is not expired and reads the expiry date.
  *
- * From the read expiry date we apply the operator's listing rules:
- *   - expired OR < 30 days to expiry  → BLOCK (cannot list)
- *   - 31–90 days to expiry            → WARN (list, but warn the seller)
- *   - > 90 days                       → OK
+ * From the read expiry date we RECORD it for display on the listing. It no
+ * longer gates publishing: a licence can be renewed, and the dealer completes
+ * the transfer against the licence at hand-over, so an expired or near-expiry
+ * date must not stop a seller listing. The date is still read and stored on
+ * every listing where it is legible.
  *
- * Plus any serial/holder mismatch or an unreadable licence → BLOCK.
+ * Any serial/holder mismatch or an unreadable licence → BLOCK.
  *
  * The same 0-100 scoring convention as DealerVerificationService. When no
  * model is configured we BLOCK (a firearm listing must not publish
@@ -37,9 +38,6 @@ import { sanitizePromptValue } from '../common/prompt-sanitize';
 
 // Match-confidence floor (same convention as dealer verification).
 const MATCH_FLOOR = 80;
-// Listing-gate expiry windows (days).
-const BLOCK_WITHIN_DAYS = 30;
-const WARN_WITHIN_DAYS = 90;
 
 export interface FirearmLicenceFindings {
   serialPhoto: {
@@ -59,11 +57,11 @@ export interface FirearmLicenceFindings {
   issues: string[];
 }
 
-export type LicenceGate = 'OK' | 'WARN' | 'BLOCK';
+export type LicenceGate = 'OK' | 'BLOCK';
 
 export interface FirearmLicenceResult {
   gate: LicenceGate;
-  // Human-readable reason — shown to the seller (BLOCK) or as a warning (WARN).
+  // Human-readable reason — shown to the seller when a BLOCK is returned.
   reason: string;
   licenceExpiresAt: Date | null;
   licenceHolderName: string | null;
@@ -265,47 +263,12 @@ export class FirearmLicenceService {
       );
     }
 
-    // ----- Expiry rules ------------------------------------------------
+    // ----- Expiry — read and recorded, never a gate --------------------
+    // The date is displayed on the listing. It does not block publishing:
+    // a licence can be renewed, and the dealer checks the licence at
+    // hand-over. An unreadable date is simply left null.
     const expiresAt = this.parseDate(findings.licence.expiry_date);
-    if (!expiresAt) {
-      return this.block(
-        'We could not read the expiry date on your licence. Please upload a clearer photo of the full licence.',
-        null,
-        holderName,
-        null,
-        findings,
-      );
-    }
-    const days = this.daysUntil(expiresAt);
-
-    if (days < 0) {
-      return this.block(
-        'This firearm licence has expired. An expired licence cannot be used to list a firearm.',
-        expiresAt,
-        holderName,
-        days,
-        findings,
-      );
-    }
-    if (days < BLOCK_WITHIN_DAYS) {
-      return this.block(
-        `This licence expires in ${days} day${days === 1 ? '' : 's'}. Licences within 30 days of expiry cannot be listed — please renew first.`,
-        expiresAt,
-        holderName,
-        days,
-        findings,
-      );
-    }
-    if (days <= WARN_WITHIN_DAYS) {
-      return {
-        gate: 'WARN',
-        reason: `Heads up: this licence expires in ${days} days. Your listing will go live, but it will be automatically delisted once the licence is within 30 days of expiry. Renew before then to keep it listed.`,
-        licenceExpiresAt: expiresAt,
-        licenceHolderName: holderName,
-        daysUntilExpiry: days,
-        findings,
-      };
-    }
+    const days = expiresAt ? this.daysUntil(expiresAt) : null;
     return {
       gate: 'OK',
       reason: '',

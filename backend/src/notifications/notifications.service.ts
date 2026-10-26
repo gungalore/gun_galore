@@ -2383,58 +2383,30 @@ export class NotificationsService {
     sellerName: string;
     listingTitle: string;
     listingId: string;
-    kind: 'warn' | 'delisted';
     daysLeft?: number;
   }) {
-    const myListingsUrl = `${this.appUrl}/my/listings`;
     const listingUrl = `${this.appUrl}/listings/${d.listingId}`;
-    if (d.kind === 'warn') {
-      await this.persistByEmail(d.sellerEmail, {
-        category: 'SELLER',
-        type: 'firearm_licence_expiring',
-        title: 'Firearm licence expiring soon',
-        body: `${d.listingTitle} — your licence expires in ${d.daysLeft} days. Renew before it is within 30 days of expiry or the listing will be delisted.`,
-        url: `/listings/${d.listingId}`,
-        iconKey: 'sold',
-        linkedType: 'listing',
-        linkedId: d.listingId,
-        dismissible: true,
-      });
-      const html = this.email({
-        status: { tone: 'pending', label: 'Action needed' },
-        headline: 'Your firearm licence is expiring',
-        body: `Hi ${b(d.sellerName)}, the licence for your listing ${b(d.listingTitle)} expires in ${b(String(d.daysLeft))} days. The listing is still live, but once the licence is within 30 days of expiry we will automatically delist it. Renew your licence to keep it listed.`,
-        cta: { label: 'View listing', url: listingUrl },
-        preheader: `${d.listingTitle}: firearm licence expiring soon`,
-      });
-      await this.send(
-        d.sellerEmail,
-        'Firearm licence expiring soon: ' + d.listingTitle,
-        html,
-      );
-      return;
-    }
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
-      type: 'firearm_listing_delisted',
-      title: 'Firearm listing delisted',
-      body: `${d.listingTitle} was delisted because its licence is within 30 days of expiry. Renew the licence, then relist.`,
-      url: '/my/listings',
+      type: 'firearm_licence_expiring',
+      title: 'Firearm licence expiring soon',
+      body: `${d.listingTitle} — your licence expires in ${d.daysLeft} days. The listing stays live; renew before then so the dealer can complete the transfer.`,
+      url: `/listings/${d.listingId}`,
       iconKey: 'sold',
       linkedType: 'listing',
       linkedId: d.listingId,
-      dismissible: false,
+      dismissible: true,
     });
     const html = this.email({
-      status: { tone: 'error', label: 'Delisted' },
-      headline: 'Firearm listing delisted',
-      body: `Hi ${b(d.sellerName)}, your listing ${b(d.listingTitle)} has been delisted because its firearm licence is now within 30 days of expiry. Renew your licence, then relist the firearm.`,
-      cta: { label: 'Open my listings', url: myListingsUrl },
-      preheader: `${d.listingTitle} was delisted (licence expiry)`,
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Your firearm licence is expiring',
+      body: `Hi ${b(d.sellerName)}, the licence for your listing ${b(d.listingTitle)} expires in ${b(String(d.daysLeft))} days. The listing stays live and the expiry date is shown to buyers. Renew it before then so the dealer can complete the transfer.`,
+      cta: { label: 'View listing', url: listingUrl },
+      preheader: `${d.listingTitle}: firearm licence expiring soon`,
     });
     await this.send(
       d.sellerEmail,
-      'Firearm listing delisted: ' + d.listingTitle,
+      'Firearm licence expiring soon: ' + d.listingTitle,
       html,
     );
   }
